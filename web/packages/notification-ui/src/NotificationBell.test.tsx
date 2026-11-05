@@ -88,6 +88,18 @@ describe('NotificationBell', () => {
     expect(button.textContent).toBe('')
   })
 
+  it('caps the printed count at 99+ and carries the same text in the name', async () => {
+    const respond: RealResponder = () => jsonResponse(200, { unread: 150 })
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationBell onClick={() => undefined} />)
+
+    const button = await screen.findByRole('button', {
+      name: zhCN.bell.labelWithCount.replace('{{n}}', '99+'),
+    })
+    expect(button).toHaveTextContent('99+')
+  })
+
   it('stays at zero when the count read fails', async () => {
     const respond: RealResponder = () => {
       throw new Error('network down')

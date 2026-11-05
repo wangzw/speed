@@ -7,6 +7,7 @@ notification-ui 是站内通知在浏览器里的界面，位于能力 UI 包这
 本包交付站内通知在浏览器里的界面（包 `web/packages/notification-ui`）：一个能力 UI 包对应一个后端能力目录（[web](design-web.md) 的划分轴），覆盖后端通知能力的收件箱、偏好与推送。它交付：
 
 - **未读铃铛**：`NotificationBell` 读调用方的未读数（`GET /api/v1/notifications/messages/unread-count`），渲染为图标按钮。**未读为零时不渲染徽标**——没有未读就没有数字，也不留一个可见的 `0`；未读数尚未读出或读取失败时同样不渲染徽标，此刻它不知道有没有未读，摆一个 `0` 是把未知说成没有；计数非零时徽标字形对无障碍树隐藏，计数落在按钮的可及名上（前端规范的图标按钮规则），读屏只播报一次。它受控：`onClick` 是宿主的导航，铃铛本身不含路由。
+- **未读计数**：`useNotificationUnread` 把同一份未读数交给任何要带徽标的控件——计数本身、徽标要印的文本、可及名要加的短语，各自一件；`enabled` 为假时不发这条读。`NOTIFICATION_BADGE_MAX` 是徽标印制的上限。铃铛仍由本包交付；宿主不挂铃铛时，可以用这个钩子把未读数放在自己的控件上。
 - **收件箱界面**：`NotificationInbox` 读一页消息（`GET /api/v1/notifications/messages`），逐行渲染标题、正文、时间与未读/已读标记，未读行提供「标记为已读」（`POST /api/v1/notifications/messages/:id/read`），页头提供「全部标记为已读」（`POST /api/v1/notifications/messages/read-all`）。可选入参让宿主按分组过滤、按页大小翻页、在每行附上详情、把带链接的行交给宿主打开，并以嵌入形态去掉页头、改在指定层级渲染标题。
 - **偏好矩阵**：`NotificationPreferences` 读按类型的渠道矩阵（`GET /api/v1/notifications/preferences`）与类型分类法（`GET /api/v1/notifications/types`，取每类型是否可退订），写入单个渠道的目标态（`PUT /api/v1/notifications/preferences/:typeKey/:channel`）。渠道列是 `in_app` 加宿主给出的、特性在场的可选渠道。
 - **通知界面**：`NotificationCenter` 是默认组合——收件箱与其下的偏好矩阵；特性 `notification.preferences` 缺席时只有收件箱。
@@ -33,6 +34,9 @@ notification-ui 是站内通知在浏览器里的界面，位于能力 UI 包这
 | 导出 | 种类 | 说明 |
 |---|---|---|
 | `NotificationBell` | 组件 | 带未读徽标的铃铛；`onClick` 上报激活事件，可选 `icon` 替换字形。 |
+| `useNotificationUnread` | hook | 调用方的未读数，形状供任何带徽标的控件使用：`count`、`badgeText`、`phrase`；可选 `enabled` 关掉这条读。 |
+| `NOTIFICATION_BADGE_MAX` | 常量 | 徽标印制的上限（`99`），超过时印「99+」。 |
+| `NotificationUnread` | 类型 | 上面这个 hook 的返回结构。 |
 | `NotificationInbox` | 组件 | 收件箱界面：消息列表、行内标记已读、全部标记已读；可选激活、详情、分组与翻页、嵌入形态。 |
 | `NotificationPreferences` | 组件 | 按类型的渠道偏好矩阵；可选类型标签与分组标签。 |
 | `NotificationCenter` | 组件 | 收件箱与偏好矩阵的组合页；可选透传入参。 |
@@ -108,6 +112,24 @@ interface NotificationBellProps {
 
 `onClick` 收到激活事件，宿主可据修饰键或目标决定落点。`icon` 只替换徽标内的字形，可及名仍由本包给出。
 
+### 未读计数的入参
+
+```ts
+const NOTIFICATION_BADGE_MAX = 99
+
+interface NotificationUnread {
+  readonly count: number                  // 未读数；读落定之前为 0
+  readonly badgeText: string | null       // 徽标印的文本（"3"、"99+"），没有未读时为 null
+  readonly phrase: string | null          // 加进控件可及名的短语，没有未读时为 null
+}
+
+function useNotificationUnread(enabled?: boolean): NotificationUnread
+```
+
+三件各回答一个问题：`count` 是数字本身，`badgeText` 是徽标印的文本，`phrase` 是同一个事实给可及名用的说法。计数为零时 `badgeText` 与 `phrase` 都是 `null`，宿主因此不渲染徽标——一个隐藏起来的「0」仍是可及名没有携带的可见文本（WCAG 2.5.3）。计数超过 `NOTIFICATION_BADGE_MAX` 时 `badgeText` 印「99+」，`phrase` 用同一段文本，可见徽标因此落在可及名之内。`enabled` 缺省为真；宿主在部署不服务收件箱时传假，这条读不发。
+
+**徽标用 `error.light` 填充、`grey.900` 字色。** 预设把语义色按自己的画布加深过：玻璃预设的 `error.main` 读起来接近黑色，`error.dark` 用在浅色填充上又只在那种预设里够对比。中性字色在浅色与深色两种模式下、每个预设里都够，铃铛与宿主自己的徽标同用这一对颜色。
+
 ### 特性在场的入参
 
 ```ts
@@ -124,7 +146,7 @@ interface NotificationPresenceProviderProps {
 
 ### 对外接口
 
-`src/index.ts` 的导出集、各组件的 props 结构（含 `NotificationBellProps`、`NotificationInboxProps`、`NotificationPreferencesProps`、`NotificationCenterProps`）、`notificationRoutes` 的类型与它所列的特性、`NotificationStreamProvider` 与 `NotificationPresenceProvider` 的入参语义（含没有 provider 时的处理），以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的接口。包以锁定版本组发布。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
+`src/index.ts` 的导出集、各组件的 props 结构（含 `NotificationBellProps`、`NotificationInboxProps`、`NotificationPreferencesProps`、`NotificationCenterProps`）、`useNotificationUnread` 的返回结构与 `enabled` 语义、`NOTIFICATION_BADGE_MAX` 的取值、`notificationRoutes` 的类型与它所列的特性、`NotificationStreamProvider` 与 `NotificationPresenceProvider` 的入参语义（含没有 provider 时的处理），以及 `NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources` 是对使用者的接口。包以锁定版本组发布。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 
 ## 依赖
 
@@ -147,7 +169,9 @@ interface NotificationPresenceProviderProps {
 
 ```mermaid
 graph TD
-    NotificationBell --> useNotificationUnreadCount
+    NotificationBell --> useNotificationUnread
+    useNotificationUnread --> useNotificationUnreadCount
+    useNotificationUnread --> i18n
     NotificationInbox --> useNotificationMessages
     NotificationInbox --> useNotificationUnreadCount
     NotificationInbox --> useMarkNotificationRead
@@ -241,7 +265,7 @@ graph TD
 | 读失败（列表、偏好），屏上没有数据 | 该界面的四态分支落到可重试的错误占位 |
 | 列表或偏好读被准入层拒绝：没有问题对象的裸 404，不区分租户不存在、已停用与非成员（[tenant 准入](../tenant/design-tenant-admission.md)） | 该界面渲染「无法访问当前组织」空态，说明它可能不存在，或你还不是该组织的成员，并指引联系管理员发送邀请；不给重试，与读失败的可重试占位分开 |
 | 已有列表或偏好数据时刷新失败 | 旧内容保留，其上渲染陈旧提示与重试 |
-| 未读数读失败 | 铃铛保持最后一次读到的值（从未读到过则为零），不渲染错误与重试 |
+| 未读数读失败 | 铃铛与任何带该徽标的控件保持最后一次读到的值（从未读到过则为零），不渲染错误与重试 |
 | 类型分类法读失败 | 按未知处理，偏好矩阵保持可勾，不渲染错误占位 |
 | 写失败（标记已读、全部已读、写偏好） | 该界面的内联错误横幅渲染应答的码文本（白名单外落 `errors.unknown`）；被准入层拒绝的裸 404 渲染同一句「无法访问当前组织」 |
 | 无租户（无路由或未挂 provider） | 读以 `enabled: false` 不取，失败关闭而非造一个租户 |
@@ -259,6 +283,7 @@ graph TD
 - **收件箱的结构。** 宿主可用 `group` 收窄到一个分组，用 `pageSize` 打开翻页，用 `renderDetail` 在行尾追加自己的内容，用 `onOpen` 接管带链接行的打开动作，用 `variant` 与 `headingLevel` 把同一个界面嵌进自己的页面。
 - **偏好界面与渠道。** `NotificationCenter` 把偏好矩阵放在通知界面内；一个宿主也可单独挂 `NotificationPreferences` 到自己的账户页，挂不挂由宿主按特性 `notification.preferences` 决定，渠道列同样取自 `NotificationPresenceProvider`。类型标签与分组标题经 `typeLabel`、`groupLabel` 交给宿主。
 - **铃铛的字形。** `icon` 替换徽标内的字形，可及名与未读数的播报仍由本包给出。
+- **宿主自己的控件带未读徽标。** 用 `useNotificationUnread` 取计数、徽标文本与可及名短语，控件本身由宿主渲染；零未读时不渲染徽标、徽标配色与铃铛相同。
 - **不开实时。** 宿主不传 `openStream` 或传 `enabled: false` 即得一个只按挂载与标签页重新可见读通知的界面，无需改动本包。
 - **新增一个后端通知界面的渲染。** 加一个组件并经生成接口发请求，加进本包的公开接口与命名空间；不改壳，不改传输。
 
@@ -268,6 +293,7 @@ graph TD
 |---|---|---|
 | 实时订阅随身份变更重建 | 已实现 | `web/packages/notification-ui/src/NotificationStream.tsx` `NotificationStreamProvider`、`identityGeneration` |
 | 未读铃铛与徽标 | 已实现 | `web/packages/notification-ui/src/NotificationBell.tsx` `NotificationBell` |
+| 未读计数供任何控件使用，含上限与可及名短语 | 已实现 | `web/packages/notification-ui/src/useNotificationUnread.ts` `useNotificationUnread`、`NotificationUnread`、`NOTIFICATION_BADGE_MAX` |
 | 收件箱界面与标记已读 | 已实现 | `web/packages/notification-ui/src/NotificationInbox.tsx` `NotificationInbox` |
 | 偏好矩阵的读写 | 已实现 | `web/packages/notification-ui/src/NotificationPreferences.tsx` `NotificationPreferences` |
 | 通知界面的组合 | 已实现 | `web/packages/notification-ui/src/NotificationCenter.tsx` `NotificationCenter` |

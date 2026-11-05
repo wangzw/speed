@@ -31,6 +31,11 @@ export {
   type NotificationBellProps,
 } from './NotificationBell.js'
 export {
+  NOTIFICATION_BADGE_MAX,
+  useNotificationUnread,
+  type NotificationUnread,
+} from './useNotificationUnread.js'
+export {
   NotificationInbox,
   type NotificationInboxProps,
 } from './NotificationInbox.js'

@@ -23,11 +23,11 @@
 import type { MouseEvent, ReactNode } from 'react'
 import Badge from '@mui/material/Badge'
 import IconButton from '@mui/material/IconButton'
-import { useNotificationUnreadCount } from './internal/queries.js'
 import { useNotificationUiTranslation } from './internal/translation.js'
-
-/** The largest count the badge prints before switching to "99+". */
-const BADGE_MAX = 99
+import {
+  NOTIFICATION_BADGE_MAX,
+  useNotificationUnread,
+} from './useNotificationUnread.js'
 
 export type NotificationBellProps = {
   /** Invoked when the bell is activated; the host navigates to the
@@ -40,13 +40,10 @@ export type NotificationBellProps = {
 /** The unread-count bell for a shell's header actions. */
 export function NotificationBell({ onClick, icon }: NotificationBellProps) {
   const { t } = useNotificationUiTranslation()
-  const { data } = useNotificationUnreadCount()
-  const count = data ?? 0
-  // The badge prints "99+" above the cap, and the accessible name carries the
-  // same text so the visible badge stays part of the name (WCAG 2.5.3).
-  const shownCount = count > BADGE_MAX ? `${BADGE_MAX}+` : String(count)
-  const label =
-    count > 0 ? t('bell.labelWithCount', { n: shownCount }) : t('bell.label')
+  const { badgeText, phrase } = useNotificationUnread()
+  // The badge's own text is carried on the button's accessible name too, so
+  // the visible count stays part of the name (WCAG 2.5.3).
+  const label = phrase ?? t('bell.label')
   return (
     <IconButton
       color="inherit"
@@ -55,9 +52,19 @@ export function NotificationBell({ onClick, icon }: NotificationBellProps) {
     >
       <Badge
         color="error"
-        max={BADGE_MAX}
+        max={NOTIFICATION_BADGE_MAX}
+        // A pale `error.light` fill under the neutral-900 ink: the solid
+        // `error.main` fill reads as black in a preset whose semantic tones
+        // are deepened for a saturated canvas, and `error.dark` on a pale
+        // fill only clears contrast in such a preset. The neutral ink clears
+        // it in every preset, in both modes.
+        sx={{
+          '& .MuiBadge-badge': { bgcolor: 'error.light', color: 'grey.900' },
+        }}
         badgeContent={
-          count > 0 ? <span aria-hidden="true">{shownCount}</span> : undefined
+          badgeText === null ? undefined : (
+            <span aria-hidden="true">{badgeText}</span>
+          )
         }
       >
         {icon ?? <BellIcon />}

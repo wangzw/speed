@@ -97,14 +97,16 @@ export function useNotificationMessages(listing?: NotificationMessageListing) {
 }
 
 /** The number of the caller's unread, unexpired messages (GET
- * /notifications/messages/unread-count); undefined until it settles. */
-export function useNotificationUnreadCount() {
+ * /notifications/messages/unread-count); undefined until it settles.
+ * `enabled` lets a host that offers the count somewhere other than the inbox
+ * withhold the read where the deployment serves no inbox endpoint. */
+export function useNotificationUnreadCount(enabled = true) {
   const bareKey = useMemo(() => getNotificationInboxGetUnreadCountQueryKey(), [])
   const { tenantId, queryKey } = useTenantQueryKey(bareKey)
   return useNotificationInboxGetUnreadCount<number>({
     query: {
       queryKey,
-      enabled: tenantId !== null,
+      enabled: enabled && tenantId !== null,
       select: (data) => data?.unread ?? 0,
     },
   })
