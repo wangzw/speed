@@ -8,6 +8,8 @@ package main
 //     (tenant.Provisioner),
 //   - whether an account is an active member of a tenant before a
 //     platform-administrator binding is written (authz.MembershipChecker),
+//   - what a role-usage read should show for an account: its display name and
+//     whether it is still active (authz.AccountIdentityReader),
 //   - which removals of a membership a tenant refuses (authn.MembershipGuard),
 //   - the per-tenant lock that judges a tenant's administrator floor
 //     (authz.TenantLock),
@@ -15,13 +17,15 @@ package main
 //   - which domains' settings may not be changed through the tenant surface
 //     (authz.WriteSettings).
 //
-// The demo host answers the first five from one module because they are one
+// The demo host answers the first six from one module because they are one
 // policy: system and every personal tenant are protected; a tenant opens with a
 // tenant-admin bound to its creator; platform administration is confined to
 // accounts that belong to system; a personal tenant refuses every membership
 // removal while an ordinary tenant keeps at least one tenant-admin; and one
-// per-tenant lock carries the floor both of those guards judge. The last two are
-// modules of their own: tenant.WriteGuard, authz.WriteGuard and
+// per-tenant lock carries the floor both of those guards judge. The identity
+// answer is the account store and the membership store read together, because
+// neither alone answers both halves of what a role-usage row shows. The last two
+// are modules of their own: tenant.WriteGuard, authz.WriteGuard and
 // authz.WriteSettings each name their method Denied, and one Go type cannot
 // carry two methods named Denied. The tenancy product holds one piece of state,
 // the removal lock, because the policy module's binding delete and both guards
@@ -83,6 +87,7 @@ func tenancyModule() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authz.Manager)(nil)},
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
@@ -91,6 +96,7 @@ func tenancyModule() core.Module {
 		},
 		Provides: []core.Provision{
 			{Token: (*authz.MembershipChecker)(nil)},
+			{Token: (*authz.AccountIdentityReader)(nil)},
 			{Token: (*tenant.WriteGuard)(nil)},
 			{Token: (*tenant.Provisioner)(nil)},
 			{Token: (*authn.MembershipGuard)(nil)},
@@ -113,6 +119,7 @@ func tenancyModule() core.Module {
 type tenancyProduct struct {
 	roster      tenant.Catalog
 	memberships authn.Memberships
+	accounts    authn.Accounts
 	manager     authz.Manager
 	seeder      authz.Seeder
 	catalog     authz.Catalog
@@ -122,12 +129,13 @@ type tenancyProduct struct {
 
 // The interfaces are one product.
 var (
-	_ authz.MembershipChecker    = (*tenancyProduct)(nil)
-	_ tenant.WriteGuard          = (*tenancyProduct)(nil)
-	_ tenant.Provisioner         = (*tenancyProduct)(nil)
-	_ authn.MembershipGuard      = (*tenancyProduct)(nil)
-	_ authn.SharedMembershipLock = (*tenancyProduct)(nil)
-	_ authz.TenantLock           = (*tenancyProduct)(nil)
+	_ authz.MembershipChecker     = (*tenancyProduct)(nil)
+	_ authz.AccountIdentityReader = (*tenancyProduct)(nil)
+	_ tenant.WriteGuard           = (*tenancyProduct)(nil)
+	_ tenant.Provisioner          = (*tenancyProduct)(nil)
+	_ authn.MembershipGuard       = (*tenancyProduct)(nil)
+	_ authn.SharedMembershipLock  = (*tenancyProduct)(nil)
+	_ authz.TenantLock            = (*tenancyProduct)(nil)
 )
 
 func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
@@ -138,6 +146,10 @@ func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
 	memberships, err := core.Resolve[authn.Memberships](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the memberships: %w", tenancyModuleName, err)
+	}
+	accounts, err := core.Resolve[authn.Accounts](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the accounts: %w", tenancyModuleName, err)
 	}
 	manager, err := core.Resolve[authz.Manager](reg)
 	if err != nil {
@@ -158,6 +170,7 @@ func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
 	product := &tenancyProduct{
 		roster:      roster,
 		memberships: memberships,
+		accounts:    accounts,
 		manager:     manager,
 		seeder:      seeder,
 		catalog:     catalog,
@@ -191,6 +204,55 @@ func (p *tenancyProduct) IsMember(ctx context.Context, tenantID, account string)
 		return true, nil
 	}
 	return p.memberships.IsMember(ctx, id, tenantID)
+}
+
+// Identities implements authz.AccountIdentityReader: the display name comes
+// from the account store and the activity from the account's state in this
+// tenant. An account is active only while its status is active and its
+// membership is in force, because a disabled account or a suspended membership
+// is not a member a role-usage count should show as present.
+//
+// An account string this host cannot resolve — one that is not an account
+// identifier, one naming no live account, or a deleted account's tombstone — is
+// left out of the map rather than answered with an inactive row: the caller
+// shows an unavailable identity instead of claiming the account was disabled.
+// A store that cannot be read is an error, which the caller treats as a 503.
+//
+// A subject of the static credential table is the one exception: the deployment
+// configured that operator in its own table, so it is active with no account
+// row and therefore no display name. This mirrors IsMember's answer for the
+// same principal.
+func (p *tenancyProduct) Identities(ctx context.Context, tenantID string,
+	accounts []string,
+) (map[string]authz.AccountIdentity, error) {
+	identities := make(map[string]authz.AccountIdentity, len(accounts))
+	for _, account := range accounts {
+		id, err := authn.ParseAccountID(account)
+		if err != nil {
+			continue
+		}
+		if id.IsStatic() {
+			identities[account] = authz.AccountIdentity{Active: true}
+			continue
+		}
+		held, err := p.accounts.Get(ctx, id)
+		if errors.Is(err, authn.ErrAccountNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: reading the account %q: %w", tenancyModuleName, account, err)
+		}
+		membership, found, err := p.memberships.Membership(ctx, tenantID, id)
+		if err != nil {
+			return nil, fmt.Errorf("%s: reading the membership of %q in %q: %w",
+				tenancyModuleName, account, tenantID, err)
+		}
+		identities[account] = authz.AccountIdentity{
+			DisplayName: held.DisplayName,
+			Active:      found && membership.Active && held.Status == authn.StatusActive,
+		}
+	}
+	return identities, nil
 }
 
 // CheckMembershipRemoval implements authn.MembershipGuard. A personal tenant is

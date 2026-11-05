@@ -117,6 +117,7 @@ func Module() core.Module {
 			db.Migrations{FS: migrationsFS},
 			schema(),
 			messageCatalog,
+			roleMessageCatalog,
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

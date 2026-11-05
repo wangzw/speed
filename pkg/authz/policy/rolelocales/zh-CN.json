@@ -1,0 +1,4 @@
+{
+  "authz.role.platformAdmin": "平台管理员",
+  "authz.role.tenantAdmin": "租户管理员"
+}

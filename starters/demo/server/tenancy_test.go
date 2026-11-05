@@ -34,12 +34,51 @@ func tenancyProductOf(
 	return &tenancyProduct{
 		roster:      roster,
 		memberships: memberships,
+		accounts:    newFakeAccounts(),
 		manager:     manager,
 		seeder:      seeder,
 		catalog:     catalog,
 		removalLock: &tenantRemovalLock{dialect: db.SQLite, byTenant: make(map[string]chan struct{})},
 		logger:      log.Default(),
 	}
+}
+
+// fakeAccounts is the authn.Accounts the identity cases use. The embedded
+// interface is nil on purpose: a read this case does not expect panics rather
+// than passing silently.
+type fakeAccounts struct {
+	authn.Accounts
+	byID  map[authn.AccountID]authn.Account
+	reads []authn.AccountID
+	err   error
+}
+
+func newFakeAccounts() *fakeAccounts {
+	return &fakeAccounts{byID: map[authn.AccountID]authn.Account{}}
+}
+
+// Get reads one account, reporting an absent one as the account module does.
+func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
+	a.reads = append(a.reads, id)
+	if a.err != nil {
+		return authn.Account{}, a.err
+	}
+	held, ok := a.byID[id]
+	if !ok {
+		return authn.Account{}, authn.ErrAccountNotFound
+	}
+	return held, nil
+}
+
+// errorMemberships answers every membership read with one fixed error, so a
+// case can hold the identity read's failure path without a store.
+type errorMemberships struct {
+	authn.Memberships
+	err error
+}
+
+func (m errorMemberships) Membership(context.Context, string, authn.AccountID) (authn.Membership, bool, error) {
+	return authn.Membership{}, false, m.err
 }
 
 // TestTheMembershipCheckerReadsTheMembershipSeam holds the checker to the
@@ -75,6 +114,93 @@ func TestTheMembershipCheckerReadsTheMembershipSeam(t *testing.T) {
 	}
 	if member {
 		t.Error("a subject no account identifier can name read as a member")
+	}
+}
+
+// TestTheIdentityReaderResolvesDisplayNamesAndActivity holds the role-usage
+// answer: the display name comes from the account store, activity needs both an
+// active account and a membership in force, and a string this host cannot
+// resolve is left out rather than reported as an inactive account. A static
+// credential principal has no account row but is an active subject the
+// deployment configured, so it answers active with no display name.
+func TestTheIdentityReaderResolvesDisplayNamesAndActivity(t *testing.T) {
+	ctx := context.Background()
+	memberships := newFakeMemberships()
+	for account, active := range map[authn.AccountID]bool{
+		"acct-1": true, "acct-2": true, "acct-3": true, "acct-4": false,
+	} {
+		if err := memberships.Put(ctx, authn.Membership{
+			Account: account, Tenant: "acme", Active: active, Source: "admin",
+		}); err != nil {
+			t.Fatalf("writing the stand-in membership of %q: %v", account, err)
+		}
+	}
+	accounts := newFakeAccounts()
+	accounts.byID["acct-1"] = authn.Account{ID: "acct-1", Status: authn.StatusActive, DisplayName: "Alice"}
+	accounts.byID["acct-2"] = authn.Account{ID: "acct-2", Status: authn.StatusDisabled, DisplayName: "Bob"}
+	accounts.byID["acct-4"] = authn.Account{ID: "acct-4", Status: authn.StatusActive, DisplayName: "Carol"}
+	product := tenancyProductOf(newFakeRoster(), memberships, nil, nil, nil)
+	product.accounts = accounts
+
+	got, err := product.Identities(ctx, "acme", []string{
+		"acct-1", "acct-2", "acct-3", "acct-4", "static.operator", "not an account id",
+	})
+	if err != nil {
+		t.Fatalf("Identities: %v", err)
+	}
+	want := map[string]authz.AccountIdentity{
+		"acct-1":          {DisplayName: "Alice", Active: true},
+		"acct-2":          {DisplayName: "Bob", Active: false},
+		"acct-4":          {DisplayName: "Carol", Active: false},
+		"static.operator": {Active: true},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Identities resolved %v, want %v", got, want)
+	}
+	for account, identity := range want {
+		if got[account] != identity {
+			t.Errorf("Identities[%q] = %+v, want %+v", account, got[account], identity)
+		}
+	}
+	for _, account := range []string{"acct-3", "not an account id"} {
+		if _, ok := got[account]; ok {
+			t.Errorf("Identities answered %q, which names no account this host knows", account)
+		}
+	}
+}
+
+// TestTheIdentityReaderLeavesAnUnreadableAnswerToTheCaller holds the failure
+// path: a store that cannot be read is an error, never an empty or inactive
+// set, so the role-usage read can answer 503 instead of claiming the accounts
+// are gone.
+func TestTheIdentityReaderLeavesAnUnreadableAnswerToTheCaller(t *testing.T) {
+	ctx := context.Background()
+	accounts := newFakeAccounts()
+	accounts.byID["acct-1"] = authn.Account{ID: "acct-1", Status: authn.StatusActive}
+	accounts.err = errors.New("the account table is unavailable")
+	product := tenancyProductOf(newFakeRoster(), newFakeMemberships(), nil, nil, nil)
+	product.accounts = accounts
+	if _, err := product.Identities(ctx, "acme", []string{"acct-1"}); err == nil {
+		t.Error("Identities answered an unreadable account store with no error")
+	}
+
+	accounts.err = nil
+	product.memberships = errorMemberships{err: errors.New("the membership table is unavailable")}
+	if _, err := product.Identities(ctx, "acme", []string{"acct-1"}); err == nil {
+		t.Error("Identities answered an unreadable membership store with no error")
+	}
+}
+
+// TestTheIdentityReaderOfNoAccountsIsAnEmptyMap holds the empty read: a role
+// with no binding asks for no identity and gets an empty map, not nil.
+func TestTheIdentityReaderOfNoAccountsIsAnEmptyMap(t *testing.T) {
+	got, err := tenancyProductOf(newFakeRoster(), newFakeMemberships(), nil, nil, nil).
+		Identities(context.Background(), "acme", nil)
+	if err != nil {
+		t.Fatalf("Identities: %v", err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Errorf("Identities of no accounts = %v, want an empty map", got)
 	}
 }
 
@@ -621,8 +747,23 @@ func TestTheHostModulesProvideTheGuards(t *testing.T) {
 		}
 		return false
 	}
+	requires := func(module core.Module, token any) bool {
+		want := reflect.TypeOf(token)
+		for _, requirement := range module.Requires {
+			if reflect.TypeOf(requirement.Token) == want {
+				return true
+			}
+		}
+		return false
+	}
 	if !provides(tenancyModule(), (*authn.MembershipGuard)(nil)) {
 		t.Error("the tenancy module does not provide authn.MembershipGuard")
+	}
+	if !provides(tenancyModule(), (*authz.AccountIdentityReader)(nil)) {
+		t.Error("the tenancy module does not provide authz.AccountIdentityReader")
+	}
+	if !requires(tenancyModule(), (*authn.Accounts)(nil)) {
+		t.Error("the tenancy module does not require authn.Accounts for its identity read")
 	}
 	if !provides(policyWriteGuardModule(), (*authz.WriteGuard)(nil)) {
 		t.Error("the policy write guard module does not provide authz.WriteGuard")

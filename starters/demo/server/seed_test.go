@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1455,6 +1457,101 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	}
 	if manager.markBuiltinCalls != 2 {
 		t.Errorf("the seed marked %d role(s) builtin, want the two non-personal domains", manager.markBuiltinCalls)
+	}
+}
+
+// TestSeedConvergesAnExistingTenantToTheGovernedSet holds the upgrade path: a
+// tenant the roster already holds keeps its builtin tenant-admin role, and a
+// seed run gives that role every governed grant it is missing while asking the
+// reconciler to retire only the declared permissions that are no longer
+// governed. This version adds no permission to the governed set, so the case
+// pins the seed's target to the catalog's own set rather than to a second list
+// written out here.
+func TestSeedConvergesAnExistingTenantToTheGovernedSet(t *testing.T) {
+	t.Parallel()
+	roster := newFakeRoster()
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.roles["acme"] = []authz.RoleRecord{
+		{Tenant: "acme", Role: tenantAdminRole, Builtin: true, DescriptionKey: tenantAdminDescriptionKey},
+	}
+	catalog := fixedCatalog{
+		pairs: map[authz.Permission][2]string{
+			"authz.tenant.role.read": {"authz.tenant.role", "read"},
+			"crm.deal.read":          {"deal", "read"},
+			"crm.deal.write":         {"deal", "write"},
+		},
+		governed: map[authz.Permission]bool{
+			"authz.tenant.role.read": true,
+			"crm.deal.read":          true,
+		},
+	}
+	reconciler := &recordingReconciler{}
+
+	if err := seedRosterAdministration(t.Context(), roster, manager, newFakeSeeder(grants),
+		reconciler, newRecordedAudit(), catalog); err != nil {
+		t.Fatalf("seedRosterAdministration: %v", err)
+	}
+
+	want := governedGrants(catalog)
+	got := grants.held("acme", tenantAdminRole)
+	if len(got) != len(want) {
+		t.Fatalf("the existing tenant-admin holds %v, want the governed set %v", got, want)
+	}
+	for _, grant := range want {
+		if !slices.Contains(got, grant) {
+			t.Errorf("the existing tenant-admin does not hold the governed grant %+v; it holds %v", grant, got)
+		}
+	}
+
+	if len(reconciler.calls) != 1 {
+		t.Fatalf("the reconciler was called %d time(s), want once", len(reconciler.calls))
+	}
+	call := reconciler.calls[0]
+	if call.tenant != "acme" || call.role != tenantAdminRole {
+		t.Errorf("the reconciler was asked for %s/%s, want acme/%s", call.tenant, call.role, tenantAdminRole)
+	}
+	if !slices.Equal(call.grants, want) {
+		t.Errorf("the reconciler's target = %+v, want the governed set %+v", call.grants, want)
+	}
+	if retired := retiredTenantAdminGrants(catalog); !slices.Equal(call.retired, retired) {
+		t.Errorf("the reconciler's retired set = %+v, want %+v", call.retired, retired)
+	}
+}
+
+// TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog holds the seed's builtin
+// role keys to the catalog the i18n engine renders them from: the two keys the
+// seed writes have an entry in every locale, and the catalog carries no key the
+// seed never writes.
+func TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog(t *testing.T) {
+	want := map[string]bool{
+		platformAdminDescriptionKey: true,
+		tenantAdminDescriptionKey:   true,
+	}
+	for _, locale := range []string{"zh-CN", "en-US"} {
+		path := filepath.Join("..", "..", "..", "pkg", "authz", "policy", "rolelocales", locale+".json")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading the role catalog %s: %v", path, err)
+		}
+		var entries map[string]string
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			t.Fatalf("%s is not a JSON object of message text: %v", path, err)
+		}
+		if len(entries) != len(want) {
+			t.Errorf("%s carries %d key(s), want the seed's %d role keys", path, len(entries), len(want))
+		}
+		for key := range want {
+			if _, ok := entries[key]; !ok {
+				t.Errorf("%s carries no entry for %q, a key the seed writes into a builtin role", path, key)
+			}
+		}
+		for key := range entries {
+			if !want[key] {
+				t.Errorf("%s carries %q, which the seed never writes into a builtin role", path, key)
+			}
+		}
 	}
 }
 
