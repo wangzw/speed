@@ -208,13 +208,6 @@ sms:
   admin:
     endpoints: [admin]
 
-# REVIEW: the personal tenant the review walkthrough exercises. A registration
-# completed through the SMS sign-in lands in the tenant area with a personal
-# tenant this host creates on the first ensure call.
-org:
-  personal:
-    enabled: true
-
 # The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:

@@ -296,14 +296,12 @@ func platformDefaultsDocument() map[string]any {
 			"metadata": map[string]any{"content-endpoints": []any{"content"}},
 		},
 
-		// The host's own organization policy. The personal-tenant switch is on in
-		// a bare run: every account gets a personal tenant when it is created. The
-		// self-service creation switch is on too: a verified account may open a
-		// business organization. The /orgs prefix is claimed either way, and a
-		// deployment that turns a switch off makes that path answer 404.
+		// The host's self-service creation policy: a bare run lets a verified
+		// account open a business organization. The personal tenant has no switch
+		// — every user account owns one — so only org.create is written here. A
+		// deployment that turns this switch off makes POST /api/v1/orgs answer 404.
 		"org": map[string]any{
-			"personal": map[string]any{"enabled": true},
-			"create":   map[string]any{"enabled": true},
+			"create": map[string]any{"enabled": true},
 		},
 
 		// The local seed a bare run starts from: the development operator, the

@@ -16,6 +16,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // seedModuleName is the name the seed command's configuration module is
@@ -331,7 +332,7 @@ func checkTenants(in seedInput) error {
 			return fmt.Errorf("seed: the tenant %q is the system tenant, which the command registers "+
 				"itself and must not be listed under seed.%s", name, tenantsItem)
 		}
-		if isPersonalTenantID(name) {
+		if tenantpersonal.IsPersonalTenantID(name) {
 			return fmt.Errorf("seed: the tenant %q carries the personal prefix; seed.%s lists the "+
 				"deployment's business tenants, and personal tenants are built from account creation",
 				name, tenantsItem)
@@ -1272,7 +1273,7 @@ func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz
 	if err := seedGrants(ctx, seeder, domain, role, grants); err != nil {
 		return err
 	}
-	if isPersonalTenantID(domain) {
+	if tenantpersonal.IsPersonalTenantID(domain) {
 		fmt.Printf("skipped: builtin mark on %s/%s (personal domain)\n", domain, role)
 		return nil
 	}
@@ -1311,7 +1312,7 @@ func seedRosterAdministration(ctx context.Context, roster tenant.Catalog, manage
 	retired := retiredTenantAdminGrants(catalog)
 	for _, t := range tenants {
 		id := string(t.ID)
-		if isPersonalTenantID(id) {
+		if tenantpersonal.IsPersonalTenantID(id) {
 			fmt.Printf("skipped: builtin mark on %s/%s (personal domain)\n", id, tenantAdminRole)
 			continue
 		}

@@ -106,6 +106,7 @@ import (
 	tenantadmin "github.com/vislake/speed/pkg/tenant/admin"
 	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 	tenantprofile "github.com/vislake/speed/pkg/tenant/profile"
 	"github.com/vislake/speed/pkg/tenant/resolve"
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
@@ -399,13 +400,13 @@ var (
 		// otherwise refuse them 403 as undeclared. See management.go.
 		managementModuleName,
 
-		// The host's own personal-tenant policy: on by default, a deployment
-		// may turn it off. When on it mounts
-		// POST /api/v1/orgs/personal on the account endpoint and declares the
-		// conditional feature org.personal. It requires the kind resolver,
-		// which the module beside it delivers. See personal.go.
-		personalModuleName,
-		personalKindModuleName,
+		// The platform's personal-tenant module: every user account owns a
+		// personal tenant, written in the account's own transaction. It is always
+		// in force when assembled; there is no switch. It mounts
+		// POST /api/v1/orgs/personal on the account endpoint, declares the static
+		// feature org.personal, delivers the tenant kind resolver and implements
+		// the account lifecycle. See pkg/tenant/personal.
+		tenantpersonal.ModuleName,
 
 		// The host's own self-service organization creation: on by default, a
 		// deployment may turn it off. When on it mounts POST /api/v1/orgs on the
@@ -622,11 +623,11 @@ func addStack(root *config.Command, s stack) {
 	//
 	// It names the personal-tenant module and the audit journal that module
 	// requires, so the account-creation hook runs while this command writes the
-	// preset accounts. A deployment that enables the feature then has every
-	// seeded account's personal tenant before the first request arrives; without
-	// the module, the accounts exist with no space until a browser calls the
-	// backfill. The hook honours the feature switch, so a deployment with it off
-	// builds no personal tenant here either.
+	// preset accounts. Every seeded account therefore has its personal tenant
+	// before the first request arrives; without the module, the accounts exist
+	// with no space until a browser calls the backfill. The module is always in
+	// force when assembled, so there is no other switch for this command to
+	// honour.
 	//
 	// Neither module needs an HTTP entry point here: the journal skips its
 	// request-level layer and the personal module skips its backfill route when
@@ -640,7 +641,7 @@ func addStack(root *config.Command, s stack) {
 	seed := node.Sub(seedCommand)
 	seed.Include(seedGuardModuleName, seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
 		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName,
-		tenancyModuleName, auditjournal.ModuleName, personalModuleName, personalKindModuleName)
+		tenancyModuleName, auditjournal.ModuleName, tenantpersonal.ModuleName)
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes

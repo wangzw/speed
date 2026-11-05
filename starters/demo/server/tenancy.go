@@ -46,6 +46,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // tenancyModuleName is the name the host registers this module under.
@@ -177,7 +178,7 @@ func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
 		removalLock: newTenantRemovalLock(database),
 		logger:      log.Default(),
 	}
-	if delivered, found, takeErr := optionalPersonal[log.Logger](reg, "the logger"); takeErr != nil {
+	if delivered, found, takeErr := optionalTenancy[log.Logger](reg, "the logger"); takeErr != nil {
 		return nil, takeErr
 	} else if found {
 		product.logger = delivered.Named(tenancyModuleName)
@@ -265,7 +266,7 @@ func (p *tenancyProduct) Identities(ctx context.Context, tenantID string,
 // memberships: the rule is that a domain keeps an administrator binding, and a
 // suspended member's binding still exists.
 func (p *tenancyProduct) CheckMembershipRemoval(ctx context.Context, id authn.AccountID, tenantID string) error {
-	if isPersonalTenantID(tenantID) {
+	if tenantpersonal.IsPersonalTenantID(tenantID) {
 		return fmt.Errorf("%w: the personal tenant %q is a single-member space",
 			authn.ErrLastTenantAdmin, tenantID)
 	}
@@ -314,7 +315,7 @@ func (p *tenancyProduct) Denied(_ context.Context, id tenant.ID, op tenant.Write
 // recognises by the prefix of the identifier it derives.
 func protectedTenant(id tenant.ID) bool {
 	return string(id) == string(authz.PlatformDomain) ||
-		isPersonalTenantID(string(id))
+		tenantpersonal.IsPersonalTenantID(string(id))
 }
 
 // policyWriteGuardModule delivers authz.WriteGuard. It is a module of its own
@@ -346,7 +347,7 @@ var _ authz.WriteGuard = policyWriteGuard{}
 
 // Denied implements authz.WriteGuard.
 func (policyWriteGuard) Denied(_ context.Context, tenantID string, _ authz.WriteOp) (bool, error) {
-	return isPersonalTenantID(tenantID), nil
+	return tenantpersonal.IsPersonalTenantID(tenantID), nil
 }
 
 // settingsWriteGuardModule delivers authz.WriteSettings. It is a module of its
@@ -386,7 +387,7 @@ var _ authz.WriteSettings = settingsWriteGuard{}
 
 // Denied implements authz.WriteSettings.
 func (settingsWriteGuard) Denied(_ context.Context, tenantID string) (bool, error) {
-	return isPersonalTenantID(tenantID) || settingsWriteGuardReviewDenial(tenantID), nil
+	return tenantpersonal.IsPersonalTenantID(tenantID) || settingsWriteGuardReviewDenial(tenantID), nil
 }
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's
@@ -470,7 +471,7 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 	// as a personal domain in every other seam, and the personal tenant's
 	// tenant-admin is not builtin because the host revokes grants outside the
 	// allowlist through the manager. Leave that role unfrozen for the same reason.
-	if !isPersonalTenantID(tenantID) {
+	if !tenantpersonal.IsPersonalTenantID(tenantID) {
 		if err := p.markTenantAdminBuiltin(ctx, tenantID, role); err != nil {
 			return fmt.Errorf("%s: marking the tenant-admin role builtin: %w", tenancyModuleName, err)
 		}
@@ -593,4 +594,18 @@ func grantsFor(catalog authz.Catalog, permissions []authz.Permission) []authz.Gr
 		return strings.Compare(a.Action, b.Action)
 	})
 	return grants
+}
+
+// optionalTenancy takes up a capability whose absence is a legal assembly.
+func optionalTenancy[T any](reg *core.Registry, what string) (T, bool, error) {
+	var zero T
+	v, err := core.Resolve[T](reg)
+	switch {
+	case err == nil:
+		return v, true, nil
+	case errors.Is(err, core.ErrMissingProvider):
+		return zero, false, nil
+	default:
+		return zero, false, fmt.Errorf("%s: taking up %s: %w", tenancyModuleName, what, err)
+	}
 }

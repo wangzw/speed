@@ -19,14 +19,14 @@
         "type": "object"
       },
       "OrganizationPersonalTenant": {
-        "description": "The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.",
+        "description": "The personal tenant the ensure names.",
         "properties": {
           "alias": {
-            "description": "The request-surface name, equal to the identifier for a personal tenant",
+            "description": "The request-surface name. It is the account's username, or the derived identifier when the account carries no username",
             "type": "string"
           },
           "id": {
-            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
+            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
             "type": "string"
           },
           "kind": {
@@ -84,7 +84,7 @@
   "paths": {
     "/orgs/personal": {
       "post": {
-        "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
+        "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the module's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier is derived from the account identifier, and the alias is the account's username; the answer names the tenant and whether this call created it.",
         "operationId": "org.personal.ensure",
         "responses": {
           "200": {

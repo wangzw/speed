@@ -47,6 +47,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // orgCreateModuleName is the name this host module is registered under, and the
@@ -718,7 +719,7 @@ func (p *orgCreateProduct) activeBusinessOrganizations(ctx context.Context, acco
 	}
 	count := 0
 	for _, membership := range held {
-		if !membership.Active || isPersonalTenantID(membership.Tenant) {
+		if !membership.Active || tenantpersonal.IsPersonalTenantID(membership.Tenant) {
 			continue
 		}
 		if status[membership.Tenant] == tenant.StatusActive {
