@@ -397,8 +397,20 @@ func (m *fakeTxManager) SeedGrantsTx(_ context.Context, tx *gorm.DB, _ string, _
 	if m.seedErr != nil {
 		return 0, nil, m.seedErr
 	}
-	m.grants = append(m.grants, grants...)
-	return len(grants), afterClosure(&m.after, "grants"), nil
+	// The production write answers a nil closure when it added no row, so a
+	// grant set that is empty — the personal tenant's is — registers no
+	// after-commit work. Mirroring that keeps the collector assertion honest.
+	added := 0
+	for _, grant := range grants {
+		if !slices.Contains(m.grants, grant) {
+			m.grants = append(m.grants, grant)
+			added++
+		}
+	}
+	if added == 0 {
+		return 0, nil, nil
+	}
+	return added, afterClosure(&m.after, "grants"), nil
 }
 
 func (m *fakeTxManager) PutBindingTx(_ context.Context, tx *gorm.DB, b authz.Binding) (func(context.Context) error, error) {

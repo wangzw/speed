@@ -8,10 +8,11 @@ package personal
 // the compensation. The two status hooks move the tenant through the roster's
 // account-driven transition, which writes the disable source as the account's;
 // an operator's disable is therefore never lifted by an account's recovery. The
-// deletion removes the tenant's memberships, the deleted account's bindings and
-// its tenant-admin role, records the deletion, and then writes the tombstone, in
-// that order. Every hook is idempotent, and the tombstone is the completion
-// marker: a repeated call finds the row already deleted and writes nothing.
+// deletion removes the tenant's memberships; the seam has already cleared the
+// deleted account's bindings and removed its tenant-admin role in the account's
+// transaction, and a hook that finds no tombstone records the deletion and
+// writes it. Every hook is idempotent, and a repeated call on a tombstone still
+// clears the memberships the account's own transaction never reached.
 
 import (
 	"context"
@@ -108,15 +109,27 @@ func (p *product) setAccountStatus(ctx context.Context, id authn.AccountID, targ
 //  3. the deletion's audit row is written,
 //  4. the tenant's tombstone is written.
 //
-// Each step is idempotent, and the tombstone is the completion marker.
+// Each step is idempotent, and the tombstone is the completion marker. In an
+// assembly that carries the transaction seam, the seam has already cleared the
+// account's bindings, deleted the role and written the tombstone before this
+// hook runs. The memberships the account's own transaction never reached are
+// still this hook's work, so a tombstone shortens the cleanup to step 1 rather
+// than skipping it.
 func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error {
 	personalID := TenantID(id)
 	held, found, err := p.lifecycleTenant(ctx, personalID)
 	if err != nil {
 		return err
 	}
-	if !found || held.Status == tenant.StatusDeleted {
+	if !found {
 		return nil
+	}
+	if held.Status == tenant.StatusDeleted {
+		// The transaction seam wrote the tombstone with the account, so the
+		// policy cleanup and the audit row are already done. The rows an
+		// administrator added are not: the seam has no transaction-aware
+		// membership listing, so the hook removes them here.
+		return p.clearMemberships(ctx, string(personalID))
 	}
 	tenantID := string(personalID)
 	if err := p.clearMemberships(ctx, tenantID); err != nil {

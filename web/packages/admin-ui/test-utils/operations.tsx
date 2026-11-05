@@ -400,6 +400,7 @@ export function tenantFixture(
     alias: 'Acme',
     status: 'active',
     contactEmail: '',
+    createdAt: '2026-10-15T12:00:00Z',
     description: '',
     displayName: '',
     website: '',

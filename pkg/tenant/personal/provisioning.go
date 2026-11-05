@@ -66,6 +66,13 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 	switch {
 	case err == nil:
 		provisioning.AfterCommitOf(ctx).Add(after)
+		// The creation's audit row is written after the commit, like the
+		// deletion's: the tenant row is committed with the account, and the row
+		// records that creation rather than gating it. A replay that finds the
+		// row already there records nothing.
+		provisioning.AfterCommitOf(ctx).Add(func(ctx context.Context) error {
+			return p.audit.Record(ctx, personalAudit(personalCreateAction, account, personalID, newPersonalActionID()))
+		})
 	case errors.Is(err, tenant.ErrTenantExists):
 		// The row is already there; the remaining steps are the replay.
 	case errors.Is(err, tenant.ErrAliasConflict):

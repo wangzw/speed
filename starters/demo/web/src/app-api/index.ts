@@ -1872,12 +1872,12 @@ export const OrganizationPersonalTenantKind = {
 } as const;
 
 /**
- * The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.
+ * The personal tenant the ensure names.
  */
 export interface OrganizationPersonalTenant {
-  /** The request-surface name, equal to the identifier for a personal tenant */
+  /** The request-surface name. It is the account's username, or the derived identifier when the account carries no username */
   alias: string;
-  /** The tenant identifier, derived deterministically from the account identifier: the fixed prefix "personal-" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language */
+  /** The tenant identifier, derived deterministically from the account identifier: the fixed prefix "personal-" followed by the account identifier. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language */
   id: string;
   /** The tenant kind; the frontend renders the personal organization label from it */
   kind: OrganizationPersonalTenantKind;
@@ -2215,15 +2215,15 @@ export const TenantAdminTenantStatus = {
 } as const;
 
 /**
- * One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time when known, and who disabled it while it is disabled.
+ * One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time and who disabled it while it is disabled.
  */
 export interface TenantAdminTenant {
   /** The alias the request surface addresses the tenant by. */
   alias: string;
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
   contactEmail: string;
-  /** When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for. */
-  createdAt?: string;
+  /** When the tenant was registered, as an RFC 3339 instant in UTC. */
+  createdAt: string;
   /** The organization's description. Empty when its profile names none. */
   description: string;
   /** Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled. */
@@ -2287,8 +2287,8 @@ export interface TenantProfileView {
   alias: string;
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
   contactEmail: string;
-  /** When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for. */
-  createdAt?: string;
+  /** When the tenant was registered, as an RFC 3339 instant in UTC. */
+  createdAt: string;
   /** The organization's description. Empty when its profile names none. */
   description: string;
   /** The organization's display name. Empty when its profile names none; a surface falls back to the alias then. */
@@ -2444,7 +2444,7 @@ export type AuthnLoginAddIdentifierBody = {
   human_proof?: string;
   /** The identifier kind to add: username or email; a phone is added through /auth/phone */
   kind: string;
-  /** The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 64 characters of [a-z0-9._-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request. */
+  /** The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 63 characters of [a-z0-9-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request. */
   value: string;
 };
 
@@ -2993,7 +2993,7 @@ export type TenantAdminTenantsGet200 = {
 };
 
 export type TenantAdminTenantsSetAliasBody = {
-  /** The new alias; an alias another tenant holds is refused with a 409. */
+  /** The alias the caller asked for. The route refuses every value, because an alias cannot change after creation. */
   alias: string;
 };
 
@@ -7419,7 +7419,7 @@ export const useOrgCreateCreate = <TError = Problem,
     }
 
 /**
- * Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.
+ * Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the module's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier is derived from the account identifier, and the alias is the account's username; the answer names the tenant and whether this call created it.
  * @summary Ensure the caller's personal tenant exists and is complete
  */
 export const orgPersonalEnsure = (
@@ -10206,8 +10206,8 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
 
 
 /**
- * Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, an alias another tenant holds is a 409, and a tenant the roster holds as a tombstone is a 409: deletion is terminal and a rename does not revive it. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.
- * @summary Change one tenant's alias
+ * Transitional compatibility route, to be removed in T6. Every tenant alias is immutable after creation, so this route refuses the change instead of applying it: the path identifier and the body's alias must both be well formed, a tenant the roster does not hold is a 404, a tombstone is a 409, and any other request is a 409 with the problem type urn:speed:tenant:alias-immutable. It never writes the alias or any other column and writes no audit row, because no successful write happens.
+ * @summary Refuse a tenant alias change
  */
 export const tenantAdminTenantsSetAlias = (
     tenant: string,
@@ -10216,7 +10216,7 @@ export const tenantAdminTenantsSetAlias = (
 ) => {
 
 
-      return speedRequest<void>(
+      return speedRequest<unknown>(
       {url: `/api/v1/system/tenants/${tenant}`, method: 'PATCH',
       headers: {'Content-Type': 'application/json', },
       data: tenantAdminTenantsSetAliasBody, signal
@@ -10258,7 +10258,7 @@ const {mutation: mutationOptions} = options ?
     export type TenantAdminTenantsSetAliasMutationError = Problem | void
 
     /**
- * @summary Change one tenant's alias
+ * @summary Refuse a tenant alias change
  */
 export const useTenantAdminTenantsSetAlias = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{tenant: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
@@ -10763,7 +10763,7 @@ export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
     }
 
 /**
- * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.
+ * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.
  * @summary Write one tenant's organization profile
  */
 export const tenantAdminTenantsProfile = (
@@ -12396,7 +12396,7 @@ export function useTenantProfileGet<TData = Awaited<ReturnType<typeof tenantProf
 
 
 /**
- * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.
+ * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.
  * @summary Write a tenant's organization profile
  */
 export const tenantProfileUpdate = (

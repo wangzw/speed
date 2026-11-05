@@ -1012,8 +1012,9 @@ export const adminOperations: AdminOperations = {
   useSetTenantAlias: () => {
     const queryClient = useQueryClient()
     return useMutation({
-      mutationFn: (input: AdminSetTenantAliasInput) =>
-        tenantAdminTenantsSetAlias(input.id, { alias: input.alias }),
+      mutationFn: async (input: AdminSetTenantAliasInput) => {
+        await tenantAdminTenantsSetAlias(input.id, { alias: input.alias })
+      },
       onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),

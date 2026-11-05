@@ -149,7 +149,10 @@ func TestProvisionAccountStopsOnAnyOtherFailure(t *testing.T) {
 }
 
 // Every transaction-aware write hands its after-commit work to the collector on
-// the context the account module supplied. The collector runs all five.
+// the context the account module supplied. The collector runs the tenant row,
+// the membership, the role and the binding; the grant set is empty here, so its
+// write answers a nil closure exactly as the production write does, and the
+// creation's audit row is the collector's own addition.
 func TestProvisionAccountRegistersEveryAfterCommitClosure(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	ctx, after := provisioning.WithAfterCommit(context.Background())
@@ -168,8 +171,50 @@ func TestProvisionAccountRegistersEveryAfterCommitClosure(t *testing.T) {
 	if got := len(writer.after); got != 1 {
 		t.Errorf("the membership registered %d closure(s), want one", got)
 	}
-	if got := len(manager.after); got != 3 {
-		t.Errorf("the policy writes registered %d closure(s), want the role, the grants and the binding", got)
+	if got := len(manager.after); got != 2 {
+		t.Errorf("the policy writes registered %d closure(s), want the role and the binding; "+
+			"an empty grant set registers none", got)
+	}
+	if rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalCreateAction); len(rows) != 1 {
+		t.Errorf("the creation wrote %d audit row(s), want one", len(rows))
+	}
+}
+
+// The creation's audit row is written after the account's transaction commits,
+// exactly once: a replay that finds the tenant row already there records
+// nothing.
+func TestProvisionAccountWritesTheCreationAuditAfterTheCommit(t *testing.T) {
+	p, roster, _, _ := provisioningProduct()
+	facts := provisioning.AccountFacts{
+		ID: "acc-1", Kind: string(authn.KindUser), Status: "active", Username: "alice",
+	}
+	wantID := TenantID(authn.AccountID(facts.ID))
+
+	ctx, after := provisioning.WithAfterCommit(context.Background())
+	if err := p.ProvisionAccount(ctx, &gorm.DB{}, facts); err != nil {
+		t.Fatalf("provisioning: %v", err)
+	}
+	if rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalCreateAction); len(rows) != 0 {
+		t.Errorf("the audit row was written before the commit: %+v", rows)
+	}
+	if err := after.Run(context.Background()); err != nil {
+		t.Fatalf("running the after-commit work: %v", err)
+	}
+	rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalCreateAction)
+	if len(rows) != 1 || rows[0].Object != string(wantID) {
+		t.Errorf("the creation wrote the audit rows %+v, want one row on %q", rows, wantID)
+	}
+
+	roster.createErr = tenant.ErrTenantExists
+	replayCtx, replayAfter := provisioning.WithAfterCommit(context.Background())
+	if err := p.ProvisionAccount(replayCtx, &gorm.DB{}, facts); err != nil {
+		t.Fatalf("replaying provisioning: %v", err)
+	}
+	if err := replayAfter.Run(context.Background()); err != nil {
+		t.Fatalf("running the replay's after-commit work: %v", err)
+	}
+	if rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalCreateAction); len(rows) != 1 {
+		t.Errorf("the replay wrote a second audit row: %+v", rows)
 	}
 }
 

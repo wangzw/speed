@@ -1352,7 +1352,7 @@
                     "type": "string"
                   },
                   "value": {
-                    "description": "The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 64 characters of [a-z0-9._-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request.",
+                    "description": "The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 63 characters of [a-z0-9-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request.",
                     "type": "string"
                   }
                 },
@@ -5203,7 +5203,7 @@
     },
     "/api/v1/orgs/personal": {
       "post": {
-        "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
+        "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the module's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier is derived from the account identifier, and the alias is the account's username; the answer names the tenant and whether this call created it.",
         "operationId": "org.personal.ensure",
         "responses": {
           "200": {
@@ -5267,7 +5267,7 @@
         ],
         "summary": "Ensure the caller's personal tenant exists and is complete",
         "tags": [
-          "speed.application"
+          "org.personal"
         ],
         "x-endpoint": "account"
       }
@@ -8797,7 +8797,7 @@
                 }
               }
             },
-            "description": "The identifier or the alias is outside the identifier domain"
+            "description": "The identifier is outside the identifier domain, or the alias is outside the slug domain"
           },
           "401": {
             "content": {
@@ -8950,7 +8950,7 @@
         "x-endpoint": "admin"
       },
       "patch": {
-        "description": "Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, an alias another tenant holds is a 409, and a tenant the roster holds as a tombstone is a 409: deletion is terminal and a rename does not revive it. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.",
+        "description": "Transitional compatibility route, to be removed in T6. Every tenant alias is immutable after creation, so this route refuses the change instead of applying it: the path identifier and the body's alias must both be well formed, a tenant the roster does not hold is a 404, a tombstone is a 409, and any other request is a 409 with the problem type urn:speed:tenant:alias-immutable. It never writes the alias or any other column and writes no audit row, because no successful write happens.",
         "operationId": "tenant.admin.tenants.setAlias",
         "parameters": [
           {
@@ -8970,7 +8970,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "alias": {
-                    "description": "The new alias; an alias another tenant holds is refused with a 409.",
+                    "description": "The alias the caller asked for. The route refuses every value, because an alias cannot change after creation.",
                     "type": "string"
                   }
                 },
@@ -8981,13 +8981,10 @@
               }
             }
           },
-          "description": "The new alias, which must be an identifier.",
+          "description": "The alias the caller asked for. The route refuses every value, because an alias cannot change after creation.",
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "The alias was changed"
-          },
           "400": {
             "content": {
               "application/problem+json": {
@@ -8996,7 +8993,7 @@
                 }
               }
             },
-            "description": "The identifier or the alias is outside the identifier domain"
+            "description": "The identifier or the alias is outside its domain, or the request body is not one JSON object"
           },
           "401": {
             "content": {
@@ -9029,7 +9026,7 @@
                 }
               }
             },
-            "description": "The alias is already taken, or the tenant is a tombstone"
+            "description": "The alias cannot be changed after creation (urn:speed:tenant:alias-immutable), or the tenant is a tombstone"
           },
           "413": {
             "content": {
@@ -9060,7 +9057,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Change one tenant's alias",
+        "summary": "Refuse a tenant alias change",
         "tags": [
           "tenant.admin"
         ],
@@ -9643,7 +9640,7 @@
     },
     "/api/v1/system/tenants/{tenant}/profile": {
       "patch": {
-        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.",
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.",
         "operationId": "tenant.admin.tenants.profile",
         "parameters": [
           {
@@ -11960,7 +11957,7 @@
         "x-endpoint": "api"
       },
       "patch": {
-        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.",
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.",
         "operationId": "tenant.profile.update",
         "parameters": [
           {
@@ -17457,14 +17454,14 @@
         "type": "object"
       },
       "OrganizationPersonalTenant": {
-        "description": "The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.",
+        "description": "The personal tenant the ensure names.",
         "properties": {
           "alias": {
-            "description": "The request-surface name, equal to the identifier for a personal tenant",
+            "description": "The request-surface name. It is the account's username, or the derived identifier when the account carries no username",
             "type": "string"
           },
           "id": {
-            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
+            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
             "type": "string"
           },
           "kind": {
@@ -18021,7 +18018,7 @@
         "type": "object"
       },
       "TenantAdminTenant": {
-        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time when known, and who disabled it while it is disabled.",
+        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time and who disabled it while it is disabled.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
@@ -18032,7 +18029,7 @@
             "type": "string"
           },
           "createdAt": {
-            "description": "When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for.",
+            "description": "When the tenant was registered, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
           },
@@ -18077,7 +18074,8 @@
           "description",
           "contactEmail",
           "website",
-          "status"
+          "status",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -18156,7 +18154,7 @@
             "type": "string"
           },
           "createdAt": {
-            "description": "When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for.",
+            "description": "When the tenant was registered, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
           },
@@ -18193,7 +18191,8 @@
           "description",
           "contactEmail",
           "website",
-          "status"
+          "status",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -18300,6 +18299,9 @@
     },
     {
       "name": "ops"
+    },
+    {
+      "name": "org.personal"
     },
     {
       "name": "settings.admin"

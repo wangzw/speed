@@ -123,6 +123,7 @@ const TENANT: TenantAdminTenant = {
   description: 'The canned organization the fixture answers with.',
   displayName: 'Acme Inc.',
   website: 'https://acme.example',
+  createdAt: INSTANT,
 }
 
 const ACCOUNT: AuthnAdminAccount = {

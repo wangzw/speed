@@ -180,6 +180,30 @@ func TestAccountDeletedIsIdempotentOnATombstone(t *testing.T) {
 	}
 }
 
+// The transaction seam writes the tombstone before the deletion hook runs, so
+// the hook must still remove the memberships the seam could not reach: the rows
+// an administrator added are not the account's own row, which the account
+// transaction erased.
+func TestAccountDeletedClearsTheMembershipsOfATombstonedTenant(t *testing.T) {
+	p, roster, memberships, _, _ := unitProduct()
+	id := TenantID(unitAccount)
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDeleted}
+	other := authn.AccountID("9other")
+	memberships.rows[other] = []authn.Membership{
+		{Account: other, Tenant: string(id), Active: true, Source: "admin"},
+	}
+	if err := p.AccountDeleted(context.Background(), unitAccount); err != nil {
+		t.Fatalf("the deletion hook: %v", err)
+	}
+	if len(memberships.rows[other]) != 0 {
+		t.Errorf("the deletion left the membership of %s in the tombstoned tenant: %v",
+			other, memberships.rows[other])
+	}
+	if roster.deleteAttempts != 0 {
+		t.Errorf("the deletion hook wrote a tombstone over an existing one")
+	}
+}
+
 // A deletion whose audit row cannot land stops before the tombstone.
 func TestAccountDeletedStopsWhenTheAuditRowFails(t *testing.T) {
 	p, roster, _, _, auditor := seededPersonal(t)

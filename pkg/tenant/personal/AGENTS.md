@@ -31,9 +31,12 @@ The tenant capability's personal-tenant module: it implements
 - **The lifecycle hooks are the retry path, not the authority.** After the
   account's transaction commits, `AccountCreated` completes anything the seam
   left unfinished, the status hooks move the tenant with the account, and
-  `AccountDeleted` winds it down. Every hook is idempotent. The deletion order is
-  memberships, policy, audit, tombstone; the tombstone is the completion marker.
-  A hook that fails leaves the earlier steps for the next call.
+  `AccountDeleted` winds it down. Every hook is idempotent. The in-transaction
+  deletion clears the deleted account's bindings, removes the tenant-admin role
+  and writes the tombstone; the deletion hook then removes the tenant's other
+  memberships, including when the tombstone is already there, because the
+  member listing has no transaction-aware form. A hook that fails leaves the
+  earlier steps for the next call.
 - **The event compensation subscribes the same hooks.** With an event bus in the
   assembly, `authn.account.status_changed` and `authn.account.deleted` rerun the
   matching hook. The status handler reads the account's current state first, so
@@ -75,5 +78,6 @@ order and their idempotence. `ensure_test.go` pins the backfill and the kind
 resolver. `events_test.go` pins the compensation. `integration_test.go` drives
 the real account, roster and policy modules over one SQLite database and pins
 the shared transaction: a failure after the tenant row is written leaves no
-account, an alias conflict leaves no account, and a failed tombstone leaves the
-account in service. `module_test.go` pins the descriptor and the mounted route.
+account, an alias conflict leaves no account, a failed tombstone leaves the
+account in service, a committed creation leaves its audit row, and a deletion
+removes the other members of the personal tenant. `module_test.go` pins the descriptor and the mounted route.

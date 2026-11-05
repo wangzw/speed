@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"gorm.io/gorm"
@@ -33,10 +34,36 @@ import (
 	"github.com/vislake/speed/pkg/tenant/personal"
 )
 
-// recordingAudit accepts every row.
-type recordingAudit struct{}
+// recordingAudit accepts every row and keeps it, so a case can read what the
+// module wrote.
+type recordingAudit struct {
+	mu      sync.Mutex
+	entries []audit.Entry
+}
 
-func (recordingAudit) Record(context.Context, audit.Entry) error { return nil }
+func (a *recordingAudit) Record(_ context.Context, e audit.Entry) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.entries = append(a.entries, e)
+	return nil
+}
+
+func (a *recordingAudit) rows() []audit.Entry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]audit.Entry(nil), a.entries...)
+}
+
+// entriesOfAction answers the entries written for one action.
+func entriesOfAction(entries []audit.Entry, action string) []audit.Entry {
+	var out []audit.Entry
+	for _, entry := range entries {
+		if entry.Action == action {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
 
 // personalWriteGuard is the host's statement that a personal tenant and the
 // platform domain refuse management writes. The account-deletion floor is what
@@ -50,10 +77,12 @@ func (personalWriteGuard) Denied(_ context.Context, tenantID string, _ authz.Wri
 
 // assembly is the running set of modules a transactional case drives.
 type assembly struct {
-	admin    authn.AccountAdmin
-	accounts authn.Accounts
-	catalog  tenant.Catalog
-	handle   *gorm.DB
+	admin       authn.AccountAdmin
+	accounts    authn.Accounts
+	memberships authn.Memberships
+	catalog     tenant.Catalog
+	audit       *recordingAudit
+	handle      *gorm.DB
 }
 
 // withAssembly drives the real modules to Init over a SQLite database of the
@@ -62,6 +91,7 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 	t.Helper()
 	dsn := "file:" + filepath.Join(t.TempDir(), "personal.db")
 	configuration := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)
+	auditor := &recordingAudit{}
 
 	modules := []core.Module{
 		sqlite.Module(),
@@ -69,7 +99,7 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 		authzpolicy.Module(),
 		account.Module(),
 		personal.Module(),
-		standIn("stand-in.audit", recordingAudit{}, (*audit.Audit)(nil)),
+		standIn("stand-in.audit", auditor, (*audit.Audit)(nil)),
 		standIn("stand-in.write-guard", personalWriteGuard{}, (*authz.WriteGuard)(nil)),
 	}
 	reader := configtest.Reader(t, configuration, modules...)
@@ -109,11 +139,30 @@ func resolve(t *testing.T, reg *core.Registry) *assembly {
 	if err != nil {
 		t.Fatalf("taking up the account read surface: %v", err)
 	}
+	memberships, err := core.Resolve[authn.Memberships](reg)
+	if err != nil {
+		t.Fatalf("taking up the membership surface: %v", err)
+	}
 	roster, err := core.Resolve[tenant.Catalog](reg)
 	if err != nil {
 		t.Fatalf("taking up the roster: %v", err)
 	}
-	return &assembly{admin: admin, accounts: accounts, catalog: roster, handle: database.DB()}
+	recorder, err := core.Resolve[audit.Audit](reg)
+	if err != nil {
+		t.Fatalf("taking up the audit capability: %v", err)
+	}
+	auditor, ok := recorder.(*recordingAudit)
+	if !ok {
+		t.Fatalf("the audit capability is %T, want the recording stand-in", recorder)
+	}
+	return &assembly{
+		admin:       admin,
+		accounts:    accounts,
+		memberships: memberships,
+		catalog:     roster,
+		audit:       auditor,
+		handle:      database.DB(),
+	}
 }
 
 func standIn(name string, instance any, token core.Token) core.Module {
@@ -257,6 +306,54 @@ func TestTheTombstoneKeepsTheAlias(t *testing.T) {
 		}
 		if alias != "dave" {
 			t.Errorf("the tombstone's alias is %q, want the username", alias)
+		}
+	})
+}
+
+// The account's transaction writes the tenant row, so a creation that commits
+// leaves its creation audit row behind.
+func TestCreatingAnAccountWritesTheCreationAuditRow(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		created, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "erin", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account: %v", err)
+		}
+		rows := entriesOfAction(a.audit.rows(), "org.personal.tenant.create")
+		wantID := string(personal.TenantID(created.ID))
+		if len(rows) != 1 || rows[0].Object != wantID || rows[0].Outcome != "success" {
+			t.Errorf("the creation wrote the audit rows %+v, want one successful row on %q", rows, wantID)
+		}
+	})
+}
+
+// The transaction seam tombstones the tenant before the deletion hook runs, but
+// it cannot reach the memberships an administrator added. The hook removes
+// them, so deleting the account does not leave another account's membership in
+// a tenant no request can resolve.
+func TestDeletingAnAccountRemovesTheOtherMembersOfItsPersonalTenant(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		alice, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "alice", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating alice: %v", err)
+		}
+		bob, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "bob", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating bob: %v", err)
+		}
+		personalID := string(personal.TenantID(alice.ID))
+		if err := a.memberships.Put(t.Context(), authn.Membership{
+			Account: bob.ID, Tenant: personalID, Active: true, Source: "admin",
+		}); err != nil {
+			t.Fatalf("adding bob to alice's personal tenant: %v", err)
+		}
+		if n := a.count(t, "authn_memberships", "account_id = ? AND tenant_id = ?", bob.ID.String(), personalID); n != 1 {
+			t.Fatalf("bob holds %d membership(s) in alice's personal tenant before the deletion, want one", n)
+		}
+		if err := a.admin.Delete(t.Context(), alice.ID, "admin"); err != nil {
+			t.Fatalf("deleting alice: %v", err)
+		}
+		if n := a.count(t, "authn_memberships", "account_id = ? AND tenant_id = ?", bob.ID.String(), personalID); n != 0 {
+			t.Errorf("the deletion left %d membership(s) of bob in alice's personal tenant, want none", n)
 		}
 	})
 }

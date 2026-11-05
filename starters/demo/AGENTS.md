@@ -1047,8 +1047,8 @@ names the fixed part of that wiring, and no configuration file repeats it:
   `ProvisionAccount` runs inside the account's transaction and writes five
   pieces: the tenant row, the creator's membership (source `personal`), a
   non-builtin `tenant-admin` role, that role's grants converged to the
-  allowlist the module declares (its business-resource set less membership,
-  invitation and identity-provider management — the set is empty here because
+  allowlist the module declares (its business-resource set less membership
+  and identity-provider management — the set is empty here because
   neither the notification surface nor the object store declares a permission
   point), and the account's binding. The tenant's identifier is
   `personal-<account-id>`; its alias is the account's username, with the
