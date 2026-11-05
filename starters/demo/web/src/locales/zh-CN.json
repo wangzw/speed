@@ -173,8 +173,11 @@
   },
   "userMenu": {
     "accountMenu": "账户菜单",
+    "organizations": "组织",
+    "triggerWithNotifications": "{{account}}，{{notifications}}",
     "accountSettings": "账户设置",
     "messages": "消息通知",
+    "messagesWithCount": "消息通知，{{n}} 条未读",
     "preferences": "偏好设置",
     "signOut": "退出登录"
   },

@@ -41,7 +41,6 @@ import {
   setTenantAlias,
   setTenantAliases,
   tenantAlias,
-  TenantMenu,
   UserMenu,
   useTenantSelection,
 } from './chrome.js'
@@ -153,15 +152,18 @@ const TWO_TENANTS: readonly DemoTenant[] = [
   { id: 'globex', alias: 'globex', name: 'Globex Corp.', kind: 'business' },
 ]
 
-/** The tenant switcher over the host's own selection state, the way the
- * tenant frame composes it. */
+/** The account menu over the host's own selection state, the way the tenant
+ * frame composes it: the organization rows live in the menu, so the harness
+ * renders the real surface rather than the rows alone. */
 function TenantSwitchHarness(): ReactElement {
   const [tenantId, setTenantId] = useTenantSelection('acme')
   return (
-    <TenantMenu
-      tenants={TWO_TENANTS}
-      tenantId={tenantId}
-      onTenantSelect={setTenantId}
+    <UserMenu
+      organizations={{
+        tenants: TWO_TENANTS,
+        tenantId,
+        onSelect: setTenantId,
+      }}
     />
   )
 }
@@ -180,15 +182,19 @@ function renderTenantSwitch() {
     ],
   })
   const queryClient = createQueryClient()
+  const session = createTestSession(authenticatedSnapshot())
+  attachSession(session)
   const services: SpeedAppServices = {
-    session: createTestSession(),
+    session,
     api: createHarnessClient(),
     queryClient,
   }
   const result = render(
     <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
       <AppServicesProvider services={services}>
-        <TenantSwitchHarness />
+        <RouteProvider table={[]} fallback={() => null}>
+          <TenantSwitchHarness />
+        </RouteProvider>
       </AppServicesProvider>
     </SpeedAppProviders>,
   )
@@ -208,7 +214,10 @@ describe('the tenant switch', () => {
     // convention), which is what makes it the departing tenant's row.
     queryClient.setQueryData(tenantQueryKey('acme', 'rows'), [{ id: 'row-1' }])
 
-    await user.click(screen.getByRole('button', { name: 'acme' }))
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    // The organization row names the current one; the others appear when it
+    // expands.
+    await user.click(await screen.findByRole('menuitem', { name: 'acme' }))
     await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
 
     // The switch is a host action: the departing tenant's whole cache
@@ -224,7 +233,10 @@ describe('the tenant switch', () => {
   it('keeps the switch confirmation announced but clipped', async () => {
     const user = userEvent.setup()
     renderTenantSwitch()
-    await user.click(screen.getByRole('button', { name: 'acme' }))
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    // The organization row names the current one; the others appear when it
+    // expands.
+    await user.click(await screen.findByRole('menuitem', { name: 'acme' }))
     await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
 
     // The confirmation reaches an assistive reader through the live region,

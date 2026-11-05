@@ -193,9 +193,9 @@
 
 ### REQ-tenancy-022
 
-租户切换控件必须显示当前租户。
+系统必须在账户菜单的组织行显示当前组织。
 
-- **验收**：当前租户的名字出现在控件上。
+- **验收**：当前组织的名字出现在账户菜单的组织行上。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
@@ -313,9 +313,9 @@
 
 ### REQ-tenancy-050
 
-租户切换控件必须把个人租户显示为组织的文案，而不是它的别名。
+系统必须在账户菜单的组织行与可切换项中把个人租户显示为登录账户的显示名，账户没有显示名时显示「组织」文案，不得显示该租户的别名。
 
-- **验收**：列表中的个人租户那一项显示组织的文案，不显示该租户的别名。
+- **验收**：个人租户的那一项显示登录账户的显示名；账户没有显示名时显示「组织」文案；两种情况都不显示该租户的别名。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -353,33 +353,33 @@
 
 ### REQ-tenancy-035
 
-租户切换控件必须列出该账户持有有效成员关系（成员关系存在且租户处于启用状态）的全部租户，当前租户也在列表之中。
+账户菜单的组织行展开后必须列出该账户持有有效成员关系（成员关系存在且租户处于启用状态）的其他全部租户，当前租户不在展开项中重复。
 
-- **验收**：打开列表能看到该账户持有有效成员关系的全部租户；当前租户出现在列表之中。
+- **验收**：打开组织行的展开项，能看到该账户持有有效成员关系的全部租户中除当前租户以外的每一项；当前租户只出现在组织行上，不出现在展开项里。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-tenancy-036
 
-租户切换控件必须让当前租户那一项不可被选中。
+账户菜单的组织行展开后不得列入当前租户，使当前租户无法被选作切换目标。
 
-- **验收**：点击当前租户那一项不触发切换。
+- **验收**：展开组织行，当前租户不出现在可选项里，因此不能对当前租户发起切换。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-member-organization.spec.ts` `member-organization: a member receives, reads and configures notifications`
 
 ### REQ-tenancy-037
 
-没有当前租户时，租户切换控件必须不可用并显示占位文案。
+没有当前租户时，账户菜单的组织行必须显示占位文案，展开后仍列出账户可进入的每个租户。
 
-- **验收**：账户没有当前租户时，控件不可操作，并显示占位文案。
+- **验收**：账户没有当前租户时，组织行显示占位文案而不是租户名；展开后列出该账户可进入的全部租户。
 - **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenancy-038
 
-冒充期间不得显示租户切换控件，冒充结束后恢复。
+冒充期间账户菜单不得出现组织行，冒充结束后恢复。
 
-- **验收**：冒充开始后租户区不出现切换控件；冒充结束后切换控件恢复出现。
+- **验收**：冒充开始后租户区的账户菜单不出现组织行；冒充结束后组织行恢复出现。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 

@@ -85,6 +85,12 @@ import {
   expandAccountRows,
   selectAccountSection,
 } from '../helpers/account-sections'
+import {
+  adminEntry,
+  backToApp,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
 
 // The settings table's type column is the lowest-priority one: it renders only
@@ -98,7 +104,39 @@ const OPERATOR = {
   username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
+  /** The organization the operator administers; the admin is entered from the
+   * platform's own organization instead. */
+  organization: 'acme',
 } as const
+
+/** The platform's own organization: the admin entry is offered only there. */
+const SYSTEM_ORGANIZATION = 'system'
+
+/**
+ * Move the tenant area onto the platform's own organization, where the admin
+ * entry is offered. The account menu's first row names the current
+ * organization; expanding it lists the others, and a pick closes the menu and
+ * announces the switch in the menu's live region.
+ */
+async function enterSystemOrganization(page: Page): Promise<void> {
+  await openAccountMenu(page)
+  const currentRow = organizationRow(page, OPERATOR.organization)
+  await expect(currentRow).toBeVisible({ timeout: 15_000 })
+  await currentRow.click()
+  const row = page
+    .getByRole('menu')
+    .getByRole('menuitem', { name: SYSTEM_ORGANIZATION, exact: true })
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  await row.click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(
+    page.getByRole('status').filter({
+      hasText: copy('tenancyUi', 'tenantSwitcher.switchedTo', {
+        tenant: SYSTEM_ORGANIZATION,
+      }),
+    }),
+  ).toBeVisible()
+}
 
 /** The one declared setting this journey writes, and its declared type. */
 const SETTING_KEY = 'ratelimit.limit'
@@ -249,15 +287,12 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await expect(banner.getByRole('button')).toHaveCount(0)
   })
 
-  await test.step('the admin opens from the header entry, and the settings page lists the declared items', async () => {
-    // The home admin card and the header entry are two derivations of the
-    // same target; the step drives the header one and checks they agree.
-    const adminEntry = page
-      .getByRole('banner')
-      .getByRole('link', {
-        name: copy('demo', 'nav.admin'),
-        exact: true,
-      })
+  await test.step('the admin opens from the account menu entry, and the settings page lists the declared items', async () => {
+    // The admin entry belongs to the platform's own organization, so the
+    // tenant area moves there first; the home admin card and the account
+    // menu's entry are two derivations of the same target, and the step drives
+    // the menu one and checks they agree.
+    await enterSystemOrganization(page)
     const adminCard = page
       .getByRole('heading', {
         level: 2,
@@ -265,13 +300,18 @@ test('operator-first-run: the operator proves the email and lands the first sett
         exact: true,
       })
       .locator('xpath=ancestor::a[1]')
-    await expect(adminEntry).toBeVisible()
-    await expect(adminCard).toBeVisible()
-    const entryHref = await adminEntry.getAttribute('href')
-    expect(entryHref).not.toBeNull()
-    await expect(adminCard).toHaveAttribute('href', entryHref ?? '')
+    await expect(adminCard).toBeVisible({ timeout: 15_000 })
+    const cardHref = await adminCard.getAttribute('href')
+    expect(cardHref).not.toBeNull()
 
-    await adminEntry.click()
+    await openAccountMenu(page)
+    const entry = adminEntry(page)
+    await expect(entry).toBeVisible()
+    const entryHref = await entry.getAttribute('href')
+    expect(entryHref).not.toBeNull()
+    expect(entryHref).toBe(cardHref)
+
+    await entry.click()
 
     // The admin navigation is grouped: the identity group holds six served
     // pages, so its heading renders as a disclosure control. (The platform
@@ -388,12 +428,8 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // Back to the tenant area, where the standing notice is still there: it is
     // not a one-page notice, and the round trip through the admin must not
     // clear it.
-    await page
-      .getByRole('link', {
-        name: copy('demo', 'admin.backToApp'),
-        exact: true,
-      })
-      .click()
+    await openAccountMenu(page)
+    await backToApp(page).click()
     const banner = verificationBanner(page, OPERATOR.identifier)
     await expect(banner).toBeVisible()
 
@@ -504,14 +540,10 @@ test('operator-first-run: the operator proves the email and lands the first sett
 
   await test.step('the same write now lands and the item reads overridden', async () => {
     // Re-enter the admin and the settings page; the page is a fresh mount, so
-    // the item starts again from the declaration.
-    await page
-      .getByRole('banner')
-      .getByRole('link', {
-        name: copy('demo', 'nav.admin'),
-        exact: true,
-      })
-      .click()
+    // the item starts again from the declaration. The current organization is
+    // still the platform's own, so the entry is offered from the account menu.
+    await openAccountMenu(page)
+    await adminEntry(page).click()
     const nav = adminNav(page)
     await nav
       .getByRole('link', {

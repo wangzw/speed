@@ -62,6 +62,11 @@ import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  adminEntry,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 
 // The settings table's type column is the lowest-priority one: it renders only
@@ -75,7 +80,39 @@ const OPERATOR = {
   username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
+  /** The organization the operator administers; the admin is entered from the
+   * platform's own organization instead. */
+  organization: 'acme',
 } as const
+
+/** The platform's own organization: the admin entry is offered only there. */
+const SYSTEM_ORGANIZATION = 'system'
+
+/**
+ * Move the tenant area onto the platform's own organization, where the admin
+ * entry is offered. The account menu's first row names the current
+ * organization; expanding it lists the others, and a pick closes the menu and
+ * announces the switch in the menu's live region.
+ */
+async function enterSystemOrganization(page: Page): Promise<void> {
+  await openAccountMenu(page)
+  const currentRow = organizationRow(page, OPERATOR.organization)
+  await expect(currentRow).toBeVisible({ timeout: 15_000 })
+  await currentRow.click()
+  const row = page
+    .getByRole('menu')
+    .getByRole('menuitem', { name: SYSTEM_ORGANIZATION, exact: true })
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  await row.click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(
+    page.getByRole('status').filter({
+      hasText: copy('tenancyUi', 'tenantSwitcher.switchedTo', {
+        tenant: SYSTEM_ORGANIZATION,
+      }),
+    }),
+  ).toBeVisible()
+}
 
 /** The one declared setting this journey writes. Its namespace is the module
  * that declared it; the value cell is labelled with the full key. */
@@ -323,11 +360,11 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
         }),
       ).toBeVisible()
 
-      // The home admin card and the header entry are two derivations of the
-      // same target; the step drives the header one and checks they agree.
-      const adminEntry = page
-        .getByRole('banner')
-        .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
+      // The admin entry belongs to the platform's own organization, so the
+      // tenant area moves there first; the home admin card and the account
+      // menu's entry are two derivations of the same target, and the step
+      // drives the menu one and checks they agree.
+      await enterSystemOrganization(page)
       const adminCard = page
         .getByRole('heading', {
           level: 2,
@@ -335,13 +372,18 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
           exact: true,
         })
         .locator('xpath=ancestor::a[1]')
-      await expect(adminEntry).toBeVisible()
-      await expect(adminCard).toBeVisible()
-      const entryHref = await adminEntry.getAttribute('href')
-      expect(entryHref).not.toBeNull()
-      await expect(adminCard).toHaveAttribute('href', entryHref ?? '')
+      await expect(adminCard).toBeVisible({ timeout: 15_000 })
+      const cardHref = await adminCard.getAttribute('href')
+      expect(cardHref).not.toBeNull()
 
-      await adminEntry.click()
+      await openAccountMenu(page)
+      const entry = adminEntry(page)
+      await expect(entry).toBeVisible()
+      const entryHref = await entry.getAttribute('href')
+      expect(entryHref).not.toBeNull()
+      expect(entryHref).toBe(cardHref)
+
+      await entry.click()
 
       // The settings page is opened from the admin navigation.
       await adminNav(page)

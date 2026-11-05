@@ -137,34 +137,40 @@ describe('AdminArea', () => {
     expect(screen.getByText('admin page')).toBeInTheDocument()
   })
 
-  it('renders the exit as an icon-only control in the collapsed rail, under the same name', () => {
+  it('keeps the exit reachable and named in the collapsed rail', async () => {
+    const user = userEvent.setup()
     renderAdminArea(undefined, {
       shellLayout: 'sidebar',
       sidebarCollapsed: true,
     })
-    // The rail has no room for the exit text; the control keeps the label
-    // as its accessible name and its href, so it stays a real link.
-    const exit = screen.getByRole('link', {
+    // The rail has room only for the account glyph; the exit is one entry of
+    // the menu that glyph opens, still named by the same label and a real
+    // link to the tenant home.
+    await user.click(screen.getByTestId('account-entry-trigger'))
+    const exit = await screen.findByRole('menuitem', {
       name: demoEnUS.admin.backToApp,
     })
-    expect(exit.textContent?.trim()).toBe('')
+    expect(exit.tagName).toBe('A')
     expect(exit.getAttribute('href')).not.toBeNull()
   })
 
-  it('hands the admin header controls to the shell as siblings, so a collapsed rail can stack them', () => {
+  it('hands the admin header its account menu as the actions slot’s own control', () => {
     renderAdminArea()
-    const back = screen.getByRole('link', {
-      name: demoEnUS.admin.backToApp,
-    })
+    const trigger = screen.getByTestId('user-menu-trigger')
     const toolbar = screen
       .getByRole('banner')
       .querySelector(`.${toolbarClasses.root}`)
     expect(toolbar).not.toBeNull()
-    // The controls are the actions slot's own children, not a wrapper's: the
-    // shell lays a slot's children out in a row on the top bar and in a
-    // column in the collapsed rail, so a wrapper would leave the rail one
-    // row of controls wider than the paper.
-    expect(back.parentElement?.parentElement).toBe(toolbar)
+    // The account menu is the bar's one control and the actions slot's own
+    // child: the shell lays a slot's children out in a row on the top bar and
+    // in a column in the collapsed rail, so an extra wrapper would leave the
+    // rail one row of controls wider than the paper. The trigger sits in the
+    // menu's own box, itself the slot's child inside the toolbar.
+    expect(trigger.parentElement?.parentElement?.parentElement).toBe(toolbar)
+    // The exit is no longer a second bar control: it is a menu entry.
+    expect(
+      screen.queryByRole('link', { name: demoEnUS.admin.backToApp }),
+    ).toBeNull()
   })
 
   it('renders the account entry in the navigation column and the header avatar menu', async () => {
@@ -266,19 +272,25 @@ describe('AdminArea', () => {
     const user = userEvent.setup()
     renderAdminArea()
 
-    const exit = screen.getByRole('link', { name: demoEnUS.admin.backToApp })
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    const exit = await screen.findByRole('menuitem', {
+      name: demoEnUS.admin.backToApp,
+    })
     await user.click(exit)
     expect(window.location.pathname).toBe('/')
   })
 
-  it('raises the exit link to the 44px touch floor under a coarse pointer', () => {
+  it('raises the exit menu entry to the 44px touch floor under a coarse pointer', async () => {
     window.history.replaceState({}, '', '/admin/tenants')
+    const user = userEvent.setup()
     renderAdminArea()
 
-    // The exit is a text link: on a fine pointer it is a 24px-tall inline
-    // box, below the finger floor. The theme's coarse rule makes it an
-    // inline-flex box of at least 44x44 -- no per-control gate here.
-    const exit = screen.getByRole('link', { name: demoEnUS.admin.backToApp })
+    // The exit is a menu entry now: ButtonBase's coarse rule gives it the
+    // same 44px floor every other menu row gets, with no per-control gate.
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    const exit = await screen.findByRole('menuitem', {
+      name: demoEnUS.admin.backToApp,
+    })
     expect(hasCoarsePointerTouchTarget(exit)).toBe(true)
   })
 

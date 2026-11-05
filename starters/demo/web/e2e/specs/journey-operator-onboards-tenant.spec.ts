@@ -26,8 +26,8 @@
  * alias acme holds -- and each is asserted to leave the roster unchanged. The
  * new tenant's alias is then changed on its detail page to a value that differs
  * from its identifier, so the accept summary (which names the tenant by
- * identifier) and the tenant switcher (which names it by alias) cannot be
- * confused.
+ * identifier) and the account menu's organization row (which names it by alias)
+ * cannot be confused.
  *
  * THE DOCUMENT'S STEP-10 RE-OPENED LINK IS NOT RENDERED BY THE PRODUCT, so this
  * spec leaves it undriven and reports the gap. The accept-view read returns an
@@ -51,8 +51,8 @@
  * branches: the invitee here holds the invited address's own account, so the
  * acceptance binds the membership to that account. REQ-tenancy-023 is not
  * claimed: the invitee's account owns a personal tenant as well, so the
- * switcher has a second row available, but this spec only observes the current
- * row and leaves the switch to the journeys that drive it. REQ-tenancy-005 is
+ * organization list has a second row available, but this spec only observes the
+ * current row and leaves the switch to the journeys that drive it. REQ-tenancy-005 is
  * claimed narrowly: the roster is read with the seeded tenants and asserted in
  * identifier order, while the empty-roster clause needs a deployment that seeds
  * no tenant. REQ-tenancy-008 is claimed narrowly too: the creator's member list
@@ -77,6 +77,13 @@ import type { BrowserContext, Locator, Page } from '@playwright/test'
 import { reviewInvitee } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  adminEntry,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+  switchOrganization,
+} from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 
 // The admin tables carry low-priority columns and the admin sidebar takes
@@ -177,14 +184,6 @@ function verificationBanner(page: Page, email: string): Locator {
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
     name: copy('accountUi', 'verification.title'),
-    exact: true,
-  })
-}
-
-/** The header's admin entry (a link, while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.admin'),
     exact: true,
   })
 }
@@ -315,11 +314,6 @@ function invitationLinkPanel(page: Page, email: string): Locator {
 /** The expiry line's copy prefix: the sentence with an empty value. */
 const EXPIRY_PREFIX = copy('authUi', 'acceptInvitation.expires', { expires: '' })
 
-/** The tenant switcher's trigger, naming the current organization by alias. */
-function tenantSwitcher(page: Page, alias: string): Locator {
-  return page.getByRole('banner').getByRole('button', { name: alias, exact: true })
-}
-
 test('operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins', async ({
   demo,
   browser,
@@ -396,9 +390,14 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       // REQ-platform-admin-001's operator facet: both derivations of the
-      // admin destination are offered to platform staff.
-      await expect(adminEntry(page)).toBeVisible()
+      // admin destination are offered to platform staff, and only while the
+      // platform's own organization is current. The account menu's admin
+      // entry is read with the menu open; the card is read before it,
+      // because an open menu's backdrop hides the page from role queries.
+      await switchOrganization(page, 'system')
       await expect(adminCard(page)).toBeVisible()
+      await openAccountMenu(page)
+      await expect(adminEntry(page)).toBeVisible()
       await adminEntry(page).click()
       const nav = adminNav(page)
       await expect(nav).toBeVisible()
@@ -1005,31 +1004,47 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // REQ-tenancy-021: the current tenant is the invited one. The switcher
-      // names it by alias -- the value the operator renamed it to, not the
-      // identifier the accept summary showed.
-      await expect(tenantSwitcher(invitee, TENANT_ALIAS)).toBeVisible({
+      // REQ-tenancy-021: the current organization is the invited one. The
+      // account menu's organization row names it by alias -- the value the
+      // operator renamed it to, not the identifier the accept summary showed.
+      await openAccountMenu(invitee)
+      await expect(organizationRow(invitee, TENANT_ALIAS)).toBeVisible({
         timeout: 15_000,
       })
-      await expect(tenantSwitcher(invitee, TENANT_ALIAS)).toBeEnabled()
+      await expect(organizationRow(invitee, TENANT_ALIAS)).toBeEnabled()
+      await closeAccountMenu(invitee)
     })
 
-    await test.step('step 10: the switcher shows the current tenant and its row is not selectable', async () => {
+    await test.step('step 10: the organization row names the current organization and its list offers only the others', async () => {
       if (inviteePage === undefined) {
         throw new Error('the invitee page was never opened')
       }
       const invitee = inviteePage
 
-      // REQ-tenancy-022: the current tenant appears in the control's trigger,
-      // and the current row of its open list is the disabled one.
-      await tenantSwitcher(invitee, TENANT_ALIAS).click()
+      // REQ-tenancy-022: the current organization is named by the menu's
+      // organization row. Expanding that row lists the organizations the
+      // account may switch to, so the current one is not offered again: the
+      // expansion does not hold a second row for it, and the account's other
+      // organization is the one choice it renders.
+      const menu = await openAccountMenu(invitee)
+      const row = organizationRow(invitee, TENANT_ALIAS)
+      await expect(row).toBeVisible()
+      await row.click()
+      const others = menu.getByRole('group', {
+        name: copy('demo', 'userMenu.organizations'),
+        exact: true,
+      })
+      await expect(others).toBeVisible()
       await expect(
-        invitee.getByRole('menuitem', { name: TENANT_ALIAS, exact: true }),
-      ).toBeDisabled()
-      await invitee.keyboard.press('Escape')
+        others.getByRole('menuitem', { name: TENANT_ALIAS, exact: true }),
+      ).toHaveCount(0)
       await expect(
-        invitee.getByRole('menuitem', { name: TENANT_ALIAS, exact: true }),
-      ).toBeHidden()
+        others.getByRole('menuitem', {
+          name: reviewInvitee.displayName,
+          exact: true,
+        }),
+      ).toBeVisible()
+      await closeAccountMenu(invitee)
 
       // The document's re-opened-link sub-step is not driven: the product
       // renders the accepted invitation's summary again instead of the
@@ -1038,12 +1053,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // invitation-to-tenant spec documents the same divergence.
       //
       // REQ-platform-admin-001's member facet: a plain member is offered
-      // neither the header's admin entry nor the start page's admin card.
-      await expect(
-        invitee
-          .getByRole('banner')
-          .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true }),
-      ).toHaveCount(0)
+      // neither the account menu's admin entry nor the start page's admin
+      // card. The card is read with the menu closed; the menu entry with it
+      // open.
       await expect(
         invitee.getByRole('heading', {
           level: 2,
@@ -1051,6 +1063,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toHaveCount(0)
+      await openAccountMenu(invitee)
+      await expect(adminEntry(invitee)).toHaveCount(0)
+      await closeAccountMenu(invitee)
     })
 
     await test.step('step 11: the operator refreshes and sees the invitation accepted and the member listed', async () => {

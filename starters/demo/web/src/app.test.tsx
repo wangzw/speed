@@ -94,6 +94,30 @@ const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tLayoutZh = textI18n.getFixedT('zh-CN', LAYOUT_KIT_NAMESPACE)
 const tUiKit = textI18n.getFixedT('en-US', UI_KIT_NAMESPACE)
 
+/** Opens the header placement of the account menu, which carries the
+ * organization switcher, the admin entry and the way back from the admin. */
+async function openHeaderAccountMenu(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  await user.click(screen.getByTestId('user-menu-trigger'))
+  return screen.findByRole('menu')
+}
+
+/** Closes the open account menu and waits for its surface to leave the tree. */
+async function closeAccountMenu(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+}
+
+/** Makes the platform's own organization the current tenant: the admin entry
+ * is offered only there, so a case about that entry must settle it. */
+function settlePlatformOrganization(): void {
+  setCurrentTenantId('system')
+  setTenantAliases(new Map([['system', 'system']]))
+}
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   // The current tenant is module-level host state (the client's tenantProvider
@@ -207,6 +231,7 @@ describe('the app at the root path', () => {
 
 describe('the tenant shell with a session', () => {
   it('offers a platform administrator a header admin entry that lands in the admin', async () => {
+    settlePlatformOrganization()
     const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(
@@ -221,11 +246,13 @@ describe('the tenant shell with a session', () => {
       within(nav).queryByRole('link', { name: demoEnUS.nav.admin }),
     ).not.toBeInTheDocument()
 
-    // It rides the header instead. A plain click routes in place to the admin
-    // prefix, which renders the admin's dashboard: the admin frame's own
-    // navigation appears.
-    const entry = screen.getByRole('link', { name: demoEnUS.nav.admin })
-    await user.click(entry)
+    // It rides the header's account menu instead. A plain click routes in
+    // place to the admin prefix, which renders the admin's dashboard: the
+    // admin frame's own navigation appears.
+    const menu = await openHeaderAccountMenu(user)
+    await user.click(
+      within(menu).getByRole('menuitem', { name: demoEnUS.nav.admin }),
+    )
     expect(
       await screen.findByRole('navigation', {
         name: tAdmin('shell.navLabel'),
@@ -233,17 +260,23 @@ describe('the tenant shell with a session', () => {
     ).toBeInTheDocument()
   })
 
-  it('offers an ordinary member no admin entry anywhere', () => {
+  it('offers an ordinary member no admin entry anywhere', async () => {
+    settlePlatformOrganization()
+    const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: [] })),
     })
 
     // The member's platform permission set is known and does not hold the
-    // entry's code, so neither the sidebar nor the header carries an admin
-    // entry: there is no way into the admin to be found.
+    // entry's code, so neither the sidebar nor the header's account menu
+    // carries an admin entry: there is no way into the admin to be found.
     expect(
       screen.queryByRole('link', { name: demoEnUS.nav.admin }),
     ).not.toBeInTheDocument()
+    const menu = await openHeaderAccountMenu(user)
+    expect(
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
+    ).toBeNull()
   })
 
   it('keeps the admin entry hidden while the platform permission set is unknown', async () => {
@@ -252,39 +285,41 @@ describe('the tenant shell with a session', () => {
     // platform permissions. usePermission fails closed on an unknown set, so
     // the entry is absent -- a member never sees it for the moment before the
     // set lands.
+    settlePlatformOrganization()
+    const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot()),
     })
 
-    const brand = await screen.findByText(demoEnUS.app.title)
-    const banner = brand.closest('header')
-    expect(banner).not.toBeNull()
+    const menu = await openHeaderAccountMenu(user)
     expect(
-      within(banner as HTMLElement).queryByRole('link', {
-        name: demoEnUS.nav.admin,
-      }),
-    ).not.toBeInTheDocument()
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
+    ).toBeNull()
   })
 
   it('reveals the admin entry once the platform permission set lands', async () => {
     // The attach-then-appear transition the host drives through
     // setPermissionSet: the set flips from unknown (null) to a known one
     // holding the entry's code, and the entry appears where it was hidden.
+    settlePlatformOrganization()
+    const user = userEvent.setup()
     const session = createTestSession(authenticatedSnapshot())
     renderDemoApp({ session })
 
-    const brand = await screen.findByText(demoEnUS.app.title)
-    const banner = brand.closest('header') as HTMLElement
-
+    const menu = await openHeaderAccountMenu(user)
     expect(
-      within(banner).queryByRole('link', { name: demoEnUS.nav.admin }),
-    ).not.toBeInTheDocument()
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
+    ).toBeNull()
+    await closeAccountMenu(user)
 
     act(() => {
       session.set(authenticatedSnapshot({ system: ['tenant.read'] }))
     })
+    const reopened = await openHeaderAccountMenu(user)
     expect(
-      await within(banner).findByRole('link', { name: demoEnUS.nav.admin }),
+      await within(reopened).findByRole('menuitem', {
+        name: demoEnUS.nav.admin,
+      }),
     ).toBeInTheDocument()
   })
 })
@@ -914,9 +949,13 @@ describe('the admin area', () => {
     await user.click(
       screen.getByRole('button', { name: tLayout('appShell.collapseNav') }),
     )
-    // Leave for the tenant area through the admin banner's exit link: the
-    // sidebar is collapsed to the rail, so the exit link is the way back.
-    await user.click(screen.getByRole('link', { name: demoEnUS.admin.backToApp }))
+    // Leave for the tenant area through the admin banner's account menu: the
+    // sidebar is collapsed to the rail, so the menu's exit entry is the way
+    // back.
+    const menu = await openHeaderAccountMenu(user)
+    await user.click(
+      within(menu).getByRole('menuitem', { name: demoEnUS.admin.backToApp }),
+    )
     // The tenant frame comes up already collapsed: one host-held state feeds
     // both areas, so the operator's collapse survives the switch rather than
     // resetting to open.
@@ -945,8 +984,13 @@ describe('the organization admin path', () => {
     })
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    await user.click(await screen.findByRole('button', { name: 'acme' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
+    // The account menu names the current organization first; expanding it
+    // lists the others, the current one not repeated.
+    const menu = await openHeaderAccountMenu(user)
+    await user.click(within(menu).getByRole('menuitem', { name: 'acme' }))
+    await user.click(
+      await within(menu).findByRole('menuitem', { name: 'globex' }),
+    )
 
     // The new tenant does not necessarily grant the old page's permissions,
     // so the host leaves the management surface for the tenant home rather
@@ -972,15 +1016,16 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
 
   it('offers an entry that targets the first admin page whose code they hold', async () => {
     window.history.replaceState({}, '', '/')
+    settlePlatformOrganization()
+    const user = userEvent.setup()
     renderDemoApp({ session: staff('audit.read') })
 
     // The dashboard's code (tenant.read) is unheld, so the entry cannot point
     // at the admin root; the audit page is the first labelled declaration
     // whose code the principal holds, and the entry targets it.
-    const brand = await screen.findByText(demoEnUS.app.title)
-    const banner = brand.closest('header') as HTMLElement
+    const menu = await openHeaderAccountMenu(user)
     expect(
-      within(banner).getByRole('link', { name: demoEnUS.nav.admin }),
+      within(menu).getByRole('menuitem', { name: demoEnUS.nav.admin }),
     ).toHaveAttribute('href', '/admin/audit')
   })
 
@@ -1102,17 +1147,14 @@ describe('the tenant area header controls', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     // The language entry lives on the account preferences page alone. The
-    // header carries exactly its two account surfaces -- the tenant switcher
-    // and the account menu -- so a third menu trigger is what a removed
+    // header carries its account menu only -- the organization switcher rides
+    // inside that menu now -- so a second menu trigger is what a removed
     // language switch would be.
     const [banner] = await screen.findAllByRole('banner')
     const menus = within(banner as HTMLElement)
       .getAllByRole('button')
       .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(2)
-    expect(
-      within(banner as HTMLElement).getByRole('button', { name: 'acme' }),
-    ).toBeInTheDocument()
+    expect(menus).toHaveLength(1)
     expect(
       within(banner as HTMLElement).getByTestId('user-menu-trigger'),
     ).toBeInTheDocument()
@@ -1125,12 +1167,15 @@ describe('the tenant area header controls', () => {
     // The seeded roster registers acme alone, so the switcher must not
     // offer a second tenant: switching to one the server cannot resolve
     // would leave every tenant-scoped read refused 404.
-    await user.click(screen.getByRole('button', { name: 'acme' }))
+    const menu = await openHeaderAccountMenu(user)
+    expect(within(menu).getByText('acme')).toBeInTheDocument()
     expect(
-      screen.getByRole('menuitem', { name: 'acme' }),
-    ).toBeInTheDocument()
+      within(menu).queryByRole('menuitem', { name: 'Globex Corp.' }),
+    ).toBeNull()
     expect(
-      screen.queryByRole('menuitem', { name: 'Globex Corp.' }),
+      within(menu).queryByRole('group', {
+        name: demoEnUS.userMenu.organizations,
+      }),
     ).toBeNull()
     expect(getCurrentTenantId()).toBe('acme')
   })
@@ -1404,13 +1449,13 @@ describe('the account page', () => {
         name: tAccount('preferences.language.label'),
       }),
     ).toBeInTheDocument()
-    // ...and the tenant header carries no language switch: its two menus are
-    // the tenant switcher and the account menu.
+    // ...and the tenant header carries no language switch: its one menu is
+    // the account menu, with the organization switcher inside it.
     const [banner] = screen.getAllByRole('banner')
     const menus = within(banner as HTMLElement)
       .getAllByRole('button')
       .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(2)
+    expect(menus).toHaveLength(1)
     expect(
       within(banner as HTMLElement).getByTestId('user-menu-trigger'),
     ).toBeInTheDocument()

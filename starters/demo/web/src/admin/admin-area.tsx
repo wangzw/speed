@@ -19,10 +19,10 @@
  * admin pages pushes a history entry instead of reloading the page -- the
  * skeleton's session lives in memory, so a reload would sign the operator out.
  *
- * The frame's top bar is the same chrome the tenant frame carries -- the brand
- * and the sign-out action (src/chrome) -- plus an exit back to the tenant area,
- * so the admin is not a navigation dead end. This one has no tenant
- * switcher, which is why the exit is a plain link rather than a switcher.
+ * The frame's top bar is the same chrome the tenant frame carries (src/chrome):
+ * the brand and the account menu. The menu's destination entry is the way back
+ * to the tenant area, so the admin is not a navigation dead end; the admin
+ * resolves no tenant, so that menu carries no organization list.
  * The account entry follows the same ACCOUNT_ENTRY constant as the tenant
  * frame (src/account-entry): by default it is the row at the bottom of the
  * navigation column, and the header carries no avatar menu.
@@ -30,8 +30,6 @@
 
 import { useCallback } from 'react'
 import Box from '@mui/material/Box'
-import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
 import type {
   AdminImpersonationStarting,
   AdminNavGroup,
@@ -40,13 +38,14 @@ import type {
 import { AdminShell, ADMIN_UI_NAMESPACE, adminNavGroups } from '@speed/admin-ui'
 import { useTranslation } from '@speed/i18n'
 import type { AppShellShellLayout } from '@speed/layout-kit'
-import { useLocationPath, useNavigate, useNavItems, useRouteLinkProps } from '@speed/route-kit'
+import { useLocationPath, useNavigate, useNavItems } from '@speed/route-kit'
 import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
 import { ACCOUNT_ENTRY } from '../account-entry.js'
 import { useAppServices } from '../app-services.js'
 import { CallbackLandingNotice } from '../callback-error-notice.js'
 import { AccountEntry, AppBrand, UserMenu } from '../chrome.js'
+import type { AccountMenuDestination } from '../chrome.js'
 import { TENANT_HOME_PATH } from '../pages/not-found-page.js'
 import { invitationPath, ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -119,6 +118,17 @@ export function AdminArea({
   // marks a row selected by asking whether that row's path is one of them
   // and is the selected one (the shell does no path matching of its own).
   const items = useNavItems()
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  // The menu's way back to the tenant area. The admin is not a navigation
+  // dead end: the entry is a real link whose plain-click handler route-kit
+  // supplies, so the browser keeps a modified or new-tab click and an in-app
+  // click moves the history without a page load.
+  const destination: AccountMenuDestination = {
+    id: 'back-to-app',
+    label: t('admin.backToApp'),
+    target: TENANT_HOME_PATH,
+    icon: <BackGlyph />,
+  }
   const isSelected = useCallback(
     (path: string): boolean =>
       items.some((item) => item.id === path && item.selected),
@@ -132,16 +142,24 @@ export function AdminArea({
       navGroups={navGroups ?? adminNavGroups}
       hasFeature={hasFeature}
       title={<AppBrand />}
-      headerActions={(rail) => <AdminHeaderActions narrow={rail.narrow} />}
+      // The bar carries the account menu alone: the way back to the tenant
+      // area is the menu's destination entry, beside the same account panes
+      // the tenant frame offers.
+      headerActions={() =>
+        ACCOUNT_ENTRY === 'sidebar' ? null : (
+          <UserMenu destination={destination} />
+        )
+      }
       // The account entry's placement follows the tenant frame's constant:
       // a row at the bottom of the navigation column by default, the header
-      // menu only when the host puts it there. The admin keeps no tenant
-      // switcher, so the footer holds the account entry alone.
+      // menu only when the host puts it there. The admin resolves no tenant,
+      // so the menu carries no organization list.
       navFooter={(rail) =>
         ACCOUNT_ENTRY === 'header' ? null : (
           <AccountEntry
             narrow={rail.narrow}
             closeDrawer={rail.closeDrawer}
+            destination={destination}
           />
         )
       }
@@ -180,53 +198,6 @@ export function AdminArea({
       </Box>
       {children}
     </AdminShell>
-  )
-}
-
-/**
- * The admin banner's trailing chrome: an exit back to the tenant area beside
- * the sign-out action, in the same chrome the tenant frame carries. The exit
- * routes in place (the same seam the frame's own navigation uses), so leaving
- * the admin does not reload the page and sign the operator out. In the
- * collapsed sidebar rail only the arrow fits, and its accessible name stays
- * the exit label.
- */
-function AdminHeaderActions({
-  narrow = false,
-}: {
-  /** Whether the controls render in the collapsed sidebar rail. */
-  readonly narrow?: boolean
-}): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
-  // The exit is a real link whose plain-click handler route-kit supplies:
-  // the browser keeps a modified or new-tab click, and an in-app click moves
-  // the history without a page load.
-  const { href, onClick } = useRouteLinkProps(TENANT_HOME_PATH)
-  return (
-    <>
-      {narrow ? (
-        <IconButton
-          color="inherit"
-          aria-label={t('admin.backToApp')}
-          href={href}
-          onClick={onClick}
-        >
-          <BackGlyph />
-        </IconButton>
-      ) : (
-        <Link
-          href={href}
-          underline="hover"
-          onClick={onClick}
-          sx={{ color: 'inherit' }}
-        >
-          {t('admin.backToApp')}
-        </Link>
-      )}
-      {/* The header carries the account menu when ACCOUNT_ENTRY includes the
-          header; the sidebar-only placement keeps it in the column. */}
-      {ACCOUNT_ENTRY === 'sidebar' ? null : <UserMenu />}
-    </>
   )
 }
 

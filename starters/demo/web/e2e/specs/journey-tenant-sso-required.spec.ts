@@ -37,22 +37,20 @@
  * The journey's precondition -- the tenant has an enabled, pre-provisioned
  * enterprise provider with a verified e-mail domain -- is reached through the
  * rendered admin the way the operator reaches it: the platform operator
- * registers the provider and claims and verifies the domain. The provider and
- * invitation routes are tenant-resolved on the API endpoint, and the admission
- * layer judges a request in the organization the request surface announces, not
- * the one a admin page's own selector names. A platform administrator's
- * tenant area settles the roster's staff default, so the operator's setup writes
- * are judged there while the page addresses the tenant the provider belongs to;
- * the journey then moves the tenant area to that tenant.
+ * registers the provider and claims and verifies the domain. A tenant-addressed
+ * admin route announces the tenant its path names on the request surface
+ * (src/tenant-addressed-fetch.ts), so the admission layer judges the write in
+ * the tenant the page addresses, whatever organization the tenant area's
+ * account menu currently names. The way into the admin is the account menu's
+ * entry, which the demo offers only while the platform's own `system`
+ * organization is current.
  *
  * The requirement itself is switched on through the admin's settings surface
  * after the administrator's session and admin area are established, rather
- * than seeded before the server starts. The admin's own permission read is a
- * request the admission layer judges, so a requirement already on would refuse
- * that read and keep the admin area from being entered at all; switching it
- * on while the page is open is also the operational sequence in which a
- * signed-in member first meets the requirement. The setting's global row is the
- * value the tenant falls back to, and the settings page writes that layer.
+ * than seeded before the server starts: switching it on while the page is open
+ * is the operational sequence in which a signed-in member first meets the
+ * requirement. The setting's global row is the value the tenant falls back to,
+ * and the settings page writes that layer.
  *
  * The administrator is also a platform administrator because this host's
  * admin is platform-staff only, and the invitations-and-members page lives in
@@ -83,8 +81,15 @@ import {
   type EnterpriseIdentityProvider,
 } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
-import type { ReviewServer } from '../fixtures/server'
 import { expectAccountMenuName } from '../helpers/account-menu'
+import type { ReviewServer } from '../fixtures/server'
+import {
+  adminEntry,
+  backToApp,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
@@ -143,13 +148,6 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The header's admin entry (a link, while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
-}
-
 /** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
@@ -177,62 +175,46 @@ async function selectTenant(page: Page, tenant: string): Promise<void> {
   await page.getByRole('option', { name: tenant, exact: true }).click()
 }
 
-/**
- * The organization the tenant area announces for a platform administrator
- * before the journey switches it: the roster's staff default, the first
- * active business tenant. The administrator the journey signs in as is
- * platform staff because this host's admin is platform-staff only, so the
- * tenant area settles this organization rather than one of their own
- * memberships.
- */
-const STAFF_DEFAULT_TENANT = 'acme'
-
-/** The tenant switcher's trigger, naming the current organization by alias. */
-function tenantSwitcher(page: Page, alias: string): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('button', { name: alias, exact: true })
-}
-
-/** The tenant switcher's row for one organization. */
-function tenantMenuItem(page: Page, alias: string): Locator {
-  return page.getByRole('menuitem', { name: alias, exact: true })
-}
+/** The platform's own organization. The account menu offers the admin entry
+ * only while this is the current organization; platform administration is not
+ * a tenant member's surface. */
+const PLATFORM_TENANT = 'system'
 
 /**
- * Move the tenant area to one organization.
- *
- * The requests the admin's tenant-addressed pages issue carry the tenant
- * area's current organization on the request surface, and the admission layer
- * decides the request in that organization's domain, not in the one the page's
- * own selector names. The journey therefore has to switch the tenant area
- * before an invitation write is judged in the tenant that requires SSO. The
- * trigger names the organization the host settled, which is the roster's staff
- * default until a switch; the menu's row is disabled when the organization is
- * already current, the only case this helper leaves the menu with Escape.
+ * Move the tenant area to one organization through the account menu. The
+ * menu's first entry names the current organization and expands the others;
+ * choosing one closes the menu, switches, and announces the confirmation.
  */
 async function switchToTenant(page: Page, tenant: string): Promise<void> {
-  const trigger = tenantSwitcher(page, tenant).or(
-    tenantSwitcher(page, STAFF_DEFAULT_TENANT),
-  )
-  await expect(trigger).toBeVisible()
-  await trigger.click()
-  const row = tenantMenuItem(page, tenant)
-  await expect(row).toBeVisible()
-  if (await row.isEnabled()) {
-    await row.click()
-    await expectClippedAnnouncement(
-      page,
-      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
-    )
-  } else {
-    await page.keyboard.press('Escape')
+  const menu = await openAccountMenu(page)
+  if (
+    (await organizationRow(page, tenant).count()) > 0 ||
+    (await menu.getByText(tenant, { exact: true }).count()) > 0
+  ) {
+    // The organization is already current: its row is the expansion control,
+    // or context when it is the only one, and never a pick.
+    await closeAccountMenu(page)
+    return
   }
-  await expect(tenantSwitcher(page, tenant)).toBeVisible()
+  await menu.getByRole('menuitem').first().click()
+  const row = organizationRow(page, tenant)
+  await expect(row).toBeVisible()
+  await row.click()
+  await expectClippedAnnouncement(
+    page,
+    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+  )
+  await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
-/** Open the admin from the tenant area. */
+/**
+ * Open the admin from the tenant area. The way in is the account menu's admin
+ * entry, offered only while the platform's own organization is current, so
+ * the journey moves there first.
+ */
 async function openConsole(page: Page): Promise<void> {
+  await switchToTenant(page, PLATFORM_TENANT)
+  await openAccountMenu(page)
   await expect(adminEntry(page)).toBeVisible()
   await adminEntry(page).click()
   await expect(adminNav(page)).toBeVisible()
@@ -372,15 +354,11 @@ async function proveEmail(
   await expect(banner).toHaveCount(0)
 }
 
-/** Leave the admin for the tenant area, where the sign-out menu lives. */
+/** Leave the admin for the tenant area, where the sign-out menu lives. The way
+ * back is the admin account menu's destination entry. */
 async function leaveConsole(page: Page): Promise<void> {
-  await page
-    .getByRole('banner')
-    .getByRole('link', {
-      name: copy('demo', 'admin.backToApp'),
-      exact: true,
-    })
-    .click()
+  await openAccountMenu(page)
+  await backToApp(page).click()
   await expect(homeHeading(page)).toBeVisible()
 }
 
@@ -390,9 +368,7 @@ async function openInvitations(page: Page): Promise<void> {
     .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
     .click()
   await expect(homeHeading(page)).toBeVisible()
-  await expect(adminEntry(page)).toBeVisible()
-  await adminEntry(page).click()
-  await expect(adminNav(page)).toBeVisible()
+  await openConsole(page)
   await adminLink(page, copy('adminUi', 'invitations.title')).click()
   await expect(
     page.getByRole('heading', {
@@ -586,9 +562,9 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
     await expect(homeHeading(page)).toBeVisible()
-    await expect(adminEntry(page)).toBeVisible()
-    await adminEntry(page).click()
-    await expect(adminNav(page)).toBeVisible()
+    // The way in is the account menu's entry, offered while the platform's
+    // own organization is current.
+    await openConsole(page)
     await adminLink(page, copy('adminUi', 'sso.title')).click()
     await expect(
       page.getByRole('heading', {
@@ -622,12 +598,12 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     })
     await proveEmail(page, server, tenantSSOAdmin.identifier)
 
-    // The tenant's requirement is judged on the organization the request
-    // surface announces, and the tenant area settles the roster's staff
-    // default for a platform administrator. The journey's administrator
-    // exercises the tenant's own domain, so the tenant area moves to it
-    // before any admin page is opened.
-    await switchToTenant(page, TENANT)
+    // The tenant's requirement is judged in the tenant the request surface
+    // announces, but a tenant-addressed admin route announces the tenant its
+    // path names (src/tenant-addressed-fetch.ts). No tenant-area switch is
+    // therefore needed for the write: the way into the admin is the account
+    // menu's entry, and the journey moves to the platform's own organization
+    // to open it.
   })
 
   await test.step('precondition: the tenant requirement is switched on after the administrator is signed in', async () => {
@@ -755,12 +731,10 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
   })
 
   await test.step('step 5: the same invitation is accepted with the direct-submit confirmation', async () => {
-    // The provider's callback settles the tenant area again; a platform
-    // administrator starts from the roster's staff default, so the journey
-    // moves it back to the tenant whose provider signed the session in before
-    // the write is judged. The helper leaves an already-current organization
-    // alone.
-    await switchToTenant(page, TENANT)
+    // The write is judged in the tenant its path names, so the journey does
+    // not move the tenant area first; the way back into the admin is the
+    // account menu's entry, offered while the platform's own organization is
+    // current.
     await openInvitations(page)
     await selectTenant(page, TENANT)
 

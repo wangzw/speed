@@ -11,7 +11,8 @@
  * it makes.
  */
 
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -39,6 +40,39 @@ const ENSURE_PATH = '/api/v1/orgs/personal'
 const SELF_PATH = '/api/v1/auth/me/tenants'
 
 const PERSONAL_FEATURES = ['tenant.admin', 'org.personal'] as const
+
+/** The signed-in account's display name: a personal organization row is named
+ * after the account it belongs to. */
+const ACCOUNT_NAME = 'Test User'
+
+/** Opens the account menu: the organization list lives inside it, not beside
+ * the header's controls. */
+async function openAccountMenu(): Promise<void> {
+  await userEvent.setup().click(await screen.findByTestId('user-menu-trigger'))
+}
+
+/** The organization row of the open account menu, found inside the menu: the
+ * sidebar's account entry carries the same name outside it. */
+async function findOrganizationRow(name: string): Promise<HTMLElement> {
+  const menu = await screen.findByRole('menu')
+  return within(menu).findByText(name)
+}
+
+/** An authenticated snapshot whose account has set no display name, so the
+ * personal organization renders the host's generic copy instead of a person's
+ * name. */
+function snapshotWithoutDisplayName() {
+  const snapshot = authenticatedSnapshot({
+    features: readyFeatures(...PERSONAL_FEATURES),
+  })
+  if (snapshot.principal === null) {
+    throw new Error('the authenticated snapshot carries no principal')
+  }
+  return {
+    ...snapshot,
+    principal: { ...snapshot.principal, display_name: '' },
+  }
+}
 
 /** Binds a scripted request function: the case-specific answers are plain
  * values, and the seam's generic result type is the caller's contract. */
@@ -264,11 +298,8 @@ describe('the tenant frame and the personal tenant', () => {
       ),
     })
 
-    expect(
-      await screen.findByRole('button', {
-        name: demoEnUS.organization.personal,
-      }),
-    ).toBeInTheDocument()
+    await openAccountMenu()
+    expect(await findOrganizationRow(ACCOUNT_NAME)).toBeInTheDocument()
     expect(ensureCalls).toEqual([ENSURE_PATH])
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
     expect(getCurrentTenantAlias()).toBe(PERSONAL_ID)
@@ -306,9 +337,12 @@ describe('the tenant frame and the personal tenant', () => {
     })
 
     // The list holds another tenant, but not the caller's own personal one, so
-    // the backfill asks for it. The settled current tenant is not replaced.
+    // the backfill asks for it -- once: the current tenant settling beside it
+    // is not a second reason to ask. The settled current tenant is not
+    // replaced.
     await waitFor(() => expect(ensureCalls).toHaveLength(1))
     await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    expect(ensureCalls).toHaveLength(1)
   })
 
   it('settles the first membership that is not the account’s personal tenant', async () => {
@@ -397,22 +431,20 @@ describe('the tenant frame and the personal tenant', () => {
     // membership source rather than a special case.
     await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
     await waitFor(() => expect(selfCalls.length).toBeGreaterThanOrEqual(2))
-    expect(
-      await screen.findByRole('button', { name: demoEnUS.organization.personal }),
-    ).toBeInTheDocument()
+    await openAccountMenu()
+    expect(await findOrganizationRow(ACCOUNT_NAME)).toBeInTheDocument()
   })
 
   it('renders the personal label in the interface language', async () => {
     script({ roster: 'refused' })
     renderDemoApp({
       language: 'zh-CN',
-      session: createTestSession(
-        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
-      ),
+      session: createTestSession(snapshotWithoutDisplayName()),
     })
 
+    await openAccountMenu()
     expect(
-      await screen.findByRole('button', { name: demoZhCN.organization.personal }),
+      await findOrganizationRow(demoZhCN.organization.personal),
     ).toBeInTheDocument()
   })
 
@@ -574,9 +606,8 @@ describe('the tenant frame and the personal tenant', () => {
     fireEvent.click(
       screen.getByRole('button', { name: demoEnUS.organization.failure.retry }),
     )
-    expect(
-      await screen.findByRole('button', { name: demoEnUS.organization.personal }),
-    ).toBeInTheDocument()
+    await openAccountMenu()
+    expect(await findOrganizationRow(ACCOUNT_NAME)).toBeInTheDocument()
     expect(ensureCalls).toHaveLength(2)
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
   })
@@ -689,9 +720,8 @@ describe('the tenant frame and the personal tenant', () => {
     const session = createTestSession(snapshotWithProfile(true))
     renderDemoApp({ session })
 
-    expect(
-      await screen.findByRole('button', { name: demoEnUS.organization.personal }),
-    ).toBeInTheDocument()
+    await openAccountMenu()
+    expect(await findOrganizationRow(ACCOUNT_NAME)).toBeInTheDocument()
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
     expect(getCurrentTenantAlias()).toBe(PERSONAL_ID)
 

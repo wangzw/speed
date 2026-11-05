@@ -11,7 +11,7 @@
  * always, the notification card when the route layer leaves its
  * declaration in force (useHasRoute), and the admin card only to platform
  * staff while at least one admin page is served -- pointing at the first such
- * page the principal may open, the same derivation the header entry uses
+ * page the principal may open, the same derivation the account menu's entry uses
  * (src/admin-routes.ts's firstAdminTarget). The gates fail closed: a
  * permission set or feature document the host has not settled reads as "not
  * offered", so a card stays hidden until the fact it depends on is known.
@@ -40,6 +40,7 @@ import {
   adminShellRoutes,
   useAdminTarget,
 } from '../admin-routes.js'
+import { useCurrentTenantId } from '../chrome.js'
 import { useOrganizationAdminAdmission } from '../organization-admin.js'
 import { ACCOUNT_PATH, NOTIFICATIONS_PATH } from '../paths.js'
 import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
@@ -188,21 +189,24 @@ function RouteStartCard({
 }
 
 /**
- * The admin card: offered only to a principal holding a platform permission,
- * while at least one admin declaration is in force, and pointing at the
- * first admin page the principal may open. It calls the same
- * useAdminTarget the header's admin entry does (src/app.tsx), so card and
- * entry never disagree about where the admin is or whether it is offered at
- * all -- including during an impersonation, when neither offers it. While the
- * feature document or the permission set is unsettled the card is hidden (both
- * answers fail closed).
+ * The admin card: offered only while the current organization is the
+ * platform's own `system` tenant, to a principal holding a platform
+ * permission, with at least one admin declaration in force, and pointing at
+ * the first admin page the principal may open. It calls the same
+ * useAdminTarget the account menu's admin entry does (src/app.tsx) and reads
+ * the same current tenant, so card and entry never disagree about where the
+ * admin is or whether it is offered at all -- including during an
+ * impersonation, when neither offers it. While the feature document, the
+ * permission set or the current tenant is unsettled the card is hidden (all
+ * three fail closed).
  */
 function AdminStartCard(): ReactElement | null {
   const presence = featurePresence(useFeatureState())
+  const tenantId = useCurrentTenantId()
   const target = useAdminTarget(
     presentDeclarations(adminShellRoutes, presence),
   )
-  if (target === null) {
+  if (target === null || tenantId !== 'system') {
     return null
   }
   return <StartCardView card={{ key: 'admin', path: target }} />

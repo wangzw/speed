@@ -40,7 +40,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import {
   TenantProvider,
@@ -61,11 +60,9 @@ import type {
   RouteGuardStatus,
 } from '@speed/layout-kit'
 import {
-  NotificationBell,
   NotificationPresenceProvider,
   NotificationStreamProvider,
 } from '@speed/notification-ui'
-import type { AdminRoute } from '@speed/admin-ui'
 import {
   OrganizationAdminProvider,
   organizationAdminOperations,
@@ -81,7 +78,6 @@ import {
   useNavigate,
   useNavItems,
   useRedirect,
-  useRouteLinkProps,
 } from '@speed/route-kit'
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
 import type { MouseEvent, ReactElement, ReactNode } from 'react'
@@ -101,14 +97,17 @@ import {
   setCurrentTenantId,
   setTenantAlias,
   setTenantAliases,
-  TenantMenu,
   TenantRosterFailure,
   UserMenu,
   AccountEntry,
   useCurrentTenantId,
   useTenantSelection,
 } from './chrome.js'
-import type { DemoTenant } from './chrome.js'
+import type {
+  AccountMenuDestination,
+  AccountMenuOrganizations,
+  DemoTenant,
+} from './chrome.js'
 import { ACCOUNT_ENTRY } from './account-entry.js'
 import { AdminArea } from './admin/admin-area.js'
 import {
@@ -950,8 +949,12 @@ function TenantFrame({
         // Read the cell, not this render's state: the settlement effect above
         // runs earlier in the same commit and writes it synchronously, so a
         // tenant it just settled (the roster's staff default, for one) is
-        // already visible here even though React has not re-rendered.
-        if (tenantId === null && getCurrentTenantId() === null) {
+        // already visible here even though React has not re-rendered. The
+        // cell is also what the effect's guard reads, so the current tenant
+        // settling is not a reason to run this effect again -- the tenant it
+        // settles is not the missing personal one, and re-running would ask
+        // for the same backfill a second time while the first is in flight.
+        if (getCurrentTenantId() === null) {
           setTenantId(answer.tenant.id)
           setTenantSettled(true)
         }
@@ -975,7 +978,6 @@ function TenantFrame({
     featuresReady,
     personalServed,
     selfState,
-    tenantId,
     principalId,
     generation,
     personalRetry,
@@ -1022,6 +1024,50 @@ function TenantFrame({
     organizationAdmission.status === 'allowed'
       ? organizationAdmission.children
       : undefined
+  // The organization list the account menu offers, and the roster read's
+  // failure notice under its rows. Both the header menu and the sidebar entry
+  // receive this one value, so the two surfaces cannot drift. The list is
+  // withheld while an impersonation is in force and during the identity-change
+  // gap after one ends: the impersonation is confined to one tenant, the
+  // roster read is unreachable and the replacement list is the grant's tenant
+  // alone, so the section would have nothing to offer. Withholding it also
+  // keeps those rows out of the accessibility tree and the tab order.
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const organizations: AccountMenuOrganizations | undefined =
+    impersonating || identitySettling
+      ? undefined
+      : {
+          tenants: menuTenants,
+          tenantId,
+          onSelect: setTenantId,
+          notice: rosterFailed ? (
+            <TenantRosterFailure
+              onRetry={() => setRosterAttempt((current) => current + 1)}
+            />
+          ) : undefined,
+        }
+  // The account menu's destination into the platform admin: the first admin
+  // page the principal may open (useAdminTarget, src/admin-routes.ts), shown
+  // only while the current organization is the platform's own `system`
+  // tenant. Platform administration is not a tenant member's surface, and
+  // offering the way in from every organization put a staff-only console in
+  // front of ordinary members' menus. An impersonating identity gets the
+  // effective account's answer, which for a real target is null because a
+  // target holds no platform permission. The set is not known synchronously
+  // -- the host attaches it once the caller's platform permissions have been
+  // read -- so the entry is absent until the set lands, which is the safe
+  // direction. The start page's admin card calls the same hook, so the two
+  // never disagree.
+  const adminTarget = useAdminTarget(adminRoutes)
+  const adminDestination: AccountMenuDestination | undefined =
+    adminTarget === null || tenantId !== 'system'
+      ? undefined
+      : {
+          id: 'admin',
+          label: t('nav.admin'),
+          target: adminTarget,
+          icon: <AdminNavIcon size={24} />,
+        }
 
   // The tenant navigation is the home entry alone. The admin's pages are
   // filtered out (the admin entry lives in the header's action slot, offered
@@ -1107,69 +1153,32 @@ function TenantFrame({
               <ContactVerificationBanner />
             </>
           }
-          // The notification bell rides the header actions slot beside the
-          // shared chrome; it opens the notification surface. It lives only
-          // in the tenant area (the admin resolves no tenant, so its bell
-          // would have nothing to read) and only when notification.inbox is
-          // served: a deployment without it has no destination for the bell.
-          // The admin entry sits at the same end of the bar, nearest the
-          // account controls, and shows only to platform staff (AdminEntry
-          // gates itself).
-          headerActions={(rail) => (
-            <>
-              {inboxServed ? (
-                <NotificationBell
-                  onClick={() => navigate(NOTIFICATIONS_PATH)}
-                />
-              ) : null}
-              <AdminEntry routes={adminRoutes} narrow={rail.narrow} />
-            </>
-          )}
+          // The bar carries no notification control of its own: the unread
+          // count rides the account avatar (`notifications` below), and the
+          // inbox is one entry of the account menu. The badge is offered only
+          // when the deployment serves notification.inbox -- a deployment
+          // without that endpoint has nothing to count, and the read would be
+          // refused on every mount.
+          headerActions={() => null}
           sidebarCollapsed={sidebarCollapsed}
           onSidebarCollapsedChange={onSidebarCollapsedChange}
-          // The tenant switcher sits in the userMenu slot (the design's
-          // placement for it) ahead of the account menu. It is not mounted
-          // while impersonating: the impersonation is confined to one tenant,
-          // the roster read is unreachable and its replacement list is the
-          // grant's tenant alone, so the switcher has nothing to offer and
-          // would show "no current tenant" against the banner that states the
-          // tenant. Not mounting it also keeps it out of the accessibility
-          // tree and the tab order, and the bar closes over the missing item
-          // (the slot is a flex row, so the remaining controls simply sit
-          // together). Once the impersonation ends the effect above settles
-          // the tenant again from the caller tenant list and the roster, and
-          // the switcher returns over the settled row; until those reads land
-          // the identity-change gap keeps it out of the bar for the same
-          // reason -- the host has no tenant to show yet, and its
-          // no-current-tenant text belongs to a host that settles none.
+          // The account entry, its organization list and the admin entry are
+          // one menu: both placements receive the same values, so the header
+          // dropdown and the sidebar row cannot drift into two menus.
           navFooter={(rail) =>
             ACCOUNT_ENTRY === 'header' ? null : (
               <AccountEntry
                 narrow={rail.narrow}
                 closeDrawer={rail.closeDrawer}
                 organizationItems={organizationItems}
+                organizations={organizations}
+                destination={adminDestination}
+                notifications={inboxServed}
               />
             )
           }
           userMenu={(rail) => (
             <>
-              {/* A failed roster read leaves the current tenant and the
-                  membership facts as they were; the notice beside the
-                  switcher says what could not be named and retries it. */}
-              {rosterFailed ? (
-                <TenantRosterFailure
-                  onRetry={() => setRosterAttempt((current) => current + 1)}
-                  compact={rail.narrow}
-                />
-              ) : null}
-              {impersonating || identitySettling ? null : (
-                <TenantMenu
-                  tenants={menuTenants}
-                  tenantId={tenantId}
-                  onTenantSelect={setTenantId}
-                  compact={rail.narrow}
-                />
-              )}
               {/* The chip sits ahead of the account menu: while an
                   impersonation is in force it is the persistent visible
                   indication, and it toggles the notice (its close control
@@ -1180,6 +1189,9 @@ function TenantFrame({
                   narrow={rail.narrow}
                   closeDrawer={rail.closeDrawer}
                   organizationItems={organizationItems}
+                  organizations={organizations}
+                  destination={adminDestination}
+                  notifications={inboxServed}
                 />
               )}
             </>
@@ -1219,88 +1231,6 @@ function TenantFrame({
         </ImpersonationNoticeProvider>
       </NotificationStreamProvider>
     </TenantProvider>
-  )
-}
-
-/**
- * The header's admin entry: a link into the first admin page the principal
- * may open, shown only to a principal that holds a platform permission and
- * only while at least one admin declaration is in force.
- *
- * The target comes from useAdminTarget (src/admin-routes.ts): the first
- * labelled declaration, in table order, with no permission code or one the
- * effective account's platform permission set holds. An impersonating identity
- * gets the effective account's answer, which for a real target is null because
- * a target holds no platform permission. The set is not known synchronously --
- * the host attaches it once the caller's platform permissions have been read,
- * and useAuthState reads null until then -- so the entry is hidden until the set
- * lands, which is the safe direction: a member never sees the entry for the
- * moment before the set arrives. The start page's admin card calls the same
- * hook, so the two never disagree.
- *
- * It routes in place (the same seam every other entry uses), so entering the
- * admin does not reload the page and sign the operator out, and it keeps its
- * href so a middle-click or a copied URL still reaches the admin.
- */
-function AdminEntry({
-  routes,
-  narrow = false,
-}: {
-  /** The admin declarations the presence predicate left in force. */
-  readonly routes: readonly AdminRoute[]
-  /** Whether the entry renders in the collapsed sidebar rail, where only an
-   * icon fits; the accessible name stays the entry's label. */
-  readonly narrow?: boolean
-}): ReactElement | null {
-  // The admin entry follows the effective account's platform set alone; an
-  // impersonating identity gets the same derivation as any other viewer.
-  const target = useAdminTarget(routes)
-  if (target === null) {
-    return null
-  }
-  // The link itself renders in its own component: the href/onClick pair is a
-  // hook call, and hooks cannot follow the null branch above.
-  return <AdminEntryLink target={target} narrow={narrow} />
-}
-
-/** The admin entry's anchor, with route-kit's basename-aware href and its
- * plain-click-navigates / modified-click-stays-with-the-browser handler. */
-function AdminEntryLink({
-  target,
-  narrow,
-}: {
-  /** The admin page the entry points at (a route, not yet a served URL). */
-  readonly target: string
-  /** Icon form for the collapsed rail. */
-  readonly narrow: boolean
-}): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
-  const { href, onClick } = useRouteLinkProps(target)
-  if (narrow) {
-    return (
-      <IconButton
-        color="inherit"
-        aria-label={t('nav.admin')}
-        href={href}
-        onClick={onClick}
-      >
-        <AdminNavIcon size={20} />
-      </IconButton>
-    )
-  }
-  // The entry is an action, not a label: it wears the header's outlined
-  // pill — the same visual language and size tier as the SYSTEM capsule —
-  // while the collapsed rail keeps its icon-only form.
-  return (
-    <Button
-      color="inherit"
-      variant="outlined"
-      size="small"
-      href={href}
-      onClick={onClick}
-    >
-      <DemoNavLabel labelKey="nav.admin" />
-    </Button>
   )
 }
 
@@ -1396,9 +1326,10 @@ function useAdminTenantSettle(authenticated: boolean): void {
  * rendered with its content swapped for a no-permission surface: the menu names
  * are themselves information a non-staff viewer must not receive.
  *
- * It settles the area tier of the admin gate, between the header entry
- * (AdminEntry, which hides the way in) and each page's own code (the route
- * guard below, which turns a staff viewer away from a page they lack). The
+ * It settles the area tier of the admin gate, between the account menu's
+ * admin entry (which hides the way in outside the `system` organization) and
+ * each page's own code (the route guard below, which turns a staff viewer
+ * away from a page they lack). The
  * decision is drawn from the platform permission set (auth-core's 'system'
  * domain), read here before the shell renders so a denied viewer never sees
  * even its chrome. The snapshot's `impersonating` fact is decided first,
@@ -1557,8 +1488,9 @@ function ContactVerificationRedirect(): null {
  * The area tier's decision for the current session. The criterion is the
  * platform permission set, not any one page's code: the area is staff-only, so
  * holding a single platform permission is what tells staff from an ordinary
- * member. (The header entry keys on the first page whose code is held; the two
- * agree on the demo's principals, which hold everything or nothing.) An
+ * member. (The account menu's entry keys on the first page whose code is
+ * held; the two agree on the demo's principals, which hold everything or
+ * nothing.) An
  * unknown set is pending, never granted.
  */
 function adminAreaStatus(
@@ -1770,7 +1702,7 @@ function RoutePresenceFailed(): ReactElement {
  * code (the admin declarations carry tenant.read / settings.read /
  * audit.read). A code held, or a page with no code, is allowed; a code the
  * principal is known not to hold is denied. This is the innermost tier of the
- * admin gate -- the header entry (AdminEntry) hides the way in, the area
+ * admin gate -- the account menu's admin entry hides the way in, the area
  * gate (AdminAreaGate) turns a non-staff viewer away before the shell
  * renders, and this guard settles each page's own code within the area. It
  * runs only inside the area, where the platform set is already known, so its

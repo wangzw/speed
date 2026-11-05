@@ -4,8 +4,9 @@
  * It shows the platform's assembled capabilities as a card grid rather than
  * developer copy. Each card is an anchor carrying its target path and, on a
  * plain click, routing there without a reload. A card that declares a platform
- * permission -- the admin card, held to the same code the header entry uses
- * -- is offered only to a principal that holds it and stays hidden while the
+ * permission -- the admin card, held to the same code the account menu's
+ * admin entry uses -- is offered only while the current organization is the
+ * platform's own and the principal holds the code, and stays hidden while the
  * permission set is unknown. The member-facing cards (account,
  * notifications) declare no permission and are offered to every signed-in
  * viewer.
@@ -16,6 +17,8 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { emittedStyleText } from '../test-utils/emitted-css.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
+import { setCurrentTenantId, setTenantAliases } from '../chrome.js'
+import { clearSelfTenants } from '../tenant-self.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -29,6 +32,12 @@ import {
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
+  // The admin card is offered only from the platform's own `system`
+  // organization, so the suite settles the current organization there; each
+  // case then isolates the fact it varies (permission or impersonation).
+  setCurrentTenantId('system')
+  setTenantAliases(new Map([['system', 'system']]))
+  clearSelfTenants()
 })
 
 /** The card link for a capability, located by the heading it carries (the

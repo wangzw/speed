@@ -75,8 +75,14 @@ import {
 } from '../fixtures/identity-provider'
 import type { EnterpriseIdentityProvider } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
-import { createAccounts, type Accounts } from '../helpers/accounts'
 import { expectAccountMenuName } from '../helpers/account-menu'
+import { createAccounts, type Accounts } from '../helpers/accounts'
+import {
+  adminEntry,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import {
   expandAccountRows,
   openAccountSection,
@@ -84,6 +90,7 @@ import {
 } from '../helpers/account-sections'
 import { copy, copyPattern } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
+import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 import {
   addVirtualAuthenticator,
   type VirtualAuthenticator,
@@ -215,13 +222,6 @@ function verificationSection(page: Page): Locator {
   return emailCard(page)
 }
 
-/** The header's admin entry (a link, while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
-}
-
 /** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
@@ -233,6 +233,51 @@ function adminNav(page: Page): Locator {
 /** One admin navigation link by its page title. */
 function adminLink(page: Page, label: string): Locator {
   return adminNav(page).getByRole('link', { name: label, exact: true })
+}
+
+/** The platform's own organization. The account menu offers the admin entry
+ * only while this is the current organization; platform administration is not
+ * a tenant member's surface. */
+const PLATFORM_TENANT = 'system'
+
+/**
+ * Move the tenant area to one organization through the account menu. The
+ * menu's first entry names the current organization and expands the others;
+ * choosing one closes the menu, switches, and announces the confirmation.
+ */
+async function switchToTenant(page: Page, tenant: string): Promise<void> {
+  const menu = await openAccountMenu(page)
+  if (
+    (await organizationRow(page, tenant).count()) > 0 ||
+    (await menu.getByText(tenant, { exact: true }).count()) > 0
+  ) {
+    // The organization is already current: its row is the expansion control,
+    // or context when it is the only one, and never a pick.
+    await closeAccountMenu(page)
+    return
+  }
+  await menu.getByRole('menuitem').first().click()
+  const row = organizationRow(page, tenant)
+  await expect(row).toBeVisible()
+  await row.click()
+  await expectClippedAnnouncement(
+    page,
+    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+  )
+  await expect(page.getByRole('menu')).toHaveCount(0)
+}
+
+/**
+ * Open the admin from the tenant area. The way in is the account menu's admin
+ * entry, offered only while the platform's own organization is current, so
+ * the journey moves there first.
+ */
+async function openConsole(page: Page): Promise<void> {
+  await switchToTenant(page, PLATFORM_TENANT)
+  await openAccountMenu(page)
+  await expect(adminEntry(page)).toBeVisible()
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
 }
 
 /** The tenant selector of a tenant-addressed admin page. */
@@ -643,9 +688,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         .click()
       await expect(homeHeading(operatorPage)).toBeVisible()
 
-      await expect(adminEntry(operatorPage)).toBeVisible()
-      await adminEntry(operatorPage).click()
-      await expect(adminNav(operatorPage)).toBeVisible()
+      await openConsole(operatorPage)
       await adminLink(operatorPage, copy('adminUi', 'sso.title')).click()
       await expect(
         operatorPage.getByRole('heading', {

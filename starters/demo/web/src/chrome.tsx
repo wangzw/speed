@@ -11,16 +11,16 @@
  * The pieces:
  *
  *  - AppBrand: the demo namespace's product title.
- *  - TenantMenu: tenancy-ui's TenantSwitcher over the caller's own tenant
- *    list (the caller tenant read). product-shell places the switcher in the
- *    userMenu slot; the admin banner, which resolves no tenant, does not
- *    render it. Its switch confirmation is announced but never painted.
  *  - UserMenu: an avatar trigger opening the account menu -- the same entries
  *    the sidebar account entry carries, from one shared list: the
- *    notification centre, the four account panes, the organization admin group
- *    (only while the caller's admission supplies it) and sign-out. While an
- *    impersonation is in force, auth-ui's end item sits first: closing the
- *    banner must not strand the operator without a way to end it.
+ *    organization list (tenancy-ui's rows over the caller's own tenant read,
+ *    with the current one marked and unselectable), the notification centre,
+ *    the four account panes, the organization admin group (only while the
+ *    caller's admission supplies it), the destination into the other area
+ *    (the platform admin from the tenant area, the way back from the admin)
+ *    and sign-out. While an impersonation is in force, auth-ui's end item
+ *    sits first: closing the banner must not strand the operator without a
+ *    way to end it.
  *
  * The module also owns the device side of the color-mode preference: the
  * storage helpers the account page and the tenant frame use to mirror the
@@ -30,22 +30,32 @@
  */
 
 import { useCallback, useId, useRef, useState, useSyncExternalStore } from 'react'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
+import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Collapse from '@mui/material/Collapse'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import type { Theme } from '@mui/material/styles'
+import type { SxProps, Theme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { ImpersonationEndMenuItem } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
+import {
+  NOTIFICATION_BADGE_MAX,
+  useNotificationUnread,
+} from '@speed/notification-ui'
+import type { NotificationUnread } from '@speed/notification-ui'
 import { Avatar, avatarInitials } from '@speed/layout-kit'
 import type { AppShellNavItem } from '@speed/layout-kit'
-import { useNavigate } from '@speed/route-kit'
-import { TenantSwitcher } from '@speed/tenancy-ui'
+import { useNavigate, useRouteLinkProps } from '@speed/route-kit'
+import {
+  TenantMenuItems,
+  TenantSwitchAnnouncement,
+} from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
 import { themePresets } from '@speed/theme-presets'
 import type { AppThemeModePreference } from '@speed/ui-kit'
@@ -341,52 +351,73 @@ export function AppBrand(): ReactElement {
 }
 
 /**
- * The tenant switcher over the caller's own tenant list. The current tenant is
- * a host fact (a route change, not a session op), and product-shell places the
- * switcher in the userMenu slot; the admin banner, which resolves no tenant,
- * does not render it.
- *
- * Every row the host offers is rendered. A tenant record carries no display
- * name, so a row renders its alias -- the request-surface name, never
- * translated -- except a row whose kind is `personal`, which renders the
- * host's bilingual 「组织 / Organization」 text. The kind comes from the caller
- * tenant read, so another account's personal tenant (which the list can hold)
- * renders its alias too: only the host's own answer marks a row personal.
+ * The organization list the account menu offers: the rows the host's tenant
+ * read produced, the tenant the host currently resolves to, and the pick
+ * handler. Absent leaves the section out of the menu -- the admin area
+ * resolves no tenant, and an impersonation is confined to one.
  */
-export function TenantMenu({
-  tenants: offered,
-  tenantId,
-  onTenantSelect,
-  compact = false,
-}: {
-  /** The tenant list the host offers: the caller tenant read's rows plus the
-   * current tenant when the list does not hold it. Required -- the host has no
-   * default roster to fall back on. */
+export interface AccountMenuOrganizations {
+  /** The caller tenant read's rows plus the current tenant when the list does
+   * not hold it, each with the display name it renders. */
   readonly tenants: readonly DemoTenant[]
   /** The id of the tenant the host currently resolves to, or null. */
   readonly tenantId: string | null
   /** Reports the tenant the user picked; the host switches its route/state. */
-  readonly onTenantSelect: (tenantId: string) => void
-  /** Icon-only trigger for the collapsed sidebar rail, where the tenant
-   * name does not fit. The switch confirmation is announced but never
-   * painted, in this form and the full one alike. */
-  readonly compact?: boolean
-}): ReactElement {
+  readonly onSelect: (tenantId: string) => void
+  /** The roster read's failure notice, rendered under the rows: the read names
+   * tenants outside the caller's own memberships, and a failed one explains
+   * what could not be named and offers the retry. */
+  readonly notice?: ReactNode
+}
+
+/**
+ * The name an organization row renders. A tenant record carries no display
+ * name, so a row renders its alias -- the request-surface name, never
+ * translated -- except a row whose kind is `personal`, which renders
+ * `personalLabel`. The kind comes from the caller tenant read, so another
+ * account's personal tenant (which the list can hold) renders its alias too:
+ * only the host's own answer marks a row personal.
+ */
+export function tenantDisplayName(
+  tenant: DemoTenant,
+  personalLabel: string,
+): string {
+  return tenant.kind === 'personal' ? personalLabel : tenant.alias
+}
+
+/**
+ * What a personal organization row is called: the signed-in account's own
+ * display name. The personal organization is that account's own space, so it
+ * is named after the person rather than by a generic word; an account that
+ * has set no display name falls back to the host's bilingual 「组织 /
+ * Organization」 text.
+ */
+export function usePersonalOrganizationName(): string {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const tenants: readonly DemoTenant[] = offered.map((tenant) =>
-    tenant.kind === 'personal'
-      ? { ...tenant, name: t('organization.personal') }
-      : { ...tenant, name: tenant.alias },
-  )
-  return (
-    <TenantSwitcher
-      tenants={tenants}
-      currentTenantId={tenantId}
-      onSelect={onTenantSelect}
-      compact={compact}
-      announcement="visually-hidden"
-    />
-  )
+  const snapshot = useAuthState()
+  const displayName =
+    snapshot.state === 'authenticated'
+      ? snapshot.principal?.display_name.trim()
+      : undefined
+  return displayName === undefined || displayName === ''
+    ? t('organization.personal')
+    : displayName
+}
+
+/**
+ * One destination into the other area of the app, as the account menu renders
+ * it: the platform admin entry in the tenant area, the way back to the tenant
+ * area in the admin. It is a real link carrying route-kit's basename-aware
+ * href and click handler, so a modified or new-tab click keeps the browser's
+ * behavior while a plain click navigates in place.
+ */
+export interface AccountMenuDestination {
+  readonly id: string
+  readonly label: string
+  /** The route-kit route the entry opens. */
+  readonly target: string
+  /** The glyph shown in the menu's icon cell; absent leaves the cell empty. */
+  readonly icon?: ReactNode
 }
 
 /**
@@ -590,6 +621,9 @@ export function UserMenu({
   narrow = false,
   closeDrawer,
   organizationItems,
+  organizations,
+  destination,
+  notifications = false,
 }: {
   /** Tightens the trigger for the collapsed sidebar rail, where the stock
    * padding would push it past the paper's edge. */
@@ -601,6 +635,17 @@ export function UserMenu({
   /** The organization admin group's entries, supplied only while the caller's
    * admission allows it; absent leaves the group out. */
   readonly organizationItems?: readonly AppShellNavItem[]
+  /** The organization list the menu offers; absent leaves the section out (the
+   * admin area resolves no tenant, and an impersonation is confined to one). */
+  readonly organizations?: AccountMenuOrganizations
+  /** The destination into the other area -- the platform admin from the tenant
+   * area, the tenant area from the admin; absent leaves it out. */
+  readonly destination?: AccountMenuDestination
+  /** Whether the avatar carries the unread-notification badge. The host
+   * passes it only where the deployment serves the inbox: a deployment
+   * without that endpoint has nothing to count, and the read would be
+   * refused on every mount. */
+  readonly notifications?: boolean
 } = {}): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
@@ -609,6 +654,26 @@ export function UserMenu({
   const menuId = useId()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const menuOpen = anchorEl !== null
+  // The tenant the last organization pick switched to, for the clipped live
+  // region beside the trigger. It is held here, outside the menu, because the
+  // menu closes on a pick and a live region born and gone with it is not
+  // reliably announced.
+  const [switchedTenant, setSwitchedTenant] = useState<string | null>(null)
+  const personalOrganizationName = usePersonalOrganizationName()
+  const selectTenant = (tenantId: string): void => {
+    if (organizations === undefined) {
+      return
+    }
+    const picked = organizations.tenants.find(
+      (tenant) => tenant.id === tenantId,
+    )
+    organizations.onSelect(tenantId)
+    setSwitchedTenant(
+      picked === undefined
+        ? null
+        : tenantDisplayName(picked, personalOrganizationName),
+    )
+  }
 
   const displayName =
     snapshot.state === 'authenticated'
@@ -619,12 +684,22 @@ export function UserMenu({
   // would omit the on-screen initials. Both come from the same derivation
   // the avatar renders, so the two cannot drift.
   const initials = avatarInitials(displayName)
-  const triggerLabel =
+  const accountName =
     displayName === undefined || displayName.trim() === ''
       ? t('userMenu.accountMenu')
       : initials === ''
         ? displayName
         : `${initials} ${displayName}`
+  // The unread badge is visible text, so the trigger's accessible name
+  // carries its phrase as well (WCAG 2.5.3).
+  const unread = useNotificationUnread(notifications)
+  const triggerLabel =
+    unread.phrase === null
+      ? accountName
+      : t('userMenu.triggerWithNotifications', {
+          account: accountName,
+          notifications: unread.phrase,
+        })
 
   const closeMenu = (): void => setAnchorEl(null)
   // The surface may sit inside AppShell's temporary drawer (the sidebar shell
@@ -666,8 +741,21 @@ export function UserMenu({
         data-testid="user-menu-trigger"
         onClick={(event) => setAnchorEl(event.currentTarget)}
       >
-        <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
+        <Badge
+          color="error"
+          max={NOTIFICATION_BADGE_MAX}
+          overlap="circular"
+          sx={unreadBadgeSx}
+          badgeContent={
+            unread.badgeText === null ? undefined : (
+              <span aria-hidden="true">{unread.badgeText}</span>
+            )
+          }
+        >
+          <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
+        </Badge>
       </IconButton>
+      <TenantSwitchAnnouncement tenantName={switchedTenant} />
       <Menu
         id={menuId}
         anchorEl={anchorEl}
@@ -685,6 +773,13 @@ export function UserMenu({
           onClose={closeMenu}
           onDismiss={dismissSurface}
           organizationItems={organizationItems}
+          organizations={
+            organizations === undefined
+              ? undefined
+              : { ...organizations, onSelect: selectTenant }
+          }
+          destination={destination}
+          unread={unread}
         />
       </Menu>
     </Box>
@@ -739,6 +834,61 @@ const accountMenuItemIconSx = {
  * 9px margin and 1px border. */
 const accountMenuItemSx = { pl: '6px' } as const
 
+/** The organization row when it is context rather than a control: the account
+ * may enter only one organization, so there is nothing to switch to. It keeps
+ * a menu entry's metrics so it sits on the same track, and offers no hover or
+ * focus. */
+const nonInteractiveRowSx = {
+  display: 'flex',
+  alignItems: 'center',
+  py: 0.75,
+  pr: 2,
+  pl: 2,
+  typography: 'body1',
+} as const
+
+/**
+ * One organization row's mark: a rounded tile carrying the organization's
+ * initial. It sits in the menu's icon cell so the names share the track every
+ * other entry's label starts on, and it gives each organization a stable
+ * shape to recognise in a list that is otherwise bare names. Decorative: the
+ * row's name is its accessible name.
+ */
+function OrganizationTile({ name }: { readonly name: string }): ReactElement {
+  const initial = (Array.from(name.trim())[0] ?? '').toUpperCase()
+  return (
+    <Box
+      component="span"
+      aria-hidden="true"
+      sx={(theme) => ({
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: theme.spacing(3),
+        height: theme.spacing(3),
+        borderRadius: 0.75,
+        bgcolor: 'action.hover',
+        color: 'text.secondary',
+        typography: 'caption',
+        fontWeight: 600,
+        lineHeight: 1,
+      })}
+    >
+      {initial}
+    </Box>
+  )
+}
+
+/** The unread badge's ink: a pale `error.light` fill under the neutral-900
+ * ink. A solid `error.main` fill reads as black in the glass preset, whose
+ * semantic tones are deepened for its pastel canvas; `error.dark` on the pale
+ * fill only clears contrast in that same preset (2.3:1 in the default one,
+ * 4.4:1 in ascii), while the neutral ink clears it everywhere, in both
+ * modes. */
+const unreadBadgeSx = {
+  '& .MuiBadge-badge': { bgcolor: 'error.light', color: 'grey.900' },
+} as const
+
 /** The sign-out glyph: a door with an outward arrow, decorative only. */
 function SignOutIcon() {
   return (
@@ -788,6 +938,9 @@ function AccountMenuItems({
   onDismiss,
   itemSx,
   organizationItems,
+  organizations,
+  destination,
+  unread,
 }: {
   /** Opens a destination; the surface closes itself first. */
   readonly onNavigate: (path: string) => void
@@ -804,18 +957,75 @@ function AccountMenuItems({
   /** The organization admin group's entries, in the admission's order. Absent or
    * empty leaves the group out. */
   readonly organizationItems?: readonly AppShellNavItem[]
+  /** The organization list, already carrying the pick handler the surface
+   * wrapped for its live region; absent leaves the section out. */
+  readonly organizations?: AccountMenuOrganizations
+  /** The destination into the other area; absent leaves the entry out. */
+  readonly destination?: AccountMenuDestination
+  /** The unread count the Messages row carries; absent leaves it plain. */
+  readonly unread?: NotificationUnread
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const notificationsShown =
+    unread !== undefined && unread.badgeText !== null
   return (
     <>
       {/* The same end attempt the banner carries: an impersonation ends from
           wherever the account menu lives. */}
       <ImpersonationEndMenuItem divider onActivate={onClose} />
-      <MenuItem onClick={() => onNavigate(NOTIFICATIONS_PATH)} sx={itemSx}>
+      {/* The organization switcher sits first: it names the context every
+          entry below acts in. The row states which organization is current,
+          so the bar needs no control of its own for it. */}
+      {organizations === undefined ? null : (
+        <>
+          <OrganizationMenuEntry
+            organizations={organizations}
+            onClose={onClose}
+            itemSx={itemSx}
+          />
+          <Divider sx={{ my: 1 }} />
+        </>
+      )}
+      <MenuItem
+        onClick={() => onNavigate(NOTIFICATIONS_PATH)}
+        sx={itemSx}
+        // The count is visible text inside the row, so the row's accessible
+        // name carries it (WCAG 2.5.3) -- and it reads as one sentence
+        // instead of the name plus a stray number.
+        aria-label={
+          notificationsShown
+            ? t('userMenu.messagesWithCount', { n: unread?.badgeText })
+            : undefined
+        }
+      >
         <Box component="span" sx={accountMenuItemIconSx}>
           <NotificationsNavIcon size={24} />
         </Box>
-        {t('userMenu.messages')}
+        <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0 }}>
+          {t('userMenu.messages')}
+        </Box>
+        {notificationsShown ? (
+          <Box
+            component="span"
+            aria-hidden="true"
+            sx={(theme) => ({
+              flex: '0 0 auto',
+              ml: 2,
+              minWidth: theme.spacing(2.5),
+              px: theme.spacing(0.75),
+              py: theme.spacing(0.125),
+              borderRadius: 999,
+              bgcolor: 'error.light',
+              color: 'grey.900',
+              typography: 'caption',
+              fontWeight: 700,
+              lineHeight: 1.5,
+              textAlign: 'center',
+            })}
+          >
+            {unread?.badgeText}
+          </Box>
+        ) : null}
       </MenuItem>
       {/* The menu's section rhythm is set here rather than by MUI's sibling
           rule, which does not match a divider after the group container. */}
@@ -865,6 +1075,16 @@ function AccountMenuItems({
           </Box>
         </>
       ) : null}
+      {destination === undefined ? null : (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <AccountMenuDestinationItem
+            destination={destination}
+            onDismiss={onDismiss}
+            itemSx={itemSx}
+          />
+        </>
+      )}
       <Divider sx={{ my: 1 }} />
       <MenuItem onClick={onSignOut} sx={itemSx}>
         <Box component="span" sx={accountMenuItemIconSx}>
@@ -873,6 +1093,168 @@ function AccountMenuItems({
         {t('userMenu.signOut')}
       </MenuItem>
     </>
+  )
+}
+
+/**
+ * The account menu's organization switcher: one row naming the organization
+ * the account is acting in, with an expansion that lists every organization
+ * the account may enter. The account menu stays short however many
+ * organizations there are -- the full list appears only when asked for.
+ *
+ * The row's mark is the current organization's initial tile and its label the
+ * current organization's name, so the menu states the context without a
+ * separate control in the bar. A pick reports the id and closes the account
+ * menu (`onClose`); the surface that owns the menu holds the switch
+ * confirmation's live region outside it. The expansion carries the roster
+ * read's failure notice under its rows.
+ */
+export function OrganizationMenuEntry({
+  organizations,
+  onClose,
+  itemSx,
+}: {
+  readonly organizations: AccountMenuOrganizations
+  /** Closes the account menu this entry is embedded in. */
+  readonly onClose: () => void
+  /** The entry inset the sidebar's navigation track needs; absent keeps the
+   * menu's default spacing. */
+  readonly itemSx?: typeof accountMenuItemSx
+}): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const [expanded, setExpanded] = useState(false)
+  const personalOrganizationName = usePersonalOrganizationName()
+  const options: readonly TenantOption[] = organizations.tenants.map(
+    (tenant) => ({
+      id: tenant.id,
+      name: tenantDisplayName(tenant, personalOrganizationName),
+    }),
+  )
+  const current =
+    options.find((tenant) => tenant.id === organizations.tenantId) ?? null
+  // The row above already names the current organization, so the expansion
+  // lists only the others: one row per fact, and no organization appears
+  // twice. An account with a single organization has nothing to switch to,
+  // so its row is context rather than a control.
+  const others = options.filter(
+    (tenant) => tenant.id !== organizations.tenantId,
+  )
+  const rowContent = (
+    <>
+      <Box component="span" sx={accountMenuItemIconSx}>
+        <OrganizationTile name={current?.name ?? ''} />
+      </Box>
+      <Box
+        component="span"
+        sx={{
+          flex: '1 1 auto',
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          fontWeight: 600,
+        }}
+      >
+        {current === null ? t('userMenu.organizations') : current.name}
+      </Box>
+    </>
+  )
+  if (others.length === 0) {
+    return (
+      <>
+        <Box sx={[nonInteractiveRowSx, itemSx ?? {}] as SxProps<Theme>}>
+          {rowContent}
+        </Box>
+        {organizations.notice}
+      </>
+    )
+  }
+  return (
+    <>
+      <MenuItem
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+        sx={itemSx}
+      >
+        {rowContent}
+        <Box
+          component="svg"
+          aria-hidden="true"
+          focusable="false"
+          viewBox="0 0 24 24"
+          width={18}
+          height={18}
+          fill="currentColor"
+          sx={(theme) => ({
+            flex: '0 0 auto',
+            color: 'text.secondary',
+            transform: expanded ? 'rotate(90deg)' : 'none',
+            transition: theme.transitions.create('transform'),
+          })}
+        >
+          <path d="M9 6.5 14.5 12 9 17.5z" />
+        </Box>
+      </MenuItem>
+      <Collapse in={expanded} timeout="auto" unmountOnExit>
+        <Box role="group" aria-label={t('userMenu.organizations')}>
+          <TenantMenuItems
+            tenants={others}
+            currentTenantId={organizations.tenantId}
+            onSelect={organizations.onSelect}
+            onDismiss={() => {
+              setExpanded(false)
+              onClose()
+            }}
+            itemSx={itemSx}
+            leading={(tenant) => (
+              <Box component="span" sx={accountMenuItemIconSx}>
+                <OrganizationTile name={tenant.name} />
+              </Box>
+            )}
+          />
+        </Box>
+      </Collapse>
+      {/* The roster read's failure notice sits under the row rather than
+          inside the expansion: an account with a single organization never
+          expands, and the notice is the only way that fault is reported. */}
+      {organizations.notice}
+    </>
+  )
+}
+
+/**
+ * The account menu's destination entry, as the anchor it is. The href/onClick
+ * pair comes from route-kit, so a plain click navigates in place and a
+ * modified or new-tab click stays with the browser; the surface closes itself
+ * either way, as it does for every other entry.
+ */
+function AccountMenuDestinationItem({
+  destination,
+  onDismiss,
+  itemSx,
+}: {
+  readonly destination: AccountMenuDestination
+  readonly onDismiss?: () => void
+  readonly itemSx?: typeof accountMenuItemSx
+}): ReactElement {
+  const { href, onClick } = useRouteLinkProps(destination.target)
+  return (
+    <MenuItem
+      component="a"
+      href={href}
+      onClick={(event) => {
+        onClick(event)
+        onDismiss?.()
+      }}
+      sx={itemSx}
+    >
+      {destination.icon === undefined ? null : (
+        <Box component="span" sx={accountMenuItemIconSx}>
+          {destination.icon}
+        </Box>
+      )}
+      {destination.label}
+    </MenuItem>
   )
 }
 
@@ -900,6 +1282,9 @@ export function AccountEntry({
   narrow = false,
   closeDrawer,
   organizationItems,
+  organizations,
+  destination,
+  notifications = false,
 }: {
   /** The collapsed rail's icon-only form. */
   readonly narrow?: boolean
@@ -908,6 +1293,13 @@ export function AccountEntry({
   /** The organization admin group's entries, supplied only while the caller's
    * admission allows it; absent leaves the group out. */
   readonly organizationItems?: readonly AppShellNavItem[]
+  /** The organization list the menu offers; absent leaves the section out. */
+  readonly organizations?: AccountMenuOrganizations
+  /** The destination into the other area; absent leaves the entry out. */
+  readonly destination?: AccountMenuDestination
+  /** Whether the avatar carries the unread-notification badge; see
+   * UserMenu for the gate. */
+  readonly notifications?: boolean
 }): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
@@ -916,18 +1308,46 @@ export function AccountEntry({
   const menuId = useId()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const menuOpen = anchorEl !== null
+  // See UserMenu: the switch confirmation's live region lives outside the
+  // menu, which closes on the pick.
+  const [switchedTenant, setSwitchedTenant] = useState<string | null>(null)
+  const personalOrganizationName = usePersonalOrganizationName()
+  const selectTenant = (tenantId: string): void => {
+    if (organizations === undefined) {
+      return
+    }
+    const picked = organizations.tenants.find(
+      (tenant) => tenant.id === tenantId,
+    )
+    organizations.onSelect(tenantId)
+    setSwitchedTenant(
+      picked === undefined
+        ? null
+        : tenantDisplayName(picked, personalOrganizationName),
+    )
+  }
 
   const displayName =
     snapshot.state === 'authenticated'
       ? snapshot.principal?.display_name
       : undefined
   const initials = avatarInitials(displayName)
-  const triggerLabel =
+  const accountName =
     displayName === undefined || displayName.trim() === ''
       ? t('userMenu.accountMenu')
       : initials === ''
         ? displayName
         : `${initials} ${displayName}`
+  // The unread badge is visible text, so the trigger's accessible name
+  // carries its phrase as well (WCAG 2.5.3).
+  const unread = useNotificationUnread(notifications)
+  const triggerLabel =
+    unread.phrase === null
+      ? accountName
+      : t('userMenu.triggerWithNotifications', {
+          account: accountName,
+          notifications: unread.phrase,
+        })
 
   const closeMenu = (): void => setAnchorEl(null)
   const dismissSurface = (): void => {
@@ -949,6 +1369,7 @@ export function AccountEntry({
   return (
     <Box data-testid="account-entry" sx={{ width: '100%' }}>
       <Divider />
+      <TenantSwitchAnnouncement tenantName={switchedTenant} />
       <Box sx={{ pt: '12px', pb: '12px' }}>
         <Button
           fullWidth
@@ -978,7 +1399,19 @@ export function AccountEntry({
               width: narrow ? 'auto' : '36px',
             }}
           >
-            <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
+            <Badge
+              color="error"
+              max={NOTIFICATION_BADGE_MAX}
+              overlap="circular"
+          sx={unreadBadgeSx}
+              badgeContent={
+                unread.badgeText === null ? undefined : (
+                  <span aria-hidden="true">{unread.badgeText}</span>
+                )
+              }
+            >
+              <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
+            </Badge>
           </Box>
           {/* The glyph's initials and the display name are two text nodes.
               Without a separator their text coalesces into one word ("TUJane
@@ -1055,6 +1488,13 @@ export function AccountEntry({
           onDismiss={dismissSurface}
           itemSx={accountMenuItemSx}
           organizationItems={organizationItems}
+          organizations={
+            organizations === undefined
+              ? undefined
+              : { ...organizations, onSelect: selectTenant }
+          }
+          destination={destination}
+          unread={unread}
         />
       </Menu>
     </Box>

@@ -173,8 +173,11 @@
   },
   "userMenu": {
     "accountMenu": "Account menu",
+    "organizations": "Organizations",
+    "triggerWithNotifications": "{{account}}, {{notifications}}",
     "accountSettings": "Account settings",
     "messages": "Messages",
+    "messagesWithCount": "Messages, {{n}} unread",
     "preferences": "Preferences",
     "signOut": "Sign out"
   },

@@ -75,6 +75,12 @@ import {
 } from '../fixtures/identity-provider'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  adminEntry,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 import {
@@ -96,8 +102,6 @@ import {
   providerFormSection,
   rolesSection,
   settingsNamespaces,
-  switchTenant,
-  tenantSwitcher,
   verificationBanner,
   verificationSection,
   organizationHomeCard,
@@ -233,12 +237,42 @@ function adminNavigation(page: Page): Locator {
   })
 }
 
-/** The header's admin entry. */
-function adminEntry(page: Page): Locator {
-  return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.admin'),
-    exact: true,
-  })
+/**
+ * The account menu row naming the current organization. The row is a menuitem
+ * while the account has another organization to switch to and a plain row (no
+ * role) when it has none, so the row's text is what both shapes share.
+ */
+function currentOrganizationRow(page: Page, name: string): Locator {
+  return page.getByRole('menu').getByText(name, { exact: true })
+}
+
+/**
+ * Move the tenant area onto `target` through the account menu's organization
+ * row. The row names the current organization and expands to the others; a
+ * pick closes the menu and announces the switch in the menu's live region.
+ */
+async function switchOrganization(
+  page: Page,
+  current: string,
+  target: string,
+): Promise<void> {
+  await openAccountMenu(page)
+  const currentRow = organizationRow(page, current)
+  await expect(currentRow).toBeVisible({ timeout: 15_000 })
+  await currentRow.click()
+  const row = page
+    .getByRole('menu')
+    .getByRole('menuitem', { name: target, exact: true })
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  await row.click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(
+    page.getByRole('status').filter({
+      hasText: copy('tenancyUi', 'tenantSwitcher.switchedTo', {
+        tenant: target,
+      }),
+    }),
+  ).toBeVisible()
 }
 
 /** The seeded platform operator the impersonation branch signs in as. */
@@ -572,7 +606,11 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
-        await expect(tenantSwitcher(invitee, TENANT)).toBeVisible()
+        // The account menu's organization row names the invited tenant as the
+        // current one.
+        await openAccountMenu(invitee)
+        await expect(currentOrganizationRow(invitee, TENANT)).toBeVisible()
+        await closeAccountMenu(invitee)
       })
 
       await test.step('step 6: the colleague is an ordinary member and sees no organization entry', async () => {
@@ -1077,11 +1115,13 @@ test.describe('the tenant administrator manages the organization', () => {
       })
 
       await test.step('step 13: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
-        const personal = copy('demo', 'organization.personal')
+        // A personal organization is named after the account it belongs to, so
+        // the switcher row carries the administrator's own display name.
+        const personal = reviewTenantAdmin.displayName
 
         // REQ-tenant-admin-003/006: the switch retracts the entry, the account
         // menu's organization group and the card at once.
-        await switchTenant(page, TENANT, personal)
+        await switchOrganization(page, TENANT, personal)
         await expect(homeHeading(page)).toBeVisible()
         await expectOrganizationEntryAbsent(page)
 
@@ -1105,7 +1145,7 @@ test.describe('the tenant administrator manages the organization', () => {
 
         // Switching back restores the entry once the new permission set
         // settles.
-        await switchTenant(page, personal, TENANT)
+        await switchOrganization(page, personal, TENANT)
         await expect(homeHeading(page)).toBeVisible()
         await expectOrganizationEntryPresent(page)
       })
@@ -1557,6 +1597,9 @@ test.describe('an impersonated session hides the organization', () => {
 
     await test.step('precondition: the operator signs in and opens the impersonation page', async () => {
       await signInOperatorWithTotp(page, accounts)
+      // The operator's current organization is the platform's own, so the
+      // admin entry is offered from the account menu.
+      await openAccountMenu(page)
       await adminEntry(page).click()
       await expect(adminNavigation(page)).toBeVisible()
 

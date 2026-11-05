@@ -43,9 +43,10 @@
  * STEP 10's IN-APP HALF IS NOT REACHABLE FROM THE TENANT AREA. The document
  * asks for in-app navigation from the tenant area to a admin path quietly
  * landing back on the tenant home. The tenant area offers a plain member no
- * admin destination at all: the header entry and the start page's admin
- * card are hidden by REQ-platform-admin-001, and the navigation lists no
- * admin path. There is therefore no rendered control this step could click.
+ * admin destination at all: the account menu's admin entry and the start
+ * page's admin card are hidden by REQ-platform-admin-001, and the navigation
+ * lists no admin path. There is therefore no rendered control this step could
+ * click.
  * The spec drives the branch the document states for a full-page load instead:
  * a URL navigation to the admin root and to a admin subpath leaves the
  * page on the "checking admin access" wait, renders no admin content, and
@@ -79,7 +80,14 @@ import type { BrowserContext, Locator, Page } from '@playwright/test'
 import { reviewInvitee } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  adminEntry,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
+import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
 // The admin's invitation table has a low-priority expiry column, and the
 // admin sidebar takes part of the width, so the desktop viewport has to be
@@ -151,14 +159,6 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The header's admin entry (a link, while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.admin'),
-    exact: true,
-  })
-}
-
 /** The home page's admin card. */
 function adminCard(page: Page): Locator {
   return page
@@ -176,6 +176,51 @@ function adminNav(page: Page): Locator {
     name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
+}
+
+/** The platform's own organization. The account menu offers the admin entry
+ * only while this is the current organization; platform administration is not
+ * a tenant member's surface. */
+const PLATFORM_TENANT = 'system'
+
+/**
+ * Move the tenant area to one organization through the account menu. The
+ * menu's first entry names the current organization and expands the others;
+ * choosing one closes the menu, switches, and announces the confirmation.
+ */
+async function switchToTenant(page: Page, tenant: string): Promise<void> {
+  const menu = await openAccountMenu(page)
+  if (
+    (await organizationRow(page, tenant).count()) > 0 ||
+    (await menu.getByText(tenant, { exact: true }).count()) > 0
+  ) {
+    // The organization is already current: its row is the expansion control,
+    // or context when it is the only one, and never a pick.
+    await closeAccountMenu(page)
+    return
+  }
+  await menu.getByRole('menuitem').first().click()
+  const row = organizationRow(page, tenant)
+  await expect(row).toBeVisible()
+  await row.click()
+  await expectClippedAnnouncement(
+    page,
+    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+  )
+  await expect(page.getByRole('menu')).toHaveCount(0)
+}
+
+/**
+ * Open the admin from the tenant area. The way in is the account menu's admin
+ * entry, offered only while the platform's own organization is current, so
+ * the journey moves there first.
+ */
+async function openConsole(page: Page): Promise<void> {
+  await switchToTenant(page, PLATFORM_TENANT)
+  await openAccountMenu(page)
+  await expect(adminEntry(page)).toBeVisible()
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
 }
 
 /** The tenant selector of a tenant-addressed admin page. */
@@ -311,12 +356,13 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         }),
       ).toBeVisible()
 
-      // REQ-platform-admin-001's operator facet: both derivations of the
-      // admin destination are offered to platform staff.
-      await expect(adminEntry(page)).toBeVisible()
+      // REQ-platform-admin-001's operator facet: while the platform's own
+      // organization is current, both derivations of the admin destination
+      // are offered to platform staff -- the account menu's entry and the
+      // start page's card.
+      await switchToTenant(page, PLATFORM_TENANT)
       await expect(adminCard(page)).toBeVisible()
-      await adminEntry(page).click()
-      await expect(adminNav(page)).toBeVisible()
+      await openConsole(page)
 
       await adminNav(page)
         .getByRole('link', {
@@ -615,21 +661,24 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         }),
       ).toBeVisible()
 
-      // The current tenant is the invited one: the switcher's trigger names
-      // it, and its row is the disabled current row in the open list.
-      const switcher = invitee
-        .getByRole('banner')
-        .getByRole('button', { name: TENANT, exact: true })
-      await expect(switcher).toBeVisible()
-      await expect(switcher).toBeEnabled()
-      await switcher.click()
-      await expect(
-        invitee.getByRole('menuitem', { name: TENANT, exact: true }),
-      ).toBeDisabled()
-      await invitee.keyboard.press('Escape')
-      await expect(
-        invitee.getByRole('menuitem', { name: TENANT, exact: true }),
-      ).toBeHidden()
+      // The current organization is the invited one: the account menu's first
+      // entry names it, and its own row expands the other organizations
+      // instead of being a pick, so the expansion never lists it again.
+      const menu = await openAccountMenu(invitee)
+      await expect(menu.getByText(TENANT, { exact: true })).toBeVisible()
+      if ((await organizationRow(invitee, TENANT).count()) > 0) {
+        await organizationRow(invitee, TENANT).click()
+        await expect(
+          menu
+            .getByRole('group', {
+              name: copy('demo', 'userMenu.organizations'),
+              exact: true,
+            })
+            .getByRole('menuitem', { name: TENANT, exact: true }),
+        ).toHaveCount(0)
+      }
+      await closeAccountMenu(invitee)
+      await expect(organizationRow(invitee, TENANT)).toHaveCount(0)
     })
 
     await test.step('step 9: a member has no admin entry, and a full-page admin load turns back home', async () => {
@@ -641,12 +690,18 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // REQ-platform-admin-001's member facet, checked on the tenant home the
       // acceptance landed on: this step runs while the viewer is still there,
       // before the re-opened link below leaves them on the landing, so the
-      // header and start-page assertions observe the member's real home.
+      // menu and start-page assertions observe the member's real home. The bar
+      // carries no admin link, and the account menu offers no admin entry
+      // because the current organization is the invited tenant rather than the
+      // platform's own.
       await expect(
         invitee
           .getByRole('banner')
           .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true }),
       ).toHaveCount(0)
+      await openAccountMenu(invitee)
+      await expect(adminEntry(invitee)).toHaveCount(0)
+      await closeAccountMenu(invitee)
       await expect(
         invitee.getByRole('heading', {
           level: 2,

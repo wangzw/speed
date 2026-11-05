@@ -168,14 +168,20 @@ describe('a failed roster read', () => {
   it('explains the fault beside the switcher, leaves the tenant, and retries', async () => {
     // The roster is a staff alias source: a failed read decides no tenant and
     // infers no membership, so the switcher keeps the tenant the caller's own
-    // list settled and shows what could not be named with a retry.
+    // list settled and shows what could not be named with a retry. The notice
+    // sits under the organization row and needs no expansion to be read.
     setCurrentTenantId(null)
     setTenantAliases(new Map())
     clearSelfTenants()
     let rosterReads = 0
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
-        return { tenants: [{ id: 'acme', alias: 'acme' }] } as T
+        return {
+          tenants: [
+            { id: 'acme', alias: 'acme' },
+            { id: 'globex', alias: 'globex' },
+          ],
+        } as T
       }
       if (path === '/api/v1/system/tenants') {
         rosterReads += 1
@@ -196,14 +202,17 @@ describe('a failed roster read', () => {
       ),
     })
 
-    expect(
-      await screen.findByText(demoEnUS.tenantRoster.failed),
-    ).toBeInTheDocument()
     // The current tenant settled from the caller's own list and does not
     // change because the roster could not be read.
     await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
 
-    await userEvent.setup().click(
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('user-menu-trigger'))
+    expect(
+      await screen.findByText(demoEnUS.tenantRoster.failed),
+    ).toBeInTheDocument()
+
+    await user.click(
       screen.getByRole('button', { name: demoEnUS.tenantRoster.retry }),
     )
 
@@ -215,5 +224,38 @@ describe('a failed roster read', () => {
     expect(rosterReads).toBe(2)
     expect(getCurrentTenantId()).toBe('acme')
     await waitFor(() => expect(getCurrentTenantAlias()).toBe('acme-inc'))
+  })
+
+  it('reports the fault under a lone organization, whose row never expands', async () => {
+    // One membership means no expansion: the row is context, not a control.
+    // The failed read still has to be reported, so the notice renders under
+    // the row itself.
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    clearSelfTenants()
+    bindRequestFn((async <T>(path: string): Promise<T> => {
+      if (path === '/api/v1/auth/me/tenants') {
+        return { tenants: [{ id: 'acme', alias: 'acme' }] } as T
+      }
+      if (path === '/api/v1/system/tenants') {
+        throw new Error('the roster service is unavailable')
+      }
+      throw new Error(`the suite binds only the tenant reads: ${path}`)
+    }) as RequestFn)
+
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
+
+    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    await userEvent.click(await screen.findByTestId('user-menu-trigger'))
+    expect(
+      await screen.findByText(demoEnUS.tenantRoster.failed),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: demoEnUS.tenantRoster.retry }),
+    ).toBeInTheDocument()
   })
 })

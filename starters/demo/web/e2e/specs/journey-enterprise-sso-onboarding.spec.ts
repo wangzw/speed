@@ -32,8 +32,9 @@
  *   6. The employee approves at the provider and comes back signed in to the
  *      account the operator prepared -- the account's display name is the one the
  *      operator typed, not the provider's claim, so no second account was made.
- *   7. The tenant switcher names the current organization, that item is not
- *      selectable, and choosing the target tenant switches the interface to it.
+ *   7. The account menu's first entry names the current organization, that row
+ *      expands the others rather than being a choice, and choosing the target
+ *      tenant switches the interface to it.
  *
  * Two things are non-UI, and only these:
  *
@@ -90,6 +91,13 @@ import {
 import type { EnterpriseIdentityProvider } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
 import { expectAccountMenuName } from '../helpers/account-menu'
+import {
+  adminEntry,
+  backToApp,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import {
   expandAccountRows,
   selectAccountSection,
@@ -173,13 +181,6 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The header's admin entry (a link, while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
-}
-
 /** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
@@ -233,51 +234,57 @@ function memberSection(page: Page): Locator {
   })
 }
 
-/** The tenant switcher's trigger, naming the current organization by alias. */
-function tenantSwitcher(page: Page, alias: string): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('button', { name: alias, exact: true })
-}
+/** The platform's own organization. The account menu offers the admin entry
+ * only while this is the current organization; platform administration is not
+ * a tenant member's surface. */
+const PLATFORM_TENANT = 'system'
 
-/** The tenant switcher's row for one organization. */
-function tenantMenuItem(page: Page, alias: string): Locator {
-  return page.getByRole('menuitem', { name: alias, exact: true })
+/**
+ * Move the tenant area to one organization through the account menu. The
+ * menu's first entry names the current organization and expands the others;
+ * choosing one closes the menu, switches, and announces the confirmation.
+ */
+async function switchToTenant(page: Page, tenant: string): Promise<void> {
+  const menu = await openAccountMenu(page)
+  if (
+    (await organizationRow(page, tenant).count()) > 0 ||
+    (await menu.getByText(tenant, { exact: true }).count()) > 0
+  ) {
+    // The organization is already current: its row is the expansion control,
+    // or context when it is the only one, and never a pick.
+    await closeAccountMenu(page)
+    return
+  }
+  await menu.getByRole('menuitem').first().click()
+  const row = organizationRow(page, tenant)
+  await expect(row).toBeVisible()
+  await row.click()
+  await expectClippedAnnouncement(
+    page,
+    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+  )
+  await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
 /**
- * Move the tenant area to one organization. The employee's account owns a
- * personal organization, and the host settles that row as the current
- * organization for an ordinary member, so the trigger's current name is not
- * known up front. The menu's row is disabled when the organization is already
- * current, which is the only case this helper leaves the menu without a click.
+ * Open the admin from the tenant area. The way in is the account menu's admin
+ * entry, offered only while the platform's own organization is current, so
+ * the journey moves there first.
  */
-async function switchToTenant(page: Page, tenant: string): Promise<void> {
-  const trigger = page
-    .getByRole('banner')
-    .getByRole('button', { name: tenant, exact: true })
-    .or(
-      page
-        .getByRole('banner')
-        .getByRole('button', {
-          name: copy('demo', 'organization.personal'),
-          exact: true,
-        }),
-    )
-  await expect(trigger).toBeVisible()
-  await trigger.click()
-  const row = tenantMenuItem(page, tenant)
-  await expect(row).toBeVisible()
-  if (await row.isEnabled()) {
-    await row.click()
-    await expectClippedAnnouncement(
-      page,
-      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
-    )
-  } else {
-    await page.keyboard.press('Escape')
-  }
-  await expect(tenantSwitcher(page, tenant)).toBeVisible()
+async function openConsole(page: Page): Promise<void> {
+  await switchToTenant(page, PLATFORM_TENANT)
+  await openAccountMenu(page)
+  await expect(adminEntry(page)).toBeVisible()
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
+}
+
+/** Leave the admin for the tenant area. The way back is the admin account
+ * menu's destination entry. */
+async function leaveConsole(page: Page): Promise<void> {
+  await openAccountMenu(page)
+  await backToApp(page).click()
+  await expect(homeHeading(page)).toBeVisible()
 }
 
 /** Select one organization through a tenant-addressed page's selector. */
@@ -634,15 +641,13 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
 
   await test.step('step 1: the operator opens the admin SSO page and selects the target tenant', async () => {
     // The account page the verification landed on is inside the tenant shell;
-    // the start page is where the admin entry is read.
+    // the start page is where the account menu is read.
     await page
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
     await expect(homeHeading(page)).toBeVisible()
 
-    await expect(adminEntry(page)).toBeVisible()
-    await adminEntry(page).click()
-    await expect(adminNav(page)).toBeVisible()
+    await openConsole(page)
     await adminLink(page, copy('adminUi', 'sso.title')).click()
 
     await expect(
@@ -807,14 +812,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // The operator leaves the admin for the tenant area first: signing out
     // from the admin lands on the plain sign-in surface, while the tenant
     // frame's session-ended surface is what the account helper waits for.
-    await page
-      .getByRole('banner')
-      .getByRole('link', {
-        name: copy('demo', 'admin.backToApp'),
-        exact: true,
-      })
-      .click()
-    await expect(homeHeading(page)).toBeVisible()
+    await leaveConsole(page)
     await accounts.signOut()
     await accounts.openSignIn()
     await expect(signInHeading(page)).toBeVisible()
@@ -912,31 +910,55 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
   await test.step('step 7: the employee switches from the current organization into the tenant', async () => {
     // The journey's start state is the seeded organization the employee
     // already belongs to. An ordinary member's account also owns a personal
-    // organization, which the host settles first; move to the seeded organization
-    // through the same control this step drives so the switch below starts
-    // from it.
+    // organization, which the host may settle first; move to the seeded
+    // organization through the same control this step drives so the switch
+    // below starts from it.
     await switchToTenant(page, EXISTING_TENANT)
 
-    // REQ-tenancy-022/035: the trigger names the current organization, and the
-    // list carries every organization the employee belongs to.
-    const switcher = tenantSwitcher(page, EXISTING_TENANT)
-    await expect(switcher).toBeVisible()
-    await expect(switcher).toBeEnabled()
-    await switcher.click()
-
-    // REQ-tenancy-036: the current organization's own row cannot be selected.
-    await expect(tenantMenuItem(page, EXISTING_TENANT)).toBeDisabled()
-    await expect(tenantMenuItem(page, TARGET_TENANT)).toBeEnabled()
+    // REQ-tenancy-022/035: the menu's first entry names the current
+    // organization, and expanding it lists the other organizations the
+    // employee belongs to.
+    const menu = await openAccountMenu(page)
+    await expect(menu.getByRole('menuitem').first()).toHaveAccessibleName(
+      EXISTING_TENANT,
+    )
+    await organizationRow(page, EXISTING_TENANT).click()
+    const choices = menu.getByRole('group', {
+      name: copy('demo', 'userMenu.organizations'),
+      exact: true,
+    })
+    // REQ-tenancy-036: the current organization's row is the expansion
+    // control, never one of the choices, so the group does not list it again.
+    await expect(
+      choices.getByRole('menuitem', {
+        name: EXISTING_TENANT,
+        exact: true,
+      }),
+    ).toHaveCount(0)
+    await expect(
+      choices.getByRole('menuitem', {
+        name: TARGET_TENANT,
+        exact: true,
+      }),
+    ).toBeVisible()
 
     // REQ-tenancy-023: choosing another organization moves the interface to it.
-    await tenantMenuItem(page, TARGET_TENANT).click()
-    await expect(tenantSwitcher(page, TARGET_TENANT)).toBeVisible()
+    await organizationRow(page, TARGET_TENANT).click()
     await expectClippedAnnouncement(
       page,
       copy('tenancyUi', 'tenantSwitcher.switchedTo', {
         tenant: TARGET_TENANT,
       }),
     )
+
+    // The menu closed on the pick; opening it again names the target as the
+    // organization being acted in.
+    await expect(page.getByRole('menu')).toHaveCount(0)
+    const switched = await openAccountMenu(page)
+    await expect(switched.getByRole('menuitem').first()).toHaveAccessibleName(
+      TARGET_TENANT,
+    )
+    await closeAccountMenu(page)
   })
 })
 
@@ -976,9 +998,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
       .click()
     await expect(homeHeading(page)).toBeVisible()
 
-    await expect(adminEntry(page)).toBeVisible()
-    await adminEntry(page).click()
-    await expect(adminNav(page)).toBeVisible()
+    await openConsole(page)
     await adminLink(page, copy('adminUi', 'sso.title')).click()
     await expect(
       page.getByRole('heading', {
@@ -1006,14 +1026,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
   await test.step('step 4: the employee signs in with the work email and is asked for a username', async () => {
     // The operator leaves the admin for the tenant area first: signing out
     // from the admin lands on the plain sign-in surface.
-    await page
-      .getByRole('banner')
-      .getByRole('link', {
-        name: copy('demo', 'admin.backToApp'),
-        exact: true,
-      })
-      .click()
-    await expect(homeHeading(page)).toBeVisible()
+    await leaveConsole(page)
     await accounts.signOut()
     await accounts.openSignIn()
     await expect(signInHeading(page)).toBeVisible()
@@ -1126,6 +1139,8 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     // well, which the host may settle first, so the helper moves from
     // whichever row is current.
     await switchToTenant(page, TARGET_TENANT)
-    await expect(tenantSwitcher(page, TARGET_TENANT)).toBeVisible()
+    const menu = await openAccountMenu(page)
+    await expect(menu.getByText(TARGET_TENANT, { exact: true })).toBeVisible()
+    await closeAccountMenu(page)
   })
 })

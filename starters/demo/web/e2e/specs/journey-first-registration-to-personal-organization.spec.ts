@@ -35,6 +35,10 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { Accounts } from '../helpers/accounts'
+import {
+  closeAccountMenu,
+  openAccountMenu,
+} from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
 
 /** The account page's email verification section. */
@@ -246,12 +250,19 @@ test('first-registration: a new visitor reaches a personal organization, and occ
         exact: true,
       }),
     ).toBeVisible()
-    const switcher = page.getByRole('button', {
-      name: copy('demo', 'organization.personal'),
-      exact: true,
-    })
-    await expect(switcher).toBeVisible()
-    await expect(switcher).toBeEnabled()
+
+    // The account menu's first row names the current organization. A personal
+    // organization is named after the signed-in account -- and a registration
+    // without a display name names the account after its username -- so the
+    // row carries the account's own name rather than the generic
+    // 「Organization」 copy. The account holds this one organization, so the
+    // row is context rather than a switcher and the menu is the only place it
+    // renders.
+    await openAccountMenu(page)
+    await expect(
+      page.getByRole('menu').getByText(account.username, { exact: true }),
+    ).toBeVisible()
+    await closeAccountMenu(page)
   })
 
   await test.step('the new credentials sign in through the password form', async () => {

@@ -17,7 +17,8 @@
  * Everything the person does is a mouse or keyboard action on the rendered
  * product: the account controls that prove the email and phone the dispatch
  * needs, the admin navigation, the register and enable/disable controls, the
- * review-only verdict control, the tenant switcher and the notice control. Two
+ * review-only verdict control, the account menu's organization row and the
+ * notice control. Two
  * reads are not UI, and each is the harness's own:
  *
  *   - The email and SMS verification codes come from the process log through
@@ -85,6 +86,12 @@ import { smsRolloutOperator } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import {
+  adminEntry,
+  backToApp,
+  closeAccountMenu,
+  openAccountMenu,
+} from '../helpers/account-menu'
+import {
   expandAccountRows,
   selectAccountSection,
 } from '../helpers/account-sections'
@@ -133,25 +140,10 @@ function phoneSection(page: Page): Locator {
   })
 }
 
-/** The header's admin entry (a link while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
-}
-
 /** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
     name: copy('adminUi', 'shell.navLabel'),
-    exact: true,
-  })
-}
-
-/** The admin frame's link back to the tenant area. */
-function backToApp(page: Page): Locator {
-  return page.getByRole('link', {
-    name: copy('demo', 'admin.backToApp'),
     exact: true,
   })
 }
@@ -193,46 +185,68 @@ function templateRow(page: Page, name: string): Locator {
   return page.getByRole('row').filter({ hasText: name })
 }
 
-/** The tenant switcher's trigger: the personal organization or the seeded tenant. */
-function tenantTrigger(page: Page): Locator {
+/**
+ * The platform's own organization. The admin entry is offered only while the
+ * current organization is this one, and this operator also administers the
+ * seeded tenant, so the journey switches here before opening the admin.
+ */
+const ADMIN_TENANT = 'system'
+
+/** The account menu's organization row: the collapsed row that expands the
+ * other organizations. Waiting for that shape skips the menu's later entries
+ * while the caller tenant read is still settling. */
+function currentOrganizationRow(page: Page): Locator {
   return page
-    .getByRole('banner')
-    .getByRole('button', { name: TENANT, exact: true })
-    .or(
-      page
-        .getByRole('banner')
-        .getByRole('button', { name: copy('demo', 'organization.personal'), exact: true }),
-    )
+    .getByRole('menu')
+    .getByRole('menuitem', { expanded: false })
+    .first()
 }
 
 /**
- * Switch the tenant area to the seeded tenant. The operator may hold a personal
- * organization too, so the trigger's current name is not known; the seeded tenant's
- * row is disabled when it is already current, which is the only case the helper
- * leaves the menu without a click.
+ * Move the tenant area to `target` through the account menu's organization
+ * row. The operator belongs to more than one organization and the current one
+ * is not known up front, so the row is expanded first; the target is one of
+ * the other organizations the expansion lists. When the target is already
+ * current, the expansion does not offer it and the menu is simply closed.
  */
-async function switchToTenant(page: Page): Promise<void> {
-  const trigger = tenantTrigger(page)
-  await expect(trigger).toBeVisible()
-  await trigger.click()
-  const row = page.getByRole('menuitem', { name: TENANT, exact: true })
-  await expect(row).toBeVisible()
-  if (await row.isEnabled()) {
-    await row.click()
-    await expectClippedAnnouncement(
-      page,
-      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT }),
-    )
-  } else {
-    await page.keyboard.press('Escape')
+async function switchToTenant(page: Page, target: string): Promise<void> {
+  const menu = await openAccountMenu(page)
+  const current = currentOrganizationRow(page)
+  await expect(current).toBeVisible()
+  await current.click()
+  const others = menu.getByRole('group', {
+    name: copy('demo', 'userMenu.organizations'),
+    exact: true,
+  })
+  await expect(others).toBeVisible()
+  const row = others.getByRole('menuitem', { name: target, exact: true })
+  if ((await row.count()) === 0) {
+    // The target is the current organization: the expansion lists only the
+    // others, so there is nothing to switch to.
+    await closeAccountMenu(page)
+    return
   }
+  await row.click()
+  await expectClippedAnnouncement(
+    page,
+    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: target }),
+  )
+  // The pick closes the menu; wait for it to leave before reopening, so the
+  // next open matches exactly one menu under strict mode.
+  await closeAccountMenu(page)
+  await openAccountMenu(page)
   await expect(
-    page.getByRole('banner').getByRole('button', { name: TENANT, exact: true }),
+    page.getByRole('menu').getByRole('menuitem', { name: target, exact: true }),
   ).toBeVisible()
+  await closeAccountMenu(page)
 }
 
 /** Open the admin from the tenant area and its SMS page from the navigation. */
 async function openSmsPage(page: Page): Promise<void> {
+  // The admin entry is offered only while the platform's own organization is
+  // current, so the operator moves there before opening the account menu.
+  await switchToTenant(page, ADMIN_TENANT)
+  await openAccountMenu(page)
   await expect(adminEntry(page)).toBeVisible()
   await adminEntry(page).click()
   await expect(adminNav(page)).toBeVisible()
@@ -240,6 +254,12 @@ async function openSmsPage(page: Page): Promise<void> {
     .getByRole('link', { name: copy('adminUi', 'sms.title'), exact: true })
     .click()
   await expect(smsHeading(page)).toBeVisible()
+}
+
+/** Return to the tenant area through the admin's account-menu destination. */
+async function returnToApp(page: Page): Promise<void> {
+  await openAccountMenu(page)
+  await backToApp(page).click()
 }
 
 /** One row's approval text for a language, as the page renders it. */
@@ -586,7 +606,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
   })
 
   await test.step('the member dispatches a notice and the approved language reaches the SMS carrier', async () => {
-    await backToApp(page).click()
+    await returnToApp(page)
     await expect(
       page.getByRole('heading', {
         level: 1,
@@ -594,7 +614,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
         exact: true,
       }),
     ).toBeVisible()
-    await switchToTenant(page)
+    await switchToTenant(page, TENANT)
 
     const notice = page.getByRole('region', {
       name: copy('demo', 'home.reviewNotice.title'),
@@ -659,7 +679,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await expect(row).toContainText(approvalText(EN_LOCALE, 'approved'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
 
-    await backToApp(page).click()
+    await returnToApp(page)
     await expect(
       page.getByRole('heading', {
         level: 1,
@@ -667,7 +687,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
         exact: true,
       }),
     ).toBeVisible()
-    await switchToTenant(page)
+    await switchToTenant(page, TENANT)
 
     const logAfter = server.log.mark()
     await page

@@ -16,6 +16,7 @@
  */
 
 import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, SpeedClient } from '@speed/api-client'
@@ -91,8 +92,10 @@ function sessionWith(
   return createTestSession(authenticatedSnapshot({ ...options, features }))
 }
 
-/** The notification bell's accessible name (the unread count is not read
- * here, so the plain label is the answer). */
+/** The standalone notification control's accessible name. The header no
+ * longer carries one -- the unread count rides the account avatar and the
+ * inbox is an entry of the account menu -- so the assertions below use it to
+ * prove the old control is gone. */
 const BELL_NAME = new RegExp(`^${tNotifications('bell.label')}`)
 
 /** A client whose event-stream opener records each open and each close, so a
@@ -131,11 +134,12 @@ function cardLink(title: string): HTMLElement {
 describe('a served document narrows the tenant area', () => {
   it('keeps the surfaces it names and hides the ones it omits', async () => {
     // The document serves the notification centre alone. Its card and the
-    // header bell survive; the centre itself is an entry of the account menu,
-    // so the navigation column does not list it. The admin card -- a
-    // platform surface a member does not hold -- disappears, and the object
-    // page the skeleton no longer ships contributes neither a card nor a
-    // navigation entry.
+    // account menu's Messages entry survive; the centre is a menu entry, so
+    // the navigation column does not list it, and the header carries no
+    // standalone notification control. The admin card -- a platform surface a
+    // member does not hold -- disappears, and the object page the skeleton no
+    // longer ships contributes neither a card nor a navigation entry.
+    const user = userEvent.setup()
     renderDemoApp({ session: sessionWith(readyFeatures('notification.inbox')) })
 
     expect(
@@ -152,14 +156,20 @@ describe('a served document narrows the tenant area', () => {
         name: tNotifications('inbox.title'),
       }),
     ).not.toBeInTheDocument()
+    // The absences are read before the menu opens: the open menu makes the
+    // rest of the page aria-hidden, so a role query could not reach it.
     expect(
-      screen.getByRole('button', { name: BELL_NAME }),
-    ).toBeInTheDocument()
-
+      screen.queryByRole('button', { name: BELL_NAME }),
+    ).not.toBeInTheDocument()
     expect(
       cardHeading(demoEnUS.home.cards.admin.title),
     ).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/objects"]')).toBeNull()
+
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    expect(
+      await screen.findByRole('menuitem', { name: demoEnUS.userMenu.messages }),
+    ).toBeInTheDocument()
   })
 
   it('renders the not-found fallback for a gated page the document omits', async () => {
@@ -218,6 +228,7 @@ describe('a served document narrows the tenant area', () => {
     await harness.session.startFlow({ method: 'password' })
     await harness.session.answerFlow({ seq: 2, step: 'complete' })
 
+    const user = userEvent.setup()
     renderDemoApp({ session: harness.session })
 
     expect(harness.calls.some((call) => call.path === '/api/v1/features')).toBe(true)
@@ -231,15 +242,22 @@ describe('a served document narrows the tenant area', () => {
         name: demoEnUS.home.cards.notifications.title,
       }),
     ).toBeInTheDocument()
+    // The absences are read before the menu opens: the open menu makes the
+    // rest of the page aria-hidden, so a role query could not reach it.
     expect(
-      screen.getByRole('button', { name: BELL_NAME }),
-    ).toBeInTheDocument()
+      screen.queryByRole('button', { name: BELL_NAME }),
+    ).not.toBeInTheDocument()
     // The document leaves the admin surfaces out: a member gets no admin
     // card, and the removed object page has no link to it.
     expect(
       cardHeading(demoEnUS.home.cards.admin.title),
     ).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/objects"]')).toBeNull()
+
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    expect(
+      await screen.findByRole('menuitem', { name: demoEnUS.userMenu.messages }),
+    ).toBeInTheDocument()
   })
 })
 
@@ -426,25 +444,38 @@ describe('an admin page whose feature is absent is not reachable', () => {
 
 describe('the admin entry and home card follow the served declarations', () => {
   it('targets the first served admin page whose permission the principal holds', async () => {
-    // tenant.admin is not served, so the dashboard and roster are out; the
-    // settings page remains and its code is held, so both the header entry and
-    // the home card point at it instead of the admin root (which would 404).
+    // The caller acts in the platform's own `system` organization, where the
+    // admin entry and card are offered. tenant.admin is not served, so the
+    // dashboard and roster are out; the settings page remains and its code is
+    // held, so both the menu entry and the home card point at it instead of
+    // the admin root (which would 404).
+    setCurrentTenantId('system')
+    setTenantAliases(new Map([['system', 'system']]))
+    const user = userEvent.setup()
     renderDemoApp({
       session: sessionWith(readyFeatures('settings.admin'), {
         system: ['settings.read'],
       }),
     })
 
-    expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
-    ).toHaveAttribute('href', '/admin/settings')
+    // The card is read first: the open menu makes the rest of the page
+    // aria-hidden, so a role query cannot reach it from under the modal.
     expect(cardLink(demoEnUS.home.cards.admin.title)).toHaveAttribute(
       'href',
       '/admin/settings',
     )
+    await user.click(await screen.findByTestId('user-menu-trigger'))
+    expect(
+      await screen.findByRole('menuitem', { name: demoEnUS.nav.admin }),
+    ).toHaveAttribute('href', '/admin/settings')
   })
 
   it('hides both when the document serves no admin page', async () => {
+    // The tenant condition is satisfied on purpose: the only fact that
+    // removes both surfaces is the document serving no admin page.
+    setCurrentTenantId('system')
+    setTenantAliases(new Map([['system', 'system']]))
+    const user = userEvent.setup()
     renderDemoApp({
       session: sessionWith(readyFeatures('notification.inbox'), {
         system: ['settings.read'],
@@ -457,10 +488,14 @@ describe('the admin entry and home card follow the served declarations', () => {
         name: demoEnUS.home.cards.account.title,
       }),
     ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
-    ).not.toBeInTheDocument()
+    // The card is read before the menu opens: the open menu hides the rest of
+    // the page from role queries, which would make its absence meaningless.
     expect(cardHeading(demoEnUS.home.cards.admin.title)).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    const menu = await screen.findByRole('menu')
+    expect(
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
+    ).not.toBeInTheDocument()
   })
 })
 

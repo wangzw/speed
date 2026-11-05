@@ -104,7 +104,7 @@ interface SpeedAppDefinition {
 
 **两个管理面共用一套页面组件，按租户模式分支。** 平台管理面渲染平台侧外壳；组织管理面把同一组页面按租户模式组合，由 `OrganizationAdminProvider` 只装上下文、不渲染外壳。租户模式换掉的是数据来源与选择器——成员身份取自租户成员、设置只读写租户层、权限目录取受治理集合、账户选择器换成员选择器——不是页面布局。
 
-**入口由宿主派生。** 平台管理面的入口（页头动作里的入口与首页卡片）只在平台权限集持有声明的权限码、且收窄后的平台声明非空时出现，冒充期间不出现。组织管理面的入口（账户菜单里的组织分组与首页卡片）在会话不冒充、当前租户既不是系统租户也不是个人租户、收窄后的组织声明非空、调用方持有其中一条权限码时出现；判据见 [admin-ui](design-web-admin-ui.md) 的「入口的派生」。
+**入口由宿主派生。** 平台管理面的入口（账户菜单里进入管理后台区的条目与首页卡片）只在当前租户是系统租户、平台权限集持有声明的权限码、且收窄后的平台声明非空时出现，冒充期间不出现；两处调用同一个派生，不各判一次。组织管理面的入口（账户菜单里的组织分组与首页卡片）在会话不冒充、当前租户既不是系统租户也不是个人租户、收窄后的组织声明非空、调用方持有其中一条权限码时出现；判据见 [admin-ui](design-web-admin-ui.md) 的「入口的派生」。
 
 **两个管理面不互相承载。** 平台管理面的页面不渲染在租户侧壳里，组织管理面的页面不渲染平台侧壳。`AdminProvider` 仍是平台员工的接口，`OrganizationAdminProvider` 是租户侧的接口；`admin-ui` 不 import `route-kit`、`tenancy-ui` 与 `product-shell`，宿主分别把它们接上。
 
@@ -155,11 +155,11 @@ interface SpeedAppDefinition {
 | `auth-core` | 浏览器会话状态机、特性态与 hooks | `api-sdk`、`api-client` |
 | `auth-ui` | 登录组件族 | `ui-kit`、`i18n`、`auth-core`（`api-sdk` 只是开发期的类型依赖，公开接口不引用它的类型） |
 | `account-ui` | 已登录账户管理组件族 | `ui-kit`、`i18n`、`auth-core`、`api-sdk` |
-| `tenancy-ui` | 租户切换控件 | `ui-kit`、`i18n` |
+| `tenancy-ui` | 租户切换：切换控件、宿主菜单里的租户行与切换播报区域 | `ui-kit`、`i18n` |
 | `product-shell` | 组装壳与装配入口 | `layout-kit`、`auth-ui`、`auth-core`、`i18n`（主出口的直接依赖；`./bootstrap` 出口另直接取 `api-client`、`api-sdk`、`ui-kit`） |
 | `route-kit` | 路由与导航独立层、声明式注册接口、按特性在场收窄注册范围 | 无 |
 | `admin-ui` | 平台侧与租户侧两个管理面：平台管理面的第二种壳，组织管理面在租户侧壳里只装上下文 | `ui-kit`、`layout-kit`、`i18n`、`auth-core`、`api-sdk` |
-| `notification-ui` | 站内通知界面：未读铃铛、收件箱与已读、偏好矩阵、实时订阅与声明式入口 | `ui-kit`、`i18n`、`auth-core`、`api-sdk`、`api-client` |
+| `notification-ui` | 站内通知界面：未读计数与铃铛、收件箱与已读、偏好矩阵、实时订阅与声明式入口 | `ui-kit`、`i18n`、`auth-core`、`api-sdk`、`api-client` |
 
 **`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自只在内部保有 provider 标签回退词表，不共享类型。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
 
@@ -298,12 +298,12 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 | 浏览器会话状态机与 hooks | 部分实现 | `web/packages/auth-core/src/session.ts` `createAuthSession`；`web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission`、`useFeature`、`useFeatureState`、`featurePresence` |
 | 登录组件族 | 部分实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SignOutButton.tsx` `SignOutButton`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` `SessionEndedScreen` |
 | 账户管理组件族 | 已实现 | `web/packages/account-ui/src/index.ts` `ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`、`PreferencesSection`、`SessionsSection`、`SocialBindingsSection`、`MfaSection` |
-| 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/index.ts` `TenantSwitcher`、`TenantOption`、`TenantSwitcherProps`；`web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
+| 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/index.ts` `TenantSwitcher`、`TenantMenuItems`、`TenantSwitchAnnouncement`、`TenantOption`、`TenantSwitcherProps`、`TenantMenuItemsProps`、`TenantSwitchAnnouncementProps`；`web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |
 | 平台管理面组件族 | 已实现 | `web/packages/admin-ui/src/index.ts` `AdminShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
 | 组织管理面组件族 | 部分实现 | `web/packages/admin-ui/src/OrganizationAdminProvider.tsx`、`OrganizationAdminBreadcrumb.tsx`、`organization-routes.tsx`、`organization-operations.tsx`、`organization-pages.tsx`；`starters/demo/web/src/organization-admin.ts` |
-| 站内通知界面组件族 | 已实现 | `web/packages/notification-ui/src/index.ts` `NotificationBell`、`NotificationInbox`、`NotificationPreferences`、`NotificationCenter`、`NotificationStreamProvider`、`notificationRoutes` |
+| 站内通知界面组件族 | 已实现 | `web/packages/notification-ui/src/index.ts` `NotificationBell`、`useNotificationUnread`、`NOTIFICATION_BADGE_MAX`、`NotificationInbox`、`NotificationPreferences`、`NotificationCenter`、`NotificationStreamProvider`、`notificationRoutes` |
 | 声明式注册接口 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/admin-ui/src/route.ts` `AdminRoute` |
 | 租户作用域的查询键工厂与逐出辅助函数 | 已实现 | `web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |
 | 运行期的 API origin 注入 | 已实现 | `starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；`starters/demo/web/src/main.tsx` `bootstrapDemoApp` |

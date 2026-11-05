@@ -12,8 +12,9 @@
  * `business`, so it renders its alias.
  */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import MenuList from '@mui/material/MenuList'
 import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { RequestFn } from '@speed/api-client'
@@ -31,7 +32,7 @@ import {
   getCurrentTenantId,
   setCurrentTenantId,
   setTenantAliases,
-  TenantMenu,
+  OrganizationMenuEntry,
 } from './chrome.js'
 import type { DemoTenant } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
@@ -228,7 +229,7 @@ const OFFERED: readonly DemoTenant[] = [
   { id: 'acme', alias: 'acme', name: 'acme', kind: 'business' },
 ]
 
-/** Renders the tenant switcher under the production stack. */
+/** Renders the account menu's organization group under the production stack. */
 function renderTenantMenu(props: {
   readonly tenants: readonly DemoTenant[]
   readonly tenantId: string | null
@@ -251,11 +252,16 @@ function renderTenantMenu(props: {
     queryClient,
   }
   const view: ReactElement = (
-    <TenantMenu
-      tenants={props.tenants}
-      tenantId={props.tenantId}
-      onTenantSelect={() => undefined}
-    />
+    <MenuList>
+      <OrganizationMenuEntry
+        organizations={{
+          tenants: props.tenants,
+          tenantId: props.tenantId,
+          onSelect: () => undefined,
+        }}
+        onClose={() => undefined}
+      />
+    </MenuList>
   )
   render(
     <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
@@ -266,36 +272,46 @@ function renderTenantMenu(props: {
 
 describe('the tenant switcher over the self list', () => {
   it('keeps every row and labels the row the read answers as personal', async () => {
-    const user = userEvent.setup()
     renderTenantMenu({
       tenants: OFFERED,
       tenantId: 'acme',
     })
 
-    await user.click(screen.getByRole('button', { name: 'acme' }))
-    const items = await screen.findAllByRole('menuitem')
+    // The menu states the current organization in its first row and expands
+    // to the others; both halves together are the full list.
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('menuitem', { name: 'acme' }))
 
     // Every tenant the account holds a membership in is offered. The row the
     // read answers as personal carries the personal-organization copy; another
     // account's personal tenant came back as business, so it keeps its alias.
-    expect(items.map((item) => item.textContent)).toEqual([
-      demoEnUS.organization.personal,
-      'other-space',
-      'acme',
-    ])
+    expect(
+      await screen.findByRole('menuitem', {
+        name: demoEnUS.organization.personal,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: 'other-space' }),
+    ).toBeInTheDocument()
+    // The current organization is context, not one more destination: the
+    // expansion does not repeat it.
+    expect(screen.getAllByRole('menuitem', { name: 'acme' })).toHaveLength(1)
   })
 
   it('leaves the current tenant in the list but not selectable', async () => {
-    const user = userEvent.setup()
     renderTenantMenu({
       tenants: OFFERED,
       tenantId: 'acme',
     })
 
-    await user.click(screen.getByRole('button', { name: 'acme' }))
+    const user = userEvent.setup()
     const current = await screen.findByRole('menuitem', { name: 'acme' })
-
-    expect(current).toHaveAttribute('aria-disabled', 'true')
+    // The current row is the expander, not a destination: clicking it reveals
+    // the others, and no second row offers the current tenant to switch to.
+    await user.click(current)
+    expect(current).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getAllByRole('menuitem', { name: 'acme' })).toHaveLength(1)
   })
 
   it('adds a current tenant the list does not hold, named from the roster cache', async () => {
@@ -324,8 +340,10 @@ describe('the tenant switcher over the self list', () => {
       session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
     })
 
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('user-menu-trigger'))
     expect(
-      await screen.findByRole('button', { name: 'globex-renamed' }),
+      within(await screen.findByRole('menu')).getByText('globex-renamed'),
     ).toBeInTheDocument()
     expect(getCurrentTenantId()).toBe('globex')
   })

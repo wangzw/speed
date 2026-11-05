@@ -93,7 +93,12 @@ import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
-import { expectAccountMenuName } from '../helpers/account-menu'
+import {
+  adminEntry,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 
@@ -157,12 +162,16 @@ function homeHeading(page: Page): Locator {
   })
 }
 
-/** The header's admin entry (a link, while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.admin'),
-    exact: true,
-  })
+/** The account menu's trigger on the sidebar's account row.
+ *
+ * Its accessible name carries the signed-in identity (with the visible
+ * initials in front of it), so asserting the identity is present is what says
+ * the menu names the acting account. */
+async function expectAccountMenuName(
+  trigger: Locator,
+  identity: string,
+): Promise<void> {
+  await expect(trigger).toHaveAccessibleName(new RegExp(escapeRegExp(identity)))
 }
 
 /** The home page's admin card, which must agree with the entry's visibility. */
@@ -338,13 +347,17 @@ test('impersonation-for-support: the operator acts as a member and the record an
       .click()
     await expect(homeHeading(page)).toBeVisible()
 
-    // The operator is platform staff: the header entry and the home card both
-    // exist before any impersonation.
-    await expect(adminEntry(page)).toBeVisible()
+    // The operator is platform staff: the account menu's admin entry and the
+    // home card both exist before any impersonation. The card is read with
+    // the menu closed; the entry with it open.
     await expect(adminCard(page)).toBeVisible()
+    await openAccountMenu(page)
+    await expect(adminEntry(page)).toBeVisible()
+    await closeAccountMenu(page)
   })
 
   await test.step('step 1: the operator opens the impersonation page and it reports no impersonation', async () => {
+    await openAccountMenu(page)
     await adminEntry(page).click()
     await expect(adminNav(page)).toBeVisible()
     await adminNav(page)
@@ -637,16 +650,15 @@ test('impersonation-for-support: the operator acts as a member and the record an
         exact: true,
       }),
     ).toBeVisible()
-    await page.keyboard.press('Escape')
 
-    // The admin entry, its home card and the tenant switcher are gone.
+    // The admin entry and the organization row are gone from the menu: an
+    // impersonation is confined to one organization and the target holds no
+    // platform permission. Both are asserted with the menu open; the home
+    // card is read after it closes, because the backdrop hides the page.
     await expect(adminEntry(page)).toHaveCount(0)
+    await expect(organizationRow(page, TENANT)).toHaveCount(0)
+    await closeAccountMenu(page, 'sidebar')
     await expect(adminCard(page)).toHaveCount(0)
-    await expect(
-      page
-        .getByRole('banner')
-        .getByRole('button', { name: TENANT, exact: true }),
-    ).toHaveCount(0)
 
     // A admin path entered by a full document load is silently brought back
     // to the tenant home: the admin area is decided by the effective
@@ -666,10 +678,14 @@ test('impersonation-for-support: the operator acts as a member and the record an
   })
 
   await test.step('step 5: the notification inbox opens under the impersonated identity', async () => {
+    // The bar carries no bell any more: the inbox is the account menu's
+    // notification-centre row. The target has no mailbox and no notice is
+    // addressed to it, so the row carries no count.
+    await openAccountMenu(page)
     await page
-      .getByRole('banner')
-      .getByRole('button', {
-        name: copy('notificationUi', 'bell.label'),
+      .getByRole('menu')
+      .getByRole('menuitem', {
+        name: copy('demo', 'userMenu.messages'),
         exact: true,
       })
       .click()
@@ -750,7 +766,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     ).toBeVisible()
 
     // The header indicator goes, the account menu names the operator again,
-    // and the admin entry and the tenant switcher come back.
+    // and the admin entry and the organization row come back.
     await expect(
       page.getByRole('banner').getByText(
         copy('authUi', 'impersonation.impersonating'),
@@ -761,15 +777,15 @@ test('impersonation-for-support: the operator acts as a member and the record an
       page.getByTestId('account-entry-trigger'),
       OPERATOR.displayName,
     )
+    await openAccountMenu(page)
     await expect(adminEntry(page)).toBeVisible({ timeout: 10_000 })
-    // The switcher returns over the tenant the operator's own membership
-    // list settles (the system tenant); the grant's tenant was never the
-    // operator's own.
-    await expect(
-      page
-        .getByRole('banner')
-        .getByRole('button', { name: OPERATOR_TENANT, exact: true }),
-    ).toBeVisible({ timeout: 10_000 })
+    // The organization row names the organization the operator's own
+    // membership list settles (the system organization); the grant's
+    // organization was never the operator's own.
+    await expect(organizationRow(page, OPERATOR_TENANT)).toBeVisible({
+      timeout: 10_000,
+    })
+    await closeAccountMenu(page)
 
     // No re-login happened: the ended-session surface never appears.
     await expect(
@@ -781,6 +797,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
   })
 
   await test.step('step 7: the impersonation record and the audit trail carry the start and the end', async () => {
+    await openAccountMenu(page)
     await adminEntry(page).click()
     await expect(adminNav(page)).toBeVisible()
     await adminNav(page)

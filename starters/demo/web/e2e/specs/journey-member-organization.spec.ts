@@ -4,7 +4,7 @@
  * The member signs in as an ordinary active member of the seeded tenant. A
  * system action -- the review build's notification worker, dispatching one
  * notice per tenant per ten-second window -- addresses the notice to the
- * member, the header bell reports it without a page reload, and the
+ * member, the avatar's unread badge reports it without a page reload, and the
  * notification surface lists it unread. The member marks it read, then marks
  * everything read and sees the count the server reported and a cleared bell.
  * The preference matrix shows the channels the member can be addressed on;
@@ -76,6 +76,11 @@ import type { Locator, Page } from '@playwright/test'
 
 import { reviewMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
+import {
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
 import { copy, copyKey, copyPattern, type CopyLocale } from '../helpers/i18n'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
@@ -87,46 +92,52 @@ test.use({ seedMember: true })
  * row's label: the demo composes the matrix without a type-label override. */
 const TYPE_KEY = 'review.notice'
 
-/** The seeded tenant's name: the alias the switcher renders. */
+/** The seeded tenant's name: the alias its organization row renders. */
 const TENANT_NAME = reviewMember.tenant
 
-/** The tenant switcher's trigger, naming the current organization. */
-function tenantSwitcher(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('button', { name: TENANT_NAME, exact: true })
+/** Escape the characters a regular expression reads as syntax. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
- * Move the tenant area to the seeded organization. The member's account also
- * owns a personal organization, and the host settles that row as the current
- * organization for an ordinary member, so the trigger's current name is not
- * known up front. The menu's row is disabled when the organization is already
- * current, which is the only case this helper leaves the menu without a click.
+ * Move the tenant area to the seeded organization through the account menu's
+ * organization row. The member's account also owns a personal organization,
+ * which the host settles as the current organization for an ordinary member,
+ * so the row's current name is not known up front; the expansion lists the
+ * other organizations, and the seeded one is the row this helper picks. When
+ * it is already current the expansion does not offer it, and the menu is
+ * simply closed.
  */
 async function switchToTenant(page: Page): Promise<void> {
-  const trigger = tenantSwitcher(page).or(
-    page
-      .getByRole('banner')
-      .getByRole('button', {
-        name: copy('demo', 'organization.personal'),
-        exact: true,
-      }),
-  )
-  await expect(trigger).toBeVisible()
-  await trigger.click()
-  const row = page.getByRole('menuitem', { name: TENANT_NAME, exact: true })
-  await expect(row).toBeVisible()
-  if (await row.isEnabled()) {
-    await row.click()
-    await expectClippedAnnouncement(
-      page,
-      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT_NAME }),
-    )
-  } else {
-    await page.keyboard.press('Escape')
+  const menu = await openAccountMenu(page)
+  // The collapsed organization row is the one that expands the other
+  // organizations; waiting for that shape skips the menu's later entries while
+  // the caller tenant read is still settling.
+  const current = menu.getByRole('menuitem', { expanded: false }).first()
+  await expect(current).toBeVisible()
+  await current.click()
+  const others = menu.getByRole('group', {
+    name: copy('demo', 'userMenu.organizations'),
+    exact: true,
+  })
+  await expect(others).toBeVisible()
+  const row = others.getByRole('menuitem', { name: TENANT_NAME, exact: true })
+  if ((await row.count()) === 0) {
+    await closeAccountMenu(page)
+    return
   }
-  await expect(tenantSwitcher(page)).toBeVisible()
+  await row.click()
+  await expectClippedAnnouncement(
+    page,
+    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT_NAME }),
+  )
+  // The pick closes the menu; wait for it to leave before reopening, so the
+  // next open matches exactly one menu under strict mode.
+  await closeAccountMenu(page)
+  await openAccountMenu(page)
+  await expect(organizationRow(page, TENANT_NAME)).toBeVisible()
+  await closeAccountMenu(page)
 }
 
 /**
@@ -151,28 +162,33 @@ const NOTICE_BODY = copyKey(
 )
 
 /**
- * The header bell. Its accessible name is the bare label when the count is
- * zero and the labelled form otherwise, so a substring match on the bare label
- * finds it in both states.
+ * The account menu's trigger: the header avatar. The bar carries no bell any
+ * more; the unread count rides this avatar as a badge and the account menu's
+ * notification-centre row.
  */
-function bell(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('button', { name: copy('notificationUi', 'bell.label') })
+function accountTrigger(page: Page): Locator {
+  return page.getByTestId('user-menu-trigger')
 }
 
 /**
- * The count the bell currently reports, read from the accessible name the
- * product puts it in. A name that is only the bare label means zero.
+ * The unread-count phrase inside an accessible name. `copyPattern` anchors its
+ * match, and the phrase is only one part of the trigger's name, so the
+ * placeholder is replaced here to build an unanchored matcher.
+ */
+function countPhrase(): RegExp {
+  const template = copy('notificationUi', 'bell.labelWithCount', {
+    n: '\u0000',
+  })
+  return new RegExp(template.split('\u0000').map(escapeRegExp).join('(\\d+)'))
+}
+
+/**
+ * The count the avatar currently reports, read from the trigger's accessible
+ * name. A name with no count phrase means zero.
  */
 async function unreadCount(page: Page): Promise<number> {
-  const label = await bell(page).getAttribute('aria-label')
-  if (label === null || label === copy('notificationUi', 'bell.label')) {
-    return 0
-  }
-  const match = copyPattern('notificationUi', 'bell.labelWithCount', {
-    n: '(\\d+)',
-  }).exec(label)
+  const label = await accountTrigger(page).getAttribute('aria-label')
+  const match = label === null ? null : countPhrase().exec(label)
   return match?.[1] === undefined ? 0 : Number(match[1])
 }
 
@@ -262,22 +278,27 @@ test('member-organization: a member receives, reads and configures notifications
 
     // The member's account owns a personal organization, which the host settles
     // as the current organization for an ordinary member. Move to the seeded
-    // organization through the switcher so the journey runs where it says.
+    // organization through the account menu's organization row so the journey
+    // runs where it says.
     await switchToTenant(page)
 
-    // Step 1: the switcher names the seeded tenant as the current organization,
-    // and the row that stands for it is the disabled one once the list opens.
-    const switcher = tenantSwitcher(page)
-    await expect(switcher).toBeVisible()
-    await expect(switcher).toBeEnabled()
-    await switcher.click()
+    // Step 1: the menu's organization row names the seeded organization as
+    // the current one. Expanding it lists the organizations the member may
+    // switch to, so the current one is not offered again.
+    const menu = await openAccountMenu(page)
+    const current = organizationRow(page, TENANT_NAME)
+    await expect(current).toBeVisible()
+    await expect(current).toBeEnabled()
+    await current.click()
+    const others = menu.getByRole('group', {
+      name: copy('demo', 'userMenu.organizations'),
+      exact: true,
+    })
+    await expect(others).toBeVisible()
     await expect(
-      page.getByRole('menuitem', { name: TENANT_NAME, exact: true }),
-    ).toBeDisabled()
-    await page.keyboard.press('Escape')
-    await expect(
-      page.getByRole('menuitem', { name: TENANT_NAME, exact: true }),
-    ).toBeHidden()
+      others.getByRole('menuitem', { name: TENANT_NAME, exact: true }),
+    ).toHaveCount(0)
+    await closeAccountMenu(page)
   })
 
   await test.step("the inbox's precondition: it already holds an unread notice", async () => {
@@ -302,10 +323,18 @@ test('member-organization: a member receives, reads and configures notifications
     // here (see the file header on REQ-notifications-013).
     await afterNextNotice(page)
 
-    // Opening the surface from the bell lists the notice, unread, with its
-    // rendered title and body, and the bell's accessible name carries the
-    // total.
-    await bell(page).click()
+    // Opening the notification centre from the account menu lists the notice,
+    // unread, with its rendered title and body; the avatar's accessible name
+    // carries the total.
+    await openAccountMenu(page)
+    await page
+      .getByRole('menu')
+      .getByRole('menuitem', {
+        name: copyPattern('demo', 'userMenu.messagesWithCount', {
+          n: '\\d+',
+        }),
+      })
+      .click()
     const list = inbox(page)
     const newest = list.getByRole('listitem').first()
     await expect(newest).toBeVisible()
@@ -316,9 +345,7 @@ test('member-organization: a member receives, reads and configures notifications
         exact: true,
       }),
     ).toBeVisible()
-    await expect(bell(page)).toHaveAccessibleName(
-      copyPattern('notificationUi', 'bell.labelWithCount', { n: '\\d+' }),
-    )
+    await expect(accountTrigger(page)).toHaveAccessibleName(countPhrase())
   })
 
   await test.step('marking the message read clears its mark and decrements the bell', async () => {
@@ -413,10 +440,8 @@ test('member-organization: a member receives, reads and configures notifications
       })
       .toBeGreaterThanOrEqual(rowsBefore)
 
-    // No unread remains, so the bell falls back to its bare label.
-    await expect(bell(page)).toHaveAccessibleName(
-      copy('notificationUi', 'bell.label'),
-    )
+    // No unread remains, so the avatar carries no count phrase.
+    await expect(accountTrigger(page)).not.toHaveAccessibleName(countPhrase())
   })
 
   await test.step('the preference matrix shows the type with its default channels', async () => {

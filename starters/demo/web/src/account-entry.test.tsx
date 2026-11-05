@@ -147,8 +147,9 @@ describe('the account entry in the navigation column', () => {
       expect(getComputedStyle(item).paddingLeft).toBe('6px')
       expect(item.querySelector('svg')).toHaveAttribute('width', '24')
     }
-    // One divider between Messages and the panes, one before sign-out.
-    expect(screen.getAllByRole('separator')).toHaveLength(2)
+    // One divider below the organization row, one between Messages and the
+    // panes, one before sign-out.
+    expect(screen.getAllByRole('separator')).toHaveLength(3)
 
     // The paper sits 9px in from the column's edge and keeps the shared
     // minimum width, with a divider-coloured outline over the theme's deep

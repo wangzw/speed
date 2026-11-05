@@ -47,7 +47,11 @@ import type { Locator, Page } from '@playwright/test'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { Accounts } from '../helpers/accounts'
-import { expectAccountMenuName } from '../helpers/account-menu'
+import {
+  closeAccountMenu,
+  expectAccountMenuName,
+  openAccountMenu,
+} from '../helpers/account-menu'
 import {
   expandAccountRows,
   openAccountSection,
@@ -137,13 +141,6 @@ function phoneCard(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.phone'))
 }
 
-/** The tenant switcher's trigger, showing the current organization's name. */
-function switcher(page: Page): Locator {
-  return page.getByRole('button', {
-    name: copy('demo', 'organization.personal'),
-    exact: true,
-  })
-}
 
 /**
  * Switch the sign-in surface to the SMS channel and fill the phone control:
@@ -324,19 +321,16 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
       SIGNUP_DISPLAY_NAME,
     )
 
-    // The header switcher names the personal organization as the current
-    // organization, and its list holds that one row, disabled because it is
-    // the current one.
-    const trigger = switcher(page)
-    await expect(trigger).toBeEnabled()
-    await trigger.click()
-    const rows = page.getByRole('menuitem')
-    await expect(rows).toHaveCount(1)
-    await expect(rows.first()).toHaveAccessibleName(
-      copy('demo', 'organization.personal'),
-    )
-    await expect(rows.first()).toBeDisabled()
-    await page.keyboard.press('Escape')
+    // The account menu's organization row names the personal organization --
+    // the only one this account holds -- by the account's display name. With
+    // no other organization to switch to, the row is context rather than a
+    // control, so it is not a menu item and its list does not open.
+    const menu = await openAccountMenu(page)
+    await expect(
+      menu.getByText(SIGNUP_DISPLAY_NAME, { exact: true }),
+    ).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: SIGNUP_DISPLAY_NAME })).toHaveCount(0)
+    await closeAccountMenu(page)
   })
 
   await test.step('the account lists the phone as a contact and both the phone and the username as sign-in ways', async () => {
@@ -354,15 +348,14 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
     })
     await expect(homeHeading(page)).toBeVisible()
 
-    // The password sign-in reaches the account's one personal organization.
-    const trigger = switcher(page)
-    await expect(trigger).toBeEnabled()
-    await trigger.click()
-    await expect(page.getByRole('menuitem')).toHaveCount(1)
-    await expect(page.getByRole('menuitem').first()).toHaveAccessibleName(
-      copy('demo', 'organization.personal'),
-    )
-    await page.keyboard.press('Escape')
+    // The password sign-in reaches the account's one personal organization:
+    // the account menu's organization row names it by the account's display
+    // name, and there is nothing else to switch to.
+    const menu = await openAccountMenu(page)
+    await expect(
+      menu.getByText(SIGNUP_DISPLAY_NAME, { exact: true }),
+    ).toBeVisible()
+    await closeAccountMenu(page)
   })
 })
 

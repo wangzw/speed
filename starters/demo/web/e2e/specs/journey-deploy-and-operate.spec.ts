@@ -115,6 +115,11 @@ import {
   expandAccountRows,
   selectAccountSection,
 } from '../helpers/account-sections'
+import {
+  adminEntry,
+  backToApp,
+  openAccountMenu,
+} from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 
 // The settings table's type column renders only from its container's `lg`
@@ -196,13 +201,6 @@ function signInHeading(page: Page): Locator {
     name: copy('demo', 'signIn.heading'),
     exact: true,
   })
-}
-
-/** The header entry that opens the admin. */
-function adminEntry(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
 }
 
 /** The home page's admin card, as the link that carries it. */
@@ -418,13 +416,20 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       }),
     ).toBeVisible()
-    const entry = adminEntry(page)
+    // The home admin card and the account menu's admin entry are two
+    // derivations of one target. The card is read before the menu opens: an
+    // open menu's backdrop hides the rest of the app from role queries.
     const card = adminCard(page)
-    await expect(entry).toBeVisible()
     await expect(card).toBeVisible()
+    const cardHref = await card.getAttribute('href')
+    expect(cardHref).not.toBeNull()
+
+    await openAccountMenu(page)
+    const entry = adminEntry(page)
+    await expect(entry).toBeVisible()
     const entryHref = await entry.getAttribute('href')
     expect(entryHref).not.toBeNull()
-    await expect(card).toHaveAttribute('href', entryHref ?? '')
+    expect(entryHref).toBe(cardHref)
   })
 
   await test.step('step 8: the account page shows the profile and identifiers, and an unproved write is refused', async () => {
@@ -492,7 +497,9 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         }),
     ).toHaveCount(0)
 
-    // Enter the admin and attempt a settings write.
+    // Enter the admin and attempt a settings write. The deployment registers
+    // only the platform's own organization, so the entry is offered here.
+    await openAccountMenu(page)
     await adminEntry(page).click()
     await expect(adminNav(page)).toBeVisible()
     await adminNav(page)
@@ -546,10 +553,9 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
   })
 
   await test.step('step 9: the admin shows its grouped navigation and the roster-derived overview', async () => {
-    // Back to the app, then in through the header entry the journey names.
-    await page
-      .getByRole('link', { name: copy('demo', 'admin.backToApp'), exact: true })
-      .click()
+    // Back to the app, then in through the account menu's admin entry.
+    await openAccountMenu(page)
+    await backToApp(page).click()
     await expect(
       page.getByRole('heading', {
         level: 1,
@@ -557,6 +563,7 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       }),
     ).toBeVisible()
+    await openAccountMenu(page)
     await adminEntry(page).click()
 
     await expect(

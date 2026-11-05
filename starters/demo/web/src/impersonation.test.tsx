@@ -35,7 +35,6 @@ import {
 import {
   createSpeedI18n,
 } from '@speed/product-shell/bootstrap'
-import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
@@ -71,7 +70,6 @@ const textI18n = createSpeedI18n({
   navigatorLanguages: [],
   namespaces: [
     { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
-    { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
     {
       namespace: NOTIFICATION_UI_NAMESPACE,
       resources: notificationUiResources,
@@ -81,21 +79,22 @@ const textI18n = createSpeedI18n({
 const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
 const tAdmin = textI18n.getFixedT('en-US', ADMIN_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
-const tTenancy = textI18n.getFixedT('en-US', TENANCY_UI_NAMESPACE)
 
 /**
- * The impersonation banner's standing live region. The app mounts a second
- * standing status region for the invitation-acceptance confirmation; these
- * cases assert on the impersonation announcement, so they select the region
- * that is not the named membership one.
+ * The impersonation banner's standing live region. The app mounts more than
+ * one standing status region: the invitation-acceptance confirmation, and the
+ * tenant-switch confirmation each account-menu placement carries. The
+ * impersonation announcement is the only Alert-shaped one, so select that
+ * rather than assuming a sole unnamed region.
  */
 function announcementRegion(): HTMLElement {
   const regions = screen
     .getAllByRole('status')
     .filter(
       (region) =>
+        region.classList.contains('MuiAlert-root') &&
         region.getAttribute('aria-label') !==
-        demoEnUS.home.membershipNotice.region,
+          demoEnUS.home.membershipNotice.region,
     )
   expect(regions).toHaveLength(1)
   return regions[0]!
@@ -595,17 +594,38 @@ function banner(): HTMLElement | null {
   })
 }
 
+/** Opens the header placement of the account menu, where the organization
+ * switcher now lives. */
+async function openAccountMenu(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  await user.click(screen.getByTestId('user-menu-trigger'))
+  return screen.findByRole('menu')
+}
+
+/** Closes the open account menu and waits for its surface to leave the tree. */
+async function closeAccountMenu(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+}
+
 /**
- * The tenant switcher's trigger, or null while it is not mounted. The trigger
- * is named by the current tenant's row, or by the no-current-tenant label
- * while the host has settled none.
+ * The account menu's organization entry, or null while the host withholds the
+ * organization list. The entry is named by the current organization's display
+ * name; with no current tenant settled it carries the menu's generic
+ * organizations label instead. An impersonation in force, and the
+ * identity-change gap after one ends, withdraw the entry entirely.
  */
-function tenantSwitcherTrigger(): HTMLElement | null {
+function organizationEntry(
+  menu: HTMLElement,
+  currentName: string,
+): HTMLElement | null {
   return (
-    screen.queryByRole('button', { name: 'acme' }) ??
-    screen.queryByRole('button', {
-      name: tTenancy('tenantSwitcher.noCurrentTenant'),
-    })
+    within(menu).queryByRole('menuitem', { name: currentName }) ??
+    within(menu).queryByText(currentName) ??
+    within(menu).queryByText(demoEnUS.userMenu.organizations)
   )
 }
 
@@ -679,11 +699,12 @@ describe('the impersonation shell', () => {
 
     // The impersonated account holds no platform permission, so the admin
     // is offered on the effective account's set, not on the impersonation
-    // flag: the header entry is absent for the same reason the ordinary
-    // member's is.
+    // flag: the account menu's entry is absent for the same reason the
+    // ordinary member's is.
+    const menu = await openAccountMenu(user)
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
-    ).not.toBeInTheDocument()
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
+    ).toBeNull()
   })
 
   it('keeps the banner across tenant-area pages', async () => {
@@ -715,6 +736,7 @@ describe('the impersonation shell', () => {
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
     })
     bindRequestFn(backend.fn)
+    const user = userEvent.setup()
 
     renderDemoApp({
       session: scriptedSession(targetSnapshot(), () => targetSnapshot()),
@@ -729,11 +751,13 @@ describe('the impersonation shell', () => {
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
 
-    // The switcher is not in the tree at all -- neither as a live affordance
-    // nor as a disabled no-current-tenant button -- and the rest of the top
-    // bar renders without it. The language switch is not there either: the
-    // bar's menus are the two account surfaces alone.
-    expect(tenantSwitcherTrigger()).toBeNull()
+    // The switcher is not in the tree at all -- the account menu opens
+    // without an organization entry or group -- and the rest of the top bar
+    // renders without it. The language switch is not there either: the bar's
+    // menus are the two account surfaces alone.
+    const menu = await openAccountMenu(user)
+    expect(organizationEntry(menu, 'acme')).toBeNull()
+    await closeAccountMenu(user)
     const menus = screen
       .getAllByRole('button')
       .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
@@ -768,7 +792,9 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
-    expect(tenantSwitcherTrigger()).toBeNull()
+    const menu = await openAccountMenu(user)
+    expect(organizationEntry(menu, 'acme')).toBeNull()
+    await closeAccountMenu(user)
     const rosterBefore = backend.rosterReads()
 
     await user.click(
@@ -782,9 +808,10 @@ describe('the impersonation shell', () => {
     await waitFor(() =>
       expect(backend.rosterReads()).toBeGreaterThan(rosterBefore),
     )
-    expect(
-      await screen.findByRole('button', { name: 'acme' }),
-    ).toBeInTheDocument()
+    const reopened = await openAccountMenu(user)
+    await waitFor(() =>
+      expect(organizationEntry(reopened, 'acme')).not.toBeNull(),
+    )
     expect(getCurrentTenantId()).toBe('acme')
   })
 
@@ -810,7 +837,9 @@ describe('the impersonation shell', () => {
     await waitFor(() =>
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
-    expect(tenantSwitcherTrigger()).toBeNull()
+    const menu = await openAccountMenu(user)
+    expect(organizationEntry(menu, 'acme')).toBeNull()
+    await closeAccountMenu(user)
 
     await user.click(
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
@@ -824,20 +853,19 @@ describe('the impersonation shell', () => {
     // reading.
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() => expect(backend.selfReads()).toBe(2))
-    expect(tenantSwitcherTrigger()).toBeNull()
+    const gapMenu = await openAccountMenu(user)
+    expect(organizationEntry(gapMenu, 'acme')).toBeNull()
     expect(
-      screen.queryByRole('button', {
-        name: tTenancy('tenantSwitcher.noCurrentTenant'),
-      }),
+      within(gapMenu).queryByText(demoEnUS.userMenu.organizations),
     ).toBeNull()
 
     // The read lands, and the switcher returns over the tenant it settles.
     await act(async () => {
       self.resolve()
     })
-    expect(
-      await screen.findByRole('button', { name: 'acme' }),
-    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(organizationEntry(gapMenu, 'acme')).not.toBeNull(),
+    )
     expect(getCurrentTenantId()).toBe('acme')
   })
 
@@ -884,16 +912,15 @@ describe('the impersonation shell', () => {
     await waitFor(() => expect(backend.selfReads()).toBe(2))
 
     // The roster read lands first. The caller tenant read is still in
-    // flight, so the gap stays open: no switcher and, above all, no
-    // no-current-tenant text.
+    // flight, so the gap stays open: no organization entry and, above all,
+    // no generic organizations row.
+    const menu = await openAccountMenu(user)
     await act(async () => {
       roster.resolve()
     })
-    expect(tenantSwitcherTrigger()).toBeNull()
+    expect(organizationEntry(menu, 'acme')).toBeNull()
     expect(
-      screen.queryByRole('button', {
-        name: tTenancy('tenantSwitcher.noCurrentTenant'),
-      }),
+      within(menu).queryByText(demoEnUS.userMenu.organizations),
     ).toBeNull()
 
     // The caller tenant read lands, and the switcher returns over the tenant
@@ -901,9 +928,9 @@ describe('the impersonation shell', () => {
     await act(async () => {
       self.resolve()
     })
-    expect(
-      await screen.findByRole('button', { name: 'acme' }),
-    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(organizationEntry(menu, 'acme')).not.toBeNull(),
+    )
     expect(getCurrentTenantId()).toBe('acme')
   })
 
@@ -916,16 +943,18 @@ describe('the impersonation shell', () => {
     setCurrentTenantId(null)
     const backend = makeBackend()
     bindRequestFn(backend.fn)
+    const user = userEvent.setup()
 
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
     expect(backend.rosterReads()).toBe(0)
+    // With no current organization settled the entry still mounts, carrying
+    // the menu's generic organizations label rather than a name.
+    const menu = await openAccountMenu(user)
     expect(
-      screen.getByRole('button', {
-        name: tTenancy('tenantSwitcher.noCurrentTenant'),
-      }),
-    ).toBeInTheDocument()
+      organizationEntry(menu, demoEnUS.userMenu.organizations),
+    ).not.toBeNull()
   })
 
   it('leaves the top bar unchanged for a member who is not impersonating', async () => {
@@ -934,16 +963,18 @@ describe('the impersonation shell', () => {
       selfTenants: [{ id: 'acme', alias: 'acme' }],
     })
     bindRequestFn(backend.fn)
+    const user = userEvent.setup()
 
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // The caller list settles the current tenant and the switcher stays where
-    // the frame put it; no status read is issued, no banner appears, and the
-    // member spends no platform roster read.
+    // The caller list settles the current tenant and the organization entry
+    // names it inside the account menu; no status read is issued, no banner
+    // appears, and the member spends no platform roster read.
     await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
-    expect(
-      await screen.findByRole('button', { name: 'acme' }),
-    ).toBeInTheDocument()
+    const menu = await openAccountMenu(user)
+    await waitFor(() =>
+      expect(organizationEntry(menu, 'acme')).not.toBeNull(),
+    )
     expect(banner()).toBeNull()
     expect(backend.statusReads()).toBe(0)
     expect(backend.rosterReads()).toBe(0)
@@ -985,11 +1016,16 @@ describe('the impersonation shell', () => {
       screen.getByText(tAuth('impersonation.ended')),
     ).toBeInTheDocument()
 
-    // The operator's own identity is back: the admin entry returns, and
-    // the identity-keyed roster read re-ran.
-    expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
-    ).toBeInTheDocument()
+    // The operator's own identity is back: both account triggers name the
+    // operator again, and the identity-keyed roster read re-ran.
+    await waitFor(() =>
+      expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
+        accountTriggerName('Staff One'),
+      ),
+    )
+    expect(screen.getByTestId('account-entry-trigger')).toHaveAccessibleName(
+      accountTriggerName('Staff One'),
+    )
     await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(rosterBefore))
 
     // The page did not move.
@@ -1040,7 +1076,11 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(banner()).toBeNull())
-    await screen.findByRole('link', { name: demoEnUS.nav.admin })
+    await waitFor(() =>
+      expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
+        accountTriggerName('Staff One'),
+      ),
+    )
 
     // A later impersonation in the same mount renders its banner: the
     // withheld state belongs to the finished interval.
@@ -1177,7 +1217,11 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(banner()).toBeNull())
-    await screen.findByRole('link', { name: demoEnUS.nav.admin })
+    await waitFor(() =>
+      expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
+        accountTriggerName('Staff One'),
+      ),
+    )
 
     holdStatus = true
     act(() => {
@@ -1300,11 +1344,13 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     // The host re-read the session, and the operator's own state returned:
-    // the banner is gone and the admin entry is offered again.
+    // the banner is gone and the account trigger names the operator again.
     await waitFor(() => expect(banner()).toBeNull())
-    expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
-    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
+        accountTriggerName('Staff One'),
+      ),
+    )
     expect(window.location.pathname).toBe('/')
   })
 
@@ -1390,9 +1436,12 @@ describe('the impersonation shell', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(banner()).toBeNull())
     expect(backend.deletes()).toBe(1)
-    expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
-    ).toBeInTheDocument()
+    // The identity re-read settled back on the operator.
+    await waitFor(() =>
+      expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
+        accountTriggerName('Staff One'),
+      ),
+    )
   })
 
   it('withholds the banner as soon as the end settles, before the session re-read', async () => {
@@ -2061,7 +2110,10 @@ describe('the impersonation shell', () => {
     setCurrentTenantId(null)
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      // The operator's own membership is the platform's organization: the
+      // admin entry is offered only there, so the end must settle it for the
+      // entry to be the observable this case reads.
+      selfTenants: [{ id: 'system', alias: 'system' }],
     })
     // The read fails while the session impersonates and answers for the
     // operator: the test needs the two outcomes, not a reason the
@@ -2126,9 +2178,11 @@ describe('the impersonation shell', () => {
     // (the guarded route answers 404 to a request naming no tenant), and the
     // refused read leaves the set unknown instead of attaching an empty one.
     await waitFor(() => expect(attached).toEqual([null]))
+    const menu = await openAccountMenu(user)
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
     ).toBeNull()
+    await closeAccountMenu(user)
 
     await user.click(
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
@@ -2146,8 +2200,9 @@ describe('the impersonation shell', () => {
     // change resets again, and the operator's own read is the one that
     // answers.
     expect(attached).toEqual([null, null, null, ['tenant.read']])
+    const settledMenu = await openAccountMenu(user)
     expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
+      within(settledMenu).getByRole('menuitem', { name: demoEnUS.nav.admin }),
     ).toBeInTheDocument()
   })
 
@@ -2882,6 +2937,7 @@ describe('the admin under an impersonation', () => {
       Promise.resolve({ platform: ['tenant.read'], tenant: [] }),
     )
     const session = attachable(createTestSession(targetSnapshot()))
+    const user = userEvent.setup()
     renderDemoApp({
       session,
       wrap: (app) => (
@@ -2892,9 +2948,11 @@ describe('the admin under an impersonation', () => {
     await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
+    const menu = await openAccountMenu(user)
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
     ).toBeNull()
+    await closeAccountMenu(user)
 
     act(() => {
       window.history.pushState({}, '', '/admin/tenants')
@@ -2907,10 +2965,51 @@ describe('the admin under an impersonation', () => {
     ).toBeNull()
   })
 
+  it('hides the entry under an impersonation even in the system organization', async () => {
+    // The tenant condition the entry also carries is satisfied here: the
+    // authorization names the platform organization, so the shell settles it
+    // as the current one and the permission read holds a served page's code.
+    // The absence is therefore the impersonation's alone, which the case
+    // after this one distinguishes by ending it on the same tenant.
+    window.history.replaceState({}, '', '/')
+    const backend = makeBackend({
+      grant: {
+        ...grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+        tenant: 'system',
+      },
+      selfTenants: [{ id: 'system', alias: 'system' }],
+    })
+    bindRequestFn(<T,>(path: string, options?: RequestOptions): Promise<T> => {
+      if (path === '/api/v1/authz/me/permissions') {
+        return Promise.resolve({ platform: ['tenant.read'], tenant: [] }) as Promise<T>
+      }
+      return backend.fn<T>(path, options)
+    })
+    const session = attachable(createTestSession(targetSnapshot()))
+    const user = userEvent.setup()
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await screen.findByRole('region', {
+      name: tAuth('impersonation.regionLabel'),
+    })
+    const menu = await openAccountMenu(user)
+    expect(
+      within(menu).queryByRole('menuitem', { name: demoEnUS.nav.admin }),
+    ).toBeNull()
+  })
+
   it('lets the admin back in once the impersonation ends', async () => {
     window.history.replaceState({}, '', '/admin/tenants')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      // The operator's own organization is the platform's: the menu offers
+      // the admin entry only there.
+      selfTenants: [{ id: 'system', alias: 'system' }],
     })
     bindRequestFn(backend.fn)
     const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
@@ -2926,8 +3025,10 @@ describe('the admin under an impersonation', () => {
     )
     await waitFor(() => expect(banner()).toBeNull())
 
-    const entry = await screen.findByRole('link', { name: demoEnUS.nav.admin })
-    await user.click(entry)
+    const menu = await openAccountMenu(user)
+    await user.click(
+      within(menu).getByRole('menuitem', { name: demoEnUS.nav.admin }),
+    )
     expect(
       await screen.findByRole('navigation', {
         name: tAdmin('shell.navLabel'),

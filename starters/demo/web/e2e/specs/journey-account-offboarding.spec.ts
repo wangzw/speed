@@ -63,6 +63,12 @@ import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts } from '../helpers/accounts'
 import {
+  adminEntry,
+  closeAccountMenu,
+  openAccountMenu,
+  organizationRow,
+} from '../helpers/account-menu'
+import {
   openAccountSection,
   selectAccountSection,
 } from '../helpers/account-sections'
@@ -106,13 +112,10 @@ const WRONG_PASSWORD = 'not-the-member-password'
 /** The account settings' first pane, which is the protected page the member was on. */
 const ACCOUNT_PROFILE_PATH = '/account/profile'
 
-/** The header's admin entry (a link, while the operator may reach it). */
-function adminEntry(page: Page): Locator {
-  return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.admin'),
-    exact: true,
-  })
-}
+/** The platform's own organization. The account menu offers the admin entry
+ * only while this is the current organization; platform administration is not
+ * a tenant member's surface. */
+const PLATFORM_TENANT = 'system'
 
 /** The admin's navigation landmark. */
 function adminNav(page: Page): Locator {
@@ -120,6 +123,18 @@ function adminNav(page: Page): Locator {
     name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
+}
+
+/**
+ * Open the admin from the tenant area. The way in is the account menu's admin
+ * entry, offered only while the platform's own organization is current.
+ */
+async function openConsole(page: Page): Promise<void> {
+  await switchToTenant(page, PLATFORM_TENANT)
+  await openAccountMenu(page)
+  await expect(adminEntry(page)).toBeVisible()
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
 }
 
 /** The accounts table of the admin page. */
@@ -261,43 +276,33 @@ function sessionsSection(page: Page): Locator {
   })
 }
 
-/** The tenant switcher's trigger, naming the current organization. */
-function tenantSwitcher(page: Page): Locator {
-  return page
-    .getByRole('banner')
-    .getByRole('button', { name: TENANT, exact: true })
-}
-
 /**
- * Move the tenant area to the member's organization. The member's account also
- * owns a personal organization, and the host settles that row as the current
- * organization for an ordinary member, so the trigger's current name is not
- * known up front. The menu's row is disabled when the organization is already
- * current, which is the only case this helper leaves the menu without a click.
+ * Move the tenant area to one organization through the account menu. The
+ * menu's first entry names the current organization and expands the others;
+ * choosing one closes the menu, switches, and announces the confirmation. The
+ * member's account also owns a personal organization, named after the account
+ * itself, so the current row's name is not known up front.
  */
-async function switchToTenant(page: Page): Promise<void> {
-  const trigger = tenantSwitcher(page).or(
-    page
-      .getByRole('banner')
-      .getByRole('button', {
-        name: copy('demo', 'organization.personal'),
-        exact: true,
-      }),
-  )
-  await expect(trigger).toBeVisible()
-  await trigger.click()
-  const row = page.getByRole('menuitem', { name: TENANT, exact: true })
-  await expect(row).toBeVisible()
-  if (await row.isEnabled()) {
-    await row.click()
-    await expectClippedAnnouncement(
-      page,
-      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT }),
-    )
-  } else {
-    await page.keyboard.press('Escape')
+async function switchToTenant(page: Page, tenant: string): Promise<void> {
+  const menu = await openAccountMenu(page)
+  if (
+    (await organizationRow(page, tenant).count()) > 0 ||
+    (await menu.getByText(tenant, { exact: true }).count()) > 0
+  ) {
+    // The organization is already current: its row is the expansion control,
+    // or context when it is the only one, and never a pick.
+    await closeAccountMenu(page)
+    return
   }
-  await expect(tenantSwitcher(page)).toBeVisible()
+  await menu.getByRole('menuitem').first().click()
+  const row = organizationRow(page, tenant)
+  await expect(row).toBeVisible()
+  await row.click()
+  await expectClippedAnnouncement(
+    page,
+    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+  )
+  await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
 /** The password sign-in surface's fields and submit control. */
@@ -432,9 +437,7 @@ test('account-offboarding: an operator disables a member and the member returns 
     })
 
     await test.step('step 1: the operator enters the admin and opens the accounts page', async () => {
-      await expect(adminEntry(page)).toBeVisible()
-      await adminEntry(page).click()
-      await expect(adminNav(page)).toBeVisible()
+      await openConsole(page)
       await adminNav(page)
         .getByRole('link', {
           name: copy('adminUi', 'accounts.title'),
@@ -719,7 +722,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       expect(new URL(memberB.url()).pathname).toBe(ACCOUNT_PROFILE_PATH)
     })
 
-    await test.step('alternate path: the session list holds only the new device, and the switcher names the organization', async () => {
+    await test.step('alternate path: the session list holds only the new device, and the account menu names the organization', async () => {
       if (memberBPage === undefined) {
         throw new Error('the member page was never opened')
       }
@@ -739,20 +742,28 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toHaveCount(1)
 
-      // The member's account owns a personal organization, which the host settles
-      // as the current organization for an ordinary member. Move to the
+      // The member's account owns a personal organization, which the host may
+      // settle as the current organization for an ordinary member. Move to the
       // organization this journey disabled and restored it in through the
-      // switcher, then observe that it is the current, unselectable row.
-      await switchToTenant(memberB)
-      await expect(tenantSwitcher(memberB)).toBeVisible({ timeout: 15_000 })
-      await tenantSwitcher(memberB).click()
-      await expect(
-        memberB.getByRole('menuitem', { name: TENANT, exact: true }),
-      ).toBeDisabled()
-      await memberB.keyboard.press('Escape')
-      await expect(
-        memberB.getByRole('menuitem', { name: TENANT, exact: true }),
-      ).toBeHidden()
+      // account menu, then observe that the menu names it as current and does
+      // not offer it again among the choices.
+      await switchToTenant(memberB, TENANT)
+      const menu = await openAccountMenu(memberB)
+      await expect(menu.getByText(TENANT, { exact: true })).toBeVisible({
+        timeout: 15_000,
+      })
+      if ((await organizationRow(memberB, TENANT).count()) > 0) {
+        await organizationRow(memberB, TENANT).click()
+        await expect(
+          menu
+            .getByRole('group', {
+              name: copy('demo', 'userMenu.organizations'),
+              exact: true,
+            })
+            .getByRole('menuitem', { name: TENANT, exact: true }),
+        ).toHaveCount(0)
+      }
+      await closeAccountMenu(memberB)
     })
   } finally {
     // The member contexts hold cookie sessions of their own; closing them

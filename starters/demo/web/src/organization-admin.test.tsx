@@ -264,6 +264,24 @@ async function accountMenuOrganization(
   return { group, names, firstHref }
 }
 
+/** Switches the current organization through the account menu: opens the
+ * header menu, expands the current organization's row, and picks `name`. */
+async function switchOrganization(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<void> {
+  await user.click(screen.getByTestId('user-menu-trigger'))
+  const menu = await screen.findByRole('menu')
+  // The menu's first row names the current organization and expands to the
+  // others; the pick closes the menu.
+  await user.click(
+    within(menu).getByRole('menuitem', {
+      name: getCurrentTenantAlias() ?? '',
+    }),
+  )
+  await user.click(await screen.findByRole('menuitem', { name }))
+}
+
 /** The organization group on both account-menu surfaces (the header's and the
  * sidebar's), plus the home card beside them. Every case reads both surfaces,
  * so a group that survives in one of them cannot pass as absent. `card` is
@@ -469,8 +487,7 @@ describe('the organization admin entry', () => {
       tAdmin('organization.nav.invitations'),
     ])
 
-    await user.click(screen.getByRole('button', { name: 'acme' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
+    await switchOrganization(user, 'globex')
 
     // The switch clears the tenant domain and the read for globex has not
     // answered: the old tenant's set must not stand in for the new tenant.
@@ -660,8 +677,7 @@ describe('the organization admin route admission', () => {
 
     // A switch inside the organization area takes the viewer home; the page
     // unmounts with its draft.
-    await user.click(screen.getByRole('button', { name: 'acme' }))
-    await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
+    await switchOrganization(user, 'globex')
     await waitFor(() => expect(window.location.pathname).toBe('/'))
 
     // Re-entering under the new tenant starts a fresh page: the draft did

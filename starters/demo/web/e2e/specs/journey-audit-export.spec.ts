@@ -61,6 +61,11 @@ import type { Locator, Page, Request } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  adminEntry,
+  openAccountMenu,
+  switchOrganization,
+} from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 
 // The settings table's type column and the audit table's least important
@@ -678,10 +683,12 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
     await expect(homeHeading(page)).toBeVisible()
-    await page
-      .getByRole('banner')
-      .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
-      .click()
+    // The admin entry is offered only while the platform's own organization
+    // is current, and it lives in the account menu.
+    await switchOrganization(page, 'system')
+    await openAccountMenu(page)
+    await expect(adminEntry(page)).toBeVisible()
+    await adminEntry(page).click()
     await expect(adminNav(page)).toBeVisible()
 
     // Open the audit page once to read the size its list read asks for. The
