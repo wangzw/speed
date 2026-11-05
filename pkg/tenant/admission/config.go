@@ -164,17 +164,30 @@ func schema() config.Schema {
 // domain the code acts on.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
-		Namespace: ConfigNamespace,
-		Mounts:    []settings.Mount{{Value: &defaults}},
+		Namespace:    ConfigNamespace,
+		TenantFacing: true,
+		Mounts:       []settings.Mount{{Value: &defaults}},
 		Items: map[string]settings.Item{
 			requireMFAItem: {
 				Description: "whether a tenant's members must have authenticated with more " +
 					"than one kind of factor to make a request in that tenant; per tenant",
+				TitleKey:       ConfigNamespace + "." + requireMFAItem + ".title",
+				DescriptionKey: ConfigNamespace + "." + requireMFAItem + ".description",
+				Control:        settings.ControlSwitch,
+				Danger:         settings.DangerCritical,
+				Effect:         settings.EffectImmediate,
+				TenantAccess:   settings.TenantReadWrite,
 			},
 			requireSSOItem: {
 				Description: "whether a tenant's members must have signed in through one of " +
 					"that tenant's own identity providers to make a request in that tenant; " +
 					"per tenant",
+				TitleKey:       ConfigNamespace + "." + requireSSOItem + ".title",
+				DescriptionKey: ConfigNamespace + "." + requireSSOItem + ".description",
+				Control:        settings.ControlSwitch,
+				Danger:         settings.DangerCritical,
+				Effect:         settings.EffectImmediate,
+				TenantAccess:   settings.TenantReadWrite,
 			},
 			checkTTLItem: {
 				Description: "how long a membership and a permission read from the account " +

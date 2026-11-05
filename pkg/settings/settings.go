@@ -308,6 +308,12 @@ type Schema struct {
 	// Items carries per-item metadata, keyed by the path relative to the
 	// namespace. An item absent from here takes the defaults.
 	Items map[string]Item
+	// TenantFacing declares that this schema states which of its items a tenant
+	// surface exposes. The zero value is false: a schema belongs to the
+	// platform alone unless it says otherwise, and an item that carries a
+	// tenant access under a schema that does not say so is a declaration
+	// defect.
+	TenantFacing bool
 }
 
 // Mount is one carrier struct, together with the path prefix it hangs from.
@@ -321,10 +327,83 @@ type Mount struct {
 	Value any
 }
 
+// TenantAccess says how much of a setting item a tenant surface exposes. The
+// set is closed, and the zero value is TenantNone: an item belongs to the
+// platform alone unless its declaration says otherwise. A schema must also set
+// Schema.TenantFacing for any item to carry an access other than TenantNone, so
+// a declaration that states a tenant access without the schema-level switch
+// fails the startup instead of exposing the item by accident.
+type TenantAccess string
+
+const (
+	// TenantNone keeps the item on the platform surface alone. It is the zero
+	// value.
+	TenantNone TenantAccess = ""
+	// TenantRead exposes the item to a tenant for reading. The platform alone
+	// writes it. The value is part of the closed set; no item declares it yet.
+	TenantRead TenantAccess = "read"
+	// TenantReadWrite exposes the item to a tenant for reading and writing.
+	TenantReadWrite TenantAccess = "read-write"
+)
+
+// Control names the control a tenant surface renders for an item. The set is
+// closed, and the zero value declares no control: a tenant-facing item must
+// name one.
+type Control string
+
+const (
+	// ControlNone declares no control. It is the zero value.
+	ControlNone Control = ""
+	// ControlSwitch renders a switch for a boolean item.
+	ControlSwitch Control = "switch"
+)
+
+// Danger says how destructive turning an item off is, and so whether a surface
+// confirms the change first. The zero value declares no danger.
+type Danger string
+
+const (
+	// DangerNone declares no danger. It is the zero value.
+	DangerNone Danger = ""
+	// DangerCritical marks a change a surface confirms before saving.
+	DangerCritical Danger = "critical"
+)
+
+// Effect says when a change to an item takes effect. The zero value declares no
+// effect.
+type Effect string
+
+const (
+	// EffectNone declares no effect. It is the zero value.
+	EffectNone Effect = ""
+	// EffectImmediate marks a change that applies as soon as it is saved.
+	EffectImmediate Effect = "immediate"
+)
+
 // Item is the metadata of one setting item.
 type Item struct {
-	// Description explains the item. Declared reports it.
+	// Description explains the item. Declared reports it. It is the text a
+	// tenant surface falls back to when no localizer is present, so a
+	// tenant-facing item carries one.
 	Description string
+	// TitleKey is the i18n key of the item's title. A tenant-facing item must
+	// declare one.
+	TitleKey string
+	// DescriptionKey is the i18n key of the item's description. A
+	// tenant-facing item must declare one.
+	DescriptionKey string
+	// Control is the control a tenant surface renders for the item. A
+	// tenant-facing item must name one.
+	Control Control
+	// Danger is how destructive turning the item off is. The zero value
+	// declares none.
+	Danger Danger
+	// Effect is when a change to the item takes effect. The zero value
+	// declares none.
+	Effect Effect
+	// TenantAccess is how much of the item a tenant surface exposes. The zero
+	// value keeps it on the platform surface alone.
+	TenantAccess TenantAccess
 	// Sensitive keeps the value out of change events and out of Declared: an
 	// event for a sensitive item carries neither the old nor the new value,
 	// and the listing carries no default for it.

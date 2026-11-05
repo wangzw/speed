@@ -334,8 +334,69 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 	if defect := domainDefect(entry); defect != "" {
 		return fmt.Errorf("%w: module %q declares %q: %s", ErrInvalidDeclaration, e.module, key, defect)
 	}
+	if defect := tenantDefect(entry, e.schema.TenantFacing); defect != "" {
+		return fmt.Errorf("%w: module %q declares %q: %s", ErrInvalidDeclaration, e.module, key, defect)
+	}
 	e.entries = append(e.entries, entry)
 	return nil
+}
+
+// tenantDefect reports why an item's tenant-facing declaration is not one a
+// tenant surface may render, or "" when it is.
+//
+// The tenant surface is fail-closed on both switches: the zero TenantAccess and
+// the zero Schema.TenantFacing each keep an item on the platform surface, and an
+// item that states a tenant access under a schema that does not declare itself
+// tenant-facing is a defect rather than an item exposed on the strength of one
+// field. The metadata is judged with the access because a surface renders the
+// item from it: a title, a description with its English fallback, and a control
+// are required. Danger and Effect are optional, since an item may carry neither.
+//
+// The judgement runs when the key table is built, which is part of a module's
+// New, so a defective declaration fails the startup and no request surface
+// exists to observe it. The message names only the declaring module's own key.
+func tenantDefect(entry keyEntry, tenantFacing bool) string {
+	switch entry.item.TenantAccess {
+	case TenantNone:
+		return ""
+	case TenantRead, TenantReadWrite:
+	default:
+		return fmt.Sprintf("its tenant access %q is outside the closed set: TenantNone, "+
+			"TenantRead or TenantReadWrite", entry.item.TenantAccess)
+	}
+	if !tenantFacing {
+		return fmt.Sprintf("its tenant access is %q, and the schema does not declare "+
+			"TenantFacing. An item reaches a tenant surface only under a schema that says "+
+			"it is tenant-facing", entry.item.TenantAccess)
+	}
+	switch {
+	case entry.item.TitleKey == "":
+		return "it is tenant-facing and declares no TitleKey, which a tenant surface renders " +
+			"as the item's title"
+	case entry.item.DescriptionKey == "":
+		return "it is tenant-facing and declares no DescriptionKey, which a tenant surface " +
+			"renders as the item's description"
+	case entry.item.Description == "":
+		return "it is tenant-facing and declares no Description, the text a surface falls back " +
+			"to when it has no localizer"
+	}
+	if entry.item.Control == ControlNone {
+		return "it is tenant-facing and declares no Control, so a tenant surface would not " +
+			"know what to render"
+	}
+	if entry.item.Control != ControlSwitch {
+		return fmt.Sprintf("its control %q is outside the closed set: ControlSwitch",
+			entry.item.Control)
+	}
+	if entry.item.Danger != DangerNone && entry.item.Danger != DangerCritical {
+		return fmt.Sprintf("its danger %q is outside the closed set: DangerNone or DangerCritical",
+			entry.item.Danger)
+	}
+	if entry.item.Effect != EffectNone && entry.item.Effect != EffectImmediate {
+		return fmt.Sprintf("its effect %q is outside the closed set: EffectNone or EffectImmediate",
+			entry.item.Effect)
+	}
+	return ""
 }
 
 // domainDefect reports why an item's declared domain is not one a write can
