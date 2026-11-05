@@ -142,6 +142,10 @@ function TenantRowActions({
 }) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  // Temporary: the alias route and this control are removed in T6. An
+  // alias is immutable after a tenant is registered, so PATCH
+  // /tenants/:id survives only to refuse the change; this row's rename
+  // keeps its caller until T6 takes both away.
   const renameTenant = operations.useSetTenantAlias()
   const setStatus = operations.useSetTenantStatus()
   // The row's own scope, with its region inside this row.
@@ -189,6 +193,7 @@ function TenantRowActions({
     setFailedAction(null)
     void feedback.run(async () => {
       try {
+        // Temporary: this alias call goes away with the route in T6.
         await renameTenant.mutateAsync({ id: tenant.id, alias })
         // A landed rename clears the draft so the next edit starts empty;
         // a refused one keeps it for a retry.
