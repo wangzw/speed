@@ -1130,9 +1130,11 @@ func deletionTime() time.Time {
 // a control character.
 //
 // A tombstone is refused with ErrTenantDeleted: its owner stays with the row.
-// Writing the owner a row already carries is a no-op that returns nil and reads
-// nothing from the table, so a repeated transfer costs no reread. An identifier
-// no row carries is refused with ErrInvalidTenant. The update carries the
+// Writing the owner a row already carries is a no-op that returns nil. It still
+// reads that row once inside the transaction, to tell the no-op from a missing
+// row or a tombstone, but it skips the whole-roster afterWrite reread, so a
+// repeated transfer costs no full read. An identifier no row carries is
+// refused with ErrInvalidTenant. The update carries the
 // tombstone condition itself, so a deletion committed between the check and the
 // write leaves the row as it is; a statement that updated no row is read again
 // to tell a tombstone from a tenant that is no longer there.

@@ -153,7 +153,7 @@ key.
   change that could not be recorded is not made. When the roster refuses the
   write, a failed row linked to the permitted one by the action identifier is
   written best-effort: its own failure is an Error line and changes nothing about
-  the answer. The action names are a closed set — `tenant.create`, `tenant.update`,
+  the answer. The action names are a closed set — `tenant.create`,
   `tenant.status`, `tenant.profile.update` — one per write route, and a read
   writes no audit row of its own. A profile update's rows carry
   `surface=platform` in their detail, which tells them apart from the tenant
@@ -215,8 +215,8 @@ key.
   added to a record later does not reach a client by being there. The view carries
   the tenant's identifier, its alias, the four profile fields, its state spelled
   the way `tenant.Status` spells it — `active` or `disabled` — and the creation
-  time when the roster recorded one; a row that predates the column omits
-  `createdAt` rather than rendering a zero time.
+  time. The creation time is always present: `created_at` is not null, so the
+  view renders it as an RFC 3339 instant in UTC and carries no omission branch.
 
 ## Configuration
 
