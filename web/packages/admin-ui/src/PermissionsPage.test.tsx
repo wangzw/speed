@@ -27,8 +27,8 @@ import type {
   AdminWriteRoleInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { WorkspaceAdminProvider } from './WorkspaceAdminProvider.js'
-import { WorkspacePermissionsPage } from './workspace-pages.js'
+import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
+import { OrganizationPermissionsPage } from './organization-pages.js'
 import { AdminDescribeRoleProvider } from './internal/describe-role.js'
 import { containerMaxWidthOf } from '../test-utils/container-visibility.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
@@ -148,7 +148,7 @@ function member(overrides: Partial<AdminMember> = {}): AdminMember {
   }
 }
 
-/** The workspace bundle over a scripted backend: the tenant reads default to
+/** The organization bundle over a scripted backend: the tenant reads default to
  * one role, its governed catalog and one member. */
 function tenantModeOperations(
   overrides: Partial<AdminBackend> = {},
@@ -167,20 +167,20 @@ function tenantModeOperations(
   )
 }
 
-/** Mounts the workspace roles page at the host's current tenant. */
+/** Mounts the organization roles page at the host's current tenant. */
 function renderTenantPermissions(
   operations: ReturnType<typeof createAdminOperations>,
   protectedRoles: readonly string[] = [],
 ): ReturnType<typeof renderWithProviders> {
   return renderWithProviders(
-    <WorkspaceAdminProvider
+    <OrganizationAdminProvider
       tenant="acme"
       operations={operations}
       hasFeature={() => true}
       protectedRoles={protectedRoles}
     >
-      <WorkspacePermissionsPage />
-    </WorkspaceAdminProvider>,
+      <OrganizationPermissionsPage />
+    </OrganizationAdminProvider>,
   )
 }
 
@@ -1789,7 +1789,7 @@ describe('PermissionsPage', () => {
     const operations = withAuthz({
       listRoles: () => Promise.resolve([role()]),
     })
-    const resolved = 'Editor of the tenant'
+    const resolved = 'Editor of the organization'
     const first = renderWithProviders(
       <AdminDescribeRoleProvider
         describeRole={(_key, described) => `${resolved} (${described.role})`}
@@ -2119,7 +2119,7 @@ describe('PermissionsPage tenant mode', () => {
     function TenantSwitch() {
       const [tenant, setTenant] = useState('acme')
       return (
-        <WorkspaceAdminProvider
+        <OrganizationAdminProvider
           tenant={tenant}
           operations={operations}
           hasFeature={() => true}
@@ -2127,8 +2127,8 @@ describe('PermissionsPage tenant mode', () => {
           <button type="button" onClick={() => setTenant('globex')}>
             switch tenant
           </button>
-          <WorkspacePermissionsPage />
-        </WorkspaceAdminProvider>
+          <OrganizationPermissionsPage />
+        </OrganizationAdminProvider>
       )
     }
     renderWithProviders(<TenantSwitch />)

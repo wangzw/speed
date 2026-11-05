@@ -159,7 +159,7 @@
 
 #### 认领的粒度
 
-按能力命名空间认领：示范把 `/api` 归业务端点，把 `/api/v1/auth`、`/api/v1/features`、`/api/v1/workspace` 归账户端点，把 `/api/v1/system/audit`、`/api/v1/system/auth`、`/api/v1/system/permissions`、`/api/v1/system/settings`、`/api/v1/system/sms`、`/api/v1/system/tenants` 归管理端点；`/api/v1/tenants` 落在业务端点的 `/api` 认领之下；只有要把一段子树划给另一个端点时才写更深的前缀。
+按能力命名空间认领：示范把 `/api` 归业务端点，把 `/api/v1/auth`、`/api/v1/features`、`/api/v1/orgs` 归账户端点，把 `/api/v1/system/audit`、`/api/v1/system/auth`、`/api/v1/system/permissions`、`/api/v1/system/settings`、`/api/v1/system/sms`、`/api/v1/system/tenants` 归管理端点；`/api/v1/tenants` 落在业务端点的 `/api` 认领之下；只有要把一段子树划给另一个端点时才写更深的前缀。
 
 否决「按 `/<能力>/admin` 这类子命名空间认领」：占用的命名空间更少，但认领要覆盖平台前端会寻址的全集，按子命名空间写最容易漏；能力增加子命名空间时还要改认领。顶层名字前端产物里本来就有，暴露它们带不出装配。
 

@@ -14,7 +14,7 @@
  * never this file.
  *
  * The app owns two operations of its own today: the host's personal-tenant
- * ensure (`POST /api/v1/workspace/personal`), generated from the contract, and
+ * ensure (`POST /api/v1/orgs/personal`), generated from the contract, and
  * the review build's notice control (src/app-api/review-notice.ts), which is
  * hand-written because the review-only route is not in the baseline contract.
  * The generated half needs no mutator the platform package does not export.

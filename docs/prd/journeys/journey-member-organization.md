@@ -1,4 +1,4 @@
-# 成员在租户里收发通知
+# 成员在组织里收发通知
 
 ## 参与者
 
@@ -56,4 +56,4 @@ flowchart TD
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
+`starters/demo/web/e2e/specs/journey-member-organization.spec.ts` `member-organization: a member receives, reads and configures notifications`

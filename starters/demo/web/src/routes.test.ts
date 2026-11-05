@@ -32,9 +32,9 @@ import {
   ACCOUNT_SECTION_PATHS,
   INVITATION_PREFIX,
   PASSWORD_RESET_PATH,
-  WORKSPACE_ADMIN_PREFIX,
+  ORGANIZATION_ADMIN_PREFIX,
 } from './paths.js'
-import { workspaceAdminShellRoutes } from './workspace-admin.js'
+import { organizationAdminShellRoutes } from './organization-admin.js'
 
 describe('the route table', () => {
   it('names the business slot, the account page and the notification center, all labelled but for the completion points beside the unlabelled callback', () => {
@@ -174,20 +174,20 @@ describe('the route table', () => {
         invitationRoutes.length +
         passwordResetRoutes.length +
         adminShellRoutes.length +
-        workspaceAdminShellRoutes.length,
+        organizationAdminShellRoutes.length,
     )
   })
 
-  it('mounts the workspace declarations under their own prefix, outside the admin prefix', () => {
-    expect(workspaceAdminShellRoutes.map((route) => route.path)).toEqual([
-      `${WORKSPACE_ADMIN_PREFIX}/invitations`,
-      `${WORKSPACE_ADMIN_PREFIX}/sso`,
-      `${WORKSPACE_ADMIN_PREFIX}/roles`,
-      `${WORKSPACE_ADMIN_PREFIX}/settings`,
+  it('mounts the organization declarations under their own prefix, outside the admin prefix', () => {
+    expect(organizationAdminShellRoutes.map((route) => route.path)).toEqual([
+      `${ORGANIZATION_ADMIN_PREFIX}/invitations`,
+      `${ORGANIZATION_ADMIN_PREFIX}/sso`,
+      `${ORGANIZATION_ADMIN_PREFIX}/roles`,
+      `${ORGANIZATION_ADMIN_PREFIX}/settings`,
     ])
-    for (const route of workspaceAdminShellRoutes) {
+    for (const route of organizationAdminShellRoutes) {
       // The two management surfaces have disjoint path spaces: the admin
-      // predicate does not claim a workspace page.
+      // predicate does not claim an organization page.
       expect(isAdminPath(route.path)).toBe(false)
     }
   })

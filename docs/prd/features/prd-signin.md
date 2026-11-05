@@ -66,7 +66,7 @@
 
 - **验收**：持有口令的账户以用户名或已选作登录方式的已验证邮箱提交正确口令后登录完成；已登记并已验证但未选作登录方式的邮箱被拒绝；未证明的邮箱被拒绝；经提供方声明写下的地址不能用作口令登录名。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signin-007
 

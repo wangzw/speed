@@ -39,7 +39,7 @@ package main
 // hidden. The fixture writes the pruned set through the preference seam because
 // the delivery pipeline reads the effective channels when it consumes the job.
 //
-// The periodic schedule is the member-workspace journey's dispatch: the
+// The periodic schedule is the member-organization journey's dispatch: the
 // platform's scheduler enqueues one job per tenant per window and the handler
 // turns each job into one notification per addressable active member. The
 // rollout journey's proof is not that window: it is the review-only control
@@ -169,7 +169,7 @@ var reviewNotificationCatalog = i18n.Catalog{
 // reviewNotificationType is the type a business module would declare for a
 // system notice a recipient may turn off. Its default channels are the in-app
 // inbox, email and sms: the rollout journey needs sms among them, while the
-// member-workspace journey reaches the other two. It is unsubscribable — the
+// member-organization journey reaches the other two. It is unsubscribable — the
 // journey's preference write turns a channel off — and the only parameter it
 // exposes is the destination the delivery pipeline reads, which is the
 // recipient's own phone number or address. The catalog names the sms template
@@ -377,9 +377,9 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 	if !ok {
 		return jobs.Result{}, fmt.Errorf("%s: %w", reviewNotificationModuleName, tenant.ErrNoTenantInContext)
 	}
-	// The system tenant is the platform's policy domain, not a workspace: the
+	// The system tenant is the platform's policy domain, not an organization: the
 	// notice this fixture dispatches is not addressed to its administrators.
-	// Personal tenants are real workspaces and do receive it.
+	// Personal tenants are real organizations and do receive it.
 	if string(id) == string(authz.PlatformDomain) {
 		return jobs.Result{}, nil
 	}

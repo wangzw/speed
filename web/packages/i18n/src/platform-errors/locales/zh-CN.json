@@ -26,6 +26,7 @@
     "authn.password_reset_closed": "本站未开放免登录的密码重置。",
     "authn.password_reset_unavailable": "该账户当前无法重置密码，请联系管理员。",
     "authn.password_too_short": "密码长度不能少于 {{min_length}} 个字符。",
+    "authn.phone_required": "请先添加并验证手机号，再启用短信两步验证。",
     "authn.refresh_token_invalid": "会话无法续期，请重新登录。",
     "authn.refresh_token_reused": "检测到凭证被重复使用，出于安全考虑已结束该会话，请重新登录。",
     "authn.session_not_found": "会话不存在。",
@@ -46,7 +47,7 @@
     "authz.conflict": "该改动与现有角色或绑定冲突。",
     "authz.forbidden": "你没有执行该操作的权限。",
     "authz.protected": "这个域受保护，不能在这里管理它的角色、授予和绑定。",
-    "billing.insufficient_credits": "租户可用信用点余额不足以覆盖 {{amount}} 点。",
+    "billing.insufficient_credits": "组织可用信用点余额不足以覆盖 {{amount}} 点。",
     "billing.invalid_amount": "金额 {{amount}} 非法，必须是正数。",
     "billing.invoice_not_found": "未找到 id 为 \"{{id}}\" 的账单。",
     "billing.plan_not_found": "未找到 \"{{id}}\" 对应的套餐。",
@@ -63,9 +64,9 @@
     "sms.config_template": "该模板由配置提供，无法在此修改。",
     "sms.conflict": "同名模板已存在。",
     "tenant.bad_request": "提交的内容有误，请检查表单后重试。",
-    "tenant.conflict": "该标识或别名已被其他租户占用。",
-    "tenant.protected": "该租户受保护，无法修改。",
-    "workspace.identifier_unavailable": "个人工作区的地址不可用，请联系管理员。",
-    "workspace.tenant_unavailable": "你的个人工作区已被停用，请联系管理员。"
+    "tenant.conflict": "该标识或别名已被其他组织占用。",
+    "tenant.protected": "该组织受保护，无法修改。",
+    "org.identifier_unavailable": "个人组织的地址不可用，请联系管理员。",
+    "org.tenant_unavailable": "你的个人组织已被停用，请联系管理员。"
   }
 }

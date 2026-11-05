@@ -16,15 +16,27 @@
  * ones that missed, so one bad criterion does not hide the rest.
  */
 
-import { screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { alpha } from '@mui/material/styles'
 import axe from 'axe-core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
+import { attachSession } from '@speed/auth-core'
+import type { AppShellNavItem } from '@speed/layout-kit'
+import {
+  createQueryClient,
+  createSpeedI18n,
+  SpeedAppProviders,
+} from '@speed/product-shell/bootstrap'
+import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
+import { RouteProvider } from '@speed/route-kit'
 import { themePresets } from '@speed/theme-presets'
 import { createAppTheme } from '@speed/ui-kit'
-import { renderDemoApp } from './test-utils/render.js'
+import { AppServicesProvider } from './app-services.js'
+import { AccountEntry } from './chrome.js'
+import { DEMO_NAMESPACE, demoResources } from './resources.js'
+import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
 import {
   authenticatedSnapshot,
   createTestSession,
@@ -33,7 +45,6 @@ import {
 /** The account bar's geometry contract, in CSS pixels. */
 const EXPECTED = {
   menuLeftInset: 9,
-  menuWidth: 238,
   avatarInset: 16,
   /** The navigation's own icon mark, and so every menu entry's. */
   iconGlyphSize: 24,
@@ -392,18 +403,29 @@ describe('the account menu across theme presets', () => {
         const paperStyle = getComputedStyle(paper)
 
         // The menu opens from the column's left edge (its paper's own 9px
-        // margin is part of the contract) and keeps the fixed width.
+        // margin is part of the contract) and keeps the theme's width.
         const menuLeftInset = paperRect.left - columnRect.left
         if (Math.abs(menuLeftInset - EXPECTED.menuLeftInset) > TOLERANCE) {
           issues.push(
             `${label}: menu left edge: expected ${EXPECTED.menuLeftInset}px ±${TOLERANCE}px, measured ${px(menuLeftInset)}px (computed margin-left ${paperStyle.marginLeft})`,
           )
         }
+        // The expected width is the theme's own spacing(30), not a fixed
+        // pixel count: the paper settles at that minimum unless its content
+        // is wider, so the content's own width is measured too.
+        const themeMinWidth = Number.parseFloat(theme.spacing(30))
+        const inlineWidth = paper.style.width
+        const inlineMinWidth = paper.style.minWidth
+        paper.style.width = 'max-content'
+        paper.style.minWidth = '0px'
+        const contentWidth = paper.getBoundingClientRect().width
+        paper.style.width = inlineWidth
+        paper.style.minWidth = inlineMinWidth
         checkClose(
           issues,
           `${label}: menu width`,
           paperRect.width,
-          EXPECTED.menuWidth,
+          Math.max(themeMinWidth, contentWidth),
         )
 
         // The sidebar's own icon track is the reference: every entry shares
@@ -558,5 +580,134 @@ describe("the account trigger's Label in Name", () => {
     expect(
       result.passes.reduce((total, rule) => total + rule.nodes.length, 0),
     ).toBeGreaterThan(0)
+  })
+})
+
+/** The organization entry this case's menu carries; the group renders one
+ * entry, so its bottom edge is the group's. */
+const ORGANIZATION_ITEM: AppShellNavItem = {
+  id: '/organization/admin/invitations',
+  label: 'Invitations',
+}
+
+/**
+ * Mounts the sidebar account entry alone, with the organization group present,
+ * under the production provider stack and the theme the case renders. The
+ * group is what the divider before sign-out follows, so this is the shape that
+ * exercises the rhythm MUI's sibling rule cannot reach.
+ */
+function renderAccountEntry(): void {
+  const i18n = createSpeedI18n({
+    supportedLanguages: ['zh-CN', 'en-US'],
+    defaultLanguage: 'en-US',
+    storage: null,
+    urlParameterName: null,
+    navigatorLanguages: [],
+    namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
+  })
+  const queryClient = createQueryClient()
+  const session = createTestSession(authenticatedSnapshot())
+  attachSession(session)
+  const services: SpeedAppServices = {
+    session,
+    api: createHarnessClient(),
+    queryClient,
+  }
+  render(
+    <SpeedAppProviders
+      i18n={i18n}
+      queryClient={queryClient}
+      theme={{
+        presets: themePresets,
+        defaultPreset: 'default',
+        defaultMode: 'light',
+        projectTokens: {},
+      }}
+    >
+      <AppServicesProvider services={services}>
+        <RouteProvider table={[]} fallback={() => null}>
+          <AccountEntry organizationItems={[ORGANIZATION_ITEM]} />
+        </RouteProvider>
+      </AppServicesProvider>
+    </SpeedAppProviders>,
+  )
+}
+
+/**
+ * The menu's section rhythm belongs to the shared list, not to MUI's sibling
+ * rule: every divider carries theme.spacing(1) above and below, including the
+ * one that follows the organization group's container rather than a menu item.
+ * Measured on the sidebar account entry's menu, where that group renders.
+ */
+describe('the account menu section rhythm', () => {
+  it('spaces every divider, including the one before sign-out', async () => {
+    await page.viewport(1280, 900)
+    const preset =
+      themePresets.find((candidate) => candidate.id === 'default') ??
+      themePresets[0]
+    if (preset === undefined) {
+      throw new Error('the theme shelf is empty')
+    }
+    const theme = createAppTheme(preset.tokens, undefined, 'light').theme
+    const rhythm = Number.parseFloat(theme.spacing(1))
+    expect(rhythm).toBeGreaterThan(0)
+
+    renderAccountEntry()
+
+    const trigger = await screen.findByTestId('account-entry-trigger')
+    await userEvent.setup().click(trigger)
+    const menu = await screen.findByRole('menu', undefined, { timeout: 5000 })
+    const paper = menu.parentElement as HTMLElement
+    // The Grow transition scales the paper while it opens; measure the
+    // settled box.
+    await waitFor(() => {
+      const transform = getComputedStyle(paper).transform
+      const settled =
+        transform === 'none' ||
+        /^matrix\(1, 0, 0, 1, 0, 0\)$/.test(transform)
+      if (!settled) {
+        throw new Error(`menu still transforming: ${transform}`)
+      }
+    })
+
+    const dividers = Array.from(menu.children).filter(
+      (child): child is HTMLElement => child.tagName === 'HR',
+    )
+    // One after the notification centre, one before the organization group,
+    // one before sign-out.
+    expect(dividers).toHaveLength(3)
+    dividers.forEach((divider, index) => {
+      const style = getComputedStyle(divider)
+      expect(style.marginTop, `divider ${index + 1} margin-top`).toBe(
+        `${rhythm}px`,
+      )
+      expect(style.marginBottom, `divider ${index + 1} margin-bottom`).toBe(
+        `${rhythm}px`,
+      )
+    })
+
+    const group = menu.querySelector('[role="group"]')
+    const lastDivider = dividers[dividers.length - 1]
+    if (!(group instanceof HTMLElement) || lastDivider === undefined) {
+      throw new Error('the menu has no organization group or last divider')
+    }
+    const signOut = within(menu).getAllByRole('menuitem').at(-1)
+    if (signOut === undefined) {
+      throw new Error('the menu has no sign-out item')
+    }
+
+    const dividerRect = lastDivider.getBoundingClientRect()
+    const groupToDivider =
+      dividerRect.top - group.getBoundingClientRect().bottom
+    const dividerToSignOut =
+      signOut.getBoundingClientRect().top - dividerRect.bottom
+    expect(
+      Math.abs(groupToDivider - rhythm),
+      `organization group to last divider gap: expected ${rhythm}px, measured ${px(groupToDivider)}px`,
+    ).toBeLessThanOrEqual(TOLERANCE)
+    expect(
+      Math.abs(dividerToSignOut - rhythm),
+      `last divider to sign-out gap: expected ${rhythm}px, measured ${px(dividerToSignOut)}px`,
+    ).toBeLessThanOrEqual(TOLERANCE)
   })
 })

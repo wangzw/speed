@@ -162,7 +162,7 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q before the address is proved, want pending", state)
 	}
 
-	// The workspace exists before the address is proved: the account's creation
+	// The organization exists before the address is proved: the account's creation
 	// hook built the personal tenant, and the verification notice is a separate
 	// surface. The backfill after verification below reads the same tenant back.
 	early := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
@@ -214,7 +214,7 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q after the code was accepted, want verified", state)
 	}
 
-	// The proved address lifts the registration limit; the workspace the creation
+	// The proved address lifts the registration limit; the organization the creation
 	// hook built is read back unchanged.
 	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
 	if ensured.status != http.StatusOK {

@@ -415,7 +415,7 @@ describe('the colour mode preference', () => {
 vi.mock('./account-entry.js', () => ({ ACCOUNT_ENTRY: 'both' }))
 
 /** The entries every account menu carries unconditionally, in render order.
- * The workspace admin group joins the list only while the caller's admission
+ * The organization admin group joins the list only while the caller's admission
  * allows it. */
 const ACCOUNT_MENU_LABELS = [
   demoEnUS.userMenu.messages,
@@ -510,7 +510,7 @@ describe('the account menus', () => {
   }
 })
 
-/** UserMenu with one workspace entry whose link pair is route-kit's own, so a
+/** UserMenu with one organization entry whose link pair is route-kit's own, so a
  * plain click navigates in place exactly as it does from the app's slot. */
 function UserMenuHarness({
   closeDrawer,
@@ -528,7 +528,7 @@ function UserMenuHarness({
       onClick: link.onClick,
     },
   ]
-  return <UserMenu closeDrawer={closeDrawer} workspaceItems={items} />
+  return <UserMenu closeDrawer={closeDrawer} organizationItems={items} />
 }
 
 /** Renders UserMenu alone, under the production provider stack and the app
@@ -568,11 +568,11 @@ function renderUserMenu(options: {
 }
 
 describe('the header account menu in the temporary drawer', () => {
-  it('closes the drawer as well as the menu when a workspace entry is chosen', async () => {
+  it('closes the drawer as well as the menu when an organization entry is chosen', async () => {
     window.history.replaceState({}, '', '/')
     const user = userEvent.setup()
     const closeDrawer = vi.fn()
-    renderUserMenu({ closeDrawer, target: '/workspace/admin/invitations' })
+    renderUserMenu({ closeDrawer, target: '/organization/admin/invitations' })
 
     await user.click(screen.getByTestId('user-menu-trigger'))
     await user.click(
@@ -584,14 +584,14 @@ describe('the header account menu in the temporary drawer', () => {
     // the drawer covers the page it just opened.
     expect(closeDrawer).toHaveBeenCalledTimes(1)
     await waitFor(() =>
-      expect(window.location.pathname).toBe('/workspace/admin/invitations'),
+      expect(window.location.pathname).toBe('/organization/admin/invitations'),
     )
     await waitFor(() =>
       expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
     )
   })
 
-  it('closes the app\'s temporary drawer when a workspace entry is chosen', async () => {
+  it('closes the app\'s temporary drawer when an organization entry is chosen', async () => {
     // The case above injects the close channel into UserMenu, so it cannot
     // prove the assembled app passes the slot's own channel through. This
     // case drives the app instead: the sidebar shell below md, its temporary
@@ -612,7 +612,7 @@ describe('the header account menu in the temporary drawer', () => {
           tenant: ['authn.membership.manage'],
         } as T)
       }
-      // The workspace landing page reads its first declaration's list.
+      // The organization landing page reads its first declaration's list.
       if (path.endsWith('/invitations')) {
         return Promise.resolve({ invitations: [], next_cursor: '' } as T)
       }
@@ -646,12 +646,12 @@ describe('the header account menu in the temporary drawer', () => {
       screen.getByRole('button', { name: tLayout('appShell.openNav') }),
     )
 
-    // The avatar menu is the drawer's userMenu slot. Its workspace group is
+    // The avatar menu is the drawer's userMenu slot. Its organization group is
     // the admission's entries, resolved from the scripted reads.
     await user.click(screen.getByTestId('user-menu-trigger'))
     const menu = await screen.findByRole('menu')
     const group = await within(menu).findByRole('group', {
-      name: demoEnUS.nav.workspaceAdmin,
+      name: demoEnUS.nav.organizationAdmin,
     })
     const firstEntry = within(group).getAllByRole('menuitem')[0]
     expect(firstEntry).toBeDefined()
@@ -659,7 +659,7 @@ describe('the header account menu in the temporary drawer', () => {
 
     // The route-kit entry navigates in place...
     await waitFor(() =>
-      expect(window.location.pathname).toBe('/workspace/admin/invitations'),
+      expect(window.location.pathname).toBe('/organization/admin/invitations'),
     )
     // ...and the slot's closeDrawer closed the temporary drawer around it.
     await waitFor(() =>

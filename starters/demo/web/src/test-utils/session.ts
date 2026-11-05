@@ -88,7 +88,7 @@ export function authenticatedSnapshot(options: {
     // The suite's session serves the platform vocabulary a baseline
     // deployment serves unless the test narrows it, so the feature-gated
     // pages and controls are present by default. Application-owned names
-    // (the personal tenant's workspace.personal, for one) are not in the
+    // (the personal tenant's org.personal, for one) are not in the
     // platform package's FEATURE_NAMES; a suite that needs one passes its own
     // feature state.
     features: options.features ?? {

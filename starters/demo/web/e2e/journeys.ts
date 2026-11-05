@@ -171,7 +171,7 @@ export const journeys: readonly JourneyEntry[] = [
     ],
   },
   {
-    journey: 'journey-first-registration-to-personal-workspace.md',
+    journey: 'journey-first-registration-to-personal-organization.md',
     status: 'covered',
     covers: [
       'REQ-account-010',
@@ -271,7 +271,7 @@ export const journeys: readonly JourneyEntry[] = [
     ],
   },
   {
-    journey: 'journey-member-workspace.md',
+    journey: 'journey-member-organization.md',
     status: 'covered',
     covers: [
       'REQ-notifications-001',

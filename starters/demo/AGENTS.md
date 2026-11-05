@@ -471,12 +471,13 @@ value they were written with:
 | `server/modules/` | The slot for this product's business modules |
 | `server/testdata/` | One override document per deployment stack: the deltas from `server/defaults.go` |
 | `server/dist/` | The frontend build output, embedded by the Go program |
+| `server/dist-e2e/` | The end-to-end tier's own bundle, produced by `web/e2e/global-setup.ts` and embedded only by an e2e-tagged build |
 | `web/` | The frontend application's source and build; it writes into `server/dist` |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
 | `Dockerfile` | The container image: the frontend workspace built first, then the Go program that embeds it. Built from the repository root, not this directory |
 | `fly.toml` | The Fly.io deployment: one Machine, the volume, the two checks |
 | `deploy/` | The container entrypoint and the configuration template it renders at start |
-| `.gitignore` | Keeps the runtime state (`server/var/`) and the build output (`server/dist/`) out of the tree |
+| `.gitignore` | Keeps the runtime state (`server/var/`) and the build output (`server/dist/`, and the e2e tier's `server/dist-e2e/`) out of the tree |
 
 ## Running it
 
@@ -554,7 +555,7 @@ after an earlier run is added on the next run through the host's seeding
 surface, so each administration role keeps everything the process declares while
 the management surface stays unable to change it. The command names the personal
 tenant module too, so its account-creation hook builds every seeded account's
-personal tenant at seed time when `workspace.personal.enabled` is on; with the
+personal tenant at seed time when `org.personal.enabled` is on; with the
 switch off the hook builds nothing. The run has no HTTP entry point: the
 personal module skips its backfill route and the audit journal skips its
 request-level layer, while the account lifecycle hooks and the statement-level
@@ -711,7 +712,7 @@ unreadable.
 which compiles every capability in and lets the rendered configuration decide
 which ones start; `seed.settings` opens
 `authn.account.password-signup` and `authn.account.signup`; and
-`workspace.personal.enabled` is on, so an account that proves its email address
+`org.personal.enabled` is on, so an account that proves its email address
 gets a personal tenant. The email loop needs a real relay: the entrypoint
 requires `DEMO_SMTP_HOST` and `DEMO_SMTP_FROM`, and treats
 `DEMO_SMTP_USERNAME` and `DEMO_SMTP_PASSWORD` as optional (empty means no
@@ -839,7 +840,7 @@ table:
 | Endpoint | Claims |
 |---|---|
 | `api` | `/api` |
-| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace` |
+| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/orgs` |
 | `admin` | `/api/v1/system/audit`, `/api/v1/system/auth`, `/api/v1/system/permissions`, `/api/v1/system/settings`, `/api/v1/system/sms`, `/api/v1/system/tenants` |
 | `ops` | `/health`, `/ready`, `/openapi.json` (declared explicitly: the endpoint shares the backend listener, whose root the `web` endpoint claims) |
 | `web` | `/` |
@@ -1018,21 +1019,21 @@ names the fixed part of that wiring, and no configuration file repeats it:
   review build is the worked example of both: it declares a type and names the
   caller as the recipient (see "The review build's notification fixture").
 - **The personal tenant** is the host's own policy, not a platform capability
-  (`workspace.personal`, `server/personal.go` and `server/personal_lifecycle.go`,
-  named in `baselineServe`). Its switch is `workspace.personal.enabled`, on by
+  (`org.personal`, `server/personal.go` and `server/personal_lifecycle.go`,
+  named in `baselineServe`). Its switch is `org.personal.enabled`, on by
   default; the `testdata/` files leave it there and the review assembly names it
   too (`server/review/sqlite.yaml`). With it on, the module implements
   `authn.AccountLifecycle.AccountCreated`: the account is committed and then its
   personal tenant, membership and tenant-admin binding are built, so no account
   exists without a tenant. With the switch off the hook builds nothing, no route
   is mounted, the feature is absent from the document, and the claimed
-  `/api/v1/workspace` prefix answers the account endpoint's 404. A service
+  `/api/v1/orgs` prefix answers the account endpoint's 404. A service
   account has no personal tenant, and a deleted account (or an existing tenant
   tombstone) is no work. The status and deletion hooks stay in force whether or
   not the route is mounted, because they wind up a tenant an account already
   has.
 
-  The policy module requires `tenant.KindResolver`; `workspace.personal.kind`
+  The policy module requires `tenant.KindResolver`; `org.personal.kind`
   (`server/personal.go`) delivers it and both are named in `baselineServe`. The
   resolver compares a row's identifier with the caller's own derived
   `personal-<account-id>` exactly, so the caller tenant read answers `personal`
@@ -1043,7 +1044,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   and the seed's skip — all call `isPersonalTenantID`, so the prefix is spelled
   once.
 
-  The route `POST /api/v1/workspace/personal` on the `account` endpoint is the
+  The route `POST /api/v1/orgs/personal` on the `account` endpoint is the
   backfill: a caller whose own personal tenant is missing from its membership
   list asks for one. A membership in another tenant is not a refusal — every
   account owns its personal tenant — so the backfill creates it beside them; an
@@ -1055,7 +1056,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   static-credential principal 403.
   Registration verification is not an eligibility fact: an unverified account
   gets its personal tenant, and the verification gate limits what it may do
-  inside the workspace. The idempotent pieces are the tenant row (identifier and
+  inside the organization. The idempotent pieces are the tenant row (identifier and
   alias both `personal-<account-id>`), the account's membership, a non-builtin
   `tenant-admin` role, that role's grants converged to the allowlist the host
   declares (the host's business-resource set less membership, invitation and
@@ -1066,7 +1067,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   409 `tenant-unavailable` without writing anything. An alias collision or a
   derived identifier outside the roster domain answers 409
   `identifier-unavailable`. A dependency failure is a 503 with no part of the
-  result. The two 409s carry `urn:speed:workspace:<code>` types, so a frontend
+  result. The two 409s carry `urn:speed:org:<code>` types, so a frontend
   that must render them by code can distinguish them. `personal.go` demonstrates
   that an application module's refusal a product frontend must render by code
   needs that shape, since `@speed/api-client` degrades every other problem type

@@ -10,7 +10,7 @@
 
 declare module '@speed/api-sdk/features' {
   interface FeatureNameRegistry {
-    'workspace.personal': true
+    'org.personal': true
   }
 }
 

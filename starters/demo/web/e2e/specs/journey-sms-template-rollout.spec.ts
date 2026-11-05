@@ -193,7 +193,7 @@ function templateRow(page: Page, name: string): Locator {
   return page.getByRole('row').filter({ hasText: name })
 }
 
-/** The tenant switcher's trigger: the personal workspace or the seeded tenant. */
+/** The tenant switcher's trigger: the personal organization or the seeded tenant. */
 function tenantTrigger(page: Page): Locator {
   return page
     .getByRole('banner')
@@ -201,13 +201,13 @@ function tenantTrigger(page: Page): Locator {
     .or(
       page
         .getByRole('banner')
-        .getByRole('button', { name: copy('demo', 'workspace.personal'), exact: true }),
+        .getByRole('button', { name: copy('demo', 'organization.personal'), exact: true }),
     )
 }
 
 /**
  * Switch the tenant area to the seeded tenant. The operator may hold a personal
- * workspace too, so the trigger's current name is not known; the seeded tenant's
+ * organization too, so the trigger's current name is not known; the seeded tenant's
  * row is disabled when it is already current, which is the only case the helper
  * leaves the menu without a click.
  */

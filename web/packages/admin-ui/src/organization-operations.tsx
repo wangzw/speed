@@ -1,11 +1,11 @@
 /**
- * The workspace administration surface's operations bundle: the
- * tenant-scoped reads and writes the workspace pages run through.
+ * The organization administration surface's operations bundle: the
+ * tenant-scoped reads and writes the organization pages run through.
  *
  * Every member here addresses `/api/v1/tenants/{tenant}/...`; the tenant is
  * an argument the caller supplies from the current tenant the host handed
- * the workspace provider. The bundle holds no platform member and never
- * addresses `/api/v1/system`, so a workspace page cannot reach a platform
+ * the organization provider. The bundle holds no platform member and never
+ * addresses `/api/v1/system`, so an organization page cannot reach a platform
  * asset even by mistake.
  *
  * The invitation, membership and SSO members overlap with the console
@@ -28,10 +28,10 @@
  * the departing tenant's whole subtree. The writes invalidate through the
  * same factory, so a write refreshes only the tenant it names.
  *
- * `WorkspaceAdminProvider` publishes the bundle through
- * `WorkspaceAdminOperationsProvider`; a host that mounts its own bundle at
+ * `OrganizationAdminProvider` publishes the bundle through
+ * `OrganizationAdminOperationsProvider`; a host that mounts its own bundle at
  * the provider substitutes the wiring, and with none mounted the shipped
- * `workspaceAdminOperations` answers.
+ * `organizationAdminOperations` answers.
  */
 
 import { createContext, useContext } from 'react'
@@ -172,11 +172,11 @@ export interface AdminTenantBindingRef {
 }
 
 /**
- * The tenant-scoped operations the workspace pages read and write through:
+ * The tenant-scoped operations the organization pages read and write through:
  * invitations and membership, SSO providers, the tenant settings layer and
  * the tenant roles, permissions, grants and bindings.
  */
-export interface WorkspaceAdminOperations
+export interface OrganizationAdminOperations
   extends Pick<
     AdminOperations,
     | 'useInvitations'
@@ -290,13 +290,13 @@ export interface WorkspaceAdminOperations
 }
 
 /**
- * The shipped workspace bundle: the invitation, membership and SSO
+ * The shipped organization bundle: the invitation, membership and SSO
  * operations re-bound over the tenant-scoped key convention, plus the
  * tenant management surface's own generated operations. A host that needs a
- * different wiring mounts its own bundle on `WorkspaceAdminProvider`'s
+ * different wiring mounts its own bundle on `OrganizationAdminProvider`'s
  * `operations` prop instead.
  */
-export const workspaceAdminOperations: WorkspaceAdminOperations = {
+export const organizationAdminOperations: OrganizationAdminOperations = {
   // --- Invitation surface (tenant-scoped) -------------------------------
 
   useInvitations: (tenant, params) => {
@@ -878,37 +878,37 @@ function invalidateTenantAccountBindings(
   })
 }
 
-const WorkspaceAdminOperationsContext =
-  createContext<WorkspaceAdminOperations | null>(null)
+const OrganizationAdminOperationsContext =
+  createContext<OrganizationAdminOperations | null>(null)
 
-export interface WorkspaceAdminOperationsProviderProps {
-  /** The operations bundle every workspace page under this provider reads
+export interface OrganizationAdminOperationsProviderProps {
+  /** The operations bundle every organization page under this provider reads
    * through. */
-  readonly operations: WorkspaceAdminOperations
+  readonly operations: OrganizationAdminOperations
   readonly children: ReactNode
 }
 
 /**
- * Publishes the workspace operations bundle to the pages below it. The
- * workspace provider mounts one around its children; a host composing the
- * workspace pages without the full provider mounts its own.
+ * Publishes the organization operations bundle to the pages below it. The
+ * organization provider mounts one around its children; a host composing the
+ * organization pages without the full provider mounts its own.
  */
-export function WorkspaceAdminOperationsProvider({
+export function OrganizationAdminOperationsProvider({
   operations,
   children,
-}: WorkspaceAdminOperationsProviderProps) {
+}: OrganizationAdminOperationsProviderProps) {
   return (
-    <WorkspaceAdminOperationsContext.Provider value={operations}>
+    <OrganizationAdminOperationsContext.Provider value={operations}>
       {children}
-    </WorkspaceAdminOperationsContext.Provider>
+    </OrganizationAdminOperationsContext.Provider>
   )
 }
 
 /**
- * The workspace operations bundle the pages read through: the enclosing
- * provider's when one is mounted, the shipped `workspaceAdminOperations`
+ * The organization operations bundle the pages read through: the enclosing
+ * provider's when one is mounted, the shipped `organizationAdminOperations`
  * otherwise.
  */
-export function useWorkspaceAdminOperations(): WorkspaceAdminOperations {
-  return useContext(WorkspaceAdminOperationsContext) ?? workspaceAdminOperations
+export function useOrganizationAdminOperations(): OrganizationAdminOperations {
+  return useContext(OrganizationAdminOperationsContext) ?? organizationAdminOperations
 }

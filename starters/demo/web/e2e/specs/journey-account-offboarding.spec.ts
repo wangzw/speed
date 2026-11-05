@@ -270,7 +270,7 @@ function tenantSwitcher(page: Page): Locator {
 
 /**
  * Move the tenant area to the member's organization. The member's account also
- * owns a personal workspace, and the host settles that row as the current
+ * owns a personal organization, and the host settles that row as the current
  * organization for an ordinary member, so the trigger's current name is not
  * known up front. The menu's row is disabled when the organization is already
  * current, which is the only case this helper leaves the menu without a click.
@@ -280,7 +280,7 @@ async function switchToTenant(page: Page): Promise<void> {
     page
       .getByRole('banner')
       .getByRole('button', {
-        name: copy('demo', 'workspace.personal'),
+        name: copy('demo', 'organization.personal'),
         exact: true,
       }),
   )
@@ -739,7 +739,7 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toHaveCount(1)
 
-      // The member's account owns a personal workspace, which the host settles
+      // The member's account owns a personal organization, which the host settles
       // as the current organization for an ordinary member. Move to the
       // organization this journey disabled and restored it in through the
       // switcher, then observe that it is the current, unselectable row.

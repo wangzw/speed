@@ -23,10 +23,10 @@ import { zhCN as muiZhCN } from '@mui/material/locale'
 import { SettingsPage } from './SettingsPage.js'
 import type { AdminSetting } from './operations.js'
 import {
-  WorkspaceAdminOperationsProvider,
-  workspaceAdminOperations,
+  OrganizationAdminOperationsProvider,
+  organizationAdminOperations,
   type AdminTenantSetting,
-} from './workspace-operations.js'
+} from './organization-operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import { uiKitResources } from '@speed/ui-kit'
@@ -1151,9 +1151,9 @@ describe('SettingsPage tenant mode', () => {
       throw new Error(`unexpected request: ${call.method} ${call.path}`)
     })
     const { queryClient } = renderWithProviders(
-      <WorkspaceAdminOperationsProvider operations={workspaceAdminOperations}>
+      <OrganizationAdminOperationsProvider operations={organizationAdminOperations}>
         <SettingsPage tenant={TENANT} tenantMode />
-      </WorkspaceAdminOperationsProvider>,
+      </OrganizationAdminOperationsProvider>,
     )
 
     const field = await screen.findByRole('textbox', { name: 'app.mode' })
@@ -1245,9 +1245,9 @@ describe('SettingsPage tenant mode', () => {
       makeAdminBackend({ listTenantSettings: () => Promise.resolve(rows) }),
     )
     renderWithProviders(
-      <WorkspaceAdminOperationsProvider operations={operations}>
+      <OrganizationAdminOperationsProvider operations={operations}>
         <SettingsPage tenant={TENANT} tenantMode />
-      </WorkspaceAdminOperationsProvider>,
+      </OrganizationAdminOperationsProvider>,
     )
     await screen.findByDisplayValue('on')
     expect(screen.getByText(zhCN.settings.column.source)).toBeInTheDocument()
@@ -1324,9 +1324,9 @@ describe('SettingsPage tenant mode', () => {
       }),
     )
     renderWithProviders(
-      <WorkspaceAdminOperationsProvider operations={operations}>
+      <OrganizationAdminOperationsProvider operations={operations}>
         <SettingsPage tenant={TENANT} tenantMode />
-      </WorkspaceAdminOperationsProvider>,
+      </OrganizationAdminOperationsProvider>,
     )
     expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: zhCN.settings.retry })).toBeNull()
@@ -1340,9 +1340,9 @@ describe('SettingsPage tenant mode', () => {
       }),
     )
     renderWithProviders(
-      <WorkspaceAdminOperationsProvider operations={operations}>
+      <OrganizationAdminOperationsProvider operations={operations}>
         <SettingsPage tenant={TENANT} tenantMode />
-      </WorkspaceAdminOperationsProvider>,
+      </OrganizationAdminOperationsProvider>,
     )
     expect(await screen.findByText(zhCN.settings.error.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.settings.error.description)).toBeInTheDocument()
@@ -1359,9 +1359,9 @@ describe('SettingsPage tenant mode', () => {
       }),
     )
     renderWithProviders(
-      <WorkspaceAdminOperationsProvider operations={operations}>
+      <OrganizationAdminOperationsProvider operations={operations}>
         <SettingsPage tenant={TENANT} tenantMode />
-      </WorkspaceAdminOperationsProvider>,
+      </OrganizationAdminOperationsProvider>,
     )
     const field = await screen.findByRole('textbox', { name: 'app.mode' })
     await user.clear(field)

@@ -1,6 +1,6 @@
 /**
- * The workspace surface's tenant-scoped operations: the settings and role
- * members the workspace bundle adds beside the invitations and SSO members.
+ * The organization surface's tenant-scoped operations: the settings and role
+ * members the organization bundle adds beside the invitations and SSO members.
  *
  * The read cases bind the shipped bundle's generated operations into the
  * request seam and record every URL: a tenant operation may address only
@@ -21,16 +21,16 @@ import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { evictTenantQueries } from '@speed/auth-core'
-import { WorkspaceAdminProvider } from './WorkspaceAdminProvider.js'
+import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
 import {
-  WorkspacePermissionsPage,
-  WorkspaceSettingsPage,
-} from './workspace-pages.js'
+  OrganizationPermissionsPage,
+  OrganizationSettingsPage,
+} from './organization-pages.js'
 import {
-  useWorkspaceAdminOperations,
-  workspaceAdminOperations,
-} from './workspace-operations.js'
-import { workspaceAdminRoutes } from './workspace-routes.js'
+  useOrganizationAdminOperations,
+  organizationAdminOperations,
+} from './organization-operations.js'
+import { organizationAdminRoutes } from './organization-routes.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import type { ObservedCall } from '../test-utils/request-rig.js'
@@ -64,7 +64,7 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
   it('reads each surface at the tenant paths and no platform path', async () => {
     const calls = bindAdminRequest(readResponder)
     function ReadProbe() {
-      const operations = useWorkspaceAdminOperations()
+      const operations = useOrganizationAdminOperations()
       const settings = operations.useTenantSettingsList(TENANT)
       const namespace = operations.useTenantSettingsRead(TENANT, 'app')
       const roles = operations.useTenantRoles(TENANT)
@@ -111,7 +111,7 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
       throw new Error(`unexpected request: ${call.method} ${call.path}`)
     })
     function WriteProbe() {
-      const operations = useWorkspaceAdminOperations()
+      const operations = useOrganizationAdminOperations()
       const write = operations.useTenantSettingsWrite()
       const remove = operations.useTenantSettingsRemove()
       return (
@@ -176,7 +176,7 @@ describe('the tenant operations key their reads by tenant', () => {
 
   function KeyProbe() {
     const [tenant, setTenant] = useState('acme')
-    const operations = useWorkspaceAdminOperations()
+    const operations = useOrganizationAdminOperations()
     const roles = operations.useTenantRoles(tenant)
     return (
       <div>
@@ -224,7 +224,7 @@ describe('the tenant operations key their reads by tenant', () => {
 
 describe('the inherited invitation, member and SSO reads key by tenant', () => {
   // The generated keys of these reads name the tenant inside the path
-  // string, not as the key's outermost segment, so a workspace read that
+  // string, not as the key's outermost segment, so an organization read that
   // forwards them verbatim shares no prefix with the tenant subtree the
   // host evicts on a switch. The bundle wraps each in tenantQueryKey.
   function inheritedReadsResponder(call: ObservedCall): unknown {
@@ -245,7 +245,7 @@ describe('the inherited invitation, member and SSO reads key by tenant', () => {
 
   function KeyProbe() {
     const [tenant, setTenant] = useState('acme')
-    const operations = useWorkspaceAdminOperations()
+    const operations = useOrganizationAdminOperations()
     const invitations = operations.useInvitations(tenant)
     const members = operations.useMembers(tenant)
     const providers = operations.useSsoProviders(tenant)
@@ -318,40 +318,40 @@ describe('the inherited invitation, member and SSO reads key by tenant', () => {
   })
 })
 
-describe('the workspace declarations for roles and settings', () => {
+describe('the organization declarations for roles and settings', () => {
   it('carries the tenant-domain permission and feature codes', () => {
-    expect(workspaceAdminRoutes.map((route) => route.id)).toEqual([
-      'workspace-invitations',
-      'workspace-sso',
-      'workspace-roles',
-      'workspace-settings',
+    expect(organizationAdminRoutes.map((route) => route.id)).toEqual([
+      'organization-invitations',
+      'organization-sso',
+      'organization-roles',
+      'organization-settings',
     ])
-    expect(workspaceAdminRoutes.map((route) => route.path)).toEqual([
+    expect(organizationAdminRoutes.map((route) => route.path)).toEqual([
       '/invitations',
       '/sso',
       '/roles',
       '/settings',
     ])
-    const roles = workspaceAdminRoutes.find(
-      (route) => route.id === 'workspace-roles',
+    const roles = organizationAdminRoutes.find(
+      (route) => route.id === 'organization-roles',
     )
     expect(roles?.permission).toBe('authz.tenant.role.read')
     // The role page's account pickers read the tenant's members through the
     // membership endpoints, so the page needs that feature as well.
     expect(roles?.requires).toEqual(['authz.tenantadmin', 'authn.admin'])
-    const settings = workspaceAdminRoutes.find(
-      (route) => route.id === 'workspace-settings',
+    const settings = organizationAdminRoutes.find(
+      (route) => route.id === 'organization-settings',
     )
     expect(settings?.permission).toBe('settings.tenant.read')
     expect(settings?.requires).toEqual(['settings.tenantadmin'])
-    // The workspace declarations never name the platform roster feature.
-    for (const route of workspaceAdminRoutes) {
+    // The organization declarations never name the platform roster feature.
+    for (const route of organizationAdminRoutes) {
       expect(route.requires).not.toContain('tenant.admin')
     }
   })
 })
 
-describe('the workspace settings wrapper', () => {
+describe('the organization settings wrapper', () => {
   const SETTING = {
     key: 'app.mode',
     namespace: 'app',
@@ -374,13 +374,13 @@ describe('the workspace settings wrapper', () => {
       throw new Error(`unexpected request: ${call.method} ${call.path}`)
     })
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
-        operations={workspaceAdminOperations}
+        operations={organizationAdminOperations}
         hasFeature={() => true}
       >
-        <WorkspaceSettingsPage />
-      </WorkspaceAdminProvider>,
+        <OrganizationSettingsPage />
+      </OrganizationAdminProvider>,
     )
     expect(await screen.findByText('app.mode')).toBeInTheDocument()
     expect(calls.length).toBeGreaterThan(0)
@@ -391,7 +391,7 @@ describe('the workspace settings wrapper', () => {
   })
 })
 
-describe('the workspace roles wrapper', () => {
+describe('the organization roles wrapper', () => {
   const ROLE = {
     tenant: TENANT,
     role: 'tenant-operator',
@@ -425,15 +425,15 @@ describe('the workspace roles wrapper', () => {
       throw new Error(`unexpected request: ${call.method} ${call.path}`)
     })
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
-        operations={workspaceAdminOperations}
+        operations={organizationAdminOperations}
         hasFeature={() => true}
-        routes={workspaceAdminRoutes}
+        routes={organizationAdminRoutes}
         protectedRoles={['tenant-admin']}
       >
-        <WorkspacePermissionsPage />
-      </WorkspaceAdminProvider>,
+        <OrganizationPermissionsPage />
+      </OrganizationAdminProvider>,
     )
     expect(await screen.findByText('tenant-operator')).toBeInTheDocument()
     expect(calls.length).toBeGreaterThan(0)
@@ -444,9 +444,9 @@ describe('the workspace roles wrapper', () => {
   })
 })
 
-describe('the workspace operations bundle', () => {
+describe('the organization operations bundle', () => {
   it('exposes the tenant members and no platform member', () => {
-    const members = Object.keys(workspaceAdminOperations)
+    const members = Object.keys(organizationAdminOperations)
     for (const member of [
       'useTenantSettingsList',
       'useTenantSettingsRead',

@@ -208,11 +208,11 @@ type compiledDefaults struct {
 			ContentEndpoints []string `config:"content-endpoints"`
 		} `config:"metadata"`
 	} `config:"objectstore"`
-	Workspace struct {
+	Org struct {
 		Personal struct {
 			Enabled bool `config:"enabled"`
 		} `config:"personal"`
-	} `config:"workspace"`
+	} `config:"org"`
 	Seed struct {
 		Accounts []compiledSeedAccount `config:"accounts"`
 		Tenants  []compiledSeedTenant  `config:"tenants"`
@@ -259,7 +259,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	}
 	wantEndpoints := map[string]compiledEndpoint{
 		"api":     {Listener: "backend", Prefixes: []string{"/api"}},
-		"account": {Listener: "backend", Prefixes: []string{"/api/v1/auth", "/api/v1/features", "/api/v1/workspace"}},
+		"account": {Listener: "backend", Prefixes: []string{"/api/v1/auth", "/api/v1/features", "/api/v1/orgs"}},
 		"admin": {Listener: "backend", Prefixes: []string{
 			"/api/v1/system/audit", "/api/v1/system/auth", "/api/v1/system/permissions",
 			"/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants",
@@ -349,8 +349,8 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "objectstore.fs.root", doc.Objectstore.FS.Root, "./var/objects")
 	wantStrings(t, "objectstore.metadata.content-endpoints",
 		doc.Objectstore.Metadata.ContentEndpoints, []string{"content"})
-	if !doc.Workspace.Personal.Enabled {
-		t.Error("workspace.personal.enabled is false, want the bare run's switch on")
+	if !doc.Org.Personal.Enabled {
+		t.Error("org.personal.enabled is false, want the bare run's switch on")
 	}
 
 	// The local seed a bare run starts from: the development operator, the

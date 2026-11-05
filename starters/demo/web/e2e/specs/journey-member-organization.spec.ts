@@ -70,7 +70,7 @@
  * stores no language preference, so the dispatch resolves to the platform
  * default, en-US.
  */
-// @journey journey-member-workspace.md
+// @journey journey-member-organization.md
 // @covers REQ-notifications-001, REQ-notifications-003, REQ-notifications-004, REQ-notifications-010, REQ-notifications-028, REQ-notifications-029, REQ-notifications-030, REQ-notifications-051, REQ-tenancy-022, REQ-tenancy-036
 import type { Locator, Page } from '@playwright/test'
 
@@ -99,7 +99,7 @@ function tenantSwitcher(page: Page): Locator {
 
 /**
  * Move the tenant area to the seeded organization. The member's account also
- * owns a personal workspace, and the host settles that row as the current
+ * owns a personal organization, and the host settles that row as the current
  * organization for an ordinary member, so the trigger's current name is not
  * known up front. The menu's row is disabled when the organization is already
  * current, which is the only case this helper leaves the menu without a click.
@@ -109,7 +109,7 @@ async function switchToTenant(page: Page): Promise<void> {
     page
       .getByRole('banner')
       .getByRole('button', {
-        name: copy('demo', 'workspace.personal'),
+        name: copy('demo', 'organization.personal'),
         exact: true,
       }),
   )
@@ -242,7 +242,7 @@ async function afterNextNotice(page: Page): Promise<number> {
   return unreadCount(page)
 }
 
-test('member-workspace: a member receives, reads and configures notifications', async ({
+test('member-organization: a member receives, reads and configures notifications', async ({
   demo,
 }) => {
   const { page, accounts } = demo
@@ -260,7 +260,7 @@ test('member-workspace: a member receives, reads and configures notifications', 
       }),
     ).toBeVisible()
 
-    // The member's account owns a personal workspace, which the host settles
+    // The member's account owns a personal organization, which the host settles
     // as the current organization for an ordinary member. Move to the seeded
     // organization through the switcher so the journey runs where it says.
     await switchToTenant(page)

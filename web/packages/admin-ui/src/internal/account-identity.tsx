@@ -156,7 +156,7 @@ export function useAccountIdentity(account: string | undefined): {
 
 /**
  * One account identifier rendered from the identity its own tenant-scoped
- * record carries, for the workspace surface: the member read answers each
+ * record carries, for the organization surface: the member read answers each
  * row's `display_name`, so the identity never needs the platform account
  * read that `AccountIdentity` issues. A name the record carries renders
  * as-is; an absent or empty one -- the read has not settled, was refused, or

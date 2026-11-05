@@ -26,6 +26,7 @@
     "authn.password_reset_closed": "Password reset without signing in is not available on this site.",
     "authn.password_reset_unavailable": "This account cannot reset its password. Contact an administrator for help.",
     "authn.password_too_short": "The password must be at least {{min_length}} characters long.",
+    "authn.phone_required": "Verify a phone number before adding an SMS second step.",
     "authn.refresh_token_invalid": "The session could not be renewed. Sign in again.",
     "authn.refresh_token_reused": "This session was ended for your security because its credential was used twice. Sign in again.",
     "authn.session_not_found": "No such session.",
@@ -46,7 +47,7 @@
     "authz.conflict": "That change conflicts with an existing role or binding.",
     "authz.forbidden": "You do not have permission to do that.",
     "authz.protected": "This domain is protected. Its roles, grants and bindings cannot be managed here.",
-    "billing.insufficient_credits": "The tenant's available credit balance cannot cover {{amount}} credits.",
+    "billing.insufficient_credits": "The organization's available credit balance cannot cover {{amount}} credits.",
     "billing.invalid_amount": "Amount {{amount}} is invalid; it must be a positive number.",
     "billing.invoice_not_found": "No invoice was found with id \"{{id}}\".",
     "billing.plan_not_found": "No plan was found for \"{{id}}\".",
@@ -63,9 +64,9 @@
     "sms.config_template": "This template is backed by a configuration and cannot be changed here.",
     "sms.conflict": "A template with that name already exists.",
     "tenant.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-    "tenant.conflict": "That identifier or alias is already taken by another tenant.",
-    "tenant.protected": "This tenant is protected and cannot be changed.",
-    "workspace.identifier_unavailable": "Your personal workspace's address is unavailable. Contact an administrator.",
-    "workspace.tenant_unavailable": "Your personal workspace has been disabled. Contact an administrator."
+    "tenant.conflict": "That identifier or alias is already taken by another organization.",
+    "tenant.protected": "This organization is protected and cannot be changed.",
+    "org.identifier_unavailable": "Your personal organization's address is unavailable. Contact an administrator.",
+    "org.tenant_unavailable": "Your personal organization has been disabled. Contact an administrator."
   }
 }

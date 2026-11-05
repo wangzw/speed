@@ -451,14 +451,25 @@ var (
 	sendForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable, or a human-verification proof is missing or invalid "+
 			"(human-verification-required)")
+	// answerForbiddenAnswer is the 403 of the route that answers the current
+	// step of a flow. The route continues any flow, so it carries the account
+	// refusal shared with the other routes, the SMS prerequisite a second-factor
+	// challenge or an enrollment step carries, and the human-verification
+	// refusal a deployment may turn on a send.
+	answerForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
+		"The account is unavailable, or an SMS second-factor challenge or enrollment is refused because "+
+			"the account has no proved phone (phone-required), or a human-verification proof is missing "+
+			"or invalid (human-verification-required)")
 	// signedInForbiddenAnswer is the 403 of the flow route that runs on an
 	// identity already signed in. It carries the signup gate of `purpose=link`
-	// beside the refusal shared with the other routes, and the
-	// human-verification refusal a deployment may turn on a step-up.
+	// beside the refusal shared with the other routes, the SMS prerequisite an
+	// `enroll` flow for the SMS kind carries, and the human-verification
+	// refusal a deployment may turn on a step-up.
 	signedInForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable, or a `purpose=link` flow is refused because the "+
-			"caller has an email address that is not proved (contact-required), or a human-verification "+
-			"proof is missing or invalid (human-verification-required)")
+			"caller has an email address that is not proved (contact-required), or an SMS `purpose=enroll` "+
+			"flow is refused because the account has no proved phone (phone-required), or a "+
+			"human-verification proof is missing or invalid (human-verification-required)")
 	conflictAnswer = speedhttp.ProblemResponse(http.StatusConflict,
 		"The request conflicts with the account's state")
 	mediaTypeAnswer = capabilityProblem(http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType,
@@ -639,7 +650,7 @@ var answerOperation = speedhttp.NewReplyOperation[answerInput](
 			"The username a pending first login would open the account with does not normalize"),
 		bodyOverLimit,
 		unauthorized("The credential did not hold, or the flow binding is missing or wrong"),
-		sendForbiddenAnswer,
+		answerForbiddenAnswer,
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The request conflicts with the account's state: a completed link names an external identity another account already holds, or the username a pending first login would open the account with is already taken (username-taken). A step that does not match the flow's state is a 401 flow-invalid, not a 409."),
 		mediaTypeAnswer,

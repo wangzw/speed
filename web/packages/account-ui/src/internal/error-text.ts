@@ -90,6 +90,7 @@ export const ERROR_TEXT_CODES = [
   'authn.impersonation_restricted',
   'authn.forbidden',
   'authn.contact_required',
+  'authn.phone_required',
   'authn.factor_not_found',
   'authn.conflict',
   'authn.email_taken',

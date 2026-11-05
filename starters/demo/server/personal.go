@@ -20,7 +20,7 @@ package main
 // default, a deployment may turn it off), and no pkg/ package gains a surface
 // for it.
 //
-// The route is POST /api/v1/workspace/personal on the account endpoint. That endpoint
+// The route is POST /api/v1/orgs/personal on the account endpoint. That endpoint
 // resolves no tenant, so the caller is served before any tenant context exists;
 // the gateway guards the endpoint, and this module registers the route as one an
 // impersonating identity may reach. The ensure then acts for the effective
@@ -62,7 +62,7 @@ import (
 
 // personalModuleName is the name this host module is registered under, and the
 // configuration namespace its single switch hangs from.
-const personalModuleName = "workspace.personal"
+const personalModuleName = "org.personal"
 
 // personalFeature is the feature this host module declares. It is conditional:
 // the module is named by the baseline's serve command, and the feature is in
@@ -75,7 +75,7 @@ const personalConfigItem = "enabled"
 // personalPathFragment is the route as the fragment writes it: relative to the
 // API root the module's Spec declares. The mounting resolves it to the absolute
 // path the route is registered at.
-const personalPathFragment = "/workspace/personal"
+const personalPathFragment = "/orgs/personal"
 
 // personalEndpoint is the listening endpoint the route is mounted on and the
 // endpoint the OpenAPI fragment describes. It is fixed: the route is deliberately
@@ -135,7 +135,7 @@ func (personalKindResolver) KindOf(ctx context.Context, id tenant.ID) (tenant.Ki
 // keeps the fail-closed check where the design puts it: an assembly that names
 // the policy module without this one ends at dependency resolution, before any
 // request.
-const personalKindModuleName = "workspace.personal.kind"
+const personalKindModuleName = "org.personal.kind"
 
 // personalKindModule delivers tenant.KindResolver.
 func personalKindModule() core.Module {
@@ -225,7 +225,7 @@ const personalTenantAdminDescriptionKey = tenantAdminDescriptionKey
 const personalMemberSource = "personal"
 
 // personalKind is the answer's tenant kind. The frontend renders the personal
-// workspace label from it; the tenant record itself carries no display name.
+// organization label from it; the tenant record itself carries no display name.
 const personalKind = "personal"
 
 // The problem types the module writes. A 403, a 401 and a 503 carry no type of
@@ -233,7 +233,7 @@ const personalKind = "personal"
 // the refusals a retry cannot change from a dependency failure. Every code here
 // is this surface's own, so the two surfaces do not share a code.
 const (
-	personalProblemPrefix     = "urn:speed:workspace:"
+	personalProblemPrefix     = "urn:speed:org:"
 	tenantUnavailableCode     = "tenant-unavailable"
 	identifierUnavailableCode = "identifier-unavailable"
 )
@@ -243,8 +243,8 @@ const (
 // action identifier links the rows of one attempt, and account and tenant name
 // the two ends of the action. The shape is the management surface's.
 const (
-	personalCreateAction   = "workspace.personal.tenant.create"
-	personalDeleteAction   = "workspace.personal.tenant.delete"
+	personalCreateAction   = "org.personal.tenant.create"
+	personalDeleteAction   = "org.personal.tenant.delete"
 	personalOutcomeSuccess = "success"
 	personalOutcomeFailed  = "failed"
 	personalDetailActionID = "action_id"
@@ -257,7 +257,7 @@ const (
 var (
 	// errTenantUnavailable refuses an account whose personal tenant row exists
 	// and is not enabled. The ensure then writes nothing, so disabling the
-	// tenant is how an operator withdraws a personal workspace.
+	// tenant is how an operator withdraws a personal organization.
 	errTenantUnavailable = errors.New("the personal tenant exists and is not enabled")
 	// errIdentifierUnavailable refuses an identifier or alias the personal
 	// tenant cannot take: the derived identifier is outside the roster's
@@ -274,7 +274,7 @@ var (
 // fragment personalOperations generates. The generation test compares the
 // committed bytes with what these name.
 const (
-	personalFragmentTitle   = "workspace personal"
+	personalFragmentTitle   = "organization personal"
 	personalFragmentVersion = "1.0.0"
 )
 
@@ -282,7 +282,7 @@ const (
 var personalFragment []byte
 
 // personalSpec is the API root the module's fragment and route hang off. The
-// route hangs off the account endpoint's /api/v1/workspace claim; the prefix is
+// route hangs off the account endpoint's /api/v1/orgs claim; the prefix is
 // written into every configuration and into the frontend's backend-prefix
 // manifest, so it stays claimed even when the switch is off (the claim is
 // configuration, the mounting is assembly: an off switch answers the prefix
@@ -302,8 +302,8 @@ var personalRoutePath = personalSpec.ResolvePath(personalPathFragment)
 // handler receives no input and returns the reply, so the entry point binds the
 // request and writes the declared success answer. The failure answers are the
 // route's closed set; a refusal the declaration does not carry is answered 500.
-var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonalReply](
-	"workspace.personal.ensure",
+var personalEnsureOperation = speedhttp.NewOperation[struct{}, OrganizationPersonalReply](
+	"org.personal.ensure",
 	http.MethodPost,
 	personalPathFragment,
 	"Ensure the caller's personal tenant exists and is complete",
@@ -434,7 +434,7 @@ func personalModule() core.Module {
 // personalConfig is the module's configuration.
 type personalConfig struct {
 	// Enabled is the switch. Off, the route is not mounted and the feature is
-	// not in force; the claimed /api/v1/workspace prefix then answers 404.
+	// not in force; the claimed /api/v1/orgs prefix then answers 404.
 	Enabled bool `config:"enabled"`
 }
 
@@ -453,7 +453,7 @@ func personalSchema() config.Schema {
 			personalConfigItem: {
 				Origins: config.OriginPrimary | config.OriginEnv,
 				Description: "whether the host creates a personal tenant for an account with no " +
-					"membership; off, POST /api/v1/workspace/personal is not mounted and /api/v1/workspace answers 404",
+					"membership; off, POST /api/v1/orgs/personal is not mounted and /api/v1/orgs answers 404",
 			},
 		},
 	}
@@ -633,24 +633,24 @@ func optionalPersonal[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// WorkspacePersonalReply is the ensure's success answer. It is the operation's
+// OrganizationPersonalReply is the ensure's success answer. It is the operation's
 // declared success body, so its exported name is the component name the
 // fragment publishes.
-type WorkspacePersonalReply struct {
+type OrganizationPersonalReply struct {
 	_ struct{} `description:"The answer to a successful ensure: the caller's personal tenant and whether this call registered it."`
 
-	Tenant  WorkspacePersonalTenant `json:"tenant" required:"true"`
-	Created bool                    `json:"created" required:"true" description:"Whether this call registered the tenant"`
+	Tenant  OrganizationPersonalTenant `json:"tenant" required:"true"`
+	Created bool                       `json:"created" required:"true" description:"Whether this call registered the tenant"`
 }
 
-// WorkspacePersonalTenant is the tenant the answer names. It carries no display
-// name: the frontend renders the personal label from Kind.
-type WorkspacePersonalTenant struct {
+// OrganizationPersonalTenant is the tenant the answer names. It carries no
+// display name: the frontend renders the personal label from Kind.
+type OrganizationPersonalTenant struct {
 	_ struct{} `description:"The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind."`
 
 	ID    string `json:"id" required:"true" description:"The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language"`
 	Alias string `json:"alias" required:"true" description:"The request-surface name, equal to the identifier for a personal tenant"`
-	Kind  string `json:"kind" required:"true" enum:"personal" description:"The tenant kind; the frontend renders the personal label from it"`
+	Kind  string `json:"kind" required:"true" enum:"personal" description:"The tenant kind; the frontend renders the personal organization label from it"`
 }
 
 // personalResult is the ensure's outcome before it is rendered.
@@ -659,7 +659,7 @@ type personalResult struct {
 	Created bool
 }
 
-// handleEnsure serves POST /api/v1/workspace/personal.
+// handleEnsure serves POST /api/v1/orgs/personal.
 //
 // The caller has to be authenticated; the gateway has usually settled that, and
 // the check here is what answers a run whose account endpoint is unguarded. The
@@ -669,28 +669,28 @@ type personalResult struct {
 // whose personal tenant is not enabled is the 409 tenant-unavailable, and an
 // identifier or alias the tenant cannot take is the 409 identifier-unavailable.
 // Every dependency failure is a 503 that carries no part of the result.
-func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (WorkspacePersonalReply, error) {
+func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (OrganizationPersonalReply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
-		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusUnauthorized}
+		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
 	if slices.Contains(id.Methods(), authn.MethodClientSecret) {
 		// A service account authenticates only with its client secret, so the
 		// method is the account kind: a non-interactive API client is given
-		// tenant access by an administrator and gets no workspace of its own.
-		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
+		// tenant access by an administrator and gets no organization of its own.
+		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
 	}
 	account := id.Account()
 	if account == "" || account.IsStatic() {
 		// A subject of the static credential table has no account row, so it
 		// cannot hold a membership or own a tenant.
-		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
+		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
 	}
 	result, err := p.ensure(ctx, account)
 	switch {
 	case err == nil:
-		return WorkspacePersonalReply{
-			Tenant: WorkspacePersonalTenant{
+		return OrganizationPersonalReply{
+			Tenant: OrganizationPersonalTenant{
 				ID:    string(result.Tenant.ID),
 				Alias: result.Tenant.Alias,
 				Kind:  personalKind,
@@ -700,14 +700,14 @@ func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (Workspa
 	case errors.Is(err, errTenantUnavailable):
 		p.logger.Warn(personalModuleName+": the personal tenant is not enabled",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		return WorkspacePersonalReply{}, speedhttp.Fault{
+		return OrganizationPersonalReply{}, speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   personalProblemPrefix + tenantUnavailableCode,
 		}
 	case errors.Is(err, errIdentifierUnavailable):
 		p.logger.Warn(personalModuleName+": the personal tenant's identifier is unavailable",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		return WorkspacePersonalReply{}, speedhttp.Fault{
+		return OrganizationPersonalReply{}, speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   personalProblemPrefix + identifierUnavailableCode,
 		}
@@ -717,11 +717,11 @@ func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (Workspa
 		// failure of the run, so it is not an error-level record.
 		p.logger.Warn(personalModuleName+": the roster's snapshot lags the personal tenant row",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
+		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	default:
 		p.logger.Error(personalModuleName+": the personal tenant could not be ensured",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
-		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
+		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
 }
 
@@ -797,7 +797,7 @@ func (p *personalProduct) auditBestEffort(ctx context.Context, e audit.Entry) {
 // in its personal tenant reads that tenant back. A membership elsewhere is not
 // an eligibility fact — every account owns its personal tenant — so the
 // backfill creates one even for an account that belongs to business tenants. An
-// unproved email address is not an eligibility fact either: the workspace exists
+// unproved email address is not an eligibility fact either: the organization exists
 // for the account, and the verification gate limits what the account may do
 // inside it.
 func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (personalResult, error) {

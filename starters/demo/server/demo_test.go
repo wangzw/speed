@@ -1002,11 +1002,11 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				}
 			}
 		}
-		if applicationOwned, declared := expected["POST /api/v1/workspace/personal"]; !declared || !applicationOwned {
+		if applicationOwned, declared := expected["POST /api/v1/orgs/personal"]; !declared || !applicationOwned {
 			// The named anchor: the host's own route, declared by a module in
 			// this package, is the leg that proves registration and marking
 			// agree.
-			t.Errorf("the host's route POST /api/v1/workspace/personal is not among the application-owned operations")
+			t.Errorf("the host's route POST /api/v1/orgs/personal is not among the application-owned operations")
 		}
 		present := map[string]bool{}
 		for path, methods := range doc.Paths {
@@ -1446,11 +1446,11 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	// not answer for a tenant — the role is a per-domain row — so the seed
 	// writes the role and its grants into the tenant's domain too. Each of
 	// these reads answered 403 before that, which is what this case holds
-	// against.
+	// against. The SSO provider group is not among them: this configuration
+	// leaves authn.admin.sso.enabled off, so its route is not mounted.
 	for _, path := range []string{
 		"/api/v1/tenants/" + demoTenant + "/members",
 		"/api/v1/tenants/" + demoTenant + "/invitations",
-		"/api/v1/tenants/" + demoTenant + "/sso/providers",
 	} {
 		got := adminGet(t, seedIdentifier, path)
 		if got.status != http.StatusOK {
@@ -1761,10 +1761,11 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	token := signIn(t, accountBase, seedIdentifier, seedPassword)
 	for _, tenant := range []string{demoTenant, secondTenant} {
+		// The SSO provider group is not here for the reason the tenant-admin
+		// case gives: this configuration leaves its item off.
 		for _, path := range []string{
 			"/members",
 			"/invitations",
-			"/sso/providers",
 		} {
 			got := send(t, client, http.MethodGet,
 				adminBase+"/api/v1/tenants/"+tenant+path, nil,

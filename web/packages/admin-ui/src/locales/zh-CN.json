@@ -21,7 +21,7 @@
       "username_immutable": "用户名不可更改或删除。",
       "contact_required": "请先在账户验证页验证邮箱地址，再继续此操作。",
       "forbidden": "你没有执行此操作的权限。",
-      "impersonation_restricted": "无法执行此操作：目标账户必须是该租户中已启用且未受保护的成员，并且你当前不能处于冒充其他账户的状态。",
+      "impersonation_restricted": "无法执行此操作：目标账户必须是该组织中已启用且未受保护的成员，并且你当前不能处于冒充其他账户的状态。",
       "factor_not_seasoned": "此操作需要一个已启用满规定时长的非短信验证方式（认证器应用或通行密钥）。刚添加的验证方式需要先等待一段时间。",
       "login_failed": "验证未通过，邮箱、手机号、密码或验证码不正确。",
       "flow_invalid": "验证流程已失效，请重新开始。",
@@ -52,7 +52,7 @@
     },
     "tenant": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
-      "conflict": "该标识或别名已被其他租户占用。"
+      "conflict": "该标识或别名已被其他组织占用。"
     },
     "settings": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
@@ -74,12 +74,12 @@
     "groups": {
       "overview": "概览",
       "identity": "身份与访问",
-      "tenants": "租户",
+      "tenants": "组织",
       "platform": "平台配置",
       "audit": "审计"
     }
   },
-  "workspace": {
+  "organization": {
     "nav": {
       "invitations": "邀请与成员",
       "sso": "SSO 提供方",
@@ -93,13 +93,13 @@
     "refreshed": "数据已刷新",
     "cancel": "取消",
     "confirm": "确认",
-    "tenant": "租户",
+    "tenant": "组织",
     "tenantNone": "未选择",
-    "tenantLoading": "正在加载租户…",
-    "tenantForbidden": "你没有查看租户列表的权限。",
-    "tenantLoadFailed": "租户名册加载失败。",
+    "tenantLoading": "正在加载组织…",
+    "tenantForbidden": "你没有查看组织列表的权限。",
+    "tenantLoadFailed": "组织名册加载失败。",
     "tenantRetry": "重试",
-    "tenantEmpty": "尚未登记任何租户。",
+    "tenantEmpty": "尚未登记任何组织。",
     "emptyValue": "—",
     "accountUnresolved": "身份无法显示（需要查看账户的权限）",
     "accountMissing": "非账户或已删除",
@@ -158,14 +158,14 @@
     "restart": "重新开始验证"
   },
   "tenants": {
-    "title": "租户",
-    "loading": "正在加载租户",
+    "title": "组织",
+    "loading": "正在加载组织",
     "empty": {
-      "title": "暂无租户",
-      "description": "尚未登记任何租户。"
+      "title": "暂无组织",
+      "description": "尚未登记任何组织。"
     },
     "error": {
-      "title": "租户加载失败",
+      "title": "组织加载失败",
       "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
@@ -186,7 +186,7 @@
       "account": "由账户状态停用"
     },
     "create": {
-      "title": "登记租户",
+      "title": "登记组织",
       "idLabel": "标识",
       "aliasLabel": "别名",
       "submit": "登记"
@@ -194,17 +194,17 @@
     "rename": {
       "label": "新别名",
       "submit": "改名",
-      "ariaWithId": "租户 {{id}} 的新别名",
-      "submitAria": "为租户 {{id}} 改名"
+      "ariaWithId": "组织 {{id}} 的新别名",
+      "submitAria": "为组织 {{id}} 改名"
     },
     "enable": "启用",
     "disable": "停用",
-    "enableAria": "启用租户 {{id}}",
-    "disableAria": "停用租户 {{id}}",
-    "created": "租户「{{id}}」已登记",
-    "renamed": "租户「{{id}}」的别名已更新",
-    "enabledToast": "租户「{{id}}」已启用",
-    "disabledToast": "租户「{{id}}」已停用",
+    "enableAria": "启用组织 {{id}}",
+    "disableAria": "停用组织 {{id}}",
+    "created": "组织「{{id}}」已登记",
+    "renamed": "组织「{{id}}」的别名已更新",
+    "enabledToast": "组织「{{id}}」已启用",
+    "disabledToast": "组织「{{id}}」已停用",
     "identifierHelper": "不能包含空格"
   },
   "forbidden": {
@@ -223,7 +223,7 @@
     },
     "retry": "重试",
     "kpi": {
-      "tenants": "租户总数",
+      "tenants": "组织总数",
       "active": "已启用",
       "disabled": "已停用",
       "deleted": "已删除"
@@ -260,11 +260,11 @@
     }
   },
   "tenantDetail": {
-    "title": "租户「{{id}}」",
+    "title": "组织「{{id}}」",
     "back": "返回名册",
-    "loading": "正在加载租户",
+    "loading": "正在加载组织",
     "error": {
-      "title": "租户加载失败",
+      "title": "组织加载失败",
       "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
@@ -281,9 +281,9 @@
       "renameSubmit": "改名",
       "enable": "启用",
       "disable": "停用",
-      "renamed": "租户「{{id}}」的别名已更新",
-      "enabled": "租户「{{id}}」已启用",
-      "disabled": "租户「{{id}}」已停用"
+      "renamed": "组织「{{id}}」的别名已更新",
+      "enabled": "组织「{{id}}」已启用",
+      "disabled": "组织「{{id}}」已停用"
     },
     "related": {
       "title": "相关页面",
@@ -307,7 +307,7 @@
     "detailTitle": "详情",
     "field": {
       "id": "标识",
-      "tenant": "租户",
+      "tenant": "组织",
       "occurredAt": "时间",
       "actor": "操作者",
       "source": "来源",
@@ -361,7 +361,7 @@
       "overridden": "已覆盖"
     },
     "source": {
-      "tenant": "租户",
+      "tenant": "组织",
       "global": "全局",
       "default": "默认值"
     }
@@ -417,15 +417,15 @@
   "permissions": {
     "title": "权限",
     "needTenant": {
-      "title": "请选择租户",
-      "description": "角色、授权与绑定都属于某个租户，请先选择一个租户。"
+      "title": "请选择组织",
+      "description": "角色、授权与绑定都属于某个组织，请先选择一个组织。"
     },
     "roles": {
       "title": "角色",
       "loading": "正在加载角色",
       "empty": {
         "title": "暂无角色",
-        "description": "该租户尚未定义任何角色。"
+        "description": "该组织尚未定义任何角色。"
       },
       "error": {
         "title": "角色加载失败",
@@ -507,7 +507,7 @@
       "title": "绑定",
       "accountLabel": "账户",
       "noMembers": "没有匹配的成员",
-      "membersFailed": "未能读取租户成员。",
+      "membersFailed": "未能读取组织成员。",
       "membersNext": "更多成员",
       "membersPrevious": "上一批成员",
       "roleLabel": "角色",
@@ -515,7 +515,7 @@
       "loading": "正在加载绑定",
       "empty": {
         "title": "暂无绑定",
-        "description": "该租户尚无任何账户绑定角色。"
+        "description": "该组织尚无任何账户绑定角色。"
       },
       "error": {
         "title": "绑定加载失败",
@@ -546,7 +546,7 @@
       "retry": "重试",
       "empty": {
         "title": "暂无绑定",
-        "description": "该账户在此租户下没有持有任何角色。"
+        "description": "该账户在此组织下没有持有任何角色。"
       }
     }
   },
@@ -854,8 +854,8 @@
   "impersonations": {
     "title": "冒充",
     "needTenant": {
-      "title": "请选择租户",
-      "description": "冒充记录属于某个租户，请先选择一个租户。"
+      "title": "请选择组织",
+      "description": "冒充记录属于某个组织，请先选择一个组织。"
     },
     "loading": "正在加载冒充记录",
     "empty": {
@@ -870,7 +870,7 @@
     "column": {
       "actor": "操作者",
       "target": "被冒充账户",
-      "tenant": "租户",
+      "tenant": "组织",
       "started": "开始时间",
       "ends": "结束时间",
       "state": "状态",
@@ -897,7 +897,7 @@
       "loading": "正在读取冒充状态",
       "none": "当前未冒充任何账户。",
       "target": "被冒充账户：",
-      "tenant": "租户：{{tenant}}",
+      "tenant": "组织：{{tenant}}",
       "ends": "结束时间：{{ends}}",
       "end": "结束冒充",
       "started": "已开始冒充账户{{account}}。",
@@ -913,7 +913,7 @@
       "title": "发起冒充",
       "precondition": "开始冒充前，你本人的账户必须已启用短信以外的第二因素，且启用至今已满本系统要求的时长。刚添加的第二因素不算，重新登录也不会缩短这段等待。",
       "accountLabel": "目标账户",
-      "tenantHint": "请先选择一个租户；被冒充账户必须属于该租户。",
+      "tenantHint": "请先选择一个组织；被冒充账户必须属于该组织。",
       "reasonLabel": "理由",
       "ttlLabel": "有效期（秒）",
       "submit": "发起冒充"
@@ -922,8 +922,8 @@
   "invitations": {
     "title": "邀请与成员",
     "needTenant": {
-      "title": "请选择租户",
-      "description": "邀请与成员都属于某个租户，请先选择一个租户。"
+      "title": "请选择组织",
+      "description": "邀请与成员都属于某个组织，请先选择一个组织。"
     },
     "section": {
       "title": "邀请"
@@ -937,7 +937,7 @@
     "loading": "正在加载邀请",
     "empty": {
       "title": "暂无邀请",
-      "description": "该租户尚无邀请。"
+      "description": "该组织尚无邀请。"
     },
     "error": {
       "title": "邀请加载失败",
@@ -970,7 +970,7 @@
       "copyToken": "复制接受令牌",
       "copied": "已复制",
       "close": "关闭",
-      "closeAria": "关闭租户「{{tenant}}」发给「{{email}}」的接受链接面板"
+      "closeAria": "关闭组织「{{tenant}}」发给「{{email}}」的接受链接面板"
     }
   },
   "members": {
@@ -980,7 +980,7 @@
     "nextPage": "下一页",
     "empty": {
       "title": "暂无成员",
-      "description": "该租户尚无成员。"
+      "description": "该组织尚无成员。"
     },
     "error": {
       "title": "成员加载失败",
@@ -1017,10 +1017,10 @@
     },
     "remove": "移除",
     "removeTitle": "移除成员",
-    "removeMessage": "从该租户移除成员「{{name}}」。",
-    "removeMessageWithIdentifier": "从该租户移除成员「{{name}}」（{{identifier}}）。",
-    "removeMessageByIdentifier": "从该租户移除成员「{{identifier}}」。",
-    "removeMessageUnnamed": "从该租户移除该成员。",
+    "removeMessage": "从该组织移除成员「{{name}}」。",
+    "removeMessageWithIdentifier": "从该组织移除成员「{{name}}」（{{identifier}}）。",
+    "removeMessageByIdentifier": "从该组织移除成员「{{identifier}}」。",
+    "removeMessageUnnamed": "从该组织移除该成员。",
     "removed": "已移除成员{{account}}",
     "removedUnnamed": "已移除该成员",
     "ssoExemptSaved": "已为成员{{account}}设置 SSO 豁免",
@@ -1031,13 +1031,13 @@
   "sso": {
     "title": "SSO 提供方",
     "needTenant": {
-      "title": "请选择租户",
-      "description": "SSO 提供方属于某个租户，请先选择一个租户。"
+      "title": "请选择组织",
+      "description": "SSO 提供方属于某个组织，请先选择一个组织。"
     },
     "loading": "正在加载提供方",
     "empty": {
       "title": "暂无提供方",
-      "description": "该租户尚未注册 SSO 提供方。"
+      "description": "该组织尚未注册 SSO 提供方。"
     },
     "error": {
       "title": "提供方加载失败",
@@ -1090,7 +1090,7 @@
       "verified": "已验证提供方「{{name}}」的域名「{{domain}}」",
       "removed": "已从提供方「{{name}}」移除域名「{{domain}}」",
       "claimTokenClose": "关闭",
-      "claimTokenCloseAria": "关闭租户「{{tenant}}」中提供方「{{name}}」域名「{{domain}}」的认领令牌面板",
+      "claimTokenCloseAria": "关闭组织「{{tenant}}」中提供方「{{name}}」域名「{{domain}}」的认领令牌面板",
       "remove": "移除",
       "removeAria": "移除域名 {{domain}}",
       "removeTitle": "移除域名",

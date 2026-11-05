@@ -25,8 +25,8 @@ import (
 // than taken from the constants the code uses, because a changed value is a
 // changed contract.
 const (
-	createAuditAction = "workspace.personal.tenant.create"
-	deleteAuditAction = "workspace.personal.tenant.delete"
+	createAuditAction = "org.personal.tenant.create"
+	deleteAuditAction = "org.personal.tenant.delete"
 	outcomeSuccess    = "success"
 	outcomeFailed     = "failed"
 )
@@ -489,7 +489,7 @@ func TestTheAccountLifecycleDeletionRecordsTheAuditWithoutAnIdentity(t *testing.
 }
 
 // TestAccountDeletedDoesNothingWithoutAPersonalTenant holds the account that
-// never had a workspace: nothing is written and the hook is satisfied.
+// never had an organization: nothing is written and the hook is satisfied.
 func TestAccountDeletedDoesNothingWithoutAPersonalTenant(t *testing.T) {
 	product, roster, memberships, manager, _ := unitProduct()
 	auditor := auditorOf(t, product)
@@ -666,7 +666,7 @@ func TestThePersonalModuleDeclaresTheLifecycleAndTheAudit(t *testing.T) {
 }
 
 // The lifecycle hooks are what the module provides to the account module, and
-// the workspace.personal switch withdraws the route and the feature, not the
+// the org.personal switch withdraws the route and the feature, not the
 // hooks. Every case above builds the product with the switch on, so a short
 // circuit added at the top of a hook would go unnoticed there; these build it
 // with the switch off and hold the same effects.

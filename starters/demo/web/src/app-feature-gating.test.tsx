@@ -164,7 +164,7 @@ describe('a served document narrows the tenant area', () => {
 
   it('renders the not-found fallback for a gated page the document omits', async () => {
     window.history.replaceState({}, '', '/notifications')
-    renderDemoApp({ session: sessionWith(readyFeatures('workspace.personal')) })
+    renderDemoApp({ session: sessionWith(readyFeatures('org.personal')) })
 
     // The notification page is not a page in this deployment: the same
     // fallback an unregistered path renders.

@@ -10,7 +10,7 @@
 
 ### 不在范围内
 
-除个人租户开通所需的角色与授权外，平台域的权限目录、平台角色与绑定属于平台设置与授权；租户管理员在工作区管理面对本租户角色与绑定的管理属于租户管理能力。账户本身的建立、登录、邮箱验证与注销属于自助注册、登录与账户自助；冒充的发起、记录与结束属于平台运营与账户安全。租户的层级与租户树、租户数据的导出不属于本能力。
+除个人租户开通所需的角色与授权外，平台域的权限目录、平台角色与绑定属于平台设置与授权；租户管理员在组织管理面对本租户角色与绑定的管理属于租户管理能力。账户本身的建立、登录、邮箱验证与注销属于自助注册、登录与账户自助；冒充的发起、记录与结束属于平台运营与账户安全。租户的层级与租户树、租户数据的导出不属于本能力。
 
 ## 参与者
 
@@ -197,7 +197,7 @@
 
 - **验收**：当前租户的名字出现在控件上。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-tenancy-023
 
@@ -229,7 +229,7 @@
 
 - **验收**：新开户且尚未加入任何组织的账户，无论开户来源、无论邮箱是否已证明，第一次进入租户区即拥有个人租户，并可在其中使用该个人租户的业务能力。再次触发时读回同一个租户，标识不变，不新建租户；账户后来加入其他租户也不改变这一点。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-tenancy-027
 
@@ -253,7 +253,7 @@
 
 - **验收**：已属于另一个租户的账户触发个人租户创建得到已是成员的拒绝，且不建立第二个租户。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-tenancy-030
 
@@ -313,9 +313,9 @@
 
 ### REQ-tenancy-050
 
-租户切换控件必须把个人租户显示为工作区的文案，而不是它的别名。
+租户切换控件必须把个人租户显示为组织的文案，而不是它的别名。
 
-- **验收**：列表中的个人租户那一项显示工作区的文案，不显示该租户的别名。
+- **验收**：列表中的个人租户那一项显示组织的文案，不显示该租户的别名。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -365,7 +365,7 @@
 
 - **验收**：点击当前租户那一项不触发切换。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-organization.spec.ts` `member-organization: a member receives, reads and configures notifications`
 
 ### REQ-tenancy-037
 

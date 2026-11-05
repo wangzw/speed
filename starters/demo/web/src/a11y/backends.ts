@@ -30,7 +30,7 @@
  * read on mount -- GET /api/v1/auth/impersonation, the operator's own impersonation
  * status -- which is scripted here too, in data mode as a grant in force and in
  * empty mode as the bare 404 the page reads as "not impersonating". The
- * tenant-scoped pages the workspace surface mounts under the current tenant
+ * tenant-scoped pages the organization surface mounts under the current tenant
  * (invitations and members, SSO providers), the tenant roles and permissions
  * page (roles, the governed permission catalog, a role's grants and the
  * tenant's bindings) and the tenant settings page (the declared set on the
@@ -136,7 +136,7 @@ const ACCOUNT: AuthnAdminAccount = {
 
 /**
  * One member of the scan tenant, carrying the account display name the
- * member read answers: the workspace invitations page renders the name
+ * member read answers: the organization invitations page renders the name
  * column and both identity cells from it, so data mode scans a populated
  * member table rather than an empty shell.
  */
@@ -151,7 +151,7 @@ const MEMBER: AuthnAdminMember = {
 
 /**
  * One pending invitation of the scan tenant. Its inviter is the same account
- * the member read carries, so the workspace page resolves the inviter from
+ * the member read carries, so the organization page resolves the inviter from
  * the member read rather than the platform account read.
  */
 const INVITATION_ROW: AuthnInviteInvitation = {
@@ -208,7 +208,7 @@ const SETTING: SettingsAdminSetting = {
 }
 
 /**
- * One row of each tenant-scoped administration read the workspace roles and
+ * One row of each tenant-scoped administration read the organization roles and
  * settings pages issue: a role, a governed permission, a grant held by that
  * role, a binding of that role to the scan account, and a tenant-layer
  * setting. They carry the scan tenant, so data mode renders the pages'
@@ -417,7 +417,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
       ],
     } satisfies AuthzSelfPermissions200,
     // The caller's own permission sets are not page data: the same grant is
-    // answered in the empty state so the workspace pages render their empty
+    // answered in the empty state so the organization pages render their empty
     // state rather than the home fallback an empty permission set implies.
     {
       platform: [],
@@ -586,7 +586,7 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
       providers: [],
     } satisfies AuthnAdminProviderList),
   ],
-  // The workspace roles page's four tenant-scoped reads: the roles, the
+  // The organization roles page's four tenant-scoped reads: the roles, the
   // governed permission catalog, the selected role's grants and the tenant's
   // bindings. The grants read stays disabled until a role is chosen, so its
   // answer is reached only by the table's own invariant.
@@ -623,7 +623,7 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
       { bindings: [] } satisfies AuthzTenantadminBindingsOf200,
     ),
   ],
-  // The workspace settings page reads the tenant layer's whole declared set;
+  // The organization settings page reads the tenant layer's whole declared set;
   // the namespace read stays disabled while the "all namespaces" entry is
   // chosen, so only the table invariant reaches its answer.
   [

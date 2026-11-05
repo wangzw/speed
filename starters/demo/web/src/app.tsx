@@ -67,8 +67,8 @@ import {
 } from '@speed/notification-ui'
 import type { AdminRoute } from '@speed/admin-ui'
 import {
-  WorkspaceAdminProvider,
-  workspaceAdminOperations,
+  OrganizationAdminProvider,
+  organizationAdminOperations,
 } from '@speed/admin-ui'
 import { ProductShell } from '@speed/product-shell'
 import { useAppThemeMode, WriteFeedbackPageProvider } from '@speed/ui-kit'
@@ -89,7 +89,7 @@ import { contactVerificationPending } from './contact-verification.js'
 import {
   tenantAdminTenantsList,
   useAuthnProfileGet,
-  workspacePersonalEnsure,
+  orgPersonalEnsure,
 } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import {
@@ -128,10 +128,10 @@ import { ContactVerificationBanner } from './contact-verification-banner.js'
 import { CallbackErrorAlert } from './callback-error-notice.js'
 import { usePermissionRead } from './platform-permissions.js'
 import {
-  useWorkspaceAdminAdmission,
-  useWorkspaceAdminPermission,
-  workspaceAdminProtectedRoles,
-} from './workspace-admin.js'
+  useOrganizationAdminAdmission,
+  useOrganizationAdminPermission,
+  organizationAdminProtectedRoles,
+} from './organization-admin.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
 import { AdminNavIcon } from './nav-icons.js'
@@ -147,7 +147,7 @@ import {
   ACCOUNT_PATH,
   invitationPath,
   isAccountLevelPath,
-  isWorkspaceAdminPath,
+  isOrganizationAdminPath,
   PASSWORD_RESET_PATH,
 } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
@@ -301,11 +301,11 @@ function AppFrame({
   // one. Absent, pending or failed, no declaration matches and the path falls
   // through to the tenant area's own matching.
   const match = useMatch()
-  // The workspace surface's admission for this render (see
-  // src/workspace-admin.ts). It is computed unconditionally so the hooks it
+  // The organization surface's admission for this render (see
+  // src/organization-admin.ts). It is computed unconditionally so the hooks it
   // reads keep a stable order whichever area the URL selects; only the
-  // workspace branch consumes the result.
-  const workspaceAdmission = useWorkspaceAdminAdmission()
+  // organization branch consumes the result.
+  const organizationAdmission = useOrganizationAdminAdmission()
   const navigate = useNavigate()
   const { session } = useAppServices()
   // The host's identity-change action, handed to the admin page so a
@@ -409,7 +409,7 @@ function AppFrame({
     )
   }
 
-  // The workspace admin partition. It renders inside the tenant frame --
+  // The organization admin partition. It renders inside the tenant frame --
   // the tenant shell already provides the AppShell -- and its subtree is
   // keyed by the current tenant: a switch remounts it, so the new tenant's
   // pages start with their own state and reads and nothing of the previous
@@ -417,7 +417,7 @@ function AppFrame({
   // the viewer to the new tenant's home, so the remounted frame is not
   // generally seen for a tenant the viewer may not manage; the key covers
   // the window before that navigation runs and any in-place tenant move.
-  if (isWorkspaceAdminPath(pathname)) {
+  if (isOrganizationAdminPath(pathname)) {
     const hasFeature =
       presence.state === 'ready' ? presence.has : (): boolean => false
     const matchedLabel = match?.declaration.label
@@ -445,34 +445,34 @@ function AppFrame({
         sidebarCollapsed={sidebarCollapsed}
         onSidebarCollapsedChange={setSidebarCollapsed}
       >
-        {workspaceAdmission.status === 'allowed' ? (
-          <WorkspaceAdminProvider
-            key={`workspace-admin:${workspaceAdmission.tenantId}`}
-            tenant={workspaceAdmission.tenantId}
-            operations={workspaceAdminOperations}
+        {organizationAdmission.status === 'allowed' ? (
+          <OrganizationAdminProvider
+            key={`organization-admin:${organizationAdmission.tenantId}`}
+            tenant={organizationAdmission.tenantId}
+            operations={organizationAdminOperations}
             hasFeature={hasFeature}
             session={session}
-            routes={workspaceAdmission.routes}
+            routes={organizationAdmission.routes}
             onNavigate={navigate}
             breadcrumbs={breadcrumbs}
             invitationLink={invitationPath}
-            protectedRoles={workspaceAdminProtectedRoles}
+            protectedRoles={organizationAdminProtectedRoles}
           >
-            <WorkspaceRouteGuard target={workspaceAdmission.target}>
+            <OrganizationRouteGuard target={organizationAdmission.target}>
               <RouteView />
-            </WorkspaceRouteGuard>
-          </WorkspaceAdminProvider>
-        ) : workspaceAdmission.status === 'pending' ? (
+            </OrganizationRouteGuard>
+          </OrganizationAdminProvider>
+        ) : organizationAdmission.status === 'pending' ? (
           // A fact the decision needs is still in flight (the tenant, its
           // kind, the feature document or the tenant permission read). Wait
           // inside the tenant frame rather than admitting a surface the
           // viewer may not have, or bouncing a viewer who does.
           <RouteGuard status="pending" />
-        ) : workspaceAdmission.status === 'failed' ? (
+        ) : organizationAdmission.status === 'failed' ? (
           // A read the decision needs failed: the answer is unknown, not a
           // denial. The retryable page replaces the redirect, so a viewer
           // who may manage the tenant is not sent home as if they could not.
-          <WorkspaceAccessFailed />
+          <OrganizationAccessFailed />
         ) : (
           // A settled fact rules the surface out -- impersonating, the
           // system or a personal tenant, no served page, or no tenant
@@ -595,7 +595,7 @@ function TenantFrame({
   // account whose own personal tenant is missing from its membership list asks
   // the server to backfill it, and a registration lands in the tenant area with
   // it (src/pages/sign-in-view.tsx).
-  const personalServed = useFeature('workspace.personal')
+  const personalServed = useFeature('org.personal')
   const snapshot = useAuthState()
   const authenticated = snapshot.state === 'authenticated'
   // Whose identity this session acts as right now. A start or end swaps it,
@@ -661,7 +661,7 @@ function TenantFrame({
   const [tenantId, setTenantId] = useTenantSelection(
     impersonating ? null : getCurrentTenantId(),
   )
-  // A switch made while the viewer is inside the workspace admin area takes
+  // A switch made while the viewer is inside the organization admin area takes
   // them to the new tenant's home. The new tenant does not necessarily grant
   // the same administrative permissions, so staying on the page the previous
   // tenant offered would render its surface against the new tenant; the home
@@ -675,11 +675,11 @@ function TenantFrame({
     if (
       previous !== null &&
       previous !== tenantId &&
-      isWorkspaceAdminPath(pathname) &&
+      isOrganizationAdminPath(pathname) &&
       !(
         // An authenticated viewer whose tenant went unknown because the
         // feature document is still pending or failed is waiting, not
-        // switching: the workspace admission renders its pending or retryable
+        // switching: the organization admission renders its pending or retryable
         // failure view in place. Redirecting here would replace that view
         // with the tenant home and hide the retry.
         tenantId === null &&
@@ -912,7 +912,7 @@ function TenantFrame({
 
   // The personal-tenant backfill. It asks the server only when the caller's own
   // personal tenant is missing from its settled membership list:
-  // authenticated, not impersonating, the workspace.personal policy served, the
+  // authenticated, not impersonating, the org.personal policy served, the
   // caller tenant list settled, and the identifier derived from the principal
   // absent from that list. A failed list read is not a missing tenant, so it
   // never triggers. The list's other rows are irrelevant: an account in
@@ -940,7 +940,7 @@ function TenantFrame({
     let cancelled = false
     setPersonalFailure(false)
     void Promise.resolve()
-      .then(() => workspacePersonalEnsure())
+      .then(() => orgPersonalEnsure())
       .then((answer) => {
         if (cancelled) {
           return
@@ -1011,22 +1011,22 @@ function TenantFrame({
 
   const items = useNavItems()
   const adminRoutes = presentDeclarations(adminShellRoutes, presence)
-  // The workspace admin entry: the account menu's workspace group and the
-  // home card read this one derivation (src/workspace-admin.ts), so they
+  // The organization admin entry: the account menu's organization group and the
+  // home card read this one derivation (src/organization-admin.ts), so they
   // never disagree about whether the surface is offered or where it starts.
-  // The group's children are route-kit's own entries for the workspace
+  // The group's children are route-kit's own entries for the organization
   // declarations the caller may open, ordered as the declarations are, and
   // only while the admission is `allowed`.
-  const workspaceAdmission = useWorkspaceAdminAdmission()
-  const workspaceItems: readonly AppShellNavItem[] | undefined =
-    workspaceAdmission.status === 'allowed'
-      ? workspaceAdmission.children
+  const organizationAdmission = useOrganizationAdminAdmission()
+  const organizationItems: readonly AppShellNavItem[] | undefined =
+    organizationAdmission.status === 'allowed'
+      ? organizationAdmission.children
       : undefined
 
   // The tenant navigation is the home entry alone. The admin's pages are
   // filtered out (the admin entry lives in the header's action slot, offered
-  // only to platform staff), the workspace admin's pages are destinations of
-  // the account menu's workspace group rather than navigation entries, and
+  // only to platform staff), the organization admin's pages are destinations of
+  // the account menu's organization group rather than navigation entries, and
   // the notification centre and the account settings are destinations of the
   // account entry at the bottom of the column, not navigation entries. The
   // entry's href/onClick pair is route-kit's -- a plain click navigates in
@@ -1035,7 +1035,7 @@ function TenantFrame({
   // the entry id that declaration path supplies.
   const navItems: readonly AppShellNavItem[] = items
     .filter((item) => !isAdminPath(item.id))
-    .filter((item) => !isWorkspaceAdminPath(item.id))
+    .filter((item) => !isOrganizationAdminPath(item.id))
     .filter(
       (item) => item.id !== NOTIFICATIONS_PATH && item.id !== ACCOUNT_PATH,
     )
@@ -1147,7 +1147,7 @@ function TenantFrame({
               <AccountEntry
                 narrow={rail.narrow}
                 closeDrawer={rail.closeDrawer}
-                workspaceItems={workspaceItems}
+                organizationItems={organizationItems}
               />
             )
           }
@@ -1179,7 +1179,7 @@ function TenantFrame({
                 <UserMenu
                   narrow={rail.narrow}
                   closeDrawer={rail.closeDrawer}
-                  workspaceItems={workspaceItems}
+                  organizationItems={organizationItems}
                 />
               )}
             </>
@@ -1499,14 +1499,14 @@ function TenantHomeRedirect(): null {
 }
 
 /**
- * The workspace page's route guard. It reads the permission code of the
+ * The organization page's route guard. It reads the permission code of the
  * declaration the URL matched exactly and checks it against the tenant
  * permission set scoped to the current tenant. A code the caller does not
- * hold sends the viewer to `target`, the first workspace page it may open
- * (the same entry the account menu's workspace group and home card point at);
+ * hold sends the viewer to `target`, the first organization page it may open
+ * (the same entry the account menu's organization group and home card point at);
  * no permitted page at all is a `denied` admission, handled above.
  */
-function WorkspaceRouteGuard({
+function OrganizationRouteGuard({
   target,
   children,
 }: {
@@ -1514,20 +1514,20 @@ function WorkspaceRouteGuard({
   readonly children: ReactNode
 }): ReactElement {
   const match = useMatch()
-  const status = useWorkspaceAdminPermission(match?.declaration.permission)
+  const status = useOrganizationAdminPermission(match?.declaration.permission)
   return (
     <RouteGuard
       status={status}
-      deniedFallback={<WorkspaceTargetRedirect target={target} />}
+      deniedFallback={<OrganizationTargetRedirect target={target} />}
     >
       {children}
     </RouteGuard>
   )
 }
 
-/** Replaces the current history entry with the given workspace page,
+/** Replaces the current history entry with the given organization page,
  * rendered instead of a page the current tenant's permissions do not admit. */
-function WorkspaceTargetRedirect({
+function OrganizationTargetRedirect({
   target,
 }: {
   readonly target: string
@@ -1630,7 +1630,7 @@ function AdminAccessFailed({
 }
 
 /**
- * The workspace surface's retryable failure, rendered inside the tenant
+ * The organization surface's retryable failure, rendered inside the tenant
  * frame. A read the admission depends on -- the caller tenant list, the
  * feature document, or the tenant permission read -- failed, so the answer is
  * unknown and neither the surface nor the tenant-home redirect is supported.
@@ -1642,7 +1642,7 @@ function AdminAccessFailed({
  * list, the feature document and the tenant permission set. Absent any one
  * of them, the admission would simply settle back into this state.
  */
-function WorkspaceAccessFailed(): ReactElement {
+function OrganizationAccessFailed(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   const read = usePermissionRead()
   const { session } = useAppServices()
@@ -1678,13 +1678,13 @@ function WorkspaceAccessFailed(): ReactElement {
       }}
     >
       <Typography component="h1" variant="h5">
-        {t('workspace.accessFailed.title')}
+        {t('organization.accessFailed.title')}
       </Typography>
       <Typography variant="body1">
-        {t('workspace.accessFailed.description')}
+        {t('organization.accessFailed.description')}
       </Typography>
       <Button onClick={retry} disabled={retrying}>
-        {t('workspace.accessFailed.retry')}
+        {t('organization.accessFailed.retry')}
       </Button>
     </Box>
   )
@@ -1711,13 +1711,13 @@ function TenantProvisionFailure({
       sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 640 }}
     >
       <Typography variant="h5" component="h2">
-        {t('workspace.failure.title')}
+        {t('organization.failure.title')}
       </Typography>
       <Typography variant="body1">
-        {t('workspace.failure.description')}
+        {t('organization.failure.description')}
       </Typography>
       <Box>
-        <Button onClick={onRetry}>{t('workspace.failure.retry')}</Button>
+        <Button onClick={onRetry}>{t('organization.failure.retry')}</Button>
       </Box>
     </Box>
   )

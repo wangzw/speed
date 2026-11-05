@@ -61,7 +61,7 @@ export interface ReviewConfigInput {
   /** The backend listener's port (the browser's origin, the API and the ops probes). */
   readonly backendPort: number
   /**
-   * Seed the member-workspace journey's account and membership. Off by
+   * Seed the member-organization journey's account and membership. Off by
    * default: only that journey's server reads them, so the shared template's
    * seed -- the operator, the tenant and the settings -- stays the baseline
    * every other spec starts from.
@@ -130,7 +130,7 @@ export interface ReviewConfigInput {
   readonly mfaRequired?: boolean
   /**
    * Replace the scheduler's tick with this duration. Off by default: the
-   * template's two-second tick feeds the member-workspace journey's worker. A
+   * template's two-second tick feeds the member-organization journey's worker. A
    * journey whose dispatch is a control click and whose only intended sends are
    * its own turns the periodic trigger off with `0s`, which the scheduler
    * treats as no trigger at all; the job queue that carries the click's
@@ -154,7 +154,7 @@ export interface ReviewConfigInput {
    * Seed the tenant-admin journey's proved-email business administrator and
    * make it acme's only tenant administrator. Off by default: the account owns
    * a mailbox the notification fixture would address, and only the journey that
-   * drives the workspace admin surface needs it. The account is added through
+   * drives the organization admin surface needs it. The account is added through
    * the binary's own seed, with the review build proving its address.
    */
   readonly seedTenantAdmin?: boolean
@@ -169,7 +169,7 @@ export interface ReviewConfigInput {
    * Seed a system-tenant administrator outside the platform-administrator
    * role, under the seed's `system-admins` list. Off by default: only the
    * journey that proves the system tenant is not manageable through the
-   * workspace admin surface needs it.
+   * organization admin surface needs it.
    */
   readonly seedSystemTenantAdmin?: boolean
   /**
@@ -197,11 +197,11 @@ export interface ReviewConfig {
 }
 
 /**
- * The member the member-workspace journey signs in as.
+ * The member the member-organization journey signs in as.
  *
  * The review template's seed holds the platform operator alone, and a platform
  * administrator's role binding is not a membership: the seeded tenant has no
- * member for the notification worker to address. When the member-workspace
+ * member for the notification worker to address. When the member-organization
  * spec asks for it (`seedMember`), this account and its membership are added
  * to the configuration the harness writes, so the binary's own `seed` command
  * creates both -- the fixture never writes a row into a running database. The
@@ -303,9 +303,9 @@ export const tenantSSOAdmin = {
  * The business tenant administrator the tenant-admin journey signs in as.
  *
  * It is acme's only tenant administrator and holds no platform permission, so
- * it reaches the workspace admin surface with the governed set alone. Its
+ * it reaches the organization admin surface with the governed set alone. Its
  * address is proved by the review seed, because an unproved address is refused
- * every workspace admin write; the username is its login name. The account
+ * every organization admin write; the username is its login name. The account
  * also owns the personal tenant every account gets at creation, which is the
  * tenant the journey switches to and back from. A review value, not a
  * credential.
@@ -339,7 +339,7 @@ export const reviewUnprovedTenantAdmin = {
  * tenant-admin role without the platform-administrator role. The platform
  * console lists the account like any other, so the operator can see it there
  * while the journey proves the system tenant is not manageable through the
- * workspace admin surface. It is a username, so it signs in with a login name
+ * organization admin surface. It is a username, so it signs in with a login name
  * and needs no mailbox.
  */
 export const reviewSystemTenantAdmin = {
@@ -351,7 +351,7 @@ export const reviewSystemTenantAdmin = {
 
 /**
  * The impersonation journey's target: an ordinary member of acme that holds no
- * role binding, so it covers no workspace admin page. It is the template's own
+ * role binding, so it covers no organization admin page. It is the template's own
  * `member` account, seeded without a mailbox on purpose: the notification
  * fixture addresses every member with one, and an extra destination in acme
  * would change the delivery counts another fixture asserts.
@@ -383,8 +383,8 @@ export const reviewImpersonationAdmin = {
  * A declared setting the tenant-admin journey writes on its tenant's layer.
  *
  * The namespace is the module that declares it and is outside the platform-only
- * set (`ratelimit.*`, `tenant.admission.*`, `authn.*`), so the workspace admin
- * settings page lists it as an editable row. `notification.delivery` is part of
+ * set (`ratelimit.*`, `tenant.admission.*`, `authn.*`), so the organization
+ * admin settings page lists it as an editable row. `notification.delivery` is part of
  * the review assembly, so its budget keys are declared on every review server.
  * The value stays inside the declared domain of whole numbers from one to a
  * thousand.
@@ -487,7 +487,7 @@ interface ReviewTenantAdmins {
  * The tenant-admin flags win over the impersonation default because the journey
  * that sets them makes its account the tenant's administrator. The impersonation
  * server demotes the ordinary member and names its own administrator, because
- * the impersonated account must cover no workspace admin page and the operator
+ * the impersonated account must cover no organization admin page and the operator
  * is not a member of the tenant. Every other server keeps the template's member
  * as an administrator and adds the platform operator, which is the tenant-domain
  * grant the console's tenant-addressed pages decide on.
@@ -832,7 +832,7 @@ export async function writeReviewConfig(
   }
 
   // A journey whose dispatch is its own click turns the periodic scheduler off:
-  // the template's tick feeds the member-workspace worker, and a worker that
+  // the template's tick feeds the member-organization worker, and a worker that
   // addressed the same tenant would send the rollout journey's notice on its own
   // windows. A tick at or below zero starts no trigger at all; the job queue
   // that carries the click's dispatch polls on its own interval.

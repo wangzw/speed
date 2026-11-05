@@ -251,7 +251,14 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   and a name typed in the panel is written to the row the flow added
   through the generated rename mutation once the flow settles `enrolled`.
   The authenticator's panel has no name field: its first input carries an
-  empty label and the server refuses a name for that kind.
+  empty label and the server refuses a name for that kind. The SMS panel
+  reads the account's verified phone off the same profile read the other
+  sections use: with one, its note names that destination and its name
+  field stays empty, because the destination is the account's phone rather
+  than this browser; with none, the add entry opens no panel and sends no
+  flow request, and an informational notice with no action appears beneath
+  that kind's entry. A direct API caller that starts the SMS enrollment
+  without a verified phone is answered 403 `phone-required`.
   The step states what confirming does before its controls, and its cancel
   sits on the left of its confirm with the ordinary action-row spacing. One
   confirm takes the step; a bare `complete` step the server answers with is

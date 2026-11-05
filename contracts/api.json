@@ -784,7 +784,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable, or a human-verification proof is missing or invalid (human-verification-required)"
+            "description": "The account is unavailable, or an SMS second-factor challenge or enrollment is refused because the account has no proved phone (phone-required), or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -958,7 +958,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required), or a human-verification proof is missing or invalid (human-verification-required)"
+            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required), or an SMS `purpose=enroll` flow is refused because the account has no proved phone (phone-required), or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -5074,6 +5074,77 @@
           "notification.preferences"
         ],
         "x-endpoint": "api"
+      }
+    },
+    "/api/v1/orgs/personal": {
+      "post": {
+        "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
+        "operationId": "org.personal.ensure",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPersonalReply"
+                }
+              }
+            },
+            "description": "The personal tenant, complete; created says whether this call registered it"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is a service account, or a static-table subject that cannot own a tenant"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller cannot have a personal tenant: its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. tenant-unavailable changes if an operator enables the tenant, and identifier-unavailable does not change on retry"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer; no part of the result is returned"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Ensure the caller's personal tenant exists and is complete",
+        "tags": [
+          "speed.application"
+        ],
+        "x-endpoint": "account"
       }
     },
     "/api/v1/system/audit/export": {
@@ -13636,77 +13707,6 @@
         "x-endpoint": "api"
       }
     },
-    "/api/v1/workspace/personal": {
-      "post": {
-        "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
-        "operationId": "workspace.personal.ensure",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkspacePersonalReply"
-                }
-              }
-            },
-            "description": "The personal tenant, complete; created says whether this call registered it"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The request carries no identity"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The caller is a service account, or a static-table subject that cannot own a tenant"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The caller cannot have a personal tenant: its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. tenant-unavailable changes if an operator enables the tenant, and identifier-unavailable does not change on retry"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "A dependency could not answer; no part of the result is returned"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Ensure the caller's personal tenant exists and is complete",
-        "tags": [
-          "speed.application"
-        ],
-        "x-endpoint": "account"
-      }
-    },
     "/health": {
       "get": {
         "description": "Reads nothing and always answers 200, so any answer at all means the process is up. The route is mounted on the endpoint named by ops.endpoint (default \"ops\"), which the host assembles unguarded: a probe needs no credential and no tenant.",
@@ -16706,6 +16706,49 @@
         ],
         "type": "object"
       },
+      "OrganizationPersonalReply": {
+        "description": "The answer to a successful ensure: the caller's personal tenant and whether this call registered it.",
+        "properties": {
+          "created": {
+            "description": "Whether this call registered the tenant",
+            "type": "boolean"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/OrganizationPersonalTenant"
+          }
+        },
+        "required": [
+          "tenant",
+          "created"
+        ],
+        "type": "object"
+      },
+      "OrganizationPersonalTenant": {
+        "description": "The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.",
+        "properties": {
+          "alias": {
+            "description": "The request-surface name, equal to the identifier for a personal tenant",
+            "type": "string"
+          },
+          "id": {
+            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
+            "type": "string"
+          },
+          "kind": {
+            "description": "The tenant kind; the frontend renders the personal organization label from it",
+            "enum": [
+              "personal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "alias",
+          "kind"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "properties": {
@@ -17250,49 +17293,6 @@
           "alias"
         ],
         "type": "object"
-      },
-      "WorkspacePersonalReply": {
-        "description": "The answer to a successful ensure: the caller's personal tenant and whether this call registered it.",
-        "properties": {
-          "created": {
-            "description": "Whether this call registered the tenant",
-            "type": "boolean"
-          },
-          "tenant": {
-            "$ref": "#/components/schemas/WorkspacePersonalTenant"
-          }
-        },
-        "required": [
-          "tenant",
-          "created"
-        ],
-        "type": "object"
-      },
-      "WorkspacePersonalTenant": {
-        "description": "The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.",
-        "properties": {
-          "alias": {
-            "description": "The request-surface name, equal to the identifier for a personal tenant",
-            "type": "string"
-          },
-          "id": {
-            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
-            "type": "string"
-          },
-          "kind": {
-            "description": "The tenant kind; the frontend renders the personal label from it",
-            "enum": [
-              "personal"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "alias",
-          "kind"
-        ],
-        "type": "object"
       }
     },
     "securitySchemes": {
@@ -17479,6 +17479,10 @@
       "endpoint": "ops"
     },
     {
+      "module": "org.personal",
+      "endpoint": "account"
+    },
+    {
       "module": "settings.admin",
       "endpoint": "admin"
     },
@@ -17496,10 +17500,6 @@
     },
     {
       "module": "tenant.self",
-      "endpoint": "account"
-    },
-    {
-      "module": "workspace.personal",
       "endpoint": "account"
     }
   ]

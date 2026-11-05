@@ -28,7 +28,7 @@ import {
 } from './test-utils/session.js'
 
 const ROSTER_PATH = '/api/v1/system/tenants'
-const ENSURE_PATH = '/api/v1/workspace/personal'
+const ENSURE_PATH = '/api/v1/orgs/personal'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 
 const PERSONAL_ID = 'personal-account-1'
@@ -51,7 +51,7 @@ const PROFILE = {
 } as const
 const STREAM_FEATURES = [
   'tenant.admin',
-  'workspace.personal',
+  'org.personal',
   'notification.stream',
   'notification.inbox',
 ] as const

@@ -62,7 +62,7 @@ a spec merely waiting its turn.
 
 Spec declaration contract (header comment, before the imports):
 
-    // @journey journey-first-registration-to-personal-workspace.md
+    // @journey journey-first-registration-to-personal-organization.md
     // @covers REQ-signin-001, REQ-signup-001
 
 Exit codes: 0 = clean; 1 = one or more findings, each printed with its path

@@ -926,12 +926,12 @@ describe('the admin area', () => {
   })
 })
 
-describe('the workspace admin path', () => {
+describe('the organization admin path', () => {
   it("takes the viewer to the new tenant's home when a switch happens there", async () => {
     const user = userEvent.setup()
-    // The workspace admin surface acts on the current tenant and renders
+    // The organization admin surface acts on the current tenant and renders
     // inside the tenant shell, so the switcher is available there.
-    window.history.replaceState({}, '', '/workspace/admin')
+    window.history.replaceState({}, '', '/organization/admin')
     bindRequestFn(<T,>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({

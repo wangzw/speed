@@ -128,7 +128,7 @@
 | [主题预设是纯数据的 token 覆写，效果由 ui-kit 映射，预设不承载组件覆盖](adr-web-theme-presets.md) |
 | [颜色模式偏好跟随账户，系统偏好由主题 provider 解析](adr-web-color-mode-preference.md) |
 | [语言选项按基础语言命名，同基础语言多变体时保留地区名](adr-web-language-display-name.md) |
-| [管理面分两档：平台管理面在 /admin，工作区管理面在 /workspace/admin 的租户外壳内](adr-tenant-admin-surface.md) |
+| [管理面分两档：平台管理面在 /admin，组织管理面在 /organization/admin 的租户外壳内](adr-tenant-admin-surface.md) |
 
 ## 认证
 

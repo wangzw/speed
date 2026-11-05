@@ -9,7 +9,7 @@
     "account": "账户设置",
     "home": "首页",
     "admin": "管理后台",
-    "workspaceAdmin": "工作区管理"
+    "organizationAdmin": "组织管理"
   },
   "admin": {
     "backToApp": "返回应用",
@@ -33,7 +33,7 @@
     "intro": "本骨架不带业务域；下列是平台开箱即用的能力，先四处看看，再长你自己的业务。",
     "membershipNotice": {
       "region": "成员确认",
-      "title": "你已成为该租户的成员。",
+      "title": "你已成为该组织的成员。",
       "dismiss": "关闭加入成员确认"
     },
     "cards": {
@@ -43,11 +43,11 @@
       },
       "admin": {
         "title": "管理后台",
-        "description": "平台管理：租户、账户、设置与审计等。"
+        "description": "平台管理：组织、账户、设置与审计等。"
       },
-      "workspaceAdmin": {
-        "title": "工作区管理",
-        "description": "管理当前工作区的成员、邀请与企业单点登录。"
+      "organizationAdmin": {
+        "title": "组织管理",
+        "description": "管理当前组织的成员、邀请与企业单点登录。"
       },
       "notifications": {
         "title": "通知",
@@ -187,19 +187,19 @@
     "ascii": "ASCII 终端"
   },
   "tenantRoster": {
-    "failed": "无法读取租户列表",
+    "failed": "无法读取组织列表",
     "retry": "重试"
   },
-  "workspace": {
-    "personal": "工作区",
+  "organization": {
+    "personal": "组织",
     "failure": {
-      "title": "无法准备你的工作区",
-      "description": "准备工作区时出了问题，请稍后重试。",
+      "title": "无法准备你的组织",
+      "description": "准备组织时出了问题，请稍后重试。",
       "retry": "重试"
     },
     "accessFailed": {
-      "title": "无法核实工作区访问权限",
-      "description": "打开这个工作区所需的信息没能加载，请重试。",
+      "title": "无法核实组织访问权限",
+      "description": "打开这个组织所需的信息没能加载，请重试。",
       "retry": "重试"
     }
   },

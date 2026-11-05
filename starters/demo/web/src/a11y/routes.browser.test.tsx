@@ -113,7 +113,7 @@ async function scanRoute(
   const unscripted: string[] = []
   bindRequestFn(createBackend(mode, (url) => unscripted.push(url)))
   window.history.replaceState({}, '', path)
-  // The workspace pages admit only against the tenant-tagged permission set
+  // The organization pages admit only against the tenant-tagged permission set
   // the production assembly publishes, so mount the attach as a page load
   // does.
   const session = staffSession()
@@ -133,7 +133,7 @@ async function scanRoute(
     mode === 'error' ? ERROR_PLACEHOLDER_BY_PATH[path] : undefined
   if (errorPlaceholder !== undefined) {
     // As in the jsdom sweep: settle() can return on a wait view that is
-    // momentarily stable while the workspace admission's reads are still
+    // momentarily stable while the organization admission's reads are still
     // failing, so wait for the route's own error copy before scanning.
     await screen.findByText(errorPlaceholder)
     await settle()

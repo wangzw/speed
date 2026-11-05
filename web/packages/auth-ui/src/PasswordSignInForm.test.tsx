@@ -526,6 +526,37 @@ describe('PasswordSignInForm', () => {
     }
   })
 
+  it('render an SMS second factor refused for a missing phone with its own sentence', async () => {
+    // The account's phone was removed elsewhere while the sign-in was in
+    // flight: choosing the SMS factor cannot send, and the refusal names the
+    // missing verified phone instead of falling back to the unknown sentence.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'mfa-1', kind: 'sms' }],
+          },
+        }),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(403, 'authn.phone_required')
+      },
+    })
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.signInFlow.factorKind.sms,
+      }),
+    )
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.phone_required)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
+  })
+
   it('clear the failure banner when a parked step is answered again', async () => {
     // Answering a step is a new attempt: the previous refusal's banner must
     // not stay beside the step the next answer parks.

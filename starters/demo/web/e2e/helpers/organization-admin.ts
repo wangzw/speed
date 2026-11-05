@@ -1,10 +1,10 @@
 /**
- * The workspace administration surface's rendered landmarks.
+ * The organization administration surface's rendered landmarks.
  *
- * The workspace pages are the shared admin-ui pages mounted inside the tenant
- * frame at `/workspace/admin/*`. The host's entry is a group of links inside
+ * The organization pages are the shared admin-ui pages mounted inside the tenant
+ * frame at `/organization/admin/*`. The host's entry is a group of links inside
  * the account menu, plus a start card on the tenant home; the sidebar carries
- * no workspace navigation. These helpers open the account menu, address the
+ * no organization navigation. These helpers open the account menu, address the
  * group and the sections the pages render, so a journey names a landmark once
  * instead of repeating its role query.
  *
@@ -84,98 +84,100 @@ export async function closeAccountMenu(
   await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
-/** The home page's workspace admin card, as the anchor it is. */
-export function workspaceHomeCard(page: Page): Locator {
+/** The home page's organization admin card, as the anchor it is. */
+export function organizationHomeCard(page: Page): Locator {
   return page
     .getByRole('heading', {
       level: 2,
-      name: copy('demo', 'home.cards.workspaceAdmin.title'),
+      name: copy('demo', 'home.cards.organizationAdmin.title'),
       exact: true,
     })
     .locator('xpath=ancestor::a[1]')
 }
 
-/** The URL of one workspace page, relative to the deployment root. */
-export function workspacePath(path: string): string {
-  return `/workspace/admin${path}`
+/** The URL of one organization page, relative to the deployment root. */
+export function organizationPath(path: string): string {
+  return `/organization/admin${path}`
 }
 
-/** The workspace pages, each by its navigation label and page title. */
-export type WorkspacePageKey = 'invitations' | 'sso' | 'roles' | 'settings'
+/** The organization pages, each by its navigation label and page title. */
+export type OrganizationPageKey = 'invitations' | 'sso' | 'roles' | 'settings'
 
-/** The workspace pages in the order the account menu lists them. */
-export const WORKSPACE_PAGE_KEYS: readonly WorkspacePageKey[] = [
+/** The organization pages in the order the account menu lists them. */
+export const ORGANIZATION_PAGE_KEYS: readonly OrganizationPageKey[] = [
   'invitations',
   'sso',
   'roles',
   'settings',
 ]
 
-const WORKSPACE_PAGES: Record<
-  WorkspacePageKey,
+const ORGANIZATION_PAGES: Record<
+  OrganizationPageKey,
   { readonly nav: string; readonly title: string }
 > = {
   invitations: {
-    nav: 'workspace.nav.invitations',
+    nav: 'organization.nav.invitations',
     title: 'invitations.title',
   },
-  sso: { nav: 'workspace.nav.sso', title: 'sso.title' },
-  roles: { nav: 'workspace.nav.roles', title: 'permissions.title' },
-  settings: { nav: 'workspace.nav.settings', title: 'settings.title' },
+  sso: { nav: 'organization.nav.sso', title: 'sso.title' },
+  roles: { nav: 'organization.nav.roles', title: 'permissions.title' },
+  settings: { nav: 'organization.nav.settings', title: 'settings.title' },
 }
 
 /**
- * The workspace admin group's heading inside the account menu. The menu
- * renders it as a plain, non-interactive label above the group's entries. The
- * query is scoped to the menu because the home card carries the same copy.
+ * The organization admin group inside the account menu, addressed by the name it
+ * carries on `aria-label`. The group paints no caption, so this is a role
+ * query rather than a text query; scoping it to the menu keeps it off any
+ * other group the page may render.
  */
-export function workspaceGroupLabel(page: Page): Locator {
-  return page
-    .getByRole('menu')
-    .getByText(copy('demo', 'nav.workspaceAdmin'), { exact: true })
+export function organizationGroup(page: Page): Locator {
+  return page.getByRole('menu').getByRole('group', {
+    name: copy('demo', 'nav.organizationAdmin'),
+    exact: true,
+  })
 }
 
-/** One workspace page's entry in the open account menu, as a menuitem link. */
-export function workspaceMenuItem(
+/** One organization page's entry in the open account menu, as a menuitem link. */
+export function organizationMenuItem(
   page: Page,
-  key: WorkspacePageKey,
+  key: OrganizationPageKey,
 ): Locator {
   return page.getByRole('menu').getByRole('menuitem', {
-    name: copy('adminUi', WORKSPACE_PAGES[key].nav),
+    name: copy('adminUi', ORGANIZATION_PAGES[key].nav),
     exact: true,
   })
 }
 
 /**
  * Open one account-menu surface (the header's by default) and return its
- * workspace admin entries: one menuitem per page the caller's admission
+ * organization admin entries: one menuitem per page the caller's admission
  * allows, in admission order. The menu stays open for the caller's
  * assertions.
  */
-export async function workspaceEntry(
+export async function organizationEntry(
   page: Page,
   surface: AccountMenuSurface = 'header',
 ): Promise<Locator> {
   const menu = await openAccountMenu(page, surface)
   return menu
     .getByRole('group', {
-      name: copy('demo', 'nav.workspaceAdmin'),
+      name: copy('demo', 'nav.organizationAdmin'),
       exact: true,
     })
     .getByRole('menuitem')
 }
 
 /**
- * Open one workspace page through its account-menu entry, opening the menu if
+ * Open one organization page through its account-menu entry, opening the menu if
  * it is closed, and wait for the page's h1.
  */
-export async function openWorkspacePage(
+export async function openOrganizationPage(
   page: Page,
-  key: WorkspacePageKey,
+  key: OrganizationPageKey,
 ): Promise<void> {
   await openAccountMenu(page)
-  const target = WORKSPACE_PAGES[key]
-  await workspaceMenuItem(page, key).click()
+  const target = ORGANIZATION_PAGES[key]
+  await organizationMenuItem(page, key).click()
   await expect(
     page.getByRole('heading', {
       level: 1,
@@ -287,8 +289,8 @@ export async function switchTenant(
 }
 
 /**
- * The workspace entry and the home card are both gone. The sidebar is asserted
- * to carry no workspace control either: the entry moved into the account menu,
+ * The organization entry and the home card are both gone. The sidebar is asserted
+ * to carry no organization control either: the entry moved into the account menu,
  * so a regression that brings the old navigation-column control back must
  * fail. Both
  * account menus are then opened in turn -- the header's and the sidebar's --
@@ -297,53 +299,53 @@ export async function switchTenant(
  * open menu's backdrop hides the rest of the app from role queries and would
  * make the absence assertions pass vacuously.
  */
-export async function expectWorkspaceEntryAbsent(page: Page): Promise<void> {
-  await expect(workspaceHomeCard(page)).toHaveCount(0)
+export async function expectOrganizationEntryAbsent(page: Page): Promise<void> {
+  await expect(organizationHomeCard(page)).toHaveCount(0)
   const navigation = mainNavigation(page)
   for (const role of ['button', 'link'] as const) {
     await expect(
       navigation.getByRole(role, {
-        name: copy('demo', 'nav.workspaceAdmin'),
+        name: copy('demo', 'nav.organizationAdmin'),
         exact: true,
       }),
     ).toHaveCount(0)
   }
-  for (const key of WORKSPACE_PAGE_KEYS) {
+  for (const key of ORGANIZATION_PAGE_KEYS) {
     await expect(
       navigation.getByRole('link', {
-        name: copy('adminUi', WORKSPACE_PAGES[key].nav),
+        name: copy('adminUi', ORGANIZATION_PAGES[key].nav),
         exact: true,
       }),
     ).toHaveCount(0)
   }
 
   for (const surface of ['header', 'sidebar'] as const) {
-    const entries = await workspaceEntry(page, surface)
+    const entries = await organizationEntry(page, surface)
     await expect(entries).toHaveCount(0)
-    await expect(workspaceGroupLabel(page)).toHaveCount(0)
-    for (const key of WORKSPACE_PAGE_KEYS) {
-      await expect(workspaceMenuItem(page, key)).toHaveCount(0)
+    await expect(organizationGroup(page)).toHaveCount(0)
+    for (const key of ORGANIZATION_PAGE_KEYS) {
+      await expect(organizationMenuItem(page, key)).toHaveCount(0)
     }
     await closeAccountMenu(page, surface)
   }
 }
 
 /**
- * The account menu's workspace group and the home card are both offered on
- * both account-menu surfaces: the group label, one entry per page, and the
- * start card. Each surface is opened, asserted and closed in turn, because the
- * two share one list and an entry present in only one of them is a live
- * regression. The menus are closed before returning so the caller's next click
- * lands on the page rather than the menu's backdrop.
+ * The account menu's organization group and the home card are both offered on
+ * both account-menu surfaces: the group itself (by its accessible name), one
+ * entry per page, and the start card. Each surface is opened, asserted and
+ * closed in turn, because the two share one list and an entry present in only
+ * one of them is a live regression. The menus are closed before returning so
+ * the caller's next click lands on the page rather than the menu's backdrop.
  */
-export async function expectWorkspaceEntryPresent(page: Page): Promise<void> {
-  await expect(workspaceHomeCard(page)).toBeVisible()
+export async function expectOrganizationEntryPresent(page: Page): Promise<void> {
+  await expect(organizationHomeCard(page)).toBeVisible()
   for (const surface of ['header', 'sidebar'] as const) {
-    const entries = await workspaceEntry(page, surface)
-    await expect(workspaceGroupLabel(page)).toBeVisible()
-    await expect(entries).toHaveCount(WORKSPACE_PAGE_KEYS.length)
-    for (const key of WORKSPACE_PAGE_KEYS) {
-      await expect(workspaceMenuItem(page, key)).toBeVisible()
+    const entries = await organizationEntry(page, surface)
+    await expect(organizationGroup(page)).toBeVisible()
+    await expect(entries).toHaveCount(ORGANIZATION_PAGE_KEYS.length)
+    for (const key of ORGANIZATION_PAGE_KEYS) {
+      await expect(organizationMenuItem(page, key)).toBeVisible()
     }
     await closeAccountMenu(page, surface)
   }

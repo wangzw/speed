@@ -1,12 +1,12 @@
 /**
- * The workspace administration surface's exports: its declarations, the
+ * The organization administration surface's exports: its declarations, the
  * frameless provider and breadcrumb context, and the page wrappers.
  *
  * The wrapper cases pin the tenant contract: the wrapper takes the current
  * tenant from the provider and hands it to the shared page as a controlled
  * tenant, so the page issues its reads at that tenant and does not mount
  * the roster-fed tenant selector. The provider cases pin that it renders
- * no frame of its own while publishing the workspace contexts the pages
+ * no frame of its own while publishing the organization contexts the pages
  * read, and that the breadcrumb context is preferred only where it is
  * installed.
  */
@@ -15,23 +15,23 @@ import { describe, expect, it } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
-  WorkspaceAdminBreadcrumbProvider,
-  useWorkspaceAdminBreadcrumbs,
-} from './WorkspaceAdminBreadcrumb.js'
+  OrganizationAdminBreadcrumbProvider,
+  useOrganizationAdminBreadcrumbs,
+} from './OrganizationAdminBreadcrumb.js'
 import {
-  WorkspaceAdminProvider,
-  useWorkspaceAdminContext,
-  useWorkspaceAdminProtectedRoles,
-  useWorkspaceAdminTenant,
-} from './WorkspaceAdminProvider.js'
+  OrganizationAdminProvider,
+  useOrganizationAdminContext,
+  useOrganizationAdminProtectedRoles,
+  useOrganizationAdminTenant,
+} from './OrganizationAdminProvider.js'
 import { useAdminHasFeature } from './internal/features.js'
 import { useAdminRouteTable } from './internal/route-table.js'
-import { workspaceAdminRoutes } from './workspace-routes.js'
+import { organizationAdminRoutes } from './organization-routes.js'
 import {
-  WorkspaceInvitationsPage,
-  WorkspaceSsoPage,
-} from './workspace-pages.js'
-import { workspaceAdminOperations } from './workspace-operations.js'
+  OrganizationInvitationsPage,
+  OrganizationSsoPage,
+} from './organization-pages.js'
+import { organizationAdminOperations } from './organization-operations.js'
 import { adminOperations } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
@@ -79,61 +79,61 @@ function recordingBackend(): {
 const noFeatures = (): boolean => false
 
 /**
- * The platform bundle beside the workspace bundle: the workspace pages run
+ * The platform bundle beside the organization bundle: the organization pages run
  * through the same generated operations, and the request record -- not the
  * bundle's shape -- proves they never reach a platform asset.
  */
-const fullWorkspaceBundle = {
+const fullOrganizationBundle = {
   ...adminOperations,
-  ...workspaceAdminOperations,
+  ...organizationAdminOperations,
 }
 
-describe('workspaceAdminRoutes', () => {
+describe('organizationAdminRoutes', () => {
   it('declares the tenant-scoped pages with tenant-domain codes and features', () => {
-    expect(workspaceAdminRoutes.map((route) => route.id)).toEqual([
-      'workspace-invitations',
-      'workspace-sso',
-      'workspace-roles',
-      'workspace-settings',
+    expect(organizationAdminRoutes.map((route) => route.id)).toEqual([
+      'organization-invitations',
+      'organization-sso',
+      'organization-roles',
+      'organization-settings',
     ])
-    expect(workspaceAdminRoutes.map((route) => route.path)).toEqual([
+    expect(organizationAdminRoutes.map((route) => route.path)).toEqual([
       '/invitations',
       '/sso',
       '/roles',
       '/settings',
     ])
-    expect(workspaceAdminRoutes.map((route) => route.permission)).toEqual([
+    expect(organizationAdminRoutes.map((route) => route.permission)).toEqual([
       'authn.membership.manage',
       'authn.idp.manage',
       'authz.tenant.role.read',
       'settings.tenant.read',
     ])
-    expect(workspaceAdminRoutes.map((route) => route.requires)).toEqual([
+    expect(organizationAdminRoutes.map((route) => route.requires)).toEqual([
       ['authn.admin', 'authn.invitations'],
       ['authn.admin', 'authn.admin.sso'],
       ['authz.tenantadmin', 'authn.admin'],
       ['settings.tenantadmin'],
     ])
-    // The workspace declarations never name the platform roster feature: the
+    // The organization declarations never name the platform roster feature: the
     // surface reads no roster and holds no tenant selector.
-    for (const route of workspaceAdminRoutes) {
+    for (const route of organizationAdminRoutes) {
       expect(route.requires).not.toContain('tenant.admin')
     }
   })
 })
 
-describe('the workspace page wrappers', () => {
+describe('the organization page wrappers', () => {
   it('scopes the invitations page to the provided tenant without a selector', async () => {
     const { backend, readTenants, rosterReads } = recordingBackend()
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
         operations={createAdminOperations(backend)}
         hasFeature={noFeatures}
-        routes={workspaceAdminRoutes}
+        routes={organizationAdminRoutes}
       >
-        <WorkspaceInvitationsPage />
-      </WorkspaceAdminProvider>,
+        <OrganizationInvitationsPage />
+      </OrganizationAdminProvider>,
     )
     await waitFor(() => expect(readTenants).toEqual([TENANT, TENANT]))
     // The controlled tenant means the page never reads the platform roster
@@ -141,62 +141,62 @@ describe('the workspace page wrappers', () => {
     expect(rosterReads()).toBe(0)
   })
 
-  it('prefers the workspace trail over the platform trail on the page header', async () => {
+  it('prefers the organization trail over the platform trail on the page header', async () => {
     const { backend } = recordingBackend()
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
         operations={createAdminOperations(backend)}
         hasFeature={noFeatures}
-        routes={workspaceAdminRoutes}
+        routes={organizationAdminRoutes}
         breadcrumbs={[
-          { label: 'Workspace home' },
+          { label: 'Organization home' },
           { label: 'Invitations' },
         ]}
       >
-        <WorkspaceInvitationsPage />
-      </WorkspaceAdminProvider>,
+        <OrganizationInvitationsPage />
+      </OrganizationAdminProvider>,
     )
-    // The workspace trail is the one the page header renders ...
-    expect(await screen.findByText('Workspace home')).toBeInTheDocument()
+    // The organization trail is the one the page header renders ...
+    expect(await screen.findByText('Organization home')).toBeInTheDocument()
     // ... and the platform console's own trail is not.
     expect(screen.queryByText(zhCN.shell.title)).toBeNull()
   })
 
-  it('prefers the workspace trail over the platform trail on the SSO header', async () => {
+  it('prefers the organization trail over the platform trail on the SSO header', async () => {
     const { backend } = recordingBackend()
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
         operations={createAdminOperations(backend)}
         hasFeature={() => true}
-        routes={workspaceAdminRoutes}
-        breadcrumbs={[{ label: 'Workspace home' }, { label: 'SSO' }]}
+        routes={organizationAdminRoutes}
+        breadcrumbs={[{ label: 'Organization home' }, { label: 'SSO' }]}
       >
-        <WorkspaceSsoPage />
-      </WorkspaceAdminProvider>,
+        <OrganizationSsoPage />
+      </OrganizationAdminProvider>,
     )
-    expect(await screen.findByText('Workspace home')).toBeInTheDocument()
+    expect(await screen.findByText('Organization home')).toBeInTheDocument()
     expect(screen.queryByText(zhCN.shell.title)).toBeNull()
   })
 
   it('scopes the SSO page to the provided tenant without a selector', async () => {
     const { backend, readTenants, rosterReads } = recordingBackend()
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
         operations={createAdminOperations(backend)}
         hasFeature={() => true}
-        routes={workspaceAdminRoutes}
+        routes={organizationAdminRoutes}
       >
-        <WorkspaceSsoPage />
-      </WorkspaceAdminProvider>,
+        <OrganizationSsoPage />
+      </OrganizationAdminProvider>,
     )
     await waitFor(() => expect(readTenants).toEqual([TENANT]))
     expect(rosterReads()).toBe(0)
   })
 
-  it('renders the acceptance link and copy control for a workspace invitation', async () => {
+  it('renders the acceptance link and copy control for an organization invitation', async () => {
     const user = userEvent.setup()
     const backend = makeAdminBackend({
       issueInvitation: () =>
@@ -210,15 +210,15 @@ describe('the workspace page wrappers', () => {
         ),
     })
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
         operations={createAdminOperations(backend)}
         hasFeature={noFeatures}
-        routes={workspaceAdminRoutes}
+        routes={organizationAdminRoutes}
         invitationLink={(token) => `/invitations/${token}`}
       >
-        <WorkspaceInvitationsPage />
-      </WorkspaceAdminProvider>,
+        <OrganizationInvitationsPage />
+      </OrganizationAdminProvider>,
     )
     await user.type(
       await screen.findByLabelText(zhCN.invitations.issue.emailLabel),
@@ -248,13 +248,13 @@ describe('the workspace page wrappers', () => {
   })
 })
 
-describe('WorkspaceAdminProvider', () => {
-  it('publishes the workspace contexts and renders no frame of its own', () => {
+describe('OrganizationAdminProvider', () => {
+  it('publishes the organization contexts and renders no frame of its own', () => {
     const { backend } = recordingBackend()
     function Probe() {
-      const { tenant } = useWorkspaceAdminContext()
-      const tenantFromHook = useWorkspaceAdminTenant()
-      const protectedRoles = useWorkspaceAdminProtectedRoles()
+      const { tenant } = useOrganizationAdminContext()
+      const tenantFromHook = useOrganizationAdminTenant()
+      const protectedRoles = useOrganizationAdminProtectedRoles()
       const hasFeature = useAdminHasFeature()
       const routes = useAdminRouteTable()
       return (
@@ -272,22 +272,22 @@ describe('WorkspaceAdminProvider', () => {
       )
     }
     const { container } = renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
         operations={createAdminOperations(backend)}
         hasFeature={(name) => name === 'authn.admin'}
-        routes={workspaceAdminRoutes}
+        routes={organizationAdminRoutes}
         protectedRoles={['tenant-admin']}
       >
         <Probe />
-      </WorkspaceAdminProvider>,
+      </OrganizationAdminProvider>,
     )
     expect(screen.getByTestId('tenant')).toHaveTextContent(TENANT)
     expect(screen.getByTestId('tenant-hook')).toHaveTextContent(TENANT)
     expect(screen.getByTestId('roles')).toHaveTextContent('tenant-admin')
     expect(screen.getByTestId('feature')).toHaveTextContent('present')
     expect(screen.getByTestId('routes')).toHaveTextContent(
-      'workspace-invitations,workspace-sso,workspace-roles,workspace-settings',
+      'organization-invitations,organization-sso,organization-roles,organization-settings',
     )
     // The provider adds no frame: no main landmark and no navigation of its
     // own appear around the probe.
@@ -297,17 +297,17 @@ describe('WorkspaceAdminProvider', () => {
 
   it('throws outside the provider rather than issuing a request with no tenant', () => {
     function Bare(): null {
-      useWorkspaceAdminContext()
+      useOrganizationAdminContext()
       return null
     }
     // React logs the render error; the assertion is the throw itself.
-    expect(() => render(<Bare />)).toThrow(/WorkspaceAdminProvider/)
+    expect(() => render(<Bare />)).toThrow(/OrganizationAdminProvider/)
   })
 
-  it('publishes the workspace breadcrumb trail only where it is installed', () => {
+  it('publishes the organization breadcrumb trail only where it is installed', () => {
     const { backend } = recordingBackend()
     function Trail() {
-      const breadcrumbs = useWorkspaceAdminBreadcrumbs()
+      const breadcrumbs = useOrganizationAdminBreadcrumbs()
       return (
         <span data-testid="trail">
           {breadcrumbs === undefined
@@ -317,29 +317,29 @@ describe('WorkspaceAdminProvider', () => {
       )
     }
     const { unmount } = renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
         operations={createAdminOperations(backend)}
         hasFeature={noFeatures}
-        breadcrumbs={[{ label: 'Workspace' }, { label: 'Invitations' }]}
+        breadcrumbs={[{ label: 'Organization' }, { label: 'Invitations' }]}
       >
         <Trail />
-      </WorkspaceAdminProvider>,
+      </OrganizationAdminProvider>,
     )
     expect(screen.getByTestId('trail')).toHaveTextContent(
-      'Workspace>Invitations',
+      'Organization>Invitations',
     )
     unmount()
     renderWithProviders(
-      <WorkspaceAdminBreadcrumbProvider breadcrumbs={[{ label: 'Only' }]}>
+      <OrganizationAdminBreadcrumbProvider breadcrumbs={[{ label: 'Only' }]}>
         <Trail />
-      </WorkspaceAdminBreadcrumbProvider>,
+      </OrganizationAdminBreadcrumbProvider>,
     )
     expect(screen.getByTestId('trail')).toHaveTextContent('Only')
   })
 
   it('ships a tenant-scoped operations bundle with no platform member', () => {
-    expect(Object.keys(workspaceAdminOperations).sort()).toEqual(
+    expect(Object.keys(organizationAdminOperations).sort()).toEqual(
       [
         'useClaimSsoDomain',
         'useCreateSsoProvider',
@@ -376,20 +376,20 @@ describe('WorkspaceAdminProvider', () => {
       ].sort(),
     )
     // No platform roster member rides along.
-    expect(workspaceAdminOperations).not.toHaveProperty('useTenants')
+    expect(organizationAdminOperations).not.toHaveProperty('useTenants')
   })
 })
 
 /**
- * The workspace pages through the shipped generated bundle, with a request
+ * The organization pages through the shipped generated bundle, with a request
  * seam that records every URL the render issued. The assertion is the
- * surface's defining promise: a workspace page never reaches a platform
+ * surface's defining promise: an organization page never reaches a platform
  * asset, and every tenant-addressed read names the current tenant. The full
  * `adminOperations` bundle is mounted deliberately -- the page must not
  * issue the platform account reads that bundle carries, so the request
  * record, not the bundle's shape, is what proves the scoping.
  */
-describe('the workspace pages address only the current tenant', () => {
+describe('the organization pages address only the current tenant', () => {
   interface Recorded {
     readonly paths: readonly string[]
   }
@@ -472,18 +472,18 @@ describe('the workspace pages address only the current tenant', () => {
   function renderPage(page: 'invitations' | 'sso'): Recorded {
     const recorded = recordRequests()
     renderWithProviders(
-      <WorkspaceAdminProvider
+      <OrganizationAdminProvider
         tenant={TENANT}
-        operations={fullWorkspaceBundle}
+        operations={fullOrganizationBundle}
         hasFeature={() => true}
-        routes={workspaceAdminRoutes}
+        routes={organizationAdminRoutes}
       >
         {page === 'invitations' ? (
-          <WorkspaceInvitationsPage />
+          <OrganizationInvitationsPage />
         ) : (
-          <WorkspaceSsoPage />
+          <OrganizationSsoPage />
         )}
-      </WorkspaceAdminProvider>,
+      </OrganizationAdminProvider>,
     )
     return recorded
   }

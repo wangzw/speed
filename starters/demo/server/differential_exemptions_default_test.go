@@ -17,7 +17,7 @@ import (
 // differential_exemptions_review_test.go, because its configuration sets these
 // switches differently.
 //
-// workspace.personal is not exempt: the compiled default turns its switch on, so
+// org.personal is not exempt: the compiled default turns its switch on, so
 // the baseline template mounts its route and removing it lowers the account
 // endpoint's route count. See TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration.
 var mayLeaveRouteCountUnchanged = map[string]string{
@@ -30,9 +30,9 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 // baseline exemption to its stated reason over the template this build's case
 // runs: dropping the module leaves every endpoint it describes at the same
 // route count. It also holds the personal module out of the table: the compiled
-// default enables workspace.personal, so removing it lowers the account
+// default enables org.personal, so removing it lowers the account
 // endpoint's route count and an exemption claiming otherwise would be false. A
-// configuration that turns the switch off reddens the workspace half, which is
+// configuration that turns the switch off reddens the organization half, which is
 // the check retiring a default that moved back.
 func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	names := make([]string, 0, len(mayLeaveRouteCountUnchanged))
@@ -45,9 +45,9 @@ func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T)
 	for _, name := range names {
 		groups = append(groups, variantGroupNamed(t, name))
 	}
-	personal := variantGroupNamed(t, "workspace.personal")
-	if reason, exempt := mayLeaveRouteCountUnchanged["workspace.personal"]; exempt {
-		t.Errorf("the baseline build exempts workspace.personal (%q), but the compiled default "+
+	personal := variantGroupNamed(t, "org.personal")
+	if reason, exempt := mayLeaveRouteCountUnchanged["org.personal"]; exempt {
+		t.Errorf("the baseline build exempts org.personal (%q), but the compiled default "+
 			"enables its route: the exemption is false for this build", reason)
 	}
 

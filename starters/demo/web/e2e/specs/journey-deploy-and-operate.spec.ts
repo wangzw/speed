@@ -582,6 +582,13 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       }),
     ).toBeVisible()
+    // The SSO provider page is not in the navigation: this deployment leaves
+    // authn.admin.sso.enabled unset, so the management module mounts no SSO
+    // group and the page's feature is absent. The entry's absence is read from
+    // the DOM, not from a collapsed disclosure.
+    await expect(
+      nav.getByRole('link', { name: copy('adminUi', 'sso.title'), exact: true }),
+    ).toHaveCount(0)
 
     // The overview's roster counts come from the deployment's tenant list. The
     // seed registers the system tenant, and the personal-tenant hook gives the

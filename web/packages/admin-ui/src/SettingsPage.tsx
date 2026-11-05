@@ -122,12 +122,12 @@ import type {
   AdminSetting,
 } from './operations.js'
 import {
-  useWorkspaceAdminOperations,
+  useOrganizationAdminOperations,
   type AdminTenantRemoveSettingInput,
   type AdminTenantSetSettingInput,
   type AdminTenantSettingSource,
-  type WorkspaceAdminOperations,
-} from './workspace-operations.js'
+  type OrganizationAdminOperations,
+} from './organization-operations.js'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 
 /** The sentinel the "all namespaces" navigation entry selects. */
@@ -152,15 +152,15 @@ function settingState(setting: AdminSetting): SettingState {
 
 export interface SettingsPageProps {
   /**
-   * A controlled tenant scope for the workspace surface. When given with
+   * A controlled tenant scope for the organization surface. When given with
    * `tenantMode`, the page reads and writes the tenant's settings layer and
    * does not touch the platform's global layer.
    */
   readonly tenant?: string
   /**
-   * Tenant mode: the workspace surface's configuration of the same page.
+   * Tenant mode: the organization surface's configuration of the same page.
    * The page reads and writes `/api/v1/tenants/{tenant}/settings` through
-   * the workspace operations bundle, with the tenant as the path segment,
+   * the organization operations bundle, with the tenant as the path segment,
    * and never addresses `/api/v1/system/settings`.
    */
   readonly tenantMode?: boolean
@@ -238,9 +238,9 @@ function boundTenantSettingRemove(
   }
 }
 
-/** The workspace surface's data operations: the current tenant's layer. */
+/** The organization surface's data operations: the current tenant's layer. */
 function useTenantSettingsOperations(
-  operations: WorkspaceAdminOperations,
+  operations: OrganizationAdminOperations,
   tenant: string,
 ): SettingsOperations {
   return {
@@ -264,7 +264,7 @@ function useTenantSettingsOperations(
 
 /**
  * The settings page. Without `tenantMode` it renders the platform surface's
- * global layer; with it, the workspace surface's current-tenant layer.
+ * global layer; with it, the organization surface's current-tenant layer.
  */
 export function SettingsPage({
   tenant,
@@ -284,7 +284,7 @@ function PlatformSettingsPage() {
 }
 
 function TenantSettingsPage({ tenant }: { readonly tenant: string }) {
-  const operations = useWorkspaceAdminOperations()
+  const operations = useOrganizationAdminOperations()
   const data = useTenantSettingsOperations(operations, tenant)
   return <SettingsPageBody operations={data} />
 }

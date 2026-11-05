@@ -1155,7 +1155,7 @@ func TestThePersonalTenantAdminRoleIsNotBuiltin(t *testing.T) {
 }
 
 // TestTheEnsureRefusesAServiceAccount holds the account-kind refusal: a
-// client-secret identity is a non-interactive API client and gets no workspace,
+// client-secret identity is a non-interactive API client and gets no organization,
 // and nothing is written for it.
 func TestTheEnsureRefusesAServiceAccount(t *testing.T) {
 	product, roster, memberships, manager, seeder := unitProduct()
@@ -1256,7 +1256,7 @@ func assertPersonalType(t *testing.T, recorder *httptest.ResponseRecorder, statu
 }
 
 // assertProblemType holds one answer's status and its problem type, the type
-// given whole rather than under this surface's workspace prefix.
+// given whole rather than under this surface's organization prefix.
 // The stand-ins the wiring case hands the product. The registry resolves an
 // optional capability by what a module provides, so each one is a module of its
 // own supplying its instance.
@@ -1450,7 +1450,7 @@ func TestTheEnsureAnswersTheTenantAndKind(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("the ensure answered %d, want 200:\n%s", recorder.Code, recorder.Body.String())
 	}
-	var reply WorkspacePersonalReply
+	var reply OrganizationPersonalReply
 	if err := json.Unmarshal(recorder.Body.Bytes(), &reply); err != nil {
 		t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body.String())
 	}
@@ -1476,7 +1476,7 @@ func personalServe(t *testing.T, enabled bool) (string, string) {
 	dsn := filepath.Join(t.TempDir(), "demo.db")
 	body := configBody(t, ports, dsn)
 	if !enabled {
-		body += "workspace:\n  personal:\n    enabled: false\n"
+		body += "org:\n  personal:\n    enabled: false\n"
 	}
 	config := writeConfigFile(t, body)
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
@@ -1989,7 +1989,7 @@ func TestThePersonalTenantRouteIsAbsentWithTheSwitchOff(t *testing.T) {
 }
 
 // TestTheEnsureCreatesForAnUnprovedRegistration holds the eligibility rule: an
-// unproved email address is not a reason to withhold the workspace. The account
+// unproved email address is not a reason to withhold the organization. The account
 // gets its personal tenant, and the verification gate limits what it may do
 // inside it, not whether it exists.
 func TestTheEnsureCreatesForAnUnprovedRegistration(t *testing.T) {
@@ -2216,7 +2216,7 @@ func standInCapability(name string, instance any, token core.Token) core.Module 
 // resolver, so an assembly that names it without a provider stops at
 // dependency resolution rather than serving every tenant as business.
 func TestThePersonalFeatureWithoutAKindResolverFailsTheStartup(t *testing.T) {
-	reader := personalConfigReader(t, `{"workspace.personal":{"enabled":true}}`)
+	reader := personalConfigReader(t, `{"org.personal":{"enabled":true}}`)
 
 	reg := core.New()
 	reg.Register(config.Module())

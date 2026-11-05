@@ -1,7 +1,7 @@
 /**
  * J1 -- a new visitor registers with a username, an email address and a
  * password, proves the address from the code the review mail carrier writes to
- * the process log, and reaches the tenant area with a personal workspace as the
+ * the process log, and reaches the tenant area with a personal organization as the
  * current organization. The journey's occupancy branches then close the test:
  * the same username and the same email are each refused on the registration
  * form, in place, without creating an account, and the username a refused
@@ -28,7 +28,7 @@
  * and unverified sign-in are all outside the steps below. Those fields are
  * inaccurate; the ids this spec does exercise are the `@covers` line.
  */
-// @journey journey-first-registration-to-personal-workspace.md
+// @journey journey-first-registration-to-personal-organization.md
 // @covers REQ-signin-006, REQ-signup-001, REQ-signup-002, REQ-signup-003, REQ-signup-004, REQ-signup-005, REQ-signup-008, REQ-signup-009, REQ-signup-010, REQ-signup-028, REQ-signup-029, REQ-account-010, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-tenancy-022, REQ-tenancy-026
 import type { Page } from '@playwright/test'
 
@@ -87,7 +87,7 @@ function registrationField(page: Page, key: string) {
   return page.getByLabel(copy('authUi', key), { exact: true })
 }
 
-test('first-registration: a new visitor reaches a personal workspace, and occupancy is refused', async ({
+test('first-registration: a new visitor reaches a personal organization, and occupancy is refused', async ({
   demo,
 }) => {
   const { page, server, accounts } = demo
@@ -235,7 +235,7 @@ test('first-registration: a new visitor reaches a personal workspace, and occupa
     await expect(verificationBanner(page, account.email)).toHaveCount(0)
   })
 
-  await test.step('the tenant home opens with the personal workspace as the current organization', async () => {
+  await test.step('the tenant home opens with the personal organization as the current organization', async () => {
     await page
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
@@ -247,7 +247,7 @@ test('first-registration: a new visitor reaches a personal workspace, and occupa
       }),
     ).toBeVisible()
     const switcher = page.getByRole('button', {
-      name: copy('demo', 'workspace.personal'),
+      name: copy('demo', 'organization.personal'),
       exact: true,
     })
     await expect(switcher).toBeVisible()

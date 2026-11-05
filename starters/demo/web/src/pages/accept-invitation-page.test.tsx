@@ -422,7 +422,7 @@ describe('the invitation landing', () => {
     let verified = false
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
-        features: ['authn.invitations', 'workspace.personal'],
+        features: ['authn.invitations', 'org.personal'],
       }),
       [LOGIN_METHODS]: () =>
         methodList([{ name: 'password', kind: 'form' }], {
@@ -539,7 +539,7 @@ describe('the invitation landing', () => {
     // commit brings the document with it.
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
-        features: ['authn.invitations', 'workspace.personal'],
+        features: ['authn.invitations', 'org.personal'],
       }),
       [LOGIN_METHODS]: () =>
         methodList(
@@ -619,7 +619,7 @@ describe('the invitation landing', () => {
     // declaration on its own.
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
-        features: ['authn.invitations', 'workspace.personal'],
+        features: ['authn.invitations', 'org.personal'],
       }),
       [LOGIN_METHODS]: () =>
         methodList(

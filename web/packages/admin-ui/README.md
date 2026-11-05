@@ -3,10 +3,15 @@
 The management surfaces of a frontend built on speed. One package
 renders two surfaces over one set of page components, one declaration
 shape and one operations seam. The platform surface is the platform-staff
-console; the workspace surface is the tenant-scoped half, mounted inside
-the tenant shell. The workspace surface ships its context provider, route
+console; the organization surface is the tenant-scoped half, mounted inside
+the tenant shell. The organization surface ships its context provider, route
 declarations, operations bundle and the invitations/membership, SSO,
 tenant roles/permissions and tenant settings page wrappers.
+
+User-visible text in this package calls the tenant an organization
+(「组织」 in the Chinese bundle). The tenancy mechanism keeps its own
+name: the `tenant` prop, the `/api/v1/tenants/{tenant}` request paths and
+the tenant-domain permission codes are tenant, not organization.
 
 ## The three endpoint kinds
 
@@ -20,14 +25,14 @@ interchangeable:
   membership, SSO) under `/api/v1/tenants/{tenant}/...`, judged in that
   tenant's domain. Holding `platform-admin` alone does not admit the
   caller: the caller needs a separate binding in that tenant.
-- **The workspace surface** under `/api/v1/tenants/{tenant}/...`, judged in
+- **The organization surface** under `/api/v1/tenants/{tenant}/...`, judged in
   the current tenant's domain: invitations and membership, SSO, tenant-layer
   settings, and tenant roles and permissions, scoped to the tenant the host
   supplies.
 
 The platform surface holds no current tenant. The tenant its
 tenant-addressed pages name is an argument of the request, not a session
-tenant. The workspace surface takes the current tenant from the host and
+tenant. The organization surface takes the current tenant from the host and
 writes it into every request path; it too holds no selector.
 
 **The platform surface** is the platform-staff admin: the second shell.
@@ -70,22 +75,23 @@ frame, the admin root being a dashboard:
 The tenant detail and audit detail pages are declared without a navigation
 label -- reachable from a list row, not listed in the navigation.
 
-**The workspace surface** is the tenant administrator's admin, mounted at
-`/workspace/admin` inside `@speed/product-shell`. It acts on the current
+**The organization surface** is the organization administrator's admin,
+mounted under a host-chosen prefix (`/organization/admin` in the demo)
+inside `@speed/product-shell`. It acts on the current
 tenant the host supplies and addresses every request at
 `/api/v1/tenants/{tenant}/...`: invitations and membership, SSO providers,
 tenant roles and permissions, and the tenant settings layer. It reads
 nothing under `/api/v1/system`, holds no tenant selector, and renders no
-`AppShell`; `WorkspaceAdminProvider` installs only the workspace contexts,
+`AppShell`; `OrganizationAdminProvider` installs only the organization contexts,
 because the tenant frame already renders the shell.
 
-**What ships today.** The package exports `WorkspaceAdminProvider` (and
-its tenant/protected-role hooks), `WorkspaceAdminBreadcrumbProvider` (and
-its read hook), `workspaceAdminRoutes`, `WorkspaceAdminOperations` /
-`workspaceAdminOperations` with their publishing context
-(`WorkspaceAdminOperationsProvider`, `useWorkspaceAdminOperations`), and
-the `WorkspaceInvitationsPage`, `WorkspaceSsoPage`,
-`WorkspacePermissionsPage` and `WorkspaceSettingsPage` wrappers. The
+**What ships today.** The package exports `OrganizationAdminProvider` (and
+its tenant/protected-role hooks), `OrganizationAdminBreadcrumbProvider` (and
+its read hook), `organizationAdminRoutes`, `OrganizationAdminOperations` /
+`organizationAdminOperations` with their publishing context
+(`OrganizationAdminOperationsProvider`, `useOrganizationAdminOperations`), and
+the `OrganizationInvitationsPage`, `OrganizationSsoPage`,
+`OrganizationPermissionsPage` and `OrganizationSettingsPage` wrappers. The
 invitations wrapper runs the shared page in tenant mode: the member write
 form's platform account search is not rendered, the inviter identity
 resolves from the members read's `display_name`, the member table takes
@@ -98,9 +104,9 @@ and bindings, the member picker that replaces the platform account search,
 the member-read identity for binding rows, and the host's `protectedRoles`
 rendered read-only beside the server's builtin roles. The settings wrapper
 runs the shared settings page in tenant mode: only the tenant layer, with
-the server-reported source column. The shared pages prefer the workspace
+the server-reported source column. The shared pages prefer the organization
 breadcrumb context on their `PageHeader` and fall back to their own
-platform trail otherwise. The `WorkspaceAdminOperations` bundle carries
+platform trail otherwise. The `OrganizationAdminOperations` bundle carries
 the tenant-scoped invitation, membership and SSO members, the tenant
 settings members and the tenant roles/grants/bindings members; no member
 addresses a platform asset or the platform account read.
@@ -188,9 +194,9 @@ area -- while keeping the admin pages' seams available. It remains a
 platform-staff surface: it must not host tenant-facing pages, and it
 carries no current-tenant affordance. `hasFeature` is required here too;
 every other prop is optional and its absence leaves the documented
-fallback in force. The tenant-side counterpart is `WorkspaceAdminProvider`,
+fallback in force. The organization-side counterpart is `OrganizationAdminProvider`,
 which takes the current tenant as a required prop and renders no DOM; see
-"The workspace surface" below.
+"The organization surface" below.
 
 The pages whose routes carry the tenant as a path segment (authorization,
 invitations and membership, SSO) and the impersonation page read the
@@ -255,13 +261,13 @@ feature-gated control without importing the host's session package.
 | `AuditPage.tsx` | `AuditPage` |
 | `AuditDetailPage.tsx` | `AuditDetailPage`, `AuditDetailPageProps` |
 | `resources.ts` | `ADMIN_UI_NAMESPACE`, `adminUiResources` |
-| `WorkspaceAdminProvider.tsx` | `WorkspaceAdminProvider`, `WorkspaceAdminProviderProps`, `WorkspaceAdminContextValue`, `useWorkspaceAdminContext`, `useWorkspaceAdminTenant`, `useWorkspaceAdminProtectedRoles` |
-| `WorkspaceAdminBreadcrumb.tsx` | `WorkspaceAdminBreadcrumbProvider`, `WorkspaceAdminBreadcrumbProviderProps`, `useWorkspaceAdminBreadcrumbs` |
-| `workspace-operations.tsx` | `WorkspaceAdminOperations`, `workspaceAdminOperations`, `WorkspaceAdminOperationsProvider`, `WorkspaceAdminOperationsProviderProps`, `useWorkspaceAdminOperations`, `AdminTenantSetting`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
-| `workspace-routes.tsx` | `workspaceAdminRoutes` |
-| `workspace-pages.tsx` | `WorkspaceInvitationsPage`, `WorkspaceSsoPage`, `WorkspacePermissionsPage`, `WorkspaceSettingsPage` |
+| `OrganizationAdminProvider.tsx` | `OrganizationAdminProvider`, `OrganizationAdminProviderProps`, `OrganizationAdminContextValue`, `useOrganizationAdminContext`, `useOrganizationAdminTenant`, `useOrganizationAdminProtectedRoles` |
+| `OrganizationAdminBreadcrumb.tsx` | `OrganizationAdminBreadcrumbProvider`, `OrganizationAdminBreadcrumbProviderProps`, `useOrganizationAdminBreadcrumbs` |
+| `organization-operations.tsx` | `OrganizationAdminOperations`, `organizationAdminOperations`, `OrganizationAdminOperationsProvider`, `OrganizationAdminOperationsProviderProps`, `useOrganizationAdminOperations`, `AdminTenantSetting`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
+| `organization-routes.tsx` | `organizationAdminRoutes` |
+| `organization-pages.tsx` | `OrganizationInvitationsPage`, `OrganizationSsoPage`, `OrganizationPermissionsPage`, `OrganizationSettingsPage` |
 
-The workspace surface's wrappers, declarations and tenant-mode behaviour
+The organization surface's wrappers, declarations and tenant-mode behaviour
 all ship: the settings page reads and writes only the tenant layer and
 renders the server-reported source column; the roles page reads the
 governed catalog and fills its account pickers and recorded identities
@@ -392,42 +398,42 @@ change. The provider is an override: a host that wants different wiring,
 or a suite that scripts a backend, mounts its own bundle and the pages
 read that instead.
 
-## The workspace surface
+## The organization surface
 
-The workspace surface reuses the same pages and declarations, composed
-for the current tenant. Mount `WorkspaceAdminProvider` inside
+The organization surface reuses the same pages and declarations, composed
+for the current tenant. Mount `OrganizationAdminProvider` inside
 `@speed/product-shell`'s content area:
 
 ```tsx
 import {
-  WorkspaceAdminProvider,
-  workspaceAdminOperations,
-  workspaceAdminRoutes,
+  OrganizationAdminProvider,
+  organizationAdminOperations,
+  organizationAdminRoutes,
 } from '@speed/admin-ui'
 
-<WorkspaceAdminProvider
+<OrganizationAdminProvider
   tenant={currentTenantId}
-  operations={workspaceAdminOperations}
+  operations={organizationAdminOperations}
   hasFeature={hasFeature}
-  routes={presentDeclarations(workspaceAdminRoutes, presence)}
+  routes={presentDeclarations(organizationAdminRoutes, presence)}
   session={session}
   onNavigate={navigate}
   invitationLink={(token) => `/invitations/${token}`}
 >
   <RouteView />
-</WorkspaceAdminProvider>
+</OrganizationAdminProvider>
 ```
 
 The contract: `tenant` is required; the provider never derives or
-switches the current tenant. The workspace surface reads nothing under
+switches the current tenant. The organization surface reads nothing under
 `/api/v1/system` and holds no tenant selector. `invitationLink` is the
 same acceptance-link builder the platform shell takes; absent, the
 invitation page shows the bare token. `protectedRoles` names the roles
 the host seeded into the tenant that the roles page renders read-only
 beside the server's builtin ones; absent, no role is treated as
 protected. The provider publishes the operations bundle through
-`WorkspaceAdminOperationsProvider`, so a page reads it with
-`useWorkspaceAdminOperations`; the shipped `workspaceAdminOperations`
+`OrganizationAdminOperationsProvider`, so a page reads it with
+`useOrganizationAdminOperations`; the shipped `organizationAdminOperations`
 answers with none mounted. The wrappers that ship compose the existing
 pages in tenant mode:
 
@@ -451,15 +457,16 @@ pages in tenant mode:
 
 None of the four wrappers issues an `/api/v1/system` request.
 
-The account menu's workspace group and the home card are the host's
+The account menu's organization group and the home card are the host's
 composition: the host derives them from the narrowed
-`workspaceAdminRoutes` and hides them while impersonating, in the system
+`organizationAdminRoutes` and hides them while impersonating, in the system
 tenant, in a personal tenant, while the tenant permission read is pending,
-and when the set belongs to another tenant. The group carries a heading and
-lists the openable declarations as links in both the avatar account menu and
-the sidebar account menu; the home card opens the first openable declaration. The
-workspace page wrappers publish the breadcrumb through
-`WorkspaceAdminBreadcrumbProvider`; the shared pages' `PageHeader` prefers
+and when the set belongs to another tenant. The group's accessible name is
+"Organization admin"; it renders no visible heading and lists the openable
+declarations as links in both the avatar account menu and the sidebar account
+menu. The home card opens the first openable declaration. The
+organization page wrappers publish the breadcrumb through
+`OrganizationAdminBreadcrumbProvider`; the shared pages' `PageHeader` prefers
 that context and falls back to its own platform trail otherwise.
 
 ## What this admin does not do
@@ -467,8 +474,8 @@ that context and falls back to its own platform trail otherwise.
 - **No current-tenant ownership.** The platform surface has no
   current-tenant switcher and uses no current-tenant query key; the tenant
   its tenant-addressed invitation/membership and SSO pages name is an
-  argument of the request. The workspace surface takes the current
-  tenant as the required `tenant` prop of `WorkspaceAdminProvider` and
+  argument of the request. The organization surface takes the current
+  tenant as the required `tenant` prop of `OrganizationAdminProvider` and
   writes it into every request path, but never derives or switches it.
   Switching the current tenant is `@speed/tenancy-ui`'s. A tenant-named
   selector on the platform surface's pages whose routes carry the tenant

@@ -68,7 +68,7 @@ let state: SelfTenantState = EMPTY
 let epoch = 0
 // The issue order of the reads. A read publishes only while it is still the
 // newest one started, so a slow failure cannot overwrite a newer success --
-// the retry on the workspace failure page starts a read per click, and the
+// the retry on the organization failure page starts a read per click, and the
 // last outcome to land must be the newest read's, not the slowest one's.
 let sequence = 0
 const listeners = new Set<() => void>()

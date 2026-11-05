@@ -17,7 +17,7 @@
  *    render it. Its switch confirmation is announced but never painted.
  *  - UserMenu: an avatar trigger opening the account menu -- the same entries
  *    the sidebar account entry carries, from one shared list: the
- *    notification centre, the four account panes, the workspace admin group
+ *    notification centre, the four account panes, the organization admin group
  *    (only while the caller's admission supplies it) and sign-out. While an
  *    impersonation is in force, auth-ui's end item sits first: closing the
  *    banner must not strand the operator without a way to end it.
@@ -349,7 +349,7 @@ export function AppBrand(): ReactElement {
  * Every row the host offers is rendered. A tenant record carries no display
  * name, so a row renders its alias -- the request-surface name, never
  * translated -- except a row whose kind is `personal`, which renders the
- * host's bilingual 「工作区 / Workspace」 text. The kind comes from the caller
+ * host's bilingual 「组织 / Organization」 text. The kind comes from the caller
  * tenant read, so another account's personal tenant (which the list can hold)
  * renders its alias too: only the host's own answer marks a row personal.
  */
@@ -375,7 +375,7 @@ export function TenantMenu({
   const { t } = useTranslation(DEMO_NAMESPACE)
   const tenants: readonly DemoTenant[] = offered.map((tenant) =>
     tenant.kind === 'personal'
-      ? { ...tenant, name: t('workspace.personal') }
+      ? { ...tenant, name: t('organization.personal') }
       : { ...tenant, name: tenant.alias },
   )
   return (
@@ -561,7 +561,7 @@ export function initialThemePreset(deploymentPreset?: string): string {
  * inside the name; the generic label is used while anonymous. Sign-out
  * drives the session's logout, whose quiet terminal flip the shells observe.
  *
- * `workspaceItems` is the host's workspace admin group: the route-kit
+ * `organizationItems` is the host's organization admin group: the route-kit
  * entries the caller's tenant admits, supplied only while the admission is
  * `allowed`. Each account menu receives it from its host surface -- the app
  * passes the same list to this menu and to the sidebar's account entry -- so
@@ -589,7 +589,7 @@ function accountMenuPaperSx(theme: Theme) {
 export function UserMenu({
   narrow = false,
   closeDrawer,
-  workspaceItems,
+  organizationItems,
 }: {
   /** Tightens the trigger for the collapsed sidebar rail, where the stock
    * padding would push it past the paper's edge. */
@@ -598,9 +598,9 @@ export function UserMenu({
    * navigating or signing out. The host passes the drawer slot's channel in
    * every layout; on a surface outside that drawer it is a no-op. */
   readonly closeDrawer?: () => void
-  /** The workspace admin group's entries, supplied only while the caller's
+  /** The organization admin group's entries, supplied only while the caller's
    * admission allows it; absent leaves the group out. */
-  readonly workspaceItems?: readonly AppShellNavItem[]
+  readonly organizationItems?: readonly AppShellNavItem[]
 } = {}): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
@@ -684,7 +684,7 @@ export function UserMenu({
           onSignOut={signOut}
           onClose={closeMenu}
           onDismiss={dismissSurface}
-          workspaceItems={workspaceItems}
+          organizationItems={organizationItems}
         />
       </Menu>
     </Box>
@@ -765,15 +765,15 @@ function SignOutIcon() {
  * The account menu's entries, rendered by both surfaces that offer them: the
  * header's avatar menu and the sidebar's account entry. One list keeps the
  * two menus from drifting into two different sets of actions -- the
- * notification centre, one entry per account pane, the workspace admin group
+ * notification centre, one entry per account pane, the organization admin group
  * when the caller's admission supplies it, then sign-out, with the
  * impersonation-end item first while an impersonation is in force.
  *
- * The workspace group sits after the account panes and before the divider
- * that precedes sign-out. Its label is a plain group heading -- not a
- * menuitem and not focusable -- and each entry is a real link carrying
- * route-kit's href and click handler, so a modified or new-tab click keeps
- * the browser's behavior.
+ * The organization group sits after the account panes and before the divider
+ * that precedes sign-out. It paints no caption; the group's name is on its
+ * `aria-label`, and the group is not a menuitem and not focusable. Each entry
+ * is a real link carrying route-kit's href and click handler, so a modified or
+ * new-tab click keeps the browser's behavior.
  *
  * The callbacks carry each surface's own dismissal: it closes its menu and,
  * when it is mounted in AppShell's temporary drawer, that drawer too, before
@@ -787,7 +787,7 @@ function AccountMenuItems({
   onClose,
   onDismiss,
   itemSx,
-  workspaceItems,
+  organizationItems,
 }: {
   /** Opens a destination; the surface closes itself first. */
   readonly onNavigate: (path: string) => void
@@ -795,18 +795,17 @@ function AccountMenuItems({
   readonly onSignOut: () => void
   /** Closes the surface after the impersonation-end item activates. */
   readonly onClose: () => void
-  /** Closes the surface after a workspace entry activates; when the surface
+  /** Closes the surface after an organization entry activates; when the surface
    * sits in a temporary drawer, it closes that too. */
   readonly onDismiss?: () => void
   /** The entry inset the sidebar's navigation track needs; absent keeps the
    * menu's default spacing. */
   readonly itemSx?: typeof accountMenuItemSx
-  /** The workspace admin group's entries, in the admission's order. Absent or
+  /** The organization admin group's entries, in the admission's order. Absent or
    * empty leaves the group out. */
-  readonly workspaceItems?: readonly AppShellNavItem[]
+  readonly organizationItems?: readonly AppShellNavItem[]
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const workspaceLabelId = useId()
   return (
     <>
       {/* The same end attempt the banner carries: an impersonation ends from
@@ -818,7 +817,9 @@ function AccountMenuItems({
         </Box>
         {t('userMenu.messages')}
       </MenuItem>
-      <Divider />
+      {/* The menu's section rhythm is set here rather than by MUI's sibling
+          rule, which does not match a divider after the group container. */}
+      <Divider sx={{ my: 1 }} />
       {ACCOUNT_MENU_PANES.map(({ section, key, icon }) => (
         <MenuItem
           key={section}
@@ -831,27 +832,15 @@ function AccountMenuItems({
           {t(key)}
         </MenuItem>
       ))}
-      {workspaceItems !== undefined && workspaceItems.length > 0 ? (
+      {organizationItems !== undefined && organizationItems.length > 0 ? (
         <>
-          <Divider />
-          {/* The group's heading names the group for assistive technology and
-              is not itself an action: a plain div inside role="group", never
-              a menuitem, so the menu's focus cycle skips it. */}
-          <Box role="group" aria-labelledby={workspaceLabelId}>
-            <Typography
-              id={workspaceLabelId}
-              component="div"
-              variant="caption"
-              sx={{
-                display: 'block',
-                px: 2,
-                py: 0.5,
-                color: 'text.secondary',
-              }}
-            >
-              {t('nav.workspaceAdmin')}
-            </Typography>
-            {workspaceItems.map((item) => (
+          <Divider sx={{ my: 1 }} />
+          {/* The group carries its name on aria-label, so assistive technology
+              announces the grouping while the menu paints no caption above it.
+              The group element is not itself an action: it is never a
+              menuitem, so the menu's focus cycle skips it. */}
+          <Box role="group" aria-label={t('nav.organizationAdmin')}>
+            {organizationItems.map((item) => (
               <MenuItem
                 key={item.id}
                 component="a"
@@ -876,7 +865,7 @@ function AccountMenuItems({
           </Box>
         </>
       ) : null}
-      <Divider />
+      <Divider sx={{ my: 1 }} />
       <MenuItem onClick={onSignOut} sx={itemSx}>
         <Box component="span" sx={accountMenuItemIconSx}>
           <SignOutIcon />
@@ -891,9 +880,9 @@ function AccountMenuItems({
  * The account entry at the bottom of the navigation column: a divider above a
  * row carrying the signed-in user's avatar, display name and disclosure
  * chevron. The menu opens upward over the navigation column with the
- * notification centre, the four account panes, the workspace admin group and
- * sign-out. `workspaceItems` is the same group the header menu receives, so
- * both surfaces offer the workspace entries when the caller's admission
+ * notification centre, the four account panes, the organization admin group and
+ * sign-out. `organizationItems` is the same group the header menu receives, so
+ * both surfaces offer the organization entries when the caller's admission
  * allows them.
  *
  * The row shares the navigation's own icon track in absolute pixels -- a 16px
@@ -910,15 +899,15 @@ function AccountMenuItems({
 export function AccountEntry({
   narrow = false,
   closeDrawer,
-  workspaceItems,
+  organizationItems,
 }: {
   /** The collapsed rail's icon-only form. */
   readonly narrow?: boolean
   /** Closes a temporary (mobile) drawer before navigating. */
   readonly closeDrawer?: () => void
-  /** The workspace admin group's entries, supplied only while the caller's
+  /** The organization admin group's entries, supplied only while the caller's
    * admission allows it; absent leaves the group out. */
-  readonly workspaceItems?: readonly AppShellNavItem[]
+  readonly organizationItems?: readonly AppShellNavItem[]
 }): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
@@ -1058,14 +1047,14 @@ export function AccountEntry({
       >
         {/* The same entries the header's avatar menu carries, from one list:
             the impersonation-end item, the notification centre, the four
-            account panes, the workspace admin group and sign-out. */}
+            account panes, the organization admin group and sign-out. */}
         <AccountMenuItems
           onNavigate={goTo}
           onSignOut={signOut}
           onClose={closeMenu}
           onDismiss={dismissSurface}
           itemSx={accountMenuItemSx}
-          workspaceItems={workspaceItems}
+          organizationItems={organizationItems}
         />
       </Menu>
     </Box>

@@ -4,10 +4,10 @@
  * open -- a username, an optional display name, and a password with its
  * confirmation -- before it creates anything, so the account exists with that
  * username, password, display name and verified phone and lands in a personal
- * workspace. The account holds two ways to sign in from the start: the phone
+ * organization. The account holds two ways to sign in from the start: the phone
  * and the username with the password chosen at the step. Signing out and
  * signing back in with the username and password reaches the same personal
- * workspace.
+ * organization.
  *
  * Everything is driven through the rendered product with mouse and keyboard:
  * channel tabs, the country/number control, headings, labels, buttons, the
@@ -140,7 +140,7 @@ function phoneCard(page: Page): Locator {
 /** The tenant switcher's trigger, showing the current organization's name. */
 function switcher(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('demo', 'workspace.personal'),
+    name: copy('demo', 'organization.personal'),
     exact: true,
   })
 }
@@ -324,7 +324,7 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
       SIGNUP_DISPLAY_NAME,
     )
 
-    // The header switcher names the personal workspace as the current
+    // The header switcher names the personal organization as the current
     // organization, and its list holds that one row, disabled because it is
     // the current one.
     const trigger = switcher(page)
@@ -333,7 +333,7 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
     const rows = page.getByRole('menuitem')
     await expect(rows).toHaveCount(1)
     await expect(rows.first()).toHaveAccessibleName(
-      copy('demo', 'workspace.personal'),
+      copy('demo', 'organization.personal'),
     )
     await expect(rows.first()).toBeDisabled()
     await page.keyboard.press('Escape')
@@ -347,20 +347,20 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
     await signOutToSignIn(page, accounts)
   })
 
-  await test.step('the username and password sign in to the same personal workspace', async () => {
+  await test.step('the username and password sign in to the same personal organization', async () => {
     await accounts.signIn({
       identifier: username,
       password: SIGNUP_PASSWORD,
     })
     await expect(homeHeading(page)).toBeVisible()
 
-    // The password sign-in reaches the account's one personal workspace.
+    // The password sign-in reaches the account's one personal organization.
     const trigger = switcher(page)
     await expect(trigger).toBeEnabled()
     await trigger.click()
     await expect(page.getByRole('menuitem')).toHaveCount(1)
     await expect(page.getByRole('menuitem').first()).toHaveAccessibleName(
-      copy('demo', 'workspace.personal'),
+      copy('demo', 'organization.personal'),
     )
     await page.keyboard.press('Escape')
   })

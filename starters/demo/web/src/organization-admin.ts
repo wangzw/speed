@@ -1,11 +1,11 @@
 /**
- * The workspace admin area's route facts and entry derivation.
+ * The organization admin area's route facts and entry derivation.
  *
- * The workspace surface is the tenant-scoped management area: its
+ * The organization surface is the tenant-scoped management area: its
  * declarations arrive from @speed/admin-ui relative to a host-chosen root
- * and mount under WORKSPACE_ADMIN_PREFIX (/workspace/admin). The host
+ * and mount under ORGANIZATION_ADMIN_PREFIX (/organization/admin). The host
  * narrows them with the feature-presence predicate, then derives both
- * entries -- the account menu's workspace group and the home card -- from
+ * entries -- the account menu's organization group and the home card -- from
  * the same answer, so the two never disagree.
  *
  * Admission is fail-closed at every step. The surface is offered only when
@@ -28,13 +28,13 @@
 import { useAuthState, useFeatureState, featurePresence } from '@speed/auth-core'
 import type { AppShellNavItem } from '@speed/layout-kit'
 import { presentDeclarations, useNavItems } from '@speed/route-kit'
-import { workspaceAdminRoutes } from '@speed/admin-ui'
+import { organizationAdminRoutes } from '@speed/admin-ui'
 import type { AdminRoute, AdminRouteTable } from '@speed/admin-ui'
 import {
   getRecordedTenantKind,
   useCurrentTenantId,
 } from './chrome.js'
-import { WORKSPACE_ADMIN_PREFIX } from './paths.js'
+import { ORGANIZATION_ADMIN_PREFIX } from './paths.js'
 import {
   usePermissionRead,
   useTenantPermissionSet,
@@ -44,27 +44,27 @@ import { useSelfTenantState } from './tenant-self.js'
 /**
  * The role names the demo host seeds into every business tenant and keeps
  * under its own control: the seed writes `tenant-admin`
- * (starters/demo/server/seed.go) and converges its grants, so the workspace
+ * (starters/demo/server/seed.go) and converges its grants, so the organization
  * role page must render that row read-only even where the server's builtin
- * mark is absent. The host hands the list to `WorkspaceAdminProvider`; the
+ * mark is absent. The host hands the list to `OrganizationAdminProvider`; the
  * page locks exactly these names, the way the platform console locks a
  * builtin role.
  */
-export const workspaceAdminProtectedRoles: readonly string[] = ['tenant-admin']
+export const organizationAdminProtectedRoles: readonly string[] = ['tenant-admin']
 
 /**
- * The workspace declarations mapped onto their prefixed URLs. The workspace
+ * The organization declarations mapped onto their prefixed URLs. The organization
  * root itself has no page: every declaration lives one segment below it.
  */
-export const workspaceAdminShellRoutes: AdminRouteTable =
-  workspaceAdminRoutes.map((route) => ({
+export const organizationAdminShellRoutes: AdminRouteTable =
+  organizationAdminRoutes.map((route) => ({
     ...route,
-    path: `${WORKSPACE_ADMIN_PREFIX}${route.path}`,
+    path: `${ORGANIZATION_ADMIN_PREFIX}${route.path}`,
   }))
 
-/** The entry both the account menu's workspace group and the home card
+/** The entry both the account menu's organization group and the home card
  * render. */
-export interface WorkspaceAdminEntry {
+export interface OrganizationAdminEntry {
   /** The current tenant the surface acts on; every request names it. */
   readonly tenantId: string
   /** The first declaration the caller may open. */
@@ -72,7 +72,7 @@ export interface WorkspaceAdminEntry {
   /** The narrowed declarations, prefixed. */
   readonly routes: readonly AdminRoute[]
   /** The route-kit navigation entries for the declarations the caller may
-   * open, ready to sit in the account menu's workspace group. */
+   * open, ready to sit in the account menu's organization group. */
   readonly children: readonly AppShellNavItem[]
 }
 
@@ -88,11 +88,11 @@ export interface WorkspaceAdminEntry {
  * not take a viewer who may manage the tenant to the tenant home. The
  * `failed` state is the retryable surface the host renders instead.
  */
-export type WorkspaceAdminAdmission =
+export type OrganizationAdminAdmission =
   | { readonly status: 'pending' }
   | { readonly status: 'failed' }
   | { readonly status: 'denied' }
-  | ({ readonly status: 'allowed' } & WorkspaceAdminEntry)
+  | ({ readonly status: 'allowed' } & OrganizationAdminEntry)
 
 /**
  * Whether the page at the current URL may open. The `permission` a
@@ -100,7 +100,7 @@ export type WorkspaceAdminAdmission =
  * caller does not hold denies the page, and the host sends the viewer to
  * the first page it may open.
  */
-export function useWorkspaceAdminPermission(
+export function useOrganizationAdminPermission(
   permission: string | undefined,
 ): 'allowed' | 'denied' | 'pending' {
   const permissions = useTenantPermissionSet()
@@ -114,14 +114,14 @@ export function useWorkspaceAdminPermission(
 }
 
 /**
- * The workspace surface's admission and entry for the current render.
+ * The organization surface's admission and entry for the current render.
  *
  * Hooks are called unconditionally; the returned status carries the
- * decision. Callers render the entry (account menu's workspace group, home
+ * decision. Callers render the entry (account menu's organization group, home
  * card) only on `allowed`, wait on `pending`, show a retryable failure on
  * `failed`, and send the viewer home on `denied`.
  */
-export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
+export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
   const snapshot = useAuthState()
   const tenantId = useCurrentTenantId()
   const self = useSelfTenantState()
@@ -171,7 +171,7 @@ export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
   if (kind !== 'business') {
     return { status: 'denied' }
   }
-  const narrowed = presentDeclarations(workspaceAdminShellRoutes, presence)
+  const narrowed = presentDeclarations(organizationAdminShellRoutes, presence)
   if (narrowed.length === 0) {
     return { status: 'denied' }
   }

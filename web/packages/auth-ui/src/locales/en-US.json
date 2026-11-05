@@ -190,14 +190,14 @@
   "acceptInvitation": {
     "title": "Accept invitation",
     "loading": "Loading the invitation…",
-    "invited": "You have been invited to join the tenant \"{{tenant}}\".",
+    "invited": "You have been invited to join the organization \"{{tenant}}\".",
     "email": "Invitation sent to: {{email}}",
     "expires": "Expires: {{expires}}",
     "accept": "Accept",
     "retry": "Retry",
     "accepted": {
       "title": "Invitation accepted",
-      "description": "You are now a member of the tenant."
+      "description": "You are now a member of the organization."
     },
     "missing": {
       "title": "Invitation not found",
@@ -222,7 +222,7 @@
   "impersonation": {
     "regionLabel": "Impersonation notice",
     "actingAs": "You are operating as {{subject}}.",
-    "tenant": "Tenant: {{tenant}}",
+    "tenant": "Organization: {{tenant}}",
     "expiresAt": "This impersonation ends at {{expiresAt}}.",
     "managementUnavailable": "Management features are unavailable while you are impersonating.",
     "end": "End impersonation",
@@ -246,6 +246,7 @@
       "link_required": "This social account's email belongs to an account here. Sign in to that account the way you signed in before, then link this account under Account settings → Social bindings.",
       "method_disabled": "This sign-in method is turned off. Choose another one.",
       "account_unavailable": "This account is unavailable. Contact an administrator for help.",
+      "phone_required": "This account has no verified phone number, so a text message can't be sent. Use another sign-in method you've registered, or add and verify a phone number in your account settings.",
       "password_reset_closed": "Password reset without signing in is not available on this site.",
       "password_reset_unavailable": "This account cannot reset its password. Contact an administrator for help.",
       "conflict": "Your account may have changed. Refresh the page and try again.",

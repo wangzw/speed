@@ -306,7 +306,7 @@ func settingsWriteGuardModule() core.Module {
 // surface may not write the settings of a domain whose identifier starts with
 // the personal prefix. That domain's settings belong to the host that built the
 // space, and its tenant administrator governs a business tenant rather than the
-// personal workspace.
+// personal organization.
 //
 // The answer reads the identifier alone and never fails. The platform-only
 // namespaces are a separate rule the settings module holds itself, so this seam

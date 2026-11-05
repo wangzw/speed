@@ -600,7 +600,14 @@ formatted with the account's display-timezone chain.
   travels with the flow's first input
   (`session.startAuthenticatedFlow({purpose: 'enroll', input: {kind, label}})`,
   because later steps do not read it), and each reply's next step is
-  rendered and answered (`session.answerFlow`). A `webauthn` step hands the
+  rendered and answered (`session.answerFlow`). The SMS entry reads the
+  account's verified phone from the profile: with one, the panel's note
+  names that number and the name field stays empty, because the
+  destination is the account's phone rather than this browser; without
+  one, the entry opens no panel and sends no flow request, showing an
+  informational notice with no action beneath it instead. A direct API
+  caller that starts the SMS enrollment without a verified phone is
+  answered 403 `phone-required`. A `webauthn` step hands the
   factor its own JSON: TOTP's `otpauth_uri` renders through ui-kit's
   `TotpEnrollmentPanel` as a scannable QR symbol with a manual-entry
   disclosure that shows the parsed base32 secret and a copy control, and a

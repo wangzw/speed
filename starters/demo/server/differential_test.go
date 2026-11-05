@@ -91,7 +91,7 @@ var expectedOwners = map[string]string{
 	"/api":                       "api",
 	"/api/v1/auth":               "account",
 	"/api/v1/features":           "account",
-	"/api/v1/workspace":          "account",
+	"/api/v1/orgs":               "account",
 	"/api/v1/system/auth":        "admin",
 	"/api/v1/system/audit":       "admin",
 	"/api/v1/system/permissions": "admin",
@@ -899,7 +899,7 @@ const splitEndpoints = `  endpoints:
       prefixes: ["/api"]
     account:
       listener: backend
-      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace"]
+      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/orgs"]
     admin:
       listener: backend
       prefixes: ["/api/v1/system/audit", "/api/v1/system/auth", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]

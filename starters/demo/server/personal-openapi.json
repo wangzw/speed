@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "OrganizationPersonalReply": {
+        "description": "The answer to a successful ensure: the caller's personal tenant and whether this call registered it.",
+        "properties": {
+          "created": {
+            "description": "Whether this call registered the tenant",
+            "type": "boolean"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/OrganizationPersonalTenant"
+          }
+        },
+        "required": [
+          "tenant",
+          "created"
+        ],
+        "type": "object"
+      },
+      "OrganizationPersonalTenant": {
+        "description": "The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.",
+        "properties": {
+          "alias": {
+            "description": "The request-surface name, equal to the identifier for a personal tenant",
+            "type": "string"
+          },
+          "id": {
+            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
+            "type": "string"
+          },
+          "kind": {
+            "description": "The tenant kind; the frontend renders the personal organization label from it",
+            "enum": [
+              "personal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "alias",
+          "kind"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "description": "An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.",
         "properties": {
@@ -30,68 +73,25 @@
           "status"
         ],
         "type": "object"
-      },
-      "WorkspacePersonalReply": {
-        "description": "The answer to a successful ensure: the caller's personal tenant and whether this call registered it.",
-        "properties": {
-          "created": {
-            "description": "Whether this call registered the tenant",
-            "type": "boolean"
-          },
-          "tenant": {
-            "$ref": "#/components/schemas/WorkspacePersonalTenant"
-          }
-        },
-        "required": [
-          "tenant",
-          "created"
-        ],
-        "type": "object"
-      },
-      "WorkspacePersonalTenant": {
-        "description": "The personal tenant the ensure names. It carries no display name: the frontend renders the personal label from the kind.",
-        "properties": {
-          "alias": {
-            "description": "The request-surface name, equal to the identifier for a personal tenant",
-            "type": "string"
-          },
-          "id": {
-            "description": "The tenant identifier, derived deterministically from the account identifier: the fixed prefix \"personal-\" followed by the account identifier, the same string the alias carries. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language",
-            "type": "string"
-          },
-          "kind": {
-            "description": "The tenant kind; the frontend renders the personal label from it",
-            "enum": [
-              "personal"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "alias",
-          "kind"
-        ],
-        "type": "object"
       }
     }
   },
   "info": {
-    "title": "workspace personal",
+    "title": "organization personal",
     "version": "1.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/workspace/personal": {
+    "/orgs/personal": {
       "post": {
         "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
-        "operationId": "workspace.personal.ensure",
+        "operationId": "org.personal.ensure",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkspacePersonalReply"
+                  "$ref": "#/components/schemas/OrganizationPersonalReply"
                 }
               }
             },

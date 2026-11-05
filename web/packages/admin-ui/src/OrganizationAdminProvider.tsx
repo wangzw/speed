@@ -1,13 +1,13 @@
 /**
- * WorkspaceAdminProvider: the workspace administration surface's contexts,
+ * OrganizationAdminProvider: the organization administration surface's contexts,
  * without a frame of its own.
  *
  * The host has already rendered @speed/product-shell's `AppShell` around
- * the tenant area, so the workspace surface must not render a second one.
+ * the tenant area, so the organization surface must not render a second one.
  * This provider installs only what the shared page components need: the
  * current tenant, the tenant-scoped operations bundle, the session, the
- * feature answer, the narrowed workspace route table, the in-place
- * navigation callback, the workspace breadcrumb, the invitation-link
+ * feature answer, the narrowed organization route table, the in-place
+ * navigation callback, the organization breadcrumb, the invitation-link
  * builder and the protected role names. It renders no DOM, imports neither
  * `@speed/product-shell` nor
  * `@speed/tenancy-ui`, and never derives or switches the current tenant:
@@ -30,12 +30,12 @@ import { AdminNavigationProvider } from './internal/navigation.js'
 import { AdminRouteTableProvider } from './internal/route-table.js'
 import { AdminInvitationLinkProvider } from './internal/invitation-link.js'
 import { AdminSessionProvider } from './internal/session.js'
-import { WorkspaceAdminBreadcrumbProvider } from './WorkspaceAdminBreadcrumb.js'
-import { WorkspaceAdminOperationsProvider } from './workspace-operations.js'
-import type { WorkspaceAdminOperations } from './workspace-operations.js'
+import { OrganizationAdminBreadcrumbProvider } from './OrganizationAdminBreadcrumb.js'
+import { OrganizationAdminOperationsProvider } from './organization-operations.js'
+import type { OrganizationAdminOperations } from './organization-operations.js'
 
-/** The workspace facts the wrapper pages read. */
-export interface WorkspaceAdminContextValue {
+/** The organization facts the wrapper pages read. */
+export interface OrganizationAdminContextValue {
   /** The current tenant the host resolved; every request names it. */
   readonly tenant: string
   /**
@@ -45,56 +45,56 @@ export interface WorkspaceAdminContextValue {
   readonly protectedRoles: readonly string[]
 }
 
-const WorkspaceAdminContext = createContext<WorkspaceAdminContextValue | null>(
+const OrganizationAdminContext = createContext<OrganizationAdminContextValue | null>(
   null,
 )
 
 /**
- * The workspace context. Throws outside the provider: a wrapper page
+ * The organization context. Throws outside the provider: a wrapper page
  * mounted without a tenant would have no request to address, and failing
  * loudly at composition beats issuing a request with an empty path
  * segment.
  */
-export function useWorkspaceAdminContext(): WorkspaceAdminContextValue {
-  const value = useContext(WorkspaceAdminContext)
+export function useOrganizationAdminContext(): OrganizationAdminContextValue {
+  const value = useContext(OrganizationAdminContext)
   if (value === null) {
     throw new Error(
-      'WorkspaceAdminProvider is required to render a workspace admin page',
+      'OrganizationAdminProvider is required to render an organization admin page',
     )
   }
   return value
 }
 
-/** The current tenant the host handed the workspace surface. */
-export function useWorkspaceAdminTenant(): string {
-  return useWorkspaceAdminContext().tenant
+/** The current tenant the host handed the organization surface. */
+export function useOrganizationAdminTenant(): string {
+  return useOrganizationAdminContext().tenant
 }
 
 /** The role names the tenant role page renders as read-only. */
-export function useWorkspaceAdminProtectedRoles(): readonly string[] {
-  return useWorkspaceAdminContext().protectedRoles
+export function useOrganizationAdminProtectedRoles(): readonly string[] {
+  return useOrganizationAdminContext().protectedRoles
 }
 
-export interface WorkspaceAdminProviderProps {
+export interface OrganizationAdminProviderProps {
   /** The current tenant the host resolved. Required: the package never
    * derives it from the session or the URL and never switches it. */
   readonly tenant: string
-  /** The tenant-scoped operations bundle the workspace pages run through. */
-  readonly operations: WorkspaceAdminOperations
+  /** The tenant-scoped operations bundle the organization pages run through. */
+  readonly operations: OrganizationAdminOperations
   /** The host's synchronous feature answer. Required, as on the console
    * shell: a provider that guessed would render controls the deployment
    * does not serve. */
   readonly hasFeature: (name: FeatureName) => boolean
   /** The assembled session, published so a step-up-gated write can raise it. */
   readonly session?: AuthSession
-  /** The workspace declarations the host's feature predicate left in force.
+  /** The organization declarations the host's feature predicate left in force.
    * The wrappers resolve sibling links against them by stable `id`. */
   readonly routes?: readonly AdminRoute[]
   /** The host's in-place navigation callback. Supplying it routes a plain
-   * click on a workspace link through the host's router. */
+   * click on an organization link through the host's router. */
   readonly onNavigate?: (href: string) => void
-  /** The trail from the workspace home to the page. Supplying it mounts the
-   * workspace breadcrumb provider around the children. */
+  /** The trail from the organization home to the page. Supplying it mounts the
+   * organization breadcrumb provider around the children. */
   readonly breadcrumbs?: readonly PageHeaderBreadcrumb[]
   /**
    * Builds the acceptance link for an issued invitation's token, the same
@@ -109,10 +109,10 @@ export interface WorkspaceAdminProviderProps {
 }
 
 /**
- * The frameless workspace surface: installs its contexts around the
+ * The frameless organization surface: installs its contexts around the
  * children and renders nothing else.
  */
-export function WorkspaceAdminProvider({
+export function OrganizationAdminProvider({
   tenant,
   operations,
   hasFeature,
@@ -123,22 +123,22 @@ export function WorkspaceAdminProvider({
   invitationLink,
   protectedRoles,
   children,
-}: WorkspaceAdminProviderProps) {
+}: OrganizationAdminProviderProps) {
   // The operations context is declared in the console bundle's type, but
-  // the workspace bundle is deliberately narrower in the platform members
+  // the organization bundle is deliberately narrower in the platform members
   // and wider in the tenant ones: the shared pages under this provider
-  // call only members the workspace bundle carries, and the tenant-mode
-  // settings and permissions pages read the workspace operations context
+  // call only members the organization bundle carries, and the tenant-mode
+  // settings and permissions pages read the organization operations context
   // instead. The cast is the one place the two shapes meet; it is not a
   // promise that a platform page can render here (the package README
   // states it cannot).
   const scopedOperations = operations as unknown as AdminOperations
   const content = (
-    <WorkspaceAdminContext.Provider
+    <OrganizationAdminContext.Provider
       value={{ tenant, protectedRoles: protectedRoles ?? [] }}
     >
       <AdminOperationsProvider operations={scopedOperations}>
-        <WorkspaceAdminOperationsProvider operations={operations}>
+        <OrganizationAdminOperationsProvider operations={operations}>
           <AdminNavigationProvider onNavigate={onNavigate}>
             <AdminRouteTableProvider routes={routes}>
               <AdminSessionProvider session={session ?? null}>
@@ -150,15 +150,15 @@ export function WorkspaceAdminProvider({
               </AdminSessionProvider>
             </AdminRouteTableProvider>
           </AdminNavigationProvider>
-        </WorkspaceAdminOperationsProvider>
+        </OrganizationAdminOperationsProvider>
       </AdminOperationsProvider>
-    </WorkspaceAdminContext.Provider>
+    </OrganizationAdminContext.Provider>
   )
   return breadcrumbs === undefined ? (
     content
   ) : (
-    <WorkspaceAdminBreadcrumbProvider breadcrumbs={breadcrumbs}>
+    <OrganizationAdminBreadcrumbProvider breadcrumbs={breadcrumbs}>
       {content}
-    </WorkspaceAdminBreadcrumbProvider>
+    </OrganizationAdminBreadcrumbProvider>
   )
 }

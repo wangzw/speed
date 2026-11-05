@@ -9,7 +9,7 @@
     "account": "Account settings",
     "home": "Home",
     "admin": "Admin",
-    "workspaceAdmin": "Workspace admin"
+    "organizationAdmin": "Organization admin"
   },
   "admin": {
     "backToApp": "Back to app",
@@ -33,7 +33,7 @@
     "intro": "This skeleton ships no business domain of its own. These are the platform capabilities that already work -- take a look around before you grow your own.",
     "membershipNotice": {
       "region": "Membership confirmation",
-      "title": "You are now a member of the tenant.",
+      "title": "You are now a member of the organization.",
       "dismiss": "Dismiss membership confirmation"
     },
     "cards": {
@@ -43,11 +43,11 @@
       },
       "admin": {
         "title": "Admin",
-        "description": "Platform administration: tenants, accounts, settings and the audit trail."
+        "description": "Platform administration: organizations, accounts, settings and the audit trail."
       },
-      "workspaceAdmin": {
-        "title": "Workspace admin",
-        "description": "Manage this workspace's members, invitations and enterprise single sign-on."
+      "organizationAdmin": {
+        "title": "Organization admin",
+        "description": "Manage this organization's members, invitations and enterprise single sign-on."
       },
       "notifications": {
         "title": "Notifications",
@@ -187,19 +187,19 @@
     "ascii": "ASCII terminal"
   },
   "tenantRoster": {
-    "failed": "Could not load the tenant list",
+    "failed": "Could not load the organization list",
     "retry": "Try again"
   },
-  "workspace": {
-    "personal": "Workspace",
+  "organization": {
+    "personal": "Organization",
     "failure": {
-      "title": "Could not prepare your workspace",
-      "description": "Something went wrong while preparing your workspace. Please try again.",
+      "title": "Could not prepare your organization",
+      "description": "Something went wrong while preparing your organization. Please try again.",
       "retry": "Try again"
     },
     "accessFailed": {
-      "title": "Could not check workspace access",
-      "description": "We could not load what we need to open this workspace. Please try again.",
+      "title": "Could not check organization access",
+      "description": "We could not load what we need to open this organization. Please try again.",
       "retry": "Try again"
     }
   },

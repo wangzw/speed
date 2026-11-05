@@ -21,7 +21,7 @@
       "username_immutable": "A username cannot be changed or removed.",
       "contact_required": "Verify your email address on the account verification page before continuing.",
       "forbidden": "You do not have permission to do that.",
-      "impersonation_restricted": "This can't be done: the target must be an enabled, unprotected member of the tenant, and you must not be impersonating another account right now.",
+      "impersonation_restricted": "This can't be done: the target must be an enabled, unprotected member of the organization, and you must not be impersonating another account right now.",
       "factor_not_seasoned": "This requires a non-SMS verification method (an authenticator app or a passkey) that has been active for the required period. A newly added method must wait first.",
       "login_failed": "The verification did not pass. The email, phone, password or code is incorrect.",
       "flow_invalid": "This verification attempt is no longer valid. Start again.",
@@ -52,7 +52,7 @@
     },
     "tenant": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-      "conflict": "That identifier or alias is already taken by another tenant."
+      "conflict": "That identifier or alias is already taken by another organization."
     },
     "settings": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
@@ -74,12 +74,12 @@
     "groups": {
       "overview": "Overview",
       "identity": "Identity & access",
-      "tenants": "Tenants",
+      "tenants": "Organizations",
       "platform": "Platform configuration",
       "audit": "Audit"
     }
   },
-  "workspace": {
+  "organization": {
     "nav": {
       "invitations": "Invitations & members",
       "sso": "SSO providers",
@@ -93,13 +93,13 @@
     "refreshed": "Data refreshed",
     "cancel": "Cancel",
     "confirm": "Confirm",
-    "tenant": "Tenant",
+    "tenant": "Organization",
     "tenantNone": "None selected",
-    "tenantLoading": "Loading tenants…",
-    "tenantForbidden": "You do not have permission to view the tenant list.",
-    "tenantLoadFailed": "The tenant list could not be loaded.",
+    "tenantLoading": "Loading organizations…",
+    "tenantForbidden": "You do not have permission to view the organization list.",
+    "tenantLoadFailed": "The organization list could not be loaded.",
     "tenantRetry": "Retry",
-    "tenantEmpty": "No tenant is registered yet.",
+    "tenantEmpty": "No organization is registered yet.",
     "emptyValue": "—",
     "accountUnresolved": "Identity unavailable (requires permission to view accounts)",
     "accountMissing": "Not an account or deleted",
@@ -158,14 +158,14 @@
     "restart": "Restart verification"
   },
   "tenants": {
-    "title": "Tenants",
-    "loading": "Loading tenants",
+    "title": "Organizations",
+    "loading": "Loading organizations",
     "empty": {
-      "title": "No tenants",
-      "description": "No tenant is registered yet."
+      "title": "No organizations",
+      "description": "No organization is registered yet."
     },
     "error": {
-      "title": "Tenants could not be loaded",
+      "title": "Organizations could not be loaded",
       "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
@@ -186,7 +186,7 @@
       "account": "Disabled by the account's state"
     },
     "create": {
-      "title": "Register a tenant",
+      "title": "Register an organization",
       "idLabel": "Identifier",
       "aliasLabel": "Alias",
       "submit": "Register"
@@ -194,17 +194,17 @@
     "rename": {
       "label": "New alias",
       "submit": "Rename",
-      "ariaWithId": "New alias for tenant {{id}}",
-      "submitAria": "Rename tenant {{id}}"
+      "ariaWithId": "New alias for organization {{id}}",
+      "submitAria": "Rename organization {{id}}"
     },
     "enable": "Enable",
     "disable": "Disable",
-    "enableAria": "Enable tenant {{id}}",
-    "disableAria": "Disable tenant {{id}}",
-    "created": "Tenant \"{{id}}\" registered",
-    "renamed": "Alias of tenant \"{{id}}\" updated",
-    "enabledToast": "Tenant \"{{id}}\" enabled",
-    "disabledToast": "Tenant \"{{id}}\" disabled",
+    "enableAria": "Enable organization {{id}}",
+    "disableAria": "Disable organization {{id}}",
+    "created": "Organization \"{{id}}\" registered",
+    "renamed": "Alias of organization \"{{id}}\" updated",
+    "enabledToast": "Organization \"{{id}}\" enabled",
+    "disabledToast": "Organization \"{{id}}\" disabled",
     "identifierHelper": "No spaces"
   },
   "forbidden": {
@@ -223,7 +223,7 @@
     },
     "retry": "Retry",
     "kpi": {
-      "tenants": "Tenants",
+      "tenants": "Organizations",
       "active": "Active",
       "disabled": "Disabled",
       "deleted": "Deleted"
@@ -260,11 +260,11 @@
     }
   },
   "tenantDetail": {
-    "title": "Tenant \"{{id}}\"",
+    "title": "Organization \"{{id}}\"",
     "back": "Back to the roster",
-    "loading": "Loading the tenant",
+    "loading": "Loading the organization",
     "error": {
-      "title": "The tenant could not be loaded",
+      "title": "The organization could not be loaded",
       "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
@@ -281,9 +281,9 @@
       "renameSubmit": "Rename",
       "enable": "Enable",
       "disable": "Disable",
-      "renamed": "Alias of tenant \"{{id}}\" updated",
-      "enabled": "Tenant \"{{id}}\" enabled",
-      "disabled": "Tenant \"{{id}}\" disabled"
+      "renamed": "Alias of organization \"{{id}}\" updated",
+      "enabled": "Organization \"{{id}}\" enabled",
+      "disabled": "Organization \"{{id}}\" disabled"
     },
     "related": {
       "title": "Related pages",
@@ -307,7 +307,7 @@
     "detailTitle": "Detail",
     "field": {
       "id": "Identifier",
-      "tenant": "Tenant",
+      "tenant": "Organization",
       "occurredAt": "Time",
       "actor": "Actor",
       "source": "Source",
@@ -361,7 +361,7 @@
       "overridden": "Overridden"
     },
     "source": {
-      "tenant": "Tenant",
+      "tenant": "Organization",
       "global": "Global",
       "default": "Default"
     }
@@ -417,15 +417,15 @@
   "permissions": {
     "title": "Permissions",
     "needTenant": {
-      "title": "Choose a tenant",
-      "description": "Roles, grants and bindings belong to a tenant. Choose a tenant first."
+      "title": "Choose an organization",
+      "description": "Roles, grants and bindings belong to an organization. Choose an organization first."
     },
     "roles": {
       "title": "Roles",
       "loading": "Loading roles",
       "empty": {
         "title": "No roles",
-        "description": "This tenant declares no role yet."
+        "description": "This organization declares no role yet."
       },
       "error": {
         "title": "Roles could not be loaded",
@@ -507,7 +507,7 @@
       "title": "Bindings",
       "accountLabel": "Account",
       "noMembers": "No matching members",
-      "membersFailed": "The tenant's members could not be read.",
+      "membersFailed": "The organization's members could not be read.",
       "membersNext": "More members",
       "membersPrevious": "Previous members",
       "roleLabel": "Role",
@@ -515,7 +515,7 @@
       "loading": "Loading bindings",
       "empty": {
         "title": "No bindings",
-        "description": "No account holds a role in this tenant yet."
+        "description": "No account holds a role in this organization yet."
       },
       "error": {
         "title": "Bindings could not be loaded",
@@ -546,7 +546,7 @@
       "retry": "Retry",
       "empty": {
         "title": "No bindings",
-        "description": "This account holds no role in the tenant."
+        "description": "This account holds no role in the organization."
       }
     }
   },
@@ -854,8 +854,8 @@
   "impersonations": {
     "title": "Impersonations",
     "needTenant": {
-      "title": "Choose a tenant",
-      "description": "Impersonation records belong to a tenant. Choose a tenant first."
+      "title": "Choose an organization",
+      "description": "Impersonation records belong to an organization. Choose an organization first."
     },
     "loading": "Loading impersonation records",
     "empty": {
@@ -870,7 +870,7 @@
     "column": {
       "actor": "Actor",
       "target": "Impersonated account",
-      "tenant": "Tenant",
+      "tenant": "Organization",
       "started": "Started",
       "ends": "Ends",
       "state": "State",
@@ -897,7 +897,7 @@
       "loading": "Loading the impersonation status",
       "none": "You are not impersonating any account.",
       "target": "Impersonated account: ",
-      "tenant": "Tenant: {{tenant}}",
+      "tenant": "Organization: {{tenant}}",
       "ends": "Ends: {{ends}}",
       "end": "End impersonation",
       "started": "Started impersonating account {{account}}.",
@@ -913,7 +913,7 @@
       "title": "Start an impersonation",
       "precondition": "To start an impersonation, your own account must already have a second factor other than SMS, enabled for at least as long as this system requires. A second factor added just now does not count, and signing in again does not shorten the wait.",
       "accountLabel": "Target account",
-      "tenantHint": "Select a tenant first; the target account must belong to that tenant.",
+      "tenantHint": "Select an organization first; the target account must belong to that organization.",
       "reasonLabel": "Reason",
       "ttlLabel": "Valid for (seconds)",
       "submit": "Start impersonation"
@@ -922,8 +922,8 @@
   "invitations": {
     "title": "Invitations and members",
     "needTenant": {
-      "title": "Choose a tenant",
-      "description": "Invitations and members belong to a tenant. Choose a tenant first."
+      "title": "Choose an organization",
+      "description": "Invitations and members belong to an organization. Choose an organization first."
     },
     "section": {
       "title": "Invitations"
@@ -937,7 +937,7 @@
     "loading": "Loading invitations",
     "empty": {
       "title": "No invitations",
-      "description": "This tenant has no invitation yet."
+      "description": "This organization has no invitation yet."
     },
     "error": {
       "title": "Invitations could not be loaded",
@@ -970,7 +970,7 @@
       "copyToken": "Copy acceptance token",
       "copied": "Copied",
       "close": "Close",
-      "closeAria": "Close the acceptance link panel for \"{{email}}\" in tenant \"{{tenant}}\""
+      "closeAria": "Close the acceptance link panel for \"{{email}}\" in organization \"{{tenant}}\""
     }
   },
   "members": {
@@ -980,7 +980,7 @@
     "nextPage": "Next",
     "empty": {
       "title": "No members",
-      "description": "This tenant has no member yet."
+      "description": "This organization has no member yet."
     },
     "error": {
       "title": "Members could not be loaded",
@@ -1017,10 +1017,10 @@
     },
     "remove": "Remove",
     "removeTitle": "Remove member",
-    "removeMessage": "Remove the member \"{{name}}\" from this tenant.",
-    "removeMessageWithIdentifier": "Remove the member \"{{name}}\" ({{identifier}}) from this tenant.",
-    "removeMessageByIdentifier": "Remove the member \"{{identifier}}\" from this tenant.",
-    "removeMessageUnnamed": "Remove this member from this tenant.",
+    "removeMessage": "Remove the member \"{{name}}\" from this organization.",
+    "removeMessageWithIdentifier": "Remove the member \"{{name}}\" ({{identifier}}) from this organization.",
+    "removeMessageByIdentifier": "Remove the member \"{{identifier}}\" from this organization.",
+    "removeMessageUnnamed": "Remove this member from this organization.",
     "removed": "Member {{account}} removed",
     "removedUnnamed": "The member was removed",
     "ssoExemptSaved": "SSO exemption of member {{account}} saved",
@@ -1031,13 +1031,13 @@
   "sso": {
     "title": "SSO providers",
     "needTenant": {
-      "title": "Choose a tenant",
-      "description": "SSO providers belong to a tenant. Choose a tenant first."
+      "title": "Choose an organization",
+      "description": "SSO providers belong to an organization. Choose an organization first."
     },
     "loading": "Loading providers",
     "empty": {
       "title": "No providers",
-      "description": "This tenant registers no SSO provider yet."
+      "description": "This organization registers no SSO provider yet."
     },
     "error": {
       "title": "Providers could not be loaded",
@@ -1090,7 +1090,7 @@
       "verified": "Domain \"{{domain}}\" verified for provider \"{{name}}\"",
       "removed": "Domain \"{{domain}}\" removed from provider \"{{name}}\"",
       "claimTokenClose": "Close",
-      "claimTokenCloseAria": "Close the claim token panel for domain \"{{domain}}\" of provider \"{{name}}\" in tenant \"{{tenant}}\"",
+      "claimTokenCloseAria": "Close the claim token panel for domain \"{{domain}}\" of provider \"{{name}}\" in organization \"{{tenant}}\"",
       "remove": "Remove",
       "removeAria": "Remove domain {{domain}}",
       "removeTitle": "Remove domain",

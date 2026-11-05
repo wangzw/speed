@@ -190,14 +190,14 @@
   "acceptInvitation": {
     "title": "接受邀请",
     "loading": "正在读取邀请…",
-    "invited": "你被邀请加入租户「{{tenant}}」。",
+    "invited": "你被邀请加入组织「{{tenant}}」。",
     "email": "邀请发送至：{{email}}",
     "expires": "有效期至：{{expires}}",
     "accept": "接受",
     "retry": "重试",
     "accepted": {
       "title": "邀请已接受",
-      "description": "你已成为该租户的成员。"
+      "description": "你已成为该组织的成员。"
     },
     "missing": {
       "title": "邀请不存在",
@@ -222,7 +222,7 @@
   "impersonation": {
     "regionLabel": "冒充提示",
     "actingAs": "你正在以 {{subject}} 的身份操作。",
-    "tenant": "租户：{{tenant}}",
+    "tenant": "组织：{{tenant}}",
     "expiresAt": "冒充将在 {{expiresAt}} 到期。",
     "managementUnavailable": "冒充期间管理功能不可用。",
     "end": "结束冒充",
@@ -246,6 +246,7 @@
       "link_required": "该社交账号的邮箱已属于本站的一个账户。请先用原先的登录方式登录该账户，再到「账户设置 → 社交绑定」里关联此账号。",
       "method_disabled": "该登录方式已停用，请选择其他登录方式。",
       "account_unavailable": "该账户当前不可用，请联系管理员。",
+      "phone_required": "该账户没有已验证的手机号，无法发送短信。请使用其他已注册的登录方式，或到账户设置中验证手机号。",
       "password_reset_closed": "本站未开放免登录的密码重置。",
       "password_reset_unavailable": "该账户当前无法重置密码，请联系管理员。",
       "conflict": "账户信息可能已发生变化，请刷新页面后重试。",

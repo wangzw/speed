@@ -40,7 +40,7 @@ import {
   adminShellRoutes,
   useAdminTarget,
 } from '../admin-routes.js'
-import { useWorkspaceAdminAdmission } from '../workspace-admin.js'
+import { useOrganizationAdminAdmission } from '../organization-admin.js'
 import { ACCOUNT_PATH, NOTIFICATIONS_PATH } from '../paths.js'
 import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { ReviewNoticeControl } from '../review-notice-control.js'
@@ -69,13 +69,13 @@ type StartCard =
       readonly gate: 'admin'
     }
   | {
-      readonly key: 'workspaceAdmin'
-      readonly gate: 'workspaceAdmin'
+      readonly key: 'organizationAdmin'
+      readonly gate: 'organizationAdmin'
     }
 
 const START_CARDS: readonly StartCard[] = [
   { key: 'account', path: ACCOUNT_PATH, gate: 'direct' },
-  { key: 'workspaceAdmin', gate: 'workspaceAdmin' },
+  { key: 'organizationAdmin', gate: 'organizationAdmin' },
   { key: 'admin', gate: 'admin' },
   { key: 'notifications', path: NOTIFICATIONS_PATH, gate: 'route' },
 ]
@@ -161,8 +161,8 @@ function StartCardTile({
   if (card.gate === 'admin') {
     return <AdminStartCard />
   }
-  if (card.gate === 'workspaceAdmin') {
-    return <WorkspaceAdminStartCard />
+  if (card.gate === 'organizationAdmin') {
+    return <OrganizationAdminStartCard />
   }
   if (card.gate === 'route') {
     return <RouteStartCard card={card} />
@@ -209,22 +209,22 @@ function AdminStartCard(): ReactElement | null {
 }
 
 /**
- * The workspace admin card: offered exactly when the workspace surface's
+ * The organization admin card: offered exactly when the organization surface's
  * admission allows it -- a business tenant other than `system`, no
- * impersonation, at least one served workspace declaration, and the
+ * impersonation, at least one served organization declaration, and the
  * tenant-domain permission set for THIS tenant holding one of its codes.
- * It calls the same useWorkspaceAdminAdmission the account menu's workspace
- * group does (src/workspace-admin.ts), so the card and the group never
+ * It calls the same useOrganizationAdminAdmission the account menu's organization
+ * group does (src/organization-admin.ts), so the card and the group never
  * disagree; a pending or foreign-tenant permission read fails closed and the
  * card stays hidden.
  */
-function WorkspaceAdminStartCard(): ReactElement | null {
-  const admission = useWorkspaceAdminAdmission()
+function OrganizationAdminStartCard(): ReactElement | null {
+  const admission = useOrganizationAdminAdmission()
   if (admission.status !== 'allowed') {
     return null
   }
   return (
-    <StartCardView card={{ key: 'workspaceAdmin', path: admission.target }} />
+    <StartCardView card={{ key: 'organizationAdmin', path: admission.target }} />
   )
 }
 

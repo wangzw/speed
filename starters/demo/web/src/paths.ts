@@ -17,18 +17,18 @@ import { notificationRoutes } from '@speed/notification-ui'
 export const ADMIN_PREFIX = '/admin'
 
 /**
- * The path prefix the workspace admin's pages mount under: the tenant-scoped
+ * The path prefix the organization admin's pages mount under: the tenant-scoped
  * management surface, which renders inside the tenant shell and acts on the
  * current tenant rather than on platform assets. It sits outside ADMIN_PREFIX
  * so the two management surfaces have disjoint path spaces.
  */
-export const WORKSPACE_ADMIN_PREFIX = '/workspace/admin'
+export const ORGANIZATION_ADMIN_PREFIX = '/organization/admin'
 
-/** Whether a declared path belongs to the workspace admin area. */
-export function isWorkspaceAdminPath(pathname: string): boolean {
+/** Whether a declared path belongs to the organization admin area. */
+export function isOrganizationAdminPath(pathname: string): boolean {
   return (
-    pathname === WORKSPACE_ADMIN_PREFIX ||
-    pathname.startsWith(`${WORKSPACE_ADMIN_PREFIX}/`)
+    pathname === ORGANIZATION_ADMIN_PREFIX ||
+    pathname.startsWith(`${ORGANIZATION_ADMIN_PREFIX}/`)
   )
 }
 

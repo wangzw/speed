@@ -1090,7 +1090,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable, or a human-verification proof is missing or invalid (human-verification-required)"
+            "description": "The account is unavailable, or an SMS second-factor challenge or enrollment is refused because the account has no proved phone (phone-required), or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -1260,7 +1260,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required), or a human-verification proof is missing or invalid (human-verification-required)"
+            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required), or an SMS `purpose=enroll` flow is refused because the account has no proved phone (phone-required), or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {

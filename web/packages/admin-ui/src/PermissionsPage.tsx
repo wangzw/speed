@@ -16,7 +16,7 @@
  * The page has two surfaces. The platform console reads and writes the
  * tenant-scoped authorization endpoints under `/api/v1/system`, searches
  * the platform account roster for the account pickers, and resolves an
- * account's identity through the platform account read. The workspace
+ * account's identity through the platform account read. The organization
  * surface (`tenantMode`) reads the tenant's governed catalog, roles,
  * grants and bindings under `/api/v1/tenants/{tenant}`, fills its account
  * pickers from the tenant's member read, and resolves recorded account
@@ -143,9 +143,9 @@ import type {
   AdminWriteRoleInput,
 } from './operations.js'
 import {
-  useWorkspaceAdminOperations,
-  type WorkspaceAdminOperations,
-} from './workspace-operations.js'
+  useOrganizationAdminOperations,
+  type OrganizationAdminOperations,
+} from './organization-operations.js'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 
 /**
@@ -273,7 +273,7 @@ function PlatformUnbindButton(
   )
 }
 
-/** The workspace surface's unbind control: the identity comes from the
+/** The organization surface's unbind control: the identity comes from the
  * tenant's member read, so no platform account read is issued. */
 function TenantUnbindButton({
   memberNames,
@@ -317,9 +317,9 @@ export interface PermissionsPageProps {
   /** Reports each re-selection made through the page's own selector. */
   readonly onTenantChange?: (tenant: string) => void
   /**
-   * Tenant mode: the workspace surface's configuration of the same page.
+   * Tenant mode: the organization surface's configuration of the same page.
    * The page reads and writes `/api/v1/tenants/{tenant}/...` through the
-   * workspace operations bundle, fills its account pickers from the tenant
+   * organization operations bundle, fills its account pickers from the tenant
    * member read, and never addresses `/api/v1/system` or the platform
    * account surface. The host's protected role names apply in this mode;
    * the platform surface marks only the server's builtin roles read-only.
@@ -398,10 +398,10 @@ function usePlatformPermissionsOperations(
   }
 }
 
-/** The workspace surface's operations: the tenant's own authorization
+/** The organization surface's operations: the tenant's own authorization
  * endpoints under `/api/v1/tenants/{tenant}`. */
 function useTenantPermissionsOperations(
-  operations: WorkspaceAdminOperations,
+  operations: OrganizationAdminOperations,
 ): PermissionsDataOperations {
   return {
     useRoles: (at) => operations.useTenantRoles(at),
@@ -463,7 +463,7 @@ function firstMemberPage(tenant: string): MemberCursorFrame {
 }
 
 /**
- * The workspace surface's account picker: the tenant's member list, read
+ * The organization surface's account picker: the tenant's member list, read
  * without a platform account search.
  *
  * The picker owns its read, so its search and its paging are its own. The
@@ -490,7 +490,7 @@ function TenantMemberPicker({
   readonly onMembersRead: (members: readonly AdminMember[]) => void
 }) {
   const { t } = useAdminUiTranslation()
-  const operations = useWorkspaceAdminOperations()
+  const operations = useOrganizationAdminOperations()
   const [input, setInput] = useState('')
   const [query, setQuery] = useState('')
   const [cursorState, setCursorState] = useState<MemberCursorFrame>(() =>
@@ -655,7 +655,7 @@ function TenantMemberPicker({
 
 /**
  * The page's mode-specific composition. The platform surface talks to the
- * console bundle; the workspace surface talks to the tenant bundle and to
+ * console bundle; the organization surface talks to the tenant bundle and to
  * the tenant's own member read. The body below is shared.
  */
 export function PermissionsPage({
@@ -703,7 +703,7 @@ function TenantPermissionsPage({
   readonly tenant: string
   readonly protectedRoles: readonly string[]
 }) {
-  const operations = useWorkspaceAdminOperations()
+  const operations = useOrganizationAdminOperations()
   const data = useTenantPermissionsOperations(operations)
   // The member pickers own their reads and report every page they settle,
   // so the page resolves the accounts its binding tables show without a
@@ -1104,7 +1104,7 @@ function PermissionsPageBody({
   const codeByPair = useMemo(() => buildGrantCodeIndex(permissions), [permissions])
 
   const roleRows = roles.data
-  // The workspace surface resolves every recorded account identifier it
+  // The organization surface resolves every recorded account identifier it
   // shows from the tenant's own member read. The pickers report each page
   // they settle, and the names accumulate per tenant, so paging past a
   // member leaves its binding rows named. A member no read has carried

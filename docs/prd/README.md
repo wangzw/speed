@@ -12,7 +12,7 @@
 
 | 旅程 | 文档 |
 |---|---|
-| 口令注册到个人空间 | [口令注册到个人空间](journeys/journey-first-registration-to-personal-workspace.md) |
+| 口令注册到个人组织 | [口令注册到个人组织](journeys/journey-first-registration-to-personal-organization.md) |
 | 短信首登开户到口令登录 | [短信首登开户到口令登录](journeys/journey-sms-signup-to-password-login.md) |
 | 社交登录开户 | [社交登录开户](journeys/journey-social-sign-in-and-linking.md) |
 | 为已有账户绑定社交账号 | [为已有账户绑定社交账号](journeys/journey-social-account-linking.md) |
@@ -23,7 +23,7 @@
 | 账户必须保留一个非通行密钥的登录方式 | [账户必须保留一个非通行密钥的登录方式](journeys/journey-last-login-way.md) |
 | 邮箱验证码重置口令 | [邮箱验证码重置口令](journeys/journey-password-reset-email.md) |
 | 短信验证码重置口令 | [短信验证码重置口令](journeys/journey-password-reset-sms.md) |
-| 成员在租户里收发通知 | [成员在租户里收发通知](journeys/journey-member-workspace.md) |
+| 成员在组织里收发通知 | [成员在组织里收发通知](journeys/journey-member-organization.md) |
 | 开通一个租户并让首位成员进入 | [开通一个租户并让首位成员进入](journeys/journey-operator-onboards-tenant.md) |
 | 租户管理员接管一个业务租户的日常管理 | [租户管理员接管一个业务租户的日常管理](journeys/journey-tenant-admin.md) |
 | 为租户接入企业身份提供方 | [为租户接入企业身份提供方](journeys/journey-enterprise-sso-onboarding.md) |

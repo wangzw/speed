@@ -3,7 +3,7 @@
  *
  * The server decides the answer; the host's job is to ask only when the
  * caller's own personal tenant is missing from a settled membership list --
- * authenticated, not impersonating, the workspace.personal feature in force,
+ * authenticated, not impersonating, the org.personal feature in force,
  * the list settled -- and to render what each answer means: the personal tenant
  * as the current one when none is settled, and a retryable failure for every
  * failure. The generated ensure operation runs through the api-sdk runtime
@@ -35,10 +35,10 @@ import {
 
 const PERSONAL_ID = 'personal-account-1'
 const ROSTER_PATH = '/api/v1/system/tenants'
-const ENSURE_PATH = '/api/v1/workspace/personal'
+const ENSURE_PATH = '/api/v1/orgs/personal'
 const SELF_PATH = '/api/v1/auth/me/tenants'
 
-const PERSONAL_FEATURES = ['tenant.admin', 'workspace.personal'] as const
+const PERSONAL_FEATURES = ['tenant.admin', 'org.personal'] as const
 
 /** Binds a scripted request function: the case-specific answers are plain
  * values, and the seam's generic result type is the caller's contract. */
@@ -266,7 +266,7 @@ describe('the tenant frame and the personal tenant', () => {
 
     expect(
       await screen.findByRole('button', {
-        name: demoEnUS.workspace.personal,
+        name: demoEnUS.organization.personal,
       }),
     ).toBeInTheDocument()
     expect(ensureCalls).toEqual([ENSURE_PATH])
@@ -340,7 +340,7 @@ describe('the tenant frame and the personal tenant', () => {
     script({ ensureCalls })
     renderDemoApp({
       session: createTestSession(
-        authenticatedSnapshot({ features: readyFeatures('workspace.personal') }),
+        authenticatedSnapshot({ features: readyFeatures('org.personal') }),
       ),
     })
 
@@ -398,7 +398,7 @@ describe('the tenant frame and the personal tenant', () => {
     await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
     await waitFor(() => expect(selfCalls.length).toBeGreaterThanOrEqual(2))
     expect(
-      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+      await screen.findByRole('button', { name: demoEnUS.organization.personal }),
     ).toBeInTheDocument()
   })
 
@@ -412,7 +412,7 @@ describe('the tenant frame and the personal tenant', () => {
     })
 
     expect(
-      await screen.findByRole('button', { name: demoZhCN.workspace.personal }),
+      await screen.findByRole('button', { name: demoZhCN.organization.personal }),
     ).toBeInTheDocument()
   })
 
@@ -510,7 +510,7 @@ describe('the tenant frame and the personal tenant', () => {
   })
 
   it('ensures the personal tenant for an account whose registration verification is pending', async () => {
-    // Verification limits what the account may do, not whether its workspace
+    // Verification limits what the account may do, not whether its organization
     // exists: the frame asks for the personal tenant and shows the verification
     // notice at the same time.
     const ensureCalls: string[] = []
@@ -565,17 +565,17 @@ describe('the tenant frame and the personal tenant', () => {
       ),
     })
 
-    const failure = await screen.findByText(demoEnUS.workspace.failure.title)
+    const failure = await screen.findByText(demoEnUS.organization.failure.title)
     expect(failure).toBeInTheDocument()
     expect(ensureCalls).toHaveLength(1)
     expect(getCurrentTenantId()).toBeNull()
 
     behavior = 'success'
     fireEvent.click(
-      screen.getByRole('button', { name: demoEnUS.workspace.failure.retry }),
+      screen.getByRole('button', { name: demoEnUS.organization.failure.retry }),
     )
     expect(
-      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+      await screen.findByRole('button', { name: demoEnUS.organization.personal }),
     ).toBeInTheDocument()
     expect(ensureCalls).toHaveLength(2)
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
@@ -598,7 +598,7 @@ describe('the tenant frame and the personal tenant', () => {
     // The two remaining 409s (a disabled personal tenant, an unavailable
     // identifier) do not change on a retry by the client; the tenant area shows
     // its retryable failure rather than inventing a second outcome.
-    const failure = await screen.findByText(demoEnUS.workspace.failure.title)
+    const failure = await screen.findByText(demoEnUS.organization.failure.title)
     expect(failure).toBeInTheDocument()
     expect(ensureCalls).toHaveLength(1)
     expect(getCurrentTenantId()).toBeNull()
@@ -660,7 +660,7 @@ describe('the tenant frame and the personal tenant', () => {
     // real: wait until the answer was decided before judging the page.
     await waitFor(() => expect(ensureCalls).toHaveLength(1))
     await waitFor(() => expect(ensureOutcomes).toEqual(['rejected']))
-    expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
+    expect(screen.queryByText(demoEnUS.organization.failure.title)).toBeNull()
     expect(
       screen.getByRole('heading', {
         level: 1,
@@ -677,7 +677,7 @@ describe('the tenant frame and the personal tenant', () => {
     })
 
     expect(
-      await screen.findByText(demoEnUS.workspace.failure.title),
+      await screen.findByText(demoEnUS.organization.failure.title),
     ).toBeInTheDocument()
   })
 
@@ -690,7 +690,7 @@ describe('the tenant frame and the personal tenant', () => {
     renderDemoApp({ session })
 
     expect(
-      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+      await screen.findByRole('button', { name: demoEnUS.organization.personal }),
     ).toBeInTheDocument()
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
     expect(getCurrentTenantAlias()).toBe(PERSONAL_ID)

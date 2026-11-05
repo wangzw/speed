@@ -180,7 +180,7 @@ export function SignInView({
     }
     const features = session.getSnapshot().features
     const personalServed =
-      features.state === 'ready' && features.names.has('workspace.personal')
+      features.state === 'ready' && features.names.has('org.personal')
     if (personalServed) {
       navigate(TENANT_HOME_PATH)
       return

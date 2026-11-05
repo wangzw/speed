@@ -247,7 +247,7 @@ function tenantMenuItem(page: Page, alias: string): Locator {
 
 /**
  * Move the tenant area to one organization. The employee's account owns a
- * personal workspace, and the host settles that row as the current
+ * personal organization, and the host settles that row as the current
  * organization for an ordinary member, so the trigger's current name is not
  * known up front. The menu's row is disabled when the organization is already
  * current, which is the only case this helper leaves the menu without a click.
@@ -260,7 +260,7 @@ async function switchToTenant(page: Page, tenant: string): Promise<void> {
       page
         .getByRole('banner')
         .getByRole('button', {
-          name: copy('demo', 'workspace.personal'),
+          name: copy('demo', 'organization.personal'),
           exact: true,
         }),
     )
@@ -912,7 +912,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
   await test.step('step 7: the employee switches from the current organization into the tenant', async () => {
     // The journey's start state is the seeded organization the employee
     // already belongs to. An ordinary member's account also owns a personal
-    // workspace, which the host settles first; move to the seeded organization
+    // organization, which the host settles first; move to the seeded organization
     // through the same control this step drives so the switch below starts
     // from it.
     await switchToTenant(page, EXISTING_TENANT)
@@ -1122,7 +1122,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
   await test.step('step 6: the account belongs to the tenant the provider serves', async () => {
     // The switcher lists only the organizations the account is an active
     // member of, so reaching the target tenant there is the membership the
-    // just-in-time login wrote. The account owns a personal workspace as
+    // just-in-time login wrote. The account owns a personal organization as
     // well, which the host may settle first, so the helper moves from
     // whichever row is current.
     await switchToTenant(page, TARGET_TENANT)

@@ -27,7 +27,7 @@ func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	// holds no membership and the answer's empty list is the read's own result.
 	// The default is on; the switch is written out because this case is about
 	// the empty list, not about the default.
-	body := configBody(t, ports, dsn) + "workspace:\n  personal:\n    enabled: false\n"
+	body := configBody(t, ports, dsn) + "org:\n  personal:\n    enabled: false\n"
 	config := writeConfigFile(t, body)
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())

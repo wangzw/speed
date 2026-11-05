@@ -92,7 +92,7 @@ func platformDefaultsDocument() map[string]any {
 				},
 				"account": map[string]any{
 					"listener": "backend",
-					"prefixes": []any{"/api/v1/auth", "/api/v1/features", "/api/v1/workspace"},
+					"prefixes": []any{"/api/v1/auth", "/api/v1/features", "/api/v1/orgs"},
 				},
 				"admin": map[string]any{
 					"listener": "backend",
@@ -286,10 +286,10 @@ func platformDefaultsDocument() map[string]any {
 		},
 
 		// The host's own personal-tenant policy. On in a bare run: every account
-		// gets a personal tenant when it is created. The /workspace prefix is
+		// gets a personal tenant when it is created. The /orgs prefix is
 		// claimed either way, and a deployment that turns the switch off makes
 		// that path answer 404.
-		"workspace": map[string]any{
+		"org": map[string]any{
 			"personal": map[string]any{"enabled": true},
 		},
 

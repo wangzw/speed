@@ -2,7 +2,7 @@
  * The account entry's placement: the skeleton puts it at the bottom of the
  * navigation column, and the header's avatar menu offers the same
  * unconditional entries. The menu carries the notification centre, the four
- * account panes and sign-out -- each with its own glyph; the workspace admin
+ * account panes and sign-out -- each with its own glyph; the organization admin
  * group joins it only while the caller's admission allows it. The navigation
  * column itself holds the home entry alone. The collapsed rail keeps the
  * avatar alone with the account still named, and the menu is fully
@@ -40,19 +40,19 @@ const layoutEn = layoutKitResources['en-US'] as {
   }
 }
 
-/** The workspace entries this suite hands the account entry: the shape the
+/** The organization entries this suite hands the account entry: the shape the
  * tenant frame passes while the caller's admission allows the surface. The
  * fixture carries no `href` so the activation does not make jsdom attempt a
  * navigation it does not implement; the case asserts the dismiss channel. */
-const WORKSPACE_ITEMS: readonly AppShellNavItem[] = [
-  { id: '/workspace/admin/invitations', label: 'Invitations' },
+const ORGANIZATION_ITEMS: readonly AppShellNavItem[] = [
+  { id: '/organization/admin/invitations', label: 'Invitations' },
 ]
 
 /** Renders AccountEntry alone, under the production provider stack and the
  * app services it reads, so a case can supply its drawer close channel. */
 function renderAccountEntry(options: {
   readonly closeDrawer?: () => void
-  readonly workspaceItems?: readonly AppShellNavItem[]
+  readonly organizationItems?: readonly AppShellNavItem[]
 }) {
   const i18n = createSpeedI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
@@ -76,7 +76,7 @@ function renderAccountEntry(options: {
         <RouteProvider table={[]} fallback={() => null}>
           <AccountEntry
             closeDrawer={options.closeDrawer}
-            workspaceItems={options.workspaceItems}
+            organizationItems={options.organizationItems}
           />
         </RouteProvider>
       </AppServicesProvider>
@@ -231,10 +231,10 @@ describe('the account entry in the navigation column', () => {
     expect((narrow.textContent ?? '').trim()).not.toBe('')
   })
 
-  it('closes a temporary drawer when a workspace entry is chosen', async () => {
+  it('closes a temporary drawer when an organization entry is chosen', async () => {
     const user = userEvent.setup()
     const closeDrawer = vi.fn()
-    renderAccountEntry({ closeDrawer, workspaceItems: WORKSPACE_ITEMS })
+    renderAccountEntry({ closeDrawer, organizationItems: ORGANIZATION_ITEMS })
 
     await user.click(await screen.findByTestId('account-entry-trigger'))
     await user.click(

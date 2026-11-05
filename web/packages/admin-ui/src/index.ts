@@ -43,17 +43,17 @@
  * /api/v1/system/sms and /api/v1/system/audit operations reach the pages; see
  * operations.tsx for its members and their generated bindings.
  *
- * The same package also ships the workspace administration surface: the
+ * The same package also ships the organization administration surface: the
  * tenant-scoped half, mounted under a host-chosen prefix (the demo uses
- * /workspace/admin) inside @speed/product-shell. It contributes the
- * `workspaceAdminRoutes` declarations, the frameless
- * `WorkspaceAdminProvider` (current tenant, tenant-scoped operations,
+ * /organization/admin) inside @speed/product-shell. It contributes the
+ * `organizationAdminRoutes` declarations, the frameless
+ * `OrganizationAdminProvider` (current tenant, tenant-scoped operations,
  * session, feature presence, route table, navigation callback, breadcrumb
- * and protected roles), the standalone `WorkspaceAdminBreadcrumbProvider`,
- * the `WorkspaceAdminOperations` bundle, and the thin page wrappers that
+ * and protected roles), the standalone `OrganizationAdminBreadcrumbProvider`,
+ * the `OrganizationAdminOperations` bundle, and the thin page wrappers that
  * hand the current tenant to the shared page components. It renders no
  * frame of its own and imports neither @speed/route-kit,
- * @speed/tenancy-ui nor @speed/product-shell. The workspace surface ships
+ * @speed/tenancy-ui nor @speed/product-shell. The organization surface ships
  * the invitations and membership, SSO, tenant roles and permissions and
  * tenant settings wrappers.
  *
@@ -212,30 +212,30 @@ export {
 } from './InvitationsPage.js'
 export { SsoPage, type SsoPageProps } from './SsoPage.js'
 export { SmsPage } from './SmsPage.js'
-export { workspaceAdminRoutes } from './workspace-routes.js'
+export { organizationAdminRoutes } from './organization-routes.js'
 export {
-  WorkspaceInvitationsPage,
-  WorkspacePermissionsPage,
-  WorkspaceSettingsPage,
-  WorkspaceSsoPage,
-} from './workspace-pages.js'
+  OrganizationInvitationsPage,
+  OrganizationPermissionsPage,
+  OrganizationSettingsPage,
+  OrganizationSsoPage,
+} from './organization-pages.js'
 export {
-  WorkspaceAdminProvider,
-  useWorkspaceAdminContext,
-  useWorkspaceAdminProtectedRoles,
-  useWorkspaceAdminTenant,
-  type WorkspaceAdminContextValue,
-  type WorkspaceAdminProviderProps,
-} from './WorkspaceAdminProvider.js'
+  OrganizationAdminProvider,
+  useOrganizationAdminContext,
+  useOrganizationAdminProtectedRoles,
+  useOrganizationAdminTenant,
+  type OrganizationAdminContextValue,
+  type OrganizationAdminProviderProps,
+} from './OrganizationAdminProvider.js'
 export {
-  WorkspaceAdminBreadcrumbProvider,
-  useWorkspaceAdminBreadcrumbs,
-  type WorkspaceAdminBreadcrumbProviderProps,
-} from './WorkspaceAdminBreadcrumb.js'
+  OrganizationAdminBreadcrumbProvider,
+  useOrganizationAdminBreadcrumbs,
+  type OrganizationAdminBreadcrumbProviderProps,
+} from './OrganizationAdminBreadcrumb.js'
 export {
-  WorkspaceAdminOperationsProvider,
-  useWorkspaceAdminOperations,
-  workspaceAdminOperations,
+  OrganizationAdminOperationsProvider,
+  useOrganizationAdminOperations,
+  organizationAdminOperations,
   type AdminTenantBinding,
   type AdminTenantBindingRef,
   type AdminTenantGrant,
@@ -248,6 +248,6 @@ export {
   type AdminTenantSetting,
   type AdminTenantSettingSource,
   type AdminTenantWriteRoleInput,
-  type WorkspaceAdminOperations,
-  type WorkspaceAdminOperationsProviderProps,
-} from './workspace-operations.js'
+  type OrganizationAdminOperations,
+  type OrganizationAdminOperationsProviderProps,
+} from './organization-operations.js'

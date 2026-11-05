@@ -1,10 +1,10 @@
 /**
- * The tenant administrator's workspace administration surface.
+ * The tenant administrator's organization administration surface.
  *
  * A business tenant's administrator -- a member holding the tenant's governed
- * permissions and no platform permission -- reaches the workspace admin area
+ * permissions and no platform permission -- reaches the organization admin area
  * from the tenant home. This spec drives that surface the way the person
- * does: the account menu's workspace group and the start card, the members and
+ * does: the account menu's organization group and the start card, the members and
  * invitations pages, the invitation handed to a colleague in a second browser
  * context, the tenant roles and grants, the bindings, the tenant settings
  * layer, the tenant switch, the enterprise providers, the `system` tenant and
@@ -21,7 +21,7 @@
  * console's resolved failure copy. Two refusals the document names cannot be
  * reached through a rendered control and are therefore not claimed:
  *
- *  - The platform-domain permission grant (step 9). The workspace grant
+ *  - The platform-domain permission grant (step 9). The organization grant
  *    picker offers only the governed catalog (REQ-tenant-admin-026), so a
  *    platform-domain code cannot be selected. Reaching the refusal would
  *    require the direct HTTP call the honesty gate forbids.
@@ -38,7 +38,7 @@
  *    invitation is revoked.
  *  - REQ-tenant-admin-011/012/014 cover the current tenant's provider list;
  *    the cross-tenant absence is the fixture's single-tenant shape and is not
- *    driven through a second workspace.
+ *    driven through a second organization.
  *  - REQ-tenant-admin-033 (the last-administrator floor) and REQ-tenant-admin-
  *    047 are not claimed: clicking the one existing binding is the self-
  *    unbind refusal (REQ-tenant-admin-046), which the server answers before
@@ -84,15 +84,15 @@ import {
   columnIndex,
   domainsSection,
   escapeRegExp,
-  expectWorkspaceEntryAbsent,
-  expectWorkspaceEntryPresent,
+  expectOrganizationEntryAbsent,
+  expectOrganizationEntryPresent,
   grantsSection,
   homeHeading,
   invitationsSection,
   lookupSection,
   mainNavigation,
   membersSection,
-  openWorkspacePage,
+  openOrganizationPage,
   providerFormSection,
   rolesSection,
   settingsNamespaces,
@@ -100,11 +100,11 @@ import {
   tenantSwitcher,
   verificationBanner,
   verificationSection,
-  workspaceHomeCard,
-  workspacePath,
-} from '../helpers/workspace-admin'
+  organizationHomeCard,
+  organizationPath,
+} from '../helpers/organization-admin'
 
-/** The seeded business tenant the workspace surface acts on. Its id is its alias. */
+/** The seeded business tenant the organization surface acts on. Its id is its alias. */
 const TENANT = 'acme'
 
 /** The non-builtin role the administrator creates. */
@@ -126,8 +126,8 @@ const GOVERNED_PERMISSIONS = [
 /** A platform-domain permission the governed catalog must not offer. */
 const PLATFORM_PERMISSION = 'authn.account.create'
 
-/** The SSO provider the workspace registers. */
-const PROVIDER_NAME = 'Acme Workspace OIDC'
+/** The SSO provider the organization registers. */
+const PROVIDER_NAME = 'Acme Organization OIDC'
 
 /** The printed error the reserved-role and self-binding refusals render. */
 function protectedText(): string {
@@ -257,7 +257,7 @@ const OPERATOR_PHONE = '+15551234567'
 
 /** The reason recorded on the impersonation the branch starts. */
 const IMPERSONATION_REASON =
-  'Support ticket 4712: the workspace admin surface during impersonation.'
+  'Support ticket 4712: the organization admin surface during impersonation.'
 
 /**
  * Sign the operator in with the password and the seeded authenticator factor.
@@ -297,14 +297,14 @@ async function signInOperatorWithTotp(page: Page, accounts: {
   await expect(homeHeading(page)).toBeVisible()
 }
 
-test.describe('the tenant administrator manages the workspace', () => {
+test.describe('the tenant administrator manages the organization', () => {
   test.use({
     seedTenantAdmin: true,
     seedInvitee: true,
     viewport: { width: 1920, height: 1080 },
   })
 
-  test('tenant-admin: the administrator invites, governs and switches the workspace', async ({
+  test('tenant-admin: the administrator invites, governs and switches the organization', async ({
     demo,
     browser,
   }) => {
@@ -330,15 +330,15 @@ test.describe('the tenant administrator manages the workspace', () => {
 
         // REQ-tenant-admin-001 / REQ-tenant-admin-002: a tenant administrator
         // holding no platform permission still sees the account menu's
-        // workspace group -- on both account-menu surfaces -- and the start
+        // organization group -- on both account-menu surfaces -- and the start
         // card, with one real link per openable page. The helper asserts the
-        // group label and every entry and closes each menu, so the caller's
-        // next click lands on the page.
-        await expectWorkspaceEntryPresent(page)
+        // group's accessible name and every entry and closes each menu, so the
+        // caller's next click lands on the page.
+        await expectOrganizationEntryPresent(page)
       })
 
       await test.step('step 2: the card and the entry land on the same first page', async () => {
-        await workspaceHomeCard(page).click()
+        await organizationHomeCard(page).click()
         await expect(
           page.getByRole('heading', {
             level: 1,
@@ -346,14 +346,14 @@ test.describe('the tenant administrator manages the workspace', () => {
             exact: true,
           }),
         ).toBeVisible()
-        expect(new URL(page.url()).pathname).toBe(workspacePath('/invitations'))
+        expect(new URL(page.url()).pathname).toBe(organizationPath('/invitations'))
 
         await mainNavigation(page)
           .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
           .click()
         await expect(homeHeading(page)).toBeVisible()
-        await openWorkspacePage(page, 'invitations')
-        expect(new URL(page.url()).pathname).toBe(workspacePath('/invitations'))
+        await openOrganizationPage(page, 'invitations')
+        expect(new URL(page.url()).pathname).toBe(organizationPath('/invitations'))
       })
 
       await test.step('step 3: the member table lists this tenant with names and status', async () => {
@@ -575,20 +575,20 @@ test.describe('the tenant administrator manages the workspace', () => {
         await expect(tenantSwitcher(invitee, TENANT)).toBeVisible()
       })
 
-      await test.step('step 6: the colleague is an ordinary member and sees no workspace entry', async () => {
+      await test.step('step 6: the colleague is an ordinary member and sees no organization entry', async () => {
         if (inviteePage === undefined) {
           throw new Error('the colleague page was never opened')
         }
         const invitee = inviteePage
 
         // REQ-tenant-admin-001's ordinary-member facet: no permission covers a
-        // workspace page, so neither entry exists.
-        await expectWorkspaceEntryAbsent(invitee)
+        // organization page, so neither entry exists.
+        await expectOrganizationEntryAbsent(invitee)
 
         // REQ-tenant-admin-004: a direct visit to the area root or a subpath
-        // falls back to the tenant home, with no workspace content and no
+        // falls back to the tenant home, with no organization content and no
         // retryable failure page.
-        for (const path of [workspacePath(''), workspacePath('/invitations')]) {
+        for (const path of [organizationPath(''), organizationPath('/invitations')]) {
           await invitee.goto(`${server.url}${path}`)
           await expect(homeHeading(invitee)).toBeVisible({ timeout: 15_000 })
           expect(new URL(invitee.url()).pathname).toBe('/')
@@ -602,7 +602,7 @@ test.describe('the tenant administrator manages the workspace', () => {
           await expect(
             invitee.getByRole('heading', {
               level: 1,
-              name: copy('demo', 'workspace.accessFailed.title'),
+              name: copy('demo', 'organization.accessFailed.title'),
               exact: true,
             }),
           ).toHaveCount(0)
@@ -669,7 +669,7 @@ test.describe('the tenant administrator manages the workspace', () => {
       })
 
       await test.step('step 8: the administrator creates a role and grants a governed permission', async () => {
-        await openWorkspacePage(page, 'roles')
+        await openOrganizationPage(page, 'roles')
         const roles = rolesSection(page)
         const rolesTable = roles.getByRole('table')
 
@@ -1003,7 +1003,7 @@ test.describe('the tenant administrator manages the workspace', () => {
       })
 
       await test.step('step 12: the settings page reports the source layer and a tenant write lands', async () => {
-        await openWorkspacePage(page, 'settings')
+        await openOrganizationPage(page, 'settings')
 
         // REQ-tenant-admin-016: the source column is rendered, and the
         // platform-only namespaces are not offered at all.
@@ -1077,24 +1077,24 @@ test.describe('the tenant administrator manages the workspace', () => {
       })
 
       await test.step('step 13: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
-        const personal = copy('demo', 'workspace.personal')
+        const personal = copy('demo', 'organization.personal')
 
         // REQ-tenant-admin-003/006: the switch retracts the entry, the account
-        // menu's workspace group and the card at once.
+        // menu's organization group and the card at once.
         await switchTenant(page, TENANT, personal)
         await expect(homeHeading(page)).toBeVisible()
-        await expectWorkspaceEntryAbsent(page)
+        await expectOrganizationEntryAbsent(page)
 
         // A direct visit while the personal tenant is current: history
         // navigation leaves the module's current tenant in place, so the
-        // workspace URL is reached with the personal tenant still current.
+        // organization URL is reached with the personal tenant still current.
         // The full-document load a fresh address would perform re-settles the
         // account's non-personal membership, so it cannot exercise this
         // branch; the history visit reaches the same guard.
         await page.goBack()
         await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
         expect(new URL(page.url()).pathname).toBe('/')
-        await expectWorkspaceEntryAbsent(page)
+        await expectOrganizationEntryAbsent(page)
         await expect(
           page.getByRole('heading', {
             level: 1,
@@ -1107,7 +1107,7 @@ test.describe('the tenant administrator manages the workspace', () => {
         // settles.
         await switchTenant(page, personal, TENANT)
         await expect(homeHeading(page)).toBeVisible()
-        await expectWorkspaceEntryPresent(page)
+        await expectOrganizationEntryPresent(page)
       })
     } finally {
       // The colleague's context holds its own cookie session; closing it keeps
@@ -1118,14 +1118,14 @@ test.describe('the tenant administrator manages the workspace', () => {
   })
 })
 
-test.describe('the workspace SSO page', () => {
+test.describe('the organization SSO page', () => {
   test.use({
     seedTenantAdmin: true,
     enterpriseSSO: true,
     viewport: { width: 1920, height: 1080 },
   })
 
-  test('tenant-admin: the workspace registers, verifies, disables and removes an SSO provider', async ({
+  test('tenant-admin: the organization registers, verifies, disables and removes an SSO provider', async ({
     demo,
   }) => {
     // The branch signs in and out several times to observe discovery after
@@ -1338,9 +1338,9 @@ test.describe('the workspace SSO page', () => {
       await expect(homeHeading(page)).toBeVisible()
     }
 
-    await test.step('step 1: the workspace SSO page starts empty for this tenant', async () => {
+    await test.step('step 1: the organization SSO page starts empty for this tenant', async () => {
       await signInAdmin()
-      await openWorkspacePage(page, 'sso')
+      await openOrganizationPage(page, 'sso')
       // REQ-tenant-admin-011: the list is the current tenant's and is empty.
       await expect(
         page.getByRole('heading', {
@@ -1455,14 +1455,14 @@ test.describe('the workspace SSO page', () => {
 
     await test.step('step 5: re-enabling restores discovery', async () => {
       await signInAdmin()
-      await openWorkspacePage(page, 'sso')
+      await openOrganizationPage(page, 'sso')
       await setProviderEnabled(true)
       await discover(true)
     })
 
     await test.step('step 6: deleting the provider removes it and its domain from discovery', async () => {
       await signInAdmin()
-      await openWorkspacePage(page, 'sso')
+      await openOrganizationPage(page, 'sso')
       await page
         .getByRole('table')
         .locator('tbody tr')
@@ -1519,12 +1519,12 @@ test.describe('the system tenant is not manageable', () => {
 
     // REQ-tenant-admin-006: the system tenant offers neither the entry nor the
     // card.
-    await expectWorkspaceEntryAbsent(page)
+    await expectOrganizationEntryAbsent(page)
 
     for (const path of [
-      workspacePath(''),
-      workspacePath('/invitations'),
-      workspacePath('/settings'),
+      organizationPath(''),
+      organizationPath('/invitations'),
+      organizationPath('/settings'),
     ]) {
       await page.goto(`${server.url}${path}`)
       await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
@@ -1536,19 +1536,19 @@ test.describe('the system tenant is not manageable', () => {
           exact: true,
         }),
       ).toHaveCount(0)
-      await expectWorkspaceEntryAbsent(page)
+      await expectOrganizationEntryAbsent(page)
     }
   })
 })
 
-test.describe('an impersonated session hides the workspace', () => {
+test.describe('an impersonated session hides the organization', () => {
   test.use({
     seedTenantAdmin: true,
     seedImpersonation: true,
     viewport: { width: 1920, height: 1080 },
   })
 
-  test('tenant-admin: impersonating the administrator renders no workspace surface', async ({
+  test('tenant-admin: impersonating the administrator renders no organization surface', async ({
     demo,
   }) => {
     test.setTimeout(300_000)
@@ -1656,13 +1656,13 @@ test.describe('an impersonated session hides the workspace', () => {
     await test.step('step 1: the entry and card are withheld while impersonating', async () => {
       // REQ-tenant-admin-042: the impersonated session is the target account,
       // but the surface is withheld regardless of its permissions.
-      await expectWorkspaceEntryAbsent(page)
+      await expectOrganizationEntryAbsent(page)
     })
 
     await test.step('step 2: a direct visit comes back to the tenant home', async () => {
       for (const path of [
-        workspacePath('/invitations'),
-        workspacePath('/settings'),
+        organizationPath('/invitations'),
+        organizationPath('/settings'),
       ]) {
         await page.goto(`${server.url}${path}`)
         await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
@@ -1711,9 +1711,9 @@ test.describe('an unproved email is refused until it is proved', () => {
     })
     await expect(homeHeading(page)).toBeVisible()
     // The unproved address does not block admission; the entry still appears.
-    await expectWorkspaceEntryPresent(page)
+    await expectOrganizationEntryPresent(page)
 
-    await openWorkspacePage(page, 'roles')
+    await openOrganizationPage(page, 'roles')
 
     const createRole = async (): Promise<void> => {
       const roles = rolesSection(page)
@@ -1730,7 +1730,7 @@ test.describe('an unproved email is refused until it is proved', () => {
         .click()
     }
 
-    await test.step('step 1: the workspace write is refused with the contact-required text', async () => {
+    await test.step('step 1: the organization write is refused with the contact-required text', async () => {
       // REQ-tenant-admin-043/050: the write is refused before it lands and the
       // page says to prove the address first.
       await createRole()
@@ -1800,7 +1800,7 @@ test.describe('an unproved email is refused until it is proved', () => {
         .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
         .click()
       await expect(homeHeading(page)).toBeVisible()
-      await openWorkspacePage(page, 'roles')
+      await openOrganizationPage(page, 'roles')
 
       await createRole()
       await expect(

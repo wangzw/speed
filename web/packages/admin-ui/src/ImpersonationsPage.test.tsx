@@ -1591,7 +1591,7 @@ describe('ImpersonationsPage', () => {
 
   it('renders the impersonation-restricted refusal without naming one cause', async () => {
     // The code answers several refusals -- the common one is a target that
-    // is not a member of the tenant -- so the text states the requirements
+    // is not a member of the organization -- so the text states the requirements
     // side by side instead of naming the rarest cause.
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
@@ -1652,14 +1652,14 @@ describe('ImpersonationsPage', () => {
     })
 
     await screen.findByText('You are not impersonating any account.')
-    await user.click(screen.getByLabelText('Tenant'))
+    await user.click(screen.getByLabelText('Organization'))
     await user.click(await screen.findByRole('option', { name: 'Acme' }))
     await user.type(screen.getByLabelText('Target account'), 'acc-9')
     await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
 
     const alert = await screen.findByRole('alert')
     const rendered = alert.textContent ?? ''
-    expect(rendered).toContain('member of the tenant')
+    expect(rendered).toContain('member of the organization')
     expect(rendered).toContain('enabled')
     expect(rendered).toContain('unprotected')
     expect(rendered).toContain('not be impersonating another account')

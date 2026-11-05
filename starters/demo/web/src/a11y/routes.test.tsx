@@ -149,7 +149,7 @@ async function scanRoute(
   const unscripted: string[] = []
   bindRequestFn(createBackend(mode, (url) => unscripted.push(url)))
   window.history.replaceState({}, '', path)
-  // The permission attach is part of the production assembly: the workspace
+  // The permission attach is part of the production assembly: the organization
   // admin pages admit only against the tenant-tagged set it publishes, so the
   // sweep mounts it the way a real page load does.
   const session = staffSession()
@@ -179,13 +179,13 @@ async function scanRoute(
     // The route's own error copy must be on screen before the scan. A page
     // reaches its error state asynchronously: settle() can return on a wait
     // view that is momentarily stable while a later read is still failing
-    // (the workspace surface's admission reads settle in a later batch).
+    // (the organization surface's admission reads settle in a later batch).
     // Wait for the copy itself, then settle again so the scan reads the
     // stable failure rather than a tree still being replaced.
     await screen.findByText(errorPlaceholder)
     await settle()
   } else {
-    // A workspace route in its data or empty state must render its own page
+    // A organization route in its data or empty state must render its own page
     // title. Without this, a silent redirect to the tenant home would scan a
     // clean home page and pass the sweep while the route itself never
     // rendered.
@@ -242,7 +242,7 @@ beforeEach(() => {
   // The host's cells are module-level and survive a case: clear the caller
   // tenant rows and re-record the scan tenant's kind before every route, so a
   // route's state does not depend on which mode or route ran before it. The
-  // workspace admission reads that recorded kind, and the empty backend's
+  // organization admission reads that recorded kind, and the empty backend's
   // caller-tenant answer lists no rows.
   clearSelfTenants()
   setCurrentTenantId(SCAN_TENANT_ID)

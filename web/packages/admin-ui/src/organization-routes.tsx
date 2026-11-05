@@ -1,15 +1,15 @@
 /**
- * The workspace administration surface's page declarations.
+ * The organization administration surface's page declarations.
  *
- * Paths are relative to the workspace admin root the host mounts them
- * under (`/workspace/admin` in the demo). Each declaration carries a stable
+ * Paths are relative to the organization admin root the host mounts them
+ * under (`/organization/admin` in the demo). Each declaration carries a stable
  * `id`, a translated navigation label, the tenant-domain permission code
  * the page's data is held to, and the tenant-scoped features it needs. The
  * permission code and the feature list are data the host reads: this
  * package never decides on either, and the host narrows the table with
  * route-kit's `presentDeclarations` before handing it back here.
  *
- * The declarations never name `tenant.admin`: the workspace surface reads
+ * The declarations never name `tenant.admin`: the organization surface reads
  * no roster and holds no tenant selector. The tenant is the host's current
  * tenant, written into every request path by the page wrappers.
  *
@@ -31,46 +31,46 @@ import {
   SsoIcon,
 } from './internal/icons.js'
 import {
-  WorkspaceInvitationsPage,
-  WorkspacePermissionsPage,
-  WorkspaceSettingsPage,
-  WorkspaceSsoPage,
-} from './workspace-pages.js'
+  OrganizationInvitationsPage,
+  OrganizationPermissionsPage,
+  OrganizationSettingsPage,
+  OrganizationSsoPage,
+} from './organization-pages.js'
 
-/** The workspace surface's page declarations, in navigation order. */
-export const workspaceAdminRoutes: AdminRouteTable = [
+/** The organization surface's page declarations, in navigation order. */
+export const organizationAdminRoutes: AdminRouteTable = [
   {
-    id: 'workspace-invitations',
+    id: 'organization-invitations',
     path: '/invitations',
-    view: () => <WorkspaceInvitationsPage />,
-    label: <AdminNavLabel labelKey="workspace.nav.invitations" />,
+    view: () => <OrganizationInvitationsPage />,
+    label: <AdminNavLabel labelKey="organization.nav.invitations" />,
     icon: <InvitationsIcon />,
     permission: 'authn.membership.manage',
     requires: ['authn.admin', 'authn.invitations'],
   },
   {
-    id: 'workspace-sso',
+    id: 'organization-sso',
     path: '/sso',
-    view: () => <WorkspaceSsoPage />,
-    label: <AdminNavLabel labelKey="workspace.nav.sso" />,
+    view: () => <OrganizationSsoPage />,
+    label: <AdminNavLabel labelKey="organization.nav.sso" />,
     icon: <SsoIcon />,
     permission: 'authn.idp.manage',
     requires: ['authn.admin', 'authn.admin.sso'],
   },
   {
-    id: 'workspace-roles',
+    id: 'organization-roles',
     path: '/roles',
-    view: () => <WorkspacePermissionsPage />,
-    label: <AdminNavLabel labelKey="workspace.nav.roles" />,
+    view: () => <OrganizationPermissionsPage />,
+    label: <AdminNavLabel labelKey="organization.nav.roles" />,
     icon: <PermissionsIcon />,
     permission: 'authz.tenant.role.read',
     requires: ['authz.tenantadmin', 'authn.admin'],
   },
   {
-    id: 'workspace-settings',
+    id: 'organization-settings',
     path: '/settings',
-    view: () => <WorkspaceSettingsPage />,
-    label: <AdminNavLabel labelKey="workspace.nav.settings" />,
+    view: () => <OrganizationSettingsPage />,
+    label: <AdminNavLabel labelKey="organization.nav.settings" />,
     icon: <SettingsIcon />,
     permission: 'settings.tenant.read',
     requires: ['settings.tenantadmin'],

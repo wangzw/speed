@@ -27,7 +27,7 @@
 
 - **验收**：匿名读取发现面，首登开户或口令注册任一开放时「开放注册」为真，两者都关闭时为假。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-032
 
@@ -35,7 +35,7 @@
 
 - **验收**：口令注册开关开放时「开放口令注册」为真，关闭时为假，且与「开放注册」的取值在同一应答中分别可见。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-002
 
@@ -43,7 +43,7 @@
 
 - **验收**：按 REQ-signin-005 的验收判定。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-003
 
@@ -51,7 +51,7 @@
 
 - **验收**：口令注册开放时，注册模式同时呈现口令注册表单与各可开户的登录方式；口令注册关闭时，注册模式不呈现口令注册表单。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-004
 
@@ -59,7 +59,7 @@
 
 - **验收**：分别缺用户名、缺邮箱、缺口令的提交各被拒绝，且没有账户产生；三者齐备、且用户名满足 REQ-signup-045 与 REQ-signup-046 的提交建号。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-045
 
@@ -83,7 +83,7 @@
 
 - **验收**：只提交用户名、邮箱与口令的注册成功；额外提交显示名、语言与时区的注册成功，读回的资料与偏好为提交的值。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-005
 
@@ -91,7 +91,7 @@
 
 - **验收**：注册成功后该账户存在且处于启用状态，可以用用户名与口令走登录流程并登录。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-034
 
@@ -99,7 +99,7 @@
 
 - **验收**：注册成功后立即读取会话得到匿名，任何租户资源均不可达；此后以同一份凭据完成一次口令登录才会话建立。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-006
 
@@ -107,7 +107,7 @@
 
 - **验收**：在装配了可观察替身邮件通道的部署上完成一次注册，该替身收到的消息数为零；实现改为发信时该判据失败。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-007
 
@@ -115,7 +115,7 @@
 
 - **验收**：注册刚完成时以该邮箱作口令登录名登录失败；另一账户以同一地址注册得到邮箱占用冲突；本人完成验证并把它选作登录方式后才可作为口令登录名。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-008
 
@@ -123,7 +123,7 @@
 
 - **验收**：用一个已存在账户的用户名注册，得到用户名占用冲突；该用户名仍属于原账户，没有新账户产生。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-009
 
@@ -131,7 +131,7 @@
 
 - **验收**：用一个已被其他账户持有、或正由其他账户待证明的邮箱注册，得到邮箱占用冲突；该次提交使用的用户名随后可以被另一次注册使用，且没有新账户产生。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-010
 
@@ -139,7 +139,7 @@
 
 - **验收**：注册成功且凭据可用时会话建立，进入登录态。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-035
 
@@ -147,7 +147,7 @@
 
 - **验收**：令自动登录被拒，界面停在登录表单，用户名已预填为本次注册所用值。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-036
 
@@ -155,7 +155,7 @@
 
 - **验收**：退回登录表单后，本次提交只产生一次注册请求，账户仍然只有一份。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-011
 
@@ -163,7 +163,7 @@
 
 - **验收**：口令注册开关为关闭时提交注册得到「注册已关闭」拒绝；随后不存在该用户名对应的账户。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-012
 
@@ -339,7 +339,7 @@
 
 - **验收**：注册完成后的落点是账户页的邮箱验证节，而不是账户页的其它节或站内首页。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-038
 
@@ -347,7 +347,7 @@
 
 - **验收**：落点出现时目标邮箱收到一条验证码；停留在该页不触发第二次发送，重发需手动触发。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-039
 
@@ -361,7 +361,7 @@
 
 短信首登开户成功后，系统必须按部署是否启用个人租户特性决定落点：启用时落在租户区首页，未启用时落在账户页；从邀请链接发起的短信首登开户不得导航离开该链接的接受页，账户建立后停留在该页。
 
-- **验收**：启用个人租户的装配下，经短信首登完成开户后页面落在租户区首页，个人空间是当前组织；未启用个人租户的装配下，落在账户页；从邀请链接发起的短信首登开户完成后仍停留在该邀请的接受页，不发生导航。
+- **验收**：启用个人租户的装配下，经短信首登完成开户后页面落在租户区首页，当前组织是个人组织；未启用个人租户的装配下，落在账户页；从邀请链接发起的短信首登开户完成后仍停留在该邀请的接受页，不发生导航。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（启用个人租户的短信开户）；`starters/demo/web/src/pages/sign-in-view.test.tsx` `lands a registration completed through SMS on the account profile page`（未启用个人租户的短信开户）、`lands a registration in the tenant area when the personal tenant is in force`（启用个人租户的短信开户）；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` `returns an SMS registration made on the invitation URL to its accept page`（从邀请链接发起的短信开户不导航）
 
@@ -379,7 +379,7 @@
 
 - **验收**：在启用个人租户的部署中，没有任何成员关系的账户得到一个个人租户，并持有其非内建 `tenant-admin` 角色；邮箱是否已证明不影响这一结果。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-040
 
@@ -387,7 +387,7 @@
 
 - **验收**：一个已是某一租户成员的账户请求个人租户时，没有新的租户产生，其成员关系不变。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-031
 

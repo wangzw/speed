@@ -519,9 +519,9 @@ describe('the sign-in surface', () => {
     // page happened to stay where it was.
     window.history.replaceState({}, '', ACCOUNT_PATH)
     const harness = makeHarness({
-      // The deployment serves workspace.personal: the register mode's
+      // The deployment serves org.personal: the register mode's
       // landing is the tenant home rather than the account page.
-      [FEATURES_GET]: () => ({ features: ['workspace.personal'] }),
+      [FEATURES_GET]: () => ({ features: ['org.personal'] }),
       [LOGIN_METHODS]: () =>
         methodList(
           [{ name: 'sms', kind: 'form', opens_account: true }],
@@ -643,7 +643,7 @@ describe('the sign-in surface', () => {
     window.history.replaceState({}, '', '/admin')
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
-        features: ['tenant.admin', 'workspace.personal'],
+        features: ['tenant.admin', 'org.personal'],
       }),
       [LOGIN_METHODS]: () =>
         methodList(

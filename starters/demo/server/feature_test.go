@@ -32,8 +32,9 @@ import (
 // answer belongs to a served module, and at least one conditional name of a
 // served module is absent (which fails an implementation that posts every
 // conditional unconditionally). The named anchor below is not a census but a
-// property: authn.admin.sso.metadata is declared by a served module whose
-// conditional no assembly member posts (no SAML provider here).
+// property: authn.admin.sso and authn.admin.sso.metadata are declared by a
+// served module whose conditional this baseline does not post (the SSO
+// management group is off by configuration and no SAML provider exists here).
 //
 // The stack is named sqlite-memory and the configuration gives it a database in
 // a file: seed and serve are two processes, and only a file survives the first
@@ -135,10 +136,11 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 			"the board appears to post conditionals without checking the assembly")
 	}
 
-	// An anchor, not a census: authn.admin.sso.metadata has no assembly member
-	// that posts its conditional (no SAML provider here). A name taken from the
-	// available set would report it.
-	for _, absent := range []string{"authn.admin.sso.metadata"} {
+	// An anchor, not a census: authn.admin.sso is off in the baseline
+	// configuration (no authn.admin.sso.enabled), so its group and the metadata
+	// refresh inside it are never posted. A name taken from the available set
+	// would report both.
+	for _, absent := range []string{"authn.admin.sso", "authn.admin.sso.metadata"} {
 		if answered[absent] {
 			t.Errorf("the feature document carries %q, which this process does not serve: "+
 				"an answer taken from the available set, or a conditional feature posted "+
@@ -336,8 +338,8 @@ func TestCommittedFeatureVocabulary(t *testing.T) {
 	for _, entry := range committed.Features {
 		owners[entry.Name] = entry.Owner
 	}
-	if got := owners["workspace.personal"]; got != ownerApplication {
-		t.Errorf("workspace.personal is owned by %q, want %q: the host's own module must not "+
+	if got := owners["org.personal"]; got != ownerApplication {
+		t.Errorf("org.personal is owned by %q, want %q: the host's own module must not "+
 			"enter the platform package", got, ownerApplication)
 	}
 	if got := owners["tenant.admin"]; got != ownerPlatform {

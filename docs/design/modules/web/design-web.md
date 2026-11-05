@@ -19,7 +19,7 @@
 
 **按层。** `tokens` 与 `theme-presets` 处于底层，`i18n` 同层独立，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开接口——`theme-presets` 只以类型依赖取 `tokens`，`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
 
-**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户接口、`admin-ui` 对平台与工作区两个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个接口。判据是每个能力 UI 包都是某个后端能力在浏览器里的界面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
+**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户接口、`admin-ui` 对平台与组织两个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个接口。判据是每个能力 UI 包都是某个后端能力在浏览器里的界面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
 **按契约边界。** `api-sdk` 是唯一与后端耦合的包，且是从后端契约生成的产物：orval（[REF-orval](../../../references.md)）从 `contracts/api.json` 生成操作接口，特性名生成器从 `contracts/features.json` 生成特性名类型（[api-sdk](design-web-api-sdk.md)）；`api-client` 是契约无关的手写传输运行时。判据是包与后端契约的耦合程度。证据是 `web/packages/api-sdk/src/runtime.ts` 的包文档（生成的代码保持与 fetch、axios、tenant 无关，[REF-axios](../../../references.md)）与 `web/orval.config.ts` 的 mutator 指向（生成的代码经该接口转发给宿主绑定的请求函数）。
 
@@ -94,15 +94,15 @@ interface SpeedAppDefinition {
 |---|---|---|---|---|---|
 | 平台资产 | 平台管理面 | 名册、账户、会话、冒充记录、权限、设置、短信、审计 | 平台侧外壳 `AdminShell` | 平台域 | `/api/v1/system/...` |
 | 平台管理面的按租户寻址页 | 平台管理面 | 邀请与成员、SSO 提供方 | 平台侧外壳 `AdminShell` | 那个租户的域；持 `platform-admin` 本身不放行，调用方须在该租户另有绑定 | `/api/v1/tenants/{tenant}/...` |
-| 工作区管理面 | 工作区管理面 | 邀请与成员、SSO 提供方、租户层设置、角色与权限 | 租户侧 [product-shell](design-web-product-shell.md) 的 `AppShell` 内容区 | 当前租户的域 | `/api/v1/tenants/{tenant}/...` |
+| 组织管理面 | 组织管理面 | 邀请与成员、SSO 提供方、租户层设置、角色与权限 | 租户侧 [product-shell](design-web-product-shell.md) 的 `AppShell` 内容区 | 当前租户的域 | `/api/v1/tenants/{tenant}/...` |
 
-**三类端点的判定域各自成立。** 平台资产在平台域判定。平台管理面的邀请与成员、SSO 两页按租户寻址，在那个租户的域判定：调用方要在该租户持有 `tenant-admin` 或相应权限，`platform-admin` 本身不放行。工作区管理面在当前租户的域判定，平台域权限本身不放行。平台管理面不持**当前租户**，其按租户寻址页持的是请求的实参（租户选择器）；工作区管理面把宿主给出的当前租户写进每条请求的路径。
+**三类端点的判定域各自成立。** 平台资产在平台域判定。平台管理面的邀请与成员、SSO 两页按租户寻址，在那个租户的域判定：调用方要在该租户持有 `tenant-admin` 或相应权限，`platform-admin` 本身不放行。组织管理面在当前租户的域判定，平台域权限本身不放行。平台管理面不持**当前租户**，其按租户寻址页持的是请求的实参（租户选择器）；组织管理面把宿主给出的当前租户写进每条请求的路径。
 
-**两个管理面共用一套页面组件，按租户模式分支。** 平台管理面渲染平台侧外壳；工作区管理面把同一组页面按租户模式组合，由 `WorkspaceAdminProvider` 只装上下文、不渲染外壳。租户模式换掉的是数据来源与选择器——成员身份取自租户成员、设置只读写租户层、权限目录取受治理集合、账户选择器换成员选择器——不是页面布局。
+**两个管理面共用一套页面组件，按租户模式分支。** 平台管理面渲染平台侧外壳；组织管理面把同一组页面按租户模式组合，由 `OrganizationAdminProvider` 只装上下文、不渲染外壳。租户模式换掉的是数据来源与选择器——成员身份取自租户成员、设置只读写租户层、权限目录取受治理集合、账户选择器换成员选择器——不是页面布局。
 
-**入口由宿主派生。** 平台管理面的入口（页头动作里的入口与首页卡片）只在平台权限集持有声明的权限码、且收窄后的平台声明非空时出现，冒充期间不出现。工作区管理面的入口（账户菜单里的工作区分组与首页卡片）在会话不冒充、当前租户既不是系统租户也不是个人租户、收窄后的工作区声明非空、调用方持有其中一条权限码时出现；判据见 [admin-ui](design-web-admin-ui.md) 的「入口的派生」。
+**入口由宿主派生。** 平台管理面的入口（页头动作里的入口与首页卡片）只在平台权限集持有声明的权限码、且收窄后的平台声明非空时出现，冒充期间不出现。组织管理面的入口（账户菜单里的组织分组与首页卡片）在会话不冒充、当前租户既不是系统租户也不是个人租户、收窄后的组织声明非空、调用方持有其中一条权限码时出现；判据见 [admin-ui](design-web-admin-ui.md) 的「入口的派生」。
 
-**两个管理面不互相承载。** 平台管理面的页面不渲染在租户侧壳里，工作区管理面的页面不渲染平台侧壳。`AdminProvider` 仍是平台员工的接口，`WorkspaceAdminProvider` 是租户侧的接口；`admin-ui` 不 import `route-kit`、`tenancy-ui` 与 `product-shell`，宿主分别把它们接上。
+**两个管理面不互相承载。** 平台管理面的页面不渲染在租户侧壳里，组织管理面的页面不渲染平台侧壳。`AdminProvider` 仍是平台员工的接口，`OrganizationAdminProvider` 是租户侧的接口；`admin-ui` 不 import `route-kit`、`tenancy-ui` 与 `product-shell`，宿主分别把它们接上。
 
 ### 新增三件的契约
 
@@ -154,7 +154,7 @@ interface SpeedAppDefinition {
 | `tenancy-ui` | 租户切换控件 | `ui-kit`、`i18n` |
 | `product-shell` | 组装壳与装配入口 | `layout-kit`、`auth-ui`、`auth-core`、`i18n`（主出口的直接依赖；`./bootstrap` 出口另直接取 `api-client`、`api-sdk`、`ui-kit`） |
 | `route-kit` | 路由与导航独立层、声明式注册接口、按特性在场收窄注册范围 | 无 |
-| `admin-ui` | 平台侧与租户侧两个管理面：平台管理面的第二种壳，工作区管理面在租户侧壳里只装上下文 | `ui-kit`、`layout-kit`、`i18n`、`auth-core`、`api-sdk` |
+| `admin-ui` | 平台侧与租户侧两个管理面：平台管理面的第二种壳，组织管理面在租户侧壳里只装上下文 | `ui-kit`、`layout-kit`、`i18n`、`auth-core`、`api-sdk` |
 | `notification-ui` | 站内通知界面：未读铃铛、收件箱与已读、偏好矩阵、实时订阅与声明式入口 | `ui-kit`、`i18n`、`auth-core`、`api-sdk`、`api-client` |
 
 **`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自只在内部保有 provider 标签回退词表，不共享类型。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
@@ -274,7 +274,7 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 
 **新增一个业务页面。** 业务模块导出它的路由声明，经声明式注册接口接入（见核心算法与流程）；不动壳。页面依赖的后端接口不属于「不经特性门控的后端模块」时，声明以 `requires` 列出所需特性。
 
-**新增一个管理后台。** 平台管理面的平台资产挂在 `/api/v1/system` 下、在平台域判定；按租户寻址的邀请与成员、SSO 页挂在 `/api/v1/tenants/{tenant}` 下、在那个租户的域判定。它是第二种壳：没有租户切换器，也就没有租户作用域的查询键；按租户寻址页持的租户选择器是请求的实参。工作区管理面挂在租户侧壳里，读宿主给出的当前租户、不另造外壳。两者都复用声明式注册接口，用各自的壳或上下文。
+**新增一个管理后台。** 平台管理面的平台资产挂在 `/api/v1/system` 下、在平台域判定；按租户寻址的邀请与成员、SSO 页挂在 `/api/v1/tenants/{tenant}` 下、在那个租户的域判定。它是第二种壳：没有租户切换器，也就没有租户作用域的查询键；按租户寻址页持的租户选择器是请求的实参。组织管理面挂在租户侧壳里，读宿主给出的当前租户、不另造外壳。两者都复用声明式注册接口，用各自的壳或上下文。
 
 **新增一个应用。** 应用在自己的 `main` 模块里写一份 `SpeedAppDefinition` 交给装配入口，并跑应用自己的第二级契约生成。
 
@@ -298,7 +298,7 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |
 | 平台管理面组件族 | 已实现 | `web/packages/admin-ui/src/index.ts` `AdminShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
-| 工作区管理面组件族 | 部分实现 | `web/packages/admin-ui/src/WorkspaceAdminProvider.tsx`、`WorkspaceAdminBreadcrumb.tsx`、`workspace-routes.tsx`、`workspace-operations.tsx`、`workspace-pages.tsx`；`starters/demo/web/src/workspace-admin.ts` |
+| 组织管理面组件族 | 部分实现 | `web/packages/admin-ui/src/OrganizationAdminProvider.tsx`、`OrganizationAdminBreadcrumb.tsx`、`organization-routes.tsx`、`organization-operations.tsx`、`organization-pages.tsx`；`starters/demo/web/src/organization-admin.ts` |
 | 站内通知界面组件族 | 已实现 | `web/packages/notification-ui/src/index.ts` `NotificationBell`、`NotificationInbox`、`NotificationPreferences`、`NotificationCenter`、`NotificationStreamProvider`、`notificationRoutes` |
 | 声明式注册接口 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/admin-ui/src/route.ts` `AdminRoute` |
 | 租户作用域的查询键工厂与逐出辅助函数 | 已实现 | `web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |

@@ -7,7 +7,7 @@
  * failed one keeps the rows already on hand and marks the list unsettled so a
  * failure is never read as an empty answer, and an identity change or a
  * sign-out clears it. The switcher renders every row of that list, labels a row
- * whose `kind` is `personal` with the personal-workspace copy, and leaves the
+ * whose `kind` is `personal` with the personal-organization copy, and leaves the
  * current row unselectable. Another account's personal tenant comes back as
  * `business`, so it renders its alias.
  */
@@ -276,10 +276,10 @@ describe('the tenant switcher over the self list', () => {
     const items = await screen.findAllByRole('menuitem')
 
     // Every tenant the account holds a membership in is offered. The row the
-    // read answers as personal carries the personal-workspace copy; another
+    // read answers as personal carries the personal-organization copy; another
     // account's personal tenant came back as business, so it keeps its alias.
     expect(items.map((item) => item.textContent)).toEqual([
-      demoEnUS.workspace.personal,
+      demoEnUS.organization.personal,
       'other-space',
       'acme',
     ])

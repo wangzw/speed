@@ -14,7 +14,7 @@
  * On the platform surface the inviter and the member account render through
  * the shared account identity unit: the readable display name where the
  * account read answers, the recorded identifier with an unresolved note
- * where it is refused. On the workspace surface (`tenantMode`) both resolve
+ * where it is refused. On the organization surface (`tenantMode`) both resolve
  * from the tenant's own member read instead -- the inviter through the
  * member row carrying that account, the member through its own row's
  * `display_name` -- so the page issues no platform account read, and the
@@ -87,7 +87,7 @@ import {
   useAccountIdentity,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
-import { useWorkspaceAdminBreadcrumbs } from './WorkspaceAdminBreadcrumb.js'
+import { useOrganizationAdminBreadcrumbs } from './OrganizationAdminBreadcrumb.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -185,7 +185,7 @@ export interface InvitationsPageProps {
   /** Reports each re-selection made through the page's own selector. */
   readonly onTenantChange?: (tenant: string) => void
   /**
-   * Tenant mode: the workspace surface's configuration of the same page.
+   * Tenant mode: the organization surface's configuration of the same page.
    * The member write form is not rendered -- its account field searches the
    * platform account roster -- and the inviter and member identities resolve
    * from the tenant's own member read (`display_name`) instead of the
@@ -206,7 +206,7 @@ export function InvitationsPage({
   const session = useAdminSession()
   const invitationLink = useAdminInvitationLink()
   const hasFeature = useAdminHasFeature()
-  const workspaceBreadcrumbs = useWorkspaceAdminBreadcrumbs()
+  const organizationBreadcrumbs = useOrganizationAdminBreadcrumbs()
   // The member table's exemption column, toggle and the write form's
   // checkbox exist only where the SSO surface does.
   const ssoExemption = hasFeature('authn.admin.sso')
@@ -260,7 +260,7 @@ export function InvitationsPage({
   // page has read. An account the read has not settled on, was refused, or
   // does not carry is unresolved -- rendered by its recorded identifier with
   // the unresolved note -- rather than looked up through the platform account
-  // read whose access the workspace surface does not have. Names accumulate
+  // read whose access the organization surface does not have. Names accumulate
   // across the member pages the operator visits, so an inviter resolved on an
   // earlier page stays named after paging past it.
   const [memberNamesByTenant, setMemberNamesByTenant] = useState<
@@ -623,7 +623,7 @@ export function InvitationsPage({
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       // The account column is the membership record's own account identifier,
       // which is the fact the display name column beside it does not carry.
-      // The workspace surface has no platform account read, so tenant mode
+      // The organization surface has no platform account read, so tenant mode
       // renders the recorded identifier; the platform surface resolves the
       // identity it records through the account read.
       cell: (member) =>
@@ -738,7 +738,7 @@ export function InvitationsPage({
       <PageHeader
         title={t('invitations.title')}
         breadcrumbs={
-          workspaceBreadcrumbs ?? [
+          organizationBreadcrumbs ?? [
             { label: t('shell.title') },
             { label: t('invitations.title') },
           ]
@@ -973,7 +973,7 @@ interface MemberRowActionsProps {
   readonly pending: boolean
   /** Whether the SSO surface is present, so the toggle exists. */
   readonly ssoExemption: boolean
-  /** Whether the row is on the workspace surface, which resolves the
+  /** Whether the row is on the organization surface, which resolves the
    * identity from the member read rather than the platform account read. */
   readonly tenantMode: boolean
   readonly onRemove: (
@@ -989,7 +989,7 @@ interface MemberRowActionsProps {
 /**
  * The member row's own actions. A landed write names the account the way the
  * row shows it: the platform surface reads the identity through the account
- * read the row's cell renders, and the workspace surface uses the member
+ * read the row's cell renders, and the organization surface uses the member
  * read's own display name -- never the recorded identifier as a fallback.
  */
 function MemberRowActions(props: MemberRowActionsProps) {
@@ -1005,7 +1005,7 @@ function PlatformMemberActions(props: MemberRowActionsProps) {
   return <MemberActionsBody {...props} identity={{ name, identifier }} />
 }
 
-/** The workspace surface's identity: the member read's own display name. */
+/** The organization surface's identity: the member read's own display name. */
 function memberRowIdentity(member: AdminMember): AccountIdentityValue {
   return {
     name: member.display_name === '' ? undefined : member.display_name,

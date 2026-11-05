@@ -25,7 +25,7 @@ backend endpoints claim onto the demo's single backend listener: the api,
 account, admin and content endpoints and the operations probes all answer on
 one port. The claimed prefixes live in
 `backend-prefixes.json` beside this package (`/api`, `/content`; `/api/v1/auth`,
-`/api/v1/features` and `/api/v1/workspace`;
+`/api/v1/features` and `/api/v1/orgs`;
 `/api/v1/system/audit`, `/api/v1/system/auth`, `/api/v1/system/permissions`,
 `/api/v1/system/settings`, `/api/v1/system/sms` and `/api/v1/system/tenants`;
 `/health`, `/ready` and `/openapi.json`), and

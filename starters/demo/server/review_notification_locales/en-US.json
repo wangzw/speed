@@ -1,7 +1,7 @@
 {
-  "review.notice.in_app.title": "New workspace notice",
-  "review.notice.in_app.body": "There is new activity in your workspace.",
-  "review.notice.email.subject": "New workspace notice",
-  "review.notice.email.body_text": "There is new activity in your workspace.",
+  "review.notice.in_app.title": "New organization notice",
+  "review.notice.in_app.body": "There is new activity in your organization.",
+  "review.notice.email.subject": "New organization notice",
+  "review.notice.email.body_text": "There is new activity in your organization.",
   "review.notice.sms.template": "review-notice"
 }

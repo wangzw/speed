@@ -287,7 +287,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	// post-write one; the count is taken again at the second.
 	//
 	// The operator owns a personal tenant of its own by now, and a personal
-	// tenant is a real workspace that receives notices too. Every window
+	// tenant is a real organization that receives notices too. Every window
 	// therefore carries one more email, addressed to the operator rather than
 	// to the member this case registered. Count only the lines addressed to the
 	// member, which is the delivery the preference governs.

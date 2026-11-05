@@ -4,9 +4,10 @@
  * Every reachable answer of the sign-in and session surface -- the authn
  * flow codes the login-flow endpoints answer with (the login engine's
  * closed problem set: a refused credential, an expired or consumed flow, a
- * disabled method, an account the server will not sign in, a conflict, a
- * throttled attempt, an unavailable dependency, an unsupported phone
- * region, a malformed body), plus the transport-level client.network /
+ * disabled method, an account the server will not sign in, a text-message
+ * step the account has no verified phone for, a conflict, a throttled
+ * attempt, an unavailable dependency, an unsupported phone region, a
+ * malformed body), plus the transport-level client.network /
  * client.timeout / client.protocol codes of the @speed/api-client contract
  * -- maps, one bundle key per code, under the errors section
  * ('errors.authn.login_failed' and so on). A client.http.<status> answer --
@@ -40,6 +41,7 @@ export const ERROR_TEXT_CODES = [
   'authn.link_required',
   'authn.method_disabled',
   'authn.account_unavailable',
+  'authn.phone_required',
   'authn.password_reset_closed',
   'authn.password_reset_unavailable',
   'authn.conflict',

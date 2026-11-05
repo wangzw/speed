@@ -6,7 +6,7 @@
 
 租户是请求的路由事实：服务端的解析层按端从请求头、子域或路径解析当前租户，认证不携带租户（[authn 登录](../authn/design-authn-login.md)、[tenant 准入](../tenant/design-tenant-admission.md)）。切换租户因而是一次宿主的路由变更，不是会话上的一次操作——本控件只把用户的意图报给宿主，由宿主改变它的路由并更新它交给 [auth-core](design-web-auth-core.md) 的租户上下文。
 
-**列表的来源是宿主的本人租户读取接口。** 宿主经平台的一个读取接口（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是别名；个人租户那一行是宿主自己的工作区文案。本控件不调用这个读取接口，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成工作区文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
+**列表的来源是宿主的本人租户读取接口。** 宿主经平台的一个读取接口（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是别名；个人租户那一行是宿主自己的组织文案。本控件不调用这个读取接口，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成组织文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
 控件的结构：
 
@@ -103,13 +103,13 @@ sequenceDiagram
 
 控件是受控的：用户的选行只把意图报给宿主，触发器显示的租户始终由宿主的 `currentTenantId` 决定。宿主完成切换后把新的 `currentTenantId` 传回，触发器随之收敛；在宿主完成之前，控件不自己改显示。
 
-### 切换与工作区管理面
+### 切换与组织管理面
 
-工作区管理面（[admin-ui](design-web-admin-ui.md) 的 `/workspace/admin`）作用在当前租户上，一次切换因此改变它的全部输入。控件仍只做一件事：把选中的租户标识交给 `onSelect` 一次。在「一次选择」的逐出与租户上下文更新之外，宿主按次序：
+组织管理面（[admin-ui](design-web-admin-ui.md) 的 `/organization/admin`）作用在当前租户上，一次切换因此改变它的全部输入。控件仍只做一件事：把选中的租户标识交给 `onSelect` 一次。在「一次选择」的逐出与租户上下文更新之外，宿主按次序：
 
-1. 把租户域的权限集置回未知，并按新租户重读；读回之前，工作区管理面的入口与页面按未知处置，不按旧租户的权限渲染。
-2. 以新的租户标识重挂载工作区管理面的子树。页面的本地状态随卸载丢弃，租户作用域的查询键换到新租户。
-3. 切换时如果页面在 `/workspace/admin` 之下，把页面带到新租户的租户区首页，不留在管理面：新租户不一定授予同一组管理权限，停在旧页面只会渲染一个无权限页面。
+1. 把租户域的权限集置回未知，并按新租户重读；读回之前，组织管理面的入口与页面按未知处置，不按旧租户的权限渲染。
+2. 以新的租户标识重挂载组织管理面的子树。页面的本地状态随卸载丢弃，租户作用域的查询键换到新租户。
+3. 切换时如果页面在 `/organization/admin` 之下，把页面带到新租户的租户区首页，不留在管理面：新租户不一定授予同一组管理权限，停在旧页面只会渲染一个无权限页面。
 
 当前租户从未知落定为某个租户不是切换，这三条不执行。
 
@@ -136,4 +136,4 @@ sequenceDiagram
 | 命名空间资源 | 已实现 | `web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
 | 切换通知的区域在控件挂载时存在 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcher` |
 | 菜单页脚、播报位置与触发器呈现选项 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcherProps` |
-| 切换时的租户权限集清除、工作区管理面重挂载与离开管理面到租户首页（宿主侧） | 已实现 | `starters/demo/web/src/chrome.tsx` `useTenantSelection`；`starters/demo/web/src/app.tsx` `TenantFrame` |
+| 切换时的租户权限集清除、组织管理面重挂载与离开管理面到租户首页（宿主侧） | 已实现 | `starters/demo/web/src/chrome.tsx` `useTenantSelection`；`starters/demo/web/src/app.tsx` `TenantFrame` |

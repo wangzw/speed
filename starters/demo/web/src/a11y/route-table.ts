@@ -72,8 +72,8 @@ export const ROUTE_PATHS = [
  * app's route table: the business routes (the home page, the account settings'
  * group address and its profile, security, sessions and preferences panes, the
  * notification centre, the binding callback), the auth and invitation
- * landings, the admin area under ADMIN_PREFIX, and the workspace admin area
- * under WORKSPACE_ADMIN_PREFIX, every `:param` concretized to `sample` as
+ * landings, the admin area under ADMIN_PREFIX, and the organization admin area
+ * under ORGANIZATION_ADMIN_PREFIX, every `:param` concretized to `sample` as
  * `concretize` does.
  */
 export const EXPECTED_ROUTE_PATHS = [
@@ -101,10 +101,10 @@ export const EXPECTED_ROUTE_PATHS = [
   '/admin/sms',
   '/admin/audit',
   '/admin/audit/sample',
-  '/workspace/admin/invitations',
-  '/workspace/admin/sso',
-  '/workspace/admin/roles',
-  '/workspace/admin/settings',
+  '/organization/admin/invitations',
+  '/organization/admin/sso',
+  '/organization/admin/roles',
+  '/organization/admin/settings',
 ] as const
 
 /**
@@ -128,43 +128,43 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
       readonly audit: { readonly error: { readonly title: string } }
     }
   ).audit.error.title,
-  // The workspace surface's admission failure: its caller-tenants and
+  // The organization surface's admission failure: its caller-tenants and
   // permission reads both refuse in error mode, and the page renders the
   // retryable failure (with its level-one heading) rather than a spinner.
   // Asserting the copy here makes the sweep prove it scanned that state.
-  '/workspace/admin/invitations': demoEnUS.workspace.accessFailed.title,
-  '/workspace/admin/sso': demoEnUS.workspace.accessFailed.title,
-  '/workspace/admin/roles': demoEnUS.workspace.accessFailed.title,
-  '/workspace/admin/settings': demoEnUS.workspace.accessFailed.title,
+  '/organization/admin/invitations': demoEnUS.organization.accessFailed.title,
+  '/organization/admin/sso': demoEnUS.organization.accessFailed.title,
+  '/organization/admin/roles': demoEnUS.organization.accessFailed.title,
+  '/organization/admin/settings': demoEnUS.organization.accessFailed.title,
 }
 
 /**
- * The page title heading each workspace route renders in data and empty
+ * The page title heading each organization route renders in data and empty
  * modes. The error mode renders the admission failure instead (see
  * ERROR_PLACEHOLDER_BY_PATH). Asserting the heading in the other two modes
  * stops a silent redirect to the tenant home from passing the sweep: the
  * redirect would scan a clean home page, and only the page title proves the
- * workspace route itself rendered.
+ * organization route itself rendered.
  */
 export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
-  '/workspace/admin/invitations': (
+  '/organization/admin/invitations': (
     adminUiResources['en-US'] as unknown as {
       readonly invitations: { readonly title: string }
     }
   ).invitations.title,
-  '/workspace/admin/sso': (
+  '/organization/admin/sso': (
     adminUiResources['en-US'] as unknown as {
       readonly sso: { readonly title: string }
     }
   ).sso.title,
   // The roles and settings wrappers render the package pages' own level-one
-  // titles (the workspace navigation labels sit beside them in the page).
-  '/workspace/admin/roles': (
+  // titles (the organization navigation labels sit beside them in the page).
+  '/organization/admin/roles': (
     adminUiResources['en-US'] as unknown as {
       readonly permissions: { readonly title: string }
     }
   ).permissions.title,
-  '/workspace/admin/settings': (
+  '/organization/admin/settings': (
     adminUiResources['en-US'] as unknown as {
       readonly settings: { readonly title: string }
     }

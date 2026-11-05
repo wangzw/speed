@@ -54,7 +54,7 @@ export const test = base.extend<{
   server: ReviewServer
   demo: DemoTarget
   /**
-   * Seed the member-workspace journey's account and membership. A spec sets
+   * Seed the member-organization journey's account and membership. A spec sets
    * `test.use({ seedMember: true })` when it signs that member in; every other
    * spec starts from the template's own seed.
    */
@@ -105,7 +105,7 @@ export const test = base.extend<{
   /**
    * Seed the tenant-admin journey's proved-email business administrator and
    * make it acme's only tenant administrator. A spec sets
-   * `test.use({ seedTenantAdmin: true })` when it drives the workspace admin
+   * `test.use({ seedTenantAdmin: true })` when it drives the organization admin
    * surface; every other spec starts from the template's own seed.
    */
   seedTenantAdmin: boolean
@@ -117,7 +117,7 @@ export const test = base.extend<{
   seedUnprovedTenantAdmin: boolean
   /**
    * Seed a system-tenant administrator outside the platform role, so a spec can
-   * prove the system tenant is not manageable through the workspace admin
+   * prove the system tenant is not manageable through the organization admin
    * surface.
    */
   seedSystemTenantAdmin: boolean

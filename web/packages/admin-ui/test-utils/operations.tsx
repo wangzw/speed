@@ -109,8 +109,8 @@ import type {
   AdminTenantSetSettingInput,
   AdminTenantSetting,
   AdminTenantWriteRoleInput,
-  WorkspaceAdminOperations,
-} from '../src/workspace-operations.js'
+  OrganizationAdminOperations,
+} from '../src/organization-operations.js'
 import { tenantQueryKey } from '@speed/auth-core'
 
 /** The scripted backend the operations bundle calls, grouped by surface. */
@@ -203,7 +203,7 @@ export interface AdminBackend {
   updateSsoProvider: (input: AdminWriteSsoProviderInput) => Promise<AdminSsoProvider>
   claimSsoDomain: (input: AdminClaimSsoDomainInput) => Promise<AdminSsoVerifyToken>
 
-  // Tenant management surfaces (the workspace bundle's own members).
+  // Tenant management surfaces (the organization bundle's own members).
   listTenantSettings: (tenant: string) => Promise<readonly AdminTenantSetting[]>
   listTenantSettingNamespace: (
     tenant: string,
@@ -492,7 +492,7 @@ function ssoProviderKey(id: string) {
 }
 const SMS_TEMPLATES_KEY = ['console-test', 'sms-templates'] as const
 
-/** The workspace bundle's tenant-scoped keys: auth-core's tenant prefix
+/** The organization bundle's tenant-scoped keys: auth-core's tenant prefix
  * over the surface's own name, so a switch cannot reuse another tenant's
  * rows. */
 function tenantSettingsKey(tenant: string) {
@@ -523,13 +523,13 @@ function tenantAccountBindingsKey(tenant: string, account: string) {
  * result to renderWithProviders; keep the returned object stable across a
  * render (a module-level const or a value captured before render).
  *
- * The result also carries the workspace bundle's tenant-scoped settings and
- * role members, so it is assignable to `WorkspaceAdminOperations` and a
- * workspace page test gets those surfaces from the same scripted backend.
+ * The result also carries the organization bundle's tenant-scoped settings and
+ * role members, so it is assignable to `OrganizationAdminOperations` and a
+ * organization page test gets those surfaces from the same scripted backend.
  */
 export function createAdminOperations(
   backend: AdminBackend,
-): AdminOperations & WorkspaceAdminOperations {
+): AdminOperations & OrganizationAdminOperations {
   return {
     useTenants: () =>
       useQuery({ queryKey: TENANTS_KEY, queryFn: () => backend.listTenants() }),

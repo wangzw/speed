@@ -157,7 +157,7 @@ describe('admin-ui error text', () => {
 
   it('renders the protected settings refusal with its own copy', () => {
     // The tenant settings write seam refuses a protected item with a 403
-    // settings.protected. Without its own leaf the workspace settings page
+    // settings.protected. Without its own leaf the organization settings page
     // falls back to the generic failure copy, which says nothing about the
     // deployment having protected the item.
     for (const language of ['zh-CN', 'en-US']) {

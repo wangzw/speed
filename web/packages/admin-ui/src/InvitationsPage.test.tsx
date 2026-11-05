@@ -421,7 +421,7 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       listMembers: () =>
         Promise.resolve([member({ display_name: 'Ada Lovelace' })]),
-      // The workspace face has no platform account read; the member read's
+      // The organization face has no platform account read; the member read's
       // display name is the identity even when the lookup is refused.
       getAccount: () => Promise.reject(new Error('forbidden')),
     })
@@ -479,7 +479,7 @@ describe('InvitationsPage', () => {
     expect(accountCell).toHaveTextContent('acc-1')
   })
 
-  it('pages the workspace member table through every member', async () => {
+  it('pages the organization member table through every member', async () => {
     const user = userEvent.setup()
     // One row beyond the page size is the probe that says another page
     // follows; the table itself shows the first 100.
