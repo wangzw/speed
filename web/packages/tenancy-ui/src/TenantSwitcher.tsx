@@ -83,16 +83,10 @@ import type { ButtonProps } from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import Menu from '@mui/material/Menu'
-import MenuItem from '@mui/material/MenuItem'
-import Typography from '@mui/material/Typography'
 import type { SxProps, Theme } from '@mui/material/styles'
-// The clip recipe for the visually hidden announcement, shared with every
-// other hidden live region on the platform: the element keeps its place in
-// the accessibility tree -- so a text change still announces -- while its
-// 1x1 out-of-flow box paints nothing. Never display:none, which takes the
-// region out of the tree and makes it not live.
-import { visuallyHiddenSx } from '@speed/ui-kit'
 import { useTenancyUiTranslation } from './internal/translation.js'
+import { TenantMenuItems } from './TenantMenuItems.js'
+import { TenantSwitchAnnouncement } from './TenantSwitchAnnouncement.js'
 
 /** One switchable tenant: the id onSelect is called with, and the name
  * the trigger and the list show. */
@@ -207,21 +201,24 @@ export function TenantSwitcher({
     compact ? [{ minWidth: 0, px: 1 }, buttonProps.sx] : buttonProps.sx
   ) as SxProps<Theme> | undefined
 
-  const select = (tenant: TenantOption): void => {
-    // The selection is a synchronous hand-off to the host: close the
-    // list, report the pick once, then announce it. A throwing onSelect
-    // is contained here -- it is not a selection failure (the onSelect
-    // contract), so it renders no error, never becomes an unhandled
-    // rejection from this fire-and-forget handler, and the selection is
-    // still announced.
-    closeMenu()
+  const select = (tenantId: string): void => {
+    // The selection is a synchronous hand-off to the host: the rows close
+    // the list, report the pick once, and the pick is announced here. A
+    // throwing onSelect is contained here -- it is not a selection failure
+    // (the onSelect contract), so it renders no error, never becomes an
+    // unhandled rejection from this fire-and-forget handler, and the
+    // selection is still announced.
+    const picked = tenants.find((tenant) => tenant.id === tenantId) ?? null
+    if (picked === null) {
+      return
+    }
     try {
-      onSelect(tenant.id)
+      onSelect(picked.id)
     } catch {
       // Contained: the host's own failure to handle, not this control's
       // to render or report.
     }
-    setSelectedName(tenant.name)
+    setSelectedName(picked.name)
   }
 
   return (
@@ -250,23 +247,10 @@ export function TenantSwitcher({
         >
           {compact ? (startIcon ?? <TenantGlyph />) : triggerLabel}
         </Button>
-        <Typography
-          component="span"
-          role="status"
-          // The region is mounted from the first render, empty and
-          // clipped, so the live region exists before the text arrives.
-          // The inline confirmation paints once a selection fills it; the
-          // visually-hidden form never paints.
-          sx={
-            announcement === 'visually-hidden' || selectedName === null
-              ? visuallyHiddenSx
-              : { color: 'inherit' }
-          }
-        >
-          {selectedName === null
-            ? ''
-            : t('tenantSwitcher.switchedTo', { tenant: selectedName })}
-        </Typography>
+        <TenantSwitchAnnouncement
+          tenantName={selectedName}
+          announcement={announcement}
+        />
       </Box>
       <Menu
         id={menuId}
@@ -276,23 +260,12 @@ export function TenantSwitcher({
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       >
-        {tenants.map((tenant) => (
-          <MenuItem
-            key={tenant.id}
-            disabled={tenant.id === currentTenantId}
-            onClick={() => {
-              // The current-tenant row is disabled above; this guard keeps
-              // the never-re-trigger invariant even when a synthetic or
-              // assistive click reaches the row.
-              if (tenant.id === currentTenantId) {
-                return
-              }
-              select(tenant)
-            }}
-          >
-            {tenant.name}
-          </MenuItem>
-        ))}
+        <TenantMenuItems
+          tenants={tenants}
+          currentTenantId={currentTenantId}
+          onSelect={select}
+          onDismiss={closeMenu}
+        />
         {menuFooter === undefined ? null : (
           <>
             <Divider />
