@@ -130,14 +130,15 @@ The platform level belongs to the package library and produces the package the
 shell packages import; the app level belongs to the app and produces a surface
 inside it. Both read `contracts/api.json` -- the document the host's `gen`
 command writes, carrying every fragment the binary's imports reach, so the
-platform fragments plus the app's own. This starter's own fragment is the
-personal-tenant route (`starters/demo/server/personal-openapi.json`): it is in
-the merged document and in the app surface, and the platform configuration's
-`input.filters` excludes it so the published package stays platform-only. Both
-levels reach the backend through the same seam: `src/app-api/runtime.ts`
-re-exports the mutators `@speed/api-sdk/runtime` exports, so the one
-`bindRequestFn` call at bootstrap serves both generated surfaces and no
-generated or bridge file performs HTTP itself.
+platform fragments plus the app's own. This starter's own fragment is
+self-service organization creation
+(`starters/demo/server/org-create-openapi.json`): it is in the merged document
+and in the app surface, and the platform configuration's `input.filters`
+excludes the application-owner tag so the published package stays
+platform-only. Both levels reach the backend through the same seam:
+`src/app-api/runtime.ts` re-exports the mutators `@speed/api-sdk/runtime`
+exports, so the one `bindRequestFn` call at bootstrap serves both generated
+surfaces and no generated or bridge file performs HTTP itself.
 
 `src/app-api/index.ts` is generated output carrying a DO-NOT-EDIT header, and it
 is committed -- regenerating it produces the same file. `src/app-api/runtime.ts`

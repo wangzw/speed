@@ -826,8 +826,7 @@ func TestOrgCreateRejectsAnUnusableLimit(t *testing.T) {
 }
 
 // TestOrgCreateFragmentIsGeneratedFromTheDeclarations holds the committed
-// fragment to the operation declarations, the way the personal fragment's own
-// case does.
+// fragment to the operation declarations that generate it.
 func TestOrgCreateFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	generated, err := openapigen.Generate(orgCreateFragmentTitle, orgCreateFragmentVersion, orgCreateOperations)
 	if err != nil {
@@ -848,10 +847,9 @@ func TestOrgCreateFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	}
 }
 
-// TestTheOrganizationCreateRouteCoexistsWithThePersonalRoute runs the program:
-// both routes answer for an authenticated caller, three creations are admitted
-// and the fourth is the hourly refusal, and the feature document carries
-// org.create.
+// TestTheOrganizationCreateRouteRateLimits runs the program: three creations are
+// admitted for an authenticated caller and the fourth is the hourly refusal, and
+// the feature document carries org.create.
 func TestTheOrganizationCreateRouteRateLimits(t *testing.T) {
 	base, token := orgCreateServe(t, "")
 	client := &http.Client{Timeout: 10 * time.Second}

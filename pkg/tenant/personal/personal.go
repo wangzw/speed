@@ -244,7 +244,8 @@ type product struct {
 	logger            *slog.Logger
 	// accounts is the account read surface; nil in an assembly without one.
 	// The event compensation reads the account's current state through it, and
-	// the backfill reads the account's username to name the tenant's alias.
+	// the idempotent completion reads the account's username to name the
+	// tenant's alias.
 	accounts accountReader
 	// bus is where the compensation subscribes; nil leaves the synchronous
 	// hooks as the only route.

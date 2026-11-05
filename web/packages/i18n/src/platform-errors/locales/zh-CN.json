@@ -75,7 +75,6 @@
     "org.creation_in_progress": "已有一次组织创建正在进行，请等待它完成后再试。",
     "org.identifier_unavailable": "组织地址或标识已被其他组织占用。个人组织的地址由账户生成，业务组织的标识则自动生成，两者都无法手动更换；如果持续出现，请联系管理员。",
     "org.organization_limit": "你的账户可创建的活跃业务组织数量已达上限，无法再创建新的组织。",
-    "org.rate_limited": "创建组织过于频繁，请稍后再试。",
-    "org.tenant_unavailable": "你的个人组织已被停用，请联系管理员。"
+    "org.rate_limited": "创建组织过于频繁，请稍后再试。"
   }
 }
