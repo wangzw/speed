@@ -452,9 +452,9 @@
 
 组织管理面的成员管理页必须为每名成员提供管理区，展示该成员在当前租户的角色绑定，并提供绑定与解绑角色的入口；角色本身的创建、授权与删除仍在角色页。绑定与解绑的服务端规则见 REQ-tenant-admin-030 与 REQ-tenant-admin-031。
 
-- **验收**：打开某成员的管理区，列出它在当前租户的全部角色绑定；绑定一个角色后该列表出现该角色，解绑后该角色从列表消失；缺少查看角色绑定权限的调用者看到说明且页面不读取绑定，也不出现绑定与解绑控件；只有查看权限而没有管理权限的调用者看到绑定，但看不到绑定与解绑控件；成员管理区的绑定结果与角色页读取到的绑定一致。
+- **验收**：打开某成员的管理区，列出它在当前租户的全部角色绑定；绑定一个角色后该列表出现该角色，解绑后该角色从列表消失；缺少查看角色绑定权限的调用者看到说明且页面不读取绑定，也不出现绑定与解绑控件；只有查看权限而没有管理权限的调用者看到绑定，但看不到绑定与解绑控件；成员管理区的绑定结果与角色页读取到的绑定一致；解绑前显示一次确认，确认文案说明角色权限立即失效、调用者不能解绑自己当前账户的 tenant-admin 绑定，且会移除本组织最后一名 tenant-admin 的解绑由服务端拒绝；取消确认不产生写入，绑定仍在。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 11 覆盖列出绑定、绑定、解绑确认与解绑成功，step 13 覆盖调用者自己的 tenant-admin 绑定在发起前即禁用。取消确认不产生写入由 `web/packages/admin-ui/src/OrganizationMembersPage.test.tsx` 的 `binds a role and unbinds one only after confirmation` 覆盖；最后一名 tenant-admin 的解绑被服务端拒绝由 `pkg/authz/policy/administration_test.go` 的 `TestDeletingTheLastTenantAdministratorBindingIsRefused` 覆盖。两项均未由 e2e 覆盖。
 
 ### REQ-tenant-admin-052
 
