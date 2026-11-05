@@ -235,7 +235,7 @@
     },
     "/{tenant}/settings/{namespace}/{key}": {
       "delete": {
-        "description": "Drops the layer of the tenant in the path's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item whose tenant access is read-write, otherwise the answer is 404 — the same answer an undeclared key gets, whether the declaration gives the item no tenant access or only reading. Deleting a row the layer does not hold is not an error. Dropping the tenant row while the platform layer holds the policy on is allowed: the effective value stays on, so there is no disable to refuse. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
+        "description": "Drops the layer of the tenant in the path's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item the tenant surface exposes. A key with no tenant access, whether undeclared or declared on the platform surface alone, is 404 — the same answer an undeclared key gets. An item declared read-only is 403 read-only: it is visible, and the refusal names why the row cannot be dropped rather than hiding the item. Deleting a row the layer does not hold is not an error. Dropping the tenant row while the platform layer holds the policy on is allowed: the effective value stays on, so there is no disable to refuse. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "operationId": "settings.tenantadmin.settings.remove",
         "parameters": [
           {
@@ -298,10 +298,10 @@
                 }
               }
             },
-            "description": "The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), or the host's settings write seam refused the write (protected)"
+            "description": "The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), the item is declared read-only (read-only), or the host's settings write seam refused the write (protected)"
           },
           "404": {
-            "description": "The full key is not declared with read-write tenant access"
+            "description": "The full key is not declared or exposes no tenant access"
           },
           "503": {
             "content": {
@@ -325,7 +325,7 @@
         "summary": "Drop the tenant layer's explicit row for one setting"
       },
       "put": {
-        "description": "Writes one row for the setting named by the namespace and key path segments on the layer of the tenant in the path. The full key `<namespace>.<key>` must match a declared item whose tenant access is read-write, otherwise the answer is 404 — the same answer an undeclared key gets, whether the declaration gives the item no tenant access or only reading. A value of the mask string a sensitive item is shown as is 422 masked-value before the seam, the audit and the store. A write turning a boolean switch off while the platform layer holds it on is 409 tenant-admission-enforced, also before the seam, the audit and the store. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. The value is encoded under the item's declared type and then held to its declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
+        "description": "Writes one row for the setting named by the namespace and key path segments on the layer of the tenant in the path. The full key `<namespace>.<key>` must match a declared item the tenant surface exposes. A key with no tenant access, whether undeclared or declared on the platform surface alone, is 404 — the same answer an undeclared key gets. An item declared read-only is 403 read-only: it is visible, and the refusal names why the write cannot be made rather than hiding the item. A value of the mask string a sensitive item is shown as is 422 masked-value before the seam, the audit and the store. A write turning a boolean switch off while the platform layer holds it on is 409 tenant-admission-enforced, also before the seam, the audit and the store. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. The value is encoded under the item's declared type and then held to its declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "operationId": "settings.tenantadmin.settings.set",
         "parameters": [
           {
@@ -408,10 +408,10 @@
                 }
               }
             },
-            "description": "The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), or the host's settings write seam refused the write (protected)"
+            "description": "The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), the item is declared read-only (read-only), or the host's settings write seam refused the write (protected)"
           },
           "404": {
-            "description": "The full key is not declared with read-write tenant access"
+            "description": "The full key is not declared or exposes no tenant access"
           },
           "409": {
             "content": {

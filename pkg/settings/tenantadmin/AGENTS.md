@@ -84,9 +84,13 @@ table is built, so an item that states a tenant access without a tenant-facing
 schema fails the startup.
 
 Only `TenantReadWrite` is writable. `TenantRead` is visible and unwritable; both
-write routes answer the same bare 404 an undeclared key gets. An item the
-declarations do not expose is invisible in the listing, absent from every error
-and from the OpenAPI fragment, and gets that same 404 on a write.
+write routes answer 403 `urn:speed:settings:read-only`, before the seam, the
+audit and the store, and leave the tenant layer unchanged. That refusal is not
+`protected`: `protected` is the host seam refusing a write to a tenant whose
+surface is read-only as a whole, while `read-only` says the item itself can never
+be written by a tenant. An item the declarations do not expose is invisible in
+the listing, absent from every error and from the OpenAPI fragment, and gets the
+same bare 404 on a write.
 
 A platform-enforced policy is one whose global layer holds the boolean `true`.
 The effective value is the platform value OR the tenant value, so the platform

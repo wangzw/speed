@@ -19,11 +19,15 @@ import (
 )
 
 // The problem types this module writes. typePrefix is the settings capability's
-// namespace; badRequest, invalidValue, protected, enforced and maskedValue are
-// this surface's codes in it. A 404 and a 503 are written with no type: they say
-// something is not there or a dependency could not answer, and not which kind of
-// refusal it was, so naming a kind would separate the failures the answer is
-// meant to keep apart.
+// namespace; badRequest, invalidValue, protected, readOnly, enforced and
+// maskedValue are this surface's codes in it. A 404 and a 503 are written with
+// no type: they say something is not there or a dependency could not answer, and
+// not which kind of refusal it was, so naming a kind would separate the failures
+// the answer is meant to keep apart.
+//
+// readOnly is not protected: protected says the host's write seam refused a
+// write to a tenant whose surface is read-only as a whole, while readOnly says
+// the item itself is declared read-only and no write to it was ever possible.
 //
 // The contact-required refusal is the authentication capability's, not this
 // surface's: the refusal it names is a fact about the acting account's
@@ -36,6 +40,7 @@ const (
 	badRequestCode   = "bad-request"
 	invalidValueCode = "invalid-value"
 	protectedCode    = "protected"
+	readOnlyCode     = "read-only"
 	enforcedCode     = "tenant-admission-enforced"
 	maskedValueCode  = "masked-value"
 )
@@ -285,6 +290,15 @@ func (p *product) badRequest() error {
 // called.
 func (p *product) protected() error {
 	return speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
+}
+
+// readOnly is the answer to a write of an item the declarations expose to a
+// tenant for reading alone. The item is visible, so the answer names the
+// refusal instead of hiding the item behind the bare 404 an undeclared key
+// gets; the seam, the audit and the store are not reached and the tenant layer
+// is unchanged.
+func (p *product) readOnly() error {
+	return speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + readOnlyCode}
 }
 
 // invalidValue is the answer to a write the settings module refused because the

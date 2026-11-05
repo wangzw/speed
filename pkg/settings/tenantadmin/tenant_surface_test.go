@@ -283,6 +283,11 @@ func TestTheEffectiveValueIsPlatformOrTenant(t *testing.T) {
 		{"platform off, tenant on", "false", "true", true, "true", false, "tenant", "false", "true"},
 		{"both off", "false", "false", true, "false", false, "tenant", "false", "false"},
 		{"platform on, no tenant row", "true", "", false, "true", true, "global", "true", "false"},
+		// A global row that says false is still the layer the value comes from
+		// when the tenant has no row of its own: the source names where the
+		// value was read, not whether the policy is on, and the item is not
+		// locked.
+		{"platform off, no tenant row", "false", "", false, "false", false, "global", "false", "false"},
 		{"no rows", "", "", false, "false", false, "default", "false", "false"},
 	}
 	for _, tc := range cases {
@@ -354,7 +359,8 @@ func TestTheViewCarriesEveryDeclaredField(t *testing.T) {
 }
 
 // A read-only declaration is visible and cannot be written: both write routes
-// answer the same 404 an undeclared key gets.
+// answer 403 with the read-only problem, not the 404 an undeclared or
+// platform-only key gets.
 func TestAReadOnlyDeclarationIsVisibleButNotWritable(t *testing.T) {
 	r := newRig(t)
 	item := settings.Item{
@@ -372,15 +378,31 @@ func TestAReadOnlyDeclarationIsVisibleButNotWritable(t *testing.T) {
 	if got := keysOfSettings(envelope); !reflect.DeepEqual(got, []string{"app.policy"}) {
 		t.Fatalf("the listing holds %v, want app.policy", got)
 	}
+	// The listing itself asks the seam whether the surface is writable; the
+	// refused writes must not add another question.
+	asked := len(r.writeSeam.askedTenants())
 	for _, method := range []string{http.MethodPut, http.MethodDelete} {
 		var body any
 		if method == http.MethodPut {
 			body = map[string]any{"value": true}
 		}
 		w := r.do(method, base+"/app/policy", body)
-		if w.Code != http.StatusNotFound {
-			t.Errorf("%s ended with %d, want 404", method, w.Code)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s ended with %d, want 403: %s", method, w.Code, w.Body.String())
+			continue
 		}
+		if p := problemOf(t, w); p.Type != "urn:speed:settings:read-only" {
+			t.Errorf("%s problem type = %q, want urn:speed:settings:read-only", method, p.Type)
+		}
+	}
+	if got := r.writeSeam.askedTenants(); len(got) != asked {
+		t.Errorf("a read-only item asked the seam about %v, want only the listing's question", got)
+	}
+	if got := r.audit.entries(); len(got) != 0 {
+		t.Errorf("a read-only item landed %v", got)
+	}
+	if got := r.store.recorded(); !noStoreWrites(got) {
+		t.Errorf("a read-only item changed a row: %v", got)
 	}
 }
 

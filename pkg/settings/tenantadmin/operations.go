@@ -139,28 +139,30 @@ var listOperation = speedhttp.NewOperation[listInput, SettingsTenantAdminSetting
 
 // setOperation declares PUT /{tenant}/settings/:namespace/:key: it writes one
 // row on the path tenant's layer. The handler builds its own answer because a
-// success is 204 with no body, a key no declaration exposes to a tenant for
-// writing is a bare 404, a write the host's seam refuses is a 403 protected, a
-// disable of a platform-enforced policy is a 409, and a masked value is 422.
+// success is 204 with no body, a key no declaration exposes to a tenant is a
+// bare 404, a read-only item is a 403 read-only, a write the host's seam refuses
+// is a 403 protected, a disable of a platform-enforced policy is a 409, and a
+// masked value is 422.
 var setOperation = speedhttp.NewReplyOperation[setInput](
 	"settings.tenantadmin.settings.set",
 	http.MethodPut,
 	pathNamespaceKey,
 	"Write one setting row on the tenant layer",
 	"Writes one row for the setting named by the namespace and key path segments on the layer of the "+
-		"tenant in the path. The full key `<namespace>.<key>` must match a declared item whose tenant "+
-		"access is read-write, otherwise the answer is 404 — the same answer an undeclared key gets, "+
-		"whether the declaration gives the item no tenant access or only reading. A value of the mask "+
-		"string a sensitive item is shown as is 422 masked-value before the seam, the audit and the store. "+
-		"A write turning a boolean switch off while the platform layer holds it on is 409 "+
-		"tenant-admission-enforced, also before the seam, the audit and the store. The host's settings "+
-		"write seam is asked before anything is changed; a refusal is 403 protected and an unreadable "+
-		"answer is 503. The value is encoded under the item's declared type and then held to its declared "+
-		"domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit "+
-		"answers 422. A mandatory audit row is written before the change, and if it cannot be written the "+
-		"setting is left untouched and the answer is 503. The change is attributed to the caller's "+
-		"accountability key, which under an impersonation is the administrator making the request rather "+
-		"than the account impersonated. Success is 204 with no body.",
+		"tenant in the path. The full key `<namespace>.<key>` must match a declared item the tenant "+
+		"surface exposes. A key with no tenant access, whether undeclared or declared on the platform "+
+		"surface alone, is 404 — the same answer an undeclared key gets. An item declared read-only is 403 read-only: it is "+
+		"visible, and the refusal names why the write cannot be made rather than hiding the item. A "+
+		"value of the mask string a sensitive item is shown as is 422 masked-value before the seam, the "+
+		"audit and the store. A write turning a boolean switch off while the platform layer holds it on "+
+		"is 409 tenant-admission-enforced, also before the seam, the audit and the store. The host's "+
+		"settings write seam is asked before anything is changed; a refusal is 403 protected and an "+
+		"unreadable answer is 503. The value is encoded under the item's declared type and then held to "+
+		"its declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the "+
+		"size limit answers 422. A mandatory audit row is written before the change, and if it cannot be "+
+		"written the setting is left untouched and the answer is 503. The change is attributed to the "+
+		"caller's accountability key, which under an impersonation is the administrator making the "+
+		"request rather than the account impersonated. Success is 204 with no body.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The write's body: exactly one object, whose `value` member carries the value to store.",
@@ -172,8 +174,8 @@ var setOperation = speedhttp.NewReplyOperation[setInput](
 			"A layer or tenant query parameter was sent, the tenant in the path is outside its value domain, or the body is not one object"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), or the host's settings write seam refused the write (protected)"),
-		{Status: http.StatusNotFound, Description: "The full key is not declared with read-write tenant access"},
+			"The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), the item is declared read-only (read-only), or the host's settings write seam refused the write (protected)"),
+		{Status: http.StatusNotFound, Description: "The full key is not declared or exposes no tenant access"},
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The write would turn off a policy the platform layer requires (tenant-admission-enforced)"),
 		speedhttp.ProblemResponse(http.StatusUnsupportedMediaType,
@@ -187,24 +189,26 @@ var setOperation = speedhttp.NewReplyOperation[setInput](
 // removeOperation declares DELETE /{tenant}/settings/:namespace/:key: it drops
 // the path tenant layer's explicit row for one key. The handler builds its own
 // answer because a success is 204 with no body, a key no declaration exposes to a
-// tenant for writing is a bare 404, and a write the host's seam refuses is a 403
-// protected.
+// tenant is a bare 404, a read-only item is a 403 read-only, and a write the
+// host's seam refuses is a 403 protected.
 var removeOperation = speedhttp.NewReplyOperation[removeInput](
 	"settings.tenantadmin.settings.remove",
 	http.MethodDelete,
 	pathNamespaceKey,
 	"Drop the tenant layer's explicit row for one setting",
 	"Drops the layer of the tenant in the path's explicit row for the setting named by the namespace "+
-		"and key path segments. The full key `<namespace>.<key>` must match a declared item whose tenant "+
-		"access is read-write, otherwise the answer is 404 — the same answer an undeclared key gets, "+
-		"whether the declaration gives the item no tenant access or only reading. Deleting a row the layer "+
-		"does not hold is not an error. Dropping the tenant row while the platform layer holds the policy "+
-		"on is allowed: the effective value stays on, so there is no disable to refuse. The host's settings "+
-		"write seam is asked before anything is changed; a refusal is 403 protected and an unreadable "+
-		"answer is 503. A mandatory audit row is written before the change, and if it cannot be written "+
-		"the row is left in place and the answer is 503. The change is attributed to the caller's "+
-		"accountability key, which under an impersonation is the administrator making the request rather "+
-		"than the account impersonated. Success is 204 with no body.",
+		"and key path segments. The full key `<namespace>.<key>` must match a declared item the tenant "+
+		"surface exposes. A key with no tenant access, whether undeclared or declared on the platform "+
+		"surface alone, is 404 — the same answer an undeclared key gets. An item declared read-only is 403 read-only: it is "+
+		"visible, and the refusal names why the row cannot be dropped rather than hiding the item. "+
+		"Deleting a row the layer does not hold is not an error. Dropping the tenant row while the "+
+		"platform layer holds the policy on is allowed: the effective value stays on, so there is no "+
+		"disable to refuse. The host's settings write seam is asked before anything is changed; a "+
+		"refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written "+
+		"before the change, and if it cannot be written the row is left in place and the answer is 503. "+
+		"The change is attributed to the caller's accountability key, which under an impersonation is the "+
+		"administrator making the request rather than the account impersonated. Success is 204 with no "+
+		"body.",
 	nil,
 	[]speedhttp.Response{
 		{Status: http.StatusNoContent, Description: "The row was dropped"},
@@ -212,8 +216,8 @@ var removeOperation = speedhttp.NewReplyOperation[removeInput](
 			"A layer or tenant query parameter was sent, or the tenant in the path is outside its value domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), or the host's settings write seam refused the write (protected)"),
-		{Status: http.StatusNotFound, Description: "The full key is not declared with read-write tenant access"},
+			"The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), the item is declared read-only (read-only), or the host's settings write seam refused the write (protected)"),
+		{Status: http.StatusNotFound, Description: "The full key is not declared or exposes no tenant access"},
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )

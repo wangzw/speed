@@ -98,15 +98,17 @@ func (p *product) list(ctx context.Context, tenant selection) (SettingsTenantAdm
 // the path tenant's layer. The route's authorization step has already decided
 // the write, and the entry point has already bound the body.
 //
-// The order is fixed: the tenant and the declaration are checked, a masked value
-// is refused, the platform policy is checked for a disable it forbids, the
-// host's settings write seam is asked, the mandatory audit row lands before the
-// action, and the settings module is called last. A key no declaration exposes
-// to a tenant for writing is a bare 404, the same answer an undeclared key gets.
-// A masked value is 422 masked-value without the seam, the audit or the store; a
-// disable of a platform-enforced policy is 409 tenant-admission-enforced, also
-// without them; a seam refusal is 403 protected and an unanswered seam is 503; a
-// value the settings module refuses is a 422.
+// The order is fixed: the tenant and the declaration are checked, a read-only
+// item is refused, a masked value is refused, the platform policy is checked for
+// a disable it forbids, the host's settings write seam is asked, the mandatory
+// audit row lands before the action, and the settings module is called last. A
+// key no declaration exposes to a tenant at all is a bare 404, the same answer
+// an undeclared key gets; an item declared read-only is 403 read-only, because
+// it is visible and the caller is told why the write is refused. A masked value
+// is 422 masked-value without the seam, the audit or the store; a disable of a
+// platform-enforced policy is 409 tenant-admission-enforced, also without them;
+// a seam refusal is 403 protected and an unanswered seam is 503; a value the
+// settings module refuses is a 422.
 //
 // The write's actor is the caller's accountability key, Identity.Key(), which
 // under an impersonation is the administrator whose hands are on the request and
@@ -118,8 +120,11 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 		return nil, p.badRequest()
 	}
 	key := fullKeyOf(in.Namespace, in.Key)
-	item, ok := p.writableItem(key)
-	if !ok {
+	item, writable, readOnly := p.writeAccess(key)
+	if readOnly {
+		return nil, p.readOnly()
+	}
+	if !writable {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 	if item.Sensitive {
@@ -162,14 +167,14 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 // path tenant layer's explicit row for one key. The route's authorization step
 // has already decided the write.
 //
-// The full key is required to be declared and exposed to a tenant for writing
-// before the action, otherwise it is a bare 404. Dropping the tenant row while a
-// platform policy is on is allowed: the effective value stays on, because the
-// platform layer is a floor, so there is no disable to refuse. The host's
-// settings write seam is asked next, a refusal being 403 protected; the mandatory
-// audit row lands before the settings module is called; and any failure the
-// module returns is a 503, because a delete of a declared row has no other
-// refusal to name.
+// The full key is required to be declared and exposed to a tenant before the
+// action: a key with no tenant access is a bare 404, and an item declared
+// read-only is 403 read-only. Dropping the tenant row while a platform policy is
+// on is allowed: the effective value stays on, because the platform layer is a
+// floor, so there is no disable to refuse. The host's settings write seam is
+// asked next, a refusal being 403 protected; the mandatory audit row lands
+// before the settings module is called; and any failure the module returns is a
+// 503, because a delete of a declared row has no other refusal to name.
 //
 // As on the write route, the actor is the caller's accountability key,
 // Identity.Key() — the hands on the request, which under an impersonation is the
@@ -180,7 +185,11 @@ func (p *product) handleRemove(ctx context.Context, in removeInput, _ *speedhttp
 		return nil, p.badRequest()
 	}
 	key := fullKeyOf(in.Namespace, in.Key)
-	if _, ok := p.writableItem(key); !ok {
+	_, writable, readOnly := p.writeAccess(key)
+	if readOnly {
+		return nil, p.readOnly()
+	}
+	if !writable {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 	denied, err := p.writeSettings.Denied(ctx, tenant.tenant)
@@ -211,12 +220,24 @@ func visibleToTenant(item settings.DeclaredItem) bool {
 	return item.TenantAccess == settings.TenantRead || item.TenantAccess == settings.TenantReadWrite
 }
 
-// writableItem reports whether a full key is declared and exposed to a tenant
-// for writing. Every other declaration — unknown, platform-only, or read-only —
-// is the same bare 404.
-func (p *product) writableItem(key string) (settings.DeclaredItem, bool) {
+// writeAccess settles what the tenant write routes may do with a full key. It
+// keeps the two refusals apart: an undeclared key and an item with no tenant
+// access are invisible and answer the same bare 404, while an item the
+// declarations expose for reading alone is visible and answers 403 read-only.
+// Only a read-write item proceeds, carrying its declaration.
+func (p *product) writeAccess(key string) (item settings.DeclaredItem, writable, readOnly bool) {
 	item, declared := p.declared(key)
-	return item, declared && item.TenantAccess == settings.TenantReadWrite
+	if !declared {
+		return settings.DeclaredItem{}, false, false
+	}
+	switch item.TenantAccess {
+	case settings.TenantRead:
+		return settings.DeclaredItem{}, false, true
+	case settings.TenantReadWrite:
+		return item, true, false
+	default:
+		return settings.DeclaredItem{}, false, false
+	}
 }
 
 // refuseDisabledPolicy refuses a write that would turn off a policy the platform

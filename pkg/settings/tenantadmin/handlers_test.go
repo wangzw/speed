@@ -474,9 +474,11 @@ func TestAWriteSettingsFailureIs503(t *testing.T) {
 	}
 }
 
-// A declared but read-only item is invisible to the write routes: both answer
-// the same bare 404 an undeclared key gets.
-func TestAWriteToAReadOnlyItemIsA404(t *testing.T) {
+// A declared but read-only item is visible and unwritable: both write routes
+// answer 403 with the read-only problem, before the seam, the audit and the
+// store. It is not the bare 404 an undeclared or platform-only key gets: the
+// caller can see the item and is told why it cannot write it.
+func TestAWriteToAReadOnlyItemIs403(t *testing.T) {
 	r := newRig(t)
 	item := settings.Item{
 		Description:    "a policy the platform alone writes",
@@ -494,14 +496,21 @@ func TestAWriteToAReadOnlyItemIsA404(t *testing.T) {
 			body = map[string]any{"value": true}
 		}
 		w := r.do(method, base+"/app/policy", body)
-		if w.Code != http.StatusNotFound {
-			t.Errorf("%s ended with %d, want 404", method, w.Code)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s ended with %d, want 403: %s", method, w.Code, w.Body.String())
+			continue
+		}
+		if p := problemOf(t, w); p.Type != "urn:speed:settings:read-only" {
+			t.Errorf("%s problem type = %q, want urn:speed:settings:read-only", method, p.Type)
 		}
 	}
 	if got := r.audit.entries(); len(got) != 0 {
 		t.Errorf("a read-only item reached the audit: %v", got)
 	}
-	if got := r.store.ops(); len(got) != 0 {
-		t.Errorf("a read-only item reached the settings surface: %v", got)
+	if got := r.writeSeam.askedTenants(); len(got) != 0 {
+		t.Errorf("a read-only item asked the seam about %v", got)
+	}
+	if got := r.store.recorded(); !noStoreWrites(got) {
+		t.Errorf("a read-only item changed a row: %v", got)
 	}
 }
