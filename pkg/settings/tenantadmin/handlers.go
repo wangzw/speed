@@ -3,6 +3,7 @@ package tenantadmin
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -36,8 +37,13 @@ func (p *product) handleList(ctx context.Context, in listInput) (SettingsTenantA
 // row must not answer as though the row were not there.
 //
 // The envelope also carries whether the host's settings write seam would refuse
-// a write to this tenant. A read that cannot ask the seam is a 503 rather than a
-// claim that the surface is writable.
+// a write to this tenant. A refusal is reported as read_only_reason `protected`.
+// A seam that cannot answer at all is reported as read_only_reason
+// `unavailable` with writable false: the settings were read and are served, and
+// the surface declines to claim a write it could not clear. The listing still
+// answers 200 in that case; a 503 would hide settings the tenant can read over a
+// question about writing them, and the write routes keep answering 503 for the
+// same unreadable seam. The seam's cause goes to the log and never to the body.
 func (p *product) list(ctx context.Context, tenant selection) (SettingsTenantAdminSettings, error) {
 	declared := p.store.Declared()
 	items := make([]settings.DeclaredItem, 0, len(declared))
@@ -84,12 +90,16 @@ func (p *product) list(ctx context.Context, tenant selection) (SettingsTenantAdm
 	}
 
 	denied, err := p.writeSettings.Denied(ctx, tenant.tenant)
-	if err != nil {
-		return SettingsTenantAdminSettings{}, p.unavailable("asking the settings write seam", err)
-	}
-	envelope := SettingsTenantAdminSettings{Settings: views, Writable: !denied}
-	if denied {
+	envelope := SettingsTenantAdminSettings{Settings: views}
+	switch {
+	case err != nil:
+		p.logger.Error(ModuleName+": the settings write seam could not answer, so the surface was reported read-only",
+			slog.String("cause", err.Error()))
+		envelope.ReadOnlyReason = unavailableCode
+	case denied:
 		envelope.ReadOnlyReason = protectedCode
+	default:
+		envelope.Writable = true
 	}
 	return envelope, nil
 }

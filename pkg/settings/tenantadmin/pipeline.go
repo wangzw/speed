@@ -29,6 +29,11 @@ import (
 // write to a tenant whose surface is read-only as a whole, while readOnly says
 // the item itself is declared read-only and no write to it was ever possible.
 //
+// unavailable is not a problem type: it is the read answer's read_only_reason
+// when the host's write seam cannot answer at all. The listing still serves the
+// settings it read and declines to claim the surface is writable; the write
+// routes keep answering 503 for the same unreadable seam.
+//
 // The contact-required refusal is the authentication capability's, not this
 // surface's: the refusal it names is a fact about the acting account's
 // registration, so a client branches on it the same way it branches on the answer
@@ -43,6 +48,7 @@ const (
 	readOnlyCode     = "read-only"
 	enforcedCode     = "tenant-admission-enforced"
 	maskedValueCode  = "masked-value"
+	unavailableCode  = "unavailable"
 )
 
 // The query keys the platform surface uses and this surface refuses. The tenant

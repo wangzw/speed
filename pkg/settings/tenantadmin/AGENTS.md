@@ -32,9 +32,13 @@ declared default; `tenant_value` is the tenant row or the declared default;
 `effective_value` is their boolean OR. `source` is `tenant`, `global` or
 `default`, and a platform-enforced item is `global`. The envelope's `writable`
 is the host seam's answer for the tenant, and `read_only_reason` is the refusal
-code (`protected`) when it is false. Titles and descriptions render in the
-request's language, falling back to the declared English text when no localizer
-is assembled.
+code when it is false: `protected` when the seam refuses the tenant, and
+`unavailable` when the seam cannot answer. In either case the listing still
+answers 200 with the items it read — a 503 would hide settings the tenant can
+read over a question about writing them — while the write routes keep answering
+503 for an unreadable seam. Titles and descriptions render in the request's
+language, falling back to the declared English text when no localizer is
+assembled.
 
 ## What the module is for
 

@@ -42,16 +42,19 @@ const (
 //
 // writable is the host's answer for the tenant, not for an item: a protected
 // tenant's surface is read-only as a whole, and read_only_reason names why in
-// the closed set this capability uses for the refusal (`protected`). An empty
-// read_only_reason with writable true means the surface accepts writes. A
-// platform-enforced policy is a per-item lock, reported on the item as
-// locked_by_platform, and does not make the surface read-only.
+// the closed set this capability uses: `protected` when the seam refuses the
+// tenant and `unavailable` when the seam cannot answer. Both answers keep
+// writable false; the listing still answers 200, because the settings themselves
+// were read and only the write claim is withheld. An empty read_only_reason with
+// writable true means the surface accepts writes. A platform-enforced policy is
+// a per-item lock, reported on the item as locked_by_platform, and does not make
+// the surface read-only.
 type SettingsTenantAdminSettings struct {
 	_ struct{} `description:"The tenant settings surface's read answer: the declared items it exposes and whether the tenant's settings may be written at all."`
 
 	Settings       []SettingsTenantAdminSetting `json:"settings" required:"true" description:"The items whose declarations expose them to a tenant, each with its platform value, tenant value and effective value."`
-	Writable       bool                         `json:"writable" required:"true" description:"Whether this tenant's settings may be written through this surface. False when the host's settings write seam refuses the tenant, in which case every write route answers 403 protected."`
-	ReadOnlyReason string                       `json:"read_only_reason" required:"true" description:"Why the surface is read-only, empty when writable is true. The closed set is the refusal code this capability writes for the same condition; currently only \"protected\"."`
+	Writable       bool                         `json:"writable" required:"true" description:"Whether this tenant's settings may be written through this surface. False when the host's settings write seam refuses the tenant, in which case every write route answers 403 protected, and when the seam cannot answer, in which case every write route answers 503."`
+	ReadOnlyReason string                       `json:"read_only_reason" required:"true" description:"Why the surface is read-only, empty when writable is true. The closed set is the refusal code this capability writes for the same condition: \"protected\" when the host's settings write seam refuses the tenant, \"unavailable\" when the seam cannot answer. The listing still answers 200 with the settings it read in both cases."`
 }
 
 // SettingsTenantAdminSetting is one declared setting item as the tenant

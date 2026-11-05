@@ -456,21 +456,31 @@ func TestAWriteSettingsRefusalIsProtected(t *testing.T) {
 	}
 }
 
-// The seam's own failure is a 503, never read as permission to proceed, and the
-// action does not run.
+// The seam's own failure is a 503 on both write routes, never read as
+// permission to proceed, and the action does not run. This is where a write
+// differs from the listing, which still answers 200 with the items it read and
+// reports the surface read-only instead.
 func TestAWriteSettingsFailureIs503(t *testing.T) {
-	r := newRig(t)
-	r.store.declared = admissionDeclared()
-	r.writeSeam.fail(errors.New("the tenant roster is unreachable"))
-	w := r.do(http.MethodPut, base+"/tenant.admission/require-mfa", map[string]any{"value": true})
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("the request ended with %d, want 503: %s", w.Code, w.Body.String())
-	}
-	if got := r.audit.entries(); len(got) != 0 {
-		t.Errorf("an unanswered seam landed %d audit row(s), want none", len(got))
-	}
-	if got := r.store.recorded(); !noStoreWrites(got) {
-		t.Errorf("an unanswered seam changed a row: %v", got)
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			r := newRig(t)
+			r.store.declared = admissionDeclared()
+			r.writeSeam.fail(errors.New("the tenant roster is unreachable"))
+			var body any
+			if method == http.MethodPut {
+				body = map[string]any{"value": true}
+			}
+			w := r.do(method, base+"/tenant.admission/require-mfa", body)
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("the request ended with %d, want 503: %s", w.Code, w.Body.String())
+			}
+			if got := r.audit.entries(); len(got) != 0 {
+				t.Errorf("an unanswered seam landed %d audit row(s), want none", len(got))
+			}
+			if got := r.store.recorded(); !noStoreWrites(got) {
+				t.Errorf("an unanswered seam changed a row: %v", got)
+			}
+		})
 	}
 }
 

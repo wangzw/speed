@@ -481,6 +481,38 @@ func TestAProtectedTenantIsReadOnly(t *testing.T) {
 	}
 }
 
+// A listing whose host seam cannot answer still serves the settings it read: the
+// answer is 200 with the declared items and writable false, named unavailable.
+// The seam's cause stays in the log and out of the body, and a 503 here would
+// hide settings the tenant can still read over a question about writing them.
+func TestTheTenantListingStaysAvailableWhenTheSeamCannotAnswer(t *testing.T) {
+	r := newRig(t)
+	r.store.declared = admissionDeclared()
+	r.writeSeam.fail(errUnreachable)
+
+	w := r.do(http.MethodGet, base, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the listing ended with %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var envelope tenantEnvelope
+	decode(t, w, &envelope)
+	if envelope.Writable {
+		t.Error("writable is true when the seam could not answer")
+	}
+	if envelope.ReadOnlyReason != "unavailable" {
+		t.Errorf("read_only_reason = %q, want unavailable", envelope.ReadOnlyReason)
+	}
+	if got, want := keysOfSettings(envelope), []string{mfaKey, ssoKey}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the listing holds %v, want %v", got, want)
+	}
+	if body := w.Body.String(); strings.Contains(body, errUnreachable.Error()) {
+		t.Errorf("the answer leaks the seam's cause: %s", body)
+	}
+	if got := r.writeSeam.askedTenants(); len(got) != 1 || got[0] != "acme" {
+		t.Errorf("the seam was asked about %v, want [acme]", got)
+	}
+}
+
 // A listing that cannot read a layer's rows answers 503 rather than leaving an
 // item out or reporting a false source.
 func TestTheTenantListingFailsWhenALayerCannotAnswer(t *testing.T) {
