@@ -510,7 +510,7 @@ func TestAWriteToAReadOnlyItemIs403(t *testing.T) {
 	if got := r.writeSeam.askedTenants(); len(got) != 0 {
 		t.Errorf("a read-only item asked the seam about %v", got)
 	}
-	if got := r.store.recorded(); !noStoreWrites(got) {
-		t.Errorf("a read-only item changed a row: %v", got)
+	if got := r.store.ops(); len(got) != 0 {
+		t.Errorf("a read-only write reached the settings store: %v", got)
 	}
 }

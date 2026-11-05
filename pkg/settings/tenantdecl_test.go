@@ -13,6 +13,41 @@ type tenantDeclaration struct {
 	Flag bool
 }
 
+// textTenantDeclaration mounts a string item, which a switch control has to
+// refuse.
+type textTenantDeclaration struct {
+	Label string
+}
+
+// textBool is a bool underneath that writes and reads yes/no. classifyLeaf asks
+// about the text form before the kind, so it is kindText; the tenant listing
+// re-reads a switch's row with strconv.ParseBool, which cannot read its text.
+type textBool bool
+
+func (b textBool) MarshalText() ([]byte, error) {
+	if b {
+		return []byte("yes"), nil
+	}
+	return []byte("no"), nil
+}
+
+func (b *textBool) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "yes":
+		*b = true
+	case "no":
+		*b = false
+	default:
+		return errors.New("a textBool is yes or no")
+	}
+	return nil
+}
+
+// textBoolTenantDeclaration mounts a bool whose text form is not bool text.
+type textBoolTenantDeclaration struct {
+	Flag textBool
+}
+
 // tenantItem is metadata complete enough for a tenant-facing item.
 func tenantItem(access TenantAccess) Item {
 	return Item{
@@ -99,6 +134,52 @@ func TestTenantAccessIsAClosedSet(t *testing.T) {
 		t.Fatalf("the declaration answered %v, want ErrInvalidDeclaration", err)
 	}
 	for _, want := range []string{"read_write", "TenantNone", "TenantRead", "TenantReadWrite"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure %q does not name %q", err, want)
+		}
+	}
+}
+
+// A switch renders a two-state control, so an item under one has to be declared
+// as bool. A non-boolean item behind a switch would pass the startup check and
+// then fail the encoding of the tenant's whole list on every read, so the
+// declaration is refused when the key table is built.
+func TestASwitchControlRequiresABooleanItem(t *testing.T) {
+	schema := Schema{
+		Namespace:    "tenantns",
+		TenantFacing: true,
+		Mounts:       []Mount{{Value: &textTenantDeclaration{}}},
+		Items:        map[string]Item{"label": tenantItem(TenantReadWrite)},
+	}
+	err := declarationError(t, declaring("test.tenant", schema))
+	if !errors.Is(err, ErrInvalidDeclaration) {
+		t.Fatalf("the declaration answered %v, want ErrInvalidDeclaration", err)
+	}
+	for _, want := range []string{"test.tenant", `"label"`, `"switch"`, "bool"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure %q does not name %q", err, want)
+		}
+	}
+}
+
+// A switch's item must be a plain bool, not merely a type whose underlying kind
+// is bool. A named bool that carries its own text form classifies as kindText,
+// and the tenant listing re-reads the stored text with strconv.ParseBool rather
+// than through that type; its text — yes and no here — would fail the parse and
+// turn every read of the list into a 503. Judging the classified kind rather
+// than reflect.Kind refuses it at startup, where the defect is.
+func TestASwitchControlRequiresAPlainBooleanItem(t *testing.T) {
+	schema := Schema{
+		Namespace:    "tenantns",
+		TenantFacing: true,
+		Mounts:       []Mount{{Value: &textBoolTenantDeclaration{}}},
+		Items:        map[string]Item{"flag": tenantItem(TenantReadWrite)},
+	}
+	err := declarationError(t, declaring("test.tenant", schema))
+	if !errors.Is(err, ErrInvalidDeclaration) {
+		t.Fatalf("the declaration answered %v, want ErrInvalidDeclaration", err)
+	}
+	for _, want := range []string{"test.tenant", `"flag"`, `"switch"`, "bool"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the failure %q does not name %q", err, want)
 		}

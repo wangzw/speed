@@ -350,7 +350,13 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 // tenant-facing is a defect rather than an item exposed on the strength of one
 // field. The metadata is judged with the access because a surface renders the
 // item from it: a title, a description with its English fallback, and a control
-// are required. Danger and Effect are optional, since an item may carry neither.
+// are required. A switch control additionally requires the item to be declared
+// as a plain bool — classified as kindBool, not merely bool underneath — since a
+// switch renders a boolean state and the tenant listing re-reads a switch's
+// stored text with strconv.ParseBool. A named bool that carries its own text
+// form is kindText and can write text ParseBool refuses, so admitting it would
+// fail the encoding of a whole tenant listing on every read. Danger and Effect
+// are optional, since an item may carry neither.
 //
 // The judgement runs when the key table is built, which is part of a module's
 // New, so a defective declaration fails the startup and no request surface
@@ -387,6 +393,12 @@ func tenantDefect(entry keyEntry, tenantFacing bool) string {
 	if entry.item.Control != ControlSwitch {
 		return fmt.Sprintf("its control %q is outside the closed set: ControlSwitch",
 			entry.item.Control)
+	}
+	if entry.kind != kindBool {
+		return fmt.Sprintf("its control %q is a switch, and the item is declared as %s, which is "+
+			"not encoded as a plain boolean: a switch renders a boolean state and the tenant "+
+			"listing reads its text with strconv.ParseBool, so the declared type must be bool",
+			entry.item.Control, typeName(entry.typ))
 	}
 	if entry.item.Danger != DangerNone && entry.item.Danger != DangerCritical {
 		return fmt.Sprintf("its danger %q is outside the closed set: DangerNone or DangerCritical",
