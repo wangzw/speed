@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"sort"
+	"time"
 
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -29,6 +30,12 @@ type row struct {
 	Alias      string `gorm:"column:alias;not null;uniqueIndex"`
 	Status     int    `gorm:"column:status;not null"`
 	DisabledBy int    `gorm:"column:disabled_by;not null"`
+
+	DisplayName  string     `gorm:"column:display_name;not null"`
+	Description  string     `gorm:"column:description;not null"`
+	ContactEmail string     `gorm:"column:contact_email;not null"`
+	Website      string     `gorm:"column:website;not null"`
+	CreatedAt    *time.Time `gorm:"column:created_at"`
 }
 
 // TableName fixes the table this type maps to.
@@ -57,18 +64,32 @@ func buildSnapshot(rows []row) *snapshot {
 		ordered: make([]tenant.Tenant, 0, len(rows)),
 	}
 	for _, r := range rows {
-		t := tenant.Tenant{
-			ID:         tenant.ID(r.ID),
-			Alias:      r.Alias,
-			Status:     tenant.Status(r.Status),
-			DisabledBy: disabledByOf(r.DisabledBy),
-		}
+		t := tenantOf(r)
 		s.byID[t.ID] = t
 		s.byAlias[t.Alias] = t
 		s.ordered = append(s.ordered, t)
 	}
 	sort.Slice(s.ordered, func(i, j int) bool { return s.ordered[i].ID < s.ordered[j].ID })
 	return s
+}
+
+// tenantOf reads one row as the roster serves it: the status and the disable
+// source through their closed sets, and the profile and the creation time as
+// the table holds them. A creation time the table does not hold stays nil.
+func tenantOf(r row) tenant.Tenant {
+	return tenant.Tenant{
+		ID:         tenant.ID(r.ID),
+		Alias:      r.Alias,
+		Status:     tenant.Status(r.Status),
+		DisabledBy: disabledByOf(r.DisabledBy),
+		Profile: tenant.Profile{
+			DisplayName:  r.DisplayName,
+			Description:  r.Description,
+			ContactEmail: r.ContactEmail,
+			Website:      r.Website,
+		},
+		CreatedAt: r.CreatedAt,
+	}
 }
 
 // disabledByOf reads the source column as the roster serves it: only the

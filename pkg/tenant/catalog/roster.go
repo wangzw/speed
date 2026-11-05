@@ -446,13 +446,7 @@ const connectionWait = 5 * time.Second
 // out of log lines and error text is what the domain is for.
 func checkRows(rows []row) error {
 	for _, r := range rows {
-		t := tenant.Tenant{
-			ID:         tenant.ID(r.ID),
-			Alias:      r.Alias,
-			Status:     tenant.Status(r.Status),
-			DisabledBy: disabledByOf(r.DisabledBy),
-		}
-		if err := checkTenant(t); err != nil {
+		if err := checkTenant(tenantOf(r)); err != nil {
 			return fmt.Errorf("%w: table %s holds a row this module will not act on: %w",
 				tenant.ErrInvalidTenant, tableName, err)
 		}
@@ -601,12 +595,7 @@ func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bo
 	if err := checkRows(held); err != nil {
 		return tenant.Tenant{}, false, err
 	}
-	return tenant.Tenant{
-		ID:         tenant.ID(held[0].ID),
-		Alias:      held[0].Alias,
-		Status:     tenant.Status(held[0].Status),
-		DisabledBy: disabledByOf(held[0].DisabledBy),
-	}, true, nil
+	return tenantOf(held[0]), true, nil
 }
 
 // catchUp rereads the roster when the row an entry read from the table is not
@@ -641,7 +630,22 @@ func (r *roster) catchUp(ctx context.Context, id tenant.ID, t tenant.Tenant, hel
 // one identifier: this tenant, or, when held is false, none.
 func agrees(s *snapshot, id tenant.ID, t tenant.Tenant, held bool) bool {
 	current, ok := s.byID[id]
-	return ok == held && current == t
+	return ok == held && sameTenant(current, t)
+}
+
+// sameTenant reports whether two readings name the same tenant. It compares the
+// creation instants rather than the pointers that hold them: two reads of one
+// row build two time values, and a struct comparison would take their
+// addresses as the tenant's identity.
+func sameTenant(a, b tenant.Tenant) bool {
+	if a.ID != b.ID || a.Alias != b.Alias || a.Status != b.Status ||
+		a.DisabledBy != b.DisabledBy || a.Profile != b.Profile {
+		return false
+	}
+	if a.CreatedAt == nil || b.CreatedAt == nil {
+		return a.CreatedAt == nil && b.CreatedAt == nil
+	}
+	return a.CreatedAt.Equal(*b.CreatedAt)
 }
 
 // contextLogger is how an entered tenant reaches the logger a context carries.
@@ -671,6 +675,12 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 // not have come from a status transition is refused rather than stored.
 //
 // The write and the read that names a conflict run on one connection (write).
+//
+// The profile columns and the creation time are not written here. A rewrite
+// takes the alias, the status and the disable source, so it cannot put back a
+// profile another path changed, and an insert it performs takes the migration's
+// profile defaults and a null creation time. Updating a profile is SetProfile's
+// work.
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 	if err := checkWrite(t); err != nil {
 		return err
@@ -837,6 +847,12 @@ func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error 
 
 // Create implements tenant.Catalog.
 //
+// The value's profile is written with the row, and so is a creation time: the
+// moment of the registration in UTC, never a value taken from the caller. A
+// registration date is a fact about the roster, and a caller that could choose
+// it could date a tenant before its account existed. The profile is judged by
+// checkWrite before any statement, as the identifier and the alias are.
+//
 // A tombstone's identifier is taken as any existing identifier is: the creation
 // is refused with ErrTenantExists, so a deleted tenant is never registered
 // again, and its alias stays with the row. The value's own status and disable
@@ -879,6 +895,16 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 			Alias:      t.Alias,
 			Status:     int(t.Status),
 			DisabledBy: int(t.DisabledBy),
+
+			DisplayName:  t.Profile.DisplayName,
+			Description:  t.Profile.Description,
+			ContactEmail: t.Profile.ContactEmail,
+			Website:      t.Profile.Website,
+			// The creation time is the roster's to record, not the caller's to
+			// choose: a value read off the request would let a registration
+			// date itself. A row that already exists keeps the time it has,
+			// because this insert does nothing on a taken identifier.
+			CreatedAt: creationTime(),
 		})
 		if written.Error != nil {
 			return written.Error
@@ -888,6 +914,13 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 		}
 		return nil
 	}, func(session *gorm.DB, err error) error { return failedCreate(session, t, err) })
+}
+
+// creationTime is the moment a registration is recorded at, in UTC. A new
+// value each call: two registrations, however close, do not share one.
+func creationTime() *time.Time {
+	now := time.Now().UTC()
+	return &now
 }
 
 // tenantExists is the refusal of a creation whose identifier is taken.
@@ -1107,6 +1140,57 @@ func (r *roster) SetAlias(ctx context.Context, id tenant.ID, alias string) error
 	}, func(session *gorm.DB, err error) error { return failedAlias(session, id, alias, err) })
 }
 
+// SetProfile implements tenant.Catalog, and writes the organization profile
+// alone.
+//
+// The four profile columns are the whole statement. The alias, the status, the
+// disable source and the creation time are not named, so a profile update
+// cannot put back a value this process read before another path changed it: a
+// rename, a disable or a deletion committed in the window stays. The tombstone
+// condition is in the statement itself, as it is in SetStatus and SetAlias, so
+// a deletion committed between the checks and the write leaves the row as it
+// is; a statement that updated no row is read again to tell a tombstone from a
+// tenant that is no longer there.
+//
+// The profile is judged before any write, so a refused update leaves the table
+// as it found it. A tombstone is refused with ErrTenantDeleted: its profile is
+// as terminal as the rest of its row.
+func (r *roster) SetProfile(ctx context.Context, id tenant.ID, profile tenant.Profile) error {
+	if err := checkField("identifier", string(id)); err != nil {
+		return err
+	}
+	if err := profile.Validate(); err != nil {
+		return err
+	}
+	return r.write(ctx, func(tx *gorm.DB) error {
+		held, err := lookUp(tx, "id", string(id))
+		if err != nil {
+			return err
+		}
+		if len(held) == 0 {
+			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+		}
+		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
+			return tombstone(id)
+		}
+		written := tx.Model(&row{}).
+			Where("id = ? AND status <> ?", string(id), int(tenant.StatusDeleted)).
+			Updates(map[string]any{
+				"display_name":  profile.DisplayName,
+				"description":   profile.Description,
+				"contact_email": profile.ContactEmail,
+				"website":       profile.Website,
+			})
+		if written.Error != nil {
+			return written.Error
+		}
+		if written.RowsAffected > 0 {
+			return nil
+		}
+		return missingOrTombstone(tx, id)
+	}, nil)
+}
+
 // lookUp reads the row, if any, whose unique column holds this value.
 //
 // Finding none is an answer, and it is read as one: an empty result rather than
@@ -1155,15 +1239,21 @@ func (r *roster) afterWrite(ctx context.Context) error {
 
 // checkTenant refuses a tenant this module will not act on.
 //
-// The shape it judges is the one this module can judge: not empty, and free of
-// blanks and control characters. How long an identifier may be is the declaring
-// party's to say, in the column its migration declares — this module defines no
-// length and so cannot check one.
+// The identifier and alias are judged by the shape this module can judge: not
+// empty, and free of blanks and control characters. How long an identifier may
+// be is the declaring party's to say, in the column its migration declares —
+// this module defines no length and so cannot check one. The profile is judged
+// against tenant.Profile.Validate, whose bounds and shapes this module states
+// nowhere else: a row the table holds has to pass the same check a write does,
+// because the table can be written without this module's write paths.
 func checkTenant(t tenant.Tenant) error {
 	if err := checkField("identifier", string(t.ID)); err != nil {
 		return err
 	}
-	return checkField("alias", t.Alias)
+	if err := checkField("alias", t.Alias); err != nil {
+		return err
+	}
+	return t.Profile.Validate()
 }
 
 // checkWrite is checkTenant plus the two values a registration may not choose.

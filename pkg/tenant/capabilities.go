@@ -174,6 +174,19 @@ type Catalog interface {
 	// refused as Put refuses it, as ErrAliasConflict naming the holder, and a
 	// tombstone is refused with ErrTenantDeleted: its alias stays with the row.
 	SetAlias(ctx context.Context, id ID, alias string) error
+	// SetProfile rewrites one tenant's organization profile and nothing else:
+	// the display name, the description, the contact email and the website.
+	// The alias, the status, the disable source and the creation time are not
+	// written, so a profile update cannot undo a rename, a disable or a
+	// deletion another path committed in the same window. Put is not the route
+	// for this write: it takes the whole row's values, the profile included
+	// only as it stands.
+	//
+	// A profile outside the domain this package states is refused with
+	// ErrInvalidProfile and nothing is written. An identifier no row carries is
+	// refused with ErrInvalidTenant, and a tombstone with ErrTenantDeleted: a
+	// deleted tenant's profile is as terminal as the rest of its row.
+	SetProfile(ctx context.Context, id ID, profile Profile) error
 	// List returns every tenant the roster holds, ordered by identifier, as a
 	// copy: a caller sorting or trimming what it was handed does not disturb
 	// what the next caller sees.

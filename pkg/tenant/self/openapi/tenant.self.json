@@ -41,7 +41,7 @@
   "paths": {
     "/auth/me/tenants": {
       "get": {
-        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias and kind. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
+        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias, display name and kind. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
         "operationId": "tenant.self.tenants.list",
         "responses": {
           "200": {
@@ -56,6 +56,10 @@
                         "properties": {
                           "alias": {
                             "description": "The tenant's alias, the name the request surface addresses it by.",
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "description": "The organization's display name, empty when its profile names none. A surface falls back to the alias then.",
                             "type": "string"
                           },
                           "id": {
@@ -74,6 +78,7 @@
                         "required": [
                           "id",
                           "alias",
+                          "displayName",
                           "kind"
                         ],
                         "type": "object"

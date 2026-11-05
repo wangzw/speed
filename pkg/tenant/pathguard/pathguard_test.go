@@ -52,7 +52,10 @@ func (*roster) SetStatusByAccount(context.Context, tenant.ID, tenant.Status) err
 }
 func (*roster) Delete(context.Context, tenant.ID) error           { return errUnused }
 func (*roster) SetAlias(context.Context, tenant.ID, string) error { return errUnused }
-func (*roster) List(context.Context) ([]tenant.Tenant, error)     { return nil, errUnused }
+func (*roster) SetProfile(context.Context, tenant.ID, tenant.Profile) error {
+	return errUnused
+}
+func (*roster) List(context.Context) ([]tenant.Tenant, error) { return nil, errUnused }
 func (*roster) Enter(context.Context, tenant.ID) (context.Context, error) {
 	return nil, errUnused
 }

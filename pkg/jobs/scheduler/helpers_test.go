@@ -152,6 +152,9 @@ func (c *fakeCatalog) SetStatusByAccount(context.Context, tenant.ID, tenant.Stat
 }
 func (c *fakeCatalog) Delete(context.Context, tenant.ID) error           { return nil }
 func (c *fakeCatalog) SetAlias(context.Context, tenant.ID, string) error { return nil }
+func (c *fakeCatalog) SetProfile(context.Context, tenant.ID, tenant.Profile) error {
+	return nil
+}
 
 func (c *fakeCatalog) EnterRegistered(ctx context.Context, id tenant.ID) (context.Context, error) {
 	return context.WithValue(ctx, tenantKey{}, id), nil

@@ -139,6 +139,11 @@ func (s *stubCatalog) SetAlias(_ context.Context, id tenant.ID, alias string) er
 	return s.errOr(s.setAliasErr)
 }
 
+func (s *stubCatalog) SetProfile(_ context.Context, id tenant.ID, _ tenant.Profile) error {
+	s.record(catalogCall{op: "SetProfile", id: id})
+	return s.errNow()
+}
+
 func (s *stubCatalog) List(context.Context) ([]tenant.Tenant, error) {
 	s.record(catalogCall{op: "List"})
 	if err := s.errNow(); err != nil {

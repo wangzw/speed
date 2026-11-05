@@ -36,8 +36,15 @@ func TestCreateRegistersATenantTheWriterSeesAtOnce(t *testing.T) {
 		t.Fatalf("creating: %v", err)
 	}
 	got, ok, err := r.Get(context.Background(), "t_acme")
-	if err != nil || !ok || got != want {
+	if err != nil || !ok {
+		t.Fatalf("the writer reads (%+v, %v, %v) back, want the tenant", got, ok, err)
+	}
+	if got.ID != want.ID || got.Alias != want.Alias || got.Status != want.Status ||
+		got.DisabledBy != want.DisabledBy || got.Profile != want.Profile {
 		t.Fatalf("the writer reads (%+v, %v, %v) back, want %+v", got, ok, err, want)
+	}
+	if got.CreatedAt == nil {
+		t.Fatalf("the writer reads no creation time back, want the moment of creation")
 	}
 }
 

@@ -21,8 +21,12 @@ package tenant
 import (
 	"database/sql/driver"
 	"fmt"
+	"net/mail"
+	"net/url"
 	"strings"
+	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ID is a tenant's immutable identifier.
@@ -143,6 +147,98 @@ func (d DisabledBy) String() string {
 	return "operator"
 }
 
+// Profile is the organization profile a tenant carries. Its zero value is a
+// tenant with no profile entered, which is what a row created before the
+// profile columns existed reads as.
+//
+// The fields are descriptive and carry nothing the roster decides from: an
+// identifier, an alias and a status stay the facts a request is resolved by.
+// A host may therefore change a profile without the roster's snapshot
+// changing which tenant a request reaches.
+type Profile struct {
+	// DisplayName is the name the organization is shown by. It is free text
+	// and may be empty, in which case a surface falls back to the alias.
+	DisplayName string
+	// Description is a longer account of the organization.
+	Description string
+	// ContactEmail is the address the organization is reached at. It is the
+	// organization's contact address, not a login identity.
+	ContactEmail string
+	// Website is the organization's absolute http or https address.
+	Website string
+}
+
+// The profile's bounds. They are stated here so that a surface validating a
+// field before it reaches the roster and the roster validating what it stores
+// cannot drift apart.
+const (
+	// DisplayNameMaxRunes bounds a display name.
+	DisplayNameMaxRunes = 100
+	// DescriptionMaxRunes bounds a description.
+	DescriptionMaxRunes = 500
+	// ContactEmailMaxBytes bounds a contact email.
+	ContactEmailMaxBytes = 254
+	// WebsiteMaxBytes bounds a website.
+	WebsiteMaxBytes = 2048
+)
+
+// Normalize trims the surrounding whitespace from each field. Whitespace inside
+// a description is kept: it belongs to the text. Nothing else is rewritten —
+// an email address and a website are validated against what the caller wrote,
+// so changing either here would store a value the caller was never shown.
+func (p Profile) Normalize() Profile {
+	return Profile{
+		DisplayName:  strings.TrimSpace(p.DisplayName),
+		Description:  strings.TrimSpace(p.Description),
+		ContactEmail: strings.TrimSpace(p.ContactEmail),
+		Website:      strings.TrimSpace(p.Website),
+	}
+}
+
+// Validate judges a normalized profile against the domain this package states.
+// The empty profile is valid: every field may be cleared. A failure carries
+// ErrInvalidProfile and names the field, never the value — a contact address
+// and a website are the organization's, and an error message is not a place to
+// repeat them.
+//
+// A contact email is required to be one bare address: ParseAddress's answer
+// must equal the field, so a display-name form such as `Ops <ops@acme.test>`
+// is refused rather than quietly reduced to its address. A website must be
+// absolute, use http or https, name a host, and carry no userinfo.
+func (p Profile) Validate() error {
+	if n := utf8.RuneCountInString(p.DisplayName); n > DisplayNameMaxRunes {
+		return fmt.Errorf("%w: the display name is %d runes, over its %d-rune bound",
+			ErrInvalidProfile, n, DisplayNameMaxRunes)
+	}
+	if n := utf8.RuneCountInString(p.Description); n > DescriptionMaxRunes {
+		return fmt.Errorf("%w: the description is %d runes, over its %d-rune bound",
+			ErrInvalidProfile, n, DescriptionMaxRunes)
+	}
+	if len(p.ContactEmail) > ContactEmailMaxBytes {
+		return fmt.Errorf("%w: the contact email is %d bytes, over its %d-byte bound",
+			ErrInvalidProfile, len(p.ContactEmail), ContactEmailMaxBytes)
+	}
+	if p.ContactEmail != "" {
+		address, err := mail.ParseAddress(p.ContactEmail)
+		if err != nil || address.Address != p.ContactEmail {
+			return fmt.Errorf("%w: the contact email is not one bare address", ErrInvalidProfile)
+		}
+	}
+	if len(p.Website) > WebsiteMaxBytes {
+		return fmt.Errorf("%w: the website is %d bytes, over its %d-byte bound",
+			ErrInvalidProfile, len(p.Website), WebsiteMaxBytes)
+	}
+	if p.Website != "" {
+		parsed, err := url.Parse(p.Website)
+		if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil ||
+			(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
+			return fmt.Errorf("%w: the website is not an absolute http or https address with a host and no userinfo",
+				ErrInvalidProfile)
+		}
+	}
+	return nil
+}
+
 // Tenant is one row of the roster.
 type Tenant struct {
 	// ID is the immutable identifier.
@@ -157,4 +253,10 @@ type Tenant struct {
 	// DisabledBy says who disabled this tenant. It is read only while Status
 	// is StatusDisabled, and enabling a tenant clears it.
 	DisabledBy DisabledBy
+	// Profile is the organization profile the tenant carries.
+	Profile Profile
+	// CreatedAt is when the tenant was registered. It is nil for a row that
+	// predates the column: the roster does not invent a time for a tenant
+	// whose creation it did not witness.
+	CreatedAt *time.Time
 }

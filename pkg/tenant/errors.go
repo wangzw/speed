@@ -111,6 +111,14 @@ var (
 	// every caller that resolves a tenant to it.
 	ErrInvalidTenant = errors.New("tenant: a tenant this module will not act on")
 
+	// ErrInvalidProfile reports an organization profile this module will not
+	// store or serve: a display name or a description beyond its rune bound, or
+	// a contact email or a website outside its byte bound or its shape. The
+	// message names the field and never the value. A roster row holding such a
+	// profile is refused by the read that takes it, as a row holding an
+	// out-of-domain identifier is.
+	ErrInvalidProfile = errors.New("tenant: an organization profile this module will not act on")
+
 	// ErrTenantDisabled reports a tenant the roster carries but does not
 	// serve, asked to be entered. The fix is the tenant's state, not the call:
 	// a path acting for a disabled tenant has nothing to act on until the

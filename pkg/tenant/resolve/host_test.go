@@ -394,6 +394,10 @@ func (fakeRoster) SetAlias(context.Context, tenant.ID, string) error {
 	return errors.New("not used by the resolution layer")
 }
 
+func (fakeRoster) SetProfile(context.Context, tenant.ID, tenant.Profile) error {
+	return errors.New("not used by the resolution layer")
+}
+
 func (fakeRoster) List(context.Context) ([]tenant.Tenant, error) {
 	return nil, errors.New("not used by the resolution layer")
 }

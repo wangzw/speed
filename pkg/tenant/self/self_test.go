@@ -152,6 +152,53 @@ func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 	}
 }
 
+// TestTheReadCarriesTheOrganizationDisplayName holds the host's display-name
+// source: the entry carries the roster's display name beside the alias, and a
+// tenant whose profile names none carries an empty one rather than omitting the
+// field, so a host can fall back to the alias without a missing-property branch.
+func TestTheReadCarriesTheOrganizationDisplayName(t *testing.T) {
+	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
+		"acct-bob": {
+			{Account: "acct-bob", Tenant: "acme", Active: true},
+			{Account: "acct-bob", Tenant: "globex", Active: true},
+		},
+	}}
+	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
+		"acme": {
+			ID:      "acme",
+			Alias:   "acme",
+			Status:  tenant.StatusActive,
+			Profile: tenant.Profile{DisplayName: "Acme Corporation"},
+		},
+		"globex": activeTenant("globex", "Globex"),
+	}}
+	p := newRig(memberships, catalog)
+	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
+
+	w := serve(t, tenantsOperation.Handle(p.handleTenants), ctx)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the read answered %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Tenants []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"displayName"`
+		} `json:"tenants"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding the answer %q: %v", w.Body.String(), err)
+	}
+	if len(body.Tenants) != 2 {
+		t.Fatalf("tenants = %+v, want both", body.Tenants)
+	}
+	if body.Tenants[0].DisplayName != "Acme Corporation" {
+		t.Errorf("acme's display name is %q, want Acme Corporation", body.Tenants[0].DisplayName)
+	}
+	if body.Tenants[1].DisplayName != "" {
+		t.Errorf("globex's display name is %q, want empty", body.Tenants[1].DisplayName)
+	}
+}
+
 // TestTheKindComesFromTheResolver holds the host seam: each row's kind is the
 // resolver's answer for that tenant, passed through unchanged, and the resolver
 // is asked once per listed tenant.

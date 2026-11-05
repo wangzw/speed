@@ -85,7 +85,12 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 				return tenantsBody{}, p.unavailable(err, "a tenant's kind could not be read")
 			}
 		}
-		out = append(out, tenantSelfTenant{ID: string(found.ID), Alias: found.Alias, Kind: string(kind)})
+		out = append(out, tenantSelfTenant{
+			ID:          string(found.ID),
+			Alias:       found.Alias,
+			DisplayName: found.Profile.DisplayName,
+			Kind:        string(kind),
+		})
 	}
 	return tenantsBody{Tenants: out}, nil
 }
