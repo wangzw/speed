@@ -36,7 +36,12 @@
 
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import {
   authnAdminMembersPut,
@@ -343,7 +348,11 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     return useQuery({
       ...options,
       queryKey: tenantQueryKey(tenant, ...options.queryKey),
-      select: (page) => page.members,
+      // The page envelope carries the cursor of the page that follows; the
+      // rows alone cannot tell a full last page from one with more behind it.
+      // The previous page stays on screen while a search or page change is in
+      // flight, so the table does not collapse under the operator.
+      placeholderData: keepPreviousData,
       enabled: tenant !== '',
     })
   },
@@ -727,6 +736,10 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
         authzTenantadminBindingsPut(input.tenant, input.account, input.role),
       onSuccess: (_answer, input) => {
         invalidateTenantBindings(queryClient, input.tenant, input.account)
+        // The member read carries each account's role names, so a binding
+        // change leaves the rows stale even though the membership itself did
+        // not change.
+        invalidateTenantMembers(queryClient, input.tenant)
       },
     })
   },
@@ -742,6 +755,9 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
         ),
       onSuccess: (_answer, input) => {
         invalidateTenantBindings(queryClient, input.tenant, input.account)
+        // The role column is derived from these bindings; refresh it with the
+        // binding reads so the panel and the row never disagree.
+        invalidateTenantMembers(queryClient, input.tenant)
       },
     })
   },

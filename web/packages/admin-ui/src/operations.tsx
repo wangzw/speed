@@ -152,6 +152,7 @@ import type {
   AuthnAdminIdentifierWrite,
   AuthnAdminImpersonation,
   AuthnAdminMember,
+  AuthnAdminMemberList,
   AuthnAdminMemberSSOExempt,
   AuthnAdminMemberWrite,
   AuthnAdminMembersListParams,
@@ -223,6 +224,9 @@ export type AdminAccountPage = AuthnAdminAccountList
 
 /** One page of invitations: the rows and the next-page cursor. */
 export type AdminInvitationPage = AuthnInvitePage
+
+/** One page of tenant members: the rows and the next-page cursor. */
+export type AdminMemberPage = AuthnAdminMemberList
 
 /** One page of SMS templates: the rows and the next-page cursor. */
 export type AdminSmsTemplatePage = SmsAdminTemplatesList200
@@ -855,11 +859,12 @@ export interface AdminOperations {
 
   // --- Membership surface (tenant-scoped) -------------------------------
 
-  /** GET .../tenants/:tenant/members -- a tenant's members. */
+  /** GET .../tenants/:tenant/members -- one page of a tenant's members,
+   * with the cursor of the page that follows. */
   readonly useMembers: (
     tenant: string,
     params?: AuthnAdminMembersListParams,
-  ) => UseQueryResult<readonly AdminMember[], unknown>
+  ) => UseQueryResult<AdminMemberPage, unknown>
   /** DELETE .../tenants/:tenant/members/:account -- remove a membership. */
   readonly useRemoveMember: () => UseMutationResult<void, unknown, AdminMemberRef>
   /** PUT .../tenants/:tenant/members/:account -- add, suspend or resume a membership. */
@@ -1567,7 +1572,12 @@ export const adminOperations: AdminOperations = {
   useMembers: (tenant, params) =>
     useQuery({
       ...getAuthnAdminMembersListQueryOptions(tenant, params),
-      select: (page) => page.members,
+      // The page envelope is the read's answer: a caller needs the cursor the
+      // server reported, not only the rows it happened to receive. A search
+      // or a page change keeps the previous rows on screen while the
+      // next answer is in flight, so the table does not collapse to a
+      // skeleton on every keystroke and every page step.
+      placeholderData: keepPreviousData,
       enabled: tenant !== '',
     }),
 

@@ -151,6 +151,8 @@ const MEMBER: AuthnAdminMember = {
   display_name: 'Test User',
   sso_exempt: false,
   source: 'admin',
+  roles: [],
+  joined_at: '2026-10-15T12:00:00Z',
 }
 
 /**
@@ -590,9 +592,10 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   ],
   [
     /^\/api\/v1\/tenants\/[^/]+\/members$/,
-    answer({ members: [MEMBER] } satisfies AuthnAdminMemberList, {
-      members: [],
-    } satisfies AuthnAdminMemberList),
+    answer(
+      { members: [MEMBER], next_cursor: '' } satisfies AuthnAdminMemberList,
+      { members: [], next_cursor: '' } satisfies AuthnAdminMemberList,
+    ),
   ],
   [
     /^\/api\/v1\/tenants\/[^/]+\/sso\/providers$/,

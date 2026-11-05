@@ -103,7 +103,7 @@ function invitation(overrides: Partial<AdminInvitation> = {}): AdminInvitation {
     email: 'ada@example.com',
     status: 'pending',
     invited_by: 'staff-1',
-    expires_at: '2026-10-20T00:00:00Z',
+    expires_at: '2099-01-01T00:00:00Z',
     accepted_at: '0001-01-01T00:00:00Z',
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
@@ -118,6 +118,8 @@ function member(overrides: Partial<AdminMember> = {}): AdminMember {
     display_name: '',
     sso_exempt: false,
     source: 'direct',
+    roles: [],
+    joined_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
 }
@@ -335,7 +337,7 @@ describe('InvitationsPage', () => {
       expect(screen.queryByText(zhCN.invitations.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
       expect(listInvitations).toHaveBeenCalledWith('acme')
-      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 101 })
+      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
     } finally {
       window.history.replaceState({}, '', '/')
     }
@@ -482,9 +484,9 @@ describe('InvitationsPage', () => {
 
   it('pages the organization member table through every member', async () => {
     const user = userEvent.setup()
-    // One row beyond the page size is the probe that says another page
-    // follows; the table itself shows the first 100.
-    const firstPage = Array.from({ length: 101 }, (_, index) =>
+    // The read answers its rows and the cursor of the page that follows, so a
+    // full first page is not mistaken for the last one.
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
         display_name: `Member ${index}`,
@@ -497,8 +499,13 @@ describe('InvitationsPage', () => {
       ) =>
         Promise.resolve(
           params?.after === undefined
-            ? firstPage
-            : [member({ account: 'acc-101', display_name: 'Last Member' })],
+            ? { members: firstPage, next_cursor: 'cursor-1' }
+            : {
+                members: [
+                  member({ account: 'acc-100', display_name: 'Last Member' }),
+                ],
+                next_cursor: '',
+              },
         ),
     )
     const operations = withTenant({ listMembers })
@@ -510,35 +517,34 @@ describe('InvitationsPage', () => {
     expect(
       (await within(memberSection).findAllByText('Member 0')).length,
     ).toBeGreaterThan(0)
-    // The probe row is not rendered as a member of the page on screen.
-    expect(within(memberSection).queryByText('Member 100')).toBeNull()
-    // An over-full page is the evidence another may follow; the next page is
-    // read by the last rendered row's account identifier, the cursor the
-    // route documents.
+    expect(within(memberSection).queryByText('Last Member')).toBeNull()
     await user.click(
       within(memberSection).getByRole('button', {
-        name: zhCN.members.nextPage,
+        name: zhCN.common.pager.next,
       }),
     )
     expect(
       await within(memberSection).findByText('Last Member'),
     ).toBeInTheDocument()
     expect(listMembers).toHaveBeenLastCalledWith('acme', {
-      limit: 101,
-      after: 'acc-099',
+      limit: 100,
+      after: 'cursor-1',
     })
   })
 
   it('treats an exact page as the last page without an empty next page', async () => {
-    // Exactly one page of members: the read answers the page size, one row
-    // short of the probe, so no next page follows and no empty page is read.
+    // A full page with no next cursor is the last page; the table never reads
+    // past its last row into an empty page whose empty state would wrongly say
+    // the tenant has no members.
     const page = Array.from({ length: 100 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
         display_name: `Member ${index}`,
       }),
     )
-    const listMembers = vi.fn(() => Promise.resolve(page))
+    const listMembers = vi.fn(() =>
+      Promise.resolve({ members: page, next_cursor: '' }),
+    )
     const operations = withTenant({ listMembers })
     renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
       operations,
@@ -548,12 +554,9 @@ describe('InvitationsPage', () => {
     expect(
       await within(memberSection).findByText('Member 0'),
     ).toBeInTheDocument()
-    // A full page is not evidence of another page: an exact multiple ends
-    // here, and the table never reads past its last row into an empty page
-    // whose empty state would wrongly say the tenant has no members.
     expect(
       within(memberSection).queryByRole('button', {
-        name: zhCN.members.nextPage,
+        name: zhCN.common.pager.next,
       }),
     ).toBeNull()
     expect(
@@ -564,7 +567,7 @@ describe('InvitationsPage', () => {
 
   it('returns to the first page with an empty cursor on the previous action', async () => {
     const user = userEvent.setup()
-    const firstPage = Array.from({ length: 101 }, (_, index) =>
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
         display_name: `Member ${index}`,
@@ -577,8 +580,13 @@ describe('InvitationsPage', () => {
       ) =>
         Promise.resolve(
           params?.after === undefined
-            ? firstPage
-            : [member({ account: 'acc-100', display_name: 'Member 100' })],
+            ? { members: firstPage, next_cursor: 'cursor-1' }
+            : {
+                members: [
+                  member({ account: 'acc-100', display_name: 'Member 100' }),
+                ],
+                next_cursor: '',
+              },
         ),
     )
     const operations = withTenant({ listMembers })
@@ -590,7 +598,7 @@ describe('InvitationsPage', () => {
     await within(memberSection).findByText('Member 0')
     await user.click(
       within(memberSection).getByRole('button', {
-        name: zhCN.members.nextPage,
+        name: zhCN.common.pager.next,
       }),
     )
     expect(
@@ -599,7 +607,7 @@ describe('InvitationsPage', () => {
 
     await user.click(
       within(memberSection).getByRole('button', {
-        name: zhCN.members.prevPage,
+        name: zhCN.common.pager.previous,
       }),
     )
     expect(
@@ -608,7 +616,7 @@ describe('InvitationsPage', () => {
     // The first page is read again by no cursor at all, not by the cursor the
     // second page left on the stack.
     await vi.waitFor(() =>
-      expect(listMembers).toHaveBeenLastCalledWith('acme', { limit: 101 }),
+      expect(listMembers).toHaveBeenLastCalledWith('acme', { limit: 100 }),
     )
   })
 
@@ -628,10 +636,15 @@ describe('InvitationsPage', () => {
       ) =>
         Promise.resolve(
           tenant === 'globex'
-            ? []
+            ? { members: [], next_cursor: '' }
             : params?.after === undefined
-              ? firstPage
-              : [member({ account: 'acc-100', display_name: 'Member 100' })],
+              ? { members: firstPage, next_cursor: 'cursor-1' }
+              : {
+                  members: [
+                    member({ account: 'acc-100', display_name: 'Member 100' }),
+                  ],
+                  next_cursor: '',
+                },
         ),
     )
     const operations = withTenant({
@@ -646,7 +659,7 @@ describe('InvitationsPage', () => {
     await within(memberSection).findByText('Member 0')
     await user.click(
       within(memberSection).getByRole('button', {
-        name: zhCN.members.nextPage,
+        name: zhCN.common.pager.next,
       }),
     )
     expect(
@@ -665,14 +678,14 @@ describe('InvitationsPage', () => {
     })
     for (const [tenant, params] of listMembers.mock.calls) {
       if (tenant === 'globex') {
-        expect(params).toEqual({ limit: 101 })
+        expect(params).toEqual({ limit: 100 })
       }
     }
   })
 
   it('keeps a first-page member name as an inviter after paging to the second page', async () => {
     const user = userEvent.setup()
-    const firstPage = Array.from({ length: 101 }, (_, index) =>
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
         display_name: `Member ${index}`,
@@ -690,8 +703,13 @@ describe('InvitationsPage', () => {
       ) =>
         Promise.resolve(
           params?.after === undefined
-            ? firstPage
-            : [member({ account: 'acc-100', display_name: 'Next Page Member' })],
+            ? { members: firstPage, next_cursor: 'cursor-1' }
+            : {
+                members: [
+                  member({ account: 'acc-100', display_name: 'Next Page Member' }),
+                ],
+                next_cursor: '',
+              },
         ),
     })
     renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
@@ -707,7 +725,7 @@ describe('InvitationsPage', () => {
 
     await user.click(
       within(memberSection).getByRole('button', {
-        name: zhCN.members.nextPage,
+        name: zhCN.common.pager.next,
       }),
     )
     expect(
@@ -2048,7 +2066,7 @@ describe('InvitationsPage', () => {
       await vi.waitFor(() => {
         expect(listInvitations).toHaveBeenCalledWith('acme')
       })
-      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 101 })
+      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
       expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
     } finally {
       window.history.replaceState({}, '', '/')

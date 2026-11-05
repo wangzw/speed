@@ -24,7 +24,7 @@ const INVITATIONS: readonly AdminInvitation[] = [
     email: 'ada.lovelace@example.com',
     status: 'pending',
     invited_by: 'staff-1',
-    expires_at: '2026-10-20T00:00:00Z',
+    expires_at: '2099-01-01T00:00:00Z',
     accepted_at: '0001-01-01T00:00:00Z',
     created_at: '2026-10-15T12:00:00Z',
   },
@@ -38,6 +38,8 @@ const MEMBERS: readonly AdminMember[] = [
     display_name: 'Member With A Long Display Name',
     sso_exempt: false,
     source: 'direct',
+    roles: [],
+    joined_at: '2026-10-15T12:00:00Z',
   },
 ]
 

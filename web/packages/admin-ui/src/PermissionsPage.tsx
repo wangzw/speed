@@ -538,8 +538,12 @@ function TenantMemberPicker({
     setQuery('')
   }, [tenant])
 
-  const rows = members.data
-  const hasNext = (rows?.length ?? 0) > MEMBER_PAGE_SIZE
+  const rows = members.data?.members
+  // The server's cursor is authoritative; the probe row is the fallback for
+  // a read that answered rows without one.
+  const hasNext =
+    (members.data?.next_cursor ?? '') !== '' ||
+    (rows?.length ?? 0) > MEMBER_PAGE_SIZE
   const pageRows = useMemo(
     () => (rows === undefined ? undefined : rows.slice(0, MEMBER_PAGE_SIZE)),
     [rows],
@@ -548,7 +552,10 @@ function TenantMemberPicker({
     () => (pageRows ?? []).filter((member) => member.active).map(memberAsAccount),
     [pageRows],
   )
-  const nextCursor = pageRows?.at(-1)?.account ?? ''
+  const nextCursor =
+    (members.data?.next_cursor ?? '') !== ''
+      ? (members.data?.next_cursor ?? '')
+      : (pageRows?.at(-1)?.account ?? '')
   const loading = members.isPending && rows === undefined
   const failed = members.isError
   const nextPage = () => {

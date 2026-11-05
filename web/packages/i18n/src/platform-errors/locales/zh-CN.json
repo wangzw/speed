@@ -5,6 +5,7 @@
     "authn.account_last_tenant_admin": "该账户是某个组织的唯一管理员，无法删除。请先将该组织的管理员转交给其他成员，再删除此账户。",
     "authn.account_unavailable": "该账户当前不可用，请联系管理员。",
     "authn.bad_request": "提交的信息有误，请检查后重试。",
+    "authn.cannot_suspend_self": "不能停用自己的成员身份。请让另一位管理员操作。",
     "authn.conflict": "账户信息可能已发生变化，请刷新页面后重试。",
     "authn.contact_required": "请先验证邮箱地址再继续。",
     "authn.email_taken": "该邮箱已被另一账户使用。",

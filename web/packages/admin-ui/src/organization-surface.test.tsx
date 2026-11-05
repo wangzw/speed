@@ -445,6 +445,8 @@ describe('the organization pages address only the current tenant', () => {
     display_name: 'Ada Lovelace',
     sso_exempt: false,
     source: 'admin',
+    roles: [],
+    joined_at: '2026-10-15T12:00:00Z',
   }
   const INVITATION = {
     id: 'invite-1',
@@ -485,7 +487,7 @@ describe('the organization pages address only the current tenant', () => {
         return { invitations: [INVITATION], next_cursor: '' }
       }
       if (call.path === `/api/v1/tenants/${TENANT}/members`) {
-        return { members: [MEMBER] }
+        return { members: [MEMBER], next_cursor: '' }
       }
       if (call.path === `/api/v1/tenants/${TENANT}/sso/providers`) {
         return { providers: [PROVIDER] }

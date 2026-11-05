@@ -59,7 +59,7 @@
  * form's exemption checkbox render only where `authn.admin.sso` is present.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -89,6 +89,11 @@ import {
 import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
+import { CursorPager } from './internal/cursor-pager.js'
+import {
+  invitationStatusOf,
+  type InvitationStatus,
+} from './internal/invitation-status.js'
 import { formatInstant } from '@speed/i18n'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { useAdminHasFeature } from './internal/features.js'
@@ -123,24 +128,17 @@ import type {
 const TENANT_HINT_ID = 'invitations-tenant-hint'
 
 /**
- * The member table's page size. The membership read's cursor is the account
- * identifier of the previous page's last row, and the read answers no next
- * cursor, so the page asks for one row beyond its size: an answer longer than
- * the page size is the evidence another page follows, and a tenant whose
- * member count is an exact multiple ends on a full last page rather than on an
- * empty one.
+ * The member table's page size. The membership read answers the cursor of the
+ * page that follows, so a full page is not mistaken for the last one and the
+ * page never reads a probe row of its own.
  */
 const MEMBER_PAGE_SIZE = 100
-const MEMBER_READ_LIMIT = MEMBER_PAGE_SIZE + 1
 
 /** No member names resolved yet, for a tenant the page has read no page of. */
 const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
 
 /** The invitation just issued, with the tenant it was issued under. */
 type IssuedInvitation = AdminIssuedInvitation & { readonly tenant: string }
-
-/** The invitation status's label, guarding the closed set. */
-const INVITATION_STATUSES = new Set<string>(['pending', 'accepted', 'revoked'])
 
 /**
  * The member sources the membership surface writes by name. A `jit:<id>`
@@ -149,10 +147,18 @@ const INVITATION_STATUSES = new Set<string>(['pending', 'accepted', 'revoked'])
 const MEMBER_SOURCES = new Set<string>(['admin', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
 
-function statusLabel(status: string, t: (key: string) => string): string {
-  return INVITATION_STATUSES.has(status)
-    ? t(`invitations.status.${status}`)
-    : t('invitations.status.other')
+/**
+ * The invitation status's label. Expiry is derived from the deadline (the
+ * stored state still reads pending), so the shared helper decides the fourth
+ * label; a stored value outside the closed set renders the generic one.
+ */
+function statusLabel(status: InvitationStatus, t: (key: string) => string): string {
+  return t(`invitations.status.${status}`)
+}
+
+/** The status a row displays, derived once per render from its deadline. */
+function displayedStatus(invitation: AdminInvitation): InvitationStatus {
+  return invitationStatusOf(invitation)
 }
 
 /**
@@ -240,20 +246,12 @@ export function InvitationsPage({
 
   const invitations = operations.useInvitations(tenant)
   const members = operations.useMembers(tenant, {
-    limit: MEMBER_READ_LIMIT,
+    limit: MEMBER_PAGE_SIZE,
     ...(memberCursor === '' ? {} : { after: memberCursor }),
   })
-  const memberReadRows = members.data
-  // The row beyond the page size is the probe only: the table shows the page
-  // the operator asked for, never the row that proves another page exists.
-  const memberRows = useMemo(
-    () =>
-      memberReadRows === undefined ||
-      memberReadRows.length <= MEMBER_PAGE_SIZE
-        ? memberReadRows
-        : memberReadRows.slice(0, MEMBER_PAGE_SIZE),
-    [memberReadRows],
-  )
+  // The member read answers the page envelope; the cursor beside the rows is
+  // what says another page follows.
+  const memberRows = members.data?.members
   // Tenant mode resolves an account's identity from the member rows this
   // page has read. An account the read has not settled on, was refused, or
   // does not carry is unresolved -- rendered by its recorded identifier with
@@ -524,7 +522,7 @@ export function InvitationsPage({
       header: t('invitations.column.status'),
       priority: 'high',
       cellWrap: 'nowrap',
-      cell: (invitation) => statusLabel(invitation.status, t),
+      cell: (invitation) => statusLabel(displayedStatus(invitation), t),
     },
     {
       id: 'invitedBy',
@@ -689,13 +687,10 @@ export function InvitationsPage({
   const invitationRows = invitations.data?.invitations
   const invitationsPending = invitations.isPending && invitationRows === undefined
   const membersPending = members.isPending && memberRows === undefined
-  // The membership read carries no next cursor: the page asks for one row
-  // beyond its size, so an over-full answer is the evidence another page may
-  // follow. The next page is read by the last row's account identifier, the
-  // cursor the route documents.
-  const memberHasNext = (memberReadRows?.length ?? 0) > MEMBER_PAGE_SIZE
-  const memberNextCursor =
-    memberRows === undefined ? '' : (memberRows.at(-1)?.account ?? '')
+  // The server's next cursor is the only evidence another page follows; an
+  // exact-multiple last page reports none, so it never reads an empty page.
+  const memberNextCursor = members.data?.next_cursor ?? ''
+  const memberHasNext = memberNextCursor !== ''
   const nextMemberPage = () => {
     if (!memberHasNext || memberNextCursor === '') {
       return
@@ -917,36 +912,15 @@ export function InvitationsPage({
                 />
               )}
             </AdminAsyncSection>
-            {memberRows !== undefined &&
-              (memberPage > 0 || memberHasNext) && (
-                <Box
-                  sx={{
-                    mt: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    columnGap: 2,
-                  }}
-                >
-                  <Button
-                    type="button"
-                    variant="outlined"
-                    size="small"
-                    disabled={memberPage === 0 || membersFeedback.pending}
-                    onClick={previousMemberPage}
-                  >
-                    {t('members.prevPage')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outlined"
-                    size="small"
-                    disabled={!memberHasNext || membersFeedback.pending}
-                    onClick={nextMemberPage}
-                  >
-                    {t('members.nextPage')}
-                  </Button>
-                </Box>
-              )}
+            {memberRows !== undefined && (
+              <CursorPager
+                page={memberPage}
+                hasNext={memberHasNext}
+                busy={membersFeedback.pending}
+                onPrevious={previousMemberPage}
+                onNext={nextMemberPage}
+              />
+            )}
             <Box ref={membersRegionRef}>
               <WriteFeedbackRegion
                 outcome={membersFeedback.outcome}
@@ -1111,9 +1085,24 @@ function InvitationLinkNotice({
   return (
     <OneTimeValuePanel
       message={
-        hasBuilder
-          ? t('invitations.issued.link', { email: notice.invitation.email })
-          : t('invitations.issued.token', { email: notice.invitation.email })
+        <>
+          {hasBuilder
+            ? t('invitations.issued.link', { email: notice.invitation.email })
+            : t('invitations.issued.token', { email: notice.invitation.email })}
+          {/* The notice's delivery outcome sits beside the one-time value: a
+              failed or unconfigured carrier is why the operator still has to
+              hand the link over themselves. */}
+          <Typography
+            component="span"
+            variant="body2"
+            color={
+              notice.email_delivery === 'failed' ? 'error' : 'text.secondary'
+            }
+            sx={{ display: 'block', mt: 0.5 }}
+          >
+            {t(`invitations.issued.delivery.${notice.email_delivery}`)}
+          </Typography>
+        </>
       }
       value={value}
       copyLabel={

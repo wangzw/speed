@@ -406,6 +406,8 @@ describe('the organization roles wrapper', () => {
     display_name: 'Ada Lovelace',
     source: 'admin',
     sso_exempt: false,
+    roles: [],
+    joined_at: '2026-10-15T12:00:00Z',
   }
 
   it('pins the page to the current tenant and reads no platform asset', async () => {
@@ -420,7 +422,7 @@ describe('the organization roles wrapper', () => {
         return { bindings: [] }
       }
       if (call.path === `/api/v1/tenants/${TENANT}/members`) {
-        return { members: [MEMBER] }
+        return { members: [MEMBER], next_cursor: '' }
       }
       throw new Error(`unexpected request: ${call.method} ${call.path}`)
     })

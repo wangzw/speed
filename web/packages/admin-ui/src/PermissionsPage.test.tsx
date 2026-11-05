@@ -145,6 +145,8 @@ function member(overrides: Partial<AdminMember> = {}): AdminMember {
     display_name: 'Ada',
     source: 'admin',
     sso_exempt: false,
+    roles: [],
+    joined_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
 }

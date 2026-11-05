@@ -103,6 +103,9 @@ export const ERROR_TEXT_CODES = [
   // and the 403 a denied or
   // impersonation-restricted write is answered with.
   'authn.bad_request',
+  // A member write may not suspend the caller's own membership; the server
+  // refuses it with 409 so the tenant keeps at least one active administrator.
+  'authn.cannot_suspend_self',
   'authn.unsupported_region',
   'authn.conflict',
   'authn.email_taken',

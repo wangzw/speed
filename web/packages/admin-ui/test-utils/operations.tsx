@@ -72,6 +72,7 @@ import type {
   AdminIssueInvitationInput,
   AdminIssuedInvitation,
   AdminMember,
+  AdminMemberPage,
   AdminMemberRef,
   AdminOfferSmsTemplateInput,
   AdminOperations,
@@ -183,10 +184,15 @@ export interface AdminBackend {
     input: AdminIssueInvitationInput,
   ) => Promise<AdminIssuedInvitation>
   revokeInvitation: (input: AdminInvitationRef) => Promise<void>
+  /**
+   * A test may answer with the server's page envelope (to exercise the next
+   * cursor) or with the bare rows this fixture used before paging existed;
+   * the hook normalizes both to the envelope the production read returns.
+   */
   listMembers: (
     tenant: string,
     params?: Parameters<AdminOperations['useMembers']>[1],
-  ) => Promise<readonly AdminMember[]>
+  ) => Promise<AdminMemberPage | readonly AdminMember[]>
   removeMember: (input: AdminMemberRef) => Promise<void>
   writeMember: (input: AdminWriteMemberInput) => Promise<void>
   setMemberSsoExempt: (input: AdminSetMemberSSOExemptInput) => Promise<void>
@@ -311,7 +317,7 @@ export function makeAdminBackend(
     listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
     issueInvitation: () => Promise.resolve(issuedInvitationFixture()),
     revokeInvitation: () => Promise.resolve(),
-    listMembers: () => Promise.resolve([]),
+    listMembers: () => Promise.resolve({ members: [], next_cursor: '' }),
     removeMember: () => Promise.resolve(),
     writeMember: () => Promise.resolve(),
     setMemberSsoExempt: () => Promise.resolve(),
@@ -438,11 +444,12 @@ export function issuedInvitationFixture(
       email: 'ada@example.com',
       status: 'pending',
       invited_by: 'staff-1',
-      expires_at: '2026-10-20T00:00:00Z',
+      expires_at: '2099-01-01T00:00:00Z',
       accepted_at: '0001-01-01T00:00:00Z',
       created_at: '2026-10-15T12:00:00Z',
     },
     token: 'spd_inv_test_token',
+    email_delivery: 'sent',
     ...overrides,
   }
 }
@@ -932,7 +939,13 @@ export function createAdminOperations(
     useMembers: (tenant, params) =>
       useQuery({
         queryKey: [...membersKey(tenant), params ?? null],
-        queryFn: () => backend.listMembers(tenant, params),
+        queryFn: async (): Promise<AdminMemberPage> => {
+          const answer = await backend.listMembers(tenant, params)
+          return 'members' in answer
+            ? answer
+            : { members: [...answer], next_cursor: '' }
+        },
+        placeholderData: keepPreviousData,
         enabled: tenant !== '',
       }),
     useRemoveMember: () => {

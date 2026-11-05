@@ -1786,9 +1786,23 @@ export interface AuthnInvitePage {
 }
 
 /**
- * The answer of an issue: the invitation's view together with its one-time acceptance token.
+ * How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link.
+ */
+export type AuthnInviteIssuedEmailDelivery = typeof AuthnInviteIssuedEmailDelivery[keyof typeof AuthnInviteIssuedEmailDelivery];
+
+
+export const AuthnInviteIssuedEmailDelivery = {
+  sent: 'sent',
+  failed: 'failed',
+  not_configured: 'not_configured',
+} as const;
+
+/**
+ * The answer of an issue: the invitation's view together with its one-time acceptance token and the outcome of the notice.
  */
 export interface AuthnInviteIssued {
+  /** How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link. */
+  email_delivery: AuthnInviteIssuedEmailDelivery;
   /** The issued invitation; the token is delivered beside it, not inside it. */
   invitation: AuthnInviteInvitation;
   /** The acceptance token, handed out once */
@@ -1805,6 +1819,10 @@ export interface AuthnAdminMember {
   active: boolean;
   /** The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none. */
   display_name: string;
+  /** When the account joined the tenant, as an RFC 3339 instant in UTC. */
+  joined_at: string;
+  /** The role names the account holds in the tenant, ascending and without duplicates; always an array and never null, empty when it holds none. */
+  roles: string[];
   /** How the membership came to exist: admin, invite, import or jit:<provider identifier>. */
   source: string;
   /** True when the member is exempt from the tenant's enforced SSO requirement. */
@@ -1814,11 +1832,13 @@ export interface AuthnAdminMember {
 }
 
 /**
- * One page of a tenant's memberships, in ascending account-identifier order.
+ * One page of a tenant's memberships, in ascending account-identifier order, and the cursor of the next page.
  */
 export interface AuthnAdminMemberList {
   /** The memberships on this page; the empty array when the tenant has none. */
   members: AuthnAdminMember[];
+  /** The cursor of the next page, empty on the last page */
+  next_cursor: string;
 }
 
 /**
@@ -2907,7 +2927,21 @@ limit?: number;
  * Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page.
  */
 after?: string;
+/**
+ * Narrow the page to one view: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states. Omitted lists every state. A value outside this set is refused with 400. Expiry is derived from the deadline, not stored.
+ */
+status?: AuthnInviteListStatus;
 };
+
+export type AuthnInviteListStatus = typeof AuthnInviteListStatus[keyof typeof AuthnInviteListStatus];
+
+
+export const AuthnInviteListStatus = {
+  pending: 'pending',
+  expired: 'expired',
+  accepted: 'accepted',
+  revoked: 'revoked',
+} as const;
 
 /**
  * The issue request: the invited address, which is normalized before it is stored, and an optional deadline.
@@ -2929,7 +2963,7 @@ query?: string;
  */
 limit?: number;
 /**
- * The account identifier of the last membership on the previous page, or empty for the first page.
+ * The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last membership on that page.
  */
 after?: string;
 };
@@ -10303,7 +10337,7 @@ export const useAuthzTenantadminBindingsPut = <TError = Problem,
     }
 
 /**
- * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.
+ * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The status query narrows the page: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states; an absent status lists every state, and a value outside the set is refused with 400. Expiry is derived from the deadline, not stored, so an expired row still reads status pending. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. A read writes no audit row.
  * @summary One page of a tenant's invitations
  */
 export const authnInviteList = (
@@ -10378,7 +10412,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
 
 
 /**
- * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
+ * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201 with its one-time token. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
  * @summary Issue an invitation to an address in a tenant
  */
 export const authnInviteIssue = (
@@ -10508,7 +10542,7 @@ export const useAuthnInviteRevoke = <TError = Problem | void,
     }
 
 /**
- * Lists one tenant's memberships, one page at a time, in ascending account-identifier order. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
+ * Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
  * @summary List a tenant's members
  */
 export const authnAdminMembersList = (
@@ -10647,7 +10681,7 @@ export const useAuthnAdminMembersRemove = <TError = Problem | void,
     }
 
 /**
- * Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. Requires membership.manage with the path's tenant.
+ * Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. An administrator cannot suspend their own membership: that is a 409 cannot-suspend-self, while another administrator may suspend them. Requires membership.manage with the path's tenant.
  * @summary Write an account's membership in a tenant
  */
 export const authnAdminMembersPut = (

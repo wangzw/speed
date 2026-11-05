@@ -29,7 +29,8 @@
       "throttled": "Too many attempts. Try again later.",
       "unavailable": "The service is temporarily unavailable. Try again later.",
       "human_verification_required": "Please confirm you are human, then try again.",
-      "sso_required": "This action requires re-authentication through enterprise single sign-on. Sign in again."
+      "sso_required": "This action requires re-authentication through enterprise single sign-on. Sign in again.",
+      "cannot_suspend_self": "You cannot suspend your own membership. Ask another administrator to do it."
     },
     "authz": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
@@ -88,7 +89,7 @@
   },
   "organization": {
     "nav": {
-      "invitations": "Invitations & members",
+      "invitations": "Members & invitations",
       "sso": "SSO providers",
       "roles": "Roles & permissions",
       "settings": "Settings"
@@ -114,6 +115,12 @@
       "name": "\"{{name}}\"",
       "identifier": "\"{{identifier}}\"",
       "nameWithIdentifier": "\"{{name}}\" ({{identifier}})"
+    },
+    "pager": {
+      "label": "Pagination",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {{page}}"
     }
   },
   "detail": {
@@ -927,10 +934,10 @@
     }
   },
   "invitations": {
-    "title": "Invitations and members",
+    "title": "Members & invitations",
     "needTenant": {
       "title": "Choose an organization",
-      "description": "Invitations and members belong to an organization. Choose an organization first."
+      "description": "Members and invitations belong to an organization. Choose an organization first."
     },
     "section": {
       "title": "Invitations"
@@ -939,12 +946,19 @@
       "emailLabel": "Email address",
       "expiresLabel": "Expires",
       "expiresHelper": "Chosen in your local time zone; leave blank to use the default expiry.",
-      "submit": "Send invitation"
+      "submit": "Send invitation",
+      "oneDay": "1 day",
+      "sevenDays": "7 days",
+      "thirtyDays": "30 days",
+      "defaultExpiry": "Default expiry: {{days}} days",
+      "invalidExpiry": "The expiry must be later than the current time."
     },
     "loading": "Loading invitations",
     "empty": {
       "title": "No invitations",
-      "description": "This organization has no invitation yet."
+      "description": "This organization has no invitation yet.",
+      "filteredTitle": "No invitations match this filter",
+      "filteredDescription": "No invitation matches the \"{{status}}\" filter."
     },
     "error": {
       "title": "Invitations could not be loaded",
@@ -956,18 +970,30 @@
       "status": "Status",
       "invitedBy": "Invited by",
       "expires": "Expires",
+      "created": "Created",
       "actions": "Actions"
     },
     "status": {
       "pending": "Pending",
+      "expired": "Expired",
       "accepted": "Accepted",
       "revoked": "Revoked",
       "other": "Unknown"
     },
+    "filter": {
+      "label": "Status",
+      "all": "All"
+    },
     "revoke": "Revoke",
     "revokeTitle": "Revoke invitation",
-    "revokeMessage": "Revoke the invitation sent to \"{{email}}\".",
+    "revokeMessage": "Revoke the invitation sent to \"{{email}}\". Its link stops working immediately.",
     "revoked": "Invitation to \"{{email}}\" revoked",
+    "resend": "Resend",
+    "resendTitle": "Resend invitation",
+    "resendMessage": "Resending immediately invalidates the previous link sent to \"{{email}}\" and sends a new invitation.",
+    "resent": "Invitation to \"{{email}}\" resent",
+    "copyLink": "Copy link",
+    "copyLinkUnavailable": "Only the most recently issued or resent invitation has a link to copy.",
     "issued": {
       "confirm": "Invitation sent to \"{{email}}\"",
       "link": "Hand this acceptance link to {{email}}:",
@@ -977,7 +1003,18 @@
       "copyToken": "Copy acceptance token",
       "copied": "Copied",
       "close": "Close",
-      "closeAria": "Close the acceptance link panel for \"{{email}}\" in organization \"{{tenant}}\""
+      "closeAria": "Close the acceptance link panel for \"{{email}}\" in organization \"{{tenant}}\"",
+      "expiresAt": "This link is valid until {{time}}",
+      "risk": "Anyone with this link can join this organization. Send it only to the invited person.",
+      "closeTitle": "Close the one-time link",
+      "closeMessage": "The link is shown only once. After closing it cannot be copied again, so make sure it has been saved.",
+      "keepOpen": "Keep the link",
+      "delivery": {
+        "label": "Invitation email",
+        "sent": "The invitation email was sent.",
+        "failed": "The invitation email could not be sent. The invitation exists; copy the link to pass it on another way.",
+        "not_configured": "This deployment does not send invitation email. Copy the link and give it to the invited person."
+      }
     }
   },
   "members": {
@@ -985,9 +1022,16 @@
     "loading": "Loading members",
     "prevPage": "Previous",
     "nextPage": "Next",
+    "search": {
+      "label": "Search members",
+      "placeholder": "Search by display name, username or email",
+      "clear": "Clear search"
+    },
     "empty": {
       "title": "No members",
-      "description": "This organization has no member yet."
+      "description": "This organization has no member yet.",
+      "searchTitle": "No members match your search",
+      "searchDescription": "No member matches \"{{query}}\". Try another search or clear it."
     },
     "error": {
       "title": "Members could not be loaded",
@@ -997,10 +1041,42 @@
     "column": {
       "displayName": "Display name",
       "account": "Account",
+      "roles": "Roles",
+      "status": "Status",
       "active": "Active",
       "ssoExempt": "SSO exempt",
       "source": "Source",
+      "joinedAt": "Joined",
       "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "suspended": "Suspended"
+    },
+    "roles": {
+      "none": "No roles"
+    },
+    "manage": "Manage",
+    "panel": {
+      "title": "Manage member",
+      "close": "Close",
+      "closeAria": "Close the management panel for \"{{name}}\"",
+      "summary": "Member summary",
+      "account": "Account",
+      "status": "Status",
+      "joinedAt": "Joined",
+      "rolesLabel": "Role bindings",
+      "rolesEmpty": "This member holds no role yet.",
+      "roleLabel": "Role",
+      "roleNone": "Choose a role",
+      "bind": "Bind role",
+      "unbind": "Unbind",
+      "bindSaved": "Role \"{{role}}\" bound to {{account}}",
+      "bindSavedUnnamed": "Role \"{{role}}\" bound",
+      "bindRemoved": "Role \"{{role}}\" unbound from {{account}}",
+      "bindRemovedUnnamed": "Role \"{{role}}\" unbound",
+      "suspend": "Suspend",
+      "resume": "Resume"
     },
     "source": {
       "admin": "Added by an administrator",
@@ -1022,12 +1098,23 @@
       "saved": "Membership of account {{account}} saved",
       "savedUnnamed": "Membership of the account saved"
     },
+    "suspendTitle": "Suspend member",
+    "suspendMessage": "Suspending \"{{name}}\" stops this member from accessing the organization for now. Role bindings are kept and the member can be resumed at any time.",
+    "suspendMessageUnnamed": "Suspending this member stops it from accessing the organization for now. Role bindings are kept and the member can be resumed at any time.",
+    "suspended": "Member {{account}} suspended",
+    "suspendedUnnamed": "The member was suspended",
+    "resumeTitle": "Resume member",
+    "resumeMessage": "Resuming \"{{name}}\" restores the permissions of every role the member currently holds in this organization.",
+    "resumeMessageUnnamed": "Resuming this member restores the permissions of every role it currently holds in this organization.",
+    "resumed": "Member {{account}} resumed",
+    "resumedUnnamed": "The member was resumed",
+    "cannotSuspendSelf": "You cannot suspend your own membership. Ask another administrator to do it.",
     "remove": "Remove",
     "removeTitle": "Remove member",
-    "removeMessage": "Remove the member \"{{name}}\" from this organization.",
-    "removeMessageWithIdentifier": "Remove the member \"{{name}}\" ({{identifier}}) from this organization.",
-    "removeMessageByIdentifier": "Remove the member \"{{identifier}}\" from this organization.",
-    "removeMessageUnnamed": "Remove this member from this organization.",
+    "removeMessage": "Remove the member \"{{name}}\" from this organization and clear every role binding it holds here. This cannot be undone; use Suspend instead if you only need to pause access.",
+    "removeMessageWithIdentifier": "Remove the member \"{{name}}\" ({{identifier}}) from this organization and clear every role binding it holds here. This cannot be undone; use Suspend instead if you only need to pause access.",
+    "removeMessageByIdentifier": "Remove the member \"{{identifier}}\" from this organization and clear every role binding it holds here. This cannot be undone; use Suspend instead if you only need to pause access.",
+    "removeMessageUnnamed": "Remove this member from this organization and clear every role binding it holds here. This cannot be undone; use Suspend instead if you only need to pause access.",
     "removed": "Member {{account}} removed",
     "removedUnnamed": "The member was removed",
     "ssoExemptSaved": "SSO exemption of member {{account}} saved",
