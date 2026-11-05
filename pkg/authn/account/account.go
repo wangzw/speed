@@ -44,6 +44,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/password"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -241,8 +242,14 @@ type product struct {
 	// passes before it deletes the row, in module-name order. Every one has to
 	// allow the removal; an empty list is the assembly with none.
 	membershipGuards []authn.MembershipGuard
-	meters           meters
-	logger           *slog.Logger
+	// tenantAdminCounter is the optional host seam Delete asks before it writes
+	// an account's tombstone: an account that is a business tenant's only
+	// tenant administrator is not deleted, because the tenant would be left
+	// with nobody who may govern it. An assembly without the seam deletes as it
+	// did before the seam existed.
+	tenantAdminCounter authz.TenantAdminCounter
+	meters             meters
+	logger             *slog.Logger
 
 	// mu guards reported, which holds for each fault the one last written, so that
 	// a setting read on every request is reported once and not on each.
@@ -293,6 +300,9 @@ func (p *product) wire(reg *core.Registry) error {
 	p.hooks = core.ResolveAll[authn.AccountLifecycle](reg)
 	p.membershipHooks = core.ResolveAll[authn.MembershipLifecycle](reg)
 	p.membershipGuards = core.ResolveAll[authn.MembershipGuard](reg)
+	if p.tenantAdminCounter, err = optional[authz.TenantAdminCounter](reg, "the tenant-admin counter"); err != nil {
+		return err
+	}
 
 	provider, err := optional[observability.MeterProvider](reg, "the metric capability")
 	if err != nil {

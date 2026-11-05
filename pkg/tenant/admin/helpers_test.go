@@ -44,11 +44,12 @@ var (
 // arguments that name a row, so a case can hold what the handler passed on and
 // that an action the module refused never reached the roster.
 type catalogCall struct {
-	op     string
-	id     tenant.ID
-	alias  string
-	tenant tenant.Tenant
-	status tenant.Status
+	op      string
+	id      tenant.ID
+	alias   string
+	tenant  tenant.Tenant
+	status  tenant.Status
+	profile tenant.Profile
 }
 
 // stubCatalog is a stand-in tenant.Catalog. It records every call, answers reads
@@ -63,9 +64,13 @@ type stubCatalog struct {
 	list  []tenant.Tenant
 	err   error
 
-	getErr       error
-	setAliasErr  error
-	setStatusErr error
+	getErr        error
+	setAliasErr   error
+	setStatusErr  error
+	setProfileErr error
+	// during runs at the start of SetProfile, before the call is recorded, so a
+	// case can hold that the mandatory audit row landed first.
+	during func()
 }
 
 func (s *stubCatalog) record(call catalogCall) {
@@ -139,9 +144,12 @@ func (s *stubCatalog) SetAlias(_ context.Context, id tenant.ID, alias string) er
 	return s.errOr(s.setAliasErr)
 }
 
-func (s *stubCatalog) SetProfile(_ context.Context, id tenant.ID, _ tenant.Profile) error {
-	s.record(catalogCall{op: "SetProfile", id: id})
-	return s.errNow()
+func (s *stubCatalog) SetProfile(_ context.Context, id tenant.ID, profile tenant.Profile) error {
+	if s.during != nil {
+		s.during()
+	}
+	s.record(catalogCall{op: "SetProfile", id: id, profile: profile})
+	return s.errOr(s.setProfileErr)
 }
 
 func (s *stubCatalog) List(context.Context) ([]tenant.Tenant, error) {

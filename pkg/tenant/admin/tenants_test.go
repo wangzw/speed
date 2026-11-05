@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
@@ -514,6 +515,7 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 // added to a record later does not reach a client by being there, and a source
 // never appears on a row whose state is not disabled.
 func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
+	createdAt := time.Date(2026, 7, 8, 9, 10, 11, 0, time.UTC)
 	cases := map[string]struct {
 		row        tenant.Tenant
 		wantStatus string
@@ -523,7 +525,16 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 		"active": {
 			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
 			wantStatus: "active",
-			wantKeys:   []string{"id", "alias", "status"},
+			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "status"},
+		},
+		"active with a creation time": {
+			row: tenant.Tenant{
+				ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+				CreatedAt: &createdAt,
+			},
+			wantStatus: "active",
+			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "createdAt"},
 		},
 		"disabled by an operator": {
 			row: tenant.Tenant{
@@ -531,7 +542,8 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
-			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
+			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "disabledBy"},
 			disabledBy: "operator",
 		},
 		"disabled by an account": {
@@ -540,13 +552,14 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				DisabledBy: tenant.DisabledByAccount,
 			},
 			wantStatus: "disabled",
-			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
+			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "disabledBy"},
 			disabledBy: "account",
 		},
 		"deleted": {
 			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted},
 			wantStatus: "deleted",
-			wantKeys:   []string{"id", "alias", "status"},
+			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "status"},
 		},
 		"a status this build does not know": {
 			row: tenant.Tenant{
@@ -554,7 +567,8 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
-			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
+			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "disabledBy"},
 			disabledBy: "operator",
 		},
 	}

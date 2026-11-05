@@ -69,6 +69,18 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 	if !tenant.IsIdentifier(in.ID) || !tenant.IsIdentifier(in.Alias) {
 		return tenantCreatedBody{}, badRequest()
 	}
+	// The profile is optional here and judged by the same root-package rules the
+	// profile write uses. The value is normalized before the provisioner sees
+	// it, so the roster stores what a surface will show.
+	profile := tenant.Profile{
+		DisplayName:  in.DisplayName,
+		Description:  in.Description,
+		ContactEmail: in.ContactEmail,
+		Website:      in.Website,
+	}.Normalize()
+	if err := profile.Validate(); err != nil {
+		return tenantCreatedBody{}, badRequest()
+	}
 	id, ok := authn.FromContext(ctx)
 	if !ok {
 		return tenantCreatedBody{}, speedhttp.Fault{Status: http.StatusUnauthorized}
@@ -80,7 +92,9 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 	})); err != nil {
 		return tenantCreatedBody{}, err
 	}
-	created := tenant.Tenant{ID: tenant.ID(in.ID), Alias: in.Alias, Status: tenant.StatusActive}
+	created := tenant.Tenant{
+		ID: tenant.ID(in.ID), Alias: in.Alias, Status: tenant.StatusActive, Profile: profile,
+	}
 	if err := p.provisioner.Provision(ctx, created, id.Actor().String()); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTenantCreate, in.ID, actionID))
 		return tenantCreatedBody{}, p.failureOf("registering a tenant", err)
@@ -131,6 +145,55 @@ func (p *product) handleTenantSetAlias(ctx context.Context, in setAliasInput, _ 
 		return p.replyFailure("renaming a tenant", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
+}
+
+// handleTenantSetProfile answers PATCH /api/v1/system/tenants/:tenant/profile:
+// it writes one tenant's organization profile and nothing else. It is a write,
+// so the action is tenant.manage.
+//
+// The shape is checked before the roster is read, so an invalid profile costs
+// no read and writes no audit row. The existence check precedes the audit, so a
+// tenant no row carries is a bare 404 with no row written. The mandatory audit
+// row lands before SetProfile and names the platform surface; a roster refusal
+// closes it with a linked failed row. The answer is the tenant with the profile
+// as written, built from the row this request read rather than a second read
+// that could fail after the committed write.
+func (p *product) handleTenantSetProfile(ctx context.Context, in setProfileInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if !tenant.IsIdentifier(in.ID) {
+		return nil, badRequest()
+	}
+	profile := tenant.Profile{
+		DisplayName:  in.DisplayName,
+		Description:  in.Description,
+		ContactEmail: in.ContactEmail,
+		Website:      in.Website,
+	}.Normalize()
+	if err := profile.Validate(); err != nil {
+		return nil, badRequest()
+	}
+
+	got, ok, err := p.catalog.Get(ctx, tenant.ID(in.ID))
+	if err != nil {
+		return p.replyFailure("reading a tenant", err)
+	}
+	if !ok {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+
+	actionID := newActionID()
+	if err := p.auditRequired(ctx, mandatory(actionTenantProfileUpdate, in.ID, map[string]string{
+		detailActionID: actionID,
+		detailTenant:   in.ID,
+		detailSurface:  surfacePlatform,
+	})); err != nil {
+		return nil, err
+	}
+	if err := p.catalog.SetProfile(ctx, tenant.ID(in.ID), profile); err != nil {
+		p.auditBestEffort(ctx, failedProfileAudit(actionTenantProfileUpdate, in.ID, actionID))
+		return p.replyFailure("writing a tenant's profile", err)
+	}
+	got.Profile = profile
+	return speedhttp.JSONReply(http.StatusOK, tenantReadBody{Tenant: tenantViewOf(got)}), nil
 }
 
 // statusBody is the status change's body as a case builds it. The route's

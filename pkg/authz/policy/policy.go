@@ -102,6 +102,7 @@ func Module() core.Module {
 			{Token: (*authz.Manager)(nil), Exclusive: true},
 			{Token: (*authz.Seeder)(nil), Exclusive: true},
 			{Token: (*authz.Reconciler)(nil), Exclusive: true},
+			{Token: (*authz.TenantAdminCounter)(nil), Exclusive: true},
 			{Token: (*authn.AccountLifecycle)(nil)},
 			{Token: (*authn.MembershipLifecycle)(nil)},
 			{Token: (*authn.MembershipGuard)(nil)},
@@ -194,6 +195,7 @@ var (
 	_ authz.Manager             = (*product)(nil)
 	_ authz.Seeder              = (*product)(nil)
 	_ authz.Reconciler          = (*product)(nil)
+	_ authz.TenantAdminCounter  = (*product)(nil)
 	_ authn.AccountLifecycle    = (*product)(nil)
 	_ authn.MembershipLifecycle = (*product)(nil)
 	_ authn.MembershipGuard     = (*product)(nil)
@@ -218,6 +220,11 @@ type product struct {
 	bus        event.Bus
 	roster     tenant.Catalog
 	membership authz.MembershipChecker
+	// writeGuard is the host's answer to whether a tenant's policy data rejects
+	// a management write. The tenant-administrator counter asks it which
+	// domains are not business tenants — a personal tenant refuses every policy
+	// write — so the capability does not infer a tenant's kind itself.
+	writeGuard authz.WriteGuard
 
 	holder policy.Holder
 	// tenantLock serialises the writes that judge a tenant's
@@ -278,6 +285,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.membership = checker
+	}
+	if guard, found, err := optional[authz.WriteGuard](reg, "the write guard"); err != nil {
+		return err
+	} else if found {
+		p.writeGuard = guard
 	}
 	if lock, found, err := optional[authz.TenantLock](reg, "the tenant lock"); err != nil {
 		return err

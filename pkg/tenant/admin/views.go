@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"time"
+
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -14,11 +16,19 @@ import (
 // deleted. A disabled tenant also carries who disabled it, spelled the way
 // tenant.DisabledBy spells the source: operator or account.
 type TenantAdminTenant struct {
-	_ struct{} `description:"One tenant as the management routes render it: the identifier, the alias and the state, plus who disabled it while it is disabled."`
+	_ struct{} `description:"One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time when known, and who disabled it while it is disabled."`
 
-	ID     string `json:"id" required:"true" description:"The tenant's identifier, the natural key the roster keys the row by."`
-	Alias  string `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
-	Status string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
+	ID           string `json:"id" required:"true" description:"The tenant's identifier, the natural key the roster keys the row by."`
+	Alias        string `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
+	DisplayName  string `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the alias then."`
+	Description  string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
+	ContactEmail string `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
+	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
+	Status       string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
+	// CreatedAt is present only for a row the roster recorded a creation time
+	// for. A row that predates the column carries none, and the field is left
+	// out so no zero time is rendered as a date.
+	CreatedAt *time.Time `json:"createdAt,omitempty" description:"When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for."`
 	// DisabledBy is present only while Status is disabled. The field is left
 	// out otherwise, so a source never appears on a row whose state it does not
 	// describe.
@@ -38,9 +48,14 @@ type tenantView = TenantAdminTenant
 // and no reason, which is the contradiction the view exists to avoid.
 func tenantViewOf(t tenant.Tenant) TenantAdminTenant {
 	view := TenantAdminTenant{
-		ID:     string(t.ID),
-		Alias:  t.Alias,
-		Status: t.Status.String(),
+		ID:           string(t.ID),
+		Alias:        t.Alias,
+		DisplayName:  t.Profile.DisplayName,
+		Description:  t.Profile.Description,
+		ContactEmail: t.Profile.ContactEmail,
+		Website:      t.Profile.Website,
+		Status:       t.Status.String(),
+		CreatedAt:    t.CreatedAt,
 	}
 	if t.Status.String() == tenant.StatusDisabled.String() {
 		view.DisabledBy = t.DisabledBy.String()

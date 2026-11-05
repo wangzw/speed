@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 )
 
 // hookTimeout bounds the cleanup hooks of one call, which run after the state
@@ -127,6 +128,9 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 	if err := checkID(id); err != nil {
 		return err
 	}
+	if err := p.refuseDeletingTheLastTenantAdmin(ctx, id); err != nil {
+		return err
+	}
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Exec("UPDATE "+tableAccounts+" SET updated_at = ? WHERE id = ?", p.at(), id.String())
@@ -152,6 +156,56 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 	return p.callHooks(ctx, id, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
 		return h.AccountDeleted(hookCtx, id)
 	})
+}
+
+// refuseDeletingTheLastTenantAdmin asks the optional counter before the
+// tombstone is written. An account that is the only tenant administrator of an
+// active business tenant is refused with authn.ErrLastTenantAdmin and nothing
+// is erased; the role has to be handed to another administrator first.
+//
+// The check runs before the deletion's transaction, not inside it: the counter
+// reads the policy table through another module's handle, and a statement made
+// while this module held its write transaction would compete for the one
+// connection an in-memory database has. The window that opens between the check
+// and the commit is the administration's to narrow — a binding added there
+// leaves the account refused until the delete is repeated.
+//
+// A tombstone is not checked: the call is finishing a cleanup whose hooks did
+// not complete, and the live account the floor protects is already gone. An
+// account that is not there is left to the transaction's own not-found
+// refusal, so an assembly with the seam keeps the answer it gave before.
+//
+// A counter that cannot answer is ErrUnavailable and the deletion does not
+// run: an unknown floor must not be read as permission. An assembly that
+// supplies no counter skips the whole check, which is the deletion behaviour a
+// host without a policy module has.
+func (p *product) refuseDeletingTheLastTenantAdmin(ctx context.Context, id authn.AccountID) error {
+	counter := p.tenantAdminCounter
+	if counter == nil {
+		return nil
+	}
+	var row accountRow
+	switch err := p.conn(ctx).Where("id = ?", id.String()).Take(&row).Error; {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil
+	case err != nil:
+		return failed("reading an account before deleting it", err)
+	}
+	if row.Status == statusDeleted {
+		return nil
+	}
+	tenantID, sole, err := counter.SoleTenantAdminTenant(ctx, id.String())
+	if err != nil {
+		p.logger.Error(ModuleName+": the last-administrator check could not be read, so the account was not deleted",
+			slog.String("account", id.String()), slog.String("cause", err.Error()))
+		return fmt.Errorf("%w: reading the last tenant administrator: %w", authn.ErrUnavailable, err)
+	}
+	if sole {
+		return fmt.Errorf("%w: account %q is the only %q of tenant %q; handing the role to another "+
+			"administrator is what lets the account be deleted",
+			authn.ErrLastTenantAdmin, id, authz.TenantAdminRole, tenantID)
+	}
+	return nil
 }
 
 // eraseAccount writes the tombstone of a live account in tx and deletes what

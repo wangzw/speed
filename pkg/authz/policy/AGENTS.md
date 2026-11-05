@@ -5,8 +5,8 @@ their migrations, the thin store the engine reads and writes through, the
 Casbin engine snapshot the decisions read, the permission catalog with the
 translation beside it, the platform and host seeding surfaces over the policy
 data, and the account lifecycle cleanup. It delivers `authz.Enforcer`,
-`authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager`, `authz.Seeder` and
-`authz.Reconciler`, each exclusively, and implements
+`authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager`, `authz.Seeder`,
+`authz.Reconciler` and `authz.TenantAdminCounter`, each exclusively, and implements
 `authn.AccountLifecycle`, `authn.MembershipLifecycle` and the last-administrator
 `authn.MembershipGuard` (a host may add guards beside it; every guard is asked
 and any refusal refuses). `SubjectPermissions.Held` reads the same snapshot a
@@ -190,6 +190,19 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   per-tenant teardown has `Manager.ClearAccountBindings` beside this hook; the
   hook clears every tenant, while the manager method names one tenant and one
   account.
+- **The tenant-administrator counter reads across tenants and defers the kind
+  question to the host.** `SoleTenantAdminTenant` counts each tenant's
+  tenant-administrator bindings and names the first active tenant where the
+  account holds the only one. The roster supplies "in service"; the optional
+  `authz.WriteGuard` supplies "business tenant", because a personal tenant is
+  the host's policy and this capability does not infer it from an identifier.
+  The platform domain, a tenant the roster does not carry or does not serve, and
+  a domain the guard refuses are left out. A missing roster or guard failure is
+  an error, never "not sole":
+  `TestSoleTenantAdminTenantFindsTheOnlyBusinessAdministrator`,
+  `TestASecondTenantAdministratorAllowsTheDeletion`,
+  `TestAPersonalTenantIsNotCounted`, `TestADisabledTenantIsNotCounted`,
+  `TestTheCounterFailsClosedWhenTheRosterCannotAnswer`.
 - **The membership lifecycle cascades the platform domain and the guard keeps
   one tenant administrator.** `MembershipRemoved` withdraws an account's
   platform-domain bindings when its platform-tenant membership is removed, on the

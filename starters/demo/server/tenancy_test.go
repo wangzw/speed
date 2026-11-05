@@ -15,6 +15,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
@@ -636,6 +637,27 @@ func TestTheHostModulesProvideTheGuards(t *testing.T) {
 		t.Errorf("the settings write guard module is named %q, want a name under %q",
 			settingsWriteGuardModuleName, tenancyModuleName)
 	}
+}
+
+// TestTheBaselineAssemblesTheTenantAdminCounter holds the host's side of the
+// seam: the policy module is in the baseline serve roster and provides
+// authz.TenantAdminCounter, so the account module's deletion path is protected
+// in this host. An assembly that names no policy module has no counter, and
+// its deletion path is the one the account module documents without it.
+func TestTheBaselineAssemblesTheTenantAdminCounter(t *testing.T) {
+	modules := assembledDescriptors(t)
+	policy, ok := modules[authzpolicy.ModuleName]
+	if !ok {
+		t.Fatalf("the baseline serve roster does not assemble %q", authzpolicy.ModuleName)
+	}
+	want := reflect.TypeOf((*authz.TenantAdminCounter)(nil))
+	for _, token := range policy.provides {
+		if reflect.TypeOf(token) == want {
+			return
+		}
+	}
+	t.Errorf("%q is in the baseline roster but does not provide authz.TenantAdminCounter: "+
+		"the account deletion would lose the last-administrator guard", authzpolicy.ModuleName)
 }
 
 // TestTheProvisionerRefusesATakenIdentifierWithoutTouchingItsPolicy holds the

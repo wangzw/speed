@@ -71,6 +71,17 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   the membership hooks; its own `AccountDeleted` hook and the membership events
   are its paths, and its cleanup collects rows through
   `MembershipCleanup.RemoveMembershipForDeletion`, which asks neither.
+- **Deleting an account asks the optional tenant-administrator counter before
+  the tombstone.** `Delete` reads the row first and skips the check for a
+  tombstone, so repeating a delete still finishes interrupted cleanup. A live
+  account the counter names as a business tenant's only tenant administrator is
+  refused with `authn.ErrLastTenantAdmin` and nothing is erased; a counter that
+  cannot answer is `ErrUnavailable`, never a pass. An assembly that supplies no
+  counter keeps the deletion behaviour it had before the seam existed.
+  `TestDeletingTheLastTenantAdministratorIsRefused`,
+  `TestDeletingAnAccountWithASecondTenantAdministratorProceeds`,
+  `TestAnUnreadableCounterRefusesTheDeletion`,
+  `TestNoCounterKeepsTheExistingDeletionBehaviour`.
 - **Every time written to the database or bound to a query goes through
   `internal/clock` and is converted to UTC.** The SQLite driver compares times
   as text, so a non-UTC value makes `valid_after`, a back-off's lock and an

@@ -12,9 +12,10 @@ import (
 // write lands before its action and, when the action fails, for the failed row
 // that links to it.
 const (
-	actionTenantCreate = "tenant.create"
-	actionTenantUpdate = "tenant.update"
-	actionTenantStatus = "tenant.status"
+	actionTenantCreate        = "tenant.create"
+	actionTenantUpdate        = "tenant.update"
+	actionTenantStatus        = "tenant.status"
+	actionTenantProfileUpdate = "tenant.profile.update"
 )
 
 // The outcomes this module writes. The permitted value of a mandatory row is
@@ -32,7 +33,14 @@ const (
 const (
 	detailActionID = "action_id"
 	detailTenant   = "tenant"
+	// detailSurface names the surface a profile update came through. The tenant
+	// profile module writes the same action with the value tenant, so an audit
+	// reader can tell the two apart.
+	detailSurface = "surface"
 )
+
+// surfacePlatform is the surface a platform staff member's write comes through.
+const surfacePlatform = "platform"
 
 // newActionID mints the action identifier a write's audit rows are linked by. It
 // is made after the decision and before the mandatory row, so the permitted row
@@ -56,5 +64,21 @@ func failedAudit(action, object, actionID string) audit.Entry {
 		Object:  object,
 		Outcome: outcomeFailed,
 		Detail:  map[string]string{detailActionID: actionID},
+	}
+}
+
+// failedProfileAudit closes a profile write whose roster call failed. Both rows
+// of the write name the tenant and the surface, so the failed row is
+// attributable without reading the permitted one.
+func failedProfileAudit(action, object, actionID string) audit.Entry {
+	return audit.Entry{
+		Action:  action,
+		Object:  object,
+		Outcome: outcomeFailed,
+		Detail: map[string]string{
+			detailActionID: actionID,
+			detailTenant:   object,
+			detailSurface:  surfacePlatform,
+		},
 	}
 }

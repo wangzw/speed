@@ -52,6 +52,16 @@ lock. The lock is not reentrant: the membership-removal cascade and the
 account-deletion cleanup clear bindings through `Manager.ClearAccountBindings`,
 which takes no lock.
 
+`TenantAdminCounter` is the root package's other seam over the floor, and the
+one the account-deletion path asks: `SoleTenantAdminTenant` names the active
+business tenant whose only tenant-administrator binding an account holds. The
+policy subpackage delivers it beside `Manager`; it reads bindings across
+tenants, asks the roster which tenants are in service, and asks the host's
+`WriteGuard` which domains are not business tenants rather than inferring a
+kind from an identifier. The seam is optional where the account module takes it
+up: an assembly without it deletes accounts as before, and one whose counter
+cannot answer refuses the deletion instead of passing it.
+
 ## Modules and namespaces
 
 - **The root package `pkg/authz` registers no module and exports no

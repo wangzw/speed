@@ -18,9 +18,10 @@ const (
 // Spec declares. The mounting resolves them to the absolute paths the routes are
 // registered at, so a path is written once.
 const (
-	pathTenantsFragment      = "/tenants"
-	pathTenantFragment       = "/tenants/:tenant"
-	pathTenantStatusFragment = "/tenants/:tenant/status"
+	pathTenantsFragment       = "/tenants"
+	pathTenantFragment        = "/tenants/:tenant"
+	pathTenantStatusFragment  = "/tenants/:tenant/status"
+	pathTenantProfileFragment = "/tenants/:tenant/profile"
 )
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -51,9 +52,16 @@ type (
 // registration starts the tenant active. The type name is unexported, and the
 // declaration publishes the body under the name the hand-written fragment used.
 type createBody struct {
-	_     struct{} `description:"The identifier and alias of a tenant to register. The state is not part of it, because a registered tenant starts active."`
+	_     struct{} `description:"The identifier, alias and optional profile of a tenant to register. The state is not part of it, because a registered tenant starts active."`
 	ID    string   `json:"id" required:"true" description:"The identifier to register; the roster refuses one it already holds."`
 	Alias string   `json:"alias" required:"true" description:"The alias to give the tenant; the roster refuses one another tenant already holds."`
+
+	// The profile fields are optional here: the platform form requires a
+	// display name, but the API leaves a registration without a profile valid.
+	DisplayName  string `json:"display_name" description:"The organization's display name, at most 100 runes. Empty when the registration names none."`
+	Description  string `json:"description" description:"A longer account of the organization, at most 500 runes."`
+	ContactEmail string `json:"contact_email" description:"The organization's contact address, one bare email address of at most 254 bytes."`
+	Website      string `json:"website" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo."`
 }
 
 // getTenantInput is the request of a single-tenant read: the identifier in the
@@ -68,6 +76,24 @@ type setAliasInput struct {
 	ID    string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
 	Alias string `json:"alias" required:"true" description:"The new alias; an alias another tenant holds is refused with a 409."`
 }
+
+// setProfileInput is the request of a profile update: the identifier in the
+// path and the four descriptive fields in the body, each of which must be
+// present. A field the body carries empty clears the stored value.
+type setProfileInput struct {
+	ID string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+
+	DisplayName  string `json:"displayName" required:"true" description:"The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias."`
+	Description  string `json:"description" required:"true" description:"A longer account of the organization, at most 500 runes. Empty clears it."`
+	ContactEmail string `json:"contactEmail" required:"true" description:"The organization's contact address, one bare email address of at most 254 bytes. Empty clears it."`
+	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it."`
+}
+
+// profileWriteFields are the body members a profile update must carry. The
+// declaration marks them required, and the entry point's binding enforces body
+// presence, so the declaration carries them the way the tenant profile module
+// carries its own write body.
+var profileWriteFields = []string{"displayName", "description", "contactEmail", "website"}
 
 // setStatusInput is the request of a status change: the identifier in the path
 // and the target state in the body.
@@ -109,14 +135,16 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 	pathTenantsFragment,
 	"Register an active tenant",
 	"Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the "+
-		"acting account. The body gives the identifier and the alias; the new tenant starts active. Registration "+
+		"acting account. The body gives the identifier, the alias and optionally the profile's four descriptive "+
+		"fields; the new tenant starts active. Registration "+
 		"never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A "+
 		"mandatory audit row must land before the provisioner is called; if it cannot, the registration does not "+
 		"run and the request is answered 503.",
 	&speedhttp.RequestBody{
 		MediaType: "application/json",
-		Description: "The registration: the identifier to insert and the alias the request surface will address " +
-			"the tenant by. The state is not part of it, because a registered tenant starts active.",
+		Description: "The registration: the identifier to insert, the alias the request surface will address " +
+			"the tenant by, and the optional profile fields. The state is not part of it, because a registered " +
+			"tenant starts active.",
 		Required: true,
 		Name:     "TenantAdminTenantRegistration",
 	},
@@ -205,6 +233,47 @@ var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
 	},
 )
 
+// setProfileOperation declares PATCH /tenants/:tenant/profile: it writes one
+// tenant's organization profile and nothing else. Its handler builds the answer
+// because an unknown tenant is a bare 404.
+var setProfileOperation = speedhttp.NewReplyOperation[setProfileInput](
+	"tenant.admin.tenants.profile",
+	http.MethodPatch,
+	pathTenantProfileFragment,
+	"Write one tenant's organization profile",
+	"Writes one tenant's organization profile and nothing else: the display name, description, contact email "+
+		"and website. The identifier, alias, state and creation time are not written, so a profile update "+
+		"cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; "+
+		"an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a "+
+		"404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform "+
+		"in its detail; if it cannot, nothing is written and the request is answered 503.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The four descriptive fields, all of them present. An empty value clears the stored one.",
+		Required:    true,
+		Name:        "TenantAdminTenantProfileWrite",
+	},
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusOK,
+			Description: "The tenant with the profile as written",
+			Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(tenantReadBody{})},
+		},
+		speedhttp.ProblemResponse(http.StatusBadRequest,
+			"The identifier is outside the identifier domain, the request body is not one JSON object, a "+
+				"member is absent, or the profile is outside the stated bounds"),
+		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
+		{
+			Status:      http.StatusNotFound,
+			Description: "No tenant carries the identifier",
+		},
+		speedhttp.ProblemResponse(http.StatusConflict, "The tenant is a tombstone; a deleted tenant's profile is terminal"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+	},
+)
+
 // setStatusOperation declares POST /tenants/:tenant/status: it changes
 // one tenant's state. Its handler builds the answer because the success is a 204
 // and an unknown tenant is a bare 404.
@@ -254,5 +323,6 @@ var operations = speedhttp.Operations{
 	createOperation,
 	getOperation,
 	setAliasOperation,
+	setProfileOperation,
 	setStatusOperation,
 }

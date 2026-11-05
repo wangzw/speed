@@ -40,6 +40,7 @@ the module's whole route surface.
 | Tenants | `POST /api/v1/system/tenants` | `tenant.manage` |
 | Tenants | `GET /api/v1/system/tenants/:id` | `tenant.read` |
 | Tenants | `PATCH /api/v1/system/tenants/:id` | `tenant.manage` |
+| Tenants | `PATCH /api/v1/system/tenants/:id/profile` | `tenant.manage` |
 | Tenants | `POST /api/v1/system/tenants/:id/status` | `tenant.manage` |
 
 A read route is held to `tenant.read` and a write route to `tenant.manage`. Each
@@ -51,6 +52,7 @@ route's action is one `tenant.Catalog` call:
 | `POST /tenants` | `Provisioner`, a tenant and its first tenant-admin |
 | `GET /tenants/:id` | `Get`, one tenant by identifier |
 | `PATCH /tenants/:id` | `SetAlias`, a new alias |
+| `PATCH /tenants/:id/profile` | `SetProfile`, the four descriptive fields, and nothing else |
 | `POST /tenants/:id/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
 A read answers 200 with a view; a write that creates a record answers 201 with the
@@ -83,6 +85,15 @@ key.
   alias and status together, which is a seed's action, while `Create` only
   inserts. A registration starts the tenant `active`; there is no delete, and
   disabling is the only way to retire one.
+- **The profile write goes through `SetProfile`, never `Put`.** The body carries
+  all four descriptive fields; an empty value clears the stored one. `Put`
+  writes the alias and status too, so a profile update through it would carry
+  whatever this process last read and could serve a tenant another replica
+  disabled. The profile route reads the row for its 404 first, writes the
+  mandatory audit row with `surface=platform`, then calls `SetProfile`. The
+  registration's profile fields are optional and go to the provisioner with the
+  row; both paths normalize and validate through the root package's
+  `tenant.Profile`.
 - **The rename goes through `SetAlias`, never `Put`.** `Put` takes the whole row's
   new values and writes the status back with the alias, so a rename through it
   would carry whatever status this process last read, and a tenant another replica
@@ -149,7 +160,10 @@ key.
   write, a failed row linked to the permitted one by the action identifier is
   written best-effort: its own failure is an Error line and changes nothing about
   the answer. The action names are a closed set — `tenant.create`, `tenant.update`,
-  `tenant.status` — one per write route, and a read writes no audit row of its own.
+  `tenant.status`, `tenant.profile.update` — one per write route, and a read
+  writes no audit row of its own. A profile update's rows carry
+  `surface=platform` in their detail, which tells them apart from the tenant
+  profile module's rows for the same action.
 - **The refusal mapping is closed and fail-closed.** An identifier the roster's
   table already holds is a 409; an alias another tenant holds is a 409; an
   identifier no row carries is a 404; any other failure is a 503 whose cause stays
@@ -201,8 +215,10 @@ key.
 - **The answer is a view, built field by field.** Every route answers with a view
   assembled from a `tenant.Tenant` and never the record as it stands, so a field
   added to a record later does not reach a client by being there. The view carries
-  the tenant's identifier, its alias, and its state spelled the way
-  `tenant.Status` spells it — `active` or `disabled`.
+  the tenant's identifier, its alias, the four profile fields, its state spelled
+  the way `tenant.Status` spells it — `active` or `disabled` — and the creation
+  time when the roster recorded one; a row that predates the column omits
+  `createdAt` rather than rendering a zero time.
 
 ## Configuration
 

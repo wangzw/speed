@@ -14,9 +14,10 @@ import (
 // against the API root the module's Spec carries. The declarations write them
 // relative to that root, so the fragment and the registration share one source.
 var (
-	pathTenants      = tenantAdminSpec.ResolvePath(pathTenantsFragment)
-	pathTenant       = tenantAdminSpec.ResolvePath(pathTenantFragment)
-	pathTenantStatus = tenantAdminSpec.ResolvePath(pathTenantStatusFragment)
+	pathTenants       = tenantAdminSpec.ResolvePath(pathTenantsFragment)
+	pathTenant        = tenantAdminSpec.ResolvePath(pathTenantFragment)
+	pathTenantProfile = tenantAdminSpec.ResolvePath(pathTenantProfileFragment)
+	pathTenantStatus  = tenantAdminSpec.ResolvePath(pathTenantStatusFragment)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -75,6 +76,11 @@ func (p *product) routes() []route {
 		{
 			http.MethodPatch, pathTenant, PermissionTenantManage,
 			prescreenJSON[setAliasInput](p, setAliasOperation.Handle(p.handleTenantSetAlias)),
+		},
+		{
+			http.MethodPatch, pathTenantProfile, PermissionTenantManage,
+			prescreenJSONFields[setProfileInput](p, profileWriteFields,
+				setProfileOperation.Handle(p.handleTenantSetProfile)),
 		},
 		{
 			http.MethodPost, pathTenantStatus, PermissionTenantManage,
