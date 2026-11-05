@@ -176,17 +176,11 @@ export interface AdminTenantRemoveSettingInput {
  * role name is the key a binding holds and is never renamed, so a write
  * names an existing role or creates one; `description` is the operator's
  * free text.
- *
- * `descriptionKey` is accepted only for the shared permissions page's
- * tenant mode, which predates the free-text field; the role page always
- * writes `description`. The generated contract lets `description` win when
- * both are present.
  */
 export interface AdminTenantWriteRoleInput {
   readonly tenant: string
   readonly role: string
-  readonly description?: string
-  readonly descriptionKey?: string
+  readonly description: string
 }
 
 /** A tenant-and-role target (delete a role, list its grants). */
@@ -683,9 +677,7 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     return useMutation({
       mutationFn: (input: AdminTenantWriteRoleInput) =>
         authzTenantadminRolesPut(input.tenant, input.role, {
-          ...(input.description === undefined
-            ? { description_key: input.descriptionKey ?? '' }
-            : { description: input.description }),
+          description: input.description,
         }),
       onSuccess: (_answer, input) => {
         invalidateTenantRoles(queryClient, input.tenant)
