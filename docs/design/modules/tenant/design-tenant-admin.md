@@ -4,7 +4,7 @@
 
 ## 职责
 
-`tenant.admin` 是租户名册的 HTTP 提供者。平台管理面挂在固定基路径 `/api/v1/system/tenants` 下，租户面挂在固定基路径 `/api/v1/tenants` 下，不交付任何功能接口，只把名册的读写做成路由。平台面的每条路由是经 `tenant.Catalog` 调名册或经 `OrganizationWriter` 写跨存储的组织动作——登记、读回、转移所有者、删除组织、写资料、改状态；租户面只有两个路由，所有者转移与组织删除，调用同一个 `OrganizationWriter` 与同一把租户锁。模块自己不持数据、不持规则：名册由名册模块拥有，本模块只决定谁可以问、答案长什么样。
+`tenant.admin` 是租户名册的 HTTP 提供者。平台管理面挂在固定基路径 `/api/v1/system/tenants` 下，租户面挂在固定基路径 `/api/v1/tenants` 下，不交付任何功能接口，只把名册的读写做成路由。平台面的动作分三类：登记经 `tenant.Provisioner` 建立租户、它的所有者与首任管理员；读回、写资料与改状态经 `tenant.Catalog`；转移所有者与删除组织经 `tenant.OrganizationWriter` 写跨存储的事务。租户面只有两个路由，所有者转移与组织删除，调用同一个 `OrganizationWriter` 与同一把租户锁。模块自己不持数据、不持规则：名册由名册模块拥有，本模块只决定谁可以问、答案长什么样。
 
 **本模块是框架为名册提供的那个提供者。** 租户能力本身不提供管理面：名册的写入是它唯一的运维动作，而它交付的是接口与实现，不是 HTTP 路由（[design-tenant](design-tenant.md)）。一个想要名册管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套判定与同一条审计前置。它不改变租户能力的立场——`pkg/tenant` 仍不带管理面——只把这一面从「宿主自建」补成「框架提供一个可选用的提供者」（[ADR-admin-tenant](../../../adr/adr-admin-tenant.md)）。
 
