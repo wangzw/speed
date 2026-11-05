@@ -230,6 +230,12 @@ type product struct {
 	bus        event.Bus
 	roster     tenant.Catalog
 	membership authz.MembershipChecker
+	// membershipReads is the account's membership listing, taken up so the
+	// account-administration lock also covers the active business tenants the
+	// account belongs to without administering. An ownership transfer makes an
+	// active member the owner, so a suspension or deletion that locks only the
+	// administered tenants would race it.
+	membershipReads authn.Memberships
 	// writeGuard is the host's answer to whether a tenant's policy data rejects
 	// a management write. The tenant-administrator counter asks it which
 	// domains are not business tenants — a personal tenant refuses every policy
@@ -295,6 +301,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.membership = checker
+	}
+	if memberships, found, err := optional[authn.Memberships](reg, "the membership read surface"); err != nil {
+		return err
+	} else if found {
+		p.membershipReads = memberships
 	}
 	if guard, found, err := optional[authz.WriteGuard](reg, "the write guard"); err != nil {
 		return err

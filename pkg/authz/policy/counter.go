@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -134,13 +135,24 @@ func (p *product) OwnsActiveBusinessTenant(ctx context.Context, account string) 
 
 // LockAccountAdministration implements authz.TenantAdminCounter: it takes the
 // tenant lock of every tenant in which account holds a tenant-administrator
-// binding, in identifier order, and answers one release for all of them.
+// binding and of every active business tenant in which account is an active
+// member, in identifier order, and answers one release for all of them.
 //
-// The tenants are read from the bindings, not from the roster: the lock's job
-// is to exclude every other removal that judges one of these tenants' floors,
-// and a tenant that is not in service is still a floor some other path counts
-// against. Locking it costs nothing and closing the set over the roster would
-// make a changing status a hole in the exclusion.
+// The binding tenants are read from the policy table, not from the roster: the
+// lock's job is to exclude every other removal that judges one of these tenants'
+// floors, and a tenant that is not in service is still a floor some other path
+// counts against. Locking it costs nothing and closing the set over the roster
+// would make a changing status a hole in the exclusion.
+//
+// The membership tenants are the active business tenants the account belongs to
+// without administering. An ownership transfer hands the organization to an
+// active member and makes them its owner, so a suspension or deletion that
+// judged only the tenants the account administers could interleave with that
+// transfer and commit while the transfer makes the account an owner. Reading the
+// memberships closes that hole. A personal or disabled tenant is left out, as
+// the owner counter leaves it out: the transfer cannot make an account the owner
+// of a domain the host has declared outside management. With no roster or write
+// guard assembled the set is not narrowed, which is the fail-closed side.
 //
 // The release is idempotent, and a lock that cannot be taken releases the ones
 // already taken before returning the failure, so a deletion that does not
@@ -153,11 +165,24 @@ func (p *product) LockAccountAdministration(ctx context.Context, account string)
 	if err != nil {
 		return nil, err
 	}
-	tenants := make([]string, 0, len(rows))
+	locked := make(map[string]bool, len(rows))
 	for id, tally := range rows {
 		if tally.holds {
-			tenants = append(tenants, id)
+			locked[id] = true
 		}
+	}
+	if p.membershipReads != nil {
+		memberOf, err := p.activeMembershipTenants(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		for id := range memberOf {
+			locked[id] = true
+		}
+	}
+	tenants := make([]string, 0, len(locked))
+	for id := range locked {
+		tenants = append(tenants, id)
 	}
 	slices.Sort(tenants)
 
@@ -181,6 +206,52 @@ func (p *product) LockAccountAdministration(ctx context.Context, account string)
 		held = append(held, lease)
 	}
 	return release, nil
+}
+
+// activeMembershipTenants is the set of active business tenants the account is
+// an active member of, the tenants an ownership transfer could hand to it. A
+// membership read, a roster read or a write-guard read that cannot answer is a
+// failure: the caller must never take fewer locks than the transfers it is
+// excluding.
+func (p *product) activeMembershipTenants(ctx context.Context, account string) (map[string]bool, error) {
+	memberships, err := p.membershipReads.Tenants(ctx, authn.AccountID(account))
+	if err != nil {
+		return nil, fmt.Errorf("authz/policy: reading the memberships of account %q: %w", account, err)
+	}
+	if len(memberships) == 0 {
+		return nil, nil
+	}
+	var inService map[string]bool
+	if p.roster != nil {
+		inService, err = p.serviceableTenants(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	out := make(map[string]bool, len(memberships))
+	for _, member := range memberships {
+		if !member.Active {
+			continue
+		}
+		id := member.Tenant
+		if id == string(authz.PlatformDomain) {
+			continue
+		}
+		if inService != nil && !inService[id] {
+			continue
+		}
+		if p.writeGuard != nil {
+			denied, guardErr := p.writeGuard.Denied(ctx, id, authz.WriteBinding)
+			if guardErr != nil {
+				return nil, fmt.Errorf("authz/policy: asking the write guard about tenant %q: %w", id, guardErr)
+			}
+			if denied {
+				continue
+			}
+		}
+		out[id] = true
+	}
+	return out, nil
 }
 
 // adminTally is one tenant's tenant-administrator bindings: how many the

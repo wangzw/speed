@@ -250,14 +250,23 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   `TestTheCounterFailsClosedWhenTheRosterCannotAnswer`.
 - **The counter also locks the account's tenants, for the deletion's check and
   cleanup.** `LockAccountAdministration` takes the host's `authz.TenantLock` for
-  every tenant the account administers, in identifier order, and answers one
-  idempotent release; a lock that cannot be taken releases the ones already
-  held. It locks the tenants the bindings name, not only the serviceable ones:
-  the lock excludes every other removal that judges those floors, and a status
-  change must not open a hole in that exclusion. This is the same lock
-  `Manager.DeleteBinding` and `MembershipGuard.Lock` take, so a deletion, a
-  binding removal and a membership removal cannot interleave across the
-  last-administrator check.
+  the union of two sets, in identifier order, and answers one idempotent release;
+  a lock that cannot be taken releases the ones already held. The first set is
+  every tenant the account's tenant-administrator bindings name, not only the
+  serviceable ones: the lock excludes every other removal that judges those
+  floors, and a status change must not open a hole in that exclusion. The second
+  set is every active business tenant the account is an active member of, read
+  through the optional `authn.Memberships` seam: an ownership transfer makes an
+  active member the owner, so a suspension or deletion that locked only the
+  administered tenants could interleave with that transfer and commit while the
+  account becomes an owner. A personal or disabled tenant, the platform domain,
+  and a guard that cannot answer keep the fail-closed behaviour the counters
+  share. This is the same lock `Manager.DeleteBinding`,
+  `MembershipGuard.Lock` and `tenant.ownership`'s transfer take, so a deletion, a
+  binding removal, a membership removal and a transfer cannot interleave across
+  the check.
+  `TestTheAccountAdministrationLockCoversAMemberOnlyAccount` holds the
+  member-only half over the real assembly.
 - **The membership lifecycle clears the tenant that was left, and the guard
   keeps one tenant administrator.** `MembershipRemoved` withdraws every binding
   an account holds in the tenant it left, through the manager's own
