@@ -292,7 +292,13 @@ export function OrganizationSecurityPage({
   // entry is dropped when the settled read reports the same value, or when
   // the write is refused.
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({})
-  const [savingKey, setSavingKey] = useState<string | null>(null)
+  // Every key with a write in flight. A single key is not enough: each switch
+  // saves on its own, so two writes can overlap, and the first one's row must
+  // stay disabled and busy while the second is in flight rather than becoming
+  // writable again and accepting a second, out-of-order write of its own key.
+  const [savingKeys, setSavingKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
   const [feedback, setFeedback] = useState<Record<string, RowFeedback>>({})
   const savedTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
 
@@ -302,7 +308,7 @@ export function OrganizationSecurityPage({
     [pageRefreshRead('tenant-security', settings)],
     () => {
       setOptimistic({})
-      setSavingKey(null)
+      setSavingKeys(new Set())
       setFeedback({})
       confirm.cancel()
     },
@@ -360,7 +366,11 @@ export function OrganizationSecurityPage({
       return nextFeedback
     })
     setOptimistic((previous) => ({ ...previous, [setting.key]: next }))
-    setSavingKey(setting.key)
+    setSavingKeys((previous) => {
+      const next = new Set(previous)
+      next.add(setting.key)
+      return next
+    })
     try {
       await write.mutateAsync({
         tenant,
@@ -402,9 +412,14 @@ export function OrganizationSecurityPage({
         },
       }))
     } finally {
-      setSavingKey((current) =>
-        current === setting.key ? null : current,
-      )
+      setSavingKeys((previous) => {
+        if (!previous.has(setting.key)) {
+          return previous
+        }
+        const left = new Set(previous)
+        left.delete(setting.key)
+        return left
+      })
     }
   }
 
@@ -443,7 +458,7 @@ export function OrganizationSecurityPage({
         actions={
           <RefreshButton
             busy={refresh.busy}
-            writePending={savingKey !== null}
+            writePending={savingKeys.size > 0}
             label={t('common.refresh')}
             onClick={refresh.refresh}
           />
@@ -508,7 +523,7 @@ export function OrganizationSecurityPage({
                     <SettingSwitchRow
                       setting={setting}
                       checked={checked}
-                      saving={savingKey === setting.key}
+                      saving={savingKeys.has(setting.key)}
                       readOnly={readOnly}
                       feedback={feedback[setting.key] ?? null}
                       onToggle={(next) => toggle(setting, next)}

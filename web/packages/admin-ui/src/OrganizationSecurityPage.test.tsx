@@ -271,6 +271,52 @@ describe('OrganizationSecurityPage', () => {
     )
   })
 
+  it('keeps an in-flight row disabled while another row saves', async () => {
+    const user = userEvent.setup()
+    const resolvers = new Map<string, () => void>()
+    renderPage({
+      settings: envelope([MFA, SSO]),
+      writeTenantSetting: (input) =>
+        new Promise<void>((resolve) => {
+          resolvers.set(`${input.namespace}.${input.key}`, resolve)
+        }),
+    })
+
+    const mfaSwitch = await screen.findByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        MFA.title,
+      ),
+    })
+    const ssoSwitch = screen.getByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        SSO.title,
+      ),
+    })
+
+    await user.click(mfaSwitch)
+    expect(mfaSwitch).toBeDisabled()
+    expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
+
+    // The second row saves on its own while the first write is still in
+    // flight.
+    await user.click(ssoSwitch)
+    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
+    // The first row stays inert: its request has not settled, and accepting
+    // another click would put two writes of one key in flight.
+    expect(mfaSwitch).toBeDisabled()
+    expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => {
+      resolvers.get('tenant.admission.require-mfa')?.()
+      resolvers.get('tenant.admission.require-sso')?.()
+    })
+    await waitFor(() => expect(mfaSwitch).toBeEnabled())
+    expect(ssoSwitch).toBeEnabled()
+  })
+
   it('renders a protected tenant read-only with no switches', async () => {
     const user = userEvent.setup()
     renderPage({ settings: envelope([MFA, SSO], false) })
