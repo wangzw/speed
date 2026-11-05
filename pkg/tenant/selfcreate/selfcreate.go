@@ -1,5 +1,5 @@
 // Package selfcreate is the tenancy capability's self-service organization
-// module: a verified account opens a business organization of its own.
+// module: an eligible account opens a business organization of its own.
 //
 // The route is POST /api/v1/orgs on the account endpoint. That endpoint resolves
 // no tenant and is where a caller who has not chosen one yet stands, so the
@@ -9,12 +9,12 @@
 // marked builtin and carries the governed permission set, and the membership's
 // source is the creator's.
 //
-// The upper bounds are the product's: a verified email address, five active
-// business organizations per account, three creations an hour per account, a
-// thirty-second creation lock so one account's concurrent requests do not race
-// each other, and a mandatory audit row. The two numeric limits are runtime
-// settings (org.create.max-organizations and org.create.max-per-hour); the
-// switch and the bounds' shape are configuration.
+// The eligibility rules and upper bounds are the product's: an unproved email
+// address is refused, five active business organizations per account, three
+// creations an hour per account, a thirty-second creation lock so one account's
+// concurrent requests do not race each other, and a mandatory audit row. The two
+// numeric limits are runtime settings (org.create.max-organizations and
+// org.create.max-per-hour); the switch and the bounds' shape are configuration.
 //
 // The route is an exact route on the account endpoint, whose /api/v1/orgs
 // claim is configuration and stays claimed either way: with this module's

@@ -1,7 +1,7 @@
 # pkg/tenant/selfcreate
 
 The tenancy capability's self-service organization module: it mounts
-`POST /api/v1/orgs` on the account endpoint and lets a verified account open a
+`POST /api/v1/orgs` on the account endpoint and lets an eligible account open a
 business organization through `tenant.Provisioner`.
 
 ## Boundaries
@@ -35,9 +35,10 @@ business organization through `tenant.Provisioner`.
   to the declared `int`.
 - **The switch is configuration, not a setting.** `org.create.enabled` is read
   from the primary source or the environment; it is not in `settings.Schema`.
-- **The upper bounds are the product's.** A verified email address, five active
-  business organizations per account, three attempts an hour per account, a
-  thirty-second creation lock, and a mandatory audit row before the provisioner.
+- **The eligibility rules and upper bounds are the product's.** An unproved
+  email address is refused, five active business organizations per account,
+  three attempts an hour per account, a thirty-second creation lock, and a
+  mandatory audit row before the provisioner.
   A refusal before the attempt is counted writes no audit row and consumes no
   count. A provisioner failure consumes the attempt and closes it with a linked
   failed row.
