@@ -63,6 +63,20 @@ describe('admin page declarations', () => {
     })
   }
 
+  it('keeps the platform permissions page separate from the organization roles page', () => {
+    // The platform console's permissions page is the system-domain one. The
+    // organization roles page is a declaration of the organization surface,
+    // not a member of the platform table, so its label and path never enter
+    // the platform navigation.
+    const platform = permissionsAdminRoutes[0]
+    expect(platform?.path).toBe('/permissions')
+    expect(platform?.permission).toBe('authz.role.read')
+    expect(adminRoutes.some((route) => route.id === 'organization-roles')).toBe(
+      false,
+    )
+    expect(adminRoutes.some((route) => route.path === '/roles')).toBe(false)
+  })
+
   it('carries the list page permission on each detail declaration', () => {
     expect(
       adminRoutes.find((route) => route.path === '/tenants/:id')?.permission,

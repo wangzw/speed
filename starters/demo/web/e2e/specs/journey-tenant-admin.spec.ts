@@ -111,13 +111,13 @@ import {
 import { copy, copyKey, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 import {
-  catalogSection,
   cell,
   columnIndex,
   domainsSection,
   escapeRegExp,
   expectOrganizationEntryAbsent,
   expectOrganizationEntryPresent,
+  expandCatalogSection,
   grantsSection,
   homeHeading,
   invitationRow,
@@ -133,6 +133,7 @@ import {
   openOrganizationPage,
   providerFormSection,
   rolesSection,
+  usageSection,
   verificationBanner,
   verificationSection,
   organizationHomeCard,
@@ -144,6 +145,9 @@ const TENANT = 'acme'
 
 /** The non-builtin role the administrator creates. */
 const ROLE = 'Support'
+
+/** The role's free-text description. */
+const ROLE_DESCRIPTION = 'Reviews support requests and answers audit questions.'
 
 /** The governed permission granted to the role. */
 const PERMISSION = 'authn.membership.manage'
@@ -167,6 +171,16 @@ const PROVIDER_NAME = 'Acme Organization OIDC'
 /** The printed error the reserved-role and self-binding refusals render. */
 function protectedText(): string {
   return copy('adminUi', 'errors.authz.protected')
+}
+
+/** The readable name the governed catalog renders for a permission code:
+ * the declaring module's own description key, with the code's separators
+ * turned into dashes. */
+function permissionDescription(permission: string): string {
+  return copyKey(
+    'authzPermissions',
+    `authz.permission.${permission.replace(/[.:]/g, '-')}`,
+  )
 }
 
 /** The address of an invitation used to exercise resend and revoke. */
@@ -976,7 +990,7 @@ test.describe('the tenant administrator manages the organization', () => {
         )
       })
 
-      await test.step('step 10: the administrator creates a role and grants a governed permission', async () => {
+      await test.step('step 10: the administrator creates a described role, grants and revokes a governed permission, and reads the usage', async () => {
         await openOrganizationPage(page, 'roles')
         const roles = rolesSection(page)
         const rolesTable = roles.getByRole('table')
@@ -986,6 +1000,18 @@ test.describe('the tenant administrator manages the organization', () => {
         const builtinColumn = await columnIndex(
           rolesTable,
           copy('adminUi', 'permissions.roles.column.builtin'),
+        )
+        const descriptionColumn = await columnIndex(
+          rolesTable,
+          copy('adminUi', 'permissions.roles.column.description'),
+        )
+        const permissionsColumn = await columnIndex(
+          rolesTable,
+          copy('adminUi', 'permissions.roles.column.permissions'),
+        )
+        const membersColumn = await columnIndex(
+          rolesTable,
+          copy('adminUi', 'permissions.roles.column.members'),
         )
         const builtin = rolesTable.locator('tbody tr').filter({
           hasText: 'tenant-admin',
@@ -998,8 +1024,11 @@ test.describe('the tenant administrator manages the organization', () => {
           rolesTable.getByText('platform-admin', { exact: true }),
         ).toHaveCount(0)
 
-        // REQ-tenant-admin-026: only the governed permission set is offered.
-        const catalog = catalogSection(page).getByRole('table')
+        // REQ-tenant-admin-026: the catalog reference starts collapsed; its
+        // own action opens it, and only the governed permission set is
+        // offered. The full governed set still renders, in groups, once the
+        // reference is open.
+        const catalog = await expandCatalogSection(page)
         for (const permission of GOVERNED_PERMISSIONS) {
           await expect(
             catalog.getByText(permission, { exact: true }),
@@ -1009,12 +1038,19 @@ test.describe('the tenant administrator manages the organization', () => {
           catalog.getByText(PLATFORM_PERMISSION, { exact: true }),
         ).toHaveCount(0)
 
-        // REQ-tenant-admin-023: a non-builtin role with no grants yet.
+        // REQ-tenant-admin-023: a non-builtin role with its free-text
+        // description and no grants or members yet.
         await roles
           .getByLabel(copy('adminUi', 'permissions.roles.create.roleLabel'), {
             exact: true,
           })
           .fill(ROLE)
+        await roles
+          .getByLabel(
+            copy('adminUi', 'permissions.roles.create.descriptionLabel'),
+            { exact: true },
+          )
+          .fill(ROLE_DESCRIPTION)
         await roles
           .getByRole('button', {
             name: copy('adminUi', 'permissions.roles.create.submit'),
@@ -1032,9 +1068,17 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(roleRow, builtinColumn)).toHaveText(
           copy('adminUi', 'permissions.roles.builtinNo'),
         )
+        // The row carries what the operator wrote and the two counts the
+        // server reports: no grants, no active member yet.
+        await expect(cell(roleRow, descriptionColumn)).toHaveText(
+          ROLE_DESCRIPTION,
+        )
+        await expect(cell(roleRow, permissionsColumn)).toHaveText('0')
+        await expect(cell(roleRow, membersColumn)).toHaveText('0')
 
         // REQ-tenant-admin-027: the administrator holds every governed
-        // permission, so the grant lands and the role's table shows it.
+        // permission, so the grant lands. `authn.membership.manage` is
+        // high-risk, so the page asks for the deliberate second click.
         await roleRow
           .getByRole('button', {
             name: copy('adminUi', 'permissions.roles.manageGrantsAria', {
@@ -1058,7 +1102,9 @@ test.describe('the tenant administrator manages the organization', () => {
           .click()
         await page
           .getByRole('option', {
-            name: new RegExp(`^${escapeRegExp(PERMISSION)}`),
+            name: new RegExp(
+              `^${escapeRegExp(permissionDescription(PERMISSION))}`,
+            ),
           })
           .click()
         await grants
@@ -1067,6 +1113,23 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           })
           .click()
+        const dangerousDialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'permissions.grants.dangerousTitle'),
+          exact: true,
+        })
+        await expect(dangerousDialog).toBeVisible()
+        await dangerousDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'permissions.grants.dangerousConfirm'),
+            exact: true,
+          })
+          .click()
+        const armAgain = dangerousDialog.getByRole('button', {
+          name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+          exact: true,
+        })
+        await expect(armAgain).toBeEnabled({ timeout: 5_000 })
+        await armAgain.click()
         await expect(
           page.getByText(
             copy('adminUi', 'permissions.grants.granted', {
@@ -1076,9 +1139,74 @@ test.describe('the tenant administrator manages the organization', () => {
             { exact: true },
           ),
         ).toBeVisible()
+
+        // The grant row leads with the catalog's readable name, keeps the
+        // code as secondary text, marks the risk and offers revoke by the
+        // server-reported permission code.
+        const grantRow = grants
+          .getByRole('table')
+          .locator('tbody tr')
+          .filter({ hasText: PERMISSION })
+        await expect(grantRow).toHaveCount(1)
+        await expect(
+          grantRow.getByText(permissionDescription(PERMISSION), {
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(
+          grantRow.getByText(PERMISSION, { exact: true }),
+        ).toBeVisible()
+        await expect(
+          grantRow.getByText(copy('adminUi', 'permissions.catalog.dangerous'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+        const revoke = grantRow.getByRole('button', {
+          name: copy('adminUi', 'permissions.grants.revokeAria', {
+            permission: PERMISSION,
+          }),
+          exact: true,
+        })
+        await expect(revoke).toBeEnabled()
+        await revoke.click()
+        await expect(
+          page.getByText(
+            copy('adminUi', 'permissions.grants.revoked', {
+              permission: PERMISSION,
+              role: ROLE,
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
         await expect(
           grants.getByRole('table').getByText(PERMISSION, { exact: true }),
+        ).toHaveCount(0)
+
+        // REQ-tenant-admin-041: the builtin administrator's usage is
+        // read-only. The page reports the active member count and the holder,
+        // and renders no binding or unbinding control of any kind.
+        await builtin
+          .getByRole('button', {
+            name: copy('adminUi', 'permissions.roles.viewGrantsAria', {
+              role: 'tenant-admin',
+            }),
+            exact: true,
+          })
+          .click()
+        const usage = usageSection(page)
+        await expect(
+          usage.getByText(
+            copy('adminUi', 'permissions.usage.memberCount', { count: 1 }),
+            { exact: true },
+          ),
         ).toBeVisible()
+        await expect(
+          usage.getByText(reviewTenantAdmin.displayName, { exact: true }),
+        ).toBeVisible()
+        await expect(usage.getByRole('button', { name: /bind/i })).toHaveCount(
+          0,
+        )
+        await expect(usage.getByRole('combobox')).toHaveCount(0)
       })
 
       await test.step('step 11: the member panel binds, unbinds and rebinds the role', async () => {

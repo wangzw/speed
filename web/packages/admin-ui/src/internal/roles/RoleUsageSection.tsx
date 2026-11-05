@@ -18,7 +18,7 @@ import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { formatInstant } from '@speed/i18n'
-import { DataTable, ListSkeleton } from '@speed/ui-kit'
+import { DataTable, ListSkeleton, PRIMARY_COLUMN_MAX_WIDTH } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import type {
   AdminTenantRole,
@@ -73,6 +73,7 @@ export function RoleUsageSection({
       header: t('permissions.usage.column.name'),
       cellWrap: 'wrap',
       cellFullValue: (binding) => binding.display_name || binding.account,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (binding) => binding.display_name || binding.account,
     },
     {
@@ -80,6 +81,7 @@ export function RoleUsageSection({
       header: t('permissions.usage.column.account'),
       cellWrap: 'nowrap',
       cellFullValue: (binding) => binding.account,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (binding) => binding.account,
     },
     {

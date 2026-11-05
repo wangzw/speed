@@ -745,6 +745,13 @@ describe('AdminShell', () => {
         adminUiZhCN.sms.title,
         adminUiZhCN.audit.title,
       ])
+      // The organization roles page belongs to the organization surface; its
+      // label is not a platform navigation entry of this shell.
+      expect(
+        within(nav).queryByRole('link', {
+          name: adminUiZhCN.organization.nav.roles,
+        }),
+      ).toBeNull()
       // Both platform pages sit inside the heading's controlled content,
       // not beside it as lone top-level items.
       const heading = within(nav).getByRole('button', {

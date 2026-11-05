@@ -212,6 +212,35 @@ describe('the organization page wrappers', () => {
     },
   )
 
+  it('titles the organization roles page with the organization menu label', async () => {
+    // The roles page belongs to the organization surface, so its level-one
+    // title is `organization.nav.roles` -- the same key its menu entry
+    // reads -- rather than the platform console's `permissions.title`.
+    const { backend } = recordingBackend()
+    renderWithProviders(
+      <OrganizationAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={() => true}
+        routes={organizationAdminRoutes}
+      >
+        <OrganizationPermissionsPage />
+      </OrganizationAdminProvider>,
+    )
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: zhCN.organization.nav.roles,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', {
+        level: 1,
+        name: zhCN.permissions.title,
+      }),
+    ).toBeNull()
+  })
+
   it('scopes the SSO page to the provided tenant without a selector', async () => {
     const { backend, readTenants, rosterReads } = recordingBackend()
     renderWithProviders(

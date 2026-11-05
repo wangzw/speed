@@ -529,7 +529,7 @@
         "duplicate": "This role already exists; edit its description instead."
       },
       "editDescription": "Edit description",
-      "editDescriptionAria": "Edit the description of role {{role}}",
+      "editDescriptionAria": "Edit description (role {{role}})",
       "description": {
         "title": "Edit role description",
         "close": "Close the description editor",

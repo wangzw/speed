@@ -192,13 +192,14 @@ export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
       readonly sso: { readonly title: string }
     }
   ).sso.title,
-  // The roles and settings wrappers render the package pages' own level-one
-  // titles (the organization navigation labels sit beside them in the page).
+  // The roles wrapper renders the organization roles page, whose level-one
+  // title is the same `organization.nav.roles` key its menu entry uses; the
+  // platform-only `permissions.title` is not the organization page's title.
   '/organization/admin/roles': (
     adminUiResources['en-US'] as unknown as {
-      readonly permissions: { readonly title: string }
+      readonly organization: { readonly nav: { readonly roles: string } }
     }
-  ).permissions.title,
+  ).organization.nav.roles,
   '/organization/admin/settings': (
     adminUiResources['en-US'] as unknown as {
       readonly organization: { readonly nav: { readonly settings: string } }

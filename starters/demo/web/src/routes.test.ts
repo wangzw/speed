@@ -191,6 +191,31 @@ describe('the route table', () => {
       expect(isAdminPath(route.path)).toBe(false)
     }
   })
+
+  it('keeps the four organization declarations with their tenant-domain codes', () => {
+    // The organization surface stays at four pages; the roles page is its
+    // own tenant-domain declaration, not the platform permissions page.
+    expect(organizationAdminShellRoutes.map((route) => route.id)).toEqual([
+      'organization-invitations',
+      'organization-sso',
+      'organization-roles',
+      'organization-settings',
+    ])
+    expect(
+      organizationAdminShellRoutes.map((route) => route.permission),
+    ).toEqual([
+      'authn.membership.manage',
+      'authn.idp.manage',
+      'authz.tenant.role.read',
+      'settings.tenant.read',
+    ])
+    expect(organizationAdminShellRoutes.map((route) => route.requires)).toEqual([
+      ['authn.admin', 'authn.invitations'],
+      ['authn.admin', 'authn.admin.sso'],
+      ['authz.tenantadmin', 'authn.admin'],
+      ['settings.tenantadmin'],
+    ])
+  })
 })
 
 describe('isAdminPath', () => {

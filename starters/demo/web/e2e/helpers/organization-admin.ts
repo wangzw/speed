@@ -131,7 +131,7 @@ const ORGANIZATION_PAGES: Record<
     title: 'invitations.title',
   },
   sso: { nav: 'organization.nav.sso', title: 'sso.title' },
-  roles: { nav: 'organization.nav.roles', title: 'permissions.title' },
+  roles: { nav: 'organization.nav.roles', title: 'organization.nav.roles' },
   settings: { nav: 'organization.nav.settings', title: 'organization.nav.settings' },
 }
 
@@ -290,12 +290,31 @@ export function catalogSection(page: Page): Locator {
   return section(page, 'permissions.catalog.title')
 }
 
-export function bindingsSection(page: Page): Locator {
-  return section(page, 'permissions.bindings.title')
+/** The selected role's read-only usage section. */
+export function usageSection(page: Page): Locator {
+  return section(page, 'permissions.usage.title')
 }
 
-export function lookupSection(page: Page): Locator {
-  return section(page, 'permissions.lookup.title')
+/**
+ * Expand the permission catalog reference and return its section. The
+ * reference is collapsed by default; its toggle lives in the section's own
+ * actions, and `aria-expanded` is what proves the content region opened.
+ */
+export async function expandCatalogSection(page: Page): Promise<Locator> {
+  const catalog = catalogSection(page)
+  const toggle = catalog.getByRole('button', {
+    name: copy('adminUi', 'permissions.catalog.expand'),
+    exact: true,
+  })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(
+    catalog.getByRole('button', {
+      name: copy('adminUi', 'permissions.catalog.collapse'),
+      exact: true,
+    }),
+  ).toHaveAttribute('aria-expanded', 'true')
+  return catalog
 }
 
 export function providerFormSection(page: Page): Locator {

@@ -297,6 +297,20 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     expect(bundles.invitations.title).toBe(bundles.organization.nav.invitations)
   })
 
+  it('names the organization roles page and its menu entry with the same label', () => {
+    // The roles page titles itself from `organization.nav.roles`, the same
+    // key its organization menu entry reads, rather than the platform-only
+    // `permissions.title`. The sweep's expected heading comes from the same
+    // bundle, so this case guards the route-table entry against drifting
+    // back onto the platform label.
+    const bundles = adminUiResources['en-US'] as unknown as {
+      readonly organization: { readonly nav: { readonly roles: string } }
+    }
+    expect(EXPECTED_HEADING_BY_PATH['/organization/admin/roles']).toBe(
+      bundles.organization.nav.roles,
+    )
+  })
+
   for (const path of SWEEP_PATHS) {
     for (const mode of MODES) {
       it(`${mode}: ${path}`, async () => {

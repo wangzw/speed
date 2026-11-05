@@ -1006,12 +1006,16 @@ describe('the organization admin route admission', () => {
       }),
     })
     expect(
-      await screen.findByRole('heading', { name: tAdmin('permissions.title') }),
+      await screen.findByRole('heading', {
+        name: tAdmin('organization.nav.roles'),
+      }),
     ).toBeInTheDocument()
     // Every read names the current tenant.
     expect(requested).toContain('/api/v1/tenants/acme/roles')
     expect(requested).toContain('/api/v1/tenants/acme/permissions')
-    expect(requested).toContain('/api/v1/tenants/acme/bindings')
+    // The page no longer reads the tenant's flat binding list: a role's
+    // holders are read from the role's own endpoint once a role is selected.
+    expect(requested).not.toContain('/api/v1/tenants/acme/bindings')
     // The page never reaches a platform asset.
     expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
       false,
@@ -1033,7 +1037,9 @@ describe('the organization admin route admission', () => {
       }),
     })
     expect(
-      await screen.findByRole('heading', { name: tAdmin('permissions.title') }),
+      await screen.findByRole('heading', {
+        name: tAdmin('organization.nav.roles'),
+      }),
     ).toBeInTheDocument()
     expect(await screen.findByText('tenant-admin')).toBeInTheDocument()
 
