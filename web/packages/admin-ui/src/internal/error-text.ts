@@ -119,6 +119,10 @@ export const ERROR_TEXT_CODES = [
   // last administrator of an active business organization. The copy tells
   // the operator to transfer the role before deleting the account.
   'authn.account_last_tenant_admin',
+  // The 409 an account deletion or suspension is refused with when the
+  // account owns an active business organization. The copy tells the
+  // operator to transfer the organization or delete it first.
+  'authn.account_organization_owner',
   // The tenant admission layer's SSO step-up refusal: a local factor cannot
   // clear it, and the dialog shows the enterprise sign-in exit.
   'authn.sso_required',
