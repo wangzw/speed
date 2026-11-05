@@ -136,7 +136,7 @@ describe('the announced tenant, once the roster is read', () => {
       if (path === '/api/v1/auth/me/tenants') {
         return {
           tenants: [
-            { id: 'personal-account-2', alias: 'personal-account-2', kind: 'business' },
+            { id: 'personal-account-2', alias: 'bob', kind: 'business' },
             { id: 'my-space', alias: 'my-space', kind: 'personal' },
             { id: 'zzz', alias: 'zzz', kind: 'business' },
           ],
@@ -160,7 +160,7 @@ describe('the announced tenant, once the roster is read', () => {
     await waitFor(() => {
       expect(getCurrentTenantId()).toBe('personal-account-2')
     })
-    expect(getCurrentTenantAlias()).toBe('personal-account-2')
+    expect(getCurrentTenantAlias()).toBe('bob')
   })
 })
 

@@ -411,12 +411,12 @@ describe('the organization admin entry', () => {
   it('does not appear for a personal tenant', async () => {
     const user = userEvent.setup()
     setCurrentTenantId('personal-account-1')
-    setTenantAliases(new Map([['personal-account-1', 'personal-account-1']]))
+    setTenantAliases(new Map([['personal-account-1', 'my-space']]))
     mountApp({
       tenants: [
         {
           id: 'personal-account-1',
-          alias: 'personal-account-1',
+          alias: 'my-space',
           kind: 'personal',
         },
       ],
@@ -843,13 +843,13 @@ describe('the organization admin route admission', () => {
 
   it('still sends a personal tenant direct visit to the tenant home', async () => {
     setCurrentTenantId('personal-account-1')
-    setTenantAliases(new Map([['personal-account-1', 'personal-account-1']]))
+    setTenantAliases(new Map([['personal-account-1', 'my-space']]))
     mountApp({
       path: '/organization/admin/invitations',
       tenants: [
         {
           id: 'personal-account-1',
-          alias: 'personal-account-1',
+          alias: 'my-space',
           kind: 'personal',
         },
       ],

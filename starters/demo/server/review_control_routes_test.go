@@ -17,7 +17,8 @@ package main
 // product's own encrypted serializer, so the session is a real one rather than
 // a manufactured token. The notice route is tenant-scoped: the operator is not
 // a member of the seeded tenant by design (the impersonation fixture requires
-// that), so the case ensures their personal tenant and posts under it.
+// that), so the case reads their personal tenant's alias from
+// GET /api/v1/auth/me/tenants and posts under it.
 
 import (
 	"net/http"

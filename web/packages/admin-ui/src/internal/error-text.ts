@@ -74,13 +74,11 @@ export const ERROR_TEXT_CODES = [
   'tenant.bad_request',
   'tenant.conflict',
   'tenant.alias_immutable',
-  // org create (the demo host's self-service surface) and the personal
-  // organization ensure: the 409s a creation is refused with -- another
-  // creation in flight, the account's active-organization cap, and an
-  // identifier or alias collision -- and the 429 the hourly creation
-  // limit answers with. The identifier code is one code for both the
-  // personal address conflict and the generated business identifier
-  // conflict.
+  // org create (the demo host's self-service surface): the 409s a
+  // creation is refused with -- another creation in flight, the
+  // account's active-organization cap, and a generated identifier or
+  // alias collision -- and the 429 the hourly creation limit answers
+  // with.
   'org.creation_in_progress',
   'org.identifier_unavailable',
   'org.organization_limit',

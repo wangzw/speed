@@ -116,8 +116,8 @@ too, but their operations carry the application-owner tag `gen` writes
 from the declaring module's Go package, and `web/orval.config.ts` excludes
 that tag through orval's `input.filters`; the app generates its own SDK
 over the unfiltered document through a second orval configuration that
-lives with the app (the starter's `org.personal` ensure is the app
-fragment that exercises that leg).
+lives with the app (the starter's self-service organization creation is
+the app fragment that exercises that leg).
 Platform
 membership, in the same per-operation shape:
 

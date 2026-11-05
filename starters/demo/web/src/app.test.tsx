@@ -702,7 +702,7 @@ describe('the admin area', () => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: PERSONAL, alias: PERSONAL, kind: 'personal' }],
+          tenants: [{ id: PERSONAL, alias: 'my-space', kind: 'personal' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {

@@ -510,7 +510,7 @@ func TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen(t *testing.T) {
 
 	id := tenant.ID(tenantpersonal.IDPrefix + "acme")
 	if err := product.Provision(context.Background(),
-		tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}, "acct-1"); err != nil {
+		tenant.Tenant{ID: id, Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	roles, err := manager.Roles(context.Background(), string(id))
