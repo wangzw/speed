@@ -418,10 +418,15 @@ var accountDeleteOperation = speedhttp.NewReplyOperation[accountIDInput](
 	nil,
 	speedhttp.Failures(commonFailures(),
 		speedhttp.ProblemResponse(http.StatusForbidden, "The caller is impersonating or may not delete the account"),
-		problemResponse(http.StatusConflict, mount.CodeAccountLastTenantAdmin,
-			"The account is the only tenant administrator of an active business tenant; the detail names that tenant, and the role has to be handed to another administrator first"),
-		problemResponse(http.StatusConflict, mount.CodeAccountOrganizationOwner,
-			"The account owns an active business organization; the detail names that organization, and it has to be transferred or deleted first"),
+		// One 409 answer, two refusals: the fragment holds one response per
+		// status, so both have to be named here or the second would replace the
+		// first and disappear from the contract. The codes are the ones the
+		// handler writes in the problem's type.
+		speedhttp.ProblemResponse(http.StatusConflict,
+			"The account cannot be deleted: it is the only tenant administrator of an active business tenant "+
+				"(account-last-tenant-admin; the detail names that tenant), or it owns an active business "+
+				"organization (account-organization-owner; the detail names that organization). The role or "+
+				"the organization has to be handed on first"),
 		speedhttp.Response{Status: http.StatusNotFound, Description: "No such account"},
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 		speedhttp.Response{Status: http.StatusNoContent, Description: "The account was deleted"},

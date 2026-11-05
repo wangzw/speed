@@ -974,7 +974,7 @@
                 }
               }
             },
-            "description": "The account owns an active business organization; the detail names that organization, and it has to be transferred or deleted first"
+            "description": "The account cannot be deleted: it is the only tenant administrator of an active business tenant (account-last-tenant-admin; the detail names that tenant), or it owns an active business organization (account-organization-owner; the detail names that organization). The role or the organization has to be handed on first"
           },
           "503": {
             "content": {
