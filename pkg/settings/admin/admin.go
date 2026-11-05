@@ -25,7 +25,9 @@
 // A sensitive item's value is masked here. The settings module withholds a
 // sensitive item's default from its listing but still hands out its value from a
 // read; this module masks that value before it reaches a client, so a credential
-// never travels out with a response.
+// never travels out with a response. A write carrying that mask back is refused
+// with 422 masked-value before the audit and the store: the mask is a display
+// placeholder, not the item's value.
 //
 // The routes are mounted on the endpoints the settings.admin.endpoints list
 // names, and the start diagnostics name the endpoints and the group.

@@ -399,7 +399,7 @@
         "summary": "Drop the selected layer's explicit row for one setting"
       },
       "put": {
-        "description": "Writes one row for the setting named by the namespace and key path segments on the selected layer. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as \"300s\" is stored as \"5m0s\"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
+        "description": "Writes one row for the setting named by the namespace and key path segments on the selected layer. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as \"300s\" is stored as \"5m0s\"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A value of the mask string a sensitive item is shown as is 422 masked-value before the audit and the store. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "operationId": "settings.admin.settings.set",
         "parameters": [
           {
@@ -449,7 +449,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "value": {
-                    "description": "The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422."
+                    "description": "The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. The mask string a sensitive item is shown as is refused with 422 masked-value before the audit and the store."
                   }
                 },
                 "required": [
@@ -527,7 +527,7 @@
                 }
               }
             },
-            "description": "The value cannot be encoded under the declared type or lies outside its declared domain"
+            "description": "The value cannot be encoded under the declared type, lies outside its declared domain, or is the mask string a sensitive item is shown as (masked-value)"
           },
           "503": {
             "content": {

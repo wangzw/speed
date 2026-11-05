@@ -19,10 +19,11 @@ import (
 )
 
 // The problem types this module writes. typePrefix is the settings capability's
-// namespace; badRequest and invalidValue are this surface's two codes in it. A
-// 404 and a 503 are written with no type: they say something is not there or a
-// dependency could not answer, and not which kind of refusal it was, so naming a
-// kind would separate the failures the answer is meant to keep apart.
+// namespace; badRequest, invalidValue and maskedValue are this surface's codes
+// in it. A 404 and a 503 are written with no type: they say something is not
+// there or a dependency could not answer, and not which kind of refusal it was,
+// so naming a kind would separate the failures the answer is meant to keep
+// apart.
 //
 // The contact-required refusal is the authentication capability's, not this surface's:
 // the refusal it names is a fact about the acting account's registration, so a
@@ -34,6 +35,7 @@ const (
 	typePrefix       = "urn:speed:settings:"
 	badRequestCode   = "bad-request"
 	invalidValueCode = "invalid-value"
+	maskedValueCode  = "masked-value"
 )
 
 // errNoDeclaredItem reports a namespace no declared item belongs to. The answer
@@ -315,6 +317,13 @@ func (p *product) bad(c *gin.Context) {
 // domain.
 func (p *product) invalidValue() error {
 	return speedhttp.Fault{Status: http.StatusUnprocessableEntity, Type: typePrefix + invalidValueCode}
+}
+
+// maskedValue is the answer to a write that carries the mask string a sensitive
+// item is shown as. The mask is a display placeholder, not the item's value, so
+// a client echoing it back is refused before the audit and the store.
+func (p *product) maskedValue() error {
+	return speedhttp.Fault{Status: http.StatusUnprocessableEntity, Type: typePrefix + maskedValueCode}
 }
 
 // unavailable logs a failure and answers a 503, never telling the caller which

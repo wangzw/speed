@@ -22,11 +22,10 @@
 // The declarations decide what this surface carries. A schema states
 // Schema.TenantFacing, and each item states a TenantAccess: an item with no
 // tenant access is invisible here, and a namespace's name neither opens nor
-// closes it. Only an item declared read-write is visible and writable; a
-// read-only declaration is visible and answers the same bare 404 an undeclared
-// key gets on both write routes. The exclusion narrows this surface alone: the
-// settings module and the platform surface still read and write every declared
-// item.
+// closes it. A read-only declaration is visible and answers 403 read-only on
+// both write routes; only an item declared read-write is writable. The
+// exclusion narrows this surface alone: the settings module and the platform
+// surface still read and write every declared item.
 package tenantadmin
 
 import (

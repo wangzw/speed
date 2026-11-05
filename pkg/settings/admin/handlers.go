@@ -119,10 +119,11 @@ func (p *product) resolve(item settings.DeclaredItem, layer settings.Layer) (str
 // the layer and decided the write, and the entry point has already bound the
 // body.
 //
-// The order is fixed: the full key is required to be declared, the mandatory
-// audit row lands before the action, and the settings module is called last. A
-// key with no declaration is a bare 404 and a value the settings module refuses
-// is a 422.
+// The order is fixed: the full key is required to be declared, a masked value
+// is refused, the mandatory audit row lands before the action, and the settings
+// module is called last. A key with no declaration is a bare 404, a masked value
+// written back to a sensitive item is a 422 masked-value before the audit and
+// the store, and a value the settings module refuses is a 422.
 //
 // The write's actor is the caller's accountability key, Identity.Key(), which
 // under an impersonation is the administrator whose hands are on the request and
@@ -132,8 +133,14 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 	caller, _ := authn.FromContext(ctx)
 	sel := selectionOf(in.Layer, in.Tenant)
 	key := fullKeyOf(in.Namespace, in.Key)
-	if _, declared := p.declared(key); !declared {
+	item, declared := p.declared(key)
+	if !declared {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	if item.Sensitive {
+		if text, isText := in.Value.(string); isText && text == maskedValue {
+			return nil, p.maskedValue()
+		}
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionSet, key, detail(sel, key, actionID))); err != nil {

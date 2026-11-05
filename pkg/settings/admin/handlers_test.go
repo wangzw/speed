@@ -373,6 +373,38 @@ func TestASensitiveItemsValueIsMasked(t *testing.T) {
 	}
 }
 
+// A write of the mask string a sensitive item is shown as is refused before the
+// mandatory audit and the store: the mask is a display placeholder, not the
+// item's value, so writing it back would replace the credential with the
+// placeholder. The refusal is the settings capability's masked-value problem,
+// the same answer the tenant surface gives.
+func TestAMaskedWriteBackIsRefusedBeforeTheAuditAndTheStore(t *testing.T) {
+	r := newRig(t)
+	r.store.declared = []settings.DeclaredItem{
+		decl("authn.sms.secret", "authn.sms", reflect.TypeFor[string](), "", settings.Item{
+			Description: "the SMS provider's secret",
+			Sensitive:   true,
+		}),
+	}
+	r.store.values["authn.sms.secret"] = "hunter2"
+	r.store.rows = []settings.Entry{{Key: "authn.sms.secret", Tenant: "", Value: "hunter2"}}
+
+	w := r.do(http.MethodPut, "/api/v1/system/settings/authn.sms/secret?layer=global",
+		map[string]any{"value": maskedValue})
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("the request ended with %d, want 422: %s", w.Code, w.Body.String())
+	}
+	if p := problemOf(t, w); p.Type != "urn:speed:settings:masked-value" {
+		t.Errorf("the problem type is %q, want the masked-value problem", p.Type)
+	}
+	if got := r.audit.entries(); len(got) != 0 {
+		t.Errorf("a masked write landed %v, want no audit row", got)
+	}
+	if got := r.store.ops(); len(got) != 0 {
+		t.Errorf("a masked write reached the settings store: %v", got)
+	}
+}
+
 // A write lands a 204 and passes the layer, the full key, the body's value and
 // the caller's account on to the settings module, and it writes one mandatory
 // audit row before the action.

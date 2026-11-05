@@ -84,7 +84,7 @@ type setInput struct {
 	Tenant    string `query:"tenant" description:"The tenant whose layer the write lands on. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400."`
 	Namespace string `path:"namespace" description:"The namespace of the item to write: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared."`
 	Key       string `path:"key" description:"The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared."`
-	Value     any    `json:"value" required:"true" description:"The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422."`
+	Value     any    `json:"value" required:"true" description:"The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. The mask string a sensitive item is shown as is refused with 422 masked-value before the audit and the store."`
 }
 
 // removeInput is the input of the delete route: the layer selection and the two
@@ -172,8 +172,9 @@ var setOperation = speedhttp.NewReplyOperation[setInput](
 		"The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404. The "+
 		"value is encoded under the item's declared type and then held to its declared domain, so a "+
 		"duration written as \"300s\" is stored as \"5m0s\"; a value that cannot be encoded, lies outside "+
-		"the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the "+
-		"change, and if it cannot be written the setting is left untouched and the answer is 503. The "+
+		"the domain, or exceeds the size limit answers 422. A value of the mask string a sensitive item "+
+		"is shown as is 422 masked-value before the audit and the store. A mandatory audit row is "+
+		"written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The "+
 		"change is attributed to the caller's accountability key, which under an impersonation is the "+
 		"administrator making the request rather than the account impersonated. Success is 204 with no "+
 		"body.",
@@ -193,7 +194,7 @@ var setOperation = speedhttp.NewReplyOperation[setInput](
 		speedhttp.ProblemResponse(http.StatusUnsupportedMediaType,
 			"The request body is not application/json"),
 		speedhttp.ProblemResponse(http.StatusUnprocessableEntity,
-			"The value cannot be encoded under the declared type or lies outside its declared domain"),
+			"The value cannot be encoded under the declared type, lies outside its declared domain, or is the mask string a sensitive item is shown as (masked-value)"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )

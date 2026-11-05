@@ -110,6 +110,12 @@ applied in the one place a view is built, on every read route, so a credential
 does not travel out with a response. `has_row` is not masked: it reports the
 row's existence without revealing the text.
 
+A write that carries the mask string is refused with 422
+`urn:speed:settings:masked-value` before the mandatory audit and the store. The
+mask is a display placeholder, not the item's value, so echoing it back would
+replace the credential with the placeholder; the refusal asks nothing and
+changes nothing.
+
 ## Boundaries
 
 - **One decision order, for every route, read and write alike.** The route's
