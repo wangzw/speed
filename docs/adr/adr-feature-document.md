@@ -2,7 +2,7 @@
 
 ## 背景
 
-前端产物带着各功能目录的页面、区块与入口控件的代码；一次部署实际服务其中哪些后端接口，由装配决定：既取决于命令纳入了哪些模块，也取决于一个模块之内哪些路由组或路由内分支随可选依赖成立。例如 authn.login 有 `SMSCodes` 时才挂手机号自助路由，其邮箱添加分支在没有 `EmailCodeSender` 时答 503；authn.admin 的会话、因素、密钥、SSO、冒充记录各管理组随相应功能挂载；notification.delivery 的邮件与短信渠道随相应接口兑现。
+前端产物带着各功能目录的页面、区块与入口控件的代码；一次部署实际服务其中哪些后端接口，由装配决定：既取决于命令纳入了哪些模块，也取决于一个模块之内哪些路由组或路由内分支随可选依赖成立。例如 authn.login 有 `SMSCodes` 时才挂手机号自助路由，其邮箱添加分支在没有 `EmailCodeSender` 时答 503；authn.admin 的会话、因素、密钥、SSO、冒充记录各管理组随相应功能挂载，其中 SSO 组还要配置门 `authn.admin.sso.enabled` 打开（缺省关闭，关闭时没有 SSO 路由，`authn.admin.sso` 与 `authn.admin.sso.metadata` 都不报告）；notification.delivery 的邮件与短信渠道随相应接口兑现。
 
 前端对未启用的接口的行为是 404：导航里不出现，直接访问其链接得到与不存在的路径相同的 404。未登录者读不到这份装配信息；登录前就需要判断的事实可以匿名读取，现由 authn 的 `GET /api/v1/auth/methods` 提供。
 

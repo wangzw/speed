@@ -85,6 +85,13 @@ func TestTheAccountCreateDeclaresItsIdentifierConflict(t *testing.T) {
 // is a legal assembly rather than a disagreement.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	stubs, config := routefixture.Assembly(t, Module())
+	// The SSO provider group has a configuration gate beside its capability;
+	// the check compares the whole declared surface, so the fixture enables it.
+	config = routecontract.Config(config, map[string]any{
+		"authn": map[string]any{
+			"admin": map[string]any{"sso": map[string]any{"enabled": true}},
+		},
+	})
 	stubs = append(stubs, routefixture.Seams(
 		(*authn.Accounts)(nil),
 		(*authn.AccountAdmin)(nil),

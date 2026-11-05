@@ -8,8 +8,10 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -95,6 +97,9 @@ func (a assembly) drive(t *testing.T, run func(m *mounttest.Mounter)) error {
 	mounter := mounttest.New(t)
 
 	reg := core.New()
+	reader := authntest.ConfigReader(t, Module(), `{}`)
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
 	reg.Register(Module())
 	names := []string{ModuleName}
 

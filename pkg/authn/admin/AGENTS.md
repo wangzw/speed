@@ -12,7 +12,9 @@ The descriptor declares the static feature `authn.admin` for the account and
 membership groups and one conditional feature per other group
 (`authn.admin.sessions`, `.factors`, `.secrets`, `.sso`, `.sso.metadata`,
 `.impersonations`). Each conditional name is posted in `Init` in the branch that
-mounts its group.
+mounts its group. The SSO provider group has one configuration gate beside its
+capability: `authn.admin.sso.enabled` (namespace `authn.admin`, item
+`sso.enabled`, bool, default off, primary source only).
 
 It delivers no capability of its own. It is taken in only by a command that
 wants the management routes; without it the account, membership, session,
@@ -73,11 +75,14 @@ The API is the package's godoc.
   are always mounted. The session group follows the session store, the factor
   and password group the multi-factor module, the secret group the token
   module, the SSO provider group an SSO register that also answers the
-  domain-read extended shape its provider views need, the metadata refresh
-  group an SSO metadata refresher, and the impersonation record group an
-  impersonation capability that answers the extended read the routes need. A
-  group whose capability is absent is not mounted; the start diagnostic names
-  the groups that were.
+  domain-read extended shape its provider views need *and*
+  `authn.admin.sso.enabled`, the metadata refresh group an SSO metadata
+  refresher, and the impersonation record group an impersonation capability
+  that answers the extended read the routes need. A group whose capability is
+  absent is not mounted; the start diagnostic names the groups that were. With
+  the SSO item off or absent, the provider routes do not exist and neither
+  `authn.admin.sso` nor `authn.admin.sso.metadata` is reported, even when the
+  register is present.
 - **The provider views read domain claims through an extended shape.** Every
   provider view (list rows, get, create, update and metadata-refresh answers)
   carries `domains`: each claimed email domain with its `verified` state, an

@@ -25,7 +25,9 @@ func guardedIn(m mount.Mounter, scope speedhttp.Scope) func(speedhttp.Declared, 
 // that tenant; the platform-domain groups are not registered and the gateway
 // refuses an impersonating identity there with a 401, the handler checking the
 // same domain again. The account and membership groups are always mounted; each
-// other group follows the capability it needs.
+// other group follows the capability it needs, and the SSO provider group
+// follows its configuration item as well: a register that is present with the
+// item off is a deployment that does not offer the management surface.
 func (m *product) mountRoutes() {
 	m.mountAccountRoutes()
 	m.mountMembershipRoutes()
@@ -42,7 +44,7 @@ func (m *product) mountRoutes() {
 		m.groups = append(m.groups, "secrets")
 		m.postFeature(featureServiceKeys)
 	}
-	if m.ssoProviders != nil && m.domainClaims != nil {
+	if m.ssoProviders != nil && m.domainClaims != nil && m.ssoGroupEnabled {
 		m.mountSSORoutes()
 		m.groups = append(m.groups, "sso-providers")
 		m.postFeature(featureSSO)
@@ -125,9 +127,9 @@ func (m *product) mountMembershipRoutes() {
 	m.groups = append(m.groups, "memberships")
 }
 
-// mountSSORoutes registers the SSO provider group, mounted with the SSO module.
-// The group's action is decided in the tenant the path names, so its routes are
-// registered Impersonable.
+// mountSSORoutes registers the SSO provider group, mounted with the SSO module
+// when authn.admin.sso.enabled is true. The group's action is decided in the
+// tenant the path names, so its routes are registered Impersonable.
 func (m *product) mountSSORoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
 	g(providerListOperation, mountRel(providerListOperation.Path), providerListOperation.Handle(m.handleProviderList), mount.Impersonable())

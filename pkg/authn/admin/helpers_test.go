@@ -929,6 +929,10 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 		audit:        r.audit,
 		logger:       logger,
 		settings:     newReader(r.store, logger),
+		// The rig stands in for a deployment that offers the SSO management
+		// surface: its subject is the groups and their capabilities, not the
+		// configuration gate, which the module-level cases drive.
+		ssoGroupEnabled: true,
 	}
 	if !left[noSessions] {
 		p.sessions = r.sessions

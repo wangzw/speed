@@ -4,7 +4,7 @@
 
 特性文档发布本进程服务的特性名，由装配决定，在 Start 冻结（[ADR-feature-document](adr-feature-document.md)）。模块之内还有许多开关与可选依赖决定用户看得见什么，它们的性质各不相同：
 
-- 一些决定某个接口是否成立。authn.login 有 `SMSCodes` 时才挂手机号自助路由；邮箱添加路由恒挂，其邮箱分支在没有 `EmailCodeSender` 时答 503。authn.admin 的会话、因素、密钥、SSO、SSO 元数据刷新、冒充记录各组路由，按对应功能是否在场挂载。notification.delivery 在构造期解析可选的 `mail.Sender`、`sms.Registry`、`sms.Sender`，一个渠道能否兑现由这些接口决定；渠道列本身由 notification.preferences 恒挂的路由服务。
+- 一些决定某个接口是否成立。authn.login 有 `SMSCodes` 时才挂手机号自助路由；邮箱添加路由恒挂，其邮箱分支在没有 `EmailCodeSender` 时答 503。authn.admin 的会话、因素、密钥、SSO、SSO 元数据刷新、冒充记录各组路由，按对应功能是否在场挂载；SSO 组另要求配置门 `authn.admin.sso.enabled` 打开（缺省关闭），关闭时没有 SSO 路由，`authn.admin.sso` 与 `authn.admin.sso.metadata` 都不报告。notification.delivery 在构造期解析可选的 `mail.Sender`、`sms.Registry`、`sms.Sender`，一个渠道能否兑现由这些接口决定；渠道列本身由 notification.preferences 恒挂的路由服务。
 - 一些是取值集合或渲染结构，而且登录前就要用：登录方法描述符、注册开关、可登记的因素种类，由 authn 的匿名发现接口 `GET /api/v1/auth/methods` 发布（[ADR-authn-login-method-discovery](adr-authn-login-method-discovery.md)）。
 - 一些只是参数（时长、上限、预算），违反时服务端逐次拒绝；一些的结果经流程应答送达——需先绑定经 401 `link-required`，全局强制 MFA 经登录流程的登记步，租户级强度策略经 401 的 `WWW-Authenticate`；一些发布出去会暴露租户、IdP 或账户维度，例如 IdP 清单。
 

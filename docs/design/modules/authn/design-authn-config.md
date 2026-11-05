@@ -38,6 +38,7 @@
 
 | 命名空间 | 持有它的文档 | 声明的输入项 |
 |---|---|---|
+| `authn.admin` | [design-authn-admin](design-authn-admin.md) | 配置 |
 | `authn.gate` | [design-authn-gate](design-authn-gate.md) | 配置 |
 | `authn.static` | [design-authn-gate](design-authn-gate.md) | 配置与设置 |
 | `authn.account` | [design-authn-account](design-authn-account.md) | 配置与设置 |
@@ -148,6 +149,12 @@
 | `authn.humanverify.hostname` | 字符串 | 空 | 默认 | | 控件必须运行的主机名；任一面选 `turnstile` 时必填 |
 | `authn.humanverify.action` | 字符串 | 空 | 默认 | | 控件渲染时使用的 action；任一面选 `turnstile` 时必填，提供方的答案必须报出它 |
 | `authn.humanverify.timeout` | `time.Duration` | `10s` | 默认 | | 一次校验的总时限，取值 1s 到 30s |
+
+下表是管理面的配置项（封闭集合）。
+
+| 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
+|---|---|---|---|---|---|
+| `authn.admin.sso.enabled` | 布尔 | `false` | 主 | | 本次运行是否挂出 SSO 提供方管理组；关闭或缺席时该组的路由不存在，`authn.admin.sso` 与 `authn.admin.sso.metadata` 都不报告。SSO 注册在场只说明进程能管理提供方，不说明部署提供这个管理面，所以开关独立于注册数据 |
 
 下表是短信、企业 SSO 与租户准入的配置项（封闭集合）。
 

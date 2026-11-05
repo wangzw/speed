@@ -17,7 +17,7 @@
 - **不持有账户、会话、因素、服务密钥、IdP、冒充记录的数据与规则。** 管理路由只调用对应能力的根包接口，规则与哨兵在各能力的模块里（[authn-account](design-authn-account.md)、[authn-session](design-authn-session.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)、[authn-impersonation](design-authn-impersonation.md)）。
 - **不挂自助路由。** 自助路由在 [authn-login](design-authn-login.md)、[authn-session](design-authn-session.md)、[authn-mfa](design-authn-mfa.md) 里。
 - **不发布事件。** 事件由执行写的能力接口发出；`authn.admin` 不取用事件总线与发件箱。事件与审计的契约在 [authn-events](design-authn-events.md)。
-- **不声明配置键与设置键。** 键的名字、取值域与缺省值只在 [authn-config](design-authn-config.md) 给全。
+- **只声明一个配置项。** `authn.admin.sso.enabled` 是 SSO 提供方组的配置门，键名、缺省值与来源在 [authn-config](design-authn-config.md) 给全；本模块不声明设置键。
 - **不约束经 Go 接口的直接调用。** 宿主在自己的命令里调用 `AccountAdmin`、`Memberships`、`Sessions`、`SSOProviders` 不经 `Decider`，其访问控制由宿主命令自己负责。
 - **不实现 `authz.policy` 自己的缓存与对账。** `authz.policy` 清理角色绑定靠订阅事件，并可用 `Accounts.Get` 对账。
 
@@ -141,7 +141,7 @@ type ScopeGuard interface {
 
 - **不纳入就没有管理路由。** 宿主不点名 `authn.admin` 时没有 `B/*` 或 `Bt/:tenant/*` 下的任何路由；`AccountAdmin`、`Memberships`、`Sessions`、`SSOProviders` 的 Go 接口照常可用。
 - **缺审计则启动失败。** `audit.Audit` 是必需依赖，漏纳入在任何实例构造之前以 `core.ErrMissingProvider` 失败，不留到第一次写操作才发现。
-- **每组路由随对应能力在场才挂。** 能力缺席时该组路由不存在，路由引擎对它按未命中处理；缺接口的组不挂出，不做成挂出而全拒，理由与被否决的写法在 [ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)。启动诊断写出挂了哪几组。
+- **每组路由随对应能力在场、且该组的配置门打开才挂。** 能力缺席，或该组声明的配置门为假或缺席时，该组路由不存在，路由引擎对它按未命中处理，前端按该组特性缺席隐藏入口，与任何缺席能力相同；缺接口的组不挂出，不做成挂出而全拒，理由与被否决的写法在 [ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)。启动诊断写出挂了哪几组。
 
 下表是路由组的全集（封闭集），只写组名、挂出条件与该组对应的[特性](../../../glossary.md)；每条路由属于哪一组，由下节路由表的「组」列给出。新增路由归入其能力所在的组，或新增一组。
 
@@ -152,7 +152,7 @@ type ScopeGuard interface {
 | 会话 | `Sessions` 在场 | `authn.admin.sessions`（条件） |
 | 因素与口令 | `MFA` 在场（这些路由要核对 `MFA.Seasoned`）；其中管理员重置口令的路由还要 `Passwords` 在场 | `authn.admin.factors`（条件） |
 | 服务密钥 | `Tokens` 在场 | `authn.admin.secrets`（条件） |
-| SSO 提供方 | `SSOProviders` 在场，且交付的注册另答域读扩展接口（`Domains`／`DomainsMany`） | `authn.admin.sso`（条件） |
+| SSO 提供方 | `SSOProviders` 在场，且交付的注册另答域读扩展接口（`Domains`／`DomainsMany`），且 `authn.admin.sso.enabled` 为真（缺省关闭） | `authn.admin.sso`（条件） |
 | 元数据刷新 | 至少一个 `SSOMetadataRefresher` 在场，且 SSO 提供方组已挂 | `authn.admin.sso.metadata`（条件） |
 | 冒充记录 | `Impersonation` 在场，且交付了单条读取（`Get`） | `authn.admin.impersonations`（条件） |
 
@@ -161,6 +161,7 @@ type ScopeGuard interface {
 - **`authn.admin` 是[静态特性](../../../glossary.md)，指账户组与成员关系组。** 它们恒挂：所依赖的功能与 `mount.Mounter` 都是必需依赖，模块进入启用集即挂出它们，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 - **其余各组是[条件特性](../../../glossary.md)，在 `Init` 挂该组路由的同一处判定里报告**（`pkg/authn/admin/routes.go` `(*product).mountRoutes`、`mountAccountRoutes`）：会话、服务密钥、SSO 提供方与冒充记录各在挂该组的分支里报告；`authn.admin.sso.metadata` 在 SSO 提供方分支之内、挂刷新路由的那一处报告；`authn.admin.factors` 在 `mountAccountRoutes` 里 `MFA` 在场的分支报告。进程纳入了 `feature.board` 时，特性文档含一个条件分组名，当且仅当该组已挂出（[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **管理员重置口令随因素组，不另立特性名。** `authn.admin.factors` 的报告不看 `Passwords`，而重置口令的路由在同一分支内还要 `Passwords` 在场。服务前端的命令必须纳入 `authn.login`（[web](../web/design-web.md)），`authn.login` 把 `Passwords` 列为必需依赖（[authn-login](design-authn-login.md)），所以服务前端的装配里重置口令的路由与因素组同时挂出，`authn.admin.factors` 在场即指因素组连同重置口令的路由。
+- **SSO 提供方组多一道配置门。** `SSOProviders` 在场只说明进程能管理提供方，不说明这次部署提供这个管理面；`authn.admin.sso.enabled` 缺省关闭，为假或缺席时该组不挂、`authn.admin.sso` 与 `authn.admin.sso.metadata` 都不报告，启动诊断也不列该组。运营者把该配置项置为真即得到该组，部署按需开启；审查装配为端到端走查显式打开。该组的缺席与任何能力缺席相同：路由不存在，前端按 `authn.admin.sso` 与 `authn.admin.sso.metadata` 的特性缺席隐藏 SSO 入口。模块的启用立场仍是 `StateEnabled`：这是对一个组的显式配置门，不是 `StateAuto`（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。
 - **`feature.Board` 经 `core.Resolve` 取用，不列入 `Requires`。** 取不到时（没有纳入 `feature.board` 的进程）不报告，各组照上表的条件挂出。
 
 ### 管理面路由表
@@ -443,6 +444,7 @@ flowchart TD
 | 平台域管理面在冒充中拒绝 | 冒充身份直达平台域管理路由的处理器时回 403 `impersonation-restricted`，`Decider` 的调用计数为零；判定域为该租户的管理路由按其权限判定。 |
 | 注册验证状态的门控 | 表驱动：发起者视为 `SignupPending` 时，每条管理写路由与冒充发起回 403 `contact-required`，`Decider` 与强度询问的调用计数为零，能力接口的写调用计数为零，审计写入计数为零；同一发起者的读路由照常成功；服务账户与视为 `SignupNone`（没有任何邮箱）的发起者不受影响，视为 `SignupVerified` 的发起者也不受影响；管理员预置的账户（`signup_state=0`）带着未证明邮箱时同样被拦；状态读取返回错误时回 503 且动作不执行。 |
 | 路由组随能力挂 | 逐个去掉 `Sessions`、`MFA`、`Tokens`、`SSOProviders`、`SSOMetadataRefresher`、`Impersonation`，对应组的路由是路由引擎的未命中，其余组不受影响；启动诊断列出实际挂出的组。 |
+| SSO 提供方组随配置项挂 | `SSOProviders` 与 `SSOMetadataRefresher` 都在场时，`authn.admin.sso.enabled` 为假或配置缺席时不登记该组路由、不报告两个特性、启动诊断不列该组；为真时三者都成立。 |
 | 特性与路由组同源 | 用真实的 `feature.board` 驱动到 `Start`，表驱动逐组断言：功能在场，当且仅当报告该组的特性名，当且仅当该组路由已登记；`authn.admin` 在每一种组合下都在特性文档里。 |
 | 缺席不放行 | `Decide` 返回 error 回 503，panic 同样回 503，两种情形下能力接口的写调用计数都为零。 |
 

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -69,6 +70,21 @@ func (c *featureCapture) names(t *testing.T) []string {
 	return nil
 }
 
+// diagnostic is the administration module's startup line, which names the
+// route groups it mounted.
+func (c *featureCapture) diagnostic(t *testing.T) string {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, r := range c.records {
+		if strings.Contains(r.Message, "the management routes are mounted on the endpoint") {
+			return r.Message
+		}
+	}
+	t.Fatal("the administration module logged no startup diagnostic")
+	return ""
+}
+
 type captureLogger struct{ capture *featureCapture }
 
 func (l captureLogger) Named(string) *slog.Logger { return slog.New(l.capture) }
@@ -97,17 +113,35 @@ type capabilities struct {
 	impersonate bool
 }
 
+// The two configuration fragments the cases assemble: the feature board's
+// endpoint, and the item that turns the SSO provider group on. An absent item
+// reads as off, which is the module's declared default.
+const (
+	featureBoardConfig = `"feature": {"board": {"endpoint": "account"}}`
+	ssoEnabledConfig   = `"authn": {"admin": {"sso": {"enabled": true}}}`
+)
+
 // driveWithBoard assembles the administration module, the real board and the
-// stand-ins both need, and advances to Start. It returns the mounter, so a case
-// reads the groups the module registered, and the frozen feature names.
+// stand-ins both need, and advances to Start. The SSO management group is
+// enabled, because the cases here hold the groups against their capabilities,
+// not the configuration gate. It returns the mounter, so a case reads the
+// groups the module registered, and the frozen feature names.
 func driveWithBoard(t *testing.T, on capabilities) (*mounttest.Mounter, []string) {
+	t.Helper()
+	mounter, names, _ := driveWithConfig(t, on, "{"+featureBoardConfig+", "+ssoEnabledConfig+"}")
+	return mounter, names
+}
+
+// driveWithConfig is driveWithBoard over a configuration body the case writes.
+// It also returns the module's startup diagnostic, which names the mounted
+// groups.
+func driveWithConfig(t *testing.T, on capabilities, body string) (*mounttest.Mounter, []string, string) {
 	t.Helper()
 
 	mounter := mounttest.New(t)
 	router := routecontract.NewRouter("account")
 	capture := &featureCapture{}
-	reader := authntest.ConfigReaderAll(t, `{"feature": {"board": {"endpoint": "account"}}}`,
-		featureboard.Module(), Module())
+	reader := authntest.ConfigReaderAll(t, body, featureboard.Module(), Module())
 
 	reg := core.New()
 	reg.Register(config.Module())
@@ -153,7 +187,7 @@ func driveWithBoard(t *testing.T, on capabilities) (*mounttest.Mounter, []string
 	if err := reg.Drive(t.Context(), core.Drive{Depth: core.StageStart, Participants: participants}); err != nil {
 		t.Fatalf("the drive failed: %v", err)
 	}
-	return mounter, capture.names(t)
+	return mounter, capture.names(t), capture.diagnostic(t)
 }
 
 // TestAGroupIsPresentExactlyWhenItIsNamedAndMounted holds the equivalence for
@@ -209,6 +243,56 @@ func TestAGroupIsPresentExactlyWhenItIsNamedAndMounted(t *testing.T) {
 			} {
 				if _, ok := mounter.Registered(r.method, r.path); !ok {
 					t.Errorf("%s %s is not mounted, but the static group is always mounted", r.method, r.path)
+				}
+			}
+		})
+	}
+}
+
+// TestTheSSOGroupFollowsItsConfigurationItem holds the one configuration gate:
+// the register capability being present is not enough, because it says the
+// process could manage providers, not that this deployment offers the
+// management surface. Off or absent, the group's routes are not registered,
+// neither feature is frozen into the document, and the startup diagnostic names
+// no SSO group.
+func TestTheSSOGroupFollowsItsConfigurationItem(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "the item is absent", body: "{" + featureBoardConfig + "}", want: false},
+		{
+			name: "the item is false",
+			body: "{" + featureBoardConfig + `, "authn": {"admin": {"sso": {"enabled": false}}}}`,
+			want: false,
+		},
+		{
+			name: "the item is true",
+			body: "{" + featureBoardConfig + ", " + ssoEnabledConfig + "}",
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The register and the refresher are both present, so only the item
+			// can make the answer differ.
+			mounter, names, diagnostic := driveWithConfig(t,
+				capabilities{sso: true, refresher: true}, tc.body)
+
+			if _, mounted := mounter.Registered(http.MethodGet, "/api/v1/tenants/:tenant/sso/providers"); mounted != tc.want {
+				t.Errorf("the provider route is mounted = %v, want %v", mounted, tc.want)
+			}
+			if _, mounted := mounter.Registered(http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh"); mounted != tc.want {
+				t.Errorf("the metadata-refresh route is mounted = %v, want %v", mounted, tc.want)
+			}
+			for _, feature := range []string{featureSSO, featureSSOMetadata} {
+				if got := slices.Contains(names, feature); got != tc.want {
+					t.Errorf("%s present = %v, want %v; the set is %v", feature, got, tc.want, names)
+				}
+			}
+			for _, group := range []string{"sso-providers", "sso-metadata-refresh"} {
+				if got := strings.Contains(diagnostic, group); got != tc.want {
+					t.Errorf("the diagnostic names the %s group = %v, want %v: %s", group, got, tc.want, diagnostic)
 				}
 			}
 		})

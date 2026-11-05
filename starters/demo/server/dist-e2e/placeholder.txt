@@ -1,0 +1,13 @@
+This file exists so that `go:embed dist-e2e` compiles on a clean checkout.
+go:embed refuses to embed a directory that holds no files, and the end-to-end
+harness writes this directory only while a run is building.
+
+The real bundle is written here by `pnpm build` in the frontend package beside
+the Go module, with DEMO_WEB_OUT_DIR pointed at this directory (see
+web/e2e/global-setup.ts). server/dist-e2e is git-ignored, so nothing the build
+writes is tracked; this one file is force-added and the harness's clean step
+keeps it in place.
+
+Until the end-to-end harness builds the front end, the embedded directory
+carries no entry document, and the web host answers 404 to every request --
+the design behaviour of pkg/webui when its bundle has no index.html.

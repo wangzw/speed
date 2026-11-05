@@ -32,9 +32,13 @@
 // factor and password group with the multi-factor module, the secret group with
 // the token module, the SSO provider group with the SSO module, the metadata
 // refresh group with an SSO metadata refresher, and the impersonation record
-// group with the impersonation module. A group whose capability is absent does
-// not exist, and the route engine answers it as any unmatched path; the start
-// diagnostics name the groups that were mounted.
+// group with the impersonation module. The SSO provider group carries one more
+// condition, authn.admin.sso.enabled: the register capability says the process
+// could manage providers, and the configuration item says this deployment
+// offers that management surface, so the group is mounted only when both hold.
+// A group whose capability is absent does not exist, and the route engine
+// answers it as any unmatched path; the start diagnostics name the groups that
+// were mounted.
 package admin
 
 import (
@@ -135,7 +139,8 @@ const (
 //
 // The stance is StateEnabled and never StateAuto: whether to mount the
 // management routes is a decision on the command tree and not a conclusion a
-// configuration can infer.
+// configuration can infer. The one configuration item, authn.admin.sso.enabled,
+// gates a single group inside the module rather than the module itself.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -150,6 +155,7 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
+			configSchema(),
 			adminSpec,
 			adminTenantsSpec,
 			feature.Spec{Name: featureAdmin},
@@ -229,6 +235,10 @@ type product struct {
 	settings *reader
 	logger   *slog.Logger
 
+	// ssoGroupEnabled is the configuration gate of the SSO provider group. It is
+	// read in New from authn.admin.sso.enabled and never changes after that.
+	ssoGroupEnabled bool
+
 	// board is the feature publisher, when this process has one. It is taken up
 	// in Init and read in the same stage, never in New.
 	board feature.Board
@@ -264,16 +274,25 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the audit capability: %w", diagnosticPrefix, ModuleName, err)
 	}
+	configReader, err := readerOf(reg)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := readConfig(configReader)
+	if err != nil {
+		return nil, err
+	}
 	logger := log.Default()
 	return &product{
-		mounter:      mounter,
-		accounts:     accounts,
-		accountAdm:   accountAdm,
-		memberships:  memberships,
-		verification: verification,
-		audit:        auditor,
-		logger:       logger,
-		settings:     newReader(nil, logger),
+		mounter:         mounter,
+		accounts:        accounts,
+		accountAdm:      accountAdm,
+		memberships:     memberships,
+		verification:    verification,
+		audit:           auditor,
+		logger:          logger,
+		settings:        newReader(nil, logger),
+		ssoGroupEnabled: cfg.SSO.Enabled,
 	}, nil
 }
 

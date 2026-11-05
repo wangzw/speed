@@ -67,6 +67,14 @@ authn:
   gate:
     mount:
       public-url: "http://localhost:8080"
+  # REVIEW: the management console's SSO provider page. The provider group is
+  # mounted only when authn.admin.sso.enabled is true; a baseline or deployment
+  # leaves it off, and the console then offers no SSO page. The tenant-admin and
+  # enterprise SSO journeys register providers through this page, so the review
+  # assembly turns it on.
+  admin:
+    sso:
+      enabled: true
   # REVIEW: the four social methods. The identifiers and secrets are fake and
   # exist so the methods start and build an authorization URL. Against the
   # Google block's public defaults below no callback is expected; the
@@ -196,7 +204,7 @@ sms:
 # REVIEW: the personal tenant the review walkthrough exercises. A registration
 # completed through the SMS sign-in lands in the tenant area with a personal
 # tenant this host creates on the first ensure call.
-workspace:
+org:
   personal:
     enabled: true
 
