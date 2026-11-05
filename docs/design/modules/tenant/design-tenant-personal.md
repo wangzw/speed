@@ -6,7 +6,7 @@
 
 ## 职责
 
-- 实现认证根包的事务内 seam `provisioning.AccountProvisioning`：在账户创建的同一事务里写租户行、创建者成员关系、`tenant-admin` 角色、角色的授予与创建者绑定；在账户删除的同一事务里清空账户的绑定、删除 `tenant-admin` 角色并把租户行写成墓碑。
+- 实现认证根包的事务内 seam `provisioning.AccountProvisioning`：在账户创建的同一事务里写租户行、创建者成员关系、`tenant-admin` 角色、角色在允许集内的授予与创建者绑定（允许集为空时不写授予行）；在账户删除的同一事务里清空账户的绑定、删除 `tenant-admin` 角色并把租户行写成墓碑。
 - 对服务账户什么也不写：服务账户由管理员授予租户访问，不拥有自己的组织。
 - 把个人租户的别名写成账户的用户名，使个人组织在请求侧以用户名寻址；用户名缺席时以 `personal-<accountID>` 兜底。
 - 实现认证根包的 `authn.AccountLifecycle`：创建钩子补齐事务内 seam 未完成的部分，停用与启用钩子按账户的状态迁移租户，删除钩子收尾租户内其余账户的成员关系。清空被删除账户的绑定、删除角色、写删除审计行与写墓碑由事务内的删除完成。
@@ -125,7 +125,7 @@ sequenceDiagram
 
 - **租户行**：`ID` 是 `personal-` 加账户标识，`Alias` 是账户用户名（没有用户名时等于 `ID`），`Status` 是 `active`，`OwnerAccount` 是账户标识，`Profile.DisplayName` 是账户的显示名。
 - **成员关系**：账户在个人租户里的有效成员关系，来源写 `personal`。
-- **授权行**：`tenant-admin` 角色（描述键 `authz.role.tenantAdmin`）、它的授予与账户到该角色的绑定。
+- **授权行**：`tenant-admin` 角色（描述键 `authz.role.tenantAdmin`）与账户到该角色的绑定；角色在允许集内的授予只在允许集非空时写入。
 - **审计行**：创建与删除各一行，结果取 `success` 或 `failed`。
 
 删除把租户行写成墓碑：`Status` 变成 `deleted`，别名保留，标识因此不可复用。
@@ -139,15 +139,15 @@ sequenceDiagram
 1. 账户模块在一个事务里写账户行、用户名标识与凭据。
 2. 同一事务里调用 `ProvisionAccount`。本模块以 `ID=personal-<id>`、`Alias=alice`、`Status=active`、`OwnerAccount=<id>` 调 `CreateTx`；名册写入租户行并交回提交后的快照重读闭包。
 3. 本模块经 `PutMembershipTx` 写 `alice` 在个人租户里的有效成员关系，来源 `personal`。
-4. 本模块经 `PutRoleTx` 写 `tenant-admin` 角色，经 `SeedGrantsTx` 写允许集内的授予，经 `PutBindingTx` 把 `alice` 绑到该角色。每次写入交回的闭包都交给上下文里的 `AfterCommit` 收集器。
+4. 本模块经 `PutRoleTx` 写 `tenant-admin` 角色，经 `SeedGrantsTx` 写允许集内的授予（允许集为空，这一步不写行），经 `PutBindingTx` 把 `alice` 绑到该角色。每次写入交回的闭包都交给上下文里的 `AfterCommit` 收集器。
 5. 账户模块提交。名册重读与授权的快照刷新、事件发布与创建的审计行按收集器的顺序运行。
 6. 账户模块调用 `AccountCreated`。本模块读到租户行已是 `active`，`ensure` 发现成员关系、角色与绑定都在，不写任何行。
 
-持久状态：账户行、`personal-<id>` 租户行（别名 `alice`）、一条成员关系、一个角色、一条授予、一条绑定与一条创建审计行。
+持久状态：账户行、`personal-<id>` 租户行（别名 `alice`）、创建者的一条成员关系、`tenant-admin` 角色、该角色的零条授予、账户到该角色的一条绑定与一条创建审计行。授予为零是因为允许集为空：本骨架的 `personalBusinessPermissions` 没有列出任何业务资源权限，而允许集只从这个代码内列出的集合取，不从进程目录推导，所以模块声明的权限不会自行加入；当前允许集是它与 `TenantGoverned` 相交、再减去成员关系管理与身份提供方管理两个排除项的结果，因此为空。新增业务能力时，把它的租户级权限加入这个集合，下一次补齐就会写入相应授予（见[扩展点](#扩展点)）。
 
 ### 事务内建立
 
-`ProvisionAccount` 只对 `kind=user` 生效。它为租户标识派生 `TenantID(account)`，把别名写作用户名，用户名空时退回标识。五次写入的次序是租户行、成员关系、角色、授予、绑定；每一步交回的提交后闭包都追加到 `provisioning.AfterCommitOf(ctx)`。租户行这次真正建立时，创建的审计行也作为一个提交后闭包写入；幂等重放不再记一行。
+`ProvisionAccount` 只对 `kind=user` 生效。它为租户标识派生 `TenantID(account)`，把别名写作用户名，用户名空时退回标识。五次写入的次序是租户行、成员关系、角色、授予（允许集为空时这一步没有行）、绑定；每一步交回的提交后闭包都追加到 `provisioning.AfterCommitOf(ctx)`。租户行这次真正建立时，创建的审计行也作为一个提交后闭包写入；幂等重放不再记一行。
 
 租户行返回 `tenant.ErrTenantExists` 是幂等重放：租户行已在，剩下的四步继续补完。返回 `tenant.ErrAliasConflict` 是本模块导出的 `ErrAliasConflict`，同时包装名册的哨兵，账户事务回滚。其余失败原样返回，事务同样回滚。
 
@@ -163,7 +163,7 @@ sequenceDiagram
 
 ### 补齐
 
-`ensure` 以调用方的身份执行。它先读成员关系；已有则经 `EnterRegistered` 与 `Get` 读回租户行，没有则先写强制审计行，再读账户用户名为别名创建租户，然后补成员关系、角色、授予与绑定，最后移除旧模型遗留的 `owner` 角色。租户行不是 `active` 时在写任何行之前以 `ErrTenantUnavailable` 拒绝。
+`ensure` 以调用方的身份执行。它先读成员关系；已有则经 `EnterRegistered` 与 `Get` 读回租户行，没有则先写强制审计行，再读账户用户名为别名创建租户，然后补成员关系、角色、允许集内的授予与绑定（允许集为空时没有授予行），最后移除旧模型遗留的 `owner` 角色。租户行不是 `active` 时在写任何行之前以 `ErrTenantUnavailable` 拒绝。
 
 ### 种类解析
 
@@ -200,7 +200,7 @@ seam 的失败一律使账户事务回滚：账户与它拥有的空间要么都
 
 ## 扩展点
 
-个人租户的 `tenant-admin` 允许集写在包内：业务资源集合与两个排除项在代码里显式列出，不从进程目录推导。新增业务能力时，把它的租户级权限加入集合即可进入个人租户；平台只允许租户管理员治理的权限才真正写入授权行。本模块不提供配置项、路由或接口来改写这个集合。
+个人租户的 `tenant-admin` 允许集写在包内：业务资源集合与两个排除项在代码里显式列出，不从进程目录推导。本骨架的 `personalBusinessPermissions` 没有列出任何业务资源权限——集合不从进程目录推导，模块声明的权限不会自行加入——因此 `tenant-admin` 当前不持有授予。新增业务能力时，把它的租户级权限加入集合即可进入个人租户；平台只允许租户管理员治理的权限才真正写入授权行。本模块不提供配置项、路由或接口来改写这个集合。
 
 ## 实现状态
 
