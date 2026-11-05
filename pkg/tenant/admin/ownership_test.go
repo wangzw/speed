@@ -117,6 +117,37 @@ func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 	}
 }
 
+// A transfer that commits between the guard's read and the handler's read does
+// not hand the deletion the new owner as its own expectation: the caller is the
+// expected owner, so the writer refuses with ErrOwnerChanged.
+func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
+	r := newRig(t)
+	r.guard.allow = false
+	owner := authntest.DefaultAccount
+	r.catalog.held = tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		OwnerAccount: owner.String(),
+	}
+	r.catalog.found = true
+	reads := 0
+	r.catalog.getHook = func() {
+		reads++
+		if reads > 1 {
+			// A transfer committed after the guard saw the caller as owner.
+			r.catalog.held.OwnerAccount = "acc-new-owner"
+		}
+	}
+
+	w := r.do(http.MethodDelete, pathTenants+"/t_acme", nil)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
+	}
+	calls := r.organization.recorded()
+	if len(calls) != 1 || calls[0].expectedOwner != owner.String() {
+		t.Fatalf("the organization writer was called %+v, want the caller as the expected owner", calls)
+	}
+}
+
 // A tenant administrator who is not the owner is refused, and nothing reaches
 // the writer or the audit.
 func TestANonOwnerTenantAdministratorCannotDelete(t *testing.T) {

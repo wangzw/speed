@@ -1493,6 +1493,45 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	}
 }
 
+// TestSeedLeavesADeletedTenantAlone holds the terminal state on the seed path:
+// the roster keeps returning a tombstone, and the repair must not recreate the
+// roles, grants and builtin mark the deletion removed.
+func TestSeedLeavesADeletedTenantAlone(t *testing.T) {
+	t.Parallel()
+	roster := newFakeRoster()
+	roster.rows["gone"] = tenant.Tenant{ID: "gone", Alias: "gone", Status: tenant.StatusDeleted}
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.roles["acme"] = []authz.RoleRecord{{Tenant: "acme", Role: tenantAdminRole}}
+	catalog := fixedCatalog{
+		pairs:    map[authz.Permission][2]string{"crm.deal.read": {"deal", "read"}},
+		governed: map[authz.Permission]bool{"crm.deal.read": true},
+	}
+
+	if err := seedRosterAdministration(t.Context(), roster, manager, newFakeSeeder(grants),
+		&recordingReconciler{}, newRecordedAudit(), catalog); err != nil {
+		t.Fatalf("seedRosterAdministration: %v", err)
+	}
+
+	roles, err := manager.Roles(t.Context(), "gone")
+	if err != nil {
+		t.Fatalf("reading the deleted tenant's roles: %v", err)
+	}
+	if len(roles) != 0 {
+		t.Errorf("the deleted tenant holds roles %+v, want none", roles)
+	}
+	if held := grants.held("gone", tenantAdminRole); len(held) != 0 {
+		t.Errorf("the deleted tenant holds grants %+v, want none", held)
+	}
+	if manager.markBuiltinCalls != 1 {
+		t.Errorf("the seed marked %d role(s) builtin, want only the active tenant's", manager.markBuiltinCalls)
+	}
+	if roles, err := manager.Roles(t.Context(), "acme"); err != nil || len(roles) != 1 || !roles[0].Builtin {
+		t.Errorf("the active tenant's roles = %+v (%v), want one builtin tenant-admin", roles, err)
+	}
+}
+
 // TestSeedConvergesAnExistingTenantToTheGovernedSet holds the upgrade path: a
 // tenant the roster already holds keeps its builtin tenant-admin role, and a
 // seed run gives that role every governed grant it is missing while asking the

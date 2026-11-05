@@ -1316,6 +1316,13 @@ func seedRosterAdministration(ctx context.Context, roster tenant.Catalog, manage
 			fmt.Printf("skipped: builtin mark on %s/%s (personal domain)\n", id, tenantAdminRole)
 			continue
 		}
+		// A deleted tenant is terminal: the deletion cleaned its roles, grants
+		// and bindings, and the seed must not bring them back. The roster
+		// keeps returning the tombstone, so skipping is the seed's own step.
+		if t.Status == tenant.StatusDeleted {
+			fmt.Printf("skipped: builtin mark on %s/%s (deleted tenant)\n", id, tenantAdminRole)
+			continue
+		}
 		if err := seedAdministration(ctx, manager, seeder, id, tenantAdminRole,
 			tenantAdminDescriptionKey, target); err != nil {
 			return err

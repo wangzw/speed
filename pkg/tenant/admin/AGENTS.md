@@ -175,7 +175,8 @@ key.
   write, a failed row linked to the permitted one by the action identifier is
   written best-effort: its own failure is an Error line and changes nothing about
   the answer. The action names are a closed set — `tenant.create`,
-  `tenant.status`, `tenant.profile.update` — one per write route, and a read
+  `tenant.status`, `tenant.profile.update`, `tenant.owner.transfer` and
+  `tenant.delete` — one per write route, and a read
   writes no audit row of its own. A profile update's rows carry
   `surface=platform` in their detail, which tells them apart from the tenant
   profile module's rows for the same action.

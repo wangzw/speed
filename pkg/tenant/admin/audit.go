@@ -8,7 +8,7 @@ import (
 
 // The audit action names this module writes, one per write route. The set
 // mirrors the permission vocabulary: a read writes no audit row of its own, and
-// every write is one of these three. A name is written for the mandatory row a
+// every write is one of these five. A name is written for the mandatory row a
 // write lands before its action and, when the action fails, for the failed row
 // that links to it.
 const (

@@ -71,6 +71,10 @@ type stubCatalog struct {
 	// during runs at the start of SetProfile, before the call is recorded, so a
 	// case can hold that the mandatory audit row landed first.
 	during func()
+	// getHook runs before every Get answer, so a case can make a write land
+	// between two reads (a transfer committing between the guard's read and
+	// the handler's).
+	getHook func()
 }
 
 // store records the row a successful provisioner call wrote, so the create
@@ -115,6 +119,9 @@ func (s *stubCatalog) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool,
 	s.record(catalogCall{op: "Get", id: id})
 	if err := s.errOr(s.getErr); err != nil {
 		return tenant.Tenant{}, false, err
+	}
+	if s.getHook != nil {
+		s.getHook()
 	}
 	return s.held, s.found, nil
 }

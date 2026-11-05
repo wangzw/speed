@@ -173,9 +173,13 @@ func (p *product) handleTenantTransferOwner(ctx context.Context, in transferOwne
 // refuses a disable. The mandatory audit row lands before the deletion; a
 // refusal closes it with a linked failed row.
 //
-// An owner-initiated deletion carries the owner it observed, so a transfer that
-// wins the race leaves the deletion a 409 rather than deleting the organization
-// the owner no longer governs. Platform staff carry no such expectation.
+// An owner-initiated deletion carries the caller as the owner it expects, so a
+// transfer that wins the race leaves the deletion a 409 rather than deleting
+// the organization the caller no longer governs. The expected value is the
+// caller's own actor, not the owner this handler's read returns: a transfer can
+// commit between the guard's read and this one, and the second read would
+// otherwise name the new owner as its own expectation. Platform staff carry no
+// such expectation.
 func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	if !tenant.IsIdentifier(in.ID) {
 		return nil, badRequest()
@@ -200,9 +204,17 @@ func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *
 		return nil, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
 	}
 
+	// The expected owner is the caller, not the row read here: the guard already
+	// decided this request is the owner's by reading the row, and a transfer
+	// that commits between that read and this one must make the deletion a 409,
+	// not silently adopt the new owner as the expectation.
 	expectedOwner := ""
 	if !isPlatformStaff(ctx) {
-		expectedOwner = got.OwnerAccount
+		id, ok := authn.FromContext(ctx)
+		if !ok {
+			return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
+		}
+		expectedOwner = id.Actor().String()
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, in.ID, map[string]string{
