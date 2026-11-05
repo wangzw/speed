@@ -11,9 +11,11 @@ import (
 )
 
 // maskedValue is the fixed string a sensitive item's written text and resolved
-// value are replaced with before the view reaches a client. It is the same
-// string in both fields, so a client reads one marker and not several.
-const maskedValue = "********"
+// value are replaced with before the view reaches a client. It is the settings
+// capability's own mask, shared with every other management surface, so a client
+// reads one marker and the write-back refusal of one surface cannot drift from
+// the other's.
+const maskedValue = settings.MaskedValue
 
 // viewOf builds one item's view from its declaration, the text the selected
 // layer holds for it, whether it holds a row at all, and the text it resolves to.
