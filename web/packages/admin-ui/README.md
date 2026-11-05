@@ -101,12 +101,13 @@ inviter identity resolves from the members read's `display_name`, the
 member table takes `display_name` for its name column and shows the
 recorded account identifier in its account column without resolving it,
 and an inviter that read cannot resolve renders its recorded identifier
-with the unresolved note. The roles wrapper runs the shared permissions
-page in tenant mode: the governed permission catalog, the tenant roles,
-grants and bindings, the member picker that replaces the platform account
-search, the member-read identity for binding rows, and the host's
-`protectedRoles`
-rendered read-only beside the server's builtin roles. The settings wrapper
+with the unresolved note. The roles wrapper runs the organization-only
+`OrganizationRolesPage`: a role table with each role's description,
+permission count and active-member count, a create form and a description
+editor, the selected role's grants, a read-only usage section with cursor
+paging, and a collapsible permission catalog at the bottom. Binding and
+unbinding belong to the member panel, and the host's `protectedRoles` are
+read-only beside the server's builtin roles. The settings wrapper
 renders `OrganizationSecurityPage`: the two declared tenant admission
 policies as switches, each saving on its own, platform-enforced policies
 read-only, and a protected tenant's page read-only with no switches. The
@@ -250,7 +251,7 @@ feature-gated control without importing the host's session package.
 |---|---|
 | `AdminShell.tsx` | `AdminShell`, `AdminShellProps` |
 | `AdminProvider.tsx` | `AdminProvider`, `AdminProviderProps` |
-| `internal/describe-role.tsx`, `internal/impersonation-starting.tsx`, `internal/impersonation-change.tsx` | Type-only: `AdminDescribeRole`, `AdminImpersonationStarting`, `AdminImpersonationChange` (the callback types the shell and provider props reference) |
+| `internal/impersonation-starting.tsx`, `internal/impersonation-change.tsx` | Type-only: `AdminImpersonationStarting`, `AdminImpersonationChange` (the callback types the shell and provider props reference) |
 | `internal/session.tsx` | `AdminSessionProvider`, `AdminSessionProviderProps` — the shell mounts it from its `session` prop; a host rendering pages without the shell mounts it itself |
 | `route.ts` | `AdminRoute`, `AdminRouteContext`, `AdminRouteParams`, `AdminRouteTable`, `AdminNavGroup` |
 | `nav-groups.tsx` | `adminNavGroups` |
@@ -277,13 +278,13 @@ feature-gated control without importing the host's session package.
 | `organization-routes.tsx` | `organizationAdminRoutes` |
 | `organization-pages.tsx` | `OrganizationInvitationsPage`, `OrganizationSsoPage`, `OrganizationPermissionsPage`, `OrganizationSettingsPage` |
 
-The organization surface's wrappers, declarations and tenant-mode behaviour
+The organization surface's wrappers, declarations and tenant-scoped pages
 all ship: the settings wrapper reads and writes the two tenant admission
 policies as switches under `/api/v1/tenants/{tenant}/settings`; the roles
-page reads the
-governed catalog and fills its account pickers and recorded identities
-from the tenant's member read. The shared platform pages are unchanged
-when the tenant-mode options are absent.
+page reads the governed catalog, the role list, its grants and its usage
+page, and writes roles, descriptions and grants. The platform
+`PermissionsPage` remains the platform surface's own page and keeps its
+bindings and account lookup.
 
 Everything else (`src/internal/`) is shared plumbing -- the error-text
 resolver, the `InlineError` and `WriteFeedbackRegion` bindings, the
@@ -291,7 +292,7 @@ translation hook, the tenant selector, the account identity unit, the
 zero-instant sentinel and the package's internal contexts -- and is
 deliberately not exported. The callback types above and the session
 provider are the exceptions: the types are type-only exports, because a
-host annotating the shell's `describeRole`, `onImpersonationStarting` or
+host annotating the shell's `onImpersonationStarting` or
 `onImpersonationChange` by hand needs them, and `AdminSessionProvider`
 is the public provider the shell mounts (a host composing pages without
 the shell mounts it itself); no other internal value or provider is
@@ -458,12 +459,12 @@ the current tenant:
   column shows the recorded account identifier without resolving it, and
   the page issues no `/api/v1/system` request;
 - the SSO page is locked to the current tenant;
-- the permissions page is given the current tenant, `tenantMode` and the
-  host's `protectedRoles`: it reads the governed permission catalog,
-  roles, grants and bindings under `/api/v1/tenants/{tenant}`, fills its
-  two account pickers from the tenant's member read instead of the
-  platform account search, resolves binding-row identities from that same
-  member read, and renders the host's protected roles read-only;
+- the roles page is given the current tenant and the host's
+  `protectedRoles`: it reads the governed permission catalog, the roles,
+  the selected role's grants and its usage page under
+  `/api/v1/tenants/{tenant}`, writes roles, descriptions and grants, and
+  renders the host's protected roles read-only; binding and unbinding
+  belong to the members page;
 - the settings wrapper is given the current tenant: it reads
   `/api/v1/tenants/{tenant}/settings`, renders the two declared admission
   policies as switches, saves each switch on its own, and draws a
