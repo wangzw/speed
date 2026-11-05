@@ -34,7 +34,7 @@
 - **不定义响应体的结构。** 本模块决定拒绝的状态码、`Problem.Type` 与必要的响应头；响应体经入口模块的 `Fail` 写出，结构由入口模块的默认结构或交付 `ErrorResponder` 的模块决定（[http](http/design-http.md)）。
 - **写出缺身份时的 401，且它与准入层的无身份 401 一致。** 这条不推翻「不做认证」：它是「路由需要认证而没有身份」的拒绝，与准入层写出的那个 401 是同一个判定，结构也保持相同——同为 `Problem{Status: 401}`（不带 `Type`），头按准入层无身份 401 的同一规则组装（[authn-gate](authn/design-authn-gate.md)）。它出现在这里，因为授权阶段也在网关之内：网关缺席或没守这个端时，授权层是链上唯一还能拒绝匿名请求的层，而准入层只在它自己所守的端上运行；两处写出同一个结构，调用方就不必按「谁拒的」分辨它们的读法（[tenant-admission](tenant/design-tenant-admission.md)、[authn](authn/design-authn.md)）。
 - **不实现管理面的访问控制之外的任何业务动作。** `authz.admin` 只把角色、权限授予与角色绑定的读写、以及权限目录的读暴露成平台 HTTP 路由；`authz.tenantadmin` 只把同一批表操作与治理集的目录读暴露成租户域 HTTP 路由。写动作本身是 `policy` 的表操作，目录读经 `policy` 的 `Catalog`。
-- **不判定一个租户是不是个人租户。** 个人租户是宿主的策略；本模块经宿主的 `WriteGuard` 与 `WriteSettings` 扩展点得到拒绝，不按标识前缀、名称或权限集自行推断。
+- **不判定一个租户是不是个人租户。** 个人租户的存在归公共模块 [tenant.personal](tenant/design-tenant-personal.md)；本模块经宿主的 `WriteGuard` 与 `WriteSettings` 扩展点得到拒绝，不按标识前缀、名称或权限集自行推断。
 - **不替租户管理员决定它可以拥有哪些权限。** 治理集是平台定义的封闭集（见[治理权限与权限矩阵](#治理权限与权限矩阵)）；本模块只按它过滤目录与授予，不把「某模块新声明了一条权限」视为「租户管理员自动获得它」。
 - **不决定哪条命令纳入本模块。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`；是否运行是命令树上的决定（[ADR-command-tree](../../adr/adr-command-tree.md)）。
 
@@ -411,7 +411,7 @@ const (
 - **把 `authz.guard`、`authz.policy` 的模块名写进需要授权的命令。** 只挂中间件而不点名 `policy` 时，`guard` 的 `Enforcer` 缺席，本模块判定不可用，全部受守路由答 503；两者要么一起点名，要么都不点。
 - **`endpoints` 写成业务端。** 与 `tenant.admission.endpoints` 一致；`authz.guard` 只在它守的端上登记中间件。
 - **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。一个已置 `builtin` 的角色，其授权只经 `Seeder.SeedGrants` 增补、经 `Reconciler.ReconcileGrants` 收敛：`Manager`、`authz.admin` 与 `authz.tenantadmin` 的写路由都拒绝它，两个管理面模块也都不持有这两个能力。
-- **`platform-admin` 与 `tenant-admin` 的授权集分开种。** 平台域的 `platform-admin` 取 `Catalog.Declared()` 的全量，永不被治理集收窄；业务租户与 `system` 域的 `tenant-admin` 取 `Catalog.TenantGoverned()` 的全量，由宿主置 `builtin` 并经 `Reconciler` 收敛到当前版本的治理集；个人租户的 `tenant-admin` 取 `(personalBusinessPermissions ∩ Catalog.TenantGoverned()) − personalExcludedPermissions`，不置 `builtin`，也不经 `Reconciler` 收敛。宿主在每次种入时按角色分流。
+- **`platform-admin` 与 `tenant-admin` 的授权集分开种。** 平台域的 `platform-admin` 取 `Catalog.Declared()` 的全量，永不被治理集收窄；业务租户与 `system` 域的 `tenant-admin` 取 `Catalog.TenantGoverned()` 的全量，由宿主置 `builtin` 并经 `Reconciler` 收敛到当前版本的治理集；个人租户的 `tenant-admin` 取 `(personalBusinessPermissions ∩ Catalog.TenantGoverned()) − personalExcludedPermissions`，不置 `builtin`，也不经 `Reconciler` 收敛；它由 [tenant.personal](tenant/design-tenant-personal.md) 在账户事务内写入，种子跳过个人域。
 - **名册里必须有标识为 `system` 的租户。** 平台域的策略行挂在这个标识上；`authz.policy` 在启动时经 `tenant.Catalog` 读名册，没有即以 `ErrPlatformDomainMissing` 终止启动。没有租户模块的装配里没有名册，这条核对不执行。该租户不可停用、不可删除，由名册的写保护拒绝。
 - **想让权限随撤销尽快生效的装配里要提供事件总线。** 没有 `event.Bus` 时，策略变更靠 `refresh-interval` 兜底，撤销的生效延迟以它为界。
 - **想挂管理面的命令点名 `authz.admin` 并配 `authz.admin.endpoints`。** 不点名时没有 `/api/v1/system/*` 下的任何路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。这条命令还要纳入 `authn.account`：写路由经 `authn.SignupVerification` 读发起者的注册验证状态，缺席时依赖解析以缺提供者终止启动。

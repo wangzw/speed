@@ -196,7 +196,8 @@ The walkthrough is: register a username, email and password; sign in with the
 password through the ordinary flow; add the email under the account's own
 identifiers; read the code from the `log mail:` line; submit it to
 `POST /api/v1/auth/identifiers/verify`; watch `/api/v1/auth/me` report
-`verification.state = verified`; then call the personal ensure. Registration
+`verification.state = verified`; then call the personal backfill, which reads
+back the tenant the account's transaction wrote. Registration
 itself sends no mail, and `sms.log` verifies a phone the same way without
 lifting the registration limit.
 
@@ -570,9 +571,10 @@ after an earlier run is added on the next run through the host's seeding
 surface, so each administration role keeps everything the process declares while
 the management surface stays unable to change it. The command names the personal
 tenant module too, so its provisioning seam writes every seeded account's
-personal tenant inside the account's own transaction when
-`org.personal.enabled` is on; with the switch off the seam writes nothing. The
-account creation hook then converges what the seam wrote. The run has no HTTP
+personal tenant inside the account's own transaction. There is no switch: the
+module is always in force when assembled, and an account without its space is
+not a state the command can produce. The account creation hook then converges
+what the seam wrote. The run has no HTTP
 entry point: the personal module skips its backfill route and the audit journal
 skips its request-level layer, while the account lifecycle hooks and the
 statement-level audit rows keep working. Routes belong to the serve command. The tenant-admin role the seed writes in a
@@ -728,7 +730,7 @@ unreadable.
 which compiles every capability in and lets the rendered configuration decide
 which ones start; `seed.settings` opens
 `authn.account.password-signup` and `authn.account.signup`; and
-`org.personal.enabled` is on, so an account that proves its email address
+the personal tenant has no switch, so an account that proves its email address
 gets a personal tenant. The email loop needs a real relay: the entrypoint
 requires `DEMO_SMTP_HOST` and `DEMO_SMTP_FROM`, and treats
 `DEMO_SMTP_USERNAME` and `DEMO_SMTP_PASSWORD` as optional (empty means no
@@ -1034,64 +1036,63 @@ names the fixed part of that wiring, and no configuration file repeats it:
   names no recipient, so the matrix is empty and that step does not arise. The
   review build is the worked example of both: it declares a type and names the
   caller as the recipient (see "The review build's notification fixture").
-- **The personal tenant** is the host's own policy, not a platform capability
-  (`org.personal`, `server/personal.go` and `server/personal_lifecycle.go`,
-  named in `baselineServe`). Its switch is `org.personal.enabled`, on by
-  default; the `testdata/` files leave it there and the review assembly names it
-  too (`server/review/sqlite.yaml`). With it on, the module implements
-  `authn.AccountLifecycle.AccountCreated`: the account is committed and then its
-  personal tenant, membership and tenant-admin binding are built, so no account
-  exists without a tenant. With the switch off the hook builds nothing, no route
-  is mounted, the feature is absent from the document, and the claimed
-  `/api/v1/orgs` prefix answers the account endpoint's 404. A service
-  account has no personal tenant, and a deleted account (or an existing tenant
-  tombstone) is no work. The status and deletion hooks stay in force whether or
-  not the route is mounted, because they wind up a tenant an account already
-  has.
+- **The personal tenant is a platform module the host assembles**
+  (`pkg/tenant/personal`, module name `org.personal`, named in
+  `baselineServe` and in the `seed` command). It implements
+  `provisioning.AccountProvisioning`, `authn.AccountLifecycle` and
+  `tenant.KindResolver`, and it mounts the backfill route. The host writes no
+  policy body of its own. There is no switch: the module is always in force
+  when assembled, and the account's transaction writes its personal tenant.
 
-  The policy module requires `tenant.KindResolver`; `org.personal.kind`
-  (`server/personal.go`) delivers it and both are named in `baselineServe`. The
-  resolver compares a row's identifier with the caller's own derived
-  `personal-<account-id>` exactly, so the caller tenant read answers `personal`
-  for that row and `business` for every other tenant, another account's personal
-  tenant included. An assembly that names the policy module without the resolver
-  fails at dependency resolution rather than serving every row as business. The
-  host's prefix checks — the write guards, the provisioner's builtin exemption
-  and the seed's skip — all call `isPersonalTenantID`, so the prefix is spelled
-  once.
+  `ProvisionAccount` runs inside the account's transaction and writes five
+  pieces: the tenant row, the creator's membership (source `personal`), a
+  non-builtin `tenant-admin` role, that role's grants converged to the
+  allowlist the module declares (its business-resource set less membership,
+  invitation and identity-provider management — the set is empty here because
+  neither the notification surface nor the object store declares a permission
+  point), and the account's binding. The tenant's identifier is
+  `personal-<account-id>`; its alias is the account's username, with the
+  derived identifier as the defensive fallback when the seam is handed no
+  username. A service account writes nothing. The status and deletion hooks
+  follow the account after its commit, and the deletion hook winds the tenant
+  down when the transaction's own tombstone has not already done so.
+  `ProvisionAccountDeletion` clears the account's bindings, deletes the
+  tenant-admin role and writes the tombstone in the account's transaction, so
+  the alias is retained and the username is never reused.
+
+  The same module delivers `tenant.KindResolver`. It compares a row's
+  identifier with the caller's own derived `personal-<account-id>` exactly, so
+  the caller tenant read answers `personal` for that row and `business` for
+  every other tenant, another account's personal tenant included. There is no
+  separate kind module: the resolver is one of the three capabilities the
+  module provides. The host's prefix checks — the write guards, the
+  provisioner's builtin exemption and the seed's skip — all call the module's
+  exported `IsPersonalTenantID`, so the prefix is spelled once.
 
   The route `POST /api/v1/orgs/personal` on the `account` endpoint is the
   backfill: a caller whose own personal tenant is missing from its membership
-  list asks for one. A membership in another tenant is not a refusal — every
-  account owns its personal tenant — so the backfill creates it beside them; an
-  existing personal membership is read back without rewriting it. The route
-  requires an authenticated caller and settles it for the effective account: it
-  is registered `Impersonable`, so an impersonating identity reaches the handler,
+  list asks for one. The account's transaction normally built it, so the
+  common answer reads it back without writing; a membership in another tenant
+  is not a refusal — every account owns its personal tenant — so the backfill
+  creates one beside them when it is missing. The route requires an
+  authenticated caller and settles it for the effective account: it is
+  registered `Impersonable`, so an impersonating identity reaches the handler,
   which builds or reads back the impersonated account's personal tenant rather
   than answering the gateway's default 401. It refuses a service account or a
-  static-credential principal 403.
-  Registration verification is not an eligibility fact: an unverified account
-  gets its personal tenant, and the verification gate limits what it may do
-  inside the organization. The idempotent pieces are the tenant row (identifier and
-  alias both `personal-<account-id>`), the account's membership, a non-builtin
-  `tenant-admin` role, that role's grants converged to the allowlist the host
-  declares (the host's business-resource set less membership, invitation and
-  identity-provider management — the set is empty here because neither the
-  notification surface nor the object store declares a permission point), and
-  the account's binding. It never overwrites an operator's decision: an existing
-  membership is left alone, and a tenant row whose status is not enabled answers
-  409 `tenant-unavailable` without writing anything. An alias collision or a
-  derived identifier outside the roster domain answers 409
+  static-credential principal 403. Registration verification is not an
+  eligibility fact: an unverified account gets its personal tenant, and the
+  verification gate limits what it may do inside the organization. An existing
+  membership is left alone, and a tenant row whose status is not enabled
+  answers 409 `tenant-unavailable` without writing anything. An alias collision
+  or a derived identifier outside the roster domain answers 409
   `identifier-unavailable`. A dependency failure is a 503 with no part of the
-  result. The two 409s carry `urn:speed:org:<code>` types, so a frontend
-  that must render them by code can distinguish them. `personal.go` demonstrates
-  that an application module's refusal a product frontend must render by code
-  needs that shape, since `@speed/api-client` degrades every other problem type
-  to `client.http.<status>`. The frontend calls the backfill from the tenant
-  frame when an authenticated, non-impersonating viewer's own personal tenant is
-  absent from its settled membership list and the feature is served, regardless
-  of the account's verification state or its other memberships. A registration
-  completed through SMS lands on `/` (the tenant home) when the
+  result. The two 409s carry `urn:speed:org:<code>` types, so a frontend that
+  must render them by code can distinguish them; `@speed/api-client` degrades
+  every other problem type to `client.http.<status>`. The frontend calls the
+  backfill from the tenant frame when an authenticated, non-impersonating
+  viewer's own personal tenant is absent from its settled membership list,
+  regardless of the account's verification state or its other memberships. A
+  registration completed through SMS lands on `/` (the tenant home) when the
   personal-tenant feature is served and on `/account` otherwise. A registration
   completed through a social or enterprise provider always lands on `/` (the
   tenant home), whether or not the feature is served. A password registration
@@ -1127,9 +1128,10 @@ names the fixed part of that wiring, and no configuration file repeats it:
   any refusal refuses the removal. Account deletion does not go through that
   call, so it consults neither guard and can leave an ordinary tenant with no
   tenant-admin binding until a new one is written. The personal domain is
-  recognised by the identifier prefix the host derives (`personal-`), and that
-  prefix is this host's policy: the platform passes plain tenant identifiers and
-  defines no tenant kind.
+  recognised by the personal module's exported `IsPersonalTenantID` (`personal-`);
+  that prefix is the module's, not this host's policy, and the host calls the
+  same function rather than spelling the prefix itself. The platform passes
+  plain tenant identifiers and defines no tenant kind.
 - **The policy write guard** (`authz.WriteGuard`) refuses every role, grant and
   binding write in a domain whose identifier starts with `personal-`. It is a
   module of its own (`host.tenancy.policy-write`, named in `baselineServe`)

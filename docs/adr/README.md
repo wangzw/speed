@@ -407,7 +407,7 @@
 | 记录 |
 |---|
 | [用顶层 starters/ 提供可运行的示范骨架](adr-starters-skeleton.md) |
-| [每个账户创建即拥有一个个人租户，个人租户是单人的受保护租户](adr-starters-personal-tenant.md) |
+| [每个用户账户在创建它的事务里拥有一个个人租户，个人租户是单人的受保护租户](adr-starters-personal-tenant.md) |
 
 ## 测试
 

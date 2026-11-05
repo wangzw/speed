@@ -194,9 +194,10 @@ before writing a scoped model.
   root package derives none from an identifier, a name or a permission set.
   `KindResolver` is the host seam: the caller tenant read takes it up
   optionally, passes `KindOf`'s answer through, and reads every tenant as
-  `KindBusiness` when it is absent. A host that carries a personal-tenant policy
-  provides a resolver and requires it in that policy's module, so the absence
-  fails at startup rather than at each list request. A resolver error is a
+  `KindBusiness` when it is absent. The personal-tenant module
+  (`pkg/tenant/personal`) provides the resolver rather than requiring one, and
+  an assembly that names that module gets it; an assembly without the module has
+  no personal tenant and never sees a resolver. A resolver error is a
   failure of the read (503), never a row silently read as business.
 - **The registration window spans the global `Init` stage, not this module's
   own callback.** It opens in `Migrate` and shuts in `Start` for that reason: a
