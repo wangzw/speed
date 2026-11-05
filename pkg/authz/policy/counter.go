@@ -80,6 +80,58 @@ func (p *product) SoleTenantAdminTenant(ctx context.Context, account string) (st
 	return "", false, nil
 }
 
+// OwnsActiveBusinessTenant implements authz.TenantOwnerCounter: it reads the
+// roster and answers the first active business tenant whose owner column names
+// account.
+//
+// A personal tenant is not a business tenant: the host's write guard is the
+// statement of which domains are personal or otherwise outside management, and
+// this capability does not infer a tenant's kind from its identifier or its
+// grants. With no guard assembled every active tenant counts, which is the
+// fail-closed side: the account is protected more widely, never less.
+//
+// A roster that is absent or cannot answer, and a guard that cannot answer, are
+// failures. The caller treats them as unavailable; answering "owns nothing"
+// would let a deletion or suspension through while the owner is unknown.
+func (p *product) OwnsActiveBusinessTenant(ctx context.Context, account string) (string, bool, error) {
+	if account == "" {
+		return "", false, nil
+	}
+	if p.roster == nil {
+		return "", false, fmt.Errorf("authz/policy: the tenant roster is not assembled, so no organization " +
+			"owner can be judged")
+	}
+	tenants, err := p.roster.List(ctx)
+	if err != nil {
+		return "", false, fmt.Errorf("authz/policy: reading the roster: %w", err)
+	}
+	ids := make([]string, 0, 1)
+	for _, t := range tenants {
+		if t.Status != tenant.StatusActive || t.OwnerAccount != account {
+			continue
+		}
+		id := string(t.ID)
+		if id == string(authz.PlatformDomain) {
+			continue
+		}
+		if p.writeGuard != nil {
+			denied, guardErr := p.writeGuard.Denied(ctx, id, authz.WriteBinding)
+			if guardErr != nil {
+				return "", false, fmt.Errorf("authz/policy: asking the write guard about tenant %q: %w", id, guardErr)
+			}
+			if denied {
+				continue
+			}
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return "", false, nil
+	}
+	slices.Sort(ids)
+	return ids[0], true, nil
+}
+
 // LockAccountAdministration implements authz.TenantAdminCounter: it takes the
 // tenant lock of every tenant in which account holds a tenant-administrator
 // binding, in identifier order, and answers one release for all of them.

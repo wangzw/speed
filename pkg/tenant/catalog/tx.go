@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 
@@ -30,13 +31,34 @@ import (
 // inside a caller's transaction that read is neither possible nor meaningful,
 // so a caller that needs the classification reads its own transaction's state.
 type TxCatalog interface {
+	// GetTx reads one tenant from the table through the caller's transaction,
+	// so a row another transaction committed is visible to the caller's own
+	// writes. The second result is false when no row carries the identifier.
+	GetTx(ctx context.Context, tx *gorm.DB, id tenant.ID) (tenant.Tenant, bool, error)
 	// CreateTx is Create inside the caller's transaction.
 	CreateTx(ctx context.Context, tx *gorm.DB, t tenant.Tenant) (after func(context.Context) error, err error)
 	// DeleteTx is Delete inside the caller's transaction.
 	DeleteTx(ctx context.Context, tx *gorm.DB, id tenant.ID) (after func(context.Context) error, err error)
+	// SetOwnerTx is SetOwner inside the caller's transaction.
+	SetOwnerTx(ctx context.Context, tx *gorm.DB, id tenant.ID, owner string) (after func(context.Context) error, err error)
 }
 
 var _ TxCatalog = (*roster)(nil)
+
+// GetTx implements TxCatalog.
+func (r *roster) GetTx(_ context.Context, tx *gorm.DB, id tenant.ID) (tenant.Tenant, bool, error) {
+	if err := checkField("identifier", string(id)); err != nil {
+		return tenant.Tenant{}, false, err
+	}
+	held, err := lookUp(tx, "id", string(id))
+	if err != nil {
+		return tenant.Tenant{}, false, err
+	}
+	if len(held) == 0 {
+		return tenant.Tenant{}, false, nil
+	}
+	return tenantOf(held[0]), true, nil
+}
 
 // CreateTx implements TxCatalog.
 func (r *roster) CreateTx(ctx context.Context, tx *gorm.DB, t tenant.Tenant) (func(context.Context) error, error) {
@@ -60,6 +82,42 @@ func (r *roster) DeleteTx(ctx context.Context, tx *gorm.DB, id tenant.ID) (func(
 		return nil, err
 	}
 	return r.afterTxWrite(wrote), nil
+}
+
+// SetOwnerTx implements TxCatalog.
+func (r *roster) SetOwnerTx(_ context.Context, tx *gorm.DB, id tenant.ID, owner string) (func(context.Context) error, error) {
+	if err := checkField("identifier", string(id)); err != nil {
+		return nil, err
+	}
+	if err := checkField("owner", owner); err != nil {
+		return nil, err
+	}
+	held, err := lookUp(tx, "id", string(id))
+	if err != nil {
+		return nil, err
+	}
+	if len(held) == 0 {
+		return nil, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+	}
+	if tenant.Status(held[0].Status) == tenant.StatusDeleted {
+		return nil, tombstone(id)
+	}
+	if held[0].OwnerAccount == owner {
+		return nil, nil
+	}
+	written := tx.Model(&row{}).
+		Where("id = ? AND status <> ?", string(id), int(tenant.StatusDeleted)).
+		Update("owner_account", owner)
+	if written.Error != nil {
+		return nil, written.Error
+	}
+	if written.RowsAffected > 0 {
+		return r.afterTxWrite(true), nil
+	}
+	if err := missingOrTombstone(tx, id); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 // afterTxWrite is the work a tx write hands back: the whole roster reread, once

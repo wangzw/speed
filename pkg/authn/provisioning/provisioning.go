@@ -107,6 +107,12 @@ type MembershipWriter interface {
 	// removed and returns a nil closure. It is RemoveMembershipForDeletion's
 	// rules without the transaction that method opens.
 	RemoveMembershipTx(ctx context.Context, tx *gorm.DB, account authn.AccountID, tenant string) (after func(context.Context) error, err error)
+	// RemoveTenantMembershipsTx deletes every membership of one tenant in the
+	// transaction it is handed, publishing authn.membership.changed for each row
+	// it removed. It is the organization-deletion path: the tenant is becoming a
+	// tombstone, so no guard is asked and no lifecycle hook is called. A tenant
+	// with no membership returns a nil closure.
+	RemoveTenantMembershipsTx(ctx context.Context, tx *gorm.DB, tenant string) (after func(context.Context) error, err error)
 }
 
 // afterCommitKey is the context key of an AfterCommit collector.

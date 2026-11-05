@@ -398,6 +398,38 @@ func (p *product) RemoveMembershipTx(ctx context.Context, tx *gorm.DB, id authn.
 	}, nil
 }
 
+// RemoveTenantMembershipsTx deletes every membership of one tenant in the
+// transaction it is handed, with RemoveMembershipForDeletion's rules: no guard
+// is asked and no lifecycle hook runs, and each removed row publishes
+// authn.membership.changed so an event subscriber cleans what it holds. The
+// after closure publishes the removal staged in that transaction; a tenant with
+// no membership returns a nil closure.
+func (p *product) RemoveTenantMembershipsTx(ctx context.Context, tx *gorm.DB, tenant string) (func(context.Context) error, error) {
+	if tenant == "" {
+		return nil, nil
+	}
+	var held []membershipRow
+	if err := tx.Where("tenant_id = ?", tenant).Order("account_id").Find(&held).Error; err != nil {
+		return nil, failed("reading a tenant's memberships", err)
+	}
+	if len(held) == 0 {
+		return nil, nil
+	}
+	if err := tx.Where("tenant_id = ?", tenant).Delete(&membershipRow{}).Error; err != nil {
+		return nil, failed("removing a tenant's memberships", err)
+	}
+	b := &batch{}
+	for _, m := range held {
+		if err := p.emit(tx, b, membershipChanged(authn.AccountID(m.AccountID), tenant, changeRemoved, m.Source), true); err != nil {
+			return nil, failed("staging a membership removal", err)
+		}
+	}
+	return func(afterCtx context.Context) error {
+		p.publish(afterCtx, b)
+		return nil
+	}, nil
+}
+
 // removeMembershipIn deletes one membership row inside the transaction it is
 // handed and stages its event in b. It reports whether it removed anything.
 func (p *product) removeMembershipIn(_ context.Context, tx *gorm.DB, id authn.AccountID, tenant string, b *batch) (bool, error) {

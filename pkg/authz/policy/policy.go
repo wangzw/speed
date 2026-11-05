@@ -103,6 +103,7 @@ func Module() core.Module {
 			{Token: (*authz.Seeder)(nil), Exclusive: true},
 			{Token: (*authz.Reconciler)(nil), Exclusive: true},
 			{Token: (*authz.TenantAdminCounter)(nil), Exclusive: true},
+			{Token: (*authz.TenantOwnerCounter)(nil), Exclusive: true},
 			{Token: (*TxManager)(nil), Exclusive: true},
 			{Token: (*authn.AccountLifecycle)(nil)},
 			{Token: (*authn.MembershipLifecycle)(nil)},

@@ -54,3 +54,28 @@ type TenantAdminCounter interface {
 	// non-guarantee of the assembly (see authz.TenantLock).
 	LockAccountAdministration(ctx context.Context, account string) (release func(), err error)
 }
+
+// TenantOwnerCounter answers whether an account owns a business tenant that is
+// still in service.
+//
+// An organization that still has an owner may not have that account deleted or
+// suspended: the organization would be left with nobody who can hand it on.
+// The fact lives in the roster's owner column, so the answer is a seam from the
+// capability that reads the roster, and the account lifecycle takes it up
+// optionally beside TenantAdminCounter.
+//
+// Only a business tenant in service counts. The implementation leaves out the
+// platform domain, a tenant the roster does not carry or does not serve, and a
+// tenant the host's write guard refuses as personal: a personal organization
+// follows its account and is ended with it, so it must not block the account's
+// own deletion or suspension.
+//
+// An error means the roster or the host's write guard could not answer: the
+// caller treats it as unavailable and never as permission.
+type TenantOwnerCounter interface {
+	// OwnsActiveBusinessTenant reports whether account owns an active business
+	// tenant. The first result names that tenant when the second is true, and is
+	// empty otherwise; when several qualify, it is the first by identifier. An
+	// empty account owns nothing.
+	OwnsActiveBusinessTenant(ctx context.Context, account string) (tenant string, owns bool, err error)
+}

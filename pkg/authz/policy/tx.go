@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 
@@ -41,6 +42,12 @@ type TxManager interface {
 	// ClearAccountBindingsTx is ClearAccountBindings inside the caller's
 	// transaction, and after is nil when it removed nothing.
 	ClearAccountBindingsTx(ctx context.Context, tx *gorm.DB, tenant, account string) (after func(context.Context) error, err error)
+	// DeleteTenantPolicyTx removes every role, grant and binding of one tenant
+	// inside the caller's transaction. It is the organization-deletion path: the
+	// tenant is becoming a tombstone, so the builtin mark does not protect its
+	// tenant-admin role from this write, and the last-administrator floor does
+	// not apply. after is nil when the tenant held no policy row.
+	DeleteTenantPolicyTx(ctx context.Context, tx *gorm.DB, tenant string) (after func(context.Context) error, err error)
 }
 
 var _ TxManager = (*product)(nil)
@@ -128,6 +135,26 @@ func (p *product) ClearAccountBindingsTx(ctx context.Context, tx *gorm.DB, tenan
 		return nil, err
 	}
 	if !removed {
+		return nil, nil
+	}
+	return p.afterWriteTx(), nil
+}
+
+// DeleteTenantPolicyTx implements TxManager.
+func (p *product) DeleteTenantPolicyTx(ctx context.Context, tx *gorm.DB, tenant string) (func(context.Context) error, error) {
+	if err := requireTenant(tenant); err != nil {
+		return nil, err
+	}
+	handle := crossingTx(ctx, tx)
+	var changed int64
+	for _, model := range []any{&grantRow{}, &bindingRow{}, &roleRow{}} {
+		res := handle.Where("tenant_id = ?", tenant).Delete(model)
+		if res.Error != nil {
+			return nil, fmt.Errorf("authz/policy: deleting tenant %q's policy rows: %w", tenant, res.Error)
+		}
+		changed += res.RowsAffected
+	}
+	if changed == 0 {
 		return nil, nil
 	}
 	return p.afterWriteTx(), nil
