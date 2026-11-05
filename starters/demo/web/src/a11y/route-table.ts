@@ -108,6 +108,28 @@ export const EXPECTED_ROUTE_PATHS = [
 ] as const
 
 /**
+ * The organization members page's role-filter deep link. The page reads
+ * `?role=<name>` on entry, so scanning this address reaches the filtered
+ * state -- the selected role and its clear control -- that the bare
+ * declaration path never renders. The address is not a
+ * route declaration: the organization declaration set stays at four pages,
+ * and this path is listed beside the derived table rather than added to it.
+ * The role names a role the scripted backend answers in data mode.
+ */
+export const ORGANIZATION_MEMBERS_ROLE_DEEP_LINK =
+  '/organization/admin/invitations?role=support'
+
+/**
+ * The paths both route sweeps walk: the app's own route table plus the
+ * deep-link states that a declaration path alone cannot reach. Keeping one
+ * list means the jsdom and browser sweeps cannot drift apart.
+ */
+export const SWEEP_PATHS = [
+  ...ROUTE_PATHS,
+  ORGANIZATION_MEMBERS_ROLE_DEEP_LINK,
+] as const
+
+/**
  * The error-placeholder title each route renders in error mode, read from the
  * packages' own bundles.
  *
@@ -133,6 +155,10 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
   // retryable failure (with its level-one heading) rather than a spinner.
   // Asserting the copy here makes the sweep prove it scanned that state.
   '/organization/admin/invitations': demoEnUS.organization.accessFailed.title,
+  // The role-filter deep link is the same page and the same admission
+  // failure; its key carries the query string the sweep navigates to.
+  [ORGANIZATION_MEMBERS_ROLE_DEEP_LINK]:
+    demoEnUS.organization.accessFailed.title,
   '/organization/admin/sso': demoEnUS.organization.accessFailed.title,
   '/organization/admin/roles': demoEnUS.organization.accessFailed.title,
   '/organization/admin/settings': demoEnUS.organization.accessFailed.title,
@@ -147,7 +173,16 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
  * organization route itself rendered.
  */
 export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
+  // The members-and-invitations page titles itself from `invitations.title`
+  // and its organization menu entry from `organization.nav.invitations`;
+  // both bundles carry the one `Members & invitations` wording, so the
+  // deep-link address expects the same level-one heading.
   '/organization/admin/invitations': (
+    adminUiResources['en-US'] as unknown as {
+      readonly invitations: { readonly title: string }
+    }
+  ).invitations.title,
+  [ORGANIZATION_MEMBERS_ROLE_DEEP_LINK]: (
     adminUiResources['en-US'] as unknown as {
       readonly invitations: { readonly title: string }
     }

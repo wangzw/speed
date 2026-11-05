@@ -40,10 +40,10 @@ import { createBackend } from './backends.js'
 import {
   ERROR_PLACEHOLDER_BY_PATH,
   MODES,
-  ROUTE_PATHS,
   SCAN_TENANT_ID,
   settle,
   staffSession,
+  SWEEP_PATHS,
 } from './route-table.js'
 
 /** The rule this tier settles; the full page set belongs to the jsdom gate. */
@@ -162,7 +162,7 @@ afterEach(() => {
 })
 
 describe('route-level Label in Name in Chromium', () => {
-  for (const path of ROUTE_PATHS) {
+  for (const path of SWEEP_PATHS) {
     for (const mode of MODES) {
       it(`${mode}: ${path}`, async () => {
         await scanRoute(path, mode)

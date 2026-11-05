@@ -40,6 +40,7 @@ import type {
   AuthnProfileProfile,
 } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { adminUiResources } from '@speed/admin-ui'
 import { authUiResources } from '@speed/auth-ui'
 import type { AppShellShellLayout } from '@speed/layout-kit'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
@@ -59,10 +60,12 @@ import {
   EXPECTED_HEADING_BY_PATH,
   EXPECTED_ROUTE_PATHS,
   MODES,
+  ORGANIZATION_MEMBERS_ROLE_DEEP_LINK,
   ROUTE_PATHS,
   SCAN_TENANT_ID,
   settle,
   staffSession,
+  SWEEP_PATHS,
 } from './route-table.js'
 import { formatFinding, formatFindings, isFailing, runBestPracticePass, scanPage } from './scan.js'
 import type { A11yFinding, A11yScanResult } from './scan.js'
@@ -279,7 +282,22 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     expect(ROUTE_PATHS).toEqual(expect.arrayContaining([...EXPECTED_ROUTE_PATHS]))
   })
 
-  for (const path of ROUTE_PATHS) {
+  it('sweeps the members page role-filter deep link beside the route table', () => {
+    // The deep link is the only address at which the role filter's selected
+    // state and its clear control render, so a sweep that dropped it would
+    // scan the page without the filter's own accessibility surface.
+    expect(SWEEP_PATHS).toContain(ORGANIZATION_MEMBERS_ROLE_DEEP_LINK)
+    // The page title and its organization menu entry name the same page;
+    // both read their wording from the package bundles, so this guards
+    // against the two drifting onto different labels.
+    const bundles = adminUiResources['en-US'] as unknown as {
+      readonly invitations: { readonly title: string }
+      readonly organization: { readonly nav: { readonly invitations: string } }
+    }
+    expect(bundles.invitations.title).toBe(bundles.organization.nav.invitations)
+  })
+
+  for (const path of SWEEP_PATHS) {
     for (const mode of MODES) {
       it(`${mode}: ${path}`, async () => {
         const findings = await scanRoute(path, mode)
