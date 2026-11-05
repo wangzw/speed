@@ -6,8 +6,10 @@
  * the catalog marks it dangerous. The grant picker offers only the
  * permissions the caller may grant, grouped the way the catalog groups
  * them. A grant whose server-reported permission is empty is a pair this
- * process no longer translates: its row keeps the raw pair, and revoke is
- * unavailable because the route names a permission by its code.
+ * process no longer translates: its row keeps the raw pair, and revoke stays
+ * disabled with the reason beside it because the route names a permission by
+ * its code. A readonly role (builtin, host-protected or `can_manage=false`)
+ * lists its grants without the actions column at all.
  */
 
 import { useMemo, useState } from 'react'
@@ -110,6 +112,62 @@ export function RoleGrantsSection({
   }, [catalog])
   const chosen = byCode.get(permission)
 
+  const actionsColumn: DataTableColumn<AdminTenantGrant> = {
+    id: 'actions',
+    header: t('permissions.grants.column.actions'),
+    cellWrap: 'nowrap',
+    cell: (grant) => {
+      const key = `${grant.resource}:${grant.action}`
+      const failed = failedGrant === key
+      const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
+      const unmappable = grant.permission === ''
+      const label = unmappable
+        ? `${grant.resource}/${grant.action}`
+        : grant.permission
+      return (
+        <Box>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            color="error"
+            aria-label={t('permissions.grants.revokeAria', {
+              permission: label,
+            })}
+            aria-invalid={failed}
+            aria-describedby={failed ? errorId : undefined}
+            disabled={busy || unmappable}
+            loading={busy}
+            onClick={() => onRevoke(grant)}
+          >
+            {t('permissions.grants.revoke')}
+          </Button>
+          {unmappable && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mt: 0.5 }}
+            >
+              {t('permissions.grants.revokeUnavailable')}
+            </Typography>
+          )}
+          {failed && failureText !== null && (
+            <Typography
+              id={errorId}
+              variant="caption"
+              color="error"
+              sx={{ display: 'block', mt: 0.5 }}
+            >
+              {failureText}
+            </Typography>
+          )}
+        </Box>
+      )
+    },
+  }
+
+  // A readonly role lists its grants and the reason it is read-only; no
+  // grant or revoke control renders, per the design's read-only tier.
   const columns: DataTableColumn<AdminTenantGrant>[] = [
     {
       id: 'permission',
@@ -130,59 +188,7 @@ export function RoleGrantsSection({
         )
       },
     },
-    {
-      id: 'actions',
-      header: t('permissions.grants.column.actions'),
-      cellWrap: 'nowrap',
-      cell: (grant) => {
-        const key = `${grant.resource}:${grant.action}`
-        const failed = failedGrant === key
-        const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
-        const unmappable = grant.permission === ''
-        const label = unmappable
-          ? `${grant.resource}/${grant.action}`
-          : grant.permission
-        return (
-          <Box>
-            <Button
-              type="button"
-              size="small"
-              variant="outlined"
-              color="error"
-              aria-label={t('permissions.grants.revokeAria', {
-                permission: label,
-              })}
-              aria-invalid={failed}
-              aria-describedby={failed ? errorId : undefined}
-              disabled={busy || unmappable}
-              loading={busy}
-              onClick={() => onRevoke(grant)}
-            >
-              {t('permissions.grants.revoke')}
-            </Button>
-            {unmappable && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: 'block', mt: 0.5 }}
-              >
-                {t('permissions.grants.revokeUnavailable')}
-              </Typography>
-            )}
-            {failed && failureText !== null && (
-              <Typography
-                id={errorId}
-                variant="caption"
-                color="error"
-                sx={{ display: 'block', mt: 0.5 }}
-              >
-                {failureText}
-              </Typography>
-            )}
-          </Box>
-        )
-      },
-    },
+    ...(lockNote === null ? [actionsColumn] : []),
   ]
 
   return (

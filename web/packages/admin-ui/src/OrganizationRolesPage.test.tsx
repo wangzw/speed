@@ -530,11 +530,29 @@ describe('the role catalog', () => {
         name: zhCN.permissions.grants.permissionLabel,
       }),
     ).toBeNull()
+    // The builtin role holds a grant; the read-only tier renders no revoke
+    // control for it.
+    const grantsSection = section(zhCN.permissions.grants.title)
+    expect(
+      await within(grantsSection).findByText('Read roles'),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.permissions.grants.revokeAria, {
+          permission: 'authz.tenant.role.read',
+        }),
+      }),
+    ).toBeNull()
   })
 
   it('keeps a host-protected role read-only', async () => {
     const user = userEvent.setup()
-    const { backend } = scripted()
+    const { backend } = scripted({
+      listTenantGrants: () =>
+        Promise.resolve([
+          grant('authz.tenant.role.read', 'tenant_role', 'read', ROLE_PROTECTED.role),
+        ]),
+    })
     renderRolesPage(backend, { protectedRoles: [ROLE_PROTECTED.role] })
     await screen.findByText(ROLE_PROTECTED.role)
     expect(
@@ -550,6 +568,16 @@ describe('the role catalog', () => {
     expect(
       await screen.findByText(zhCN.permissions.grants.protectedReadOnly),
     ).toBeInTheDocument()
+    // The grant renders, its revoke control does not.
+    const grantsSection = section(zhCN.permissions.grants.title)
+    expect(await within(grantsSection).findByText('Read roles')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.permissions.grants.revokeAria, {
+          permission: 'authz.tenant.role.read',
+        }),
+      }),
+    ).toBeNull()
   })
 
   it('renders no write controls when the server says can_manage is false', async () => {
@@ -557,6 +585,10 @@ describe('the role catalog', () => {
     const { backend } = scripted({
       listTenantRoles: () =>
         Promise.resolve([role({ role: 'viewer', can_manage: false })]),
+      listTenantGrants: () =>
+        Promise.resolve([
+          grant('authz.tenant.role.read', 'tenant_role', 'read', 'viewer'),
+        ]),
     })
     renderRolesPage(backend)
     await screen.findByText('viewer')
@@ -596,6 +628,16 @@ describe('the role catalog', () => {
     expect(
       screen.queryByRole('combobox', {
         name: zhCN.permissions.grants.permissionLabel,
+      }),
+    ).toBeNull()
+    // The role's grant renders; its revoke control does not.
+    const grantsSection = section(zhCN.permissions.grants.title)
+    expect(await within(grantsSection).findByText('Read roles')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.permissions.grants.revokeAria, {
+          permission: 'authz.tenant.role.read',
+        }),
       }),
     ).toBeNull()
   })
