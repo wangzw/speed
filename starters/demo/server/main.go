@@ -401,6 +401,13 @@ var (
 		personalModuleName,
 		personalKindModuleName,
 
+		// The host's own self-service organization creation: on by default, a
+		// deployment may turn it off. When on it mounts POST /api/v1/orgs on the
+		// account endpoint and declares the conditional feature org.create. It
+		// requires the tenant provisioner and the signup-verification read, both
+		// of which the platform baseline provides. See org_create.go.
+		orgCreateModuleName,
+
 		// The host's own seed guard: a deployment listening off loopback must not
 		// run on the compiled demonstration seed, so it refuses at Prepare before
 		// any socket is bound. See seed_guard.go.

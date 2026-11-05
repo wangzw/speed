@@ -62,7 +62,7 @@ const (
 // making one platform-only is a code change. A namespace matches a root when it
 // is the root or is under it, so "authn" covers "authn.session" and never
 // "authnfoo".
-var platformOnlyRoots = []string{"ratelimit", "tenant.admission", "authn"}
+var platformOnlyRoots = []string{"ratelimit", "tenant.admission", "authn", "org.create"}
 
 // platformOnly reports whether a namespace belongs to the platform-only set.
 func platformOnly(namespace string) bool {
