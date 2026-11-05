@@ -4,7 +4,7 @@
 
 ## 职责
 
-- 把组织所有权从一个账户交给另一个账户：目标必须是该组织的活跃成员，转移在目标尚未持有 tenant-admin 时授予它，写入名册的所有者列，并撤销原所有者在组织里的全部绑定与成员关系。
+- 把组织所有权从一个账户交给另一个账户：目标必须是该组织的活跃成员，且目标的账户必须活跃；账户不存在、停用或删除时拒绝。转移在目标尚未持有 tenant-admin 时授予它，写入名册的所有者列，并撤销原所有者在组织里的全部绑定与成员关系。
 - 删除一个组织：写名册的墓碑，并在同一条事务里清除该组织的成员关系、绑定、角色与授予；标识与别名留在墓碑上，永不复用。
 - 在两条写路径上取同一个按租户的锁，使一次转移与一次删除不能交错。
 - 把跨模块事务的成功与失败如实交出：三个存储的任一步失败都回滚整条事务；提交之后才运行名册与策略的快照重读。
@@ -23,8 +23,9 @@
 ```go
 // OrganizationWriter 是组织生命周期里跨存储的两个写。
 type OrganizationWriter interface {
-    // TransferOwner 把 target 变成租户的所有者。目标必须是活跃成员；
-    // 未持有 tenant-admin 时授予；原所有者失去全部绑定并被移出组织。
+    // TransferOwner 把 target 变成租户的所有者。目标必须是活跃成员，
+    // 且目标的账户必须活跃；未持有 tenant-admin 时授予；原所有者失去
+    // 全部绑定并被移出组织。
     TransferOwner(ctx context.Context, id ID, target string) error
     // DeleteOrganization 写墓碑并清除核心关系。expectedOwner 为空表示调用方
     // 是平台员工；非空且与行上所有者不符时报 ErrOwnerChanged。
@@ -32,7 +33,7 @@ type OrganizationWriter interface {
 }
 ```
 
-两个方法都只接受取值域内的标识；`TransferOwner` 还要求目标是一个账户标识。拒绝沿用根包的哨兵：目标不是活跃成员报 `tenant.ErrOwnerNotMember`，标识没有名册行报 `tenant.ErrInvalidTenant`，墓碑报 `tenant.ErrTenantDeleted`，所有者已变报 `tenant.ErrOwnerChanged`。调用方用 `errors.Is` 分辨它们；本模块不把名册或策略的拒绝改写成另一种失败。
+两个方法都只接受取值域内的标识；`TransferOwner` 还要求目标是一个账户标识。拒绝沿用根包的哨兵：目标不是活跃成员报 `tenant.ErrOwnerNotMember`，目标的账户不是活跃状态报 `tenant.ErrOwnerInactive`，标识没有名册行报 `tenant.ErrInvalidTenant`，墓碑报 `tenant.ErrTenantDeleted`，所有者已变报 `tenant.ErrOwnerChanged`。调用方用 `errors.Is` 分辨它们；本模块不把名册、账户或策略的拒绝改写成另一种失败。
 
 ## 依赖
 
@@ -42,11 +43,12 @@ type OrganizationWriter interface {
 | `pkg/tenant` 根包 | `OrganizationWriter`、`Tenant`、`ID` 与四个哨兵 |
 | `pkg/tenant/catalog` | `TxCatalog` 的 `GetTx`、`SetOwnerTx`、`DeleteTx` |
 | `pkg/authz/policy` | `TxManager` 的 `PutBindingTx`、`ClearAccountBindingsTx`、`DeleteTenantPolicyTx` |
+| `pkg/authn` 根包 | 账户读取接口 `Accounts`（转移目标的状态） |
 | `pkg/authn/provisioning` | `MembershipWriter` 的 `MembershipTx`、`RemoveMembershipTx`、`RemoveTenantMembershipsTx` |
 | `pkg/authz` 根包 | 可选的 `TenantLock`、`Role` 与 `TenantAdminRole` |
 | `pkg/core`、`pkg/log` | 模块描述符、功能取用与可选日志 |
 
-数据库、名册的事务写面、策略的事务写面与成员关系的事务写面都是必需依赖，缺席即启动失败。租户锁可选：装配提供一个时，本模块与策略的绑定删除、成员关系守卫取同一个对象；不提供时它用自己的进程内实现，只串行本模块的转移与删除。
+数据库、名册的事务写面、策略的事务写面、成员关系的事务写面与账户读取面都是必需依赖，缺席即启动失败。租户锁可选：装配提供一个时，本模块与策略的绑定删除、成员关系守卫取同一个对象；不提供时它用自己的进程内实现，只串行本模块的转移与删除。
 
 ## UML 图
 
@@ -57,29 +59,37 @@ sequenceDiagram
     participant C as 调用方
     participant O as tenant.ownership
     participant L as authz.TenantLock
+    participant A as authn.Accounts
     participant M as authn.Memberships
     participant R as tenant.catalog
     participant P as authz.policy
     C->>O: TransferOwner(租户, 目标)
     O->>L: Lock(租户)
-    L-->>O: release
-    O->>M: Membership(租户, 目标)
-    alt 目标不是活跃成员
-        O-->>C: ErrOwnerNotMember
-    else 是活跃成员
+    L-->>O: 持有
+    O->>A: Get(目标)
+    alt 账户不存在、已停用或已删除
+        O-->>C: ErrOwnerInactive
+    else 账户活跃
         O->>O: 开启事务
         O->>R: GetTx(租户)
-        alt 墓碑
+        alt 无名册行
+            O-->>C: ErrInvalidTenant，事务回滚
+        else 墓碑
             O-->>C: ErrTenantDeleted，事务回滚
         else 在册
-            O->>P: PutBindingTx(目标, tenant-admin)
-            O->>R: SetOwnerTx(租户, 目标)
-            O->>P: ClearAccountBindingsTx(租户, 原所有者)
-            O->>M: RemoveMembershipTx(原所有者, 租户)
-            O->>O: 提交
-            O->>R: 提交后重读快照
-            O->>P: 提交后重装策略快照
-            O-->>C: nil
+            O->>M: MembershipTx(租户, 目标)
+            alt 目标不是活跃成员
+                O-->>C: ErrOwnerNotMember，事务回滚
+            else 是活跃成员
+                O->>P: PutBindingTx(目标, tenant-admin)
+                O->>R: SetOwnerTx(租户, 目标)
+                O->>P: ClearAccountBindingsTx(租户, 原所有者)
+                O->>M: RemoveMembershipTx(原所有者, 租户)
+                O->>O: 提交
+                O->>R: 提交后重读快照
+                O->>P: 提交后重装策略快照
+                O-->>C: nil
+            end
         end
     end
     O->>L: release
@@ -104,12 +114,13 @@ sequenceDiagram
 
 初始状态：名册里 `acme` 在册，所有者是 `alice`；`alice` 是 `acme` 的成员并持有 tenant-admin；`bob` 是 `acme` 的活跃成员但没有绑定。
 
-1. 平台员工调用 `TransferOwner(ctx, "acme", "bob")`。本模块取 `acme` 的租户锁；事务开始后先经 `MembershipTx` 取 `bob` 的账户行锁并读到它的活跃成员关系——成员关系的写路径同样先取那一行，一次并发停用因而不会落在校验与提交之间。
-2. 事务继续，`GetTx` 读到 `acme` 在册、所有者是 `alice`。
-3. 事务第一次写是 `PutBindingTx`，把 tenant-admin 绑给 `bob`；随后 `SetOwnerTx` 把所有者列写成 `bob`。
-4. 事务继续：`ClearAccountBindingsTx` 删除 `alice` 在 `acme` 的全部绑定，`RemoveMembershipTx` 删除 `alice` 在 `acme` 的成员关系。
-5. 提交。持久状态：`acme` 的所有者是 `bob`；`bob` 持有 tenant-admin；`alice` 在 `acme` 没有绑定，也不是成员；`acme` 的名册快照与策略快照在提交后重读。
-6. 若第 3 或第 4 步的任一语句失败，事务回滚：所有者仍是 `alice`，`bob` 没有新绑定，`alice` 的绑定与成员关系都还在。
+1. 平台员工或组织所有者调用 `TransferOwner(ctx, "acme", "bob")`。本模块取 `acme` 的租户锁；随后经账户读取面读 `bob` 的账户状态——一次停用或删除 `bob` 同样取这把锁（见 [design-authz](../design-authz.md) 的账户管理锁），所以这里读到的状态不会在提交之前改变。账户不存在、停用或删除时报 `ErrOwnerInactive`。
+2. 账户活跃时开启事务，`GetTx` 先读 `acme`：没有行报 `ErrInvalidTenant`，墓碑报 `ErrTenantDeleted`，两者都在读成员关系之前。
+3. 事务继续，经 `MembershipTx` 取 `bob` 的账户行锁并读到它的活跃成员关系——成员关系的写路径同样先取那一行，一次并发停用因而不会落在校验与提交之间；不是活跃成员报 `ErrOwnerNotMember`。
+4. 事务第一次写是 `PutBindingTx`，把 tenant-admin 绑给 `bob`；随后 `SetOwnerTx` 把所有者列写成 `bob`。
+5. 事务继续：`ClearAccountBindingsTx` 删除 `alice` 在 `acme` 的全部绑定，`RemoveMembershipTx` 删除 `alice` 在 `acme` 的成员关系。
+6. 提交。持久状态：`acme` 的所有者是 `bob`；`bob` 持有 tenant-admin；`alice` 在 `acme` 没有绑定，也不是成员；`acme` 的名册快照与策略快照在提交后重读。
+7. 若第 4 或第 5 步的任一语句失败，事务回滚：所有者仍是 `alice`，`bob` 没有新绑定，`alice` 的绑定与成员关系都还在。
 
 ### 一次组织删除
 
@@ -124,6 +135,7 @@ sequenceDiagram
 | 情形 | 表现 |
 |---|---|
 | 目标不是活跃成员，或不是账户标识 | `ErrOwnerNotMember` |
+| 目标的账户不存在、停用或删除 | `ErrOwnerInactive` |
 | 名册没有该标识 | `ErrInvalidTenant` |
 | 租户是墓碑 | `ErrTenantDeleted` |
 | 所有者发起的删除观察到所有者已变 | `ErrOwnerChanged` |

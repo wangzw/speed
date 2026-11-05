@@ -468,6 +468,7 @@ flowchart TD
 | 缺席即全拒 | 没有任何 `Decider` 的装配里，逐条管理路由回 403，冒充被拒，非成员请求回 404。 |
 | 缺审计 | 纳入 `authn.admin` 而没有 `audit.Audit` 的装配，在构造之前以 `core.ErrMissingProvider` 失败。 |
 | 强制审计先于动作 | 审计接口返回 `ErrWriteFailed` 时，每条强制档路由回 503，且能力接口的写调用计数为零。 |
+| 账户删除的审计跟随提交 | 审计接口返回 `ErrWriteFailed` 时，`DELETE B/accounts/:id` 仍删除成功并返回 204，只记 Error；能力接口的删除事务失败时回 503，并补一条 `outcome=failed` 的补偿行；成功行在删除返回之后写。 |
 | 撤销冒充记录的审计档 | 审计接口返回 `ErrWriteFailed` 时，`DELETE B/tenants/:tenant/impersonations/:id` 仍撤销成功，只记 Error；已结束的记录再撤销得到相同应答；记录不存在回 404；`GET B/tenants/:tenant/impersonations` 缺 `tenant` 回 400，`Decider` 的调用计数为零。 |
 | 强制审计不在调用方事务里 | 处理器全程不开事务，`audit.Record` 在能力接口的写之前调用；SQLite 文件库（单写者）上管理写操作成功且审计行存在——处理器若把审计与写包进一条事务，该库上会因写锁自等而失败。 |
 | 平台域管理面在冒充中拒绝 | 冒充身份直达平台域管理路由的处理器时回 403 `impersonation-restricted`，`Decider` 的调用计数为零；判定域为该租户的管理路由按其权限判定。 |
