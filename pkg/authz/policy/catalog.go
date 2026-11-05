@@ -24,6 +24,7 @@ const (
 	groupMembership    = "membership"
 	groupIdentity      = "identity"
 	groupSettings      = "settings"
+	groupProfile       = "profile"
 )
 
 // permissions is the spec this module declares: every permission it carries,
@@ -103,6 +104,8 @@ func declaredPermissions() authz.PermissionSpec {
 		authz.PermissionIDPManage:           {Group: groupIdentity, Dangerous: true},
 		authz.PermissionTenantSettingsRead:  {Group: groupSettings},
 		authz.PermissionTenantSettingsWrite: {Group: groupSettings, Dangerous: true},
+		authz.PermissionTenantProfileRead:   {Group: groupProfile},
+		authz.PermissionTenantProfileWrite:  {Group: groupProfile},
 	}
 	return authz.PermissionSpec{
 		Permissions:     list,

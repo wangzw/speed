@@ -115,6 +115,8 @@ func TestTheGovernedPermissionsCarryTheirGovernanceMetadata(t *testing.T) {
 		authz.PermissionIDPManage:           {Group: "identity", Dangerous: true},
 		authz.PermissionTenantSettingsRead:  {Group: "settings"},
 		authz.PermissionTenantSettingsWrite: {Group: "settings", Dangerous: true},
+		authz.PermissionTenantProfileRead:   {Group: "profile"},
+		authz.PermissionTenantProfileWrite:  {Group: "profile"},
 	}
 	governed := catalog.TenantGoverned()
 	if len(governed) != len(want) {
@@ -126,8 +128,12 @@ func TestTheGovernedPermissionsCarryTheirGovernanceMetadata(t *testing.T) {
 			t.Errorf("Metadata(%q) reports the permission undeclared", permission)
 			continue
 		}
-		if meta != want[permission] {
-			t.Errorf("Metadata(%q) = %+v, want %+v", permission, meta, want[permission])
+		expected := want[permission]
+		if meta.Group != expected.Group {
+			t.Errorf("Metadata(%q).Group = %q, want %q", permission, meta.Group, expected.Group)
+		}
+		if meta.Dangerous != expected.Dangerous {
+			t.Errorf("Metadata(%q).Dangerous = %v, want %v", permission, meta.Dangerous, expected.Dangerous)
 		}
 	}
 
