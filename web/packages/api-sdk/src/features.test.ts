@@ -20,6 +20,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -67,25 +68,56 @@ describe('the feature vocabulary', () => {
     expect(new Set(FEATURE_NAMES).size).toBe(FEATURE_NAMES.length)
   })
 
-  it('carries no application-owned name', () => {
+  it('carries exactly the platform-owned names', () => {
     // The vocabulary splits each declaration by the module that made it;
     // this package registers the platform's names only. An application
     // reaches its own names through the module augmentation its build
-    // generates, never through this package.
+    // generates, never through this package's registry or FEATURE_NAMES.
     const vocabulary = JSON.parse(readFileSync(contractPath, 'utf8')) as {
       features: { name: string; owner: string }[]
     }
+    const platformOwned = vocabulary.features
+      .filter((entry) => entry.owner === 'platform')
+      .map((entry) => entry.name)
     const applicationOwned = vocabulary.features
       .filter((entry) => entry.owner === 'application')
       .map((entry) => entry.name)
-    // A test that finds nothing to check would pass vacuously; the demo
-    // host declares at least one application-owned feature.
-    expect(applicationOwned.length).toBeGreaterThan(0)
+    expect(FEATURE_NAMES).toEqual(platformOwned)
     const committed = readFileSync(committedPath, 'utf8')
     for (const name of applicationOwned) {
       expect(FEATURE_NAMES).not.toContain(name)
       expect(committed).not.toContain(`'${name}'`)
     }
+  })
+
+  it('writes only the platform names from a mixed vocabulary', () => {
+    // The demo host declares no application-owned feature today, so the
+    // committed vocabulary cannot show the generator's filter at work. A
+    // synthetic vocabulary does: the platform output carries the platform
+    // name and the augmentation carries the application name.
+    const vocabularyPath = join(scratch, 'mixed-features.json')
+    const platformPath = join(scratch, 'mixed-platform.ts')
+    const applicationPath = join(scratch, 'mixed-application.ts')
+    writeFileSync(
+      vocabularyPath,
+      JSON.stringify({
+        features: [
+          { name: 'app.route', module: 'app', owner: 'application', conditional: false },
+          { name: 'platform.route', module: 'platform', owner: 'platform', conditional: false },
+        ],
+      }),
+    )
+    execFileSync(
+      process.execPath,
+      [generatorPath, vocabularyPath, platformPath, applicationPath],
+      { cwd: repoRoot, stdio: 'pipe' },
+    )
+    const platform = readFileSync(platformPath, 'utf8')
+    const application = readFileSync(applicationPath, 'utf8')
+    expect(platform).toContain("'platform.route'")
+    expect(platform).not.toContain("'app.route'")
+    expect(application).toContain("'app.route'")
+    expect(application).not.toContain("'platform.route'")
   })
 
   it('types a declared name but not a misspelled one', () => {

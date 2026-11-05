@@ -182,7 +182,7 @@ sequenceDiagram
 
 ### 别名与命名空间
 
-别名的形状由 `tenant.IsAlias` 判定：三到六十三个小写字母、数字与连字符，以字母或数字开头。模块不折叠大小写，也不改写调用方给的值。
+调用方给的值先去首尾空白，再按 `tenant.IsAlias` 判定：三到六十三个小写字母、数字与连字符，以字母或数字开头。模块不折叠大小写，也不改写其余内容。
 
 保留名由 `authn.UsernameReservation` 回答：内置保留名、部署经 `authn.account.reserved-usernames` 追加的名字，以及 `personal-` 前缀。别名与用户名共用这个集合，因为两者共用一个请求侧命名空间。
 

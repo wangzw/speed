@@ -602,6 +602,26 @@ func TestCreateReadsTheReservedAnswerFailure(t *testing.T) {
 	}
 }
 
+// TestCreateAnswersANameTheReservationCannotNormalize holds the seam's other
+// refusal: a name outside the username shape is a bad name rather than an
+// outage. A UUID-shaped string is a legal tenant slug, so it passes IsAlias and
+// reaches the seam, but the account module cannot normalize it and answers
+// authn.ErrInvalidIdentifier; the surface must answer 400, not 503.
+func TestCreateAnswersANameTheReservationCannotNormalize(t *testing.T) {
+	rig := newRig()
+	rig.reservation.err = fmt.Errorf("%w: the name is the shape of an account identifier", authn.ErrInvalidIdentifier)
+	_, err := rig.create(t, rig.ctx(t), "0f8fad5b-d9cb-469f-a165-70867728950e", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", fault.Status)
+	}
+	if len(rig.reservation.asked) != 1 || rig.reservation.asked[0] != "0f8fad5b-d9cb-469f-a165-70867728950e" {
+		t.Errorf("the reserved answer was asked %v, want the alias", rig.reservation.asked)
+	}
+	if len(rig.provisioner.recorded()) != 0 {
+		t.Error("an unnameable alias reached the provisioner")
+	}
+}
+
 // TestCreateRefusesAnAliasTheRosterHolds holds the sixth step: one namespace for
 // aliases, identifiers and usernames. A slug another tenant carries as its
 // alias or its identifier, and a slug a personal tenant carries as its

@@ -1238,6 +1238,7 @@
     },
     "source": {
       "admin": "Added by an administrator",
+      "initial": "Initial user",
       "invite": "Invitation",
       "jit": "Created on first sign-in ({{provider}})"
     },

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -715,55 +717,72 @@ func TestAListingFailureIsA503(t *testing.T) {
 	})
 }
 
-// The platform page edits a numeric item with a domain: the body's JSON number
-// reaches the store as the number the decoder produced, and the declared
-// positive-integer domain is the one the module enforces. This is the shape
-// org.create's two limits declare, so a surface that could not write it would
-// leave the platform with no way to change them.
+// The platform page edits a numeric item with a domain. The page submits the
+// text its input holds, so the body it sends carries a JSON string; the route's
+// declared body also admits a JSON number. Both reach the store as the value
+// the decoder produced, and the settings module applies the declared
+// positive-integer domain on the write. This is the shape org.create's two
+// limits declare, so a surface that could not pass either through would leave
+// the platform with no way to change them.
 func TestThePlatformSurfaceWritesANumericItemWithADomain(t *testing.T) {
-	r := newRig(t)
 	positive := settings.DomainOf("the positive integers", func(limit int) bool { return limit > 0 })
-	r.store.declared = []settings.DeclaredItem{
-		decl("org.create.max-organizations", "org.create", reflect.TypeFor[int](), "5",
-			settings.Item{Description: "the active organization cap", Domain: positive}),
-		decl("org.create.max-per-hour", "org.create", reflect.TypeFor[int](), "3",
-			settings.Item{Description: "the hourly creation cap", Domain: positive}),
+	shapes := []struct {
+		name string
+		// body is the value the route receives; want is what the store is
+		// handed for it.
+		body func(int) any
+		want func(int) any
+	}{
+		// The page's input holds text, so this is the shape it sends.
+		{"the page's text", func(n int) any { return strconv.Itoa(n) }, func(n int) any { return strconv.Itoa(n) }},
+		{"a JSON number", func(n int) any { return n }, func(n int) any { return float64(n) }},
 	}
+	for _, shape := range shapes {
+		t.Run(shape.name, func(t *testing.T) {
+			r := newRig(t)
+			r.store.declared = []settings.DeclaredItem{
+				decl("org.create.max-organizations", "org.create", reflect.TypeFor[int](), "5",
+					settings.Item{Description: "the active organization cap", Domain: positive}),
+				decl("org.create.max-per-hour", "org.create", reflect.TypeFor[int](), "3",
+					settings.Item{Description: "the hourly creation cap", Domain: positive}),
+			}
 
-	for key, value := range map[string]int{
-		"max-organizations": 10,
-		"max-per-hour":      6,
-	} {
-		w := r.do(http.MethodPut, "/api/v1/system/settings/org.create/"+key+"?layer=global",
-			map[string]any{"value": value})
-		if w.Code != http.StatusNoContent {
-			t.Fatalf("writing %s = %d ended with %d: %s", key, value, w.Code, w.Body.String())
-		}
-	}
+			written := map[string]int{
+				"max-organizations": 10,
+				"max-per-hour":      6,
+			}
+			for key, value := range written {
+				w := r.do(http.MethodPut, "/api/v1/system/settings/org.create/"+key+"?layer=global",
+					map[string]any{"value": shape.body(value)})
+				if w.Code != http.StatusNoContent {
+					t.Fatalf("writing %s = %v ended with %d: %s", key, shape.body(value), w.Code, w.Body.String())
+				}
+			}
 
-	writes := 0
-	for _, call := range r.store.recorded() {
-		if call.op != "Set" {
-			continue
-		}
-		writes++
-		if call.layer != settings.Global() {
-			t.Errorf("%s was written on %v, want the global layer", call.key, call.layer)
-		}
-		number, ok := call.value.(float64)
-		if !ok {
-			t.Errorf("%s was written as %T, want the decoder's float64", call.key, call.value)
-			continue
-		}
-		want := map[string]float64{
-			"org.create.max-organizations": 10,
-			"org.create.max-per-hour":      6,
-		}[call.key]
-		if number != want {
-			t.Errorf("%s was written as %v, want %v", call.key, number, want)
-		}
-	}
-	if writes != 2 {
-		t.Errorf("the surface wrote %d item(s), want two", writes)
+			writes := 0
+			for _, call := range r.store.recorded() {
+				if call.op != "Set" {
+					continue
+				}
+				writes++
+				if call.layer != settings.Global() {
+					t.Errorf("%s was written on %v, want the global layer", call.key, call.layer)
+				}
+				key := strings.TrimPrefix(call.key, "org.create.")
+				value, known := written[key]
+				if !known {
+					t.Errorf("the surface wrote %q, want one of the declared keys", call.key)
+					continue
+				}
+				want := shape.want(value)
+				if !reflect.DeepEqual(call.value, want) {
+					t.Errorf("%s was written as %T %v, want %T %v",
+						call.key, call.value, call.value, want, want)
+				}
+			}
+			if writes != 2 {
+				t.Errorf("the surface wrote %d item(s), want two", writes)
+			}
+		})
 	}
 }

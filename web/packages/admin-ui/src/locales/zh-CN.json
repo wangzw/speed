@@ -1238,6 +1238,7 @@
     },
     "source": {
       "admin": "管理员添加",
+      "initial": "初始用户",
       "invite": "邀请",
       "jit": "首次登录时开通（{{provider}}）"
     },

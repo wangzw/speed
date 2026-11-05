@@ -97,7 +97,15 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 		return OrganizationCreatedReply{}, speedhttp.Fault{Status: http.StatusBadRequest}
 	}
 	reserved, err := p.reservations.ReservedUsername(ctx, alias)
-	if err != nil {
+	switch {
+	case errors.Is(err, authn.ErrInvalidIdentifier):
+		// The alias is a legal tenant slug but not a name the username
+		// namespace can normalize — a string in the shape of an account
+		// identifier, for one. The seam answers such a name as a bad name, not
+		// as an outage, and so does this surface rather than blaming a
+		// dependency.
+		return OrganizationCreatedReply{}, speedhttp.Fault{Status: http.StatusBadRequest}
+	case err != nil:
 		p.logger.Error(ModuleName+": the reserved-name set could not be read, so the creation was not carried out",
 			"account", account.String(), "cause", err.Error())
 		return OrganizationCreatedReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}

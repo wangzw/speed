@@ -151,7 +151,7 @@ const INVITATION_IDENTITY_MAX_WIDTH = {
 } as const
 
 /** The sources the surface names itself; a `jit:<id>` value names a provider. */
-const MEMBER_SOURCES = new Set<string>(['admin', 'invite'])
+const MEMBER_SOURCES = new Set<string>(['admin', 'initial', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
 
 /** The invitation just issued or resent, held with the tenant it belongs to. */

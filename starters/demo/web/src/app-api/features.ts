@@ -8,10 +8,4 @@
 // through the registry augmentation below and never the published
 // package's registry or FEATURE_NAMES.
 
-declare module '@speed/api-sdk/features' {
-  interface FeatureNameRegistry {
-    'org.create': true
-  }
-}
-
 export {}

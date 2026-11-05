@@ -44,7 +44,7 @@
 
 **`Catalog.Delete` 只写状态。** 标识、别名与行本身不动；对已经删除的行重复调用什么也不写；名册上没有这一行，或标识不在取值域内，报 `ErrInvalidTenant`。
 
-**终态对每一条写路径成立。** `SetStatus`、`SetStatusByAccount`、`SetAlias` 与 `Put` 遇到一个已删除的行一律以 `ErrTenantDeleted` 拒绝，什么也不写；`Create` 对表里已有的标识照旧以 `ErrTenantExists` 拒绝。标识因而在任何一条路径上都拿不到第二次登记，别名随行保留，同样不再可用。
+**终态对每一条写路径成立。** `SetStatus`、`SetStatusByAccount` 与 `Put` 遇到一个已删除的行一律以 `ErrTenantDeleted` 拒绝，什么也不写；`Create` 对表里已有的标识照旧以 `ErrTenantExists` 拒绝。标识因而在任何一条路径上都拿不到第二次登记，别名随行保留，同样不再可用。
 
 **请求侧把已删除当作不存在。** 解析层按别名取到那一行后，只要状态不是在册就不放行，与停用、与名册上没有这个名字收口同一个 404。状态不泄漏给进程外的调用方，存在性预言机因而不存在。
 

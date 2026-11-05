@@ -22,9 +22,12 @@
  * misses every operation with a parameter and cannot tell two methods on one
  * path apart.
  *
- * The first case also asserts the document has at least one marked
- * operation, so a vocabulary that silently stopped marking cannot make the
- * check vacuous.
+ * The demo host declares no application-owned operation today, so the
+ * document-side set is empty and the first case is trivially true against
+ * the committed pair. The leak matcher's own fixtures below keep it
+ * discriminating: they show it finds an application-marked operation in a
+ * synthetic document, and the drift case holds the committed surface to
+ * the platform operations in both directions.
  */
 
 import { readFileSync } from 'node:fs'
@@ -187,8 +190,9 @@ function readContract(): MergedDocument {
 describe('the platform surface ownership split', () => {
   it('contains no application-marked operation', () => {
     const document = readContract()
-    const marked = documentOperations(document).filter((operation) => operation.applicationOwned)
-    expect(marked.length).toBeGreaterThan(0)
+    // The demo host declares none today, so the surface has nothing to leak;
+    // the matcher cases below prove that this assertion still discriminates
+    // for a document that does.
     expect(
       leaked(document, readFileSync(generatedPath, 'utf8')),
       `${generatedPath} carries application-owned operations; regenerate it with the platform filter in web/orval.config.ts`,

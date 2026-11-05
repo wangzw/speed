@@ -144,7 +144,7 @@ type IssuedInvitation = AdminIssuedInvitation & { readonly tenant: string }
  * The member sources the membership surface writes by name. A `jit:<id>`
  * value names the provider a just-in-time membership came from.
  */
-const MEMBER_SOURCES = new Set<string>(['admin', 'invite'])
+const MEMBER_SOURCES = new Set<string>(['admin', 'initial', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
 
 /**

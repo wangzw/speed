@@ -54,6 +54,7 @@ const TENANT = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
  */
 const SOURCE_LABELS = {
   admin: 'member-source-admin',
+  initial: 'member-source-initial',
   invite: 'member-source-invite',
   jit: 'member-source-jit:{{provider}}',
 } as const
@@ -2255,6 +2256,7 @@ describe('InvitationsPage', () => {
       listMembers: () =>
         Promise.resolve([
           member({ account: 'acc-admin', source: 'admin' }),
+          member({ account: 'acc-initial', source: 'initial' }),
           member({ account: 'acc-invite', source: 'invite' }),
           member({ account: 'acc-jit', source: 'jit:acme-idp' }),
           member({ account: 'acc-import', source: 'import' }),
@@ -2266,6 +2268,7 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
 
     expect(await screen.findByText(SOURCE_LABELS.admin)).toBeInTheDocument()
+    expect(screen.getByText(SOURCE_LABELS.initial)).toBeInTheDocument()
     expect(screen.getByText(SOURCE_LABELS.invite)).toBeInTheDocument()
     expect(
       screen.getByText(fill(SOURCE_LABELS.jit, { provider: 'acme-idp' })),

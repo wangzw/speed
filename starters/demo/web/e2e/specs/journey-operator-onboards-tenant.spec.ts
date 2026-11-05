@@ -795,7 +795,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .filter({ hasText: OPERATOR.displayName })
       await expect(creator).toHaveCount(1)
       await expect(
-        creator.getByText(copy('adminUi', 'members.source.admin'), {
+        creator.getByText(copy('adminUi', 'members.source.initial'), {
           exact: true,
         }),
       ).toBeVisible()

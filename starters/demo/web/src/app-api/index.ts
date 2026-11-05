@@ -1819,9 +1819,11 @@ export interface OpsReadiness {
 }
 
 /**
- * The display name and description of the organization to create. The identifier and alias are generated.
+ * The alias, display name and description of the organization to create. The identifier is generated.
  */
 export interface OrganizationCreateRequest {
+  /** The organization's public alias: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation. */
+  alias: string;
   /** The organization's description; at most 500 runes after trimming. */
   description?: string;
   /** The organization's display name; 1 to 100 runes after trimming, and the surface requires it non-empty. */
@@ -1839,10 +1841,10 @@ export const OrganizationCreatedTenantStatus = {
 } as const;
 
 /**
- * The created organization: the generated identifier and alias (the same string), the profile the caller gave, and the active state.
+ * The created organization: the generated identifier, the caller's alias and profile, and the active state.
  */
 export interface OrganizationCreatedTenant {
-  /** The request-surface name, equal to the identifier for a self-service organization. */
+  /** The request-surface name the caller chose; unique across the roster and immutable after creation. */
   alias: string;
   /** The organization's description, trimmed. */
   description: string;
@@ -1855,7 +1857,7 @@ export interface OrganizationCreatedTenant {
 }
 
 /**
- * The organization this call created, with the generated identifier and alias.
+ * The organization this call created.
  */
 export interface OrganizationCreatedReply {
   tenant: OrganizationCreatedTenant;
@@ -7323,7 +7325,7 @@ export function useNotificationPreferencesListTypes<TData = Awaited<ReturnType<t
 
 
 /**
- * Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The identifier and alias are generated together as one org-<uuid> string. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.
+ * Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated as org-<uuid>. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.
  * @summary Create a business organization
  */
 export const orgCreateCreate = (
