@@ -162,12 +162,13 @@ const NOTICE_BODY = copyKey(
 )
 
 /**
- * The account menu's trigger: the header avatar. The bar carries no bell any
- * more; the unread count rides this avatar as a badge and the account menu's
+ * The account menu's trigger: the navigation column's account row, the one
+ * surface both shell shapes render. The bar carries no bell any more; the
+ * unread count rides this avatar as a badge and the account menu's
  * notification-centre row.
  */
 function accountTrigger(page: Page): Locator {
-  return page.getByTestId('user-menu-trigger')
+  return page.getByTestId('account-entry-trigger')
 }
 
 /**

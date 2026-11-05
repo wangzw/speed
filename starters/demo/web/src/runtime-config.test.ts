@@ -192,17 +192,19 @@ describe('loadRuntimeConfig', () => {
 describe('the committed runtime-config asset', () => {
   const appDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-  it('resolves to the same-origin fallback, never overriding the deployment base', async () => {
+  it('names no origin, so the deployment keeps the same-origin fallback', async () => {
     // The asset is what the deployment serves at the root; the build copies it
     // out of public/ (see the next test). Driving the real loader over its own
     // body proves the served config names no origin, so the app reaches its own
-    // origin exactly as it does with the file absent -- the file's only effect
-    // is the read answering 200 instead of 404.
+    // origin exactly as it does with the file absent. What it does name is the
+    // shell shape the demo ships.
     const body = JSON.parse(
       readFileSync(join(appDir, 'public', RUNTIME_CONFIG_FILE), 'utf8'),
     ) as unknown
     stubFetch({ ok: true, json: async () => body })
-    await expect(loadRuntimeConfig()).resolves.toEqual({})
+    const config = await loadRuntimeConfig()
+    expect(config.apiOrigin).toBeUndefined()
+    expect(config.shellLayout).toBe('sidebar')
   })
 
   it('sits in the directory the build copies into the served output', async () => {

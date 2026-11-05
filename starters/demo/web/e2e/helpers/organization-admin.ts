@@ -33,10 +33,21 @@ export function mainNavigation(page: Page): Locator {
   })
 }
 
-/** The two account-menu surfaces. The header's avatar is the deployment's
- * primary; the sidebar's row at the bottom of the navigation column opens the
- * same shared menu. */
+/** The two account-menu surfaces. The sidebar's row at the bottom of the
+ * navigation column is the deployment's default -- it is the one surface both
+ * shell shapes render -- and the header's avatar opens the same shared menu
+ * in the top-bar shape. */
 export type AccountMenuSurface = 'header' | 'sidebar'
+
+/** The account-menu surfaces the running shell renders: the row is in every
+ * shape, the header avatar only in the top-bar shape. */
+async function renderedSurfaces(
+  page: Page,
+): Promise<readonly AccountMenuSurface[]> {
+  return (await page.getByTestId('user-menu-trigger').count()) > 0
+    ? ['header', 'sidebar']
+    : ['sidebar']
+}
 
 /** The account menu's trigger on one surface. */
 function accountMenuTrigger(
@@ -56,7 +67,7 @@ function accountMenuTrigger(
  */
 export async function openAccountMenu(
   page: Page,
-  surface: AccountMenuSurface = 'header',
+  surface: AccountMenuSurface = 'sidebar',
 ): Promise<Locator> {
   const trigger = accountMenuTrigger(page, surface)
   await expect(trigger).toBeVisible()
@@ -74,7 +85,7 @@ export async function openAccountMenu(
  * menu to leave: the next open must match exactly one menu under strict mode. */
 export async function closeAccountMenu(
   page: Page,
-  surface: AccountMenuSurface = 'header',
+  surface: AccountMenuSurface = 'sidebar',
 ): Promise<void> {
   const trigger = accountMenuTrigger(page, surface)
   if ((await trigger.getAttribute('aria-expanded')) === 'true') {
@@ -156,7 +167,7 @@ export function organizationMenuItem(
  */
 export async function organizationEntry(
   page: Page,
-  surface: AccountMenuSurface = 'header',
+  surface: AccountMenuSurface = 'sidebar',
 ): Promise<Locator> {
   const menu = await openAccountMenu(page, surface)
   return menu
@@ -319,7 +330,7 @@ export async function expectOrganizationEntryAbsent(page: Page): Promise<void> {
     ).toHaveCount(0)
   }
 
-  for (const surface of ['header', 'sidebar'] as const) {
+  for (const surface of await renderedSurfaces(page)) {
     const entries = await organizationEntry(page, surface)
     await expect(entries).toHaveCount(0)
     await expect(organizationGroup(page)).toHaveCount(0)
@@ -332,15 +343,15 @@ export async function expectOrganizationEntryAbsent(page: Page): Promise<void> {
 
 /**
  * The account menu's organization group and the home card are both offered on
- * both account-menu surfaces: the group itself (by its accessible name), one
- * entry per page, and the start card. Each surface is opened, asserted and
- * closed in turn, because the two share one list and an entry present in only
- * one of them is a live regression. The menus are closed before returning so
+ * every account-menu surface the shell renders: the group itself (by its
+ * accessible name), one entry per page, and the start card. Each surface is
+ * opened, asserted and closed in turn, because the surfaces share one list and
+ * an entry present in only one of them is a live regression. The menus are closed before returning so
  * the caller's next click lands on the page rather than the menu's backdrop.
  */
 export async function expectOrganizationEntryPresent(page: Page): Promise<void> {
   await expect(organizationHomeCard(page)).toBeVisible()
-  for (const surface of ['header', 'sidebar'] as const) {
+  for (const surface of await renderedSurfaces(page)) {
     const entries = await organizationEntry(page, surface)
     await expect(organizationGroup(page)).toBeVisible()
     await expect(entries).toHaveCount(ORGANIZATION_PAGE_KEYS.length)

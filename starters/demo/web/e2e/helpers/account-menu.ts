@@ -97,7 +97,7 @@ export function organizationRow(page: Page, name: string): Locator {
 export async function switchOrganization(
   page: Page,
   name: string,
-  surface: AccountMenuSurface = 'header',
+  surface: AccountMenuSurface = 'sidebar',
 ): Promise<void> {
   const menu = await openAccountMenu(page, surface)
   await menu.getByRole('menuitem').first().click()

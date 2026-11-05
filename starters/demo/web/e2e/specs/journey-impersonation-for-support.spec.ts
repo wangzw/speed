@@ -633,13 +633,13 @@ test('impersonation-for-support: the operator acts as a member and the record an
       }),
     ).toBeVisible()
 
-    // The app bar carries the persistent impersonating indicator, and the
-    // account menu's first entry is the same end action.
+    // The chrome carries the persistent impersonating indicator -- in the
+    // app bar's user slot, or in the sidebar's bottom row when the shell hides
+    // the bar -- and the account menu's first entry is the same end action.
     await expect(
-      page.getByRole('banner').getByText(
-        copy('authUi', 'impersonation.impersonating'),
-        { exact: true },
-      ),
+      page.getByText(copy('authUi', 'impersonation.impersonating'), {
+        exact: true,
+      }),
     ).toBeVisible()
     const menuTrigger = page.getByTestId('account-entry-trigger')
     await expectAccountMenuName(menuTrigger, TARGET.displayName)
@@ -765,13 +765,12 @@ test('impersonation-for-support: the operator acts as a member and the record an
       page.getByText(copy('authUi', 'impersonation.ended'), { exact: true }),
     ).toBeVisible()
 
-    // The header indicator goes, the account menu names the operator again,
-    // and the admin entry and the organization row come back.
+    // The indicator goes, the account menu names the operator again, and the
+    // admin entry and the organization row come back.
     await expect(
-      page.getByRole('banner').getByText(
-        copy('authUi', 'impersonation.impersonating'),
-        { exact: true },
-      ),
+      page.getByText(copy('authUi', 'impersonation.impersonating'), {
+        exact: true,
+      }),
     ).toHaveCount(0)
     await expectAccountMenuName(
       page.getByTestId('account-entry-trigger'),
