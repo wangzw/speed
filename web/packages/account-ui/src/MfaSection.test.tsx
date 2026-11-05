@@ -22,6 +22,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
 import { formatInstant } from '@speed/i18n'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -31,7 +32,7 @@ import {
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
-import { profileBody } from '../test-utils/fixtures.js'
+import { identifier, profileBody } from '../test-utils/fixtures.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
@@ -2289,6 +2290,274 @@ describe('MfaSection', () => {
         input: { kind: 'magic', label: '' },
       })
     })
+  })
+
+  it('shows an informational notice instead of the SMS panel when no phone is proved', async () => {
+    // An SMS factor sends to the account's proved phone, and the flow has no
+    // phone field of its own. With no proved phone the add entry answers
+    // with an informational notice: no panel, no cancel, no flow start.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['sms']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.sms)
+
+    // The notice states the prerequisite where the panel would have opened.
+    const notice = screen.getByText(zhCN.mfa.enroll.prerequisite.sms)
+    expect(notice).toBeVisible()
+    // It is a notice, not a panel: no panel heading, no name field, no
+    // confirm, no cancel.
+    expect(
+      screen.queryByRole('heading', {
+        name: enrollTitleOf(zhCN.mfa.factor.kind.sms),
+      }),
+    ).toBeNull()
+    expect(screen.queryByLabelText(zhCN.mfa.enroll.labelField)).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.mfa.enroll.confirmLabel,
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.mfa.enroll.cancelLabel,
+      }),
+    ).toBeNull()
+    // The notice carries no action button and no close control.
+    const alert = notice.closest('.MuiAlert-root') as HTMLElement | null
+    expect(alert).not.toBeNull()
+    expect(within(alert as HTMLElement).queryAllByRole('button')).toHaveLength(
+      0,
+    )
+    // No flow request went out, and the add control stays available.
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      ),
+    ).toHaveLength(0)
+    expect(abandonCalls(rig.calls)).toHaveLength(0)
+    expect(
+      screen.getByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.sms),
+      }),
+    ).toBeTruthy()
+  })
+
+  it('keeps the SMS panel when the profile omits its identifiers collection', async () => {
+    // A partial profile answer is not evidence that the account has no
+    // phone: the notice would state a fact the read never claimed, so the
+    // add entry opens the normal panel and the server decides.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['sms']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', required: true }],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, {
+      profile: profileBody({ identifiers: undefined }),
+    })
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.sms)
+
+    expect(
+      screen.queryByText(zhCN.mfa.enroll.prerequisite.sms),
+    ).toBeNull()
+    expect(
+      screen.getByRole('heading', {
+        name: enrollTitleOf(zhCN.mfa.factor.kind.sms),
+      }),
+    ).toBeVisible()
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toEqual({
+        purpose: 'enroll',
+        input: { kind: 'sms', label: '' },
+      })
+    })
+  })
+
+  it('clears the SMS notice once the profile has a proved phone, and a later add starts the flow', async () => {
+    // The notice speaks for a missing phone. When the profile read gains a
+    // verified phone, the notice has said its piece and clears itself; the
+    // next add opens the panel and starts the flow.
+    const phone = '+8613800138000'
+    let proved = false
+    // The profile is scripted here rather than through mount's fixed answer,
+    // because this case changes it between clicks.
+    const rig = makeRealClientRig((call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: proved
+              ? [identifier({ kind: 'phone', value: phone, proven: true })]
+              : [],
+          }),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['sms']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', required: true }],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    rig.store.set('access-1')
+    const { queryClient } = renderWithProviders(
+      <MfaSection session={rig.session} />,
+    )
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.sms)
+    expect(screen.getByText(zhCN.mfa.enroll.prerequisite.sms)).toBeVisible()
+
+    // The read now carries a verified phone: the notice clears without the
+    // reader doing anything to it.
+    proved = true
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: getAuthnProfileGetQueryKey(),
+      })
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.mfa.enroll.prerequisite.sms),
+      ).toBeNull(),
+    )
+
+    // A later add opens the panel, names the destination and starts the flow.
+    await openEnrollment(user, zhCN.mfa.factor.kind.sms)
+    expect(
+      screen.getByText(
+        zhCN.mfa.enroll.note.smsTo.replace('{{phone}}', phone),
+      ),
+    ).toBeVisible()
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toEqual({
+        purpose: 'enroll',
+        input: { kind: 'sms', label: '' },
+      })
+    })
+  })
+
+  it('names the proved phone in the SMS note and starts the flow', async () => {
+    const phone = '+8613800138000'
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['sms']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', required: true }],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, {
+      profile: profileBody({
+        identifiers: [identifier({ kind: 'phone', value: phone, proven: true })],
+      }),
+    })
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.sms)
+
+    // The note names the destination the code goes to.
+    expect(
+      screen.getByText(
+        zhCN.mfa.enroll.note.smsTo.replace('{{phone}}', phone),
+      ),
+    ).toBeVisible()
+    // The name field stays (several SMS factors may be held), but it is not
+    // prefilled with this browser's summary.
+    expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toHaveValue('')
+
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toEqual({
+        purpose: 'enroll',
+        input: { kind: 'sms', label: '' },
+      })
+    })
+  })
+
+  it('renders the phone-required refusal as its own sentence', async () => {
+    // The profile still showed a proved phone, but the server no longer has
+    // one (another tab removed it). The section resolves the code to the
+    // sentence that says what is missing, not the generic failure text.
+    const phone = '+8613800138000'
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['sms']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return errorResponse(403, 'authn.phone_required')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, {
+      profile: profileBody({
+        identifiers: [identifier({ kind: 'phone', value: phone, proven: true })],
+      }),
+    })
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.sms)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.phone_required)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
   })
 
   it('raises the factor remove control to the 44px floor under a coarse pointer', async () => {

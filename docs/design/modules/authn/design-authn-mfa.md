@@ -495,7 +495,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### 短信因素
 
-- 登记要求账户已持有已验证的手机标识；没有则先走 `POST B/phone`、`POST B/phone/verify`，这些路由要求新渠道验证，本身不要求新鲜认证，但新号码取代已启用短信因素发码目标时，证明时要求新鲜认证。
+- 登记与发码都以账户已验证的那条手机标识为目标；登记要求账户已持有已验证的手机标识，没有则答 403 `phone-required`，要先走 `POST B/phone`、`POST B/phone/verify`。登记面板点名这个号码，不提供手机号选择框——因素绑定的就是这一个标识。这些路由要求新渠道验证，本身不要求新鲜认证，但新号码取代已启用短信因素发码目标时，证明时要求新鲜认证。
 - 发码与校验共用 `authn.sms` 的验证码引擎，用途为 `mfa`，同一套预算、重发间隔、尝试次数、摘要与消费语义（[authn-sms](design-authn-sms.md)）。
 - 发码时因素把 `FlowState.Source` 原样填进 `SendCode.Source`，所以短信第二因素也计入来源预算。`FlowState.Source` 只由登录引擎的 `challengeFactor` 从发起这次挑战的请求填入；因素自己没有请求，空值表示没有可信来源，引擎按 fail-open 不施加来源维度。因素不读 HTTP，也不从别处猜一个地址。
 - 通过的结论 `Pass.Methods` 为 `sms`。短信因素是受限认证器：允许登记与使用，管理员重置与冒充发起的强认证里不计。
@@ -576,6 +576,7 @@ CREATE TABLE authn_webauthn_credentials (
 | 哨兵 | 何时 | 对外 | 方向 |
 |---|---|---|---|
 | `ErrFactorLimit` | 某种因素已达 `max-per-kind` | 409 `conflict` | 拒 |
+| `ErrPhoneRequired` | 短信因素登记与发码时账户没有已验证的手机标识 | 403 `phone-required` | 拒 |
 | `ErrLastFactor` | `mfa_required` 的账户删最后一个因素 | 409 | 拒 |
 | `ErrFactorNotEnrolled` | 因素未登记，或待确认的行被用于验证 | 并入 `login-failed` | 拒 |
 | `ErrReplay` | TOTP 计数器或 WebAuthn 签名计数重放 | 并入 `login-failed` | 拒 |

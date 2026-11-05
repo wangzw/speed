@@ -2,6 +2,7 @@ package login
 
 import (
 	"context"
+	"errors"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -220,6 +221,15 @@ func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []
 		// report, so a proof the gate never accepted is not a failed login.
 		if cause := step.CauseOf(got); isHumanProofRejection(cause) {
 			r.fail(c, cause)
+			return
+		}
+		// The SMS factor refuses to send when the account no longer holds a
+		// verified phone it first enrolled with. The account has to verify a
+		// phone before the factor can send, which is a precondition and not a
+		// credential that did not hold, so it keeps its own 403 and is not
+		// reported as a failed login.
+		if errors.Is(step.CauseOf(got), authn.ErrPhoneRequired) {
+			c.forbidden(mount.CodePhoneRequired)
 			return
 		}
 		r.reportLogin(c.ctx, rec, outcomeFailed)

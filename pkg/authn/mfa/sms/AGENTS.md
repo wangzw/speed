@@ -33,10 +33,12 @@ The API is the package's godoc, and the `Factor`, `FactorRecord`, `FlowState`,
   or `idp:<provider>`) and that carries a verification time. A phone only
   asserted — by an administrator or an import — is not one the factor can bind,
   because a second factor has to be a number the account proved it can receive a
-  code at. An account with no such phone is `StepRefused` naming `B/phone` and
-  `B/phone/verify`, the routes that prove one. A phone that cannot be read is
-  `StepUnavailable`, never a refusal: an unreadable account must not read as one
-  with no phone.
+  code at. An account with no such phone is `StepRefused` whose cause wraps
+  `authn.ErrPhoneRequired`, so the engine answers 403 `phone-required` and the
+  client is told to verify a phone first. The cause's own text is a diagnostic
+  for whatever logs it; this package writes no log line. A phone that cannot be
+  read is `StepUnavailable`, never a refusal: an unreadable account must not
+  read as one with no phone.
 - **`Enroll` carries no step of its own.** A phone that is already proven
   registers at once: `Enroll` answers `StepEnrolled` on the first call and sends
   no code. It writes nothing — the register row is the multi-factor module's, and

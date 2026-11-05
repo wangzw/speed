@@ -76,6 +76,7 @@ var codeTable = []struct {
 	{"forbidden", 403},
 	{"signup-closed", 403},
 	{"contact-required", 403},
+	{"phone-required", 403},
 	{"human-verification-required", 403},
 	{"password-reset-closed", 403},
 	{"password-reset-unavailable", 403},
@@ -109,7 +110,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	for _, code := range []string{
 		"", "Bad-Request", "bad_request", "bad-request ", "login_failed", "not-found", "internal",
 		"insufficient-user-authentication", "urn:speed:authn:bad-request", "payload-too-large", "unauthorized",
-		"signup_closed", "username_taken", "email_taken", "contact_required",
+		"signup_closed", "username_taken", "email_taken", "contact_required", "phone_required",
 	} {
 		if ValidCode(code) {
 			t.Errorf("ValidCode(%q) = true", code)
@@ -124,7 +125,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 		CodeFlowInvalid, CodeLinkRequired,
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
-		CodeContactRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,
+		CodeContactRequired, CodePhoneRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,
 		CodePasswordResetUnavailable, CodeFactorNotFound, CodeConflict, CodeLoginIdentifierRequired,
 		CodeLastLoginMethod, CodeUsernameImmutable, CodeUsernameTaken, CodeEmailTaken,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
@@ -228,7 +229,7 @@ func TestForbiddenWritesThe403CodesItOwns(t *testing.T) {
 	for _, code := range []string{
 		CodeMethodDisabled, CodeAccountUnavailable, CodeImpersonationRestricted,
 		CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed, CodeContactRequired,
-		CodeHumanVerificationRequired, CodePasswordResetClosed, CodePasswordResetUnavailable,
+		CodePhoneRequired, CodeHumanVerificationRequired, CodePasswordResetClosed, CodePasswordResetUnavailable,
 	} {
 		w := serve(func(c *gin.Context) { Forbidden(c, code) }, http.MethodGet, nil, nil)
 		if w.Code != http.StatusForbidden {

@@ -37,6 +37,7 @@ const (
 	CodeForbidden                      = "forbidden"                        // 403
 	CodeSignupClosed                   = "signup-closed"                    // 403
 	CodeContactRequired                = "contact-required"                 // 403
+	CodePhoneRequired                  = "phone-required"                   // 403
 	CodeHumanVerificationRequired      = "human-verification-required"      // 403
 	CodePasswordResetClosed            = "password-reset-closed"            // 403
 	CodePasswordResetUnavailable       = "password-reset-unavailable"       // 403
@@ -68,6 +69,7 @@ var statusOf = map[string]int{
 	CodeForbidden:                      http.StatusForbidden,
 	CodeSignupClosed:                   http.StatusForbidden,
 	CodeContactRequired:                http.StatusForbidden,
+	CodePhoneRequired:                  http.StatusForbidden,
 	CodeHumanVerificationRequired:      http.StatusForbidden,
 	CodePasswordResetClosed:            http.StatusForbidden,
 	CodePasswordResetUnavailable:       http.StatusForbidden,
@@ -199,10 +201,10 @@ func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 
 // Forbidden writes a 403. code is method-disabled, account-unavailable,
 // impersonation-restricted, factor-not-seasoned, forbidden, signup-closed,
-// contact-required, human-verification-required, password-reset-closed or
-// password-reset-unavailable, the ten that this capability's own handlers may
-// answer: the gateway and the admission layer never write a 403. Any other code
-// panics.
+// contact-required, phone-required, human-verification-required,
+// password-reset-closed or password-reset-unavailable, the eleven that this
+// capability's own handlers may answer: the gateway and the admission layer
+// never write a 403. Any other code panics.
 func Forbidden(c *gin.Context, code string) {
 	problem(c, mustCode("Forbidden", code, http.StatusForbidden), code)
 }

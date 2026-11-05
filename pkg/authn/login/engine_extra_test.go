@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -173,6 +174,27 @@ func TestApplyEnrollForwardsTheClientInput(t *testing.T) {
 	}
 	if got := r.mfa.enrolls[1].Fields["code"]; got != "123456" {
 		t.Errorf("the confirmation step's input was dropped: MFA.Enroll saw %v", r.mfa.enrolls[1].Fields)
+	}
+}
+
+// TestAnEnrollmentRefusedForAMissingPhoneIsThePhoneRequiredProblem holds that the
+// SMS factor's missing-phone precondition is not answered as a failed login: the
+// enrollment answers the 403 phone-required that tells the client to verify a
+// phone first, just as a malformed input keeps its own bad-request.
+func TestAnEnrollmentRefusedForAMissingPhoneIsThePhoneRequiredProblem(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.mfa.enroll = func(_ authn.FactorKind, _ authn.StepInput) authn.Step {
+		return authn.StepRefused(fmt.Errorf("%w: the account has no proven phone", authn.ErrPhoneRequired))
+	}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"sms"}}`)
+	if start.Code != http.StatusForbidden {
+		t.Fatalf("an enrollment without a proven phone answered %d, want 403: %s", start.Code, start.Body.String())
+	}
+	if got := decode(t, start.Body.String())["type"]; got != "urn:speed:authn:phone-required" {
+		t.Errorf("the refusal wrote problem type %v, want urn:speed:authn:phone-required", got)
 	}
 }
 

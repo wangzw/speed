@@ -58,7 +58,7 @@
 | 对外不区分成因 | 每个对外的 503 应答 | 应答体不携带是哪个依赖不可用；成因只进日志与指标 |
 | 没答与答了拒绝不混 | 网关对校验后端的收口 | 零值判决收口 401、单独计 `unspoken`、记 Error；凭据存在而后端答不了是 503，不是匿名，可选认证的路由上也一样（理由见 [ADR-authn-verdict](../../../adr/adr-authn-verdict.md)） |
 | 补充校验不由库覆盖 | 本功能目录在库的校验之外另加的每一项检查 | 库返回成功而补充校验不通过，结果是失败，并记一条 Error |
-| 403 的位置 | 全部 authn 与准入层的拒绝 | 403 只带 `impersonation-restricted`、`forbidden`、`method-disabled`、`account-unavailable`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required`、`password-reset-closed`、`password-reset-unavailable` 这些码，且只在 authn 自己的处理器里；`ErrImpersonationRestricted` 与 `ErrImpersonationNeedsSession` 同带 `impersonation-restricted`，`ErrFactorNotSeasoned` 带 `factor-not-seasoned`，`ErrSignupClosed` 在自助注册路由上带 `signup-closed`，`ErrContactRequired` 带 `contact-required`，`ErrHumanVerificationRequired` 带 `human-verification-required`；网关与 `tenant.admission` 不写 403 |
+| 403 的位置 | 全部 authn 与准入层的拒绝 | 403 只带 `impersonation-restricted`、`forbidden`、`method-disabled`、`account-unavailable`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`phone-required`、`human-verification-required`、`password-reset-closed`、`password-reset-unavailable` 这些码，且只在 authn 自己的处理器里；`ErrImpersonationRestricted` 与 `ErrImpersonationNeedsSession` 同带 `impersonation-restricted`，`ErrFactorNotSeasoned` 带 `factor-not-seasoned`，`ErrSignupClosed` 在自助注册路由上带 `signup-closed`，`ErrContactRequired` 带 `contact-required`，`ErrPhoneRequired` 带 `phone-required`，`ErrHumanVerificationRequired` 带 `human-verification-required`；网关与 `tenant.admission` 不写 403 |
 | 撤销不依赖时钟 | 会话、刷新令牌与访问令牌的撤销 | 撤销以会话行的 `revoked_at` 为准、不比较时间；时钟偏差不会让撤销失效 |
 
 ### 对外的失败应答
@@ -250,6 +250,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrLinkRequired`、`ErrNotProvisioned`、`ErrDomainMismatch`、`ErrProvisionRefused` | 社交登录或企业即时开通无绑定而提供方声明的地址命中现有账户；企业 SSO 的预置模式匹配不到预置账户，或声明地址的域不属于该提供方所属租户；宿主拒绝开户 | `ErrLinkRequired` 是 401 `link-required`，其余对外一律 401 `login-failed`，成因进日志 |
 | `ErrSignupClosed` | 首登开户关闭；自助注册开关 `authn.account.password-signup` 不是 `open` | 首登开户路径 401 `login-failed`；自助注册路由 403 `signup-closed` |
 | `ErrContactRequired` | 未验证账户（`SignupStateOf` 为 `SignupPending`：有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力 | 403 `contact-required` |
+| `ErrPhoneRequired` | 账户没有一条已证明的手机标识，而短信因素登记与发码时要求它 | 403 `phone-required` |
 | `ErrHumanVerificationRequired` | 一次发送没有人机验证凭证，或凭证无效、过期、已用 | 403 `human-verification-required` |
 | `ErrHumanProofTooLong` | 一次发送的人机验证证明长过字段上限 | 400 `bad-request` |
 | `ErrBindingConflict`、`ErrLastFactor`、`ErrLastTenantAdmin` | 外部身份冲突；删最后一个因素；移除成员关系会让租户不再有任何租户管理员绑定 | 409 `conflict` |

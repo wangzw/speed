@@ -527,6 +527,14 @@ func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte
 			c.fail(mount.CodeBadRequest)
 			return
 		}
+		// The SMS factor refuses an account with no verified phone: the factor
+		// binds a number the account already proved, so the enrollment has a
+		// precondition the client can meet. That is not a credential that did not
+		// hold, and it keeps its own 403 rather than the failed login.
+		if errors.Is(step.CauseOf(got), authn.ErrPhoneRequired) {
+			c.forbidden(mount.CodePhoneRequired)
+			return
+		}
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return

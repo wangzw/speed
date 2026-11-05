@@ -878,6 +878,7 @@ var exportedSurface = []string{
 	"var ErrNotMigrated",
 	"var ErrNotProvisioned",
 	"var ErrPasswordPolicy",
+	"var ErrPhoneRequired",
 	"var ErrProviderNotFound",
 	"var ErrProvisionRefused",
 	"var ErrRefreshReuse",

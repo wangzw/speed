@@ -274,6 +274,12 @@ var (
 	// raises it itself. Outwardly it is a 403 contact-required.
 	ErrContactRequired = errors.New("authn: the account has not verified an email address")
 
+	// ErrPhoneRequired reports an account that holds no phone whose ownership it
+	// proved being used for a capability that requires one, such as enrolling the
+	// SMS second factor. No method of the account module returns it: a caller
+	// raises it itself. Outwardly it is a 403 phone-required.
+	ErrPhoneRequired = errors.New("authn: the account has not verified a phone number")
+
 	// ErrDomainMismatch reports an enterprise sign-in whose email address is in a
 	// domain the tenant has not verified. Outwardly it is a 401 login-failed, and
 	// the cause goes to the log.

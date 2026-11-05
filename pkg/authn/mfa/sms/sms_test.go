@@ -193,8 +193,11 @@ func TestEnrollRefusesAnAccountWithNoProvenPhone(t *testing.T) {
 				t.Fatalf("Enroll answered %s, want a refusal: the factor binds a number the account proved it holds", step.KindOf(got))
 			}
 			cause := step.CauseOf(got)
-			if cause == nil || !strings.Contains(cause.Error(), "B/phone") {
-				t.Errorf("the refusal cause is %v, want it to name the phone verification routes", cause)
+			if !errors.Is(cause, authn.ErrPhoneRequired) {
+				t.Errorf("the refusal cause is %v, want it to read as ErrPhoneRequired", cause)
+			}
+			if cause == nil || !strings.Contains(cause.Error(), "no proven phone") {
+				t.Errorf("the refusal cause is %v, want it to name the missing proven phone", cause)
 			}
 		})
 	}
@@ -328,6 +331,9 @@ func TestChallengeSendsNothingForAnAccountWithNoProvenPhone(t *testing.T) {
 	}
 	if step.KindOf(got) != step.KindRefused {
 		t.Fatalf("Challenge answered %s, want a refusal when the account has no proven phone", step.KindOf(got))
+	}
+	if cause := step.CauseOf(got); !errors.Is(cause, authn.ErrPhoneRequired) {
+		t.Errorf("the refusal cause is %v, want it to read as ErrPhoneRequired", cause)
 	}
 	if n := r.cs.sendCount(); n != 0 {
 		t.Errorf("Challenge sent %d codes, want none without a phone to send to", n)

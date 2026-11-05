@@ -459,6 +459,58 @@ func TestAFactorChallengeNonProofRefusalIsReportedAsAFailedLogin(t *testing.T) {
 	}
 }
 
+// TestAFactorChallengeWithoutAProvenPhoneIsThePhoneRequiredProblem holds that a
+// factor whose account no longer holds the verified phone it enrolled with is a
+// precondition failure, not a credential that did not hold: the challenge answers
+// 403 phone-required and records neither a failed login outcome nor a login audit
+// row.
+func TestAFactorChallengeWithoutAProvenPhoneIsThePhoneRequiredProblem(t *testing.T) {
+	reader, mp := newTestMetrics(t)
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorSMS, Label: "Phone"}}
+	r.mfa.challenge = func(string) authn.Step {
+		return authn.StepRefused(fmt.Errorf("authn.mfa.sms: %w: the account has no proven phone", authn.ErrPhoneRequired))
+	}
+	sink := &auditing{}
+	r.p.audit = sink
+	var err error
+	if r.p.meters, err = newMeters(mp); err != nil {
+		t.Fatalf("creating the instrument: %v", err)
+	}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("the start answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		fmt.Sprintf(`{"seq":%d,"step":"factor","input":{"factor":"f1"}}`, seq),
+		"Cookie", cookie)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("the refused challenge answered %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if got := humanType(t, rec.Body.String()); got != "phone-required" {
+		t.Errorf("the refusal code = %q, want phone-required", got)
+	}
+	if pairs := loginMetricPairs(t, reader); len(pairs) != 0 {
+		t.Errorf("a missing phone was counted as a login outcome: %v", pairs)
+	}
+	if rows := sink.rows(); len(rows) != 0 {
+		t.Errorf("a missing phone wrote %d login audit rows, want none: %v", len(rows), rows)
+	}
+	if r.mfa.challenges != 1 {
+		t.Errorf("the factor challenge was started %d times, want once", r.mfa.challenges)
+	}
+}
+
 // TestAStartWithNoProofReachesTheMethod holds the other direction: the engine
 // no longer refuses a send for want of a proof. The code engine makes that
 // decision, and the method is called with an empty proof so the code engine can

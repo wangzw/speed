@@ -38,6 +38,23 @@
  *    method's own group and replaces that group's rows, its heading naming
  *    the method being added. Its cancel sits on the left of its confirm
  *    with the ordinary action-row spacing.
+ *  - SMS destination and prerequisite. The SMS factor binds the phone the
+ *    account has already proved; this flow carries no phone field, and the
+ *    server refuses a start without one (authn.phone_required). The panel
+ *    therefore reads the proved phone off the profile (GET /api/v1/auth/me,
+ *    the same read the account page uses) and names it in the note above the
+ *    step. An account with no proved phone gets no panel: activating the SMS
+ *    add entry shows an informational notice beneath that kind's entry
+ *    instead, stating that an SMS second step uses the account's verified
+ *    phone and that one must be added and verified first. The notice carries
+ *    no action and no close control, no flow request goes out, and the add
+ *    entry stays available. It clears when another kind's add entry is
+ *    activated, when the profile gains a verified phone, or when the section
+ *    unmounts. Because the destination is the account's phone and not this
+ *    browser, the panel does not prefill the browser summary for this kind.
+ *    A refusal that still answers phone-required -- the phone was removed in
+ *    another tab -- renders that code's own sentence in the panel's failure
+ *    region.
  *  - Fail inside the panel. A refused start or answer renders its code in
  *    the panel's own region, beside the controls that can be corrected; the
  *    panel stays open with the typed code and name. This is the one place a
@@ -163,7 +180,7 @@ import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { asFactorList } from './internal/models.js'
-import { useFactorsQuery } from './internal/queries.js'
+import { useFactorsQuery, useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountTimeZone } from './internal/time-zone.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
@@ -227,9 +244,11 @@ type AdvanceOutcome =
       readonly failure: unknown
     }
 
-/** The name suggested for a factor registered from this browser: the same
+/** The name suggested for a passkey registered from this browser: the same
  * short browser/OS summary the session rows show. An unrecognised user
- * agent suggests no name; the reader can type one or leave it empty. */
+ * agent suggests no name; the reader can type one or leave it empty. No
+ * other kind takes this suggestion: an SMS factor sends to the account's
+ * phone, so its name describes no browser. */
 function suggestedFactorName(): string {
   if (typeof navigator === 'undefined') {
     return ''
@@ -340,6 +359,21 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useFactorsQuery()
+  // The same profile read the account page's identifier surface uses: the
+  // SMS factor sends to the account's proved phone, and this is where that
+  // phone is read. The read is not a new endpoint.
+  const { data: profile } = useProfileQuery()
+  const provenPhone =
+    profile?.identifiers?.find(
+      (identifier) =>
+        identifier.kind === 'phone' && identifier.proven === true,
+    )?.value ?? null
+  // The profile answered with its identifier collection and that collection
+  // lists no verified phone. An absent collection is not read as "no phone":
+  // a partial answer keeps the normal panel and leaves the prerequisite to
+  // the server.
+  const phoneMissing =
+    profile?.identifiers !== undefined && provenPhone === null
   const removeMutation = useAuthnMfaRemoveFactor()
   const updateMutation = useAuthnMfaUpdateFactor()
 
@@ -347,6 +381,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const [gate, setGate] = useState<GatedAction | null>(null)
   // The open enrollment panel, if any.
   const [panel, setPanel] = useState<EnrollPanel | null>(null)
+  // The kind whose add entry answered with its informational prerequisite
+  // notice instead of opening a panel: an SMS factor with no proved phone.
+  const [notice, setNotice] = useState<string | null>(null)
   // The enrollment's in-flight state.
   const [enrolling, setEnrolling] = useState(false)
   // The row whose removal is being confirmed.
@@ -458,6 +495,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
   }, [session])
 
+  // The notice states a missing phone: once the profile read supplies one,
+  // it has said its piece and clears itself, rather than hiding only for as
+  // long as the phone is there and reappearing if it is removed again.
+  useEffect(() => {
+    if (provenPhone !== null) {
+      setNotice(null)
+    }
+  }, [provenPhone])
+
   const factors = data?.factors
   const pending = isPending && data === undefined
   // Disabled through the whole attempt, including the refetches that follow
@@ -471,8 +517,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
 
   /** Whether a kind's factors carry a reader-chosen name. Only a kind that
    * may be held more than once needs one: the account keeps a single
-   * authenticator entry, while several passkeys are told apart by their
-   * names. */
+   * authenticator entry, while several passkeys or several SMS factors are
+   * told apart by their names. */
   function takesName(kind: string): boolean {
     return kind !== 'totp'
   }
@@ -491,6 +537,17 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       method: factorKindLabel(kind),
       interpolation: { escapeValue: false },
     })
+  }
+  /** The enrollment panel's note: an SMS panel with a proved phone names
+   * that destination, and every other kind reads its own sentence. */
+  function enrollNote(kind: string): string {
+    if (kind === 'sms' && provenPhone !== null) {
+      return t('mfa.enroll.note.smsTo', {
+        phone: provenPhone,
+        interpolation: { escapeValue: false },
+      })
+    }
+    return t(enrollNoteKey(kind))
   }
   // Every kind the deployment reported gets an entry, in the document's
   // order. An unknown kind still starts that kind's flow -- the generic
@@ -570,7 +627,11 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
 
   /** Open one method's enrollment panel and start its flow at once, so the
    * method's body (a QR symbol or a registration prompt) is on the same
-   * panel as the name field. */
+   * panel as the name field. The one exception is an SMS factor with no
+   * proved phone: there is nothing to send to, so the add entry answers
+   * with an informational notice and no panel and no flow request. An
+   * unresolved profile is not read as "no phone"; the server still answers
+   * that case. */
   function openEnroll(factorKind: string): void {
     releaseEnrollFlow()
     knownIdsRef.current = new Set(
@@ -580,8 +641,19 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     )
     feedback.reset()
     panelFeedback.reset()
+    if (factorKind === 'sms' && phoneMissing) {
+      // A start still in flight belongs to the panel being replaced.
+      panelTokenRef.current += 1
+      setPanel(null)
+      setNotice(factorKind)
+      return
+    }
+    setNotice(null)
     const token = ++panelTokenRef.current
-    const label = takesName(factorKind) ? suggestedFactorName() : ''
+    // Only a passkey suggests the browser summary; an SMS factor's name
+    // describes the account's phone, not this device.
+    const label =
+      factorKind === 'webauthn' ? suggestedFactorName() : ''
     setPanel({ kind: factorKind, label, step: null, seq: 0 })
     void startEnrollFlow(factorKind, token, label)
   }
@@ -1040,9 +1112,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                         {open !== null ? (
                           <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
                             {/* The name field belongs to a kind that may be
-                                held more than once: several passkeys are told
-                                apart by their names, while the single
-                                authenticator entry is the kind itself. */}
+                                held more than once: several passkeys or SMS
+                                factors are told apart by their names, while
+                                the single authenticator entry is the kind
+                                itself. */}
                             {takesName(kind) ? (
                               <TextField
                                 label={t('mfa.enroll.labelField')}
@@ -1066,13 +1139,14 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                             ) : null}
                             {/* The step states what confirming does; a
                                 passkey's registration prompt alone does not
-                                carry that sentence. */}
+                                carry that sentence. An SMS step also names
+                                the phone the code goes to. */}
                             <Typography
                               variant="body2"
                               color="text.secondary"
                               sx={{ mt: 1.5 }}
                             >
-                              {t(enrollNoteKey(kind))}
+                              {enrollNote(kind)}
                             </Typography>
                             {open.step === null ? (
                               <Box sx={{ mt: 2 }}>
@@ -1137,6 +1211,22 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 {t(help)}
                               </Typography>
                             )}
+                            {notice === kind && phoneMissing ? (
+                              // No phone to send to: the add entry answers
+                              // with a statement about the missing
+                              // prerequisite, not a panel, printed under the
+                              // method's own description. It carries no
+                              // action and no close control; another add
+                              // entry, a proved phone or leaving the section
+                              // clears it.
+                              <Alert
+                                severity="info"
+                                role="note"
+                                sx={{ mt: 1.5 }}
+                              >
+                                {t('mfa.enroll.prerequisite.sms')}
+                              </Alert>
+                            ) : null}
                             {kindFactors.length > 0 ? (
                               <Box
                                 component="ul"

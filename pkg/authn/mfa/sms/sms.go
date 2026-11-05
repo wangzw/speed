@@ -285,9 +285,11 @@ func readChallenge(private []byte) (string, bool) {
 // challenge identifier.
 var (
 	// errNoProvenPhone is the refusal of an account that has no phone whose
-	// ownership it proved. It names where a client proves one, which is the step
-	// the client has to take first.
-	errNoProvenPhone = errors.New("authn.mfa.sms: the account has no proven phone; verify one at B/phone and B/phone/verify first")
+	// ownership it proved. It wraps authn.ErrPhoneRequired so the engine answers
+	// the 403 phone-required that tells the client to verify a phone first,
+	// rather than a failed login. The text after the sentinel is a diagnostic for
+	// a caller that logs the cause; this package writes no log line.
+	errNoProvenPhone = fmt.Errorf("%w: the account has no proven phone; verify one first", authn.ErrPhoneRequired)
 
 	errNoChallenge = errors.New("authn.mfa.sms: the flow carries no challenge this factor started")
 
