@@ -456,6 +456,26 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
       ).toBe(true)
     }
   })
+
+  it('keeps both identity columns inside the 600px tier floor when a long email meets a long resolved inviter', async () => {
+    await page.viewport(600, 900)
+    // The inviter resolves through the members read to a display name as
+    // long as the cap, so both identity columns carry their whole cap and
+    // the row's unbreakable width has to fit the sm floor together with
+    // status, both timestamps and the actions column.
+    const invitation: AdminInvitation = {
+      ...LONG_INVITATION,
+      invited_by: LONG_ACCOUNT,
+    }
+    renderPage({}, undefined, backend([LONG_MEMBER], [invitation]))
+
+    await screen.findAllByText(LONG_DISPLAY_NAME)
+    await screen.findAllByText(LONG_EMAIL)
+    // The strict per-tier check, not the page-level one: each table's
+    // containment box is pinned to every tier floor and the visible
+    // columns must fit without the scroll fallback.
+    await expectNoHorizontalOverflow()
+  })
 })
 
 describe('OrganizationMembersPage single-token identity values in Chromium', () => {

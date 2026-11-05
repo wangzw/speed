@@ -120,6 +120,28 @@ const MEMBER_IDENTITY_MAX_WIDTH = {
   fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
 } as const
 
+/**
+ * The content cap the invitation table's two nowrap identity columns take
+ * below `md`. The email column shares the primary cap and the inviter the
+ * long-text cap; both stay on one line, so each contributes its whole cap
+ * to the row's unbreakable width. At the 600px `sm` floor those two shared
+ * caps (160px each) together with the status, both timestamps and the
+ * actions column exceed the floor (measured 641px). 140px keeps the six
+ * columns inside it; the complete values remain reachable through the
+ * title and the copy control. From `md` up each column returns to its
+ * shared cap: 200px for the email, 160px for the inviter.
+ */
+const INVITATION_IDENTITY_MAX_WIDTH = {
+  email: {
+    belowMd: 140,
+    fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
+  },
+  invitedBy: {
+    belowMd: 140,
+    fromMd: LONG_TEXT_COLUMN_MAX_WIDTH,
+  },
+} as const
+
 /** The sources the surface names itself; a `jit:<id>` value names a provider. */
 const MEMBER_SOURCES = new Set<string>(['admin', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
@@ -718,7 +740,7 @@ export function OrganizationMembersPage({
       header: t('invitations.column.email'),
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.email,
-      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      contentMaxWidth: INVITATION_IDENTITY_MAX_WIDTH.email,
       cell: (invitation) => (
         <Typography variant="body2" noWrap>
           {invitation.email}
@@ -742,7 +764,7 @@ export function OrganizationMembersPage({
       // the copy control `cellFullValue` adds.
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.invited_by,
-      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
+      contentMaxWidth: INVITATION_IDENTITY_MAX_WIDTH.invitedBy,
       cell: (invitation) => (
         <TenantAccountIdentity
           account={invitation.invited_by}
