@@ -36,6 +36,7 @@ import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
   createAdminOperations,
   makeAdminBackend,
+  tenantFixture,
   type AdminBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
@@ -74,7 +75,7 @@ function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+const TENANT = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
 
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
@@ -494,7 +495,7 @@ describe('PermissionsPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            { id: 'globex', alias: 'Globex', status: 'active' as const },
+            tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
           ]),
       })
       renderWithProviders(

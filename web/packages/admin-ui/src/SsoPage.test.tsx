@@ -28,6 +28,7 @@ import {
   createAdminOperations,
   makeAdminBackend,
   providerFixture,
+  tenantFixture,
   type AdminBackend,
 } from '../test-utils/operations.js'
 import { createStepUpSession } from '../test-utils/session.js'
@@ -35,7 +36,7 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+const TENANT = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
 
 /** Fills a locale template's `{{name}}` placeholders. */
 function text(template: string, values: Record<string, string>): string {
@@ -1385,7 +1386,7 @@ describe('SsoPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            { id: 'globex', alias: 'Globex', status: 'active' as const },
+            tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
           ]),
         listSsoProviders,
       })

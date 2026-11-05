@@ -119,6 +119,10 @@ const TENANT: TenantAdminTenant = {
   id: 'acme',
   alias: 'Acme Inc.',
   status: 'active',
+  contactEmail: 'ops@acme.example',
+  description: 'The canned organization the fixture answers with.',
+  displayName: 'Acme Inc.',
+  website: 'https://acme.example',
 }
 
 const ACCOUNT: AuthnAdminAccount = {
@@ -393,7 +397,12 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
   '/api/v1/auth/me/tenants': answer(
     {
       tenants: [
-        { id: TENANT.id, alias: TENANT.alias, kind: 'business' },
+        {
+          id: TENANT.id,
+          alias: TENANT.alias,
+          kind: 'business',
+          displayName: TENANT.displayName,
+        },
       ],
     } satisfies TenantSelfTenantsList200,
     // The caller's membership list is not page data: the same tenant is
@@ -402,7 +411,12 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     // tenant home (which the sweep would scan as a clean page).
     {
       tenants: [
-        { id: TENANT.id, alias: TENANT.alias, kind: 'business' },
+        {
+          id: TENANT.id,
+          alias: TENANT.alias,
+          kind: 'business',
+          displayName: TENANT.displayName,
+        },
       ],
     } satisfies TenantSelfTenantsList200,
   ),

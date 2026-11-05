@@ -28,6 +28,7 @@ import {
   createAdminOperations,
   makeAdminBackend,
   recordFixture,
+  tenantFixture,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -41,9 +42,9 @@ const COPY = zhCN.common as {
 /** The marker a refused account read leaves on the recent-activity actor. */
 
 const TENANTS = [
-  { id: 'acme', alias: 'Acme', status: 'active' as const },
-  { id: 'beta', alias: 'Beta', status: 'active' as const },
-  { id: 'old', alias: 'Old', status: 'disabled' as const },
+  tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+  tenantFixture({ id: 'beta', alias: 'Beta', status: 'active' }),
+  tenantFixture({ id: 'old', alias: 'Old', status: 'disabled' }),
 ]
 
 /**
@@ -80,7 +81,7 @@ describe('DashboardPage', () => {
     // total instead of leaving a tombstone unaccounted for.
     const tenants = [
       ...TENANTS,
-      { id: 'gone', alias: 'Gone', status: 'deleted' as const },
+      tenantFixture({ id: 'gone', alias: 'Gone', status: 'deleted' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),

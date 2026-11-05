@@ -35,6 +35,7 @@ import {
   accountFixture,
   createAdminOperations,
   makeAdminBackend,
+  tenantFixture,
   type AdminBackend,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
@@ -44,7 +45,7 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 import { uiKitResources } from '@speed/ui-kit'
 
 const ZERO = '0001-01-01T00:00:00Z'
-const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+const TENANT = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
 
 /** The end-reason labels a test injects into the namespace. */
 const END_REASON_LABELS = { revoked: 'end-reason-revoked' } as const
@@ -804,7 +805,7 @@ describe('ImpersonationsPage', () => {
             listTenants: () =>
               Promise.resolve([
                 TENANT,
-                { id: 'globex', alias: 'Globex', status: 'active' as const },
+                tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
               ]),
             listImpersonations,
           }),

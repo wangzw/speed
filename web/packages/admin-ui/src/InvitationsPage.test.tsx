@@ -36,6 +36,7 @@ import {
   createAdminOperations,
   issuedInvitationFixture,
   makeAdminBackend,
+  tenantFixture,
   type AdminBackend,
 } from '../test-utils/operations.js'
 import { AdminInvitationLinkProvider } from './internal/invitation-link.js'
@@ -44,7 +45,7 @@ import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { uiKitResources } from '@speed/ui-kit'
 
-const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
+const TENANT = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
 
 /**
  * The member-source labels a test injects into the namespace, so a
@@ -613,7 +614,7 @@ describe('InvitationsPage', () => {
 
   it('starts a switched tenant with no member cursor', async () => {
     const user = userEvent.setup()
-    const globex = { id: 'globex', alias: 'Globex', status: 'active' as const }
+    const globex = tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' })
     const firstPage = Array.from({ length: 101 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
@@ -1967,7 +1968,7 @@ describe('InvitationsPage', () => {
       listTenants: () =>
         Promise.resolve([
           TENANT,
-          { id: 'globex', alias: 'Globex', status: 'active' as const },
+          tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
         ]),
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
@@ -2067,7 +2068,7 @@ describe('InvitationsPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            { id: 'globex', alias: 'Globex', status: 'active' as const },
+            tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
           ]),
         listInvitations,
         listMembers,

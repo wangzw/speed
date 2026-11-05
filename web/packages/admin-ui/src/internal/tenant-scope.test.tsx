@@ -17,11 +17,12 @@ import { renderWithProviders } from '../../test-utils/render.js'
 import {
   createAdminOperations,
   makeAdminBackend,
+  tenantFixture,
 } from '../../test-utils/operations.js'
 import type { AdminTenant } from '../operations.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-const TENANT: AdminTenant = { id: 'acme', alias: 'Acme', status: 'active' }
+const TENANT: AdminTenant = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
 const TENANT_LABEL = zhCN.common.tenant
 
 /** A host holding the selection, as the pages do. */

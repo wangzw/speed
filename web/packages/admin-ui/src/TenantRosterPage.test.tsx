@@ -23,6 +23,7 @@ import { containerMaxWidthOf } from '../test-utils/container-visibility.js'
 import {
   createAdminOperations,
   makeAdminBackend,
+  tenantFixture,
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -70,8 +71,8 @@ describe('TenantRosterPage', () => {
 
   it('lists tenants with the roster status spelling', async () => {
     const tenants: AdminTenant[] = [
-      { id: 'acme', alias: 'Acme', status: 'active' },
-      { id: 'old', alias: 'Old Co', status: 'disabled' },
+      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ id: 'old', alias: 'Old Co', status: 'disabled' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -84,7 +85,7 @@ describe('TenantRosterPage', () => {
 
   it('renders the deleted state and hides a tombstone row\'s write controls', async () => {
     const tenants: AdminTenant[] = [
-      { id: 'gone', alias: 'Gone Co', status: 'deleted' },
+      tenantFixture({ id: 'gone', alias: 'Gone Co', status: 'deleted' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -116,9 +117,9 @@ describe('TenantRosterPage', () => {
 
   it('shows who disabled a disabled row and nothing on a row that is not disabled', async () => {
     const tenants: AdminTenant[] = [
-      { id: 'op', alias: 'Operator Off', status: 'disabled', disabledBy: 'operator' },
-      { id: 'acc', alias: 'Account Off', status: 'disabled', disabledBy: 'account' },
-      { id: 'on', alias: 'Still On', status: 'active' },
+      tenantFixture({ id: 'op', alias: 'Operator Off', status: 'disabled', disabledBy: 'operator' }),
+      tenantFixture({ id: 'acc', alias: 'Account Off', status: 'disabled', disabledBy: 'account' }),
+      tenantFixture({ id: 'on', alias: 'Still On', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -134,8 +135,8 @@ describe('TenantRosterPage', () => {
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const tenants: AdminTenant[] = [
-      { id: 'acme', alias: 'Acme', status: 'active' },
-      { id: 'old', alias: 'Old Co', status: 'disabled' },
+      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ id: 'old', alias: 'Old Co', status: 'disabled' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -160,11 +161,11 @@ describe('TenantRosterPage', () => {
       makeAdminBackend({
         listTenants: () => Promise.resolve([...store]),
         createTenant: (input) => {
-          const tenant: AdminTenant = {
+          const tenant: AdminTenant = tenantFixture({
             id: input.id,
             alias: input.alias,
             status: 'active',
-          }
+          })
           store.push(tenant)
           return Promise.resolve(tenant)
         },
@@ -203,7 +204,7 @@ describe('TenantRosterPage', () => {
     const user = userEvent.setup()
     const calls: string[] = []
     const tenants: AdminTenant[] = [
-      { id: 'acme', alias: 'Acme', status: 'active' },
+      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -226,8 +227,8 @@ describe('TenantRosterPage', () => {
 
   it('names each row control with its own tenant', async () => {
     const tenants: AdminTenant[] = [
-      { id: 'acme', alias: 'Acme', status: 'active' },
-      { id: 'globex', alias: 'Globex', status: 'active' },
+      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -257,7 +258,7 @@ describe('TenantRosterPage', () => {
   it('announces a landed rename and a landed status change', async () => {
     const user = userEvent.setup()
     const tenants: AdminTenant[] = [
-      { id: 'acme', alias: 'Acme', status: 'active' },
+      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -281,7 +282,7 @@ describe('TenantRosterPage', () => {
     const user = userEvent.setup()
     const calls: string[] = []
     const tenants: AdminTenant[] = [
-      { id: 'acme', alias: 'Acme', status: 'active' },
+      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -301,7 +302,7 @@ describe('TenantRosterPage', () => {
 
   it('opens with the page header: the title as h1, a breadcrumb trail, and a refresh action', async () => {
     const tenants: AdminTenant[] = [
-      { id: 'acme', alias: 'Acme', status: 'active' },
+      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
     ]
     const listTenants = vi.fn(() => Promise.resolve(tenants))
     const operations = createAdminOperations(makeAdminBackend({ listTenants }))
@@ -334,7 +335,7 @@ describe('TenantRosterPage', () => {
         listTenants: () => {
           reads.push('read')
           return Promise.resolve([
-            { id: 'acme', alias: 'Acme', status: 'active' },
+            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
           ])
         },
         setTenantAlias: () => pending.promise,
@@ -404,7 +405,7 @@ describe('TenantRosterPage', () => {
     expect(reads).toHaveLength(1)
 
     await act(async () => {
-      pending.resolve({ id: 'acme', alias: 'Acme', status: 'active' })
+      pending.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }))
     })
     await vi.waitFor(() => {
       expect(refresh).not.toBeDisabled()
@@ -415,7 +416,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
@@ -436,7 +437,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(
@@ -471,7 +472,8 @@ describe('TenantRosterPage', () => {
     const alias = 'AcmeCorporationInternationalHoldingsEMEA'
     const operations = createAdminOperations(
       makeAdminBackend({
-        listTenants: () => Promise.resolve([{ id, alias, status: 'active' }]),
+        listTenants: () =>
+          Promise.resolve([tenantFixture({ id, alias, status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
@@ -544,7 +546,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
         setTenantAlias: () => Promise.resolve(),
       }),
     )
@@ -580,11 +582,13 @@ describe('TenantRosterPage', () => {
       makeAdminBackend({
         createTenant: (input) => {
           created.push(`${input.id}:${input.alias}`)
-          return Promise.resolve({
-            id: input.id,
-            alias: input.alias,
-            status: 'active',
-          })
+          return Promise.resolve(
+            tenantFixture({
+              id: input.id,
+              alias: input.alias,
+              status: 'active',
+            }),
+          )
         },
       }),
     )
@@ -631,7 +635,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
         setTenantAlias: (input) => {
           calls.push(`${input.id}:${input.alias}`)
           return Promise.resolve()
@@ -689,7 +693,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage basePath="/admin/tenants" />, {
@@ -708,8 +712,8 @@ describe('TenantRosterPage', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            { id: 'acme', alias: 'Acme', status: 'active' },
-            { id: 'globex', alias: 'Globex', status: 'active' },
+            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
           ]),
         setTenantAlias: (input) =>
           input.id === 'acme'
@@ -769,7 +773,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
         setTenantAlias: () => Promise.reject({ code: 'tenant.conflict' }),
       }),
     )
@@ -804,7 +808,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
         setTenantStatus: () => Promise.reject({ code: 'tenant.bad_request' }),
       }),
     )
@@ -835,7 +839,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
@@ -872,7 +876,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
         setTenantAlias: () =>
           Promise.reject({ status: 400, code: 'client.http.400' }),
       }),
@@ -911,7 +915,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
         setTenantStatus: () => Promise.resolve(),
       }),
     )
@@ -937,7 +941,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
