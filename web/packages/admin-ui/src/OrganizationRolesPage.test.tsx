@@ -889,7 +889,9 @@ describe('the role usage section', () => {
     const user = userEvent.setup()
     const { backend } = scripted({
       listTenantRoles: () =>
-        Promise.resolve([role({ member_count: undefined })]),
+        Promise.resolve([
+          role({ member_count: null as unknown as number }),
+        ]),
     })
     renderRolesPage(backend)
     await selectRole(user, ROLE_AUDITOR.role)
