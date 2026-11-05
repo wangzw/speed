@@ -136,3 +136,111 @@ func TestTheTxVariantsKeepTheCtxVariantsRefusals(t *testing.T) {
 		t.Fatalf("driving the refusals: %v", err)
 	}
 }
+
+// GetTx reports a row no table carries as absent and a tombstone as present, so
+// a caller that has to distinguish the two reads the status rather than the
+// boolean.
+func TestGetTxReportsAbsenceAndTheTombstone(t *testing.T) {
+	r := rosterOver(t, insertRow("t_gone", "gone", tenant.StatusDeleted, tenant.DisabledByOperator))
+	if err := r.read(context.Background()); err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	if err := r.handle.Transaction(func(tx *gorm.DB) error {
+		if _, found, err := r.GetTx(context.Background(), tx, "t_missing"); err != nil || found {
+			t.Errorf("GetTx of an identifier no row carries = (found %t, %v), want (false, nil)", found, err)
+		}
+		got, found, err := r.GetTx(context.Background(), tx, "t_gone")
+		if err != nil || !found {
+			t.Fatalf("GetTx of a tombstone = (found %t, %v), want (true, nil)", found, err)
+		}
+		if got.Status != tenant.StatusDeleted {
+			t.Errorf("GetTx of a tombstone reports status %q, want deleted", got.Status)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("driving GetTx: %v", err)
+	}
+}
+
+// SetOwnerTx refuses an identifier no row carries and a tombstone, writes
+// nothing for a transfer to the current owner, and answers no error for an
+// update that matched no row but left a live row behind.
+func TestSetOwnerTxRejectionBranches(t *testing.T) {
+	r := rosterOver(t,
+		insertOwner("t_acme", "acme", "alice"),
+		insertOwner("t_gone", "gone", ""),
+		insertRow("t_tomb", "tomb", tenant.StatusDeleted, tenant.DisabledByOperator),
+	)
+	if err := r.read(context.Background()); err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+
+	t.Run("no roster row", func(t *testing.T) {
+		if err := r.handle.Transaction(func(tx *gorm.DB) error {
+			if _, err := r.SetOwnerTx(context.Background(), tx, "t_missing", "bob"); !errors.Is(err, tenant.ErrInvalidTenant) {
+				t.Errorf("SetOwnerTx of an identifier no row carries gave %v, want ErrInvalidTenant", err)
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("driving SetOwnerTx: %v", err)
+		}
+	})
+
+	t.Run("tombstone", func(t *testing.T) {
+		if err := r.handle.Transaction(func(tx *gorm.DB) error {
+			if _, err := r.SetOwnerTx(context.Background(), tx, "t_tomb", "bob"); !errors.Is(err, tenant.ErrTenantDeleted) {
+				t.Errorf("SetOwnerTx of a tombstone gave %v, want ErrTenantDeleted", err)
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("driving SetOwnerTx: %v", err)
+		}
+	})
+
+	t.Run("same owner", func(t *testing.T) {
+		if err := r.handle.Transaction(func(tx *gorm.DB) error {
+			after, err := r.SetOwnerTx(context.Background(), tx, "t_acme", "alice")
+			if err != nil {
+				t.Fatalf("SetOwnerTx to the current owner: %v", err)
+			}
+			if after != nil {
+				t.Error("SetOwnerTx to the current owner returned an after closure, want none")
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("driving SetOwnerTx: %v", err)
+		}
+	})
+
+	t.Run("an update that changed nothing", func(t *testing.T) {
+		if err := r.handle.Exec(`CREATE TRIGGER ignore_owner_write
+			BEFORE UPDATE OF owner_account ON tenants
+			BEGIN SELECT RAISE(IGNORE); END`).Error; err != nil {
+			t.Fatalf("creating the trigger that ignores the update: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := r.handle.Exec("DROP TRIGGER ignore_owner_write").Error; err != nil {
+				t.Fatalf("dropping the trigger: %v", err)
+			}
+		})
+		if err := r.handle.Transaction(func(tx *gorm.DB) error {
+			after, err := r.SetOwnerTx(context.Background(), tx, "t_acme", "bob")
+			if err != nil {
+				t.Fatalf("SetOwnerTx whose update matched no row: %v", err)
+			}
+			if after != nil {
+				t.Error("SetOwnerTx whose update matched no row returned an after closure, want none")
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("driving SetOwnerTx: %v", err)
+		}
+	})
+}
+
+// insertOwner is one roster row written as a statement with its owner column,
+// which insert does not carry.
+func insertOwner(id, alias, owner string) string {
+	return "INSERT INTO tenants (id, alias, status, owner_account) VALUES ('" +
+		id + "', '" + alias + "', 1, '" + owner + "')"
+}
