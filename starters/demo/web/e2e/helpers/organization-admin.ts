@@ -306,14 +306,6 @@ export function domainsSection(page: Page): Locator {
   return section(page, 'sso.domains.title')
 }
 
-/** The settings page's namespace navigation. */
-export function settingsNamespaces(page: Page): Locator {
-  return page.getByRole('navigation', {
-    name: copy('adminUi', 'settings.nav.label'),
-    exact: true,
-  })
-}
-
 /**
  * The index of the column headed `header` in a table. The header copy comes
  * from the shipped bundle, so a renamed column fails here rather than matching

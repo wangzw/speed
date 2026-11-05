@@ -380,22 +380,31 @@ export const reviewImpersonationAdmin = {
 } as const
 
 /**
- * A declared setting the tenant-admin journey writes on its tenant's layer.
+ * The two policies the organization security page manages.
  *
- * The namespace is the module that declares it and is outside the platform-only
- * set (`ratelimit.*`, `tenant.admission.*`, `authn.*`), so the organization
- * admin settings page lists it as an editable row. `notification.delivery` is part of
- * the review assembly, so its budget keys are declared on every review server.
- * The value stays inside the declared domain of whole numbers from one to a
- * thousand.
+ * `tenant.admission` is the only namespace declared tenant-facing: its two
+ * switches are the organization surface's whole settings page, and the page
+ * renders them from the server's declaration rather than from a key/value
+ * register. Every other declared namespace is platform-level and must not be
+ * reachable from the organization surface -- not in the list, not by namespace,
+ * not by key.
  */
-export const reviewTenantSetting = {
-  namespace: 'notification.delivery',
-  key: 'notification.delivery.per-recipient-hourly',
-  /** The declared default the row resolves to before the tenant writes it. */
-  defaultValue: '20',
-  /** The value the journey writes on the tenant layer. */
-  value: '25',
+export const reviewTenantPolicies = {
+  namespace: 'tenant.admission',
+  /** The two tenant read-write items, in the order the declaration lists them. */
+  keys: [
+    'tenant.admission.require-mfa',
+    'tenant.admission.require-sso',
+  ],
+  /** Namespaces the organization surface must never render or address. */
+  platformOnlyNamespaces: [
+    'ratelimit',
+    'authn',
+    'jobs.db',
+    'notification.delivery',
+    'objectstore.metadata',
+    'sms',
+  ],
 } as const
 
 /** The template's seeded operator entry; the member entry is appended to it. */

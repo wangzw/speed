@@ -63,7 +63,7 @@
  * the review carrier writes when a notice is delivered.
  */
 // @journey journey-tenant-admin.md
-// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021
+// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import {
@@ -71,7 +71,7 @@ import {
   reviewOrdinaryMember,
   reviewSystemTenantAdmin,
   reviewTenantAdmin,
-  reviewTenantSetting,
+  reviewTenantPolicies,
   reviewUnprovedTenantAdmin,
 } from '../fixtures/config'
 import {
@@ -114,7 +114,6 @@ import {
   openOrganizationPage,
   providerFormSection,
   rolesSection,
-  settingsNamespaces,
   verificationBanner,
   verificationSection,
   organizationHomeCard,
@@ -1575,78 +1574,84 @@ test.describe('the tenant administrator manages the organization', () => {
         await chooseInvitationStatus(page, 'invitations.filter.all')
       })
 
-      await test.step('step 17: the settings page reports the source layer and a tenant write lands', async () => {
+      await test.step('step 17: the settings page is the two sign-in policies and nothing else', async () => {
         await openOrganizationPage(page, 'settings')
 
-        // REQ-tenant-admin-016: the source column is rendered, and the
-        // platform-only namespaces are not offered at all.
+        // REQ-tenant-admin-016: the organization surface manages exactly the
+        // two declared admission policies. It is not the key/value register:
+        // there is no table, no namespace navigation, no search and no batch
+        // save bar, and no platform-level setting name is rendered.
         await expect(
-          page.getByRole('columnheader', {
-            name: copy('adminUi', 'settings.column.source'),
+          page.getByRole('heading', {
+            level: 1,
+            name: copy('adminUi', 'organization.nav.settings'),
             exact: true,
           }),
         ).toBeVisible()
-        const namespaces = settingsNamespaces(page)
         await expect(
-          namespaces.getByRole('button', {
-            name: /^(authn|ratelimit|tenant\.admission)\./,
+          page.getByRole('heading', {
+            level: 2,
+            name: copy('adminUi', 'organization.security.section.title'),
+            exact: true,
           }),
-        ).toHaveCount(0)
-        const delivery = namespaces.getByRole('button', {
-          name: reviewTenantSetting.namespace,
-          exact: true,
-        })
-        await expect(delivery).toBeVisible()
-        await delivery.click()
+        ).toBeVisible()
 
-        const table = page.getByRole('table')
-        const row = table
-          .locator('tbody tr')
-          .filter({ hasText: reviewTenantSetting.key })
-        // The namespace change re-reads the register; wait for the row before
-        // reading the columns, because the pending read renders a skeleton
-        // with no table at all.
-        await expect(row).toHaveCount(1)
-        const sourceColumn = await columnIndex(
-          table,
-          copy('adminUi', 'settings.column.source'),
-        )
-        const stateColumn = await columnIndex(
-          table,
-          copy('adminUi', 'settings.column.state'),
-        )
-        await expect(cell(row, sourceColumn)).toHaveText(
-          copy('adminUi', 'settings.source.default'),
-        )
-        await expect(cell(row, stateColumn)).toHaveText(
-          copy('adminUi', 'settings.state.default'),
-        )
-        const field = page.getByRole('textbox', {
-          name: reviewTenantSetting.key,
-          exact: true,
-        })
-        await expect(field).toHaveValue(reviewTenantSetting.defaultValue)
+        const policies = [
+          copy('adminUi', 'organization.security.mfa.title'),
+          copy('adminUi', 'organization.security.sso.title'),
+        ]
+        for (const title of policies) {
+          await expect(
+            page.getByRole('heading', {
+              level: 3,
+              name: title,
+              exact: true,
+            }),
+          ).toBeVisible()
+        }
 
-        // REQ-tenant-admin-017: the write lands on the tenant layer, and the
-        // row reports the new value, the overridden state and the tenant
-        // source.
-        await field.fill(reviewTenantSetting.value)
-        await page
-          .getByRole('button', {
-            name: copy('adminUi', 'settings.saveBar.save'),
+        await expect(page.getByRole('switch')).toHaveCount(2)
+        for (const title of policies) {
+          const control = page.getByRole('switch', {
+            name: copy('adminUi', 'organization.security.switchAria', {
+              title,
+            }),
             exact: true,
           })
-          .click()
+          await expect(control).toBeVisible()
+          await expect(control).not.toBeChecked()
+        }
         await expect(
-          page.getByText(copy('adminUi', 'settings.saved'), { exact: true }),
-        ).toBeVisible()
-        await expect(field).toHaveValue(reviewTenantSetting.value)
-        await expect(cell(row, sourceColumn)).toHaveText(
-          copy('adminUi', 'settings.source.tenant'),
-        )
-        await expect(cell(row, stateColumn)).toHaveText(
-          copy('adminUi', 'settings.state.overridden'),
-        )
+          page.getByText(
+            copy('adminUi', 'organization.security.status.disabled'),
+            { exact: true },
+          ),
+        ).toHaveCount(2)
+
+        await expect(page.getByRole('table')).toHaveCount(0)
+        await expect(
+          page.getByRole('navigation', {
+            name: copy('adminUi', 'settings.nav.label'),
+            exact: true,
+          }),
+        ).toHaveCount(0)
+        await expect(
+          page.getByRole('button', {
+            name: copy('adminUi', 'settings.saveBar.save'),
+            exact: true,
+          }),
+        ).toHaveCount(0)
+        for (const namespace of reviewTenantPolicies.platformOnlyNamespaces) {
+          await expect(page.getByText(namespace, { exact: false })).toHaveCount(0)
+        }
+
+        // This journey leaves both policies off. Turning one on would require
+        // it of the single-factor review administrator from the next request
+        // onward -- the write itself passes, the read after it is challenged --
+        // and every later step would meet that challenge. The optimistic save,
+        // the confirmation and the rollback are driven in the page's unit
+        // tests; the tenant surface's write path is driven in the settings
+        // module's own tests.
       })
 
       await test.step('step 18: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {

@@ -18,7 +18,7 @@ import {
   reviewOrdinaryMember,
   reviewSystemTenantAdmin,
   reviewTenantAdmin,
-  reviewTenantSetting,
+  reviewTenantPolicies,
   reviewUnprovedTenantAdmin,
   writeDeployConfig,
   writeReviewConfig,
@@ -171,12 +171,17 @@ describe('the review configuration', () => {
     expect(entry).not.toContain('platform-admin')
   })
 
-  it('names a declared tenant-writable setting outside the platform-only namespaces', () => {
-    expect(reviewTenantSetting.key).toBe(
-      `${reviewTenantSetting.namespace}.per-recipient-hourly`,
-    )
-    for (const platformOnly of ['ratelimit', 'tenant.admission', 'authn']) {
-      expect(reviewTenantSetting.namespace).not.toMatch(
+  it('names the two tenant-facing policies and the platform-only namespaces', () => {
+    expect(reviewTenantPolicies.namespace).toBe('tenant.admission')
+    expect(reviewTenantPolicies.keys).toEqual([
+      'tenant.admission.require-mfa',
+      'tenant.admission.require-sso',
+    ])
+    for (const key of reviewTenantPolicies.keys) {
+      expect(key.startsWith(`${reviewTenantPolicies.namespace}.`)).toBe(true)
+    }
+    for (const platformOnly of reviewTenantPolicies.platformOnlyNamespaces) {
+      expect(reviewTenantPolicies.namespace).not.toMatch(
         new RegExp(`^${platformOnly.replace('.', '\\.')}(\\.|$)`),
       )
     }
