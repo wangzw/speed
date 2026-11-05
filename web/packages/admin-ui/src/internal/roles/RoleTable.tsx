@@ -1,0 +1,231 @@
+/**
+ * RoleTable: the role catalog's table.
+ *
+ * The table leads with the role name, then the description, the two counts
+ * and the builtin mark, with the row actions pinned to the trailing edge.
+ * A builtin role, a role the host protects and a role the caller may not
+ * manage are all read-only: the row keeps a way to open the role's grants
+ * and shows why the write controls are absent, because a disabled control
+ * is not focusable and its reason would be unreachable to keyboard users.
+ */
+
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Typography from '@mui/material/Typography'
+import {
+  DataTable,
+  LONG_TEXT_COLUMN_MAX_WIDTH,
+  PRIMARY_COLUMN_MAX_WIDTH,
+} from '@speed/ui-kit'
+import type { DataTableColumn } from '@speed/ui-kit'
+import type { AdminTenantRole } from '../../organization-operations.js'
+import { useAdminUiTranslation } from '../translation.js'
+
+export interface RoleTableProps {
+  readonly roles: readonly AdminTenantRole[]
+  /** The role whose grants and usage the lower sections show. */
+  readonly selectedRole: string
+  /** The role names the host protects from writes. */
+  readonly protectedRoles: readonly string[]
+  /** The role a delete failure names, or null. */
+  readonly failedRole: string | null
+  /** The resolved text of the role scope's failure, or null. */
+  readonly failureText: string | null
+  /** Whether a role write is in flight. */
+  readonly busy: boolean
+  /** Opens one role's grants and usage. */
+  readonly onSelect: (role: string) => void
+  /** Opens the description editor for one role. */
+  readonly onEditDescription: (role: AdminTenantRole) => void
+  /** Asks to remove one role. */
+  readonly onRemove: (role: AdminTenantRole) => void
+}
+
+/** Why a row is read-only: the server's builtin mark, the host's protected
+ * list, or the caller's missing manage permission. */
+function lockedReason(
+  role: AdminTenantRole,
+  protectedRoles: readonly string[],
+): 'builtin' | 'protected' | 'noManage' | null {
+  if (role.builtin) {
+    return 'builtin'
+  }
+  if (protectedRoles.includes(role.role)) {
+    return 'protected'
+  }
+  if (!role.can_manage) {
+    return 'noManage'
+  }
+  return null
+}
+
+export function RoleTable({
+  roles,
+  selectedRole,
+  protectedRoles,
+  failedRole,
+  failureText,
+  busy,
+  onSelect,
+  onEditDescription,
+  onRemove,
+}: RoleTableProps) {
+  const { t } = useAdminUiTranslation()
+
+  const columns: DataTableColumn<AdminTenantRole>[] = [
+    {
+      id: 'role',
+      header: t('permissions.roles.column.role'),
+      cellWrap: 'nowrap',
+      cellFullValue: (role) => role.role,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      cell: (role) => <Typography variant="body2">{role.role}</Typography>,
+    },
+    {
+      id: 'description',
+      header: t('permissions.roles.column.description'),
+      priority: 'medium',
+      cellWrap: 'wrap',
+      cellFullValue: (role) =>
+        role.description === '' ? undefined : role.description,
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
+      cell: (role) => role.description,
+    },
+    {
+      id: 'permissions',
+      header: t('permissions.roles.column.permissions'),
+      priority: 'medium',
+      cellWrap: 'nowrap',
+      cell: (role) => role.permission_count,
+    },
+    {
+      id: 'members',
+      header: t('permissions.roles.column.members'),
+      priority: 'medium',
+      cellWrap: 'nowrap',
+      cell: (role) =>
+        role.member_count === undefined || role.member_count === null
+          ? t('common.emptyValue')
+          : role.member_count,
+    },
+    {
+      id: 'builtin',
+      header: t('permissions.roles.column.builtin'),
+      priority: 'low',
+      cellWrap: 'nowrap',
+      cell: (role) =>
+        role.builtin
+          ? t('permissions.roles.builtinYes')
+          : t('permissions.roles.builtinNo'),
+    },
+    {
+      id: 'actions',
+      header: t('permissions.roles.column.actions'),
+      cellWrap: 'nowrap',
+      cell: (role) => {
+        const locked = lockedReason(role, protectedRoles)
+        const failed = failedRole === role.role
+        const errorId = `permissions-role-error-${encodeURIComponent(role.role)}`
+        const selected = selectedRole === role.role
+        return (
+          <Box>
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                columnGap: 1,
+                rowGap: 1,
+              }}
+            >
+              {locked === null ? (
+                <>
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="outlined"
+                    aria-label={t('permissions.roles.manageGrantsAria', {
+                      role: role.role,
+                    })}
+                    aria-pressed={selected}
+                    onClick={() => onSelect(role.role)}
+                  >
+                    {t('permissions.roles.manageGrants')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="outlined"
+                    aria-label={t('permissions.roles.editDescriptionAria', {
+                      role: role.role,
+                    })}
+                    onClick={() => onEditDescription(role)}
+                  >
+                    {t('permissions.roles.editDescription')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    aria-label={t('permissions.roles.removeAria', {
+                      role: role.role,
+                    })}
+                    aria-invalid={failed}
+                    aria-describedby={failed ? errorId : undefined}
+                    disabled={busy}
+                    loading={busy}
+                    onClick={() => onRemove(role)}
+                  >
+                    {t('permissions.roles.remove')}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="outlined"
+                    aria-label={t('permissions.roles.viewGrantsAria', {
+                      role: role.role,
+                    })}
+                    aria-pressed={selected}
+                    onClick={() => onSelect(role.role)}
+                  >
+                    {t('permissions.roles.viewGrants')}
+                  </Button>
+                  <Typography variant="body2" color="text.secondary">
+                    {locked === 'builtin'
+                      ? t('permissions.roles.builtinLocked')
+                      : locked === 'protected'
+                        ? t('permissions.roles.protectedReadOnly')
+                        : t('permissions.roles.noManageReadOnly')}
+                  </Typography>
+                </>
+              )}
+            </Box>
+            {failed && failureText !== null && (
+              <Typography
+                id={errorId}
+                variant="caption"
+                color="error"
+                sx={{ display: 'block', mt: 0.5 }}
+              >
+                {failureText}
+              </Typography>
+            )}
+          </Box>
+        )
+      },
+    },
+  ]
+
+  return (
+    <DataTable
+      rows={roles}
+      columns={columns}
+      rowKey={(role) => role.role}
+      pinLastColumn
+    />
+  )
+}

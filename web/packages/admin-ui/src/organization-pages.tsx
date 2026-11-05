@@ -9,8 +9,9 @@
  * are unchanged. The members and invitations wrapper mounts the
  * organization-only page (`OrganizationMembersPage`), whose identities
  * resolve from the tenant's member read and which never reaches the platform
- * account surface. The roles wrapper hands over the host's protected role
- * names so the tenant role page renders them read-only.
+ * account surface. The roles wrapper mounts the organization-only role page
+ * and hands over the host's protected role names so it renders them
+ * read-only.
  *
  * The wrappers exist for the organization pages whose tenant-scoped surface
  * the package ships: invitations and membership, SSO providers, tenant
@@ -23,8 +24,8 @@ import {
   useOrganizationAdminTenant,
 } from './OrganizationAdminProvider.js'
 import { OrganizationMembersPage } from './OrganizationMembersPage.js'
+import { OrganizationRolesPage } from './OrganizationRolesPage.js'
 import { OrganizationSecurityPage } from './OrganizationSecurityPage.js'
-import { PermissionsPage } from './PermissionsPage.js'
 import { SsoPage } from './SsoPage.js'
 
 /** Members and invitations, scoped to the host's current tenant. */
@@ -44,11 +45,7 @@ export function OrganizationPermissionsPage(): ReactElement {
   const tenant = useOrganizationAdminTenant()
   const protectedRoles = useOrganizationAdminProtectedRoles()
   return (
-    <PermissionsPage
-      tenant={tenant}
-      tenantMode
-      protectedRoles={protectedRoles}
-    />
+    <OrganizationRolesPage tenant={tenant} protectedRoles={protectedRoles} />
   )
 }
 

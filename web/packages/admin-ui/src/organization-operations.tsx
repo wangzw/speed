@@ -78,6 +78,8 @@ import {
   getAuthzTenantadminGrantsListQueryKey,
   getAuthzTenantadminGrantsListQueryOptions,
   getAuthzTenantadminPermissionsListQueryOptions,
+  getAuthzTenantadminRolesBindingsListQueryKey,
+  getAuthzTenantadminRolesBindingsListQueryOptions,
   getAuthzTenantadminRolesListQueryKey,
   getAuthzTenantadminRolesListQueryOptions,
   getSettingsTenantadminSettingsListQueryKey,
@@ -89,7 +91,10 @@ import type {
   AuthzTenantAdminBindingView,
   AuthzTenantAdminGrantView,
   AuthzTenantAdminPermissionView,
+  AuthzTenantAdminRoleBindingView,
   AuthzTenantAdminRoleView,
+  AuthzTenantadminRolesBindingsList200,
+  AuthzTenantadminRolesBindingsListParams,
   SettingsTenantAdminSetting,
   SettingsTenantAdminSettingSource,
   SettingsTenantAdminSettings,
@@ -137,6 +142,19 @@ export type AdminTenantGrant = AuthzTenantAdminGrantView
 /** One role binding within a tenant (GET .../tenants/{tenant}/bindings). */
 export type AdminTenantBinding = AuthzTenantAdminBindingView
 
+/** One account holding a role, as the role-usage read reports it: the
+ * account, the display name the host's identity reader resolved, whether
+ * the membership is active (unknown when no reader answered) and when the
+ * binding was written. */
+export type AdminTenantRoleBinding = AuthzTenantAdminRoleBindingView
+
+/** One page of a role's holders together with the cursor of the next page. */
+export type AdminTenantRoleBindingPage = AuthzTenantadminRolesBindingsList200
+
+/** The role-usage read's cursor parameters. */
+export type AdminTenantRoleBindingsQuery =
+  AuthzTenantadminRolesBindingsListParams
+
 /** PUT .../tenants/{tenant}/settings/{namespace}/{key} body: the item to
  * write on the tenant layer. */
 export interface AdminTenantSetSettingInput {
@@ -153,11 +171,22 @@ export interface AdminTenantRemoveSettingInput {
   readonly key: string
 }
 
-/** PUT .../tenants/{tenant}/roles/{role} body: a role's declared shape. */
+/**
+ * PUT .../tenants/{tenant}/roles/{role} body: a role's declared shape. The
+ * role name is the key a binding holds and is never renamed, so a write
+ * names an existing role or creates one; `description` is the operator's
+ * free text.
+ *
+ * `descriptionKey` is accepted only for the shared permissions page's
+ * tenant mode, which predates the free-text field; the role page always
+ * writes `description`. The generated contract lets `description` win when
+ * both are present.
+ */
 export interface AdminTenantWriteRoleInput {
   readonly tenant: string
   readonly role: string
-  readonly descriptionKey: string
+  readonly description?: string
+  readonly descriptionKey?: string
 }
 
 /** A tenant-and-role target (delete a role, list its grants). */
@@ -244,6 +273,14 @@ export interface OrganizationAdminOperations
     tenant: string,
     role: string | undefined,
   ) => UseQueryResult<readonly AdminTenantGrant[], unknown>
+  /** GET .../tenants/{tenant}/roles/{role}/bindings -- one page of the
+   * accounts holding the role, with the cursor of the next page (disabled
+   * while no role is chosen). */
+  readonly useTenantRoleBindings: (
+    tenant: string,
+    role: string | undefined,
+    params?: AdminTenantRoleBindingsQuery,
+  ) => UseQueryResult<AdminTenantRoleBindingPage, unknown>
   /** GET .../tenants/{tenant}/bindings -- a tenant's bindings. */
   readonly useTenantBindings: (
     tenant: string,
@@ -605,6 +642,19 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     })
   },
 
+  useTenantRoleBindings: (tenant, role, params) => {
+    const options = getAuthzTenantadminRolesBindingsListQueryOptions(
+      tenant,
+      role ?? '',
+      params,
+    )
+    return useQuery({
+      ...options,
+      queryKey: tenantQueryKey(tenant, ...options.queryKey),
+      enabled: tenant !== '' && role !== undefined && role !== '',
+    })
+  },
+
   useTenantBindings: (tenant) => {
     const options = getAuthzTenantadminBindingsListQueryOptions(tenant)
     return useQuery({
@@ -633,7 +683,9 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     return useMutation({
       mutationFn: (input: AdminTenantWriteRoleInput) =>
         authzTenantadminRolesPut(input.tenant, input.role, {
-          description_key: input.descriptionKey,
+          ...(input.description === undefined
+            ? { description_key: input.descriptionKey ?? '' }
+            : { description: input.description }),
         }),
       onSuccess: (_answer, input) => {
         invalidateTenantRoles(queryClient, input.tenant)
@@ -663,6 +715,18 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
               input.tenant,
               input.role,
             ),
+          ),
+        })
+        // The role's holder list is part of the role's usage; removing the
+        // role leaves it meaningless. The bare path is the prefix of every
+        // page of that read (the page's cursor is the key's trailing part).
+        void queryClient.invalidateQueries({
+          queryKey: tenantQueryKey(
+            input.tenant,
+            getAuthzTenantadminRolesBindingsListQueryKey(
+              input.tenant,
+              input.role,
+            )[0],
           ),
         })
         invalidateTenantAccountBindings(queryClient, input.tenant)

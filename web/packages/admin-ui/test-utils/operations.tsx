@@ -106,6 +106,8 @@ import type {
   AdminTenantPermission,
   AdminTenantRemoveSettingInput,
   AdminTenantRole,
+  AdminTenantRoleBindingPage,
+  AdminTenantRoleBindingsQuery,
   AdminTenantRoleRef,
   AdminTenantSetSettingInput,
   AdminTenantSettings,
@@ -229,6 +231,11 @@ export interface AdminBackend {
     tenant: string,
     role: string,
   ) => Promise<readonly AdminTenantGrant[]>
+  listTenantRoleBindings: (
+    tenant: string,
+    role: string,
+    params?: AdminTenantRoleBindingsQuery,
+  ) => Promise<AdminTenantRoleBindingPage>
   grantTenantPermission: (input: AdminTenantGrantRef) => Promise<void>
   revokeTenantPermission: (input: AdminTenantGrantRef) => Promise<void>
   listTenantBindings: (tenant: string) => Promise<readonly AdminTenantBinding[]>
@@ -348,6 +355,8 @@ export function makeAdminBackend(
     removeTenantRole: () => Promise.resolve(),
     listTenantPermissions: () => Promise.resolve([]),
     listTenantGrants: () => Promise.resolve([]),
+    listTenantRoleBindings: () =>
+      Promise.resolve({ bindings: [], next_cursor: '' }),
     grantTenantPermission: () => Promise.resolve(),
     revokeTenantPermission: () => Promise.resolve(),
     listTenantBindings: () => Promise.resolve([]),
@@ -525,6 +534,9 @@ function tenantPermissionsKey(tenant: string) {
 }
 function tenantGrantsKey(tenant: string, role: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-grants', role)
+}
+function tenantRoleBindingsKey(tenant: string, role: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-role-bindings', role)
 }
 function tenantBindingsKey(tenant: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-bindings')
@@ -1148,6 +1160,13 @@ export function createAdminOperations(
         queryFn: () => backend.listTenantGrants(tenant, role ?? ''),
         enabled: tenant !== '' && role !== undefined && role !== '',
       }),
+    useTenantRoleBindings: (tenant, role, params) =>
+      useQuery({
+        queryKey: [...tenantRoleBindingsKey(tenant, role ?? ''), params ?? null],
+        queryFn: () =>
+          backend.listTenantRoleBindings(tenant, role ?? '', params),
+        enabled: tenant !== '' && role !== undefined && role !== '',
+      }),
     useTenantBindings: (tenant) =>
       useQuery({
         queryKey: tenantBindingsKey(tenant),
@@ -1187,6 +1206,9 @@ export function createAdminOperations(
           })
           void client.invalidateQueries({
             queryKey: tenantGrantsKey(input.tenant, input.role),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantRoleBindingsKey(input.tenant, input.role),
           })
         },
       })

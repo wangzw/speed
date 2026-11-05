@@ -512,17 +512,34 @@
       "column": {
         "role": "Role",
         "builtin": "Built-in",
-        "description": "Description (message key)",
+        "description": "Description",
+        "permissions": "Permissions",
+        "members": "Members",
         "actions": "Actions"
       },
       "builtinYes": "Yes",
       "builtinNo": "No",
       "builtinLocked": "A built-in role cannot be changed or deleted",
       "protectedReadOnly": "This role is protected by the deployment and is read-only: it cannot be changed, deleted, or have its grants altered.",
+      "noManageReadOnly": "You do not have permission to manage roles; this role is read-only.",
       "create": {
         "roleLabel": "Role name",
-        "descriptionLabel": "Description (message key)",
-        "submit": "Save role"
+        "descriptionLabel": "Description",
+        "submit": "Create role",
+        "duplicate": "This role already exists; edit its description instead."
+      },
+      "editDescription": "Edit description",
+      "editDescriptionAria": "Edit the description of role {{role}}",
+      "description": {
+        "title": "Edit role description",
+        "close": "Close the description editor",
+        "roleLabel": "Role name",
+        "descriptionLabel": "Description",
+        "counter": "{{count}}/{{max}} characters",
+        "tooLong": "The description cannot exceed {{max}} characters.",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saved": "The description of role \"{{role}}\" was saved."
       },
       "viewGrants": "View grants",
       "viewGrantsAria": "View grants (role {{role}})",
@@ -543,8 +560,13 @@
       "forRole": "Grants of role \"{{role}}\"",
       "builtinReadOnly": "This role is built-in; its grants are read-only and cannot be granted or revoked.",
       "protectedReadOnly": "This role is protected by the deployment; its grants are read-only and cannot be granted or revoked.",
+      "noManageReadOnly": "You do not have permission to manage roles; the grants are read-only.",
       "permissionLabel": "Permission",
       "add": "Grant",
+      "noneGrantable": "The catalog carries no permission you may grant.",
+      "dangerousTitle": "Grant a high-risk permission",
+      "dangerousMessage": "Permission {{permission}} is high-risk; granting it to role \"{{role}}\" widens that role's power. Click again to confirm.",
+      "dangerousConfirm": "Confirm grant",
       "loading": "Loading grants",
       "empty": {
         "title": "No grants",
@@ -561,6 +583,7 @@
       },
       "revoke": "Revoke",
       "revokeAria": "Revoke permission {{permission}}",
+      "revokeUnavailable": "This grant does not map to the current permission catalog, so it cannot be revoked.",
       "granted": "Permission {{permission}} granted to role \"{{role}}\"",
       "revoked": "Permission {{permission}} revoked from role \"{{role}}\""
     },
@@ -576,8 +599,52 @@
         "description": "This content didn't load. Try again shortly."
       },
       "retry": "Retry",
+      "expand": "Expand the permission catalog",
+      "collapse": "Collapse the permission catalog",
+      "dangerous": "High risk",
+      "notGrantable": "You may not grant this",
+      "noMatches": "No matching permissions.",
+      "search": {
+        "label": "Search permissions",
+        "placeholder": "Search by name or permission code"
+      },
+      "group": {
+        "authorization": "Authorization",
+        "membership": "Membership",
+        "identity": "Identity",
+        "settings": "Settings",
+        "other": "Other"
+      },
       "column": {
         "permission": "Permission"
+      }
+    },
+    "usage": {
+      "title": "Usage",
+      "pickRole": "Select a role above to see how it is used.",
+      "memberCount": "Active members: {{count}}",
+      "memberCountUnavailable": "Member status is unavailable.",
+      "viewInMembers": "View in the members page",
+      "loading": "Loading the members holding this role",
+      "retry": "Retry",
+      "error": {
+        "title": "Usage could not be loaded",
+        "description": "This content didn't load. Try again shortly."
+      },
+      "empty": {
+        "title": "No members",
+        "description": "No member holds this role right now."
+      },
+      "column": {
+        "name": "Member",
+        "account": "Account",
+        "status": "Status",
+        "grantedAt": "Granted at"
+      },
+      "status": {
+        "active": "Active",
+        "suspended": "Suspended",
+        "unavailable": "Unavailable"
       }
     },
     "bindings": {
