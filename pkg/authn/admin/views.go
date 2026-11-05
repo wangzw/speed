@@ -141,19 +141,22 @@ type AuthnAdminSecretCreated struct {
 type AuthnAdminMember struct {
 	_ struct{} `description:"One account's membership in one tenant."`
 
-	Account     string `json:"account" required:"true" description:"The member account's identifier."`
-	DisplayName string `json:"display_name" required:"true" description:"The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none."`
-	Tenant      string `json:"tenant" required:"true" description:"The tenant's identifier."`
-	Active      bool   `json:"active" required:"true" description:"True when the membership is in force; false means suspended, which reads as not a member."`
-	SSOExempt   bool   `json:"sso_exempt" required:"true" description:"True when the member is exempt from the tenant's enforced SSO requirement."`
-	Source      string `json:"source" required:"true" description:"How the membership came to exist: admin, invite, import or jit:<provider identifier>."`
+	Account     string    `json:"account" required:"true" description:"The member account's identifier."`
+	DisplayName string    `json:"display_name" required:"true" description:"The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none."`
+	Tenant      string    `json:"tenant" required:"true" description:"The tenant's identifier."`
+	Active      bool      `json:"active" required:"true" description:"True when the membership is in force; false means suspended, which reads as not a member."`
+	SSOExempt   bool      `json:"sso_exempt" required:"true" description:"True when the member is exempt from the tenant's enforced SSO requirement."`
+	Source      string    `json:"source" required:"true" description:"How the membership came to exist: admin, invite, import or jit:<provider identifier>."`
+	Roles       []string  `json:"roles" required:"true" description:"The role names the account holds in the tenant, ascending and without duplicates; always an array and never null, empty when it holds none."`
+	JoinedAt    time.Time `json:"joined_at" required:"true" description:"When the account joined the tenant, as an RFC 3339 instant in UTC."`
 }
 
 // AuthnAdminMemberList is one page of a tenant's memberships.
 type AuthnAdminMemberList struct {
-	_ struct{} `description:"One page of a tenant's memberships, in ascending account-identifier order."`
+	_ struct{} `description:"One page of a tenant's memberships, in ascending account-identifier order, and the cursor of the next page."`
 
-	Members []AuthnAdminMember `json:"members" required:"true" description:"The memberships on this page; the empty array when the tenant has none."`
+	Members    []AuthnAdminMember `json:"members" required:"true" description:"The memberships on this page; the empty array when the tenant has none."`
+	NextCursor string             `json:"next_cursor" required:"true" description:"The cursor of the next page, empty on the last page"`
 }
 
 // AuthnAdminProviderDomain is one email domain a provider has claimed, with its

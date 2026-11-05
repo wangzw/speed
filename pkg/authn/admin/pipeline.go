@@ -17,8 +17,15 @@ import (
 )
 
 // typePrefix starts the Problem.Type of every failure this capability's
-// handlers write, the code following it being one of mount's closed table.
+// handlers write, the code following it being one of mount's table or one this
+// package declares.
 const typePrefix = "urn:speed:authn:"
+
+// codeCannotSuspendSelf is the problem code of the self-suspension refusal: a
+// handler of this capability produces it, so it lives beside typePrefix rather
+// than in mount's table, which names the codes its request pipeline writes. The
+// type it produces is urn:speed:authn:cannot-suspend-self.
+const codeCannotSuspendSelf = "cannot-suspend-self"
 
 // errNotFound marks a capability failure that means the object the route names
 // is not there. A management route answers it as a bare 404, which carries no
@@ -286,6 +293,8 @@ func (m *product) answer(op string, err error) error {
 		return authnFailure(http.StatusConflict, mount.CodeConflict)
 	case errors.Is(err, authn.ErrLastLoginMethod):
 		return authnFailure(http.StatusConflict, mount.CodeLastLoginMethod)
+	case errors.Is(err, authn.ErrCannotSuspendSelf):
+		return authnFailure(http.StatusConflict, codeCannotSuspendSelf)
 	case errors.Is(err, authn.ErrUnsupportedRegion):
 		return authnFailure(http.StatusBadRequest, mount.CodeUnsupportedRegion)
 	default:

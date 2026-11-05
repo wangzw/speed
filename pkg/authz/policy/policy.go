@@ -106,6 +106,11 @@ func Module() core.Module {
 			{Token: (*authn.AccountLifecycle)(nil)},
 			{Token: (*authn.MembershipLifecycle)(nil)},
 			{Token: (*authn.MembershipGuard)(nil)},
+			// The member listing's optional seam. It stands beside the lifecycle
+			// hooks and the guard rather than exclusively: a host that holds
+			// policy of its own may deliver one too, and the listing takes the
+			// one the registry resolves.
+			{Token: (*authn.MemberRoleReader)(nil)},
 		},
 		Resources: []any{
 			permissions,
@@ -199,6 +204,7 @@ var (
 	_ authn.AccountLifecycle    = (*product)(nil)
 	_ authn.MembershipLifecycle = (*product)(nil)
 	_ authn.MembershipGuard     = (*product)(nil)
+	_ authn.MemberRoleReader    = (*product)(nil)
 )
 
 // product is this module's product and the implementation of the enforcement

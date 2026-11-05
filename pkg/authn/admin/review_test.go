@@ -525,6 +525,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		{"binding conflict", authn.ErrBindingConflict, http.StatusConflict, mount.CodeConflict},
 		{"domain claimed", authn.ErrDomainClaimed, http.StatusConflict, mount.CodeConflict},
 		{"last login method", authn.ErrLastLoginMethod, http.StatusConflict, "last-login-method"},
+		{"cannot suspend self", authn.ErrCannotSuspendSelf, http.StatusConflict, "cannot-suspend-self"},
 		{"factor limit", authn.ErrFactorLimit, http.StatusConflict, mount.CodeConflict},
 		{"last factor", authn.ErrLastFactor, http.StatusConflict, mount.CodeConflict},
 		{"unsupported region", authn.ErrUnsupportedRegion, http.StatusBadRequest, mount.CodeUnsupportedRegion},

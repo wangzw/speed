@@ -472,3 +472,34 @@ func TestDeletingAnAccountDoesNotConsultTheMembershipGuardOrHook(t *testing.T) {
 		}
 	})
 }
+
+// Re-adding a member who left writes the membership again and runs no removal
+// hook, so a module that cleared the account's roles when it left has nothing to
+// restore on the rejoin and the member starts from no roles.
+func TestReAddingARemovedMemberRunsNoRemovalHook(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("returning-member", "")
+		hook := &recordingMembershipHook{}
+		h.p.membershipHooks = []authn.MembershipLifecycle{hook}
+
+		join := authn.Membership{Account: id, Tenant: "acme", Active: true, Source: authn.ReasonAdmin}
+		if err := h.p.Put(ctx, join); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		if err := h.p.Remove(ctx, id, "acme"); err != nil {
+			t.Fatalf("removing: %v", err)
+		}
+		if err := h.p.Put(ctx, join); err != nil {
+			t.Fatalf("rejoining: %v", err)
+		}
+
+		want := []string{"acme:" + id.String()}
+		if got := hook.seen(); !slices.Equal(got, want) {
+			t.Errorf("the membership hook saw %v, want the removal alone %v", got, want)
+		}
+		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 1 {
+			t.Errorf("%d membership row(s) after the rejoin, want one", n)
+		}
+	})
+}

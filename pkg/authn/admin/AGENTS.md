@@ -65,6 +65,26 @@ The API is the package's godoc.
   belongs to another tenant answers not found, the same answer an absent object
   gets, so the path cannot be used to probe another tenant's objects. `PUT` may
   not change a provider's tenant.
+- **The member listing carries roles, the join instant and the next page's
+  cursor, and its role read is optional.** Each row carries the tenant's role
+  names for the account, ascending and without duplicates, and the membership's
+  creation instant in UTC; the page carries `next_cursor`, empty on the last
+  page. The roles come from one bulk call to `authn.MemberRoleReader`, not one
+  read per row. An assembly with no implementation answers empty role arrays, and
+  a read that fails is a `Warn` line and empty role arrays rather than a failed
+  page: the member list is the primary task of the surface and a policy outage
+  costs it its roles, not its rows. The page is read one row longer than it shows
+  below the store's ceiling; at the ceiling the full page is asked again for a
+  single row past its last account, because the read cannot exceed its own bound.
+- **A member write may not suspend its own caller.** `PUT` with `active` false
+  and the path's account the effective caller is a 409
+  `cannot-suspend-self` (`urn:speed:authn:cannot-suspend-self`), decided in the
+  handler after the `Decider` and before the mandatory audit, so the refusal
+  writes no row and calls no capability. The membership store's `Put` keeps its
+  plain idempotent shape; another administrator may suspend the caller, and
+  resuming oneself is no refusal. The last-tenant-administrator guard on removal
+  is unchanged and is what keeps a business tenant governable when a removal now
+  clears that tenant's bindings.
 - **The mandatory audit is written outside any transaction and before the
   action.** A write whose row does not land is answered 503 and the capability
   is not called; a write that fails after it gets a `failed` row linked to the

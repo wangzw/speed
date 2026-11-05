@@ -46,11 +46,10 @@ func TestRemovingASystemMembershipRevokesThePlatformDomainBindings(t *testing.T)
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 0)
 }
 
-// Only a removal cascades: suspending the membership is a state change the
-// account can be resumed from, and the ADR names removal alone. The event
-// carries the tenant in its envelope, so a removal in a business tenant leaves
-// the platform-domain bindings alone as well.
-func TestOnlyASystemMembershipRemovalCascades(t *testing.T) {
+// Only a removal cascades, and only in the tenant the envelope names:
+// suspending the membership is a state change the account can be resumed from,
+// and a removal in a business tenant leaves every other tenant's bindings alone.
+func TestOnlyARemovalCascadesAndOnlyInItsOwnTenant(t *testing.T) {
 	p := newFixture(t).product
 	bus := newRecordingBus()
 	wireProduct(t, p, bus)
@@ -124,4 +123,62 @@ func TestThePolicyModuleSubscribesToMembershipChanges(t *testing.T) {
 	if n := len(bus.handlers[authn.EventMembershipChanged]); n != 1 {
 		t.Fatalf("%d handlers are subscribed to %s, want 1", n, authn.EventMembershipChanged)
 	}
+}
+
+// An explicit removal clears every binding the account holds in the tenant it
+// left, not only in the platform domain: a member who is removed from a business
+// tenant loses the roles that tenant gave them, while their roles elsewhere stay.
+// The lifecycle hook is the ordinary path; the event is the crash-window
+// compensation and runs the same statement.
+func TestRemovingAMembershipClearsEveryBindingInItsTenant(t *testing.T) {
+	p := newFixture(t).product
+	seedPolicy(t, p, "acme", "alpha", "acct-1", "account", "read")
+	seedPolicy(t, p, "globex", "globex-only", "acct-1", "account", "read")
+	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.TenantAdminRole), "acct-1", "tenant", "read")
+
+	if err := p.MembershipRemoved(t.Context(), "acct-1", "acme"); err != nil {
+		t.Fatalf("MembershipRemoved(acme): %v", err)
+	}
+	assertBindingCount(t, p, "acme", "acct-1", 0)
+	assertBindingCount(t, p, "globex", "acct-1", 1)
+	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 1)
+
+	// A retry, and the rejoin that follows it, start from no binding: the hook is
+	// idempotent and the membership store writes no binding back.
+	if err := p.MembershipRemoved(t.Context(), "acct-1", "acme"); err != nil {
+		t.Fatalf("the retried removal: %v", err)
+	}
+	assertBindingCount(t, p, "acme", "acct-1", 0)
+}
+
+// The membership.changed subscription is the compensation for a crash between
+// the removal's commit and the lifecycle hook, so it clears the tenant the
+// envelope names. A suspension is a state the member can be resumed from and
+// clears nothing.
+func TestAMembershipRemovalEventClearsTheTenantsBindings(t *testing.T) {
+	p := newFixture(t).product
+	bus := newRecordingBus()
+	wireProduct(t, p, bus)
+	seedPolicy(t, p, "acme", "alpha", "acct-1", "account", "read")
+	seedPolicy(t, p, "globex", "globex-only", "acct-1", "account", "read")
+
+	bus.deliver(t, authn.EventMembershipChanged, event.Event{
+		Type:     authn.EventMembershipChanged,
+		TenantID: "acme",
+		Payload:  authn.MembershipChanged{AccountID: "acct-1", Change: "suspended"},
+	})
+	assertBindingCount(t, p, "acme", "acct-1", 1)
+
+	removed := event.Event{
+		Type:     authn.EventMembershipChanged,
+		TenantID: "acme",
+		Payload:  authn.MembershipChanged{AccountID: "acct-1", Change: "removed"},
+	}
+	bus.deliver(t, authn.EventMembershipChanged, removed)
+	assertBindingCount(t, p, "acme", "acct-1", 0)
+	assertBindingCount(t, p, "globex", "acct-1", 1)
+
+	// A second delivery of the same event is no work and no error.
+	bus.deliver(t, authn.EventMembershipChanged, removed)
+	assertBindingCount(t, p, "acme", "acct-1", 0)
 }

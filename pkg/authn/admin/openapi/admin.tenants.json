@@ -30,6 +30,18 @@
             "description": "The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none.",
             "type": "string"
           },
+          "joined_at": {
+            "description": "When the account joined the tenant, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "roles": {
+            "description": "The role names the account holds in the tenant, ascending and without duplicates; always an array and never null, empty when it holds none.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "source": {
             "description": "How the membership came to exist: admin, invite, import or jit:<provider identifier>.",
             "type": "string"
@@ -49,12 +61,14 @@
           "tenant",
           "active",
           "sso_exempt",
-          "source"
+          "source",
+          "roles",
+          "joined_at"
         ],
         "type": "object"
       },
       "AuthnAdminMemberList": {
-        "description": "One page of a tenant's memberships, in ascending account-identifier order.",
+        "description": "One page of a tenant's memberships, in ascending account-identifier order, and the cursor of the next page.",
         "properties": {
           "members": {
             "description": "The memberships on this page; the empty array when the tenant has none.",
@@ -62,10 +76,15 @@
               "$ref": "#/components/schemas/AuthnAdminMember"
             },
             "type": "array"
+          },
+          "next_cursor": {
+            "description": "The cursor of the next page, empty on the last page",
+            "type": "string"
           }
         },
         "required": [
-          "members"
+          "members",
+          "next_cursor"
         ],
         "type": "object"
       },
@@ -340,7 +359,7 @@
   "paths": {
     "/{tenant}/members": {
       "get": {
-        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
+        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
         "operationId": "authn.admin.members.list",
         "parameters": [
           {
@@ -360,7 +379,7 @@
             }
           },
           {
-            "description": "The account identifier of the last membership on the previous page, or empty for the first page.",
+            "description": "The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last membership on that page.",
             "in": "query",
             "name": "after",
             "schema": {
@@ -549,7 +568,7 @@
         "summary": "Remove an account's membership from a tenant"
       },
       "put": {
-        "description": "Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. Requires membership.manage with the path's tenant.",
+        "description": "Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. An administrator cannot suspend their own membership: that is a 409 cannot-suspend-self, while another administrator may suspend them. Requires membership.manage with the path's tenant.",
         "operationId": "authn.admin.members.put",
         "parameters": [
           {
@@ -626,6 +645,16 @@
           },
           "404": {
             "description": "No such account"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller cannot suspend their own membership"
           },
           "413": {
             "content": {

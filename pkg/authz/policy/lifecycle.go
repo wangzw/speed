@@ -53,25 +53,27 @@ func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error 
 // own, so revoking one leaves this module's rows as they were.
 func (p *product) ServiceSecretRevoked(context.Context, authn.AccountID, string) error { return nil }
 
-// MembershipRemoved implements authn.MembershipLifecycle: removing an account's
-// membership of the platform tenant withdraws every binding the account holds in
-// the platform domain.
+// MembershipRemoved implements authn.MembershipLifecycle: an explicit membership
+// removal withdraws every binding the account holds in the tenant it left.
 //
-// The platform administrator role exists only in the platform domain and a
-// binding to it is refused unless the account is an active member of that
-// tenant. Removing the membership has to withdraw the bindings too, or a row
-// granted under a condition that has ceased keeps granting the role. The hook
-// runs on the ordinary path, right after the removal commits, and the
+// Removal is the member leaving the tenant, not a pause: a suspended membership
+// keeps its bindings and can be resumed, while a removal takes the roles away
+// with the membership, so a rejoin starts from none. The cascade reaches the
+// platform domain as well, where the platform administrator role exists only
+// while the account is an active member of that tenant, and it is safe in a
+// business tenant because the removal guard refuses the last tenant
+// administrator: a tenant that stays in service keeps someone who may govern it.
+//
+// The hook runs on the ordinary path, right after the removal commits, and the
 // membership.changed subscription stays as the compensation for a crash between
-// the commit and this call. A removal in a business tenant cascades nothing.
-//
-// The cleanup is idempotent: the account already holding nothing in the domain
-// is no work and no error.
+// the commit and this call. The clear is the manager's own binding-removal path,
+// so the hook and the deletion cascade cannot diverge. It is idempotent: the
+// account already holding nothing in the tenant is no work and no error.
 func (p *product) MembershipRemoved(ctx context.Context, id authn.AccountID, tenant string) error {
-	if tenant != string(authz.PlatformDomain) {
+	if tenant == "" {
 		return nil
 	}
-	return p.withdrawPlatformBindings(ctx, id.String())
+	return p.ClearAccountBindings(ctx, tenant, id.String())
 }
 
 // CheckMembershipRemoval implements authn.MembershipGuard: an explicit removal of
@@ -99,49 +101,29 @@ func (p *product) CheckMembershipRemoval(ctx context.Context, id authn.AccountID
 	return nil
 }
 
-// withdrawPlatformBindings removes every binding the account holds in the
-// platform domain in one statement. It is the cleanup both the synchronous hook
-// and the membership.changed subscription run, so the ordinary path and the
-// crash-window compensation cannot diverge. A second run deletes nothing and is
-// no error.
-func (p *product) withdrawPlatformBindings(ctx context.Context, account string) error {
-	res := p.crossing(ctx).
-		Where("tenant_id = ? AND account_id = ?", string(authz.PlatformDomain), account).
-		Delete(&bindingRow{})
-	if res.Error != nil {
-		return fmt.Errorf("authz/policy: withdrawing the platform-domain bindings of %q: %w", account, res.Error)
-	}
-	return p.afterWrite(ctx)
-}
-
 // membershipChangeRemoved is the payload's change value for a membership that
 // was deleted. The publisher's change values are text agreed between the two
 // ends, and the authentication package documents this one beside the event.
 const membershipChangeRemoved = "removed"
 
-// onMembershipChanged withdraws an account's platform-domain bindings when its
-// membership of the platform tenant is removed.
+// onMembershipChanged withdraws the bindings an account holds in the tenant the
+// envelope names, when its membership of that tenant is removed.
 //
 // The subscription is the compensation for a process that crashed between the
 // removal's commit and MembershipRemoved, and for a replica that did not make
 // the removal. Only a removal cascades: a suspension is a state the account can
-// be resumed from, and the event names the tenant in its envelope, so a change
-// in a business tenant leaves the platform domain alone.
-//
-// The handler is idempotent — a second delivery deletes nothing and still
-// reloads the snapshot. A payload that cannot be read names no account, so there
-// is nothing to withdraw and it is dropped, as the event contract requires of a
+// be resumed from, and its bindings stay. The write is the same clear the hook
+// runs and is idempotent — a second delivery deletes nothing and still reloads
+// the snapshot. A payload that cannot be read names no account, so there is
+// nothing to withdraw and it is dropped, as the event contract requires of a
 // subscriber.
 func (p *product) onMembershipChanged(ctx context.Context, evt event.Event) error {
-	if evt.TenantID != string(authz.PlatformDomain) {
-		return nil
-	}
 	var payload authn.MembershipChanged
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {
 		return nil
 	}
-	if payload.Change != membershipChangeRemoved || payload.AccountID == "" {
+	if payload.Change != membershipChangeRemoved || payload.AccountID == "" || evt.TenantID == "" {
 		return nil
 	}
-	return p.withdrawPlatformBindings(ctx, payload.AccountID)
+	return p.ClearAccountBindings(ctx, evt.TenantID, payload.AccountID)
 }

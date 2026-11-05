@@ -3,6 +3,8 @@ package admin
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"slices"
 	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -10,8 +12,9 @@ import (
 )
 
 // memberViewOf builds one membership as the management routes show it,
-// carrying the account's display name resolved outside the membership store.
-func memberViewOf(mem authn.Membership, displayName string) AuthnAdminMember {
+// carrying the account's display name resolved outside the membership store and
+// the role names the policy side holds for the account.
+func memberViewOf(mem authn.Membership, displayName string, roles []string) AuthnAdminMember {
 	return AuthnAdminMember{
 		Account:     string(mem.Account),
 		DisplayName: displayName,
@@ -19,7 +22,19 @@ func memberViewOf(mem authn.Membership, displayName string) AuthnAdminMember {
 		Active:      mem.Active,
 		SSOExempt:   mem.SSOExempt,
 		Source:      mem.Source,
+		Roles:       roleNames(roles),
+		JoinedAt:    mem.CreatedAt.UTC(),
 	}
+}
+
+// roleNames is the view's role array: ascending, without duplicates and never
+// nil. The reader promises that order already; sorting here holds the view's
+// contract even for an implementation that answers another one.
+func roleNames(names []string) []string {
+	out := make([]string, 0, len(names))
+	out = append(out, names...)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // handleMemberList answers GET /admin/tenants/:tenant/members. The tenant in the
@@ -47,10 +62,11 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant}); err != nil {
 		return AuthnAdminMemberList{}, err
 	}
-	members, err := m.memberships.Members(ctx, in.Tenant, query)
+	members, next, err := m.memberPage(ctx, in.Tenant, query)
 	if err != nil {
 		return AuthnAdminMemberList{}, m.unavailable("listing members", err)
 	}
+	roles := m.rolesByAccount(ctx, in.Tenant)
 	views := make([]AuthnAdminMember, len(members))
 	for i, mem := range members {
 		// The member read carries the account's display name so the workspace
@@ -62,9 +78,70 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 		if err != nil {
 			return AuthnAdminMemberList{}, err
 		}
-		views[i] = memberViewOf(mem, name)
+		views[i] = memberViewOf(mem, name, roles[mem.Account])
 	}
-	return AuthnAdminMemberList{Members: views}, nil
+	return AuthnAdminMemberList{Members: views, NextCursor: next}, nil
+}
+
+// memberPage reads one page of members and answers the cursor of the next page,
+// which is empty when this one is the last. The membership store's read cannot
+// ask for one row past its ceiling, so below the ceiling the page is read one
+// row longer than it shows and the extra row is the probe; at the ceiling the
+// full page is asked again for a single row past its last account.
+func (m *product) memberPage(ctx context.Context, tenant string, query authn.MemberQuery) ([]authn.Membership, string, error) {
+	limit := query.EffectiveLimit()
+	var members []authn.Membership
+	hasMore := false
+	if limit < authn.MaxPageLimit {
+		query.Limit = limit + 1
+		read, err := m.memberships.Members(ctx, tenant, query)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(read) > limit {
+			hasMore = true
+			read = read[:limit]
+		}
+		members = read
+	} else {
+		query.Limit = limit
+		read, err := m.memberships.Members(ctx, tenant, query)
+		if err != nil {
+			return nil, "", err
+		}
+		members = read
+		if len(read) == limit {
+			probe := query
+			probe.Limit = 1
+			probe.After = read[limit-1].Account.String()
+			beyond, err := m.memberships.Members(ctx, tenant, probe)
+			if err != nil {
+				return nil, "", err
+			}
+			hasMore = len(beyond) > 0
+		}
+	}
+	if !hasMore || len(members) == 0 {
+		return members, "", nil
+	}
+	return members, members[len(members)-1].Account.String(), nil
+}
+
+// rolesByAccount reads every member's roles in one bulk call. The seam is
+// optional and the read is allowed to fail: a listing that cannot show roles is
+// still a listing, so a failure is a Warn line and empty role arrays rather
+// than a failed page.
+func (m *product) rolesByAccount(ctx context.Context, tenant string) map[authn.AccountID][]string {
+	if m.roleReader == nil || tenant == "" {
+		return nil
+	}
+	roles, err := m.roleReader.MemberRoles(ctx, tenant)
+	if err != nil {
+		m.logger.Warn(ModuleName+": reading the members' roles failed; the listing is answered without them",
+			slog.String("cause", err.Error()))
+		return nil
+	}
+	return roles
 }
 
 // memberDisplayName reads the display name of one member account. A missing
@@ -104,6 +181,15 @@ func (m *product) handleMemberPut(ctx context.Context, in memberWriteInput, _ *s
 		Target: string(accountID), TargetAccount: string(accountID),
 	}); err != nil {
 		return nil, err
+	}
+	// An administrator cannot suspend their own membership: the tenant would
+	// lose one of its active administrators and the write is the one way an
+	// administrator could stop themselves from governing it. Another
+	// administrator may suspend them, and resuming oneself is no refusal. The
+	// check is the route's, not the membership store's, so the store's write
+	// stays a plain idempotent write.
+	if !in.Active && accountID == id.Account() {
+		return nil, m.answer("refusing a self-suspension", authn.ErrCannotSuspendSelf)
 	}
 	actionID := newActionID()
 	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, string(accountID),

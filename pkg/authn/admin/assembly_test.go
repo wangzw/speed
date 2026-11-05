@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/vislake/speed/pkg/audit"
@@ -28,6 +29,15 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 		Provides: provides,
 		New:      func(context.Context, *core.Registry) (any, error) { return instance, nil },
 	}
+}
+
+// membersOf is the membership store a drive registers: the one the case
+// supplied, or a fresh one.
+func membersOf(m *fakeMemberships) *fakeMemberships {
+	if m != nil {
+		return m
+	}
+	return newMemberships()
 }
 
 // TestTheDescriptorNamesWhatItRequiresAndDelivers holds the descriptor's shape:
@@ -88,6 +98,14 @@ type assembly struct {
 	// audit is the audit capability; nil leaves it out, which must fail the
 	// drive with a missing provider before any instance is built.
 	audit audit.Audit
+	// roles is the optional member-role read; nil leaves it out, which is a
+	// legal assembly with empty role arrays.
+	roles authn.MemberRoleReader
+	// members is the membership store; nil gets a fresh one.
+	members *fakeMemberships
+	// decider is the decision seam; nil leaves a legal assembly that refuses
+	// every request.
+	decider authn.Decider
 }
 
 // drive advances the assembly to Start and returns what the drive returned. It
@@ -109,8 +127,16 @@ func (a assembly) drive(t *testing.T, run func(m *mounttest.Mounter)) error {
 	names = append(names, "stand-in.accounts")
 	reg.Register(standIn("stand-in.account-admin", newAccountAdmin(), (*authn.AccountAdmin)(nil)))
 	names = append(names, "stand-in.account-admin")
-	reg.Register(standIn("stand-in.memberships", newMemberships(), (*authn.Memberships)(nil)))
+	reg.Register(standIn("stand-in.memberships", membersOf(a.members), (*authn.Memberships)(nil)))
 	names = append(names, "stand-in.memberships")
+	if a.roles != nil {
+		reg.Register(standIn("stand-in.member-roles", a.roles, (*authn.MemberRoleReader)(nil)))
+		names = append(names, "stand-in.member-roles")
+	}
+	if a.decider != nil {
+		reg.Register(standIn("stand-in.decider", a.decider, (*authn.Decider)(nil)))
+		names = append(names, "stand-in.decider")
+	}
 	reg.Register(standIn("stand-in.signup-state", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
 	names = append(names, "stand-in.signup-state")
 	if a.audit != nil {
@@ -152,5 +178,36 @@ func TestTheDriveFailsWithoutAnAuditCapability(t *testing.T) {
 	err := assembly{}.drive(t, func(*mounttest.Mounter) {})
 	if !errors.Is(err, core.ErrMissingProvider) {
 		t.Fatalf("the drive = %v, want ErrMissingProvider", err)
+	}
+}
+
+// TestAnAssemblyThatDeliversTheMemberRoleReaderUsesIt holds the optional seam
+// end to end: the admitted capability is taken up in Init, and the member
+// listing carries the roles it answers without the membership store knowing
+// about policy.
+func TestAnAssemblyThatDeliversTheMemberRoleReaderUsesIt(t *testing.T) {
+	members := newMemberships()
+	members.put(authn.Membership{Account: userID, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin})
+	roles := &fakeMemberRoles{roles: map[authn.AccountID][]string{userID: {"alpha"}}}
+
+	err := assembly{
+		audit:   &recordingAudit{},
+		roles:   roles,
+		members: members,
+		decider: &fakeDecider{allow: true},
+	}.drive(t, func(m *mounttest.Mounter) {
+		m.As(fresh()...)
+		rec := m.Do(httptest.NewRequest(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("listing members: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+		}
+		member := readMemberPage(t, rec.Body.Bytes()).memberByAccount(t, string(userID))
+		raw, ok := member["roles"].([]any)
+		if !ok || len(raw) != 1 || raw[0] != "alpha" {
+			t.Errorf("the member carries roles = %v, want [alpha]", member["roles"])
+		}
+	})
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
 	}
 }

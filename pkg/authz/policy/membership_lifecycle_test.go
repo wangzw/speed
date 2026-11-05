@@ -35,19 +35,20 @@ func TestMembershipRemovedWithdrawsThePlatformBindings(t *testing.T) {
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 0)
 }
 
-// A membership removed in a business tenant cascades nothing: the platform
-// administrator role exists only in the platform domain, so a business tenant's
-// membership has no platform binding to withdraw.
-func TestMembershipRemovedInABusinessTenantLeavesTheBindings(t *testing.T) {
+// A membership removed in a business tenant clears that tenant's bindings and
+// leaves the account's bindings in every other tenant, the platform domain
+// included. The roles a member held where they served do not follow them out
+// and are not restored by a rejoin.
+func TestMembershipRemovedInABusinessTenantClearsItsOwnBindings(t *testing.T) {
 	p := newFixture(t).product
 	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.PlatformAdminRole), "acct-1", "tenant", "read")
-	seedBinding(t, p, "acme", "acct-1", string(authz.TenantAdminRole))
+	seedPolicy(t, p, "acme", "alpha", "acct-1", "account", "read")
 
 	if err := p.MembershipRemoved(t.Context(), authn.AccountID("acct-1"), "acme"); err != nil {
 		t.Fatalf("MembershipRemoved: %v", err)
 	}
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 1)
-	assertBindingCount(t, p, "acme", "acct-1", 1)
+	assertBindingCount(t, p, "acme", "acct-1", 0)
 }
 
 // The guard refuses the removal of an account that is the only tenant

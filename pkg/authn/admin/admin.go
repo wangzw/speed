@@ -227,6 +227,11 @@ type product struct {
 	domainClaims  domainClaims
 	refreshers    []authn.SSOMetadataRefresher
 	impersonation authn.Impersonation
+	// roleReader answers every member's roles in one bulk read. It is optional:
+	// without it the member listing carries empty role arrays rather than
+	// failing, because a deployment that takes this module in without the policy
+	// module still has a working membership surface.
+	roleReader authn.MemberRoleReader
 	// records is the impersonation capability read through the extended shape
 	// the record routes need; it is nil when the delivered capability does not
 	// answer it.
@@ -353,6 +358,9 @@ func (m *product) wire(reg *core.Registry) error {
 		if r, ok := m.impersonation.(records); ok {
 			m.records = r
 		}
+	}
+	if m.roleReader, err = optional[authn.MemberRoleReader](reg, "the member role reader"); err != nil {
+		return err
 	}
 	m.refreshers = core.ResolveAll[authn.SSOMetadataRefresher](reg)
 	if b, err := core.Resolve[feature.Board](reg); err == nil {

@@ -9,7 +9,10 @@ data, and the account lifecycle cleanup. It delivers `authz.Enforcer`,
 `authz.Reconciler` and `authz.TenantAdminCounter`, each exclusively, and implements
 `authn.AccountLifecycle`, `authn.MembershipLifecycle` and the last-administrator
 `authn.MembershipGuard` (a host may add guards beside it; every guard is asked
-and any refusal refuses). `SubjectPermissions.Held` reads the same snapshot a
+and any refusal refuses). It also implements the optional `authn.MemberRoleReader`
+the member listing reads: one bulk answer of each account's role names in a
+tenant, built over the manager's own binding listing, and delivered beside the
+lifecycle hooks rather than exclusively. `SubjectPermissions.Held` reads the same snapshot a
 decision reads and maps each held (object, action) pair back through the
 catalog's reverse lookup; a pair no declared permission translates to is left
 out of the answer.
@@ -213,14 +216,20 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   `Manager.DeleteBinding` and `MembershipGuard.Lock` take, so a deletion, a
   binding removal and a membership removal cannot interleave across the
   last-administrator check.
-- **The membership lifecycle cascades the platform domain and the guard keeps
-  one tenant administrator.** `MembershipRemoved` withdraws an account's
-  platform-domain bindings when its platform-tenant membership is removed, on the
-  ordinary path right after the removal commits; the `authn.membership.changed`
-  subscription runs the same helper as the crash-window compensation. A removal
-  in a business tenant cascades nothing. `CheckMembershipRemoval` refuses with
+- **The membership lifecycle clears the tenant that was left, and the guard
+  keeps one tenant administrator.** `MembershipRemoved` withdraws every binding
+  an account holds in the tenant it left, through the manager's own
+  `ClearAccountBindings` path, on the ordinary path right after the removal
+  commits; the `authn.membership.changed` subscription runs the same clear for
+  the tenant its envelope names as the crash-window compensation. The cascade
+  reaches the platform domain too: a platform-tenant removal takes the account's
+  platform-domain bindings with it, because the platform administrator role
+  exists only while the account is an active member of that tenant. A suspension
+  clears nothing, because the membership can be resumed. The guard makes the
+  business-tenant cascade safe: `CheckMembershipRemoval` refuses with
   `authn.ErrLastTenantAdmin` when the account is the named tenant's only
-  `TenantAdminRole` binding. `Lock` delegates to the product's `authz.TenantLock`,
+  `TenantAdminRole` binding, so a tenant that stays in service keeps someone who
+  may govern it. `Lock` delegates to the product's `authz.TenantLock`,
   the same lock `DeleteBinding` takes: the host supplies that object and the
   policy module uses its in-process default when the host supplies none, so the
   guard's lock and the binding delete serialise together. `MembershipLock`

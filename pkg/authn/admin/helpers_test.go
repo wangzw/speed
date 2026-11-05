@@ -441,9 +441,24 @@ func (f *fakeMemberships) Members(_ context.Context, tenant string, query authn.
 	f.lastQuery = query
 	var out []authn.Membership
 	for _, m := range f.member {
-		if m.Tenant == tenant {
+		if m.Tenant == tenant && (query.After == "" || m.Account.String() > query.After) {
 			out = append(out, m)
 		}
+	}
+	// The real read orders by account identifier and applies the page bounds,
+	// so a case about cursors observes the same page a request would.
+	slices.SortFunc(out, func(a, b authn.Membership) int {
+		switch {
+		case a.Account < b.Account:
+			return -1
+		case a.Account > b.Account:
+			return 1
+		default:
+			return 0
+		}
+	})
+	if limit := query.EffectiveLimit(); len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
 }
@@ -852,6 +867,27 @@ func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
+// fakeMemberRoles is the policy side's bulk role read.
+type fakeMemberRoles struct {
+	mu    sync.Mutex
+	roles map[authn.AccountID][]string
+	err   error
+	calls int
+}
+
+func (f *fakeMemberRoles) MemberRoles(_ context.Context, _ string) (map[authn.AccountID][]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	return f.roles, f.err
+}
+
+func (f *fakeMemberRoles) seen() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
 // rig is the module with every dependency a case drives.
 type rig struct {
 	t            *testing.T
@@ -862,6 +898,7 @@ type rig struct {
 	accountAdm   *fakeAccountAdmin
 	passwords    *fakePasswords
 	members      *fakeMemberships
+	roles        *fakeMemberRoles
 	sessions     *fakeSessions
 	mfa          *fakeMFA
 	providers    *fakeProviders
@@ -886,6 +923,7 @@ const (
 	noRecords         leaveOut = "records"
 	noAudit           leaveOut = "audit"
 	noDecider         leaveOut = "decider"
+	noMemberRoles     leaveOut = "member-roles"
 )
 
 // newRig builds the module over a mounttest Mounter with every capability
@@ -904,6 +942,7 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 		accountAdm:   newAccountAdmin(),
 		passwords:    &fakePasswords{},
 		members:      newMemberships(),
+		roles:        &fakeMemberRoles{},
 		sessions:     newSessions(),
 		mfa:          &fakeMFA{seasoned: true},
 		providers:    newProviders(),
@@ -957,6 +996,9 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 	}
 	if !left[noDecider] {
 		p.decider = r.decider
+	}
+	if !left[noMemberRoles] {
+		p.roleReader = r.roles
 	}
 	r.p = p
 	p.mountRoutes()
