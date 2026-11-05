@@ -1459,6 +1459,10 @@ export function AccountEntry({
                   whiteSpace: 'nowrap',
                   textAlign: 'left',
                   typography: 'body2',
+                  // The avatar's own track is wider than the navigation's
+                  // 24px icons, so the name takes its own inset on both sides
+                  // instead of crowding the avatar.
+                  pl: '8px',
                   pr: '8px',
                 }}
               >

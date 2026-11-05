@@ -54,6 +54,33 @@ describe('the admin entry surface', () => {
     ).toBeNull()
   })
 
+  it('insets the account row’s name by one step on both sides', async () => {
+    await page.viewport(1100, 900)
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    const trigger = await screen.findByTestId('account-entry-trigger')
+    const avatar = trigger.querySelector('.MuiAvatar-root')
+    expect(avatar).not.toBeNull()
+    const name = Array.from(trigger.querySelectorAll('span')).find(
+      (node) => (node.textContent ?? '').trim() === 'Test User',
+    )
+    expect(name).toBeDefined()
+
+    // The avatar's own track is wider than the navigation's icons, so the
+    // name carries its own inset: one step on each side, rather than sitting
+    // on the navigation label's line with the avatar crowding it.
+    const style = getComputedStyle(name as Element)
+    expect(style.paddingLeft).toBe('8px')
+    expect(style.paddingRight).toBe('8px')
+    const avatarRect = (avatar as Element).getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(name as Element)
+    expect(range.getBoundingClientRect().left - avatarRect.right).toBeCloseTo(
+      12,
+      0,
+    )
+  })
+
   it('paints the unread count beside the trigger, fully inside its hit box', async () => {
     await page.viewport(1100, 900)
     // The scripted backend answers one unread message.
