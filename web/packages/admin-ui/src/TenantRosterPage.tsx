@@ -58,7 +58,6 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   primaryColumnMaxWidthSx,
@@ -82,6 +81,7 @@ import {
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /**
  * The roster's closed status set, one bundle key each under
@@ -466,7 +466,7 @@ export function TenantRosterPage({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('tenants.title')}
         breadcrumbs={[
           { label: t('shell.title') },

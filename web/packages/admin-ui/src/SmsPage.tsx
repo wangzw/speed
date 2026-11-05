@@ -41,7 +41,6 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   pageRefreshRead,
@@ -62,6 +61,7 @@ import {
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminSmsTemplate } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /** The template sources the registry names. */
 const SMS_SOURCES = new Set<string>(['config', 'runtime'])
@@ -358,7 +358,7 @@ export function SmsPage() {
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('sms.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('sms.title') }]}
         actions={

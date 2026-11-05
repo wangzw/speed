@@ -98,7 +98,6 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
-  PageHeader,
   SectionCard,
   primaryColumnMaxWidthSx,
   useWriteFeedback,
@@ -115,6 +114,7 @@ import {
 } from '@speed/ui-kit'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { settingKeyRest, useAdminOperations } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 import type {
   AdminOperations,
   AdminRemoveSettingInput,
@@ -662,7 +662,7 @@ function SettingsPageBody({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('settings.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('settings.title') }]}
         actions={

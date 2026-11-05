@@ -105,7 +105,6 @@ import {
   EmptyState,
   ListSkeleton,
   LONG_TEXT_COLUMN_MAX_WIDTH,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   RefreshButton,
   SectionCard,
@@ -136,6 +135,7 @@ import { useAdminUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminImpersonation } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /** The caller's own impersonation status as the section renders it: the
  * settled grant, or a settled "not impersonating" answer. */
@@ -534,7 +534,7 @@ export function ImpersonationsPage({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('impersonations.title')}
         breadcrumbs={[
           { label: t('shell.title') },

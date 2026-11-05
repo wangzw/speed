@@ -29,6 +29,8 @@ import { useAdminRouteTable } from './internal/route-table.js'
 import { organizationAdminRoutes } from './organization-routes.js'
 import {
   OrganizationInvitationsPage,
+  OrganizationPermissionsPage,
+  OrganizationSettingsPage,
   OrganizationSsoPage,
 } from './organization-pages.js'
 import { organizationAdminOperations } from './organization-operations.js'
@@ -179,6 +181,36 @@ describe('the organization page wrappers', () => {
     expect(await screen.findByText('Organization home')).toBeInTheDocument()
     expect(screen.queryByText(zhCN.shell.title)).toBeNull()
   })
+
+  it.each([
+    ['roles', OrganizationPermissionsPage],
+    ['settings', OrganizationSettingsPage],
+  ])(
+    'prefers the organization trail over the platform trail on the %s header',
+    async (_page, Page) => {
+      const { backend } = recordingBackend()
+      renderWithProviders(
+        <OrganizationAdminProvider
+          tenant={TENANT}
+          operations={createAdminOperations(backend)}
+          hasFeature={() => true}
+          routes={organizationAdminRoutes}
+          breadcrumbs={[
+            { label: 'Organization home' },
+            { label: 'A page' },
+          ]}
+          protectedRoles={['tenant-admin']}
+        >
+          <Page />
+        </OrganizationAdminProvider>,
+      )
+      // The organization trail reaches every page through the shared page
+      // header, including the two pages that never read the context
+      // themselves.
+      expect(await screen.findByText('Organization home')).toBeInTheDocument()
+      expect(screen.queryByText(zhCN.shell.title)).toBeNull()
+    },
+  )
 
   it('scopes the SSO page to the provided tenant without a selector', async () => {
     const { backend, readTenants, rosterReads } = recordingBackend()

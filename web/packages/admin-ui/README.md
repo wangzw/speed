@@ -104,16 +104,19 @@ and bindings, the member picker that replaces the platform account search,
 the member-read identity for binding rows, and the host's `protectedRoles`
 rendered read-only beside the server's builtin roles. The settings wrapper
 runs the shared settings page in tenant mode: only the tenant layer, with
-the server-reported source column. The shared pages prefer the organization
-breadcrumb context on their `PageHeader` and fall back to their own
-platform trail otherwise. The `OrganizationAdminOperations` bundle carries
+the server-reported source column. The shared pages render through the
+package-internal `AdminPageHeader`, which prefers the organization
+breadcrumb context and falls back to the page's own platform trail
+otherwise. The `OrganizationAdminOperations` bundle carries
 the tenant-scoped invitation, membership and SSO members, the tenant
 settings members and the tenant roles/grants/bindings members; no member
 addresses a platform asset or the platform account read.
 
-Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
-level-one heading and a breadcrumb trail from the admin to the page. The
-refresh action that re-reads the page's data sits in the header on pages
+Each page opens with the package-internal `AdminPageHeader` (a binding of
+`@speed/ui-kit`'s `PageHeader`): the page title as the level-one heading and
+a breadcrumb trail from the admin to the page, replaced by the organization
+trail on the organization surface. The refresh action that re-reads the
+page's data sits in the header on pages
 that are not addressed by a selector; a page whose body is addressed by a
 selector (the sessions page's account, or the tenant-addressed pages'
 tenant) puts it in the selector's row, immediately to the selector's
@@ -466,8 +469,11 @@ and when the set belongs to another tenant. The group's accessible name is
 declarations as links in both the avatar account menu and the sidebar account
 menu. The home card opens the first openable declaration. The
 organization page wrappers publish the breadcrumb through
-`OrganizationAdminBreadcrumbProvider`; the shared pages' `PageHeader` prefers
-that context and falls back to its own platform trail otherwise.
+`OrganizationAdminBreadcrumbProvider`; the package-internal
+`AdminPageHeader` prefers that context and falls back to the page's own
+platform trail otherwise. The
+organization trail starts at the organization's name as plain text, not a
+link.
 
 ## What this admin does not do
 

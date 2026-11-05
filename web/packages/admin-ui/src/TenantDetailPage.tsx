@@ -51,7 +51,6 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   ListSkeleton,
-  PageHeader,
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -77,6 +76,7 @@ import {
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /** The roster's closed status set; a value outside it renders the generic label. */
 const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
@@ -371,7 +371,7 @@ export function TenantDetailPage({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('tenantDetail.title', { id })}
         breadcrumbs={crumbs}
         actions={

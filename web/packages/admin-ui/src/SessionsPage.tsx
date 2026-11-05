@@ -33,7 +33,6 @@ import {
   DataTable,
   EmptyState,
   ListSkeleton,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   primaryColumnMaxWidthSx,
   SectionCard,
@@ -58,6 +57,7 @@ import {
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminAccount, AdminAccountSession } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /**
  * The id of the page's own "choose an account first" text. The disabled
@@ -249,7 +249,7 @@ export function SessionsPage() {
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('sessions.title')}
         breadcrumbs={[
           { label: t('shell.title') },

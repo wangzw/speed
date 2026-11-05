@@ -73,7 +73,6 @@ import {
   EmptyState,
   ListSkeleton,
   OneTimeValuePanel,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   useWriteFeedback,
@@ -98,8 +97,8 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
-import { useOrganizationAdminBreadcrumbs } from './OrganizationAdminBreadcrumb.js'
 import type { AdminSsoProvider } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /**
  * The id of the page's own "choose a tenant first" text. The disabled
@@ -149,7 +148,6 @@ export function SsoPage({
   const operations = useAdminOperations()
   const session = useAdminSession()
   const hasFeature = useAdminHasFeature()
-  const organizationBreadcrumbs = useOrganizationAdminBreadcrumbs()
   // A provider's metadata refresh is a separate capability of the SSO
   // surface; without it the row keeps its other actions.
   const metadataRefresh = hasFeature('authn.admin.sso.metadata')
@@ -502,14 +500,12 @@ export function SsoPage({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('sso.title')}
-        breadcrumbs={
-          organizationBreadcrumbs ?? [
-            { label: t('shell.title') },
-            { label: t('sso.title') },
-          ]
-        }
+        breadcrumbs={[
+          { label: t('shell.title') },
+          { label: t('sso.title') },
+        ]}
         sx={{ mb: 2 }}
       />
 

@@ -50,7 +50,6 @@ import {
   DataTable,
   ListSkeleton,
   LONG_TEXT_COLUMN_MAX_WIDTH,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
 } from '@speed/ui-kit'
@@ -70,6 +69,7 @@ import { useAdminHasFeature } from './internal/features.js'
 import { AdminLink } from './internal/navigation.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminAuditRecord, AdminTenant } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /** How many of the newest audit records the recent-activity list shows. */
 const RECENT_LIMIT = 5
@@ -333,7 +333,7 @@ function DashboardFrame({
   const { t } = useAdminUiTranslation()
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('dashboard.title')}
         breadcrumbs={[{ label: t('shell.title') }, { label: t('dashboard.title') }]}
         actions={

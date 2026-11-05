@@ -58,7 +58,6 @@ import {
   DataTable,
   ListSkeleton,
   LONG_TEXT_COLUMN_MAX_WIDTH,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   errorCodeOf,
@@ -80,6 +79,7 @@ import {
 } from '@speed/ui-kit'
 import { useAdminOperations } from './operations.js'
 import type { AdminAuditRecord } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 /** The default page size (rows per cursor page). */
 const DEFAULT_LIMIT = 25
@@ -322,7 +322,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('audit.title')}
         breadcrumbs={[
           { label: t('shell.title') },

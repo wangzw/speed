@@ -94,7 +94,6 @@ import {
   EmptyState,
   ListSkeleton,
   LONG_TEXT_COLUMN_MAX_WIDTH,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   primaryColumnMaxWidthSx,
@@ -129,6 +128,7 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 import type {
   AdminAccount,
   AdminBinding,
@@ -1466,7 +1466,7 @@ function PermissionsPageBody({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('permissions.title')}
         breadcrumbs={[
           { label: t('shell.title') },

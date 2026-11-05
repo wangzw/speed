@@ -73,7 +73,6 @@ import {
   ListSkeleton,
   LONG_TEXT_COLUMN_MAX_WIDTH,
   OneTimeValuePanel,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   useWriteFeedback,
@@ -87,7 +86,6 @@ import {
   useAccountIdentity,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
-import { useOrganizationAdminBreadcrumbs } from './OrganizationAdminBreadcrumb.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -110,6 +108,7 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 import type {
   AdminAccount,
   AdminInvitation,
@@ -206,7 +205,6 @@ export function InvitationsPage({
   const session = useAdminSession()
   const invitationLink = useAdminInvitationLink()
   const hasFeature = useAdminHasFeature()
-  const organizationBreadcrumbs = useOrganizationAdminBreadcrumbs()
   // The member table's exemption column, toggle and the write form's
   // checkbox exist only where the SSO surface does.
   const ssoExemption = hasFeature('authn.admin.sso')
@@ -735,14 +733,12 @@ export function InvitationsPage({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('invitations.title')}
-        breadcrumbs={
-          organizationBreadcrumbs ?? [
-            { label: t('shell.title') },
-            { label: t('invitations.title') },
-          ]
-        }
+        breadcrumbs={[
+          { label: t('shell.title') },
+          { label: t('invitations.title') },
+        ]}
         sx={{ mb: 2 }}
       />
 

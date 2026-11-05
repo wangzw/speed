@@ -35,7 +35,7 @@ import { useMemo } from 'react'
 import Box from '@mui/material/Box'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { ListSkeleton, PageHeader, SectionCard } from '@speed/ui-kit'
+import { ListSkeleton, SectionCard } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
 import { formatInstant } from '@speed/i18n'
@@ -45,6 +45,7 @@ import { RefreshButton } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminAuditRecord } from './operations.js'
+import { AdminPageHeader } from './internal/page-header.js'
 
 export interface AuditDetailPageProps {
   /** The record to show. */
@@ -132,7 +133,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('auditDetail.title')}
         breadcrumbs={crumbs}
         actions={

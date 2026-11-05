@@ -2,13 +2,16 @@
  * The organization administration surface's breadcrumb context.
  *
  * The organization pages reuse the platform console's page components, whose
- * `PageHeader` renders the console's own trail ("admin" down to the page).
+ * page header renders the console's own trail ("admin" down to the page).
  * Inside the organization surface that trail is wrong: the page hangs off the
- * organization home, not the platform console. A host therefore publishes the
- * organization trail through this provider, and the shared page components
- * render it in preference to their own trail when it is present. Nothing
- * leaks either way -- a page outside the provider keeps its platform
- * trail, and an organization page never shows one.
+ * organization, not the platform console. A host therefore publishes the
+ * organization trail through this provider, and `AdminPageHeader` -- the
+ * binding every page in this package renders its header through -- uses it
+ * in preference to the page's own trail when it is present. Nothing leaks
+ * either way -- a page outside the provider keeps its platform trail, and an
+ * organization page never shows one. The organization trail starts at the
+ * organization's name as plain text: the surface has no root page, so the
+ * first step is not a link.
  *
  * `OrganizationAdminProvider` mounts this provider itself when its
  * `breadcrumbs` prop is supplied. A host that renders the pages without the
@@ -26,7 +29,7 @@ const OrganizationAdminBreadcrumbContext = createContext<
 >(undefined)
 
 export interface OrganizationAdminBreadcrumbProviderProps {
-  /** The trail from the organization home down to the page. */
+  /** The trail from the organization down to the page. */
   readonly breadcrumbs: readonly PageHeaderBreadcrumb[]
   readonly children: ReactNode
 }

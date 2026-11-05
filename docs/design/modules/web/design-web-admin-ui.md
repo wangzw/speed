@@ -25,7 +25,7 @@ admin-ui 是平台侧与租户侧的管理面在浏览器里的页面家族，�
 
 **平台管理面的根（`/`）渲染仪表盘**，其指标与最近活动由名册读与审计读拼出；各管理面的列表页可链入其详情页。
 
-**每个页面以 ui-kit 的 `PageHeader` 开篇**：页标题即该页的一级标题，一条从管理后台（组织管理面则从组织首页）到该页的面包屑，以及页头操作。页的刷新动作的位置与范围见「页的刷新动作」。标题层级因此不跳级——`AsyncSection` 的占位与各节的次级标题都渲染在它之下。
+**每个页面以本包的 `AdminPageHeader` 开篇**（它绑定 ui-kit 的 `PageHeader`）：页标题即该页的一级标题，一条到该页的面包屑，以及页头操作。平台管理面的面包屑从管理后台起；组织管理面的起点是当前组织的名称，不可点——组织管理面没有自己的根页面，起点只回答「这是哪个组织」，既不重复租户导航里的「首页」，也不把组织名做成回到首页的链接。页的刷新动作的位置与范围见「页的刷新动作」。标题层级因此不跳级——`AsyncSection` 的占位与各节的次级标题都渲染在它之下。
 
 **为平台管理面交付平台侧的外壳。** 平台资产——名册、账户、会话、冒充记录、权限、设置、短信、审计——在 `/api/v1/system` 下，在平台域判定：名册是平台资产，审计表持有全部租户的行，设置的全局层是平台操作。邀请与成员页、SSO 提供方页按租户寻址，在 `/api/v1/tenants/{tenant}` 下，在那个租户的域判定；持 `platform-admin` 本身不放行，调用方须在该租户另有绑定。平台管理面因此没有**当前租户**切换器，也没有租户作用域的查询键——它不认识「当前租户」这个概念；按租户寻址的邀请与成员页、SSO 提供方页持的是请求的实参（租户选择器），不是当前租户。组织管理面反之：当前租户由宿主给出、作为每条请求的路径段，租户作用域的查询键随之按租户分段；平台域权限在它上面同样不放行；它仍不持切换器，也不自己推导当前租户。
 
@@ -245,7 +245,7 @@ export function OrganizationSettingsPage(): ReactElement
 ```
 
 - **`OrganizationAdminProvider` 只安装上下文，不渲染外壳。** 宿主已用 `ProductShell` 渲染了租户侧的壳，组织管理面因此不另造一帧：provider 把当前租户、操作束、会话、特性判定、导航回调、路由表、面包屑、邀请链接构造器与受保护角色交给包装页，本身不渲染 DOM；操作束经 `OrganizationAdminOperationsProvider` 一并发布给页面。它不 import `product-shell` 与 `tenancy-ui`；当前租户是一个属性，不是它从会话或路由推导的值。
-- **面包屑上下文优先。** 包装页经 `OrganizationAdminBreadcrumbProvider` 发布组织管理面的面包屑（组织首页到该页）；共用的页面组件在 `PageHeader` 上优先取这个上下文，没有它时渲染自己的平台管理面面包屑。页面组件因此不需要为面包屑新增属性，两个面的面包屑也不会互相泄漏。`OrganizationAdminProvider` 在给出 `breadcrumbs` 时挂载同一个提供者；渲染自有外壳、只用页面组件的宿主单独挂载它，形态同 `AdminSessionProvider`。
+- **面包屑上下文优先，且只在一个地方判断。** 包装页经 `OrganizationAdminBreadcrumbProvider` 发布组织管理面的面包屑（当前组织名称到该页，起点不可点）；管理面各页面统一经 `AdminPageHeader` 渲染页头，由它优先取这个上下文，没有它时渲染页面自己的平台管理面面包屑。页面只声明自己的平台面包屑，不需要感知上下文，新增页面也不会漏掉这条规则。两个面的面包屑因此不会互相泄漏。`OrganizationAdminProvider` 在给出 `breadcrumbs` 时挂载同一个提供者；渲染自有外壳、只用页面组件的宿主单独挂载它，形态同 `AdminSessionProvider`。
 - **包装页是薄组合。** 四个包装页读 provider 的上下文，把当前租户作为受控租户交给底下的页面，并按租户模式配置页面（见「租户模式的页面行为」）。它们不复制页面逻辑：邀请与成员、SSO、设置与角色权限的读写都在既有页面里。角色权限包装页把 provider 的 `protectedRoles` 交给页面。
 - **组织操作束是租户作用域的。** `OrganizationAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点，设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)，角色、授予与绑定指向 [authz.tenantadmin](../design-authz.md)。它不持有平台操作，也不接受 `/api/v1/system` 的路径。租户作用域的读键以租户标识为最外层段：`tenantQueryKey` 套在生成的裸键之外，写经同一工厂失效，切租户即换键、离任租户的缓存由宿主逐出。`organizationAdminOperations` 是出厂绑定；宿主可改挂自己的，页面经 `useOrganizationAdminOperations` 取用。
 

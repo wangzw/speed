@@ -120,7 +120,6 @@ import {
   FormLayout,
   ListSkeleton,
   OneTimeValuePanel,
-  PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   RefreshButton,
   SectionCard,
@@ -158,6 +157,7 @@ import {
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import { ADMIN_UI_NAMESPACE } from './resources.js'
+import { AdminPageHeader } from './internal/page-header.js'
 import type {
   AdminAccount,
   AdminAccountSecret,
@@ -934,7 +934,7 @@ export function AccountsPage({
 
   return (
     <Box>
-      <PageHeader
+      <AdminPageHeader
         title={t('accounts.title')}
         breadcrumbs={[
           { label: t('shell.title') },

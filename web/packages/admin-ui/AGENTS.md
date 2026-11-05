@@ -93,10 +93,11 @@ search, member-read identities for binding rows, and the host's
 `protectedRoles` read-only beside the server's builtin roles. The settings
 wrapper runs the shared settings page in tenant mode: only the tenant
 layer, with the server-reported source column and no layer control. The
-shared pages prefer the organization breadcrumb context on their
-`PageHeader` and fall back to their own platform trail otherwise, so
-neither surface leaks the other's trail. `OrganizationAdminOperations`
-carries the tenant-scoped invitation, membership and SSO members, the
+shared pages render through `AdminPageHeader`, which prefers the
+organization breadcrumb context and falls back to the page's own platform
+trail otherwise, so neither surface leaks the other's trail.
+`OrganizationAdminOperations` carries the tenant-scoped invitation,
+membership and SSO members, the
 tenant settings members and the tenant roles/grants/bindings members; no
 member addresses a platform asset or the platform account read.
 
@@ -503,11 +504,15 @@ request body.
   account create or identifier add collides with is the 409
   `authn.email_taken`, whose text names the address as already registered
   and asks for another -- an actionable refusal, not a restated status.
-- **Each page opens with ui-kit's `PageHeader`.** The page title is the
+- **Each page opens with `AdminPageHeader`.** The page title is the
   level-one heading and a breadcrumb trail runs from the admin to the
-  page. On the organization surface the trail comes from
-  `OrganizationAdminBreadcrumbProvider` and runs from the organization home to
-  the page; without that context the page renders its platform trail. The
+  page. The component binds ui-kit's `PageHeader`, preferring the trail
+  `OrganizationAdminBreadcrumbProvider` publishes on the organization
+  surface and rendering the page's own platform trail otherwise. The
+  organization trail starts at the current organization's name as plain
+  text, not a link: the surface has no root page, so a link there could
+  only go to the tenant home under the organization's name. A page
+  states only its platform trail and never reads the context itself. The
   refresh action that re-reads the page's data (its `refetch`)
   sits in the header, except on a page whose body is addressed by a
   selector (the sessions page's account, and the tenant-addressed pages'
