@@ -81,7 +81,6 @@ import type {
 import type { AdminNavGroup, AdminRoute } from './route.js'
 import type { AdminImpersonationChange } from './internal/impersonation-change.js'
 import type { AdminImpersonationStarting } from './internal/impersonation-starting.js'
-import type { AdminDescribeRole } from './internal/describe-role.js'
 import { AdminProvider } from './AdminProvider.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 
@@ -215,11 +214,6 @@ export interface AdminShellProps extends AppShellPassthroughProps {
    * `onImpersonationChange('started')` action settles.
    */
   readonly onImpersonationStarting?: AdminImpersonationStarting
-  /**
-   * Resolves a role's `description_key` to display content, with the role
-   * it belongs to. Absent, a page shows the raw key.
-   */
-  readonly describeRole?: AdminDescribeRole
   /** Extra styling merged onto the root layout box. */
   readonly sx?: SxProps<Theme>
 }
@@ -324,7 +318,6 @@ export function AdminShell({
   session,
   onImpersonationChange,
   onImpersonationStarting,
-  describeRole,
   userMenu,
   banner,
   mobileOpen,
@@ -372,7 +365,7 @@ export function AdminShell({
     >
       {/* The package-level seams: navigation, route table, session,
           account destination, invitation link, impersonation change and
-          start, role descriptions and feature presence. The content area
+          start, and feature presence. The content area
           carries the same padding the tenant shell's own content region
           applies (theme spacing 3 = 24px all round), so a page's heading,
           breadcrumb, table and form sit clear of the sidebar and the
@@ -386,7 +379,6 @@ export function AdminShell({
         returnPath={returnPath}
         onImpersonationChange={onImpersonationChange}
         onImpersonationStarting={onImpersonationStarting}
-        describeRole={describeRole}
         routes={routes}
       >
         {/* One inset on every side: the admin's content starts on the same

@@ -21,16 +21,11 @@ import type {
   AdminAccount,
   AdminBinding,
   AdminGrant,
-  AdminMember,
   AdminPermission,
   AdminRole,
   AdminWriteRoleInput,
 } from './operations.js'
-import type { AdminTenantPermission } from './organization-operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
-import { OrganizationPermissionsPage } from './organization-pages.js'
-import { AdminDescribeRoleProvider } from './internal/describe-role.js'
 import { containerMaxWidthOf } from '../test-utils/container-visibility.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -115,20 +110,6 @@ function permission(value: string, description = ''): AdminPermission {
   return { permission: value, description }
 }
 
-/** A permission of the tenant-governed catalog. */
-function tenantPermission(
-  value: string,
-  description = '',
-): AdminTenantPermission {
-  return {
-    permission: value,
-    description,
-    dangerous: false,
-    grantable: true,
-    group: '',
-  }
-}
-
 /** A searchable account row: a display name beside an opaque id. */
 function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
   return {
@@ -153,57 +134,6 @@ function binding(overrides: Partial<AdminBinding> = {}): AdminBinding {
     granted_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
-}
-
-/** A tenant membership as the tenant's own member read answers it. */
-function member(overrides: Partial<AdminMember> = {}): AdminMember {
-  return {
-    account: 'acc-1',
-    tenant: 'acme',
-    active: true,
-    display_name: 'Ada',
-    source: 'admin',
-    sso_exempt: false,
-    roles: [],
-    joined_at: '2026-10-15T12:00:00Z',
-    ...overrides,
-  }
-}
-
-/** The organization bundle over a scripted backend: the tenant reads default to
- * one role, its governed catalog and one member. */
-function tenantModeOperations(
-  overrides: Partial<AdminBackend> = {},
-): ReturnType<typeof createAdminOperations> {
-  return createAdminOperations(
-    makeAdminBackend({
-      listTenantRoles: () => Promise.resolve([role({ role: 'tenant-operator' })]),
-      listTenantPermissions: () =>
-        Promise.resolve([tenantPermission('tenant.deal.read')]),
-      listTenantGrants: () => Promise.resolve([]),
-      listTenantBindings: () => Promise.resolve([]),
-      listTenantAccountBindings: () => Promise.resolve([]),
-      listMembers: () => Promise.resolve([member()]),
-      ...overrides,
-    }),
-  )
-}
-
-/** Mounts the organization roles page at the host's current tenant. */
-function renderTenantPermissions(
-  operations: ReturnType<typeof createAdminOperations>,
-  protectedRoles: readonly string[] = [],
-): ReturnType<typeof renderWithProviders> {
-  return renderWithProviders(
-    <OrganizationAdminProvider
-      tenant="acme"
-      operations={operations}
-      hasFeature={() => true}
-      protectedRoles={protectedRoles}
-    >
-      <OrganizationPermissionsPage />
-    </OrganizationAdminProvider>,
-  )
 }
 
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -743,6 +673,99 @@ describe('PermissionsPage', () => {
     ).toHaveTextContent(/^crm\.deal\.read$/)
   })
 
+  it("shows a role's free-text description from the server, never the legacy key", async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () =>
+        Promise.resolve([
+          role({
+            description: 'Reads audit records',
+            description_key: 'role.auditor',
+          }),
+        ]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    const roles = section(zhCN.permissions.roles.title)
+    expect(
+      await within(roles).findByText('Reads audit records'),
+    ).toBeInTheDocument()
+    // The legacy key is stored for the host but is not what the row shows.
+    expect(within(roles).queryByText('role.auditor')).toBeNull()
+  })
+
+  it('renders a grant by the catalog description, the server code and a high-risk badge', async () => {
+    const user = userEvent.setup()
+    const described = "Manage the organization's roles"
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listPermissions: () =>
+        Promise.resolve([permission('authz.tenant.role.manage', described)]),
+      listGrants: () =>
+        Promise.resolve([
+          grant({
+            permission: 'authz.tenant.role.manage',
+            resource: 'tenant_role',
+            action: 'manage',
+          }),
+        ]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    const grants = section(zhCN.permissions.grants.title)
+    // The readable description is the row's primary text; the permission
+    // code the server reports stays beneath it.
+    const cell = (await within(grants).findByText(described)).closest('td')
+    expect(cell).not.toBeNull()
+    expect(
+      within(cell as HTMLElement).getByText('authz.tenant.role.manage'),
+    ).toBeInTheDocument()
+    // The badge is text, so the mark never rests on color alone.
+    expect(
+      within(cell as HTMLElement).getByText(
+        zhCN.permissions.catalog.dangerous,
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('writes the role description as free text', async () => {
+    const user = userEvent.setup()
+    const written: AdminWriteRoleInput[] = []
+    const operations = withAuthz({
+      writeRole: (input) => {
+        written.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
+      'auditor',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.descriptionLabel),
+      'Reads audit records',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }),
+    )
+    await vi.waitFor(() => {
+      expect(written).toEqual([
+        {
+          tenant: 'acme',
+          role: 'auditor',
+          description: 'Reads audit records',
+        },
+      ])
+    })
+  })
+
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
@@ -789,7 +812,7 @@ describe('PermissionsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }))
     await vi.waitFor(() => {
       expect(written).toEqual([
-        { tenant: 'acme', role: 'auditor', descriptionKey: '' },
+        { tenant: 'acme', role: 'auditor', description: '' },
       ])
     })
     // The landed create fills the role scope's success region, naming the
@@ -899,13 +922,19 @@ describe('PermissionsPage', () => {
       .getByRole('heading', { name: zhCN.permissions.grants.title })
       .closest('section') as HTMLElement
     await within(grantsSection).findByText('retired/op')
-    expect(
-      within(grantsSection).getByRole('button', {
-        name: text(zhCN.permissions.grants.revokeAria, {
-          permission: 'retired/op',
-        }),
+    const revoke = within(grantsSection).getByRole('button', {
+      name: text(zhCN.permissions.grants.revokeAria, {
+        permission: 'retired/op',
       }),
-    ).toBeDisabled()
+    })
+    expect(revoke).toBeDisabled()
+    // The reason is visible text beneath the disabled control, not only a
+    // hover affordance a keyboard user cannot reach.
+    const reason = within(grantsSection).getByText(
+      zhCN.permissions.grants.revokeUnavailable,
+    )
+    expect(reason).toBeInTheDocument()
+    expect(revoke).toHaveAttribute('aria-describedby', reason.id)
   })
 
   it('binds the role to the chosen account, not to the typed name', async () => {
@@ -1848,39 +1877,6 @@ describe('PermissionsPage', () => {
     ).toBeNull()
   })
 
-  it('resolves a role description through the host, falling back to the raw key', async () => {
-    const user = userEvent.setup()
-    const operations = withAuthz({
-      listRoles: () => Promise.resolve([role()]),
-    })
-    const resolved = 'Editor of the organization'
-    const first = renderWithProviders(
-      <AdminDescribeRoleProvider
-        describeRole={(_key, described) => `${resolved} (${described.role})`}
-      >
-        <PermissionsPage />
-      </AdminDescribeRoleProvider>,
-      { operations },
-    )
-    await pickTenant(user)
-    expect(
-      await within(section(zhCN.permissions.roles.title)).findByText(
-        `${resolved} (editor)`,
-      ),
-    ).toBeInTheDocument()
-    first.unmount()
-
-    // No resolver: the key is the host's, so the raw key stands rather than
-    // an empty cell.
-    renderWithProviders(<PermissionsPage />, { operations })
-    await pickTenant(user)
-    expect(
-      await within(section(zhCN.permissions.roles.title)).findByText('role.editor'),
-    ).toBeInTheDocument()
-    // The permission catalog keeps the full code as the primary text.
-    expect(await screen.findByText('crm.deal.read')).toBeInTheDocument()
-  })
-
   it('has no axe violations', async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
@@ -1892,488 +1888,6 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     await screen.findByText('editor')
     await screen.findByText('platform-admin')
-    await expectNoAxeViolations()
-  })
-})
-
-describe('PermissionsPage tenant mode', () => {
-  it('reads the tenant endpoints and member read, never a platform asset', async () => {
-    const listRoles = vi.fn(() => Promise.resolve([role()]))
-    const listPermissions = vi.fn(() =>
-      Promise.resolve([permission('platform.secret.read')]),
-    )
-    const listBindings = vi.fn(() => Promise.resolve([]))
-    const listAccountBindings = vi.fn(() => Promise.resolve([]))
-    const listAccounts = vi.fn(() =>
-      Promise.resolve({ accounts: [account()], next_cursor: '' }),
-    )
-    const getAccount = vi.fn(() => Promise.resolve(account()))
-    const listTenantRoles = vi.fn(() =>
-      Promise.resolve([role({ role: 'tenant-operator' })]),
-    )
-    const listTenantPermissions = vi.fn(() =>
-      Promise.resolve([tenantPermission('tenant.deal.read')]),
-    )
-    const listMembers = vi.fn(() => Promise.resolve([member()]))
-    const operations = tenantModeOperations({
-      listRoles,
-      listPermissions,
-      listBindings,
-      listAccountBindings,
-      listAccounts,
-      getAccount,
-      listTenantRoles,
-      listTenantPermissions,
-      listTenantBindings: () => Promise.resolve([binding()]),
-      listMembers,
-    })
-    renderTenantPermissions(operations)
-
-    // The page renders the tenant's governed catalog and roles.
-    expect(await screen.findByText('tenant-operator')).toBeInTheDocument()
-    expect(await screen.findByText('tenant.deal.read')).toBeInTheDocument()
-    expect(screen.queryByText('platform.secret.read')).toBeNull()
-    // The binding's identity comes from the tenant member read, so the
-    // platform account read is never issued.
-    expect((await screen.findAllByText('Ada')).length).toBeGreaterThan(0)
-
-    // None of the platform endpoints (the `/api/v1/system` operations) or
-    // the platform account reads was called.
-    expect(listRoles).not.toHaveBeenCalled()
-    expect(listPermissions).not.toHaveBeenCalled()
-    expect(listBindings).not.toHaveBeenCalled()
-    expect(listAccountBindings).not.toHaveBeenCalled()
-    expect(listAccounts).not.toHaveBeenCalled()
-    expect(getAccount).not.toHaveBeenCalled()
-    // The tenant surface answered every read the page issued.
-    expect(listTenantRoles).toHaveBeenCalled()
-    expect(listTenantPermissions).toHaveBeenCalled()
-    expect(listMembers).toHaveBeenCalled()
-  })
-
-  it('renders the host protected roles read-only beside the builtin ones', async () => {
-    const operations = tenantModeOperations({
-      listTenantRoles: () =>
-        Promise.resolve([
-          role({ role: 'tenant-admin' }),
-          role({ role: 'editor' }),
-        ]),
-    })
-    renderTenantPermissions(operations, ['tenant-admin'])
-
-    expect(await screen.findByText('tenant-admin')).toBeInTheDocument()
-    // The protected role keeps only its read-only grants entry.
-    expect(
-      screen.getByRole('button', {
-        name: text(zhCN.permissions.roles.viewGrantsAria, {
-          role: 'tenant-admin',
-        }),
-      }),
-    ).toBeEnabled()
-    expect(
-      screen.queryByRole('button', {
-        name: text(zhCN.permissions.roles.manageGrantsAria, {
-          role: 'tenant-admin',
-        }),
-      }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', {
-        name: text(zhCN.permissions.roles.removeAria, {
-          role: 'tenant-admin',
-        }),
-      }),
-    ).toBeNull()
-    // The protected role is not a builtin one, so its row says so and
-    // carries the protected read-only copy rather than the builtin lock
-    // text.
-    const protectedRow = screen.getByText('tenant-admin').closest('tr')
-    if (protectedRow === null) {
-      throw new Error('no tenant-admin row')
-    }
-    expect(
-      within(protectedRow).getByText(zhCN.permissions.roles.builtinNo),
-    ).toBeInTheDocument()
-    expect(
-      within(protectedRow).getByText(zhCN.permissions.roles.protectedReadOnly),
-    ).toBeInTheDocument()
-    expect(
-      within(protectedRow).queryByText(zhCN.permissions.roles.builtinLocked),
-    ).toBeNull()
-    // An ordinary tenant role keeps its write controls, so the assertion
-    // above distinguishes the protected mark from "no role has controls".
-    expect(
-      screen.getByRole('button', {
-        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
-      }),
-    ).toBeEnabled()
-    expect(
-      screen.getByRole('button', {
-        name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }),
-      }),
-    ).toBeEnabled()
-  })
-
-  it('lists the tenant members with their display names in the member picker', async () => {
-    const user = userEvent.setup()
-    const listAccounts = vi.fn(() =>
-      Promise.resolve({ accounts: [account()], next_cursor: '' }),
-    )
-    const operations = tenantModeOperations({
-      listMembers: () =>
-        Promise.resolve([
-          member(),
-          member({ account: 'acc-2', display_name: 'Grace Hopper' }),
-        ]),
-      listAccounts,
-    })
-    renderTenantPermissions(operations)
-
-    expect(await screen.findByText('tenant-operator')).toBeInTheDocument()
-    const picker = screen.getByRole('combobox', {
-      name: zhCN.permissions.bindings.accountLabel,
-    })
-    await user.click(picker)
-    expect(
-      await screen.findByRole('option', { name: 'Ada (acc-1)' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('option', { name: 'Grace Hopper (acc-2)' }),
-    ).toBeInTheDocument()
-    // Listing the members opens no platform account search.
-    expect(listAccounts).not.toHaveBeenCalled()
-  })
-
-  it('searches the tenant members through the read query', async () => {
-    const user = userEvent.setup()
-    const calls: (Parameters<AdminBackend['listMembers']>[1])[] = []
-    const operations = tenantModeOperations({
-      listMembers: (_tenant, params) => {
-        calls.push(params)
-        return Promise.resolve([member()])
-      },
-    })
-    renderTenantPermissions(operations)
-    await screen.findByText('tenant-operator')
-
-    const picker = screen.getByRole('combobox', {
-      name: zhCN.permissions.bindings.accountLabel,
-    })
-    await user.type(picker, 'ada')
-    await waitFor(() =>
-      expect(calls.some((params) => params?.query === 'ada')).toBe(true),
-    )
-    // Every read is paged and asks for the probe row that proves another
-    // page follows.
-    expect(calls.every((params) => params?.limit === 101)).toBe(true)
-  })
-
-  it('disables the member picker while its read is pending', async () => {
-    const operations = tenantModeOperations({
-      listMembers: () => new Promise<readonly AdminMember[]>(() => undefined),
-    })
-    renderTenantPermissions(operations)
-    await screen.findByText('tenant-operator')
-
-    expect(
-      screen.getByRole('combobox', {
-        name: zhCN.permissions.bindings.accountLabel,
-      }),
-    ).toBeDisabled()
-  })
-
-  it('reports a refused member read with its own message and a retry', async () => {
-    const operations = tenantModeOperations({
-      listMembers: () =>
-        Promise.reject({ status: 403, code: 'client.http.403' }),
-    })
-    renderTenantPermissions(operations)
-    await screen.findByText('tenant-operator')
-
-    expect(
-      (await screen.findAllByText(zhCN.permissions.bindings.membersFailed))
-        .length,
-    ).toBeGreaterThan(0)
-    expect(
-      screen.getAllByRole('button', {
-        name: zhCN.permissions.bindings.retry,
-      }).length,
-    ).toBeGreaterThan(0)
-  })
-
-  it('offers active memberships only', async () => {
-    const user = userEvent.setup()
-    const operations = tenantModeOperations({
-      listMembers: () =>
-        Promise.resolve([
-          member(),
-          member({
-            account: 'acc-suspended',
-            display_name: 'Suspended Member',
-            active: false,
-          }),
-        ]),
-    })
-    renderTenantPermissions(operations)
-    await screen.findByText('tenant-operator')
-
-    const picker = screen.getByRole('combobox', {
-      name: zhCN.permissions.bindings.accountLabel,
-    })
-    await user.click(picker)
-    expect(
-      await screen.findByRole('option', { name: 'Ada (acc-1)' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('option', {
-        name: 'Suspended Member (acc-suspended)',
-      }),
-    ).toBeNull()
-  })
-
-  it('pages the member picker past the first page with the last row as cursor', async () => {
-    const user = userEvent.setup()
-    const firstPage = Array.from({ length: 101 }, (_value, index) =>
-      member({
-        account: `acc-${String(index + 1).padStart(3, '0')}`,
-        display_name: `Member ${index + 1}`,
-      }),
-    )
-    const secondPageMember = member({
-      account: 'acc-extra',
-      display_name: 'Second Page Member',
-    })
-    const afterValues: (string | undefined)[] = []
-    const operations = tenantModeOperations({
-      listMembers: (_tenant, params) => {
-        afterValues.push(params?.after)
-        if (params?.after === undefined) {
-          return Promise.resolve(firstPage)
-        }
-        return Promise.resolve([...firstPage.slice(100), secondPageMember])
-      },
-    })
-    renderTenantPermissions(operations)
-    await screen.findByText('tenant-operator')
-
-    const bindings = section(zhCN.permissions.bindings.title)
-    await user.click(
-      within(bindings).getByRole('button', {
-        name: zhCN.permissions.bindings.membersNext,
-      }),
-    )
-    await waitFor(() =>
-      expect(afterValues).toContain(firstPage[99]?.account),
-    )
-
-    const picker = within(bindings).getByRole('combobox', {
-      name: zhCN.permissions.bindings.accountLabel,
-    })
-    await user.click(picker)
-    expect(
-      await screen.findByRole('option', {
-        name: 'Second Page Member (acc-extra)',
-      }),
-    ).toBeInTheDocument()
-  })
-
-  it('pages the member picker by a real next cursor without skipping the probe row', async () => {
-    const user = userEvent.setup()
-    const firstPage = Array.from({ length: 101 }, (_value, index) =>
-      member({
-        account: `acc-${String(index + 1).padStart(3, '0')}`,
-        display_name: `Member ${index + 1}`,
-      }),
-    )
-    const probeMember = member({
-      account: 'acc-101',
-      display_name: 'Member 101',
-    })
-    // The picker displays the first hundred rows; the hundredth is the
-    // cursor the next read must continue from.
-    const lastDisplayed = 'acc-100'
-    const probeRow = probeMember.account
-    const secondPageMember = member({
-      account: 'acc-extra',
-      display_name: 'Second Page Member',
-    })
-    const afterValues: (string | undefined)[] = []
-    const operations = tenantModeOperations({
-      listMembers: (_tenant, params) => {
-        afterValues.push(params?.after)
-        if (params?.after === undefined) {
-          // The server answers the page envelope: it read one row beyond the
-          // page for the probe and names that probe row as the next cursor.
-          return Promise.resolve({
-            members: firstPage,
-            next_cursor: probeRow,
-          })
-        }
-        return Promise.resolve(
-          params.after === lastDisplayed
-            ? { members: [probeMember, secondPageMember], next_cursor: '' }
-            : { members: [secondPageMember], next_cursor: '' },
-        )
-      },
-    })
-    renderTenantPermissions(operations)
-    await screen.findByText('tenant-operator')
-
-    const bindings = section(zhCN.permissions.bindings.title)
-    await user.click(
-      within(bindings).getByRole('button', {
-        name: zhCN.permissions.bindings.membersNext,
-      }),
-    )
-    // The picker shows the first hundred rows, so the next read must continue
-    // from the hundredth: the probe row the server named is the first row the
-    // next page has to show, not a row to skip.
-    await waitFor(() => expect(afterValues).toContain(lastDisplayed))
-    expect(afterValues).not.toContain(probeRow)
-
-    const picker = within(bindings).getByRole('combobox', {
-      name: zhCN.permissions.bindings.accountLabel,
-    })
-    await user.click(picker)
-    expect(
-      await screen.findByRole('option', { name: 'Member 101 (acc-101)' }),
-    ).toBeInTheDocument()
-    expect(
-      await screen.findByRole('option', {
-        name: 'Second Page Member (acc-extra)',
-      }),
-    ).toBeInTheDocument()
-  })
-
-  it('clears the role and account selections when the controlled tenant changes', async () => {
-    const user = userEvent.setup()
-    const operations = tenantModeOperations()
-    function TenantSwitch() {
-      const [tenant, setTenant] = useState('acme')
-      return (
-        <OrganizationAdminProvider
-          tenant={tenant}
-          operations={operations}
-          hasFeature={() => true}
-        >
-          <button type="button" onClick={() => setTenant('globex')}>
-            switch tenant
-          </button>
-          <OrganizationPermissionsPage />
-        </OrganizationAdminProvider>
-      )
-    }
-    renderWithProviders(<TenantSwitch />)
-
-    // Select the tenant role.
-    await user.click(
-      await screen.findByRole('button', {
-        name: text(zhCN.permissions.roles.manageGrantsAria, {
-          role: 'tenant-operator',
-        }),
-      }),
-    )
-    expect(screen.queryByText(zhCN.permissions.grants.pickRole)).toBeNull()
-
-    // Choose the account both the binding and the lookup name.
-    await user.click(
-      screen.getByRole('combobox', {
-        name: zhCN.permissions.bindings.accountLabel,
-      }),
-    )
-    await user.click(await screen.findByRole('option', { name: 'Ada (acc-1)' }))
-    await user.click(
-      screen.getByRole('combobox', {
-        name: zhCN.permissions.lookup.accountLabel,
-      }),
-    )
-    await user.click(await screen.findByRole('option', { name: 'Ada (acc-1)' }))
-    await user.click(
-      screen.getByRole('button', { name: zhCN.permissions.lookup.apply }),
-    )
-    const lookupSection = section(zhCN.permissions.lookup.title)
-    expect(
-      await within(lookupSection).findByText(
-        zhCN.permissions.lookup.empty.title,
-      ),
-    ).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'switch tenant' }))
-
-    // The role selection, both chosen accounts and the applied lookup
-    // belong to the tenant being left.
-    expect(
-      await screen.findByText(zhCN.permissions.grants.pickRole),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('combobox', {
-        name: zhCN.permissions.bindings.accountLabel,
-      }),
-    ).toHaveValue('')
-    expect(
-      screen.getByRole('combobox', {
-        name: zhCN.permissions.lookup.accountLabel,
-      }),
-    ).toHaveValue('')
-    expect(
-      within(section(zhCN.permissions.lookup.title)).queryByText(
-        zhCN.permissions.lookup.empty.title,
-      ),
-    ).toBeNull()
-  })
-
-  it('keeps the platform surface on its own selector and account picker', async () => {
-    const user = userEvent.setup()
-    const operations = withAuthz()
-    renderWithProviders(<PermissionsPage />, { operations })
-
-    // The platform surface still mounts the roster-fed tenant selector.
-    expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
-    await pickTenant(user)
-    expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
-    // ...and its platform account search picker, which reads only after the
-    // operator types.
-    expect(
-      screen.getByRole('combobox', {
-        name: zhCN.permissions.bindings.accountLabel,
-      }),
-    ).toBeInTheDocument()
-  })
-
-  it('renders the permission placeholder when the tenant roles read is refused with 403', async () => {
-    const operations = tenantModeOperations({
-      listTenantRoles: () =>
-        Promise.reject({ status: 403, code: 'client.http.403' }),
-    })
-    renderTenantPermissions(operations)
-    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: zhCN.permissions.roles.retry }),
-    ).toBeNull()
-  })
-
-  it('renders the retryable error placeholder when the tenant roles read fails with 5xx', async () => {
-    const operations = tenantModeOperations({
-      listTenantRoles: () =>
-        Promise.reject({ status: 503, code: 'client.http.503' }),
-    })
-    renderTenantPermissions(operations)
-    expect(
-      await screen.findByText(zhCN.permissions.roles.error.title),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(zhCN.permissions.roles.error.description),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: zhCN.permissions.roles.retry }),
-    ).toBeInTheDocument()
-  })
-
-  it('has no axe violations in tenant mode', async () => {
-    const operations = tenantModeOperations()
-    renderTenantPermissions(operations)
-    await screen.findByText('tenant-operator')
-    await screen.findByText('tenant.deal.read')
     await expectNoAxeViolations()
   })
 })

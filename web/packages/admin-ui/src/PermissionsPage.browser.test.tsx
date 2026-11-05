@@ -107,8 +107,8 @@ describe('PermissionsPage horizontal overflow in Chromium', () => {
  * before the scroll fallback appears.
  */
 const LONG_ROLE = 'tenant-operations-reviewer-with-a-long-unbroken-name-0001'
-const LONG_DESCRIPTION_KEY =
-  'role.a-long-description-key-that-does-not-fit-in-the-column'
+const LONG_DESCRIPTION =
+  'A long free-text description that does not fit in the column on one line'
 const LONG_RESOURCE = 'a-very-long-resource-name-that-keeps-going'
 const LONG_ACTION = 'an-equally-long-action-name'
 const LONG_PERMISSION = `${LONG_RESOURCE}.${LONG_ACTION}`
@@ -119,8 +119,8 @@ const LONG_ROLES: readonly AdminRole[] = [
     role: LONG_ROLE,
     builtin: false,
     can_manage: true,
-    description: '',
-    description_key: LONG_DESCRIPTION_KEY,
+    description: LONG_DESCRIPTION,
+    description_key: '',
     permission_count: 0,
     created_at: '2026-10-15T12:00:00Z',
   },

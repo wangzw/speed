@@ -1,5 +1,5 @@
 /**
- * PermissionsPage: the authorization-administration page of the console.
+ * PermissionsPage: the platform console's authorization-administration page.
  *
  * The authorization surface is tenant-scoped: the roles, their grants and
  * the account bindings all live under one tenant
@@ -13,27 +13,19 @@
  * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
  * reports each re-selection made through the page's own selector.
  *
- * The page has two surfaces. The platform console reads and writes the
- * tenant-scoped authorization endpoints under `/api/v1/system`, searches
- * the platform account roster for the account pickers, and resolves an
- * account's identity through the platform account read. The organization
- * surface (`tenantMode`) reads the tenant's governed catalog, roles,
- * grants and bindings under `/api/v1/tenants/{tenant}`, fills its account
- * pickers from the tenant's member read, and resolves recorded account
- * identifiers from the member rows those pickers have read -- it issues no
- * platform request. A picker searches the member read server-side and pages
- * it by cursor; it offers active memberships alone and reports its own
- * pending and failed reads, so neither reads as an empty roster. The host's
- * protected role names are read-only on that surface, beside the server's
- * builtin roles.
+ * The page is the platform-staff surface only. It reads the platform
+ * permission catalog, searches the platform account roster for the account
+ * pickers, and resolves an account's identity through the platform account
+ * read. The organization surface's roles page is a separate component: it
+ * reads the tenant's own governed catalog and operations and never reaches
+ * `/api/v1/system`.
  *
- * The page renders the surface in five sections:
+ * The page renders in five sections:
  *
  *  - the role catalog: list a tenant's roles, create or rewrite one, and
  *    remove one (removal revokes its grants and bindings with it);
- *  - the grants of the selected role: list them by the same permission code
- *    the catalog spells, grant a permission from the catalog and revoke
- *    one;
+ *  - the grants of the selected role: list them by the permission code the
+ *    server reports, grant a permission from the catalog and revoke one;
  *  - the permission catalog: every permission the platform declares, for
  *    reference when granting;
  *  - the tenant's bindings: list them, bind a role to an account chosen
@@ -46,15 +38,17 @@
  * unbind control names the account by that same readable identity when the
  * account read answers one, and by the recorded identifier otherwise.
  *
- * A role row carries the host's description key, never text this package
- * ships: the shell's `describeRole` resolver renders it, and without one the
- * raw key stands so the row is never blank. The permission catalog keeps the
- * full permission code as its primary text and shows the permission's
- * server-rendered description as a secondary line beneath it; the grant
- * picker's options carry the same pair, while the closed control shows the
- * chosen code alone. An empty description leaves the code as the only text,
- * and the authorization table keeps the same permission code the catalog
- * spells as its primary text.
+ * A role row shows the role's description as the server reports it: the
+ * operator's free text for a role this surface wrote, or a builtin role's
+ * description rendered in the request's language. The role name is the key
+ * a binding holds and is never renamed; the create form names a role (or
+ * rewrites the description of the role that already carries the name). The
+ * permission catalog and a grant row show the server-rendered description
+ * as the primary text with the permission code beneath it, and a permission
+ * the deployment calls out as dangerous carries a visible high-risk badge.
+ * An empty description leaves the code as the only text. A grant the server
+ * cannot translate to a permission code keeps its recorded resource/action
+ * spelling and cannot be revoked.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A failed list
@@ -82,7 +76,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
@@ -105,15 +98,12 @@ import {
   AccountIdentity,
   accountIdentityValue,
   accountNotice,
-  TenantAccountIdentity,
   useAccountIdentity,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
-import type { AccountSelectorProps } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { useAdminDescribeRole } from './internal/describe-role.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
@@ -132,21 +122,11 @@ import { AdminPageHeader } from './internal/page-header.js'
 import type {
   AdminAccount,
   AdminBinding,
-  AdminBindingRef,
   AdminGrant,
-  AdminGrantRef,
-  AdminMember,
   AdminOperations,
   AdminPermission,
   AdminRole,
-  AdminRoleRef,
-  AdminWriteRoleInput,
 } from './operations.js'
-import {
-  useOrganizationAdminOperations,
-  type OrganizationAdminOperations,
-} from './organization-operations.js'
-import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 
 /**
  * The id of the page's own "choose a tenant first" text. The disabled
@@ -155,55 +135,103 @@ import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 const TENANT_HINT_ID = 'permissions-tenant-hint'
 
 /**
- * The member picker's page size and read. The membership read answers the
- * page envelope: `next_cursor` names the last row it returned, and a read
- * that follows it starts after that row. The picker asks for one row beyond
- * its size, so a read whose cursor is missing still has the probe row as
- * evidence that another page follows. When the probe row is present it is
- * the first row the next page has to show, so the cursor stays on the last
- * row the picker displays rather than on the probe row.
+ * The permission codes whose grant widens the grantee's power over other
+ * accounts or over the tenant's policy. The platform permission view does not
+ * carry the governed metadata the tenant view does, so the page mirrors the
+ * declared dangerous set; the plan's own choice fixes these four codes. A
+ * view that grows a `dangerous` field is honored too, so the badge follows
+ * the server as soon as the platform contract ships it.
  */
-const MEMBER_PAGE_SIZE = 100
-const MEMBER_READ_LIMIT = MEMBER_PAGE_SIZE + 1
-/** The pause between the last keystroke and the member read it triggers. */
-const MEMBER_SEARCH_DEBOUNCE_MS = 250
-/** No member names resolved yet, for a tenant no picker has read. */
-const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
+const DANGEROUS_PERMISSIONS: ReadonlySet<string> = new Set([
+  'authz.tenant.role.manage',
+  'authn.membership.manage',
+  'authn.idp.manage',
+  'settings.tenant.write',
+])
+
+/** Whether granting a permission is one the deployment calls out. */
+function permissionIsDangerous(entry: AdminPermission): boolean {
+  const marked = (entry as { readonly dangerous?: unknown }).dangerous
+  return marked === true || DANGEROUS_PERMISSIONS.has(entry.permission)
+}
 
 /**
- * One permission's code with its server-rendered description beneath it.
- * The code stays the primary text: it is the vocabulary the grant routes
- * name a permission by, and the one the catalog and the authorization
- * table share. The description arrives already rendered in the request's
- * language and is shown as received; an empty one leaves the code alone.
+ * One permission's server-rendered description as its primary text with the
+ * permission code beneath it, plus the high-risk badge when the deployment
+ * marks the permission dangerous. The description arrives already rendered
+ * in the request's language and is shown as received; an empty one leaves
+ * the code as the only line. A grant the server cannot translate passes no
+ * catalog entry, so its recorded resource/action spelling stands alone.
+ *
+ * The primary line alone is capped when the caller is a table cell: prose
+ * stacks beneath it, and the cap must not squeeze that second line. The
+ * grant picker's menu is not a table cell and keeps the full width.
  */
 function PermissionLabel({
   entry,
+  code,
   capIdentity = false,
 }: {
-  readonly entry: AdminPermission
+  /** The catalog entry naming this permission, when the catalog has one. */
+  readonly entry: AdminPermission | undefined
+  /** The spelling this surface shows when no description resolves. */
+  readonly code: string
   readonly capIdentity?: boolean
 }) {
+  const { t } = useAdminUiTranslation()
+  const description = entry?.description ?? ''
+  const primary = description === '' ? code : description
+  const dangerous = entry !== undefined && permissionIsDangerous(entry)
   return (
     <Box>
-      <Typography
-        variant="body2"
-        noWrap
-        // A table cell caps its identity line alone when prose stacks
-        // beneath it (the description below), so the cap never squeezes
-        // the wrapped description. The grant picker's menu is not a table
-        // cell and keeps the code's full width.
-        sx={capIdentity ? primaryColumnMaxWidthSx : undefined}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          columnGap: 1,
+          rowGap: 0.5,
+        }}
       >
-        {entry.permission}
-      </Typography>
-      {entry.description !== '' && (
+        <Typography
+          variant="body2"
+          noWrap={description === ''}
+          sx={{
+            ...(capIdentity ? primaryColumnMaxWidthSx : undefined),
+            ...(description === ''
+              ? { fontFamily: (theme) => theme.typography.fontFamilyMono }
+              : undefined),
+          }}
+        >
+          {primary}
+        </Typography>
+        {dangerous && (
+          <Typography
+            component="span"
+            variant="caption"
+            sx={(theme) => ({
+              border: `1px solid ${theme.palette.warning.main}`,
+              borderRadius: 0.5,
+              color: theme.palette.warning.main,
+              px: 0.5,
+              whiteSpace: 'nowrap',
+            })}
+          >
+            {t('permissions.catalog.dangerous')}
+          </Typography>
+        )}
+      </Box>
+      {description !== '' && (
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{ display: 'block', whiteSpace: 'normal' }}
+          sx={(theme) => ({
+            display: 'block',
+            whiteSpace: 'normal',
+            fontFamily: theme.typography.fontFamilyMono,
+          })}
         >
-          {entry.description}
+          {code}
         </Typography>
       )}
     </Box>
@@ -276,25 +304,6 @@ function PlatformUnbindButton(
   )
 }
 
-/** The organization surface's unbind control: the identity comes from the
- * tenant's member read, so no platform account read is issued. */
-function TenantUnbindButton({
-  memberNames,
-  ...props
-}: Omit<Parameters<typeof UnbindButton>[0], 'name' | 'identity'> & {
-  readonly memberNames: ReadonlyMap<string, string>
-}) {
-  const recorded = memberNames.get(props.binding.account)
-  const name = recorded === undefined || recorded === '' ? undefined : recorded
-  return (
-    <UnbindButton
-      {...props}
-      name={name}
-      identity={{ name, identifier: undefined }}
-    />
-  )
-}
-
 /** The key a binding row carries through the page's failure markers. */
 function bindingKey(binding: AdminBinding): string {
   return `${binding.account}:${binding.role}`
@@ -319,417 +328,21 @@ export interface PermissionsPageProps {
   readonly defaultTenant?: string
   /** Reports each re-selection made through the page's own selector. */
   readonly onTenantChange?: (tenant: string) => void
-  /**
-   * Tenant mode: the organization surface's configuration of the same page.
-   * The page reads and writes `/api/v1/tenants/{tenant}/...` through the
-   * organization operations bundle, fills its account pickers from the tenant
-   * member read, and never addresses `/api/v1/system` or the platform
-   * account surface. The host's protected role names apply in this mode;
-   * the platform surface marks only the server's builtin roles read-only.
-   */
-  readonly tenantMode?: boolean
-  /**
-   * Role names the host seeded into this tenant and that the page renders
-   * as read-only (the same treatment a builtin role gets). Absent, no row
-   * is treated as protected.
-   */
-  readonly protectedRoles?: readonly string[]
 }
 
-/**
- * The reads and writes the page body runs, in the platform and tenant
- * surfaces' common shape. The two surfaces address different endpoints but
- * carry the same row and input shapes, so the body is written once and the
- * mode decides which bundle answers it.
- */
-interface PermissionsDataOperations {
-  readonly useRoles: (
-    tenant: string,
-  ) => UseQueryResult<readonly AdminRole[], unknown>
-  readonly usePermissions: (
-    tenant: string,
-  ) => UseQueryResult<readonly AdminPermission[], unknown>
-  readonly useGrants: (
-    tenant: string,
-    role: string | undefined,
-  ) => UseQueryResult<readonly AdminGrant[], unknown>
-  readonly useBindings: (
-    tenant: string,
-  ) => UseQueryResult<readonly AdminBinding[], unknown>
-  readonly useAccountBindings: (
-    tenant: string,
-    account: string | undefined,
-  ) => UseQueryResult<readonly AdminBinding[], unknown>
-  readonly useWriteRole: () => UseMutationResult<
-    void,
-    unknown,
-    AdminWriteRoleInput
-  >
-  readonly useRemoveRole: () => UseMutationResult<void, unknown, AdminRoleRef>
-  readonly useGrantPermission: () => UseMutationResult<
-    void,
-    unknown,
-    AdminGrantRef
-  >
-  readonly useRevokePermission: () => UseMutationResult<
-    void,
-    unknown,
-    AdminGrantRef
-  >
-  readonly useBindRole: () => UseMutationResult<void, unknown, AdminBindingRef>
-  readonly useUnbindRole: () => UseMutationResult<void, unknown, AdminBindingRef>
-}
-
-/** The platform surface's operations: the console's tenant-scoped
- * authorization endpoints under `/api/v1/system`. */
-function usePlatformPermissionsOperations(
-  operations: AdminOperations,
-): PermissionsDataOperations {
-  return {
-    useRoles: (tenant) => operations.useRoles(tenant),
-    usePermissions: () => operations.usePermissions(),
-    useGrants: (tenant, role) => operations.useGrants(tenant, role),
-    useBindings: (tenant) => operations.useBindings(tenant),
-    useAccountBindings: (tenant, account) =>
-      operations.useAccountBindings({ tenant, account }),
-    useWriteRole: () => operations.useWriteRole(),
-    useRemoveRole: () => operations.useRemoveRole(),
-    useGrantPermission: () => operations.useGrantPermission(),
-    useRevokePermission: () => operations.useRevokePermission(),
-    useBindRole: () => operations.useBindRole(),
-    useUnbindRole: () => operations.useUnbindRole(),
-  }
-}
-
-/** The organization surface's operations: the tenant's own authorization
- * endpoints under `/api/v1/tenants/{tenant}`. */
-function useTenantPermissionsOperations(
-  operations: OrganizationAdminOperations,
-): PermissionsDataOperations {
-  return {
-    useRoles: (at) => operations.useTenantRoles(at),
-    usePermissions: (at) => operations.useTenantPermissions(at),
-    useGrants: (at, role) => operations.useTenantGrants(at, role),
-    useBindings: (at) => operations.useTenantBindings(at),
-    useAccountBindings: (at, account) =>
-      operations.useTenantAccountBindings(at, account),
-    useWriteRole: () => operations.useTenantWriteRole(),
-    useRemoveRole: () => operations.useTenantRemoveRole(),
-    useGrantPermission: () => operations.useTenantGrantPermission(),
-    useRevokePermission: () => operations.useTenantRevokePermission(),
-    useBindRole: () => operations.useTenantBindRole(),
-    useUnbindRole: () => operations.useTenantUnbindRole(),
-  }
-}
-
-/**
- * One tenant member as the page's account picker holds it. The member read
- * carries the account identifier, its display name and whether the
- * membership is in force; the remaining account fields exist only so the
- * shared picker and the page's identity helpers can consume the row, and
- * none of them is read. A suspended membership reads as a disabled
- * account, which is what the read says about it.
- */
-function memberAsAccount(member: AdminMember): AdminAccount {
-  return {
-    id: member.account,
-    display_name: member.display_name,
-    identifiers: [],
-    kind: 'user',
-    status: member.active ? 'active' : 'disabled',
-    mfa_required: false,
-    protected: false,
-    password_set: false,
-    created_at: '',
-  }
-}
-
-/** The member picker's option text: the display name beside the recorded
- * account identifier, or the identifier alone. */
-function memberOptionLabel(member: AdminAccount): string {
-  return member.display_name === ''
-    ? member.id
-    : `${member.display_name} (${member.id})`
-}
-
-/** The member picker's cursor frame, tagged with the tenant it was read
- * for. A frame for another tenant derives as the first page synchronously,
- * so the first read after a switch carries no cursor. */
-interface MemberCursorFrame {
-  readonly tenant: string
-  readonly cursors: readonly string[]
-  readonly page: number
-}
-
-function firstMemberPage(tenant: string): MemberCursorFrame {
-  return { tenant, cursors: [''], page: 0 }
-}
-
-/**
- * The organization surface's account picker: the tenant's member list, read
- * without a platform account search.
- *
- * The picker owns its read, so its search and its paging are its own. The
- * operator's text narrows the read through the member route's `query`
- * (server-side); one page is kept at a time with the tenant-keyed cursor
- * stack the route documents. The read answers the page envelope, and the
- * picker also reads one row beyond the page size: the probe row is the
- * evidence another page follows, and because the probe row is the first row
- * the next page must show, the cursor is taken from the last row the picker
- * displays, not from the probe. Suspended memberships are left out of the
- * options: a binding requires an active member, so offering one would only
- * invite a refused write. The read's progress and its failure are the
- * picker's own, so a pending or refused member read never looks like an
- * empty roster.
- */
-function TenantMemberPicker({
-  tenant,
-  label,
-  value,
-  onChange,
-  disabled = false,
-  onMembersRead,
-}: Pick<AccountSelectorProps, 'label' | 'value' | 'onChange' | 'disabled'> & {
-  readonly tenant: string
-  /** Reports every page the picker reads, so the page can name the accounts
-   * its binding tables show. */
-  readonly onMembersRead: (members: readonly AdminMember[]) => void
-}) {
-  const { t } = useAdminUiTranslation()
-  const operations = useOrganizationAdminOperations()
-  const [input, setInput] = useState('')
-  const [query, setQuery] = useState('')
-  const [cursorState, setCursorState] = useState<MemberCursorFrame>(() =>
-    firstMemberPage(tenant),
-  )
-  const frame =
-    cursorState.tenant === tenant ? cursorState : firstMemberPage(tenant)
-  const cursor = frame.cursors[frame.page] ?? ''
-  const members = operations.useMembers(tenant, {
-    limit: MEMBER_READ_LIMIT,
-    ...(query === '' ? {} : { query }),
-    ...(cursor === '' ? {} : { after: cursor }),
-  })
-
-  // A chosen account fills the box with its label, which names the selection
-  // rather than a search. The search text is lifted after the operator
-  // pauses; a new search starts at the first page.
-  const selectedLabel = value === null ? '' : memberOptionLabel(value)
-  const previousValue = useRef(value)
-  useEffect(() => {
-    if (value === null && previousValue.current !== null) {
-      setInput('')
-    }
-    previousValue.current = value
-  }, [value])
-  useEffect(() => {
-    const trimmed = input.trim()
-    const timer = setTimeout(() => {
-      setQuery(trimmed === '' || trimmed === selectedLabel ? '' : trimmed)
-    }, MEMBER_SEARCH_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [input, selectedLabel])
-  useEffect(() => {
-    setCursorState(firstMemberPage(tenant))
-  }, [query, tenant])
-  // A controlled tenant change keeps the picker mounted; its box and its
-  // search must not carry the old tenant's text into the new one.
-  const previousTenant = useRef(tenant)
-  useEffect(() => {
-    if (previousTenant.current === tenant) {
-      return
-    }
-    previousTenant.current = tenant
-    setInput('')
-    setQuery('')
-  }, [tenant])
-
-  const rows = members.data?.members
-  // The server's cursor names the last row it returned; when the picker
-  // asked for a probe row beyond the page it displays, that probe is the
-  // first row of the next page. Continuing from the server's cursor would
-  // skip it, so the cursor stays on the last displayed row in that case. A
-  // read that answers no cursor keeps the probe row as the evidence that
-  // another page follows.
-  const serverCursor = members.data?.next_cursor ?? ''
-  const hasProbeRow = (rows?.length ?? 0) > MEMBER_PAGE_SIZE
-  const hasNext = serverCursor !== '' || hasProbeRow
-  const pageRows = useMemo(
-    () => (rows === undefined ? undefined : rows.slice(0, MEMBER_PAGE_SIZE)),
-    [rows],
-  )
-  const options = useMemo(
-    () => (pageRows ?? []).filter((member) => member.active).map(memberAsAccount),
-    [pageRows],
-  )
-  const nextCursor = hasProbeRow
-    ? (pageRows?.at(-1)?.account ?? '')
-    : serverCursor
-  const loading = members.isPending && rows === undefined
-  const failed = members.isError
-  const nextPage = () => {
-    if (!hasNext || nextCursor === '') {
-      return
-    }
-    setCursorState((previous) => {
-      const current =
-        previous.tenant === tenant ? previous : firstMemberPage(tenant)
-      const cursors = [...current.cursors]
-      cursors[current.page + 1] = nextCursor
-      return { tenant, cursors, page: current.page + 1 }
-    })
-  }
-  const previousPage = () => {
-    setCursorState((previous) => {
-      const current =
-        previous.tenant === tenant ? previous : firstMemberPage(tenant)
-      return current.page === 0
-        ? current
-        : { ...current, page: current.page - 1 }
-    })
-  }
-  useEffect(() => {
-    if (rows !== undefined) {
-      onMembersRead(rows)
-    }
-  }, [rows, onMembersRead])
-
-  return (
-    <Box>
-      <Autocomplete<AdminAccount>
-        size="small"
-        value={value}
-        disabled={disabled || loading}
-        onChange={(_event, next) => onChange(next)}
-        inputValue={input}
-        onInputChange={(_event, nextValue) => setInput(nextValue)}
-        options={options}
-        loading={members.isFetching}
-        // The route already narrowed the page; filtering it again would
-        // hide rows the operator's text matched by an identifier.
-        filterOptions={(candidates) => candidates}
-        getOptionLabel={memberOptionLabel}
-        isOptionEqualToValue={(option, current) => option.id === current.id}
-        noOptionsText={
-          failed
-            ? t('permissions.bindings.membersFailed')
-            : t('permissions.bindings.noMembers')
-        }
-        loadingText={t('permissions.bindings.loading')}
-        clearText={t('accountSelector.clear')}
-        openText={t('accountSelector.open')}
-        closeText={t('accountSelector.close')}
-        renderInput={(params) => (
-          <TextField {...params} size="small" label={label} />
-        )}
-        sx={{ minWidth: 260 }}
-      />
-      {failed && (
-        <Box
-          sx={{ display: 'flex', alignItems: 'center', columnGap: 1, mt: 0.5 }}
-        >
-          <Typography variant="caption" color="error">
-            {t('permissions.bindings.membersFailed')}
-          </Typography>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            onClick={() => {
-              void members.refetch()
-            }}
-          >
-            {t('permissions.bindings.retry')}
-          </Button>
-        </Box>
-      )}
-      {!failed && (frame.page > 0 || hasNext) && (
-        <Box sx={{ display: 'flex', columnGap: 1, mt: 0.5 }}>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            disabled={frame.page === 0 || members.isFetching}
-            onClick={previousPage}
-          >
-            {t('permissions.bindings.membersPrevious')}
-          </Button>
-          <Button
-            type="button"
-            size="small"
-            variant="outlined"
-            disabled={!hasNext || members.isFetching}
-            onClick={nextPage}
-          >
-            {t('permissions.bindings.membersNext')}
-          </Button>
-        </Box>
-      )}
-    </Box>
-  )
-}
-
-/**
- * The page's mode-specific composition. The platform surface talks to the
- * console bundle; the organization surface talks to the tenant bundle and to
- * the tenant's own member read. The body below is shared.
- */
+/** The platform console's authorization-administration page. */
 export function PermissionsPage({
-  tenant: controlledTenant,
+  tenant,
   defaultTenant,
   onTenantChange,
-  tenantMode = false,
-  protectedRoles = [],
 }: PermissionsPageProps = {}) {
-  return tenantMode ? (
-    <TenantPermissionsPage
-      tenant={controlledTenant ?? ''}
-      protectedRoles={protectedRoles}
-    />
-  ) : (
-    <PlatformPermissionsPage
-      tenant={controlledTenant}
-      defaultTenant={defaultTenant}
-      onTenantChange={onTenantChange}
-    />
-  )
-}
-
-function PlatformPermissionsPage({
-  tenant,
-  defaultTenant,
-  onTenantChange,
-}: Pick<PermissionsPageProps, 'tenant' | 'defaultTenant' | 'onTenantChange'>) {
   const operations = useAdminOperations()
-  const data = usePlatformPermissionsOperations(operations)
   return (
     <PermissionsPageBody
-      operations={data}
+      operations={operations}
       tenant={tenant}
       defaultTenant={defaultTenant}
       onTenantChange={onTenantChange}
-    />
-  )
-}
-
-function TenantPermissionsPage({
-  tenant,
-  protectedRoles,
-}: {
-  readonly tenant: string
-  readonly protectedRoles: readonly string[]
-}) {
-  const operations = useOrganizationAdminOperations()
-  const data = useTenantPermissionsOperations(operations)
-  // The member pickers own their reads and report every page they settle,
-  // so the page resolves the accounts its binding tables show without a
-  // read of its own and never reaches the platform account surface.
-  return (
-    <PermissionsPageBody
-      operations={data}
-      tenant={tenant}
-      tenantMode
-      protectedRoles={protectedRoles}
     />
   )
 }
@@ -739,13 +352,10 @@ function PermissionsPageBody({
   tenant: controlledTenant,
   defaultTenant,
   onTenantChange,
-  tenantMode = false,
-  protectedRoles = [],
 }: PermissionsPageProps & {
-  readonly operations: PermissionsDataOperations
+  readonly operations: AdminOperations
 }) {
   const { t } = useAdminUiTranslation()
-  const describeRole = useAdminDescribeRole()
 
   const [innerTenant, setInnerTenant] = useState(
     () => defaultTenant ?? tenantFromLocation(),
@@ -815,13 +425,13 @@ function PermissionsPageBody({
   const resolveErrorText = useAdminUiErrorText()
 
   const roles = operations.useRoles(tenant)
-  const catalog = operations.usePermissions(tenant)
+  const catalog = operations.usePermissions()
   const grants = operations.useGrants(tenant, selectedRole || undefined)
   const bindings = operations.useBindings(tenant)
-  const accountBindings = operations.useAccountBindings(
+  const accountBindings = operations.useAccountBindings({
     tenant,
-    lookupApplied === '' ? undefined : lookupApplied,
-  )
+    account: lookupApplied === '' ? undefined : lookupApplied,
+  })
 
   const writeRole = operations.useWriteRole()
   const removeRole = operations.useRemoveRole()
@@ -966,7 +576,7 @@ function PermissionsPageBody({
       await writeRole.mutateAsync({
         tenant,
         role,
-        descriptionKey: roleDescription,
+        description: roleDescription,
       })
       setRoleName('')
       setRoleDescription('')
@@ -1111,49 +721,24 @@ function PermissionsPageBody({
   }
 
   const permissions = catalog.data ?? []
+  // The catalog entry that names a permission, for the readable primary text
+  // of a grant row and the dangerous mark. A grant the server cannot
+  // translate has no code and no entry, so the row keeps its recorded pair.
+  const permissionByCode = useMemo(
+    () => new Map(permissions.map((entry) => [entry.permission, entry])),
+    [permissions],
+  )
 
   const roleRows = roles.data
-  // The organization surface resolves every recorded account identifier it
-  // shows from the tenant's own member read. The pickers report each page
-  // they settle, and the names accumulate per tenant, so paging past a
-  // member leaves its binding rows named. A member no read has carried
-  // stays unresolved and renders its recorded identifier, which is what the
-  // shared identity unit does.
-  const [memberNamesByTenant, setMemberNamesByTenant] = useState<
-    Readonly<Record<string, ReadonlyMap<string, string>>>
-  >({})
-  const rememberMembers = useCallback(
-    (members: readonly AdminMember[]) => {
-      setMemberNamesByTenant((previous) => {
-        const current = previous[tenant] ?? EMPTY_MEMBER_NAMES
-        let next: Map<string, string> | null = null
-        for (const member of members) {
-          if (current.get(member.account) === member.display_name) {
-            continue
-          }
-          next ??= new Map(current)
-          next.set(member.account, member.display_name)
-        }
-        return next === null ? previous : { ...previous, [tenant]: next }
-      })
-    },
-    [tenant],
-  )
-  const memberNames = memberNamesByTenant[tenant] ?? EMPTY_MEMBER_NAMES
   // A locked role refuses every write -- role rewrite and delete, and
-  // grant/revoke -- but not the reads. A server builtin role is locked on
-  // both surfaces; in tenant mode the host's protected role names are
-  // locked the same way. The selected role therefore opens read-only: the
-  // grants it holds are visible, and every write control that would name it
-  // is withheld.
-  const roleProtected = (role: AdminRole): boolean =>
-    !role.builtin && tenantMode && protectedRoles.includes(role.role)
-  const roleLocked = (role: AdminRole): boolean =>
-    role.builtin || roleProtected(role)
+  // grant/revoke -- but not the reads. Only the server's builtin mark locks
+  // a role here: the platform surface has no host-protected role names. The
+  // selected role therefore opens read-only: the grants it holds are
+  // visible, and every write control that would name it is withheld.
+  const roleLocked = (role: AdminRole): boolean => role.builtin
   const selectedRoleRow = roleRows?.find((role) => role.role === selectedRole)
   const selectedRoleLocked =
     selectedRoleRow === undefined ? false : roleLocked(selectedRoleRow)
-  const selectedRoleBuiltin = selectedRoleRow?.builtin ?? false
 
   const roleColumns: DataTableColumn<AdminRole>[] = [
     {
@@ -1181,22 +766,15 @@ function PermissionsPageBody({
     {
       id: 'description',
       header: t('permissions.roles.column.description'),
-      priority: 'low',
-      cellWrap: 'nowrap',
-      cellFullValue: (role) =>
-        role.description_key === '' ? undefined : role.description_key,
-      // A long-text column beside the identity: the flat cap bounds the
-      // rendered description (or the raw message key) at every tier, so
-      // the `lg` tier's total stays within its floor. The complete value
-      // stays on the cell title and copy control.
+      priority: 'medium',
+      // A free-text description wraps rather than truncating: the server
+      // renders a builtin role's text in the request's language and returns
+      // an operator's text as written, so there is no key to resolve here.
+      cellWrap: 'wrap',
+      // The cap keeps the wrapped prose from widening the row past its
+      // tier's floor; the text itself stays complete on the cell.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
-      // The key names an entry in the host's own bundle, so only the host
-      // can render it; without a resolver the raw key stands rather than an
-      // empty cell.
-      cell: (role) =>
-        role.description_key === ''
-          ? ''
-          : (describeRole?.(role.description_key, role) ?? role.description_key),
+      cell: (role) => role.description,
     },
     {
       id: 'actions',
@@ -1239,9 +817,7 @@ function PermissionsPageBody({
                   {t('permissions.roles.viewGrants')}
                 </Button>
                 <Typography variant="body2" color="text.secondary">
-                  {role.builtin
-                    ? t('permissions.roles.builtinLocked')
-                    : t('permissions.roles.protectedReadOnly')}
+                  {t('permissions.roles.builtinLocked')}
                 </Typography>
               </Box>
             ) : (
@@ -1299,11 +875,13 @@ function PermissionsPageBody({
     },
   ]
 
-  // A grant row shows the permission code the server reports for it, so
-  // "what is granted" and "what the catalog declares" read as one
-  // vocabulary. A grant whose pair the server cannot translate carries an
-  // empty permission; the row falls back to the pair's own spelling, and its
-  // revoke is withheld (the route names a permission by its code).
+  // A grant row takes the permission code the server reports for it as the
+  // key into the catalog, so "what is granted" and "what the catalog
+  // declares" read as one vocabulary: the catalog's description is the
+  // primary text and the code sits beneath it. A grant whose pair the server
+  // cannot translate carries an empty permission; the row falls back to the
+  // pair's own spelling, and its revoke is withheld -- the route names a
+  // permission by its code, and there is no code to send.
   const grantLabel = (grant: AdminGrant): string =>
     grant.permission !== ''
       ? grant.permission
@@ -1315,13 +893,17 @@ function PermissionsPageBody({
       header: t('permissions.grants.column.permission'),
       cellWrap: 'nowrap',
       cellFullValue: grantLabel,
-      // The permission code is this table's primary identity. The shared
-      // whole-cell cap keeps it and the revoke control inside the `sm`
-      // floor, where the grant table shows only this column and the
-      // actions; the complete code stays on the cell title and copy
-      // control.
-      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      cell: (grant) => grantLabel(grant),
+      // The readable description is this table's primary identity, with the
+      // code beneath it. The column declares no whole-cell cap -- that
+      // would squeeze the wrapped description -- so the identity line alone
+      // carries the shared cap (see PermissionLabel).
+      cell: (grant) => (
+        <PermissionLabel
+          entry={permissionByCode.get(grant.permission)}
+          code={grantLabel(grant)}
+          capIdentity
+        />
+      ),
     },
   ]
   // A builtin role's grants are read-only: the revoke column is not part of
@@ -1335,6 +917,11 @@ function PermissionsPageBody({
       const key = `${grant.resource}:${grant.action}`
       const failed = failedGrant === key
       const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
+      // A grant with no permission code cannot name the permission the
+      // revoke route takes. The control stays visible but disabled, and the
+      // reason sits beneath it as text, so a reader who never focuses the
+      // disabled control still gets the explanation.
+      const unmappedId = `permissions-grant-unmapped-${encodeURIComponent(key)}`
       return (
         <Box>
           <Button
@@ -1346,7 +933,7 @@ function PermissionsPageBody({
               permission: grantLabel(grant),
             })}
             aria-invalid={failed}
-            aria-describedby={failed ? errorId : undefined}
+            aria-describedby={failed ? errorId : code === null ? unmappedId : undefined}
             disabled={grantsFeedback.pending || code === null}
             loading={grantsFeedback.pending}
             onClick={() => {
@@ -1357,6 +944,16 @@ function PermissionsPageBody({
           >
             {t('permissions.grants.revoke')}
           </Button>
+          {code === null && (
+            <Typography
+              id={unmappedId}
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mt: 0.5, whiteSpace: 'normal' }}
+            >
+              {t('permissions.grants.revokeUnavailable')}
+            </Typography>
+          )}
           {failed && grantsFailureText !== null && (
             <Typography
               id={errorId}
@@ -1379,14 +976,20 @@ function PermissionsPageBody({
     {
       id: 'permission',
       header: t('permissions.catalog.column.permission'),
-      // The code is the column's unbroken primary text; the description
-      // beneath it wraps, so the cell's nowrap policy stops at the code.
-      // The column declares no whole-cell cap -- that would squeeze the
-      // wrapped description -- so the identity line alone carries the
+      // The server-rendered description is the column's primary text; the
+      // code beneath it wraps, so the cell's nowrap policy stops at the
+      // identity line. The column declares no whole-cell cap -- that would
+      // squeeze the wrapped code -- so the identity line alone carries the
       // shared primary cap (see PermissionLabel).
       cellWrap: 'nowrap',
       cellFullValue: (entry) => entry.permission,
-      cell: (entry) => <PermissionLabel entry={entry} capIdentity />,
+      cell: (entry) => (
+        <PermissionLabel
+          entry={entry}
+          code={entry.permission}
+          capIdentity
+        />
+      ),
     },
   ]
 
@@ -1408,15 +1011,7 @@ function PermissionsPageBody({
         // the recorded identifier -- which the refused lookup renders in
         // full -- inside the sm floor alongside the row actions.
         contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-        cell: (binding) =>
-          tenantMode ? (
-            <TenantAccountIdentity
-              account={binding.account}
-              name={memberNames.get(binding.account)}
-            />
-          ) : (
-            <AccountIdentity account={binding.account} />
-          ),
+        cell: (binding) => <AccountIdentity account={binding.account} />,
       },
       {
         id: 'role',
@@ -1438,24 +1033,13 @@ function PermissionsPageBody({
           )
           return (
             <Box>
-              {tenantMode ? (
-                <TenantUnbindButton
-                  binding={binding}
-                  memberNames={memberNames}
-                  disabled={feedback.pending}
-                  invalid={failed}
-                  describedBy={errorId}
-                  onClick={(identity) => unbind(binding, lookup, identity)}
-                />
-              ) : (
-                <PlatformUnbindButton
-                  binding={binding}
-                  disabled={feedback.pending}
-                  invalid={failed}
-                  describedBy={errorId}
-                  onClick={(identity) => unbind(binding, lookup, identity)}
-                />
-              )}
+              <PlatformUnbindButton
+                binding={binding}
+                disabled={feedback.pending}
+                invalid={failed}
+                describedBy={errorId}
+                onClick={(identity) => unbind(binding, lookup, identity)}
+              />
               {failed && failureText !== null && (
                 <Typography
                   id={errorId}
@@ -1554,9 +1138,16 @@ function PermissionsPageBody({
               />
               <TextField
                 size="small"
+                multiline
+                minRows={1}
+                maxRows={3}
                 value={roleDescription}
                 onChange={(event) => setRoleDescription(event.target.value)}
                 label={t('permissions.roles.create.descriptionLabel')}
+                // The server caps a role description at 500 characters and
+                // answers an over-long value with 400; the field stops the
+                // input at the same bound.
+                slotProps={{ htmlInput: { maxLength: 500 } }}
               />
               <Button
                 type="button"
@@ -1623,9 +1214,7 @@ function PermissionsPageBody({
                 </Typography>
                 {selectedRoleLocked ? (
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {selectedRoleBuiltin
-                      ? t('permissions.grants.builtinReadOnly')
-                      : t('permissions.grants.protectedReadOnly')}
+                    {t('permissions.grants.builtinReadOnly')}
                   </Typography>
                 ) : (
                   <Box
@@ -1647,17 +1236,20 @@ function PermissionsPageBody({
                       sx={{ minWidth: 240 }}
                       slotProps={{
                         select: {
-                          // The options carry the description beneath the
-                          // code; the closed control shows the chosen code
-                          // alone, so the field keeps its single-line height
-                          // and the code stays the primary text.
+                          // The options carry the readable description above
+                          // the code; the closed control shows the chosen
+                          // code alone, so the field keeps its single-line
+                          // height and names the permission unambiguously.
                           renderValue: (value) => value as string,
                         },
                       }}
                     >
                       {permissions.map((entry) => (
                         <MenuItem key={entry.permission} value={entry.permission}>
-                          <PermissionLabel entry={entry} />
+                          <PermissionLabel
+                            entry={entry}
+                            code={entry.permission}
+                          />
                         </MenuItem>
                       ))}
                     </TextField>
@@ -1763,23 +1355,12 @@ function PermissionsPageBody({
                 mb: 2,
               }}
             >
-              {tenantMode ? (
-                <TenantMemberPicker
-                  tenant={tenant}
-                  label={t('permissions.bindings.accountLabel')}
-                  value={bindAccount}
-                  onChange={changeBindAccount}
-                  disabled={bindingsFeedback.pending}
-                  onMembersRead={rememberMembers}
-                />
-              ) : (
-                <AccountSelector
-                  label={t('permissions.bindings.accountLabel')}
-                  value={bindAccount}
-                  onChange={changeBindAccount}
-                  disabled={bindingsFeedback.pending}
-                />
-              )}
+              <AccountSelector
+                label={t('permissions.bindings.accountLabel')}
+                value={bindAccount}
+                onChange={changeBindAccount}
+                disabled={bindingsFeedback.pending}
+              />
               <TextField
                 size="small"
                 value={bindRoleName}
@@ -1849,23 +1430,12 @@ function PermissionsPageBody({
                 mb: 2,
               }}
             >
-              {tenantMode ? (
-                <TenantMemberPicker
-                  tenant={tenant}
-                  label={t('permissions.lookup.accountLabel')}
-                  value={lookupAccount}
-                  onChange={setLookupAccount}
-                  disabled={lookupFeedback.pending}
-                  onMembersRead={rememberMembers}
-                />
-              ) : (
-                <AccountSelector
-                  label={t('permissions.lookup.accountLabel')}
-                  value={lookupAccount}
-                  onChange={setLookupAccount}
-                  disabled={lookupFeedback.pending}
-                />
-              )}
+              <AccountSelector
+                label={t('permissions.lookup.accountLabel')}
+                value={lookupAccount}
+                onChange={setLookupAccount}
+                disabled={lookupFeedback.pending}
+              />
               <Button
                 type="button"
                 variant="outlined"

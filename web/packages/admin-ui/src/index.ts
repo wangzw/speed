@@ -78,7 +78,6 @@ export type {
 export { adminNavGroups } from './nav-groups.js'
 export { AdminShell, type AdminShellProps } from './AdminShell.js'
 export { AdminProvider, type AdminProviderProps } from './AdminProvider.js'
-export type { AdminDescribeRole } from './internal/describe-role.js'
 export type { AdminImpersonationStarting } from './internal/impersonation-starting.js'
 export type { AdminImpersonationChange } from './internal/impersonation-change.js'
 export {

@@ -7,8 +7,8 @@
  * dialog, a side panel, an overlay that sits outside the console's main
  * area -- mounts this provider instead and keeps the console's seams
  * (navigation, session, account destination, invitation link,
- * impersonation change, impersonation start, role descriptions, feature
- * presence and the route table) available to the console pages it renders
+ * impersonation change, impersonation start, feature presence and the
+ * route table) available to the console pages it renders
  * inside it.
  *
  * It installs exactly the contexts AdminShell installs, with the same
@@ -29,10 +29,8 @@ import type { FeatureName } from '@speed/api-sdk/features'
 import type { AdminRoute } from './route.js'
 import type { AdminImpersonationChange } from './internal/impersonation-change.js'
 import type { AdminImpersonationStarting } from './internal/impersonation-starting.js'
-import type { AdminDescribeRole } from './internal/describe-role.js'
 import { AdminAccountHrefProvider } from './internal/account-href.js'
 import { AdminReturnPathProvider } from './internal/return-path.js'
-import { AdminDescribeRoleProvider } from './internal/describe-role.js'
 import { AdminFeatureProvider } from './internal/features.js'
 import { AdminImpersonationChangeProvider } from './internal/impersonation-change.js'
 import { AdminImpersonationStartingProvider } from './internal/impersonation-starting.js'
@@ -91,11 +89,6 @@ export interface AdminProviderProps {
    */
   readonly onImpersonationStarting?: AdminImpersonationStarting
   /**
-   * Resolves a role's `description_key` to display content. Absent, a
-   * page shows the raw key.
-   */
-  readonly describeRole?: AdminDescribeRole
-  /**
    * The route table whose declarations the pages resolve sibling links
    * against, by stable `id`. The provider publishes it unchanged; the
    * host hands over the table its feature presence predicate narrowed.
@@ -119,7 +112,6 @@ export function AdminProvider({
   returnPath,
   onImpersonationChange,
   onImpersonationStarting,
-  describeRole,
   routes,
   children,
 }: AdminProviderProps) {
@@ -136,11 +128,9 @@ export function AdminProvider({
                   <AdminImpersonationStartingProvider
                     onImpersonationStarting={onImpersonationStarting}
                   >
-                    <AdminDescribeRoleProvider describeRole={describeRole}>
-                      <AdminFeatureProvider hasFeature={hasFeature}>
-                        {children}
-                      </AdminFeatureProvider>
-                    </AdminDescribeRoleProvider>
+                    <AdminFeatureProvider hasFeature={hasFeature}>
+                      {children}
+                    </AdminFeatureProvider>
                   </AdminImpersonationStartingProvider>
                 </AdminImpersonationChangeProvider>
               </AdminInvitationLinkProvider>

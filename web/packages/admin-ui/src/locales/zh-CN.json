@@ -650,10 +650,6 @@
     "bindings": {
       "title": "绑定",
       "accountLabel": "账户",
-      "noMembers": "没有匹配的成员",
-      "membersFailed": "未能读取组织成员。",
-      "membersNext": "更多成员",
-      "membersPrevious": "上一批成员",
       "roleLabel": "角色",
       "bind": "绑定",
       "loading": "正在加载绑定",

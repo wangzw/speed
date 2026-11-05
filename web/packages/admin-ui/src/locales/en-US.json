@@ -650,10 +650,6 @@
     "bindings": {
       "title": "Bindings",
       "accountLabel": "Account",
-      "noMembers": "No matching members",
-      "membersFailed": "The organization's members could not be read.",
-      "membersNext": "More members",
-      "membersPrevious": "Previous members",
       "roleLabel": "Role",
       "bind": "Bind",
       "loading": "Loading bindings",

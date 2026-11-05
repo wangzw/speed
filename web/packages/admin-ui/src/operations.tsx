@@ -310,14 +310,16 @@ export type AdminGrant = AuthzAdminGrantView
 export type AdminBinding = AuthzAdminBindingView
 
 /**
- * PUT .../roles/:role body: a role's declared shape. There is no builtin
+ * PUT .../roles/:role body: a role's declared shape. The role name is the key
+ * a binding holds and is never renamed, so a write names an existing role or
+ * creates one; `description` is the operator's free text. There is no builtin
  * field: the mark is the host's to set when it seeds the role, and the server
  * refuses a role write that carries it.
  */
 export interface AdminWriteRoleInput {
   readonly tenant: string
   readonly role: string
-  readonly descriptionKey: string
+  readonly description: string
 }
 
 /** A tenant-and-role target (delete a role, list its grants). */
@@ -1139,7 +1141,7 @@ export const adminOperations: AdminOperations = {
     return useMutation({
       mutationFn: (input: AdminWriteRoleInput) =>
         authzAdminRolesPut(input.tenant, input.role, {
-          description_key: input.descriptionKey,
+          description: input.description,
         }),
       onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({

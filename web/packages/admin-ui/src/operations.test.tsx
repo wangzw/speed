@@ -428,7 +428,7 @@ function AuthzWrites() {
   const unbind = adminOperations.useUnbindRole()
   return (
     <>
-      <button onClick={() => writeRole.mutate({ tenant: 'acme', role: 'editor', descriptionKey: 'd' })}>writeRole</button>
+      <button onClick={() => writeRole.mutate({ tenant: 'acme', role: 'editor', description: 'd' })}>writeRole</button>
       <button onClick={() => removeRole.mutate({ tenant: 'acme', role: 'editor' })}>removeRole</button>
       <button onClick={() => grant.mutate({ tenant: 'acme', role: 'editor', permission: 'deal:read' })}>grant</button>
       <button onClick={() => revoke.mutate({ tenant: 'acme', role: 'editor', permission: 'deal:read' })}>revoke</button>

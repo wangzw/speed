@@ -12,9 +12,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AdminProvider } from './AdminProvider.js'
-import type { AdminRole } from './operations.js'
 import { useAdminAccountHref } from './internal/account-href.js'
-import { useAdminDescribeRole } from './internal/describe-role.js'
 import { useAdminHasFeature } from './internal/features.js'
 import { useAdminImpersonationChange } from './internal/impersonation-change.js'
 import { useAdminImpersonationStarting } from './internal/impersonation-starting.js'
@@ -33,17 +31,6 @@ const ROUTES: readonly AdminRoute[] = [
   { id: 'tenants', path: '/tenants', view: () => null },
   { id: 'accounts', path: '/accounts', view: () => null },
 ]
-
-const ROLE: AdminRole = {
-  tenant: 'acme',
-  role: 'editor',
-  builtin: false,
-  can_manage: true,
-  description: '',
-  description_key: 'role.editor',
-  permission_count: 0,
-  created_at: '2026-10-15T12:00:00Z',
-}
 
 /**
  * Dispatches a click and cancels its default action at the document, after
@@ -193,26 +180,6 @@ describe('AdminProvider', () => {
     // The provider hands the hook's return value straight back, so the
     // page's release reaches the host's own function.
     expect(release).toHaveBeenCalledTimes(1)
-  })
-
-  it('publishes the role-description resolver', () => {
-    function Probe() {
-      const describeRole = useAdminDescribeRole()
-      return (
-        <span>
-          {describeRole?.(ROLE.description_key, ROLE) ?? 'no-resolver'}
-        </span>
-      )
-    }
-    renderWithProviders(
-      <AdminProvider
-        hasFeature={() => true}
-        describeRole={(_key, role) => `described:${role.role}`}
-      >
-        <Probe />
-      </AdminProvider>,
-    )
-    expect(screen.getByText('described:editor')).toBeInTheDocument()
   })
 
   it('publishes the route table unchanged, resolving a declaration by id', () => {
