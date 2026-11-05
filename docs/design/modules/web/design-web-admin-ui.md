@@ -710,7 +710,7 @@ graph TD
 | 详情面板内有写入在途时收到关闭请求 | 面板 `busy`，不上报 `onClose` |
 | 详情面板展示着未关闭的服务密钥时收到关闭请求 | 先经 `ConfirmDialog` 确认放弃，取消则面板保持 |
 | 写入在途时操作租户选择器或其它改变上下文的选择器 | 选择器在它牵动的作用域 `pending` 时禁用 |
-| 组织角色页的角色成员数不可用（装配没有身份接缝） | 成员数显示「不可用」，不以绑定数或零代替；使用情况的显示名为空、状态显示不可用 |
+| 组织角色页的角色成员数不可用（装配没有身份接缝） | 角色表的成员数单元显示空值占位（破折号）；使用情况摘要显示「成员状态不可用」，不以绑定数或零代替；使用情况的显示名为空、状态显示不可用 |
 | 组织角色页的使用情况读失败 | 使用情况区渲染可重试的失败占位；角色与授权仍可按各自的读渲染 |
 | 授权行的服务端权限码为空（本进程翻译不回权限） | 行显示 `resource/action` 的拼写，撤销控件禁用，行内说明该授权无法映射到当前权限目录 |
 | 角色描述超过 500 个字符 | 服务端答 400；描述面板保留输入并渲染该失败，列表中的原描述不变 |
@@ -783,7 +783,7 @@ graph TD
 | 冒充发起被拒的文案、冒充期间记录区的收起 | 已实现 | `web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/admin-ui/src/operations.tsx` `useImpersonations` |
 | `onImpersonationChange` 宿主回调 | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShell`、`onImpersonationChange`；`web/packages/admin-ui/src/internal/impersonation-change.tsx` `AdminImpersonationChangeProvider`、`useAdminImpersonationChange`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm` |
 | 权限页（角色、授权、目录、绑定） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/routes.tsx` `permissionsAdminRoutes` |
-| 权限目录与授予选择器显示服务端渲染的权限说明 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel` |
+| 权限目录按服务端 `group` 分组显示，高危与不可授予标记取服务端元数据，授予选择器只列 `grantable=true` 的项 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel`、`groupCatalog`；`web/packages/admin-ui/src/internal/roles/PermissionName.tsx` `PERMISSION_GROUPS`、`permissionGroupOf` |
 | 内建角色只读（保留查看授权入口，隐藏授予与撤销控件） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 平台管理面的邀请与成员页（邀请读写、成员列出与移除、会员 SSO 豁免） | 已实现 | `web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/routes.tsx` `invitationsAdminRoutes` |
 | SSO 页（创建、改动、列出、删除、元数据、域名列表与认领、验证、移除） | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/admin-ui/src/routes.tsx` `ssoAdminRoutes` |
