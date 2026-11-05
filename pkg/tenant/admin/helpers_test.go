@@ -72,6 +72,15 @@ type stubCatalog struct {
 	during func()
 }
 
+// store records the row a successful provisioner call wrote, so the create
+// route's read-back finds it as it would find a row the real roster holds.
+func (s *stubCatalog) store(t tenant.Tenant) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.held = t
+	s.found = true
+}
+
 func (s *stubCatalog) record(call catalogCall) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -425,16 +434,16 @@ func newRig(t *testing.T) *rig {
 	t.Helper()
 	logs := &logBuffer{}
 	r := &rig{
-		t:           t,
-		catalog:     &stubCatalog{},
-		writeGuard:  &stubWriteGuard{},
-		provisioner: &stubProvisioner{},
-		guard:       &stubGuard{allow: true},
-		audit:       &recordingAudit{},
-		router:      newStubRouter("public"),
-		logs:        logs,
-		signup:      &fakeSignupVerification{},
+		t:          t,
+		catalog:    &stubCatalog{},
+		writeGuard: &stubWriteGuard{},
+		guard:      &stubGuard{allow: true},
+		audit:      &recordingAudit{},
+		router:     newStubRouter("public"),
+		logs:       logs,
+		signup:     &fakeSignupVerification{},
 	}
+	r.provisioner = &stubProvisioner{roster: r.catalog}
 	r.p = &product{
 		catalog:      r.catalog,
 		writeGuard:   r.writeGuard,

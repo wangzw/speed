@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/tenant"
@@ -58,12 +59,21 @@ type provisionCall struct {
 	creator string
 }
 
+// provisionedAt is the creation instant the stand-in provisioner records on the
+// row it stores. The real provisioner writes the roster's own UTC instant; a
+// fixed value lets a case hold that the answer is read back from the roster
+// rather than built from the request, which would carry the zero instant.
+var provisionedAt = time.Date(2026, 7, 8, 9, 10, 11, 0, time.UTC)
+
 // stubProvisioner records every registration and answers from what a case
-// scripted.
+// scripted. roster, when set, receives the row a successful registration
+// wrote, standing in for the roster the real provisioner fills through
+// Catalog.Create.
 type stubProvisioner struct {
-	mu    sync.Mutex
-	err   error
-	calls []provisionCall
+	mu     sync.Mutex
+	err    error
+	calls  []provisionCall
+	roster *stubCatalog
 	// during runs inside the call, before it is recorded.
 	during func()
 }
@@ -73,9 +83,18 @@ func (p *stubProvisioner) Provision(_ context.Context, t tenant.Tenant, creator 
 		p.during()
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.calls = append(p.calls, provisionCall{tenant: t, creator: creator})
-	return p.err
+	err := p.err
+	p.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if p.roster != nil {
+		written := t
+		written.CreatedAt = provisionedAt
+		p.roster.store(written)
+	}
+	return nil
 }
 
 func (p *stubProvisioner) recorded() []provisionCall {

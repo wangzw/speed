@@ -992,6 +992,27 @@ func TestSeedRefusesATenantWithoutAnAdministrator(t *testing.T) {
 	}
 }
 
+// A configured tenant's name becomes its identifier and its alias, so it has to
+// be a slug: a name the old identifier domain admitted would pass configuration
+// and then fail at the roster, after the command had started writing.
+func TestSeedRefusesATenantNameOutsideTheSlugForm(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"Acme_Corp", "a.b", "ab"} {
+		in := seedInput{
+			Accounts: []seedAccount{{Identifier: "operator", Password: "operator-dev-secret"}},
+			Tenants:  []seedTenantEntry{{Name: name, Admins: []string{"operator"}}},
+		}
+		err := checkTenants(in)
+		if err == nil {
+			t.Errorf("checkTenants accepted the tenant name %q, which is not a slug", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "slug") {
+			t.Errorf("the refusal for %q = %q, want it to name the slug form", name, err)
+		}
+	}
+}
+
 // An administrator has to be one of the declared accounts: the binding would
 // otherwise name an account no seed run can write.
 func TestSeedRefusesAnAdministratorItCannotName(t *testing.T) {

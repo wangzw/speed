@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -99,7 +100,18 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 		p.auditBestEffort(ctx, failedAudit(actionTenantCreate, in.ID, actionID))
 		return tenantCreatedBody{}, p.failureOf("registering a tenant", err)
 	}
-	return tenantCreatedBody{Tenant: tenantViewOf(created)}, nil
+	// The answer is the row as the roster holds it, not the value this call
+	// assembled: the creation time is the roster's to record, so a view built
+	// from the input would carry the zero instant.
+	written, found, err := p.catalog.Get(ctx, tenant.ID(in.ID))
+	if err != nil {
+		return tenantCreatedBody{}, p.failureOf("reading a tenant back after registering it", err)
+	}
+	if !found {
+		return tenantCreatedBody{}, p.failureOf("reading a tenant back after registering it",
+			fmt.Errorf("the provisioner reported success but the roster holds no tenant %q", in.ID))
+	}
+	return tenantCreatedBody{Tenant: tenantViewOf(written)}, nil
 }
 
 // handleTenantSetProfile answers PATCH /api/v1/system/tenants/:tenant/profile:

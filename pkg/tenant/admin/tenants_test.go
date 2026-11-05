@@ -87,6 +87,11 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	if got.Tenant.ID != "t_acme" || got.Tenant.Alias != "acme" || got.Tenant.Status != "active" {
 		t.Errorf("tenant = %+v, want the registration, active", got.Tenant)
 	}
+	// The answer carries the creation instant the roster recorded, not the zero
+	// value of the value this call assembled.
+	if !got.Tenant.CreatedAt.Equal(provisionedAt) {
+		t.Errorf("createdAt = %v, want the roster's %v", got.Tenant.CreatedAt, provisionedAt)
+	}
 	calls := r.provisioner.recorded()
 	if len(calls) != 1 {
 		t.Fatalf("the provisioner was asked %+v, want one registration", calls)

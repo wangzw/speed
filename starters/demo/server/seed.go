@@ -323,8 +323,9 @@ func checkTenants(in seedInput) error {
 			return fmt.Errorf("seed: a tenant under seed.%s names no name, and a tenant is "+
 				"registered by its name", tenantsItem)
 		}
-		if !tenant.IsIdentifier(name) {
-			return fmt.Errorf("seed: the tenant %q is outside the roster's identifier domain", name)
+		if !tenant.IsAlias(name) {
+			return fmt.Errorf("seed: the tenant %q is not a lower-case slug of 3 to 63 letters, "+
+				"digits and dashes; the name is the tenant's alias", name)
 		}
 		if name == string(authz.PlatformDomain) {
 			return fmt.Errorf("seed: the tenant %q is the system tenant, which the command registers "+
@@ -901,7 +902,9 @@ func seedSystemTenantAdmins(ctx context.Context, memberships authn.Memberships, 
 
 // seedTenant registers one tenant the configuration names unless the roster
 // already holds it. The alias is the identifier, so a request carrying the
-// tenant's name on its surface resolves to it.
+// tenant's name on its surface resolves to it. The name is held to the slug
+// form by checkTenants, so both the identifier and the alias it stands in for
+// are names the roster accepts.
 //
 // A repeated run reads the row and skips. A create that loses the identifier to
 // another run between the read and the write is the same answer: the tenant is
