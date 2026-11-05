@@ -891,12 +891,13 @@ function PermissionsPageBody({
     {
       id: 'permission',
       header: t('permissions.grants.column.permission'),
-      cellWrap: 'nowrap',
+      // The readable description wraps; the code beneath it is unbroken but
+      // may break at its dots on a narrow tier.
+      cellWrap: 'wrap',
       cellFullValue: grantLabel,
-      // The readable description is this table's primary identity, with the
-      // code beneath it. The column declares no whole-cell cap -- that
-      // would squeeze the wrapped description -- so the identity line alone
-      // carries the shared cap (see PermissionLabel).
+      // The column declares no whole-cell cap -- that would squeeze the
+      // wrapped description -- so the identity line alone carries the
+      // shared cap (see PermissionLabel).
       cell: (grant) => (
         <PermissionLabel
           entry={permissionByCode.get(grant.permission)}
@@ -976,12 +977,12 @@ function PermissionsPageBody({
     {
       id: 'permission',
       header: t('permissions.catalog.column.permission'),
-      // The server-rendered description is the column's primary text; the
-      // code beneath it wraps, so the cell's nowrap policy stops at the
-      // identity line. The column declares no whole-cell cap -- that would
-      // squeeze the wrapped code -- so the identity line alone carries the
+      // The server-rendered description is the column's primary text and
+      // wraps; the code beneath it is unbroken but may break at its dots on
+      // a narrow tier. The column declares no whole-cell cap -- that would
+      // squeeze the wrapped text -- so the identity line alone carries the
       // shared primary cap (see PermissionLabel).
-      cellWrap: 'nowrap',
+      cellWrap: 'wrap',
       cellFullValue: (entry) => entry.permission,
       cell: (entry) => (
         <PermissionLabel
