@@ -80,13 +80,14 @@ key.
   through `errors.Is`. An identifier the table already holds is
   `tenant.ErrTenantExists`, answered a 409, and nothing is written. This is
   where `Create` and `Put` divide: `Put` rewrites the row its identifier names,
-  alias and status together, which is a seed's action, while `Create` only
-  inserts. A registration starts the tenant `active`; there is no delete, and
-  disabling is the only way to retire one.
+  the status and the disable source together, which is a seed's action, while
+  `Create` only inserts. An alias is chosen at creation and never changes, so a
+  rewrite carrying another alias is refused. A registration starts the tenant
+  `active`; there is no delete, and disabling is the only way to retire one.
 - **The profile write goes through `SetProfile`, never `Put`.** The body carries
   all four descriptive fields; an empty value clears the stored one. `Put`
-  writes the alias and status too, so a profile update through it would carry
-  whatever this process last read and could serve a tenant another replica
+  writes the status and disable source too, so a profile update through it would
+  carry whatever this process last read and could serve a tenant another replica
   disabled. The profile route reads the row for its 404 first, writes the
   mandatory audit row with `surface=platform`, then calls `SetProfile`. The
   registration's profile fields are optional and go to the provisioner with the
@@ -158,7 +159,9 @@ key.
   `surface=platform` in their detail, which tells them apart from the tenant
   profile module's rows for the same action.
 - **The refusal mapping is closed and fail-closed.** An identifier the roster's
-  table already holds is a 409; an alias another tenant holds is a 409; an
+  table already holds — as an identifier or as an alias, since the two share one
+  namespace — is a 409; an alias another tenant holds as an alias or as its
+  identifier is a 409; an
   identifier no row carries is a 404; any other failure is a 503 whose cause stays
   in the log and never reaches the caller. A 404 and a 503 carry no problem type —
   they say something is not there or a dependency could not answer and not which

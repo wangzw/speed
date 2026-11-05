@@ -158,7 +158,8 @@ func TestMembersFiltersByDisplayNameOrIdentifier(t *testing.T) {
 		}{
 			{"every member with no query", "", []authn.AccountID{named, login, other}},
 			{"a display-name prefix", "Ada L", []authn.AccountID{named}},
-			{"an identifier prefix after lower-casing", "ada-log", []authn.AccountID{login}}, {"a query neither matches", "zzz", nil},
+			{"an identifier prefix after lower-casing", "ada-log", []authn.AccountID{login}},
+			{"a query neither matches", "zzz", nil},
 		}
 		for _, c := range cases {
 			got, err := h.p.Members(ctx, "acme", authn.MemberQuery{Query: c.query})

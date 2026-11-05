@@ -368,7 +368,7 @@ func TestListOrdersPendingFirstAndPagesByCursor(t *testing.T) {
 	b := h.issue(tenant, "b@example.com")
 	h.clock.advance(time.Minute)
 	c := h.issue(tenant, "c@example.com")
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: b.Token, Username: "b"}); err != nil {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: b.Token, Username: "brand"}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 

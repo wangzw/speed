@@ -540,14 +540,16 @@ func TestPutRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 }
 
 // TestPutRewritesByIdentifier is Put's idempotence: the same identifier written
-// twice is one row, carrying the second write's alias and status. Both halves
-// need holding — a put that inserted a second row and one that left the first
-// row untouched are different defects that a claim of "one row" alone would not
+// twice is one row, carrying the second write's status. Both halves need
+// holding — a put that inserted a second row and one that left the first row
+// untouched are different defects that a claim of "one row" alone would not
 // tell apart.
 //
 // The alias is resolved back through the roster rather than only read from the
 // table: a rewrite whose result this process does not serve is one an operator
-// has to wait out a refresh period to see.
+// has to wait out a refresh period to see. The alias stays the one the row was
+// written with, and the second write names it so that the rewrite is not
+// refused as a rename.
 func TestPutRewritesByIdentifier(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
@@ -559,7 +561,7 @@ func TestPutRewritesByIdentifier(t *testing.T) {
 		t.Fatalf("the first write left %d rows, want 1", got)
 	}
 
-	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Alias: "renamed", Status: tenant.StatusDisabled}); err != nil {
+	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusDisabled}); err != nil {
 		t.Fatalf("rewriting the tenant: %v", err)
 	}
 	if got := countRows(t, r); got != 1 {
@@ -569,15 +571,99 @@ func TestPutRewritesByIdentifier(t *testing.T) {
 	if !ok {
 		t.Fatal("the identifier the row was written under is no longer in the table")
 	}
-	if held.Alias != "renamed" {
-		t.Errorf("the row's alias is %q, want the second write's %q", held.Alias, "renamed")
+	if held.Alias != "acme" {
+		t.Errorf("the row's alias is %q, want the %q it was written with", held.Alias, "acme")
 	}
 	if held.Status != int(tenant.StatusDisabled) {
 		t.Errorf("the row's status is %d, want the second write's %d", held.Status, int(tenant.StatusDisabled))
 	}
-	if written, ok, err := r.ByAlias(ctx, "renamed"); err != nil || !ok || written.Status != tenant.StatusDisabled {
-		t.Errorf("the roster does not resolve the alias that was just written: %+v (found=%v, err=%v)",
+	if written, ok, err := r.ByAlias(ctx, "acme"); err != nil || !ok || written.Status != tenant.StatusDisabled {
+		t.Errorf("the roster does not resolve the alias the row was written with: %+v (found=%v, err=%v)",
 			written, ok, err)
+	}
+}
+
+// TestPutRefusesToChangeAnAlias holds the alias's immutability: an alias is
+// chosen when the row is written and is never changed afterwards, so a rewrite
+// carrying another alias is refused and leaves the row as it was. Renaming
+// would otherwise reopen the ambiguity the namespace check closes — a new alias
+// could equal another tenant's identifier without any creation path seeing it.
+func TestPutRefusesToChangeAnAlias(t *testing.T) {
+	r := rosterOver(t, insert("t_acme", "acme"))
+	err := r.Put(context.Background(), tenant.Tenant{
+		ID: "t_acme", Alias: "renamed", Status: tenant.StatusDisabled,
+	})
+	if !errors.Is(err, tenant.ErrInvalidTenant) {
+		t.Fatalf("rewriting a tenant under another alias gave %v, want ErrInvalidTenant", err)
+	}
+	requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme", Status: int(tenant.StatusActive)})
+}
+
+// TestCreateRefusesAnAliasThatIsAnotherTenantsIdentifier and
+// TestCreateRefusesAnIdentifierThatIsAnotherTenantsAlias hold the two halves of
+// one namespace: a slug addresses one tenant whichever way it is looked up, so
+// a creation cannot make one tenant's alias read as another tenant's
+// identifier. Both refusals write nothing.
+func TestCreateRefusesAnAliasThatIsAnotherTenantsIdentifier(t *testing.T) {
+	r := rosterOver(t, insert("acme-one", "first"))
+	err := r.Create(context.Background(), tenant.Tenant{
+		ID: "second", Alias: "acme-one", Status: tenant.StatusActive,
+	})
+	if !errors.Is(err, tenant.ErrAliasConflict) {
+		t.Fatalf("creating a tenant whose alias is another tenant's identifier gave %v, want ErrAliasConflict", err)
+	}
+	if got := countRows(t, r); got != 1 {
+		t.Errorf("the refused creation left %d rows, want the 1 it started with", got)
+	}
+}
+
+func TestCreateRefusesAnIdentifierThatIsAnotherTenantsAlias(t *testing.T) {
+	r := rosterOver(t, insert("first", "second-alias"))
+	err := r.Create(context.Background(), tenant.Tenant{
+		ID: "second-alias", Alias: "third-alias", Status: tenant.StatusActive,
+	})
+	if !errors.Is(err, tenant.ErrTenantExists) {
+		t.Fatalf("creating a tenant whose identifier is another tenant's alias gave %v, want ErrTenantExists", err)
+	}
+	if got := countRows(t, r); got != 1 {
+		t.Errorf("the refused creation left %d rows, want the 1 it started with", got)
+	}
+}
+
+// TestPutRefusesACrossNamespaceInsert holds the same two checks on Put's insert
+// path: the rewrite is not the only way a row enters the table, so a creation
+// through Put cannot leave the namespace ambiguous either.
+func TestPutRefusesACrossNamespaceInsert(t *testing.T) {
+	cases := []struct {
+		name     string
+		first    string
+		second   tenant.Tenant
+		sentinel error
+	}{
+		{
+			name:     "an alias that is another tenant's identifier",
+			first:    "INSERT INTO tenants (id, alias, status) VALUES ('acme-one', 'first', 1)",
+			second:   tenant.Tenant{ID: "second", Alias: "acme-one", Status: tenant.StatusActive},
+			sentinel: tenant.ErrAliasConflict,
+		},
+		{
+			name:     "an identifier that is another tenant's alias",
+			first:    "INSERT INTO tenants (id, alias, status) VALUES ('first', 'second-alias', 1)",
+			second:   tenant.Tenant{ID: "second-alias", Alias: "third-alias", Status: tenant.StatusActive},
+			sentinel: tenant.ErrTenantExists,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := rosterOver(t, tc.first)
+			err := r.Put(context.Background(), tc.second)
+			if !errors.Is(err, tc.sentinel) {
+				t.Fatalf("the insert gave %v, want %v", err, tc.sentinel)
+			}
+			if got := countRows(t, r); got != 1 {
+				t.Errorf("the refused insert left %d rows, want the 1 it started with", got)
+			}
+		})
 	}
 }
 

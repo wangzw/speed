@@ -119,8 +119,8 @@ func TestSetOwnerIsIdempotent(t *testing.T) {
 
 // TestCreateWritesTheOwnerAndPutLeavesItAlone holds the creation path and the
 // rewrite path apart: Create writes the value's owner, and a rewrite through Put
-// changes the alias, the state and the disable source without transferring the
-// organization.
+// changes the state and the disable source without transferring the organization
+// or changing the alias.
 func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
@@ -138,8 +138,8 @@ func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 		t.Fatalf("the created tenant's owner is %q, want acct-1", created.OwnerAccount)
 	}
 
-	if err := r.Put(ctx, tenant.Tenant{
-		ID: "t_acme", Alias: "acme-two", Status: tenant.StatusDisabled, OwnerAccount: "acct-2",
+	if err = r.Put(ctx, tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled, OwnerAccount: "acct-2",
 	}); err != nil {
 		t.Fatalf("rewriting the tenant: %v", err)
 	}
@@ -150,8 +150,8 @@ func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 	if rewritten.OwnerAccount != "acct-1" {
 		t.Errorf("Put transferred the owner to %q, want acct-1 left as Create wrote it", rewritten.OwnerAccount)
 	}
-	if rewritten.Alias != "acme-two" || rewritten.Status != tenant.StatusDisabled {
-		t.Errorf("the rewrite left %+v, want the new alias and state", rewritten)
+	if rewritten.Alias != "acme" || rewritten.Status != tenant.StatusDisabled {
+		t.Errorf("the rewrite left %+v, want the alias it was created with and the new state", rewritten)
 	}
 }
 

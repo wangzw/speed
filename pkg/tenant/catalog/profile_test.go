@@ -391,7 +391,7 @@ func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
 	}
 
 	if err := r.Put(context.Background(), tenant.Tenant{
-		ID: "t_put", Alias: "put-renamed", Status: tenant.StatusDisabled,
+		ID: "t_put", Alias: "put", Status: tenant.StatusDisabled,
 	}); err != nil {
 		t.Fatalf("rewriting through Put: %v", err)
 	}

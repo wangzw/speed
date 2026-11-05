@@ -654,10 +654,19 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 
 // Put implements tenant.Catalog.
 //
-// The rewrite is by identifier, so registering a tenant twice is one row. The
-// alias is checked inside the same transaction as the write: the column's
-// unique index would catch a collision too, but it would report it as a
-// constraint violation rather than as which tenant holds the name.
+// The rewrite is by identifier, so registering a tenant twice is one row. An
+// alias is chosen when the row is written and is immutable afterwards: a
+// rewrite whose value carries another alias is refused with ErrInvalidTenant
+// and writes nothing, while one carrying the alias the row already has changes
+// only the status and the disable source.
+//
+// An insert takes the alias, the owner and the creation time, and the alias is
+// checked inside the same transaction as the write: the column's unique index
+// would catch a collision too, but it would report it as a constraint violation
+// rather than as which tenant holds the name. The alias and the identifier are
+// one namespace — a slug may be a tenant's alias or its identifier, never both —
+// so an insert also refuses an alias another tenant carries as its identifier
+// and an identifier another tenant carries as its alias (checkNamespace).
 //
 // The check does not close the race on its own. Two writes putting one alias
 // on two tenants at once can both find it free, and the later insert then
@@ -677,10 +686,11 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 //
 // The write and the read that names a conflict run on one connection (write).
 //
-// The profile and owner columns are not written by a rewrite. A rewrite takes
-// the alias, the status and the disable source, so it cannot put back a profile
-// another path changed or an owner another path transferred; an insert it
-// performs takes the migration's profile defaults and the value's owner. The
+// The profile, owner and alias columns are not written by a rewrite. A rewrite
+// takes the status and the disable source, so it cannot put back a profile
+// another path changed, an owner another path transferred, or an alias the row
+// was not created with; an insert it performs takes the migration's profile
+// defaults and the value's owner. The
 // creation time is written on an insert and only on an insert: a registration
 // made through Put records the real moment in UTC, exactly as Create does, while
 // the upsert's update clause leaves an existing row's time alone. Updating a
@@ -694,20 +704,23 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 		if err != nil {
 			return err
 		}
-		if len(held) > 0 && tenant.Status(held[0].Status) == tenant.StatusDeleted {
+		switch {
+		case len(held) > 0 && tenant.Status(held[0].Status) == tenant.StatusDeleted:
 			return tombstone(t.ID)
-		}
-		held, err = lookUp(tx, "alias", t.Alias)
-		if err != nil {
-			return err
-		}
-		if len(held) > 0 && held[0].ID != string(t.ID) {
-			return fmt.Errorf("%w: alias %q is held by tenant %q",
-				tenant.ErrAliasConflict, t.Alias, held[0].ID)
+		case len(held) > 0 && held[0].Alias != t.Alias:
+			return fmt.Errorf("%w: tenant %q already carries the alias %q, and an alias "+
+				"is chosen at creation and never changed", tenant.ErrInvalidTenant, t.ID, held[0].Alias)
+		case len(held) == 0:
+			if err := checkNamespace(tx, t); err != nil {
+				return err
+			}
 		}
 		written := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"alias", "status", "disabled_by"}),
+			Columns: []clause.Column{{Name: "id"}},
+			// The alias is immutable: an existing row keeps the one it was
+			// written with, and the value's alias is read only by the insert
+			// below.
+			DoUpdates: clause.AssignmentColumns([]string{"status", "disabled_by"}),
 			// The rewrite itself refuses a tombstone: the check above runs
 			// before the statement, and a deletion committed between the two
 			// would otherwise be overwritten by the values this caller read.
@@ -880,8 +893,10 @@ func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error 
 // identifier is already there, and a write that inserted nothing is the
 // refusal — so two creations of one identifier at once end with one row and
 // one ErrTenantExists, the later one having waited on the earlier's row rather
-// than overwriting it. The alias is checked and its race answered as Put
-// answers it, on the write's one connection (write).
+// than overwriting it. The alias and the identifier are one namespace, so an
+// insert also refuses an alias another tenant carries as its identifier and an
+// identifier another tenant carries as its alias (checkNamespace); the alias's
+// race is answered as Put answers it, on the write's one connection (write).
 func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 	if err := checkWrite(t); err != nil {
 		return err
@@ -894,13 +909,8 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 		if len(held) > 0 {
 			return tenantExists(t.ID)
 		}
-		held, err = lookUp(tx, "alias", t.Alias)
-		if err != nil {
+		if err := checkNamespace(tx, t); err != nil {
 			return err
-		}
-		if len(held) > 0 {
-			return fmt.Errorf("%w: alias %q is held by tenant %q",
-				tenant.ErrAliasConflict, t.Alias, held[0].ID)
 		}
 		written := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
@@ -1320,6 +1330,51 @@ func checkAlias(alias string) error {
 	if !tenant.IsAlias(alias) {
 		return fmt.Errorf("%w: the alias is not a lower-case slug of 3 to 63 letters, digits and dashes",
 			tenant.ErrInvalidTenant)
+	}
+	return nil
+}
+
+// checkNamespace holds an alias and an identifier to one namespace, for the
+// creation paths, inside the write's transaction.
+//
+// A slug is either a tenant's alias or a tenant's identifier, never both: a
+// request surface that carried one value would otherwise name two tenants, and
+// the path guard would refuse that segment on every route that takes a tenant.
+// The two lookups are separate because the columns are — alias is unique on its
+// own and id is the primary key — and neither index spans the other column, so
+// the pair's disjointness is this check's to enforce.
+//
+// The row this call is about is not in the table yet: Create has already found
+// its identifier free, and Put reaches here only on its insert path. An alias
+// another tenant carries as its identifier is reported as ErrAliasConflict, the
+// alias being the value whose fix is the caller's; an identifier another tenant
+// carries as its alias is reported as ErrTenantExists, for the same reason. The
+// message names the holder and never a value the caller has not already
+// supplied.
+func checkNamespace(tx *gorm.DB, t tenant.Tenant) error {
+	held, err := lookUp(tx, "alias", t.Alias)
+	if err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		return fmt.Errorf("%w: alias %q is held by tenant %q",
+			tenant.ErrAliasConflict, t.Alias, held[0].ID)
+	}
+	held, err = lookUp(tx, "id", t.Alias)
+	if err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		return fmt.Errorf("%w: alias %q is the identifier of tenant %q",
+			tenant.ErrAliasConflict, t.Alias, held[0].ID)
+	}
+	held, err = lookUp(tx, "alias", string(t.ID))
+	if err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		return fmt.Errorf("%w: identifier %q is the alias of tenant %q",
+			tenant.ErrTenantExists, t.ID, held[0].ID)
 	}
 	return nil
 }

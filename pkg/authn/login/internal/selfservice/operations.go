@@ -80,7 +80,7 @@ type addIdentifierInput struct {
 	_ struct{} `description:"The login identifier to add — a username or an email address — and the human-verification proof the email branch may require."`
 
 	Kind  string `json:"kind" required:"true" description:"The identifier kind to add: username or email; a phone is added through /auth/phone"`
-	Value string "json:\"value\" required:\"true\" description:\"The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 64 characters of [a-z0-9._-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request.\""
+	Value string "json:\"value\" required:\"true\" description:\"The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 63 characters of [a-z0-9-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request.\""
 	// HumanProof is the proof the deployment's human-verification gate checks
 	// before an email code is sent. The username branch sends nothing and ignores
 	// it.

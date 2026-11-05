@@ -138,8 +138,8 @@ func TestTheRostersWritesHandGORMNoFailedStatement(t *testing.T) {
 	if err := r.Put(ctx, tenant.Tenant{ID: "t_1", Alias: "acme", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("putting a new tenant: %v", err)
 	}
-	if err := r.Put(ctx, tenant.Tenant{ID: "t_1", Alias: "acme2", Status: tenant.StatusActive}); err != nil {
-		t.Fatalf("renaming a tenant: %v", err)
+	if err := r.Put(ctx, tenant.Tenant{ID: "t_1", Alias: "acme", Status: tenant.StatusDisabled}); err != nil {
+		t.Fatalf("rewriting a tenant: %v", err)
 	}
 	if err := r.Create(ctx, tenant.Tenant{ID: "t_2", Alias: "initech", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("creating a new tenant: %v", err)

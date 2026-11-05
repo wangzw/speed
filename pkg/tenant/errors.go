@@ -94,7 +94,8 @@ var (
 	// ErrInvalidTenant reports a tenant this module will not act on: one
 	// whose own shape is wrong — an empty identifier or alias, an alias outside
 	// the lower-case slug form, an identifier carrying blanks or control
-	// characters, an owner value that is neither empty nor an identifier — or an
+	// characters, an owner value that is neither empty nor an identifier, or a
+	// rewrite naming an alias other than the one the row was created with — or an
 	// identifier no row of the roster carries, which is what a caller asking to
 	// change the state of a tenant that is not there, or to enter one, is told.
 	//
@@ -154,15 +155,18 @@ var (
 	// caller outside the process; this one goes to the process's own code.
 	ErrTenantDeleted = errors.New("tenant: the tenant has been deleted")
 
-	// ErrAliasConflict reports a write that would put one alias on two
-	// tenants. The fix is to change one of them; an alias is chosen when the
-	// tenant is created and is never changed afterwards.
+	// ErrAliasConflict reports a write that would put one slug on two tenants:
+	// an alias another tenant already carries as its alias, or an alias that is
+	// another tenant's identifier. An alias and an identifier are one
+	// namespace, so the fix is the same either way — choose another alias. The
+	// message names the tenant holding the value.
 	ErrAliasConflict = errors.New("tenant: two tenants would share one alias")
 
 	// ErrTenantExists reports a creation naming an identifier the roster's
-	// table already holds. Nothing was written. The fix depends on what the
-	// caller meant: a new tenant needs an identifier of its own, and a change
-	// to the one that exists goes through Put or SetStatus.
+	// table already holds — as some tenant's identifier, or as its alias, since
+	// the two share one namespace. Nothing was written. The fix depends on what
+	// the caller meant: a new tenant needs an identifier of its own, and a
+	// change to the one that exists goes through Put or SetStatus.
 	ErrTenantExists = errors.New("tenant: a tenant with this identifier is already registered")
 
 	// ErrNoTenantInContext reports a statement against a scoped model whose

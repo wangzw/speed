@@ -120,12 +120,18 @@ type Catalog interface {
 	// alias is then looked up as an identifier.
 	ByAlias(ctx context.Context, alias string) (Tenant, bool, error)
 	// Put registers a tenant, or rewrites the row its identifier already
-	// has. Alias, status and disable source are taken from the value as given.
-	// The owner is written on an insert and left alone on a rewrite: Put is not
-	// the transfer path, SetOwner is.
+	// has. The status and the disable source are taken from the value as
+	// given; the alias is not, because an alias is chosen at creation and is
+	// never changed. The owner is written on an insert and left alone on a
+	// rewrite: Put is not the transfer path, SetOwner is.
 	//
-	// It is idempotent by identifier. A second tenant arriving with an
-	// alias another one holds is refused, and nothing is written. A row that
+	// It is idempotent by identifier. A rewrite whose value carries an alias
+	// other than the one the row already has is refused with ErrInvalidTenant,
+	// and nothing is written. An insert whose alias another tenant holds, or
+	// whose alias is another tenant's identifier, is refused as
+	// ErrAliasConflict; an insert whose identifier is another tenant's alias is
+	// refused as ErrTenantExists. An alias and an identifier are one namespace,
+	// so a slug addresses one tenant whichever way it is looked up. A row that
 	// is a tombstone is refused with ErrTenantDeleted, and nothing is written:
 	// a deleted tenant is terminal. So is a value whose status is StatusDeleted
 	// or whose disable source is anything but the operator's, refused with
@@ -137,7 +143,9 @@ type Catalog interface {
 	// writing nothing — a tombstone's identifier included, so a deleted tenant
 	// is never registered a second time. The value's owner, profile and the
 	// moment of creation are written with the row. An alias another tenant holds
-	// is refused as Put refuses it, and a value whose status is StatusDeleted or
+	// is refused as Put refuses it, so is an alias another tenant carries as its
+	// identifier, and an identifier another tenant carries as its alias is
+	// refused with ErrTenantExists; a value whose status is StatusDeleted or
 	// whose disable source is not the operator's is refused with
 	// ErrInvalidTenant, as Put refuses it.
 	//
