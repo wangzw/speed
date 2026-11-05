@@ -7,8 +7,9 @@
  * directions. The page index is zero-based in state and one-based in the
  * label. The control renders nothing on a single-page list, so a caller may
  * place it unconditionally below the table; `busy` disables both directions
- * while the section's own writes are in flight, since a page change would
- * move the rows a settled result describes.
+ * while a page change would read a cursor that is not the settled page's --
+ * while the section's own writes are in flight, and while the page the control
+ * was just moved to is still loading under a kept previous result.
  *
  * The labels come from the admin-ui namespace's shared pager keys, so the
  * two lists page with one wording and the host overrides it once.

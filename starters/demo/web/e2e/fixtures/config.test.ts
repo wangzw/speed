@@ -77,7 +77,7 @@ describe('the review configuration', () => {
     expect(body).not.toContain('    ops:\n')
     expect(body).not.toContain('8080')
     expect(body).not.toContain('8083')
-    expect(body.match(/"http:\/\/localhost:41080"/g)).toHaveLength(3)
+    expect(body.match(/"http:\/\/localhost:41080"/g)).toHaveLength(4)
   })
 
   it('keeps the enterprise SSO seams at the deployment defaults', async () => {

@@ -978,8 +978,7 @@
       "pending": "Pending",
       "expired": "Expired",
       "accepted": "Accepted",
-      "revoked": "Revoked",
-      "other": "Unknown"
+      "revoked": "Revoked"
     },
     "filter": {
       "label": "Status",
@@ -991,7 +990,7 @@
     "revoked": "Invitation to \"{{email}}\" revoked",
     "resend": "Resend",
     "resendTitle": "Resend invitation",
-    "resendMessage": "Resending immediately invalidates the previous link sent to \"{{email}}\" and sends a new invitation.",
+    "resendMessage": "Resending immediately invalidates the previous link sent to \"{{email}}\" and sends a new invitation with a {{days}}-day validity.",
     "resent": "Invitation to \"{{email}}\" resent",
     "copyLink": "Copy link",
     "copyLinkUnavailable": "Only the most recently issued or resent invitation has a link to copy.",

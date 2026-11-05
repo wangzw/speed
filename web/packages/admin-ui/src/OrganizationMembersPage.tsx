@@ -267,7 +267,11 @@ export function OrganizationMembersPage({
   }
 
   const nextMemberPage = () => {
-    if (memberNextCursor === '' || membersFeedback.pending) {
+    // `keepPreviousData` leaves the previous page's envelope on screen while
+    // the next one loads, so its `next_cursor` still names that same page.
+    // Reading it again would push the same cursor twice and show one page
+    // twice; the control waits for the read to settle.
+    if (memberNextCursor === '' || membersFeedback.pending || members.isFetching) {
       return
     }
     const next = memberNextCursor
@@ -280,7 +284,7 @@ export function OrganizationMembersPage({
     })
   }
   const previousMemberPage = () => {
-    if (memberPage === 0 || membersFeedback.pending) {
+    if (memberPage === 0 || membersFeedback.pending || members.isFetching) {
       return
     }
     setMemberCursorState((previous) => {
@@ -373,6 +377,10 @@ export function OrganizationMembersPage({
     if (address === '') {
       return
     }
+    // A new attempt owns the scope: the row marked by an earlier failed
+    // resend or revoke must not keep a dangling `aria-describedby` once this
+    // attempt replaces that failure's text.
+    setFailedInvitation(null)
     void invitationFeedback.run(async () => {
       const answer = await issueInvitation.mutateAsync({
         tenant,
@@ -390,7 +398,10 @@ export function OrganizationMembersPage({
   const requestResend = (invitation: AdminInvitation) => {
     confirm.ask({
       title: t('invitations.resendTitle'),
-      message: t('invitations.resendMessage', { email: invitation.email }),
+      message: t('invitations.resendMessage', {
+        email: invitation.email,
+        days: expiryDays,
+      }),
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedInvitation(null)
@@ -818,7 +829,7 @@ export function OrganizationMembersPage({
           <CursorPager
             page={memberPage}
             hasNext={memberNextCursor !== ''}
-            busy={membersFeedback.pending}
+            busy={membersFeedback.pending || members.isFetching}
             onPrevious={previousMemberPage}
             onNext={nextMemberPage}
           />

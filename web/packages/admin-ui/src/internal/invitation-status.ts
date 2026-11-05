@@ -31,24 +31,13 @@ export const INVITATION_STATUS_FILTERS: readonly InvitationStatusFilter[] = [
 ]
 
 /**
- * Whether a value is one of the four displayed statuses. A value outside the
- * set renders the generic label rather than a raw value.
- */
-export function isInvitationStatus(value: string): value is InvitationStatus {
-  return (
-    value === 'pending' ||
-    value === 'expired' ||
-    value === 'accepted' ||
-    value === 'revoked'
-  )
-}
-
-/**
  * The displayed status of one invitation at `now`. A stored `pending`
  * invitation whose deadline is at or before `now` reads `expired`; accepted
- * and revoked are terminal and never expire. A deadline that does not parse
- * leaves the invitation pending: the row keeps the stored state rather than
- * inventing an expiry from malformed data.
+ * and revoked are terminal and never expire. A stored value that is neither
+ * terminal is treated as pending and judged by its deadline: the display
+ * derives from the closed stored set rather than inventing a fifth state. A
+ * deadline that does not parse leaves the invitation pending: the row keeps
+ * the stored state rather than inventing an expiry from malformed data.
  */
 export function invitationStatusOf(
   invitation: Pick<AuthnInviteInvitation, 'status' | 'expires_at'>,

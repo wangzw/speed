@@ -30,6 +30,7 @@ import type {
   AdminInvitation,
   AdminIssuedInvitation,
   AdminMember,
+  AdminMemberPage,
   AdminOperations,
 } from './operations.js'
 import type {
@@ -527,6 +528,44 @@ describe('the member search and paging', () => {
     expect(
       screen.getByText(zhCN.common.pager.page.replace('{{page}}', '2')),
     ).toBeInTheDocument()
+  })
+
+  it('blocks a second page change while the kept previous page is still loading', async () => {
+    const user = userEvent.setup()
+    let resolveNext: (page: AdminMemberPage) => void = () => undefined
+    const { backend, recorder } = scripted({
+      listMembers: (_tenant, params) => {
+        recorder.memberParams.push(params)
+        if (params?.after === 'acc-1') {
+          return new Promise<AdminMemberPage>((resolve) => {
+            resolveNext = resolve
+          })
+        }
+        return Promise.resolve({ members: [ADA], next_cursor: 'acc-1' })
+      },
+    })
+    renderPage(backend)
+    await screen.findByText(ADA.display_name)
+
+    const next = screen.getByRole('button', { name: zhCN.common.pager.next })
+    await user.click(next)
+    // While the second page loads, the kept first page's envelope still
+    // names `acc-1`. A second click would push that same cursor onto the
+    // stack and show one page twice, so the control must be disabled until
+    // the read settles.
+    await waitFor(() => expect(next).toBeDisabled())
+
+    await act(async () => {
+      resolveNext({ members: [BOB], next_cursor: '' })
+    })
+    expect(await screen.findByText(BOB.display_name)).toBeInTheDocument()
+    // Exactly one page advanced: the second click made no change.
+    expect(
+      screen.getByText(zhCN.common.pager.page.replace('{{page}}', '2')),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.common.pager.page.replace('{{page}}', '3')),
+    ).toBeNull()
   })
 
   it('starts the new tenant at the first page without carrying the old cursor', async () => {
@@ -1129,6 +1168,87 @@ describe('the invitation section', () => {
         name: zhCN.invitations.copyLink,
       }),
     ).toBeNull()
+  })
+
+  it('names the new validity before resending', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted()
+    renderPage(backend)
+    await screen.findByText(PENDING_INVITATION.email)
+
+    // The issue form's expiry choice also sets the resend's validity. Ask for
+    // the confirmation under two choices and read what it says: the sentence
+    // must state the validity this resend will give, so the two cannot read
+    // the same. The text is read from the dialog, not compared against a
+    // literal, so a host's own wording keeps the case meaningful.
+    const confirmTextFor = async (choice: string): Promise<string> => {
+      await user.click(
+        screen.getByRole('combobox', {
+          name: zhCN.invitations.issue.quickLabel,
+        }),
+      )
+      await user.click(screen.getByRole('option', { name: choice }))
+      await user.click(
+        within(rowOf(PENDING_INVITATION.email)).getByRole('button', {
+          name: zhCN.invitations.resend,
+        }),
+      )
+      const dialog = await screen.findByRole('dialog', {
+        name: zhCN.invitations.resendTitle,
+      })
+      const text = dialog.textContent ?? ''
+      await user.click(
+        within(dialog).getByRole('button', { name: zhCN.common.cancel }),
+      )
+      return text
+    }
+
+    const oneDay = await confirmTextFor(zhCN.invitations.issue.oneDay)
+    const thirtyDays = await confirmTextFor(zhCN.invitations.issue.thirtyDays)
+    expect(oneDay).not.toBe(thirtyDays)
+  })
+
+  it('clears an earlier failed row marker when a later issue succeeds', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      issueInvitation: (input) =>
+        input.email === PENDING_INVITATION.email
+          ? Promise.reject(new Error('invite write refused'))
+          : Promise.resolve(issuedFixture(input.email)),
+    })
+    renderPage(backend)
+    const row = rowOf(await screen.findByText(PENDING_INVITATION.email))
+    await user.click(
+      within(row).getByRole('button', { name: zhCN.invitations.resend }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+    const failedResend = within(
+      rowOf(PENDING_INVITATION.email),
+    ).getByRole('button', { name: zhCN.invitations.resend })
+    await waitFor(() =>
+      expect(failedResend).toHaveAttribute('aria-invalid', 'true'),
+    )
+    expect(failedResend).toHaveAttribute('aria-describedby')
+
+    // A later issue replaces the failure in the scope. The old row must stop
+    // pointing at the error text that is no longer rendered.
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'fresh@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    await screen.findByText(
+      `${window.location.origin}/invitations/spd_inv_new_token`,
+    )
+    const settledResend = within(
+      rowOf(PENDING_INVITATION.email),
+    ).getByRole('button', { name: zhCN.invitations.resend })
+    expect(settledResend).not.toHaveAttribute('aria-invalid', 'true')
+    expect(settledResend).not.toHaveAttribute('aria-describedby')
   })
 
   it('revokes a pending invitation', async () => {

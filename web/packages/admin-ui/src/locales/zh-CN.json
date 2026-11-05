@@ -978,8 +978,7 @@
       "pending": "待接受",
       "expired": "已过期",
       "accepted": "已接受",
-      "revoked": "已撤销",
-      "other": "未知"
+      "revoked": "已撤销"
     },
     "filter": {
       "label": "状态",
@@ -991,7 +990,7 @@
     "revoked": "已撤销发给「{{email}}」的邀请",
     "resend": "重发",
     "resendTitle": "重发邀请",
-    "resendMessage": "重发会立即作废发给「{{email}}」的旧链接，并发送一条新邀请。",
+    "resendMessage": "重发会立即作废发给「{{email}}」的旧链接，并发送一条有效期为 {{days}} 天的新邀请。",
     "resent": "已重发发给「{{email}}」的邀请",
     "copyLink": "复制链接",
     "copyLinkUnavailable": "只有最近一次签发或重发的邀请可以复制链接。",
