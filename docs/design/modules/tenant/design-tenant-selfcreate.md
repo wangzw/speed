@@ -105,22 +105,24 @@ graph LR
 sequenceDiagram
   participant C as 调用方
   participant S as tenant.selfcreate
-  participant V as authn.SignupVerification
+  participant signup as authn.SignupVerification
   participant R as authn.UsernameReservation
   participant K as kv.KV
+  participant settings as settings.Store
   participant T as tenant.Catalog
   participant M as authn.Memberships
   participant A as audit.Audit
   participant P as tenant.Provisioner
 
   C->>S: POST /api/v1/orgs
-  S->>V: SignupStateOf(account)
+  S->>signup: SignupStateOf(account)
   S->>R: ReservedUsername(alias)
   S->>T: ByAlias(alias), Get(alias)
   S->>K: SetIfAbsent(lock, 30s)
-  S->>K: Get(hourly)
+  S->>settings: Get(max-organizations), Get(max-per-hour)
   S->>M: Tenants(account)
   S->>T: List()
+  S->>K: Get(hourly)
   S->>T: Get(id), ByAlias(id)
   S->>K: IncrByFloatWithTTL(hourly, 1)
   S->>A: Record(org.tenant.create)
