@@ -55,6 +55,8 @@ type assembly struct {
 	memberships authn.Memberships
 	catalog     tenant.Catalog
 	manager     authz.Manager
+	seeder      authz.Seeder
+	counter     authz.TenantAdminCounter
 	writer      tenant.OrganizationWriter
 	handle      *gorm.DB
 }
@@ -73,6 +75,11 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 		ownership.Module(),
 		standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)),
 		standIn("stand-in.write-guard", personalWriteGuard{}, (*authz.WriteGuard)(nil)),
+		// The shared tenant lock every path that judges a tenant's ownership or
+		// administrator floor takes. The policy module and the ownership module
+		// both take it up, so the account-administration lock and a transfer
+		// exclude each other the way a deployment's database lock does.
+		standIn("stand-in.tenant-lock", authz.NewInProcessTenantLock(), (*authz.TenantLock)(nil)),
 	}
 	reader := configtest.Reader(t, configuration, modules...)
 
@@ -127,12 +134,22 @@ func resolve(t *testing.T, reg *core.Registry) *assembly {
 	if err != nil {
 		t.Fatalf("taking up the organization writer: %v", err)
 	}
+	counter, err := core.Resolve[authz.TenantAdminCounter](reg)
+	if err != nil {
+		t.Fatalf("taking up the account-administration counter: %v", err)
+	}
+	seeder, err := core.Resolve[authz.Seeder](reg)
+	if err != nil {
+		t.Fatalf("taking up the policy seeder: %v", err)
+	}
 	return &assembly{
 		admin:       admin,
 		accounts:    accounts,
 		memberships: memberships,
 		catalog:     roster,
 		manager:     manager,
+		seeder:      seeder,
+		counter:     counter,
 		writer:      writer,
 		handle:      database.DB(),
 	}
@@ -266,6 +283,27 @@ func TestTransferOwnerRefusesANonMember(t *testing.T) {
 	})
 }
 
+// A tenant no row carries is ErrInvalidTenant, and a tombstone ErrTenantDeleted:
+// the roster is read before the membership, so a missing tenant is not reported
+// as a missing member.
+func TestTransferOwnerReadsTheRosterBeforeTheMembership(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		owner := a.user(t, "alice")
+		target := a.user(t, "bob")
+		a.organization(t, "acme", "acme-org", owner)
+
+		if err := a.writer.TransferOwner(t.Context(), "ghost", target.ID.String()); !errors.Is(err, tenant.ErrInvalidTenant) {
+			t.Errorf("transferring a tenant no row carries gave %v, want ErrInvalidTenant", err)
+		}
+		if err := a.writer.DeleteOrganization(t.Context(), "acme", ""); err != nil {
+			t.Fatalf("deleting the organization: %v", err)
+		}
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String()); !errors.Is(err, tenant.ErrTenantDeleted) {
+			t.Errorf("transferring a tombstone gave %v, want ErrTenantDeleted", err)
+		}
+	})
+}
+
 // An owner-initiated deletion carries the owner it observed: when a transfer
 // has changed the owner, the deletion is refused and the organization stays.
 func TestDeleteOrganizationRefusesAnOwnerThatChanged(t *testing.T) {
@@ -294,6 +332,16 @@ func TestDeleteOrganizationWritesTheTombstoneAndCleansTheCoreRelations(t *testin
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
 		a.organization(t, "acme", "acme-org", owner)
+		// A grant has to exist before the deletion for the cleanup assertion to
+		// be able to fail: a tenant with no grant would leave the count at zero
+		// whether the cleanup ran or not.
+		if _, err := a.seeder.SeedGrants(t.Context(), "acme", authz.TenantAdminRole,
+			[]authz.Grant{{Resource: "deal", Action: "read"}}); err != nil {
+			t.Fatalf("seeding a grant: %v", err)
+		}
+		if n := a.count(t, "authz_grants", "tenant_id = ?", "acme"); n != 1 {
+			t.Fatalf("the tenant holds %d grant(s) before the deletion, want one", n)
+		}
 
 		if err := a.writer.DeleteOrganization(t.Context(), "acme", ""); err != nil {
 			t.Fatalf("deleting the organization: %v", err)
@@ -435,6 +483,82 @@ func TestThePreviousOwnerCanBeDeletedAfterTheTransfer(t *testing.T) {
 		}
 		if err := a.admin.Delete(t.Context(), owner.ID, authn.ReasonAdmin); err != nil {
 			t.Fatalf("deleting the previous owner: %v", err)
+		}
+	})
+}
+
+// A target whose account is suspended is refused: an active membership is not
+// enough, the account that receives the organization has to be active itself.
+func TestTransferOwnerRefusesAnInactiveAccount(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		owner := a.user(t, "alice")
+		target := a.user(t, "bob")
+		a.organization(t, "acme", "acme-org", owner)
+		a.join(t, "acme", target)
+		if err := a.admin.SetStatus(t.Context(), target.ID, authn.StatusDisabled, authn.ReasonAdmin); err != nil {
+			t.Fatalf("suspending the target: %v", err)
+		}
+
+		err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String())
+		if !errors.Is(err, tenant.ErrOwnerInactive) {
+			t.Fatalf("the transfer gave %v, want ErrOwnerInactive", err)
+		}
+		if got := a.held(t, "acme").OwnerAccount; got != owner.ID.String() {
+			t.Errorf("the owner changed to %q, want %q", got, owner.ID)
+		}
+		if bindings := a.bindingsOf(t, "acme", target); len(bindings) != 0 {
+			t.Errorf("the refused transfer bound the target: %+v", bindings)
+		}
+	})
+}
+
+// TestTheAccountAdministrationLockCoversAMemberOnlyAccount holds the lock set
+// the suspension and deletion paths take: an active member of an active business
+// tenant that administers nothing is still covered, because a transfer gives it
+// the organization. Holding that lock blocks a transfer to the account, which is
+// exactly the interleaving the wider set exists to exclude.
+func TestTheAccountAdministrationLockCoversAMemberOnlyAccount(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		owner := a.user(t, "alice")
+		member := a.user(t, "bob")
+		a.organization(t, "acme", "acme-org", owner)
+		a.join(t, "acme", member)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		release, err := a.counter.LockAccountAdministration(ctx, member.ID.String())
+		if err != nil {
+			t.Fatalf("taking the account-administration lock: %v", err)
+		}
+		closed := false
+		defer func() {
+			if !closed {
+				release()
+			}
+		}()
+
+		done := make(chan error, 1)
+		go func() {
+			done <- a.writer.TransferOwner(ctx, "acme", member.ID.String())
+		}()
+		select {
+		case err := <-done:
+			t.Fatalf("the transfer ran while the member-only account's tenant lock was held: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		release()
+		closed = true
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("the transfer after the release: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the transfer did not finish after the lock was released")
+		}
+		if got := a.held(t, "acme").OwnerAccount; got != member.ID.String() {
+			t.Errorf("the owner is %q, want %q", got, member.ID)
 		}
 	})
 }

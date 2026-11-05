@@ -19,12 +19,17 @@ and the membership store.
   not a policy binding delete or a membership removal. An assembly that wants
   those paths to exclude each other supplies the one object they all take.
 - **The transfer writes the new owner first.** It refuses a target that is not
-  an active member (`tenant.ErrOwnerNotMember`), grants `tenant-admin`, writes
-  the roster owner, then clears the previous owner's bindings and removes its
-  membership. A transfer to the current owner is a no-op. The target's
-  membership is read inside the transaction under the account's row lock
-  (`provisioning.MembershipWriter.MembershipTx`), so a concurrent suspension
-  either is seen by the check or waits for the transfer to commit.
+  an active member (`tenant.ErrOwnerNotMember`), and refuses a target whose
+  account is not active (`tenant.ErrOwnerInactive`) after reading it through
+  `authn.Accounts` under the tenant lock. The roster is read before the
+  membership, so a missing tenant is `tenant.ErrInvalidTenant` and a tombstone
+  `tenant.ErrTenantDeleted`, never `tenant.ErrOwnerNotMember`. It then grants
+  `tenant-admin`, writes the roster owner, and clears the previous owner's
+  bindings and removes its membership. A transfer to the current owner is a
+  no-op. The target's membership is read inside the transaction under the
+  account's row lock (`provisioning.MembershipWriter.MembershipTx`), so a
+  concurrent suspension either is seen by the check or waits for the transfer to
+  commit.
 - **The deletion writes the tombstone and cleans the core relations.** It
   writes the roster tombstone, deletes the tenant's grants, bindings and roles,
   and deletes its memberships, all in that one transaction. It never writes
@@ -57,8 +62,11 @@ go -C pkg vet ./tenant/ownership/...
 
 `integration_test.go` drives the real account, roster, policy and personal
 modules over one SQLite database: the transfer hands the organization on, a
-non-member is refused, a deletion cleans the core relations and leaves the
-identifier and alias unusable, a failed step rolls the whole deletion back, a
-transfer against the old owner's deletion leaves exactly one winner, an account
-owning an active organization cannot be deleted or suspended, and the previous
-owner can be deleted once the ownership has moved.
+non-member and an inactive account are refused, a missing tenant and a tombstone
+are reported before the membership, a deletion cleans the core relations
+including a seeded grant and leaves the identifier and alias unusable, a failed
+step rolls the whole deletion back, a transfer against the old owner's deletion
+leaves exactly one winner, an account owning an active organization cannot be
+deleted or suspended, the account-administration lock covers a member-only
+account so a transfer to it blocks, and the previous owner can be deleted once
+the ownership has moved.

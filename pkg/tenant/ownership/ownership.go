@@ -9,8 +9,9 @@
 // as one transaction, so they live in a module that holds the transaction-aware
 // surfaces of all three stores rather than in any one of them.
 //
-// The module mounts no route and delivers no configurable behavior. The
-// platform management surface takes the capability up and calls it.
+// The module mounts no route and delivers no configurable behavior. Both the
+// platform management surface and the organization's own tenant surface take
+// the capability up and call it; the module cannot tell them apart.
 package ownership
 
 import (
@@ -56,6 +57,7 @@ func Module() core.Module {
 			{Token: (*tenantcatalog.TxCatalog)(nil)},
 			{Token: (*authzpolicy.TxManager)(nil)},
 			{Token: (*provisioning.MembershipWriter)(nil)},
+			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authz.TenantLock)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
@@ -84,6 +86,7 @@ type product struct {
 	txRoster         tenantcatalog.TxCatalog
 	txManager        authzpolicy.TxManager
 	membershipWriter provisioning.MembershipWriter
+	accounts         authn.Accounts
 	lock             authz.TenantLock
 	logger           *slog.Logger
 }
@@ -113,11 +116,16 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the transaction-aware membership writes: %w", ModuleName, err)
 	}
+	accounts, err := core.Resolve[authn.Accounts](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the account read surface: %w", ModuleName, err)
+	}
 	return &product{
 		database:         database,
 		txRoster:         txRoster,
 		txManager:        txManager,
 		membershipWriter: membershipWriter,
+		accounts:         accounts,
 		lock:             authz.NewInProcessTenantLock(),
 		logger:           log.Default(),
 	}, nil

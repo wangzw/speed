@@ -10,6 +10,11 @@ import (
 // organization; it does not add them.
 var ErrOwnerNotMember = errors.New("tenant: the new owner is not an active member of the organization")
 
+// ErrOwnerInactive reports a transfer whose target is an active member but not
+// an active account. A suspended, disabled or deleted account cannot govern an
+// organization, so the transfer refuses before it writes anything.
+var ErrOwnerInactive = errors.New("tenant: the new owner's account is not active")
+
 // ErrOwnerChanged reports an organization deletion begun by an owner that no
 // longer owned the organization when the deletion reached its transaction. It
 // is how a transfer and an owner-initiated deletion that race end with exactly
@@ -29,9 +34,11 @@ var ErrOwnerChanged = errors.New("tenant: the caller is no longer the owner of t
 type OrganizationWriter interface {
 	// TransferOwner makes target the tenant's owner. The target must be an
 	// active member of the tenant, and the transfer grants tenant-admin when the
-	// target does not hold it. The previous owner loses every binding in the
-	// tenant and is removed from it, in the same transaction. A refusal names
-	// ErrOwnerNotMember, ErrInvalidTenant or ErrTenantDeleted.
+	// target does not hold it. The target's account must also be active: a
+	// suspended, disabled or deleted account is refused with ErrOwnerInactive.
+	// The previous owner loses every binding in the tenant and is removed from
+	// it, in the same transaction. A refusal names ErrOwnerNotMember,
+	// ErrOwnerInactive, ErrInvalidTenant or ErrTenantDeleted.
 	TransferOwner(ctx context.Context, id ID, target string) error
 
 	// DeleteOrganization writes the tenant's tombstone and cleans the core
