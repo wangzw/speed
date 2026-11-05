@@ -1,138 +1,119 @@
 package tenantadmin
 
 import (
-	"encoding"
+	"context"
 	"fmt"
 	"reflect"
 	"strconv"
-	"time"
 
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// maskedValue is the fixed string a sensitive item's written text and resolved
-// value are replaced with before the view reaches a client. It is the same
-// string in both fields, so a client reads one marker and not several.
-const maskedValue = "********"
+// maskedValue is the fixed string a sensitive item's value is replaced with
+// before the view reaches a client. It is the settings capability's own mask,
+// so a client reads one marker across every management surface.
+const maskedValue = settings.MaskedValue
 
 // viewOf builds one item's view from its declaration, the text the tenant layer
-// holds for it, whether it holds a row at all, the text it resolves to, and the
-// layer that value came from.
+// holds for it, whether it holds a row at all, the text the global layer holds,
+// and whether the global layer holds a row.
 //
-// The item's namespace is the module that declared it, which is the key's prefix
-// segment. The type is the declared type's text form. The domain is the rule the
-// declaration states, empty for an item whose domain admits every value of its
-// type.
+// The platform value is the global row's text, or the declared default when
+// there is no global row. The tenant value is the tenant row's text, or the
+// declared default when the tenant holds none. The effective value is the
+// policy's boolean OR: a platform requirement is a floor a tenant cannot lower,
+// so an item is effectively on when either layer holds true. The effective
+// value is also what locks the item: a platform policy that is on keeps it on
+// regardless of the tenant's own row.
 //
-// A sensitive item's default, written and value are all masked here, in one
-// place, because the masking is a property of the item rather than of the route
-// that read it: a second place building a view is a second place that can forget
-// to mask it, and a forgotten mask sends a credential out with the response. The
-// mask covers the text only; has_row reports the row's existence unchanged.
-func viewOf(item settings.DeclaredItem, written string, hasRow bool, value, source string) SettingsTenantAdminSetting {
+// source names the layer the effective value came from, in the closed set the
+// capability already uses: global when the platform policy is on, tenant when
+// the tenant holds a row and the platform is not forcing the item, global when
+// only the global layer holds a row, default when neither does. There is no
+// separate platform marker.
+//
+// The title and description are rendered in the request's language from the
+// declaration's keys; with no localizer, or a key no catalog carries, both fall
+// back to the declared English text.
+//
+// A sensitive item's three value fields carry the mask; its row existence and
+// its source still answer, because those say which layer is configured and not
+// what the value is.
+func (p *product) viewOf(
+	ctx context.Context,
+	item settings.DeclaredItem,
+	tenantText string,
+	hasRow bool,
+	platformText string,
+	hasPlatformRow bool,
+) (SettingsTenantAdminSetting, error) {
+	tenantValue := item.Default
+	if hasRow {
+		tenantValue = tenantText
+	}
+	platformValue := item.Default
+	if hasPlatformRow {
+		platformValue = platformText
+	}
+	effective, locked, err := effectiveValue(item, platformValue, tenantValue)
+	if err != nil {
+		return SettingsTenantAdminSetting{}, err
+	}
+	source := sourceDefault
+	switch {
+	case locked:
+		source = sourceGlobal
+	case hasRow:
+		source = sourceTenant
+	case hasPlatformRow:
+		source = sourceGlobal
+	}
+	view := SettingsTenantAdminSetting{
+		Key:              item.Key,
+		Title:            p.text(ctx, i18n.Key(item.TitleKey), item.Description),
+		Description:      p.text(ctx, i18n.Key(item.DescriptionKey), item.Description),
+		Type:             item.Type.String(),
+		Control:          string(item.Control),
+		Danger:           string(item.Danger),
+		Effect:           string(item.Effect),
+		TenantAccess:     string(item.TenantAccess),
+		EffectiveValue:   effective,
+		PlatformValue:    platformValue,
+		TenantValue:      tenantValue,
+		LockedByPlatform: locked,
+		HasRow:           hasRow,
+		Source:           source,
+	}
 	if item.Sensitive {
-		return SettingsTenantAdminSetting{
-			Key:         item.Key,
-			Namespace:   item.Module,
-			Type:        item.Type.String(),
-			Description: item.Description,
-			Domain:      item.Domain.Rule(),
-			Sensitive:   true,
-			Default:     "",
-			Written:     maskedValue,
-			HasRow:      hasRow,
-			Value:       maskedValue,
-			Source:      source,
-		}
+		view.EffectiveValue = maskedValue
+		view.PlatformValue = maskedValue
+		view.TenantValue = maskedValue
 	}
-	return SettingsTenantAdminSetting{
-		Key:         item.Key,
-		Namespace:   item.Module,
-		Type:        item.Type.String(),
-		Description: item.Description,
-		Domain:      item.Domain.Rule(),
-		Sensitive:   false,
-		Default:     item.Default,
-		Written:     written,
-		HasRow:      hasRow,
-		Value:       value,
-		Source:      source,
-	}
+	return view, nil
 }
 
-// durationType is the type a text duration is held to, matched by identity so
-// that a type defined over time.Duration is treated as the integer it is to
-// reflection, exactly as the settings module's declaration does.
-var durationType = reflect.TypeFor[time.Duration]()
-
-// textUnmarshalerType is the interface a type uses to decode itself from text.
-var textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
-
-// renderValue writes a resolved value in the declared type's own text form, the
-// form the settings module stores a value in and reports a row as. It is what
-// makes the view's value field comparable with its written and default fields:
-// all three are the text a row of the item would carry.
+// effectiveValue resolves one switch's effective value and whether the platform
+// policy locks it. The tenant surface renders switches, so an item of any other
+// declared type is a declaration this surface cannot resolve and is reported as
+// a type mismatch rather than rendered as though it were a boolean.
 //
-// The rules mirror the settings module's own text form — the one place that form
-// is defined — because that module exports no value-to-text function, and its
-// classification decides which rule applies: a type that decodes itself from
-// text is written through its MarshalText; time.Duration through its own String;
-// the scalar kinds through strconv; a float through its shortest round-tripping
-// text. A value whose type the settings module would classify otherwise would
-// not reach here, since Get hands out a value of the declared type under the
-// same classification.
-func renderValue(typ reflect.Type, value any) (string, error) {
-	rv := reflect.ValueOf(value)
-	if !rv.IsValid() || rv.Type() != typ {
-		// Unreachable in a request: Get hands out a value of exactly the declared
-		// type. The guard is here because formatting a value of some other shape
-		// would write a text the item's rows never carry.
-		return "", fmt.Errorf("%w: the declared type is %s and the value is %T",
-			settings.ErrTypeMismatch, typ, value)
+// A row whose text does not decode as a boolean is a corrupt stored value; it is
+// reported as a mismatch so the listing answers 503 rather than a wrong value.
+func effectiveValue(item settings.DeclaredItem, platformValue, tenantValue string) (string, bool, error) {
+	if item.Type.Kind() != reflect.Bool {
+		return "", false, fmt.Errorf("%w: the tenant surface renders switches, and %q is declared as %s",
+			settings.ErrTypeMismatch, item.Key, item.Type)
 	}
-	if decodesFromText(typ) {
-		held := reflect.New(typ)
-		held.Elem().Set(rv)
-		marshaler, ok := held.Interface().(encoding.TextMarshaler)
-		if !ok {
-			// Unreachable: a declared type is one that carries its own text form
-			// only when it also writes itself back to text, which the settings
-			// module refuses a declaration lacking.
-			return "", fmt.Errorf("the declared type %s has no MarshalText", typ)
-		}
-		text, err := marshaler.MarshalText()
-		if err != nil {
-			return "", fmt.Errorf("%w: writing a %s value as text: %w", settings.ErrTypeMismatch, typ, err)
-		}
-		return string(text), nil
+	platform, err := strconv.ParseBool(platformValue)
+	if err != nil {
+		return "", false, fmt.Errorf("%w: the global row of %q is not a boolean: %w",
+			settings.ErrTypeMismatch, item.Key, err)
 	}
-	if typ == durationType {
-		// rv's type is the declared type, which is time.Duration here, so the
-		// integer underneath it is the duration's count.
-		return time.Duration(rv.Int()).String(), nil
+	tenant, err := strconv.ParseBool(tenantValue)
+	if err != nil {
+		return "", false, fmt.Errorf("%w: the tenant row of %q is not a boolean: %w",
+			settings.ErrTypeMismatch, item.Key, err)
 	}
-	switch typ.Kind() {
-	case reflect.String:
-		return rv.String(), nil
-	case reflect.Bool:
-		return strconv.FormatBool(rv.Bool()), nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return strconv.FormatInt(rv.Int(), 10), nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return strconv.FormatUint(rv.Uint(), 10), nil
-	case reflect.Float32, reflect.Float64:
-		return strconv.FormatFloat(rv.Float(), 'g', -1, typ.Bits()), nil
-	}
-	return "", fmt.Errorf("%w: the declared type %s has no text form", settings.ErrTypeMismatch, typ)
-}
-
-// decodesFromText reports whether a type takes its value from a text of its own,
-// either directly or through a pointer method set. It is the settings module's
-// criterion, restated so that a value is rendered by the same rule it was
-// classified under.
-func decodesFromText(t reflect.Type) bool {
-	if t.Implements(textUnmarshalerType) {
-		return true
-	}
-	return t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(textUnmarshalerType)
+	return strconv.FormatBool(platform || tenant), platform, nil
 }

@@ -100,6 +100,18 @@ func (s *stubStore) ops() []string {
 	return names
 }
 
+// hasWriteOp reports whether the store recorded an operation named op. A write
+// case uses it because the handler may read the global layer first to judge
+// platform enforcement, so the write is not necessarily the first call.
+func hasWriteOp(calls []storeCall, op string) bool {
+	for _, c := range calls {
+		if c.op == op {
+			return true
+		}
+	}
+	return false
+}
+
 // holdsLayerKey reports whether the store was ever asked to act on this layer
 // and key with this operation.
 func (s *stubStore) holdsLayerKey(op string, layer settings.Layer, key string) bool {

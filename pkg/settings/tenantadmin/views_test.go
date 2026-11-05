@@ -1,152 +1,166 @@
 package tenantadmin
 
 import (
+	"context"
 	"reflect"
 	"testing"
-	"time"
 
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// A resolved value is written in the declared type's own text form, the form the
-// settings module stores a row in, so a view's value reads the same way its
-// written and default do: a duration reads "5m0s" rather than a count of
-// nanoseconds, a float its shortest round-tripping text.
-func TestRenderValueWritesTheDeclaredTypesOwnTextForm(t *testing.T) {
-	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+// A switch's effective value is the platform policy OR the tenant policy, and
+// the platform policy is what locks it.
+func TestEffectiveValueIsTheBooleanOr(t *testing.T) {
+	item := decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItem())
 	cases := []struct {
-		name  string
-		typ   reflect.Type
-		value any
-		want  string
+		name     string
+		platform string
+		tenant   string
+		want     string
+		locked   bool
 	}{
-		{"string", reflect.TypeFor[string](), "auto", "auto"},
-		{"bool", reflect.TypeFor[bool](), true, "true"},
-		{"int", reflect.TypeFor[int](), 42, "42"},
-		{"uint", reflect.TypeFor[uint](), uint(7), "7"},
-		{"float", reflect.TypeFor[float64](), 1.5, "1.5"},
-		{"duration", reflect.TypeFor[time.Duration](), 5 * time.Minute, "5m0s"},
-		{"a type that carries its own text form", reflect.TypeFor[time.Time](), at, at.Format(time.RFC3339Nano)},
+		{"platform on", "true", "false", "true", true},
+		{"tenant on", "false", "true", "true", false},
+		{"both off", "false", "false", "false", false},
+		{"both on", "true", "true", "true", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := renderValue(tc.typ, tc.value)
+			got, locked, err := effectiveValue(item, tc.platform, tc.tenant)
 			if err != nil {
-				t.Fatalf("rendering: %v", err)
+				t.Fatalf("resolving: %v", err)
 			}
-			if got != tc.want {
-				t.Errorf("rendered %q, want %q", got, tc.want)
+			if got != tc.want || locked != tc.locked {
+				t.Errorf("effective/locked = %q/%t, want %q/%t", got, locked, tc.want, tc.locked)
 			}
 		})
 	}
 }
 
-// A value the declared type cannot hold is a failure, not a silent empty string.
-func TestRenderValueRefusesAValueOfTheWrongType(t *testing.T) {
-	if _, err := renderValue(reflect.TypeFor[time.Duration](), "5m"); err == nil {
-		t.Error("rendering a string as a duration returned nil, want a failure")
-	}
-	if _, err := renderValue(reflect.TypeFor[int](), "nope"); err == nil {
-		t.Error("rendering a string as an int returned nil, want a failure")
+// The tenant surface renders switches; another declared type is a declaration it
+// cannot resolve, reported rather than rendered as a boolean.
+func TestEffectiveValueRefusesANonBooleanItem(t *testing.T) {
+	item := decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{})
+	if _, _, err := effectiveValue(item, "auto", "manual"); err == nil {
+		t.Error("a non-boolean item resolved, want a type mismatch")
 	}
 }
 
-// The view of an ordinary item carries the declaration's metadata, the two texts
-// it was built from and the backend's source marker.
-func TestViewOfBuildsAnOrdinaryItem(t *testing.T) {
-	item := settings.DeclaredItem{
-		Key:     "app.mode",
-		Module:  "app",
-		Type:    reflect.TypeFor[string](),
-		Default: "auto",
-		Item: settings.Item{
-			Description: "how the application runs",
-			Domain:      settings.DomainOf("one of auto or manual", func(v string) bool { return v == "auto" || v == "manual" }),
-		},
+// A stored text that is not a boolean is a corrupt value, reported rather than
+// read as false.
+func TestEffectiveValueRefusesAnUndecodableRow(t *testing.T) {
+	item := decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItem())
+	if _, _, err := effectiveValue(item, "maybe", "false"); err == nil {
+		t.Error("an undecodable global text resolved, want a type mismatch")
 	}
-	v := viewOf(item, "manual", true, "manual", sourceTenant)
-	if v.Key != "app.mode" || v.Namespace != "app" || v.Type != "string" {
-		t.Errorf("the view is %+v", v)
+	if _, _, err := effectiveValue(item, "false", "maybe"); err == nil {
+		t.Error("an undecodable tenant text resolved, want a type mismatch")
 	}
-	if v.Description != "how the application runs" || v.Domain != "one of auto or manual" {
-		t.Errorf("the metadata is %+v", v)
+}
+
+// The view carries the declaration's control metadata, the two layers' values,
+// the effective value, the row existence and the source.
+func TestViewOfBuildsAnItem(t *testing.T) {
+	p := &product{}
+	item := decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItem())
+	v, err := p.viewOf(context.Background(), item, "false", true, "true", true)
+	if err != nil {
+		t.Fatalf("building the view: %v", err)
 	}
-	if v.Sensitive || v.Default != "auto" || v.Written != "manual" || !v.HasRow || v.Value != "manual" {
+	if v.Key != mfaKey || v.Type != "bool" {
+		t.Errorf("the identity is %+v", v)
+	}
+	if v.Title != item.Description || v.Description != item.Description {
+		t.Errorf("title/description are %q/%q, want the declared English text", v.Title, v.Description)
+	}
+	if v.Control != "switch" || v.Danger != "critical" || v.Effect != "immediate" || v.TenantAccess != "read-write" {
+		t.Errorf("the control metadata is %+v", v)
+	}
+	if v.EffectiveValue != "true" || v.PlatformValue != "true" || v.TenantValue != "false" {
 		t.Errorf("the values are %+v", v)
 	}
-	if v.Source != sourceTenant {
-		t.Errorf("the source is %q, want tenant", v.Source)
+	if !v.LockedByPlatform || !v.HasRow {
+		t.Errorf("locked/has_row are %t/%t, want true/true", v.LockedByPlatform, v.HasRow)
+	}
+	if v.Source != sourceGlobal {
+		t.Errorf("source = %q, want global: the platform policy is on", v.Source)
 	}
 }
 
-// A sensitive item's view carries no value: the default is empty and both the
-// written and the resolved text are the mask. The source is the backend's answer
-// and is not masked away, because it says which layer the item is configured on
-// and not what its value is.
+// A sensitive item's three value fields carry the mask; its row existence and
+// its source still answer, because they say which layer is configured and not
+// what the value is.
 func TestViewOfMasksASensitiveItem(t *testing.T) {
-	item := settings.DeclaredItem{
-		Key:     "app.secret",
-		Module:  "app",
-		Type:    reflect.TypeFor[string](),
-		Default: "",
-		Item:    settings.Item{Sensitive: true},
+	p := &product{}
+	item := decl("app.secret", "app", reflect.TypeFor[string](), "", settings.Item{
+		Description:    "a credential",
+		TitleKey:       "app.secret.title",
+		DescriptionKey: "app.secret.description",
+		Control:        settings.ControlSwitch,
+		TenantAccess:   settings.TenantReadWrite,
+		Sensitive:      true,
+	})
+	// The value is a string, which effectiveValue refuses; the case is about the
+	// masking, so it uses a boolean item instead.
+	item.Type = reflect.TypeFor[bool]()
+	item.Default = "false"
+	v, err := p.viewOf(context.Background(), item, "true", true, "false", false)
+	if err != nil {
+		t.Fatalf("building the view: %v", err)
 	}
-	v := viewOf(item, "hunter2", true, "hunter2", sourceTenant)
-	if !v.Sensitive {
-		t.Error("the view is not marked sensitive")
-	}
-	if v.Default != "" {
-		t.Errorf("the default is %q, want empty", v.Default)
-	}
-	if v.Written != maskedValue || v.Value != maskedValue {
-		t.Errorf("written/value are %q/%q, want the mask", v.Written, v.Value)
+	if v.EffectiveValue != maskedValue || v.PlatformValue != maskedValue || v.TenantValue != maskedValue {
+		t.Errorf("the values are %q/%q/%q, want the mask", v.EffectiveValue, v.PlatformValue, v.TenantValue)
 	}
 	if !v.HasRow {
-		t.Error("the mask covers the text but has_row must still report the row")
+		t.Error("has_row is false, want the mask to leave the row existence intact")
 	}
 	if v.Source != sourceTenant {
-		t.Errorf("the source is %q, want tenant", v.Source)
+		t.Errorf("source = %q, want tenant", v.Source)
 	}
 }
 
-// A type that carries its own text form is classified as one; the scalar kinds
-// are not.
-func TestDecodesFromText(t *testing.T) {
-	if !decodesFromText(reflect.TypeFor[time.Time]()) {
-		t.Error("time.Time is not classified as carrying its own text form")
-	}
-	if decodesFromText(reflect.TypeFor[string]()) {
-		t.Error("a string is classified as carrying its own text form")
-	}
-	if decodesFromText(reflect.TypeFor[time.Duration]()) {
-		t.Error("a duration is classified as carrying its own text form")
+// With no localizer the declared English text is the answer for both title and
+// description.
+func TestTextFallsBackToTheDeclaredEnglish(t *testing.T) {
+	p := &product{}
+	if got := p.text(context.Background(), "any.key", "the declared text"); got != "the declared text" {
+		t.Errorf("text = %q, want the declared fallback", got)
 	}
 }
 
-// The platform-only set matches a namespace root and its subtree, and nothing
-// else: a module whose name merely begins with the same letters is not
-// platform-only.
-func TestPlatformOnlyMatchesRootsAndTheirSubtree(t *testing.T) {
-	cases := map[string]bool{
-		"ratelimit":             true,
-		"ratelimit.burst":       true,
-		"tenant.admission":      true,
-		"tenant.admission.open": true,
-		"authn":                 true,
-		"authn.session":         true,
-		"authn.session.idle":    true,
-		"org.create":            true,
-		"org.create.limit":      true,
-		"app":                   false,
-		"authnfoo":              false,
-		"org.creation":          false,
-		"tenant":                false,
-		"tenant.membership":     false,
-		"ratelimits":            false,
+// With a localizer the title and description render from the declaration's keys
+// in the request's language.
+func TestViewOfRendersTheRequestLanguage(t *testing.T) {
+	p := &product{localizer: localizerStub{
+		"tenant.admission.require-mfa.title":       "要求多因素认证",
+		"tenant.admission.require-mfa.description": "成员登录时必须使用第二因素。",
+	}}
+	item := decl(mfaKey, "tenant.admission", reflect.TypeFor[bool](), "false", admissionItemFor(mfaKey))
+	v, err := p.viewOf(context.Background(), item, "", false, "", false)
+	if err != nil {
+		t.Fatalf("building the view: %v", err)
 	}
-	for namespace, want := range cases {
-		if got := platformOnly(namespace); got != want {
-			t.Errorf("platformOnly(%q) = %t, want %t", namespace, got, want)
-		}
+	if v.Title != "要求多因素认证" {
+		t.Errorf("title = %q, want the localized title", v.Title)
 	}
+	if v.Description != "成员登录时必须使用第二因素。" {
+		t.Errorf("description = %q, want the localized description", v.Description)
+	}
+}
+
+// localizerStub renders the keys it carries and writes every other key back as
+// itself, the way the engine's localizer reports a miss.
+type localizerStub map[string]string
+
+func (l localizerStub) Localize(_ context.Context, key i18n.Key, _ i18n.Args) string {
+	if text, ok := l[string(key)]; ok {
+		return text
+	}
+	return string(key)
+}
+
+func (l localizerStub) Translate(_ i18n.Locale, key i18n.Key, _ i18n.Args) (string, bool) {
+	text, ok := l[string(key)]
+	return text, ok
 }

@@ -1,0 +1,6 @@
+{
+  "tenant.admission.require-mfa.title": "Require multi-factor authentication",
+  "tenant.admission.require-mfa.description": "Members must sign in with a second factor before they can use this organization.",
+  "tenant.admission.require-sso.title": "Require enterprise single sign-on",
+  "tenant.admission.require-sso.description": "Members must sign in through one of this organization's own identity providers."
+}

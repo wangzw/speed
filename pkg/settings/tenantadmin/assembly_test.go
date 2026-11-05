@@ -305,7 +305,6 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 
 	want := map[mountedRoute]bool{
 		{http.MethodGet, "/api/v1/tenants/:tenant/settings"}:                    true,
-		{http.MethodGet, "/api/v1/tenants/:tenant/settings/:namespace"}:         true,
 		{http.MethodPut, "/api/v1/tenants/:tenant/settings/:namespace/:key"}:    true,
 		{http.MethodDelete, "/api/v1/tenants/:tenant/settings/:namespace/:key"}: true,
 	}

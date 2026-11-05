@@ -19,12 +19,14 @@
 // to a personal tenant; an assembly that mounts this module without one fails at
 // dependency resolution rather than deciding the refusal at run time.
 //
-// The platform-only namespaces — ratelimit.*, tenant.admission.* and authn.* — are
-// excluded from this surface by a closed set in this package: the list omits
-// them, and a single-key read or write answers the same bare 404 an undeclared
-// key gets. The set is a code constant, not configuration, and it narrows this
-// surface alone: the settings module and the platform surface still read and
-// write those namespaces.
+// The declarations decide what this surface carries. A schema states
+// Schema.TenantFacing, and each item states a TenantAccess: an item with no
+// tenant access is invisible here, and a namespace's name neither opens nor
+// closes it. Only an item declared read-write is visible and writable; a
+// read-only declaration is visible and answers the same bare 404 an undeclared
+// key gets on both write routes. The exclusion narrows this surface alone: the
+// settings module and the platform surface still read and write every declared
+// item.
 package tenantadmin
 
 import (
@@ -42,6 +44,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -134,6 +137,7 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(),
+			messageCatalog,
 			tenantAdminSpec,
 			operations,
 			// The tenant settings management surface: its routes are mounted
@@ -196,6 +200,10 @@ type product struct {
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it.
 	gate authz.Gate
+	// localizer renders the titles and descriptions of the items this surface
+	// exposes in the request's language, nil when no module delivers the
+	// capability; the declared English text is then the answer.
+	localizer i18n.Localizer
 	// routeGuard is the tenant administration guard the tenant capability
 	// delivers under the pkg/http TenantAdminRouteGuard capability: the identity
 	// rule plus the refusal of the platform domain. Every route is wrapped with
@@ -281,6 +289,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.gate = gate
+	}
+	if localizer, found, err := optional[i18n.Localizer](reg, "the message localizer"); err != nil {
+		return err
+	} else if found {
+		p.localizer = localizer
 	}
 	if routeGuard, found, err := optional[speedhttp.TenantAdminRouteGuard](reg, "the tenant administration guard"); err != nil {
 		return err

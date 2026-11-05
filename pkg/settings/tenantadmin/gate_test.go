@@ -4,25 +4,21 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
-	"github.com/vislake/speed/pkg/settings"
 )
 
 // gateWriteTarget is a write the settings module accepts once it is reached.
-const gateWriteTarget = base + "/app/mode"
+const gateWriteTarget = base + "/tenant.admission/require-mfa"
 
 // declareGateItem declares the item a write through gateWriteTarget acts on, so
 // the shape checks past the decision let an allowed write land.
 func declareGateItem(r *rig) {
-	r.store.declared = []settings.DeclaredItem{
-		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
-	}
+	r.store.declared = admissionDeclared()
 }
 
 // gateWrites is every write route, with what a case sends to it.
@@ -32,7 +28,7 @@ var gateWrites = []struct {
 	target string
 	body   any
 }{
-	{"the set", http.MethodPut, gateWriteTarget, map[string]any{"value": "on"}},
+	{"the set", http.MethodPut, gateWriteTarget, map[string]any{"value": true}},
 	{"the delete", http.MethodDelete, gateWriteTarget, nil},
 }
 
@@ -103,11 +99,11 @@ func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 			declareGateItem(r)
 			r.signup.answer(state, nil)
 
-			w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": "on"})
+			w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": true})
 			if w.Code != http.StatusNoContent {
 				t.Fatalf("status = %d, want 204: %s", w.Code, w.Body.String())
 			}
-			if calls := r.store.recorded(); len(calls) != 1 || calls[0].op != "Set" {
+			if calls := r.store.recorded(); !hasWriteOp(calls, "Set") {
 				t.Errorf("the settings module recorded %v, want the write", calls)
 			}
 		})
@@ -123,7 +119,7 @@ func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 		declareGateItem(r)
 		r.signup.answer(authn.SignupPending, nil)
 
-		w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": "on"},
+		w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": true},
 			authntest.WithMethods(authn.MethodClientSecret))
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("status = %d, want 204: %s", w.Code, w.Body.String())
@@ -138,7 +134,7 @@ func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 		declareGateItem(r)
 		r.signup.answer(authn.SignupPending, nil)
 
-		w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": "on"},
+		w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": true},
 			authntest.WithAccount(authn.StaticPrefix+"ops"), authntest.WithBackend("static"))
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("status = %d, want 204: %s", w.Code, w.Body.String())
@@ -157,7 +153,7 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	declareGateItem(r)
 	r.signup.answer(authn.SignupNone, errors.New("the database is down"))
 
-	w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": "on"})
+	w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": true})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", w.Code, w.Body.String())
 	}
@@ -183,7 +179,7 @@ func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 			r.signup.answer(authn.SignupPending, nil)
 			script(r)
 
-			w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": "on"})
+			w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": true})
 			if w.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, want 403 contact-required: %s", w.Code, w.Body.String())
 			}
@@ -239,7 +235,7 @@ func TestTheGateRefusesBeforeTheQueryShape(t *testing.T) {
 	declareGateItem(r)
 	r.signup.answer(authn.SignupPending, nil)
 
-	w := r.do(http.MethodPut, base+"/app/mode?layer=global", map[string]any{"value": "on"})
+	w := r.do(http.MethodPut, base+"/tenant.admission/require-mfa?layer=global", map[string]any{"value": true})
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 contact-required: %s", w.Code, w.Body.String())
 	}
@@ -259,7 +255,7 @@ func TestTheGateReadsTheActorNotTheImpersonationTarget(t *testing.T) {
 	declareGateItem(r)
 	r.signup.answer(authn.SignupPending, nil)
 
-	w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": "on"},
+	w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": true},
 		authntest.WithAccount("target-account"),
 		authntest.WithActor("operator-account"),
 		authntest.WithSession("session-1"),
@@ -281,14 +277,14 @@ func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	declareGateItem(r)
 	r.signup.answer(authn.SignupNone, authn.ErrAccountNotFound)
 
-	w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": "on"})
+	w := r.do(http.MethodPut, gateWriteTarget, map[string]any{"value": true})
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204: %s", w.Code, w.Body.String())
 	}
 	if asked := r.guard.askedFor(); len(asked) != 1 {
 		t.Errorf("the guard was asked for %v, want the one decision", asked)
 	}
-	if calls := r.store.recorded(); len(calls) != 1 || calls[0].op != "Set" {
+	if calls := r.store.recorded(); !hasWriteOp(calls, "Set") {
 		t.Errorf("the settings module recorded %v, want the write", calls)
 	}
 }

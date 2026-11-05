@@ -19,10 +19,11 @@ import (
 )
 
 // The problem types this module writes. typePrefix is the settings capability's
-// namespace; badRequest, invalidValue and protected are this surface's codes in
-// it. A 404 and a 503 are written with no type: they say something is not there
-// or a dependency could not answer, and not which kind of refusal it was, so
-// naming a kind would separate the failures the answer is meant to keep apart.
+// namespace; badRequest, invalidValue, protected, enforced and maskedValue are
+// this surface's codes in it. A 404 and a 503 are written with no type: they say
+// something is not there or a dependency could not answer, and not which kind of
+// refusal it was, so naming a kind would separate the failures the answer is
+// meant to keep apart.
 //
 // The contact-required refusal is the authentication capability's, not this
 // surface's: the refusal it names is a fact about the acting account's
@@ -35,13 +36,9 @@ const (
 	badRequestCode   = "bad-request"
 	invalidValueCode = "invalid-value"
 	protectedCode    = "protected"
+	enforcedCode     = "tenant-admission-enforced"
+	maskedValueCode  = "masked-value"
 )
-
-// errNoDeclaredItem reports a namespace no declared item belongs to, or one whose
-// items are all platform-only. The answer is a bare 404 with no problem document,
-// so the handler turns the sentinel into an empty reply rather than returning it
-// as an error.
-var errNoDeclaredItem = errors.New("settings.tenantadmin: no declared item belongs to the namespace")
 
 // The query keys the platform surface uses and this surface refuses. The tenant
 // surface's layer is fixed by the path, so either of these on a request here is a
@@ -51,28 +48,6 @@ const (
 	queryLayer  = "layer"
 	queryTenant = "tenant"
 )
-
-// platformOnlyRoots is the closed set of namespace roots this surface refuses.
-// Limit and admission parameters are the deployment's, and the authentication
-// namespaces are the sign-in, session, token, factor, SMS, invitation and SSO
-// security parameters; a tenant administrator may neither read nor write them.
-//
-// The set is a code constant, not configuration and not derived from
-// declarations: a newly declared namespace is open to tenants by default, and
-// making one platform-only is a code change. A namespace matches a root when it
-// is the root or is under it, so "authn" covers "authn.session" and never
-// "authnfoo".
-var platformOnlyRoots = []string{"ratelimit", "tenant.admission", "authn", "org.create"}
-
-// platformOnly reports whether a namespace belongs to the platform-only set.
-func platformOnly(namespace string) bool {
-	for _, root := range platformOnlyRoots {
-		if namespace == root || strings.HasPrefix(namespace, root+".") {
-			return true
-		}
-	}
-	return false
-}
 
 // selection is what the path settled: the tenant layer the action acts on, the
 // policy domain its decision is made in, and the tenant for the audit detail.
@@ -317,6 +292,22 @@ func (p *product) protected() error {
 // domain.
 func (p *product) invalidValue() error {
 	return speedhttp.Fault{Status: http.StatusUnprocessableEntity, Type: typePrefix + invalidValueCode}
+}
+
+// maskedValue is the answer to a write that carries the mask string a sensitive
+// item's value is shown as. It is what the client read, not a value anyone
+// chose; the write is refused before the seam, the audit and the store, so the
+// credential is left as it was.
+func (p *product) maskedValue() error {
+	return speedhttp.Fault{Status: http.StatusUnprocessableEntity, Type: typePrefix + maskedValueCode}
+}
+
+// enforced is the answer to a write that would turn off a policy the platform
+// layer requires. The platform layer is a floor, so the write is refused rather
+// than accepted and overruled; no audit row lands and the tenant layer is
+// unchanged.
+func (p *product) enforced() error {
+	return speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + enforcedCode}
 }
 
 // unavailable logs a failure and answers a 503, never telling the caller which

@@ -42,6 +42,12 @@ const ConfigNamespace = ModuleName
 // checking the two ends against each other.
 const ChangedEventType = "settings.changed"
 
+// MaskedValue is the fixed text a management surface shows in place of a
+// sensitive item's value. A surface also refuses a write that carries this
+// text: it is what the client read, not a value anyone chose, and writing it
+// back would replace the credential with the mask.
+const MaskedValue = "********"
+
 // Layer names the layer a read or write acts on: the global layer, or one
 // tenant's layer.
 //

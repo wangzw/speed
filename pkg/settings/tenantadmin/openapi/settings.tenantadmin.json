@@ -32,38 +32,49 @@
         "type": "object"
       },
       "SettingsTenantAdminSetting": {
-        "description": "One declared setting item as the tenant management surface shows it. The declaration fields come from the key table; written and has_row come from that tenant layer's rows, and value and source from the resolved read. Every value-bearing field is text in the declared type's own form, so a duration reads as \"5m0s\" rather than as a count of nanoseconds.",
+        "description": "One declared setting item as the tenant management surface shows it. The declaration fields and the item's control metadata come from the key table; the three value fields come from the tenant layer's rows and the global layer's rows, and every value-bearing field is text in the declared type's own form.",
         "properties": {
-          "default": {
-            "description": "The declared default in the declared type's text form, empty for a sensitive item",
+          "control": {
+            "description": "The control the surface renders for the item.",
+            "enum": [
+              "switch"
+            ],
+            "type": "string"
+          },
+          "danger": {
+            "description": "How destructive turning the item off is: \"critical\" when the surface must confirm the change first, empty when there is no such warning.",
             "type": "string"
           },
           "description": {
-            "description": "The human-readable text the declaring module gave the item.",
+            "description": "The item's description, rendered in the request's language from the declaration's key, falling back to the declared English text when no localizer is assembled.",
             "type": "string"
           },
-          "domain": {
-            "description": "The declared rule over the item's values, empty when every value of the type is admitted",
+          "effect": {
+            "description": "When a change to the item takes effect: \"immediate\" when it applies as soon as it is saved, empty when the declaration names none.",
+            "type": "string"
+          },
+          "effective_value": {
+            "description": "The text the item resolves to: the platform policy OR the tenant policy, in the declared type's text form. The mask string for a sensitive item.",
             "type": "string"
           },
           "has_row": {
-            "description": "Whether the tenant layer holds a row for the item. For a non-sensitive item, written is empty both when no row is held and when the row's text is empty; a sensitive item's written is the mask string whether or not a row exists.",
+            "description": "Whether the tenant layer holds an explicit row for the item, whether or not the platform policy is forcing the effective value.",
             "type": "boolean"
           },
           "key": {
             "description": "The full setting key: the declaring module's namespace joined with the item's own segment by a dot.",
             "type": "string"
           },
-          "namespace": {
-            "description": "The module that declared the item",
-            "type": "string"
-          },
-          "sensitive": {
-            "description": "Whether the item is a credential. A sensitive item's default is empty and its written and value carry a fixed mask string; has_row still reports whether the tenant layer holds a row.",
+          "locked_by_platform": {
+            "description": "Whether the platform layer holds this policy on, so that a tenant write turning it off answers 409 tenant-admission-enforced.",
             "type": "boolean"
           },
+          "platform_value": {
+            "description": "The global layer's value in the declared type's text form, the declared default when the global layer holds no row. The mask string for a sensitive item.",
+            "type": "string"
+          },
           "source": {
-            "description": "The layer the reported value comes from: \"tenant\" when this tenant layer holds an explicit row, \"global\" when it does not and the global layer does, \"default\" when neither does and the value is the declared default.",
+            "description": "The layer the effective value comes from: \"global\" when the platform policy is on or the global layer holds a row, \"tenant\" when the tenant holds a row and the platform is not forcing the item, \"default\" when neither holds a row.",
             "enum": [
               "tenant",
               "global",
@@ -71,31 +82,68 @@
             ],
             "type": "string"
           },
+          "tenant_access": {
+            "description": "How much of the item the tenant surface exposes: \"read\" for a visible but unwritable item, \"read-write\" for one the tenant may change.",
+            "enum": [
+              "read",
+              "read-write"
+            ],
+            "type": "string"
+          },
+          "tenant_value": {
+            "description": "The tenant layer's value in the declared type's text form, the declared default when the tenant holds no row. The mask string for a sensitive item.",
+            "type": "string"
+          },
+          "title": {
+            "description": "The item's title, rendered in the request's language from the declaration's key, falling back to the declared English text when no localizer is assembled.",
+            "type": "string"
+          },
           "type": {
-            "description": "The declared type's name as reflection reports it, such as \"string\", \"int\", \"bool\" or \"time.Duration\"; the item's values are stored and rendered in that type's text form.",
-            "type": "string"
-          },
-          "value": {
-            "description": "The text the item resolves to after the three-level fallback, the mask string for a sensitive item",
-            "type": "string"
-          },
-          "written": {
-            "description": "The text the tenant layer holds, the mask string for a sensitive item",
+            "description": "The declared type's name as reflection reports it. The tenant surface renders switches, so this is \"bool\".",
             "type": "string"
           }
         },
         "required": [
           "key",
-          "namespace",
-          "type",
+          "title",
           "description",
-          "domain",
-          "sensitive",
-          "default",
-          "written",
+          "type",
+          "control",
+          "danger",
+          "effect",
+          "tenant_access",
+          "effective_value",
+          "platform_value",
+          "tenant_value",
+          "locked_by_platform",
           "has_row",
-          "value",
           "source"
+        ],
+        "type": "object"
+      },
+      "SettingsTenantAdminSettings": {
+        "description": "The tenant settings surface's read answer: the declared items it exposes and whether the tenant's settings may be written at all.",
+        "properties": {
+          "read_only_reason": {
+            "description": "Why the surface is read-only, empty when writable is true. The closed set is the refusal code this capability writes for the same condition; currently only \"protected\".",
+            "type": "string"
+          },
+          "settings": {
+            "description": "The items whose declarations expose them to a tenant, each with its platform value, tenant value and effective value.",
+            "items": {
+              "$ref": "#/components/schemas/SettingsTenantAdminSetting"
+            },
+            "type": "array"
+          },
+          "writable": {
+            "description": "Whether this tenant's settings may be written through this surface. False when the host's settings write seam refuses the tenant, in which case every write route answers 403 protected.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "settings",
+          "writable",
+          "read_only_reason"
         ],
         "type": "object"
       }
@@ -109,7 +157,7 @@
   "paths": {
     "/{tenant}/settings": {
       "get": {
-        "description": "Returns every item in the declaration listing, including keys declared by modules that do not run in this process, each with the value it resolves to on the layer of the tenant in the path. The platform-only namespaces are left out. Resolution walks the three-level fallback: the tenant row, then the global row, then the declared default; source reports which of the three the value came from. Every value-bearing field is text in the declared type's own form; for a sensitive item default is empty and written and value carry a fixed mask string. A failure to read the layer's rows or to resolve a value answers 503 rather than leaving the item out.",
+        "description": "Returns the items whose declarations expose them to a tenant: a schema that declares itself tenant-facing and an item that states a tenant access. No namespace is included or excluded by its name. Each item carries the platform layer's value, the tenant layer's value and their boolean OR, its control metadata, whether the platform layer locks it, whether the tenant layer holds a row, and the layer the effective value comes from. Titles and descriptions are rendered in the request's language. The envelope also says whether the host's settings write seam would accept a write to this tenant. A failure to read either layer, or to ask the seam, answers 503 rather than leaving an item out.",
         "operationId": "settings.tenantadmin.settings.list",
         "parameters": [
           {
@@ -127,14 +175,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SettingsTenantAdminSetting"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/SettingsTenantAdminSettings"
                 }
               }
             },
-            "description": "Every declared item"
+            "description": "The items the declarations expose to a tenant"
           },
           "400": {
             "content": {
@@ -185,105 +230,12 @@
             "sessionCookie": []
           }
         ],
-        "summary": "List every declared setting with its value on the tenant layer"
-      }
-    },
-    "/{tenant}/settings/{namespace}": {
-      "get": {
-        "description": "Returns the declared items whose namespace equals the path segment, that is the group one module declared, each carrying the same fields and resolved the same way as on the all-items route. The declaration listing is not narrowed to the modules running in this process, and the platform-only namespaces are left out. A namespace no declared item belongs to, or one whose items are all platform-only, answers 404 without a problem document.",
-        "operationId": "settings.tenantadmin.settings.listNamespace",
-        "parameters": [
-          {
-            "description": "The tenant whose settings layer the read addresses, named in the path. A \"layer\" or \"tenant\" query parameter is refused with 400.",
-            "in": "path",
-            "name": "tenant",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The namespace whose declared items the listing returns: the declaring module, which is the key's leading segment (for example \"deals\" or \"authn.session\"). A namespace no declared item belongs to, or one whose items are all platform-only, is a 404.",
-            "in": "path",
-            "name": "namespace",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SettingsTenantAdminSetting"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "The namespace's declared items"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "A layer or tenant query parameter was sent, or the tenant in the path is outside the tenant identifier's value domain"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The request carries no identity"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The caller holds no settings.tenant.read in the tenant's domain"
-          },
-          "404": {
-            "description": "No declared item belongs to the namespace, or the namespace is platform-only"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "A dependency could not answer"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "List the declared settings one namespace declares on the tenant layer"
+        "summary": "List the declared settings the tenant surface exposes"
       }
     },
     "/{tenant}/settings/{namespace}/{key}": {
       "delete": {
-        "description": "Drops the layer of the tenant in the path's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item and must not belong to a platform-only namespace, otherwise the answer is 404; deleting a row the layer does not hold is not an error. Once the row is gone the item resolves through the fallback again. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
+        "description": "Drops the layer of the tenant in the path's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item whose tenant access is read-write, otherwise the answer is 404 — the same answer an undeclared key gets, whether the declaration gives the item no tenant access or only reading. Deleting a row the layer does not hold is not an error. Dropping the tenant row while the platform layer holds the policy on is allowed: the effective value stays on, so there is no disable to refuse. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "operationId": "settings.tenantadmin.settings.remove",
         "parameters": [
           {
@@ -296,7 +248,7 @@
             }
           },
           {
-            "description": "The namespace of the item whose row is dropped: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared and not platform-only.",
+            "description": "The namespace of the item whose row is dropped: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared with read-write tenant access.",
             "in": "path",
             "name": "namespace",
             "required": true,
@@ -305,7 +257,7 @@
             }
           },
           {
-            "description": "The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared and not platform-only.",
+            "description": "The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared with read-write tenant access.",
             "in": "path",
             "name": "key",
             "required": true,
@@ -349,7 +301,7 @@
             "description": "The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), or the host's settings write seam refused the write (protected)"
           },
           "404": {
-            "description": "The full key has no declaration, or its namespace is platform-only"
+            "description": "The full key is not declared with read-write tenant access"
           },
           "503": {
             "content": {
@@ -373,7 +325,7 @@
         "summary": "Drop the tenant layer's explicit row for one setting"
       },
       "put": {
-        "description": "Writes one row for the setting named by the namespace and key path segments on the layer of the tenant in the path. The full key `<namespace>.<key>` must match a declared item and must not belong to a platform-only namespace, otherwise the answer is 404. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as \"300s\" is stored as \"5m0s\"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
+        "description": "Writes one row for the setting named by the namespace and key path segments on the layer of the tenant in the path. The full key `<namespace>.<key>` must match a declared item whose tenant access is read-write, otherwise the answer is 404 — the same answer an undeclared key gets, whether the declaration gives the item no tenant access or only reading. A value of the mask string a sensitive item is shown as is 422 masked-value before the seam, the audit and the store. A write turning a boolean switch off while the platform layer holds it on is 409 tenant-admission-enforced, also before the seam, the audit and the store. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. The value is encoded under the item's declared type and then held to its declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "operationId": "settings.tenantadmin.settings.set",
         "parameters": [
           {
@@ -386,7 +338,7 @@
             }
           },
           {
-            "description": "The namespace of the item to write: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared and not platform-only.",
+            "description": "The namespace of the item to write: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared with read-write tenant access.",
             "in": "path",
             "name": "namespace",
             "required": true,
@@ -395,7 +347,7 @@
             }
           },
           {
-            "description": "The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared and not platform-only.",
+            "description": "The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared with read-write tenant access.",
             "in": "path",
             "name": "key",
             "required": true,
@@ -411,7 +363,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "value": {
-                    "description": "The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422."
+                    "description": "The value to store, in the JSON form the item's declared type is read from: a boolean for a switch. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. The mask string a sensitive item is shown as is refused with 422 masked-value before anything runs."
                   }
                 },
                 "required": [
@@ -459,7 +411,17 @@
             "description": "The caller holds no settings.tenant.write in the tenant's domain, the caller has not proved an email address (contact-required), or the host's settings write seam refused the write (protected)"
           },
           "404": {
-            "description": "The full key has no declaration, or its namespace is platform-only"
+            "description": "The full key is not declared with read-write tenant access"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The write would turn off a policy the platform layer requires (tenant-admission-enforced)"
           },
           "413": {
             "content": {
@@ -489,7 +451,7 @@
                 }
               }
             },
-            "description": "The value cannot be encoded under the declared type or lies outside its declared domain"
+            "description": "The value is the mask string a sensitive item is shown as (masked-value), cannot be encoded under the declared type, or lies outside its declared domain"
           },
           "503": {
             "content": {

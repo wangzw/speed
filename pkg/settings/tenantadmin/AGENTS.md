@@ -9,22 +9,32 @@ setting, rule or data of its own.
 The descriptor declares the static feature `settings.tenantadmin`, present
 whenever the module is in force.
 
-The route set is four routes under the tenant surface's base path:
+The route set is three routes under the tenant surface's base path:
 
-- `GET /api/v1/tenants/:tenant/settings` — every declared item, minus the
-  platform-only namespaces, with its value and source on that tenant's layer.
-- `GET /api/v1/tenants/:tenant/settings/:namespace` — the same for one declared
-  namespace; a namespace with no visible item is a bare 404.
+- `GET /api/v1/tenants/:tenant/settings` — every item whose declaration exposes
+  it to a tenant, each with its platform value, tenant value and effective
+  value, in an envelope that also says whether the tenant's settings are
+  writable.
 - `PUT /api/v1/tenants/:tenant/settings/:namespace/:key` — one row written on
   that tenant's layer.
 - `DELETE /api/v1/tenants/:tenant/settings/:namespace/:key` — that layer's
   explicit row dropped.
 
-A listing view carries the declaration fields plus `written`, `has_row`,
-`value` and `source`. `source` is the backend's answer to which layer the value
-comes from — `tenant`, `global` or `default` — computed from the tenant layer's
-rows and the global layer's rows; this surface does not expose the global layer,
-so a client cannot work it out and must not try.
+There is no per-namespace read. An unknown path is answered by the router with
+404 or 405 before any setting is looked at, and the answer carries no key name,
+value, source, default or row existence.
+
+A listing item carries `key`, `title`, `description`, `type`, `control`,
+`danger`, `effect`, `tenant_access`, `effective_value`, `platform_value`,
+`tenant_value`, `locked_by_platform`, `has_row` and `source`. The three values
+are text in the declared type's form. `platform_value` is the global row or the
+declared default; `tenant_value` is the tenant row or the declared default;
+`effective_value` is their boolean OR. `source` is `tenant`, `global` or
+`default`, and a platform-enforced item is `global`. The envelope's `writable`
+is the host seam's answer for the tenant, and `read_only_reason` is the refusal
+code (`protected`) when it is false. Titles and descriptions render in the
+request's language, falling back to the declared English text when no localizer
+is assembled.
 
 ## What the module is for
 
@@ -40,34 +50,50 @@ in the layer a route acts on and in the permission it asks for.
   `settings.tenant.read` on a read and `settings.tenant.write` on a write. The
   two codes belong to the governed set and are carried by the authorization
   capability; this module declares no catalog entry and no translation row.
-- **The global layer is not reachable here.** It is served by
+- **The global layer is not writable here.** It is served by
   `pkg/settings/admin` under `/api/v1/system`; the path being the platform
-  domain is answered with a bare 404.
+  domain is answered with a bare 404. The listing reads the global layer's rows
+  only to compute the platform value and the effective value of the items the
+  declarations already expose, and it never lists the global layer itself.
 - **The path tenant is reconciled with the resolved tenant by the tenant
   capability**, on the same layer the tenant management routes use. This module
   does not take the tenant roster in and does not re-implement that check.
 - **A host supplies the mandatory `authz.WriteSettings` seam.** It refuses a
   write to a personal tenant. An assembly that mounts this module without one
   fails at dependency resolution rather than deciding the refusal at run time;
-  the seam only narrows and never lets a write through. The set of
-  platform-only namespaces is a different rule, held by this module's own closed
-  set rather than by the seam.
+  the seam only narrows and never lets a write through.
 
 The mandatory audit, the registration-state gate, the closed refusal mapping and
 the sensitive-value masking follow the platform settings surface. A write lands
 its mandatory audit row before the action and before any settings call, and an
 audit row that cannot be written answers 503 with nothing changed. The host's
-`authz.WriteSettings` seam is asked after the shape and platform-only checks and
-before the audit; its refusal is 403 `urn:speed:settings:protected` and an
-unreadable answer is 503, neither of which runs the action. A sensitive item's
-text is masked in the view; its `has_row` and `source` still answer.
+`authz.WriteSettings` seam is asked after the declaration and platform-enforcement
+checks and before the audit; its refusal is 403 `urn:speed:settings:protected`
+and an unreadable answer is 503, neither of which runs the action. A sensitive
+item's three value fields carry the settings capability's mask; its `has_row`
+and `source` still answer. A write that carries the mask string is 422
+`urn:speed:settings:masked-value` before the seam, the audit and the store.
 
-The platform-only namespaces are `ratelimit.*`, `tenant.admission.*` and
-`authn.*`, held as a closed set in this package rather than in configuration or
-derived from declarations. The list omits them and a single-key read or write
-answers the same bare 404 an undeclared key gets. The exclusion narrows this
-surface alone: the settings module and the platform surface still read and write
-those namespaces.
+## What a tenant sees
+
+The declarations decide the surface. A schema states `Schema.TenantFacing`, and
+each item states a `TenantAccess`. An item whose declaration gives it no tenant
+access is invisible here; a namespace's name neither opens nor closes anything,
+and there is no prefix list. The schema-level switch is judged when the key
+table is built, so an item that states a tenant access without a tenant-facing
+schema fails the startup.
+
+Only `TenantReadWrite` is writable. `TenantRead` is visible and unwritable; both
+write routes answer the same bare 404 an undeclared key gets. An item the
+declarations do not expose is invisible in the listing, absent from every error
+and from the OpenAPI fragment, and gets that same 404 on a write.
+
+A platform-enforced policy is one whose global layer holds the boolean `true`.
+The effective value is the platform value OR the tenant value, so the platform
+layer is a floor. A write that would turn such a policy off answers 409
+`urn:speed:settings:tenant-admission-enforced` before the seam, the audit and the
+store; the tenant layer is unchanged and no success audit lands. Writing the
+enforced value and deleting the tenant row remain legal.
 
 ## Configuration
 
@@ -102,7 +128,8 @@ env -C pkg golangci-lint run ./settings/tenantadmin/...
 ```
 
 The tests ask for no service and no environment. They hold the route set, the
-permission and domain each route asks for, the platform-only exclusion, the
-source marker, the masking, the registration gate, the host seam, the audit
-ordering, the refusal mapping, the feature declaration, the endpoint defaults and
-the generated fragment.
+permission and domain each route asks for, the declaration-driven visibility, the
+effective value and its source, the platform-enforcement refusal, the envelope,
+the localized titles, the masking and the masked-write refusal, the registration
+gate, the host seam, the audit ordering, the refusal mapping, the feature
+declaration, the endpoint defaults and the generated fragment.

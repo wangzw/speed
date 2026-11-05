@@ -100,11 +100,6 @@ func (p *product) routes() []route {
 			listOperation.Handle(p.handleList),
 		},
 		{
-			http.MethodGet, tenantAdminSpec.ResolvePath(pathNamespace),
-			authz.PermissionTenantSettingsRead,
-			namespaceOperation.Handle(p.handleListNamespace),
-		},
-		{
 			http.MethodPut, tenantAdminSpec.ResolvePath(pathNamespaceKey),
 			authz.PermissionTenantSettingsWrite,
 			setOperation.Handle(p.handleSet),

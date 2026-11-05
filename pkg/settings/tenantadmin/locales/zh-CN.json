@@ -1,0 +1,6 @@
+{
+  "tenant.admission.require-mfa.title": "要求多因素认证",
+  "tenant.admission.require-mfa.description": "成员登录时必须使用第二因素，才能使用本组织。",
+  "tenant.admission.require-sso.title": "要求企业单点登录",
+  "tenant.admission.require-sso.description": "成员必须通过本组织自己的身份提供方登录。"
+}

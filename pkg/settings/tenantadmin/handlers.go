@@ -2,10 +2,10 @@ package tenantadmin
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
+	"strconv"
 
 	speedhttp "github.com/vislake/speed/pkg/http"
 
@@ -13,91 +13,44 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// jsonContentType is the media type the entry point's JSON writer sets. A reply
-// operation's JSON answer is written through c.Data, which carries the declared
-// media type as it stands, so the one declared without the charset parameter
-// would reach the wire without it; this is the media type the simple form's
-// reader and the reply form's writer share.
-const jsonContentType = "application/json; charset=utf-8"
-
-// replyJSON builds a 200 answer carrying body as JSON, with the media type the
-// entry point's own JSON writer produces. It is the answer of a reply operation
-// that also has to write a bare 404, which the simple form cannot.
-func replyJSON(body any) (speedhttp.Reply, error) {
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	return speedhttp.BytesReply(http.StatusOK, jsonContentType, encoded), nil
-}
-
-// handleList answers GET /{tenant}/settings: every declared setting item, minus
-// the platform-only namespaces, with the value each resolves to on the path
-// tenant's layer. The route's authorization step has already decided the read.
-func (p *product) handleList(ctx context.Context, in listInput) ([]SettingsTenantAdminSetting, error) {
+// handleList answers GET /{tenant}/settings: the items whose declarations expose
+// them to a tenant, each with its platform value, tenant value and effective
+// value, in the envelope that also says whether the tenant may write at all.
+// The route's authorization step has already decided the read.
+func (p *product) handleList(ctx context.Context, in listInput) (SettingsTenantAdminSettings, error) {
 	tenant, ok := p.pathTenant(in.Tenant)
 	if !ok {
-		return nil, p.badRequest()
+		return SettingsTenantAdminSettings{}, p.badRequest()
 	}
-	return p.list(ctx, tenant, "")
+	return p.list(ctx, tenant)
 }
 
-// handleListNamespace answers GET /{tenant}/settings/:namespace: the declared
-// items that namespace declared, each as the all-items route shows it. A
-// namespace that no declared item belongs to, or whose items are all
-// platform-only, is a bare 404.
-func (p *product) handleListNamespace(ctx context.Context, in namespaceInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	tenant, ok := p.pathTenant(in.Tenant)
-	if !ok {
-		return nil, p.badRequest()
-	}
-	views, err := p.list(ctx, tenant, in.Namespace)
-	if errors.Is(err, errNoDeclaredItem) {
-		return speedhttp.EmptyReply(http.StatusNotFound), nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return replyJSON(views)
-}
-
-// list answers a read route with the declared items, limited to namespace when
-// it is given.
+// list answers the all-items read.
 //
-// The items are the declaration listing, which takes no IO and needs no context;
-// the platform-only namespaces are dropped from it first. Each item's written
-// text and row existence come from the path tenant's rows, its resolved text from
-// a read at that layer, which walks the three-level fallback, and its source from
-// the tenant layer's rows and the global layer's rows: the tenant row when it is
-// there, else the global row, else the declared default. A namespace no declared
-// item belongs to is a bare 404, reported as errNoDeclaredItem; a failure to read
-// the rows or resolve a value is a 503, because a listing that could not read a
+// The items are the declaration listing filtered by declaration alone: an item
+// is visible when its declaration gives it a tenant access, and no namespace is
+// excluded or opened by its name. Each item's platform value and row existence
+// come from the global layer's rows, its tenant value and row existence from the
+// path tenant's rows, and its effective value is the boolean OR of the two. A
+// failure to read either layer is a 503, because a listing that could not read a
 // row must not answer as though the row were not there.
-func (p *product) list(ctx context.Context, tenant selection, namespace string) ([]SettingsTenantAdminSetting, error) {
+//
+// The envelope also carries whether the host's settings write seam would refuse
+// a write to this tenant. A read that cannot ask the seam is a 503 rather than a
+// claim that the surface is writable.
+func (p *product) list(ctx context.Context, tenant selection) (SettingsTenantAdminSettings, error) {
 	declared := p.store.Declared()
 	items := make([]settings.DeclaredItem, 0, len(declared))
 	for _, item := range declared {
-		if platformOnly(item.Module) {
+		if !visibleToTenant(item) {
 			continue
 		}
 		items = append(items, item)
 	}
-	if namespace != "" {
-		group := make([]settings.DeclaredItem, 0, len(items))
-		for _, item := range items {
-			if item.Module == namespace {
-				group = append(group, item)
-			}
-		}
-		if len(group) == 0 {
-			return nil, errNoDeclaredItem
-		}
-		items = group
-	}
 
 	rows, err := p.store.List(ctx, tenant.layer)
 	if err != nil {
-		return nil, p.unavailable("listing the settings rows", err)
+		return SettingsTenantAdminSettings{}, p.unavailable("listing the settings rows", err)
 	}
 	// The layer's rows are keyed by their text and, separately, by their
 	// existence: an empty text is a row the layer holds as much as a non-empty
@@ -110,57 +63,50 @@ func (p *product) list(ctx context.Context, tenant selection, namespace string) 
 		present[row.Key] = true
 	}
 
-	// The global layer is read only for the source marker: this surface does not
-	// expose the global layer's values and accepts no write to it, but a value
-	// that falls through to the global row has to say so.
 	globalRows, err := p.store.List(ctx, settings.Global())
 	if err != nil {
-		return nil, p.unavailable("listing the global settings rows", err)
+		return SettingsTenantAdminSettings{}, p.unavailable("listing the global settings rows", err)
 	}
+	globalWritten := make(map[string]string, len(globalRows))
 	globalPresent := make(map[string]bool, len(globalRows))
 	for _, row := range globalRows {
+		globalWritten[row.Key] = row.Value
 		globalPresent[row.Key] = true
 	}
 
 	views := make([]SettingsTenantAdminSetting, 0, len(items))
 	for _, item := range items {
-		value, err := p.resolve(item, tenant.layer)
-		if err != nil {
-			return nil, p.unavailable("resolving a setting", err)
+		view, viewErr := p.viewOf(ctx, item, written[item.Key], present[item.Key], globalWritten[item.Key], globalPresent[item.Key])
+		if viewErr != nil {
+			return SettingsTenantAdminSettings{}, p.unavailable("resolving a setting", viewErr)
 		}
-		source := sourceDefault
-		switch {
-		case present[item.Key]:
-			source = sourceTenant
-		case globalPresent[item.Key]:
-			source = sourceGlobal
-		}
-		views = append(views, viewOf(item, written[item.Key], present[item.Key], value, source))
+		views = append(views, view)
 	}
-	return views, nil
-}
 
-// resolve reads one item at the layer and writes the resolved value in the
-// declared type's text form. The read walks the three-level fallback — tenant
-// row, global row, declared default — starting at the layer, and the target is a
-// fresh pointer to the declared type, which is the target Get accepts.
-func (p *product) resolve(item settings.DeclaredItem, layer settings.Layer) (string, error) {
-	target := reflect.New(item.Type)
-	if err := p.store.Get(layer, item.Key, target.Interface()); err != nil {
-		return "", err
+	denied, err := p.writeSettings.Denied(ctx, tenant.tenant)
+	if err != nil {
+		return SettingsTenantAdminSettings{}, p.unavailable("asking the settings write seam", err)
 	}
-	return renderValue(item.Type, target.Elem().Interface())
+	envelope := SettingsTenantAdminSettings{Settings: views, Writable: !denied}
+	if denied {
+		envelope.ReadOnlyReason = protectedCode
+	}
+	return envelope, nil
 }
 
 // handleSet answers PUT /{tenant}/settings/:namespace/:key: it writes one row on
 // the path tenant's layer. The route's authorization step has already decided
 // the write, and the entry point has already bound the body.
 //
-// The order is fixed: the tenant and the full key are checked, the host's
-// settings write seam is asked, the mandatory audit row lands before the action,
-// and the settings module is called last. A key with no declaration, or one in a
-// platform-only namespace, is a bare 404; a seam refusal is 403 protected and an
-// unanswered seam is 503; a value the settings module refuses is a 422.
+// The order is fixed: the tenant and the declaration are checked, a masked value
+// is refused, the platform policy is checked for a disable it forbids, the
+// host's settings write seam is asked, the mandatory audit row lands before the
+// action, and the settings module is called last. A key no declaration exposes
+// to a tenant for writing is a bare 404, the same answer an undeclared key gets.
+// A masked value is 422 masked-value without the seam, the audit or the store; a
+// disable of a platform-enforced policy is 409 tenant-admission-enforced, also
+// without them; a seam refusal is 403 protected and an unanswered seam is 503; a
+// value the settings module refuses is a 422.
 //
 // The write's actor is the caller's accountability key, Identity.Key(), which
 // under an impersonation is the administrator whose hands are on the request and
@@ -172,8 +118,17 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 		return nil, p.badRequest()
 	}
 	key := fullKeyOf(in.Namespace, in.Key)
-	if !p.writable(in.Namespace, key) {
+	item, ok := p.writableItem(key)
+	if !ok {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	if item.Sensitive {
+		if text, isText := in.Value.(string); isText && text == maskedValue {
+			return nil, p.maskedValue()
+		}
+	}
+	if err := p.refuseDisabledPolicy(ctx, item, in.Value); err != nil {
+		return nil, err
 	}
 	denied, err := p.writeSettings.Denied(ctx, tenant.tenant)
 	if err != nil {
@@ -207,12 +162,14 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 // path tenant layer's explicit row for one key. The route's authorization step
 // has already decided the write.
 //
-// The full key is required to be declared and outside the platform-only
-// namespaces before the action, otherwise it is a bare 404; the host's settings
-// write seam is asked next, a refusal being 403 protected; the mandatory audit
-// row lands before the settings module is called; and any failure the module
-// returns is a 503, because a delete of a declared row has no other refusal to
-// name.
+// The full key is required to be declared and exposed to a tenant for writing
+// before the action, otherwise it is a bare 404. Dropping the tenant row while a
+// platform policy is on is allowed: the effective value stays on, because the
+// platform layer is a floor, so there is no disable to refuse. The host's
+// settings write seam is asked next, a refusal being 403 protected; the mandatory
+// audit row lands before the settings module is called; and any failure the
+// module returns is a 503, because a delete of a declared row has no other
+// refusal to name.
 //
 // As on the write route, the actor is the caller's accountability key,
 // Identity.Key() — the hands on the request, which under an impersonation is the
@@ -223,7 +180,7 @@ func (p *product) handleRemove(ctx context.Context, in removeInput, _ *speedhttp
 		return nil, p.badRequest()
 	}
 	key := fullKeyOf(in.Namespace, in.Key)
-	if !p.writable(in.Namespace, key) {
+	if _, ok := p.writableItem(key); !ok {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 	denied, err := p.writeSettings.Denied(ctx, tenant.tenant)
@@ -245,15 +202,91 @@ func (p *product) handleRemove(ctx context.Context, in removeInput, _ *speedhttp
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
-// writable reports whether a full key belongs to this surface: its namespace is
-// not platform-only and the key is declared. Both refusals are the same bare
-// 404, so the two are one answer.
-func (p *product) writable(namespace, key string) bool {
-	if platformOnly(namespace) {
-		return false
-	}
+// visibleToTenant reports whether an item's declaration exposes it to a tenant.
+// The schema-level TenantFacing switch is judged when the key table is built: an
+// item carrying a tenant access under a schema that does not declare itself
+// tenant-facing fails the startup, so the item itself is the complete statement
+// by the time a request sees it.
+func visibleToTenant(item settings.DeclaredItem) bool {
+	return item.TenantAccess == settings.TenantRead || item.TenantAccess == settings.TenantReadWrite
+}
+
+// writableItem reports whether a full key is declared and exposed to a tenant
+// for writing. Every other declaration — unknown, platform-only, or read-only —
+// is the same bare 404.
+func (p *product) writableItem(key string) (settings.DeclaredItem, bool) {
 	item, declared := p.declared(key)
-	return declared && !platformOnly(item.Module)
+	return item, declared && item.TenantAccess == settings.TenantReadWrite
+}
+
+// refuseDisabledPolicy refuses a write that would turn off a policy the platform
+// layer requires. The platform value is the global row, or the declared default
+// when there is none; when it is true the item is enforced, and a request that
+// sets the item to false is a 409 rather than a write the effective-value rule
+// would silently overrule. Writing the enforced value and dropping the tenant
+// row stay legal.
+//
+// The check runs after the declaration is established and before the host seam,
+// the audit and the store: a refused write asks nothing and changes nothing. A
+// platform value that cannot be read or decoded is a 503, never read as an
+// absent enforcement.
+func (p *product) refuseDisabledPolicy(ctx context.Context, item settings.DeclaredItem, value any) error {
+	if item.Type.Kind() != reflect.Bool {
+		return nil
+	}
+	disabled, known := disables(value)
+	if !known || !disabled {
+		return nil
+	}
+	text, present, err := p.globalText(ctx, item.Key)
+	if err != nil {
+		return p.unavailable("reading the platform policy", err)
+	}
+	if !present {
+		text = item.Default
+	}
+	active, err := strconv.ParseBool(text)
+	if err != nil {
+		return p.unavailable("reading the platform policy", err)
+	}
+	if active {
+		return p.enforced()
+	}
+	return nil
+}
+
+// globalText reads the global layer's text for one key. The second result says
+// whether the layer holds a row at all, which a write of the declared default
+// needs to tell apart from an explicit default row.
+func (p *product) globalText(ctx context.Context, key string) (string, bool, error) {
+	rows, err := p.store.List(ctx, settings.Global())
+	if err != nil {
+		return "", false, err
+	}
+	for _, row := range rows {
+		if row.Key == key {
+			return row.Value, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// disables reports whether a write's value turns a boolean item off, and whether
+// the value is a boolean at all. A value of another shape is left to the
+// settings module, which rejects it under the declared type.
+func disables(value any) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return !v, true
+	case string:
+		enabled, err := strconv.ParseBool(v)
+		if err != nil {
+			return false, false
+		}
+		return !enabled, true
+	default:
+		return false, false
+	}
 }
 
 // fullKeyOf assembles the full setting key from the route's two path
