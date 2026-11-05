@@ -63,6 +63,14 @@ const policyWriteGuardModuleName = tenancyModuleName + ".policy-write"
 // Go type cannot carry both.
 const settingsWriteGuardModuleName = tenancyModuleName + ".settings-write"
 
+// protectedTestTenantPrefix marks a business tenant the demo's review and e2e
+// fixtures construct to exercise the settings surface's read-only state. The
+// settings write guard refuses it while every management surface still admits
+// it, so it opens organization administration and sees the protected notice.
+// It is a fixture convention of this host alone: an ordinary tenant never
+// carries the prefix unless a test asks for one.
+const protectedTestTenantPrefix = "protected-"
+
 // init registers the three modules. The tenancy module is named on serve, which
 // stands the management surface up, and on seed, which writes the platform
 // administrator binding that asks the membership checker. The two write-guard
@@ -366,20 +374,30 @@ func settingsWriteGuardModule() core.Module {
 
 // settingsWriteGuard implements authz.WriteSettings: the tenant management
 // surface may not write the settings of a domain whose identifier starts with
-// the personal prefix. That domain's settings belong to the host that built the
-// space, and its tenant administrator governs a business tenant rather than the
-// personal organization.
+// the personal prefix or the protected test prefix. The personal domain's
+// settings belong to the host that built the space, and its tenant
+// administrator governs a business tenant rather than the personal
+// organization; the protected test prefix is the review fixtures' read-only
+// business tenant.
 //
 // The answer reads the identifier alone and never fails. The platform-only
 // namespaces are a separate rule the settings module holds itself, so this seam
-// only refuses the personal domain.
+// only refuses those two domains. The other management surfaces do not know the
+// protected test prefix, so such a tenant still opens organization
+// administration; only its settings writes are refused.
 type settingsWriteGuard struct{}
 
 var _ authz.WriteSettings = settingsWriteGuard{}
 
 // Denied implements authz.WriteSettings.
 func (settingsWriteGuard) Denied(_ context.Context, tenantID string) (bool, error) {
-	return isPersonalTenantID(tenantID), nil
+	return isPersonalTenantID(tenantID) || isProtectedTestTenantID(tenantID), nil
+}
+
+// isProtectedTestTenantID reports whether a tenant belongs to the review
+// fixture's read-only business class.
+func isProtectedTestTenantID(tenantID string) bool {
+	return strings.HasPrefix(tenantID, protectedTestTenantPrefix)
 }
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's

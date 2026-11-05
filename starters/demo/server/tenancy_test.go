@@ -683,6 +683,69 @@ func TestTheSettingsWriteGuardRefusesAPersonalDomainWrite(t *testing.T) {
 	}
 }
 
+// TestTheSettingsWriteGuardRefusesTheProtectedTestTenant holds the review
+// fixture's read-only business tenant: the settings surface refuses the
+// protected- prefix while the management surface still admits the tenant, so a
+// review or e2e case can open organization administration and observe the
+// protected notice. An ordinary business tenant stays writable, and the personal
+// tenant keeps its own refusal.
+func TestTheSettingsWriteGuardRefusesTheProtectedTestTenant(t *testing.T) {
+	guard := settingsWriteGuard{}
+	ctx := context.Background()
+	for _, domain := range []string{protectedTestTenantPrefix + "acme", protectedTestTenantPrefix} {
+		denied, err := guard.Denied(ctx, domain)
+		if err != nil {
+			t.Fatalf("Denied(%q): %v", domain, err)
+		}
+		if !denied {
+			t.Errorf("Denied(%q) = false, want the protected test tenant refused", domain)
+		}
+	}
+	for _, domain := range []string{"acme", string(authz.PlatformDomain), "protected", "acme-protected"} {
+		denied, err := guard.Denied(ctx, domain)
+		if err != nil {
+			t.Fatalf("Denied(%q): %v", domain, err)
+		}
+		if denied {
+			t.Errorf("Denied(%q) = true, want an ordinary business tenant allowed", domain)
+		}
+	}
+	for _, domain := range []string{personalIDPrefix + "acct-1", personalIDPrefix} {
+		denied, err := guard.Denied(ctx, domain)
+		if err != nil {
+			t.Fatalf("Denied(%q): %v", domain, err)
+		}
+		if !denied {
+			t.Errorf("Denied(%q) = false, want the personal domain refused", domain)
+		}
+	}
+
+	// The prefix is read-only on the settings surface alone: the management
+	// surface's write guard and the tenant write guard both admit the tenant,
+	// which is what lets it enter organization administration at all.
+	tenantID := protectedTestTenantPrefix + "acme"
+	policy := policyWriteGuard{}
+	for _, op := range []authz.WriteOp{authz.WriteRole, authz.WriteGrant, authz.WriteBinding} {
+		denied, err := policy.Denied(ctx, tenantID, op)
+		if err != nil {
+			t.Fatalf("the management write guard refused %q with an error: %v", tenantID, err)
+		}
+		if denied {
+			t.Errorf("the management write guard denies %q op %d, want the tenant admitted", tenantID, op)
+		}
+	}
+	product := tenancyProductOf(newFakeRoster(), newFakeMemberships(), nil, nil, nil)
+	for _, op := range []tenant.WriteOp{tenant.WriteDisable, tenant.WriteDelete} {
+		denied, err := product.Denied(ctx, tenant.ID(tenantID), op)
+		if err != nil {
+			t.Fatalf("the tenant write guard refused %q with an error: %v", tenantID, err)
+		}
+		if denied {
+			t.Errorf("the tenant write guard denies %q op %d, want the tenant admitted", tenantID, op)
+		}
+	}
+}
+
 // TestTheMembershipGuardRefusesAPersonalDomainRemoval holds the personal tenant
 // as a single-member space: a removal of any membership in it is refused, even
 // when another tenant-administrator binding would satisfy the last-admin floor.

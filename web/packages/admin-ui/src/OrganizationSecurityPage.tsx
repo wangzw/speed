@@ -12,10 +12,13 @@
  * A policy the platform holds on is read-only and drawn as an enabled,
  * disabled switch: the platform value OR the tenant value decides the
  * effective one, so a tenant can never be looser than the platform floor.
- * Turning a policy off asks through the danger dialog's two-step
- * confirmation; turning one on saves immediately. A switch saves on its own
- * and reports the result beside itself (a short "saved" note, or the
- * resolved refusal), so the page has no save bar and no batch.
+ * Turning a policy off follows the declaration's danger: "critical" asks
+ * through the danger dialog's two-step confirmation, a declaration that
+ * carries no danger saves immediately, and any other value gets the
+ * ordinary single-step confirmation. Turning one on saves immediately. A
+ * switch saves on its own and reports the result beside itself (a short
+ * "saved" note, or the resolved refusal), so the page has no save bar and
+ * no batch.
  *
  * A tenant the host's settings write seam protects is read-only as a whole.
  * The page says so above the section and renders no switch at all; the
@@ -425,6 +428,14 @@ export function OrganizationSecurityPage({
 
   const toggle = (setting: AdminTenantSetting, next: boolean): void => {
     if (!next) {
+      // The declaration decides the guard. A policy that declares no danger
+      // saves without a dialog; "critical" gets the two-step guard; any other
+      // declared danger gets the ordinary single-step confirmation rather
+      // than being treated as harmless.
+      if (setting.danger === '') {
+        void apply(setting, false)
+        return
+      }
       confirm.ask({
         title: t('organization.security.confirm.title', {
           title: itemTitle({ setting, t }),
@@ -434,7 +445,7 @@ export function OrganizationSecurityPage({
           impact: itemImpact({ setting, t }),
         }),
         confirmLabel: t('common.confirm'),
-        doubleConfirm: true,
+        doubleConfirm: setting.danger === 'critical',
         run: () => {
           void apply(setting, false)
         },

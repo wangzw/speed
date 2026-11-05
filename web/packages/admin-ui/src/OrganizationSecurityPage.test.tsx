@@ -233,6 +233,84 @@ describe('OrganizationSecurityPage', () => {
     expect(mfaSwitch).not.toBeChecked()
   })
 
+  it('turns a policy off without a dialog when it declares no danger', async () => {
+    const user = userEvent.setup()
+    const writes: unknown[] = []
+    renderPage({
+      settings: envelope([
+        {
+          ...MFA,
+          danger: '',
+          effective_value: 'true',
+          tenant_value: 'true',
+          has_row: true,
+          source: 'tenant',
+        },
+      ]),
+      writeTenantSetting: (input) => {
+        writes.push(input)
+        return Promise.resolve()
+      },
+    })
+
+    const mfaSwitch = await screen.findByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        MFA.title,
+      ),
+    })
+    expect(mfaSwitch).toBeChecked()
+    await user.click(mfaSwitch)
+
+    // No danger means no confirmation: the switch saves on its own.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0]).toEqual({
+      tenant: TENANT,
+      namespace: 'tenant.admission',
+      key: 'require-mfa',
+      value: 'false',
+    })
+  })
+
+  it('asks once when a declaration is dangerous but not critical', async () => {
+    const user = userEvent.setup()
+    const writes: unknown[] = []
+    renderPage({
+      settings: envelope([
+        {
+          ...MFA,
+          danger: 'warning',
+          effective_value: 'true',
+          tenant_value: 'true',
+          has_row: true,
+          source: 'tenant',
+        },
+      ]),
+      writeTenantSetting: (input) => {
+        writes.push(input)
+        return Promise.resolve()
+      },
+    })
+
+    const mfaSwitch = await screen.findByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        MFA.title,
+      ),
+    })
+    await user.click(mfaSwitch)
+
+    // A declared danger that is not "critical" gets the ordinary
+    // single-step confirmation, not the two-step guard.
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(writes).toHaveLength(0)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.confirm }),
+    )
+    await waitFor(() => expect(writes).toHaveLength(1))
+  })
+
   it('saves optimistically, marks the request busy, and rolls back on refusal', async () => {
     const user = userEvent.setup()
     let rejectWrite: (error: unknown) => void = () => undefined
