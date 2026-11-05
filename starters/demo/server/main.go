@@ -448,8 +448,7 @@ var (
 		jobsdb.ModuleName,
 		jobsscheduler.ModuleName,
 		outboxrelay.ModuleName,
-		// Background paths write audit rows: the account-deletion cleanup and
-		// the personal tenant's create and delete in the event compensation. A
+		// Background paths write audit rows: the account-deletion cleanup. A
 		// worker without the journal loses them silently. Without an HTTP entry
 		// point the run serves no request, so request capture is skipped while
 		// statement- and record-level capture continue.
