@@ -115,14 +115,14 @@ func TestTheRoleListReportsUsageAndManagement(t *testing.T) {
 		}
 	})
 
-	t.Run("the description key is kept beside the free text", func(t *testing.T) {
+	t.Run("the removed description key does not appear in the view", func(t *testing.T) {
 		r := newRig(t, authz.PermissionTenantRoleRead)
 		r.manager.roles = []authz.RoleRecord{
 			{Tenant: "t1", Role: "editor", DescriptionKey: "authz.role.editor", Description: "Writes posts"},
 		}
 		view := roleListView(t, r)
-		if got := viewString(t, view, "description_key"); got != "authz.role.editor" {
-			t.Errorf("the description key = %q, want the stored key kept for old clients", got)
+		if _, ok := view["description_key"]; ok {
+			t.Error("the role view still carries description_key; the field was removed")
 		}
 	})
 
@@ -208,8 +208,9 @@ func TestThePermissionCatalogReportsGovernanceMetadata(t *testing.T) {
 }
 
 // TestTheRolePutAcceptsFreeTextDescription holds the role write's body: a
-// description is accepted, it wins over the legacy key, and one longer than
-// authz.RoleDescriptionMax is a 400 answered before the manager.
+// description is accepted, the removed description key reaches nothing, and a
+// description longer than authz.RoleDescriptionMax is a 400 answered before the
+// manager.
 func TestTheRolePutAcceptsFreeTextDescription(t *testing.T) {
 	t.Run("the description alone reaches the manager", func(t *testing.T) {
 		r := newRig(t)
@@ -227,7 +228,7 @@ func TestTheRolePutAcceptsFreeTextDescription(t *testing.T) {
 		}
 	})
 
-	t.Run("the description wins over the legacy key", func(t *testing.T) {
+	t.Run("the removed description key reaches nothing", func(t *testing.T) {
 		r := newRig(t)
 		w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/tenants/t1/roles/editor",
 			params("tenant", "t1", "role", "editor"),
@@ -236,8 +237,8 @@ func TestTheRolePutAcceptsFreeTextDescription(t *testing.T) {
 			t.Fatalf("writing a role answered %d, want 204; body = %q", w.Code, w.Body.String())
 		}
 		calls := r.manager.recorded()
-		if len(calls) != 1 || calls[0].roleRec.Description != "Writes posts" {
-			t.Fatalf("the record = %+v, want the description to win", calls)
+		if len(calls) != 1 || calls[0].roleRec.Description != "Writes posts" || calls[0].roleRec.DescriptionKey != "" {
+			t.Fatalf("the record = %+v, want the description written and the removed key ignored", calls)
 		}
 	})
 

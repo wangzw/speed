@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -63,22 +64,51 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 				t.Errorf("view %d's description = %q with no localizer assembled, want the empty string", i, description)
 			}
 		}
-		if len(view) != 2 {
-			t.Errorf("view %d carries %d fields (%v), want the two fields the route declares", i, len(view), view)
+		if len(view) != 5 {
+			t.Errorf("view %d carries %d fields (%v), want the five fields the route declares", i, len(view), view)
 		}
 	}
 }
 
-// permissionViews decodes the catalog route's answer into one map per view.
-func permissionViews(t *testing.T, body string) []map[string]string {
+// permissionViews decodes the catalog route's answer into one map per view. The
+// members are kept raw because the view mixes text and booleans.
+func permissionViews(t *testing.T, body string) []map[string]json.RawMessage {
 	t.Helper()
 	var got struct {
-		Permissions []map[string]string `json:"permissions"`
+		Permissions []map[string]json.RawMessage `json:"permissions"`
 	}
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatalf("the answer %q is not a permissions object: %v", body, err)
 	}
 	return got.Permissions
+}
+
+// viewString decodes one string member of a raw view.
+func viewString(t *testing.T, view map[string]json.RawMessage, key string) string {
+	t.Helper()
+	raw, ok := view[key]
+	if !ok {
+		t.Fatalf("the view carries no %q member: %v", key, view)
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatalf("the view's %q member is not a string: %v", key, err)
+	}
+	return value
+}
+
+// viewBool decodes one boolean member of a raw view.
+func viewBool(t *testing.T, view map[string]json.RawMessage, key string) bool {
+	t.Helper()
+	raw, ok := view[key]
+	if !ok {
+		t.Fatalf("the view carries no %q member: %v", key, view)
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatalf("the view's %q member is not a boolean: %v", key, err)
+	}
+	return value
 }
 
 // TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale drives the catalog
@@ -126,7 +156,7 @@ func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 				t.Fatalf("the answer lists %d views, want %d", len(views), len(texts))
 			}
 			for i, text := range texts {
-				if got := views[i]["description"]; got != text {
+				if got := viewString(t, views[i], "description"); got != text {
 					t.Errorf("view %d's description = %q in %s, want the text the key carries %q", i, got, locale, text)
 				}
 			}
@@ -145,7 +175,7 @@ func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testin
 		r.catalog.describe(authz.PermissionRoleRead, "authz.permission.authz-role-read")
 		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
 		views := permissionViews(t, w.Body.String())
-		if len(views) != 1 || views[0]["description"] != "" {
+		if len(views) != 1 || viewString(t, views[0], "description") != "" {
 			t.Fatalf("the answer = %+v, want one view whose description is the empty string", views)
 		}
 	})
@@ -159,7 +189,7 @@ func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testin
 		}, "en-US")
 		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
 		views := permissionViews(t, w.Body.String())
-		if len(views) != 1 || views[0]["description"] != "" {
+		if len(views) != 1 || viewString(t, views[0], "description") != "" {
 			t.Fatalf("the answer = %+v, want one view whose description is the empty string", views)
 		}
 	})
@@ -180,8 +210,72 @@ func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	if len(views) != 1 {
 		t.Fatalf("the answer lists %d views, want one", len(views))
 	}
-	if got := views[0]["description"]; got != key {
+	if got := viewString(t, views[0], "description"); got != key {
 		t.Fatalf("the description = %q for a key no catalogue carries, want the key itself %q", got, key)
+	}
+}
+
+// TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet holds the catalog
+// view's remaining fields: group and dangerous come from the declaring module's
+// metadata, and grantable is the caller's own held permission in the platform
+// domain. A permission the caller does not hold is still listed, marked not
+// grantable; a permission with no metadata answers an empty group and a false
+// dangerous mark.
+func TestTheCatalogRouteCarriesTheMetadataAndTheCallersHeldSet(t *testing.T) {
+	r := newRig(t, authz.PermissionRoleRead, authz.PermissionRoleManage, authz.PermissionAccountRead)
+	r.catalog.metadata[authz.PermissionRoleRead] = authz.PermissionMeta{Group: "authorization"}
+	r.catalog.metadata[authz.PermissionRoleManage] = authz.PermissionMeta{Group: "authorization", Dangerous: true}
+	r.subject.answer(authz.PermissionRoleRead)
+	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the catalog route answered %d, want 200", w.Code)
+	}
+	views := permissionViews(t, w.Body.String())
+	if len(views) != 3 {
+		t.Fatalf("the answer lists %d views, want three", len(views))
+	}
+	if got := viewString(t, views[0], "group"); got != "authorization" {
+		t.Errorf("the held permission's group = %q, want the module's group", got)
+	}
+	if viewBool(t, views[0], "dangerous") {
+		t.Error("the held permission is marked dangerous, want the module's false")
+	}
+	if !viewBool(t, views[0], "grantable") {
+		t.Error("a permission the caller holds is marked not grantable")
+	}
+	if got := viewString(t, views[1], "group"); got != "authorization" {
+		t.Errorf("the dangerous permission's group = %q, want the module's group", got)
+	}
+	if !viewBool(t, views[1], "dangerous") {
+		t.Error("the module marked the permission dangerous, but the view does not carry it")
+	}
+	if viewBool(t, views[1], "grantable") {
+		t.Error("a permission the caller does not hold is marked grantable")
+	}
+	if got := viewString(t, views[2], "group"); got != "" {
+		t.Errorf("a permission with no metadata answered group %q, want the empty string", got)
+	}
+	if viewBool(t, views[2], "dangerous") || viewBool(t, views[2], "grantable") {
+		t.Error("a permission with no metadata and no held grant answered a true mark")
+	}
+	calls := r.subject.asked()
+	if len(calls) != 1 || calls[0].domain != authz.PlatformDomain {
+		t.Fatalf("the held set was read %+v, want one read in the platform domain", calls)
+	}
+}
+
+// TestTheCatalogRouteWhoseHeldSetCannotBeReadIsA503 holds the failure rule: a
+// held set that cannot be read is a 503, never a catalog whose every permission
+// quietly says it cannot be granted.
+func TestTheCatalogRouteWhoseHeldSetCannotBeReadIsA503(t *testing.T) {
+	r := newRig(t, authz.PermissionRoleRead)
+	r.subject.fail(errors.New("the permission read is down"))
+	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a catalog read whose held set could not be read answered %d, want 503", w.Code)
+	}
+	if strings.Contains(w.Body.String(), `"permissions"`) {
+		t.Fatalf("a failed catalog read carried the permission list: %q", w.Body.String())
 	}
 }
 

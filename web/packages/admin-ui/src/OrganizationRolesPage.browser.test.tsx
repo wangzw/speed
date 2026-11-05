@@ -59,7 +59,6 @@ const ROLE_AUDITOR: AdminTenantRole = {
   builtin: false,
   can_manage: true,
   description: 'Reads audit records.',
-  description_key: '',
   permission_count: 1,
   member_count: 1,
   created_at: '2026-01-01T00:00:00Z',
@@ -71,7 +70,6 @@ const ROLE_BUILTIN: AdminTenantRole = {
   builtin: true,
   can_manage: true,
   description: 'Tenant administrator',
-  description_key: '',
   permission_count: 1,
   member_count: 1,
   created_at: '2026-01-01T00:00:00Z',
@@ -254,7 +252,6 @@ describe('OrganizationRolesPage over-long values in Chromium', () => {
       ...ROLE_AUDITOR,
       role: LONG_ROLE,
       description: LONG_DESCRIPTION,
-      description_key: '',
     },
   ]
 

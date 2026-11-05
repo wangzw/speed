@@ -16,9 +16,10 @@
  * the creator's membership and binding, so the operator can address the new
  * tenant's management pages at once and the page's member list holds the
  * operator from the start. The permissions page is still driven in step 6: it
- * creates a second role, grants it `authn.membership.manage`, and binds the
- * operator to it. That exercises the authorization surface without being the
- * precondition the invitation page needs.
+ * creates a second role, grants it `authn.membership.manage` through the
+ * high-risk permission's two-step confirmation, and binds the operator to it.
+ * That exercises the authorization surface without being the precondition the
+ * invitation page needs.
  *
  * The seeded roster already carries acme; the second tenant is registered
  * through the create form. Both collision branches the document names are
@@ -669,6 +670,25 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .click()
+      // The membership permission is dangerous, so the platform page asks for
+      // the same deliberate second click the organization page does.
+      const dangerousDialog = page.getByRole('dialog', {
+        name: copy('adminUi', 'permissions.grants.dangerousTitle'),
+        exact: true,
+      })
+      await expect(dangerousDialog).toBeVisible()
+      await dangerousDialog
+        .getByRole('button', {
+          name: copy('adminUi', 'permissions.grants.dangerousConfirm'),
+          exact: true,
+        })
+        .click()
+      const armAgain = dangerousDialog.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(armAgain).toBeEnabled({ timeout: 5_000 })
+      await armAgain.click()
       await expect(
         page.getByText(
           copy('adminUi', 'permissions.grants.granted', {

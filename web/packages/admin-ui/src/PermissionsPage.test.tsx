@@ -87,7 +87,6 @@ function role(overrides: Partial<AdminRole> = {}): AdminRole {
     builtin: false,
     can_manage: true,
     description: '',
-    description_key: 'role.editor',
     permission_count: 0,
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
@@ -106,8 +105,19 @@ function grant(overrides: Partial<AdminGrant> = {}): AdminGrant {
   }
 }
 
-function permission(value: string, description = ''): AdminPermission {
-  return { permission: value, description }
+function permission(
+  value: string,
+  description = '',
+  overrides: Partial<AdminPermission> = {},
+): AdminPermission {
+  return {
+    permission: value,
+    description,
+    group: '',
+    dangerous: false,
+    grantable: true,
+    ...overrides,
+  }
 }
 
 /** A searchable account row: a display name beside an opaque id. */
@@ -673,14 +683,13 @@ describe('PermissionsPage', () => {
     ).toHaveTextContent(/^crm\.deal\.read$/)
   })
 
-  it("shows a role's free-text description from the server, never the legacy key", async () => {
+  it("shows a role's free-text description from the server", async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
       listRoles: () =>
         Promise.resolve([
           role({
             description: 'Reads audit records',
-            description_key: 'role.auditor',
           }),
         ]),
     })
@@ -690,8 +699,6 @@ describe('PermissionsPage', () => {
     expect(
       await within(roles).findByText('Reads audit records'),
     ).toBeInTheDocument()
-    // The legacy key is stored for the host but is not what the row shows.
-    expect(within(roles).queryByText('role.auditor')).toBeNull()
   })
 
   it('renders a grant by the catalog description, the server code and a high-risk badge', async () => {
@@ -700,7 +707,11 @@ describe('PermissionsPage', () => {
     const operations = withAuthz({
       listRoles: () => Promise.resolve([role()]),
       listPermissions: () =>
-        Promise.resolve([permission('authz.tenant.role.manage', described)]),
+        Promise.resolve([
+          permission('authz.tenant.role.manage', described, {
+            dangerous: true,
+          }),
+        ]),
       listGrants: () =>
         Promise.resolve([
           grant({
@@ -731,6 +742,121 @@ describe('PermissionsPage', () => {
         zhCN.permissions.catalog.dangerous,
       ),
     ).toBeInTheDocument()
+  })
+
+  it('requires the two-step confirmation before granting a dangerous permission', async () => {
+    const user = userEvent.setup()
+    const granted: string[] = []
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listPermissions: () =>
+        Promise.resolve([
+          permission('crm.deal.read', '', { dangerous: true }),
+          permission('crm.deal.write'),
+        ]),
+      grantPermission: (input) => {
+        granted.push(input.permission)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+
+    // A dangerous permission asks before it is written: the add click opens
+    // the dialog and submits nothing.
+    await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
+    await user.click(
+      await screen.findByRole('option', { name: contains('crm.deal.read') }),
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
+    const dialog = await screen.findByRole('dialog')
+    expect(granted).toEqual([])
+    // The heavier two-step arm: the first confirming click only arms the
+    // button, and the deliberate second click fires the write.
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.permissions.grants.dangerousConfirm,
+      }),
+    )
+    expect(granted).toEqual([])
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+    await vi.waitFor(() => {
+      expect(granted).toEqual(['crm.deal.read'])
+    })
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // A permission the server does not mark dangerous submits at once.
+    await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
+    await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
+    await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
+    await vi.waitFor(() => {
+      expect(granted).toEqual(['crm.deal.read', 'crm.deal.write'])
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('groups the catalog by the server group and marks entries the caller cannot grant', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listPermissions: () =>
+        Promise.resolve([
+          permission('authz.role.read', 'Read roles', {
+            group: 'authorization',
+          }),
+          permission('authn.member.read', 'Read members', {
+            group: 'membership',
+            grantable: false,
+          }),
+        ]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+
+    const catalog = section(zhCN.permissions.catalog.title)
+    // The catalog is grouped by the declaring module's group, in the shared
+    // order and with the shared headings.
+    expect(
+      await within(catalog).findByText(
+        zhCN.permissions.catalog.group.authorization,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(catalog).getByText(zhCN.permissions.catalog.group.membership),
+    ).toBeInTheDocument()
+    // An entry the caller cannot grant is still listed and marked.
+    expect(
+      await within(catalog).findByText('authn.member.read'),
+    ).toBeInTheDocument()
+    expect(
+      within(catalog).getByText(zhCN.permissions.catalog.notGrantable),
+    ).toBeInTheDocument()
+
+    // The grant picker offers only what the caller may grant.
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
+    expect(
+      await screen.findByRole('option', { name: contains('authz.role.read') }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('option', { name: contains('authn.member.read') }),
+    ).toBeNull()
   })
 
   it('writes the role description as free text', async () => {

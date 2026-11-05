@@ -32,7 +32,6 @@ const ROLES: readonly AdminRole[] = [
     builtin: false,
     can_manage: true,
     description: '',
-    description_key: 'role.editor',
     permission_count: 0,
     created_at: '2026-10-15T12:00:00Z',
   },
@@ -42,15 +41,14 @@ const ROLES: readonly AdminRole[] = [
     builtin: false,
     can_manage: true,
     description: '',
-    description_key: 'role.viewer',
     permission_count: 0,
     created_at: '2026-10-15T12:00:00Z',
   },
 ]
 
 const PERMISSIONS: readonly AdminPermission[] = [
-  { permission: 'deal.read', description: '' },
-  { permission: 'deal.write', description: '' },
+  { permission: 'deal.read', description: '', group: '', dangerous: false, grantable: true },
+  { permission: 'deal.write', description: '', group: '', dangerous: false, grantable: true },
 ]
 
 const GRANTS: readonly AdminGrant[] = [
@@ -120,14 +118,13 @@ const LONG_ROLES: readonly AdminRole[] = [
     builtin: false,
     can_manage: true,
     description: LONG_DESCRIPTION,
-    description_key: '',
     permission_count: 0,
     created_at: '2026-10-15T12:00:00Z',
   },
 ]
 
 const LONG_PERMISSIONS: readonly AdminPermission[] = [
-  { permission: LONG_PERMISSION, description: '' },
+  { permission: LONG_PERMISSION, description: '', group: '', dangerous: false, grantable: true },
 ]
 
 const LONG_GRANTS: readonly AdminGrant[] = [

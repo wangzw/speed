@@ -225,7 +225,6 @@ const TENANT_ROLE: AuthzTenantAdminRoleView = {
   can_manage: true,
   created_at: INSTANT,
   description: '',
-  description_key: 'role.support',
   permission_count: 0,
   role: 'support',
   tenant: TENANT.id,
@@ -498,7 +497,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     { entries: [], next: '' } satisfies AuditAdminRecordPage,
   ),
   '/api/v1/system/permissions': answer(
-    { permissions: [{ permission: 'example.read', description: '' }] } satisfies {
+    { permissions: [{ permission: 'example.read', description: '', group: '', dangerous: false, grantable: true }] } satisfies {
       permissions: AuthzAdminPermissionView[]
     },
     { permissions: [] } satisfies { permissions: AuthzAdminPermissionView[] },

@@ -63,11 +63,9 @@ type bindingInput struct {
 }
 
 // roleWriteInput is the request of a role write: the role named in the path and
-// its description in the body. The body carries free text in description; the
-// legacy description_key is still accepted for the incremental contract.
-// description takes priority whenever the member is present, including as an
-// explicit empty string; description_key is used only when it is absent.
-// The builtin mark is not part of the
+// its description in the body. The body carries free text in description: the
+// member is optional, and an explicit empty string clears the free text. The
+// builtin mark is not part of the
 // request — a client cannot set it, and the field a client sends for it reaches
 // nothing. The mark is what freezes a role for good, so it is set by the host
 // that seeds the policy data through Manager.MarkRoleBuiltin, never by the
@@ -78,14 +76,12 @@ type bindingInput struct {
 // describe instead of refusing them, so the schema must not claim a refusal the
 // route does not make.
 type roleWriteInput struct {
-	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description, or the legacy description key. The builtin mark is not part of the body; a member sent under that name reaches nothing."`
+	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description. The builtin mark is not part of the body; a member sent under that name reaches nothing."`
 
 	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 
-	DescriptionKey string `json:"description_key" description:"Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. It is used only when description is absent; an explicit empty description still takes priority."`
-
-	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. When the member is present, including as an explicit empty string, it takes priority over description_key; the key is used only when description is absent. An over-long value is a 400."`
+	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400."`
 }
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -188,9 +184,8 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	http.MethodPut,
 	pathRoleFragment,
 	"Create or rewrite a role",
-	"The request carries the role's free-text description. The legacy description_key is still accepted; "+
-		"description takes priority whenever the member is present, including as an explicit empty string, "+
-		"and the key is used only when description is absent. The builtin mark is not writable here: it is set by the host "+
+	"The request carries the role's free-text description; absent leaves the stored text as it is, and an "+
+		"explicit empty string clears it. The builtin mark is not writable here: it is set by the host "+
 		"that seeds the policy data, and once set it cannot be cleared through this surface.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",

@@ -455,7 +455,6 @@ describe('the organization roles wrapper', () => {
     builtin: false,
     can_manage: true,
     description: '',
-    description_key: 'role.tenantOperator',
     permission_count: 0,
     created_at: '2026-01-01T00:00:00Z',
   }

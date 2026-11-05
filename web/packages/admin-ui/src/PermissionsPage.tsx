@@ -45,10 +45,15 @@
  * rewrites the description of the role that already carries the name). The
  * permission catalog and a grant row show the server-rendered description
  * as the primary text with the permission code beneath it, and a permission
- * the deployment calls out as dangerous carries a visible high-risk badge.
- * An empty description leaves the code as the only text. A grant the server
- * cannot translate to a permission code keeps its recorded resource/action
- * spelling and cannot be revoked.
+ * the server marks dangerous carries a visible high-risk badge. The catalog is
+ * grouped by the `group` the declaring modules report, folded into the shared
+ * authorization, membership, identity, settings and "other" headings; an entry
+ * the caller cannot grant is still listed and marked, while the grant picker
+ * offers only the entries the caller may grant. An empty description leaves
+ * the code as the only text. A grant the server cannot translate to a
+ * permission code keeps its recorded resource/action spelling and cannot be
+ * revoked. Granting a dangerous permission is confirmed through the same
+ * two-step dialog the organization page uses.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A failed list
@@ -106,6 +111,11 @@ import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { RefreshButton } from '@speed/ui-kit'
+import {
+  PERMISSION_GROUPS,
+  permissionGroupKey,
+  permissionGroupOf,
+} from './internal/roles/PermissionName.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import {
@@ -135,33 +145,12 @@ import type {
 const TENANT_HINT_ID = 'permissions-tenant-hint'
 
 /**
- * The permission codes whose grant widens the grantee's power over other
- * accounts or over the tenant's policy. The platform permission view does not
- * carry the governed metadata the tenant view does, so the page mirrors the
- * declared dangerous set; the plan's own choice fixes these four codes. A
- * view that grows a `dangerous` field is honored too, so the badge follows
- * the server as soon as the platform contract ships it.
- */
-const DANGEROUS_PERMISSIONS: ReadonlySet<string> = new Set([
-  'authz.tenant.role.manage',
-  'authn.membership.manage',
-  'authn.idp.manage',
-  'settings.tenant.write',
-])
-
-/** Whether granting a permission is one the deployment calls out. */
-function permissionIsDangerous(entry: AdminPermission): boolean {
-  const marked = (entry as { readonly dangerous?: unknown }).dangerous
-  return marked === true || DANGEROUS_PERMISSIONS.has(entry.permission)
-}
-
-/**
  * One permission's server-rendered description as its primary text with the
- * permission code beneath it, plus the high-risk badge when the deployment
- * marks the permission dangerous. The description arrives already rendered
- * in the request's language and is shown as received; an empty one leaves
- * the code as the only line. A grant the server cannot translate passes no
- * catalog entry, so its recorded resource/action spelling stands alone.
+ * permission code beneath it, plus the high-risk badge when the server marks
+ * the permission dangerous. The description arrives already rendered in the
+ * request's language and is shown as received; an empty one leaves the code
+ * as the only line. A grant the server cannot translate passes no catalog
+ * entry, so its recorded resource/action spelling stands alone.
  *
  * The primary line alone is capped when the caller is a table cell: prose
  * stacks beneath it, and the cap must not squeeze that second line. The
@@ -181,7 +170,7 @@ function PermissionLabel({
   const { t } = useAdminUiTranslation()
   const description = entry?.description ?? ''
   const primary = description === '' ? code : description
-  const dangerous = entry !== undefined && permissionIsDangerous(entry)
+  const dangerous = entry?.dangerous === true
   return (
     <Box>
       <Box
@@ -236,6 +225,20 @@ function PermissionLabel({
       )}
     </Box>
   )
+}
+
+/**
+ * The catalog's entries folded into the fixed permission-group order the
+ * shared vocabulary defines. A permission the declaring modules left ungrouped
+ * falls into "other" rather than disappearing from the catalog.
+ */
+function groupCatalog(entries: readonly AdminPermission[]) {
+  return PERMISSION_GROUPS.flatMap((group) => {
+    const grouped = entries.filter(
+      (entry) => permissionGroupOf(entry.group) === group,
+    )
+    return grouped.length === 0 ? [] : [{ group, entries: grouped }]
+  })
 }
 
 /**
@@ -459,6 +462,28 @@ function PermissionsPageBody({
     bindingsFeedback.pending ||
     lookupFeedback.pending
 
+  const permissions = catalog.data ?? []
+  // The catalog entry that names a permission, for the readable primary text
+  // of a grant row and the dangerous mark. A grant the server cannot
+  // translate has no code and no entry, so the row keeps its recorded pair.
+  const permissionByCode = useMemo(
+    () => new Map(permissions.map((entry) => [entry.permission, entry])),
+    [permissions],
+  )
+  // The catalog groups the declaring modules name, folded into the fixed
+  // order the shared permission vocabulary defines; a permission the modules
+  // left ungrouped is folded into "other" rather than dropped.
+  const catalogGroups = useMemo(
+    () => groupCatalog(permissions),
+    [permissions],
+  )
+  // The grant picker offers only permissions the caller may grant; the
+  // catalog itself still lists every declared permission.
+  const grantablePermissions = useMemo(
+    () => permissions.filter((entry) => entry.grantable),
+    [permissions],
+  )
+
   // The one function the page-level context changes share -- the tenant
   // change and the refresh action: it clears every slot and every row
   // marker, so a cleared slot never leaves a control carrying
@@ -617,22 +642,41 @@ function PermissionsPageBody({
     if (permission === '') {
       return
     }
-    // The grant and the revoke share the grants scope: a new attempt starts
-    // from a clean result, so the refused row's marker and its inline reason
-    // do not outlive the result they described.
-    setFailedGrant(null)
-    void grantsFeedback.run(async () => {
-      await grantPermissionMutation.mutateAsync({
-        tenant,
-        role: selectedRole,
-        permission,
+    const run = () => {
+      // The grant and the revoke share the grants scope: a new attempt starts
+      // from a clean result, so the refused row's marker and its inline reason
+      // do not outlive the result they described.
+      setFailedGrant(null)
+      void grantsFeedback.run(async () => {
+        await grantPermissionMutation.mutateAsync({
+          tenant,
+          role: selectedRole,
+          permission,
+        })
+        setGrantPermission('')
+        return t('permissions.grants.granted', {
+          permission,
+          role: selectedRole,
+        })
       })
-      setGrantPermission('')
-      return t('permissions.grants.granted', {
-        permission,
-        role: selectedRole,
+    }
+    // A permission the catalog marks dangerous widens the grantee's power over
+    // other accounts or the tenant's policy: the deliberate two-step
+    // confirmation stands in front of it, as it does on the organization page.
+    if (permissionByCode.get(permission)?.dangerous === true) {
+      confirm.ask({
+        title: t('permissions.grants.dangerousTitle'),
+        message: t('permissions.grants.dangerousMessage', {
+          permission,
+          role: selectedRole,
+        }),
+        confirmLabel: t('permissions.grants.dangerousConfirm'),
+        doubleConfirm: true,
+        run,
       })
-    })
+      return
+    }
+    run()
   }
 
   const revoke = (grant: AdminGrant, code: string) => {
@@ -719,15 +763,6 @@ function PermissionsPageBody({
       }
     })
   }
-
-  const permissions = catalog.data ?? []
-  // The catalog entry that names a permission, for the readable primary text
-  // of a grant row and the dangerous mark. A grant the server cannot
-  // translate has no code and no entry, so the row keeps its recorded pair.
-  const permissionByCode = useMemo(
-    () => new Map(permissions.map((entry) => [entry.permission, entry])),
-    [permissions],
-  )
 
   const roleRows = roles.data
   // A locked role refuses every write -- role rewrite and delete, and
@@ -985,11 +1020,25 @@ function PermissionsPageBody({
       cellWrap: 'wrap',
       cellFullValue: (entry) => entry.permission,
       cell: (entry) => (
-        <PermissionLabel
-          entry={entry}
-          code={entry.permission}
-          capIdentity
-        />
+        <Box>
+          <PermissionLabel
+            entry={entry}
+            code={entry.permission}
+            capIdentity
+          />
+          {/* A permission the caller does not hold is still listed; the mark
+              says it cannot be granted, so the absence from the picker reads
+              as a property of the caller rather than of the catalog. */}
+          {!entry.grantable && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block' }}
+            >
+              {t('permissions.catalog.notGrantable')}
+            </Typography>
+          )}
+        </Box>
       ),
     },
   ]
@@ -1245,7 +1294,7 @@ function PermissionsPageBody({
                         },
                       }}
                     >
-                      {permissions.map((entry) => (
+                      {grantablePermissions.map((entry) => (
                         <MenuItem key={entry.permission} value={entry.permission}>
                           <PermissionLabel
                             entry={entry}
@@ -1335,13 +1384,23 @@ function PermissionsPageBody({
                 description: t('permissions.catalog.empty.description'),
               }}
             >
-              {(settled) => (
-                <DataTable
-                  rows={settled}
-                  columns={catalogColumns}
-                  rowKey={(entry) => entry.permission}
-                />
-              )}
+              {() =>
+                catalogGroups.map((group) => (
+                  <Box
+                    key={group.group}
+                    sx={{ '&:not(:last-of-type)': { mb: 3 } }}
+                  >
+                    <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
+                      {t(permissionGroupKey(group.group))}
+                    </Typography>
+                    <DataTable
+                      rows={group.entries}
+                      columns={catalogColumns}
+                      rowKey={(entry) => entry.permission}
+                    />
+                  </Box>
+                ))
+              }
             </AdminAsyncSection>
           </SectionCard>
 

@@ -72,8 +72,20 @@
       "AuthzAdminPermissionView": {
         "description": "One permission the catalog declares.",
         "properties": {
+          "dangerous": {
+            "description": "True when granting the permission widens the grantee's power over other accounts or over the tenant's policy; a client calls such a permission out before an operator grants it, and asks for a deliberate second confirmation.",
+            "type": "boolean"
+          },
           "description": {
             "description": "The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback; a client shows the text as received and does not resolve keys.",
+            "type": "string"
+          },
+          "grantable": {
+            "description": "True when the caller holds the permission in the platform domain and may therefore grant it to a role. A permission the caller does not hold is still listed: the catalog is the whole declared set, not the caller's grantable subset.",
+            "type": "boolean"
+          },
+          "group": {
+            "description": "The group the declaring module places the permission in, for example authorization or membership. Empty when the module gave it no group; a client groups such a permission as it sees fit.",
             "type": "string"
           },
           "permission": {
@@ -83,7 +95,10 @@
         },
         "required": [
           "permission",
-          "description"
+          "description",
+          "group",
+          "dangerous",
+          "grantable"
         ],
         "type": "object"
       },
@@ -105,10 +120,6 @@
           },
           "description": {
             "description": "The role's description as a client shows it: the operator's free text for a role this surface created, or a builtin role's description key rendered in the request's language. With no message localizer assembled, a builtin role answers its key itself, the i18n fallback.",
-            "type": "string"
-          },
-          "description_key": {
-            "description": "The i18n key of the role's description text; stored as given and not resolved by this surface. Empty for a role the management surface created from free text. Kept for the incremental contract.",
             "type": "string"
           },
           "member_count": {
@@ -133,7 +144,6 @@
           "role",
           "builtin",
           "description",
-          "description_key",
           "permission_count",
           "can_manage",
           "created_at"
@@ -142,14 +152,10 @@
       },
       "AuthzAdminRoleWrite": {
         "additionalProperties": true,
-        "description": "The body of a role write: the role's description, or the legacy description key. The builtin mark is not part of the body; a member sent under that name reaches nothing.",
+        "description": "The body of a role write: the role's description. The builtin mark is not part of the body; a member sent under that name reaches nothing.",
         "properties": {
           "description": {
-            "description": "The role's free-text description, at most 500 characters. When the member is present, including as an explicit empty string, it takes priority over description_key; the key is used only when description is absent. An over-long value is a 400.",
-            "type": "string"
-          },
-          "description_key": {
-            "description": "Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. It is used only when description is absent; an explicit empty description still takes priority.",
+            "description": "The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400.",
             "type": "string"
           }
         },
@@ -811,7 +817,7 @@
         "summary": "Remove a role, revoking its grants and bindings with it"
       },
       "put": {
-        "description": "The request carries the role's free-text description. The legacy description_key is still accepted; description takes priority whenever the member is present, including as an explicit empty string, and the key is used only when description is absent. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.",
+        "description": "The request carries the role's free-text description; absent leaves the stored text as it is, and an explicit empty string clears it. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.",
         "operationId": "authz.admin.roles.put",
         "parameters": [
           {

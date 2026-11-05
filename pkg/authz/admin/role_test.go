@@ -42,7 +42,7 @@ func TestListingRolesRequiresRoleRead(t *testing.T) {
 // TestPutRoleRequiresRoleManageAndWritesTheIdentifierAsTenant holds the role
 // write: the handler asks the guard for authz.role.manage and, when allowed,
 // writes the record the manager stores with the tenant the path named as the
-// record's Tenant and the body's description key forwarded.
+// record's Tenant and the body's free-text description forwarded.
 //
 // The body is sent with a `builtin` member the schema no longer carries: a
 // client that sends it anyway must not reach the manager with the mark set. The
@@ -52,7 +52,7 @@ func TestPutRoleRequiresRoleManageAndWritesTheIdentifierAsTenant(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
 		params("tenant", "t1", "role", "ops"),
-		map[string]any{"builtin": true, "description_key": "authz.role.ops"})
+		map[string]any{"builtin": true, "description": "Runs the operations."})
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("writing a role answered %d, want 204", w.Code)
 	}
@@ -73,8 +73,8 @@ func TestPutRoleRequiresRoleManageAndWritesTheIdentifierAsTenant(t *testing.T) {
 	if rec.Builtin {
 		t.Fatalf("the record = %+v, want the client's builtin member to reach nothing", rec)
 	}
-	if rec.DescriptionKey != "authz.role.ops" {
-		t.Fatalf("the record = %+v, want the body's description_key forwarded", rec)
+	if rec.Description != "Runs the operations." {
+		t.Fatalf("the record = %+v, want the body's description forwarded", rec)
 	}
 }
 

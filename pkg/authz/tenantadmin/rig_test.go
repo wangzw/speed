@@ -18,9 +18,9 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// roleBody is the request a role write's cases send: the description key alone.
+// roleBody is the request a role write's cases send: a free-text description.
 type roleBody struct {
-	DescriptionKey string `json:"description_key"`
+	Description string `json:"description"`
 }
 
 // readRoute binds a read operation's typed handler behind the route's

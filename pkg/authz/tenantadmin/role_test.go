@@ -199,8 +199,11 @@ func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 		t.Fatalf("the answer carries %d views, want one", len(got.Roles))
 	}
 	v := got.Roles[0]
-	if v.Tenant != "t1" || v.Role != "editor" || !v.Builtin || v.DescriptionKey != "authz.role.editor" {
-		t.Fatalf("the view = %+v, want tenant t1, role editor, builtin true, the description key", v)
+	if v.Tenant != "t1" || v.Role != "editor" || !v.Builtin {
+		t.Fatalf("the view = %+v, want tenant t1, role editor, builtin true", v)
+	}
+	if v.Description != "authz.role.editor" {
+		t.Fatalf("the view's description = %q, want the key itself with no localizer", v.Description)
 	}
 	if !v.CreatedAt.Equal(created) || v.CreatedAt.Location() != time.UTC {
 		t.Fatalf("the view's created_at = %v (%v), want the same instant in UTC", v.CreatedAt, v.CreatedAt.Location())

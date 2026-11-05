@@ -57,11 +57,6 @@ type AuthzTenantAdminRoleView struct {
 	Role    string `json:"role" required:"true" description:"The role name within the tenant. A role is never renamed: the name is the key a binding holds."`
 	Builtin bool   `json:"builtin" required:"true" description:"True for a builtin role: the tenant management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
 
-	// DescriptionKey is kept for a client that still reads the legacy field. The
-	// role page reads Description; a client written before the free-text change
-	// keeps working through this member.
-	DescriptionKey string `json:"description_key" required:"true" description:"Deprecated: the i18n key of the role's description text, kept for a client that still reads it. It is stored as given and not resolved by this surface; new clients read description."`
-
 	Description string `json:"description" required:"true" description:"The role's description in the request's language: a builtin role's key is rendered through the message localizer (falling back to the key), and a role the management face created carries the operator's free text as written."`
 
 	PermissionCount int `json:"permission_count" required:"true" description:"How many permission grants the role holds within the tenant. A role holding none answers zero."`
@@ -82,7 +77,6 @@ func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permission
 		Tenant:          r.Tenant,
 		Role:            string(r.Role),
 		Builtin:         r.Builtin,
-		DescriptionKey:  r.DescriptionKey,
 		Description:     p.roleDescription(ctx, r),
 		PermissionCount: permissionCount,
 		MemberCount:     memberCount,

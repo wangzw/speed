@@ -179,11 +179,11 @@ func (p *product) requireVerifiedAccount(c *gin.Context, id authn.Identity) bool
 // The entry point's binding is closed and header-strict — a member the input
 // does not declare is a 400, and a Content-Type other than application/json is a
 // 415 — while this surface's role write accepts a JSON object whatever its
-// media type and forwards only the description and the legacy description key.
-// A member such as `builtin` reaches nothing: it is dropped here, before the
-// binding, and the handler builds its record from the declared fields alone. A
-// body that is not one JSON object is refused with this module's bad-request
-// code, the answer the shape refusal has always carried.
+// media type and forwards only the description. A member such as `builtin`
+// reaches nothing: it is dropped here, before the binding, and the handler
+// builds its record from the declared fields alone. A body that is not one JSON
+// object is refused with this module's bad-request code, the answer the shape
+// refusal has always carried.
 func prescreenRoleWrite(next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Body == nil {
@@ -210,8 +210,8 @@ func prescreenRoleWrite(next gin.HandlerFunc) gin.HandlerFunc {
 			// left behind.
 			members = map[string]json.RawMessage{}
 		}
-		kept := make(map[string]json.RawMessage, 2)
-		for _, name := range []string{"description", "description_key"} {
+		kept := make(map[string]json.RawMessage, 1)
+		for _, name := range []string{"description"} {
 			value, ok := members[name]
 			if !ok {
 				continue

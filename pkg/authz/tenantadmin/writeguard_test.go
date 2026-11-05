@@ -34,7 +34,7 @@ func writeRouteCases() []writeRouteCase {
 			name: "a role write", op: authz.WriteRole,
 			route:  func(p *product) gin.HandlerFunc { return rolePutRoute(p) },
 			method: http.MethodPut, target: rolePutTarget,
-			params: params("tenant", "t1", "role", "r1"), body: roleBody{DescriptionKey: "k"},
+			params: params("tenant", "t1", "role", "r1"), body: roleBody{Description: "Runs it."},
 		},
 		{
 			name: "a role delete", op: authz.WriteRole,
@@ -127,7 +127,7 @@ func TestAWriteGuardThatCannotAnswerIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.writeGuard.fail(errors.New("the guard's store is down"))
 	w := r.serve(writeRouteCases()[0].route(r.p), http.MethodPut,
-		"/api/v1/tenants/t1/roles/r1", params("tenant", "t1", "role", "r1"), roleBody{DescriptionKey: "k"})
+		"/api/v1/tenants/t1/roles/r1", params("tenant", "t1", "role", "r1"), roleBody{Description: "Runs it."})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a write guard that could not answer answered %d, want 503", w.Code)
 	}
@@ -171,7 +171,7 @@ func TestTheWriteGuardIsOptional(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.p.writeGuard = nil
 	w := r.serve(writeRouteCases()[0].route(r.p), http.MethodPut,
-		"/api/v1/tenants/t1/roles/r1", params("tenant", "t1", "role", "r1"), roleBody{DescriptionKey: "k"})
+		"/api/v1/tenants/t1/roles/r1", params("tenant", "t1", "role", "r1"), roleBody{Description: "Runs it."})
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("a write with no guard assembled answered %d, want 204", w.Code)
 	}

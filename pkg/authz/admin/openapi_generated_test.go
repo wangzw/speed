@@ -39,14 +39,14 @@ func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	}
 }
 
-// TestTheRoleWriteBodySchemaCarriesTheOldContract holds the published schema
+// TestTheRoleWriteBodySchemaCarriesItsDescription holds the published schema
 // against the hand-written fragment it replaced: the role write's body keeps its
 // description, and the object stays open because the mounted route drops the
 // members the declaration does not describe rather than refusing them —
 // role_test.go sends a builtin member and holds that it reaches nothing. Neither
 // property is visible in the generation check, which compares the fragment with
 // a declaration that could have lost them.
-func TestTheRoleWriteBodySchemaCarriesTheOldContract(t *testing.T) {
+func TestTheRoleWriteBodySchemaCarriesItsDescription(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {
 		t.Fatalf("generating the fragment: %v", err)
@@ -63,10 +63,10 @@ func TestTheRoleWriteBodySchemaCarriesTheOldContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("the fragment carries no AuthzAdminRoleWrite schema")
 	}
-	const description = "The body of a role write: the role's description, or the legacy description key. " +
+	const description = "The body of a role write: the role's description. " +
 		"The builtin mark is not part of the body; a member sent under that name reaches nothing."
 	if schema["description"] != description {
-		t.Errorf("the write body schema description reads %v, want the one the hand-written fragment carried", schema["description"])
+		t.Errorf("the write body schema description reads %v, want the declared one", schema["description"])
 	}
 	if open, ok := schema["additionalProperties"].(bool); !ok || !open {
 		t.Errorf("the write body schema reads %v, want additionalProperties true: the route drops a member the declaration does not describe", schema)

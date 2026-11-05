@@ -167,11 +167,12 @@ func prescreenRoleWrite(next gin.HandlerFunc) gin.HandlerFunc {
 		}
 		if members == nil {
 			// A literal null decoded into no object. The write is a role with no
-			// description key.
+			// description, which is the value the surface's original body reader
+			// left behind.
 			members = map[string]json.RawMessage{}
 		}
-		kept := make(map[string]json.RawMessage, 2)
-		for _, name := range []string{"description_key", "description"} {
+		kept := make(map[string]json.RawMessage, 1)
+		for _, name := range []string{"description"} {
 			value, ok := members[name]
 			if !ok {
 				continue

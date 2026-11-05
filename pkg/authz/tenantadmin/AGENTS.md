@@ -34,9 +34,10 @@ and in the anti-escalation rules they apply.
 - **A role's description is free text.** The role view carries `description`: a
   builtin role's key rendered in the request's language through the optional
   localizer (the key itself when none is assembled), and an operator-created
-  role's text as written. The write body's `description` takes priority whenever
-  present, including an explicit empty string; the legacy `description_key` is
-  used only when it is absent. A description longer than
+  role's text as written. The write body carries `description`; the key member
+  `description_key` was removed from both the view and the write body, not
+  deprecated or retained, so a client that still sends it reaches nothing. An
+  explicit empty description clears the stored text. A description longer than
   `authz.RoleDescriptionMax` characters is a 400. A role is never renamed: its
   name is the key a binding holds.
 - **The permission catalog carries governance metadata.** Each entry reports the

@@ -1386,8 +1386,14 @@ export interface AuthnAdminAccountStatus {
  * One permission the catalog declares.
  */
 export interface AuthzAdminPermissionView {
+  /** True when granting the permission widens the grantee's power over other accounts or over the tenant's policy; a client calls such a permission out before an operator grants it, and asks for a deliberate second confirmation. */
+  dangerous: boolean;
   /** The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback; a client shows the text as received and does not resolve keys. */
   description: string;
+  /** True when the caller holds the permission in the platform domain and may therefore grant it to a role. A permission the caller does not hold is still listed: the catalog is the whole declared set, not the caller's grantable subset. */
+  grantable: boolean;
+  /** The group the declaring module places the permission in, for example authorization or membership. Empty when the module gave it no group; a client groups such a permission as it sees fit. */
+  group: string;
   /** The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action. */
   permission: string;
 }
@@ -1732,8 +1738,6 @@ export interface AuthzAdminRoleView {
   created_at: string;
   /** The role's description as a client shows it: the operator's free text for a role this surface created, or a builtin role's description key rendered in the request's language. With no message localizer assembled, a builtin role answers its key itself, the i18n fallback. */
   description: string;
-  /** The i18n key of the role's description text; stored as given and not resolved by this surface. Empty for a role the management surface created from free text. Kept for the incremental contract. */
-  description_key: string;
   /** How many active members hold the role. Null when the assembly delivers no account-identity reader: the count cannot be read, and the binding count is not a stand-in for it. */
   member_count?: number;
   /** How many permission grants the role holds, from one grouped read of the tenant's grants. */
@@ -1745,13 +1749,11 @@ export interface AuthzAdminRoleView {
 }
 
 /**
- * The body of a role write: the role's description, or the legacy description key. The builtin mark is not part of the body; a member sent under that name reaches nothing.
+ * The body of a role write: the role's description. The builtin mark is not part of the body; a member sent under that name reaches nothing.
  */
 export interface AuthzAdminRoleWrite {
-  /** The role's free-text description, at most 500 characters. When the member is present, including as an explicit empty string, it takes priority over description_key; the key is used only when description is absent. An over-long value is a 400. */
+  /** The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400. */
   description?: string;
-  /** Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. It is used only when description is absent; an explicit empty description still takes priority. */
-  description_key?: string;
   [key: string]: unknown;
  }
 
@@ -1946,8 +1948,6 @@ export interface AuthzTenantAdminRoleView {
   created_at: string;
   /** The role's description in the request's language: a builtin role's key is rendered through the message localizer (falling back to the key), and a role the management face created carries the operator's free text as written. */
   description: string;
-  /** Deprecated: the i18n key of the role's description text, kept for a client that still reads it. It is stored as given and not resolved by this surface; new clients read description. */
-  description_key: string;
   /** How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero. */
   member_count?: number;
   /** How many permission grants the role holds within the tenant. A role holding none answers zero. */
@@ -1962,10 +1962,8 @@ export interface AuthzTenantAdminRoleView {
  * The body of a role write: the role's description. The builtin mark and the role name are not part of the body; a member sent under those names reaches nothing.
  */
 export interface AuthzTenantAdminRoleWrite {
-  /** The role's free-text description, at most 500 characters. When the member is present, including as an explicit empty string, it takes priority over description_key; the key is used only when description is absent. An over-long value is a 400. */
+  /** The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400. */
   description?: string;
-  /** Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. It is used only when description is absent; an explicit empty description still takes priority. */
-  description_key?: string;
   [key: string]: unknown;
  }
 
@@ -9835,7 +9833,7 @@ export const useAuthzAdminRolesDelete = <TError = Problem,
     }
 
 /**
- * The request carries the role's free-text description. The legacy description_key is still accepted; description takes priority whenever the member is present, including as an explicit empty string, and the key is used only when description is absent. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.
+ * The request carries the role's free-text description; absent leaves the stored text as it is, and an explicit empty string clears it. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.
  * @summary Create or rewrite a role
  */
 export const authzAdminRolesPut = (
@@ -11264,7 +11262,7 @@ export const useAuthzTenantadminRolesDelete = <TError = Problem,
     }
 
 /**
- * The request carries the role's description, free text or the legacy i18n key; description takes priority whenever the member is present, including as an explicit empty string, and the key is used only when description is absent. A description longer than 500 characters is a 400. The role name is not writable: a role is never renamed, because the name is the key a binding holds. The builtin mark is not writable here either. platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * The request carries the role's free-text description; absent leaves the stored text as it is, and an explicit empty string clears it. A description longer than 500 characters is a 400. The role name is not writable: a role is never renamed, because the name is the key a binding holds. The builtin mark is not writable here either. platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
  * @summary Create or rewrite a role
  */
 export const authzTenantadminRolesPut = (

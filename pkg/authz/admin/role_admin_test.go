@@ -157,8 +157,8 @@ func TestARolePutFailureLeavesAFailedRow(t *testing.T) {
 
 // TestTheRoleListViewCarriesEveryField holds the role view's field mapping: the
 // answer decodes into the view with the tenant, the role, the builtin flag and
-// the description key each in its own field, and the timestamp normalized to
-// UTC. A list that only carried the role name as a substring would let a view
+// the rendered description each in its own field, and the timestamp normalized
+// to UTC. A list that only carried the role name as a substring would let a view
 // that swapped the tenant and the role, dropped the builtin flag, or left a
 // non-UTC timestamp pass.
 func TestTheRoleListViewCarriesEveryField(t *testing.T) {
@@ -180,8 +180,8 @@ func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 		t.Fatalf("the answer carries %d views, want one", len(got.Roles))
 	}
 	v := got.Roles[0]
-	if v.Tenant != "t1" || v.Role != "editor" || !v.Builtin || v.DescriptionKey != "authz.role.editor" {
-		t.Fatalf("the view = %+v, want tenant t1, role editor, builtin true, the description key", v)
+	if v.Tenant != "t1" || v.Role != "editor" || !v.Builtin {
+		t.Fatalf("the view = %+v, want tenant t1, role editor, builtin true", v)
 	}
 	if v.Description != "authz.role.editor" {
 		t.Fatalf("the view's description = %q, want the key itself with no localizer", v.Description)

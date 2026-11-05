@@ -22,17 +22,29 @@ type AuthzAdminPermissionView struct {
 	Permission string `json:"permission" required:"true" description:"The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action."`
 
 	Description string `json:"description" required:"true" description:"The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback; a client shows the text as received and does not resolve keys."`
+
+	Group string `json:"group" required:"true" description:"The group the declaring module places the permission in, for example authorization or membership. Empty when the module gave it no group; a client groups such a permission as it sees fit."`
+
+	Dangerous bool `json:"dangerous" required:"true" description:"True when granting the permission widens the grantee's power over other accounts or over the tenant's policy; a client calls such a permission out before an operator grants it, and asks for a deliberate second confirmation."`
+
+	Grantable bool `json:"grantable" required:"true" description:"True when the caller holds the permission in the platform domain and may therefore grant it to a role. A permission the caller does not hold is still listed: the catalog is the whole declared set, not the caller's grantable subset."`
 }
 
-// permissionViewOf builds one permission's view. The description is the key the
-// declaring module gave the permission, rendered through the optional message
-// localizer in the request's locale. With no localizer assembled there is no
-// text to render and the field is empty; a permission whose declaring module
-// gave no key has nothing to render either. A key no catalog carries is written
-// back as the key by the localizer itself, so the field never says "no
-// description" for a module that gave one.
-func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission) AuthzAdminPermissionView {
-	view := AuthzAdminPermissionView{Permission: string(perm)}
+// permissionViewOf builds one permission's view from the declared catalog and
+// the caller's held set. The description is the key the declaring module gave
+// the permission, rendered through the optional message localizer in the
+// request's locale. With no localizer assembled there is no text to render and
+// the field is empty; a permission whose declaring module gave no key has
+// nothing to render either. A key no catalog carries is written back as the key
+// by the localizer itself, so the field never says "no description" for a
+// module that gave one. The metadata is the declaring module's, and grantable is
+// the caller's own held set.
+func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission, grantable bool) AuthzAdminPermissionView {
+	view := AuthzAdminPermissionView{Permission: string(perm), Grantable: grantable}
+	if meta, ok := p.catalog.Metadata(perm); ok {
+		view.Group = meta.Group
+		view.Dangerous = meta.Dangerous
+	}
 	key, ok := p.catalog.DescriptionKey(perm)
 	if !ok || key == "" || p.localizer == nil {
 		return view
@@ -45,9 +57,7 @@ func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission) A
 //
 // The description is the text a client shows: the operator's free text for a
 // role this surface created, and a builtin role's key rendered in the request's
-// language. DescriptionKey stays published for the incremental contract — a
-// client written against the earlier fragment still reads it — and is empty for
-// a role the management surface created.
+// language.
 type AuthzAdminRoleView struct {
 	_ struct{} `description:"One role of a tenant as the role routes report it."`
 
@@ -55,7 +65,6 @@ type AuthzAdminRoleView struct {
 	Role            string    `json:"role" required:"true" description:"The role name within the tenant."`
 	Builtin         bool      `json:"builtin" required:"true" description:"True for a builtin role: the management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
 	Description     string    `json:"description" required:"true" description:"The role's description as a client shows it: the operator's free text for a role this surface created, or a builtin role's description key rendered in the request's language. With no message localizer assembled, a builtin role answers its key itself, the i18n fallback."`
-	DescriptionKey  string    `json:"description_key" required:"true" description:"The i18n key of the role's description text; stored as given and not resolved by this surface. Empty for a role the management surface created from free text. Kept for the incremental contract."`
 	PermissionCount int       `json:"permission_count" required:"true" description:"How many permission grants the role holds, from one grouped read of the tenant's grants."`
 	MemberCount     *int      `json:"member_count" description:"How many active members hold the role. Null when the assembly delivers no account-identity reader: the count cannot be read, and the binding count is not a stand-in for it."`
 	CanManage       bool      `json:"can_manage" required:"true" description:"True when the caller holds authz.role.manage in the platform domain, so a client renders the role, grant and binding controls. False hides them; the route guard still refuses a write the caller may not make."`
@@ -71,7 +80,6 @@ func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permission
 		Role:            string(r.Role),
 		Builtin:         r.Builtin,
 		Description:     p.roleDescription(ctx, r),
-		DescriptionKey:  r.DescriptionKey,
 		PermissionCount: permissionCount,
 		MemberCount:     memberCount,
 		CanManage:       canManage,

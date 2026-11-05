@@ -17,9 +17,9 @@ func TestTheViewFieldSetsArePinned(t *testing.T) {
 		view any
 		want []string
 	}{
-		"permission": {AuthzAdminPermissionView{}, []string{"permission", "description"}},
+		"permission": {AuthzAdminPermissionView{}, []string{"permission", "description", "group", "dangerous", "grantable"}},
 		"role": {AuthzAdminRoleView{}, []string{
-			"tenant", "role", "builtin", "description", "description_key",
+			"tenant", "role", "builtin", "description",
 			"permission_count", "member_count", "can_manage", "created_at",
 		}},
 		"grant":   {AuthzAdminGrantView{}, []string{"tenant", "role", "permission", "resource", "action", "created_at"}},

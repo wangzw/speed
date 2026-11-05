@@ -45,7 +45,7 @@ func writeRoutes(p *product) map[string]struct {
 		"the role write": {
 			rolePutRoute(p), http.MethodPut, "/api/v1/system/tenants/t1/roles/r1",
 			params("tenant", "t1", "role", "r1"),
-			roleBody{DescriptionKey: "authz.role.editor"},
+			roleBody{Description: "Runs the editor."},
 		},
 		"the role delete": {
 			writeRoute(p, roleDeleteOperation.Handle(p.handleRoleDelete)), http.MethodDelete,

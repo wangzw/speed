@@ -53,29 +53,42 @@ func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListB
 // directly is answered as an outage rather than being given an empty held set.
 var errNoIdentity = speedhttp.Fault{Status: http.StatusServiceUnavailable}
 
-// canManageRoles reports whether the caller holds authz.role.manage in the
-// platform domain, the permission the role, grant and binding writes are held
-// to. The subject is the request's effective account — the one an authorization
-// decision uses — and not the tenant the path names, which is the data the route
-// acts on. A read that fails is a 503 and is never read as "cannot manage": a
-// client that hid the controls on a fault would be told the caller's permission
-// set is one it could not read.
-func (p *product) canManageRoles(ctx context.Context) (bool, error) {
+// heldPermissions reads the caller's effective permissions in the platform
+// domain through SubjectPermissions. The subject is the request's effective
+// account — the one an authorization decision uses — and not the tenant a path
+// or body names, which is the data a route acts on. The returned set is the one
+// source for both the role list's can_manage and the catalog's grantable. A read
+// that fails is a 503 and is never read as an empty set: an empty set is a
+// conclusion, a fault is not.
+func (p *product) heldPermissions(ctx context.Context) (map[authz.Permission]bool, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
-		p.logger.Error(ModuleName + ": the caller could not be read, so the role management hint is unavailable")
-		return false, errNoIdentity
+		p.logger.Error(ModuleName + ": the caller could not be read, so the held permission set is unavailable")
+		return nil, errNoIdentity
 	}
 	held, err := p.subject.Held(ctx, authz.PlatformDomain, string(id.Account()))
 	if err != nil {
-		return false, p.failureOf("reading the caller's permissions", err)
+		return nil, p.failureOf("reading the caller's permissions", err)
 	}
+	set := make(map[authz.Permission]bool, len(held))
 	for _, permission := range held {
-		if permission == authz.PermissionRoleManage {
-			return true, nil
-		}
+		set[permission] = true
 	}
-	return false, nil
+	return set, nil
+}
+
+// canManageRoles reports whether the caller holds authz.role.manage in the
+// platform domain, the permission the role, grant and binding writes are held
+// to. It reads the same held set the catalog's grantable uses, so the two
+// fields cannot disagree. A read that fails is a 503 and is never read as
+// "cannot manage": a client that hid the controls on a fault would be told the
+// caller's permission set is one it could not read.
+func (p *product) canManageRoles(ctx context.Context) (bool, error) {
+	held, err := p.heldPermissions(ctx)
+	if err != nil {
+		return false, err
+	}
+	return held[authz.PermissionRoleManage], nil
 }
 
 // roleMemberCounts counts the active members of every role from one tenant-wide
@@ -149,18 +162,15 @@ func (p *product) accountIdentities(ctx context.Context, tenant string, accounts
 // the mandatory audit row lands before the manager is called. A builtin role
 // the manager refuses is a 409 with a failed row beside the permitted one.
 //
-// The body carries the role's free-text description; the legacy description_key
-// is still accepted for the incremental contract. description takes priority
-// whenever the member is present, including as an explicit empty string; the key
-// is used only when description is absent. A description longer than
-// authz.RoleDescriptionMax characters is a 400 before the write guard, the audit
-// and the manager.
+// The body carries the role's free-text description: absent leaves the stored
+// text as it is, and an explicit empty string clears it. A description longer
+// than authz.RoleDescriptionMax characters is a 400 before the write guard, the
+// audit and the manager.
 func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{}, error) {
 	role := authz.Role(in.Role)
-	// The description is the request's to set: when the member is present, even
-	// as an explicit empty string, it takes priority, and description_key is used
-	// only when description is absent. The role name is not writable: it comes
-	// from the path, which is the binding's key.
+	// The description is the request's to set: an explicit empty string clears
+	// the free text rather than being treated as absent. The role name is not
+	// writable: it comes from the path, which is the binding's key.
 	if in.Description != nil && utf8.RuneCountInString(*in.Description) > authz.RoleDescriptionMax {
 		return struct{}{}, badRequest()
 	}
@@ -177,9 +187,8 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 		return struct{}{}, err
 	}
 	record := authz.RoleRecord{
-		Tenant:         in.Tenant,
-		Role:           role,
-		DescriptionKey: in.DescriptionKey,
+		Tenant: in.Tenant,
+		Role:   role,
 	}
 	if in.Description != nil {
 		record.Description = *in.Description

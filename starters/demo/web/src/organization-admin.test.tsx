@@ -80,7 +80,6 @@ interface TenantRoleRow {
   readonly tenant: string
   readonly can_manage: boolean
   readonly description: string
-  readonly description_key: string
   readonly permission_count: number
   readonly created_at: string
 }
@@ -94,7 +93,6 @@ function tenantRole(role: string): TenantRoleRow {
     tenant: 'acme',
     can_manage: true,
     description: '',
-    description_key: '',
     permission_count: 0,
     created_at: '2026-10-01T00:00:00Z',
   }

@@ -69,7 +69,6 @@ function role(overrides: Partial<AdminTenantRole> = {}): AdminTenantRole {
     builtin: false,
     can_manage: true,
     description: 'Reads audit records.',
-    description_key: '',
     permission_count: 2,
     member_count: 2,
     created_at: '2026-01-01T00:00:00Z',
@@ -334,6 +333,33 @@ describe('the role catalog', () => {
         name: zhCN.permissions.roles.column.members,
       }).length,
     ).toBeGreaterThan(0)
+  })
+
+  it('keeps the empty-value dash for a null member count in the role table', async () => {
+    // The wire can carry an explicit null; the generated type models the
+    // server's "no identity reader" as an absent member, so the fixture
+    // spells the runtime value.
+    const { backend } = scripted({
+      listTenantRoles: () =>
+        Promise.resolve([
+          role({ role: 'support', member_count: null as unknown as number }),
+        ]),
+    })
+    renderRolesPage(backend)
+    const table = await screen.findByRole('table')
+    const row = within(table).getByText('support').closest('tr')
+    expect(row).not.toBeNull()
+    // The role table's cell keeps the shared empty-value dash; the explicit
+    // "member state unavailable" sentence belongs to the usage summary, not
+    // to this cell.
+    expect(
+      within(row as HTMLElement).getByText(zhCN.common.emptyValue),
+    ).toBeInTheDocument()
+    expect(
+      within(row as HTMLElement).queryByText(
+        zhCN.permissions.usage.memberCountUnavailable,
+      ),
+    ).toBeNull()
   })
 
   it('creates a role with its free-text description', async () => {

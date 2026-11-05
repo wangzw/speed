@@ -147,7 +147,7 @@ func TestEveryWriteRouteAsksForTenantRoleManage(t *testing.T) {
 		path   string
 		body   any
 	}{
-		"the role write":     {http.MethodPut, "/api/v1/tenants/t1/roles/editor", roleBody{DescriptionKey: "authz.role.editor"}},
+		"the role write":     {http.MethodPut, "/api/v1/tenants/t1/roles/editor", roleBody{Description: "Runs the editor."}},
 		"the role delete":    {http.MethodDelete, "/api/v1/tenants/t1/roles/editor", nil},
 		"the grant write":    {http.MethodPut, "/api/v1/tenants/t1/roles/editor/grants/" + string(authz.PermissionTenantRoleRead), nil},
 		"the grant delete":   {http.MethodDelete, "/api/v1/tenants/t1/roles/editor/grants/" + string(authz.PermissionTenantRoleRead), nil},

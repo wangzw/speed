@@ -608,8 +608,10 @@ builtin/protected/no-manage read-only states, granting and revoking, the
 server permission code driving revoke, grantable filtering, the usage
 section's states and paging, the collapsed catalog, `can_manage=false`, the
 members-page entry, and an axe scan. The platform `PermissionsPage.test.tsx`
-covers the platform surface's bindings and account lookup, and the grant's
-server-reported permission code.
+covers the platform surface's bindings and account lookup, the grouped
+catalog, the not-grantable mark and the grant picker's grantable filter, the
+dangerous grant's two-step confirmation, and the grant's server-reported
+permission code.
 
 ## Deferrals (recorded, do not re-open silently)
 

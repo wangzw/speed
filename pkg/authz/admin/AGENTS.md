@@ -142,10 +142,11 @@ write that lands answers 204 and no body.
   `Manager` judges that one. The module holds `Manager` alone and never a
   `Seeder`, so no route can add a grant to a builtin role either.
 - **The role write body carries the description, never the builtin mark.** The
-  body's `description` is the role's free text; the legacy `description_key` is
-  still accepted for the incremental contract. `description` takes priority
-  whenever the member is present, including as an explicit empty string; the key
-  is used only when `description` is absent. A description longer than
+  body's `description` is the role's free text; the key member
+  `description_key` was removed from the request, not deprecated or retained:
+  a client that still sends it reaches nothing, and the route's body prescreen
+  drops it before the entry point binds the declared input. An explicit empty
+  description clears the stored text. A description longer than
   `authz.RoleDescriptionMax` characters is a 400 before the write guard, the
   audit and the `Manager`. The mark freezes a
   role against the management surface — it cannot be rewritten, deleted or
@@ -159,8 +160,9 @@ write that lands answers 204 and no body.
 - **The role view describes a role and counts its use.** Its `description` is
   the operator's free text for a role this surface created, and a builtin role's
   description key rendered through the optional localizer in the request's
-  language — the key itself when no localizer is assembled. `description_key`
-  stays published for the incremental contract. `permission_count` is one
+  language — the key itself when no localizer is assembled. The key member
+  `description_key` was removed from the view, not deprecated or retained.
+  `permission_count` is one
   grouped read of the tenant's grants. `member_count` counts the active accounts
   holding the role from one binding read and one batch identity read through the
   optional `authz.AccountIdentityReader`; with no reader the field is null and

@@ -34,8 +34,7 @@ func listRoles(t *testing.T, r *rig) []map[string]any {
 
 // TestTheRoleListViewDescribesEachRole holds the role view's description: the
 // operator's free text on a role the management surface created, and the
-// rendered description of a builtin role's key. The legacy description_key stays
-// beside it for the incremental contract, and the counts and the caller's
+// rendered description of a builtin role's key. The counts and the caller's
 // management capability are published with it.
 func TestTheRoleListViewDescribesEachRole(t *testing.T) {
 	r := newRig(t)
@@ -77,16 +76,13 @@ func TestTheRoleListViewDescribesEachRole(t *testing.T) {
 	if got := editor["can_manage"]; got != false {
 		t.Errorf("editor can_manage = %v, want false for a caller without role.manage", got)
 	}
-	if _, ok := editor["description_key"]; !ok {
-		t.Error("the role view dropped description_key; the first segment keeps it")
+	if _, ok := editor["description_key"]; ok {
+		t.Error("the role view still carries description_key; the field was removed")
 	}
 
 	viewer := byRole["viewer"]
 	if got := viewer["description"]; got != "Reads articles." {
 		t.Errorf("viewer description = %v, want the builtin key rendered in the request's language", got)
-	}
-	if got := viewer["description_key"]; got != "authz.role.viewer" {
-		t.Errorf("viewer description_key = %v, want the stored key", got)
 	}
 }
 
@@ -106,8 +102,8 @@ func TestABuiltinDescriptionFallsBackToItsKeyWithoutALocalizer(t *testing.T) {
 }
 
 // TestPutRoleStoresTheFreeTextDescription holds the write: the body's
-// description reaches the manager as the record's Description, and the legacy
-// key stays empty.
+// description reaches the manager as the record's Description, and the stored
+// key stays empty because the request no longer carries one.
 func TestPutRoleStoresTheFreeTextDescription(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
@@ -128,40 +124,34 @@ func TestPutRoleStoresTheFreeTextDescription(t *testing.T) {
 	}
 }
 
-// TestPutRolePrefersTheDescriptionOverTheLegacyKey holds the incremental
-// contract: a request carrying both members is written with the description, and
-// the description is what a reader of the role sees. The legacy key is stored
-// beside it, exactly as the tenant surface stores it, and is not what the view
-// renders for a role the management surface created.
-func TestPutRolePrefersTheDescriptionOverTheLegacyKey(t *testing.T) {
+// TestPutRoleIgnoresTheRemovedDescriptionKey holds the removal: the request no
+// longer declares description_key, so a client that still sends it reaches
+// nothing. The role is written with no key and no description, the removed
+// member is not a refusal.
+func TestPutRoleIgnoresTheRemovedDescriptionKey(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
-		params("tenant", "t1", "role", "ops"),
-		map[string]any{"description": "Runs the platform.", "description_key": "authz.role.ops"})
+		params("tenant", "t1", "role", "ops"), map[string]any{"description_key": "authz.role.ops"})
 	if w.Code != http.StatusNoContent {
-		t.Fatalf("writing a role answered %d, want 204; body = %s", w.Code, w.Body.String())
+		t.Fatalf("a removed-member write answered %d, want 204; body = %s", w.Code, w.Body.String())
 	}
 	got := r.manager.recorded()
 	if len(got) != 1 || got[0].op != "PutRole" {
 		t.Fatalf("the manager calls = %+v, want one PutRole", got)
 	}
 	rec := got[0].roleRec
-	if rec.Description != "Runs the platform." {
-		t.Errorf("the record = %+v, want the description to win", rec)
-	}
-	if rec.Builtin {
-		t.Errorf("the record = %+v, want no builtin mark", rec)
+	if rec.DescriptionKey != "" || rec.Description != "" {
+		t.Errorf("the record = %+v, want neither a key nor a description", rec)
 	}
 }
 
-// TestAnEmptyDescriptionWinsOverTheLegacyKey holds the presence rule: a body
-// that carries description as an explicit empty string clears the free text
-// instead of falling back to the legacy key.
-func TestAnEmptyDescriptionWinsOverTheLegacyKey(t *testing.T) {
+// TestAnExplicitEmptyDescriptionClearsTheText holds the presence rule: a body
+// that carries description as an explicit empty string clears the free text,
+// rather than being treated as absent.
+func TestAnExplicitEmptyDescriptionClearsTheText(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
-		params("tenant", "t1", "role", "ops"),
-		map[string]any{"description": "", "description_key": "authz.role.ops"})
+		params("tenant", "t1", "role", "ops"), map[string]any{"description": ""})
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("writing a role answered %d, want 204; body = %s", w.Code, w.Body.String())
 	}
@@ -170,26 +160,7 @@ func TestAnEmptyDescriptionWinsOverTheLegacyKey(t *testing.T) {
 		t.Fatalf("the manager calls = %+v, want one PutRole", got)
 	}
 	if rec := got[0].roleRec; rec.Description != "" {
-		t.Errorf("the record = %+v, want the explicit empty description, not the key", rec)
-	}
-}
-
-// TestPutRoleStillAcceptsTheLegacyDescriptionKey holds the other half of the
-// incremental contract: a client that sends only the key is served as before.
-func TestPutRoleStillAcceptsTheLegacyDescriptionKey(t *testing.T) {
-	r := newRig(t)
-	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",
-		params("tenant", "t1", "role", "ops"), map[string]any{"description_key": "authz.role.ops"})
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("writing a role answered %d, want 204; body = %s", w.Code, w.Body.String())
-	}
-	got := r.manager.recorded()
-	if len(got) != 1 || got[0].op != "PutRole" {
-		t.Fatalf("the manager calls = %+v, want one PutRole", got)
-	}
-	rec := got[0].roleRec
-	if rec.DescriptionKey != "authz.role.ops" || rec.Description != "" {
-		t.Errorf("the record = %+v, want the legacy key forwarded and no description written", rec)
+		t.Errorf("the record = %+v, want the explicit empty description", rec)
 	}
 }
 

@@ -150,10 +150,6 @@
             "description": "The role's description in the request's language: a builtin role's key is rendered through the message localizer (falling back to the key), and a role the management face created carries the operator's free text as written.",
             "type": "string"
           },
-          "description_key": {
-            "description": "Deprecated: the i18n key of the role's description text, kept for a client that still reads it. It is stored as given and not resolved by this surface; new clients read description.",
-            "type": "string"
-          },
           "member_count": {
             "description": "How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero.",
             "type": "integer"
@@ -175,7 +171,6 @@
           "tenant",
           "role",
           "builtin",
-          "description_key",
           "description",
           "permission_count",
           "can_manage",
@@ -188,11 +183,7 @@
         "description": "The body of a role write: the role's description. The builtin mark and the role name are not part of the body; a member sent under those names reaches nothing.",
         "properties": {
           "description": {
-            "description": "The role's free-text description, at most 500 characters. When the member is present, including as an explicit empty string, it takes priority over description_key; the key is used only when description is absent. An over-long value is a 400.",
-            "type": "string"
-          },
-          "description_key": {
-            "description": "Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. It is used only when description is absent; an explicit empty description still takes priority.",
+            "description": "The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400.",
             "type": "string"
           }
         },
@@ -945,7 +936,7 @@
         "summary": "Remove a role, revoking its grants and bindings with it"
       },
       "put": {
-        "description": "The request carries the role's description, free text or the legacy i18n key; description takes priority whenever the member is present, including as an explicit empty string, and the key is used only when description is absent. A description longer than 500 characters is a 400. The role name is not writable: a role is never renamed, because the name is the key a binding holds. The builtin mark is not writable here either. platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
+        "description": "The request carries the role's free-text description; absent leaves the stored text as it is, and an explicit empty string clears it. A description longer than 500 characters is a 400. The role name is not writable: a role is never renamed, because the name is the key a binding holds. The builtin mark is not writable here either. platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "operationId": "authz.tenantadmin.roles.put",
         "parameters": [
           {
