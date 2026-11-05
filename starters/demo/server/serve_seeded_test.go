@@ -16,6 +16,14 @@ import (
 // and no email address (the configuration's second seed account).
 func seededServe(t *testing.T, extra string) (string, string) {
 	t.Helper()
+	base, token, _ := seededServeWithDatabase(t, extra)
+	return base, token
+}
+
+// seededServeWithDatabase is seededServe with the database file's locator too,
+// for a case that reads the rows the assembly wrote.
+func seededServeWithDatabase(t *testing.T, extra string) (string, string, string) {
+	t.Helper()
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "demo.db")
 	body := configBody(t, ports, dsn) + extra
@@ -26,5 +34,5 @@ func seededServe(t *testing.T, extra string) (string, string) {
 	serve := start(t, config, "sqlite-memory", serveCommand)
 	serve.waitReady(t)
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	return base, signIn(t, base, hashIdentifier, seedPassword)
+	return base, signIn(t, base, hashIdentifier, seedPassword), dsn
 }
