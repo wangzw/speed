@@ -832,12 +832,14 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // link and a copy control, and neither survives the panel's close.
       const panel = invitationLinkPanel(page, reviewInvitee.identifier)
       await expect(panel).toBeVisible()
+      // The message carries the delivery outcome beside the hand-out line, so
+      // it is matched as a substring of the panel's text rather than as an
+      // exact node.
       await expect(
         panel.getByText(
           copy('adminUi', 'invitations.issued.link', {
             email: reviewInvitee.identifier,
           }),
-          { exact: true },
         ),
       ).toBeVisible()
       await expect(
