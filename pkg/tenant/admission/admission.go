@@ -188,8 +188,9 @@ func productOf(instance any) (*layer, bool) {
 // layer is this module's product. It implements tenant.Admission and
 // authn.ScopeGuard.
 type layer struct {
-	endpoints []string
-	guarded   map[string]struct{}
+	endpoints        []string
+	ssoExemptTenants []string
+	guarded          map[string]struct{}
 
 	memberships authn.Memberships
 
@@ -225,11 +226,12 @@ func newLayer(cfg resolved, memberships authn.Memberships) *layer {
 		guarded[name] = struct{}{}
 	}
 	return &layer{
-		endpoints:   cfg.endpoints,
-		guarded:     guarded,
-		memberships: memberships,
-		logger:      log.Default(),
-		cache:       newDecisionCache(time.Now),
+		endpoints:        cfg.endpoints,
+		ssoExemptTenants: cfg.ssoExemptTenants,
+		guarded:          guarded,
+		memberships:      memberships,
+		logger:           log.Default(),
+		cache:            newDecisionCache(time.Now),
 	}
 }
 

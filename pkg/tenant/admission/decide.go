@@ -137,6 +137,15 @@ func (j *judging) requirements() decision {
 	if !sso {
 		return decision{outcome: admitted}
 	}
+	// The tenants the platform exempts are not held to this row. Its question
+	// is whether the session signed in through one of THIS tenant's own
+	// identity providers, and a tenant that has none can never answer yes: the
+	// platform's own tenant hosts the administration surface and its
+	// administrators, so holding it to the row would refuse every request
+	// there and close the console. The membership rows above still bind.
+	if slices.Contains(j.ssoExemptTenants, string(j.tenant)) {
+		return decision{outcome: admitted}
+	}
 	owned, err := j.providerOwnsSession()
 	if err != nil {
 		return unavailableFor(err)

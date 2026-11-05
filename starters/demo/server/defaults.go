@@ -210,8 +210,15 @@ func platformDefaultsDocument() map[string]any {
 				"endpoints": []any{"api"},
 				"extractor": "header",
 			},
-			"admission": map[string]any{"endpoints": []any{"api"}},
-			"admin":     map[string]any{"endpoints": []any{"admin"}},
+			// The platform's own tenant is not held to the tenant SSO
+			// requirement: it hosts the console and has no identity provider of
+			// its own, so the requirement could never be satisfied there and
+			// would close the console the moment a deployment switched it on.
+			"admission": map[string]any{
+				"endpoints":          []any{"api"},
+				"sso-exempt-tenants": []any{"system"},
+			},
+			"admin": map[string]any{"endpoints": []any{"admin"}},
 			// The caller's own tenant list mounts on the account endpoint, which
 			// resolves no tenant: the answer is about the caller, not about one
 			// tenant.

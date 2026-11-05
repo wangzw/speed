@@ -134,6 +134,13 @@ descriptor, and `decide`'s before changing the judgement order.
   requirement is on the host's own management surface, and this module does not
   check that a host honours it. The same hard requirement covers the `authn.*`
   namespace.
+- **The SSO row exempts the tenants the configuration names.** `sso-exempt-tenants`
+  lists tenant identifiers the row does not bind; their members are still checked
+  for membership and still held to the MFA row, but they are not asked for a
+  sign-in through the tenant's own identity provider. The platform's own tenant is
+  the case the item exists for: it hosts the console, has no provider of its own,
+  and would otherwise refuse every request there once a deployment switches the
+  row on (`TestRowSSO`, `TestResolveCarriesTheSSOExemptTenants`).
 - **Every diagnostic line starts with `tenant: ` and names the module.** The
   capability directory's prefix leads the line so the several writers of the
   startup diagnostics can be told apart. A registry of identity providers that is

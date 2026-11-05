@@ -10,7 +10,7 @@
 
 - 判定身份是否是请求所在租户的成员。成员关系的事实读自 `authn.Memberships`；静态口令表主体没有成员关系行，不是任何租户的成员。
 - 就非成员询问判定接口：不带冒充范围的非成员可经 `Decider` 的 `authn.tenant.access` 动作放行，缺省拒绝（[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)）。
-- 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。这类强度要求只能在请求期判，登录时账户全局，租户未知（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。
+- 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。这类强度要求只能在请求期判，登录时账户全局，租户未知（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。`tenant.admission.sso-exempt-tenants` 列出的租户不受 SSO 要求约束：该要求问的是「这次会话是不是经本租户自己的身份提供方登录」，而一个没有提供方的租户永远答不出是——平台自己的 `system` 租户就是这种租户，对它执行这条要求会拒绝该租户上的每一个请求，管理后台一并被关掉。成员关系与多因素要求对这些租户照常生效。
 - 执行冒充身份的租户范围：身份携带的 `Scope()` 与请求的租户不符，或请求没有租户上下文时拒绝（[ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。
 - 交付 `authn.ScopeGuard`：声明自己守哪些端，使网关与 `authn.impersonation` 不 import `pkg/tenant` 即可得知冒充身份能被放进哪些端。
 - 交付定序锚点 `(*tenant.Admission)(nil)`：授权功能目录（[authz](../design-authz.md)）与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
@@ -105,6 +105,7 @@ type ScopeGuard interface {
 
 - **`tenant.admission.endpoints`**（配置，字符串列表）：准入层所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`**（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。清单的结构同 `tenant.resolve.endpoints`，一般与它相同；对 `*` 的处置不同：解析层把 `*` 当作未声明的端名，以 `ErrUnknownEndpoint` 终止，准入层以 `ErrInvalidConfig` 终止。**清单必须是 `tenant.resolve.endpoints` 的子集**：本模块在 `Prepare` 里读对方清单，列出对方不解析的端即 `ErrInvalidConfig`。落在那样的端上的请求没有租户上下文，而本层对非冒充的无租户上下文请求一律放行，成员检查就不会发生；对方清单未写出或未声明时无从比较，那一档由解析层自己的必填与空清单规则处理。清单不得含普通作用域与平台管理作用域的认证挂载端；租户管理作用域的挂载端必须同时在本清单与解析清单里，覆盖关系的核对由网关执行。
 - **`tenant.admission.require-mfa`、`tenant.admission.require-sso`**（设置，布尔）：按租户取值，租户行、全局行、声明的默认值依次回退；默认关闭。
+- **`tenant.admission.sso-exempt-tenants`**（配置，字符串列表，可选，缺省为空）：不受 SSO 要求约束的租户标识。名单里的租户仍要过成员关系行与多因素要求，只是不必经本租户的提供方登录。示范装配把平台自己的 `system` 租户写进名单。名单只在列出本模块的端时一并生效；它不改变任何租户对多因素要求的取值。
 - **`tenant.admission.check-ttl`**（设置，时长）：成员结果与放行结果在进程内的缓存时长，只读全局层；0 关闭缓存，有上限。
 
 设置对准入层是可选依赖：`settings.Store` 缺席时一律取声明的默认值，行为与默认值下的设置完全一致，只是调不了（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。放宽方向的取值有被写入接口改动的风险，见威胁与对策。
@@ -119,7 +120,7 @@ type ScopeGuard interface {
 
 ### 对外接口
 
-下列是本模块与其他模块之间的接口：`tenant.Admission` 与 `authn.ScopeGuard` 的结构，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter（[REF-opentelemetry-go](../../../references.md)）名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权功能目录的不兼容变更；设置键与指标属性值的变更同时是对运维接口的不兼容变更。
+下列是本模块与其他模块之间的接口：`tenant.Admission` 与 `authn.ScopeGuard` 的结构，模块名与交付标识，`endpoints` 的必填与不接受 `*`，配置键 `tenant.admission.sso-exempt-tenants`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter（[REF-opentelemetry-go](../../../references.md)）名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权功能目录的不兼容变更；设置键与指标属性值的变更同时是对运维接口的不兼容变更。
 
 ## 依赖
 

@@ -11,8 +11,11 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The configuration key this module accepts, relative to its namespace.
-const endpointsItem = "endpoints"
+// The configuration keys this module accepts, relative to its namespace.
+const (
+	endpointsItem        = "endpoints"
+	ssoExemptTenantsItem = "sso-exempt-tenants"
+)
 
 // The settings this module declares, relative to its namespace, and the full
 // paths a read goes by.
@@ -52,6 +55,14 @@ type moduleConfig struct {
 	// entry point's own names. The list is a set of concrete names: the name
 	// that stands for every endpoint is not accepted.
 	Endpoints []string `config:"endpoints"`
+	// SSOExemptTenants names the tenants the SSO requirement does not bind.
+	// The platform's own tenant is one: it hosts the platform administration
+	// surface and holds the platform's administrators, so a requirement that
+	// asks for a sign-in through one of the tenant's own identity providers
+	// -- of which that tenant has none -- would refuse every request there,
+	// the console included. The membership rows still bind; only this
+	// strength row is exempt.
+	SSOExemptTenants []string `config:"sso-exempt-tenants"`
 }
 
 // options carries the settings items and their declared defaults. The two
@@ -76,7 +87,8 @@ func checkTTLInDomain(d time.Duration) bool { return d >= 0 && d <= maxCheckTTL 
 
 // resolved is the configuration this module actually runs on.
 type resolved struct {
-	endpoints []string
+	endpoints        []string
+	ssoExemptTenants []string
 }
 
 // resolve turns decoded configuration into what the module runs on, refusing
@@ -111,7 +123,16 @@ func (c moduleConfig) resolve() (resolved, error) {
 		}
 		seen[name] = struct{}{}
 	}
-	return resolved{endpoints: c.Endpoints}, nil
+	for i, name := range c.SSOExemptTenants {
+		if name == "" {
+			return resolved{}, fmt.Errorf("%w: %s holds an empty name at position %d",
+				authn.ErrInvalidConfig, ConfigNamespace+"."+ssoExemptTenantsItem, i)
+		}
+	}
+	return resolved{
+		endpoints:        c.Endpoints,
+		ssoExemptTenants: c.SSOExemptTenants,
+	}, nil
 }
 
 // schema declares this module's input items. The namespace is this module's own
@@ -128,6 +149,12 @@ func schema() config.Schema {
 				Description: "the listening endpoints whose requests are checked for membership " +
 					"of the tenant they resolved to, by the names the entry point's own " +
 					"configuration gives them; concrete names only, never *",
+			},
+			ssoExemptTenantsItem: {
+				Origins: config.OriginPrimary,
+				Description: "the tenants the SSO requirement does not bind; their members are " +
+					"still checked for membership, but they are not held to signing in through " +
+					"one of the tenant's own identity providers",
 			},
 		},
 	}

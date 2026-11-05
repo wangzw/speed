@@ -150,8 +150,9 @@ func TestTheEndpointListIsReadFromThePrimarySourceAlone(t *testing.T) {
 	if schema().Namespace != ModuleName {
 		t.Errorf("the namespace is %q, want the module's own name", schema().Namespace)
 	}
-	if len(schema().Items) != 1 {
-		t.Errorf("the schema declares %d items, want the one key", len(schema().Items))
+	if len(schema().Items) != 2 {
+		t.Errorf("the schema declares %d items, want the endpoint list and the SSO exemption",
+			len(schema().Items))
 	}
 }
 
@@ -262,5 +263,28 @@ func TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration(t *testing.T) {
 	}
 	if got.State != core.StateEnabled {
 		t.Fatalf("the stance is %v, want StateEnabled", got.State)
+	}
+}
+
+// TestResolveCarriesTheSSOExemptTenants holds the exemption list through the
+// module's own resolution: the names reach the layer, and an empty name is
+// refused like an empty endpoint name.
+func TestResolveCarriesTheSSOExemptTenants(t *testing.T) {
+	got, err := moduleConfig{
+		Endpoints:        []string{"public"},
+		SSOExemptTenants: []string{"system"},
+	}.resolve()
+	if err != nil {
+		t.Fatalf("resolve refused a list of names: %v", err)
+	}
+	if len(got.ssoExemptTenants) != 1 || got.ssoExemptTenants[0] != "system" {
+		t.Fatalf("resolve carried %v, want the tenant it was given", got.ssoExemptTenants)
+	}
+
+	if _, err := (moduleConfig{
+		Endpoints:        []string{"public"},
+		SSOExemptTenants: []string{""},
+	}).resolve(); !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("an empty exempt name answered %v, want authn.ErrInvalidConfig", err)
 	}
 }

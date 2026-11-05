@@ -474,6 +474,23 @@ func TestRowSSO(t *testing.T) {
 		stepUp(t, "a password session", r.serve(r.as(acme)), acrSSO)
 		r.onlyCounted(stepUpSSO)
 	})
+	t.Run("a tenant the platform exempts is admitted without a provider", func(t *testing.T) {
+		// The platform's own tenant hosts the console and has no identity
+		// provider of its own: holding it to the row would refuse every request
+		// there, so the deployment names it as exempt.
+		r := requiring(t)
+		r.l.ssoExemptTenants = []string{acme}
+		rp := r.serve(r.as(acme))
+		if !rp.reached() {
+			t.Fatalf("answered %d %q, want it admitted", rp.status, rp.body)
+		}
+		r.onlyCounted(admitted)
+	})
+	t.Run("the exemption names tenants, not every tenant", func(t *testing.T) {
+		r := requiring(t)
+		r.l.ssoExemptTenants = []string{"system"}
+		stepUp(t, "a password session in a tenant the list does not name", r.serve(r.as(acme)), acrSSO)
+	})
 	t.Run("a session through the tenant's own provider is admitted", func(t *testing.T) {
 		r := requiring(t)
 		rp := r.serve(r.as(acme, authntest.WithProvider(idpOfAcme)))
