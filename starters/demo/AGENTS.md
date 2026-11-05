@@ -206,6 +206,21 @@ administrator credential and opens registration. The guard limits the listening
 address only; a code written to the process log can still leave the machine
 through log collection or export.
 
+**The review build refuses settings writes to a `protected-` tenant.** The
+host seam behind every settings write (`settingsWriteGuard`) denies a tenant
+whose identifier carries the `protected-` prefix, and no other management seam
+does: the tenant is registered and administered like any business tenant, so
+organization administration opens, while its security page reports itself
+read-only and renders no switch. This is a review-only fixture, compiled under
+the `review` tag in `server/review.go`; `server/review_off.go` answers the same
+seam with false, so a default or deployment binary refuses only the personal
+domain and knows no `protected-` prefix. The end-to-end harness seeds the
+tenant and its proved-email administrator through its own configuration
+overlay (`seedProtectedTenant` in `web/e2e/fixtures/config.ts`), never through
+`server/review/sqlite.yaml`: the shared seed's tenant list is what the other
+review journeys are built on. The program-level case is
+`server/review_settings_guard_test.go`.
+
 #### The review build's notification fixture
 
 `server/notification_fixture.go` is compiled into every build and named in

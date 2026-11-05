@@ -173,6 +173,24 @@ export interface ReviewConfigInput {
    */
   readonly seedSystemTenantAdmin?: boolean
   /**
+   * Seed the review build's protected business tenant and its proved-email
+   * administrator. Off by default: only the journey that drives the settings
+   * surface's read-only state needs it, and every other server starts from
+   * the template's own seed. The tenant's identifier carries the review
+   * build's `protected-` prefix, which is the prefix the settings write seam
+   * refuses; every other management seam still admits the tenant, so its
+   * organization administration opens and only the settings page is read-only.
+   */
+  readonly seedProtectedTenant?: boolean
+  /**
+   * Hold the admission policy `tenant.admission.require-mfa` on at the
+   * platform layer, so every tenant on this server reads it as enforced. Off
+   * by default: a platform requirement binds every tenant, and only the
+   * journey that observes the enforced state turns it on. The server also
+   * needs a way for its tenant administrator to reach multi-factor assurance.
+   */
+  readonly platformRequireMFA?: boolean
+  /**
    * Replace the administrators each seeded tenant starts with, keyed by tenant
    * name. An absent key keeps the tenant's default administrator list, and a
    * key naming a tenant the default list does not carry adds that tenant. This
@@ -350,6 +368,29 @@ export const reviewSystemTenantAdmin = {
 } as const
 
 /**
+ * The review build's protected business tenant and its administrator.
+ *
+ * The review build refuses every settings write to a tenant whose identifier
+ * carries the `protected-` prefix, while every other management seam admits
+ * it: organization administration opens, and its security page reports itself
+ * read-only with no switch. The tenant and its administrator are a fixture the
+ * end-to-end harness adds through this configuration, never through the
+ * shared review/sqlite.yaml -- the other review journeys are built on that
+ * seed's exact tenant list.
+ *
+ * The administrator is a proved-email account, which is what lets its write
+ * reach the host seam instead of being stopped as an unproved
+ * self-registration's. Its password is a review value, not a credential.
+ */
+export const reviewProtectedTenant = {
+  tenant: 'protected-acme',
+  identifier: 'protected-admin@demo.test',
+  username: 'protected-admin',
+  password: 'protected-admin-secret',
+  displayName: 'Protected Tenant Administrator',
+} as const
+
+/**
  * The impersonation journey's target: an ordinary member of acme that holds no
  * role binding, so it covers no organization admin page. It is the template's own
  * `member` account, seeded without a mailbox on purpose: the notification
@@ -509,6 +550,12 @@ function defaultTenantAdmins(input: ReviewConfigInput): ReviewTenantAdmins[] {
     const globexAdmins: string[] = [smsRolloutOperator.identifier]
     if (input.tenantSSO === true) globexAdmins.push(tenantSSOAdmin.identifier)
     entries.push({ name: 'globex', admins: globexAdmins })
+  }
+  if (input.seedProtectedTenant === true) {
+    entries.push({
+      name: reviewProtectedTenant.tenant,
+      admins: [reviewProtectedTenant.identifier],
+    })
   }
   return entries
 }
@@ -780,6 +827,19 @@ export async function writeReviewConfig(
   if (input.seedSystemTenantAdmin === true) {
     extraAccounts.push(seedAccountEntry(reviewSystemTenantAdmin))
   }
+  if (input.seedProtectedTenant === true) {
+    extraAccounts.push(
+      seedAccountEntry(
+        {
+          identifier: reviewProtectedTenant.identifier,
+          username: reviewProtectedTenant.username,
+          password: reviewProtectedTenant.password,
+          displayName: reviewProtectedTenant.displayName,
+        },
+        { provedEmail: true },
+      ),
+    )
+  }
   if (input.seedImpersonation === true) {
     extraAccounts.push(seedAccountEntry(reviewImpersonationAdmin))
   }
@@ -895,6 +955,19 @@ export async function writeReviewConfig(
       '\n  settings:\n',
       '\n  settings:\n    - key: "authn.mfa.global-required"\n      value: "true"\n',
       'global-required setting',
+    )
+  }
+
+  // A journey that observes a platform-enforced admission policy holds it on
+  // in the global layer: the tenant surface reports the item as locked and
+  // read-only. The binary's seed writes the switch like any other setting, so
+  // the state is the product's own, not a row written around it.
+  if (input.platformRequireMFA === true) {
+    body = replaceOnce(
+      body,
+      '\n  settings:\n',
+      '\n  settings:\n    - key: "tenant.admission.require-mfa"\n      value: "true"\n',
+      'platform admission floor',
     )
   }
 

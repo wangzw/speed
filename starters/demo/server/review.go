@@ -20,6 +20,17 @@ package main
 // signup, and the log carriers that write verification codes to the process
 // output.
 //
+// The build also carries one settings-surface fixture: a business tenant whose
+// identifier carries the protected- prefix has every settings write refused
+// with 403 protected, while every other management seam still admits it, so
+// organization administration opens and its security page is read-only. The
+// prefix and the refusal are compiled under the review tag alone; the default
+// build refuses only the personal domain (review_off.go), so no deployment
+// knows the fixture. The end-to-end harness seeds the tenant and its
+// administrator through its own configuration overlay, never through the
+// shared review/sqlite.yaml; see review_settings_guard_test.go for the
+// program-level case.
+//
 // The rest of this build's configuration is server/review/sqlite.yaml, a copy
 // outside testdata so the six baselines under testdata stay exactly as they
 // are.

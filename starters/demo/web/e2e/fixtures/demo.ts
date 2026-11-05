@@ -122,6 +122,16 @@ export const test = base.extend<{
    */
   seedSystemTenantAdmin: boolean
   /**
+   * Seed the review build's protected business tenant and its proved
+   * administrator, so a spec can prove the settings surface's read-only state.
+   */
+  seedProtectedTenant: boolean
+  /**
+   * Write the admission policy `tenant.admission.require-mfa` into the global
+   * layer, so a spec observes the platform-enforced, read-only switch.
+   */
+  platformRequireMFA: boolean
+  /**
    * Replace the administrators of the named tenants. A spec that needs a tenant
    * with exactly one tenant-admin binding sets this; every other spec keeps the
    * default administrator list.
@@ -157,6 +167,8 @@ export const test = base.extend<{
   seedTenantAdmin: [false, { option: true }],
   seedUnprovedTenantAdmin: [false, { option: true }],
   seedSystemTenantAdmin: [false, { option: true }],
+  seedProtectedTenant: [false, { option: true }],
+  platformRequireMFA: [false, { option: true }],
   tenantAdmins: [undefined, { option: true }],
   recentWindow: [undefined, { option: true }],
   mfaRequired: [false, { option: true }],
@@ -173,6 +185,8 @@ export const test = base.extend<{
       seedTenantAdmin,
       seedUnprovedTenantAdmin,
       seedSystemTenantAdmin,
+      seedProtectedTenant,
+      platformRequireMFA,
       tenantAdmins,
       recentWindow,
       mfaRequired,
@@ -192,6 +206,8 @@ export const test = base.extend<{
       seedTenantAdmin,
       seedUnprovedTenantAdmin,
       seedSystemTenantAdmin,
+      seedProtectedTenant,
+      platformRequireMFA,
       tenantAdmins,
       recentWindow,
       mfaRequired,

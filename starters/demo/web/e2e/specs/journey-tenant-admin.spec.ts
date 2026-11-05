@@ -55,6 +55,18 @@
  *    to the account's non-personal membership; the history visit keeps the
  *    personal tenant current, which is the state the requirement describes.
  *
+ * The settings surface's two refusal states have their own servers and
+ * administrators. A platform-held policy needs a multi-factor administrator,
+ * because the admission layer would challenge every tenant-scoped request of
+ * a single-factor one; that server names the review build's operator, whose
+ * seasoned authenticator its seed provides, as the tenant's administrator,
+ * and the branch signs in with that factor before reading the policy as an
+ * enforced, disabled switch. A tenant the review build protects is
+ * read-only as a whole, so its page renders no switch at all; the refused
+ * write has no rendered control there, and the review server fixture makes
+ * that one write through the product's API beside the rendered assertion, as
+ * the same administrator.
+ *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts; the invitation notice's subject is read from the backend
  * module's own catalog, because that is the string the mail carrier renders.
@@ -69,6 +81,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test'
 import {
   reviewInvitee,
   reviewOrdinaryMember,
+  reviewProtectedTenant,
   reviewSystemTenantAdmin,
   reviewTenantAdmin,
   reviewTenantPolicies,
@@ -2399,5 +2412,135 @@ test.describe('an unproved email is refused until it is proved', () => {
           .filter({ hasText: roleName }),
       ).toHaveCount(1)
     })
+  })
+})
+
+test.describe('a policy the platform holds on', () => {
+  test.use({
+    // A platform requirement binds every tenant, so the tenant-scoped read
+    // that opens the settings page needs a multi-factor session. The review
+    // build seeds its operator's seasoned authenticator, so this branch names
+    // the operator the tenant's administrator. The page under test is the
+    // tenant settings surface; the account's platform role changes nothing on
+    // it, and the tenant-admin binding is what admits the read.
+    seedImpersonation: true,
+    tenantAdmins: { acme: [OPERATOR.identifier] },
+    platformRequireMFA: true,
+    viewport: { width: 1920, height: 1080 },
+  })
+
+  test('tenant-admin: a platform-enforced policy is read-only and cannot be turned off', async ({
+    demo,
+  }) => {
+    test.setTimeout(300_000)
+
+    const { page, accounts } = demo
+
+    await signInOperatorWithTotp(page, accounts)
+    await openOrganizationPage(page, 'settings')
+
+    // The platform layer holds the MFA policy on, so the item reads as
+    // enforced and its switch is an enabled, disabled control with no way to
+    // turn it off. The SSO policy, which the platform does not hold, keeps its
+    // ordinary switch.
+    const mfaTitle = copy('adminUi', 'organization.security.mfa.title')
+    const ssoTitle = copy('adminUi', 'organization.security.sso.title')
+    for (const title of [mfaTitle, ssoTitle]) {
+      await expect(
+        page.getByRole('heading', { level: 3, name: title, exact: true }),
+      ).toBeVisible()
+    }
+    await expect(page.getByRole('switch')).toHaveCount(2)
+
+    const mfaSwitch = page.getByRole('switch', {
+      name: copy('adminUi', 'organization.security.switchAria', {
+        title: mfaTitle,
+      }),
+      exact: true,
+    })
+    await expect(mfaSwitch).toBeChecked()
+    await expect(mfaSwitch).toBeDisabled()
+    await expect(
+      page.getByText(
+        copy('adminUi', 'organization.security.status.platformEnforced'),
+        { exact: true },
+      ),
+    ).toBeVisible()
+    await expect(
+      page.getByText(copy('adminUi', 'organization.security.platformLocked'), {
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    const ssoSwitch = page.getByRole('switch', {
+      name: copy('adminUi', 'organization.security.switchAria', {
+        title: ssoTitle,
+      }),
+      exact: true,
+    })
+    await expect(ssoSwitch).not.toBeChecked()
+    await expect(ssoSwitch).toBeEnabled()
+  })
+})
+
+test.describe('a protected business tenant is read-only', () => {
+  test.use({
+    seedProtectedTenant: true,
+    viewport: { width: 1920, height: 1080 },
+  })
+
+  test('tenant-admin: the protected organization renders no switch and its write is refused', async ({
+    demo,
+  }) => {
+    const { page, server, accounts } = demo
+
+    await accounts.signIn({
+      identifier: reviewProtectedTenant.username,
+      password: reviewProtectedTenant.password,
+    })
+    await expect(homeHeading(page)).toBeVisible()
+
+    // The protected prefix is a settings write policy, not an admission rule:
+    // the tenant's administrator still reaches organization administration.
+    await openOrganizationPage(page, 'settings')
+
+    // The surface says why it cannot be changed and renders no switch at all;
+    // the two policies are still listed with their titles.
+    await expect(
+      page.getByText(copy('adminUi', 'organization.security.readOnly.title'), {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(
+      page.getByText(
+        copy('adminUi', 'organization.security.readOnly.description'),
+        { exact: true },
+      ),
+    ).toBeVisible()
+    for (const title of [
+      copy('adminUi', 'organization.security.mfa.title'),
+      copy('adminUi', 'organization.security.sso.title'),
+    ]) {
+      await expect(
+        page.getByRole('heading', { level: 3, name: title, exact: true }),
+      ).toBeVisible()
+    }
+    await expect(page.getByRole('switch')).toHaveCount(0)
+
+    // The refused write has no rendered control on a read-only page. The
+    // review server fixture makes the same write the page would, as the same
+    // administrator, and the answer is the host seam's refusal. The rendered
+    // read-only state above is asserted first; this is the write that state
+    // promises cannot land.
+    const refusal = await server.writeTenantSetting({
+      tenant: reviewProtectedTenant.tenant,
+      identifier: reviewProtectedTenant.identifier,
+      password: reviewProtectedTenant.password,
+      namespace: 'tenant.admission',
+      key: 'require-mfa',
+      value: 'true',
+    })
+    expect(refusal.status).toBe(403)
+    expect(refusal.problemType).toBe('urn:speed:settings:protected')
   })
 })

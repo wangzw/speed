@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   reviewImpersonationAdmin,
   reviewOrdinaryMember,
+  reviewProtectedTenant,
   reviewSystemTenantAdmin,
   reviewTenantAdmin,
   reviewTenantPolicies,
@@ -169,6 +170,32 @@ describe('the review configuration', () => {
     )
     const entry = accountEntry(body, reviewSystemTenantAdmin.identifier)
     expect(entry).not.toContain('platform-admin')
+  })
+
+  it('seeds the protected business tenant and its proved administrator on request', async () => {
+    const body = await rendered({ seedProtectedTenant: true })
+    expect(body).toContain(
+      `    - name: ${reviewProtectedTenant.tenant}\n` +
+        `      admins:\n        - ${reviewProtectedTenant.identifier}\n`,
+    )
+    const entry = accountEntry(body, reviewProtectedTenant.identifier)
+    expect(entry).toContain('proved-email: true')
+    expect(entry).not.toContain('platform-admin')
+  })
+
+  it('keeps the protected tenant out of the default seed', async () => {
+    const body = await rendered({})
+    expect(body).not.toContain(reviewProtectedTenant.tenant)
+    expect(body).not.toContain(reviewProtectedTenant.identifier)
+  })
+
+  it('holds the admission policy on at the platform layer on request', async () => {
+    const body = await rendered({ platformRequireMFA: true })
+    expect(body).toContain(
+      '    - key: "tenant.admission.require-mfa"\n      value: "true"',
+    )
+    const without = await rendered({})
+    expect(without).not.toContain('tenant.admission.require-mfa')
   })
 
   it('names the two tenant-facing policies and the platform-only namespaces', () => {

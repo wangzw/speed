@@ -17,7 +17,7 @@
  */
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
-import { get as httpGet } from 'node:http'
+import { get as httpGet, request as httpRequest } from 'node:http'
 import { createServer } from 'node:net'
 import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
@@ -273,6 +273,121 @@ function looksLikePortTaken(error: unknown): boolean {
   return /EADDRINUSE|address already in use/i.test(String(error))
 }
 
+/** One answer from the product's own API, as the fixture reads it. */
+interface ApiAnswer {
+  readonly status: number
+  readonly body: string
+  readonly setCookie: readonly string[]
+}
+
+/** Make one request against the running server and read the whole answer. */
+function callApi(
+  url: string,
+  options: {
+    readonly method: string
+    readonly body?: string
+    readonly headers?: Readonly<Record<string, string>>
+  },
+): Promise<ApiAnswer> {
+  return new Promise((resolve, reject) => {
+    const call = httpRequest(
+      url,
+      { method: options.method, headers: options.headers },
+      (response) => {
+        const chunks: Buffer[] = []
+        response.on('data', (chunk: Buffer) => chunks.push(chunk))
+        response.on('end', () => {
+          resolve({
+            status: response.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString('utf8'),
+            setCookie: response.headers['set-cookie'] ?? [],
+          })
+        })
+        response.on('error', reject)
+      },
+    )
+    call.on('error', reject)
+    call.setTimeout(10_000, () => {
+      call.destroy(new Error(`${url} did not answer within 10s`))
+    })
+    if (options.body !== undefined) {
+      call.write(options.body)
+    }
+    call.end()
+  })
+}
+
+/** The Cookie request header a set of Set-Cookie values asks for. */
+function cookieHeader(setCookie: readonly string[]): string {
+  return setCookie
+    .map((entry) => entry.split(';', 1)[0] ?? '')
+    .filter((entry) => entry !== '')
+    .join('; ')
+}
+
+/**
+ * Sign one account in through the product's own password flow and answer the
+ * access token. The flow keeps its state in a cookie, so the answer's cookie is
+ * carried to the completing call; the token is what the API write below uses.
+ */
+async function signInThroughApi(
+  origin: string,
+  identifier: string,
+  password: string,
+): Promise<string> {
+  const start = await callApi(`${origin}/api/v1/auth/flows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      method: 'password',
+      delivery: 'token',
+      binding: 'cookie',
+      input: { identifier, password },
+    }),
+  })
+  if (start.status !== 200) {
+    throw new Error(
+      `starting the API sign-in of ${identifier} answered ${start.status}:\n${start.body}`,
+    )
+  }
+  const cookie = cookieHeader(start.setCookie)
+  const answer = await callApi(`${origin}/api/v1/auth/flows/answer`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(cookie === '' ? {} : { Cookie: cookie }),
+    },
+    body: JSON.stringify({ step: 'complete' }),
+  })
+  if (answer.status !== 200) {
+    throw new Error(
+      `completing the API sign-in of ${identifier} answered ${answer.status}:\n${answer.body}`,
+    )
+  }
+  const parsed = JSON.parse(answer.body) as { readonly access_token?: unknown }
+  if (typeof parsed.access_token !== 'string' || parsed.access_token === '') {
+    throw new Error(`the API sign-in of ${identifier} answered no access token`)
+  }
+  return parsed.access_token
+}
+
+/** The input of one settings write the fixture makes through the product. */
+export interface TenantSettingWriteInput {
+  readonly tenant: string
+  readonly identifier: string
+  readonly password: string
+  readonly namespace: string
+  readonly key: string
+  readonly value: string
+}
+
+/** What one settings write answered: its status and, for a problem, its type. */
+export interface TenantSettingWriteAnswer {
+  readonly status: number
+  /** The problem type the refusal named; empty when the answer was not a problem. */
+  readonly problemType: string
+}
+
 /**
  * Start the local identity provider with the same fresh-pair retry the backend
  * port uses: the provider probes for two free ports and then binds them, so a
@@ -373,6 +488,19 @@ export interface ReviewServer {
   countOutboundRecords(
     options: Parameters<typeof countOutboundRecords>[1],
   ): number
+  /**
+   * Make one settings write through the product's own API, as the named
+   * account, and answer the status and problem type.
+   *
+   * A read-only tenant's settings page renders no switch, so the refused write
+   * has no rendered control to drive. This is the assembly layer's one product
+   * request: it signs the account in through the public password flow and
+   * sends the same PUT the page would. A spec asserts the rendered read-only
+   * state first and this answer beside it, never in place of it.
+   */
+  writeTenantSetting(
+    input: TenantSettingWriteInput,
+  ): Promise<TenantSettingWriteAnswer>
   /** Run a hook before SIGTERM; hooks run in reverse registration order. */
   beforeStop(hook: () => Promise<void> | void): void
   /** Request shutdown, wait for exit, and clean up unless kept. */
@@ -392,13 +520,17 @@ export interface ReviewServer {
  *
  * `seedMember`, `seedImpersonation`, `seedInvitee`, `seedSocialAccount`,
  * `seedTenantAdmin`, `seedUnprovedTenantAdmin`, `seedSystemTenantAdmin`,
- * `tenantAdmins` and `recentWindow` are passed through to the configuration the
- * binary seeds; a spec that needs none leaves them off, so the template's own
- * seed stays the baseline. The three tenant-admin opt-ins seed through the
- * binary's own seed command: the proved administrator, the unproved one that
- * the write gate refuses, and a system tenant administrator outside the platform
- * role. `tenantAdmins` overrides the administrator list of a seeded tenant, so
- * a journey can pin a tenant to exactly one tenant-admin binding.
+ * `seedProtectedTenant`, `platformRequireMFA`, `tenantAdmins` and
+ * `recentWindow` are passed through to the configuration the binary seeds; a
+ * spec that needs none leaves them off, so the template's own seed stays the
+ * baseline. The tenant-admin opt-ins seed through the binary's own seed
+ * command: the proved administrator, the unproved one that the write gate
+ * refuses, a system tenant administrator outside the platform role, and the
+ * review build's protected business tenant with its proved administrator.
+ * `tenantAdmins` overrides the administrator list of a seeded tenant, so a
+ * journey can pin a tenant to exactly one tenant-admin binding.
+ * `platformRequireMFA` writes the admission policy into the global layer, the
+ * platform floor every tenant reads as enforced.
  *
  * A spec that drives a social method turns on `socialIdentityProvider`. Only
  * then does the fixture start the local OpenID Connect provider, which mints
@@ -434,6 +566,8 @@ export async function startReviewServer(
     readonly seedTenantAdmin?: boolean
     readonly seedUnprovedTenantAdmin?: boolean
     readonly seedSystemTenantAdmin?: boolean
+    readonly seedProtectedTenant?: boolean
+    readonly platformRequireMFA?: boolean
     readonly tenantAdmins?: Readonly<Record<string, readonly string[]>>
     readonly recentWindow?: string
     readonly mfaRequired?: boolean
@@ -534,6 +668,8 @@ export async function startReviewServer(
       seedTenantAdmin: options.seedTenantAdmin,
       seedUnprovedTenantAdmin: options.seedUnprovedTenantAdmin,
       seedSystemTenantAdmin: options.seedSystemTenantAdmin,
+      seedProtectedTenant: options.seedProtectedTenant,
+      platformRequireMFA: options.platformRequireMFA,
       tenantAdmins: options.tenantAdmins,
       socialProvider,
       ssoProvider,
@@ -567,6 +703,8 @@ export async function startReviewServer(
         seedTenantAdmin: options.seedTenantAdmin,
         seedUnprovedTenantAdmin: options.seedUnprovedTenantAdmin,
         seedSystemTenantAdmin: options.seedSystemTenantAdmin,
+        seedProtectedTenant: options.seedProtectedTenant,
+        platformRequireMFA: options.platformRequireMFA,
         tenantAdmins: options.tenantAdmins,
         socialProvider,
         ssoProvider,
@@ -689,6 +827,42 @@ export async function startReviewServer(
       },
       countOutboundRecords(options) {
         return countOutboundRecords(log, options)
+      },
+      async writeTenantSetting(
+        input: TenantSettingWriteInput,
+      ): Promise<TenantSettingWriteAnswer> {
+        const token = await signInThroughApi(
+          reviewConfig.origin,
+          input.identifier,
+          input.password,
+        )
+        const answer = await callApi(
+          `${reviewConfig.origin}/api/v1/tenants/${input.tenant}/settings/` +
+            `${input.namespace}/${input.key}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+              'X-Tenant': input.tenant,
+            },
+            body: JSON.stringify({ value: input.value }),
+          },
+        )
+        let problemType = ''
+        if (answer.status >= 400 && answer.body !== '') {
+          try {
+            const problem = JSON.parse(answer.body) as {
+              readonly type?: unknown
+            }
+            if (typeof problem.type === 'string') {
+              problemType = problem.type
+            }
+          } catch {
+            // A refusal that is not a problem document names no type.
+          }
+        }
+        return { status: answer.status, problemType }
       },
       beforeStop(hook: () => Promise<void> | void): void {
         hooks.push(hook)
