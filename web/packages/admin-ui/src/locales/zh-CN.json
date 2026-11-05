@@ -1146,7 +1146,7 @@
       "suspendedBindNote": "停用成员不能绑定角色，请先恢复。",
       "roleLabel": "角色",
       "roleNone": "选择角色",
-      "allRolesBound": "该成员已绑定本组织全部角色。",
+      "allRolesBound": "没有可绑定的角色",
       "bind": "绑定角色",
       "unbind": "解绑",
       "unbindTitle": "解绑角色",

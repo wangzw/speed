@@ -1146,7 +1146,7 @@
       "suspendedBindNote": "A suspended member cannot be bound to a role. Resume the member first.",
       "roleLabel": "Role",
       "roleNone": "Choose a role",
-      "allRolesBound": "This member already holds every role in the organization.",
+      "allRolesBound": "There are no roles left to bind.",
       "bind": "Bind role",
       "unbind": "Unbind",
       "unbindTitle": "Unbind role",
