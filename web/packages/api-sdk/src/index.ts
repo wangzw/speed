@@ -1760,6 +1760,11 @@ export interface AuthnAdminImpersonationList {
   next_cursor: string;
 }
 
+export interface TenantAdminTenantOwnerTransfer {
+  /** The account identifier of the active member that becomes the organization's owner. */
+  account: string;
+}
+
 export interface TenantAdminTenantProfileWrite {
   /** The organization's contact address, one bare email address of at most 254 bytes. Empty clears it. */
   contact_email: string;
@@ -1918,6 +1923,11 @@ export interface AuthnAdminMemberWrite {
 export interface AuthnAdminMemberSSOExempt {
   /** True exempts the member; false clears the exemption. */
   sso_exempt: boolean;
+}
+
+export interface TenantOwnerTransfer {
+  /** The account identifier of the active member that becomes the organization's owner. */
+  account: string;
 }
 
 /**
@@ -2954,11 +2964,6 @@ export type TenantAdminTenantsCreate201 = {
 export type TenantAdminTenantsGet200 = {
   /** The tenant, with its identifier, alias and state. */
   tenant: TenantAdminTenant;
-};
-
-export type TenantAdminTenantsSetAliasBody = {
-  /** The alias the caller asked for. The route refuses every value, because an alias cannot change after creation. */
-  alias: string;
 };
 
 /**
@@ -9194,6 +9199,69 @@ export const useTenantAdminTenantsCreate = <TError = Problem,
     }
 
 /**
+ * Deletes one tenant platform staff names. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.
+ * @summary Delete one tenant
+ */
+export const tenantAdminTenantsDelete = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminTenantsDeleteMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsDelete>>, TError,{tenant: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsDelete>>, TError,{tenant: string}, TContext> => {
+
+const mutationKey = ['tenantAdminTenantsDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsDelete>>, {tenant: string}> = (props) => {
+          const {tenant} = props ?? {};
+
+          return  tenantAdminTenantsDelete(tenant,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminTenantsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsDelete>>>
+
+    export type TenantAdminTenantsDeleteMutationError = Problem | void
+
+    /**
+ * @summary Delete one tenant
+ */
+export const useTenantAdminTenantsDelete = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsDelete>>, TError,{tenant: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminTenantsDelete>>,
+        TError,
+        {tenant: string},
+        TContext
+      > => {
+      return useMutation(getTenantAdminTenantsDeleteMutationOptions(options));
+    }
+
+/**
  * Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.
  * @summary Read one tenant the roster holds
  */
@@ -9262,72 +9330,6 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
 
 
 
-
-/**
- * Transitional compatibility route, to be removed in T6. Every tenant alias is immutable after creation, so this route refuses the change instead of applying it: the path identifier and the body's alias must both be well formed, a tenant the roster does not hold is a 404, a tombstone is a 409, and any other request is a 409 with the problem type urn:speed:tenant:alias-immutable. It never writes the alias or any other column and writes no audit row, because no successful write happens.
- * @summary Refuse a tenant alias change
- */
-export const tenantAdminTenantsSetAlias = (
-    tenant: string,
-    tenantAdminTenantsSetAliasBody: TenantAdminTenantsSetAliasBody,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<unknown>(
-      {url: `/api/v1/system/tenants/${tenant}`, method: 'PATCH',
-      headers: {'Content-Type': 'application/json', },
-      data: tenantAdminTenantsSetAliasBody, signal
-    },
-      );
-    }
-
-
-
-export const getTenantAdminTenantsSetAliasMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{tenant: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{tenant: string;data: TenantAdminTenantsSetAliasBody}, TContext> => {
-
-const mutationKey = ['tenantAdminTenantsSetAlias'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, {tenant: string;data: TenantAdminTenantsSetAliasBody}> = (props) => {
-          const {tenant,data} = props ?? {};
-
-          return  tenantAdminTenantsSetAlias(tenant,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type TenantAdminTenantsSetAliasMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>>
-    export type TenantAdminTenantsSetAliasMutationBody = TenantAdminTenantsSetAliasBody
-    export type TenantAdminTenantsSetAliasMutationError = Problem | void
-
-    /**
- * @summary Refuse a tenant alias change
- */
-export const useTenantAdminTenantsSetAlias = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{tenant: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
- ): UseMutationResult<
-        Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>,
-        TError,
-        {tenant: string;data: TenantAdminTenantsSetAliasBody},
-        TContext
-      > => {
-      return useMutation(getTenantAdminTenantsSetAliasMutationOptions(options));
-    }
 
 /**
  * Lists every role binding of the tenant, ordered by account identifier and then role name, one view each. A tenant with no binding yields an empty list. The list is not paginated.
@@ -9740,6 +9742,72 @@ export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
         TContext
       > => {
       return useMutation(getAuthnAdminImpersonationsRevokeMutationOptions(options));
+    }
+
+/**
+ * Hands one tenant's ownership to an active member. The target must already be an active member of the organization; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.
+ * @summary Transfer one tenant's owner
+ */
+export const tenantAdminTenantsTransferOwner = (
+    tenant: string,
+    tenantAdminTenantOwnerTransfer: TenantAdminTenantOwnerTransfer,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/owner`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: tenantAdminTenantOwnerTransfer, signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminTenantsTransferOwnerMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransfer}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransfer}, TContext> => {
+
+const mutationKey = ['tenantAdminTenantsTransferOwner'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, {tenant: string;data: TenantAdminTenantOwnerTransfer}> = (props) => {
+          const {tenant,data} = props ?? {};
+
+          return  tenantAdminTenantsTransferOwner(tenant,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminTenantsTransferOwnerMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>>
+    export type TenantAdminTenantsTransferOwnerMutationBody = TenantAdminTenantOwnerTransfer
+    export type TenantAdminTenantsTransferOwnerMutationError = Problem | void
+
+    /**
+ * @summary Transfer one tenant's owner
+ */
+export const useTenantAdminTenantsTransferOwner = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransfer}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>,
+        TError,
+        {tenant: string;data: TenantAdminTenantOwnerTransfer},
+        TContext
+      > => {
+      return useMutation(getTenantAdminTenantsTransferOwnerMutationOptions(options));
     }
 
 /**
@@ -10277,6 +10345,69 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem | void,
         TContext
       > => {
       return useMutation(getTenantAdminTenantsSetStatusMutationOptions(options));
+    }
+
+/**
+ * Deletes one organization, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction, under the same tenant lock the platform surface takes. A protected tenant is refused by the host's write guard. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal.
+ * @summary Delete the caller's own organization
+ */
+export const tenantAdminOwnerDelete = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminOwnerDeleteMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerDelete>>, TError,{tenant: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerDelete>>, TError,{tenant: string}, TContext> => {
+
+const mutationKey = ['tenantAdminOwnerDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminOwnerDelete>>, {tenant: string}> = (props) => {
+          const {tenant} = props ?? {};
+
+          return  tenantAdminOwnerDelete(tenant,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminOwnerDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminOwnerDelete>>>
+
+    export type TenantAdminOwnerDeleteMutationError = Problem | void
+
+    /**
+ * @summary Delete the caller's own organization
+ */
+export const useTenantAdminOwnerDelete = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerDelete>>, TError,{tenant: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminOwnerDelete>>,
+        TError,
+        {tenant: string},
+        TContext
+      > => {
+      return useMutation(getTenantAdminOwnerDeleteMutationOptions(options));
     }
 
 /**
@@ -11029,6 +11160,72 @@ export const useAuthnAdminMembersSsoExempt = <TError = Problem | void,
         TContext
       > => {
       return useMutation(getAuthnAdminMembersSsoExemptMutationOptions(options));
+    }
+
+/**
+ * Hands one organization's ownership on, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The target must be an active member of the organization whose account is active; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction, under the tenant lock the platform surface takes too. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.
+ * @summary Transfer the caller's organization to another member
+ */
+export const tenantAdminOwnerTransfer = (
+    tenant: string,
+    tenantOwnerTransfer: TenantOwnerTransfer,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/owner`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: tenantOwnerTransfer, signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminOwnerTransferMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, TError,{tenant: string;data: TenantOwnerTransfer}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, TError,{tenant: string;data: TenantOwnerTransfer}, TContext> => {
+
+const mutationKey = ['tenantAdminOwnerTransfer'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, {tenant: string;data: TenantOwnerTransfer}> = (props) => {
+          const {tenant,data} = props ?? {};
+
+          return  tenantAdminOwnerTransfer(tenant,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminOwnerTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>>
+    export type TenantAdminOwnerTransferMutationBody = TenantOwnerTransfer
+    export type TenantAdminOwnerTransferMutationError = Problem | void
+
+    /**
+ * @summary Transfer the caller's organization to another member
+ */
+export const useTenantAdminOwnerTransfer = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, TError,{tenant: string;data: TenantOwnerTransfer}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>,
+        TError,
+        {tenant: string;data: TenantOwnerTransfer},
+        TContext
+      > => {
+      return useMutation(getTenantAdminOwnerTransferMutationOptions(options));
     }
 
 /**

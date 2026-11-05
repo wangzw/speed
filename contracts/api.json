@@ -5903,7 +5903,7 @@
                 }
               }
             },
-            "description": "The account is the only tenant administrator of an active business tenant; the detail names that tenant, and the role has to be handed to another administrator first"
+            "description": "The account cannot be deleted: it is the only tenant administrator of an active business tenant (account-last-tenant-admin; the detail names that tenant), or it owns an active business organization (account-organization-owner; the detail names that organization). The role or the organization has to be handed on first"
           },
           "503": {
             "content": {
@@ -7309,6 +7309,16 @@
           },
           "404": {
             "description": "No such account"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The account owns an active business organization and cannot be suspended; the detail names that organization, and it has to be transferred or deleted first"
           },
           "413": {
             "content": {
@@ -8795,6 +8805,92 @@
       }
     },
     "/api/v1/system/tenants/{tenant}": {
+      "delete": {
+        "description": "Deletes one tenant platform staff names. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.",
+        "operationId": "tenant.admin.tenants.delete",
+        "parameters": [
+          {
+            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The tenant was deleted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The identifier is outside the identifier domain"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
+          },
+          "404": {
+            "description": "No tenant carries the identifier"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The tenant is a tombstone"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete one tenant",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "admin"
+      },
       "get": {
         "description": "Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.",
         "operationId": "tenant.admin.tenants.get",
@@ -8873,120 +8969,6 @@
           }
         ],
         "summary": "Read one tenant the roster holds",
-        "tags": [
-          "tenant.admin"
-        ],
-        "x-endpoint": "admin"
-      },
-      "patch": {
-        "description": "Transitional compatibility route, to be removed in T6. Every tenant alias is immutable after creation, so this route refuses the change instead of applying it: the path identifier and the body's alias must both be well formed, a tenant the roster does not hold is a 404, a tombstone is a 409, and any other request is a 409 with the problem type urn:speed:tenant:alias-immutable. It never writes the alias or any other column and writes no audit row, because no successful write happens.",
-        "operationId": "tenant.admin.tenants.setAlias",
-        "parameters": [
-          {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
-            "in": "path",
-            "name": "tenant",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "alias": {
-                    "description": "The alias the caller asked for. The route refuses every value, because an alias cannot change after creation.",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "alias"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "description": "The alias the caller asked for. The route refuses every value, because an alias cannot change after creation.",
-          "required": true
-        },
-        "responses": {
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identifier or the alias is outside its domain, or the request body is not one JSON object"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The request carries no identity"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
-          },
-          "404": {
-            "description": "No tenant carries the identifier"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The alias cannot be changed after creation (urn:speed:tenant:alias-immutable), or the tenant is a tombstone"
-          },
-          "413": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The request body is over the endpoint's limit"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "A dependency could not answer"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Refuse a tenant alias change",
         "tags": [
           "tenant.admin"
         ],
@@ -9563,6 +9545,115 @@
         "summary": "Revoke an impersonation record",
         "tags": [
           "authn.admin"
+        ],
+        "x-endpoint": "admin"
+      }
+    },
+    "/api/v1/system/tenants/{tenant}/owner": {
+      "put": {
+        "description": "Hands one tenant's ownership to an active member. The target must already be an active member of the organization; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.",
+        "operationId": "tenant.admin.tenants.transferOwner",
+        "parameters": [
+          {
+            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantAdminTenantOwnerTransfer"
+              }
+            }
+          },
+          "description": "The account identifier of the active member that becomes the owner.",
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The ownership was transferred"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
+          },
+          "404": {
+            "description": "No tenant carries the identifier"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The target is not an active member of the organization, or the tenant is a tombstone"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Transfer one tenant's owner",
+        "tags": [
+          "tenant.admin"
         ],
         "x-endpoint": "admin"
       }
@@ -10424,6 +10515,94 @@
           "tenant.admin"
         ],
         "x-endpoint": "admin"
+      }
+    },
+    "/api/v1/tenants/{tenant}": {
+      "delete": {
+        "description": "Deletes one organization, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction, under the same tenant lock the platform surface takes. A protected tenant is refused by the host's write guard. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal.",
+        "operationId": "tenant.admin.owner.delete",
+        "parameters": [
+          {
+            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The organization was deleted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The identifier is outside the identifier domain"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is not the organization's owner, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
+          },
+          "404": {
+            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The tenant is a tombstone, or the caller stopped owning the organization before the write committed"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Delete the caller's own organization",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/bindings": {
@@ -11702,6 +11881,115 @@
         "summary": "Set an account's exemption from a tenant's SSO requirement",
         "tags": [
           "authn.admin"
+        ],
+        "x-endpoint": "api"
+      }
+    },
+    "/api/v1/tenants/{tenant}/owner": {
+      "put": {
+        "description": "Hands one organization's ownership on, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The target must be an active member of the organization whose account is active; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction, under the tenant lock the platform surface takes too. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.",
+        "operationId": "tenant.admin.owner.transfer",
+        "parameters": [
+          {
+            "description": "The organization's identifier as the request surface addresses it. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantOwnerTransfer"
+              }
+            }
+          },
+          "description": "The account identifier of the active member that becomes the owner.",
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The ownership was transferred"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is not the organization's owner, or the caller has not proved an email address (contact-required)"
+          },
+          "404": {
+            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The target is not an active member, the target's account is not active, or the tenant is a tombstone"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Transfer the caller's organization to another member",
+        "tags": [
+          "tenant.admin"
         ],
         "x-endpoint": "api"
       }
@@ -17970,6 +18258,19 @@
         ],
         "type": "object"
       },
+      "TenantAdminTenantOwnerTransfer": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "description": "The account identifier of the active member that becomes the organization's owner.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "type": "object"
+      },
       "TenantAdminTenantProfileWrite": {
         "additionalProperties": false,
         "properties": {
@@ -18030,6 +18331,19 @@
         "required": [
           "id",
           "alias"
+        ],
+        "type": "object"
+      },
+      "TenantOwnerTransfer": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "description": "The account identifier of the active member that becomes the organization's owner.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account"
         ],
         "type": "object"
       },
@@ -18321,6 +18635,10 @@
     {
       "module": "tenant.admin",
       "endpoint": "admin"
+    },
+    {
+      "module": "tenant.admin",
+      "endpoint": "api"
     },
     {
       "module": "tenant.profile",
