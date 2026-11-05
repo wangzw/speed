@@ -457,23 +457,58 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     }
   })
 
-  it('keeps both identity columns inside the 600px tier floor when a long email meets a long resolved inviter', async () => {
+  // The status column is nowrap and its label is the only cell in the row
+  // whose width changes with the stored state. "Accepted" is the longest
+  // label, so a pending row is the narrowest case, not the worst one: every
+  // stored status has to fit the sm floor with both identity columns at
+  // their whole cap. `expired` is the derived fourth label a stored pending
+  // invitation takes once its deadline passes.
+  for (const status of [
+    'pending',
+    'expired',
+    'accepted',
+    'revoked',
+  ] as const) {
+    it(`keeps both invitation identity columns inside the 600px tier floor when a long email meets a long resolved inviter (${status})`, async () => {
+      await page.viewport(600, 900)
+      // The inviter resolves through the members read to a display name as
+      // long as the cap, so both identity columns carry their whole cap and
+      // the row's unbreakable width has to fit the sm floor together with
+      // status, both timestamps and the actions column.
+      const invitation: AdminInvitation = {
+        ...LONG_INVITATION,
+        invited_by: LONG_ACCOUNT,
+        status,
+        expires_at:
+          status === 'expired'
+            ? '2020-01-01T00:00:00Z'
+            : LONG_INVITATION.expires_at,
+      }
+      renderPage({}, undefined, backend([LONG_MEMBER], [invitation]))
+
+      await screen.findAllByText(LONG_DISPLAY_NAME)
+      await screen.findAllByText(LONG_EMAIL)
+      // The strict per-tier check, not the page-level one: each table's
+      // containment box is pinned to every tier floor and the visible
+      // columns must fit without the scroll fallback.
+      await expectNoHorizontalOverflow()
+    })
+  }
+
+  it('keeps the member table inside the 600px tier floor when a long identity meets a suspended member', async () => {
     await page.viewport(600, 900)
-    // The inviter resolves through the members read to a display name as
-    // long as the cap, so both identity columns carry their whole cap and
-    // the row's unbreakable width has to fit the sm floor together with
-    // status, both timestamps and the actions column.
-    const invitation: AdminInvitation = {
-      ...LONG_INVITATION,
-      invited_by: LONG_ACCOUNT,
+    // The status chip has no content cap and its label grows with the
+    // member's state: "Suspended" is wider than "Active". A member whose
+    // display name and account both sit at their whole cap is the widest
+    // row the table has to fit, and the earlier cases never combined the
+    // long identity with the inactive state.
+    const suspended: AdminMember = {
+      ...LONG_MEMBER,
+      active: false,
     }
-    renderPage({}, undefined, backend([LONG_MEMBER], [invitation]))
+    renderPage({}, undefined, backend([suspended], []))
 
     await screen.findAllByText(LONG_DISPLAY_NAME)
-    await screen.findAllByText(LONG_EMAIL)
-    // The strict per-tier check, not the page-level one: each table's
-    // containment box is pinned to every tier floor and the visible
-    // columns must fit without the scroll fallback.
     await expectNoHorizontalOverflow()
   })
 })

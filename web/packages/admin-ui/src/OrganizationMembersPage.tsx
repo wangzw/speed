@@ -111,12 +111,15 @@ const COMPACT_TABLE_SX = {
  * the display name and the account stay on one line, so each contributes
  * its whole cap to the row's unbreakable width. At the 600px `sm` floor
  * those two caps together with the roles, status, joined and action columns
- * exceed the floor. 112px keeps the row inside it; the complete values
- * remain reachable through the title and the copy control. From `md` up the
- * shared 200px cap applies unchanged.
+ * exceed the floor. The status column has no cap of its own and its chip
+ * grows with the label -- "Suspended" is the widest state -- so the pair has
+ * to fit with that worst-case column as well, not only with "Active". 102px
+ * keeps the widest row inside the floor; the complete values remain
+ * reachable through the title and the copy control. From `md` up the shared
+ * 200px cap applies unchanged.
  */
 const MEMBER_IDENTITY_MAX_WIDTH = {
-  belowMd: 112,
+  belowMd: 102,
   fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
 } as const
 
@@ -126,18 +129,21 @@ const MEMBER_IDENTITY_MAX_WIDTH = {
  * long-text cap; both stay on one line, so each contributes its whole cap
  * to the row's unbreakable width. At the 600px `sm` floor those two shared
  * caps (160px each) together with the status, both timestamps and the
- * actions column exceed the floor (measured 641px). 140px keeps the six
- * columns inside it; the complete values remain reachable through the
+ * actions column exceed the floor (measured 641px). The status column has
+ * no cap of its own and its label grows with the stored state: "Accepted"
+ * is wider than "Pending", and a pending row is therefore the narrowest
+ * case rather than the widest. 133px keeps the six columns inside the floor
+ * with the widest label; the complete values remain reachable through the
  * title and the copy control. From `md` up each column returns to its
  * shared cap: 200px for the email, 160px for the inviter.
  */
 const INVITATION_IDENTITY_MAX_WIDTH = {
   email: {
-    belowMd: 140,
+    belowMd: 133,
     fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
   },
   invitedBy: {
-    belowMd: 140,
+    belowMd: 133,
     fromMd: LONG_TEXT_COLUMN_MAX_WIDTH,
   },
 } as const
