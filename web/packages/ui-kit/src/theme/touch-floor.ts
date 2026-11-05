@@ -35,7 +35,13 @@
  *   so the hit area grows without thickening the track.
  * - `InputBase`'s root is the visual field and its `input` slot is the
  *   element that carries the typing caret and the click, so both take the
- *   floor (a `Select` renders its trigger on the same `input` slot).
+ *   floor.
+ * - `Select`'s trigger is a `div` on its own `select` slot, not the
+ *   `InputBase` input element: MUI sets `min-height: 1.4375em` there to
+ *   match the text field, and that declaration wins the cascade over the
+ *   `InputBase` override, leaving the trigger at 40px on a coarse pointer.
+ *   The explicit `MuiSelect` rule restores the floor on the element that
+ *   actually receives the click.
  * - `Link` renders an inline `<a>`: `min-height` has no effect on a
  *   non-replaced inline box, so the coarse rule also makes it an
  *   `inline-flex` box that centers its text.
@@ -94,6 +100,7 @@ export const touchFloorComponents: ThemeOptions['components'] = {
   MuiInputBase: {
     styleOverrides: { root: coarseFloor(), input: coarseFloor() },
   },
+  MuiSelect: { styleOverrides: { select: coarseFloor() } },
   MuiLink: {
     styleOverrides: {
       root: {

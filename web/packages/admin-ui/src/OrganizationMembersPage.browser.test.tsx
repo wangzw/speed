@@ -24,6 +24,7 @@ import type { ReactNode } from 'react'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useTheme } from '@mui/material/styles'
+import { selectClasses } from '@mui/material/Select'
 import { cdp, page } from 'vitest/browser'
 import { attachSession } from '@speed/auth-core'
 import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
@@ -422,16 +423,15 @@ describe('OrganizationMembersPage touch targets in Chromium', () => {
     await user.click(screen.getByRole('button', { name: manageName(ADA) }))
     await screen.findByRole('dialog', { name: enUS.members.panel.title })
 
-    // The page's own controls. A MUI Select trigger (the combobox div) and
-    // its hidden native input are outside this measurement: @speed/ui-kit's
-    // coarse-pointer floor is declared on the InputBase slots, and MUI's
-    // Select renders its trigger on a div that does not receive that
-    // override, so every select in the package stays 40px high on touch.
-    // That gap belongs to the theme rather than this page; it is reported
-    // as a follow-up instead of being asserted away here.
+    // The page's own controls, the Select trigger's `div[role=combobox]`
+    // included. The trigger is not an `input`: the InputBase `root`/`input`
+    // slots do not bound it, and MUI's own `min-height` on the `select`
+    // slot wins the cascade, so it only reaches the floor through the
+    // theme's `MuiSelect` rule. The visually hidden native input is still
+    // skipped -- it is `aria-hidden` and carries no hit area of its own.
     const controls = Array.from(
       document.querySelectorAll<HTMLElement>(
-        'button, a[href], input:not(.MuiSelect-nativeInput)',
+        'button, a[href], input:not(.MuiSelect-nativeInput), [role="combobox"]',
       ),
     ).filter((control) => {
       const rect = control.getBoundingClientRect()
@@ -443,6 +443,14 @@ describe('OrganizationMembersPage touch targets in Chromium', () => {
     })
     // A run that measured nothing would be vacuously green.
     expect(controls.length).toBeGreaterThan(5)
+    // Nor may the Select trigger be skipped: the panel's role field is the
+    // element that exposed the theme gap, so a scan without it would not
+    // prove the fix.
+    expect(
+      controls.filter((control) =>
+        control.matches(`.${selectClasses.select}`),
+      ).length,
+    ).toBeGreaterThan(0)
     for (const control of controls) {
       const rect = control.getBoundingClientRect()
       expect(

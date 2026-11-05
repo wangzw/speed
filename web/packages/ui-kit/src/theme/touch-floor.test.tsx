@@ -23,10 +23,13 @@ import Checkbox, { checkboxClasses } from '@mui/material/Checkbox'
 import Radio, { radioClasses } from '@mui/material/Radio'
 import Switch, { switchClasses } from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
 import Link from '@mui/material/Link'
 import ListItemButton from '@mui/material/ListItemButton'
 import Chip, { chipClasses } from '@mui/material/Chip'
 import { inputBaseClasses } from '@mui/material/InputBase'
+import { selectClasses } from '@mui/material/Select'
 import {
   emittedStyleText,
   hasCoarsePointerTouchTarget,
@@ -48,6 +51,13 @@ function Fixture() {
       <Radio slotProps={{ input: { 'aria-label': 'radio' } }} />
       <Switch slotProps={{ input: { 'aria-label': 'switch' } }} />
       <TextField label="input" />
+      <Select
+        value="one"
+        onChange={() => undefined}
+        SelectDisplayProps={{ 'aria-label': 'select' }}
+      >
+        <MenuItem value="one">one</MenuItem>
+      </Select>
       <Link href="#link">link</Link>
       <ListItemButton>navigation item</ListItemButton>
       <Chip label="clickable chip" onClick={() => undefined} />
@@ -77,6 +87,32 @@ const switchRoot = (): Element =>
   screen
     .getByRole('switch', { name: 'switch' })
     .closest(`.${switchClasses.root}`) as Element
+// A Select's trigger is the `div[role=combobox]` that carries the click
+// and its own `min-height`, not the InputBase wrapper or the visually
+// hidden native input.
+const selectTrigger = (): Element =>
+  screen
+    .getByRole('combobox', { name: 'select' })
+    .closest(`.${selectClasses.select}`) as Element
+
+/**
+ * The `@media (pointer: coarse)` rules whose selector targets `slotClass`
+ * as a compound class (`.MuiSelect-select`, not merely a generated class
+ * whose hyphenated name happens to contain it). These are the rules the
+ * theme declares for that slot, as opposed to one inherited from a
+ * parent component's slot.
+ */
+function coarseRulesSelecting(slotClass: string): string[] {
+  const rules: string[] = []
+  for (const block of emittedStyleText()
+    .split('@media (pointer: coarse)')
+    .slice(1)) {
+    for (const match of block.matchAll(/[^{}]+\{[^{}]*\}/g)) {
+      if (match[0].includes(`${slotClass}{`)) rules.push(match[0])
+    }
+  }
+  return rules
+}
 
 describe('theme touch-target floor', () => {
   it('raises every sampled control category to the 44px floor', () => {
@@ -98,6 +134,7 @@ describe('theme touch-target floor', () => {
       { category: 'radio', element: radioRoot() },
       { category: 'switch', element: switchRoot() },
       { category: 'input', element: inputRoot() },
+      { category: 'select trigger', element: selectTrigger() },
       { category: 'link', element: screen.getByRole('link', { name: 'link' }) },
       {
         category: 'navigation item',
@@ -116,6 +153,30 @@ describe('theme touch-target floor', () => {
     const input = screen.getByRole('textbox', { name: 'input' })
     expect(hasCoarsePointerTouchTarget(input)).toBe(true)
     expect(hasCoarsePointerTouchTarget(inputRoot() as Element)).toBe(true)
+  })
+
+  it('carries the floor on the Select trigger div, not only its field wrapper', () => {
+    renderWithProviders(<Fixture />)
+    // MUI 9 renders the Select's clickable element as a `div` on the
+    // `select` slot; the InputBase `root`/`input` overrides do not reach
+    // it, and its own base style resets `min-height` to 1.4375em.
+    const trigger = selectTrigger()
+    expect(trigger).toHaveClass(selectClasses.select)
+    expect(trigger.tagName).toBe('DIV')
+    // The InputBase overrides do not settle it: MUI's own
+    // `min-height: 1.4375em` on the select slot wins the cascade, so a
+    // coarse rule that merely matches the wrapper is not enough. The
+    // select slot itself must declare the floor.
+    const slotRules = coarseRulesSelecting(`.${selectClasses.select}`)
+    expect(slotRules).not.toHaveLength(0)
+    expect(
+      slotRules.some(
+        (rule) =>
+          rule.includes('min-width:44px') &&
+          rule.includes('min-height:44px'),
+      ),
+    ).toBe(true)
+    expect(hasCoarsePointerTouchTarget(trigger)).toBe(true)
   })
 
   it('grows the switch root but pins its track to the stock height', () => {
@@ -158,6 +219,7 @@ describe('theme touch-target floor', () => {
       switchRoot(),
       screen.getByRole('textbox', { name: 'input' }),
       inputRoot() as Element,
+      selectTrigger(),
       screen.getByRole('link', { name: 'link' }),
       screen.getByRole('button', { name: 'navigation item' }),
       screen.getByRole('button', { name: 'clickable chip' }),
@@ -190,6 +252,7 @@ describe('theme touch-target floor', () => {
         ['radio', radioRoot()],
         ['switch', switchRoot()],
         ['input', inputRoot() as Element],
+        ['select', selectTrigger()],
         ['link', screen.getByRole('link', { name: 'link' })],
         ['nav', screen.getByRole('button', { name: 'navigation item' })],
         ['chip', screen.getByRole('button', { name: 'clickable chip' })],
