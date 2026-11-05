@@ -271,6 +271,18 @@ func (c *stubCatalog) ObjectAction(p authz.Permission) (object, action string, o
 	return translation.Lookup(p)
 }
 
+// PermissionOf reverses the process's translation over the permissions the
+// stand-in declares, the way the real catalog's reverse index does.
+func (c *stubCatalog) PermissionOf(object, action string) (authz.Permission, bool) {
+	for _, p := range c.Declared() {
+		o, a, ok := translation.Lookup(p)
+		if ok && o == object && a == action {
+			return p, true
+		}
+	}
+	return "", false
+}
+
 // DescriptionKey answers the key a case gave a declared permission. A declared
 // permission a case did not describe answers an empty key and true, which is the
 // shape a module that left one permission out of DescriptionKeys declares.

@@ -397,7 +397,7 @@ func (p *product) Held(ctx context.Context, domain authz.Domain, subject string)
 	held := make([]authz.Permission, 0, len(pairs))
 	seen := make(map[authz.Permission]struct{}, len(pairs))
 	for _, pair := range pairs {
-		perm, ok := p.catalog.permissionOf(pair[0], pair[1])
+		perm, ok := p.catalog.PermissionOf(pair[0], pair[1])
 		if !ok {
 			continue
 		}
@@ -426,6 +426,12 @@ func (p *product) Has(perm authz.Permission) bool { return p.catalog.Has(perm) }
 // ObjectAction answers the (object, action) pair a permission translates to.
 func (p *product) ObjectAction(perm authz.Permission) (object, action string, ok bool) {
 	return p.catalog.ObjectAction(perm)
+}
+
+// PermissionOf answers the permission a (object, action) pair translates back
+// to, and whether any declared permission translates to it.
+func (p *product) PermissionOf(object, action string) (authz.Permission, bool) {
+	return p.catalog.PermissionOf(object, action)
 }
 
 // DescriptionKey implements authz.Catalog.

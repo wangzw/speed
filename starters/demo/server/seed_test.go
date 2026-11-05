@@ -210,6 +210,17 @@ func (c fixedCatalog) ObjectAction(permission authz.Permission) (string, string,
 	return pair[0], pair[1], true
 }
 
+// PermissionOf reverses the pairs this catalog was given, the way the real
+// catalog's reverse index does.
+func (c fixedCatalog) PermissionOf(object, action string) (authz.Permission, bool) {
+	for permission, pair := range c.pairs {
+		if pair[0] == object && pair[1] == action {
+			return permission, true
+		}
+	}
+	return "", false
+}
+
 // DescriptionKey answers no key: these cases exercise the seeding surface, which
 // reads the declared set and the translation, never a permission's description.
 func (c fixedCatalog) DescriptionKey(permission authz.Permission) (string, bool) {

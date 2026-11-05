@@ -77,6 +77,17 @@ type Catalog interface {
 	// does. A caller that writes policy data in a permission's name therefore
 	// reads the second result: one that is false means there is no pair to write.
 	ObjectAction(p Permission) (object, action string, ok bool)
+	// PermissionOf returns the declared permission a (object, action) pair
+	// translates back to, and whether any declared permission translates to it
+	// at all. The grant table stores the pair the engine matches on, so a view
+	// that names the permission a grant was written as reads it back here.
+	//
+	// A pair no declared permission translates to answers ("", false): the
+	// policy table can hold a grant written against a vocabulary this process
+	// no longer translates, and such a grant names no permission a caller could
+	// act on. The translation's rows are unique — Resolve refuses two
+	// permissions sharing one pair — so the answer is a function of the pair.
+	PermissionOf(object, action string) (Permission, bool)
 	// DescriptionKey returns the i18n key of the description the declaring
 	// module gave p, and whether p is declared at all. A declared permission may
 	// carry no key: a module that listed it in PermissionSpec.Permissions and

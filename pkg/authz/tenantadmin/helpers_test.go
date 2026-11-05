@@ -245,6 +245,16 @@ func (c *stubCatalog) ObjectAction(p authz.Permission) (object, action string, o
 	return translation.Lookup(p)
 }
 
+func (c *stubCatalog) PermissionOf(object, action string) (authz.Permission, bool) {
+	for _, p := range c.Declared() {
+		o, a, ok := translation.Lookup(p)
+		if ok && o == object && a == action {
+			return p, true
+		}
+	}
+	return "", false
+}
+
 func (c *stubCatalog) DescriptionKey(p authz.Permission) (key string, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

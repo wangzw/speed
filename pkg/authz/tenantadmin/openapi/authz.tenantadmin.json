@@ -31,10 +31,10 @@
         "type": "object"
       },
       "AuthzTenantAdminGrantView": {
-        "description": "One permission grant of a role: the (resource, action) pair the policy engine matches on.",
+        "description": "One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on.",
         "properties": {
           "action": {
-            "description": "The action the grant matches on.",
+            "description": "The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed.",
             "type": "string"
           },
           "created_at": {
@@ -42,8 +42,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "permission": {
+            "description": "The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries.",
+            "type": "string"
+          },
           "resource": {
-            "description": "The resource the grant matches on.",
+            "description": "The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed.",
             "type": "string"
           },
           "role": {
@@ -58,6 +62,7 @@
         "required": [
           "tenant",
           "role",
+          "permission",
           "resource",
           "action",
           "created_at"

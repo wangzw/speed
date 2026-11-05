@@ -173,7 +173,7 @@ func TestTheViewsExposeNoOpaqueID(t *testing.T) {
 	}{
 		"permission": {AuthzTenantAdminPermissionView{}, []string{"description", "permission"}},
 		"role":       {AuthzTenantAdminRoleView{}, []string{"builtin", "created_at", "description_key", "role", "tenant"}},
-		"grant":      {AuthzTenantAdminGrantView{}, []string{"action", "created_at", "resource", "role", "tenant"}},
+		"grant":      {AuthzTenantAdminGrantView{}, []string{"action", "created_at", "permission", "resource", "role", "tenant"}},
 		"binding":    {AuthzTenantAdminBindingView{}, []string{"account", "granted_at", "role", "tenant"}},
 	}
 	for name, tc := range cases {

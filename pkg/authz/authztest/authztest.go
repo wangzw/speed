@@ -176,6 +176,20 @@ func (c *Catalog) ObjectAction(p authz.Permission) (object, action string, ok bo
 	return translation.Lookup(p)
 }
 
+// PermissionOf implements authz.Catalog by reversing the process's translation
+// over the permissions the stand-in declares. Like ObjectAction it reads the
+// process's table rather than a case's own, so a case cannot assert against a
+// translation no decision is made by.
+func (c *Catalog) PermissionOf(object, action string) (authz.Permission, bool) {
+	for _, p := range c.perms {
+		o, a, ok := translation.Lookup(p)
+		if ok && o == object && a == action {
+			return p, true
+		}
+	}
+	return "", false
+}
+
 // DescriptionKey implements authz.Catalog. The stand-in carries no description
 // keys of its own: a case that wants one declares the PermissionSpec that holds
 // it and builds the real catalog, the way an assembly does.

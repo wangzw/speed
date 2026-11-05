@@ -66,6 +66,38 @@ func TestTheCentralCatalogSplitsTheAdministrationGrantSets(t *testing.T) {
 	}
 }
 
+// TestTheCatalogTranslatesAPairBackToItsPermission holds the catalog's reverse
+// read: the engine matches a grant's (object, action) pair and never sees the
+// permission, so a view built from the pair names the permission a client wrote
+// it as. Every declared permission with a translation row round-trips, and a
+// pair no declared permission translates to answers false rather than a name.
+func TestTheCatalogTranslatesAPairBackToItsPermission(t *testing.T) {
+	reg := core.New()
+	reg.Register(Module())
+	catalog := mustBuildCatalog(t, reg)
+
+	reverse, ok := any(catalog).(interface {
+		PermissionOf(object, action string) (authz.Permission, bool)
+	})
+	if !ok {
+		t.Fatal("the catalog exposes no PermissionOf read")
+	}
+	for _, permission := range catalog.Declared() {
+		object, action, translated := catalog.ObjectAction(permission)
+		if !translated {
+			continue // a declared permission may carry no translation row
+		}
+		got, found := reverse.PermissionOf(object, action)
+		if !found || got != permission {
+			t.Errorf("PermissionOf(%q, %q) = (%q, %v), want (%q, true)",
+				object, action, got, found, permission)
+		}
+	}
+	if got, found := reverse.PermissionOf("retired_object", "retired_action"); found {
+		t.Errorf("PermissionOf of an untranslated pair = (%q, true), want the zero permission and false", got)
+	}
+}
+
 // TestACatalogRefusesAGovernedPermissionItDoesNotDeclare holds the one shape the
 // governed metadata is checked for: a module marking a permission governed
 // without listing it in its own Permissions is a startup ErrUnknownPermission.

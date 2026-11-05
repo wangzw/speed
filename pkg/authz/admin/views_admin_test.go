@@ -19,7 +19,7 @@ func TestTheViewFieldSetsArePinned(t *testing.T) {
 	}{
 		"permission": {AuthzAdminPermissionView{}, []string{"permission", "description"}},
 		"role":       {AuthzAdminRoleView{}, []string{"tenant", "role", "builtin", "description_key", "created_at"}},
-		"grant":      {AuthzAdminGrantView{}, []string{"tenant", "role", "resource", "action", "created_at"}},
+		"grant":      {AuthzAdminGrantView{}, []string{"tenant", "role", "permission", "resource", "action", "created_at"}},
 		"binding":    {AuthzAdminBindingView{}, []string{"tenant", "account", "role", "granted_at"}},
 	}
 	for name, tc := range cases {

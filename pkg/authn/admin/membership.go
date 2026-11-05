@@ -62,11 +62,26 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant}); err != nil {
 		return AuthnAdminMemberList{}, err
 	}
-	members, next, err := m.memberPage(ctx, in.Tenant, query)
-	if err != nil {
-		return AuthnAdminMemberList{}, m.unavailable("listing members", err)
+	var members []authn.Membership
+	var next string
+	// roles is what the views show. The filtered path reads it once, with the
+	// filter, so the page a caller sees is selected and annotated from one role
+	// snapshot.
+	var roles map[authn.AccountID][]string
+	if in.Role == "" {
+		if members, next, err = m.memberPage(ctx, in.Tenant, query); err != nil {
+			return AuthnAdminMemberList{}, m.unavailable("listing members", err)
+		}
+		roles = m.rolesByAccount(ctx, in.Tenant)
+	} else {
+		// A role filter is a required dependency, not a decoration: the
+		// listing cannot be answered correctly without the role read, so a
+		// missing or failing reader is a 503 rather than an unfiltered page
+		// that would read as "every member holds this role".
+		if members, next, roles, err = m.memberPageByRole(ctx, in.Tenant, query, in.Role); err != nil {
+			return AuthnAdminMemberList{}, m.unavailable("filtering members by role", err)
+		}
 	}
-	roles := m.rolesByAccount(ctx, in.Tenant)
 	views := make([]AuthnAdminMember, len(members))
 	for i, mem := range members {
 		// The member read carries the account's display name so the workspace
@@ -125,6 +140,60 @@ func (m *product) memberPage(ctx context.Context, tenant string, query authn.Mem
 		return members, "", nil
 	}
 	return members, members[len(members)-1].Account.String(), nil
+}
+
+// memberPageByRole reads one page of members narrowed to the accounts bound to
+// role, and answers the cursor of the next page.
+//
+// The membership store cannot ask which accounts hold a role, and the role
+// read cannot page, so the two are joined here: one bulk role read answers
+// which accounts match, and the membership store is read page after page until
+// limit+1 matches are collected or its rows run out. The cursor is the last
+// matching account that was kept, not the last raw row that was read, so a
+// client walking the pages sees every match once even when whole raw pages hold
+// no match. The query and the after cursor are handed to every read unchanged.
+// The role map is answered beside the page, so the view shows the same snapshot
+// the filter selected from.
+func (m *product) memberPageByRole(ctx context.Context, tenant string, query authn.MemberQuery, role string) ([]authn.Membership, string, map[authn.AccountID][]string, error) {
+	if m.roleReader == nil {
+		return nil, "", nil, errors.New("the assembly delivers no member role reader, so the role filter cannot run")
+	}
+	roles, err := m.roleReader.MemberRoles(ctx, tenant)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	limit := query.EffectiveLimit()
+	wanted := limit + 1
+	matched := make([]authn.Membership, 0, wanted)
+	after := query.After
+	for len(matched) < wanted {
+		page := query
+		page.After = after
+		page.Limit = limit
+		read, err := m.memberships.Members(ctx, tenant, page)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		if len(read) == 0 {
+			break
+		}
+		for _, mem := range read {
+			if slices.Contains(roles[mem.Account], role) {
+				matched = append(matched, mem)
+				if len(matched) == wanted {
+					break
+				}
+			}
+		}
+		after = read[len(read)-1].Account.String()
+		if len(read) < limit {
+			break
+		}
+	}
+	if len(matched) > limit {
+		return matched[:limit], matched[limit-1].Account.String(), roles, nil
+	}
+	return matched, "", roles, nil
 }
 
 // rolesByAccount reads every member's roles in one bulk call. The seam is

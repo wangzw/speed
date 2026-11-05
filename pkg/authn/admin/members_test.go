@@ -359,3 +359,214 @@ func TestTheMemberListDegradesWhenTheRoleReadFails(t *testing.T) {
 		t.Errorf("the failed role read left no warning; log: %s", logs)
 	}
 }
+
+// pageAccounts returns the account identifiers one member page carries, in the
+// order the page lists them.
+func pageAccounts(p memberPage) []string {
+	out := make([]string, 0, len(p.members))
+	for _, member := range p.members {
+		out = append(out, fmt.Sprint(member["account"]))
+	}
+	return out
+}
+
+// TestTheMemberListFiltersByRoleExactly holds the role filter's matching rule:
+// the role name is compared exactly, an empty role selects every member, and a
+// role no binding uses selects nobody without failing. The last is deliberate:
+// a 400 for an unknown role would tell a caller which role names exist.
+func TestTheMemberListFiltersByRoleExactly(t *testing.T) {
+	r := newRig(t)
+	for _, id := range []authn.AccountID{"member-a", "member-b", "member-c", "member-d"} {
+		r.members.put(authn.Membership{Account: id, Tenant: tenantB, Active: true, Source: authn.ReasonAdmin})
+	}
+	r.roles.roles = map[authn.AccountID][]string{
+		"member-a": {"admin"},
+		"member-b": {"member"},
+		"member-c": {"admin", "auditor"},
+		"member-d": {"administrators"},
+	}
+
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role=admin", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("filtering by role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	page := readMemberPage(t, rec.Body.Bytes())
+	if got, want := strings.Join(pageAccounts(page), ","), "member-a,member-c"; got != want {
+		t.Errorf("the page holds %q, want %q: the role filter is exact", got, want)
+	}
+	if got, _ := page.body["next_cursor"].(string); got != "" {
+		t.Errorf("the page names next_cursor %q, want none", got)
+	}
+
+	// A prefix of a role name matches no role: "admi" is not "admin", and
+	// "administrators" is a different role.
+	for _, role := range []string{"admi", "administrator"} {
+		rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role="+role, nil, fresh()...)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("role %q: status = %d, want 200; body %s", role, rec.Code, rec.Body.String())
+		}
+		if got := pageAccounts(readMemberPage(t, rec.Body.Bytes())); len(got) != 0 {
+			t.Errorf("role %q selected %v, want nobody", role, got)
+		}
+	}
+
+	// A role no binding uses is an empty page, not a refusal.
+	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role=no-such-role", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an unknown role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	page = readMemberPage(t, rec.Body.Bytes())
+	if got := pageAccounts(page); len(got) != 0 {
+		t.Errorf("an unknown role selected %v, want nobody", got)
+	}
+	if _, ok := page.body["members"].([]any); !ok {
+		t.Errorf("an unknown role's answer carries members = %T, want an array", page.body["members"])
+	}
+
+	// An empty role is no filter, exactly like an absent one.
+	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role=", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an empty role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	if got, want := strings.Join(pageAccounts(readMemberPage(t, rec.Body.Bytes())), ","),
+		"member-a,member-b,member-c,member-d"; got != want {
+		t.Errorf("an empty role selected %q, want every member %q", got, want)
+	}
+}
+
+// TestTheMemberListPagesThroughRoleMatches holds the cursor rule under a role
+// filter: the cursor is the last matching account on the page, and walking the
+// pages reaches every match once, even across pages where most rows do not
+// match.
+func TestTheMemberListPagesThroughRoleMatches(t *testing.T) {
+	r := newRig(t)
+	admins := map[authn.AccountID]bool{}
+	r.roles.roles = map[authn.AccountID][]string{}
+	for i := 1; i <= 8; i++ {
+		id := authn.AccountID(fmt.Sprintf("member-%02d", i))
+		r.members.put(authn.Membership{Account: id, Tenant: tenantB, Active: true, Source: authn.ReasonAdmin})
+		if i%2 == 0 {
+			admins[id] = true
+			r.roles.roles[id] = []string{"admin"}
+		} else {
+			r.roles.roles[id] = []string{"member"}
+		}
+	}
+
+	var walked []string
+	after := ""
+	for pages := 0; ; pages++ {
+		if pages > len(admins)+1 {
+			t.Fatalf("the walk did not end; walked %v", walked)
+		}
+		target := "/api/v1/tenants/" + tenantB + "/members?role=admin&limit=2"
+		if after != "" {
+			target += "&after=" + after
+		}
+		rec := r.do(http.MethodGet, target, nil, fresh()...)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page after %q: status = %d, want 200; body %s", after, rec.Code, rec.Body.String())
+		}
+		page := readMemberPage(t, rec.Body.Bytes())
+		accounts := pageAccounts(page)
+		if len(accounts) > 2 {
+			t.Fatalf("the page holds %v, want at most 2 members", accounts)
+		}
+		for _, account := range accounts {
+			if !admins[authn.AccountID(account)] {
+				t.Errorf("the page carries %q, which does not hold the filtered role", account)
+			}
+		}
+		walked = append(walked, accounts...)
+		after, _ = page.body["next_cursor"].(string)
+		if after == "" {
+			break
+		}
+		if last := accounts[len(accounts)-1]; after != last {
+			t.Fatalf("next_cursor = %q, want the last matching account %q", after, last)
+		}
+	}
+
+	want := []string{"member-02", "member-04", "member-06", "member-08"}
+	if got := strings.Join(walked, ","); got != strings.Join(want, ",") {
+		t.Errorf("walking the filtered pages reached %q, want %q: no match is skipped or repeated", got, want)
+	}
+}
+
+// TestTheMemberListCombinesTheRoleFilterWithTheQuery holds that the two
+// narrowing rules compose: the role filter runs on the members the query
+// selects, and every membership read of the walk still carries the query.
+func TestTheMemberListCombinesTheRoleFilterWithTheQuery(t *testing.T) {
+	r := newRig(t)
+	for _, id := range []authn.AccountID{"member-a", "member-b"} {
+		r.members.put(authn.Membership{Account: id, Tenant: tenantB, Active: true, Source: authn.ReasonAdmin})
+	}
+	r.roles.roles = map[authn.AccountID][]string{
+		"member-a": {"admin"},
+		"member-b": {"member"},
+	}
+
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role=admin&query=Ada", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("filtering by role and query: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	if got := pageAccounts(readMemberPage(t, rec.Body.Bytes())); strings.Join(got, ",") != "member-a" {
+		t.Errorf("the page holds %v, want member-a alone", got)
+	}
+	if len(r.members.queries) == 0 {
+		t.Fatal("the filtered walk made no membership read")
+	}
+	for _, query := range r.members.queries {
+		if query.Query != "Ada" {
+			t.Errorf("a membership read carried query %q, want %q on every page of the walk", query.Query, "Ada")
+		}
+	}
+	if n := r.roles.seen(); n != 1 {
+		t.Errorf("the role read ran %d time(s), want one snapshot for the filter and the view", n)
+	}
+}
+
+// TestTheMemberListRefusesARoleFilterWithoutTheSeam holds the required
+// dependency: a role filter cannot run without a role reader, and an assembly
+// that lacks one answers 503 instead of an empty page, which would read as "the
+// role has no members".
+func TestTheMemberListRefusesARoleFilterWithoutTheSeam(t *testing.T) {
+	r := newRig(t, noMemberRoles)
+
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members?role=admin", nil, fresh()...)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("filtering by role without a reader: status = %d, want 503; body %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"members"`) {
+		t.Errorf("the refusal %q carries a members view, want none", rec.Body.String())
+	}
+
+	// Without a role filter the same assembly still lists members.
+	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("listing members without a role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestTheMemberListRefusesARoleFilterWhenTheRoleReadFails holds the other
+// direction of the required dependency: a role read that fails refuses the
+// filter rather than answering every member or an empty page.
+func TestTheMemberListRefusesARoleFilterWhenTheRoleReadFails(t *testing.T) {
+	r := newRig(t)
+	r.roles.err = errors.New("the policy store is down")
+
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members?role=admin", nil, fresh()...)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("filtering by role with a failing reader: status = %d, want 503; body %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"members"`) {
+		t.Errorf("the refusal %q carries a members view, want none", rec.Body.String())
+	}
+
+	// The role-less listing keeps the degradation rule: the members are listed
+	// without their roles.
+	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("listing members without a role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+}

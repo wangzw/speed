@@ -104,25 +104,12 @@ func (p *product) requireRoleSubset(ctx context.Context, tenant string, role aut
 		return p.failureOf("reading the role's grants", err)
 	}
 	for _, grant := range grants {
-		permission, ok := p.permissionOf(grant.Resource, grant.Action)
+		permission, ok := p.catalog.PermissionOf(grant.Resource, grant.Action)
 		if !ok || !held[permission] {
 			return protected()
 		}
 	}
 	return nil
-}
-
-// permissionOf maps a grant's (resource, action) pair back to the permission it
-// translates to. The translation is one-to-one across declared permissions, so
-// the first declared permission carrying the pair is the only one.
-func (p *product) permissionOf(resource, action string) (authz.Permission, bool) {
-	for _, permission := range p.catalog.Declared() {
-		object, act, ok := p.catalog.ObjectAction(permission)
-		if ok && object == resource && act == action {
-			return permission, true
-		}
-	}
-	return "", false
 }
 
 // removingOwnBinding reports whether the account a tenant-admin binding delete

@@ -61,25 +61,34 @@ func roleViewOf(r authz.RoleRecord) AuthzTenantAdminRoleView {
 
 // AuthzTenantAdminGrantView is one permission grant as the grant routes show
 // it. The resource and the action are the pair the engine matches on; the
-// permission a route names is translated to it on the way in.
+// permission a route names is translated to it on the way in, and the view
+// translates it back so a client can name the grant without a local table.
 type AuthzTenantAdminGrantView struct {
-	_ struct{} `description:"One permission grant of a role: the (resource, action) pair the policy engine matches on."`
+	_ struct{} `description:"One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on."`
 
-	Tenant    string    `json:"tenant" required:"true" description:"The tenant the grant belongs to."`
-	Role      string    `json:"role" required:"true" description:"The role holding the grant."`
-	Resource  string    `json:"resource" required:"true" description:"The resource the grant matches on."`
-	Action    string    `json:"action" required:"true" description:"The action the grant matches on."`
-	CreatedAt time.Time `json:"created_at" required:"true" description:"When the grant was written, as an RFC 3339 instant in UTC."`
+	Tenant     string    `json:"tenant" required:"true" description:"The tenant the grant belongs to."`
+	Role       string    `json:"role" required:"true" description:"The role holding the grant."`
+	Permission string    `json:"permission" required:"true" description:"The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries."`
+	Resource   string    `json:"resource" required:"true" description:"The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed."`
+	Action     string    `json:"action" required:"true" description:"The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed."`
+	CreatedAt  time.Time `json:"created_at" required:"true" description:"When the grant was written, as an RFC 3339 instant in UTC."`
 }
 
-func grantViewOf(g authz.GrantRecord) AuthzTenantAdminGrantView {
-	return AuthzTenantAdminGrantView{
+// grantViewOf builds one grant's view. The permission is read back from the
+// catalog's reverse index; a pair no declared permission translates to leaves
+// the field empty and the pair itself on the view.
+func (p *product) grantViewOf(g authz.GrantRecord) AuthzTenantAdminGrantView {
+	view := AuthzTenantAdminGrantView{
 		Tenant:    g.Tenant,
 		Role:      string(g.Role),
 		Resource:  g.Resource,
 		Action:    g.Action,
 		CreatedAt: g.CreatedAt.UTC(),
 	}
+	if permission, ok := p.catalog.PermissionOf(g.Resource, g.Action); ok {
+		view.Permission = string(permission)
+	}
+	return view
 }
 
 // AuthzTenantAdminBindingView is one role binding as the binding routes show it.

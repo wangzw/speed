@@ -158,8 +158,9 @@ type secretRevokeInput struct {
 type memberListInput struct {
 	Tenant string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
 	Query  string `query:"query" description:"Narrows the page to the members whose account display name or login identifiers begin with this text; absent or empty selects every member. The display name is matched as a byte prefix of the stored value, and an identifier after the query is lower-cased, the form usernames and email addresses are stored in."`
+	Role   string `query:"role" description:"Narrows the page to the members holding this role name in the tenant, matched exactly; absent or empty selects every member. A name no role of the tenant uses selects no member and is still a 200, so the parameter does not reveal which role names exist. A role filter needs the policy module's member role reader; an assembly without one answers 503."`
 	Limit  int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
-	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last membership on that page."`
+	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last matching membership on that page."`
 }
 
 // memberWriteInput writes one account's membership in one tenant.
@@ -692,7 +693,7 @@ var memberListOperation = speedhttp.NewOperation[memberListInput, AuthnAdminMemb
 	http.MethodGet,
 	pathMembers,
 	"List a tenant's members",
-	"Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
+	"Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
 	nil,
 	speedhttp.Failures(commonFailures(),
 		problemResponse(http.StatusBadRequest, mount.CodeBadRequest, "The page query could not be read"),

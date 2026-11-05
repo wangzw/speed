@@ -412,6 +412,7 @@ type fakeMemberships struct {
 	rmd       int
 	listCalls int
 	lastQuery authn.MemberQuery
+	queries   []authn.MemberQuery
 	err       error
 }
 
@@ -439,6 +440,7 @@ func (f *fakeMemberships) Members(_ context.Context, tenant string, query authn.
 	defer f.mu.Unlock()
 	f.listCalls++
 	f.lastQuery = query
+	f.queries = append(f.queries, query)
 	var out []authn.Membership
 	for _, m := range f.member {
 		if m.Tenant == tenant && (query.After == "" || m.Account.String() > query.After) {

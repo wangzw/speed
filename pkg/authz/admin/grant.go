@@ -17,7 +17,7 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 	}
 	views := make([]AuthzAdminGrantView, len(grants))
 	for i, g := range grants {
-		views[i] = grantViewOf(g)
+		views[i] = p.grantViewOf(g)
 	}
 	return grantListBody{Grants: views}, nil
 }

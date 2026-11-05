@@ -142,6 +142,7 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 				"Governed func(authz.Permission) bool",
 				"Has func(authz.Permission) bool",
 				"ObjectAction func(authz.Permission) (string, string, bool)",
+				"PermissionOf func(string, string) (authz.Permission, bool)",
 				"TenantGoverned func() []authz.Permission",
 			},
 		},

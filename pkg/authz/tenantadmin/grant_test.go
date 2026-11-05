@@ -1,6 +1,7 @@
 package tenantadmin
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -285,5 +286,66 @@ func TestAnonymousRequestsAreRefusedOnEveryGrantRoute(t *testing.T) {
 				t.Fatalf("the manager was called %v for an anonymous request", got)
 			}
 		})
+	}
+}
+
+// TestTheGrantViewCarriesThePermissionCode holds the grant view the tenant
+// administration face reads: a grant written in the permission vocabulary comes
+// back with that permission code, so a client can name and edit it without
+// translating the engine's (resource, action) pair. A grant whose pair no
+// declared permission translates to still comes back, with an empty permission
+// and its pair, so an operator can diagnose a stale row rather than losing it.
+func TestTheGrantViewCarriesThePermissionCode(t *testing.T) {
+	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
+	object, action, ok := translation.Lookup(authz.PermissionTenantRoleManage)
+	if !ok {
+		t.Fatal("authz.tenant.role.manage has no translation row, so the case cannot hold its pair")
+	}
+	r.manager.grants = []authz.GrantRecord{
+		{Tenant: "t1", Role: "r1", Resource: object, Action: action},
+		{Tenant: "t1", Role: "r1", Resource: "retired_object", Action: "retired_action"},
+	}
+
+	w := r.serve(readRoute(r.p, grantListOperation.Handle(r.p.handleGrantList)), http.MethodGet,
+		"/api/v1/tenants/t1/roles/r1/grants", params("tenant", "t1", "role", "r1"), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("listing the grants answered %d, want 200; body %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Grants []map[string]json.RawMessage `json:"grants"`
+	}
+	decodeInto(t, w.Body.String(), &got)
+	if len(got.Grants) != 2 {
+		t.Fatalf("the answer carries %d views, want two", len(got.Grants))
+	}
+
+	raw, present := got.Grants[0]["permission"]
+	if !present {
+		t.Fatal("the grant view carries no permission field")
+	}
+	var permission string
+	if err := json.Unmarshal(raw, &permission); err != nil {
+		t.Fatalf("decoding the permission field: %v", err)
+	}
+	if want := string(authz.PermissionTenantRoleManage); permission != want {
+		t.Errorf("the grant's permission = %q, want %q", permission, want)
+	}
+	// The engine's pair stays on the view for diagnosis.
+	for _, key := range []string{"resource", "action"} {
+		if _, ok := got.Grants[0][key]; !ok {
+			t.Errorf("the grant view carries no %s field", key)
+		}
+	}
+
+	raw, present = got.Grants[1]["permission"]
+	if !present {
+		t.Fatal("a grant with no translated pair carries no permission field, want the empty field")
+	}
+	permission = "not empty"
+	if err := json.Unmarshal(raw, &permission); err != nil {
+		t.Fatalf("decoding the unknown pair's permission field: %v", err)
+	}
+	if permission != "" {
+		t.Errorf("a grant with no translated pair carries permission %q, want the empty string", permission)
 	}
 }

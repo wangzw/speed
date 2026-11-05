@@ -166,12 +166,12 @@ func (c *catalog) indexReverse() {
 	c.reverse = reverse
 }
 
-// permissionOf returns the permission a held (object, action) pair translates
+// PermissionOf returns the permission a held (object, action) pair translates
 // to, and whether any declared permission translates to it at all. A pair no
 // declared permission carries is left out of a permission read: the policy
 // table can hold a grant written against a vocabulary this process no longer
 // translates, and such a grant names no permission a caller could act on.
-func (c *catalog) permissionOf(object, action string) (authz.Permission, bool) {
+func (c *catalog) PermissionOf(object, action string) (authz.Permission, bool) {
 	p, ok := c.reverse[[2]string{object, action}]
 	return p, ok
 }
