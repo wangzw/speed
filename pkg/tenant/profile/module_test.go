@@ -126,15 +126,6 @@ func (a moduleAssembly) drive(t *testing.T, depth core.Stage, action func(contex
 	return reg.Drive(t.Context(), core.Drive{Depth: depth, Participants: names, Action: action})
 }
 
-func productOfAssembly(t *testing.T, instance any) *product {
-	t.Helper()
-	p, ok := instance.(*product)
-	if !ok || p == nil {
-		t.Fatalf("the built instance is %T, not this module's product", instance)
-	}
-	return p
-}
-
 // This module delivers no capability: it carries no product another module
 // resolves, and the routes are its only product.
 func TestThisModuleDeliversNothing(t *testing.T) {

@@ -72,6 +72,7 @@ func (h lockObservingHook) AccountDeleted(context.Context, authn.AccountID) erro
 	h.counter.observeCleanup()
 	return nil
 }
+
 func (lockObservingHook) ServiceSecretRevoked(context.Context, authn.AccountID, string) error {
 	return nil
 }

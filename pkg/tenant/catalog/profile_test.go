@@ -318,7 +318,7 @@ func TestCreatedAtIsNullForAnExistingRowAndSetForANewOne(t *testing.T) {
 	}
 
 	before := time.Now().UTC().Add(-time.Minute)
-	if err := r.Create(context.Background(), tenant.Tenant{
+	if err = r.Create(context.Background(), tenant.Tenant{
 		ID: "t_new", Alias: "new", Status: tenant.StatusActive,
 	}); err != nil {
 		t.Fatalf("creating: %v", err)

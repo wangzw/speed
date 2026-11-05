@@ -604,7 +604,7 @@ func TestOrgCreateCountsAnAuditFailure(t *testing.T) {
 
 	rig.audit.err = nil
 	for i := range 2 {
-		if _, err := rig.create(t, rig.ctx(t), fmt.Sprintf("Acme %d", i)); err != nil {
+		if _, err = rig.create(t, rig.ctx(t), fmt.Sprintf("Acme %d", i)); err != nil {
 			t.Fatalf("creation %d after the failed audit failed: %v", i, err)
 		}
 	}

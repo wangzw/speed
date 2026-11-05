@@ -533,8 +533,10 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				CreatedAt: &createdAt,
 			},
 			wantStatus: "active",
-			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "createdAt"},
+			wantKeys: []string{
+				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "createdAt",
+			},
 		},
 		"disabled by an operator": {
 			row: tenant.Tenant{
@@ -542,8 +544,10 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
-			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "disabledBy"},
+			wantKeys: []string{
+				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "disabledBy",
+			},
 			disabledBy: "operator",
 		},
 		"disabled by an account": {
@@ -552,8 +556,10 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				DisabledBy: tenant.DisabledByAccount,
 			},
 			wantStatus: "disabled",
-			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "disabledBy"},
+			wantKeys: []string{
+				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "disabledBy",
+			},
 			disabledBy: "account",
 		},
 		"deleted": {
@@ -567,8 +573,10 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
-			wantKeys: []string{"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "disabledBy"},
+			wantKeys: []string{
+				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"status", "disabledBy",
+			},
 			disabledBy: "operator",
 		},
 	}

@@ -80,8 +80,6 @@ func (s *stubCatalog) recorded() []catalogCall {
 	return append([]catalogCall(nil), s.calls...)
 }
 
-func (s *stubCatalog) fail(err error) { s.mu.Lock(); s.err = err; s.mu.Unlock() }
-
 func (s *stubCatalog) errNow() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -510,12 +508,6 @@ func (r *rig) mount() {
 		engine.Handle(rt.method, rt.path, rt.handler)
 	}
 	r.engine = engine
-}
-
-// withdrawRouteGuard drops the tenant administration guard, which is the shape
-// a command that names the module without the tenant resolving one has.
-func (r *rig) withdrawRouteGuard() {
-	r.p.routeGuard = nil
 }
 
 // do sends one request through the engine with the identity the options build

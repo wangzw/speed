@@ -135,7 +135,7 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 		return err
 	}
 	defer release()
-	if err := p.refuseDeletingTheLastTenantAdmin(ctx, id); err != nil {
+	if err = p.refuseDeletingTheLastTenantAdmin(ctx, id); err != nil {
 		return err
 	}
 	b := &batch{}
@@ -148,8 +148,8 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 			return fmt.Errorf("%w", authn.ErrAccountNotFound)
 		}
 		var row accountRow
-		if err := tx.Where("id = ?", id.String()).Take(&row).Error; err != nil {
-			return err
+		if res = tx.Where("id = ?", id.String()).Take(&row); res.Error != nil {
+			return res.Error
 		}
 		if row.Status == statusDeleted {
 			return nil

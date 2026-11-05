@@ -15,10 +15,6 @@ import (
 // against the API root the module's Spec carries.
 var pathProfile = tenantProfileSpec.ResolvePath(pathProfileFragment)
 
-// managementGroups names the route groups in the order the start diagnostic
-// writes them. The whole surface is one group.
-var managementGroups = []string{"profile"}
-
 // realmKey is where the name of the endpoint the route was mounted on is put
 // for the handler to read back. A handler that answers 401 itself writes the
 // endpoint's name as the realm of its challenge.
