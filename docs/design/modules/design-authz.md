@@ -13,7 +13,7 @@
 本功能目录由接口包与子包组成，判据同时是依赖闭包（[ADR-authz-packaging](../../adr/adr-authz-packaging.md)）：
 
 - **根包 `pkg/authz`** 定义接口、数据类型、权限常量、Casbin 模型文本与哨兵；**自身不登记模块**。根包被每一个使用方 import，把第三方库留在根包里会把它带进每一个使用方的闭包，所以根包只依赖标准库。
-- **`pkg/authz/policy`（模块 `authz.policy`）** 随迁移建出策略表，迁移不种任何策略行；升级数据迁移撤销平台域以外的 `platform-admin` 角色、授予与绑定；策略数据由宿主经 `Manager` 写入。经薄 adapter 把 Casbin 引擎接到 `pkg/db`，由引擎按（主体，域，资源，动作）做出判定，读出一个主体在一个策略域里实际持有的权限，并把各已登记模块声明的权限汇成目录。`Manager` 交出这些行的读写；账户删除后经生命周期钩子与事件清理其绑定行；平台域的成员关系删除后撤销该账户在平台域的全部绑定；成员关系守卫在移除前拒绝会让某租户失去最后一条 `tenant-admin` 绑定的移除；移除绑定会让某域不再有租户管理员时拒绝，账户删除收尾的 `ClearAccountBindings` 除外。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
+- **`pkg/authz/policy`（模块 `authz.policy`）** 随迁移建出策略表，迁移不种任何策略行；升级数据迁移撤销平台域以外的 `platform-admin` 角色、授予与绑定；策略数据由宿主经 `Manager` 写入。经薄 adapter 把 Casbin 引擎接到 `pkg/db`，由引擎按（主体，域，资源，动作）做出判定，读出一个主体在一个策略域里实际持有的权限，并把各已登记模块声明的权限汇成目录。`Manager` 交出这些行的读写；账户删除后经生命周期钩子与事件清理其绑定行；移除成员关系时清除该账户在离开租户内的全部绑定（暂停不清、恢复保留）；成员关系守卫在移除前拒绝会让某租户失去最后一条 `tenant-admin` 绑定的移除；移除绑定会让某域不再有租户管理员时拒绝，账户删除收尾的 `ClearAccountBindings` 除外；另随生命周期钩子并立交付 `authn.MemberRoleReader`，一次读出某租户每个账户的角色名。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
 - **`pkg/authz/guard`（模块 `authz.guard`）** 交付中间件、路由声明登记接口、handler 内判定 API，并**实现 `authn.Decider`**。中间件与 `Decider` 共用同一份声明表与同一处租户读取，拆成两个模块要为它们另立接口。
 - **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/api/v1/system/*` 下的平台管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把平台管理面的依赖与业务判定的依赖分开。
 - **`pkg/authz/tenantadmin`（模块 `authz.tenantadmin`）** 挂在 `/api/v1/tenants/{tenant}/*` 下的租户管理面路由，不交付功能；它取用 `policy` 的 `Manager` 与 `Catalog`，把租户域的角色、授权与绑定暴露给该租户的租户管理员，并执行防提权规则。它不取用 `Seeder`，也不取用宿主的 `Reconciler`。
@@ -64,7 +64,7 @@
 | 登记单元 | 模块名 | 交付 | 排他 |
 |---|---|---|---|
 | `pkg/authz`（根包） | 不登记 | 接口、类型、权限常量、`ModelText`、哨兵 | — |
-| `pkg/authz/policy` | `authz.policy` | 表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager`、`AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard` | 是 |
+| `pkg/authz/policy` | `authz.policy` | 表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager`、`AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard`、`authn.MemberRoleReader` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler` 各自是；生命周期钩子、守卫与成员角色读并立 |
 | `pkg/authz/guard` | `authz.guard` | 中间件、路由声明登记接口、handler 内 API、实现 `authn.Decider` | 是 |
 | `pkg/authz/admin` | `authz.admin` | 平台管理面 HTTP 路由（不交付功能） | — |
 | `pkg/authz/tenantadmin` | `authz.tenantadmin` | 租户域管理面 HTTP 路由（不交付功能） | — |
@@ -144,6 +144,9 @@ type Catalog interface {
     Governed(p Permission) bool
     Has(p Permission) bool
     ObjectAction(p Permission) (object, action string, ok bool)
+    // PermissionOf 把策略表里的（资源，动作）对翻回它由哪条已声明权限写出；
+    // 没有任何已声明权限翻译到这一对时答 ("", false)。
+    PermissionOf(object, action string) (Permission, bool)
     DescriptionKey(p Permission) (key string, ok bool)
 }
 
@@ -402,7 +405,7 @@ const (
 | 绑定 | `PUT /api/v1/system/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
 | 绑定 | `DELETE /api/v1/system/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
 
-**读的应答是 200 加一份视图，落地写的应答是 204 无正文。** 视图逐字段从根包的值构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。各视图的字段：目录是 `permission`、`description`；角色是 `tenant`、`role`、`builtin`、`description_key`、`created_at`；授予是 `tenant`、`role`、`resource`、`action`、`created_at`；绑定是 `tenant`、`account`、`role`、`granted_at`。时间字段按 UTC 写出。目录视图的 `description` 是服务端按请求语言渲染好的说明：管理面从目录取该权限的 `DescriptionKey`，经可选的 `i18n.Localizer` 在请求的语言里渲染。装配里没有本地化器时它是空串；声明权限的模块没有给出键时它也是空串；键存在但没有任何消息目录承载它时，本地化器按引擎的回退把键本身写回，客户端照收到的文本显示，不自己解析键。
+**读的应答是 200 加一份视图，落地写的应答是 204 无正文。** 视图逐字段从根包的值构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。各视图的字段：目录是 `permission`、`description`；角色是 `tenant`、`role`、`builtin`、`description_key`、`created_at`；授予是 `tenant`、`role`、`permission`、`resource`、`action`、`created_at`；绑定是 `tenant`、`account`、`role`、`granted_at`。时间字段按 UTC 写出。**授予视图的 `permission` 由 `Catalog.PermissionOf` 从（资源，动作）对反查得出**：客户端因此不必自己维护一张翻译表就能命名与编辑一条授予。一对没有任何已声明权限翻译到的旧授权仍出现在视图里，`permission` 为空串，`resource` 与 `action` 保留，供运营者诊断一条本进程已不认识的行。目录视图的 `description` 是服务端按请求语言渲染好的说明：管理面从目录取该权限的 `DescriptionKey`，经可选的 `i18n.Localizer` 在请求的语言里渲染。装配里没有本地化器时它是空串；声明权限的模块没有给出键时它也是空串；键存在但没有任何消息目录承载它时，本地化器按引擎的回退把键本身写回，客户端照收到的文本显示，不自己解析键。
 
 **角色写入的正文只有 `description_key`。** `builtin` 是宿主的种入步骤经 `Manager.MarkRoleBuiltin` 置上的冻结标记，不是管理面可写的值：正文里带这个成员不会到达 `Manager`，`PutRole` 收到携带该标记的记录也一律拒绝。标记一旦置上就没有清回的通路——这正是它的含义。标记置上之后，管理面与 `Manager` 都不能改该角色的授权；宿主的种入接口 `Seeder.SeedGrants` 只增不删，是唯一的增补入口（[种入接口](#种入接口)）。
 
@@ -438,7 +441,7 @@ const (
 
 **目录读只列治理集。** `GET .../permissions` 从 `Catalog.TenantGoverned()` 取权限，逐条经 `DescriptionKey` 取说明键；应答结构与管理面的目录视图相同。一个不在治理集里的权限不出现在这里，也不能经授予路由写入。
 
-**读的应答是 200 加一份视图，落地写是 204 无正文。** 视图逐字段从根包的值构造，字段与管理面的同名视图相同：角色是 `tenant`、`role`、`builtin`、`description_key`、`created_at`；授予是 `tenant`、`role`、`resource`、`action`、`created_at`；绑定是 `tenant`、`account`、`role`、`granted_at`。时间按 UTC 写出。租户管理面不提供不透明的行标识，每条路由按自然键寻址。
+**读的应答是 200 加一份视图，落地写是 204 无正文。** 视图逐字段从根包的值构造，字段与管理面的同名视图相同：角色是 `tenant`、`role`、`builtin`、`description_key`、`created_at`；授予是 `tenant`、`role`、`permission`、`resource`、`action`、`created_at`；绑定是 `tenant`、`account`、`role`、`granted_at`。时间按 UTC 写出。授予的 `permission` 同样由 `Catalog.PermissionOf` 反查，空串表示这一对没有对应的已声明权限；`resource` 与 `action` 留作诊断。租户管理面不提供不透明的行标识，每条路由按自然键寻址。
 
 #### 访问控制
 
@@ -485,6 +488,8 @@ const (
 | 不能把平台域当归宿 | 路径段须等于解析出的租户别名；路径或解析出的租户是 `PlatformDomain` 时拒绝 | 裸 404 |
 | 跨租户隔离 | 路径租户 == 解析租户别名的共同前置 | 裸 404 |
 
+**授予视图的权限码是前端预检的输入，不是边界。** 租户管理面读出的每条授予带 `permission`；成员管理面的角色绑定面板在发出绑定之前，把目标角色的每条授予与调用方自己的租户权限集比较，空码或未持有的码阻止这次绑定。这条预检只让操作者少发一次必然被拒的写；服务端仍按上表的子集规则与调用方实际持有的权限判定，前端的比较不构成放行。
+
 **在业务租户的租户侧绑定 `tenant-admin` 是允许的。** 一个租户管理员可以给另一个账户绑定 `tenant-admin`，使该域保持至少一名管理员；这条写仍受子集规则约束（该域的 `tenant-admin` 持有治理集全集，调用方自己持有治理集时子集成立）、最后一条规则与删除自己的规则约束。**`system` 域的 `tenant-admin` 绑定经平台管理面或宿主种入写入**：租户侧拒绝平台域（路径或解析出的租户是 `PlatformDomain` 时答裸 404），平台管理员在 `authz.admin` 里按平台域的 `authz.role.manage` 绑定它，宿主的 `seed` 把预置平台管理员的 `system` 域绑定在种入步骤里写入。个人租户不在其列：它的策略写由宿主 `WriteGuard` 拒绝，而且它是单成员空间。角色行与授予的写入口则受无条件保护：业务租户与 `system` 域的 `tenant-admin` 授权集只由宿主的收敛能力改写，个人租户的则由宿主经 `Seeder` 与 `Manager` 维护。
 
 **回绝映射是封闭的、fail-closed 的。** 400（`urn:speed:authz:bad-request`）：请求在格式上不可读、写里的角色未知（`ErrUnknownRole`）、租户不符（`ErrTenantMismatch`）、授予一条不在治理集里的权限、绑定里的账户不是该租户的有效成员（`MembershipChecker` 答复假，不是可绑定的目标）。409（`urn:speed:authz:conflict`）：写试图删除或改动内建角色（`ErrBuiltinRole`），或删除某域最后一条 `tenant-admin` 绑定（`ErrLastTenantAdmin`）。403（`urn:speed:authz:protected`）：调用方试图授予自己没有的权限、绑定高于自己的角色、把 `platform-admin` 写进租户域（`ErrReservedRole`）、删除自己的 `tenant-admin` 绑定，以及宿主 `WriteGuard` 的拒绝。404（无 `Problem.Type`）：路径段与解析出的租户别名不是同一个，或目标是平台域。503：`Manager`、存储、审计、`SubjectPermissions`、`MembershipChecker` 的其余失败；503 不带 `Problem.Type`，成因只进日志。强制层的策略拒绝仍是 `urn:speed:authz:forbidden`，由 guard 自己写出。
@@ -516,6 +521,8 @@ const (
 以下是本模块与其他模块和宿主之间的接口，改动它们改变每一个使用方：
 
 - 根包的接口与方法集：`Enforcer`、`SubjectPermissions`、`Catalog`、`Gate`、`Manager`、`Seeder`、`Reconciler`、`WriteGuard`、`WriteSettings`、`WriteOp`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Binding`、`Grant` 的字段与取值。`Catalog` 的方法集含 `TenantGoverned` 与 `Governed`：前者读治理集，后者回答一条已声明权限是否在治理集里；两者与 `Declared` 取同一个目录，平台管理员不按它们收窄，租户管理员的授权按它们构造。`PermissionSpec` 的 `TenantGoverned` 字段是模块声明治理权限的入口，必须是 `Permissions` 的子集。`Manager` 的方法集含 `ClearAccountBindings(ctx, tenant, account)`：它是宿主账户删除收尾的入口，作用于一个域里的一个账户、跳过最后一条租户管理员规则。`Catalog` 的方法集含 `ObjectAction`：宿主按权限名写策略数据时经它取得（资源，动作）对，而不必取用强制点。它回答的是**进程翻译**里的那一行，与目录各取各的声明——`Has` 为真的权限不保证有行（模块可以只声明 `PermissionSpec` 而不写 `TranslationSpec`，那种模块合法，引用该权限的路由在启动期失败），因此调用方必须读第二个返回值。`Catalog` 的方法集也含 `DescriptionKey`：它回答声明该权限的模块给出的说明键，以及该权限是否被声明——声明了却未给键是合法的，此时第二个返回值为真、键为空。目录只交出键、不交出文本：渲染是 i18n 引擎的职责，管理面把本地化器作为可选能力取用。`Seeder` 与 `Reconciler` 都跟 `Manager` 分开是接口的一部分：两个管理面模块都只取用 `Manager`，因此拿不到写 builtin 角色授权集的那两条路径——一条只增，一条先补后删（[种入接口](#种入接口)）。
+- `Catalog.PermissionOf` 的语义：把一条授予的（资源，动作）对翻回写出它的那条已声明权限；翻译行唯一，所以答案是这一对的函数；没有任何已声明权限翻译到这一对时答 `("", false)`，调用方保留原对用于诊断。管理面与租户管理面的授予视图都经它给出 `permission` 字段。
+- `authn.MemberRoleReader` 的语义：一次读出某租户每个账户的角色名，按账户给出、升序、去重；没有绑定的账户缺席或映射为空切片；空租户是 `ErrInvalidArgument`，不答空映射。它只报角色名、不报授权集，读的是 `Manager.Bindings` 的同一批绑定；`authz.policy` 随生命周期钩子并立交付它，宿主可以另交一个实现。
 - `SubjectPermissions.Held` 的语义：主体绑定角色所持 grant 的（资源，动作）对并集，经目录反向查找映射为权限名，去重并按名升序；没有声明权限翻译到的对略去；没有绑定的主体得到空集。它读判定所用的同一份内存快照，不做 IO；快照未装载或引擎报错是 `ErrPolicyUnavailable`，调用方按 503 处置，与空集区分。
 - 权限常量的值。新增常量是兼容的；删除、改名或改变既有常量的值是破坏性变更。与 `authn.Action` 的对齐关系属于对外接口。
 - `ModelText` 的模型文本，与动作到查询的翻译：内置行（本能力自己携带的行），各模块经 `authz.TranslationSpec` 声明自有翻译行的机制，以及「未被任何行覆盖的权限即拒、模块声明的行与既有行不一致即启动失败」这两条语义；一个模块新声明的行是这份翻译的扩展，不是对已有行的破坏。
@@ -535,7 +542,7 @@ const (
 
 | 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
 |---|---|---|---|---|---|---|
-| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler`；`authn.AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler` 各自是 | `db.Database` | `tenant.Catalog` ○、`MembershipChecker` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
+| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler`；`authn.AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard`、`authn.MemberRoleReader` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler` 各自是；生命周期钩子、守卫与成员角色读并立 | `db.Database` | `tenant.Catalog` ○、`MembershipChecker` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `SubjectPermissions`、`http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/api/v1/system/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`authz.WriteGuard` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
 | `authz/tenantadmin` | `authz.tenantadmin` | 无（只挂 `/api/v1/tenants/{tenant}/*` 下的路由） | — | `Manager`、`Catalog`、`SubjectPermissions`、`MembershipChecker`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`authz.WriteGuard` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
@@ -588,6 +595,7 @@ classDiagram
         +Governed(p Permission) bool
         +Has(p Permission) bool
         +ObjectAction(p Permission) object, action, bool
+        +PermissionOf(object, action) Permission, bool
         +DescriptionKey(p Permission) key, bool
     }
     class Gate {
@@ -959,11 +967,13 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定，以 403 `urn:speed:authz:protected` 作答：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
 
-**判底的两条路径共用一把按租户的锁。** 根包定义 `TenantLock`；`Manager.DeleteBinding` 在数租户管理员绑定之前取它，提交之后释放，`authn.MembershipGuard.CheckMembershipRemoval` 所在的成员关系删除路径取的是同一个对象——本模块的守卫 `Lock` 直接委托给这个 `TenantLock`，宿主自己的守卫必须接同一个对象，两个各锁各的等于没锁。装配没有提供它时，本模块用进程内按租户的默认实现（`authz.InProcessTenantLock`）：单实例无需配置即正确。多副本的正确性由宿主改提供数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内（[ADR-authn-membership-cleanup](../../adr/adr-authn-membership-cleanup.md)）。锁不可重入：账户删除的收尾与成员关系删除的级联走**不取锁的清理路径**——`Manager.ClearAccountBindings`，或模块内部同等的直接删除（平台域级联即后者）；不得经 `DeleteBinding`，那会重入自己已持有的锁而死锁。每个持有中的数据库锁占一条池化连接，删除事务再占一条，N 个并发管理员删除因此至少要 2N+1 条连接，不足时取锁等待并以 503 结束；进程内默认不额外占连接。这是装配级的非保证，写在 [tenant](tenant/design-tenant.md) 的串行化一节。
+**判底的两条路径共用一把按租户的锁。** 根包定义 `TenantLock`；`Manager.DeleteBinding` 在数租户管理员绑定之前取它，提交之后释放，`authn.MembershipGuard.CheckMembershipRemoval` 所在的成员关系删除路径取的是同一个对象——本模块的守卫 `Lock` 直接委托给这个 `TenantLock`，宿主自己的守卫必须接同一个对象，两个各锁各的等于没锁。装配没有提供它时，本模块用进程内按租户的默认实现（`authz.InProcessTenantLock`）：单实例无需配置即正确。多副本的正确性由宿主改提供数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内（[ADR-authn-membership-cleanup](../../adr/adr-authn-membership-cleanup.md)）。锁不可重入：账户删除的收尾与成员关系移除的级联走**不取锁的清理路径**——`Manager.ClearAccountBindings`；不得经 `DeleteBinding`，那会重入自己已持有的锁而死锁。成员关系移除的级联因此不受最后一条租户管理员规则约束，那条规则保护的是仍在服务的租户：移除由成员关系守卫在提交之前拒绝，级联发生在已经允许的移除之后。每个持有中的数据库锁占一条池化连接，删除事务再占一条，N 个并发管理员删除因此至少要 2N+1 条连接，不足时取锁等待并以 503 结束；进程内默认不额外占连接。这是装配级的非保证，写在 [tenant](tenant/design-tenant.md) 的串行化一节。
 
 **被删除的账户经宿主清理路径清空其在某域内的绑定。** `Manager.ClearAccountBindings(ctx, tenant, account)` 删掉该账户在该域内的全部绑定，不受上一条规则约束：那条规则保护的是仍在服务的域，而账户删除收尾要清掉的正是它自己的绑定，其中一条可能恰是该域最后的租户管理员绑定。它作用于一个域与一个账户：同域内其他账户的绑定、该账户在其他域的绑定都不动，角色与授予也不在它的范围内。它是宿主收尾路径而非管理面路由；管理面逐条删除绑定时仍经过最后一条规则。账户删除收尾因此可以让一个仍在服务的域没有租户管理员绑定，这是这条路径的明示例外：域之后要由一条新绑定恢复治理。
 
-**移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块把这条清理实现为 `authn.MembershipLifecycle.MembershipRemoved`：成员关系删除提交之后同步调用，按账户删掉平台域的全部绑定并重载快照。删除平台域以外租户的成员关系不触到平台域。钩子幂等，重复执行不删任何行、不报错。本模块同时订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时执行同一清理，作为提交与钩子之间进程崩掉、或另一个副本没做这次删除的补偿。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除；没有事件总线的装配里只有同步钩子，没有补偿（[ADR-tenant-administration](../../adr/adr-tenant-administration.md)）。
+**移除成员关系清除该账户在离开的那个租户的全部绑定。** 移除是成员离开，不是暂停：暂停的成员关系保留角色绑定、可以恢复；移除把角色随成员关系一并收回，所以重新加入从零开始。平台域的成员关系同样如此——平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块把这条清理实现为 `authn.MembershipLifecycle.MembershipRemoved`：成员关系删除提交之后同步调用，用 `Manager.ClearAccountBindings` 删掉该账户在参数点名租户内的全部绑定并重载快照。清理只作用于那个租户与该账户，其他账户的绑定、该账户在其他租户的绑定、角色与授予都不动。业务租户里的移除因此是安全的：本模块的 `MembershipGuard` 拒绝移除该租户最后一条 `tenant-admin` 绑定，仍在服务的租户因此至少留一名能治理它的管理员。钩子幂等，重复执行不删任何行、不报错。本模块同时订阅 `authn.membership.changed`：变更值是 `removed` 且信封点名的租户非空时执行同一清理，作为提交与钩子之间进程崩掉、或另一个副本没做这次删除的补偿。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除，不触发清理；没有事件总线的装配里只有同步钩子，没有补偿（[ADR-tenant-administration](../../adr/adr-tenant-administration.md)）。
+
+**成员角色读是可选接缝，随生命周期钩子并立交付。** `authn.MemberRoleReader` 由本模块的产品实现，描述符把它与 `AccountLifecycle`、`MembershipLifecycle`、`MembershipGuard` 并列在 `Provides` 里，但不排他：一个宿主可以交付自己的实现，成员列表取注册表解析到的那一个。它一次读出某租户每个账户的角色名，升序、去重，复用 `Manager.Bindings` 的读，所以一页成员只有一次策略读，不是每行一次。空租户以 `ErrInvalidArgument` 拒绝而不是答空映射——一个空映射会被调用方读成「这个租户没有角色」，而实际是这次读没有指名任何租户。角色名是租户自己的角色标识，不是授权；该接口不把授权集交给管理面。
 
 **移除成员关系前守住租户的最后一个管理员。** 本模块把 `authn.MembershipGuard.CheckMembershipRemoval` 实现为与 `DeleteBinding` 相同的读法：点名租户的 `tenant-admin` 绑定只有一条且属于被移除的账户时，以 `ErrLastTenantAdmin` 拒绝，成员关系不删。检查只读绑定、不看成员是否暂停——规则要的是域内保留一条管理员绑定。它在成员关系删改事务之前询问，不与成员关系存储共用一个事务；宿主路由把拒绝答成 409 `conflict`。`MembershipGuard.Lock` 取的是上一条的 `TenantLock`，`DeleteBinding` 取的也是它。账户删除不走这条守卫，因此它可以把一个租户的最后一个租户管理员一并带走。
 
@@ -1123,7 +1133,7 @@ const (
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Grant`、`Enforcer`、`SubjectPermissions`、`Catalog`（含 `ObjectAction`、`DescriptionKey`）、`Gate`、`Manager`、`Seeder`、`WriteGuard`、`WriteOp`、`TenantLock` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go`；`pkg/authz/tenantlock.go` |
+| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Grant`、`Enforcer`、`SubjectPermissions`、`Catalog`（含 `ObjectAction`、`PermissionOf`、`DescriptionKey`）、`Gate`、`Manager`、`Seeder`、`WriteGuard`、`WriteOp`、`TenantLock` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go`；`pkg/authz/tenantlock.go` |
 | 权限常量与 `authn.Action` 的对齐、平台域 | 已实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
 | 平台域对应的 `system` 租户的启动期核对 | 已实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain`；`pkg/authz/policy/policy.go` `(*product).begin` |
 | 两个管理角色名 `PlatformAdminRole`、`TenantAdminRole` 与它们的域约束 | 已实现 | `pkg/authz/permissions.go` `PlatformAdminRole`、`TenantAdminRole`；`pkg/authz/policy/manager.go` `refuseReservedRole`、`(*product).PutRole`、`(*product).PutBinding` |
@@ -1135,13 +1145,14 @@ const (
 | 模块 `authz.policy` 的登记与各阶段行为（`Prepare`、`New`、`Init`、`Start`、`Stop`） | 已实现 | `pkg/authz/policy/policy.go` `Module` |
 | 策略表与按方言的迁移集 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0001_authz_policy.sql` |
 | 升级时的数据迁移：撤销平台域以外的 `platform-admin` 角色、授予与绑定，重复施加幂等 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0002_tenant_administration.sql`；`pkg/authz/policy/migrate_test.go` `TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain`；`pkg/authz/policy/migrate_postgres_test.go` `TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain` |
-| 平台域成员关系被移除时撤销该账户在平台域的全部绑定（`authn.MembershipLifecycle.MembershipRemoved` 同步执行，订阅 `authn.membership.changed` 补偿，均幂等） | 已实现 | `pkg/authz/policy/policy.go` `(*product).wire`；`pkg/authz/policy/lifecycle.go` `(*product).MembershipRemoved`、`withdrawPlatformBindings`、`onMembershipChanged`、`membershipChangeRemoved`；`pkg/authz/policy/membership_cascade_test.go`、`membership_lifecycle_test.go` |
+| 移除成员关系时清除该账户在离开租户内的全部绑定，暂停不清理（`authn.MembershipLifecycle.MembershipRemoved` 同步执行，订阅 `authn.membership.changed` 按信封租户补偿，均幂等） | 已实现 | `pkg/authz/policy/policy.go` `(*product).wire`；`pkg/authz/policy/lifecycle.go` `(*product).MembershipRemoved`、`onMembershipChanged`、`membershipChangeRemoved`；`pkg/authz/policy/manager.go` `(*product).ClearAccountBindings`；`pkg/authz/policy/membership_cascade_test.go`、`membership_lifecycle_test.go` |
+| 成员角色读 `authn.MemberRoleReader`：一次读出某租户每账户的角色名，随生命周期钩子并立交付 | 已实现 | `pkg/authz/policy/member_roles.go` `(*product).MemberRoles`；`pkg/authz/policy/policy.go` `Module`、`var _ authn.MemberRoleReader` |
 | 显式移除成员关系前的最后租户管理员检查（`authn.MembershipGuard.CheckMembershipRemoval`，拒绝为 `authn.ErrLastTenantAdmin`） | 已实现 | `pkg/authz/policy/lifecycle.go` `(*product).CheckMembershipRemoval`；`pkg/authz/policy/manager.go` `tenantAdminRows`、`lastTenantAdminAfterRemoval`；`pkg/authz/policy/membership_lifecycle_test.go` |
 | 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 已实现 | `pkg/authz/internal/persist/adapter.go` `Adapter`、`New` |
 | Casbin 引擎装载、不可变快照与原子换指针 | 已实现 | `pkg/authz/internal/policy/policy.go` `Snapshot`、`Load`、`Holder`（`Get`/`Swap` 即原子指针的读写） |
 | 启动期模型自检与夹具 | 已实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |
-| 权限目录：各已登记模块声明的 `PermissionSpec` 并成一个目录，以及目录对（资源，动作）的翻译与每个权限的说明键 | 已实现 | `pkg/authz/policy/catalog.go` `permissions`、`buildCatalog`、`(*catalog).ObjectAction`、`(*catalog).DescriptionKey`（目录类型未导出，读取接口是根包的 `Catalog`） |
-| 主体持有权限的读取：快照的隐式权限经目录反向查找映射为权限名，去重并排序，未翻译的对略去 | 已实现 | `pkg/authz/internal/policy/policy.go` `(*Snapshot).Held`；`pkg/authz/policy/policy.go` `(*product).Held`；`pkg/authz/policy/catalog.go` `(*catalog).indexReverse`、`(*catalog).permissionOf` |
+| 权限目录：各已登记模块声明的 `PermissionSpec` 并成一个目录，以及目录对（资源，动作）的正反翻译与每个权限的说明键 | 已实现 | `pkg/authz/policy/catalog.go` `permissions`、`buildCatalog`、`(*catalog).ObjectAction`、`(*catalog).PermissionOf`、`(*catalog).DescriptionKey`（目录类型未导出，读取接口是根包的 `Catalog`） |
+| 主体持有权限的读取：快照的隐式权限经目录反向查找映射为权限名，去重并排序，未翻译的对略去 | 已实现 | `pkg/authz/internal/policy/policy.go` `(*Snapshot).Held`；`pkg/authz/policy/policy.go` `(*product).Held`；`pkg/authz/policy/catalog.go` `(*catalog).indexReverse`、`(*catalog).PermissionOf` |
 | `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).ClearAccountBindings`（接口在 `pkg/authz/capabilities.go`） |
 | 宿主写守卫 `WriteGuard` 在管理面写路由上的可选扩展点（格式检查之后、审计与 `Manager` 之前；拒绝 403、读不出 503） | 已实现 | `pkg/authz/capabilities.go` `WriteGuard`、`WriteOp`；`pkg/authz/admin/admin.go` `(*product).wire`；`pkg/authz/admin/pipeline.go` `(*product).requireWriteAllowed`；`pkg/authz/admin/writeguard_test.go` |
 | 种入接口 `Seeder`：幂等、只增、可写 builtin 角色的授权集 | 已实现 | `pkg/authz/policy/manager.go` `(*product).SeedGrants`、`grantsHeld`（接口在 `pkg/authz/capabilities.go`） |
@@ -1162,7 +1173,7 @@ const (
 | 配置 `authz.self.endpoints` 的声明与读取 | 已实现 | `pkg/authz/self/self.go` `schema`、`resolve`、`readConfig` |
 | 模块 `authz.self` 的读取路由 `GET /api/v1/authz/me/permissions` 与它的 401/503 写出 | 已实现 | `pkg/authz/self/self.go` `Module`、`(*product).wire`；`pkg/authz/self/routes.go` `mount`、`declareOpen`；`pkg/authz/self/handler.go` `(*product).requireIdentity`、`(*product).handlePermissions`、`writeNoIdentity401` |
 | `authz.self` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/authz/self/operations.go`；`pkg/authz/self/openapi_generated_test.go`；片段 `pkg/authz/self/openapi/authz.self.json` |
-| 模块 `authz.admin` 的管理面路由（角色、权限授予、绑定的读写与权限目录的读） | 已实现 | `pkg/authz/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authz/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/admin/pipeline.go` `caller`、`require`、`requireWriteAllowed`、`auditRequired`、`answer`；`pkg/authz/admin/catalog.go` `handlePermissionList`；`pkg/authz/admin/views.go` `(*product).permissionViewOf`、`AuthzAdminPermissionView`、`roleView`、`grantView`、`bindingView`；`pkg/authz/admin/role.go` `handleRoleList`、`handleRolePut`、`handleRoleDelete`；`pkg/authz/admin/grant.go` `handleGrantList`、`handleGrantPut`、`handleGrantDelete`；`pkg/authz/admin/binding.go` `handleBindingList`、`handleBindingOf`、`handleBindingPut`、`handleBindingDelete`；`pkg/authz/admin/audit.go` `mandatory`、`failedAudit` |
+| 模块 `authz.admin` 的管理面路由（角色、权限授予、绑定的读写与权限目录的读） | 已实现 | `pkg/authz/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authz/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/admin/pipeline.go` `caller`、`require`、`requireWriteAllowed`、`auditRequired`、`answer`；`pkg/authz/admin/catalog.go` `handlePermissionList`；`pkg/authz/admin/views.go` `(*product).permissionViewOf`、`AuthzAdminPermissionView`、`roleView`、`(*product).grantViewOf`、`AuthzAdminGrantView`、`bindingView`；`pkg/authz/admin/role.go` `handleRoleList`、`handleRolePut`、`handleRoleDelete`；`pkg/authz/admin/grant.go` `handleGrantList`、`handleGrantPut`、`handleGrantDelete`；`pkg/authz/admin/binding.go` `handleBindingList`、`handleBindingOf`、`handleBindingPut`、`handleBindingDelete`；`pkg/authz/admin/audit.go` `mandatory`、`failedAudit` |
 | 管理面 `authz.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/authz/admin/operations.go`；`pkg/authz/admin/openapi_generated_test.go`；片段 `pkg/authz/admin/openapi/authz.admin.json` |
 | 静态特性 `authz.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/authz/admin/admin.go` `Module`；`pkg/authz/admin/feature_test.go` `TestTheModuleDeclaresTheAuthorizationAdminFeature` |
 | 词表对齐守卫与根包依赖守卫 | 已实现 | `pkg/authz/action_parity_test.go`、`pkg/authz/deps_test.go` |
@@ -1172,7 +1183,7 @@ const (
 | `platform-admin` 取全量 `Declared()`、`tenant-admin` 取 `TenantGoverned()` 的种入分流 | 已实现 | `starters/demo/server/seed.go` `seedRosterAdministration`、`seedAdministration`；`starters/demo/server/tenancy.go` `declaredGrants`、`governedGrants`、`retiredTenantAdminGrants` |
 | 宿主的收敛接口 `Reconciler`：只收敛 builtin `tenant-admin`、目标集与废弃集由调用方给出、先补后删、单事务、重载快照与发布事件 | 已实现 | `pkg/authz/policy/reconciler.go` `(*product).ReconcileGrants`；`pkg/authz/capabilities.go` `Reconciler`；`starters/demo/server/seed.go` `reconcileTenantAdminGrants` |
 | 宿主的设置写守卫 `WriteSettings` | 已实现 | `pkg/authz/capabilities.go` `WriteSettings`；`starters/demo/server/tenancy.go` `settingsWriteGuard`、`settingsWriteGuard.Denied` |
-| 租户管理面 `authz.tenantadmin`（路由、判定、防提权、审计、回绝映射） | 已实现 | `pkg/authz/tenantadmin/tenantadmin.go` `Module`、`newProduct`、`(*product).wire`；`pkg/authz/tenantadmin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/tenantadmin/pipeline.go` `(*product).guardRoute`、`requireVerifiedAccount`、`requireWriteAllowed`、`auditRequired`、`failureOf`；`pkg/authz/tenantadmin/escalation.go` 每条防提权检查；`pkg/authz/tenantadmin/role.go`、`grant.go`、`binding.go`、`catalog.go`；`pkg/authz/tenantadmin/audit.go` `mandatory`、`failedAudit` |
+| 租户管理面 `authz.tenantadmin`（路由、判定、防提权、审计、回绝映射） | 已实现 | `pkg/authz/tenantadmin/tenantadmin.go` `Module`、`newProduct`、`(*product).wire`；`pkg/authz/tenantadmin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/tenantadmin/pipeline.go` `(*product).guardRoute`、`requireVerifiedAccount`、`requireWriteAllowed`、`auditRequired`、`failureOf`；`pkg/authz/tenantadmin/escalation.go` 每条防提权检查；`pkg/authz/tenantadmin/role.go`、`grant.go`、`binding.go`、`catalog.go`、`views.go` `(*product).grantViewOf`、`AuthzTenantAdminGrantView`；`pkg/authz/tenantadmin/audit.go` `mandatory`、`failedAudit` |
 | 租户管理面的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/authz/tenantadmin/operations.go`；`pkg/authz/tenantadmin/openapi_generated_test.go`；片段 `pkg/authz/tenantadmin/openapi/authz.tenantadmin.json` |
 | 静态特性 `authz.tenantadmin` 的 `feature.Spec` 声明 | 已实现 | `pkg/authz/tenantadmin/tenantadmin.go` `Module`；`pkg/authz/tenantadmin/feature_test.go` |
 | 配置 `authz.tenantadmin.endpoints` 的声明与读取 | 已实现 | `pkg/authz/tenantadmin/tenantadmin.go` `schema`、`resolve`、`readConfig`；`pkg/authz/tenantadmin/config_test.go` |

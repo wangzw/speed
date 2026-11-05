@@ -1,22 +1,23 @@
 # authn/invite
 
-本模块持有邀请的状态机与 `authn_invitations` 表：一张邀请点名一个地址与一个[租户](../../../glossary.md)，在被接受之前不产生账户或成员行，接受时把地址接到一个账户与一条成员关系上。令牌是唯一凭据，只以摘要留存，接受不需要身份。它不投递邀请、不持账户与成员关系的表与规则，也不判定租户成员资格。读职责清单前应持有的一句话心智模型：邀请是一条待兑现的成员关系授予，令牌兑现一次即止。
+本模块持有邀请的状态机与 `authn_invitations` 表：一张邀请点名一个地址与一个[租户](../../../glossary.md)，在被接受之前不产生账户或成员行，接受时把地址接到一个账户与一条成员关系上。令牌是唯一凭据，只以摘要留存，接受不需要身份。签发成功后，本模块经可选接口 `authn.InviteNotifier` 请一次接受通知，并把这个结果随应答交出；它不渲染通知、不持邮件载体、不持账户与成员关系的表与规则，也不判定租户成员资格。读职责清单前应持有的一句话心智模型：邀请是一条待兑现的成员关系授予，令牌兑现一次即止，通知只是这条授予的送达尝试。
 
-第一遍按顺序读的节是职责与非职责、术语表、外部接口契约、依赖、UML 图、核心数据结构、核心算法与流程；术语表在遇到邀请、接受令牌、待接受态时回看，UML 图的状态机给出邀请的去向，核心数据结构的状态一览说明每个状态在做什么，核心算法与流程的走查与签发、接受给出一次兑现的落库过程。错误与失败语义与并发与事务边界是最后自检的节；扩展点与实现状态在主体之后回看。
+第一遍按顺序读的节是职责与非职责、术语表、外部接口契约、依赖、UML 图、核心数据结构、核心算法与流程；术语表在遇到邀请、接受令牌、待接受态、投递结果时回看，UML 图的状态机给出邀请的去向、类型图给出通知接口的位置，核心数据结构的状态一览说明每个状态在做什么，核心算法与流程的走查、签发、接受与通知给出一次兑现与一次送达的落库与外部调用过程。错误与失败语义与并发与事务边界是最后自检的节；扩展点与实现状态在主体之后回看。
 
 ## 职责
 
 - **驱动邀请的状态机。** 经一张 `authn_invitations` 表驱动邀请从「待接受」到终态的每一次迁移，签发、列表、撤销与接受都经它。邀请是一次**待兑现的成员关系授予**：它点名一个地址与一个租户，在被接受之前没有任何账户或成员行存在。
 - **接受即兑现。** 一次接受消费一个令牌，把一个地址接上一个账户与一条成员关系：地址已有账户时加成员行，是某账户的未证明预留时在该账户上把邮箱证成标识，两者都没有时新建账户；成员行的来源写 `invite`——这是 `Membership.Source` 早已声明的取值之一（`pkg/authn/internal/model/directory.go` `Membership.Source`）。接受的账户创建经 `AccountAdmin.Create`，账户规则仍归 `authn.account`。
 - **把接受令牌作为唯一凭据，只以摘要留存。** 接受不需要身份：持有令牌即持有加入该租户的能力。令牌明文只在签发应答里交出一次，落表的是它的 SHA-256；撤销因此是改状态，不是撤销一个签名。
+- **签发之后请一次通知，并报告结果。** 签发成功后，本模块经可选接口 `authn.InviteNotifier` 请一次接受通知，限时五秒，把结果作为 `sent`、`failed` 或 `not_configured` 写进签发应答。通知失败不撤销邀请，HTTP 仍为 201，令牌照常交出；失败记一行 `Error` 日志与一条尽力档 `authn.invitation.deliver` 审计行。通知的正文、语言与投递归通知接口的实现（`authn.invitemail` 是仓库提供的那一份），本模块只交出通知所需的租户、地址、令牌、期限与请求语言。
 - **以模块 `authn.invite` 排他交付接口 `Invites`。** 邀请的签发、列表、撤销与接受都由本模块经这个接口作答，别的模块取用邀请能力没有第二条入口；接口与数据类型随它同处本子包（[design-authn](design-authn.md)）。
 
 ### 非职责
 
 - **不做组织树。** 没有节点、没有层级、没有子树数据范围，接受只落一条成员关系，不带任何位置。早期实现有一棵多级组织树，本方案刻意不做它（[ADR-org-invitation](../../../adr/adr-org-invitation.md)）。
-- **不投递邀请，不排队，不重试。** 本模块不发送任何消息——邮件投递归 mail 模块，邀请的送达由签发者或宿主完成（[design-authn](design-authn.md)）。签发应答把接受链接连同令牌一次性交给签发者，投递交由签发者或宿主经它自己的渠道完成。没有提醒、没有自动重发：一条新的待接受邀请只能来自一次新的签发调用。
+- **不渲染通知，不排队，不重试。** 本模块不构造邮件正文、不选语言、不触达邮件载体；它只把 `InviteNotice` 交给 `authn.InviteNotifier` 的实现，由后者渲染并投递。通知在签发路径上同步调用一次，没有提醒、没有自动重发、没有后台重试：一条新的待接受邀请只能来自一次新的签发调用，一次重发就是一次新的签发。
 - **不持账户、成员关系、口令的表与规则。** 接受的账户创建与标识写入经 `AccountAdmin.Create`、`AccountAdmin.AddIdentifier`，成员行写经 `Memberships.Put`；账户与成员关系的规则与哨兵在 [authn-account](design-authn-account.md)。
-- **不做邮件的送达证明。** 令牌证明持有者收到了这条链接，不证明地址可达。地址可达性由签发者按他送出链接的渠道承担。
+- **不做邮件的送达证明。** `sent` 只表示载体接受了这条消息，不证明地址可达、收件箱收到或被打开。地址可达性仍由投递渠道与收件方承担，签发者始终可以复制链接另交。
 - **不判定租户成员资格，不 import `pkg/tenant`。** 租户标识在本模块里是字符串；请求期判定归 `tenant.admission`（[design-tenant-admission](../tenant/design-tenant-admission.md)）。
 - **不承载角色。** 接受只落成员关系，角色按（账户，租户）绑定归 `authz.policy`（[design-authz](../design-authz.md)）。
 - **不代替签发者决定把谁拉进租户。** 管理面的判定接口回答「这个发起者能不能签发」，本模块保证签发者的身份与租户范围，不保证他选的人对不对。
@@ -30,6 +31,7 @@
 | 邀请 | invitation | 本文档与邀请主题的决策记录 | 一次待兑现的成员关系授予：点名一个地址与一个租户，带状态与期限。接受之前不产生账户或成员行。 |
 | 接受令牌 | acceptance token | 本文档与邀请主题的决策记录 | 接受所凭的凭据，签发时交出一次，只以摘要留存的 256 位随机串。持有它即持有加入该租户的能力。 |
 | 待接受态 | pending | 本文档与邀请主题的决策记录 | 邀请已签发、未接受、未撤销且未过期的状态。它属于邀请自己的一行，不属于账户表——`AccountAdmin.Create` 没有可放它的行。 |
+| 投递结果 | delivery outcome | 本文档与邀请主题的决策记录 | 一次接受通知的结局，封闭集为 `sent`、`failed`、`not_configured`。它只说明这次通知有没有被载体接受，不说明地址可达或消息被阅读。 |
 
 ## 外部接口契约
 
@@ -58,8 +60,9 @@ type IssueInvite struct {
 }
 
 type Issued struct {
-    Invitation Invitation
-    Token      string // 接受令牌，只在此处交出一次；不得写日志、事件或追踪属性
+    Invitation    Invitation
+    Token         string           // 接受令牌，只在此处交出一次；不得写日志、事件或追踪属性
+    EmailDelivery InviteDelivery   // 这次接受通知的结果
 }
 
 type Invitation struct {
@@ -91,9 +94,36 @@ const (
 // Valid 报告 s 是否在存量列里。已过期的待接受邀请仍是 InvitationPending：
 // 过期由时钟与 ExpiresAt 推出，不落列。
 func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
+
+// InviteNotifier 是接受通知的投递接口，可选。定义在根包
+// pkg/authn/invite_notice.go，由宿主或 authn.invitemail 交付。
+type InviteNotifier interface {
+    // Notify 按 notice 的地址与语言送出一次通知，并报告投递结果。
+    // 失败不回滚邀请；调用方仍以 201 交出一次性令牌。
+    Notify(ctx context.Context, notice InviteNotice) (InviteDelivery, error)
+}
+
+type InviteNotice struct {
+    Tenant    string    // 邀请所授予成员关系的租户标识
+    Email     string    // 规范化后的被邀请地址
+    Token     string    // 接受令牌；不得写日志、追踪、事件或错误文本
+    ExpiresAt time.Time // 邀请的绝对期限；零值表示调用方不知道
+    Locale    string    // 请求点名的 BCP 47 语言，空串表示没有点名
+}
+
+// InviteDelivery 是一次通知的结果。零值是 InviteNotConfigured。
+type InviteDelivery uint8
+
+const (
+    InviteNotConfigured InviteDelivery = iota // 本部署没有配置通知通道，什么也没发
+    InviteSent                                // 载体接受了这条消息
+    InviteFailed                              // 载体拒绝，或结果未知
+)
 ```
 
 **`Invitation` 不含令牌。** 令牌的明文在 `Issued` 里出现一次，此后任何视图、列表、事件与诊断都不带它；`Invitation` 是给管理面读的只读视图。
+
+**`Issued.EmailDelivery` 是这次通知的结果，不是邀请的状态。** 它取 `sent`、`failed`、`not_configured` 之一；`not_configured` 表示没有通知接口或部署选择不发邮件，`failed` 表示载体拒绝或结果未知。两者都不改变邀请行、HTTP 状态与令牌。`InviteDelivery` 的零值就是 `not_configured`，所以一个从未设置过的结果读起来是「没有发」，而不是「发失败了」。
 
 **`InvitationStatus` 的存量列是 `{待接受，已接受，已撤销}`，观察态是它加「已过期」。** 已过期不是一次写出的迁移，而是「状态为待接受，且当前时刻不早于 `ExpiresAt`」的推导；接受与列表都按当前时刻判定，不靠清扫器翻转状态。判据是状态放置的方向：一次丢失的过期翻转只让一条已经不能接受的邀请看起来还能接受，而接受路径自己会拒绝它，安全性不依赖这次翻转（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。
 
@@ -116,8 +146,23 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 | 包 | 模块名 | 交付 | 排他 |
 |---|---|---|---|
 | `pkg/authn/invite` | `authn.invite` | `Invites`，以及 `Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 与哨兵 | 排他 |
+| `pkg/authn/invitemail` | `authn.invitemail` | `InviteNotifier` 的邮件实现 | 排他 |
 
-模块名照顶层能力：嵌套子包取 `authn.<功能>`，本模块取 `authn.invite`（[design-authn](design-authn.md)）。设置命名空间取同一取值；模块仍声明一个没有输入项的配置节，使旧配置里的 `authn.invite.ttl` 按完整路径报未知键。
+模块名照顶层能力：嵌套子包取 `authn.<功能>`，本模块取 `authn.invite`（[design-authn](design-authn.md)）。设置命名空间取同一取值；模块仍声明一个没有输入项的配置节，使旧配置里的 `authn.invite.ttl` 按完整路径报未知键。`InviteNotifier`、`InviteNotice` 与 `InviteDelivery` 定义在根包 `pkg/authn/invite_notice.go`，不在任何一个实现子包。
+
+### 通知的邮件实现 `authn.invitemail`
+
+`authn.invitemail` 是仓库提供的通知实现：它把一次 `InviteNotice` 渲染成邮件并交给 `pkg/mail.Sender` 的载体，排他交付 `InviteNotifier`。一条命令可以点名它，也可以换成宿主自己的实现；两个实现同时在场在消解阶段失败。
+
+- **配置项 `authn.invitemail.accept-base-url` 给出接受页所在的绝对来源。** 取值须是绝对 http/https URL、带主机、无查询与片段；末尾的 `/` 归一化掉。通知的链接是 `<accept-base-url>/invitations/<令牌>`，路径由模块拼接、令牌按单个路径段转义，配置改不了接受路由的形状。值不合法时在 `Prepare` 阶段终止启动，点名输入项且不回显取值。
+- **空值是合法的未配置部署。** 模块保持启用，不触达载体，答 `InviteNotConfigured` 与 nil 错误。选 `mail.carrier: none` 的运行里没有任何发送载体，模块随邮件能力一并 `StateDisabled`，不因一个缺席的依赖让整个装配起不来；这样的运行不校验接受来源。
+- **语言取自请求，缺目录时回退。** 通知按 `InviteNotice.Locale` 选择消息：先按原标签，再按主语言子标签，最后英文。模板在模块的 `locales/zh-CN.json` 与 `locales/en-US.json`，包含主题、纯文本与 HTML；`New` 在启动时渲染每个目录的每条消息，缺键即启动失败，不等到第一次发送才发出一条只有键的消息。
+- **期限按 UTC 写。** `InviteNotice.ExpiresAt` 是邀请的唯一期限，按 RFC 3339 的 UTC 时刻插入正文；零值表示调用方不知道，渲染为空，不编造一个时刻。
+- **令牌、收件人与正文不写日志、不进错误文本。** 每次发送只记一行结果与耗时，行里没有令牌、地址、租户或正文；实现方返回给调用方的错误是载体自己的错误，不含令牌。
+- **载体错误按原分类透传。** `mail.ErrThrottled`、`mail.ErrRejected`、`mail.ErrUncertain` 原样返回，由邀请模块决定怎么记；本模块不加自己的分类，也不重试。
+- **消息不带去重标识。** 每次签发都画一个新令牌，重发是一条取代旧行的新邀请；一个稳定的 `DedupeID` 会压掉一条合法的通知，而载体本身对每次调用只投递一次。
+
+装配上，`starters/demo/server/capabilities.go` 把本模块编入每次构建并交给 `serve` 点名；审查与本地配置给它一个接受来源并选 `mail.carrier: log`，走查因此能从进程日志读到渲染后的通知（[design-starters](../design-starters.md)）。
 
 ### 路由
 
@@ -125,8 +170,8 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 | 面 | 方法 路径 | 登记 | 授权 |
 |---|---|---|---|
-| 管理面 | `POST Bt/:tenant/invitations` | `Guarded`，`Impersonable` | 判定接口 + 强制档审计 |
-| 管理面 | `GET Bt/:tenant/invitations` | `Guarded`，`Impersonable` | 判定接口；读不写审计 |
+| 管理面 | `POST Bt/:tenant/invitations` | `Guarded`，`Impersonable` | 判定接口 + 强制档审计；签发后尽力通知 |
+| 管理面 | `GET Bt/:tenant/invitations` | `Guarded`，`Impersonable` | 判定接口；读不写审计；可按 `status` 收窄 |
 | 管理面 | `DELETE Bt/:tenant/invitations/:id` | `Guarded`，`Impersonable` | 判定接口 + 强制档审计 |
 | account 侧 | `GET B/invitations/:token` | `Public` | 令牌 |
 | account 侧 | `POST B/invitations/:token` | `Public` | 令牌 |
@@ -134,6 +179,8 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 `B` 是普通路由的基路径，`Bt` 是 `tenants` 作用域的基路径（`authn.gate.mount.bases`，见 [authn-gate](design-authn-gate.md)）。
 
 基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。管理面路由按路径里的租户标识寻址，不按名称表，所以本模块不依赖租户名册；接受路由按令牌寻址，路径里不出现租户。`POST B/invitations/:token` 在地址尚无账户时要求用户名与口令（显示名可选）；地址已有账户时只凭令牌兑现，不建账户，也不读用户名。
+
+**列表的 `status` 查询把一页收窄到一种观察态。** 取值是封闭集 `pending`、`expired`、`accepted`、`revoked`；缺省列出全部，集合外的值答 400，不当作「全部」。`pending` 是状态为待接受且 `expires_at` 晚于当前时刻的行，`expired` 是状态仍为待接受而 `expires_at` 不晚于当前时刻的行，`accepted` 与 `revoked` 是两种终态。过期仍不落列：两个 `pending` 分支读的是同一列状态，差别只在时钟与期限的比较。收窄只发生在管理面路由，`Invites.List` 本身仍列出全部。
 
 ### 管理面的判定顺序
 
@@ -156,14 +203,16 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 - **模块名**：`authn.invite`。宿主的命令树点模块名纳入，设置命名空间取同一取值。
 - **设置输入项**：`authn.invite.ttl`（时长，缺省 `168h`，取值域 1h 到 2160h）。每次不带期限的签发读它；设置缺席时取声明默认值，读取失败或取值越界时取声明默认值并记一行 `Error`，签发照常。存活期变长即放宽：本模块订阅 `settings.changed`，改到更长时写一行 `Warn` 并经审计接口记 `authn.settings.relaxed`，方向 `increase`。键的名字、取值域与缺省在 [design-authn-config](design-authn-config.md)。
-- **路由**：`Bt/:tenant/invitations` 下的签发、列表与撤销，以及 `B/invitations/:token` 下的读取与接受；询问的动作 `authn.membership.manage`。
+- **路由**：`Bt/:tenant/invitations` 下的签发、列表与撤销，以及 `B/invitations/:token` 下的读取与接受；列表的 `status` 查询与签发应答的 `email_delivery` 字段；询问的动作 `authn.membership.manage`。
+- **通知接口**：`InviteNotifier`、`InviteNotice`、`InviteDelivery` 与三个结果取值；本模块只取用接口，宿主或 `authn.invitemail` 交付实现。
 - **令牌前缀**：接受令牌以 `spd_inv_` 起头，供日志脱敏识别（对照 `spd_rt_`、`spd_cs_` 两条既有前缀，见 [design-authn-token](design-authn-token.md)）。
+- **审计动作** `authn.invitation.deliver`：一次签发通知失败时写的尽力档行，明细带 `action_id` 与 `tenant`，不带地址与令牌。
 - **特性名**：`authn.invitations`，静态特性（见「声明的特性」）。
 
 ### 对外接口
 
-- `Invites` 的方法集，`Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 的字段与方法集，以及本模块的全部哨兵，属于对外接口。
-- 路由路径与每条管理面路由询问的动作属于对外接口；`InvitationStatus` 的存量列与「已过期由时钟推出、不落列」同属接口。
+- `Invites` 的方法集，`Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 的字段与方法集，`InviteNotifier`、`InviteNotice`、`InviteDelivery` 与三个结果取值，以及本模块的全部哨兵，属于对外接口。
+- 路由路径与每条管理面路由询问的动作属于对外接口；`InvitationStatus` 的存量列、`status` 查询的四个取值、「已过期由时钟推出、不落列」，以及 `Issued.EmailDelivery` 的取值与「投递失败不撤销邀请」同属接口。
 - 成员行的 `Source = invite`、令牌前缀 `spd_inv_`、设置键 `authn.invite.ttl` 与特性名 `authn.invitations` 是宿主可见的接口的一部分，改名即破坏性变更；前端经生成的特性名类型引用特性名，撤去它或改变它所指的接口同样是破坏性变更。配置不再承载 `authn.invite.ttl`：旧配置里仍写着它的宿主在启动时按未知键失败。
 
 ### 哨兵错误
@@ -195,13 +244,15 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 | `mount.Mounter`（`pkg/authn/internal/mount`） | 挂管理面与接受路由 |
 | `Decider`（根包） | 管理面判定；可选取用，缺席即全拒 |
 | `SignupVerification`（根包声明，由 `authn.account` 交付） | 管理面由人发起的写经 `SignupStateOf` 读发起者的注册验证状态；接受经 `PendingAccountByContact` 反查地址的未证明预留所有者；必需，读失败答 503 |
-| `audit.Audit` | 管理面写路由的强制档审计；必需 |
+| `audit.Audit` | 管理面写路由的强制档审计，加通知失败的尽力档行；必需 |
+| `InviteNotifier`（根包） | 可选：签发成功后请求一次接受通知；缺席时结果答 `not_configured` |
+| `pkg/i18n` | 从请求上下文取通知语言；没有点名语言时 `InviteNotice.Locale` 为空 |
 | `Throttle`（根包声明，由 `authn.account` 交付） | 接受路由的来源层减负；可选 |
 | `event.Bus`、`outbox.Outbox` | 可选：邀请生命周期事件 |
 | `log.Logger` | 可选：诊断 |
 | `pkg/feature`（根包） | 以 `feature.Spec` 声明静态特性 `authn.invitations`；不取用 `feature.Board` |
 
-**方向核对。** `authn.invite` 位于认证功能目录内，不 import `pkg/tenant`、授权功能目录、宿主与 `pkg/feature/board`，也不 import 认证功能目录里别的实现子包。`pkg/feature` 根包只依赖标准库，为声明特性 import 它不扩大本模块的闭包（[feature](../design-feature.md)）。管理面判定经根包的 `Decider`，与 `authn.admin` 同一个接口（[design-authn-admin](design-authn-admin.md)）。
+**方向核对。** `authn.invite` 位于认证功能目录内，不 import `pkg/tenant`、授权功能目录、宿主、`pkg/mail` 与 `pkg/feature/board`，也不 import 认证功能目录里别的实现子包。通知经由根包接口取用，渲染与邮件投递在 `authn.invitemail` 里，故邀请模块的依赖闭包不出现任何邮件载体。`pkg/feature` 根包只依赖标准库，为声明特性 import 它不扩大本模块的闭包（[feature](../design-feature.md)）。管理面判定经根包的 `Decider`，与 `authn.admin` 同一个接口（[design-authn-admin](design-authn-admin.md)）。
 
 ## UML 图
 
@@ -238,6 +289,12 @@ classDiagram
     class Issued
     class Invitation
     class InvitationStatus
+    class InviteNotifier {
+        <<interface>>
+        +Notify(ctx, notice) InviteDelivery, error
+    }
+    class InviteNotice
+    class InviteDelivery
     class inviteProduct
     class Decider {
         <<interface>>
@@ -254,6 +311,7 @@ classDiagram
     }
     inviteProduct ..|> Invites
     inviteProduct ..> Decider : 可选取用
+    inviteProduct ..> InviteNotifier : 可选取用，签发后一次
     inviteProduct ..> AccountAdmin : 接受建账户
     inviteProduct ..> Memberships : 写成员行
     inviteProduct ..> Accounts : 查地址
@@ -261,8 +319,13 @@ classDiagram
     Invites ..> AcceptInvite
     Invites ..> Issued
     Invites ..> Invitation
+    Invites ..> InviteDelivery
     Invitation ..> InvitationStatus
+    InviteNotifier ..> InviteNotice : 入参
+    InviteNotifier ..> InviteDelivery : 结果
 ```
+
+**通知接口在根包里，渲染与投递在实现方。** `inviteProduct` 只取用 `InviteNotifier`，从不 import 邮件包；`authn.invitemail` 是仓库提供的实现，它把 `InviteNotice` 渲染成邮件并交给 `pkg/mail.Sender`。`InviteNotice` 是本模块交给通知实现、携带接受令牌的唯一值，实现方必须把它挡在日志、追踪、事件与错误文本之外。
 
 ## 核心数据结构
 
@@ -270,7 +333,9 @@ classDiagram
 |---|---|---|
 | 邀请 | `Invitation` | 一条邀请的只读视图：标识、租户、地址、状态、签发者、期限、接受时刻、创建时刻；不含令牌 |
 | 状态 | `InvitationStatus` | `待接受`（零值）／`已接受`／`已撤销` 的存量封闭集；「已过期」由时钟推出 |
-| 签发结果 | `Issued` | 邀请视图加一次交出的令牌 |
+| 签发结果 | `Issued` | 邀请视图、一次交出的令牌与这次通知的投递结果 |
+| 通知输入 | `InviteNotice` | 租户、规范化地址、令牌、期限与请求语言；唯一携带令牌的通知值 |
+| 投递结果 | `InviteDelivery` | `not_configured`（零值）／`sent`／`failed`；只描述通知，不描述邀请 |
 | 签发入参 | `IssueInvite` | 租户、地址、可选期限 |
 | 接受入参 | `AcceptInvite` | 令牌，加为一条尚无账户的邀请建账户所需的用户名、口令与可选显示名 |
 
@@ -297,6 +362,7 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 - **`token_digest` 全局唯一**：一个令牌映射到一条邀请，接受按摘要查行，查询不带租户谓词——接受者还没有任何租户归属。这是本模块唯一不按租户过滤的查询，理由与「接受无身份」是同一件事：兑现前不存在可依附的租户。
 - **部分唯一索引 `authn_invitations_one_pending`** 仲裁同一（租户，地址）下至多一条待接受邀请：一条新签发在插入处与并发的签发相撞即 `ErrInvitationPending`，而不是留下两条并存的活令牌。
 - **`invited_by` 是账户标识，不建外键**：与认证其余表一样，表之间不建外键，完整性由写入方在自己的事务里保证（[design-authn-account](design-authn-account.md)）。
+- **状态筛选索引 `authn_invitations_tenant_status_created`** 由 `0002_authn_invitations_status_index.sql` 建立，列为 `(tenant_id, status, created_at)`：租户与存量状态先收窄，创建时刻再排序。两个待接受观察态共用 `status = 0`，差别在 `expires_at` 的比较，因此都走这一条索引。
 
 ### 状态一览
 
@@ -329,9 +395,18 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 2. 生成令牌（256 位随机、`spd_inv_` 前缀、base64url）与它的 SHA-256。
 3. 一个事务里：把同一（租户，地址）下仍为待接受的旧邀请置为已撤销（按部分唯一索引筛选，条件写），插入新邀请行。
 4. 发布事件。
-5. 返回 `Issued`：邀请视图加令牌明文，令牌只在此处交出一次。
+5. 若装配交付了 `InviteNotifier`，以五秒上限请求一次通知；结果归入 `InviteDelivery`。没有通知接口、或实现答「未配置」时是 `not_configured`。
+6. 返回 `Issued`：邀请视图、令牌明文与投递结果。令牌只在此处交出一次。
 
 签发使旧链接立即失效：旧行转已撤销，它的令牌此后一律 `ErrInvitationRevoked`。
+
+### 通知
+
+1. 通知只在签发成功之后请求，且只请求一次；它不在邀请的事务里，也不回写邀请行。
+2. 请求把一个 `InviteNotice` 交给实现：租户、规范化地址、令牌、绝对期限与请求语言。语言取自请求上下文，没有被点名时是空串，由实现方按自己的目录回退。
+3. 调用带五秒上限。实现返回 `InviteSent` 且无错误即 `sent`；实现返回 `InviteNotConfigured` 且无错误即 `not_configured`，不记日志、不写审计；其余结果（含超时、拒绝、未知结果与 panic）一律 `failed`。
+4. `failed` 写一行 `Error` 日志（租户、邀请标识、结果与成因，不含地址与令牌），并写一条尽力档 `authn.invitation.deliver` 审计行，以 `action_id` 关联同一次签发。
+5. 通知的结果不改变邀请、令牌与 HTTP 状态。实现方自身负责渲染与投递，本模块不猜测它说了什么、经哪条通道送出。
 
 ### 接受
 
@@ -351,13 +426,14 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 
 ### 列表与撤销
 
-- **列表**按租户取一页，待接受的在前（按创建时刻倒序），游标是上一页末条的创建时刻与标识。已过期的待接受行照常列出（REQ-tenancy-015）——它仍是一行待接受，调用方按 `ExpiresAt` 读得出它已经陈旧；隐藏它会把一条已送出的邀请显示成一条从未发出的邀请。
+- **列表**按租户取一页，待接受的在前（按创建时刻倒序），游标是上一页末条的创建时刻与标识。已过期的待接受行照常列出（REQ-tenancy-015）——它仍是一行待接受，调用方按 `ExpiresAt` 读得出它已经陈旧；隐藏它会把一条已送出的邀请显示成一条从未发出的邀请。管理面路由另按 `status` 收窄：`pending` 只看未过期的待接受行，`expired` 只看已过期的待接受行，`accepted` 与 `revoked` 各看一种终态；缺省列出全部。收窄谓词与分页谓词叠在同一次查询上，游标仍按同一次排序推进。
 - **撤销**把一条待接受邀请转已撤销，条件是状态仍为待接受。已接受的邀请不静默退群，答 `ErrInvitationAlreadyAccepted`（移除成员是 `Memberships.Remove` 与成员管理路由的事）；已撤销的邀请再撤销是幂等成功。
 
 ### 复杂度
 
 - 签发、接受与撤销按唯一索引（`token_digest`、主键、部分唯一索引）定位，单行读写。
-- 列表按 `authn_invitations_tenant` 索引走一页，条数由 `Page.EffectiveLimit` 界定。
+- 列表按 `authn_invitations_tenant` 或 `authn_invitations_tenant_status_created` 索引走一页，条数由 `Page.EffectiveLimit` 界定。带 `status` 的读多一个状态谓词，仍是一页的范围。
+- 通知是一次有界外部调用，复杂度由实现方决定；本模块只加一次五秒上限与一次可能的日志、审计写入。
 
 ## 错误与失败语义
 
@@ -381,16 +457,21 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 | 读取发起者的注册验证状态失败 | 503，动作不执行 |
 | 管理面强制档审计写不进 | 503，动作不执行 |
 | 接受路由依赖不可用 | 503 |
+| 签发后通知失败、超时或实现 panic | `email_delivery` 为 `failed`，HTTP 仍为 201，邀请与令牌照常；记一行 `Error` 与一条尽力档 `authn.invitation.deliver` 审计行 |
+| 装配没有通知接口，或实现答未配置 | `email_delivery` 为 `not_configured`，HTTP 仍为 201；不记日志、不写审计 |
+| `status` 查询的值不在封闭集里 | 400，不答未过滤的一页 |
 | 签发读取存活期设置失败或取值越界 | 取声明默认值并记一行 `Error`，签发照常进行 |
 | 配置里仍写着 `authn.invite.ttl` | 启动失败，按未知键点名该键 |
 
-**管理面的回绝映射是封闭的。** 400（`Problem.Type` 为 `urn:speed:authn:bad-request`）：地址不成形、正文结构不可读与其余参数错误。403（`urn:speed:authn:forbidden`）：判定接口的拒绝。404：邀请标识不指向任何一条邀请。409（`urn:speed:authn:conflict`）：`ErrInvitationAlreadyAccepted`。503（`urn:speed:authn:unavailable`）：其余失败，以及没落地的强制档审计，成因只进日志。`Problem.Type` 前缀与码集归 `pkg/authn/internal/mount`。
+**管理面的回绝映射是封闭的。** 400（`Problem.Type` 为 `urn:speed:authn:bad-request`）：地址不成形、正文结构不可读、`status` 不在封闭集里与其余参数错误。403（`urn:speed:authn:forbidden`）：判定接口的拒绝。404：邀请标识不指向任何一条邀请。409（`urn:speed:authn:conflict`）：`ErrInvitationAlreadyAccepted`。503（`urn:speed:authn:unavailable`）：其余失败，以及没落地的强制档审计，成因只进日志。`Problem.Type` 前缀与码集归 `pkg/authn/internal/mount`。
+
+**通知的失败不进错误映射。** 它是一次尽力而为的附带动作，结果在 201 应答的 `email_delivery` 字段里；把它映射成 4xx 或 5xx 会把一条已经成立的邀请说成没发出去。实现方返回的错误只用于日志与审计行。
 
 ### 非保证
 
 - **接受不证明地址可达，只证明有人收到了链接并出示了它。** 令牌可被转发；把链接转发给第三方即把加入能力交给第三方，这是能力语义的代价。
 - **签发者选的人对不对不归本模块。** 一次签发给谁由发起者决定，本模块保证发起者的身份与租户范围。
-- **投递质量由宿主承担。** 本模块不发送、不重试、不感知送达；一条链接送出与否，本模块无从知道。
+- **投递质量由通知实现与载体承担。** 本模块只知道这次通知的结果是 `sent`、`failed` 还是 `not_configured`；`sent` 不证明地址可达或被阅读，`failed` 也不证明消息没有送出（超时与未知结果同样记作 `failed`）。本模块不重试、不排队。
 
 ### 假设与守住它们的测试
 
@@ -405,19 +486,24 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 - **本模块只在自己的事务里写自己的表。** 邀请行的写在本模块的事务里；账户与成员行的写在 `authn.account` 的事务里。跨模块的两次写用结算补偿，至少一次、非原子；正确性的底线由条件写与状态检查承担，不靠结算做完（[design-authn](design-authn.md)）。
 - **签发在同一事务里取代旧行并插入新行。** 两条写共享一条事务，部分唯一索引在插入处仲裁并发签发。
 - **管理面处理器不持有事务。** 接口的询问、强制审计与 `Invites` 的写各自独立；强制审计不在调用方事务里（[design-authn-admin](design-authn-admin.md)）。
+- **通知在签发事务之外、在应答之前同步调用。** 它带五秒上限，不持有邀请行的事务；失败的尽力档审计也不在事务里。实现方必须并发安全，且不得把令牌写进日志、追踪、事件或错误文本。实现方的 panic 在调用处被收回并记为 `failed`，不会把一条已完成的签发变成 500。
 - **`Invites` 的实现在请求路径上同步调用**，必须并发安全。
 
 ## 扩展点
 
 - **新增一条签发的资格判据。** 谁可以签发由 `Decider` 实现决定，本模块只保证 `Decision` 的填法（路径里的租户、`membership.manage` 动作）。新增资格不改本模块。
 - **接受路由新增一条支路**（例如按手机号邀请）：扩展的是令牌兑现后落账户与成员行的方式，签发与状态机不变。
-- **投递扩展点由宿主在其渠道侧实现**：本模块交出链接，不定义渠道。
+- **通知是扩展点，由宿主或 `authn.invitemail` 实现。** 换一个通知实现即换渲染语言、正文与投递渠道；本模块只交出 `InviteNotice`，不定义渠道、模板与语言目录。`authn.invitemail` 是仓库提供的那一份，把通知渲染成邮件后交给 `pkg/mail.Sender`。
 
 ## 实现状态
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | `Invites` 接口、值类型与哨兵 | 部分实现 | `pkg/authn/invite/seam.go` `Invites`、`IssueInvite`、`Issued`、`Invitation`、`AcceptInvite`、`InvitationStatus`、`ErrInvitationNotFound`、`ErrInvitationExpired`、`ErrInvitationRevoked`、`ErrInvitationAlreadyAccepted`、`ErrInvitationPending`、`ErrInvalidEmail`、`ErrInvite` |
+| 通知接口 `InviteNotifier`、`InviteNotice`、`InviteDelivery` 与签发应答的 `email_delivery` | 已实现 | `pkg/authn/invite_notice.go` `InviteNotifier`、`InviteNotice`、`InviteDelivery`、`InviteSent`、`InviteFailed`、`InviteNotConfigured`；`pkg/authn/invite/deliver.go` `(*product).deliverInvite`、`(*product).notify`；`pkg/authn/invite/admin.go` `handleIssue`；`pkg/authn/invite/views.go` `issuedViewOf` |
+| 签发通知失败的日志与尽力档审计行 | 已实现 | `pkg/authn/invite/deliver.go` `(*product).deliverInvite`；`pkg/authn/invite/audit.go` `actionDeliver`、`deliveryAudit` |
+| 列表的 `status` 筛选与状态索引 | 已实现 | `pkg/authn/invite/query.go` `listFilter`、`parseListFilter`、`(*product).list`；`pkg/authn/invite/admin.go` `handleList`；`pkg/authn/invite/migrations/postgres/0002_authn_invitations_status_index.sql`、`pkg/authn/invite/migrations/sqlite/0002_authn_invitations_status_index.sql` |
+| 邀请邮件的渲染与投递模块 `authn.invitemail` | 已实现 | `pkg/authn/invitemail/module.go` `Module`；`pkg/authn/invitemail/config.go`；`pkg/authn/invitemail/messages.go`、`locales/zh-CN.json`、`locales/en-US.json` |
 | `authn.invite` 模块、`authn_invitations` 表与迁移、状态机、签发／列表／撤销／接受 | 已实现 | `pkg/authn/invite/invite.go` `Module`；`pkg/authn/invite/store.go` `tableInvitations`；`pkg/authn/invite/migrations/postgres/0001_authn_invitations.sql`、`pkg/authn/invite/migrations/sqlite/0001_authn_invitations.sql`；`pkg/authn/invite/issue.go` `Issue`；`pkg/authn/invite/query.go` `List`、`Revoke`；`pkg/authn/invite/accept.go` `Accept` |
 | 管理面路由（判定顺序、强制审计、回绝映射） | 已实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/admin.go` `handleIssue`、`handleList`、`handleRevoke`；`pkg/authn/invite/pipeline.go` `admit`、`asks`、`callDecider`、`auditRequired`、`auditBestEffort`、`answer` |
 | 接受路由（无身份、凭令牌） | 已实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/accept_http.go` `handleAcceptView`、`handleAccept`、`viewToken` |
