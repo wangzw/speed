@@ -11,23 +11,19 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
 )
 
 // TestTheCallerTenantReadIsOnTheAccountEndpoint holds the route and the
 // contract together: the account endpoint answers the read for an authenticated
-// caller with no membership, and the served document declares the operation
-// against that endpoint. Either one alone would pass over a module that mounted
-// the route somewhere the fragment does not describe, or declared it without
-// mounting it.
+// caller, and the served document declares the operation against that endpoint.
+// Either one alone would pass over a module that mounted the route somewhere
+// the fragment does not describe, or declared it without mounting it.
 func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "demo.db")
-	// The personal tenant is switched off so the account the case signs in as
-	// holds no membership and the answer's empty list is the read's own result.
-	// The default is on; the switch is written out because this case is about
-	// the empty list, not about the default.
-	body := configBody(t, ports, dsn) + "org:\n  personal:\n    enabled: false\n"
+	body := configBody(t, ports, dsn)
 	config := writeConfigFile(t, body)
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
@@ -54,9 +50,8 @@ func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	if answer.Tenants == nil {
 		t.Errorf("the answer carries a null tenant list, want []:\n%s", read.body)
 	}
-	if len(answer.Tenants) != 0 {
-		t.Errorf("the account with no membership answered %d tenant(s), want none:\n%s",
-			len(answer.Tenants), read.body)
+	if len(answer.Tenants) == 0 {
+		t.Errorf("the caller answered no tenant(s), want its personal tenant:\n%s", read.body)
 	}
 
 	document := get(t, fmt.Sprintf("http://127.0.0.1:%d/openapi.json", ports[backendListener]))
@@ -84,20 +79,19 @@ func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	}
 }
 
-// TestThePersonalAssemblyCarriesTheCallerTenantRead holds the ruling that a
-// deployment enabling the personal tenant must also name tenant.self: the
-// ensure is triggered by the caller's tenant list having settled and being
-// empty, which no assembly can tell without this read.
+// TestThePersonalAssemblyCarriesTheCallerTenantRead holds the ruling that an
+// assembly carrying personal tenants must also name tenant.self: the caller's
+// tenant list is where an account reads the space its account creation built.
 func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	if !slices.Contains(baselineServe, tenantself.ModuleName) {
-		t.Fatalf("baselineServe does not name %q, so an assembly that enables the personal tenant "+
-			"cannot tell that the caller holds no membership", tenantself.ModuleName)
+		t.Fatalf("baselineServe does not name %q, so an assembly that carries personal tenants "+
+			"cannot list the caller's own membership", tenantself.ModuleName)
 	}
 
 	// The personal assembly answers the read through the program: the seeded
 	// account reads its own personal tenant, which the seed's account-creation
 	// hook built before any browser called the backfill.
-	base, token := personalServe(t, true)
+	base, token := orgCreateServe(t, "")
 	read := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
 		base+"/api/v1/auth/me/tenants", nil,
 		map[string]string{"Authorization": "Bearer " + token})
@@ -114,7 +108,7 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	if err := json.Unmarshal(read.body, &answer); err != nil {
 		t.Fatalf("the answer is not JSON: %v\n%s", err, read.body)
 	}
-	if len(answer.Tenants) != 1 || !strings.HasPrefix(answer.Tenants[0].ID, personalIDPrefix) {
+	if len(answer.Tenants) != 1 || !strings.HasPrefix(answer.Tenants[0].ID, tenantpersonal.IDPrefix) {
 		t.Errorf("the seeded account answered %d tenant(s), want its one personal tenant:\n%s",
 			len(answer.Tenants), read.body)
 	}

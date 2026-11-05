@@ -211,11 +211,6 @@ type compiledDefaults struct {
 			ContentEndpoints []string `config:"content-endpoints"`
 		} `config:"metadata"`
 	} `config:"objectstore"`
-	Org struct {
-		Personal struct {
-			Enabled bool `config:"enabled"`
-		} `config:"personal"`
-	} `config:"org"`
 	Seed struct {
 		Accounts []compiledSeedAccount `config:"accounts"`
 		Tenants  []compiledSeedTenant  `config:"tenants"`
@@ -353,9 +348,6 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "objectstore.fs.root", doc.Objectstore.FS.Root, "./var/objects")
 	wantStrings(t, "objectstore.metadata.content-endpoints",
 		doc.Objectstore.Metadata.ContentEndpoints, []string{"content"})
-	if !doc.Org.Personal.Enabled {
-		t.Error("org.personal.enabled is false, want the bare run's switch on")
-	}
 
 	// The local seed a bare run starts from: the development operator, the
 	// walkthrough tenant and the runtime setting.

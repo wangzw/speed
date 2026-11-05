@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 	tenantprofile "github.com/vislake/speed/pkg/tenant/profile"
 )
 
@@ -211,7 +212,7 @@ func TestTheWriteGuardProtectsTheSystemTenantAndPersonalTenants(t *testing.T) {
 	ctx := context.Background()
 	for _, id := range []tenant.ID{
 		tenant.ID(authz.PlatformDomain),
-		tenant.ID(personalIDPrefix + "acct-1"),
+		tenant.ID(tenantpersonal.IDPrefix + "acct-1"),
 	} {
 		for _, op := range []tenant.WriteOp{tenant.WriteDisable, tenant.WriteDelete} {
 			denied, err := product.Denied(ctx, id, op)
@@ -507,7 +508,7 @@ func TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen(t *testing.T) {
 	}}
 	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
 
-	id := tenant.ID(personalIDPrefix + "acme")
+	id := tenant.ID(tenantpersonal.IDPrefix + "acme")
 	if err := product.Provision(context.Background(),
 		tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
@@ -635,7 +636,7 @@ func TestThePolicyWriteGuardRefusesEveryPersonalDomainWrite(t *testing.T) {
 	ctx := context.Background()
 	ops := []authz.WriteOp{authz.WriteRole, authz.WriteGrant, authz.WriteBinding}
 	for _, op := range ops {
-		for _, domain := range []string{personalIDPrefix + "acct-1", personalIDPrefix} {
+		for _, domain := range []string{tenantpersonal.IDPrefix + "acct-1", tenantpersonal.IDPrefix} {
 			denied, err := guard.Denied(ctx, domain, op)
 			if err != nil {
 				t.Fatalf("Denied(%q, %d): %v", domain, op, err)
@@ -663,7 +664,7 @@ func TestThePolicyWriteGuardRefusesEveryPersonalDomainWrite(t *testing.T) {
 func TestTheSettingsWriteGuardRefusesAPersonalDomainWrite(t *testing.T) {
 	guard := settingsWriteGuard{}
 	ctx := context.Background()
-	for _, domain := range []string{personalIDPrefix + "acct-1", personalIDPrefix} {
+	for _, domain := range []string{tenantpersonal.IDPrefix + "acct-1", tenantpersonal.IDPrefix} {
 		denied, err := guard.Denied(ctx, domain)
 		if err != nil {
 			t.Fatalf("Denied(%q): %v", domain, err)
@@ -689,7 +690,7 @@ func TestTheSettingsWriteGuardRefusesAPersonalDomainWrite(t *testing.T) {
 func TestTheMembershipGuardRefusesAPersonalDomainRemoval(t *testing.T) {
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
-	personalID := personalIDPrefix + "acct-1"
+	personalID := tenantpersonal.IDPrefix + "acct-1"
 	manager.bindings[personalID] = []authz.Binding{
 		{Tenant: personalID, Account: "acct-2", Role: authz.TenantAdminRole},
 	}

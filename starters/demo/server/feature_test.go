@@ -329,18 +329,17 @@ func TestCommittedFeatureVocabulary(t *testing.T) {
 	}
 	holdBaselineVocabulary(t, committed.Features)
 	// The ownership split is the reason the artifact carries an owner at all:
-	// the host's own module must be application-owned so the platform package
-	// does not register its name, and a platform module must be
-	// platform-owned. The comparison above already holds every entry to this
-	// criterion; these two anchors name the property so a reader sees what the
-	// split is for.
+	// a host module's declaration is application-owned so the platform package
+	// does not register its name, and a module under pkg/ is platform-owned.
+	// The comparison above already holds every entry to this criterion; these
+	// two anchors name the property so a reader sees what the split is for.
 	owners := make(map[string]string, len(committed.Features))
 	for _, entry := range committed.Features {
 		owners[entry.Name] = entry.Owner
 	}
-	if got := owners["org.personal"]; got != ownerApplication {
-		t.Errorf("org.personal is owned by %q, want %q: the host's own module must not "+
-			"enter the platform package", got, ownerApplication)
+	if got := owners["org.personal"]; got != ownerPlatform {
+		t.Errorf("org.personal is owned by %q, want %q: the personal-tenant module lives "+
+			"under pkg/ and its feature is platform-owned", got, ownerPlatform)
 	}
 	if got := owners["tenant.admin"]; got != ownerPlatform {
 		t.Errorf("tenant.admin is owned by %q, want %q: a platform module's declaration is "+

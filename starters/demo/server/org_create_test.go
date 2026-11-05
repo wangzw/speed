@@ -32,6 +32,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // orgCreateFragmentPath is this module's fragment, relative to the package
@@ -476,7 +477,7 @@ func TestOrgCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
 		addBusiness(fmt.Sprintf("biz-%d", i), tenant.StatusActive)
 	}
 	addBusiness("biz-disabled", tenant.StatusDisabled)
-	personal := string(personalTenantID(orgCreateUnitAccount))
+	personal := string(tenantpersonal.TenantID(orgCreateUnitAccount))
 	rig.roster.rows[tenant.ID(personal)] = tenant.Tenant{ID: tenant.ID(personal), Alias: personal, Status: tenant.StatusActive}
 	rig.memberships.rows[orgCreateUnitAccount] = append(rig.memberships.rows[orgCreateUnitAccount],
 		authn.Membership{Account: orgCreateUnitAccount, Tenant: personal, Active: true, Source: "personal"})

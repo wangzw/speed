@@ -28,6 +28,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/notification"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // The accounts the notification cases register. They are not seed rows, and
@@ -411,7 +412,7 @@ func registerReviewMember(t *testing.T, client *http.Client, base string, serve 
 // alias, which the tenant-scoped routes read from the X-Tenant header.
 func ensureReviewTenant(t *testing.T, client *http.Client, base, token string) string {
 	t.Helper()
-	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil,
+	ensured := send(t, client, http.MethodPost, base+tenantpersonal.RoutePath, nil,
 		map[string]string{"Authorization": "Bearer " + token})
 	if ensured.status != http.StatusOK {
 		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)

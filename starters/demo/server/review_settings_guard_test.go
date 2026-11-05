@@ -32,6 +32,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // protectedReviewTenant is the protected- prefixed business tenant this case
@@ -71,7 +72,7 @@ func TestReviewSettingsWriteGuardRefusesTheProtectedFixture(t *testing.T) {
 			t.Errorf("Denied(%q) = true, want an ordinary business tenant allowed", domain)
 		}
 	}
-	for _, domain := range []string{personalIDPrefix + "acct-1", personalIDPrefix} {
+	for _, domain := range []string{tenantpersonal.IDPrefix + "acct-1", tenantpersonal.IDPrefix} {
 		denied, err := guard.Denied(ctx, domain)
 		if err != nil {
 			t.Fatalf("Denied(%q): %v", domain, err)

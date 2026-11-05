@@ -18,6 +18,8 @@ import (
 	"time"
 
 	maillog "github.com/vislake/speed/pkg/mail/log"
+	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // reviewMailLogMarker is what the review mail carrier writes for each message;
@@ -162,10 +164,11 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q before the address is proved, want pending", state)
 	}
 
-	// The organization exists before the address is proved: the account's creation
-	// hook built the personal tenant, and the verification notice is a separate
-	// surface. The backfill after verification below reads the same tenant back.
-	early := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
+	// The organization exists before the address is proved: the account's
+	// transaction wrote the personal tenant, and the verification notice is a
+	// separate surface. The backfill after verification below reads the same
+	// tenant back.
+	early := send(t, client, http.MethodPost, base+tenantpersonal.RoutePath, nil, auth)
 	if early.status != http.StatusOK {
 		t.Fatalf("the backfill before verification answered %d:\n%s", early.status, early.body)
 	}
@@ -179,7 +182,7 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	if err := json.Unmarshal(early.body, &personal); err != nil {
 		t.Fatalf("the backfill's answer is not JSON: %v\n%s", err, early.body)
 	}
-	if personal.Created || personal.Tenant.ID == "" || personal.Tenant.Kind != personalKind {
+	if personal.Created || personal.Tenant.ID == "" || personal.Tenant.Kind != string(tenant.KindPersonal) {
 		t.Errorf("the backfill answered %+v, want the tenant the creation hook built", personal)
 	}
 
@@ -216,7 +219,7 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 
 	// The proved address lifts the registration limit; the organization the creation
 	// hook built is read back unchanged.
-	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
+	ensured := send(t, client, http.MethodPost, base+tenantpersonal.RoutePath, nil, auth)
 	if ensured.status != http.StatusOK {
 		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)
 	}

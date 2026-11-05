@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"testing"
+
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // reviewEnabled says this test binary is built with the review tag; the
@@ -30,7 +32,7 @@ func TestTheDefaultSettingsWriteGuardHasNoReviewFixture(t *testing.T) {
 			t.Errorf("Denied(%q) = true in a default build, want the review fixture compiled out", domain)
 		}
 	}
-	for _, domain := range []string{personalIDPrefix + "acct-1", personalIDPrefix} {
+	for _, domain := range []string{tenantpersonal.IDPrefix + "acct-1", tenantpersonal.IDPrefix} {
 		denied, err := guard.Denied(ctx, domain)
 		if err != nil {
 			t.Fatalf("Denied(%q): %v", domain, err)

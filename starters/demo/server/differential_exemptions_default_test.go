@@ -30,11 +30,11 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 // TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration holds each
 // baseline exemption to its stated reason over the template this build's case
 // runs: dropping the module leaves every endpoint it describes at the same
-// route count. It also holds the personal module out of the table: the compiled
-// default enables org.personal, so an exemption claiming its removal is vacuous
-// would be false. Since the account module requires the provisioning seam this
-// module provides, dropping it fails the startup instead of lowering a route
-// count; the case holds that failure.
+// route count. It also holds the personal module out of the table: the baseline
+// names org.personal and the module is always in force, so an exemption
+// claiming its removal is vacuous would be false. Since the account module
+// requires the provisioning seam this module provides, dropping it fails the
+// startup instead of lowering a route count; the case holds that failure.
 func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	names := make([]string, 0, len(mayLeaveRouteCountUnchanged))
 	for name := range mayLeaveRouteCountUnchanged {

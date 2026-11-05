@@ -25,6 +25,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // roleManager answers the manager calls the seed's role steps make. The
@@ -1165,14 +1166,14 @@ func TestSeedRefusesAPersonalPrefixedTenantInTheTenantList(t *testing.T) {
 			Identifier: "operator", Password: "operator-dev-secret", PlatformAdmin: true,
 		}},
 		Tenants: []seedTenantEntry{{
-			Name: personalIDPrefix + "opaque", Admins: []string{"operator"},
+			Name: tenantpersonal.IDPrefix + "opaque", Admins: []string{"operator"},
 		}},
 	}
 	err := checkTenants(in)
 	if err == nil {
 		t.Fatal("checkTenants accepted a personal-prefixed tenant in seed.tenants")
 	}
-	for _, want := range []string{personalIDPrefix, "seed.tenants", "account creation"} {
+	for _, want := range []string{tenantpersonal.IDPrefix, "seed.tenants", "account creation"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal = %q, want it to name %q", err, want)
 		}
@@ -1438,7 +1439,7 @@ func TestSeedRepairsAnUndeclaredTenantsAdministration(t *testing.T) {
 // domain is left entirely to the host.
 func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	t.Parallel()
-	personal := personalIDPrefix + "acct-1"
+	personal := tenantpersonal.IDPrefix + "acct-1"
 	domains := []string{"acme", string(authz.PlatformDomain), personal}
 	roster := newFakeRoster()
 	grants := newFakeGrants()
@@ -1587,7 +1588,7 @@ func TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog(t *testing.T) {
 // revokes grants outside the allowlist through the manager.
 func TestSeedLeavesAPersonalDomainsRoleUnfrozen(t *testing.T) {
 	t.Parallel()
-	domain := personalIDPrefix + "acct-1"
+	domain := tenantpersonal.IDPrefix + "acct-1"
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	catalog := fixedCatalog{
