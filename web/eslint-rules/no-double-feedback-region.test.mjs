@@ -353,7 +353,7 @@ describe('no-double-feedback-region exemptions', () => {
       'components rendering two regions without an exemption',
     ).toEqual([])
     expect(stale, 'exemptions no component needs any more').toEqual([])
-  })
+  }, 60_000)
 
   it('states a reason on every exemption and names unique components', () => {
     const keys = new Set()

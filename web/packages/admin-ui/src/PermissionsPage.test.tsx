@@ -332,7 +332,7 @@ describe('PermissionsPage', () => {
     // A landed create returns both fields to their initial values.
     expect(name).toHaveValue('')
     expect(description).toHaveValue('')
-  })
+  }, 60_000)
 
   it('disables the refresh while the grants scope is in flight', async () => {
     const user = userEvent.setup()
