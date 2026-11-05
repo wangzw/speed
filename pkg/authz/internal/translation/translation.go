@@ -64,6 +64,8 @@ var builtin = map[authz.Permission]pair{
 	authz.PermissionTenantRoleManage:    {object: "tenant_role", action: "manage"},
 	authz.PermissionTenantSettingsRead:  {object: "tenant_settings", action: "read"},
 	authz.PermissionTenantSettingsWrite: {object: "tenant_settings", action: "write"},
+	authz.PermissionTenantProfileRead:   {object: "tenant_profile", action: "read"},
+	authz.PermissionTenantProfileWrite:  {object: "tenant_profile", action: "write"},
 	authz.PermissionAuditRead:           {object: "audit", action: "read"},
 	authz.PermissionAuditExport:         {object: "audit", action: "export"},
 	authz.PermissionSettingsRead:        {object: "settings", action: "read"},

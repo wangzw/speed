@@ -26,6 +26,8 @@ func TestTheCentralCatalogSplitsTheAdministrationGrantSets(t *testing.T) {
 		authz.PermissionTenantRoleRead,
 		authz.PermissionTenantSettingsRead,
 		authz.PermissionTenantSettingsWrite,
+		authz.PermissionTenantProfileRead,
+		authz.PermissionTenantProfileWrite,
 	}
 	if got := catalog.TenantGoverned(); !slices.Equal(got, want) {
 		t.Errorf("TenantGoverned() = %v, want %v", got, want)

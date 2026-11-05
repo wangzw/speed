@@ -55,6 +55,17 @@ const (
 	PermissionTenantSettingsWrite Permission = "settings.tenant.write"
 )
 
+// The permissions of the tenant profile surface: reading and writing the
+// organization profile a tenant carries. They are tenant-domain codes, told
+// apart from the platform roster's tenant.read and tenant.manage, so a platform
+// grant and a tenant grant decide separately. Both are governed: a tenant
+// administrator holds them by default, while a personal tenant's administrator
+// allowlist is the host's explicit list and does not include them.
+const (
+	PermissionTenantProfileRead  Permission = "tenant.profile.read"
+	PermissionTenantProfileWrite Permission = "tenant.profile.write"
+)
+
 // The permissions this capability carries for the audit and settings
 // capabilities: their search and export, and their write surface.
 const (

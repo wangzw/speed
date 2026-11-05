@@ -23,5 +23,7 @@
   "authz.permission.settings-read": "读取设置",
   "authz.permission.settings-tenant-read": "读取本租户的设置",
   "authz.permission.settings-tenant-write": "修改本租户的设置",
-  "authz.permission.settings-write": "写入设置"
+  "authz.permission.settings-write": "写入设置",
+  "authz.permission.tenant-profile-read": "读取本租户的组织资料",
+  "authz.permission.tenant-profile-write": "修改本租户的组织资料"
 }

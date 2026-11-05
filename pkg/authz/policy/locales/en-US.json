@@ -23,5 +23,7 @@
   "authz.permission.settings-read": "Read settings",
   "authz.permission.settings-tenant-read": "Read the tenant's settings",
   "authz.permission.settings-tenant-write": "Write the tenant's settings",
-  "authz.permission.settings-write": "Write settings"
+  "authz.permission.settings-write": "Write settings",
+  "authz.permission.tenant-profile-read": "Read the tenant's organization profile",
+  "authz.permission.tenant-profile-write": "Write the tenant's organization profile"
 }

@@ -58,6 +58,8 @@ func declaredPermissions() authz.PermissionSpec {
 		authz.PermissionSettingsWrite,
 		authz.PermissionTenantSettingsRead,
 		authz.PermissionTenantSettingsWrite,
+		authz.PermissionTenantProfileRead,
+		authz.PermissionTenantProfileWrite,
 	}
 	keys := make(map[authz.Permission]string, len(list))
 	replacer := strings.NewReplacer(".", "-", ":", "-")
@@ -73,6 +75,8 @@ func declaredPermissions() authz.PermissionSpec {
 		authz.PermissionTenantRoleManage,
 		authz.PermissionTenantSettingsRead,
 		authz.PermissionTenantSettingsWrite,
+		authz.PermissionTenantProfileRead,
+		authz.PermissionTenantProfileWrite,
 		authz.PermissionMembershipManage,
 		authz.PermissionIDPManage,
 	}

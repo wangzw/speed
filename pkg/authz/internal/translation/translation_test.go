@@ -99,6 +99,8 @@ func TestTheBuiltinSetIsTheWholeClosedSet(t *testing.T) {
 		authz.PermissionSettingsWrite:       {"settings", "write"},
 		authz.PermissionTenantSettingsRead:  {"tenant_settings", "read"},
 		authz.PermissionTenantSettingsWrite: {"tenant_settings", "write"},
+		authz.PermissionTenantProfileRead:   {"tenant_profile", "read"},
+		authz.PermissionTenantProfileWrite:  {"tenant_profile", "write"},
 	}
 	for p, want := range want {
 		object, action, ok := Lookup(p)
