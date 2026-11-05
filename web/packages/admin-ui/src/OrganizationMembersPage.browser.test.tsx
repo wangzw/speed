@@ -264,17 +264,11 @@ function bodyCellWith(container: HTMLElement, value: string): HTMLElement {
 }
 
 /**
- * Assert the page itself keeps its content inside the viewport, at the
- * width the tables are actually laid out at.
- *
- * This is the page-level rule the operator sees. It deliberately does not
- * pin each containment box to the tier floors the way
- * `expectNoHorizontalOverflow` does, nor require a table to fit its own
- * container: the two nowrap identity columns contribute their cap to the
- * members table's unbreakable width, so a row carrying a cap-length display
- * name *and* a cap-length account makes the table's own scroll container
- * scroll -- the fallback DataTable documents. The page must still not
- * overflow.
+ * Assert the page itself keeps its content inside the viewport when the
+ * content region is below the `sm` container floor. At that width the
+ * design keeps only the unprioritized columns and lets the table scroll
+ * inside its own container, so the table fitting its box is not required;
+ * the page must not gain a horizontal scrollbar of its own.
  */
 async function expectNoPageHorizontalOverflow(): Promise<void> {
   await waitFor(() => {
@@ -299,17 +293,43 @@ async function expectNoPageHorizontalOverflow(): Promise<void> {
   ).toBeLessThanOrEqual(document.documentElement.clientWidth + 1)
 }
 
+/**
+ * Assert a column header is inside the table's own visible box, not merely
+ * that CSS keeps it displayed. A table scrolls horizontally once its
+ * columns exceed the container, so `toBeVisible()` alone still passes for a
+ * column scrolled out of the viewport; this compares the header's rendered
+ * rect against the scroll container's instead.
+ */
+function expectHeaderOnScreen(container: HTMLElement, header: string): void {
+  const cell = within(container).getByRole('columnheader', {
+    name: header,
+    exact: true,
+  })
+  expect(cell, `the ${header} column is hidden`).toBeVisible()
+  const cellRect = cell.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  expect(
+    cellRect.left >= containerRect.left - 1 &&
+      cellRect.right <= containerRect.right + 1,
+    `the ${header} column is scrolled out of the table's visible area`,
+  ).toBe(true)
+}
+
 /** The number of line boxes the text node reading exactly `value` is laid
- * out in inside `cell`. A short value that stays on one line yields one
- * rect; one squeezed until it breaks mid-token yields two or more. Measured
- * from the rendered line boxes, not from a font size or a pixel width. */
+ * out in inside `cell`. A value on one line yields one line top even when
+ * truncation makes the range report more than one rect; a value squeezed
+ * until it breaks mid-token yields more than one. Measured from the
+ * rendered line boxes, not from a font size or a pixel width. */
 function lineBoxCount(cell: HTMLElement, value: string): number {
   const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT)
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
     if (node.textContent?.trim() !== value) continue
     const range = document.createRange()
     range.selectNodeContents(node)
-    return range.getClientRects().length
+    const tops = new Set(
+      Array.from(range.getClientRects(), (rect) => Math.round(rect.top)),
+    )
+    return tops.size
   }
   throw new Error(`no text node reads exactly "${value}"`)
 }
@@ -416,11 +436,12 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     // The values are longer than their columns' content caps. At 900px the
     // container is below the md tier, so the primary, high and action
     // columns share the narrow width with those long values. The display
-    // name and account are both nowrap identity columns capped at the
-    // primary width, so at the synthetic sm floor this row's unbreakable
-    // width exceeds the floor and the members table scrolls inside its own
-    // container -- the documented fallback. The page must not overflow.
-    await expectNoPageHorizontalOverflow()
+    // name and account are both nowrap identity columns, so their caps --
+    // tightened below `md` so the row still fits the sm floor -- bound the
+    // members table's unbreakable width, and the full values stay reachable
+    // through the title and copy control. Both tables must stay inside their
+    // own boxes and inside every tier floor.
+    await expectNoHorizontalOverflow()
 
     for (const [container, value] of [
       [members.container, LONG_DISPLAY_NAME],
@@ -437,34 +458,46 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
   })
 })
 
-describe('OrganizationMembersPage short identity values in Chromium', () => {
-  // A short, single-token identity is what an operator reads to tell one
-  // row from another: it must never be split mid-token, however narrow the
-  // column happens to be laid out.
-  const SHORT_NAME = 'Demo'
+describe('OrganizationMembersPage single-token identity values in Chromium', () => {
+  // A single-token identity is what an operator reads to tell one row from
+  // another: it must never be split mid-token, however narrow the column is
+  // laid out. The token is longer than the squeezed column, which is the
+  // case a wrapping policy splits and one-line truncation keeps whole.
+  const IDENTITY_NAME = 'AlexandriaCassandraMontgomeryWorthington'
   // The account is an opaque identifier and every member carries one, so
-  // the display-name column competes with it for the same row width. A long
-  // identifier is what squeezes the short name in the reported case.
-  const SHORT_ACCOUNT = 'account-identifier-with-a-long-unbroken-value-0000002'
-  const SHORT_MEMBER: AdminMember = {
+  // the display-name column competes with it for the same row width.
+  const IDENTITY_ACCOUNT =
+    'account-identifier-with-a-long-unbroken-value-0000002'
+  const IDENTITY_MEMBER: AdminMember = {
     ...ADA,
-    account: SHORT_ACCOUNT,
-    display_name: SHORT_NAME,
+    account: IDENTITY_ACCOUNT,
+    display_name: IDENTITY_NAME,
   }
-  const SHORT_INVITATIONS: readonly AdminInvitation[] = [
-    { ...INVITATIONS[0], invited_by: SHORT_ACCOUNT },
-  ]
+  // The inviter is a second member so the invitation's resolved name stays
+  // a short token while the members table still carries the long one.
+  const INVITER_NAME = 'Demo'
+  const INVITER_ACCOUNT =
+    'account-identifier-with-a-long-unbroken-value-0000003'
+  const INVITER_MEMBER: AdminMember = {
+    ...ADA,
+    account: INVITER_ACCOUNT,
+    display_name: INVITER_NAME,
+  }
+  const INVITATION: AdminInvitation = {
+    ...INVITATIONS[0],
+    invited_by: INVITER_ACCOUNT,
+  }
 
-  it('keeps a short display name and a short inviter on one line in the 1024px shell', async () => {
+  it('keeps a single-token display name and inviter on one line in the 1024px shell', async () => {
     await page.viewport(1024, 900)
-    renderShellPage(backend([SHORT_MEMBER], SHORT_INVITATIONS))
+    renderShellPage(backend([IDENTITY_MEMBER, INVITER_MEMBER], [INVITATION]))
 
-    await screen.findAllByText(SHORT_NAME)
-    await screen.findByText(INVITATIONS[0].email)
+    await screen.findAllByText(IDENTITY_NAME)
+    await screen.findByText(INVITATION.email)
     // The shell's content region is ~640-700px here, above the sm container
-    // floor; the page must keep fitting it, and the six visible columns of
-    // each table must stay on screen.
-    await expectNoPageHorizontalOverflow()
+    // floor: both tables stay inside it and inside every tier floor, and each
+    // table's visible columns stay on screen rather than scrolling out.
+    await expectNoHorizontalOverflow()
 
     const members = tableFor(enUS.members.column.displayName)
     const invitations = tableFor(enUS.invitations.column.email)
@@ -477,13 +510,7 @@ describe('OrganizationMembersPage short identity values in Chromium', () => {
       enUS.members.column.joinedAt,
       enUS.members.column.actions,
     ]) {
-      expect(
-        within(members.container).getByRole('columnheader', {
-          name: header,
-          exact: true,
-        }),
-        `the ${header} member column is hidden`,
-      ).toBeVisible()
+      expectHeaderOnScreen(members.container, header)
     }
     for (const header of [
       enUS.invitations.column.email,
@@ -493,40 +520,41 @@ describe('OrganizationMembersPage short identity values in Chromium', () => {
       enUS.invitations.column.created,
       enUS.invitations.column.actions,
     ]) {
-      expect(
-        within(invitations.container).getByRole('columnheader', {
-          name: header,
-          exact: true,
-        }),
-        `the ${header} invitation column is hidden`,
-      ).toBeVisible()
+      expectHeaderOnScreen(invitations.container, header)
     }
 
-    const memberNameCell = bodyCellWith(members.container, SHORT_NAME)
+    const memberNameCell = bodyCellWith(members.container, IDENTITY_NAME)
     expect(
-      lineBoxCount(memberNameCell, SHORT_NAME),
-      'the short member display name is split across lines',
+      lineBoxCount(memberNameCell, IDENTITY_NAME),
+      'the member display name is split across lines',
     ).toBe(1)
-    const inviterCell = bodyCellWith(invitations.container, SHORT_NAME)
+    const inviterCell = bodyCellWith(invitations.container, INVITER_NAME)
     expect(
-      lineBoxCount(inviterCell, SHORT_NAME),
-      'the short inviter name is split across lines',
+      lineBoxCount(inviterCell, INVITER_NAME),
+      'the inviter name is split across lines',
     ).toBe(1)
   })
 
   it('leaves the 600px viewport behavior unchanged', async () => {
     await page.viewport(600, 900)
-    renderPage({}, undefined, backend([SHORT_MEMBER], SHORT_INVITATIONS))
+    renderPage(
+      {},
+      undefined,
+      backend([IDENTITY_MEMBER, INVITER_MEMBER], [INVITATION]),
+    )
 
-    await screen.findAllByText(SHORT_NAME)
-    await screen.findByText(INVITATIONS[0].email)
+    await screen.findAllByText(IDENTITY_NAME)
+    await screen.findByText(INVITATION.email)
+    // At this viewport the content region is below the sm container floor,
+    // so only the unprioritized columns stay and the table's own scroll is
+    // the documented fallback; the page must not gain a scrollbar of its own.
     await expectNoPageHorizontalOverflow()
 
     const members = tableFor(enUS.members.column.displayName)
-    const memberNameCell = bodyCellWith(members.container, SHORT_NAME)
+    const memberNameCell = bodyCellWith(members.container, IDENTITY_NAME)
     expect(
-      lineBoxCount(memberNameCell, SHORT_NAME),
-      'the short member display name is split across lines at 600px',
+      lineBoxCount(memberNameCell, IDENTITY_NAME),
+      'the member display name is split across lines at 600px',
     ).toBe(1)
   })
 })

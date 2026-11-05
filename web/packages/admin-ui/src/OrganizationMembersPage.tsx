@@ -104,6 +104,22 @@ const COMPACT_TABLE_SX = {
   '& .MuiTableCell-root': { px: 1 },
 } as const
 
+/**
+ * The content cap the member table's two nowrap identity columns take
+ * below `md`. The shared primary cap (`PRIMARY_COLUMN_MAX_WIDTH`) is sized
+ * for a primary column whose wrapping text can shrink to its longest word;
+ * the display name and the account stay on one line, so each contributes
+ * its whole cap to the row's unbreakable width. At the 600px `sm` floor
+ * those two caps together with the roles, status, joined and action columns
+ * exceed the floor. 112px keeps the row inside it; the complete values
+ * remain reachable through the title and the copy control. From `md` up the
+ * shared 200px cap applies unchanged.
+ */
+const MEMBER_IDENTITY_MAX_WIDTH = {
+  belowMd: 112,
+  fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
+} as const
+
 /** The sources the surface names itself; a `jit:<id>` value names a provider. */
 const MEMBER_SOURCES = new Set<string>(['admin', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
@@ -595,7 +611,7 @@ export function OrganizationMembersPage({
       cellWrap: 'nowrap',
       cellFullValue: (member) =>
         member.display_name === '' ? undefined : member.display_name,
-      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      contentMaxWidth: MEMBER_IDENTITY_MAX_WIDTH,
       cell: (member) => member.display_name,
     },
     {
@@ -604,7 +620,7 @@ export function OrganizationMembersPage({
       priority: 'high',
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
-      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      contentMaxWidth: MEMBER_IDENTITY_MAX_WIDTH,
       cell: (member) => <Typography variant="body2">{member.account}</Typography>,
     },
     {

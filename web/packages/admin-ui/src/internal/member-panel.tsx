@@ -299,8 +299,9 @@ export function MemberPanel({
   }
 
   /**
-   * Unbinding is not reversible from this panel and takes the role's
-   * permissions away at once, so it asks first. The confirmation also
+   * Unbinding takes the role's permissions away at once, so it asks first.
+   * The panel can grant the role again afterwards; the confirmation guards
+   * the immediate loss, not an irreversible state. The confirmation also
    * names the two refusals the operator cannot see from here: a caller's
    * own tenant-admin binding is protected, and the server keeps a domain's
    * last tenant-admin binding.
