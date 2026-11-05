@@ -363,6 +363,9 @@ function parseFlowReply(body: string): FlowReply {
   }
 }
 
+/** The authenticator's step, matching the review register's fixed thirty seconds. */
+const TOTP_STEP_MS = 30_000
+
 /**
  * Sign one account in through the product's own password flow and answer the
  * access token. The flow keeps its state in a cookie, so the answer's cookie is
@@ -373,6 +376,11 @@ function parseFlowReply(body: string): FlowReply {
  * factor, answers its challenge with the code the review seed produces, and
  * completes with the elevated session; a flow that asks for a factor the caller
  * did not name fails loudly rather than completing at the wrong level.
+ *
+ * The authenticator refuses to match a counter it already accepted, and a
+ * browser session of the same account may have used the current step just
+ * before this call. The code is therefore asked for one step ahead, which the
+ * factor's one-step window accepts and its replay check sees as fresh.
  */
 async function signInThroughApi(
   origin: string,
@@ -431,7 +439,10 @@ async function signInThroughApi(
       body: JSON.stringify({
         seq,
         step: 'factor',
-        input: { factor: totp.id, code: totpCode(totpSecret) },
+        input: {
+          factor: totp.id,
+          code: totpCode(totpSecret, new Date(Date.now() + TOTP_STEP_MS)),
+        },
       }),
     })
     if (passed.status !== 200) {
