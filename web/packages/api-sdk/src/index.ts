@@ -957,6 +957,51 @@ export interface NotificationType {
 }
 
 /**
+ * The alias, display name and description of the organization to create. The identifier is generated.
+ */
+export interface OrganizationCreateRequest {
+  /** The organization's public alias: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation. */
+  alias: string;
+  /** The organization's description; at most 500 runes after trimming. */
+  description?: string;
+  /** The organization's display name; 1 to 100 runes after trimming, and the surface requires it non-empty. */
+  display_name: string;
+}
+
+/**
+ * The organization's state; a self-service organization starts active.
+ */
+export type OrganizationCreatedTenantStatus = typeof OrganizationCreatedTenantStatus[keyof typeof OrganizationCreatedTenantStatus];
+
+
+export const OrganizationCreatedTenantStatus = {
+  active: 'active',
+} as const;
+
+/**
+ * The created organization: the generated identifier, the caller's alias and profile, and the active state.
+ */
+export interface OrganizationCreatedTenant {
+  /** The request-surface name the caller chose; unique across the roster and immutable after creation. */
+  alias: string;
+  /** The organization's description, trimmed. */
+  description: string;
+  /** The organization's display name, trimmed. */
+  displayName: string;
+  /** The generated organization identifier: the fixed prefix "org-" followed by a random UUID. The scoped tables hold it. */
+  id: string;
+  /** The organization's state; a self-service organization starts active. */
+  status: OrganizationCreatedTenantStatus;
+}
+
+/**
+ * The organization this call created.
+ */
+export interface OrganizationCreatedReply {
+  tenant: OrganizationCreatedTenant;
+}
+
+/**
  * Empty object when the row carries no detail
  */
 export type AuditAdminRecordDetail = {[key: string]: string};
@@ -6791,6 +6836,71 @@ export function useNotificationPreferencesListTypes<TData = Awaited<ReturnType<t
 
 
 
+
+/**
+ * Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated as org-<uuid>. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.
+ * @summary Create a business organization
+ */
+export const orgCreateCreate = (
+    organizationCreateRequest: OrganizationCreateRequest,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<OrganizationCreatedReply>(
+      {url: `/api/v1/orgs`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: organizationCreateRequest, signal
+    },
+      );
+    }
+
+
+
+export const getOrgCreateCreateMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof orgCreateCreate>>, TError,{data: OrganizationCreateRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof orgCreateCreate>>, TError,{data: OrganizationCreateRequest}, TContext> => {
+
+const mutationKey = ['orgCreateCreate'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof orgCreateCreate>>, {data: OrganizationCreateRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  orgCreateCreate(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OrgCreateCreateMutationResult = NonNullable<Awaited<ReturnType<typeof orgCreateCreate>>>
+    export type OrgCreateCreateMutationBody = OrganizationCreateRequest
+    export type OrgCreateCreateMutationError = Problem
+
+    /**
+ * @summary Create a business organization
+ */
+export const useOrgCreateCreate = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof orgCreateCreate>>, TError,{data: OrganizationCreateRequest}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof orgCreateCreate>>,
+        TError,
+        {data: OrganizationCreateRequest},
+        TContext
+      > => {
+      return useMutation(getOrgCreateCreateMutationOptions(options));
+    }
 
 /**
  * Reads every audit row the supplied conditions match and writes it as one JSON object per line, the same record view the list route answers, with no envelope and no header line. The body is streamed page by page as the read surface returns it; the export is not a snapshot of one instant, so a row appended while it runs is not in the file and a row deleted while it runs is missing from it. The page size is the read surface's maximum and is not the caller's to choose; cursor and limit describe a page and are refused. A filter that matches nothing answers an empty body.
