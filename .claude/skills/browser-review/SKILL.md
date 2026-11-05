@@ -82,8 +82,10 @@ The profile keeps those cookies across restarts, so this happens once.
 - `make dev` serves the app at `http://localhost:8080` (vite, strictPort)
   and proxies the API to `127.0.0.1:8081`. A taken port fails the start
   rather than moving; stop whatever holds it.
-- Do not run `make e2e` while `make dev` is up: the e2e global setup
-  rebuilds `starters/demo/server/dist`, which the running program embeds.
+- `make e2e` may run while `make dev` is up: the e2e harness builds its own
+  front end into `starters/demo/server/dist-e2e` and its binaries with the
+  `e2e` build tag, so it writes nothing the dev server reads. Two heavy gates
+  at once still compete for machine resources.
 - Do not start the `-tags=review` assembly while `make dev` is up. It binds
   `127.0.0.1:8080` too.
 
