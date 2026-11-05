@@ -2,21 +2,43 @@ package tenantadmin
 
 import (
 	"context"
+	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/authz"
 )
 
 // handleRoleList answers GET /api/v1/tenants/:tenant/roles: every role of the
-// tenant. It is a read, so the action is authz.tenant.role.read; the identity
-// and the permission are decided by the route's guard wrapper.
+// tenant, with its description, its grant count, its active member count and
+// whether the caller may manage its grants. It is a read, so the action is
+// authz.tenant.role.read; the identity and the permission are decided by the
+// route's guard wrapper.
+//
+// The counts are read in one pass each: the grant counts from one grouped read,
+// and the member counts from one tenant-wide binding read plus one batch
+// identity read. The caller's held set is read because can_manage is a
+// property of the caller, not of the role; a held set that cannot be read is a
+// 503, never a role list that quietly says the caller may manage nothing.
 func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListBody, error) {
 	roles, err := p.manager.Roles(ctx, in.Tenant)
 	if err != nil {
 		return roleListBody{}, p.failureOf("listing the roles", err)
 	}
+	grantCounts, err := p.manager.GrantCounts(ctx, in.Tenant)
+	if err != nil {
+		return roleListBody{}, p.failureOf("counting the roles' grants", err)
+	}
+	memberCounts, err := p.roleMemberCounts(ctx, in.Tenant, roles)
+	if err != nil {
+		return roleListBody{}, err
+	}
+	held, err := p.heldPermissions(ctx, in.Tenant)
+	if err != nil {
+		return roleListBody{}, err
+	}
+	canManage := held[authz.PermissionTenantRoleManage]
 	views := make([]AuthzTenantAdminRoleView, len(roles))
 	for i, r := range roles {
-		views[i] = roleViewOf(r)
+		views[i] = p.roleViewOf(ctx, r, grantCounts[r.Role], memberCounts[r.Role], canManage)
 	}
 	return roleListBody{Roles: views}, nil
 }
@@ -34,6 +56,12 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 	if err := refuseRoleRowWrite(role); err != nil {
 		return struct{}{}, err
 	}
+	// The description is the request's to set, and the free text wins over the
+	// legacy key when both are present. The role name is not writable: it comes
+	// from the path, which is the binding's key.
+	if in.Description != nil && utf8.RuneCountInString(*in.Description) > authz.RoleDescriptionMax {
+		return struct{}{}, badRequest()
+	}
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteRole); err != nil {
 		return struct{}{}, err
 	}
@@ -50,6 +78,9 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 		Tenant:         in.Tenant,
 		Role:           role,
 		DescriptionKey: in.DescriptionKey,
+	}
+	if in.Description != nil {
+		record.Description = *in.Description
 	}
 	if err := p.manager.PutRole(ctx, record); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionRolePut, string(role), actionID))

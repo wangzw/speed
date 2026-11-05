@@ -170,14 +170,23 @@ func prescreenRoleWrite(next gin.HandlerFunc) gin.HandlerFunc {
 			// description key.
 			members = map[string]json.RawMessage{}
 		}
-		kept := make(map[string]json.RawMessage, 1)
-		if value, ok := members["description_key"]; ok {
+		kept := make(map[string]json.RawMessage, 2)
+		for _, name := range []string{"description_key", "description"} {
+			value, ok := members[name]
+			if !ok {
+				continue
+			}
 			var text string
 			if valueErr := json.Unmarshal(value, &text); valueErr != nil {
+				// A literal null names no text, the same absence an omitted member
+				// is; any other non-string value is a shape refusal.
+				if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+					continue
+				}
 				refuseBadRequest(c)
 				return
 			}
-			kept["description_key"] = value
+			kept[name] = value
 		}
 		encoded, err := json.Marshal(kept)
 		if err != nil {

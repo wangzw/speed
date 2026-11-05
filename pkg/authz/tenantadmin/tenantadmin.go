@@ -114,11 +114,14 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // self-registration has not proved an email address.
 //
 // The HTTP entry point, the tenant administration guard, the route-declaration
-// surface, the host write guard, the message localizer and the logger are taken
-// up in Init: a command that mounts routes and has no entry point is a failure
-// to report at wiring time; a command with no tenant administration guard
-// cannot mount a tenant-scoped route and is refused; the declaration surface's
-// absence, the write guard's absence and the localizer's absence are all legal.
+// surface, the host write guard, the message localizer, the account identity
+// reader and the logger are taken up in Init: a command that mounts routes and
+// has no entry point is a failure to report at wiring time; a command with no
+// tenant administration guard cannot mount a tenant-scoped route and is
+// refused; the declaration surface's absence, the write guard's absence, the
+// localizer's absence and the identity reader's absence are all legal — the last
+// one makes a role's member count and its holders' activity unknown, never
+// zero or inactive.
 //
 // The outward declaration carries a speedhttp.Spec resource beside the schema:
 // it holds this module's OpenAPI fragment, which describes the tenant
@@ -213,6 +216,11 @@ type product struct {
 	// nil when the assembly delivers no i18n engine. With none the catalog route
 	// answers an empty description.
 	localizer i18n.Localizer
+	// identities resolves the accounts a role's usage read names. It is the
+	// optional host seam: with none the role list reports an unknown member count
+	// and the role usage read reports an empty display name and an unknown
+	// activity state. A reader that cannot answer is a 503, never an empty set.
+	identities authz.AccountIdentityReader
 	// routeGuard is the tenant administration guard the tenant capability
 	// delivers under the pkg/http TenantAdminRouteGuard capability: the identity
 	// rule plus the refusal of the platform domain. Every route is wrapped with
@@ -318,6 +326,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.localizer = localizer
+	}
+	if identities, found, err := optional[authz.AccountIdentityReader](reg, "the account identity reader"); err != nil {
+		return err
+	} else if found {
+		p.identities = identities
 	}
 	if routeGuard, found, err := optional[speedhttp.TenantAdminRouteGuard](reg, "the tenant administration guard"); err != nil {
 		return err

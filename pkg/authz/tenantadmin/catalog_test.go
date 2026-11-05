@@ -37,8 +37,8 @@ func TestTheCatalogRouteListsOnlyTheGovernedSet(t *testing.T) {
 		if _, ok := got.Permissions[i]["description"]; !ok {
 			t.Errorf("view %d carries no description field", i)
 		}
-		if len(got.Permissions[i]) != 2 {
-			t.Errorf("view %d carries %d fields, want the two the route declares", i, len(got.Permissions[i]))
+		if len(got.Permissions[i]) != 5 {
+			t.Errorf("view %d carries %d fields, want the five the route declares", i, len(got.Permissions[i]))
 		}
 	}
 	for _, view := range got.Permissions {
@@ -50,11 +50,12 @@ func TestTheCatalogRouteListsOnlyTheGovernedSet(t *testing.T) {
 	}
 }
 
-// permissionViews decodes the catalog route's answer into one map per view.
-func permissionViews(t *testing.T, body string) []map[string]string {
+// permissionViews decodes the catalog route's answer into one map per view. The
+// members are kept raw because the view mixes text, booleans and integers.
+func permissionViews(t *testing.T, body string) []map[string]json.RawMessage {
 	t.Helper()
 	var got struct {
-		Permissions []map[string]string `json:"permissions"`
+		Permissions []map[string]json.RawMessage `json:"permissions"`
 	}
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatalf("the answer %q is not a permissions object: %v", body, err)
@@ -98,7 +99,7 @@ func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
 				t.Fatalf("the answer lists %d views, want %d", len(views), len(texts))
 			}
 			for i, text := range texts {
-				if got := views[i]["description"]; got != text {
+				if got := viewString(t, views[i], "description"); got != text {
 					t.Errorf("view %d's description = %q in %s, want %q", i, got, locale, text)
 				}
 			}
@@ -115,7 +116,7 @@ func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testin
 		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet,
 			"/api/v1/tenants/t1/permissions", params("tenant", "t1"), nil)
 		views := permissionViews(t, w.Body.String())
-		if len(views) != 1 || views[0]["description"] != "" {
+		if len(views) != 1 || viewString(t, views[0], "description") != "" {
 			t.Fatalf("the answer = %+v, want one view whose description is the empty string", views)
 		}
 	})
@@ -125,7 +126,7 @@ func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testin
 		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet,
 			"/api/v1/tenants/t1/permissions", params("tenant", "t1"), nil)
 		views := permissionViews(t, w.Body.String())
-		if len(views) != 1 || views[0]["description"] != "" {
+		if len(views) != 1 || viewString(t, views[0], "description") != "" {
 			t.Fatalf("the answer = %+v, want one view whose description is the empty string", views)
 		}
 	})
@@ -140,7 +141,7 @@ func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
 	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet,
 		"/api/v1/tenants/t1/permissions", params("tenant", "t1"), nil)
 	views := permissionViews(t, w.Body.String())
-	if len(views) != 1 || views[0]["description"] != key {
+	if len(views) != 1 || viewString(t, views[0], "description") != key {
 		t.Fatalf("the description = %+v, want the key itself %q", views, key)
 	}
 }
@@ -171,10 +172,11 @@ func TestTheViewsExposeNoOpaqueID(t *testing.T) {
 		view any
 		want []string
 	}{
-		"permission": {AuthzTenantAdminPermissionView{}, []string{"description", "permission"}},
-		"role":       {AuthzTenantAdminRoleView{}, []string{"builtin", "created_at", "description_key", "role", "tenant"}},
-		"grant":      {AuthzTenantAdminGrantView{}, []string{"action", "created_at", "permission", "resource", "role", "tenant"}},
-		"binding":    {AuthzTenantAdminBindingView{}, []string{"account", "granted_at", "role", "tenant"}},
+		"permission":   {AuthzTenantAdminPermissionView{}, []string{"dangerous", "description", "grantable", "group", "permission"}},
+		"role":         {AuthzTenantAdminRoleView{}, []string{"builtin", "can_manage", "created_at", "description", "description_key", "member_count", "permission_count", "role", "tenant"}},
+		"role binding": {AuthzTenantAdminRoleBindingView{}, []string{"account", "active", "display_name", "granted_at"}},
+		"grant":        {AuthzTenantAdminGrantView{}, []string{"action", "created_at", "permission", "resource", "role", "tenant"}},
+		"binding":      {AuthzTenantAdminBindingView{}, []string{"account", "granted_at", "role", "tenant"}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

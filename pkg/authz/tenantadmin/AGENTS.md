@@ -25,7 +25,16 @@ and in the anti-escalation rules they apply.
   This module declares no catalog entry and no translation row.
 - **The catalog read lists only the governed set**, `Catalog.TenantGoverned()`;
   a permission outside it is not shown and cannot be written through the grant
-  routes.
+  routes. It lists the set whole and marks each permission `grantable` from the
+  caller's held set; an unreadable held set is a 503.
+- **The role list reports usage**: the grant count, the active member count and
+  whether the caller holds `authz.tenant.role.manage` (`can_manage`). The member
+  count is measured from the host's optional `AccountIdentityReader`; without it
+  the count is null, and a reader that cannot answer fails the list as a 503.
+- **The role usage read** (`GET /roles/:role/bindings`) pages the role's
+  bindings by account cursor and reports each account's display name and
+  activity from the same optional reader. Without it the name is empty and the
+  activity null; a reader that cannot answer is a 503.
 - **The path tenant is reconciled with the resolved tenant by the tenant
   capability**, before any route runs. The resolving module delivers the
   identity rule as the `pkg/http` `RouteGuard` capability and the identity rule
@@ -45,6 +54,7 @@ and in the anti-escalation rules they apply.
 |---|---|---|
 | GET | `/api/v1/tenants/:tenant/permissions` | `authz.tenant.role.read` |
 | GET | `/api/v1/tenants/:tenant/roles` | `authz.tenant.role.read` |
+| GET | `/api/v1/tenants/:tenant/roles/:role/bindings` | `authz.tenant.role.read` |
 | PUT | `/api/v1/tenants/:tenant/roles/:role` | `authz.tenant.role.manage` |
 | DELETE | `/api/v1/tenants/:tenant/roles/:role` | `authz.tenant.role.manage` |
 | GET | `/api/v1/tenants/:tenant/roles/:role/grants` | `authz.tenant.role.read` |
@@ -111,7 +121,7 @@ The module requires `Manager`, `Catalog`, `SubjectPermissions`,
 `MembershipChecker`, `guard.Guard`, `audit.Audit` and
 `authn.SignupVerification`. It takes up the entry point, the
 `TenantAdminRouteGuard`, the route-declaration surface, the host `WriteGuard`, the message
-localizer and the logger in `Init`.
+localizer, the optional `AccountIdentityReader` and the logger in `Init`.
 
 ## Running it
 

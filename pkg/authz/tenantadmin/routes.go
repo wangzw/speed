@@ -17,13 +17,14 @@ import (
 var (
 	pathPermissions = tenantAdminSpec.ResolvePath(pathPermissionsFragment)
 
-	pathRoles     = tenantAdminSpec.ResolvePath(pathRolesFragment)
-	pathRole      = tenantAdminSpec.ResolvePath(pathRoleFragment)
-	pathGrants    = tenantAdminSpec.ResolvePath(pathGrantsFragment)
-	pathGrant     = tenantAdminSpec.ResolvePath(pathGrantFragment)
-	pathBindings  = tenantAdminSpec.ResolvePath(pathBindingsFragment)
-	pathBindingOf = tenantAdminSpec.ResolvePath(pathBindingOfFragment)
-	pathBinding   = tenantAdminSpec.ResolvePath(pathBindingFragment)
+	pathRoles        = tenantAdminSpec.ResolvePath(pathRolesFragment)
+	pathRole         = tenantAdminSpec.ResolvePath(pathRoleFragment)
+	pathRoleBindings = tenantAdminSpec.ResolvePath(pathRoleBindingsFragment)
+	pathGrants       = tenantAdminSpec.ResolvePath(pathGrantsFragment)
+	pathGrant        = tenantAdminSpec.ResolvePath(pathGrantFragment)
+	pathBindings     = tenantAdminSpec.ResolvePath(pathBindingsFragment)
+	pathBindingOf    = tenantAdminSpec.ResolvePath(pathBindingOfFragment)
+	pathBinding      = tenantAdminSpec.ResolvePath(pathBindingFragment)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -70,6 +71,10 @@ func (p *product) routes() []route {
 		{
 			http.MethodGet, pathRoles, authz.PermissionTenantRoleRead,
 			roleListOperation.Handle(p.handleRoleList),
+		},
+		{
+			http.MethodGet, pathRoleBindings, authz.PermissionTenantRoleRead,
+			roleBindingListOperation.Handle(p.handleRoleBindingList),
 		},
 		{
 			http.MethodPut, pathRole, authz.PermissionTenantRoleManage,

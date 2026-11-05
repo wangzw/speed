@@ -61,6 +61,7 @@ func TestTheRouteTableIsTheClosedSet(t *testing.T) {
 	want := map[mountedRoute]authz.Permission{
 		{http.MethodGet, "/api/v1/tenants/:tenant/permissions"}:                       authz.PermissionTenantRoleRead,
 		{http.MethodGet, "/api/v1/tenants/:tenant/roles"}:                             authz.PermissionTenantRoleRead,
+		{http.MethodGet, "/api/v1/tenants/:tenant/roles/:role/bindings"}:              authz.PermissionTenantRoleRead,
 		{http.MethodPut, "/api/v1/tenants/:tenant/roles/:role"}:                       authz.PermissionTenantRoleManage,
 		{http.MethodDelete, "/api/v1/tenants/:tenant/roles/:role"}:                    authz.PermissionTenantRoleManage,
 		{http.MethodGet, "/api/v1/tenants/:tenant/roles/:role/grants"}:                authz.PermissionTenantRoleRead,

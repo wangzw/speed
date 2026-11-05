@@ -72,8 +72,20 @@
       "AuthzTenantAdminPermissionView": {
         "description": "One permission of the tenant-governed set.",
         "properties": {
+          "dangerous": {
+            "description": "True when granting the permission widens the grantee's power over other accounts or over the tenant's policy; a client calls such a permission out before an operator grants it.",
+            "type": "boolean"
+          },
           "description": {
             "description": "The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback.",
+            "type": "string"
+          },
+          "grantable": {
+            "description": "True when the caller holds the permission in the tenant and may therefore grant it to a role. A permission the caller does not hold is still listed: the catalog is the whole governed set, not the caller's grantable subset.",
+            "type": "boolean"
+          },
+          "group": {
+            "description": "The group the declaring module places the permission in, for example authorization or membership. Empty when the module gave it no group; a client groups such a permission as it sees fit.",
             "type": "string"
           },
           "permission": {
@@ -83,7 +95,38 @@
         },
         "required": [
           "permission",
-          "description"
+          "description",
+          "group",
+          "dangerous",
+          "grantable"
+        ],
+        "type": "object"
+      },
+      "AuthzTenantAdminRoleBindingView": {
+        "description": "One account holding a role within a tenant, as the role usage read shows it.",
+        "properties": {
+          "account": {
+            "description": "The account the role is bound to.",
+            "type": "string"
+          },
+          "active": {
+            "description": "Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false.",
+            "type": "boolean"
+          },
+          "display_name": {
+            "description": "The account's display name, as the host's account identity reader reports it. Empty when the assembly delivers no identity reader or the reader knows no name for the account.",
+            "type": "string"
+          },
+          "granted_at": {
+            "description": "When the binding was written, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "display_name",
+          "granted_at"
         ],
         "type": "object"
       },
@@ -94,17 +137,33 @@
             "description": "True for a builtin role: the tenant management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared.",
             "type": "boolean"
           },
+          "can_manage": {
+            "description": "True when the caller holds authz.tenant.role.manage in the tenant, which decides whether a client renders the grant and revoke controls.",
+            "type": "boolean"
+          },
           "created_at": {
             "description": "When the role was written, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
           },
-          "description_key": {
-            "description": "The i18n key of the role's description text; stored as given and not resolved by this surface.",
+          "description": {
+            "description": "The role's description in the request's language: a builtin role's key is rendered through the message localizer (falling back to the key), and a role the management face created carries the operator's free text as written.",
             "type": "string"
           },
+          "description_key": {
+            "description": "Deprecated: the i18n key of the role's description text, kept for a client that still reads it. It is stored as given and not resolved by this surface; new clients read description.",
+            "type": "string"
+          },
+          "member_count": {
+            "description": "How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero.",
+            "type": "integer"
+          },
+          "permission_count": {
+            "description": "How many permission grants the role holds within the tenant. A role holding none answers zero.",
+            "type": "integer"
+          },
           "role": {
-            "description": "The role name within the tenant.",
+            "description": "The role name within the tenant. A role is never renamed: the name is the key a binding holds.",
             "type": "string"
           },
           "tenant": {
@@ -117,22 +176,26 @@
           "role",
           "builtin",
           "description_key",
+          "description",
+          "permission_count",
+          "can_manage",
           "created_at"
         ],
         "type": "object"
       },
       "AuthzTenantAdminRoleWrite": {
         "additionalProperties": true,
-        "description": "The body of a role write: the role's description key only. The builtin mark is not part of the body; a member sent under that name reaches nothing.",
+        "description": "The body of a role write: the role's description. The builtin mark and the role name are not part of the body; a member sent under those names reaches nothing.",
         "properties": {
+          "description": {
+            "description": "The role's free-text description, at most 500 characters. It wins over description_key when present. An over-long value is a 400.",
+            "type": "string"
+          },
           "description_key": {
-            "description": "The i18n key of the role's description text. It is stored as given and not resolved by this surface.",
+            "description": "Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. description wins when both are present.",
             "type": "string"
           }
         },
-        "required": [
-          "description_key"
-        ],
         "type": "object"
       },
       "Problem": {
@@ -882,7 +945,7 @@
         "summary": "Remove a role, revoking its grants and bindings with it"
       },
       "put": {
-        "description": "The request carries the role's description key only. The builtin mark is not writable here. platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
+        "description": "The request carries the role's description, free text or the legacy i18n key; description wins when both are present, and a description longer than 500 characters is a 400. The role name is not writable: a role is never renamed, because the name is the key a binding holds. The builtin mark is not writable here either. platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "operationId": "authz.tenantadmin.roles.put",
         "parameters": [
           {
@@ -912,7 +975,7 @@
               }
             }
           },
-          "description": "The role's description key.",
+          "description": "The role's description.",
           "required": true
         },
         "responses": {
@@ -999,6 +1062,138 @@
           }
         ],
         "summary": "Create or rewrite a role"
+      }
+    },
+    "/{tenant}/roles/{role}/bindings": {
+      "get": {
+        "description": "Lists one page of the accounts the role is bound to within the tenant, ordered by account identifier, each with its display name, whether it is active and when the binding was written. The display name and the activity state come from the host's account identity reader; an assembly that delivers none answers an empty name and an unknown activity state. A role with no binding yields an empty page. The list is paginated by the account cursor: pass the previous next_cursor as after.",
+        "operationId": "authz.tenantadmin.roles.bindings.list",
+        "parameters": [
+          {
+            "description": "The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last row on that page, and the page is read by it rather than by an offset.",
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The page's maximum size. Absent is 50; a value above 200 is capped at 200; a negative value is a 400.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed.",
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "One page of the accounts a role is bound to.",
+                  "properties": {
+                    "bindings": {
+                      "description": "The page's bindings, ordered by account identifier.",
+                      "items": {
+                        "$ref": "#/components/schemas/AuthzTenantAdminRoleBindingView"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "The account to pass as after on the next request; empty when this page is the last.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "bindings",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "One page of the role's bindings"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The tenant is empty, or limit is negative"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no authz.tenant.role.read in the tenant's domain"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The path tenant is not the tenant the request resolved to"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List the accounts holding a role"
       }
     },
     "/{tenant}/roles/{role}/grants": {

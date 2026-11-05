@@ -6,6 +6,58 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
+// The role usage read's page size: the default a query names none, and the
+// ceiling a query is held to rather than trusted.
+const (
+	defaultRoleBindingPageSize = 50
+	maxRoleBindingPageSize     = 200
+)
+
+// handleRoleBindingList answers GET
+// /api/v1/tenants/:tenant/roles/:role/bindings: one page of the accounts the
+// role is bound to, with their display names, activity and grant instant. It is
+// a read, so the action is authz.tenant.role.read.
+//
+// The cursor is the last account on the page, so a caller continues from where
+// the previous page ended. One extra row is read to tell a full last page from
+// one that has a successor. A role with no binding is an empty page and an
+// empty cursor, not an error.
+func (p *product) handleRoleBindingList(ctx context.Context, in roleBindingListInput) (roleBindingPageBody, error) {
+	limit := in.Limit
+	switch {
+	case limit < 0:
+		return roleBindingPageBody{}, badRequest()
+	case limit == 0:
+		limit = defaultRoleBindingPageSize
+	case limit > maxRoleBindingPageSize:
+		limit = maxRoleBindingPageSize
+	}
+	bindings, err := p.manager.BindingsOfRole(ctx, in.Tenant, authz.Role(in.Role), in.After, limit+1)
+	if err != nil {
+		return roleBindingPageBody{}, p.failureOf("listing the role's bindings", err)
+	}
+	next := ""
+	if len(bindings) > limit {
+		bindings = bindings[:limit]
+		next = bindings[len(bindings)-1].Account
+	}
+	var identities map[string]authz.AccountIdentity
+	if p.identities != nil && len(bindings) > 0 {
+		accounts := make([]string, len(bindings))
+		for i, b := range bindings {
+			accounts[i] = b.Account
+		}
+		identities, err = p.accountIdentities(ctx, in.Tenant, accounts)
+		if err != nil {
+			return roleBindingPageBody{}, err
+		}
+	}
+	return roleBindingPageBody{
+		Bindings:   roleBindingViewsOf(bindings, identities),
+		NextCursor: next,
+	}, nil
+}
+
 // handleBindingList answers GET /api/v1/tenants/:tenant/bindings: every role
 // binding of the tenant. It is a read, so the action is authz.tenant.role.read.
 func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindingListBody, error) {

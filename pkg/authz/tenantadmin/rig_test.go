@@ -51,6 +51,7 @@ type rig struct {
 	catalog    *stubCatalog
 	subject    *stubSubjectPermissions
 	membership *stubMembership
+	identities *stubIdentities
 	guard      *stubGuard
 	writeGuard *stubWriteGuard
 	audit      *recordingAudit
@@ -109,6 +110,15 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 func (r *rig) localizeWith(localizer i18n.Localizer, locale i18n.Locale) *rig {
 	r.p.localizer = localizer
 	r.locale = locale
+	return r
+}
+
+// withIdentities assembles the optional account identity reader. A rig without
+// this call has no reader, which is the legal assembly that reports an unknown
+// identity state.
+func (r *rig) withIdentities() *rig {
+	r.identities = &stubIdentities{byAccount: map[string]authz.AccountIdentity{}}
+	r.p.identities = r.identities
 	return r
 }
 

@@ -337,6 +337,7 @@ func TestARealRegistryMountsEveryRouteAndDeliversNothing(t *testing.T) {
 	want := map[mountedRoute]bool{
 		{http.MethodGet, "/api/v1/tenants/:tenant/permissions"}:                       true,
 		{http.MethodGet, "/api/v1/tenants/:tenant/roles"}:                             true,
+		{http.MethodGet, "/api/v1/tenants/:tenant/roles/:role/bindings"}:              true,
 		{http.MethodPut, "/api/v1/tenants/:tenant/roles/:role"}:                       true,
 		{http.MethodDelete, "/api/v1/tenants/:tenant/roles/:role"}:                    true,
 		{http.MethodGet, "/api/v1/tenants/:tenant/roles/:role/grants"}:                true,

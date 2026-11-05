@@ -20,10 +20,11 @@ const (
 const (
 	pathPermissionsFragment = "/:tenant/permissions"
 
-	pathRolesFragment  = "/:tenant/roles"
-	pathRoleFragment   = "/:tenant/roles/:role"
-	pathGrantsFragment = "/:tenant/roles/:role/grants"
-	pathGrantFragment  = "/:tenant/roles/:role/grants/:permission"
+	pathRolesFragment        = "/:tenant/roles"
+	pathRoleFragment         = "/:tenant/roles/:role"
+	pathRoleBindingsFragment = "/:tenant/roles/:role/bindings"
+	pathGrantsFragment       = "/:tenant/roles/:role/grants"
+	pathGrantFragment        = "/:tenant/roles/:role/grants/:permission"
 
 	pathBindingsFragment  = "/:tenant/bindings"
 	pathBindingOfFragment = "/:tenant/bindings/:account"
@@ -67,19 +68,35 @@ type bindingInput struct {
 	Role    string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 }
 
+// roleBindingListInput is the request of the role usage read: the role named in
+// the path and the page cursor.
+type roleBindingListInput struct {
+	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
+	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last row on that page, and the page is read by it rather than by an offset."`
+	Limit  int    `query:"limit" minimum:"0" description:"The page's maximum size. Absent is 50; a value above 200 is capped at 200; a negative value is a 400."`
+}
+
 // roleWriteInput is the request of a role write: the role named in the path and
-// the i18n key of its description in the body. The builtin mark is not part of
-// the request — a client cannot set it, and the field a client sends for it
-// reaches nothing. The blank field publishes the body schema's description and
-// opens the object: the route's body prescreen drops the members the
-// declaration does not describe instead of refusing them.
+// the role's description in the body. The builtin mark is not part of the
+// request — a client cannot set it, and the field a client sends for it reaches
+// nothing. The blank field publishes the body schema's description and opens the
+// object: the route's body prescreen drops the members the declaration does not
+// describe instead of refusing them.
+//
+// The free-text description is preferred over the legacy i18n key when both are
+// present. The key stays accepted so a client written before the change keeps
+// working. The role name is not a body member: the name is the binding's key and
+// a role is never renamed.
 type roleWriteInput struct {
-	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description key only. The builtin mark is not part of the body; a member sent under that name reaches nothing."`
+	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description. The builtin mark and the role name are not part of the body; a member sent under those names reaches nothing."`
 
 	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 
-	DescriptionKey string `json:"description_key" required:"true" description:"The i18n key of the role's description text. It is stored as given and not resolved by this surface."`
+	DescriptionKey string `json:"description_key" description:"Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. description wins when both are present."`
+
+	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. It wins over description_key when present. An over-long value is a 400."`
 }
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -97,6 +114,14 @@ type (
 		_ struct{} `description:"The tenant's roles."`
 
 		Roles []AuthzTenantAdminRoleView `json:"roles" required:"true" description:"Every role of the tenant, ordered by role name."`
+	}
+
+	// roleBindingPageBody is the 200 answer of the role usage read.
+	roleBindingPageBody = struct {
+		_ struct{} `description:"One page of the accounts a role is bound to."`
+
+		Bindings   []AuthzTenantAdminRoleBindingView `json:"bindings" required:"true" description:"The page's bindings, ordered by account identifier."`
+		NextCursor string                            `json:"next_cursor" required:"true" description:"The account to pass as after on the next request; empty when this page is the last."`
 	}
 
 	// grantListBody is the 200 answer of a grant list.
@@ -171,6 +196,34 @@ var roleListOperation = speedhttp.NewOperation[tenantInput, roleListBody](
 	},
 )
 
+// roleBindingListOperation declares GET /:tenant/roles/:role/bindings: one page
+// of the accounts the role is bound to.
+var roleBindingListOperation = speedhttp.NewOperation[roleBindingListInput, roleBindingPageBody](
+	"authz.tenantadmin.roles.bindings.list",
+	http.MethodGet,
+	pathRoleBindingsFragment,
+	"List the accounts holding a role",
+	"Lists one page of the accounts the role is bound to within the tenant, ordered by account identifier, "+
+		"each with its display name, whether it is active and when the binding was written. The display name "+
+		"and the activity state come from the host's account identity reader; an assembly that delivers none "+
+		"answers an empty name and an unknown activity state. A role with no binding yields an empty page. "+
+		"The list is paginated by the account cursor: pass the previous next_cursor as after.",
+	nil,
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusOK,
+			Description: "One page of the role's bindings",
+			Body:        &speedhttp.Body{MediaType: "application/json"},
+		},
+		speedhttp.ProblemResponse(http.StatusBadRequest, "The tenant is empty, or limit is negative"),
+		speedhttp.ProblemResponse(http.StatusNotFound, "The path tenant is not the tenant the request resolved to"),
+		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller holds no authz.tenant.role.read in the tenant's domain"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+	},
+)
+
 // rolePutOperation declares PUT /:tenant/roles/:role: it creates or rewrites a
 // role without the builtin mark. A reserved role name is refused.
 var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
@@ -178,13 +231,15 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	http.MethodPut,
 	pathRoleFragment,
 	"Create or rewrite a role",
-	"The request carries the role's description key only. The builtin mark is not writable here. "+
-		"platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete "+
-		"either role row. A mandatory audit row is written before the action; if it cannot be written the "+
-		"action is not carried out and the answer is 503.",
+	"The request carries the role's description, free text or the legacy i18n key; description wins when "+
+		"both are present, and a description longer than 500 characters is a 400. The role name is not "+
+		"writable: a role is never renamed, because the name is the key a binding holds. The builtin mark "+
+		"is not writable here either. platform-admin and tenant-admin are reserved: the tenant surface "+
+		"cannot create, rewrite or delete either role row. A mandatory audit row is written before the "+
+		"action; if it cannot be written the action is not carried out and the answer is 503.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The role's description key.",
+		Description: "The role's description.",
 		Required:    true,
 		Name:        "AuthzTenantAdminRoleWrite",
 	},
@@ -425,6 +480,7 @@ var bindingDeleteOperation = speedhttp.NewOperation[bindingInput, struct{}](
 var operations = speedhttp.Operations{
 	permissionListOperation,
 	roleListOperation,
+	roleBindingListOperation,
 	rolePutOperation,
 	roleDeleteOperation,
 	grantListOperation,

@@ -30,6 +30,7 @@ var (
 	_ authz.Catalog                   = (*stubCatalog)(nil)
 	_ authz.SubjectPermissions        = (*stubSubjectPermissions)(nil)
 	_ authz.MembershipChecker         = (*stubMembership)(nil)
+	_ authz.AccountIdentityReader     = (*stubIdentities)(nil)
 	_ authz.WriteGuard                = (*stubWriteGuard)(nil)
 	_ guard.Guard                     = (*stubGuard)(nil)
 	_ audit.Audit                     = (*recordingAudit)(nil)
@@ -45,6 +46,8 @@ type managerCall struct {
 	tenant  string
 	role    authz.Role
 	account string
+	after   string
+	limit   int
 	grant   authz.GrantRecord
 	binding authz.Binding
 	roleRec authz.RoleRecord
@@ -178,7 +181,7 @@ func (m *stubManager) GrantCounts(_ context.Context, tenant string) (map[authz.R
 // BindingsOfRole filters the stub's bindings the way the real manager does: by
 // role, after the account cursor, and up to a positive limit.
 func (m *stubManager) BindingsOfRole(_ context.Context, tenant string, role authz.Role, after string, limit int) ([]authz.Binding, error) {
-	m.record(managerCall{op: "BindingsOfRole", tenant: tenant, role: role})
+	m.record(managerCall{op: "BindingsOfRole", tenant: tenant, role: role, after: after, limit: limit})
 	if err := m.errNow(); err != nil {
 		return nil, err
 	}
@@ -381,6 +384,59 @@ func (m *stubMembership) asked() ([]string, []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.tenants...), append([]string(nil), m.accounts...)
+}
+
+// stubIdentities is a stand-in authz.AccountIdentityReader. It answers the
+// identities a case scripted for the accounts a read names and records what it
+// was asked.
+type stubIdentities struct {
+	mu        sync.Mutex
+	byAccount map[string]authz.AccountIdentity
+	err       error
+	calls     int
+	tenants   []string
+	asked     [][]string
+}
+
+func (s *stubIdentities) Identities(_ context.Context, tenant string, accounts []string) (map[string]authz.AccountIdentity, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	s.tenants = append(s.tenants, tenant)
+	s.asked = append(s.asked, append([]string(nil), accounts...))
+	if s.err != nil {
+		return nil, s.err
+	}
+	out := make(map[string]authz.AccountIdentity, len(accounts))
+	for _, account := range accounts {
+		if identity, ok := s.byAccount[account]; ok {
+			out[account] = identity
+		}
+	}
+	return out, nil
+}
+
+func (s *stubIdentities) answer(byAccount map[string]authz.AccountIdentity) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byAccount = byAccount
+}
+
+func (s *stubIdentities) fail(err error) { s.mu.Lock(); s.err = err; s.mu.Unlock() }
+
+func (s *stubIdentities) readCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+func (s *stubIdentities) lastAsked() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.asked) == 0 {
+		return nil
+	}
+	return append([]string(nil), s.asked[len(s.asked)-1]...)
 }
 
 // writeGuardCall is one question the stand-in write guard was asked.
