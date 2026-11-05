@@ -10,6 +10,8 @@
 
 组织管理面的账户菜单分组与首页卡片；页面级判定与回退；当前租户的成员读取、搜索、停用、恢复与移除、邀请的读取、签发、重发与撤销；当前租户企业身份提供方的读取、登记、启停、删除与邮箱域验证；当前租户设置层的读取、写入与移除；当前租户角色、授权与绑定的读取与写入；上述写入的防提权判定；租户切换时分组与卡片的撤下与恢复。
 
+角色页与成员页按动作分工：角色页创建、改写描述与删除角色，授予与撤销权限，并只读地展示角色的使用情况；改变成员归属的绑定与解绑在成员页完成。角色页的成员数只计当前租户的 active 成员，成员页按角色筛选时列出全部持有该角色的成员（含已停用），两处数量可以不同，不视为缺陷。
+
 平台的端点分为三类，作用域与判定域各不相同，不得互相代替：
 
 - 平台资产在平台域的 `/api/v1/system/...` 下，由平台管理面读写。
@@ -218,83 +220,83 @@
 
 ### REQ-tenant-admin-022
 
-组织管理面必须以当前租户为作用域列出该租户的角色，并标出内建角色 `tenant-admin`；平台域的角色不出现在任何租户域。角色列表与内建标记的行为契约见 REQ-platform-config-022。
+组织管理面必须以当前租户为作用域列出该租户的角色，逐行给出角色名、描述、权限数与 active 成员数，并标出内建角色 `tenant-admin`；平台域的角色不出现在任何租户域。成员数只计当前租户的 active 成员；身份状态不可用时该项显示为不可用，不得以绑定数冒充。角色列表与内建标记的行为契约见 REQ-platform-config-022。
 
-- **验收**：列表包含当前租户的全部角色，`tenant-admin` 带内建标记；其他租户的角色与平台域的角色（含 `platform-admin`）都不出现。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：列表包含当前租户的全部角色，逐行给出角色名、描述、权限数与 active 成员数，`tenant-admin` 带内建标记；新建但未授予权限的角色权限数为零；持有该角色的成员全部停用时成员数为零；身份状态不可用时成员数显示为不可用，而不是零或绑定数；其他租户的角色与平台域的角色（含 `platform-admin`）都不出现。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖角色列出、描述、权限数、成员数与内建标记。
 
 ### REQ-tenant-admin-023
 
-组织管理面必须允许租户管理员在当前租户创建一个非内建角色，填写角色名与描述键；新角色初始不持有任何权限。角色创建本身的行为契约见 REQ-platform-config-023。
+组织管理面必须允许租户管理员在当前租户创建一个非内建角色，填写角色名与自由文本描述；新角色初始不持有任何权限。角色名是绑定使用的键，创建之后不可改写，只有描述可以改写。角色创建本身的行为契约见 REQ-platform-config-023。
 
-- **验收**：创建后列表出现该角色，其授权为空；角色名去掉首尾空白后为空、与内建角色同名、或已被当前租户占用时被拒绝，列表不改变；被拒绝的同名创建不覆盖已存在的角色，也不改变它的描述键与授权。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：创建后列表出现该角色，其描述为所填文本，其授权为空；角色名去掉首尾空白后为空、与内建角色同名、或已被当前租户占用时被拒绝，列表不改变；被拒绝的同名创建不覆盖已存在的角色，也不改变它的描述与授权；角色页不提供改名的控件。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖创建角色、填写描述与初始计数。
 
 ### REQ-tenant-admin-024
 
-组织管理面必须允许租户管理员删除当前租户的非内建角色，并撤销该角色的全部授权与绑定；删除本身的行为契约见 REQ-platform-config-024。
+组织管理面必须允许租户管理员删除当前租户的非内建角色，并撤销该角色的全部授权与绑定；删除前必须二次确认，确认文案说明授权与绑定将一并撤销且不可恢复。删除本身的行为契约见 REQ-platform-config-024。
 
-- **验收**：删除后该角色从列表消失，其授权与绑定随之消失；经该角色获得过权限的账户在权限读取中不再看到这些权限；内建角色不能被删除。
-- **状态**：未实现
+- **验收**：删除确认出现，文案说明级联撤销授权与绑定且不可恢复；确认后该角色从列表消失，其授权与绑定随之消失；经该角色获得过权限的账户在权限读取中不再看到这些权限；内建角色不能被删除，删除入口不出现。
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenant-admin-025
 
-组织管理面必须把内建角色 `tenant-admin` 保持为只读：租户管理员可以查看它的授权，不能创建、改写或删除它，也不能修改它的授权；该行为契约见 REQ-platform-config-025。
+组织管理面必须把内建角色 `tenant-admin` 保持为只读：租户管理员可以查看它的描述与授权，不能创建、改写或删除它，不能改写它的描述，也不能修改它的授权；内建角色的描述由服务端按请求语言本地化。该行为契约见 REQ-platform-config-025。
 
-- **验收**：界面上内建角色只提供查看授权的入口，不提供改写、删除与改授权的控件；绕过界面发起创建同名角色、改写、删除或改授权时都被拒绝，角色名称、描述键与授权集不变。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：界面上内建角色只提供查看授权的入口，不提供改写、删除、改名与改授权的控件；它的描述随界面语言切换而换成对应语言；绕过界面发起创建同名角色、改写、删除或改授权时都被拒绝，角色名称、描述与授权集不变。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖内建标记与只读查看授权入口。
 
 ### REQ-tenant-admin-026
 
-组织管理面必须只展示治理权限供授予。治理集是封闭集：`authz.tenant.role.read`、`authz.tenant.role.manage`、`settings.tenant.read`、`settings.tenant.write`、`authn.membership.manage` 与 `authn.idp.manage`；平台域权限与其他非治理权限不出现在目录中。目录读取本身的行为契约见 REQ-platform-config-026。
+组织管理面必须只展示治理权限供授予。治理集是封闭集：`authz.tenant.role.read`、`authz.tenant.role.manage`、`settings.tenant.read`、`settings.tenant.write`、`tenant.profile.read`、`tenant.profile.write`、`authn.membership.manage` 与 `authn.idp.manage`；平台域权限与其他非治理权限不出现在目录中。目录返回完整治理集，不按调用者可授予集合过滤。目录读取本身的行为契约见 REQ-platform-config-026。
 
-- **验收**：权限目录只含上列六项治理权限；平台管理、账户、会话、审计、租户名册、冒充、短信模板与全局设置相关权限都不出现；目录不因某个模块新声明一条权限而自动扩大。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：权限目录只含上列治理权限；平台管理、账户、会话、审计、租户名册、冒充、短信模板与全局设置相关权限都不出现；调用者不持有某项治理权限时该项仍出现，只是不可授予；目录不因某个模块新声明一条权限而自动扩大。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖目录默认折叠、展开后的治理集与平台权限不出现；不可授予标记未由 e2e 驱动。
 
 ### REQ-tenant-admin-027
 
-组织管理面必须允许租户管理员为当前租户的非内建角色授予一项治理权限，且调用者必须在当前租户持有该权限；授予本身的行为契约见 REQ-platform-config-027。
+组织管理面必须允许租户管理员为当前租户的非内建角色授予一项治理权限，且调用者必须在当前租户持有该权限；授予高危权限前必须二次确认，确认文案说明该权限扩大持有者对其他账户或本租户策略的权力。授予本身的行为契约见 REQ-platform-config-027。
 
-- **验收**：授予一项调用者持有且治理的权限成功，角色授权出现该项；调用者不持有该权限时被拒绝；该权限不是治理权限时被拒绝；两种拒绝都不改变角色授权。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：授予一项调用者持有且治理的权限成功，角色授权出现该项；调用者不持有该权限时被拒绝；该权限不是治理权限时被拒绝；授予高危权限时先出现二次确认，取消不发出写入；两种拒绝都不改变角色授权。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖授予一项治理权限与高危二次确认。
 
 ### REQ-tenant-admin-028
 
-组织管理面必须允许租户管理员撤销当前租户非内建角色持有的一项权限；撤销本身的行为契约见 REQ-platform-config-028。
+组织管理面必须允许租户管理员撤销当前租户非内建角色持有的一项权限；撤销以服务端为每条授予给出的权限码为输入。无法映射到当前权限目录的历史授予保持资源与动作的原样显示，页面说明原因，并不提供撤销。撤销本身的行为契约见 REQ-platform-config-028。
 
-- **验收**：撤销后该项从该角色的授权中消失，重新加载后仍不在；经该角色持有该权限的账户在权限读取中不再看到它。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：撤销后该项从该角色的授权中消失，重新加载后仍不在；经该角色持有该权限的账户在权限读取中不再看到它；历史授予显示资源与动作而不是权限码，撤销控件不出现，页面说明该授权无法映射到当前权限目录。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖授予行的可读名称、权限码与撤销；不可映射行未由 e2e 驱动。
 
 ### REQ-tenant-admin-029
 
-组织管理面必须允许租户管理员按账户列出当前租户的角色绑定；列出本身的行为契约见 REQ-platform-config-029。
+组织管理面必须允许租户管理员按账户列出当前租户的角色绑定；该入口在成员管理页，角色页不提供按账户查询绑定的控件。列出本身的行为契约见 REQ-platform-config-029。
 
-- **验收**：查询一个有绑定的成员，列出它在当前租户的全部角色绑定；其他租户的绑定不出现；账户没有绑定时列表为空。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：打开某成员的管理区，列出它在当前租户的全部角色绑定；其他租户的绑定不出现；账户没有绑定时列表为空；角色页没有按账户查询绑定的控件。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 11 覆盖成员管理区的绑定列表。
 
 ### REQ-tenant-admin-030
 
-组织管理面必须允许租户管理员把当前租户的一名成员绑定到一个角色，前提是该角色的全部授权都不超出调用者在当前租户持有的授权，且被绑定账户是当前租户的有效成员；绑定本身的行为契约见 REQ-platform-config-039。
+组织管理面必须允许租户管理员把当前租户的一名成员绑定到一个角色，前提是该角色的全部授权都不超出调用者在当前租户持有的授权，且被绑定账户是当前租户的有效成员；该入口在成员管理页，角色页不提供绑定控件。绑定本身的行为契约见 REQ-platform-config-039。
 
-- **验收**：绑定一个授权为调用者授权子集的角色成功，绑定列表出现该角色；绑定一个含调用者未持有权限的角色被拒绝；绑定一个非成员被拒绝；两种拒绝都不产生绑定。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：绑定一个授权为调用者授权子集的角色成功，绑定列表出现该角色；绑定一个含调用者未持有权限的角色被拒绝；绑定一个非成员被拒绝；两种拒绝都不产生绑定；角色页没有绑定控件。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 11 覆盖成员管理区的绑定。
 
 ### REQ-tenant-admin-031
 
-组织管理面必须允许租户管理员解除当前租户的一项角色绑定；解除本身的行为契约见 REQ-platform-config-040。
+组织管理面必须允许租户管理员解除当前租户的一项角色绑定；该入口在成员管理页，角色页不提供解绑控件。解除本身的行为契约见 REQ-platform-config-040。
 
-- **验收**：解除后该绑定从账户的绑定列表中消失，重新加载后仍不在；该账户的权限读取中不再出现由该角色带来的权限。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：解除后该绑定从账户的绑定列表中消失，重新加载后仍不在；该账户的权限读取中不再出现由该角色带来的权限；角色页没有解绑控件。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 11 与 step 13 覆盖成员管理区的解绑。
 
 ### REQ-tenant-admin-032
 
@@ -370,11 +372,11 @@
 
 ### REQ-tenant-admin-041
 
-被拒绝的租户管理写入必须不改变任何状态，不产生该动作的成功审计记录，并经组织管理面显示失败提示，说明该动作未生效。
+被拒绝的租户管理写入必须不改变任何状态，不产生该动作的成功审计记录，并经组织管理面显示失败提示，说明该动作未生效；失败提示落在发起该写入的分区，并点名被拒绝的角色或权限。
 
-- **验收**：对每一条防提权拒绝路径发起写入，拒绝后角色、授权、绑定、成员关系与设置都不变；审计记录中没有该动作的成功行；组织管理面显示失败提示，不把该次尝试显示为成功。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：对每一条防提权拒绝路径发起写入，拒绝后角色、授权、绑定、成员关系与设置都不变；审计记录中没有该动作的成功行；组织管理面显示失败提示，不把该次尝试显示为成功；角色创建、描述改写、删除、授予与撤销的失败提示分别落在角色区或授权区，并点名对应的角色或权限。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 15 覆盖一次被拒绝的角色创建与失败提示。
 
 ### REQ-tenant-admin-042
 
@@ -410,43 +412,43 @@
 
 ### REQ-tenant-admin-046
 
-经组织管理面，系统必须把「解除自己在当前租户的 `tenant-admin` 绑定」这一写暴露为可发起的路由与页面，并在该面拒绝它；平台管理面的同一规则见 REQ-tenant-admin-032。
+经组织管理面，系统必须把「解除自己在当前租户的 `tenant-admin` 绑定」这一写暴露为可发起的路由与页面，并在该面拒绝它；该入口在成员管理页，角色页不提供解绑控件。平台管理面的同一规则见 REQ-tenant-admin-032。
 
-- **验收**：租户管理员在组织管理面的绑定列表中找到自己的 `tenant-admin` 绑定并发起解除；服务端拒绝，页面显示失败提示，该绑定仍在。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：租户管理员在成员管理区找到自己的 `tenant-admin` 绑定并发起解除；服务端拒绝，页面显示失败提示，该绑定仍在；角色页没有解绑控件。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 13 覆盖自解绑被拒绝。
 
 ### REQ-tenant-admin-047
 
-经组织管理面，系统必须把「解除当前租户的 `tenant-admin` 绑定」这一写暴露为可发起的路由与页面，使 REQ-tenant-admin-033 的服务端规则可以经该面到达。
+经组织管理面，系统必须把「解除当前租户的 `tenant-admin` 绑定」这一写暴露为可发起的路由与页面，使 REQ-tenant-admin-033 的服务端规则可以经该面到达；该入口在成员管理页。
 
-- **验收**：租户管理员在组织管理面找到一条 `tenant-admin` 绑定并发起解除；最后一条绑定的解除被服务端拒绝，页面显示失败提示，绑定仍在。
-- **状态**：未实现
+- **验收**：租户管理员在成员管理区找到一条 `tenant-admin` 绑定并发起解除；最后一条绑定的解除被服务端拒绝，页面显示失败提示，绑定仍在。
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenant-admin-048
 
-经组织管理面，系统必须把角色创建、授权与绑定三类写暴露为可发起的路由与页面，使 REQ-tenant-admin-034 对 `platform-admin` 的拒绝可以经该面到达。
+经组织管理面，系统必须把角色创建、描述改写、授权与绑定三类写暴露为可发起的路由与页面，使 REQ-tenant-admin-034 对 `platform-admin` 的拒绝可以经该面到达；绑定入口在成员管理页。
 
-- **验收**：租户管理员在组织管理面发起创建角色、授予权限与绑定角色；以 `platform-admin` 为目标时服务端拒绝，页面显示失败提示，当前租户的角色、授权与绑定不变。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：租户管理员在组织管理面发起创建角色、改写描述、授予权限与绑定角色；以 `platform-admin` 为目标时服务端拒绝，页面显示失败提示，当前租户的角色、授权与绑定不变。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 15 覆盖创建 `platform-admin` 被拒绝；授予与绑定两半不可经界面到达，授予目录与成员管理区的角色列表都不提供 `platform-admin`。
 
 ### REQ-tenant-admin-049
 
-经组织管理面，系统必须让成员、邀请、SSO、角色、授权、绑定与设置的每一类写入在审计记录写不进时向发起者呈现依赖不可用，且目标数据不变；REQ-tenant-admin-040 的审计前置因此可以经该面观察到。
+经组织管理面，系统必须让成员、邀请、SSO、角色（含描述改写）、授权、绑定与设置的每一类写入在审计记录写不进时向发起者呈现依赖不可用，且目标数据不变；REQ-tenant-admin-040 的审计前置因此可以经该面观察到。
 
 - **验收**：让审计写入失败，从组织管理面分别发起上列每一类写入，每次都得到依赖不可用的失败提示，目标数据不变；审计恢复后同一写入成功，并产生成功记录。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenant-admin-050
 
-经组织管理面，系统必须让成员、邀请、SSO、角色、授权、绑定与设置的每一类写入在发起者邮箱未证明时被拒绝，并提示先证明邮箱；REQ-tenant-admin-043 的邮箱证明门控因此可以经该面观察到。
+经组织管理面，系统必须让成员、邀请、SSO、角色（含描述改写）、授权、绑定与设置的每一类写入在发起者邮箱未证明时被拒绝，并提示先证明邮箱；REQ-tenant-admin-043 的邮箱证明门控因此可以经该面观察到。
 
 - **验收**：以邮箱未证明的租户管理员从组织管理面分别发起上列每一类写入，都被拒绝，页面提示先证明邮箱，目标数据不变；同一账户证明邮箱后同一写入成功。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the unproved administrator is refused, proves the address and retries` 覆盖邮箱未证明时写入被拒绝、证明后同一写入成功。
 
 ### REQ-tenant-admin-051
 
@@ -466,9 +468,9 @@
 
 ### REQ-tenant-admin-053
 
-组织管理面的成员分区必须提供按角色筛选的控件，选项来自当前租户的角色列表；筛选必须写入当前地址的角色参数，使带该参数的地址可直接打开已筛选的视图；筛选与文本搜索同时生效，并可单独清除。角色筛选本身的行为契约见 REQ-tenancy-052。
+组织管理面的成员分区必须提供按角色筛选的控件，选项来自当前租户的角色列表；筛选必须写入当前地址的角色参数，使带该参数的地址可直接打开已筛选的视图；筛选与文本搜索同时生效，并可单独清除。筛选列出全部持有该角色的成员，含已停用的成员；角色页的成员数只计 active 成员，两处数量可以不同，不视为缺陷。角色筛选本身的行为契约见 REQ-tenancy-052。
 
-- **验收**：带某个角色名参数的地址打开成员页时，列表按该角色筛选，控件显示该角色；选择另一个角色后地址随之更新；清除筛选后该参数从地址移除并恢复未筛选；角色列表读取失败时保留当前筛选并说明无法加载选项，提供重试；筛选与搜索同时给出时，结果同时满足两者；没有匹配时显示与角色筛选对应的空态。
+- **验收**：带某个角色名参数的地址打开成员页时，列表按该角色筛选，控件显示该角色；持有该角色的已停用成员仍出现在筛选结果中；选择另一个角色后地址随之更新；清除筛选后该参数从地址移除并恢复未筛选；角色列表读取失败时保留当前筛选并说明无法加载选项，提供重试；筛选与搜索同时给出时，结果同时满足两者；没有匹配时显示与角色筛选对应的空态。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 5 覆盖按角色筛选收窄成员列表，带角色参数的地址直达筛选视图，以及清除筛选后恢复未筛选。角色列表读取失败时保留当前筛选并提供重试，角色没有成员持有时显示筛选空态，未由 e2e 覆盖，由 `web/packages/admin-ui/src/OrganizationMembersPage.test.tsx` 覆盖；筛选与文本搜索同时生效的服务端组合未由 e2e 覆盖，由 `pkg/authn/admin/members_test.go` 的 `TestTheMemberListCombinesTheRoleFilterWithTheQuery` 覆盖。
 
@@ -543,3 +545,43 @@
 - **验收**：两项策略是租户面可见设置的全集；平台为真时该项只读为开且标出平台强制；两项的任一组合下有效值都等于两层值的或；任一平台级设置键在租户面不可见、不可写、不可删。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步）、`tenant-admin: a platform-enforced policy is read-only and cannot be turned off` 与 `tenant-admin: the protected organization renders no switch and its write is refused`。
+
+### REQ-tenant-admin-063
+
+组织管理面的角色页必须在选中一个角色后只读地展示该角色的使用情况：active 成员数与当前持有该角色的成员列表。列表逐行给出显示名、账户、成员状态与授予时间，支持游标分页；显示名不可用时以账户显示，成员状态不可用时显示为不可用而不是停用。仅持 `authz.tenant.role.read` 的调用者也能读取；页面不出现任何绑定、解绑或按账户查询的控件。
+
+- **验收**：选中一个角色后显示 active 成员数与成员列表；逐行显示显示名、账户、成员状态与授予时间，持有多个角色的成员只按该角色出现一次；显示名读不出时该行以账户显示；成员状态不可用时显示为不可用，不显示为停用；列表超过一页时提供上一页与下一页，最后一页不提供下一页；只持 `authz.tenant.role.read` 的调用者读到完整的只读列表，页面上没有绑定与解绑控件；成员状态的读取失败时整个使用情况读显示依赖不可用。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖 active 成员数、持有成员与角色页没有绑定控件；成员状态不可用与游标分页未由 e2e 驱动，由 `web/packages/admin-ui/src/OrganizationRolesPage.test.tsx` 覆盖。
+
+### REQ-tenant-admin-064
+
+组织管理面必须允许租户管理员在创建角色时填写自由文本描述，并在之后改写描述；角色名一经创建不可改写，因为它是绑定使用的键。描述不得超过 500 个字符，超长的写入被拒绝且不改变原描述。内建角色的描述由服务端按请求语言本地化，管理面不改写它。
+
+- **验收**：创建角色时填写描述，列表显示该文本；改写描述后列表显示新文本，重新加载后仍是新文本；描述为空可以保存；超过 500 个字符的写入被拒绝，列表仍显示原描述；角色页不提供改名控件；内建角色的描述随界面语言切换而换成对应语言，且没有描述改写入口。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖创建时填写描述与列表显示；描述改写未由 e2e 驱动，由 `web/packages/admin-ui/src/OrganizationRolesPage.test.tsx` 覆盖。
+
+### REQ-tenant-admin-065
+
+组织管理面的权限目录必须逐项给出可读名称、权限码、所属分组与高危标记，并标出调用者当前能否授予该项；可读名称缺失时以权限码为主文本。
+
+- **验收**：目录每项显示可读名称与权限码，可读名称缺失时以权限码为主文本；分组取授权、成员、身份、设置与其它之一；高危权限带可见文本标记，不只靠颜色区分；调用者不持有的项仍出现并标为不可授予；目录读取返回完整治理集，不按可授予集合过滤。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖目录默认折叠与展开后的治理集；可读名称、分组、高危与不可授予标记未由 e2e 驱动，由 `web/packages/admin-ui/src/OrganizationRolesPage.test.tsx` 覆盖。
+
+### REQ-tenant-admin-066
+
+组织管理面的授予视图必须逐条给出该授予翻译成的权限码；无法映射到当前权限目录的历史授予保留资源与动作的原样显示，页面说明原因，并不提供撤销。
+
+- **验收**：授予一条治理权限后，授权行显示可读名称与权限码；撤销一条可映射的授予成功，重新加载后该项仍不在；构造一条翻译不回权限的历史授予时，行显示资源与动作，撤销控件不出现，页面说明该授权无法映射到当前权限目录。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 10 覆盖授予行的可读名称、权限码与撤销；不可映射行未由 e2e 驱动。
+
+### REQ-tenant-admin-067
+
+调用者同时持有 `authn.membership.manage` 时，角色页的使用情况必须提供前往成员页的入口，地址带该角色名参数，打开后成员页按该角色筛选；调用者不持有该权限时入口不出现，角色页内的只读持有成员列表仍然可用。
+
+- **验收**：持成员管理权限的调用者选中角色后看到入口，激活后落到成员页且列表按该角色筛选，地址带该角色名参数；只持 `authz.tenant.role.read` 的调用者看不到入口，使用情况列表仍渲染；入口不替代只读列表，角色页不出现绑定与解绑控件。
+- **状态**：已实现
+- **端到端测试**：未实现

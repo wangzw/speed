@@ -1,6 +1,6 @@
 # admin-ui
 
-admin-ui 是平台侧与租户侧的管理面在浏览器里的页面家族，处在能力 UI 包这一层，由宿主接到自己的路由层与外壳上。它拥有平台资产的页面、按租户寻址的页面、组织管理面的包装页与平台侧、租户侧各自的声明，以及页面共用的操作束、反馈与刷新约定。它不拥有当前租户、不做导航与路径匹配、不判定权限，也不读[特性](../../../glossary.md)态。进入职责清单前的心智模型只有一句：平台侧与租户侧的管理面共用页面组件，差别只在壳与数据的来源。
+admin-ui 是平台侧与租户侧的管理面在浏览器里的页面家族，处在能力 UI 包这一层，由宿主接到自己的路由层与外壳上。它拥有平台资产的页面、按租户寻址的页面、组织管理面的包装页与平台侧、租户侧各自的声明，以及页面共用的操作束、反馈与刷新约定。它不拥有当前租户、不做导航与路径匹配、不判定权限，也不读[特性](../../../glossary.md)态。进入职责清单前的心智模型只有一句：平台侧与租户侧的管理面共用一套页面组件与操作束约定，成员与角色两页是组织管理面自己的页面，差别主要在壳与数据来源。
 
 第一遍为「职责」与「外部接口契约」，先给出平台侧与租户侧的分工与页面声明；「依赖」「UML 图」「核心数据结构」随读随查，「核心算法与流程」按页面查阅，其中「一次管理请求」与「入口的派生」在前，「错误与失败语义」作查表用。竞态与边界情形（刷新与写入的交错、冒充期间记录区收起、面板在途时的关闭）是最后的自检项。
 
@@ -120,8 +120,6 @@ interface AdminShellProps {
   // 状态。返回的函数在该次尝试未落地（被拒、被加强认证门控接管或抛错）时调用；
   // 落地的那次由宿主在 `onImpersonationChange('started')` 落定后自行释放。
   readonly onImpersonationStarting?: () => void | (() => void)
-  // 把角色的 `description_key` 连同角色本身解析成展示内容；不给时页面渲染裸键。
-  readonly describeRole?: (descriptionKey: string, role: AdminRole) => ReactNode
   // AppShell 的帧槽与受控 prop，原样透传：桌面侧边栏收起对、抽屉宽度、
   // 整体菜单、横幅、受控的窄视口抽屉开合、抽屉纸内的首尾内容。
   readonly sidebarCollapsed?: boolean
@@ -147,7 +145,6 @@ interface AdminProviderProps {
   readonly accountHref?: string
   readonly onImpersonationChange?: (change: 'started' | 'ended') => void | Promise<void>
   readonly onImpersonationStarting?: () => void | (() => void)
-  readonly describeRole?: (descriptionKey: string, role: AdminRole) => ReactNode
   // 宿主交来的（已按特性在场收窄的）路由表；页面按声明的稳定 `id` 解析兄弟页。
   readonly routes?: readonly AdminRoute[]
   readonly children: ReactNode
@@ -156,7 +153,7 @@ interface AdminProviderProps {
 
 - **框架 prop 原样透传。** `shellLayout` 是外壳形态，`sidebarCollapsed` / `onSidebarCollapsedChange` 是 `AppShell` 的桌面侧边栏收起对，`sidebarWidth`、`userMenu`、`banner`、`mobileOpen` / `onMobileOpenChange` 与 `navHeader` / `navFooter` 是帧的宽度、顶栏槽、横幅槽、受控的窄视口抽屉与抽屉纸内的首尾槽。这些 prop 被拾起后逐字转给 `AppShell`，本包不重新解释、不加自己的 chrome。给出收起回调即在帧的顶栏（侧栏形态下为抽屉纸顶部行）渲染收起／展开按钮并回报每次翻转，不给即维持一直展开的常驻抽屉；收起态是宿主持有的普通值。租户侧的 [product-shell](design-web-product-shell.md) 用同一组 prop，两处外壳在这条上一致。
 
-- **无帧的 `AdminProvider`。** `AdminShell` 是「`AppShell` ＋ 本 provider ＋ 内容」的一种组合；provider 本身只安装包级上下文、不渲染任何 DOM，供渲染自有平台外壳的宿主使用（自有 chrome、对话框、侧边面板）。它安装与壳相同的上下文：导航回调、路由表、会话、账户设置页、接受链接构造器、冒充变更与冒充开始、角色描述解析、特性判定。`hasFeature` 与壳一样必填；其余 prop 缺席时上下文缺席或为空，页面维持各自的回退。它仍是平台员工的接口，不能承载租户侧页面，也不带任何当前租户设施。
+- **无帧的 `AdminProvider`。** `AdminShell` 是「`AppShell` ＋ 本 provider ＋ 内容」的一种组合；provider 本身只安装包级上下文、不渲染任何 DOM，供渲染自有平台外壳的宿主使用（自有 chrome、对话框、侧边面板）。它安装与壳相同的上下文：导航回调、路由表、会话、账户设置页、接受链接构造器、冒充变更与冒充开始、特性判定。`hasFeature` 与壳一样必填；其余 prop 缺席时上下文缺席或为空，页面维持各自的回退。它仍是平台员工的接口，不能承载租户侧页面，也不带任何当前租户设施。
 
 - **导航选中由宿主判定。** 本包不做路径匹配，故哪条导航项是当前页由宿主的 `isSelected(path)` 给出，壳把每条带标签声明的路径交给它，取其答案作为该项的 `selected`。不给该判定即没有选中项。
 
@@ -166,7 +163,7 @@ interface AdminProviderProps {
 
 - **冒充开始前的宿主钩子。** `onImpersonationStarting` 在冒充发起写入发出之前同步调用，返回的函数在该次尝试未落地时调用：被服务端拒绝、被加强认证门控接管、或抛出。落地的那次不在此释放——宿主持有身份相关的帧，它在 `onImpersonationChange('started')` 的落定之后自行释放，因为新身份如何接管外壳由宿主决定。
 
-- **角色描述由宿主解析。** 权限页的角色行携带 `description_key`，它指向宿主自己的资源叶；`describeRole(descriptionKey, role)` 把它解析成展示内容。不给解析器时页面渲染裸键，角色行不会因此留空。
+- **角色描述由服务端给出。** 角色行携带 `description`：内建角色的描述是服务端按请求语言渲染的文本，管理面创建的角色是运营者写入的自由文本；页面不再经宿主解析 `description_key`，也不渲染裸键。
 
 - **导航按分组表聚合。** 页面声明可带 `group`，指向本包分组表里的一个组；壳把带标签的声明按其 `group` 聚成 [layout-kit](design-web-layout-kit.md) 的 `AppShellNavGroup`（组内是导航项、标题即折叠控件），组的顺序与标题来自宿主传入的分组表，组内顺序即声明顺序。分组表经 `navGroups` prop 传入，本包另导出 `adminNavGroups` 作为缺省：概览（仪表盘）／身份与访问（账户、会话、冒充、权限、邀请与成员、SSO）／租户（租户名册）／平台配置（设置、短信）／审计（审计）。未传分组表即维持扁平单列——十一个带标签的声明按声明顺序排成一组，现有宿主零改动；`group` 此时是数据、不起作用。无 `group` 或指向表外组的声明作为导航项排在组之前，空组（无声明指向）不渲染标题；只有一个可见条目的组同样不渲染标题，该条目作为无分组的导航项排在该组本应占据的位置——某个组此时剩几个可见条目，取决于该部署服务哪些特性。组标题经 admin-ui 命名空间解析（`nav.groups.*`），与页面标签同一套翻译路径；组标题可带装饰图标，收起的窄栏以它代替被裁剪的标题。
 
@@ -218,8 +215,8 @@ function OrganizationAdminBreadcrumbProvider(
 interface OrganizationAdminOperations {
   // 邀请与成员、SSO：/api/v1/tenants/{tenant}/...
   // 设置：/api/v1/tenants/{tenant}/settings[/{namespace}[/{key}]]
-  // 角色、权限、授予与绑定：/api/v1/tenants/{tenant}/roles、/permissions、
-  // /roles/{role}/grants 与 /bindings
+  // 角色、权限、授予与使用情况：/api/v1/tenants/{tenant}/roles、/permissions、
+  // /roles/{role}/grants 与 /roles/{role}/bindings
 }
 
 export const organizationAdminOperations: OrganizationAdminOperations
@@ -247,7 +244,7 @@ export function OrganizationSettingsPage(): ReactElement
 
 - **`OrganizationAdminProvider` 只安装上下文，不渲染外壳。** 宿主已用 `ProductShell` 渲染了租户侧的壳，组织管理面因此不另造一帧：provider 把当前租户、操作束、会话、特性判定、导航回调、路由表、面包屑、邀请链接构造器与受保护角色交给包装页，本身不渲染 DOM；操作束经 `OrganizationAdminOperationsProvider` 一并发布给页面。它不 import `product-shell` 与 `tenancy-ui`；当前租户是一个属性，不是它从会话或路由推导的值。
 - **面包屑上下文优先，且只在一个地方判断。** 包装页经 `OrganizationAdminBreadcrumbProvider` 发布组织管理面的面包屑（当前组织名称到该页，起点不可点）；管理面各页面统一经 `AdminPageHeader` 渲染页头，由它优先取这个上下文，没有它时渲染页面自己的平台管理面面包屑。页面只声明自己的平台面包屑，不需要感知上下文，新增页面也不会漏掉这条规则。两个面的面包屑因此不会互相泄漏。`OrganizationAdminProvider` 在给出 `breadcrumbs` 时挂载同一个提供者；渲染自有外壳、只用页面组件的宿主单独挂载它，形态同 `AdminSessionProvider`。
-- **包装页是薄组合。** 四个包装页读 provider 的上下文。成员与邀请包装页把当前租户交给 `OrganizationMembersPage`；SSO、设置与角色权限包装页把当前租户作为受控租户交给共享页面，并按租户模式配置页面（见「租户模式的页面行为」）。它们不复制页面逻辑：成员与邀请的读写都在 `OrganizationMembersPage` 里，SSO、设置与角色权限的读写都在共享页面里。角色权限包装页把 provider 的 `protectedRoles` 交给页面。
+- **包装页是薄组合。** 四个包装页读 provider 的上下文。成员与邀请包装页把当前租户交给 `OrganizationMembersPage`；SSO 与设置包装页把当前租户作为受控租户交给共享页面；角色权限包装页挂载组织管理面自己的 `OrganizationRolesPage`，把当前租户与 provider 的 `protectedRoles` 交给它。它们不复制页面逻辑：成员与邀请的读写都在 `OrganizationMembersPage` 里，SSO 与设置的读写都在共享页面里，角色的读写都在 `OrganizationRolesPage` 里。
 - **组织操作束是租户作用域的。** `OrganizationAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点，设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)，角色、授予与绑定指向 [authz.tenantadmin](../design-authz.md)。它不持有平台操作，也不接受 `/api/v1/system` 的路径。租户作用域的读键以租户标识为最外层段：`tenantQueryKey` 套在生成的裸键之外，写经同一工厂失效，切租户即换键、离任租户的缓存由宿主逐出。`organizationAdminOperations` 是出厂绑定；宿主可改挂自己的，页面经 `useOrganizationAdminOperations` 取用。
 
 ### 组织管理面的页面声明
@@ -263,16 +260,16 @@ export function OrganizationSettingsPage(): ReactElement
 
 **组织声明用租户域的那一套权限码。** 邀请与 SSO 用 `authn.membership.manage` 与 `authn.idp.manage`；设置用 `settings.tenant.read`，角色与权限用 `authz.tenant.role.read`。写码不进声明：`settings.tenant.write` 与 `authz.tenant.role.manage` 由服务端在每次写上判定，页面照常渲染写控件（平台管理面同样只把读码列进声明）。两套码分属平台域与租户域，不互相替代。
 
-**`requires` 只列该页依赖的租户作用域特性。** 邀请与成员、SSO 的读写由 `authn.admin` 与 `authn.invitations`、`authn.admin.sso` 服务；设置由 `settings.tenantadmin` 服务，角色与权限由 `authz.tenantadmin` 与 `authn.admin` 服务：该页的成员选择器经成员端点读该租户的成员，成员读由 `authn.admin` 带来。组织声明不列 `tenant.admin`：那是平台名册的特性，组织管理面不读名册、也不持租户选择器。
+**`requires` 只列该页依赖的租户作用域特性。** 邀请与成员、SSO 的读写由 `authn.admin` 与 `authn.invitations`、`authn.admin.sso` 服务；设置由 `settings.tenantadmin` 服务，角色与权限由 `authz.tenantadmin` 与 `authn.admin` 服务。组织声明不列 `tenant.admin`：那是平台名册的特性，组织管理面不读名册、也不持租户选择器。
 
 ### 租户模式的页面行为
 
-组织管理面的包装页把页面按租户模式渲染。租户模式改变数据的来源与选择器，不改变页面布局、写入反馈与刷新动作。SSO 与角色权限两个共享页面组件接受租户模式选项；设置页不是平台设置页的租户分支——组织侧的设置包装页渲染独立的「安全与访问」页，平台设置页只保留平台管理面。成员与邀请不走共享页的租户模式：包装页直接挂载组织管理面自己的 `OrganizationMembersPage`（见「组织管理面的成员与邀请页」）。
+组织管理面的包装页把页面按租户模式渲染。租户模式改变数据的来源与选择器，不改变页面布局、写入反馈与刷新动作。SSO 共享页面组件接受租户模式选项；权限页不再有租户模式：组织角色与权限包装页直接挂载 `OrganizationRolesPage`，平台 `PermissionsPage` 收敛为纯平台页（见「组织管理面的角色与权限页」）。设置页不是平台设置页的租户分支——组织侧的设置包装页渲染独立的「安全与访问」页，平台设置页只保留平台管理面。成员与邀请同样不走共享页的租户模式：包装页直接挂载组织管理面自己的 `OrganizationMembersPage`（见「组织管理面的成员与邀请页」）。
 
 - **成员与邀请。** 当前租户由上下文给出，页面不渲染租户选择器，不发出任何 `/api/v1/system` 读。成员读逐行携带 `display_name` 与 `roles`；邀请人的身份从该租户的成员读中解析，不再经平台账户读。成员表的姓名列取成员记录的 `display_name`，账户列直接显示记录的账户标识、不解析。只有成员读无法解析的邀请人（读尚未落定、被拒，或应答不含该账户）按记录的标识渲染并标注身份未解析。签发、重发、撤销邀请与成员的停用、恢复、移除、角色绑定都在这个页面上完成。
 - **SSO 提供方。** 当前租户受控给出，选择器不渲染；页面的读写全部落在该租户的提供方上。
 - **设置（安全与访问）。** 当前租户受控给出，页面只读写 `/api/v1/tenants/{tenant}/settings`，从不读写 `/api/v1/system/settings`。组织侧页面是 `OrganizationSecurityPage`，不是平台设置页的租户分支：它只渲染服务端返回的两项准入策略，每项是一个开关，带标题、说明、状态徽标、生效范围与关闭影响；没有键值表、命名空间导航、搜索、分页或批量保存。平台强制一项策略时开关只读为开并显示原因；关闭策略的确认由声明的 `danger` 驱动：声明为空时直接保存，`critical` 走两步确认，其他值走单步确认（服务端当前的封闭集只有空值与 `critical`，其他值分支为前向兼容）；开启即时保存，行内短暂显示已保存，失败回滚并显示解析后的拒绝。`writable` 为假时整体只读：顶部按 `read_only_reason` 说明原因，不渲染开关，刷新仍可用。两种原因分开说明：`protected` 表示宿主写守卫拒绝该租户，部署方保护它是持久事实，提示按信息级呈现；`unavailable` 表示宿主写 seam 一时读不出答案，写限制只是暂时未知，提示按警告级呈现，并在原地给出「重试」按钮重新读取。查询键以当前租户为最外层段，与平台管理面的设置读不共用键，切租户即换键，离任租户的缓存由宿主逐出。
-- **角色与权限。** 当前租户受控给出，租户选择器不渲染。角色、授予、绑定与账户绑定查询都读 `/api/v1/tenants/{tenant}/...`；权限目录读是 `GET /api/v1/tenants/{tenant}/permissions`，服务端只交出该租户管理员可授予的治理集，平台管理面读的则是完整的 `Catalog.Declared`。绑定与绑定查询的账户选择器换成成员选择器：它自己读该租户的成员（`GET /api/v1/tenants/{tenant}/members`），不再经平台账户检索；操作者的输入经成员路由的 `query` 在服务端收窄，一次只持一页并按游标翻页（成员路由答 `next_cursor`；选择器仍按页大小多读一行，探测行在场时把下一页游标停在自己展示的最后一行，而不是服务端游标指向的探测行，否则下一页会跳过它），暂停后再发起下一次检索。选项只含已启用（`active`）的成员：绑定要求成员启用，列出一名已停用的成员只会引来一次被拒的写。选择器自持读的进行状态与失败状态：读尚未落定时以加载态代替空态，读失败时渲染该次读的失败文案与重试，两者都不显示为空名单。绑定表的账户列由选择器读过的成员页解析，按租户累积，翻过一页后该成员的绑定行仍有名字；没有任何读带到的账户渲染记录的账户标识并标注身份未解析，与邀请与成员页同一来源，不发平台账户读。切租户时清空所选角色与账户草稿，它们命名的是离任租户的对象。宿主经 `OrganizationAdminProvider` 的 `protectedRoles` 属性交出该租户里不可改动、不可删除的角色名（宿主种入的 `tenant-admin` 等），包装页把它交给页面，页面把那些行渲染为只读，不渲染授予与删除控件，方式同平台管理面处理 `builtin` 角色；服务端标记的 `builtin` 角色在两面同样只读。授权表与权限目录仍按同一套完整权限码对照，页面的写控件照常渲染，由服务端判定。
+- **角色与权限。** 组织角色与权限页是组织管理面自己的页面（`OrganizationRolesPage`），不是共享权限页的租户模式；它的分区、控件来源与只读规则见「组织管理面的角色与权限页」。平台 `PermissionsPage` 只服务平台域：角色、授权、目录、绑定与按账户查询都读 `/api/v1/system`，绑定与账户查询保留。
 
 ### 平台管理面的页面声明
 
@@ -308,7 +305,7 @@ export function OrganizationSettingsPage(): ReactElement
 
 - **仪表盘**（`DashboardPage`）：管理后台根的路由（`/`）。一组等宽的租户指标块与一组平台健康度指标块，其下是最近活动列表。指标块按自身容器取档：容器窄于 `sm` 时一列，`sm` 起两列，`md` 起租户指标四列、平台健康度两列；768px 的概览上四张租户指标因而排成 2x2。租户指标由名册读拼出——名册读返回完整的租户集，租户总数即其长度，启用、停用与已删除各自的计数即其状态分布，它们相加等于总数。平台健康度由审计查询读拼出，它是唯一跨租户的读，两个读都以 `since` 为窗口起点：一读数出窗口内的全部记录，另一读以 `action=authn.login` 只数其中的成功登录。`since` 取发起读取的时刻往前 24 小时，挂载、刷新动作、标签页重新可见与重新联网各取一次新的起点，使「近 24 小时」始终成立；起点是查询键的一部分，读以新键发出。页面持有最近一次两个读都落定的那一对数值及其落定时刻：新键的读进行中继续渲染这一对、不渲染加载占位，两个新键读都落定后才一起换成新值，使同屏两个计数取自同一个窗口；新键的读失败时继续渲染旧的一对并给出陈旧提示，失败是 403 时按「读的失败情形」以权限拒绝占位替换；首次尚无落定的数值时渲染加载占位。这一条不交给查询库的占位数据承担。两个计数取自窗口化读的最新一页，故应答带下一页游标时该计数按**下界**渲染（数值后带 `+`）。最近活动取审计查询读的最新一页（`useAuditRecords` 带 `limit`），其列与优先级与审计查询页同一套。平台不声明统计端点，也不声明失败登录的读，故页面不发明契约不携带的聚合值，也不把审计表不持有的失败登录计入。平台健康度与最近活动只在特性 `audit.admin` 在场时渲染，见「特性在场的接收」。
 - **列表页**（`TenantRosterPage`、`AccountsPage`、`SessionsPage`、`ImpersonationsPage`、`PermissionsPage`、`InvitationsPage`、`SsoPage`、`SmsPage`、`AuditPage`）：页头、工具栏或写入区、数据表、分页。行详情与创建表单在操作者需要参照列表时由侧边面板承载（`AccountsPage`），见「账户页的详情与创建面板」。**租户名册的状态列按名册的每一个状态取值渲染**，`active`、`disabled` 与 `deleted` 各一条文案，集合之外的值渲染同一条通用文案；已删除的行不渲染改名与启停控件——名册拒绝写它，摆出来的控件只能空转。停用的行在状态列里另带停用来源的文案（运营者或账户），取自视图的 `disabledBy` 字段，运营者据它判断这个租户会不会随账户恢复。
-组织管理面的 `OrganizationMembersPage` 由两个列表页型分区组成：成员分区与邀请分区各自有工具栏、数据表与游标分页，页头只负责标题、面包屑与页级刷新。
+组织管理面的 `OrganizationMembersPage` 由两个列表页型分区组成：成员分区与邀请分区各自有工具栏、数据表与游标分页，页头只负责标题、面包屑与页级刷新。组织管理面的 `OrganizationRolesPage` 由四个带标题的分区组成：角色表、选中角色的授权表、使用情况表与底部折叠的权限目录参考区，页头同样只负责标题、面包屑与刷新。
 
 - **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页；详情声明另把匹配路径去掉最后两段得到的管理后台根交给页面。租户详情页的兄弟链接按稳定 `id`（`permissions`、`invitations`、`sso`、`impersonations`）在壳发布的路由表里解析目标路径，不以字面 `/tenants` 匹配拼路径——管理后台挂在任何前缀下都成立；声明缺席或目标页依赖的特性缺席时该链接不渲染，`relatedHref` 可逐条覆写目标链接。每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户，动作可以没有用途），省掉这一行会掩盖记录携带空值。
 - **平台设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一张占满内容区的分页表（键／类型／当前值／状态／操作）、底部一条粘性保存条。平台设置页没有租户模式；组织侧的设置页是独立的「安全与访问」页（见「租户模式的页面行为」）。键格在键之下另叠该行的声明：先是它的说明，再是带标签的声明默认值，与相邻的当前值分开；没有声明默认值时这一行不渲染，也不以标签配空值。每行只取自己的声明，不借用别行的说明或默认值。键行本身取主辨识列的共用上限（`primaryColumnMaxWidthSx`）并在上限内截断，完整键由复制控件承载；说明与声明默认值是正文，不套这个上限，按单元格可用宽度换行。整行按顶部对齐（`rowVerticalAlign: 'top'`），当前值输入与复制控件因此贴住键行，而不是落在多行键格的垂直中点。行的状态取自该层视图的 `has_row`：该层没有行时值走回退（标「默认」），持有行时标「已覆盖」。`written` 只用于显示，不参与判定——显式写入的空串与无行在文本上不可区分，行是否存在由 `has_row` 单独给出。只有持有行的行渲染可点的移除控件，默认行不渲染它——默认值没有可撤的覆盖行，摆一个只能空转的开关只会误导读屏用户与操作者；204 的幂等删除语义不变。**敏感项**：[settings.admin](../settings/design-settings-admin.md) 在应答里把敏感项的 `written` 与 `value` 换成遮蔽串，`has_row` 照常报出行是否存在，故页面按同一判据统计状态，并只对持有行的敏感项渲染移除控件；键格的「敏感」标记说明该行的值是遮蔽串。
@@ -325,7 +322,7 @@ export function OrganizationSettingsPage(): ReactElement
 
 下表列出页内按特性门控的控件，是穷举的；表外的控件不受特性门控。
 
-**门控的实现形态是按特性挂载子组件。** 一个受控区由页面在特性在场时挂载、缺席时不挂载：子组件携带的读随组件一并不存在，故特性缺席的控件既不渲染，也不发出本应属于它的请求。门控因此不改变公开接口——不新增「是否启用」选项，也不改变既有 prop 的含义。身份解析受 `authn.admin` 门控时，记录值照常渲染并标注身份未解析，不落入 404 的「已删除」分支；组织管理面的邀请人身份与角色权限页的绑定账户身份由成员读携带的 `display_name` 解析，不受这条门控；成员表的账户列直接显示成员记录里的账户标识。
+**门控的实现形态是按特性挂载子组件。** 一个受控区由页面在特性在场时挂载、缺席时不挂载：子组件携带的读随组件一并不存在，故特性缺席的控件既不渲染，也不发出本应属于它的请求。门控因此不改变公开接口——不新增「是否启用」选项，也不改变既有 prop 的含义。身份解析受 `authn.admin` 门控时，记录值照常渲染并标注身份未解析，不落入 404 的「已删除」分支；组织管理面的邀请人身份与成员管理区的绑定账户身份由成员读携带的 `display_name` 解析，角色页的使用情况行由服务端身份接缝给出，都不受这条门控；成员表的账户列直接显示成员记录里的账户标识。
 
 | 页面与控件 | 特性 | 特性缺席时 |
 |---|---|---|
@@ -343,7 +340,7 @@ export function OrganizationSettingsPage(): ReactElement
 | 平台管理面的邀请与成员页成员表的 SSO 豁免列与切换控件 | `authn.admin.sso` | 不渲染 |
 | 平台管理面的邀请与成员页成员写入表单的 SSO 豁免复选框 | `authn.admin.sso` | 不渲染，写入请求不带 `sso_exempt` |
 
-口令重置随因素组门控：它的路由挂在因素组的挂载分支之内（[authn-admin](../authn/design-authn-admin.md)）。组织管理面的邀请人身份与角色权限页的绑定账户身份不在上表：成员读逐行携带 `display_name`，页面据它解析；只有该读无法解析的账户回退到记录值并标注身份未解析。成员表的姓名列取记录的 `display_name`，账户列不解析：它直接显示成员记录里的账户标识。组织管理面的成员与邀请页不渲染 SSO 豁免列、切换控件或复选框，因此不受 `authn.admin.sso` 门控。
+口令重置随因素组门控：它的路由挂在因素组的挂载分支之内（[authn-admin](../authn/design-authn-admin.md)）。组织管理面的邀请人身份与成员管理区的绑定账户身份不在上表：成员读逐行携带 `display_name`，页面据它解析；只有该读无法解析的账户回退到记录值并标注身份未解析。角色页的使用情况行也不在上表：显示名与活动状态由服务端身份接缝给出。成员表的姓名列取记录的 `display_name`，账户列不解析：它直接显示成员记录里的账户标识。组织管理面的成员与邀请页不渲染 SSO 豁免列、切换控件或复选框，因此不受 `authn.admin.sso` 门控。
 
 **特性缺席与无权限的处置不对称。** 特性缺席的控件不渲染，那个功能在本进程不存在；特性在场而调用者无权限的写入控件照常渲染，授权由服务端判定（[architecture](../../architecture.md#特性与前端定制)）。
 
@@ -445,7 +442,7 @@ graph TD
 
 ### 租户作用域的设置与权限
 
-组织设置页（`OrganizationSecurityPage`）只读写当前租户的层：端点是 [settings.tenantadmin](../settings/design-settings-tenantadmin.md) 的 `/api/v1/tenants/{tenant}/settings`，作用层由路径里的租户固定，没有层选。页面只渲染服务端返回的两项准入策略，按有效值 OR 显示平台强制状态；不渲染键值表、命名空间导航或来源列（见「租户模式的页面行为」）。读写的查询键以当前租户为最外层段，与平台管理面的设置读不共用键。组织角色与权限页的目录读是 `GET /api/v1/tenants/{tenant}/permissions`，只交出 `Catalog.TenantGoverned()` 报出的治理集，授予只在集合内进行；角色、授予与绑定读 `/api/v1/tenants/{tenant}/roles`、`/roles/{role}/grants` 与 `/bindings`，绑定与绑定查询的账户选项取自成员读。目录与授权表仍按同一套完整权限码对照，页面的写控件照常渲染，由服务端判定。治理集是 `authz.tenant.role.read`、`authz.tenant.role.manage`、`settings.tenant.read`、`settings.tenant.write`、`authn.membership.manage` 与 `authn.idp.manage`。
+组织设置页（`OrganizationSecurityPage`）只读写当前租户的层：端点是 [settings.tenantadmin](../settings/design-settings-tenantadmin.md) 的 `/api/v1/tenants/{tenant}/settings`，作用层由路径里的租户固定，没有层选。页面只渲染服务端返回的两项准入策略，按有效值 OR 显示平台强制状态；不渲染键值表、命名空间导航或来源列（见「租户模式的页面行为」）。读写的查询键以当前租户为最外层段，与平台管理面的设置读不共用键。组织角色与权限页的目录读是 `GET /api/v1/tenants/{tenant}/permissions`，只交出 `Catalog.TenantGoverned()` 报出的治理集，授予只在集合内进行；角色与授权读 `/api/v1/tenants/{tenant}/roles` 与 `/roles/{role}/grants`，使用情况读 `/roles/{role}/bindings`。页面不读绑定列表或按账户查询。目录、授权表与授予选择器都以服务端给出的可读名称与权限码呈现，页面不自己翻译。治理集是 `authz.tenant.role.read`、`authz.tenant.role.manage`、`settings.tenant.read`、`settings.tenant.write`、`tenant.profile.read`、`tenant.profile.write`、`authn.membership.manage` 与 `authn.idp.manage`。
 
 ### 组织管理面的成员与邀请页
 
@@ -470,6 +467,22 @@ graph TD
 邀请表列：邮箱（主辨识列）、状态（`high`）、邀请人（`high`，经成员读解析显示名）、过期时间（`high`）、创建时间（`high`）、操作（始终显示，`pinLastColumn`）。过期时间是操作者判断要不要重发的主要依据，与邀请人、创建时间一并取 `high`：它们在 `sm` 容器档及以上都保留。两个时间列在该档内按空格换行，不把表格撑出横向滚动。邮箱与邀请人列设内容宽度上限（邮箱取主辨识上限，邀请人取长文本上限）：邀请表在 `md` 以下把这两个共享上限都收紧到 120px，`md` 起分别沿用共享的 200px 与 160px。上限作用于任意长度的值：邮箱与邀请人都在上限内单行截断。邀请人经成员读解析成显示名，是逐行辨识邀请的标识，折行会把一个词拆开，故该列与邮箱一样不折行；单行截断使上限同时成为该列的最小宽度，两列取共享的 160px 时与其余 `high` 列合计超出 `sm` 档下限。状态列不设内容宽度上限，其宽度随文案增长，「已接受」比「待接受」宽，故核算按最宽的标签取；收紧到 120px 后，最宽的可达状态是带有「复制链接」行的已接受邀请（该操作把操作列从 88px 加宽到 105px），该行在 600px 档内需要 587.7px，距该档下限留出 12.3px；带「复制链接」行的已撤销邀请需要 581.3px，距该档下限留出 18.7px。超长邮箱不把表格撑破，也不以横向滚动规避；完整值经单元格的悬停标题与复制控件取得。行操作是重发、撤销，以及仅对刚签发或刚重发那一条出现的「复制链接」。重发复用签发接口：旧待接受邀请被取代、旧链接立即失效，应答带新令牌；因此「复制链接」只属于当前这一条，历史行没有可复制的链接。撤销与重发各经一次确认；撤销一条存量状态不是待接受的邀请时控件禁用（已过期的邀请仍存为待接受，因此仍可撤销）。邀请同样按游标分页，页大小 50。
 
 **600px 视口是移动端的已知限制。** 视口宽 600px 时，内容区约 504px，低于 `sm` 容器档的下限，两张表只剩主辨识列（显示名或邮箱）与操作列：角色、状态、加入时间、邀请人、过期时间与创建时间都不显示。这是窄屏的已知限制，不在本轮修复：成员的其余事实在管理面板里查看，邀请的其余事实由状态筛选与操作承担；1024px 桌面视口扣掉 280px 侧栏后内容区仍在 `sm` 档之上，这些列全部可见。
+
+### 组织管理面的角色与权限页
+
+组织管理面的 `/roles` 是组织管理面自己的页面（`OrganizationRolesPage`），不是共享权限页的租户模式。页面由上到下分四区：角色区、授权区、使用情况与底部的权限目录参考区；四个分区各是一张 `SectionCard`，间距 `mb: 3`。页头标题与菜单同用 `organization.nav.roles`（「角色与权限」），刷新动作在页头操作里，不再独占一张空卡片。
+
+**角色区。** 创建表单只有在调用者可以管理角色时渲染：角色名加描述；角色名去掉首尾空白后为空，或与列表中已有角色同名时提交禁用，同名时提示改用编辑描述。角色表列为角色（主辨识列）、描述（`medium`，可换行）、权限数（`medium`）、成员数（`medium`，`null` 显示占位）、内建标记（`low`）、操作（始终显示，`pinLastColumn`）。内建角色、宿主 `protectedRoles` 里的角色与 `can_manage=false` 的行都只读：操作列保留「查看授权」，不渲染描述改写与删除，旁边是一句说明原因。描述改写用侧边面板：只读角色名、多行描述（500 字符上限与计数）、保存与取消；保存走同一个角色写入。删除经二次确认，文案说明级联撤销授权与绑定且不可恢复。
+
+**授权区。** 选中角色后列出它持有的权限。每行以目录里的可读名称为主文本、权限码为次要等宽小字；目录标为高危的权限带可见「高风险」徽标。授予选择器只列 `grantable=true` 的项并按目录分组；授予高危权限前经二次确认。撤销以服务端给出的 `permission` 为输入；`permission` 为空的历史授予保留 `resource/action` 的拼写，撤销控件不渲染，行内说明该授权无法映射到当前权限目录。内建、受保护或 `can_manage=false` 的角色只列出授权与只读说明，不渲染授予与撤销。
+
+**使用情况。** 摘要显示角色的 active 成员数；`member_count` 为 `null` 时显示成员状态不可用，不拿绑定数冒充。表列为显示名（空则账户）、账户、状态（启用／停用／不可用）与授予时间，按服务端账户游标分页，页大小 50。它是只读的：页面不渲染绑定、解绑或按账户查询的控件。调用者同时持有 `authn.membership.manage` 时，摘要旁提供「在成员页查看」入口，链接到成员与邀请页并带 URL 编码的角色名参数；只持 `authz.tenant.role.read` 的调用者看不到入口，只读列表仍渲染。
+
+**权限目录参考区。** 底部默认折叠，`SectionCard` 的标题与内容区始终挂载，展开与收起按钮带 `aria-expanded` 与 `aria-controls`。展开后按授权、成员、身份、设置、其它分组，可按权限码或可读名称搜索；每项以可读名称为主、权限码为次，高危带可见标记，不可授予的项标出「你无权授予」。
+
+**计数口径。** 角色区的成员数只计 active 成员；成员页按角色筛选列出全部持有该角色的成员（含停用）。两处数量可以不同，页面不互相校准，测试也不做跨页数量一致性断言。
+
+**页面状态。** 刷新成功落定后所选角色已不在列表里时，选择被清空、授权区回到未选状态，并由页面挂载的视觉隐藏 `role="status"` 播报；角色列表读失败时保留选择，由陈旧提示承担。切租户时清空选择、描述面板与使用情况游标。
 
 ### 邀请的交付
 
@@ -499,15 +512,15 @@ graph TD
 
 **页面不轮询、不推送，刷新动作是对账手段。** 页面的数据在自动重读时更新：页面重新挂载、标签页由隐藏变为可见（查询客户端的聚焦重读只监听可见性变化，标签页始终可见时窗口失焦再得焦不触发）、重新联网与写入成功后的失效重读（[ui-kit](design-web-ui-kit.md) 的「异步读的状态分支」）。刷新动作服务于标签页一直停在前台、数据在别处被改动的场景：它立即重读，不等任一自动重读。
 
-**刷新动作紧挨它所重读的对象。** 页面主体由选择器寻址的页（会话页的账户选择器，平台管理面的权限页、邀请页与 SSO 页的租户选择器），刷新动作在选择器所在的行内、紧贴选择器右侧：选择器收窄，刷新动作保持尺寸，窄视口下仍在同一行。其余页的刷新动作在页头操作里，页头是它最近的页级控件。组织管理面的权限页与 SSO 页不渲染租户选择器，刷新动作留在选择器本应占据的那一行（页头之下的第一块）；成员与邀请页与设置页没有选择器，刷新动作在页头。成员与邀请页的刷新动作重读成员与邀请两个列表，两个列表的反馈作用域一并 `reset`。冒充页的刷新动作也在页头：该页有状态区与记录区，记录区在冒充期间收起，选择器行不是稳定的落点。各页的刷新动作是 [ui-kit](design-web-ui-kit.md) 的同一个控件（`RefreshButton`），各页传入本包原有的「刷新」文案（`common.refresh`），可见文字、尺寸与状态规则因此不变，只有位置不同。这个页面清单是示例；判据是页面主体是否由一个选择器寻址。
+**刷新动作紧挨它所重读的对象。** 页面主体由选择器寻址的页（会话页的账户选择器，平台管理面的权限页、邀请页与 SSO 页的租户选择器），刷新动作在选择器所在的行内、紧贴选择器右侧：选择器收窄，刷新动作保持尺寸，窄视口下仍在同一行。其余页的刷新动作在页头操作里，页头是它最近的页级控件。组织管理面的 SSO 页不渲染租户选择器，刷新动作留在选择器本应占据的那一行（页头之下的第一块）；角色页、成员与邀请页与设置页没有选择器，刷新动作在页头。成员与邀请页的刷新动作重读成员与邀请两个列表，两个列表的反馈作用域一并 `reset`。冒充页的刷新动作也在页头：该页有状态区与记录区，记录区在冒充期间收起，选择器行不是稳定的落点。各页的刷新动作是 [ui-kit](design-web-ui-kit.md) 的同一个控件（`RefreshButton`），各页传入本包原有的「刷新」文案（`common.refresh`），可见文字、尺寸与状态规则因此不变，只有位置不同。这个页面清单是示例；判据是页面主体是否由一个选择器寻址。
 
-**刷新重读该页描述页面主体的每一个读。** 机制是 [ui-kit](design-web-ui-kit.md) 的 `usePageRefresh`：页面以 `pageRefreshRead` 把每个体读的句柄与去重键配成一条，机制按结构读句柄，只依赖 React，从不发请求。判据：页面上不在模态面板内、描述页面主体的读，只要此刻启用，都由刷新动作重读；解析到同一查询键的读只重读一次。行内的账户身份解析、账户选择器的检索读与租户选择器的名册读不描述页面主体，不在其内；模态面板内的读在面板关闭后重新打开时重读。刷新动作只重读此刻启用的读：重读不看读的启用条件，重读一个被禁用的读会发出缺实参的请求，所以因所选角色为空而被禁用的授权读、因没有已应用的查询账户而被禁用的账户绑定读、因特性缺席而不发出的审计读都被跳过。审计查询页重读当前筛选下当前游标指向的那一页，不回到首页。示例：仪表盘的名册读、健康度读与最近活动读；权限页的角色读、权限目录读、绑定列表读，以及仅在已选角色时存在的授权读、仅在已应用查询账户时存在的账户绑定查询；设置页所选命名空间的设置读与命名空间导航所用的全量设置读，选中全部命名空间时这两个读同键、只重读一次；平台邀请与成员页的邀请读与成员读，组织成员与邀请页的成员读与邀请读；冒充页的状态读，以及记录区渲染且租户已选时的记录读。这个列表是示例；判据是上述不在模态面板内、描述页面主体的读。
+**刷新重读该页描述页面主体的每一个读。** 机制是 [ui-kit](design-web-ui-kit.md) 的 `usePageRefresh`：页面以 `pageRefreshRead` 把每个体读的句柄与去重键配成一条，机制按结构读句柄，只依赖 React，从不发请求。判据：页面上不在模态面板内、描述页面主体的读，只要此刻启用，都由刷新动作重读；解析到同一查询键的读只重读一次。行内的账户身份解析、账户选择器的检索读与租户选择器的名册读不描述页面主体，不在其内；模态面板内的读在面板关闭后重新打开时重读。刷新动作只重读此刻启用的读：重读不看读的启用条件，重读一个被禁用的读会发出缺实参的请求，所以因所选角色为空而被禁用的授权读、因没有已应用的查询账户而被禁用的账户绑定读、因特性缺席而不发出的审计读都被跳过。审计查询页重读当前筛选下当前游标指向的那一页，不回到首页。示例：仪表盘的名册读、健康度读与最近活动读；平台权限页的角色读、权限目录读、绑定列表读，以及仅在已选角色时存在的授权读、仅在已应用查询账户时存在的账户绑定查询；组织角色页的角色读、权限目录读，以及仅在已选角色时存在的授权读与使用情况读；设置页所选命名空间的设置读与命名空间导航所用的全量设置读，选中全部命名空间时这两个读同键、只重读一次；平台邀请与成员页的邀请读与成员读，组织成员与邀请页的成员读与邀请读；冒充页的状态读，以及记录区渲染且租户已选时的记录读。这个列表是示例；判据是上述不在模态面板内、描述页面主体的读。
 
 **忙态只看读，禁用只看写入与寻址取值。** 本页被刷新重读的读有任一在进行中时，刷新动作带 `aria-busy` 与自带的忙态指示，保持原生可聚焦，再次激活不发第二次请求；它不置原生 `disabled`，因为聚焦的控件被禁用会使焦点落回文档，键盘用户按下 Enter 后要从页首重新 Tab。本页任一反馈作用域有写入在途时，刷新动作原生禁用而不标忙：刷新之后不会有先前上下文发起的尝试落定（[ui-kit](design-web-ui-kit.md) 的「写入的反馈」）。页面的寻址取值为空、页面因此只剩选择提示而没有可重读的读时（会话页未选账户，平台管理面的权限页、邀请页与 SSO 页未选租户，组织管理面的当前租户尚未给出），刷新动作原生禁用，并带 `aria-describedby` 指向页面原有的选择提示，使禁用的原因可被感知；页面只有这一份可见文本，启用后该关联撤除，写入在途的禁用不带它。这个页面清单是示例；判据是页面此刻没有可重读的读。冒充页不在其内：状态读不按租户寻址，租户未选时仍在屏，刷新动作照常可用、只重读状态读，记录读不发出。
 
 **刷新是上下文变化，先 `reset` 本页描述页面主体的每个反馈作用域与页面标记，再发出重读。** 重读之后，旧的写入结果会被读成描述另一个上下文，例如一条「已移除」的确认停在重读后的表格旁（[ui-kit](design-web-ui-kit.md) 的「写入的反馈」）。同页的各作用域一并 `reset`，因为刷新重读的是整页。`reset` 清的是槽；与槽里那次结果同生命周期的页面状态——指出失败落在哪一行、哪个控件的行标记（设置页的 `failedKey`，权限页、邀请页、SSO 页与短信页各自的 `failed*`，租户名册行的 `failedAction`）——随槽一并清除：槽空了而标记仍在，控件会残留 `aria-invalid` 与指向已不渲染的说明的 `aria-describedby`。凡 `reset` 作用域的上下文变化（租户或选择器改变、刷新动作）共用同一个函数清槽与标记。一次性值的展示面板不属于槽，不受影响；模态面板内的作用域不在其内，面板打开期间刷新动作不可操作。租户名册每行的重命名与启停各是一个落在行组件里的作用域：页面持有一个每次刷新自增的刷新世代值，经属性交给各行，行在世代变化时 `reset` 自己的作用域并清行标记；行把写入在途态上报给页面，刷新动作的写入在途禁用取页面自己的作用域与全部行在途态之并；刷新不重挂载行，行内尚未提交的重命名草稿保留。设置页的刷新只 `reset` 作用域与标记并重读，不动未保存的草稿，也不回到第一页。自动重读不 `reset`；失效重读尤其不能，它重读的正是刚落定的那次写入的结果。
 
-**权限页刷新后所选角色已不存在时清空选择并提示。** 刷新动作重读的角色列表成功落定、且读回的列表不再含所选角色时，选择被清空，授权区回到未选角色的状态（授权作用域随所选角色，按「上下文变化时作用域 `reset`」处理），并在页内一个随页面挂载的视觉隐藏 `role="status"` 区域里播报一条说明：所选角色已不存在，选择已清除。角色列表读失败时保持选择，由陈旧提示承担。这条提示在操作者下一次选择角色、切换租户或下一次刷新时清除。本页自己移除所选角色时，写入自身清空选择并落成功确认，不触发这条提示。文案在 zh-CN 与 en-US 语言包里各一键。
+**角色页刷新后所选角色已不存在时清空选择并提示。** 平台权限页与组织角色页都适用：刷新动作重读的角色列表成功落定、且读回的列表不再含所选角色时，选择被清空，授权区回到未选角色的状态（授权作用域随所选角色，按「上下文变化时作用域 `reset`」处理），并在页内一个随页面挂载的视觉隐藏 `role="status"` 区域里播报一条说明：所选角色已不存在，选择已清除。角色列表读失败时保持选择，由陈旧提示承担。这条提示在操作者下一次选择角色、切换租户或下一次刷新时清除。本页自己移除所选角色时，写入自身清空选择并落成功确认，不触发这条提示。文案在 zh-CN 与 en-US 语言包里各一键。
 
 **SSO 页的刷新动作与行内元数据刷新有可区分的文字。** SSO 页的刷新动作在租户选择器行内，重读提供方列表及其携带的域名与验证状态，可见文字是「刷新」，可及名点名对象「刷新提供方列表」。行内元数据刷新是对 IdP 的一次写入，可见文字是「刷新元数据」，可及名是「刷新元数据（{{name}}）」。两种语言下两处的可见文字都不相同，可及名都以可见文字起头。
 
@@ -523,7 +536,7 @@ graph TD
 
 **成员与邀请表按游标分页。** 成员读与邀请读都接受 `limit` 与 `after`，应答带 `next_cursor`，最后一页为空串；页面据此渲染上一页／下一页，不再自己多读一行探测。游标栈按租户分段，切换租户后的首帧即从空游标开始，刷新保留当前页。翻页控件在两页以上才渲染，写入在途或下一页在途时两个方向都禁用；`keepPreviousData` 让上一页留在屏上，但它的 `next_cursor` 仍指向同一页，因此控件要等这次读落定才允许再次前进。组织模式按已读过的页累积账户显示名，因此翻过一页之后，该页成员作为邀请人时仍以显示名命名。
 
-**账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、平台管理面的邀请与成员页的邀请人与成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、平台管理面权限页绑定表及其账户查询结果的账户列。特性 `authn.admin` 在场时，它经 `GET /api/v1/system/auth/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见「特性在场的接收」。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染记录值并标注身份未解析，而不是把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，否则用记录值。会点名账户的成功文案按同一套四种形式命名：解析到显示名时用显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时只以该标识点名；两者皆无（解析未完成、被拒、回答 404 或特性缺席）时改用不点名的中性句式，任何路径都不插入记录标识。文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，不阻塞确认；成员移除、成员写入、SSO 豁免的切换、账户的各项写入、权限绑定与解绑、冒充的发起、结束与终止这类点名账户或成员的文案都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。组织管理面的身份解析不经这个单元：邀请人、角色权限页绑定表的账户与解绑控件都由成员读携带的 `display_name` 解析，只有该读无法解析的账户回退到记录值并标注身份未解析；成员表的姓名列取记录的 `display_name`，账户列直接渲染成员记录里的账户标识，不解析。会点名账户的确认对话框插入解析到的显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时，只以该标识点名；解析未完成、被拒、回答 404 或特性缺席时不插入记录标识，改用不点名的中性句式（账户视图携带登录标识，见 [design-authn-admin](../authn/design-authn-admin.md)；记录标识是操作者无法与名册对应的机器值）。
+**账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、平台管理面的邀请与成员页的邀请人与成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、平台管理面权限页绑定表及其账户查询结果的账户列。特性 `authn.admin` 在场时，它经 `GET /api/v1/system/auth/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见「特性在场的接收」。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染记录值并标注身份未解析，而不是把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，否则用记录值。会点名账户的成功文案按同一套四种形式命名：解析到显示名时用显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时只以该标识点名；两者皆无（解析未完成、被拒、回答 404 或特性缺席）时改用不点名的中性句式，任何路径都不插入记录标识。文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，不阻塞确认；成员移除、成员写入、SSO 豁免的切换、账户的各项写入、权限绑定与解绑、冒充的发起、结束与终止这类点名账户或成员的文案都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。组织管理面的身份解析不经这个单元：邀请人与成员管理区的绑定账户、以及解绑控件都由成员读携带的 `display_name` 解析，只有该读无法解析的账户回退到记录值并标注身份未解析；成员表的姓名列取记录的 `display_name`，账户列直接渲染成员记录里的账户标识，不解析。角色页的使用情况行不由页面解析账户：显示名与活动状态由服务端经宿主的身份接缝给出，页面照渲染。会点名账户的确认对话框插入解析到的显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时，只以该标识点名；解析未完成、被拒、回答 404 或特性缺席时不插入记录标识，改用不点名的中性句式（账户视图携带登录标识，见 [design-authn-admin](../authn/design-authn-admin.md)；记录标识是操作者无法与名册对应的机器值）。
 
 ### 审计记录的导出
 
@@ -545,17 +558,17 @@ graph TD
 
 ### 授权表与权限目录同一套写法
 
-权限页的授权表按完整权限码列出一个角色持有的权限，与同一页的权限目录逐字一致（形如 `authn.account.read`），而不是 `resource`／`action` 两列：同一页的两块内容因此可直接对照，两个命名空间各自声明同名资源时也不会被读成同一行。行的码由已加载的权限目录把授权行的 `(resource, action)` 对映射回来——与撤销请求把同一对映射回码是同一次匹配；目录没有命名该对时，行退化为 `resource/action` 的拼写，且不提供撤销，因为撤销路由只按码命名权限。
+平台权限页与组织角色页的授权表都以服务端给出的可读名称为主文本、权限码为次要等宽小字，与同一页的权限目录同一套写法：同一页的两块内容因此可以直接对照，两个命名空间各自声明同名资源时也不会被读成同一行。授权行的权限码是服务端按 `(resource, action)` 对反查出来的，与撤销请求用的是同一个码；目录没有命名该对时，行退化为一对 `resource/action` 的拼写，且不提供撤销，因为撤销路由只按码命名权限，页面在行内说明原因。
 
-**权限目录与授予选择器显示服务端渲染好的说明。** 目录读的每一行是 `permission` 与 `description` 两个字段：后者是服务端按请求语言把该权限的说明键渲染成的文本，不从宿主资源里另做解析。目录读的查询键带着当前界面语言，界面语言切换后目录重取，说明随之换成按新语言渲染的文本，而不是停在上一次请求的语言里。权限目录把权限码作为主文本，说明紧随其下作为次级文本；授予选择器的每个选项同样以权限码为主、说明在下，选定后收起的控件只显示权限码，保持单行高度。`description` 为空（装配里没有消息本地化器，或声明该权限的模块没有给出说明键）时两处都只显示权限码；非空时照收到的文本显示，即使它的形态是一条键——服务端没有可渲染的文本时只回写键本身，页面不判断也不替换它。说明不改变授权表的一致口径：授权表仍按权限目录主文本的完整权限码逐字列出。
+**权限目录与授予选择器显示服务端给出的名称与元数据。** 目录读的每一行带 `permission`、`description`、`group`、`dangerous` 与 `grantable`。`description` 是服务端按请求语言把说明键渲染成的文本，不从宿主资源里另做解析；目录读的查询键带着当前界面语言，语言切换后目录重取。页面以可读名称为主、权限码为次；可读名称为空时以权限码为主。分组取服务端给出的 `group`，落在授权、成员、身份、设置与「其它」之间；高危权限带可见文本徽标；`grantable=false` 的项仍列出并标出「你无权授予」，授予选择器只列 `grantable=true` 的项。说明不改变授权表的一致口径：两块内容都以同一份目录的名字与码呈现。
 
 ### 破坏性动作的确认
 
-会移除或作废既有数据的写入在发出前经 ui-kit 的确认对话框确认：控件的点击只打开对话框，写入在确认点击时发出，未确认即不发出请求。对话框一律用 `ConfirmDialog` 的 `variant="danger"`；确认的**轻重**随动作是否可逆而分：一个连同其从属记录一并销毁、界面上无从恢复的删除（删除账户、删除角色、移除成员）额外带 `doubleConfirm` 两步守卫，第一次点击只把按钮改题为「再次点击确认」，第二次才发出。移除成员属于这一档：它清除该成员在本租户的全部角色绑定，重新加入不会带回旧角色。其余的可恢复的移除与作废（移除短信模板、撤销会话、撤销账户全部会话、撤销服务密钥、移除登录标识、重置 MFA、撤销邀请、重发邀请、移除 SSO 域名、移除设置项、删除 SSO 提供方、解绑角色）用单次确认点击——可恢复或可由重新签发补回的动作不该比不可逆的更重。解绑角色属于这一档：角色绑定可以再次授予，故解绑可恢复；确认文案写明角色权限立即失效、不能解绑当前账户自己的 tenant-admin 绑定，以及会移除本组织最后一名 tenant-admin 的解绑由服务端拒绝。重发邀请的单次确认要说明它立即作废旧链接。移除登录标识按操作者手输的标识值发起；手输用户名时由服务端以 409 `authn.username_immutable` 拒绝，页面渲染该码文本。撤销会话与撤销账户全部会话的目标含调用方自己的当前会话时（会话行带 `current` 标记，或所选账户的列表里有 `current` 为真的行），该行显示「当前会话」标记，确认文案说明撤销之后调用方自己也退出登录；标记取自会话读返回的 `current`，不取自前端对会话标识的比对，因为会话快照不携带会话标识。撤销落定之后调用方的下一次读被拒，由会话结束的既有处理接管，页面不另做处理。不改变既有数据的写入直接发出，不经确认；这些是名册登记与改名、设置写值、授权的授予与撤销、绑定、模板登记与提交审核、开关与冒充终止。
+会移除或作废既有数据的写入在发出前经 ui-kit 的确认对话框确认：控件的点击只打开对话框，写入在确认点击时发出，未确认即不发出请求。对话框一律用 `ConfirmDialog` 的 `variant="danger"`；确认的**轻重**随动作是否可逆而分：一个连同其从属记录一并销毁、界面上无从恢复的删除（删除账户、删除角色、移除成员）额外带 `doubleConfirm` 两步守卫，第一次点击只把按钮改题为「再次点击确认」，第二次才发出。移除成员属于这一档：它清除该成员在本租户的全部角色绑定，重新加入不会带回旧角色。其余的可恢复的移除与作废（移除短信模板、撤销会话、撤销账户全部会话、撤销服务密钥、移除登录标识、重置 MFA、撤销邀请、重发邀请、移除 SSO 域名、移除设置项、删除 SSO 提供方、解绑角色）用单次确认点击——可恢复或可由重新签发补回的动作不该比不可逆的更重。解绑角色属于这一档：角色绑定可以再次授予，故解绑可恢复；确认文案写明角色权限立即失效、不能解绑当前账户自己的 tenant-admin 绑定，以及会移除本组织最后一名 tenant-admin 的解绑由服务端拒绝。重发邀请的单次确认要说明它立即作废旧链接。移除登录标识按操作者手输的标识值发起；手输用户名时由服务端以 409 `authn.username_immutable` 拒绝，页面渲染该码文本。撤销会话与撤销账户全部会话的目标含调用方自己的当前会话时（会话行带 `current` 标记，或所选账户的列表里有 `current` 为真的行），该行显示「当前会话」标记，确认文案说明撤销之后调用方自己也退出登录；标记取自会话读返回的 `current`，不取自前端对会话标识的比对，因为会话快照不携带会话标识。撤销落定之后调用方的下一次读被拒，由会话结束的既有处理接管，页面不另做处理。不改变既有数据的写入直接发出，不经确认；这些是名册登记与改名、设置写值、普通权限的授予与撤销、绑定、模板登记与提交审核、开关与冒充终止。授予目录标为高危的权限是这一条的例外：它在发出前经 `doubleConfirm`，确认文案说明该权限扩大持有者对其他账户或本租户策略的权力；撤销高危权限仍是直接发出。
 
 ### 内建角色只读
 
-服务端在角色行上持有内建标记（`builtin`），并对内建角色的改写、删除与授权写入答 409（`authz.ErrBuiltinRole`）：其权限集固定（REQ-platform-config-025），删除还会连同其授权与绑定一并撤销；读不受限。权限页据角色列表里的该标记，去掉内建行的「管理授权」与「删除」两个写控件，改留一个只读的「查看授权」入口（`permissions.roles.viewGrants`，可及名为 `permissions.roles.viewGrantsAria`），旁边是一句可读说明（`permissions.roles.builtinLocked`）。选中内建角色后，授权区照常列出它持有的权限，但授予表单与撤销列都不渲染，另以一句只读说明（`permissions.grants.builtinReadOnly`）表明原因。写控件换掉而不是禁用，是因为禁用的按钮不可聚焦、不进 Tab 顺序，依赖焦点或悬停的 tooltip 与 `aria-describedby` 对只用键盘的使用者不可达（它仍留在无障碍树里，读屏的浏览模式仍会读到它）；换成正文文字后，原因进入每个人的阅读顺序，也不向任何人呈现一个必然失败的控件。非内建角色不受影响。内建标记不由管理后台设置：角色表单只写角色名与描述键，标记由宿主的种入步骤置上。
+服务端在角色行上持有内建标记（`builtin`），并对内建角色的改写、删除与授权写入答 409（`authz.ErrBuiltinRole`）：其权限集固定（REQ-platform-config-025），删除还会连同其授权与绑定一并撤销；读不受限。平台权限页与组织角色页都据角色列表里的该标记，去掉内建行的描述改写、删除与「管理授权」写控件，改留一个只读的「查看授权」入口（`permissions.roles.viewGrants`，可及名为 `permissions.roles.viewGrantsAria`），旁边是一句可读说明（`permissions.roles.builtinLocked`）。选中内建角色后，授权区照常列出它持有的权限，但授予表单与撤销列都不渲染，另以一句只读说明（`permissions.grants.builtinReadOnly`）表明原因。组织角色页另把宿主 `protectedRoles` 里的角色与 `can_manage=false` 的行按同一方式处理，各自的说明见「组织管理面的角色与权限页」。写控件换掉而不是禁用，是因为禁用的按钮不可聚焦、不进 Tab 顺序，依赖焦点或悬停的 tooltip 与 `aria-describedby` 对只用键盘的使用者不可达（它仍留在无障碍树里，读屏的浏览模式仍会读到它）；换成正文文字后，原因进入每个人的阅读顺序，也不向任何人呈现一个必然失败的控件。非内建角色不受影响。内建标记不由管理后台设置：角色表单只写角色名与自由文本描述，标记由宿主的种入步骤置上。
 
 ### 与租户侧的分工
 
@@ -697,6 +710,11 @@ graph TD
 | 详情面板内有写入在途时收到关闭请求 | 面板 `busy`，不上报 `onClose` |
 | 详情面板展示着未关闭的服务密钥时收到关闭请求 | 先经 `ConfirmDialog` 确认放弃，取消则面板保持 |
 | 写入在途时操作租户选择器或其它改变上下文的选择器 | 选择器在它牵动的作用域 `pending` 时禁用 |
+| 组织角色页的角色成员数不可用（装配没有身份接缝） | 成员数显示「不可用」，不以绑定数或零代替；使用情况的显示名为空、状态显示不可用 |
+| 组织角色页的使用情况读失败 | 使用情况区渲染可重试的失败占位；角色与授权仍可按各自的读渲染 |
+| 授权行的服务端权限码为空（本进程翻译不回权限） | 行显示 `resource/action` 的拼写，撤销控件不渲染，行内说明该授权无法映射到当前权限目录 |
+| 角色描述超过 500 个字符 | 服务端答 400；描述面板保留输入并渲染该失败，列表中的原描述不变 |
+| 授予高危权限时取消二次确认 | 不发写入，角色授权不变 |
 
 平台错误命名空间的 zh-CN 与 en-US 语言包各有一条 `errors.authz.protected` 文案，也各有 `errors.settings.protected`、`errors.settings.read_only`、`errors.settings.tenant_admission_enforced` 与 `errors.settings.masked_value` 文案；本包的 `ERROR_TEXT_CODES` 全部收录，组织设置页的对应拒绝渲染各自的文案。
 
@@ -705,7 +723,7 @@ graph TD
 ### 非保证
 
 - **设置页照列读回的每一项，含本进程未运行模块的键。** 键表取可用集，一个键可能由另一进程读取（[settings](../settings/design-settings.md#声明的收集与键表的建立)）；本包不按特性在场或启用集过滤设置项。平台设置页按层选读全局层或租户层，照列全部已声明项；组织设置页读租户层，服务端只返回声明为租户级的项，页面照列读回的项，不补也不推断（[settings.tenantadmin](../settings/design-settings-tenantadmin.md)）。
-- **权限页与授予界面照列权限目录里的全部码，含本进程未运行模块的码。** 目录取全部已登记模块的声明（[authz](../design-authz.md#动作到查询的翻译)），一个码可以先于装配变更授予；本包不按特性在场过滤权限码。
+- **平台权限页照列权限目录里的全部声明码，组织角色页照列完整治理集，都含本进程未运行模块的码。** 目录取全部已登记模块的声明（[authz](../design-authz.md#动作到查询的翻译)），组织侧只取治理集；一个码可以先于装配变更授予。本包不按特性在场过滤权限码，也不把调用者不持有的项从目录里删掉，只用 `grantable` 标出能否授予。
 - **邀请链接只在签发或重发的应答里存在。** 令牌只交出一次、落表的是摘要，页面没有第二条取得它的路径；历史行不提供复制链接，关闭一次性面板之后也无法再复制。要再得到一条链接只能重发，而重发会让上一条立即失效。
 - **邮件投递结果不保证送达。** `sent` 只说明载体接受了这条消息，不说明收件箱收到、被打开或地址可达；`failed` 也不保证消息没有送出（超时与未知结果同样记作 `failed`）。页面据此提示操作者是否还要手工转交。
 - **成员行的角色名是读时快照。** 绑定或解绑成功后页面失效成员读，下一次读才追上；同一页的筛选与角色列取自同一次角色读，所以二者一致，但不保证与最新绑定一致。
@@ -741,7 +759,7 @@ graph TD
 | 一次性值的展示面板（邀请链接、SSO 认领令牌含记录名与完整记录值、服务密钥） | 已实现 | `web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel`、`OneTimeValuePanelDetail`；`web/packages/admin-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/admin-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
 | 设置页的批量保存按一次尝试 | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 创建成功后表单复位与必填为空时提交禁用 | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountCreateForm`；`web/packages/admin-ui/src/PermissionsPage.tsx` `saveRole`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/admin-ui/src/SmsPage.tsx` `register`、`offer`、`registerReady`、`offerReady`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage` |
-| 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/internal/confirm.tsx` `usePendingConfirm` |
+| 确认对话框在确认点击时关闭（含平台权限页与组织角色页的角色删除，以及高危权限的授予） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/OrganizationRolesPage.tsx` `OrganizationRolesPage`；`web/packages/admin-ui/src/internal/confirm.tsx` `usePendingConfirm` |
 | 冒充状态读与结束后的呈现 | 已实现 | `web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`isNotImpersonating` |
 | 读的陈旧提示、刷新忙态与详情页 404 占位 | 已实现 | `web/packages/admin-ui/src/internal/async-section.tsx` `AdminAsyncSection`、`refreshing`、`notFoundState`、`isNotFound`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/admin-ui/src/AuditDetailPage.tsx` `AuditDetailPage`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage` |
 | 租户选择器的加载、失败与空态 | 已实现 | `web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope` |
@@ -786,10 +804,10 @@ graph TD
 | 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/admin-ui/src/internal/account-identity.tsx` `useAccountIdentity`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `ssoExemption` |
 | 刷新动作的放置（选择器寻址的页在选择器行内，其余在页头）、读忙态带 `aria-busy` 而不置原生 `disabled` 且再次激活不发第二次请求 | 已实现 | `web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton`；`web/packages/admin-ui/src/internal/selector-row.tsx` `SelectorRow`；`web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/admin-ui/src/internal/account-selector.tsx` `AccountSelector` |
 | 页面寻址取值为空时刷新动作原生禁用并以 `aria-describedby` 指向选择提示（会话页、权限页、邀请页、SSO 页）；冒充页在租户为空时刷新动作保持可用 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
-| 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（权限页、设置页、仪表盘） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
+| 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（平台权限页、组织角色页、设置页、仪表盘） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
 | 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
 | 会话页与租户详情页的写入反馈迁入反馈作用域，租户详情的重命名与启停落成功确认 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
-| 权限页刷新后所选角色已不存在时清空选择并提示 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage` |
+| 角色页刷新后所选角色已不存在时清空选择并提示（平台权限页与组织角色页） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/OrganizationRolesPage.tsx` `OrganizationRolesPage`（`roleGone`） |
 | 仪表盘健康度窗口起点随刷新动作、标签页重新可见与重新联网前移，旧数值保持到新值落定 | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage` |
 | SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton` |
 | 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/admin-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh` |
@@ -799,8 +817,10 @@ graph TD
 | 组织操作束（`organization-operations.tsx` 的 `OrganizationAdminOperations`、`organizationAdminOperations`）及其发布上下文 | 已实现 | `web/packages/admin-ui/src/organization-operations.tsx` `OrganizationAdminOperations`、`organizationAdminOperations`、`OrganizationAdminOperationsProvider`、`useOrganizationAdminOperations` |
 | SSO 页的租户模式页面行为 | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |
 | 组织安全与访问页（两项准入策略、平台强制只读、即时保存、按声明 `danger` 的关闭确认、受保护租户只读、行内反馈） | 已实现 | `web/packages/admin-ui/src/OrganizationSecurityPage.tsx` `OrganizationSecurityPage`、`SettingSwitchRow`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationSettingsPage` |
-| 权限页的租户模式（治理目录、成员选择器、受保护角色只读） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionsPageProps`、`TenantPermissionsPage`、`TenantMemberPicker`、`roleLocked`、`TenantUnbindButton`；`web/packages/admin-ui/src/internal/account-identity.tsx` `TenantAccountIdentity`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationPermissionsPage` |
 | 组织设置页的设置拒绝文案（受保护、只读、平台强制、掩码写回） | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`（`errors.settings.*`）；测试 `web/packages/admin-ui/src/internal/error-text.test.ts` |
+| 组织角色与权限页（角色区、授权区、使用情况与可折叠的权限目录参考区） | 已实现 | `web/packages/admin-ui/src/OrganizationRolesPage.tsx` `OrganizationRolesPage`、`grantsLockNote`；`web/packages/admin-ui/src/internal/roles/RoleTable.tsx` `RoleTable`、`lockedReason`；`web/packages/admin-ui/src/internal/roles/RoleCreateForm.tsx` `RoleCreateForm`；`web/packages/admin-ui/src/internal/roles/RoleDescriptionPanel.tsx` `RoleDescriptionPanel`；`web/packages/admin-ui/src/internal/roles/RoleGrantsSection.tsx` `RoleGrantsSection`、`groupGrantable`；`web/packages/admin-ui/src/internal/roles/RoleUsageSection.tsx` `RoleUsageSection`；`web/packages/admin-ui/src/internal/roles/PermissionCatalogReference.tsx` `PermissionCatalogReference`、`groupCatalog`；`web/packages/admin-ui/src/internal/roles/PermissionName.tsx` `PermissionName`、`PERMISSION_GROUPS`、`permissionGroupOf`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationPermissionsPage` |
+| 组织角色页的成员页入口（仅在持有 `authn.membership.manage` 时渲染） | 已实现 | `web/packages/admin-ui/src/OrganizationRolesPage.tsx` `OrganizationRolesPage`（`memberHref`、`INVITATIONS_ROUTE_ID`）；`web/packages/admin-ui/src/internal/roles/RoleUsageSection.tsx` `RoleUsageSection` |
+| 平台权限页收敛为纯平台页（角色描述、服务端权限码、保留绑定与账户查询） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel`；`web/packages/admin-ui/src/index.ts`（不再导出 `AdminDescribeRole`、`describeRole` prop）；`web/packages/admin-ui/src/internal/describe-role.tsx`（已删除） |
 | 组织管理面的入口派生 | 已实现 | `starters/demo/web/src/organization-admin.ts` `useOrganizationAdminAdmission`、`useOrganizationAdminPermission` |
 | 组织管理面的成员与邀请页（单路由、成员在前、页头刷新、成员搜索防抖、角色筛选写入 URL、两表游标分页） | 已实现 | `web/packages/admin-ui/src/OrganizationMembersPage.tsx` `OrganizationMembersPage`；`web/packages/admin-ui/src/internal/use-debounced-value.ts` `useDebouncedValue`；`web/packages/admin-ui/src/internal/cursor-pager.tsx` `CursorPager`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationInvitationsPage` |
 | 成员管理面板（三档角色权限、绑定前防提权、停用／恢复、移除 doubleConfirm、面板内统一反馈） | 已实现 | `web/packages/admin-ui/src/internal/member-panel.tsx` `MemberPanel`、`roleTierOf`；`web/packages/admin-ui/src/organization-operations.tsx` `useTenantAccountBindings`、`useTenantRoles`、`useTenantGrants`、`useTenantBindRole`、`useTenantUnbindRole`、`useWriteMember`、`useRemoveMember` |

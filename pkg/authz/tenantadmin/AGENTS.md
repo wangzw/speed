@@ -31,6 +31,19 @@ and in the anti-escalation rules they apply.
   whether the caller holds `authz.tenant.role.manage` (`can_manage`). The member
   count is measured from the host's optional `AccountIdentityReader`; without it
   the count is null, and a reader that cannot answer fails the list as a 503.
+- **A role's description is free text.** The role view carries `description`: a
+  builtin role's key rendered in the request's language through the optional
+  localizer (the key itself when none is assembled), and an operator-created
+  role's text as written. The write body's `description` takes priority whenever
+  present, including an explicit empty string; the legacy `description_key` is
+  used only when it is absent. A description longer than
+  `authz.RoleDescriptionMax` characters is a 400. A role is never renamed: its
+  name is the key a binding holds.
+- **The permission catalog carries governance metadata.** Each entry reports the
+  declaring module's `group` and `dangerous` through `Catalog.Metadata`, and
+  `grantable` from the caller's held set. The catalog lists the governed set
+  whole; a caller does not see a narrower set, only markers that say which
+  entries it may grant.
 - **The role usage read** (`GET /roles/:role/bindings`) pages the role's
   bindings by account cursor and reports each account's display name and
   activity from the same optional reader. Without it the name is empty and the

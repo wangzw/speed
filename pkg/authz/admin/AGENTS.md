@@ -225,6 +225,11 @@ write that lands answers 204 and no body.
   declared permission its module gave no key, answers an empty description. A key
   no message catalog carries comes back as the key itself — the engine's own
   fallback — and a client shows the text it received without resolving keys.
+  The view also carries the governance metadata: `group` and `dangerous` from
+  `Catalog.Metadata`, and `grantable` from the caller's own held set read
+  through the required `authz.SubjectPermissions`. The catalog lists every
+  declared permission; a caller sees a narrower set nowhere, only the markers
+  that say which entries it may grant.
 - **A secret and a policy value reach no log line, no error text and no metric.**
   The audit detail names a tenant and a row's natural key — a role, a permission,
   an account — and never a credential or a policy secret; a grant's resource and

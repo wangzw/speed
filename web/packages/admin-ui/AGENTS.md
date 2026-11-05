@@ -89,12 +89,13 @@ from the members read's `display_name` rather than a platform account
 read, the member table's name column takes `display_name` while its
 account column shows the recorded account identifier without resolving
 it, and an inviter that read cannot resolve renders its recorded
-identifier with the unresolved note. The roles wrapper runs the shared
-permissions page in tenant mode: the governed permission catalog, the
-tenant roles, grants and bindings, the tenant member picker in place of
-the platform account search, member-read identities for binding rows, and
-the host's
-`protectedRoles` read-only beside the server's builtin roles. The settings
+identifier with the unresolved note. The roles wrapper mounts the
+organization-only `OrganizationRolesPage`: a role table with each role's
+description, permission count and active-member count, a create form and a
+description editor, the selected role's grants, a read-only usage section
+with cursor paging, and a collapsible permission catalog at the bottom.
+Binding and unbinding belong to the member panel, and the host's
+`protectedRoles` are read-only beside the server's builtin roles. The settings
 wrapper renders `OrganizationSecurityPage`: the two declared tenant
 admission policies as switches, with their status, effect, impact and the
 platform floor, saving each switch on its own and rendering no table. The
@@ -112,8 +113,8 @@ live in that same entry. Everything under `src/internal/`
 — the error-text resolver, the `InlineError` and `WriteFeedbackRegion`
 bindings, the translation hook, the tenant selector and the zero-instant
 sentinel — is family plumbing and is deliberately not exported, except
-the type-only callback types (`AdminDescribeRole`,
-`AdminImpersonationStarting`, `AdminImpersonationChange`) a host
+the type-only callback types (`AdminImpersonationStarting`,
+`AdminImpersonationChange`) a host
 annotates its own handlers with, and `AdminSessionProvider` (with its
 props), the provider the shell mounts from its `session` prop and a host
 composing pages without the shell mounts itself.
@@ -178,8 +179,7 @@ content through package context: `invitationLink`, the acceptance-link
 builder, `accountHref`, the host's account settings page,
 `onImpersonationChange`, the identity-change action,
 `onImpersonationStarting`, the attempt hook fired before an impersonation
-start is written, `describeRole`, which resolves a role's
-`description_key`, and the route table the host supplied (pages resolve
+start is written, and the route table the host supplied (pages resolve
 sibling declarations by stable `id`). The step-up dialog renders
 `accountHref` as its enrolment link when the host supplies it and text
 only when it does not; the dialog never holds a host path. A release
@@ -334,9 +334,14 @@ providers, the tenant settings members
 (`useTenantSettingsList`, `useTenantSettingsWrite`,
 `useTenantSettingsRemove`) and the tenant
 authorization members (`useTenantRoles`, `useTenantPermissions`,
-`useTenantGrants`, `useTenantBindings`, `useTenantAccountBindings`,
-`useTenantWriteRole`, `useTenantRemoveRole`, `useTenantGrantPermission`,
-`useTenantRevokePermission`, `useTenantBindRole`, `useTenantUnbindRole`).
+`useTenantGrants`, `useTenantRoleBindings`, `useTenantBindings`,
+`useTenantAccountBindings`, `useTenantWriteRole`, `useTenantRemoveRole`,
+`useTenantGrantPermission`, `useTenantRevokePermission`, `useTenantBindRole`,
+`useTenantUnbindRole`). The roles page reads the roles, the governed catalog,
+the selected role's grants and its usage page, and writes roles, descriptions
+and grants; the member panel reads and writes one account's bindings. The
+tenant-wide `useTenantBindings` stays in the bundle for a host composing its
+own page; no organization page renders it now.
 The invitation, membership and SSO members are picked from the console
 bundle's generated bindings; the settings and authorization members are
 the tenant management modules' own generated operations, which the
@@ -596,17 +601,22 @@ policies only, the platform-enforced read-only switch, the two-step
 confirmation before turning a policy off, optimistic save and rollback on
 refusal, the protected tenant's switch-less read-only page, both
 languages, and axe. The platform settings suite covers the platform
-key/value table and its editable numeric inputs. The permissions suite
-covers tenant mode: the governed catalog, the member
-picker, member-read binding identities, and the host's protected roles
-read-only beside the builtin ones.
+key/value table and its editable numeric inputs. The
+roles suite (`OrganizationRolesPage.test.tsx`) covers the role table's
+description and counts, creation, description editing, deletion, the
+builtin/protected/no-manage read-only states, granting and revoking, the
+server permission code driving revoke, grantable filtering, the usage
+section's states and paging, the collapsed catalog, `can_manage=false`, the
+members-page entry, and an axe scan. The platform `PermissionsPage.test.tsx`
+covers the platform surface's bindings and account lookup, and the grant's
+server-reported permission code.
 
 ## Deferrals (recorded, do not re-open silently)
 
 - **Batched account-identity resolution.** The account identity unit (an
   audit record's actor, an impersonation record's actor and target, an
-  invitation's inviter, a membership's account, an authorization binding's
-  account) resolves each distinct account id through
+  invitation's inviter, and the platform permissions page's binding account)
+  resolves each distinct account id through
   `GET /api/v1/system/auth/accounts/:id`
   (react-query caches by id, so rows sharing an account share one read and a
   re-render reuses it), but a page of distinct accounts fires one read per
@@ -614,7 +624,11 @@ read-only beside the builtin ones.
   request needs a server surface this package does not have. The account
   read is gated on `authn.account.read`, which the page's own permission
   does not imply, so a viewer without it gets recorded ids marked
-  unresolved rather than readable identities.
+  unresolved rather than readable identities. The organization surface does
+  not use this unit for its role data: the roles page's usage rows carry the
+  display name and activity the server resolved through the host's
+  `AccountIdentityReader`, and the member panel's binding accounts resolve
+  from the members read.
 - **Storybook.** No preview harness exists; the components are covered by
   jsdom tests + axe, and color-contrast is verified nowhere.
 - **Generated-client freshness gate.** The generated client is committed:

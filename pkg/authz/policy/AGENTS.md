@@ -26,7 +26,11 @@ permissions. `platform-admin` exists only in the platform domain and is granted
 tenant's `tenant-admin` is granted `TenantGoverned`; a personal tenant's is
 granted the host's business-resource set intersected with `TenantGoverned`, minus
 the host's excluded set; it is not seeded as a builtin and is never converged by
-`Reconciler`. `Governed` answers for one permission.
+`Reconciler`. `Governed` answers for one permission. `Metadata` answers a
+permission's governance metadata — the group a management surface files it under
+and whether granting it is dangerous — from the declaring module's
+`PermissionSpec.Metadata`; a declared permission the module gave no metadata is
+the zero value, and an undeclared one answers false.
 
 Resolving the process's permission translation belongs here as much as the
 catalog does: the two are built over the same registered modules, and a host
@@ -58,7 +62,9 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   and rewrite its tenant, and the statement names no other tenant to refuse.
   `migrate_test.go` runs the shipped files on SQLite and PostgreSQL and asserts
   the keying and the non-empty column; a table shape written out in a test
-  rather than read from the file proves nothing.
+  rather than read from the file proves nothing. `0003_role_description.sql`
+  adds the role's `description` column and `authz_bindings`'s
+  `(tenant_id, role, account_id)` index; it deletes no row.
 - **The model text is fixed in the root package, and its self-check runs before
   the process serves.** `ModelText` is the one model the engine is loaded with;
   a host writes policy data and never the model. A wrong matcher does not fail
@@ -149,6 +155,30 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   nor deleted, with no path back. `MarkRoleBuiltin(tenant, role)` sets the mark
   on an existing role — the host's seeding step calls it once the grants are in
   place — and is idempotent; an absent role is `authz.ErrUnknownRole`.
+- **A role carries a free-text description beside the builtin key.** The
+  `authz_roles` row has two description columns: `description` is the operator's
+  free text and `description_key` is the i18n key a host seeds into a builtin
+  role. `PutRole` writes both, and a management surface's PUT writes
+  `description` alone; the host's seed keeps writing the key. The read path
+  prefers a builtin role's key (rendered by the caller's localizer) and returns
+  every other role's free text as written. `RoleDescriptionMax` is the length a
+  management write is held to; over it is the caller's 400, not this module's.
+  The module's own role catalog (`rolelocales/`) holds the builtin role
+  descriptions the host's seed keys name, registered as an `i18n.Catalog`
+  resource so they resolve in every request's language.
+- **The role-usage reads are one grouped count and one cursor page.**
+  `GrantCounts` answers how many grants each role holds from one grouped read; a
+  role holding none is absent and reads as zero. `BindingsOfRole` answers one
+  page of a role's bindings in account order, with an exclusive account cursor
+  and an optional limit, for the role-usage page. Both are `Manager` methods,
+  not separate capabilities: the two management surfaces already hold the
+  `Manager`.
+- **The identity behind a usage row is the host's.** `AccountIdentityReader` is
+  an optional root-package seam: a management surface resolves the accounts its
+  usage read names to a display name and an activity state. This module neither
+  implements it nor reads the account table; absent it the caller reports an
+  empty name and an unknown activity, and an unreadable answer is the caller's
+  503.
 - **Deleting a role revokes it.** `DeleteRole` removes the role's row together
   with its rows in `authz_grants` and `authz_bindings`, in one transaction. The
   engine decides from those two tables and never reads `authz_roles`, so the
