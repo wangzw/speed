@@ -389,6 +389,8 @@ export function AdminShell({
         describeRole={describeRole}
         routes={routes}
       >
+        {/* One inset on every side: the admin's content starts on the same
+            line as the tenant area's pages, whose frame uses the same step. */}
         <Box sx={{ p: 3 }}>{children}</Box>
       </AdminProvider>
     </AppShell>
