@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/vislake/speed/pkg/authn"
 	authnaccount "github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/authntest"
@@ -19,6 +21,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
 	"github.com/vislake/speed/pkg/settings"
@@ -473,6 +476,62 @@ func createTenantInRoster(t *testing.T, dsn, id string) {
 	})
 	if err != nil {
 		t.Fatalf("registering the tenant %q in the roster: %v", id, err)
+	}
+}
+
+// deleteTenantInRoster writes the tombstone of a tenant the database already
+// holds, through the real roster module, standing for a tenant an operator
+// deleted. It runs while the assembly is up, as withMemberships does.
+func deleteTenantInRoster(t *testing.T, dsn, id string) {
+	t.Helper()
+	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"tenant":{"catalog":{}}}`, dsn)
+	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), tenantcatalog.Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(sqlite.Module())
+	reg.Register(tenantcatalog.Module())
+	reg.Supply(reader, config.ModuleName)
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{sqlite.ModuleName, tenantcatalog.ModuleName},
+		Action: func(ctx context.Context, reg *core.Registry) error {
+			roster, err := core.Resolve[tenant.Catalog](reg)
+			if err != nil {
+				return err
+			}
+			return roster.Delete(ctx, tenant.ID(id))
+		},
+	})
+	if err != nil {
+		t.Fatalf("deleting the tenant %q from the roster: %v", id, err)
+	}
+}
+
+// withRawHandle opens the database a seed run wrote and runs check with its
+// handle, for a case that has to read a table no seam of this test's assembly
+// exposes. It runs while the assembly is up, as withMemberships does.
+func withRawHandle(t *testing.T, dsn string, check func(context.Context, *gorm.DB)) {
+	t.Helper()
+	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)
+	reader := authntest.ConfigReaderAll(t, body, sqlite.Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(sqlite.Module())
+	reg.Supply(reader, config.ModuleName)
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{sqlite.ModuleName},
+		Action: func(ctx context.Context, reg *core.Registry) error {
+			database, err := core.Resolve[db.Database](reg)
+			if err != nil {
+				return err
+			}
+			check(ctx, database.DB())
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("reading the seeded database: %v", err)
 	}
 }
 
@@ -1730,4 +1789,66 @@ func TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress(t *testing.T) {
 		in.EmailVerifiedVia.Via != authn.VerifiedViaAdmin {
 		t.Errorf("the seeded account is %+v, want the address as an admin assertion and operator as its username", in)
 	}
+}
+
+// TestSeedSkipsEveryPathIntoATombstone holds the terminal state on every seed
+// path, not only the roster-wide role repair: a configured tenant that is a
+// tombstone gains no administrator membership, no binding and no settings row,
+// and the run itself still succeeds.
+func TestSeedSkipsEveryPathIntoATombstone(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "tombstone-seed.db")
+	body := configBody(t, freePorts(t, listenerCount), dsn)
+	const needle = "  tenants:\n    - name: demo\n      admins:\n        - operator\n"
+	replacement := needle +
+		"      settings:\n        - key: \"tenant.admission.require-sso\"\n          value: \"true\"\n" +
+		"  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n"
+	replaced := strings.Replace(body, needle, replacement, 1)
+	if replaced == body {
+		t.Fatalf("the configuration template holds no seed tenant entry to extend")
+	}
+	config := writeConfigFile(t, replaced)
+
+	// The database a deleted organization leaves behind: the roster carries the
+	// tombstone, and none of the rows the deletion removed is there.
+	createTenantInRoster(t, dsn, "demo")
+	deleteTenantInRoster(t, dsn, "demo")
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err != nil {
+		t.Fatalf("seeding a database containing a tombstone failed: %v\n%s", res.err, res.combined())
+	}
+	for _, want := range []string{"skipped: tenant demo (deleted)", "skipped: member ops in demo (deleted tenant)"} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("the seed did not report %q:\n%s", want, res.stdout)
+		}
+	}
+
+	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
+		for _, id := range []authn.AccountID{operatorID(t, ctx, accounts), memberID(t, ctx, accounts)} {
+			if _, found, err := memberships.Membership(ctx, "demo", id); err != nil {
+				t.Fatalf("reading the membership of %s in demo: %v", id, err)
+			} else if found {
+				t.Errorf("the tombstone gained a membership for %s", id)
+			}
+		}
+	})
+	withSettings(t, dsn, func(ctx context.Context, store settings.Store) {
+		rows, err := store.List(ctx, settings.ForTenant("demo"))
+		if err != nil {
+			t.Fatalf("listing the tombstone's settings: %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("the tombstone gained %d settings row(s): %+v", len(rows), rows)
+		}
+	})
+	withRawHandle(t, dsn, func(_ context.Context, handle *gorm.DB) {
+		var n int64
+		if err := handle.Table("authz_bindings").Where("tenant_id = ?", "demo").Count(&n).Error; err != nil {
+			t.Fatalf("counting the tombstone's bindings: %v", err)
+		}
+		if n != 0 {
+			t.Errorf("the tombstone gained %d binding(s)", n)
+		}
+	})
 }

@@ -12,6 +12,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
 	github.com/vislake/speed/pkg v0.0.0
+	gorm.io/gorm v1.31.2
 )
 
 require (
@@ -128,7 +129,6 @@ require (
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
-	gorm.io/gorm v1.31.2 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect
 	modernc.org/memory v1.5.0 // indirect

@@ -711,9 +711,24 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	// from the roster: a page selects a tenant from it, and a tenant that is not
 	// there is one no page can name. Each tenant's settings follow its row into
 	// that tenant's layer.
+	//
+	// A configured tenant that is a tombstone is skipped entirely: the deletion
+	// removed its grants, bindings, memberships and settings, and the seed must
+	// not bring any of them back. The roster keeps returning the tombstone, so
+	// the skip is the seed's own step, not the roster's.
+	deleted := make(map[string]bool, len(in.Tenants))
 	for _, t := range in.Tenants {
 		if err := seedTenant(ctx, roster, t.Name); err != nil {
 			return err
+		}
+		tombstone, err := tenantHoldsTombstone(ctx, roster, t.Name)
+		if err != nil {
+			return err
+		}
+		if tombstone {
+			deleted[t.Name] = true
+			fmt.Printf("skipped: tenant %s (deleted)\n", t.Name)
+			continue
 		}
 		if err := seedTenantSettings(ctx, store, t.Name, t.Settings); err != nil {
 			return err
@@ -722,7 +737,7 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 
 	// Then the memberships under seed.members, which name both an account above
 	// and a tenant above, so both are written.
-	if err := seedMembers(ctx, memberships, in.Members, accountIDs, created); err != nil {
+	if err := seedMembers(ctx, memberships, in.Members, accountIDs, created, deleted); err != nil {
 		return err
 	}
 
@@ -781,6 +796,12 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	// every run, so an account the configuration names keeps administering its
 	// tenant after an operator removes one of the two.
 	for _, t := range in.Tenants {
+		if deleted[t.Name] {
+			// The tenant is a tombstone; its administrators were revoked by the
+			// deletion and must not be written back.
+			fmt.Printf("skipped: administrators of %s (deleted tenant)\n", t.Name)
+			continue
+		}
 		for _, adminName := range t.Admins {
 			_, name, err := seedLoginName(adminName)
 			if err != nil {
@@ -937,6 +958,18 @@ func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
 	return nil
 }
 
+// tenantHoldsTombstone reports whether the roster carries the identifier as a
+// deleted tenant. The seed skips every write into such a tenant: its deletion
+// removed the core relations and settings, and a later run must not recreate
+// them.
+func tenantHoldsTombstone(ctx context.Context, roster tenant.Catalog, id string) (bool, error) {
+	got, found, err := roster.Get(ctx, tenant.ID(id))
+	if err != nil {
+		return false, fmt.Errorf("seed: reading the tenant %s: %w", id, err)
+	}
+	return found && got.Status == tenant.StatusDeleted, nil
+}
+
 // seedMembers writes the memberships the configuration names, through the
 // membership seam rather than the table.
 //
@@ -958,12 +991,18 @@ func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
 // Deleting a member from the configuration does not remove the row, just as it
 // does not disable an account or delete a tenant.
 func seedMembers(ctx context.Context, memberships authn.Memberships, members []seedMember,
-	accountIDs map[string]authn.AccountID, created map[string]bool,
+	accountIDs map[string]authn.AccountID, created map[string]bool, deleted map[string]bool,
 ) error {
 	for _, m := range members {
 		_, name, err := seedLoginName(m.Account)
 		if err != nil {
 			return fmt.Errorf("seed: the account named by the member of the tenant %q: %w", m.Tenant, err)
+		}
+		if deleted[m.Tenant] {
+			// The tenant is a tombstone; a membership there would be a row the
+			// deletion just removed, brought back.
+			fmt.Printf("skipped: member %s in %s (deleted tenant)\n", name, m.Tenant)
+			continue
 		}
 		id, ok := accountIDs[name]
 		if !ok {
