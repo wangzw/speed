@@ -74,6 +74,12 @@ func (p *product) routes() []route {
 			getOperation.Handle(p.handleTenantGet),
 		},
 		{
+			// Transitional compatibility route, to be removed in T6: aliases are
+			// immutable, so this route only refuses the change.
+			http.MethodPatch, pathTenant, PermissionTenantManage,
+			prescreenJSON[setAliasInput](p, setAliasOperation.Handle(p.handleTenantSetAlias)),
+		},
+		{
 			http.MethodPatch, pathTenantProfile, PermissionTenantManage,
 			prescreenJSONFields[setProfileInput](p, profileWriteFields,
 				setProfileOperation.Handle(p.handleTenantSetProfile)),

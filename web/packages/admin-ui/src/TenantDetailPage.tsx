@@ -280,6 +280,11 @@ export function TenantDetailPage({
               rowGap: 1,
             }}
           >
+            {/* Transitional compatibility control, to be removed in T6. An
+                alias is immutable after a tenant is registered, so the
+                platform keeps PATCH /tenants/:id only to refuse the change;
+                this control stays so that route keeps its caller. T6 removes
+                both. */}
             <TextField
               size="small"
               value={alias}

@@ -39,6 +39,7 @@ the module's whole route surface.
 | Tenants | `GET /api/v1/system/tenants` | `tenant.read` |
 | Tenants | `POST /api/v1/system/tenants` | `tenant.manage` |
 | Tenants | `GET /api/v1/system/tenants/:id` | `tenant.read` |
+| Tenants | `PATCH /api/v1/system/tenants/:id` (transitional, removed in T6) | `tenant.manage` |
 | Tenants | `PATCH /api/v1/system/tenants/:id/profile` | `tenant.manage` |
 | Tenants | `POST /api/v1/system/tenants/:id/status` | `tenant.manage` |
 
@@ -50,6 +51,7 @@ route's action is one `tenant.Catalog` call:
 | `GET /tenants` | `List`, every tenant, in the roster's order (by identifier) |
 | `POST /tenants` | `Provisioner`, a tenant and its first tenant-admin |
 | `GET /tenants/:id` | `Get`, one tenant by identifier |
+| `PATCH /tenants/:id` | `Get`, then a refusal; no write method is called |
 | `PATCH /tenants/:id/profile` | `SetProfile`, the four descriptive fields, and nothing else |
 | `POST /tenants/:id/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
@@ -84,6 +86,11 @@ key.
   `Create` only inserts. An alias is chosen at creation and never changes, so a
   rewrite carrying another alias is refused. A registration starts the tenant
   `active`; there is no delete, and disabling is the only way to retire one.
+- **The alias route is a transitional compatibility route, removed in T6.** It
+  reads the tenant for its 404 and its tombstone refusal and then answers every
+  otherwise-valid request 409 `urn:speed:tenant:alias-immutable`, because an
+  alias cannot change after creation. It calls no write method, changes no
+  column and writes no audit row.
 - **The profile write goes through `SetProfile`, never `Put`.** The body carries
   all four descriptive fields; an empty value clears the stored one. `Put`
   writes the status and disable source too, so a profile update through it would

@@ -114,6 +114,39 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 	return tenantCreatedBody{Tenant: tenantViewOf(written)}, nil
 }
 
+// aliasBody is the transitional alias request's body as a case builds it. The
+// route's declared input pairs the same alias with the path's identifier.
+type aliasBody struct {
+	Alias string `json:"alias"`
+}
+
+// handleTenantSetAlias answers PATCH /api/v1/system/tenants/:tenant: it refuses
+// every alias change and writes nothing. It is a write, so the action is
+// tenant.manage.
+//
+// It is a transitional compatibility route, to be removed in T6. An alias is
+// immutable once a tenant is registered, so the only answer an otherwise-valid
+// request gets is a 409 urn:speed:tenant:alias-immutable. The roster is read so
+// an identifier no row carries stays a 404 and a tombstone stays a 409, but the
+// route calls no write method, changes no column, and writes no audit row:
+// there is no successful write to record.
+func (p *product) handleTenantSetAlias(ctx context.Context, in setAliasInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if !tenant.IsIdentifier(in.ID) || !tenant.IsAlias(in.Alias) {
+		return nil, badRequest()
+	}
+	got, ok, err := p.catalog.Get(ctx, tenant.ID(in.ID))
+	if err != nil {
+		return p.replyFailure("reading a tenant", err)
+	}
+	if !ok {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	if got.Status == tenant.StatusDeleted {
+		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
+	}
+	return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + aliasImmutableCode}
+}
+
 // handleTenantSetProfile answers PATCH /api/v1/system/tenants/:tenant/profile:
 // it writes one tenant's organization profile and nothing else. It is a write,
 // so the action is tenant.manage.

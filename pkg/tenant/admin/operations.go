@@ -70,6 +70,15 @@ type getTenantInput struct {
 	ID string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
 }
 
+// setAliasInput is the request of the transitional alias route: the identifier
+// in the path and the alias the caller asked for in the body. The body stays in
+// the declaration so a generated client keeps the method it had before aliases
+// became immutable; the route refuses every value.
+type setAliasInput struct {
+	ID    string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	Alias string `json:"alias" required:"true" description:"The alias the caller asked for. The route refuses every value, because an alias cannot change after creation."`
+}
+
 // setProfileInput is the request of a profile update: the identifier in the
 // path and the four descriptive fields in the body, each of which must be
 // present. A field the body carries empty clears the stored value.
@@ -190,6 +199,41 @@ var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 	},
 )
 
+// setAliasOperation declares PATCH /tenants/:tenant as a transitional
+// compatibility route, to be removed in T6. Aliases are immutable once a tenant
+// is registered, so the route refuses every change instead of applying it. Its
+// handler builds the answer because an unknown tenant is a bare 404.
+var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
+	"tenant.admin.tenants.setAlias",
+	http.MethodPatch,
+	pathTenantFragment,
+	"Refuse a tenant alias change",
+	"Transitional compatibility route, to be removed in T6. Every tenant alias is immutable after creation, "+
+		"so this route refuses the change instead of applying it: the path identifier and the body's alias "+
+		"must both be well formed, a tenant the roster does not hold is a 404, a tombstone is a 409, and any "+
+		"other request is a 409 with the problem type urn:speed:tenant:alias-immutable. It never writes the "+
+		"alias or any other column and writes no audit row, because no successful write happens.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The alias the caller asked for. The route refuses every value, because an alias cannot change after creation.",
+		Required:    true,
+	},
+	[]speedhttp.Response{
+		speedhttp.ProblemResponse(http.StatusBadRequest,
+			"The identifier or the alias is outside its domain, or the request body is not one JSON object"),
+		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
+		{
+			Status:      http.StatusNotFound,
+			Description: "No tenant carries the identifier",
+		},
+		speedhttp.ProblemResponse(http.StatusConflict,
+			"The alias cannot be changed after creation (urn:speed:tenant:alias-immutable), or the tenant is a tombstone"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+	},
+)
+
 // setProfileOperation declares PATCH /tenants/:tenant/profile: it writes one
 // tenant's organization profile and nothing else. Its handler builds the answer
 // because an unknown tenant is a bare 404.
@@ -279,6 +323,7 @@ var operations = speedhttp.Operations{
 	listOperation,
 	createOperation,
 	getOperation,
+	setAliasOperation,
 	setProfileOperation,
 	setStatusOperation,
 }

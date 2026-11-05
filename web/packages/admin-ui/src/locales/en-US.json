@@ -60,7 +60,8 @@
     },
     "tenant": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-      "conflict": "That identifier or alias is already taken by another organization."
+      "conflict": "That identifier or alias is already taken by another organization.",
+      "alias_immutable": "The alias cannot be changed after creation."
     },
     "settings": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",

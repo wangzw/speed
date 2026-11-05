@@ -67,11 +67,13 @@ export const ERROR_TEXT_CODES = [
   // writes with, one leaf per code (the api-client derives each
   // <module>.<code> from the module's RFC 9457 problem `type`).
   //
-  // tenant admin: a 400 shape refusal and the 409 a registration or
+  // tenant admin: a 400 shape refusal, the 409 a registration or
   // rename colliding with an existing identifier or alias is answered
-  // with.
+  // with, and the 409 the transitional alias route answers every change
+  // with (to be removed in T6).
   'tenant.bad_request',
   'tenant.conflict',
+  'tenant.alias_immutable',
   // org create (the demo host's self-service surface) and the personal
   // organization ensure: the 409s a creation is refused with -- another
   // creation in flight, the account's active-organization cap, and an

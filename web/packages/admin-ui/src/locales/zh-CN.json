@@ -60,7 +60,8 @@
     },
     "tenant": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
-      "conflict": "该标识或别名已被其他组织占用。"
+      "conflict": "该标识或别名已被其他组织占用。",
+      "alias_immutable": "别名创建后不可更改。"
     },
     "settings": {
       "bad_request": "提交的内容有误，请检查表单后重试。",

@@ -1,6 +1,6 @@
 /**
- * J13 -- an operator onboards a tenant from the admin: register it, rename
- * it, invite its first member, and see the member land in it.
+ * J13 -- an operator onboards a tenant from the admin: register it, try to
+ * rename it, invite its first member, and see the member land in it.
  *
  * The operator is the seeded platform administrator. The review seed writes its
  * email address as an administrator's assertion, not as a proof of ownership,
@@ -25,10 +25,12 @@
  * through the create form. Both collision branches the document names are
  * driven before the successful registration -- an identifier acme holds, and an
  * alias acme holds -- and each is asserted to leave the roster unchanged. The
- * new tenant's alias is then changed on its detail page to a value that differs
- * from its identifier, so the accept summary (which names the tenant by
- * identifier) and the account menu's organization row (which names it by alias)
- * cannot be confused.
+ * new tenant is registered with an alias that differs from its identifier, so
+ * the accept summary (which names the tenant by identifier) and the account
+ * menu's organization row (which names it by alias) cannot be confused. The
+ * detail page's rename attempt is then refused with the alias-immutable copy:
+ * the platform keeps that route only as a transitional compatibility route, so
+ * the alias stays the value chosen at registration.
  *
  * THE DOCUMENT'S STEP-10 RE-OPENED LINK IS NOT RENDERED BY THE PRODUCT, so this
  * spec leaves it undriven and reports the gap. The accept-view read returns an
@@ -103,11 +105,14 @@ const OPERATOR = {
 /** The tenant the seed registers; its identifier and alias are the same. */
 const SEEDED_TENANT = 'acme'
 
-/** The identifier of the tenant this journey registers, and its first alias. */
+/** The identifier of the tenant this journey registers. */
 const TENANT_ID = 'globex'
 
-/** The alias the operator renames the new tenant to; it differs from the id. */
+/** The alias the tenant is registered with; it differs from the identifier. */
 const TENANT_ALIAS = 'globex-labs'
+
+/** A distinct alias the operator tries to switch to; the immutable-alias route refuses it. */
+const REFUSED_ALIAS = 'globex-renamed'
 
 /**
  * The role the operator creates in the new tenant and binds itself to. The
@@ -491,9 +496,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(rows).toHaveCount(before)
 
       // The successful registration: the row appears, active, with the values
-      // typed.
+      // typed. The alias differs from the identifier, so the later accept
+      // summary and account-menu assertions can tell the two names apart.
       await idField.fill(TENANT_ID)
-      await aliasField.fill(TENANT_ID)
+      await aliasField.fill(TENANT_ALIAS)
       await submit.click()
       await expect(
         page.getByText(
@@ -506,7 +512,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       const created = rosterRow(page, TENANT_ID)
       await expect(created).toHaveCount(1)
       await expect(rosterIdentifier(created, TENANT_ID)).toBeVisible()
-      await expect(rosterAlias(created, TENANT_ID)).toBeVisible()
+      await expect(rosterAlias(created, TENANT_ALIAS)).toBeVisible()
       await expect(
         created.getByText(copy('adminUi', 'tenants.status.active'), {
           exact: true,
@@ -519,7 +525,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(rows.nth(1)).toContainText(TENANT_ID)
     })
 
-    await test.step("step 4: the operator renames the tenant's alias, and both the detail and the roster show it", async () => {
+    await test.step("step 4: a rename is refused and the tenant keeps its registered alias", async () => {
       // REQ-platform-admin-011: the detail page is reached from the roster row
       // and shows the identifier, the alias and the status.
       await rosterRow(page, TENANT_ID)
@@ -535,7 +541,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 
       // Summary fields, in the page's own order: identifier, alias, status.
       await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
-      await expect(summaryValue(page, 1)).toHaveText(TENANT_ID)
+      await expect(summaryValue(page, 1)).toHaveText(TENANT_ALIAS)
       await expect(summaryValue(page, 2)).toHaveText(
         copy('adminUi', 'tenants.status.active'),
       )
@@ -549,26 +555,29 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         exact: true,
       })
 
-      // REQ-tenancy-002's collision branch: an alias another tenant holds is
-      // refused, and this tenant keeps its alias and identifier.
-      await renameField.fill(SEEDED_TENANT)
+      // An alias is immutable after creation. The platform keeps the rename
+      // route only as a transitional compatibility route, so the attempt is
+      // answered 409 with the alias-immutable problem type, the page renders
+      // its copy through the console whitelist, and the alias and the rest of
+      // the row stay as they were.
+      const refused = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          new URL(response.url()).pathname ===
+            `/api/v1/system/tenants/${TENANT_ID}`,
+        { timeout: 15_000 },
+      )
+      await renameField.fill(REFUSED_ALIAS)
       await renameSubmit.click()
+      const answer = await refused
+      expect(answer.status()).toBe(409)
+      expect(await answer.json()).toMatchObject({
+        type: 'urn:speed:tenant:alias-immutable',
+      })
       await expect(
-        page.getByText(copy('adminUi', 'errors.tenant.conflict'), {
+        page.getByText(copy('adminUi', 'errors.tenant.alias_immutable'), {
           exact: true,
         }),
-      ).toBeVisible()
-      await expect(summaryValue(page, 1)).toHaveText(TENANT_ID)
-
-      // The successful rename: the detail re-reads the tenant, and the
-      // identifier and status stay as they were.
-      await renameField.fill(TENANT_ALIAS)
-      await renameSubmit.click()
-      await expect(
-        page.getByText(
-          copy('adminUi', 'tenantDetail.actions.renamed', { id: TENANT_ID }),
-          { exact: true },
-        ),
       ).toBeVisible()
       await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
       await expect(summaryValue(page, 1)).toHaveText(TENANT_ALIAS)
@@ -576,7 +585,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         copy('adminUi', 'tenants.status.active'),
       )
 
-      // The roster re-reads too: the same row now shows the new alias.
+      // The roster still shows the alias chosen at registration.
       await page
         .getByRole('link', {
           name: copy('adminUi', 'tenantDetail.back'),
@@ -1027,8 +1036,8 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       // REQ-tenancy-021: the current organization is the invited one. The
-      // account menu's organization row names it by alias -- the value the
-      // operator renamed it to, not the identifier the accept summary showed.
+      // account menu's organization row names it by alias -- the value chosen
+      // at registration, not the identifier the accept summary showed.
       await openAccountMenu(invitee)
       await expect(organizationRow(invitee, TENANT_ALIAS)).toBeVisible({
         timeout: 15_000,

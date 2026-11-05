@@ -301,6 +301,7 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 		{http.MethodGet, "/api/v1/system/tenants"}:                   true,
 		{http.MethodPost, "/api/v1/system/tenants"}:                  true,
 		{http.MethodGet, "/api/v1/system/tenants/:tenant"}:           true,
+		{http.MethodPatch, "/api/v1/system/tenants/:tenant"}:         true,
 		{http.MethodPatch, "/api/v1/system/tenants/:tenant/profile"}: true,
 		{http.MethodPost, "/api/v1/system/tenants/:tenant/status"}:   true,
 	}

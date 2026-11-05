@@ -74,6 +74,80 @@ func TestTheGetOfAnUnknownTenantIs404(t *testing.T) {
 	}
 }
 
+// The alias route is the transitional compatibility route, to be removed in
+// T6. It reads the tenant and refuses every change with the alias-immutable
+// problem type: it never calls a write method, so the alias and the rest of the
+// row stay as they were, and it writes no audit row because no successful write
+// happened.
+func TestTheAliasRouteRefusesEveryChange(t *testing.T) {
+	r := newRig(t)
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	r.catalog.found = true
+
+	w := r.do(http.MethodPatch, pathTenants+"/t_acme", aliasBody{Alias: "acme-labs"})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
+	}
+	if got := problemOf(t, w); got.Type != typePrefix+aliasImmutableCode {
+		t.Errorf("problem type = %q, want %q", got.Type, typePrefix+aliasImmutableCode)
+	}
+
+	// The route read the tenant and called nothing else: no write path was
+	// reached, so the alias and the rest of the row are unchanged.
+	calls := r.catalog.recorded()
+	if len(calls) != 1 || calls[0].op != "Get" || calls[0].id != "t_acme" {
+		t.Fatalf("roster calls = %+v, want one Get of t_acme and no write", calls)
+	}
+	if got := r.catalog.held; got.ID != "t_acme" || got.Alias != "acme" || got.Status != tenant.StatusActive {
+		t.Errorf("the row = %+v, want it unchanged", got)
+	}
+	if rows := r.audit.entries(); len(rows) != 0 {
+		t.Errorf("audit rows = %+v, want none: the route performs no successful write", rows)
+	}
+}
+
+// The alias route still reads the tenant for its two existence answers: an
+// identifier no row carries is a 404, and a tombstone is a 409 conflict. Neither
+// reaches a write method or the audit.
+func TestTheAliasRouteRefusesUnknownTenantsAndTombstones(t *testing.T) {
+	t.Run("unknown tenant", func(t *testing.T) {
+		r := newRig(t)
+		w := r.do(http.MethodPatch, pathTenants+"/t_ghost", aliasBody{Alias: "ghost-labs"})
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body %s)", w.Code, w.Body.String())
+		}
+		if w.Body.Len() != 0 {
+			t.Errorf("a 404 carried a body %q, want a bare status", w.Body.String())
+		}
+		if calls := r.catalog.recorded(); len(calls) != 1 || calls[0].op != "Get" {
+			t.Errorf("roster calls = %+v, want one read and no write", calls)
+		}
+		if rows := r.audit.entries(); len(rows) != 0 {
+			t.Errorf("audit rows = %+v, want none", rows)
+		}
+	})
+
+	t.Run("tombstone", func(t *testing.T) {
+		r := newRig(t)
+		r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted}
+		r.catalog.found = true
+
+		w := r.do(http.MethodPatch, pathTenants+"/t_acme", aliasBody{Alias: "acme-labs"})
+		if w.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
+		}
+		if got := problemOf(t, w); got.Type != typePrefix+conflictCode {
+			t.Errorf("problem type = %q, want %q", got.Type, typePrefix+conflictCode)
+		}
+		if calls := r.catalog.recorded(); len(calls) != 1 || calls[0].op != "Get" {
+			t.Errorf("roster calls = %+v, want one read and no write", calls)
+		}
+		if rows := r.audit.entries(); len(rows) != 0 {
+			t.Errorf("audit rows = %+v, want none", rows)
+		}
+	})
+}
+
 func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"})
@@ -128,6 +202,7 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 		"list":   {http.MethodGet, pathTenants, nil, PermissionTenantRead},
 		"get":    {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
 		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}, PermissionTenantManage},
+		"alias":  {http.MethodPatch, pathTenants + "/t", aliasBody{Alias: "abc"}, PermissionTenantManage},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
 	}
 	for name, tc := range cases {
@@ -395,6 +470,8 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 		"create with a short alias":         {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "ab"}},
 		"create with an underscored alias":  {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "a_b"}},
 		"create with a body it cannot read": {http.MethodPost, pathTenants, "not-an-object"},
+		"alias with a blank alias":          {http.MethodPatch, pathTenants + "/t_acme", aliasBody{Alias: "a b"}},
+		"alias with a blank identifier":     {http.MethodPatch, pathTenants + "/t%20acme", aliasBody{Alias: "acme-labs"}},
 		"status outside the closed set":     {http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "pending"}},
 		"status the closed set keeps for deletion": {
 			http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "deleted"},

@@ -325,6 +325,7 @@ func TestTheWriteGuardIsNotAskedOnAnyOtherRoute(t *testing.T) {
 		"list":    {http.MethodGet, pathTenants, nil},
 		"get":     {http.MethodGet, pathTenants + "/t_acme", nil},
 		"create":  {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"}},
+		"alias":   {http.MethodPatch, pathTenants + "/t_acme", aliasBody{Alias: "acme-labs"}},
 		"profile": {http.MethodPatch, pathTenants + "/t_acme/profile", fullProfile()},
 	}
 	for name, tc := range cases {

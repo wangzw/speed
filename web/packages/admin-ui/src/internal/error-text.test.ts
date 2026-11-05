@@ -193,6 +193,7 @@ describe('admin-ui error text', () => {
     for (const code of [
       'tenant.bad_request',
       'tenant.conflict',
+      'tenant.alias_immutable',
       'org.creation_in_progress',
       'org.identifier_unavailable',
       'org.organization_limit',

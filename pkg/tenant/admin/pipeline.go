@@ -22,11 +22,13 @@ import (
 )
 
 // The problem types this module writes. typePrefix is the tenant capability's
-// namespace; badRequest and conflict are this surface's two codes in it, and
+// namespace; badRequest and conflict are this surface's two codes in it,
 // protected is the write guard's refusal of a tenant the host declares
-// off-limits. A 404 and a 503 are written with no type: they say something is not
-// there or a dependency could not answer, and not which kind of refusal it was,
-// so naming a kind would separate the failures the answer is meant to keep apart.
+// off-limits, and aliasImmutable is the transitional alias route's refusal of
+// every change. A 404 and a 503 are written with no type: they say something is
+// not there or a dependency could not answer, and not which kind of refusal it
+// was, so naming a kind would separate the failures the answer is meant to keep
+// apart.
 //
 // The contact-required refusal is the authentication capability's, not this surface's:
 // the refusal it names is a fact about the acting account's registration, so a
@@ -35,10 +37,11 @@ import (
 // authn.ContactRequiredProblemType, written at the one refusal below rather than
 // copied here.
 const (
-	typePrefix     = "urn:speed:tenant:"
-	badRequestCode = "bad-request"
-	conflictCode   = "conflict"
-	protectedCode  = "protected"
+	typePrefix         = "urn:speed:tenant:"
+	badRequestCode     = "bad-request"
+	conflictCode       = "conflict"
+	protectedCode      = "protected"
+	aliasImmutableCode = "alias-immutable"
 )
 
 // realmOf reads back the endpoint a management route was mounted on, the name
