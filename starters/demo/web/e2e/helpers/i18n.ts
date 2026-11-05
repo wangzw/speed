@@ -31,6 +31,7 @@ export type CopyBundle =
   | 'uiKit'
   | 'adminUi'
   | 'reviewNotice'
+  | 'invitemail'
 
 /** The languages the deployment ships bundles for. */
 export type CopyLocale = 'en-US' | 'zh-CN'
@@ -52,6 +53,10 @@ const BUNDLES: Record<CopyBundle, string> = {
   // shipped product string like any other. Its keys carry dots as literal
   // characters; `copyKey` reads them that way.
   reviewNotice: '../../../server/review_notification_locales',
+  // The invitation notice the backend renders and the review mail carrier
+  // writes to the process log. Its keys carry dots as literal characters; read
+  // them through `copyKey`.
+  invitemail: '../../../../../pkg/authn/invitemail/locales',
 }
 
 const loaded = new Map<string, unknown>()
@@ -127,12 +132,14 @@ export function copy(
  * notification text is keyed `<type_key>.<channel>.<part>` -- cannot go through
  * `copy`'s dot-path lookup, which reads those dots as nesting. This reads the
  * top-level entry under the exact key. A missing key or a non-string value is
- * a harness error, the same as `copy`.
+ * a harness error, the same as `copy`. `variables` fill the entry's `{{name}}`
+ * placeholders; a placeholder with no value is a harness error, like `copy`'s.
  */
 export function copyKey(
   name: CopyBundle,
   key: string,
   locale: CopyLocale = 'en-US',
+  variables: Readonly<Record<string, string | number>> = {},
 ): string {
   const catalog = bundle(name, locale)
   if (typeof catalog !== 'object' || catalog === null || Array.isArray(catalog)) {
@@ -142,7 +149,15 @@ export function copyKey(
   if (typeof value !== 'string') {
     throw new Error(`the ${name} locale bundle has no string at the key ${key}`)
   }
-  return value
+  return value.replace(/\{\{(\w+)\}\}/g, (match: string, variable: string) => {
+    const replacement = variables[variable]
+    if (replacement === undefined) {
+      throw new Error(
+        `the ${name} locale key ${key} needs a value for ${match}`,
+      )
+    }
+    return String(replacement)
+  })
 }
 
 /** Escape the characters a regular expression reads as syntax. */

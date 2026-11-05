@@ -52,6 +52,15 @@ const SMS_CARRIER_MESSAGES: ReadonlySet<string> = new Set([
   'log sms: a message was sent',
 ])
 
+/**
+ * The `msg` the review mail carrier writes for every message it sends. The line
+ * carries the rendered subject and bodies, not a template key or a language:
+ * the request's language is what the rendered subject shows, so a caller that
+ * needs to select one template in one language passes that language's subject
+ * as the filter.
+ */
+const MAIL_CARRIER_MESSAGE = 'log mail: a message was sent'
+
 /** The `msg` notification.delivery writes for an external send it accepted. */
 const OUTBOUND_SENT_MESSAGE =
   'notification.delivery: an external message was sent'
@@ -322,10 +331,24 @@ export async function waitForVerificationCode(
 export interface CarrierMessage {
   /** The destination the carrier was handed. */
   readonly to: string
-  /** The logical template the message was sent under. */
+  /**
+   * The logical template the SMS carrier sent under. The mail carrier names no
+   * template key; its template is the rendered subject below.
+   */
   readonly template: string
-  /** The language the message was resolved in. */
+  /** The language the SMS carrier resolved the message in. */
   readonly locale: string
+  /**
+   * The rendered subject the mail carrier wrote. It is the mail template as
+   * the request's language rendered it, which is what selects one template in
+   * one language; empty on an SMS carrier line.
+   */
+  readonly subject: string
+  /**
+   * The rendered plain-text body the mail carrier wrote; empty on an SMS
+   * carrier line.
+   */
+  readonly text: string
   /** The whole line, for a failure attachment. */
   readonly line: string
   /** The line's position, so a caller can continue from it. */
@@ -350,27 +373,76 @@ export interface OutboundRecord {
   readonly index: number
 }
 
+/**
+ * The filter one carrier read accepts. An SMS line names its template key and
+ * its language, and a mail line names neither; it writes the rendered subject
+ * and plain-text body instead. A caller selects one mail template in one
+ * language by passing that language's subject, and looks for a value inside
+ * the body with `textIncludes`.
+ */
+interface CarrierMessageFilter {
+  readonly to?: string
+  readonly template?: string
+  readonly locale?: string
+  readonly subject?: string
+  readonly textIncludes?: string
+}
+
 /** A carrier line this kind of message wrote, if the line is one. */
 function carrierMessageOnLine(
   line: string,
-  options: { readonly to?: string; readonly template?: string; readonly locale?: string },
+  options: CarrierMessageFilter,
 ): CarrierMessage | undefined {
   const fields = parseLogfmt(line)
-  if (!SMS_CARRIER_MESSAGES.has(fields.msg ?? '')) return undefined
+  const msg = fields.msg ?? ''
   const to = fields.to ?? ''
-  const template = fields.template ?? ''
-  const locale = fields.locale ?? ''
-  // A carrier line is identified by what the send resolved to: the template and
-  // the language. Both message kinds carry them, so a caller can await either
-  // without one being mistaken for the other, and a line missing them is not a
-  // message this reader can attribute.
-  if (template === '' || locale === '') return undefined
-  if (options.to !== undefined && to !== options.to) return undefined
-  if (options.template !== undefined && template !== options.template) {
-    return undefined
+
+  if (SMS_CARRIER_MESSAGES.has(msg)) {
+    const template = fields.template ?? ''
+    const locale = fields.locale ?? ''
+    // A carrier line is identified by what the send resolved to: the template
+    // and the language. Both message kinds carry them, so a caller can await
+    // either without one being mistaken for the other, and a line missing them
+    // is not a message this reader can attribute.
+    if (template === '' || locale === '') return undefined
+    if (options.to !== undefined && to !== options.to) return undefined
+    if (options.template !== undefined && template !== options.template) {
+      return undefined
+    }
+    if (options.locale !== undefined && locale !== options.locale) {
+      return undefined
+    }
+    // The mail-only filters cannot name an SMS line: it carries neither a
+    // rendered subject nor a body.
+    if (options.subject !== undefined || options.textIncludes !== undefined) {
+      return undefined
+    }
+    return { to, template, locale, subject: '', text: '', line, index: -1 }
   }
-  if (options.locale !== undefined && locale !== options.locale) return undefined
-  return { to, template, locale, line, index: -1 }
+
+  if (msg === MAIL_CARRIER_MESSAGE) {
+    const subject = fields.subject ?? ''
+    const text = fields.text ?? ''
+    if (subject === '') return undefined
+    if (options.to !== undefined && to !== options.to) return undefined
+    // The mail line names no template key and no language; a caller passing
+    // either is asking for an SMS line, not this one.
+    if (options.template !== undefined || options.locale !== undefined) {
+      return undefined
+    }
+    if (options.subject !== undefined && subject !== options.subject) {
+      return undefined
+    }
+    if (
+      options.textIncludes !== undefined &&
+      !text.includes(options.textIncludes)
+    ) {
+      return undefined
+    }
+    return { to, template: '', locale: '', subject, text, line, index: -1 }
+  }
+
+  return undefined
 }
 
 /** An external-send line the pipeline wrote, if the line is one. */
@@ -412,17 +484,18 @@ function outboundRecordOnLine(
 }
 
 /**
- * Wait for the carrier line that records one SMS being handed to it. The line
- * carries the destination, the logical template and the language it was
- * resolved in; the review carrier writes it instead of reaching a vendor, so it
- * is the only evidence a browser tier can read that the message left.
+ * Wait for the carrier line that records one message being handed to it.
+ *
+ * The SMS line carries the destination, the logical template and the language
+ * it was resolved in. The mail line carries the destination and the rendered
+ * subject and body, so the caller names the template and the language together
+ * through the subject that language renders. Either line is the only evidence
+ * a browser tier can read that the message left: the review carriers reach no
+ * vendor or relay.
  */
 export async function waitForCarrierMessage(
   log: ProcessLog,
-  options: {
-    readonly to?: string
-    readonly template?: string
-    readonly locale?: string
+  options: CarrierMessageFilter & {
     readonly timeoutMs?: number
     readonly after?: number
   },
@@ -433,8 +506,9 @@ export async function waitForCarrierMessage(
       timeoutMs: options.timeoutMs ?? 30_000,
       after: options.after ?? 0,
       what:
-        'the review SMS carrier line' +
-        (options.template === undefined ? '' : ` for ${options.template}`),
+        'the review carrier line' +
+        (options.template === undefined ? '' : ` for ${options.template}`) +
+        (options.subject === undefined ? '' : ` headed ${options.subject}`),
     },
   )
   const message = carrierMessageOnLine(found.line, options)
@@ -447,10 +521,7 @@ export async function waitForCarrierMessage(
 /** Count the carrier lines a filter names, at or after `after`. */
 export function countCarrierMessages(
   log: ProcessLog,
-  options: {
-    readonly to?: string
-    readonly template?: string
-    readonly locale?: string
+  options: CarrierMessageFilter & {
     readonly after?: number
   },
 ): number {

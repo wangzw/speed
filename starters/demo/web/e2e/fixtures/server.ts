@@ -353,8 +353,10 @@ export interface ReviewServer {
   /** Everything the child wrote to standard error, joined. */
   readonly stderr: string
   /**
-   * Wait for the review SMS carrier line recording one message. The carrier
-   * line is the message itself, with its destination, template and language.
+   * Wait for a review carrier line recording one message. The SMS line names
+   * its destination, template and language; the mail line names its
+   * destination and renders the subject and body, so its template and language
+   * are selected together by the subject the caller passes.
    */
   waitForCarrierMessage(
     options: Parameters<typeof waitForCarrierMessage>[1],

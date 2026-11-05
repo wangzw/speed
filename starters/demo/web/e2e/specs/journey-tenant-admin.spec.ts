@@ -4,11 +4,12 @@
  * A business tenant's administrator -- a member holding the tenant's governed
  * permissions and no platform permission -- reaches the organization admin area
  * from the tenant home. This spec drives that surface the way the person
- * does: the account menu's organization group and the start card, the members and
- * invitations pages, the invitation handed to a colleague in a second browser
- * context, the tenant roles and grants, the bindings, the tenant settings
- * layer, the tenant switch, the enterprise providers, the `system` tenant and
- * an impersonated session.
+ * does: the account menu's organization group and the start card, the members
+ * page's search, role filter and management panel, the invitations page's
+ * issue, resend, revoke and status filter, the invitation handed to a
+ * colleague in a second browser context, the tenant roles and grants, the
+ * tenant settings layer, the tenant switch, the enterprise providers, the
+ * `system` tenant and an impersonated session.
  *
  * The administrator signs in as the review fixture's proved-email account
  * (`reviewTenantAdmin`). The seed makes it acme's only tenant administrator,
@@ -21,41 +22,48 @@
  * console's resolved failure copy. Two refusals the document names cannot be
  * reached through a rendered control and are therefore not claimed:
  *
- *  - The platform-domain permission grant (step 9). The organization grant
- *    picker offers only the governed catalog (REQ-tenant-admin-026), so a
+ *  - The platform-domain permission grant. The organization grant picker
+ *    offers only the governed catalog (REQ-tenant-admin-026), so a
  *    platform-domain code cannot be selected. Reaching the refusal would
  *    require the direct HTTP call the honesty gate forbids.
- *  - The `platform-admin` grant (part of step 10). The same governed catalog
- *    is the only grant source, so the page cannot name `platform-admin` as a
- *    grant target. Its role creation and binding are driven, and the catalog
- *    is asserted not to offer the platform permission.
+ *  - The `platform-admin` grant. The same governed catalog is the only grant
+ *    source, so the page cannot name `platform-admin` as a grant target. Its
+ *    role creation is driven, and the catalog is asserted not to offer the
+ *    platform permission.
  *
  * The remaining narrow claims:
  *
  *  - REQ-tenant-admin-003 is driven as the switch retract/restore pair (to the
  *    personal tenant and back); a business-to-business switch is not driven.
- *  - REQ-tenant-admin-010 covers the invitation list's rendered columns; no
- *    invitation is revoked.
  *  - REQ-tenant-admin-011/012/014 cover the current tenant's provider list;
  *    the cross-tenant absence is the fixture's single-tenant shape and is not
  *    driven through a second organization.
  *  - REQ-tenant-admin-033 (the last-administrator floor) and REQ-tenant-admin-
- *    047 are not claimed: clicking the one existing binding is the self-
- *    unbind refusal (REQ-tenant-admin-046), which the server answers before
- *    the last-administrator rule.
- *  - REQ-tenant-admin-034/048 cover the `platform-admin` role creation and
- *    binding refusals; the grant half is not offered by the page (above).
+ *    047 are not claimed: clicking the one existing `tenant-admin` binding is
+ *    the self-unbind refusal (REQ-tenant-admin-046), which the server answers
+ *    before the last-administrator rule.
+ *  - REQ-tenant-admin-034 covers the `platform-admin` role creation refusal.
+ *    REQ-tenant-admin-048's binding half is not reachable through a rendered
+ *    control any more: role binding moved into the member management panel,
+ *    whose role list is the tenant's own roles, and `platform-admin` is not
+ *    one of them. The refusal is the roles endpoint's, asserted by the unit
+ *    tier.
+ *  - REQ-tenant-admin-054 (cursor paging) is not driven: the review tenant
+ *    holds one page of members and invitations, so neither pager renders.
  *  - The personal-tenant direct visit is driven as an in-app history visit
  *    (`goBack`), because a full document load re-settles the current tenant
  *    to the account's non-personal membership; the history visit keeps the
  *    personal tenant current, which is the state the requirement describes.
  *
  * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts. The only non-UI reads are the email verification code and
- * the impersonation step-up SMS code from the review process log.
+ * helpers/i18n.ts; the invitation notice's subject is read from the backend
+ * module's own catalog, because that is the string the mail carrier renders.
+ * The only non-UI reads are the email verification code and the impersonation
+ * step-up SMS code from the review process log, and the invitation mail line
+ * the review carrier writes when a notice is delivered.
  */
 // @journey journey-tenant-admin.md
-// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021
+// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import {
@@ -81,10 +89,9 @@ import {
   openAccountMenu,
   organizationRow,
 } from '../helpers/account-menu'
-import { copy, copyPattern } from '../helpers/i18n'
+import { copy, copyKey, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 import {
-  bindingsSection,
   catalogSection,
   cell,
   columnIndex,
@@ -94,9 +101,15 @@ import {
   expectOrganizationEntryPresent,
   grantsSection,
   homeHeading,
+  invitationRow,
+  invitationStatusFilter,
   invitationsSection,
-  lookupSection,
   mainNavigation,
+  manageMemberButton,
+  memberPanel,
+  memberRoleFilter,
+  memberRow,
+  memberSearchField,
   membersSection,
   openOrganizationPage,
   providerFormSection,
@@ -138,21 +151,8 @@ function protectedText(): string {
   return copy('adminUi', 'errors.authz.protected')
 }
 
-/** The invitation list's row for one address. */
-function invitationRow(page: Page, email: string): Locator {
-  return invitationsSection(page)
-    .getByRole('table')
-    .locator('tbody tr')
-    .filter({ hasText: email })
-}
-
-/** One member table's row, found by the display name it renders. */
-function memberRow(page: Page, displayName: string): Locator {
-  return membersSection(page)
-    .getByRole('table')
-    .locator('tbody tr')
-    .filter({ hasText: displayName })
-}
+/** The address of an invitation used to exercise resend and revoke. */
+const RESENT_INVITEE = 'resent-invitee@demo.test'
 
 /** The status cell's text of one invitation row. */
 async function invitationStatus(page: Page, email: string): Promise<string> {
@@ -166,6 +166,57 @@ function invitationLinkPanel(page: Page, email: string): Locator {
   return page.getByRole('status').filter({
     hasText: copy('adminUi', 'invitations.issued.link', { email }),
   })
+}
+
+/**
+ * The subject the invitation notice carries in en-US: the mail template as the
+ * request's language rendered it. The mail carrier writes no template key or
+ * language, so this is what selects that one notice among the process log's
+ * mail lines.
+ */
+function invitationSubject(): string {
+  return copyKey('invitemail', 'authn.invitemail.subject', 'en-US', {
+    tenant: TENANT,
+  })
+}
+
+/** Open one member's management panel and leave it open. */
+async function openMemberPanel(page: Page, displayName: string): Promise<Locator> {
+  await manageMemberButton(page, displayName).click()
+  const panel = memberPanel(page)
+  await expect(panel).toBeVisible()
+  return panel
+}
+
+/** Close one member's management panel through its close control. */
+async function closeMemberPanel(
+  page: Page,
+  displayName: string,
+): Promise<void> {
+  const panel = memberPanel(page)
+  await panel
+    .getByRole('button', {
+      name: copy('adminUi', 'members.panel.closeAria', { name: displayName }),
+      exact: true,
+    })
+    .click()
+  await expect(panel).toHaveCount(0)
+}
+
+/** The bindings list item for one role inside an open member panel. */
+function bindingRow(panel: Locator, role: string): Locator {
+  return panel.locator('li').filter({ hasText: role })
+}
+
+/** Select one value of the invitations section's status filter. */
+async function chooseInvitationStatus(
+  page: Page,
+  key: string,
+): Promise<void> {
+  await invitationStatusFilter(page).click()
+  await page
+    .getByRole('option', { name: copy('adminUi', key), exact: true })
+    .click()
 }
 
 /** The account's display name as the admin's accounts row carries it. */
@@ -342,10 +393,11 @@ test.describe('the tenant administrator manages the organization', () => {
     demo,
     browser,
   }) => {
-    // The journey drives an invitation through a second context, the role
+    // The journey drives an invitation through a second context, the member
+    // panel's five writes, the invitation resend/revoke cycle, the role
     // surface, the settings write and two tenant switches; the tier's default
     // bound covers one server and one journey, not this many settle points.
-    test.setTimeout(300_000)
+    test.setTimeout(600_000)
 
     const { page, server, accounts } = demo
     let inviteeContext: BrowserContext | undefined
@@ -390,7 +442,7 @@ test.describe('the tenant administrator manages the organization', () => {
         expect(new URL(page.url()).pathname).toBe(organizationPath('/invitations'))
       })
 
-      await test.step('step 3: the member table lists this tenant with names and status', async () => {
+      await test.step('step 3: the member table lists this tenant with names, roles, status, source and joined-at', async () => {
         const table = membersSection(page).getByRole('table')
         const nameColumn = await columnIndex(
           table,
@@ -400,17 +452,26 @@ test.describe('the tenant administrator manages the organization', () => {
           table,
           copy('adminUi', 'members.column.account'),
         )
-        const activeColumn = await columnIndex(
+        const rolesColumn = await columnIndex(
           table,
-          copy('adminUi', 'members.column.active'),
+          copy('adminUi', 'members.column.roles'),
+        )
+        const statusColumn = await columnIndex(
+          table,
+          copy('adminUi', 'members.column.status'),
         )
         const sourceColumn = await columnIndex(
           table,
           copy('adminUi', 'members.column.source'),
         )
+        const joinedColumn = await columnIndex(
+          table,
+          copy('adminUi', 'members.column.joinedAt'),
+        )
 
-        // REQ-tenant-admin-008: the current administrator is in its own list,
-        // with the name, account, active state and source the record carries.
+        // REQ-tenant-admin-008 / REQ-tenant-admin-051: the current
+        // administrator is in its own list, with the name, account, roles,
+        // status, source and join time the record carries.
         const admin = memberRow(page, reviewTenantAdmin.displayName)
         await expect(admin).toHaveCount(1)
         await expect(cell(admin, nameColumn)).toHaveText(
@@ -421,28 +482,139 @@ test.describe('the tenant administrator manages the organization', () => {
           tenantAdminAccount,
           'the member row carried no account identifier',
         ).not.toBe('')
-        await expect(cell(admin, activeColumn)).toHaveText(
-          copy('adminUi', 'members.activeYes'),
+        await expect(cell(admin, rolesColumn)).toContainText('tenant-admin')
+        await expect(cell(admin, statusColumn)).toHaveText(
+          copy('adminUi', 'members.status.active'),
         )
         await expect(cell(admin, sourceColumn)).toHaveText(
           copy('adminUi', 'members.source.admin'),
         )
+        await expect(cell(admin, joinedColumn)).not.toBeEmpty()
 
-        // The template's ordinary member is here too; nothing from another
-        // tenant is.
+        // The template's ordinary member is here too, carrying no role;
+        // nothing from another tenant is.
         const ordinary = memberRow(page, reviewOrdinaryMember.displayName)
         await expect(ordinary).toHaveCount(1)
+        await expect(cell(ordinary, rolesColumn)).toHaveText(
+          copy('adminUi', 'members.roles.none'),
+        )
+        await expect(cell(ordinary, statusColumn)).toHaveText(
+          copy('adminUi', 'members.status.active'),
+        )
         await expect(cell(ordinary, sourceColumn)).toHaveText(
           copy('adminUi', 'members.source.admin'),
         )
       })
 
-      await test.step('step 4: the administrator issues an invitation and the one-time link is shown', async () => {
+      await test.step('step 4: the member search narrows the list and distinguishes an empty search', async () => {
+        // REQ-tenant-admin-052: a prefix narrows the server-side read to the
+        // matching members; a query with no match says no member matches it
+        // rather than reporting an empty organization.
+        await memberSearchField(page).fill('Demo Member')
+        await expect
+          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count(), {
+            timeout: 15_000,
+          })
+          .toBe(1)
+        await expect(memberRow(page, reviewTenantAdmin.displayName)).toHaveCount(0)
+
+        await memberSearchField(page).fill('no-such-member')
+        await expect(
+          membersSection(page).getByRole('heading', {
+            name: copy('adminUi', 'members.empty.searchTitle'),
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(
+          membersSection(page).getByText(
+            copy('adminUi', 'members.empty.searchDescription', {
+              query: 'no-such-member',
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+
+        // Clearing restores the full list.
+        await page
+          .getByRole('button', {
+            name: copy('adminUi', 'members.search.clear'),
+            exact: true,
+          })
+          .click()
+        await expect(memberRow(page, reviewTenantAdmin.displayName)).toHaveCount(1)
+        await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(1)
+      })
+
+      await test.step('step 5: the role filter narrows the list and a ?role= address opens filtered', async () => {
+        // REQ-tenant-admin-053: the role filter is server-side, writes the
+        // role into the address, and a direct visit with that address opens
+        // the filtered view with the filter applied.
+        await memberRoleFilter(page).click()
+        await page
+          .getByRole('option', { name: 'tenant-admin', exact: true })
+          .click()
+        await expect
+          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count(), {
+            timeout: 15_000,
+          })
+          .toBe(1)
+        await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(0)
+        expect(new URL(page.url()).search).toBe(
+          `?role=${encodeURIComponent('tenant-admin')}`,
+        )
+
+        // A full load with the parameter opens the filtered view directly.
+        await page.goto(
+          `${server.url}${organizationPath('/invitations')}?role=${encodeURIComponent(
+            'tenant-admin',
+          )}`,
+        )
+        await expect(
+          page.getByRole('heading', {
+            level: 1,
+            name: copy('adminUi', 'invitations.title'),
+            exact: true,
+          }),
+        ).toBeVisible({ timeout: 15_000 })
+        await expect
+          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count(), {
+            timeout: 15_000,
+          })
+          .toBe(1)
+        await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(0)
+
+        // Clearing the filter removes the parameter and restores both rows.
+        await memberRoleFilter(page).click()
+        await page
+          .getByRole('option', {
+            name: copy('adminUi', 'members.filter.anyRole'),
+            exact: true,
+          })
+          .click()
+        await expect
+          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count(), {
+            timeout: 15_000,
+          })
+          .toBe(1)
+        expect(new URL(page.url()).search).toBe('')
+      })
+
+      await test.step('step 6: the administrator issues an invitation, the panel shows its delivery and close is confirmed', async () => {
+        // The delivery line is written before the issue answers, so the cursor
+        // is taken before the submit and only this notice may answer the wait.
+        const mailMark = server.log.mark()
         await page
           .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
             exact: true,
           })
           .fill(reviewInvitee.identifier)
+        // The form carries the default validity beside its choice.
+        await expect(
+          page.getByText(
+            copy('adminUi', 'invitations.issue.defaultExpiry', { days: 7 }),
+            { exact: true },
+          ),
+        ).toBeVisible()
         await page
           .getByRole('button', {
             name: copy('adminUi', 'invitations.issue.submit'),
@@ -458,8 +630,9 @@ test.describe('the tenant administrator manages the organization', () => {
           ),
         ).toBeVisible()
 
-        // REQ-tenant-admin-009: the acceptance value is handed out once, as
-        // the host's absolute link, with a copy control.
+        // REQ-tenant-admin-009 / REQ-tenant-admin-059: the acceptance value is
+        // handed out once, with its validity, the bearer risk, the copy
+        // control and the delivery result.
         const panel = invitationLinkPanel(page, reviewInvitee.identifier)
         await expect(panel).toBeVisible()
         await expect(
@@ -476,15 +649,73 @@ test.describe('the tenant administrator manages the organization', () => {
         expect(acceptanceLink).toMatch(
           new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
         )
-
-        // The panel stays until the operator closes it; after the close the
-        // link is no longer on the page.
-        await panel
-          .getByRole('button', {
-            name: copy('adminUi', 'invitations.issued.closeAria', {
-              tenant: TENANT,
-              email: reviewInvitee.identifier,
+        await expect(
+          panel.getByText(
+            copyPattern('adminUi', 'invitations.issued.expiresAt', {
+              time: '.+',
             }),
+          ),
+        ).toBeVisible()
+        await expect(
+          panel.getByText(copy('adminUi', 'invitations.issued.risk'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+        // REQ-tenant-admin-061: this deployment configures a mail carrier, so
+        // the panel reports the notice as sent.
+        await expect(
+          panel.getByText(copy('adminUi', 'invitations.issued.delivery.sent'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+
+        // The review mail carrier wrote the notice to the process log: the
+        // destination, the en-US subject the module's catalog renders, and the
+        // acceptance landing the panel's link also names. The logging layer
+        // masks the `spd_inv_` token wherever it appears (the token prefix is
+        // a registered sensitive key name), so the body names the landing with
+        // the token redacted; the panel's link is the unredacted form of the
+        // same address.
+        const mail = await server.waitForCarrierMessage({
+          to: reviewInvitee.identifier,
+          subject: invitationSubject(),
+          after: mailMark,
+        })
+        const landing = `${server.url}/invitations/`
+        expect(mail.text).toContain(landing)
+        expect(acceptanceLink.startsWith(landing)).toBe(true)
+        expect(mail.text).toContain(TENANT)
+
+        // Closing is the only moment the sole copy is dropped, so it asks
+        // first; keeping it leaves the panel in place.
+        const close = panel.getByRole('button', {
+          name: copy('adminUi', 'invitations.issued.closeAria', {
+            tenant: TENANT,
+            email: reviewInvitee.identifier,
+          }),
+          exact: true,
+        })
+        await close.click()
+        const closeDialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'invitations.issued.closeTitle'),
+          exact: true,
+        })
+        await expect(closeDialog).toBeVisible()
+        await closeDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.keepOpen'),
+            exact: true,
+          })
+          .click()
+        await expect(closeDialog).toHaveCount(0)
+        await expect(panel).toBeVisible()
+        await expect(panel.getByText(acceptanceLink, { exact: true })).toBeVisible()
+
+        await close.click()
+        await expect(closeDialog).toBeVisible()
+        await closeDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.close'),
             exact: true,
           })
           .click()
@@ -510,9 +741,17 @@ test.describe('the tenant administrator manages the organization', () => {
           copy('adminUi', 'invitations.column.expires'),
         )
         await expect(cell(row, expiryColumn)).not.toBeEmpty()
+        // Once the one-time value is dropped, the now-historical row offers no
+        // copy-link action.
+        await expect(
+          row.getByRole('button', {
+            name: copy('adminUi', 'invitations.copyLink'),
+            exact: true,
+          }),
+        ).toHaveCount(0)
       })
 
-      await test.step('step 5: a colleague opens the link, signs in and accepts', async () => {
+      await test.step('step 7: a colleague opens the link, signs in and accepts', async () => {
         inviteeContext = await browser.newContext({
           locale: 'en-US',
           timezoneId: 'UTC',
@@ -613,7 +852,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await closeAccountMenu(invitee)
       })
 
-      await test.step('step 6: the colleague is an ordinary member and sees no organization entry', async () => {
+      await test.step('step 8: the colleague is an ordinary member and sees no organization entry', async () => {
         if (inviteePage === undefined) {
           throw new Error('the colleague page was never opened')
         }
@@ -663,7 +902,7 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toHaveCount(0)
       })
 
-      await test.step('step 7: the administrator refreshes and the colleague is a member', async () => {
+      await test.step('step 9: the administrator refreshes and the colleague is a member', async () => {
         await page
           .getByRole('button', {
             name: copy('adminUi', 'common.refresh'),
@@ -678,19 +917,24 @@ test.describe('the tenant administrator manages the organization', () => {
           })
           .toBe(copy('adminUi', 'invitations.status.accepted'))
 
-        // The member table gained the colleague, active and invitation-sourced.
+        // The member table gained the colleague, active, role-less and
+        // invitation-sourced.
         const table = membersSection(page).getByRole('table')
         const accountColumn = await columnIndex(
           table,
           copy('adminUi', 'members.column.account'),
         )
+        const rolesColumn = await columnIndex(
+          table,
+          copy('adminUi', 'members.column.roles'),
+        )
+        const statusColumn = await columnIndex(
+          table,
+          copy('adminUi', 'members.column.status'),
+        )
         const sourceColumn = await columnIndex(
           table,
           copy('adminUi', 'members.column.source'),
-        )
-        const activeColumn = await columnIndex(
-          table,
-          copy('adminUi', 'members.column.active'),
         )
         const joined = memberRow(page, reviewInvitee.displayName)
         await expect(joined).toHaveCount(1)
@@ -701,12 +945,15 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(joined, sourceColumn)).toHaveText(
           copy('adminUi', 'members.source.invite'),
         )
-        await expect(cell(joined, activeColumn)).toHaveText(
-          copy('adminUi', 'members.activeYes'),
+        await expect(cell(joined, statusColumn)).toHaveText(
+          copy('adminUi', 'members.status.active'),
+        )
+        await expect(cell(joined, rolesColumn)).toHaveText(
+          copy('adminUi', 'members.roles.none'),
         )
       })
 
-      await test.step('step 8: the administrator creates a role and grants a governed permission', async () => {
+      await test.step('step 10: the administrator creates a role and grants a governed permission', async () => {
         await openOrganizationPage(page, 'roles')
         const roles = rolesSection(page)
         const rolesTable = roles.getByRole('table')
@@ -811,140 +1058,289 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
       })
 
-      await test.step('step 9: the administrator binds, unbinds and rebinds the role', async () => {
-        const bindings = bindingsSection(page)
-        const bindingsTable = bindings.getByRole('table')
-        const accountField = bindings.getByRole('combobox', {
-          name: copy('adminUi', 'permissions.bindings.accountLabel'),
-          exact: true,
-        })
+      await test.step('step 11: the member panel binds, unbinds and rebinds the role', async () => {
+        // The binding belongs to the member, so the journey drives it from the
+        // member's management panel rather than the roles page.
+        await openOrganizationPage(page, 'invitations')
 
-        const chooseAccount = async (): Promise<void> => {
-          await accountField.click()
-          await accountField.fill(reviewInvitee.displayName)
-          await page
-            .getByRole('option', {
-              name: new RegExp(`^${escapeRegExp(reviewInvitee.displayName)}`),
-            })
-            .click()
-        }
-        const chooseRole = async (role: string): Promise<void> => {
-          await bindings
-            .getByLabel(copy('adminUi', 'permissions.bindings.roleLabel'), {
+        const chooseRole = async (panel: Locator): Promise<void> => {
+          await panel
+            .getByRole('combobox', {
+              name: copy('adminUi', 'members.panel.roleLabel'),
               exact: true,
             })
-            .fill(role)
+            .click()
+          await page.getByRole('option', { name: ROLE, exact: true }).click()
         }
-        const bind = async (): Promise<void> => {
-          await bindings
+        const bindRole = async (panel: Locator): Promise<void> => {
+          await panel
             .getByRole('button', {
-              name: copy('adminUi', 'permissions.bindings.bind'),
+              name: copy('adminUi', 'members.panel.bind'),
               exact: true,
             })
             .click()
         }
 
-        // REQ-tenant-admin-030: bind the role to the joined member.
-        await chooseAccount()
-        await chooseRole(ROLE)
-        await bind()
+        const panel = await openMemberPanel(page, reviewInvitee.displayName)
+        // REQ-tenant-admin-051: the panel lists the member's current bindings;
+        // the joined member holds none yet.
         await expect(
-          page.getByText(
-            copy('adminUi', 'permissions.bindings.bound', {
-              account: copy('adminUi', 'common.accountReference.name', {
-                name: reviewInvitee.displayName,
-              }),
-              role: ROLE,
-            }),
-            { exact: true },
-          ),
-        ).toBeVisible()
-        const supportBinding = bindingsTable
-          .locator('tbody tr')
-          .filter({ hasText: ROLE })
-        await expect(supportBinding).toHaveCount(1)
-        await expect(
-          supportBinding.getByText(reviewInvitee.displayName, { exact: true }),
-        ).toBeVisible()
-
-        // REQ-tenant-admin-029: the account lookup lists the same binding.
-        const lookup = lookupSection(page)
-        await lookup
-          .getByRole('combobox', {
-            name: copy('adminUi', 'permissions.lookup.accountLabel'),
-            exact: true,
-          })
-          .click()
-        await lookup
-          .getByRole('combobox', {
-            name: copy('adminUi', 'permissions.lookup.accountLabel'),
-            exact: true,
-          })
-          .fill(reviewInvitee.displayName)
-        await page
-          .getByRole('option', {
-            name: new RegExp(`^${escapeRegExp(reviewInvitee.displayName)}`),
-          })
-          .click()
-        await lookup
-          .getByRole('button', {
-            name: copy('adminUi', 'permissions.lookup.apply'),
-            exact: true,
-          })
-          .click()
-        await expect(
-          lookup.getByRole('table').locator('tbody tr').filter({ hasText: ROLE }),
-        ).toHaveCount(1)
-
-        // REQ-tenant-admin-031: the unbind removes it from both reads.
-        await supportBinding
-          .getByRole('button', {
-            name: copy('adminUi', 'permissions.bindings.unbindAria', {
-              account: reviewInvitee.displayName,
-              role: ROLE,
-            }),
-            exact: true,
-          })
-          .click()
-        await expect(
-          page.getByText(
-            copy('adminUi', 'permissions.bindings.unbound', {
-              account: copy('adminUi', 'common.accountReference.name', {
-                name: reviewInvitee.displayName,
-              }),
-              role: ROLE,
-            }),
-            { exact: true },
-          ),
-        ).toBeVisible()
-        await expect(
-          bindingsTable.locator('tbody tr').filter({ hasText: ROLE }),
-        ).toHaveCount(0)
-        await expect(
-          lookup.getByRole('heading', {
-            name: copy('adminUi', 'permissions.lookup.empty.title'),
+          panel.getByText(copy('adminUi', 'members.panel.rolesEmpty'), {
             exact: true,
           }),
         ).toBeVisible()
 
-        // The rebind restores it.
-        await chooseAccount()
-        await chooseRole(ROLE)
-        await bind()
-        await expect(supportBinding).toHaveCount(1)
+        // REQ-tenant-admin-030 / REQ-tenant-admin-051: bind the role.
+        await chooseRole(panel)
+        await bindRole(panel)
         await expect(
-          lookup.getByRole('table').locator('tbody tr').filter({ hasText: ROLE }),
-        ).toHaveCount(1)
+          panel.getByText(
+            copy('adminUi', 'members.panel.bindSaved', {
+              account: reviewInvitee.displayName,
+              role: ROLE,
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await expect(bindingRow(panel, ROLE)).toHaveCount(1)
+
+        // REQ-tenant-admin-031: unbind removes it from the list.
+        await bindingRow(panel, ROLE)
+          .getByRole('button', {
+            name: copy('adminUi', 'members.panel.unbind'),
+            exact: true,
+          })
+          .click()
+        await expect(
+          panel.getByText(
+            copy('adminUi', 'members.panel.bindRemoved', {
+              account: reviewInvitee.displayName,
+              role: ROLE,
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await expect(bindingRow(panel, ROLE)).toHaveCount(0)
+        await expect(
+          panel.getByText(copy('adminUi', 'members.panel.rolesEmpty'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+
+        // The rebind restores it, and the closed list reflects the same read.
+        await chooseRole(panel)
+        await bindRole(panel)
+        await expect(bindingRow(panel, ROLE)).toHaveCount(1)
+        await closeMemberPanel(page, reviewInvitee.displayName)
+
+        const table = membersSection(page).getByRole('table')
+        const rolesColumn = await columnIndex(
+          table,
+          copy('adminUi', 'members.column.roles'),
+        )
+        await expect
+          .poll(
+            async () =>
+              (
+                await cell(
+                  memberRow(page, reviewInvitee.displayName),
+                  rolesColumn,
+                ).innerText()
+              ).trim(),
+            { timeout: 15_000 },
+          )
+          .toBe(ROLE)
       })
 
-      await test.step('step 10: the platform-admin writes are refused and change nothing', async () => {
+      await test.step('step 12: the administrator suspends and resumes the member, keeping the binding', async () => {
+        const table = membersSection(page).getByRole('table')
+        const statusColumn = await columnIndex(
+          table,
+          copy('adminUi', 'members.column.status'),
+        )
+
+        const panel = await openMemberPanel(page, reviewInvitee.displayName)
+        // REQ-tenant-admin-055: suspend asks first and the message says the
+        // access is paused while the bindings are kept and resumable.
+        await panel
+          .getByRole('button', {
+            name: copy('adminUi', 'members.panel.suspend'),
+            exact: true,
+          })
+          .click()
+        const suspendDialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'members.suspendTitle'),
+          exact: true,
+        })
+        await expect(suspendDialog).toBeVisible()
+        await expect(
+          suspendDialog.getByText(
+            copy('adminUi', 'members.suspendMessage', {
+              name: reviewInvitee.displayName,
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await suspendDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'common.confirm'),
+            exact: true,
+          })
+          .click()
+
+        await expect(
+          panel.getByText(
+            copy('adminUi', 'members.suspended', { account: inviteeAccount }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        // The open panel follows the list read: suspended, bindings kept, and
+        // no new binding until the member is resumed.
+        await expect(
+          panel.getByText(copy('adminUi', 'members.status.suspended'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(
+          panel.getByText(copy('adminUi', 'members.panel.suspendedBindNote'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(bindingRow(panel, ROLE)).toHaveCount(1)
+        await expect(
+          panel.getByRole('button', {
+            name: copy('adminUi', 'members.panel.bind'),
+            exact: true,
+          }),
+        ).toBeDisabled()
+
+        await closeMemberPanel(page, reviewInvitee.displayName)
+        await expect(
+          cell(memberRow(page, reviewInvitee.displayName), statusColumn),
+        ).toHaveText(copy('adminUi', 'members.status.suspended'))
+
+        // Resume restores the membership and therefore the role's effect.
+        const resumed = await openMemberPanel(page, reviewInvitee.displayName)
+        await resumed
+          .getByRole('button', {
+            name: copy('adminUi', 'members.panel.resume'),
+            exact: true,
+          })
+          .click()
+        const resumeDialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'members.resumeTitle'),
+          exact: true,
+        })
+        await expect(resumeDialog).toBeVisible()
+        await resumeDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'common.confirm'),
+            exact: true,
+          })
+          .click()
+        await expect(
+          resumed.getByText(
+            copy('adminUi', 'members.resumed', { account: inviteeAccount }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await closeMemberPanel(page, reviewInvitee.displayName)
+        await expect(
+          cell(memberRow(page, reviewInvitee.displayName), statusColumn),
+        ).toHaveText(copy('adminUi', 'members.status.active'))
+      })
+
+      await test.step('step 13: the administrator cannot suspend itself and cannot unbind its own tenant-admin', async () => {
+        const panel = await openMemberPanel(page, reviewTenantAdmin.displayName)
+
+        // REQ-tenant-admin-056: the control is disabled before any request,
+        // and the panel says why.
+        await expect(
+          panel.getByRole('button', {
+            name: copy('adminUi', 'members.panel.suspend'),
+            exact: true,
+          }),
+        ).toBeDisabled()
+        await expect(
+          panel.getByText(copy('adminUi', 'members.panel.cannotSuspendSelf'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+
+        // REQ-tenant-admin-046: the one `tenant-admin` binding is the
+        // administrator's own; the server refuses the unbind and the binding
+        // stays.
+        const own = bindingRow(panel, 'tenant-admin')
+        await expect(own).toHaveCount(1)
+        await own
+          .getByRole('button', {
+            name: copy('adminUi', 'members.panel.unbind'),
+            exact: true,
+          })
+          .click()
+        await expect(own.getByText(protectedText(), { exact: true })).toBeVisible()
+        await expect(bindingRow(panel, 'tenant-admin')).toHaveCount(1)
+
+        await closeMemberPanel(page, reviewTenantAdmin.displayName)
+      })
+
+      await test.step('step 14: removing the member clears them from the list after the double confirmation', async () => {
+        const panel = await openMemberPanel(page, reviewInvitee.displayName)
+        // REQ-tenant-admin-057: the message names the role bindings the
+        // removal clears and the reversible alternative.
+        await panel
+          .getByRole('button', {
+            name: copy('adminUi', 'members.remove'),
+            exact: true,
+          })
+          .click()
+        const dialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'members.removeTitle'),
+          exact: true,
+        })
+        await expect(dialog).toBeVisible()
+        await expect(
+          dialog.getByText(
+            copy('adminUi', 'members.removeMessage', {
+              name: reviewInvitee.displayName,
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+
+        await dialog
+          .getByRole('button', {
+            name: copy('adminUi', 'common.confirm'),
+            exact: true,
+          })
+          .click()
+        const again = dialog.getByRole('button', {
+          name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+          exact: true,
+        })
+        await expect(again).toBeEnabled()
+        await again.click()
+
+        await expect(panel).toHaveCount(0)
+        await expect(
+          page.getByText(
+            copy('adminUi', 'members.removed', { account: inviteeAccount }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await expect(memberRow(page, reviewInvitee.displayName)).toHaveCount(0)
+      })
+
+      await test.step('step 15: the platform-admin role write is refused and the catalog never offers it', async () => {
+        await openOrganizationPage(page, 'roles')
         const roles = rolesSection(page)
         const rolesTable = roles.getByRole('table')
-        const bindings = bindingsSection(page)
-        const bindingsTable = bindings.getByRole('table')
 
-        // REQ-tenant-admin-034/048, role creation: the reserved name is
-        // refused and the catalog does not gain a row.
+        // REQ-tenant-admin-034, role creation: the reserved name is refused
+        // and the catalog does not gain a row. The binding half of
+        // REQ-tenant-admin-048 is not reachable here any more: the member
+        // panel's role list is the tenant's own roles, which never include
+        // `platform-admin`.
         await roles
           .getByLabel(copy('adminUi', 'permissions.roles.create.roleLabel'), {
             exact: true,
@@ -963,40 +1359,20 @@ test.describe('the tenant administrator manages the organization', () => {
           rolesTable.locator('tbody tr').filter({ hasText: 'platform-admin' }),
         ).toHaveCount(0)
 
-        // The binding of the reserved role is refused the same way.
-        const accountField = bindings.getByRole('combobox', {
-          name: copy('adminUi', 'permissions.bindings.accountLabel'),
-          exact: true,
-        })
-        await accountField.click()
-        await accountField.fill(reviewInvitee.displayName)
-        await page
-          .getByRole('option', {
-            name: new RegExp(`^${escapeRegExp(reviewInvitee.displayName)}`),
-          })
-          .click()
-        await bindings
-          .getByLabel(copy('adminUi', 'permissions.bindings.roleLabel'), {
-            exact: true,
-          })
-          .fill('platform-admin')
-        await bindings
-          .getByRole('button', {
-            name: copy('adminUi', 'permissions.bindings.bind'),
-            exact: true,
-          })
-          .click()
-        await expect(
-          bindings.getByRole('alert').getByText(protectedText(), {
-            exact: true,
-          }),
-        ).toBeVisible()
-        await expect(
-          bindingsTable.locator('tbody tr').filter({ hasText: 'platform-admin' }),
-        ).toHaveCount(0)
-
         // The governed catalog is the grant source, so the page cannot even
-        // name the platform role as a grant target.
+        // name the platform role as a grant target. The grants section renders
+        // for a chosen role, so select the role the journey created.
+        await rolesTable
+          .locator('tbody tr')
+          .filter({ hasText: ROLE })
+          .getByRole('button', {
+            name: copy('adminUi', 'permissions.roles.manageGrantsAria', {
+              role: ROLE,
+            }),
+            exact: true,
+          })
+          .click()
+        await expect(grantsSection(page)).toBeVisible()
         await grantsSection(page)
           .getByRole('combobox', {
             name: copy('adminUi', 'permissions.grants.permissionLabel'),
@@ -1009,38 +1385,197 @@ test.describe('the tenant administrator manages the organization', () => {
         await page.keyboard.press('Escape')
       })
 
-      await test.step('step 11: the administrator cannot unbind its own tenant-admin binding', async () => {
-        const bindings = bindingsSection(page)
-        const bindingsTable = bindings.getByRole('table')
+      await test.step('step 16: the invitation resend replaces the link and the status filter narrows the list', async () => {
+        await openOrganizationPage(page, 'invitations')
 
-        // REQ-tenant-admin-046: the one tenant-admin binding is the
-        // administrator's own; the server refuses the unbind and the row
-        // stays.
-        const own = bindingsTable
-          .locator('tbody tr')
-          .filter({ hasText: 'tenant-admin' })
-        await expect(own).toHaveCount(1)
-        await expect(
-          own.getByText(reviewTenantAdmin.displayName, { exact: true }),
-        ).toBeVisible()
-        await own.getByRole('button', {
-          name: copy('adminUi', 'permissions.bindings.unbindAria', {
-            account: reviewTenantAdmin.displayName,
-            role: 'tenant-admin',
-          }),
-          exact: true,
-        }).click()
-        await expect(
-          bindings.getByRole('alert').getByText(protectedText(), {
+        // REQ-tenant-admin-060: issue a second invitation the journey can
+        // resend and revoke without disturbing the accepted one.
+        await page
+          .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
             exact: true,
-          }),
-        ).toBeVisible()
+          })
+          .fill(RESENT_INVITEE)
+        await page
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issue.submit'),
+            exact: true,
+          })
+          .click()
+        const firstPanel = invitationLinkPanel(page, RESENT_INVITEE)
+        await expect(firstPanel).toBeVisible()
+        const firstLink = (
+          (await firstPanel
+            .getByText(new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`))
+            .textContent()) ?? ''
+        ).trim()
+        expect(firstLink).toMatch(
+          new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
+        )
+        await firstPanel
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.closeAria', {
+              tenant: TENANT,
+              email: RESENT_INVITEE,
+            }),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('dialog', {
+            name: copy('adminUi', 'invitations.issued.closeTitle'),
+            exact: true,
+          })
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.close'),
+            exact: true,
+          })
+          .click()
+        await expect(firstPanel).toHaveCount(0)
+
+        // Resend asks first, states the new validity, and replaces the
+        // one-time link; the mail carrier writes the new link too.
+        const mailMark = server.log.mark()
+        const resentRow = invitationRow(page, RESENT_INVITEE)
+        await resentRow
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.resend'),
+            exact: true,
+          })
+          .click()
+        const resendDialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'invitations.resendTitle'),
+          exact: true,
+        })
+        await expect(resendDialog).toBeVisible()
         await expect(
-          bindingsTable.locator('tbody tr').filter({ hasText: 'tenant-admin' }),
-        ).toHaveCount(1)
+          resendDialog.getByText(
+            copy('adminUi', 'invitations.resendMessage', {
+              email: RESENT_INVITEE,
+              days: 7,
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await resendDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'common.confirm'),
+            exact: true,
+          })
+          .click()
+        await expect(
+          page.getByText(
+            copy('adminUi', 'invitations.resent', { email: RESENT_INVITEE }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        const secondPanel = invitationLinkPanel(page, RESENT_INVITEE)
+        await expect(secondPanel).toBeVisible()
+        const secondLink = (
+          (await secondPanel
+            .getByText(new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`))
+            .textContent()) ?? ''
+        ).trim()
+        expect(secondLink).not.toBe(firstLink)
+        const resentMail = await server.waitForCarrierMessage({
+          to: RESENT_INVITEE,
+          subject: invitationSubject(),
+          after: mailMark,
+        })
+        // The token is redacted in the process log; the landing and tenant are
+        // the observable parts of the same notice the panel hands out.
+        expect(resentMail.text).toContain(`${server.url}/invitations/`)
+        expect(secondLink.startsWith(`${server.url}/invitations/`)).toBe(true)
+        expect(resentMail.text).toContain(TENANT)
+
+        await secondPanel
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.closeAria', {
+              tenant: TENANT,
+              email: RESENT_INVITEE,
+            }),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('dialog', {
+            name: copy('adminUi', 'invitations.issued.closeTitle'),
+            exact: true,
+          })
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.close'),
+            exact: true,
+          })
+          .click()
+        await expect(secondPanel).toHaveCount(0)
+
+        // REQ-tenant-admin-058: each filter narrows the server read. The
+        // superseded invitation is already a revoked row, so the revoked
+        // filter lists it while the replacement stays pending.
+        await chooseInvitationStatus(page, 'invitations.status.accepted')
+        await expect(invitationRow(page, reviewInvitee.identifier)).toHaveCount(1)
+        await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(0)
+
+        await chooseInvitationStatus(page, 'invitations.status.pending')
+        await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
+        await expect(invitationRow(page, reviewInvitee.identifier)).toHaveCount(0)
+
+        await chooseInvitationStatus(page, 'invitations.status.revoked')
+        await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
+        await expect(
+          invitationRow(page, RESENT_INVITEE).getByText(
+            copy('adminUi', 'invitations.status.revoked'),
+            { exact: true },
+          ),
+        ).toBeVisible()
+
+        // No invitation has expired, so that filter's empty result names the
+        // filter rather than reporting an empty organization.
+        await chooseInvitationStatus(page, 'invitations.status.expired')
+        await expect(
+          invitationsSection(page).getByText(
+            copy('adminUi', 'invitations.empty.filteredDescription', {
+              status: copy('adminUi', 'invitations.status.expired'),
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+
+        // REQ-tenant-admin-010: revoking the pending invitation is a terminal
+        // state the revoked filter then lists beside the superseded row.
+        await chooseInvitationStatus(page, 'invitations.status.pending')
+        await invitationRow(page, RESENT_INVITEE)
+          .filter({
+            hasText: copy('adminUi', 'invitations.status.pending'),
+          })
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.revoke'),
+            exact: true,
+          })
+          .click()
+        const revokeDialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'invitations.revokeTitle'),
+          exact: true,
+        })
+        await expect(revokeDialog).toBeVisible()
+        await revokeDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'common.confirm'),
+            exact: true,
+          })
+          .click()
+        await expect(
+          page.getByText(
+            copy('adminUi', 'invitations.revoked', { email: RESENT_INVITEE }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+
+        await chooseInvitationStatus(page, 'invitations.status.revoked')
+        await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(2)
+        await chooseInvitationStatus(page, 'invitations.filter.all')
       })
 
-      await test.step('step 12: the settings page reports the source layer and a tenant write lands', async () => {
+      await test.step('step 17: the settings page reports the source layer and a tenant write lands', async () => {
         await openOrganizationPage(page, 'settings')
 
         // REQ-tenant-admin-016: the source column is rendered, and the
@@ -1114,7 +1649,7 @@ test.describe('the tenant administrator manages the organization', () => {
         )
       })
 
-      await test.step('step 13: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
+      await test.step('step 18: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
         // A personal organization is named after the account it belongs to, so
         // the switcher row carries the administrator's own display name.
         const personal = reviewTenantAdmin.displayName

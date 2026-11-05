@@ -214,6 +214,70 @@ export function membersSection(page: Page): Locator {
   return section(page, 'members.title')
 }
 
+/** The members section's search field. */
+export function memberSearchField(page: Page): Locator {
+  return page.getByRole('textbox', {
+    name: copy('adminUi', 'members.search.label'),
+    exact: true,
+  })
+}
+
+/** The members section's role filter. */
+export function memberRoleFilter(page: Page): Locator {
+  return page.getByRole('combobox', {
+    name: copy('adminUi', 'members.filter.roleLabel'),
+    exact: true,
+  })
+}
+
+/**
+ * One member table row, found by the display name it renders. The match is an
+ * exact text cell, not a substring of the row: a name that another row's cell
+ * happens to contain must not answer for it.
+ */
+export function memberRow(page: Page, displayName: string): Locator {
+  return membersSection(page)
+    .getByRole('table')
+    .locator('tbody tr')
+    .filter({ has: page.getByText(displayName, { exact: true }) })
+}
+
+/** One member row's Manage control, named after the member. */
+export function manageMemberButton(page: Page, name: string): Locator {
+  return membersSection(page).getByRole('button', {
+    name: copy('adminUi', 'members.manageAria', { name }),
+    exact: true,
+  })
+}
+
+/** The member management panel. */
+export function memberPanel(page: Page): Locator {
+  return page.getByRole('dialog', {
+    name: copy('adminUi', 'members.panel.title'),
+    exact: true,
+  })
+}
+
+/** The invitations section's status filter. */
+export function invitationStatusFilter(page: Page): Locator {
+  return page.getByRole('combobox', {
+    name: copy('adminUi', 'invitations.filter.label'),
+    exact: true,
+  })
+}
+
+/**
+ * One invitation table row, found by the address it renders. The match is an
+ * exact address cell: `invitee@demo.test` must not answer for
+ * `resent-invitee@demo.test`.
+ */
+export function invitationRow(page: Page, email: string): Locator {
+  return invitationsSection(page)
+    .getByRole('table')
+    .locator('tbody tr')
+    .filter({ has: page.getByText(email, { exact: true }) })
+}
+
 export function rolesSection(page: Page): Locator {
   return section(page, 'permissions.roles.title')
 }

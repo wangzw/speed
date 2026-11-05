@@ -140,11 +140,16 @@ The tier allows exactly three reads from it:
   (`sms`/`mail`) and destination address. The field is `verification_code`,
   never `code`: the gateway treats `code` as a sensitive key name and the
   logging layer masks its value.
-- **The review SMS carrier's accepted-message line**, for the SMS template
-  rollout journey only. The carrier writes one line per message it accepts, and
-  that line — destination, template and language — is the evidence a browser
-  tier can read that the message left the process. `waitForCarrierMessage` and
-  `countCarrierMessages` are the server fixture's reads.
+- **A review carrier's accepted-message line.** The SMS carrier writes one line
+  per message it accepts, naming the destination, template and language; the
+  template rollout journey reads it. The mail carrier writes one line per
+  message it sends, naming the destination and the rendered subject and body;
+  the invitation journeys read it to show that the notice left the process and
+  that its acceptance landing is the one the page handed out. The logging layer
+  masks the `spd_inv_` token wherever it appears, so the mail body carries the
+  landing with the token redacted. `waitForCarrierMessage` and
+  `countCarrierMessages` are the server fixture's reads; the mail line is
+  selected by the subject the request's language renders.
 - **The delivery pipeline's external-send record line**, for the same journey
   only. The pipeline writes one record per message that leaves, and
   `waitForOutboundRecord` and `countOutboundRecords` are the server fixture's
