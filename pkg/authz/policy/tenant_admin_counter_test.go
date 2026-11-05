@@ -103,7 +103,9 @@ func TestASecondTenantAdministratorAllowsTheDeletion(t *testing.T) {
 func TestAPersonalTenantIsNotCounted(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "personal-acc1", "acc1")
-	p.roster = counterRoster{tenants: activeTenants("personal-acc1")}
+	p.roster = counterRoster{tenants: []tenant.Tenant{
+		{ID: "personal-acc1", Alias: "acc1", Status: tenant.StatusActive},
+	}}
 	p.writeGuard = counterWriteGuard{denied: map[string]bool{"personal-acc1": true}}
 
 	id, sole, err := p.SoleTenantAdminTenant(t.Context(), "acc1")
@@ -192,7 +194,9 @@ func TestTheCounterFailsClosedWhenTheGuardCannotAnswer(t *testing.T) {
 func TestWithoutAWriteGuardEveryActiveTenantCounts(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "personal-acc1", "acc1")
-	p.roster = counterRoster{tenants: activeTenants("personal-acc1")}
+	p.roster = counterRoster{tenants: []tenant.Tenant{
+		{ID: "personal-acc1", Alias: "acc1", Status: tenant.StatusActive},
+	}}
 
 	id, sole, err := p.SoleTenantAdminTenant(t.Context(), "acc1")
 	if err != nil {
