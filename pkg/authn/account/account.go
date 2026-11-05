@@ -11,21 +11,27 @@
 // Memberships, which says which tenants an account belongs to;
 // MembershipCleanup, which removes a membership on the account-deletion path
 // without asking the guards; and Throttle, the database form of the failure
-// back-off. The root package declares the interfaces, and every other module of
-// this capability directory that needs an account takes them from the registry
-// and never reads a table.
+// back-off. It also delivers the transaction-aware membership writer a
+// provisioning implementation shares the account's transaction with. The root
+// package declares the interfaces, and every other module of this capability
+// directory that needs an account takes them from the registry and never reads
+// a table.
 //
 // An account is global and never reused. Ending one leaves a tombstone, so every
 // reference to it from a session, an audit row or a role binding stays pointing
-// at the same account. A creation and a state change are written in a transaction
-// of this module and then announced to every AccountLifecycle hook, which builds
-// or cleans what the other modules hold for the account; the account's status and
-// its valid-after instant are what keep a session void when a cleanup has not
+// at the same account. A creation, a deletion and a state change are written in
+// a transaction of this module. A creation and a deletion also call the required
+// provisioning seam in that transaction, so what an account owns for the whole of
+// its life is created and ended with it; once the transaction commits, every
+// AccountLifecycle hook is called, which cleans what the other modules hold for
+// the account in a way a retry can finish. The account's status and its
+// valid-after instant are what keep a session void when a cleanup has not
 // finished.
 //
 // A host takes the module in by writing ModuleName into a command alongside a
-// database engine. The command that applies the migrations has to take it in
-// statically, or its tables do not exist and Start refuses.
+// database engine and a provisioning provider. The command that applies the
+// migrations has to take it in statically, or its tables do not exist and Start
+// refuses.
 package account
 
 import (
@@ -44,6 +50,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/password"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -119,6 +126,12 @@ func Module() core.Module {
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*db.Database)(nil)},
+			// The in-transaction provisioning seam. It is required, not
+			// optional: a user account owns data another module writes for the
+			// whole of its life, and an assembly that would create the account
+			// without it must fail at startup rather than leave a half-made
+			// account behind.
+			{Token: (*provisioning.AccountProvisioning)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
@@ -130,6 +143,9 @@ func Module() core.Module {
 			{Token: (*authn.Memberships)(nil), Exclusive: true},
 			{Token: (*authn.MembershipCleanup)(nil), Exclusive: true},
 			{Token: (*authn.Throttle)(nil), Exclusive: true},
+			// The transaction-aware membership write a provisioning
+			// implementation shares the account's transaction with.
+			{Token: (*provisioning.MembershipWriter)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
 
@@ -238,6 +254,10 @@ type product struct {
 	audit           audit.Audit
 	hooks           []authn.AccountLifecycle
 	membershipHooks []authn.MembershipLifecycle
+	// provisioning is the required in-transaction seam. It is resolved in Init
+	// from the module's required capability; a product built directly, as a
+	// case builds one, holds the no-op implementation until wire replaces it.
+	provisioning provisioning.AccountProvisioning
 	// membershipGuards are the optional checks an explicit membership removal
 	// passes before it deletes the row, in module-name order. Every one has to
 	// allow the removal; an empty list is the assembly with none.
@@ -273,6 +293,7 @@ func newProduct(database db.Database, cfg resolved) *product {
 		sweepThrottlesEvery: throttleSweepEvery,
 		sweepSecretsEvery:   secretSweepEvery,
 		logger:              log.Default(),
+		provisioning:        noopProvisioning{},
 		reported:            make(map[string]string),
 	}
 }
@@ -302,6 +323,12 @@ func (p *product) wire(reg *core.Registry) error {
 	p.membershipGuards = core.ResolveAll[authn.MembershipGuard](reg)
 	if p.tenantAdminCounter, err = optional[authz.TenantAdminCounter](reg, "the tenant-admin counter"); err != nil {
 		return err
+	}
+	// The provisioning seam is a required dependency, so its absence has
+	// already failed the drive; resolving it here is what hands the product the
+	// one implementation every creation and deletion writes through.
+	if p.provisioning, err = core.Resolve[provisioning.AccountProvisioning](reg); err != nil {
+		return fmt.Errorf("%s: taking up the account provisioning seam: %w", ModuleName, err)
 	}
 
 	provider, err := optional[observability.MeterProvider](reg, "the metric capability")

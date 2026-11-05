@@ -85,6 +85,17 @@ before writing a scoped model.
   registry's value on the second run. It also does not consult the roster, which
   is why disabling a tenant takes effect on the request face and not on the
   statement face. Both are non-guarantees.
+- **The roster's transaction-aware writes join the caller's transaction.** The
+  `Catalog` writes open a connection and a transaction of their own, which is
+  what a host command or a registration route has. `catalog.TxCatalog` is the
+  form for a caller that already holds a transaction — an account's creation,
+  where a user account's personal tenant is written in the account's
+  transaction — and its two methods take that `*gorm.DB` and write through it
+  and nothing else. They return the whole-roster reread as a closure for after
+  the caller's commit: a reread inside the transaction would see no write on
+  another connection, and on a database held to one connection would wait for
+  the transaction that called it. The methods are delivered as a capability of
+  their own beside `Catalog`, exclusively, by the same roster.
 - **`catalog/catalog.go` reaches a handle only through `db.Database`.** The
   plugin registers callbacks; nothing in this module opens a database of its
   own or writes SQL. A table belongs to the module that declares it, and this

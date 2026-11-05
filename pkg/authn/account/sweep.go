@@ -12,6 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/password"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 )
 
 // The sweeps this module runs and how long Stop waits for them. Every replica
@@ -247,6 +248,7 @@ func (p *product) sweepUnverified(ctx context.Context) (int64, error) {
 func (p *product) deleteUnverified(ctx context.Context, id authn.AccountID, horizon time.Time) (bool, error) {
 	b := &batch{}
 	deleted := false
+	ctx, after := provisioning.WithAfterCommit(ctx)
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		row, err := p.lock(tx, id)
 		if errors.Is(err, authn.ErrAccountNotFound) {
@@ -264,7 +266,14 @@ func (p *product) deleteUnverified(ctx context.Context, id authn.AccountID, hori
 		if !still {
 			return nil
 		}
+		facts, factsErr := deletionFacts(tx, row)
+		if factsErr != nil {
+			return factsErr
+		}
 		if err = p.eraseAccount(tx, row, b); err != nil {
+			return err
+		}
+		if err = p.provisioning.ProvisionAccountDeletion(ctx, tx, facts); err != nil {
 			return err
 		}
 		deleted = true
@@ -274,6 +283,7 @@ func (p *product) deleteUnverified(ctx context.Context, id authn.AccountID, hori
 		return false, failed("deleting an unverified account", err)
 	}
 	p.publish(ctx, b)
+	p.runAfterCommit(ctx, after)
 	if !deleted {
 		return false, nil
 	}

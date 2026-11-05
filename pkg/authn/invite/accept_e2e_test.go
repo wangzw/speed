@@ -12,6 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
+	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -335,7 +336,7 @@ func withRealAccountProduct(t *testing.T,
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "invite-e2e.db")
 	body := `{"db":{"sqlite":{"dsn":"` + dsn + `"}}}`
-	mods := []core.Module{sqlite.Module(), account.Module(), provideSettings()}
+	mods := []core.Module{sqlite.Module(), account.Module(), provisioningtest.Module(), provideSettings()}
 
 	reader := authntest.ConfigReaderAll(t, body, mods...)
 	reg := core.New()

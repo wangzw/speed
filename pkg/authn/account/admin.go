@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/model"
 	"github.com/vislake/speed/pkg/authn/internal/password"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 )
 
 // The bounds of the free text and the keys a write takes.
@@ -138,6 +139,7 @@ func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Acc
 
 	b := &batch{}
 	row := plan.row
+	ctx, after := provisioning.WithAfterCommit(ctx)
 	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err = tx.Create(&row).Error; err != nil {
 			return err
@@ -161,6 +163,13 @@ func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Acc
 				return err
 			}
 		}
+		// What a user account owns for the whole of its life is written in this
+		// same transaction, after the row, its identifiers and its credential and
+		// before the creation event: a failure here rolls the account back with
+		// it, and a committed account is never left without what it owns.
+		if err = p.provisioning.ProvisionAccount(ctx, tx, accountFactsFor(row, plan.username)); err != nil {
+			return err
+		}
 		return p.emit(tx, b, accountCreated(authn.AccountID(row.ID), authn.AccountKind(row.Kind), plan.via), false)
 	})
 	switch {
@@ -170,6 +179,7 @@ func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Acc
 		return authn.Account{}, failed("creating an account", err)
 	}
 	p.publish(ctx, b)
+	p.runAfterCommit(ctx, after)
 	account, err := toAccount(row, phc != "")
 	if err != nil {
 		return authn.Account{}, err
@@ -189,7 +199,11 @@ type creation struct {
 	row         accountRow
 	identifiers []identifierRow
 	claims      []pendingContactRow
-	via         string
+	// username is the normalized username the creation writes, and is empty for
+	// a service account. It is what the provisioning seam's facts carry, since
+	// the personal tenant an account owns is addressed by it.
+	username string
+	via      string
 }
 
 // planCreate checks every argument of Create and builds the rows.
@@ -247,6 +261,7 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 	}
 
 	now := p.at()
+	plan.username = username
 	plan.row = accountRow{
 		ID: id.String(), Kind: string(kind), Status: statusActive, SignupState: signupNone,
 		DisplayName: name, Attributes: attrs, MFARequired: in.MFARequired,

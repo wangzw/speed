@@ -19,6 +19,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 	mountinternal "github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/invite"
+	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db/sqlite"
@@ -566,7 +567,7 @@ func withRealAccountStore(t *testing.T, use func(context.Context, *core.Registry
 	}
 
 	modules := []core.Module{
-		sqlite.Module(), account.Module(), invite.Module(),
+		sqlite.Module(), account.Module(), provisioningtest.Module(), invite.Module(),
 		module("stand-in.identity-settings", (*settings.Store)(nil), func() (any, error) { return standInSettings{}, nil }),
 		module("stand-in.identity-audit", (*audit.Audit)(nil), func() (any, error) { return standInAudit{}, nil }),
 		module("stand-in.identity-mounter", (*mountinternal.Mounter)(nil), func() (any, error) { return noopMounter{}, nil }),

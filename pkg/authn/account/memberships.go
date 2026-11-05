@@ -139,80 +139,119 @@ func toMemberships(rows []membershipRow) []authn.Membership {
 // membership to one; the account's row is taken first, which is what keeps a
 // membership from being written after the deletion that erased them.
 func (p *product) Put(ctx context.Context, m authn.Membership) error {
-	if err := checkTenant(m.Tenant); err != nil {
+	status, err := checkMembership(m)
+	if err != nil {
 		return err
 	}
-	if !plain(m.Source, sourceMax) {
-		return invalid("the source of a membership is text of at most 128 bytes")
-	}
-	if m.Account.IsStatic() {
-		return fmt.Errorf("%w: a subject of the static credential table has no membership", authn.ErrAccountNotFound)
-	}
-	status := membershipSuspended
-	if m.Active {
-		status = membershipActive
-	}
 	b := &batch{}
-	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := p.lock(tx, m.Account); err != nil {
-			return err
-		}
-		now := p.at()
-		var held []membershipRow
-		err := tx.Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).Find(&held).Error
-		if err != nil {
-			return err
-		}
-		if len(held) == 0 {
-			row := membershipRow{
-				TenantID: m.Tenant, AccountID: m.Account.String(), Status: status, Source: m.Source,
-				SSOExempt: m.SSOExempt, CreatedAt: now, UpdatedAt: now,
-			}
-			if err = tx.Create(&row).Error; err != nil {
-				return err
-			}
-			if err = p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeAdded, m.Source), true); err != nil {
-				return err
-			}
-			if m.SSOExempt {
-				return p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeSSOExemptSet, m.Source), true)
-			}
-			return nil
-		}
-		old := held[0]
-		if old.Status == status && old.Source == m.Source && old.SSOExempt == m.SSOExempt {
-			return nil
-		}
-		err = tx.Model(&membershipRow{}).Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).
-			Updates(map[string]any{"status": status, "source": m.Source, "sso_exempt": m.SSOExempt, "updated_at": now}).Error
-		if err != nil {
-			return err
-		}
-		var changes []string
-		switch {
-		case old.Status != status && status == membershipActive:
-			changes = append(changes, changeResumed)
-		case old.Status != status:
-			changes = append(changes, changeSuspended)
-		}
-		switch {
-		case !old.SSOExempt && m.SSOExempt:
-			changes = append(changes, changeSSOExemptSet)
-		case old.SSOExempt && !m.SSOExempt:
-			changes = append(changes, changeSSOExemptCleared)
-		}
-		for _, change := range changes {
-			if err = p.emit(tx, b, membershipChanged(m.Account, m.Tenant, change, m.Source), true); err != nil {
-				return err
-			}
-		}
-		return nil
+	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		_, inErr := p.putMembershipIn(ctx, tx, m, status, b)
+		return inErr
 	})
 	if err != nil {
 		return failed("writing a membership", err)
 	}
 	p.publish(ctx, b)
 	return nil
+}
+
+// PutMembershipTx writes a membership in the transaction it is handed, with
+// Put's rules. The after closure publishes the events staged in that
+// transaction; the caller runs it once the transaction has committed. A
+// membership already carrying the same values returns a nil closure.
+func (p *product) PutMembershipTx(ctx context.Context, tx *gorm.DB, m authn.Membership) (func(context.Context) error, error) {
+	status, err := checkMembership(m)
+	if err != nil {
+		return nil, err
+	}
+	b := &batch{}
+	changed, err := p.putMembershipIn(ctx, tx, m, status, b)
+	if err != nil {
+		return nil, failed("writing a membership", err)
+	}
+	if !changed {
+		return nil, nil
+	}
+	return func(afterCtx context.Context) error {
+		p.publish(afterCtx, b)
+		return nil
+	}, nil
+}
+
+// checkMembership judges a membership write's arguments and answers the stored
+// status the Membership's Active maps to.
+func checkMembership(m authn.Membership) (int16, error) {
+	if err := checkTenant(m.Tenant); err != nil {
+		return 0, err
+	}
+	if !plain(m.Source, sourceMax) {
+		return 0, invalid("the source of a membership is text of at most 128 bytes")
+	}
+	if m.Account.IsStatic() {
+		return 0, fmt.Errorf("%w: a subject of the static credential table has no membership", authn.ErrAccountNotFound)
+	}
+	if m.Active {
+		return membershipActive, nil
+	}
+	return membershipSuspended, nil
+}
+
+// putMembershipIn writes a membership inside the transaction it is handed. It
+// reports whether the call changed anything.
+func (p *product) putMembershipIn(ctx context.Context, tx *gorm.DB, m authn.Membership, status int16, b *batch) (bool, error) {
+	if _, err := p.lock(tx, m.Account); err != nil {
+		return false, err
+	}
+	now := p.at()
+	var held []membershipRow
+	err := tx.Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).Find(&held).Error
+	if err != nil {
+		return false, err
+	}
+	if len(held) == 0 {
+		row := membershipRow{
+			TenantID: m.Tenant, AccountID: m.Account.String(), Status: status, Source: m.Source,
+			SSOExempt: m.SSOExempt, CreatedAt: now, UpdatedAt: now,
+		}
+		if err = tx.Create(&row).Error; err != nil {
+			return false, err
+		}
+		if err = p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeAdded, m.Source), true); err != nil {
+			return false, err
+		}
+		if m.SSOExempt {
+			return true, p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeSSOExemptSet, m.Source), true)
+		}
+		return true, nil
+	}
+	old := held[0]
+	if old.Status == status && old.Source == m.Source && old.SSOExempt == m.SSOExempt {
+		return false, nil
+	}
+	err = tx.Model(&membershipRow{}).Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).
+		Updates(map[string]any{"status": status, "source": m.Source, "sso_exempt": m.SSOExempt, "updated_at": now}).Error
+	if err != nil {
+		return false, err
+	}
+	var changes []string
+	switch {
+	case old.Status != status && status == membershipActive:
+		changes = append(changes, changeResumed)
+	case old.Status != status:
+		changes = append(changes, changeSuspended)
+	}
+	switch {
+	case !old.SSOExempt && m.SSOExempt:
+		changes = append(changes, changeSSOExemptSet)
+	case old.SSOExempt && !m.SSOExempt:
+		changes = append(changes, changeSSOExemptCleared)
+	}
+	for _, change := range changes {
+		if err = p.emit(tx, b, membershipChanged(m.Account, m.Tenant, change, m.Source), true); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // Remove deletes one membership. One that is not there is already removed, and the
@@ -326,28 +365,61 @@ func (p *product) RemoveMembershipForDeletion(ctx context.Context, id authn.Acco
 func (p *product) removeMembership(ctx context.Context, id authn.AccountID, tenant string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		var held membershipRow
-		err := tx.Where("tenant_id = ? AND account_id = ?", tenant, id.String()).Take(&held).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		res := tx.Where("tenant_id = ? AND account_id = ?", tenant, id.String()).Delete(&membershipRow{})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return nil
-		}
-		return p.emit(tx, b, membershipChanged(id, tenant, changeRemoved, held.Source), true)
+		_, err := p.removeMembershipIn(ctx, tx, id, tenant, b)
+		return err
 	})
 	if err != nil {
 		return failed("removing a membership", err)
 	}
 	p.publish(ctx, b)
 	return nil
+}
+
+// RemoveMembershipTx removes a membership in the transaction it is handed, with
+// RemoveMembershipForDeletion's rules: it asks no guard and calls no lifecycle
+// hook. The after closure publishes the removal staged in that transaction; the
+// caller runs it once the transaction has committed. A row that is not there
+// returns a nil closure.
+func (p *product) RemoveMembershipTx(ctx context.Context, tx *gorm.DB, id authn.AccountID, tenant string) (func(context.Context) error, error) {
+	if id.IsStatic() || tenant == "" {
+		return nil, nil
+	}
+	b := &batch{}
+	removed, err := p.removeMembershipIn(ctx, tx, id, tenant, b)
+	if err != nil {
+		return nil, failed("removing a membership", err)
+	}
+	if !removed {
+		return nil, nil
+	}
+	return func(afterCtx context.Context) error {
+		p.publish(afterCtx, b)
+		return nil
+	}, nil
+}
+
+// removeMembershipIn deletes one membership row inside the transaction it is
+// handed and stages its event in b. It reports whether it removed anything.
+func (p *product) removeMembershipIn(_ context.Context, tx *gorm.DB, id authn.AccountID, tenant string, b *batch) (bool, error) {
+	var held membershipRow
+	err := tx.Where("tenant_id = ? AND account_id = ?", tenant, id.String()).Take(&held).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	res := tx.Where("tenant_id = ? AND account_id = ?", tenant, id.String()).Delete(&membershipRow{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return false, nil
+	}
+	if err := p.emit(tx, b, membershipChanged(id, tenant, changeRemoved, held.Source), true); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // membershipExists reports whether the account holds a membership row in the

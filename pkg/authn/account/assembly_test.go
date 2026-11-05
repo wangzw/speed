@@ -6,6 +6,8 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/provisioning"
+	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -26,19 +28,21 @@ func standInDBModule(database db.Database) core.Module {
 	}
 }
 
-// driveModule brings the module up in a real registry beside a stand-in database
-// and the configuration reader, and runs the action once every instance exists.
+// driveModule brings the module up in a real registry beside a stand-in database,
+// the provisioning seam it requires and the configuration reader, and runs the
+// action once every instance exists.
 func driveModule(t *testing.T, body string, action func(context.Context, *core.Registry) error) {
 	t.Helper()
 	reader := authntest.ConfigReader(t, Module(), body)
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(standInDBModule(stubDatabase{dialect: db.SQLite}))
+	reg.Register(provisioningtest.Module())
 	reg.Register(Module())
 	reg.Supply(reader, config.ModuleName)
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageInit,
-		Participants: []string{ModuleName, standInDBName},
+		Participants: []string{ModuleName, standInDBName, provisioningtest.ModuleName},
 		Action:       action,
 	})
 	if err != nil {
@@ -84,11 +88,15 @@ func TestTheEightCapabilitiesAreDeliveredByOneInstance(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		writer, err := core.Resolve[provisioning.MembershipWriter](reg)
+		if err != nil {
+			return err
+		}
 		p, ok := accounts.(*product)
 		if !ok {
 			t.Fatalf("the delivered Accounts is a %T, not the module's product", accounts)
 		}
-		for _, got := range []any{admin, signups, verification, passwords, memberships, cleanup, throttle} {
+		for _, got := range []any{admin, signups, verification, passwords, memberships, cleanup, throttle, writer} {
 			if got != p {
 				t.Errorf("a capability resolved to %T, not the one product the descriptor built", got)
 			}

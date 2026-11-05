@@ -88,7 +88,10 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Provides:  []core.Provision{{Token: (*tenant.Catalog)(nil), Exclusive: true}},
+		Provides: []core.Provision{
+			{Token: (*tenant.Catalog)(nil), Exclusive: true},
+			{Token: (*TxCatalog)(nil), Exclusive: true},
+		},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newFilter()}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

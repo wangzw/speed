@@ -25,6 +25,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/login/password"
 	"github.com/vislake/speed/pkg/authn/mfa"
 	"github.com/vislake/speed/pkg/authn/mount"
+	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/authn/session"
 	"github.com/vislake/speed/pkg/config"
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
@@ -188,7 +189,7 @@ func assembleWithSections(t *testing.T, extra []core.Module, sections map[string
 		sqlite.Module(), logModule, speedhttp.Module(), kvmemory.Module(),
 		eventmemory.Module(), settings.Module(), mount.Module(), gate.Module(),
 		humanverify.Module(),
-		account.Module(), session.Module(), mfa.Module(), login.Module(), password.Module(),
+		account.Module(), provisioningtest.Module(), session.Module(), mfa.Module(), login.Module(), password.Module(),
 	}
 	modules = append(modules, extra...)
 	reader := loadConfig(t, string(body), modules...)

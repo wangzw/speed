@@ -36,6 +36,7 @@ import (
 	passmethod "github.com/vislake/speed/pkg/authn/login/password"
 	"github.com/vislake/speed/pkg/authn/mfa"
 	"github.com/vislake/speed/pkg/authn/mount"
+	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/authn/session"
 	"github.com/vislake/speed/pkg/authn/token"
 	"github.com/vislake/speed/pkg/config"
@@ -334,7 +335,7 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 		sqlite.Module(), logModule, kvModule, speedhttp.Module(),
 		eventmemory.Module(), settings.Module(), mount.Module(), gate.Module(),
 		humanverify.Module(),
-		account.Module(), session.Module(), mfa.Module(), login.Module(),
+		account.Module(), provisioningtest.Module(), session.Module(), mfa.Module(), login.Module(),
 		passmethod.Module(), token.Module(),
 	}
 	reader := summaryLoadConfig(t, string(body), modules...)

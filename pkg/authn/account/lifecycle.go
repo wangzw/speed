@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 )
 
 // hookTimeout bounds the cleanup hooks of one call, which run after the state
@@ -117,7 +118,9 @@ func laterOf(a, b time.Time) time.Time {
 // the time of creation and the time of deletion, and every identifier, pending
 // contact, external identity, credential, secret and membership of the account
 // is deleted in the same transaction, together with the personal data of the row
-// itself. The
+// itself. After the erase and before the transaction returns, the required
+// provisioning seam is called with the facts the erase has just taken away, so
+// what the account owned is ended in the same transaction. The
 // instant before which no session is valid moves on, as a disabling moves it.
 // Calling again on a tombstone finishes the cleanup the hooks did not.
 func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string) error {
@@ -139,6 +142,7 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 		return err
 	}
 	b := &batch{}
+	ctx, after := provisioning.WithAfterCommit(ctx)
 	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Exec("UPDATE "+tableAccounts+" SET updated_at = ? WHERE id = ?", p.at(), id.String())
 		if res.Error != nil {
@@ -154,12 +158,25 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 		if row.Status == statusDeleted {
 			return nil
 		}
-		return p.eraseAccount(tx, row, b)
+		// The facts are read before the erase: the username identifier and the
+		// display name are what the deletion seam still needs, and eraseAccount
+		// takes both away in this transaction.
+		facts, factsErr := deletionFacts(tx, row)
+		if factsErr != nil {
+			return factsErr
+		}
+		if err = p.eraseAccount(tx, row, b); err != nil {
+			return err
+		}
+		// What the account owns is ended in the same transaction. A failure
+		// here rolls the tombstone and the erase back with it.
+		return p.provisioning.ProvisionAccountDeletion(ctx, tx, facts)
 	})
 	if err != nil {
 		return failed("deleting an account", err)
 	}
 	p.publish(ctx, b)
+	p.runAfterCommit(ctx, after)
 	return p.callHooks(ctx, id, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
 		return h.AccountDeleted(hookCtx, id)
 	})

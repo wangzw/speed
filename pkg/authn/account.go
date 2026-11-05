@@ -56,7 +56,11 @@ type AccountAdmin interface {
 	// import. An empty ID generates one; a given one is for an import. An
 	// identifier, a login name or a binding that breaks a uniqueness constraint
 	// is ErrAccountExists, and a contact another account reserved or proved is
-	// ErrContactTaken. Once the transaction has committed, every
+	// ErrContactTaken. Inside the same transaction, after the account row, its
+	// identifiers and its credential and before the creation event, the required
+	// provisioning seam is called for what the account owns for the whole of its
+	// life; a failure there rolls the whole creation back. Once the transaction
+	// has committed, every
 	// AccountLifecycle.AccountCreated hook is called: a hook that fails makes the
 	// call return the created account with ErrCleanupIncomplete, and repeating the
 	// hook finishes the cleanup.
@@ -68,7 +72,10 @@ type AccountAdmin interface {
 	// finishes the cleanup. reason is one of the Reason constants that
 	// ValidPayloadReasonClass accepts, and any other is ErrInvalidArgument.
 	SetStatus(ctx context.Context, id AccountID, s AccountStatus, reason string) error
-	// Delete ends an account for good; see SetStatus.
+	// Delete ends an account for good; see SetStatus. The deletion calls the
+	// required provisioning seam after it has erased the account's own rows and
+	// before its transaction returns, so what the account owned is ended with
+	// it; a failure there rolls the deletion back.
 	Delete(ctx context.Context, id AccountID, reason string) error
 	// SetDisplayName sets the display name, at most 100 characters; a longer one
 	// is ErrInvalidArgument.

@@ -902,45 +902,54 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 		return err
 	}
 	return r.write(ctx, func(tx *gorm.DB) error {
-		held, err := lookUp(tx, "id", string(t.ID))
-		if err != nil {
-			return err
-		}
-		if len(held) > 0 {
-			return tenantExists(t.ID)
-		}
-		if err := checkNamespace(tx, t); err != nil {
-			return err
-		}
-		written := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "id"}},
-			DoNothing: true,
-		}).Create(&row{
-			ID:         string(t.ID),
-			Alias:      t.Alias,
-			Status:     int(t.Status),
-			DisabledBy: int(t.DisabledBy),
-
-			OwnerAccount: t.OwnerAccount,
-
-			DisplayName:  t.Profile.DisplayName,
-			Description:  t.Profile.Description,
-			ContactEmail: t.Profile.ContactEmail,
-			Website:      t.Profile.Website,
-			// The creation time is the roster's to record, not the caller's to
-			// choose: a value read off the request would let a registration
-			// date itself. A row that already exists keeps the time it has,
-			// because this insert does nothing on a taken identifier.
-			CreatedAt: creationTime(),
-		})
-		if written.Error != nil {
-			return written.Error
-		}
-		if written.RowsAffected == 0 {
-			return tenantExists(t.ID)
-		}
-		return nil
+		_, err := r.createIn(ctx, tx, t)
+		return err
 	}, func(session *gorm.DB, err error) error { return failedCreate(session, t, err) })
+}
+
+// createIn is Create's write inside the transaction it is handed. It reports
+// whether it wrote, so that the tx form can decide whether there is a reread to
+// do once the caller's transaction commits, and the context-taking form can
+// tell a refused statement from one that left nothing to write.
+func (r *roster) createIn(_ context.Context, tx *gorm.DB, t tenant.Tenant) (bool, error) {
+	held, err := lookUp(tx, "id", string(t.ID))
+	if err != nil {
+		return false, err
+	}
+	if len(held) > 0 {
+		return false, tenantExists(t.ID)
+	}
+	if err := checkNamespace(tx, t); err != nil {
+		return false, err
+	}
+	written := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoNothing: true,
+	}).Create(&row{
+		ID:         string(t.ID),
+		Alias:      t.Alias,
+		Status:     int(t.Status),
+		DisabledBy: int(t.DisabledBy),
+
+		OwnerAccount: t.OwnerAccount,
+
+		DisplayName:  t.Profile.DisplayName,
+		Description:  t.Profile.Description,
+		ContactEmail: t.Profile.ContactEmail,
+		Website:      t.Profile.Website,
+		// The creation time is the roster's to record, not the caller's to
+		// choose: a value read off the request would let a registration
+		// date itself. A row that already exists keeps the time it has,
+		// because this insert does nothing on a taken identifier.
+		CreatedAt: creationTime(),
+	})
+	if written.Error != nil {
+		return false, written.Error
+	}
+	if written.RowsAffected == 0 {
+		return false, tenantExists(t.ID)
+	}
+	return true, nil
 }
 
 // creationTime is the moment a registration is recorded at, in UTC. A new
@@ -1095,23 +1104,30 @@ func (r *roster) Delete(ctx context.Context, id tenant.ID) error {
 		return err
 	}
 	_, err := r.writeResult(ctx, func(tx *gorm.DB) (bool, error) {
-		held, err := lookUp(tx, "id", string(id))
-		if err != nil {
-			return false, err
-		}
-		if len(held) == 0 {
-			return false, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
-		}
-		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
-			return false, nil
-		}
-		return true, tx.Model(&row{}).Where("id = ?", string(id)).
-			Updates(map[string]any{
-				"status":     int(tenant.StatusDeleted),
-				"deleted_at": deletionTime(),
-			}).Error
+		return r.deleteIn(ctx, tx, id)
 	}, nil)
 	return err
+}
+
+// deleteIn is Delete's write inside the transaction it is handed. It reports
+// whether it wrote: a tombstone and an identifier no row carries both leave
+// nothing for the after-commit reread to see.
+func (r *roster) deleteIn(_ context.Context, tx *gorm.DB, id tenant.ID) (bool, error) {
+	held, err := lookUp(tx, "id", string(id))
+	if err != nil {
+		return false, err
+	}
+	if len(held) == 0 {
+		return false, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+	}
+	if tenant.Status(held[0].Status) == tenant.StatusDeleted {
+		return false, nil
+	}
+	return true, tx.Model(&row{}).Where("id = ?", string(id)).
+		Updates(map[string]any{
+			"status":     int(tenant.StatusDeleted),
+			"deleted_at": deletionTime(),
+		}).Error
 }
 
 // deletionTime is the moment a tenant was written as deleted, in UTC. A new

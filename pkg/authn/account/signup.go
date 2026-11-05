@@ -9,6 +9,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/model"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 )
 
 // signupLocaleAttr and signupTimeZoneAttr are the attribute keys a registration
@@ -100,6 +101,7 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 
 	var row accountRow
 	b := &batch{}
+	ctx, after := provisioning.WithAfterCommit(ctx)
 	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		now := p.at()
 		var idErr error
@@ -149,6 +151,13 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 			}
 			return idErr
 		}
+		// The provisioning seam runs in this same transaction, after the
+		// account, its username identifier and its credential and before the
+		// creation event: a refused provisioning leaves neither the account nor
+		// what it owns.
+		if idErr = p.provisioning.ProvisionAccount(ctx, tx, accountFactsFor(row, username)); idErr != nil {
+			return idErr
+		}
 		return p.emit(tx, b, accountCreated(authn.AccountID(id), authn.KindUser, bySignup), false)
 	})
 	switch {
@@ -161,6 +170,7 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 		return authn.Account{}, failed("registering an account", err)
 	}
 	p.publish(ctx, b)
+	p.runAfterCommit(ctx, after)
 	if err = p.Succeed(ctx, authn.ScopeSignupUsername, username); err != nil {
 		p.logger.Warn(ModuleName+": the failure count of a username could not be cleared", slogCause(err))
 	}

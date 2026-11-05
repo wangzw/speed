@@ -6,7 +6,8 @@ Casbin engine snapshot the decisions read, the permission catalog with the
 translation beside it, the platform and host seeding surfaces over the policy
 data, and the account lifecycle cleanup. It delivers `authz.Enforcer`,
 `authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager`, `authz.Seeder`,
-`authz.Reconciler` and `authz.TenantAdminCounter`, each exclusively, and implements
+`authz.Reconciler` and `authz.TenantAdminCounter`, each exclusively, the
+transaction-aware `TxManager` beside `Manager`, and implements
 `authn.AccountLifecycle`, `authn.MembershipLifecycle` and the last-administrator
 `authn.MembershipGuard` (a host may add guards beside it; every guard is asked
 and any refusal refuses). It also implements the optional `authn.MemberRoleReader`
@@ -94,6 +95,17 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   writes. The thin adapter's `SavePolicy` is left unimplemented because a
   clear-and-rewrite would drop a write that landed between its read and its
   write. A host that wants a different store shape is the shape to reject.
+- **`TxManager` joins a caller's transaction.** `PutRoleTx`, `DeleteRoleTx`,
+  `SeedGrantsTx`, `PutBindingTx` and `ClearAccountBindingsTx` are the same
+  writes inside a `*gorm.DB` the caller already holds — an account's creation,
+  where a new organization's roles, grants and bindings are written in the
+  account's transaction. They write through that handle and nothing else, and
+  return the snapshot reload and change event as a closure for after the
+  caller's commit: a reload inside the transaction would not see the write, and
+  the event would announce a change that may still roll back. The capability is
+  declared in this package rather than in `pkg/authz`, whose closure may hold
+  neither gorm nor a subpackage of the directory; it is delivered exclusively
+  beside `Manager`, and the two share their checks and refusals.
 - **The store is read and written through the adapter's construction, not per
   call.** The `persist.Adapter` methods carry neither a context nor a tenant, so
   the adapter binds both once in `New`: the context a load runs under, marked

@@ -6,6 +6,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -21,8 +22,11 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	if m.Name != ModuleName || ModuleName != "authn.account" {
 		t.Errorf("the module is named %q (constant %q), want authn.account", m.Name, ModuleName)
 	}
-	if len(m.Requires) != 2 || m.Requires[0].Token != core.Token((*db.Database)(nil)) || m.Requires[0].Optional {
-		t.Errorf("Requires is %+v, want the database required and the logging capability optional", m.Requires)
+	if len(m.Requires) != 3 || m.Requires[0].Token != core.Token((*db.Database)(nil)) || m.Requires[0].Optional {
+		t.Errorf("Requires is %+v, want the database required, the provisioning seam required and the logging capability optional", m.Requires)
+	}
+	if seam := m.Requires[1]; seam.Token != core.Token((*provisioning.AccountProvisioning)(nil)) || seam.Optional {
+		t.Errorf("Requires[1] is %+v, want the provisioning seam as a required dependency", seam)
 	}
 	if last := m.Requires[len(m.Requires)-1]; last.Token != core.Token((*log.Logger)(nil)) || !last.Optional {
 		t.Errorf("Requires = %+v, want the logging capability as the optional dependency", m.Requires)
@@ -36,9 +40,10 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 		core.Token((*authn.Memberships)(nil)),
 		core.Token((*authn.MembershipCleanup)(nil)),
 		core.Token((*authn.Throttle)(nil)),
+		core.Token((*provisioning.MembershipWriter)(nil)),
 	}
 	if len(m.Provides) != len(want) {
-		t.Fatalf("Provides has %d entries, want the eight capabilities", len(m.Provides))
+		t.Fatalf("Provides has %d entries, want the eight capabilities and the membership writer", len(m.Provides))
 	}
 	for _, provision := range m.Provides {
 		if !provision.Exclusive {
@@ -90,6 +95,9 @@ func TestTheProductSatisfiesEachCapability(t *testing.T) {
 	}
 	if _, ok := p.(authn.Throttle); !ok {
 		t.Error("the product is not a Throttle")
+	}
+	if _, ok := p.(provisioning.MembershipWriter); !ok {
+		t.Error("the product is not a MembershipWriter")
 	}
 }
 

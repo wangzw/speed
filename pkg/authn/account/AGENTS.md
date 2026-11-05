@@ -6,9 +6,13 @@ found by, the contact reservations they own, their external
 identities and tenant memberships, their password credentials, the secrets of
 service accounts, and the failure back-off; it delivers eight capabilities
 exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
-`Passwords`, `Memberships`, `MembershipCleanup` and `Throttle` — and it creates
+`Passwords`, `Memberships`, `MembershipCleanup` and `Throttle` — and the
+transaction-aware `provisioning.MembershipWriter` beside them, and it creates
 an account and moves it between disabled, enabled and deleted, calling every
-`AccountLifecycle` hook after the transaction commits. An explicit membership
+`AccountLifecycle` hook after the transaction commits. An account's creation and
+deletion also call the required `provisioning.AccountProvisioning` seam inside
+the transaction, so what a user account owns is created and ended with it. An
+explicit membership
 removal takes every optional `MembershipGuard`'s tenant lock, then asks the
 guards, and holds the locks across the removal's commit before calling every
 `MembershipLifecycle` hook; the account-deletion cleanup removes through
@@ -29,6 +33,27 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   `Membership` and writes as `Put`, never `Get` or `Set`, so that a name never
   collides with `Accounts.Get` or `Passwords.Set`. A new method must not reuse a
   name another of the eight already has.
+- **A creation and a deletion provision in the transaction, not after it.**
+  `provisioning.AccountProvisioning` is a required dependency, resolved in
+  `Init`; an assembly that supplies none does not start. `Create` and
+  `Signups.Register` call `ProvisionAccount` after the account row, its
+  identifiers and its credential are written and before the creation event is
+  staged, and `Delete` and the unverified-account sweep call
+  `ProvisionAccountDeletion` after `eraseAccount` and before their transaction
+  returns. The seam is handed the transaction itself and must write through it;
+  a failure rolls the account back. The facts of a deletion are read before the
+  erase, because the erase takes the username identifier and the display name
+  away. `SetStatus` calls neither method. Work a provisioning implementation
+  owes after the commit — a roster or policy snapshot reread, an event — is
+  queued on the `provisioning.AfterCommit` collector the module puts on the
+  context, and the module runs it once the transaction has committed.
+- **`provisioning.MembershipWriter` is the transaction-aware membership write.**
+  `PutMembershipTx` and `RemoveMembershipTx` take the caller's `*gorm.DB` and
+  return the publication for after its commit; they are what a provisioning
+  implementation calls to write the creator's membership in the account's
+  transaction. The `Memberships` surface opens a transaction of its own and is
+  the wrong path inside one. The tx methods ask no `MembershipGuard` and call no
+  `MembershipLifecycle` hook, as `RemoveMembershipForDeletion` does not.
 - **A table's name is one constant in three places.** A migration file, the
   model's `TableName` and the `table…` constant in `rows.go` all name the same
   table, and the `tables` list is what `Start` probes. A change to a name
@@ -212,9 +237,9 @@ From the module directory:
 
 ```
 env -C pkg go build ./authn/account/...
-env -C pkg go test ./authn/account/... ./authn/internal/password/...
+env -C pkg go test ./authn/account/... ./authn/provisioning/... ./authn/internal/password/...
 env -C pkg go test -race ./authn/account/...
-env -C pkg golangci-lint run ./authn/account/... ./authn/internal/password/...
+env -C pkg golangci-lint run ./authn/account/... ./authn/provisioning/... ./authn/internal/password/...
 ```
 
 Run `golangci-lint` from `pkg`, never from the workspace root with an absolute
