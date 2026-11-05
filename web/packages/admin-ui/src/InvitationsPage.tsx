@@ -691,8 +691,12 @@ export function InvitationsPage({
   // exact-multiple last page reports none, so it never reads an empty page.
   const memberNextCursor = members.data?.next_cursor ?? ''
   const memberHasNext = memberNextCursor !== ''
+  // `keepPreviousData` leaves the previous page's envelope on screen while
+  // the next one loads, so its `next_cursor` still names that same page.
+  // Reading it again would push the same cursor twice; the control waits for
+  // the read to settle (and the pager is disabled while it runs).
   const nextMemberPage = () => {
-    if (!memberHasNext || memberNextCursor === '') {
+    if (!memberHasNext || memberNextCursor === '' || members.isFetching) {
       return
     }
     setMemberCursorState((previous) => {
@@ -706,6 +710,9 @@ export function InvitationsPage({
     })
   }
   const previousMemberPage = () => {
+    if (members.isFetching) {
+      return
+    }
     setMemberCursorState((previous) => {
       const current =
         previous.tenant === tenant
@@ -916,7 +923,7 @@ export function InvitationsPage({
               <CursorPager
                 page={memberPage}
                 hasNext={memberHasNext}
-                busy={membersFeedback.pending}
+                busy={membersFeedback.pending || members.isFetching}
                 onPrevious={previousMemberPage}
                 onNext={nextMemberPage}
               />

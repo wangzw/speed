@@ -99,6 +99,7 @@ function grant(overrides: Partial<AdminGrant> = {}): AdminGrant {
   return {
     tenant: 'acme',
     role: 'editor',
+    permission: 'crm.deal.read',
     resource: 'deal',
     action: 'read',
     created_at: '2026-10-15T12:00:00Z',
@@ -831,7 +832,13 @@ describe('PermissionsPage', () => {
       listPermissions: () => Promise.resolve([permission('authn.mfa.reset')]),
       listRoles: () => Promise.resolve([role()]),
       listGrants: () =>
-        Promise.resolve([grant({ resource: 'factor', action: 'reset' })]),
+        Promise.resolve([
+          grant({
+            permission: 'authn.mfa.reset',
+            resource: 'factor',
+            action: 'reset',
+          }),
+        ]),
       revokePermission: (input) => {
         revoked.push(input.permission)
         return Promise.resolve()
@@ -849,6 +856,38 @@ describe('PermissionsPage', () => {
     await vi.waitFor(() => {
       expect(revoked).toEqual(['authn.mfa.reset'])
     })
+  })
+
+  it('withholds revoke for a grant whose server permission is empty', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      // A pair this process no longer translates: the server reports no
+      // permission code for it, so the row shows the recorded spelling and
+      // the revoke route (which names a permission by its code) is withheld.
+      listGrants: () =>
+        Promise.resolve([
+          grant({ permission: '', resource: 'retired', action: 'op' }),
+        ]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    const grantsSection = screen
+      .getByRole('heading', { name: zhCN.permissions.grants.title })
+      .closest('section') as HTMLElement
+    await within(grantsSection).findByText('retired/op')
+    expect(
+      within(grantsSection).getByRole('button', {
+        name: text(zhCN.permissions.grants.revokeAria, {
+          permission: 'retired/op',
+        }),
+      }),
+    ).toBeDisabled()
   })
 
   it('binds the role to the chosen account, not to the typed name', async () => {
@@ -1209,7 +1248,11 @@ describe('PermissionsPage', () => {
       listGrants: () =>
         Promise.resolve([
           grant(),
-          grant({ resource: 'deal', action: 'write' }),
+          grant({
+            permission: 'crm.deal.write',
+            resource: 'deal',
+            action: 'write',
+          }),
         ]),
       revokePermission: () => Promise.reject({ code: 'authz.forbidden' }),
     })

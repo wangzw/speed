@@ -489,6 +489,9 @@ describe('the organization pages address only the current tenant', () => {
       if (call.path === `/api/v1/tenants/${TENANT}/members`) {
         return { members: [MEMBER], next_cursor: '' }
       }
+      if (call.path === `/api/v1/tenants/${TENANT}/roles`) {
+        return { roles: [] }
+      }
       if (call.path === `/api/v1/tenants/${TENANT}/sso/providers`) {
         return { providers: [PROVIDER] }
       }
@@ -528,12 +531,14 @@ describe('the organization pages address only the current tenant', () => {
     // proof the member read settled. It appears in the name column and in
     // each identity cell that resolves the same account.
     expect((await screen.findAllByText('Ada Lovelace')).length).toBeGreaterThan(0)
-    // The recorded set is exactly the tenant's two reads: the member write
-    // form's platform account list is not mounted, and the identities cost
-    // no platform account read.
+    // The recorded set is exactly the tenant's three reads: the member and
+    // invitation lists, and the role read behind the member section's role
+    // filter. The member write form's platform account list is not mounted,
+    // and the identities cost no platform account read.
     expect([...paths].sort()).toEqual([
       `/api/v1/tenants/${TENANT}/invitations`,
       `/api/v1/tenants/${TENANT}/members`,
+      `/api/v1/tenants/${TENANT}/roles`,
     ])
     // The surface's defining promise: no platform asset is read.
     expect(paths.filter((path) => path.startsWith('/api/v1/system'))).toEqual([])

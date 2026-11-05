@@ -51,6 +51,7 @@ const GRANTS: readonly AdminGrant[] = [
   {
     tenant: 'acme',
     role: 'editor',
+    permission: 'deal.read',
     resource: 'deal',
     action: 'read',
     created_at: '2026-10-15T12:00:00Z',
@@ -124,6 +125,7 @@ const LONG_GRANTS: readonly AdminGrant[] = [
   {
     tenant: 'acme',
     role: LONG_ROLE,
+    permission: LONG_PERMISSION,
     resource: LONG_RESOURCE,
     action: LONG_ACTION,
     created_at: '2026-10-15T12:00:00Z',

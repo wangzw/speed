@@ -117,6 +117,47 @@ function firstCursorPage(tenant: string): CursorFrame {
   return { tenant, cursors: [''], page: 0 }
 }
 
+/** The query parameter the members section's role filter reads and writes. */
+const ROLE_QUERY_PARAM = 'role'
+
+/** The role name a query string carries, or '' when the parameter is absent. */
+function roleFromSearch(search: string): string {
+  return new URLSearchParams(search).get(ROLE_QUERY_PARAM)?.trim() ?? ''
+}
+
+/** The role filter the page opens on from the current URL; '' outside a
+ * browser. The parameter is read once, when the page's state is created. */
+function roleFromLocation(): string {
+  return typeof window === 'undefined'
+    ? ''
+    : roleFromSearch(window.location.search)
+}
+
+/**
+ * Writes the role filter into the current URL so the filtered view is
+ * addressable and survives a reload. The role is percent-encoded in place
+ * (not form-encoded), so a name carrying a space or an ampersand round-trips
+ * as the role itself. Every other query parameter is preserved, and an empty
+ * role removes the parameter rather than writing an empty one.
+ */
+function rememberRoleInLocation(role: string): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  const { pathname, search, hash } = window.location
+  const parts: string[] = []
+  for (const [key, value] of new URLSearchParams(search)) {
+    if (key !== ROLE_QUERY_PARAM) {
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    }
+  }
+  if (role !== '') {
+    parts.push(`${ROLE_QUERY_PARAM}=${encodeURIComponent(role)}`)
+  }
+  const query = parts.length === 0 ? '' : `?${parts.join('&')}`
+  window.history.replaceState({}, '', `${pathname}${query}${hash}`)
+}
+
 export interface OrganizationMembersPageProps {
   /** The current tenant every read and write names. */
   readonly tenant: string
@@ -165,6 +206,12 @@ export function OrganizationMembersPage({
 
   const [memberSearch, setMemberSearch] = useState('')
   const debouncedMemberSearch = useDebouncedValue(memberSearch)
+  // The role filter is named by the URL (`?role=...`) and applied on entry:
+  // the state's initial value is the parameter, so the first member read
+  // already carries it. An empty value is no filter.
+  const [roleFilter, setRoleFilter] = useState<string>(roleFromLocation)
+  const tenantRoles = operations.useTenantRoles(tenant)
+  const roleOptions = tenantRoles.data ?? []
   const [memberCursorState, setMemberCursorState] = useState<CursorFrame>(() =>
     firstCursorPage(tenant),
   )
@@ -181,9 +228,12 @@ export function OrganizationMembersPage({
       ...(debouncedMemberSearch === ''
         ? {}
         : { query: debouncedMemberSearch }),
+      // The server filters the page by role; the page never narrows the rows
+      // it received, so a filtered page is still a full page of matches.
+      ...(roleFilter === '' ? {} : { role: roleFilter }),
       ...(memberCursor === '' ? {} : { after: memberCursor }),
     }),
-    [debouncedMemberSearch, memberCursor],
+    [debouncedMemberSearch, roleFilter, memberCursor],
   )
   const members = operations.useMembers(tenant, memberParams)
   const memberRows = members.data?.members
@@ -225,6 +275,15 @@ export function OrganizationMembersPage({
 
   const [panelMember, setPanelMember] = useState<AdminMember | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
+  // The panel belongs to the tenant it was opened under. A tenant switch
+  // closes it and drops the snapshot; the derivation below also refuses a
+  // snapshot from another tenant, so even the render before this effect
+  // commits cannot offer a control whose write would name the new tenant's
+  // path and the old tenant's member.
+  useEffect(() => {
+    setPanelOpen(false)
+    setPanelMember(null)
+  }, [tenant])
   // The panel acts on the member as the list read now carries it, not on the
   // snapshot taken when the row was clicked: a suspend or resume writes the
   // membership and invalidates the list, and the open panel then follows
@@ -232,7 +291,7 @@ export function OrganizationMembersPage({
   // current row carries (a search narrowed the list away) keeps the
   // snapshot, which is the last state read for it.
   const livePanelMember =
-    panelMember === null
+    panelMember === null || panelMember.tenant !== tenant
       ? null
       : (memberRows?.find((row) => row.account === panelMember.account) ??
         panelMember)
@@ -245,6 +304,19 @@ export function OrganizationMembersPage({
   // panel's own writes report in its own scope.
   const membersFeedback = useWriteFeedback()
   const membersRegionRef = useFailureScroll(membersFeedback.outcome)
+
+  const roleFilterActive = roleFilter !== ''
+  const roleListed = roleOptions.some((role) => role.role === roleFilter)
+
+  // A filter change is a new first page and a new scope: the cursor stack
+  // belonged to the previous filter, and a result written under it would read
+  // as describing the filter just left behind.
+  const changeRoleFilter = (next: string) => {
+    setRoleFilter(next)
+    setMemberCursorState(firstCursorPage(tenant))
+    membersFeedback.reset()
+    rememberRoleInLocation(next)
+  }
 
   const openPanel = (member: AdminMember) => {
     setPanelMember(member)
@@ -785,6 +857,52 @@ export function OrganizationMembersPage({
               {t('members.search.clear')}
             </Button>
           )}
+          {/* The role options come from the tenant's role read. A failed read
+              keeps the current selection addressable and offers a retry
+              rather than presenting an empty role list as the truth. */}
+          <TextField
+            select
+            size="small"
+            value={roleFilter}
+            onChange={(event) => changeRoleFilter(event.target.value)}
+            label={t('members.filter.roleLabel')}
+            helperText={
+              tenantRoles.isError ? (
+                <Box component="span">
+                  {t('members.filter.rolesError')}{' '}
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="text"
+                    onClick={() => void tenantRoles.refetch()}
+                  >
+                    {t('members.filter.rolesRetry')}
+                  </Button>
+                </Box>
+              ) : undefined
+            }
+            sx={{ minWidth: 240 }}
+          >
+            <MenuItem value="">{t('members.filter.anyRole')}</MenuItem>
+            {roleFilterActive && !roleListed && (
+              <MenuItem value={roleFilter}>{roleFilter}</MenuItem>
+            )}
+            {roleOptions.map((role) => (
+              <MenuItem key={role.role} value={role.role}>
+                {role.role}
+              </MenuItem>
+            ))}
+          </TextField>
+          {roleFilterActive && (
+            <Button
+              type="button"
+              size="small"
+              variant="outlined"
+              onClick={() => changeRoleFilter('')}
+            >
+              {t('members.filter.clear')}
+            </Button>
+          )}
         </Box>
         <AdminAsyncSection
           pending={members.isPending && memberRows === undefined}
@@ -806,14 +924,18 @@ export function OrganizationMembersPage({
             onRetry: () => void members.refetch(),
           }}
           emptyState={{
-            title: memberSearchActive
-              ? t('members.empty.searchTitle')
-              : t('members.empty.title'),
-            description: memberSearchActive
-              ? t('members.empty.searchDescription', {
-                  query: debouncedMemberSearch,
-                })
-              : t('members.empty.description'),
+            title: roleFilterActive
+              ? t('members.empty.roleTitle')
+              : memberSearchActive
+                ? t('members.empty.searchTitle')
+                : t('members.empty.title'),
+            description: roleFilterActive
+              ? t('members.empty.roleDescription', { role: roleFilter })
+              : memberSearchActive
+                ? t('members.empty.searchDescription', {
+                    query: debouncedMemberSearch,
+                  })
+                : t('members.empty.description'),
           }}
         >
           {(settled) => (

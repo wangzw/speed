@@ -128,7 +128,6 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
-import { buildGrantCodeIndex } from './internal/grant-code-index.js'
 import { AdminPageHeader } from './internal/page-header.js'
 import type {
   AdminAccount,
@@ -1112,13 +1111,6 @@ function PermissionsPageBody({
   }
 
   const permissions = catalog.data ?? []
-  // The (resource, action) -> permission-code lookup both the row label and
-  // the revoke use: a grant row carries the pair the engine matches on,
-  // while the grant route names a permission by its code, so the catalog
-  // maps the pair back to the code that names it. A pair the catalog does
-  // not name renders as `resource/action` and offers no revoke (see
-  // buildGrantCodeIndex).
-  const codeByPair = useMemo(() => buildGrantCodeIndex(permissions), [permissions])
 
   const roleRows = roles.data
   // The organization surface resolves every recorded account identifier it
@@ -1307,13 +1299,15 @@ function PermissionsPageBody({
     },
   ]
 
-  // A grant row shows the same permission code the catalog lists, so "what
-  // is granted" and "what the catalog declares" read as one vocabulary. A
-  // pair the catalog does not name falls back to the pair's own spelling,
-  // and its revoke is withheld (the route names a permission by its code).
+  // A grant row shows the permission code the server reports for it, so
+  // "what is granted" and "what the catalog declares" read as one
+  // vocabulary. A grant whose pair the server cannot translate carries an
+  // empty permission; the row falls back to the pair's own spelling, and its
+  // revoke is withheld (the route names a permission by its code).
   const grantLabel = (grant: AdminGrant): string =>
-    codeByPair(grant.resource, grant.action) ??
-    `${grant.resource}/${grant.action}`
+    grant.permission !== ''
+      ? grant.permission
+      : `${grant.resource}/${grant.action}`
 
   const grantBaseColumns: DataTableColumn<AdminGrant>[] = [
     {
@@ -1337,7 +1331,7 @@ function PermissionsPageBody({
     header: t('permissions.grants.column.actions'),
     cellWrap: 'nowrap',
     cell: (grant) => {
-      const code = codeByPair(grant.resource, grant.action)
+      const code = grant.permission === '' ? null : grant.permission
       const key = `${grant.resource}:${grant.action}`
       const failed = failedGrant === key
       const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
@@ -1937,4 +1931,3 @@ function PermissionsPageBody({
     </Box>
   )
 }
-

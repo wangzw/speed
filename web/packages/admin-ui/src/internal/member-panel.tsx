@@ -21,12 +21,16 @@
  *  - with manage, the complete control set renders.
  *
  * Binding a role is checked before the request: the panel reads the
- * selected role's grants and compares them with the caller's own tenant
- * permission set. A grant the caller does not hold (including one the
- * permission catalog cannot map) blocks the bind, so the surface never
- * offers to hand out more than its operator has. A failed grant read keeps
- * the bind blocked and offers a retry rather than defaulting to allowed.
- * Unbinding is never blocked by this check.
+ * selected role's grants and compares each grant's server-reported
+ * `permission` with the caller's own tenant permission set. The server is
+ * the authority on what a grant means; the panel never reconstructs the
+ * permission from the engine's (resource, action) pair. A grant the caller
+ * does not hold blocks the bind, and so does a grant whose permission is
+ * empty (a pair this process no longer translates): there is no code to
+ * compare, so the panel fails closed and says the permission cannot be
+ * confirmed. A failed grant read keeps the bind blocked and offers a retry
+ * rather than defaulting to allowed. Unbinding is never blocked by this
+ * check.
  *
  * All writes in the panel share one feedback scope. A failure both lands
  * in the scope and marks the control or binding row it was about; a
@@ -55,7 +59,6 @@ import type { AdminTenantBinding } from '../organization-operations.js'
 import { useOrganizationAdminOperations } from '../organization-operations.js'
 import { AdminAsyncSection } from './async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './confirm.js'
-import { buildGrantCodeIndex } from './grant-code-index.js'
 import { useAdminUiTranslation } from './translation.js'
 import {
   failureTextOf,
@@ -135,12 +138,9 @@ export function MemberPanel({
     canReadRoles ? tenant : '',
     member.account,
   )
-  // The role list and catalog exist only where the role control does; the
-  // session's permission answer is the gate, not the read's failure.
+  // The role list exists only where the role control does; the session's
+  // permission answer is the gate, not the read's failure.
   const roles = operations.useTenantRoles(canManageRoles ? tenant : '')
-  const permissions = operations.useTenantPermissions(
-    canManageRoles ? tenant : '',
-  )
   const grants = operations.useTenantGrants(
     canManageRoles ? tenant : '',
     selectedRoleOrUndefined(canManageRoles, selectedRole),
@@ -169,31 +169,31 @@ export function MemberPanel({
   // `isPending` alone is the loading signal: an errored query also has
   // `data === undefined`, so testing the data would keep the panel in its
   // checking state after the read already failed.
-  const grantsPending =
-    canManageRoles &&
-    roleSelected &&
-    (grants.isPending || permissions.isPending)
+  const grantsPending = canManageRoles && roleSelected && grants.isPending
   const grantsFailed =
+    canManageRoles && roleSelected && !grantsPending && grants.isError
+  // A grant carrying no permission code is one this process cannot translate
+  // back to a permission. There is nothing to compare with the caller's set,
+  // so the panel cannot prove the bind is safe: it says so and fails closed.
+  const grantPermissionUnconfirmed =
     canManageRoles &&
     roleSelected &&
     !grantsPending &&
-    (grants.isError || permissions.isError)
-  const codeByPair = useMemo(
-    () => buildGrantCodeIndex(permissions.data ?? []),
-    [permissions.data],
-  )
+    !grantsFailed &&
+    (grants.data ?? []).some((grant) => grant.permission === '')
   // Every grant the selected role carries must already be in the caller's
-  // set. A pair the catalog cannot name is also refused: the panel cannot
-  // prove the caller holds it, so it does not offer to hand it out.
+  // set. A grant whose server-reported permission the caller does not hold
+  // blocks the bind, so the surface never offers to hand out more than its
+  // operator has.
   const escalationBlocked =
     canManageRoles &&
     roleSelected &&
     !grantsPending &&
     !grantsFailed &&
-    (grants.data ?? []).some((grant) => {
-      const code = codeByPair(grant.resource, grant.action)
-      return code === null || !callerPermissions.has(code)
-    })
+    (grants.data ?? []).some(
+      (grant) =>
+        grant.permission === '' || !callerPermissions.has(grant.permission),
+    )
   const bindDisabled =
     feedback.pending ||
     !member.active ||
@@ -567,23 +567,30 @@ export function MemberPanel({
                     type="button"
                     size="small"
                     variant="outlined"
-                    onClick={() => {
-                      void grants.refetch()
-                      void permissions.refetch()
-                    }}
+                    onClick={() => void grants.refetch()}
                   >
                     {t('members.panel.escalationRetry')}
                   </Button>
                 </Box>
               )}
-              {escalationBlocked && (
+              {grantPermissionUnconfirmed ? (
                 <Typography
                   variant="body2"
                   color="error"
                   sx={{ mt: 1 }}
                 >
-                  {t('members.panel.escalationBlocked')}
+                  {t('members.panel.escalationUnconfirmed')}
                 </Typography>
+              ) : (
+                escalationBlocked && (
+                  <Typography
+                    variant="body2"
+                    color="error"
+                    sx={{ mt: 1 }}
+                  >
+                    {t('members.panel.escalationBlocked')}
+                  </Typography>
+                )
               )}
               {bindFailure !== null && (
                 <Typography

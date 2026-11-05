@@ -110,6 +110,7 @@ const OPERATOR_BINDING: AdminTenantBinding = {
 const SUPER_GRANT: AdminTenantGrant = {
   tenant: TENANT,
   role: 'tenant-super',
+  permission: 'authn.account.delete',
   resource: 'account',
   action: 'delete',
   created_at: '2026-01-01T00:00:00Z',
@@ -139,12 +140,12 @@ const ROLE_GOVERNED: AdminTenantRole = {
 }
 
 const GOVERNED_GRANTS: readonly AdminTenantGrant[] = [
-  { resource: 'tenant_role', action: 'read' },
-  { resource: 'tenant_role', action: 'manage' },
-  { resource: 'membership', action: 'manage' },
-  { resource: 'idp', action: 'manage' },
-  { resource: 'tenant_settings', action: 'read' },
-  { resource: 'tenant_settings', action: 'write' },
+  { permission: 'authz.tenant.role.read', resource: 'tenant_role', action: 'read' },
+  { permission: 'authz.tenant.role.manage', resource: 'tenant_role', action: 'manage' },
+  { permission: 'authn.membership.manage', resource: 'membership', action: 'manage' },
+  { permission: 'authn.idp.manage', resource: 'idp', action: 'manage' },
+  { permission: 'settings.tenant.read', resource: 'tenant_settings', action: 'read' },
+  { permission: 'settings.tenant.write', resource: 'tenant_settings', action: 'write' },
 ].map((grant) => ({
   tenant: TENANT,
   role: ROLE_GOVERNED.role,
@@ -383,7 +384,9 @@ async function openPanel(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
 ): Promise<HTMLElement> {
-  await screen.findByText(name)
+  // The display name can appear twice once the inviter identity resolves
+  // against the member read; the row's Manage control is the unique handle.
+  await screen.findAllByText(name)
   await user.click(manageButton(name))
   return screen.getByRole('dialog', { name: zhCN.members.panel.title })
 }
@@ -618,6 +621,328 @@ describe('the member search and paging', () => {
         .filter((call) => call.tenant === 'globex')
         .every((call) => (call.params as { after?: string }).after === undefined),
     ).toBe(true)
+  })
+
+  it('closes an open management panel when the host switches tenant', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted()
+    const operations = createAdminOperations(backend)
+    // The host owns the current tenant. Its state change is programmatic here
+    // because the open modal makes the rest of the page inert, exactly as it
+    // would in the running app.
+    let switchTenant: () => void = () => undefined
+    function SwitchTenant() {
+      const [tenant, setTenant] = useState(TENANT)
+      switchTenant = () => setTenant('globex')
+      return (
+        <OrganizationAdminProvider
+          tenant={tenant}
+          operations={operations}
+          hasFeature={() => true}
+        >
+          <OrganizationMembersPage tenant={tenant} />
+        </OrganizationAdminProvider>
+      )
+    }
+    renderWithProviders(<SwitchTenant />)
+
+    await screen.findAllByText(ADA.display_name)
+    const panel = await openPanel(user, ADA.display_name)
+    expect(panel).toBeInTheDocument()
+
+    // The host mounts the organization surface for another tenant in place.
+    await act(async () => {
+      switchTenant()
+    })
+
+    // The panel was opened under the tenant the host left; it must not stay
+    // mounted with the new tenant's path beside the old member's account.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: zhCN.members.panel.title }),
+      ).toBeNull(),
+    )
+  })
+})
+
+describe('the role filter', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/')
+  })
+
+  it('lists the roles the tenant read answers and filters the member read', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+
+    const select = screen.getByRole('combobox', {
+      name: zhCN.members.filter.roleLabel,
+    })
+    await user.click(select)
+    expect(
+      await screen.findByRole('option', { name: ROLE_SUPER.role }),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('option', { name: ROLE_OPERATOR.role }),
+    )
+
+    await waitFor(() =>
+      expect(recorder.memberParams).toContainEqual({
+        limit: 100,
+        role: ROLE_OPERATOR.role,
+      }),
+    )
+    // The server filters the page: both rows the scripted backend answered
+    // with stay on screen because the page never narrows a page itself.
+    expect(screen.getAllByText(ADA.display_name).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(BOB.display_name).length).toBeGreaterThan(0)
+  })
+
+  it('applies a role from the URL on entry and writes it back encoded', async () => {
+    const user = userEvent.setup()
+    const role = 'tenant operator'
+    window.history.replaceState(
+      {},
+      '',
+      `/organization/admin/invitations?role=${encodeURIComponent(role)}`,
+    )
+    const { backend, recorder } = scripted()
+    renderPage(backend)
+
+    // The page opens with the URL's role already applied: the first member
+    // read carries it.
+    await waitFor(() =>
+      expect(recorder.memberParams).toContainEqual({ limit: 100, role }),
+    )
+
+    const select = screen.getByRole('combobox', {
+      name: zhCN.members.filter.roleLabel,
+    })
+    await user.click(select)
+    await user.click(
+      screen.getByRole('option', { name: ROLE_SUPER.role }),
+    )
+    // The new role is percent-encoded in place, and the page's path is
+    // untouched.
+    await waitFor(() =>
+      expect(window.location.search).toBe(
+        `?role=${encodeURIComponent(ROLE_SUPER.role)}`,
+      ),
+    )
+    expect(window.location.pathname).toBe('/organization/admin/invitations')
+  })
+
+  it('treats an empty role parameter as no filter', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/organization/admin/invitations?role=',
+    )
+    const { backend, recorder } = scripted()
+    renderPage(backend)
+    await waitFor(() =>
+      expect(recorder.memberParams).toContainEqual({ limit: 100 }),
+    )
+    expect(
+      recorder.memberParams.every((params) => params?.role === undefined),
+    ).toBe(true)
+  })
+
+  it('shows an empty result with a clear action for an unknown role, not an error', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(
+      {},
+      '',
+      '/organization/admin/invitations?role=retired-role',
+    )
+    const { backend, recorder } = scripted({
+      listMembers: (_tenant, params) => {
+        recorder.memberParams.push(params)
+        return Promise.resolve(
+          params?.role === 'retired-role'
+            ? { members: [], next_cursor: '' }
+            : { members: [ADA, BOB], next_cursor: '' },
+        )
+      },
+    })
+    renderPage(backend)
+
+    // The server answers 200 with no match; the page says no member holds
+    // the role rather than reporting the filter as a failed read.
+    expect(
+      await screen.findByText(zhCN.members.empty.roleTitle),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        required(
+          zhCN.members.empty.roleDescription.replace(
+            '{{role}}',
+            'retired-role',
+          ),
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.members.error.title)).toBeNull()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.members.filter.clear }),
+    )
+    await waitFor(() =>
+      expect(recorder.memberParams).toContainEqual({ limit: 100 }),
+    )
+    expect(
+      (await screen.findAllByText(ADA.display_name)).length,
+    ).toBeGreaterThan(0)
+    expect(window.location.search).toBe('')
+  })
+
+  it('offers a retry when the role list cannot be read and invents no options', async () => {
+    const user = userEvent.setup()
+    const listTenantRoles = vi.fn(() =>
+      Promise.reject(new Error('roles unavailable')),
+    )
+    window.history.replaceState(
+      {},
+      '',
+      `/organization/admin/invitations?role=${encodeURIComponent(ROLE_OPERATOR.role)}`,
+    )
+    const { backend, recorder } = scripted({ listTenantRoles })
+    renderPage(backend)
+
+    expect(
+      await screen.findByText(zhCN.members.filter.rolesError),
+    ).toBeInTheDocument()
+    // The URL's role still filters the server read; its options are unknown,
+    // so the select offers no role it did not read.
+    expect(recorder.memberParams).toContainEqual({
+      limit: 100,
+      role: ROLE_OPERATOR.role,
+    })
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.members.filter.roleLabel }),
+    )
+    expect(
+      screen.getByRole('option', { name: zhCN.members.filter.anyRole }),
+    ).toBeInTheDocument()
+    // The only role shown is the URL's own current value, not a role the
+    // failed read invented; an unread role is absent.
+    expect(
+      screen.queryByRole('option', { name: ROLE_SUPER.role }),
+    ).toBeNull()
+    await user.keyboard('{Escape}')
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.members.filter.rolesRetry }),
+    )
+    await waitFor(() => expect(listTenantRoles).toHaveBeenCalledTimes(2))
+  })
+
+  it('carries the role into the next cursor page', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted({
+      listMembers: (_tenant, params) => {
+        recorder.memberParams.push(params)
+        return Promise.resolve(
+          params?.after === 'acc-1'
+            ? { members: [BOB], next_cursor: '' }
+            : { members: [ADA], next_cursor: 'acc-1' },
+        )
+      },
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    const select = screen.getByRole('combobox', {
+      name: zhCN.members.filter.roleLabel,
+    })
+    await user.click(select)
+    await user.click(
+      screen.getByRole('option', { name: ROLE_OPERATOR.role }),
+    )
+    await waitFor(() =>
+      expect(recorder.memberParams).toContainEqual({
+        limit: 100,
+        role: ROLE_OPERATOR.role,
+      }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.pager.next }),
+    )
+    await waitFor(() =>
+      expect(recorder.memberParams).toContainEqual({
+        limit: 100,
+        role: ROLE_OPERATOR.role,
+        after: 'acc-1',
+      }),
+    )
+  })
+
+  it('returns to the first page and clears the member scope when the filter changes', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted({
+      listMembers: (_tenant, params) => {
+        recorder.memberParams.push(params)
+        return Promise.resolve(
+          params?.after === 'acc-1'
+            ? { members: [BOB], next_cursor: '' }
+            : { members: [ADA], next_cursor: 'acc-1' },
+        )
+      },
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.pager.next }),
+    )
+    expect(
+      (await screen.findAllByText(BOB.display_name)).length,
+    ).toBeGreaterThan(0)
+
+    // A removal's success is written into the member list's scope; the
+    // filter change is what then clears that scope.
+    const panel = await openPanel(user, BOB.display_name)
+    await user.click(
+      within(panel).getByRole('button', { name: zhCN.members.remove }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+    })
+    await user.click(
+      screen.getByRole('button', {
+        name: uiKitZh.confirmDialog.confirmAgainLabel,
+      }),
+    )
+    const removedMessage = zhCN.members.removed.replace(
+      '{{account}}',
+      BOB.account,
+    )
+    expect(
+      await screen.findByText(removedMessage, undefined, { timeout: 3000 }),
+    ).toBeInTheDocument()
+
+    const select = screen.getByRole('combobox', {
+      name: zhCN.members.filter.roleLabel,
+    })
+    await user.click(select)
+    await user.click(
+      screen.getByRole('option', { name: ROLE_OPERATOR.role }),
+    )
+
+    // The read starts from the first page under the new filter (no cursor
+    // from the page the operator left), and the old result is gone.
+    await waitFor(() =>
+      expect(recorder.memberParams).toContainEqual({
+        limit: 100,
+        role: ROLE_OPERATOR.role,
+      }),
+    )
+    expect(screen.queryByText(removedMessage)).toBeNull()
+    expect(
+      screen.getByText(zhCN.common.pager.page.replace('{{page}}', '1')),
+    ).toBeInTheDocument()
   })
 })
 
@@ -911,7 +1236,9 @@ describe('the role permission tiers', () => {
       }),
     ).toBeNull()
     expect(recorder.accountBindingReads).toEqual([])
-    expect(recorder.roleReads).toEqual([])
+    // The toolbar's role filter reads the tenant's roles for every caller;
+    // the panel's own gated reads stay absent.
+    expect(recorder.roleReads).toEqual([TENANT])
   })
 
   it('with role.read but not role.manage keeps the list read-only', async () => {
@@ -943,7 +1270,9 @@ describe('the role permission tiers', () => {
       }),
     ).toBeNull()
     expect(recorder.accountBindingReads).toEqual([ADA.account])
-    expect(recorder.roleReads).toEqual([])
+    // No panel role read without manage; the one recorded read is the
+    // toolbar's filter options.
+    expect(recorder.roleReads).toEqual([TENANT])
   })
 
   it('with role.manage renders the complete control set', async () => {
@@ -1023,6 +1352,101 @@ describe('the bind escalation check', () => {
     expect(
       within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
     ).toBeEnabled()
+  })
+
+  it('trusts the server permission even when the recorded pair is not inferable', async () => {
+    attachTenantPermissions(
+      GOVERNED_PERMISSIONS.map((entry) => entry.permission),
+    )
+    const user = userEvent.setup()
+    // The grant rows still name every governed permission, but their stored
+    // (resource, action) pairs are spellings this client's vocabulary cannot
+    // reconstruct (a grant written by another translation). The server's
+    // permission field is the authority; a client-side inference from the
+    // pair would resolve every one of these to null and refuse the bind.
+    const grants = GOVERNED_GRANTS.map((grant) => ({
+      ...grant,
+      resource: 'retired_object',
+      action: 'retired_action',
+    }))
+    const { backend } = scripted({
+      listTenantRoles: () => Promise.resolve([ROLE_GOVERNED]),
+      listTenantPermissions: () => Promise.resolve(GOVERNED_PERMISSIONS),
+      listTenantGrants: () => Promise.resolve(grants),
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, ADA.display_name)
+    const select = within(panel).getByRole('combobox', {
+      name: zhCN.members.panel.roleLabel,
+    })
+    await waitFor(() => expect(select).toBeEnabled())
+    await user.click(select)
+    await user.click(
+      screen.getByRole('option', { name: ROLE_GOVERNED.role }),
+    )
+    await waitFor(() =>
+      expect(
+        within(panel).queryByText(zhCN.members.panel.escalationChecking),
+      ).toBeNull(),
+    )
+    expect(
+      within(panel).queryByText(zhCN.members.panel.escalationBlocked),
+    ).toBeNull()
+    expect(
+      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
+    ).toBeEnabled()
+  })
+
+  it('fails closed when a grant carries no permission code, while unbind stays available', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted({
+      listTenantGrants: () =>
+        Promise.resolve([
+          {
+            ...SUPER_GRANT,
+            permission: '',
+            resource: 'retired_object',
+            action: 'retired_action',
+          },
+        ]),
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, ADA.display_name)
+    const select = within(panel).getByRole('combobox', {
+      name: zhCN.members.panel.roleLabel,
+    })
+    await waitFor(() => expect(select).toBeEnabled())
+    await user.click(select)
+    await user.click(
+      screen.getByRole('option', { name: ROLE_OPERATOR.role }),
+    )
+
+    expect(
+      await within(panel).findByText(
+        zhCN.members.panel.escalationUnconfirmed,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
+    ).toBeDisabled()
+    expect(recorder.binds).toEqual([])
+
+    // The escalation check never gates unbinding: a role the caller can see
+    // bound can always be taken away.
+    const unbind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.unbind,
+    })
+    expect(unbind).toBeEnabled()
+    await user.click(unbind)
+    await waitFor(() =>
+      expect(recorder.unbinds).toEqual([
+        {
+          tenant: TENANT,
+          account: ADA.account,
+          role: OPERATOR_BINDING.role,
+        },
+      ]),
+    )
   })
 
   it('does not default to allowing when the grant read fails', async () => {

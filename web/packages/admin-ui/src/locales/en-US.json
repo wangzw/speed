@@ -1027,11 +1027,20 @@
       "placeholder": "Search by display name, username or email",
       "clear": "Clear search"
     },
+    "filter": {
+      "roleLabel": "Members holding this role",
+      "anyRole": "Any role",
+      "clear": "Clear filter",
+      "rolesError": "The role list could not be loaded, so the role filter is unavailable.",
+      "rolesRetry": "Retry"
+    },
     "empty": {
       "title": "No members",
       "description": "This organization has no member yet.",
       "searchTitle": "No members match your search",
-      "searchDescription": "No member matches \"{{query}}\". Try another search or clear it."
+      "searchDescription": "No member matches \"{{query}}\". Try another search or clear it.",
+      "roleTitle": "No members hold this role",
+      "roleDescription": "No member of this organization holds the role \"{{role}}\". Clear the filter to see every member."
     },
     "error": {
       "title": "Members could not be loaded",
@@ -1088,6 +1097,7 @@
       "bindRemovedUnnamed": "Role \"{{role}}\" unbound",
       "escalationChecking": "Checking the role's permissions…",
       "escalationBlocked": "This role contains permissions you cannot grant, so it cannot be bound.",
+      "escalationUnconfirmed": "A grant of this role carries no permission code, so its permissions cannot be confirmed and it cannot be bound.",
       "escalationFailed": "The role's permissions could not be checked, so it cannot be bound right now.",
       "escalationRetry": "Retry",
       "cannotSuspendSelf": "You cannot suspend your own membership.",

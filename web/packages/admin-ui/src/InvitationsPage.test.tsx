@@ -17,6 +17,7 @@ import type {
   AdminAccount,
   AdminInvitation,
   AdminMember,
+  AdminMemberPage,
   AdminOperations,
   AdminSetMemberSSOExemptInput,
   AdminWriteMemberInput,
@@ -530,6 +531,60 @@ describe('InvitationsPage', () => {
       limit: 100,
       after: 'cursor-1',
     })
+  })
+
+  it('blocks a second member page change while the kept previous page is loading', async () => {
+    const user = userEvent.setup()
+    let resolveNext: (page: AdminMemberPage) => void = () => undefined
+    const listMembers = vi.fn(
+      (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useMembers']>[1],
+      ) =>
+        params?.after === 'cursor-1'
+          ? new Promise<AdminMemberPage>((resolve) => {
+              resolveNext = resolve
+            })
+          : Promise.resolve({
+              members: [member({ account: 'acc-0', display_name: 'Member 0' })],
+              next_cursor: 'cursor-1',
+            }),
+    )
+    const operations = withTenant({ listMembers })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    expect(
+      await within(memberSection).findByText('Member 0'),
+    ).toBeInTheDocument()
+    const next = within(memberSection).getByRole('button', {
+      name: zhCN.common.pager.next,
+    })
+    await user.click(next)
+    // While the next page loads, `keepPreviousData` still holds the first
+    // page's envelope, whose next_cursor names the same page. The control is
+    // busy for the read and the handler refuses a second advance.
+    await vi.waitFor(() => expect(next).toBeDisabled())
+    expect(listMembers).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      resolveNext({
+        members: [member({ account: 'acc-1', display_name: 'Last Member' })],
+        next_cursor: '',
+      })
+    })
+    expect(
+      await within(memberSection).findByText('Last Member'),
+    ).toBeInTheDocument()
+    // Exactly one page advanced: no second read and no repeated cursor.
+    expect(listMembers).toHaveBeenCalledTimes(2)
+    expect(
+      within(memberSection).getByText(
+        zhCN.common.pager.page.replace('{{page}}', '2'),
+      ),
+    ).toBeInTheDocument()
   })
 
   it('treats an exact page as the last page without an empty next page', async () => {
