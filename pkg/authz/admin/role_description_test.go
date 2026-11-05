@@ -23,7 +23,7 @@ func listRoles(t *testing.T, r *rig) []map[string]any {
 	var body struct {
 		Roles []map[string]any `json:"roles"`
 	}
-	if err := json.Unmarshal([]byte(w.Body.String()), &body); err != nil {
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("the answer is not a role list: %v; body = %s", err, w.Body.String())
 	}
 	if body.Roles == nil {
