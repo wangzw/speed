@@ -39,9 +39,11 @@
  *    the cross-tenant absence is the fixture's single-tenant shape and is not
  *    driven through a second organization.
  *  - REQ-tenant-admin-033 (the last-administrator floor) and REQ-tenant-admin-
- *    047 are not claimed: clicking the one existing `tenant-admin` binding is
- *    the self-unbind refusal (REQ-tenant-admin-046), which the server answers
- *    before the last-administrator rule.
+ *    047 are not claimed: the seed's one `tenant-admin` binding belongs to the
+ *    signed-in administrator, and the panel disables that own binding before
+ *    any request (REQ-tenant-admin-046), so the server's last-administrator
+ *    path is not reachable through a rendered control. The Go tier asserts the
+ *    server's refusals.
  *  - REQ-tenant-admin-034 covers the `platform-admin` role creation refusal.
  *    REQ-tenant-admin-048's binding half is not reachable through a rendered
  *    control any more: role binding moved into the member management panel,
@@ -1125,10 +1127,29 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
         await expect(bindingRow(panel, ROLE)).toHaveCount(1)
 
-        // REQ-tenant-admin-031: unbind removes it from the list.
+        // REQ-tenant-admin-031: unbind asks first, then removes it from the
+        // list. The confirmation names the role whose permissions stop
+        // applying at once and the two server-side refusals it cannot show.
         await bindingRow(panel, ROLE)
           .getByRole('button', {
             name: copy('adminUi', 'members.panel.unbind'),
+            exact: true,
+          })
+          .click()
+        const unbindDialog = page.getByRole('dialog', {
+          name: copy('adminUi', 'members.panel.unbindTitle'),
+          exact: true,
+        })
+        await expect(unbindDialog).toBeVisible()
+        await expect(
+          unbindDialog.getByText(
+            copy('adminUi', 'members.panel.unbindMessage', { role: ROLE }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await unbindDialog
+          .getByRole('button', {
+            name: copy('adminUi', 'common.confirm'),
             exact: true,
           })
           .click()
@@ -1289,18 +1310,21 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
 
         // REQ-tenant-admin-046: the one `tenant-admin` binding is the
-        // administrator's own; the server refuses the unbind and the binding
-        // stays.
+        // administrator's own; the panel disables it before any request and
+        // says why. The server refusal behind it is the Go tier's claim.
         const own = bindingRow(panel, 'tenant-admin')
         await expect(own).toHaveCount(1)
-        await own
-          .getByRole('button', {
+        await expect(
+          own.getByRole('button', {
             name: copy('adminUi', 'members.panel.unbind'),
             exact: true,
-          })
-          .click()
-        await expect(own.getByText(protectedText(), { exact: true })).toBeVisible()
-        await expect(bindingRow(panel, 'tenant-admin')).toHaveCount(1)
+          }),
+        ).toBeDisabled()
+        await expect(
+          own.getByText(copy('adminUi', 'members.panel.cannotUnbindOwnAdmin'), {
+            exact: true,
+          }),
+        ).toBeVisible()
 
         await closeMemberPanel(page, reviewTenantAdmin.displayName)
       })

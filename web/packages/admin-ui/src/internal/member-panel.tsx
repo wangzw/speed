@@ -10,6 +10,16 @@
  *  - suspend or resume the membership;
  *  - remove the membership, behind the heavier double confirmation.
  *
+ * The bind group offers only roles the member does not already hold; when
+ * every role is held it says so instead of presenting an empty list. An
+ * unbind asks for confirmation first: the role's permissions stop applying
+ * immediately, the current account's own protected binding (the host's
+ * protected role names, `tenant-admin` in the demo) cannot be taken away,
+ * and the server refuses an unbind that would leave the tenant without its
+ * last tenant-admin. The panel disables that own protected binding before
+ * the request and shows the reason; it never asserts the last-admin floor
+ * itself, which only the server can count.
+ *
  * The role group degrades by the caller's tenant permissions, read through
  * @speed/auth-core's permission set:
  *
@@ -57,6 +67,7 @@ import {
 import type { AdminMember } from '../operations.js'
 import type { AdminTenantBinding } from '../organization-operations.js'
 import { useOrganizationAdminOperations } from '../organization-operations.js'
+import { useOrganizationAdminProtectedRoles } from '../OrganizationAdminProvider.js'
 import { AdminAsyncSection } from './async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './confirm.js'
 import { useAdminUiTranslation } from './translation.js'
@@ -132,6 +143,10 @@ export function MemberPanel({
   const tier = roleTierOf(canReadRoles, canManageRoles)
   const selfAccount = auth.principal?.account_id
   const isSelf = selfAccount === member.account
+  // The host names the role a caller may not take away from itself; the
+  // server refuses that removal too, so the panel disables the control
+  // before the request instead of offering a write bound to fail.
+  const protectedRoles = useOrganizationAdminProtectedRoles()
 
   const [selectedRole, setSelectedRole] = useState('')
   const bindings = operations.useTenantAccountBindings(
@@ -145,6 +160,22 @@ export function MemberPanel({
     canManageRoles ? tenant : '',
     selectedRoleOrUndefined(canManageRoles, selectedRole),
   )
+  // A role the member already holds is not offered again. The exclusion
+  // reads only a settled bindings answer: a pending or failed read leaves
+  // every role available rather than presenting a wrong subset as truth.
+  const boundRoles = useMemo(
+    () => new Set((bindings.data ?? []).map((binding) => binding.role)),
+    [bindings.data],
+  )
+  const availableRoles = useMemo(
+    () => (roles.data ?? []).filter((role) => !boundRoles.has(role.role)),
+    [roles.data, boundRoles],
+  )
+  const allRolesBound =
+    roles.data !== undefined &&
+    roles.data.length > 0 &&
+    bindings.data !== undefined &&
+    availableRoles.length === 0
 
   const [failed, setFailed] = useState<FailedWrite | null>(null)
   const feedback = useWriteFeedback()
@@ -267,6 +298,22 @@ export function MemberPanel({
     })
   }
 
+  /**
+   * Unbinding is not reversible from this panel and takes the role's
+   * permissions away at once, so it asks first. The confirmation also
+   * names the two refusals the operator cannot see from here: a caller's
+   * own tenant-admin binding is protected, and the server keeps a domain's
+   * last tenant-admin binding.
+   */
+  const requestUnbind = (role: string) => {
+    confirm.ask({
+      title: t('members.panel.unbindTitle'),
+      message: t('members.panel.unbindMessage', { role }),
+      confirmLabel: t('common.confirm'),
+      run: () => unbind(role),
+    })
+  }
+
   const requestActive = (active: boolean) => {
     confirm.ask({
       title: active ? t('members.resumeTitle') : t('members.suspendTitle'),
@@ -344,6 +391,11 @@ export function MemberPanel({
           const refused =
             failed?.kind === 'unbind' && failed.role === binding.role
           const errorId = `binding-error-${encodeURIComponent(binding.role)}`
+          // The current account cannot take its own protected binding
+          // away; the server refuses it. The control is disabled with the
+          // reason shown rather than offered and refused on submit.
+          const ownProtected =
+            isSelf && protectedRoles.includes(binding.role)
           return (
             <Box
               component="li"
@@ -368,11 +420,20 @@ export function MemberPanel({
                   variant="outlined"
                   aria-invalid={refused}
                   aria-describedby={refused ? errorId : undefined}
-                  disabled={feedback.pending}
-                  onClick={() => unbind(binding.role)}
+                  disabled={feedback.pending || ownProtected}
+                  onClick={() => requestUnbind(binding.role)}
                 >
                   {t('members.panel.unbind')}
                 </Button>
+              )}
+              {ownProtected && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ flexBasis: '100%' }}
+                >
+                  {t('members.panel.cannotUnbindOwnAdmin')}
+                </Typography>
               )}
               {refused && bindingFailure !== null && (
                 <Typography
@@ -517,11 +578,13 @@ export function MemberPanel({
                     setSelectedRole(event.target.value)
                   }}
                   label={t('members.panel.roleLabel')}
-                  disabled={feedback.pending || roles.isPending}
+                  disabled={
+                    feedback.pending || roles.isPending || allRolesBound
+                  }
                   sx={{ minWidth: 200 }}
                 >
                   <MenuItem value="">{t('members.panel.roleNone')}</MenuItem>
-                  {(roles.data ?? []).map((role) => (
+                  {availableRoles.map((role) => (
                     <MenuItem key={role.role} value={role.role}>
                       {role.role}
                     </MenuItem>
@@ -540,6 +603,15 @@ export function MemberPanel({
                   {t('members.panel.bind')}
                 </Button>
               </Box>
+              {allRolesBound && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1 }}
+                >
+                  {t('members.panel.allRolesBound')}
+                </Typography>
+              )}
               {!member.active && (
                 <Typography
                   variant="body2"

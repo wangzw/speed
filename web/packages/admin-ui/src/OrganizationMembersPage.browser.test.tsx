@@ -9,9 +9,11 @@
  * area. The cases below cover those four facts at the sm/md/lg floors:
  *
  *   - both tables, and the page, keep their content inside their own width;
- *   - the role and expiry columns -- medium priority, the common-laptop
- *     information -- are visible from the md tier up rather than dropping
- *     at a narrow container the way a low column does;
+ *   - the role, status, joined-at and invitation columns -- high priority,
+ *     the information an operator opens the tables for -- are visible from
+ *     the sm tier up, including the 1024px desktop shell beside its 280px
+ *     sidebar, rather than dropping at a narrow container the way a medium
+ *     or low column does;
  *   - the management panel takes its 36rem tier on a wide viewport and the
  *     full width on a phone-sized one;
  *   - the dark theme paints the page's surface and keeps the same columns;
@@ -21,11 +23,13 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
+import Box from '@mui/material/Box'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useTheme } from '@mui/material/styles'
 import { selectClasses } from '@mui/material/Select'
 import { cdp, page } from 'vitest/browser'
+import { AppShell } from '@speed/layout-kit'
 import { attachSession } from '@speed/auth-core'
 import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
 import { OrganizationMembersPage } from './OrganizationMembersPage.js'
@@ -138,11 +142,45 @@ function renderPage(
         tenant={TENANT}
         operations={createAdminOperations(scripted)}
         hasFeature={() => true}
+        protectedRoles={['tenant-admin']}
       >
         <OrganizationMembersPage tenant={TENANT} />
       </OrganizationAdminProvider>
     </>,
     { language: 'en-US', ...options },
+  )
+}
+
+/** The page as the demo hosts it: the tenant frame's sidebar shell (280px
+ * drawer) around the padded content region. */
+function renderShellPage(scripted: AdminBackend = backend()) {
+  return renderWithProviders(
+    <AppShell
+      shellLayout="sidebar"
+      sidebarWidth={280}
+      navItems={[
+        {
+          id: 'members',
+          label: 'Members',
+          href: '/organization/admin/invitations',
+          selected: true,
+        },
+      ]}
+      header={<span>Speed</span>}
+    >
+      {/* The demo's own content padding (starters/demo/web/src/app.tsx). */}
+      <Box sx={{ p: 3 }}>
+        <OrganizationAdminProvider
+          tenant={TENANT}
+          operations={createAdminOperations(scripted)}
+          hasFeature={() => true}
+          protectedRoles={['tenant-admin']}
+        >
+          <OrganizationMembersPage tenant={TENANT} />
+        </OrganizationAdminProvider>
+      </Box>
+    </AppShell>,
+    { language: 'en-US' },
   )
 }
 
@@ -189,6 +227,18 @@ function headerDisplay(container: HTMLElement, header: string): string {
     throw new Error(`the table has no "${header}" column header`)
   }
   return getComputedStyle(cell).display
+}
+
+/** The zero-based position of the column headed `header` inside `container`. */
+function columnIndexIn(container: HTMLElement, header: string): number {
+  const headers = Array.from(container.querySelectorAll('thead th'))
+  const index = headers.findIndex(
+    (candidate) => candidate.textContent?.trim() === header,
+  )
+  if (index < 0) {
+    throw new Error(`the table has no "${header}" column header`)
+  }
+  return index
 }
 
 /** A column header's rendered width inside `container`. */
@@ -312,10 +362,10 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     const members = tableFor(enUS.members.column.displayName)
     const invitations = tableFor(enUS.invitations.column.email)
 
-    // The values are longer than their columns' content caps. The 900px
-    // tier is the tight one -- it is where the medium columns join the
-    // two always-visible ones -- so both tables must stay inside their
-    // tier floor there instead of falling back to horizontal scroll.
+    // The values are longer than their columns' content caps. At 900px the
+    // container is below the md tier, so the primary, high and action
+    // columns share the narrow width with those long values; both tables
+    // must stay inside it instead of falling back to horizontal scroll.
     await expectNoHorizontalOverflow()
 
     for (const [container, value] of [
@@ -334,7 +384,7 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
 })
 
 describe('OrganizationMembersPage column priorities in Chromium', () => {
-  it('keeps the role and expiry columns from the md tier up', async () => {
+  it('keeps the core member and invitation columns from the high tier up', async () => {
     await page.viewport(1200, 900)
     renderPage()
     await screen.findByText(ADA.display_name)
@@ -342,42 +392,117 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
 
     const members = tableFor(enUS.members.column.displayName)
     const invitations = tableFor(enUS.invitations.column.email)
+    const memberHeaders = [
+      enUS.members.column.roles,
+      enUS.members.column.status,
+      enUS.members.column.joinedAt,
+    ]
+    const invitationHeaders = [
+      enUS.invitations.column.invitedBy,
+      enUS.invitations.column.expires,
+      enUS.invitations.column.created,
+    ]
 
-    // Medium priority means the column sheds below the md container floor
-    // and stays from there up -- the regression this guards is a `low`
-    // column, which would disappear again at 900.
-    atContainerWidth(members.containment, 600, () => {
-      expect(
-        headerDisplay(members.container, enUS.members.column.roles),
-      ).toBe('none')
-    })
-    for (const width of [900, 1200] as const) {
+    // High priority clears at the sm container floor (600px) and stays from
+    // there up -- the regression this guards is a `medium` column, which
+    // would disappear again at 600, and a `low` one, at 1200.
+    for (const width of [600, 900, 1200] as const) {
       atContainerWidth(members.containment, width, () => {
-        expect(
-          headerDisplay(members.container, enUS.members.column.roles),
-          `the roles column is hidden at the ${width}px tier`,
-        ).toBe('table-cell')
-        expect(
-          headerWidth(members.container, enUS.members.column.roles),
-        ).toBeGreaterThan(0)
+        for (const header of memberHeaders) {
+          expect(
+            headerDisplay(members.container, header),
+            `the ${header} column is hidden at the ${width}px tier`,
+          ).toBe('table-cell')
+          expect(headerWidth(members.container, header)).toBeGreaterThan(0)
+        }
+      })
+      atContainerWidth(invitations.containment, width, () => {
+        for (const header of invitationHeaders) {
+          expect(
+            headerDisplay(invitations.container, header),
+            `the ${header} column is hidden at the ${width}px tier`,
+          ).toBe('table-cell')
+          expect(headerWidth(invitations.container, header)).toBeGreaterThan(0)
+        }
       })
     }
 
-    atContainerWidth(invitations.containment, 600, () => {
-      expect(
-        headerDisplay(invitations.container, enUS.invitations.column.expires),
-      ).toBe('none')
+    // Below sm the columns shed, which is the mobile limitation the design
+    // documents: at a 600px viewport only the primary and action columns
+    // remain.
+    atContainerWidth(members.containment, 599, () => {
+      for (const header of memberHeaders) {
+        expect(headerDisplay(members.container, header)).toBe('none')
+      }
     })
-    for (const width of [900, 1200] as const) {
-      atContainerWidth(invitations.containment, width, () => {
-        expect(
-          headerDisplay(invitations.container, enUS.invitations.column.expires),
-          `the expiry column is hidden at the ${width}px tier`,
-        ).toBe('table-cell')
-        expect(
-          headerWidth(invitations.container, enUS.invitations.column.expires),
-        ).toBeGreaterThan(0)
-      })
+    atContainerWidth(invitations.containment, 599, () => {
+      for (const header of invitationHeaders) {
+        expect(headerDisplay(invitations.container, header)).toBe('none')
+      }
+    })
+  })
+
+  it('keeps the core columns visible in the 1024px desktop shell beside the 280px sidebar', async () => {
+    await page.viewport(1024, 900)
+    renderShellPage()
+    await screen.findByText(ADA.display_name)
+    await screen.findByText(INVITATIONS[0].email)
+    // The shell's content region is ~640-700px wide here, above the sm
+    // container floor; the page must fit it without a horizontal scroll.
+    await expectNoHorizontalOverflow()
+
+    const members = tableFor(enUS.members.column.displayName)
+    const invitations = tableFor(enUS.invitations.column.email)
+    const memberHeaders = [
+      enUS.members.column.roles,
+      enUS.members.column.status,
+      enUS.members.column.joinedAt,
+    ]
+    const invitationHeaders = [
+      enUS.invitations.column.invitedBy,
+      enUS.invitations.column.expires,
+      enUS.invitations.column.created,
+    ]
+
+    // A header can be laid out yet hidden with `display: none`; toBeVisible
+    // is the assertion that the real cell is on screen, not just in the DOM.
+    for (const header of memberHeaders) {
+      expect(
+        within(members.container).getByRole('columnheader', {
+          name: header,
+          exact: true,
+        }),
+      ).toBeVisible()
+    }
+    for (const header of invitationHeaders) {
+      expect(
+        within(invitations.container).getByRole('columnheader', {
+          name: header,
+          exact: true,
+        }),
+      ).toBeVisible()
+    }
+
+    // The same is true of the data cells, not only the headers.
+    const memberRow = within(members.container).getByRole('row', {
+      name: new RegExp(ADA.display_name),
+    })
+    const memberCells = within(memberRow).getAllByRole('cell')
+    for (const header of memberHeaders) {
+      expect(
+        memberCells[columnIndexIn(members.container, header)],
+        `the ${header} data cell is hidden`,
+      ).toBeVisible()
+    }
+    const invitationRow = within(invitations.container).getByRole('row', {
+      name: new RegExp(INVITATIONS[0].email),
+    })
+    const invitationCells = within(invitationRow).getAllByRole('cell')
+    for (const header of invitationHeaders) {
+      expect(
+        invitationCells[columnIndexIn(invitations.container, header)],
+        `the ${header} data cell is hidden`,
+      ).toBeVisible()
     }
   })
 })

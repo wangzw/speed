@@ -123,6 +123,18 @@ const OPERATOR_BINDING: AdminTenantBinding = {
   granted_at: '2026-10-15T12:00:00Z',
 }
 
+/** A different role the member already holds, so the dropdown still offers
+ * the role a bind case chooses. */
+const SUPER_BINDING: AdminTenantBinding = {
+  tenant: TENANT,
+  account: ADA.account,
+  role: ROLE_SUPER.role,
+  granted_at: '2026-10-15T12:00:00Z',
+}
+
+/** The host's protected role name, as the demo hands it to the provider. */
+const TENANT_ADMIN_ROLE = 'tenant-admin'
+
 const SUPER_GRANT: AdminTenantGrant = {
   tenant: TENANT,
   role: 'tenant-super',
@@ -372,6 +384,7 @@ function renderPage(
         { label: zhCN.invitations.title },
       ]}
       invitationLink={(token) => `/invitations/${token}`}
+      protectedRoles={[TENANT_ADMIN_ROLE]}
     >
       <OrganizationMembersPage tenant={TENANT} />
     </OrganizationAdminProvider>,
@@ -1001,9 +1014,13 @@ describe('the role filter', () => {
 })
 
 describe('the member management panel', () => {
-  it('binds and unbinds a role', async () => {
+  it('binds a role and unbinds one only after confirmation', async () => {
     const user = userEvent.setup()
-    const { backend, recorder } = scripted()
+    // The member already holds tenant-super, so the dropdown omits it and
+    // still offers tenant-operator for the bind.
+    const { backend, recorder } = scripted({
+      listTenantAccountBindings: () => Promise.resolve([SUPER_BINDING]),
+    })
     renderPage(backend)
     const panel = await openPanel(user, ADA.display_name)
 
@@ -1012,6 +1029,9 @@ describe('the member management panel', () => {
     })
     await waitFor(() => expect(select).toBeEnabled())
     await user.click(select)
+    expect(
+      screen.queryByRole('option', { name: ROLE_SUPER.role }),
+    ).toBeNull()
     await user.click(
       screen.getByRole('option', { name: ROLE_OPERATOR.role }),
     )
@@ -1042,18 +1062,101 @@ describe('the member management panel', () => {
       ),
     ).toBeInTheDocument()
 
+    // Unbinding asks first: the click opens the dialog and sends nothing.
+    const unbind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.unbind,
+    })
+    await user.click(unbind)
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.members.panel.unbindTitle,
+    })
+    expect(
+      within(dialog).getByText(
+        zhCN.members.panel.unbindMessage.replace(
+          '{{role}}',
+          ROLE_SUPER.role,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(recorder.unbinds).toEqual([])
+    // Cancelling sends nothing either.
     await user.click(
-      within(panel).getByRole('button', { name: zhCN.members.panel.unbind }),
+      within(dialog).getByRole('button', { name: zhCN.common.cancel }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', {
+          name: zhCN.members.panel.unbindTitle,
+        }),
+      ).toBeNull(),
+    )
+    expect(recorder.unbinds).toEqual([])
+
+    // Only the confirmation sends the unbind.
+    await user.click(unbind)
+    const again = await screen.findByRole('dialog', {
+      name: zhCN.members.panel.unbindTitle,
+    })
+    await user.click(
+      within(again).getByRole('button', { name: zhCN.common.confirm }),
     )
     await waitFor(() =>
       expect(recorder.unbinds).toEqual([
         {
           tenant: TENANT,
           account: ADA.account,
-          role: ROLE_OPERATOR.role,
+          role: ROLE_SUPER.role,
         },
       ]),
     )
+  })
+
+  it('offers only unbound roles and says when every role is bound', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      listTenantRoles: () => Promise.resolve([ROLE_OPERATOR]),
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, ADA.display_name)
+
+    // The only role the tenant has is the one the member already holds.
+    expect(
+      await within(panel).findByText(zhCN.members.panel.allRolesBound),
+    ).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('combobox', {
+        name: zhCN.members.panel.roleLabel,
+      }),
+    ).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('disables unbinding its own protected binding and says why', async () => {
+    // The signed-in account is the member whose binding is a protected role.
+    attachTenantPermissions(FULL_TENANT_PERMISSIONS, SELF)
+    const ownBinding: AdminTenantBinding = {
+      tenant: TENANT,
+      account: ADA.account,
+      role: TENANT_ADMIN_ROLE,
+      granted_at: '2026-10-15T12:00:00Z',
+    }
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted({
+      listTenantAccountBindings: () => Promise.resolve([ownBinding]),
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, ADA.display_name)
+
+    expect(
+      await within(panel).findByText(zhCN.members.panel.cannotUnbindOwnAdmin),
+    ).toBeInTheDocument()
+    const row = within(panel).getByText(TENANT_ADMIN_ROLE).closest('li')
+    if (row === null) {
+      throw new Error('no tenant-admin binding row')
+    }
+    expect(
+      within(row).getByRole('button', { name: zhCN.members.panel.unbind }),
+    ).toBeDisabled()
+    expect(recorder.unbinds).toEqual([])
   })
 
   it('suspends an active member and resumes a suspended one', async () => {
@@ -1471,9 +1574,7 @@ describe('the bind escalation check', () => {
     })
     await waitFor(() => expect(select).toBeEnabled())
     await user.click(select)
-    await user.click(
-      screen.getByRole('option', { name: ROLE_OPERATOR.role }),
-    )
+    await user.click(screen.getByRole('option', { name: ROLE_SUPER.role }))
 
     expect(
       await within(panel).findByText(
@@ -1492,6 +1593,9 @@ describe('the bind escalation check', () => {
     })
     expect(unbind).toBeEnabled()
     await user.click(unbind)
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
     await waitFor(() =>
       expect(recorder.unbinds).toEqual([
         {
@@ -1515,7 +1619,7 @@ describe('the bind escalation check', () => {
     })
     await waitFor(() => expect(select).toBeEnabled())
     await user.click(select)
-    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+    await user.click(screen.getByRole('option', { name: ROLE_SUPER.role }))
 
     expect(
       await within(panel).findByText(zhCN.members.panel.escalationFailed),
@@ -1541,7 +1645,7 @@ describe('the bind escalation check', () => {
     })
     await waitFor(() => expect(select).toBeEnabled())
     await user.click(select)
-    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+    await user.click(screen.getByRole('option', { name: ROLE_SUPER.role }))
     await waitFor(() =>
       expect(
         within(panel).queryByText(zhCN.members.panel.escalationChecking),
@@ -1727,6 +1831,47 @@ describe('the invitation section', () => {
     ).getByRole('button', { name: zhCN.invitations.resend })
     expect(settledResend).not.toHaveAttribute('aria-invalid', 'true')
     expect(settledResend).not.toHaveAttribute('aria-describedby')
+  })
+
+  it('clears the invitation scope and row marker when the status filter changes', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      issueInvitation: () =>
+        Promise.reject(new Error('invite write refused')),
+    })
+    renderPage(backend)
+    const row = rowOf(await screen.findByText(PENDING_INVITATION.email))
+    await user.click(
+      within(row).getByRole('button', { name: zhCN.invitations.resend }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+    const failedResend = within(
+      rowOf(PENDING_INVITATION.email),
+    ).getByRole('button', { name: zhCN.invitations.resend })
+    await waitFor(() =>
+      expect(failedResend).toHaveAttribute('aria-invalid', 'true'),
+    )
+    const errorId = failedResend.getAttribute('aria-describedby') ?? ''
+    const failureText = document.getElementById(errorId)?.textContent ?? ''
+    expect(failureText).not.toBe('')
+
+    // The filter change is a new scope, like the member filter: the failure
+    // above the table and the row marker must both go. The pending row stays
+    // visible under the pending filter, so a marker that survived would.
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.invitations.status.pending }),
+    )
+    const settled = within(
+      rowOf(await screen.findByText(PENDING_INVITATION.email)),
+    ).getByRole('button', { name: zhCN.invitations.resend })
+    expect(settled).not.toHaveAttribute('aria-invalid', 'true')
+    expect(settled).not.toHaveAttribute('aria-describedby')
+    expect(screen.queryByText(failureText)).toBeNull()
   })
 
   it('revokes a pending invitation', async () => {

@@ -94,6 +94,16 @@ const EXPIRY_CHOICES = [1, 7, 30] as const
 /** No member names resolved yet, for a tenant no page has been read for. */
 const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
 
+/**
+ * The two tables carry five high-priority columns from the `sm` container
+ * floor (600px). Their horizontal cell padding is tightened from the
+ * ui-kit default so those columns fit that floor instead of falling back
+ * to the scroll container; the vertical padding is unchanged.
+ */
+const COMPACT_TABLE_SX = {
+  '& .MuiTableCell-root': { px: 1 },
+} as const
+
 /** The sources the surface names itself; a `jit:<id>` value names a provider. */
 const MEMBER_SOURCES = new Set<string>(['admin', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
@@ -546,6 +556,17 @@ export function OrganizationMembersPage({
     })
   }
 
+  // A filter change is a new first page and a new scope, exactly as the
+  // member filter is: the cursor stack belonged to the previous filter, and
+  // a result or row marker written under it would read as describing the
+  // filter just left behind.
+  const changeInvitationStatusFilter = (next: InvitationStatusFilter) => {
+    setStatusFilter(next)
+    setInvitationCursorState(firstCursorPage(tenant))
+    invitationFeedback.reset()
+    setFailedInvitation(null)
+  }
+
   // A source the surface names renders its own label; a `jit:<id>` value
   // names the provider that provisioned the membership; anything else is
   // shown as the record carries it.
@@ -586,8 +607,9 @@ export function OrganizationMembersPage({
       id: 'roles',
       header: t('members.column.roles'),
       // The role list is a primary fact about a member, not a fine-print
-      // detail: it stays from the medium floor up, never dropping to low.
-      priority: 'medium',
+      // detail: it stays from the high floor up, so the 1024px desktop
+      // viewport (280px sidebar, ~640px of content) still shows it.
+      priority: 'high',
       cellWrap: 'wrap',
       cellFullValue: (member) =>
         member.roles.length === 0 ? undefined : member.roles.join(', '),
@@ -613,7 +635,7 @@ export function OrganizationMembersPage({
     {
       id: 'status',
       header: t('members.column.status'),
-      priority: 'medium',
+      priority: 'high',
       cellWrap: 'nowrap',
       cell: (member) => (
         <Chip
@@ -639,10 +661,11 @@ export function OrganizationMembersPage({
       id: 'joinedAt',
       header: t('members.column.joinedAt'),
       // Joined-at is ordinary row information beside roles and status, so
-      // it stays from the medium floor up rather than disappearing on the
-      // common laptop width the way a low column would.
-      priority: 'medium',
-      cellWrap: 'nowrap',
+      // it stays from the high floor up rather than disappearing on the
+      // common laptop width the way a medium or low column would. The
+      // timestamp wraps at that floor instead of forcing the table wider.
+      priority: 'high',
+      cellWrap: 'wrap',
       cell: (member) =>
         formatInstant(member.joined_at, i18n.language, { timeZone: 'UTC' }),
     },
@@ -692,8 +715,10 @@ export function OrganizationMembersPage({
     {
       id: 'invitedBy',
       header: t('invitations.column.invitedBy'),
-      priority: 'medium',
-      cellWrap: 'nowrap',
+      priority: 'high',
+      // The resolved name wraps inside its cap at the high floor; the
+      // recorded identifier stays reachable through the copy control.
+      cellWrap: 'wrap',
       cellFullValue: (invitation) => invitation.invited_by,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (invitation) => (
@@ -707,9 +732,10 @@ export function OrganizationMembersPage({
       id: 'expires',
       header: t('invitations.column.expires'),
       // Expiry is one of the reasons an operator opens this table, so it
-      // stays at the medium floor rather than dropping out at common widths.
-      priority: 'medium',
-      cellWrap: 'nowrap',
+      // stays at the high floor rather than dropping out at common widths.
+      // The timestamp wraps at that floor instead of forcing a scroll.
+      priority: 'high',
+      cellWrap: 'wrap',
       cell: (invitation) =>
         formatInstant(invitation.expires_at, i18n.language, {
           timeZone: 'UTC',
@@ -718,8 +744,8 @@ export function OrganizationMembersPage({
     {
       id: 'created',
       header: t('invitations.column.created'),
-      priority: 'medium',
-      cellWrap: 'nowrap',
+      priority: 'high',
+      cellWrap: 'wrap',
       cell: (invitation) =>
         formatInstant(invitation.created_at, i18n.language, {
           timeZone: 'UTC',
@@ -945,6 +971,7 @@ export function OrganizationMembersPage({
               columns={memberColumns}
               rowKey={(member) => member.account}
               pinLastColumn
+              sx={COMPACT_TABLE_SX}
             />
           )}
         </AdminAsyncSection>
@@ -1093,10 +1120,11 @@ export function OrganizationMembersPage({
             select
             size="small"
             value={statusFilter}
-            onChange={(event) => {
-              setStatusFilter(event.target.value as InvitationStatusFilter)
-              setInvitationCursorState(firstCursorPage(tenant))
-            }}
+            onChange={(event) =>
+              changeInvitationStatusFilter(
+                event.target.value as InvitationStatusFilter,
+              )
+            }
             label={t('invitations.filter.label')}
             sx={{ minWidth: 160 }}
           >
@@ -1148,6 +1176,7 @@ export function OrganizationMembersPage({
               columns={invitationColumns}
               rowKey={(invitation) => invitation.id}
               pinLastColumn
+              sx={COMPACT_TABLE_SX}
             />
           )}
         </AdminAsyncSection>
