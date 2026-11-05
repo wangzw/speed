@@ -152,7 +152,7 @@ const ROLE_DESCRIPTION = 'Reviews support requests and answers audit questions.'
 /** The governed permission granted to the role. */
 const PERMISSION = 'authn.membership.manage'
 
-/** The six governed permissions, in the order the catalog sorts them. */
+/** The eight governed permissions, in the order the catalog sorts them. */
 const GOVERNED_PERMISSIONS = [
   'authn.idp.manage',
   'authn.membership.manage',
@@ -160,6 +160,8 @@ const GOVERNED_PERMISSIONS = [
   'authz.tenant.role.read',
   'settings.tenant.read',
   'settings.tenant.write',
+  'tenant.profile.read',
+  'tenant.profile.write',
 ] as const
 
 /** A platform-domain permission the governed catalog must not offer. */
