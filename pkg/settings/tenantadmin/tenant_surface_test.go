@@ -55,6 +55,8 @@ func admissionDeclared() []settings.DeclaredItem {
 		decl("jobs.db.url", "jobs.db", reflect.TypeFor[string](), "", settings.Item{Description: "the job store"}),
 		decl("ratelimit.window", "ratelimit", reflect.TypeFor[int](), "60", settings.Item{Description: "the rate window"}),
 		decl("authn.session.idle-timeout", "authn.session", reflect.TypeFor[int](), "30", settings.Item{Description: "the idle timeout"}),
+		decl("org.create.max-organizations", "org.create", reflect.TypeFor[int](), "5", settings.Item{Description: "the organization creation limit"}),
+		decl("org.create.max-per-hour", "org.create", reflect.TypeFor[int](), "3", settings.Item{Description: "the hourly organization creation limit"}),
 	}
 }
 
@@ -128,7 +130,13 @@ func TestTheTenantSurfaceListsOnlyTheDeclaredItems(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("the listing holds %v, want %v", got, want)
 	}
-	for _, platform := range []string{"jobs.db.url", "ratelimit.window", "authn.session.idle-timeout"} {
+	for _, platform := range []string{
+		"jobs.db.url",
+		"ratelimit.window",
+		"authn.session.idle-timeout",
+		"org.create.max-organizations",
+		"org.create.max-per-hour",
+	} {
 		if strings.Contains(envelopeBody(t, r), platform) {
 			t.Errorf("the answer names the platform key %q", platform)
 		}

@@ -330,9 +330,10 @@ type orgCreateLimitDefaults struct {
 }
 
 // orgCreateSettingsSchema declares the two runtime settings. Both are global
-// items: the tenant settings surface hides every org.create key through the
-// tenant-admin module's platform-only roots, so a tenant administrator cannot
-// read or write them.
+// items: the schema leaves TenantFacing at its zero value and each item leaves
+// TenantAccess at TenantNone, so the tenant settings surface neither lists nor
+// writes them and a tenant administrator cannot read or write any org.create
+// key.
 func orgCreateSettingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: orgCreateModuleName,
