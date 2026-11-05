@@ -66,9 +66,10 @@ type moduleConfig struct {
 }
 
 // options carries the settings items and their declared defaults. The two
-// switches are read per tenant and fall back to the global row and then to the
-// default declared here, which is off; the lifetime is read from the global
-// layer alone.
+// switches are read per tenant and the global row is a floor: the effective
+// value is the platform's global row OR the tenant's own row, and a default
+// declared here, which is off, applies only where neither layer holds one. The
+// lifetime is read from the global layer alone.
 type options struct {
 	RequireMFA bool          `config:"require-mfa"`
 	RequireSSO bool          `config:"require-sso"`

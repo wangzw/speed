@@ -119,21 +119,29 @@ descriptor, and `decide`'s before changing the judgement order.
   `TestTheLifetimeIsReadFromTheGlobalRowAlone`,
   `TestALifetimeTheCodeCannotActOnIsTheDefaultAndIsReported`,
   `TestTheLifetimeFaultIsReportedAgainOnceItHasBeenCleared`, `TestSettingsFailures`).
-  The switches fall back per tenant, the lifetime is read from the global row
-  alone. Without a settings store each switch reads as off, which is the declared
-  default, and the requirement cannot be turned on in that assembly.
+  A switch's effective value is the global row OR the tenant's own row: the
+  global layer is the platform floor, and a tenant can raise it but not lower
+  it. The declared default applies only where neither layer holds a row. The
+  lifetime is read from the global row alone. Without a settings store each
+  switch reads as off, which is the declared default, and the requirement cannot
+  be turned on in that assembly.
 - **A tenant identifier is checked before it is handed to the settings.** The
   settings refuse an empty identifier and one with a blank or control character by
   panicking, and a request must not take that panic, so `nameableLayer` refuses
   such an identifier as an error first
   (`TestNoTenantIdentifierTheSettingsRefuseReachesThem`).
-- **A `tenant.admission.*` setting is never writable through a surface a tenant or
-  an ordinary administrator can reach.** A holder of a settings write permission
-  could switch the SSO requirement off at runtime, and the layer neither blocks
-  that nor detects it — the write surface has no access control of its own, so the
-  requirement is on the host's own management surface, and this module does not
-  check that a host honours it. The same hard requirement covers the `authn.*`
-  namespace.
+- **The two switches are tenant-facing; every other item under this namespace is
+  not.** `require-mfa` and `require-sso` carry `TenantReadWrite` on a schema that
+  is `TenantFacing`, so the tenant surface may write the tenant's own row under
+  `settings.tenant.write`; the global row is the platform floor, and the judgement
+  reads the OR of the two, so a tenant write can only raise the requirement. The
+  tenant surface additionally refuses a write that would disable a
+  platform-enforced switch with 409 `tenant-admission-enforced`; that refusal is
+  an experience protection, and the OR is what keeps the requirement on when a
+  tenant row of false predates the platform's switch. `check-ttl`, and every
+  `authn.*` setting, stay platform-only: the layer neither blocks a relaxation
+  made through a surface it does not own nor detects it, and the settings.changed
+  subscription reports one after the fact.
 - **The SSO row exempts the tenants the configuration names.** `sso-exempt-tenants`
   lists tenant identifiers the row does not bind; their members are still checked
   for membership and still held to the MFA row, but they are not asked for a

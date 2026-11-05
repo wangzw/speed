@@ -300,11 +300,16 @@ func (j *judging) providerOwnsSession() (bool, error) {
 // for.
 var errSettingLayer = errors.New("the tenant identifier is outside the settings' identifier domain")
 
-// flag reads one of the two switches for this tenant. The settings are an
-// optional dependency: without them each switch reads as the default declared,
-// which is off, and the requirement cannot be turned on in that assembly. A
-// switch that cannot be read is an error, never the default, because the default
-// is the permissive value.
+// flag reads one of the two switches for this tenant. The effective value is
+// the platform floor OR the tenant's own choice: a platform requirement applies
+// to every tenant, and a tenant may turn a policy on for itself but may not
+// turn off one the platform holds. The tenant-facing view computes the same OR,
+// so the page a tenant reads and the judgement its next request gets agree.
+//
+// The settings are an optional dependency: without them each switch reads as the
+// default declared, which is off, and the requirement cannot be turned on in
+// that assembly. A switch that cannot be read is an error, never the default,
+// because the default is the permissive value.
 func (j *judging) flag(key string) (bool, error) {
 	if j.store == nil {
 		return false, nil
@@ -312,11 +317,19 @@ func (j *judging) flag(key string) (bool, error) {
 	if !nameableLayer(string(j.tenant)) {
 		return false, fmt.Errorf("reading %s: %w", key, errSettingLayer)
 	}
-	v, err := settings.Get[bool](j.store, settings.ForTenant(string(j.tenant)), key)
+	// The global layer is the platform's own row and the floor every tenant
+	// stands on. It is read on its own first; the tenant read below falls back
+	// to it, so a tenant row of false resolves false and leaves the floor to
+	// decide, while a tenant row of true raises the answer.
+	platform, err := settings.Get[bool](j.store, settings.Global(), key)
 	if err != nil {
 		return false, fmt.Errorf("reading %s: %w", key, err)
 	}
-	return v, nil
+	tenantValue, err := settings.Get[bool](j.store, settings.ForTenant(string(j.tenant)), key)
+	if err != nil {
+		return false, fmt.Errorf("reading %s: %w", key, err)
+	}
+	return platform || tenantValue, nil
 }
 
 // nameableLayer reports whether the settings can name a layer for the tenant: the

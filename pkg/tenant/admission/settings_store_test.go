@@ -25,8 +25,9 @@ import (
 // the key table from it, over a SQLite database the database module opened: the
 // assembly is refused if an item's key and its field's tag disagree, a write on
 // either side of the lifetime's domain is judged as the code acts on it, a
-// switch falls back from the tenant's row to the global row to the declared
-// default, and the layer reads what the store holds.
+// switch's effective value is the global row OR the tenant's row (the declared
+// default applies only where neither holds one), and the layer reads what the
+// store holds.
 
 func TestTheSettingsAreDeclaredToTheStoreWithTheirDomainsAndDefaults(t *testing.T) {
 	withDeliveredStore(t, func(ctx context.Context, store settings.Store) {
@@ -82,14 +83,12 @@ func TestTheLayerReadsTheSwitchesTheStoreHoldsPerTenant(t *testing.T) {
 			t.Fatalf("globex answered %d, want it admitted: only acme has a row", rp.status)
 		}
 
-		// A global row binds every tenant with none of its own, and a tenant's
-		// own row beats it.
+		// A global row binds every tenant, and a tenant's own row of false does
+		// not lower that floor: the effective value is the OR of the two.
 		write(t, ctx, store, settings.ForTenant(acme), requireMFAKey, false)
 		write(t, ctx, store, settings.Global(), requireMFAKey, true)
 		stepUp(t, "globex under the global row", r.serve(r.as(globex)), acrMultiFactor)
-		if rp := r.serve(r.as(acme)); !rp.reached() {
-			t.Fatalf("acme answered %d, want it admitted: its own row switches the requirement off", rp.status)
-		}
+		stepUp(t, "acme under the global row despite its own false row", r.serve(r.as(acme)), acrMultiFactor)
 	})
 }
 

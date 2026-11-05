@@ -427,15 +427,45 @@ func TestRowMultiFactor(t *testing.T) {
 		}
 		stepUp(t, "single factor in globex", r.serve(r.as(globex)), acrMultiFactor)
 	})
-	t.Run("the global row applies to a tenant with none of its own, and the tenant's row wins over it", func(t *testing.T) {
+	t.Run("the global row applies to a tenant with none of its own", func(t *testing.T) {
 		r := newRig(t)
 		r.members.add(alice, globex)
 		store := r.withSettings()
 		store.set(settings.Global(), requireMFAKey, true)
-		store.set(settings.ForTenant(globex), requireMFAKey, false)
 		stepUp(t, "acme falling back to the global row", r.serve(r.as(acme)), acrMultiFactor)
-		if rp := r.serve(r.as(globex)); !rp.reached() {
-			t.Fatalf("answered %d, want it admitted: globex's own row switches it off", rp.status)
+		stepUp(t, "globex falling back to the global row", r.serve(r.as(globex)), acrMultiFactor)
+	})
+	// The effective value is the platform floor OR the tenant's own choice. A
+	// tenant row of false is a choice to leave the policy off, not a way to
+	// lower a floor the platform set: the next request is judged on the OR, the
+	// same value the tenant-facing view shows.
+	t.Run("the effective value is the global row OR the tenant's own row", func(t *testing.T) {
+		cases := []struct {
+			name     string
+			platform bool
+			tenant   bool
+			stepUp   bool
+		}{
+			{name: "a platform requirement survives a tenant row of false", platform: true, tenant: false, stepUp: true},
+			{name: "a tenant row of true requires the policy on its own", platform: false, tenant: true, stepUp: true},
+			{name: "neither layer on leaves it off", platform: false, tenant: false, stepUp: false},
+		}
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				r := newRig(t)
+				r.members.add(alice, globex)
+				store := r.withSettings()
+				store.set(settings.Global(), requireMFAKey, c.platform)
+				store.set(settings.ForTenant(globex), requireMFAKey, c.tenant)
+				rp := r.serve(r.as(globex))
+				if c.stepUp {
+					stepUp(t, c.name, rp, acrMultiFactor)
+					return
+				}
+				if !rp.reached() {
+					t.Fatalf("answered %d, want it admitted", rp.status)
+				}
+			})
 		}
 	})
 	t.Run("with no settings the requirement is off", func(t *testing.T) {
@@ -444,19 +474,24 @@ func TestRowMultiFactor(t *testing.T) {
 			t.Fatalf("answered %d, want it admitted", rp.status)
 		}
 	})
-	t.Run("each switch is read for the tenant the request is in and the lifetime from the global layer", func(t *testing.T) {
+	t.Run("each switch is read from both the global and the tenant layer, and the lifetime from the global layer", func(t *testing.T) {
 		r := newRig(t)
 		store := r.withSettings()
 		r.serve(r.as(acme))
-		seen := map[string]settings.Layer{}
+		layers := map[string]map[settings.Layer]bool{}
 		for _, read := range store.reads {
-			seen[read.key] = read.layer
+			if layers[read.key] == nil {
+				layers[read.key] = map[settings.Layer]bool{}
+			}
+			layers[read.key][read.layer] = true
 		}
-		if seen[requireMFAKey] != settings.ForTenant(acme) || seen[requireSSOKey] != settings.ForTenant(acme) {
-			t.Fatalf("the switches were read from %+v, want the layer of %s", seen, acme)
+		for _, key := range []string{requireMFAKey, requireSSOKey} {
+			if !layers[key][settings.Global()] || !layers[key][settings.ForTenant(acme)] {
+				t.Fatalf("%s was read from %+v, want both the global and the %s layer", key, layers[key], acme)
+			}
 		}
-		if seen[checkTTLKey] != settings.Global() {
-			t.Fatalf("the lifetime was read from %+v, want the global layer", seen[checkTTLKey])
+		if !layers[checkTTLKey][settings.Global()] || len(layers[checkTTLKey]) != 1 {
+			t.Fatalf("the lifetime was read from %+v, want the global layer alone", layers[checkTTLKey])
 		}
 	})
 }
