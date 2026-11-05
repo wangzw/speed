@@ -47,6 +47,21 @@ type PermissionSpec struct {
 	Permissions     []Permission
 	TenantGoverned  []Permission
 	DescriptionKeys map[Permission]string
+	// Metadata is the governance metadata of the permissions this module
+	// declares: the group a management surface places one in and whether granting
+	// it is dangerous. An entry for a permission the module does not list in
+	// Permissions is ignored.
+	Metadata map[Permission]PermissionMeta
+}
+
+// PermissionMeta is what a declaring module says about one permission beyond its
+// name and description: the group a management surface groups it under and
+// whether granting it is dangerous. A dangerous permission is one that widens
+// the grantee's power over other accounts or over the tenant's policy, which a
+// management surface calls out when an operator is about to grant it.
+type PermissionMeta struct {
+	Group     string
+	Dangerous bool
 }
 
 // Translation is one row of the permission translation: the object and the
@@ -102,13 +117,24 @@ type Binding struct {
 // grants it may not change; it is set only by Manager.MarkRoleBuiltin and read
 // back as it stands. A builtin role's grants are extended only by
 // Seeder.SeedGrants and converged only by Reconciler.ReconcileGrants.
+//
+// DescriptionKey is the i18n key a host seeds into a builtin role; Description is
+// the free text the management surface writes. Both are stored, and a reader
+// prefers the description it can render: a builtin role with a key localises it,
+// while a role the management surface created carries the operator's own text.
 type RoleRecord struct {
 	Tenant         string
 	Role           Role
 	Builtin        bool
 	DescriptionKey string
+	Description    string
 	CreatedAt      time.Time
 }
+
+// RoleDescriptionMax bounds a role's free-text description, in characters. A
+// management surface refuses a longer one before it reaches the Manager; the
+// Manager stores what it is given.
+const RoleDescriptionMax = 500
 
 // GrantRecord is one permission grant of the grant table as it is read and
 // written: a role holding a (resource, action) permission within a tenant.
@@ -128,4 +154,13 @@ type GrantRecord struct {
 type Grant struct {
 	Resource string
 	Action   string
+}
+
+// AccountIdentity is what a host knows about one account, as the role-usage read
+// needs it: the name to show and whether the account is still active. The
+// capability holds no account table of its own, so a host supplies both through
+// AccountIdentityReader.
+type AccountIdentity struct {
+	DisplayName string
+	Active      bool
 }

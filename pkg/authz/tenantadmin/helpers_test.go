@@ -160,6 +160,43 @@ func (m *stubManager) ClearAccountBindings(_ context.Context, tenant, account st
 	return m.errNow()
 }
 
+// GrantCounts counts the grants a case put in the stub, grouped by role.
+func (m *stubManager) GrantCounts(_ context.Context, tenant string) (map[authz.Role]int, error) {
+	m.record(managerCall{op: "GrantCounts", tenant: tenant})
+	if err := m.errNow(); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	counts := make(map[authz.Role]int)
+	for _, grant := range m.grants {
+		counts[grant.Role]++
+	}
+	return counts, nil
+}
+
+// BindingsOfRole filters the stub's bindings the way the real manager does: by
+// role, after the account cursor, and up to a positive limit.
+func (m *stubManager) BindingsOfRole(_ context.Context, tenant string, role authz.Role, after string, limit int) ([]authz.Binding, error) {
+	m.record(managerCall{op: "BindingsOfRole", tenant: tenant, role: role})
+	if err := m.errNow(); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]authz.Binding, 0, len(m.bindings))
+	for _, binding := range m.bindings {
+		if binding.Role != role || (after != "" && binding.Account <= after) {
+			continue
+		}
+		out = append(out, binding)
+		if limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 // stubCatalog is a stand-in authz.Catalog over a fixed set of permissions and a
 // governed subset. It records every Governed and Has query.
 type stubCatalog struct {
@@ -167,6 +204,7 @@ type stubCatalog struct {
 	perms       []authz.Permission
 	set         map[authz.Permission]bool
 	keys        map[authz.Permission]string
+	metadata    map[authz.Permission]authz.PermissionMeta
 	governed    []authz.Permission
 	governedSet map[authz.Permission]bool
 	has         []authz.Permission
@@ -182,6 +220,7 @@ func newStubCatalog(perms ...authz.Permission) *stubCatalog {
 		perms:       append([]authz.Permission(nil), perms...),
 		set:         set,
 		keys:        make(map[authz.Permission]string),
+		metadata:    make(map[authz.Permission]authz.PermissionMeta),
 		governedSet: make(map[authz.Permission]bool),
 	}
 }
@@ -262,6 +301,16 @@ func (c *stubCatalog) DescriptionKey(p authz.Permission) (key string, ok bool) {
 		return "", false
 	}
 	return c.keys[p], true
+}
+
+// Metadata answers the governance metadata a case gave a declared permission.
+func (c *stubCatalog) Metadata(p authz.Permission) (authz.PermissionMeta, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.set[p] {
+		return authz.PermissionMeta{}, false
+	}
+	return c.metadata[p], true
 }
 
 // stubSubjectPermissions answers Held from what a case scripts and records the

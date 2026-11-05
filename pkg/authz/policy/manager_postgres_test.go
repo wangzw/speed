@@ -34,6 +34,7 @@ func newPostgresFixture(t *testing.T) *fixture {
 		t.Fatalf("installing the tenant filter: %v", err)
 	}
 	applyMigration(t, handle, "postgres/0001_authz_policy.sql")
+	applyMigration(t, handle, "postgres/0003_role_description.sql")
 	reg := core.New()
 	reg.Register(Module())
 	p := &product{

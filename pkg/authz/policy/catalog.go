@@ -15,6 +15,17 @@ import (
 // or a binding names them.
 const descriptionPrefix = "authz.permission."
 
+// The permission groups a management surface groups the catalog by. They name
+// the area a permission acts on rather than the module that declares it, so a
+// business module's permissions can join the group they belong to. A permission
+// with no group belongs to the surface's own "other" group.
+const (
+	groupAuthorization = "authorization"
+	groupMembership    = "membership"
+	groupIdentity      = "identity"
+	groupSettings      = "settings"
+)
+
 // permissions is the spec this module declares: every permission it carries,
 // which is every permission of the capability directory — the actions asked
 // about over the decision seam, this capability's own management surface, and
@@ -80,7 +91,25 @@ func declaredPermissions() authz.PermissionSpec {
 		authz.PermissionMembershipManage,
 		authz.PermissionIDPManage,
 	}
-	return authz.PermissionSpec{Permissions: list, TenantGoverned: governed, DescriptionKeys: keys}
+	// The governance metadata of the governed set: the group a management surface
+	// groups the permission under, and whether granting it widens the grantee's
+	// power over other accounts or the tenant's policy. A permission outside the
+	// governed set carries none, and the surface shows it in its own "other"
+	// group as an ordinary grant.
+	metadata := map[authz.Permission]authz.PermissionMeta{
+		authz.PermissionTenantRoleRead:      {Group: groupAuthorization},
+		authz.PermissionTenantRoleManage:    {Group: groupAuthorization, Dangerous: true},
+		authz.PermissionMembershipManage:    {Group: groupMembership, Dangerous: true},
+		authz.PermissionIDPManage:           {Group: groupIdentity, Dangerous: true},
+		authz.PermissionTenantSettingsRead:  {Group: groupSettings},
+		authz.PermissionTenantSettingsWrite: {Group: groupSettings, Dangerous: true},
+	}
+	return authz.PermissionSpec{
+		Permissions:     list,
+		TenantGoverned:  governed,
+		DescriptionKeys: keys,
+		Metadata:        metadata,
+	}
 }
 
 // catalog is the permission catalog: the set of permissions the registered
@@ -89,6 +118,7 @@ type catalog struct {
 	declared []authz.Permission
 	set      map[authz.Permission]bool
 	keys     map[authz.Permission]string
+	metadata map[authz.Permission]authz.PermissionMeta
 	// governed is the governed set in permission-name order, and governedSet is
 	// its membership test. A governed permission is always declared: buildCatalog
 	// refuses a module that marks one governed without listing it.
@@ -120,6 +150,7 @@ func buildCatalog(reg *core.Registry) (*catalog, error) {
 	c := &catalog{
 		set:         make(map[authz.Permission]bool),
 		keys:        make(map[authz.Permission]string),
+		metadata:    make(map[authz.Permission]authz.PermissionMeta),
 		governedSet: make(map[authz.Permission]bool),
 	}
 	for _, resource := range specs {
@@ -132,6 +163,9 @@ func buildCatalog(reg *core.Registry) (*catalog, error) {
 			}
 			if key, ok := resource.Value.DescriptionKeys[p]; ok {
 				c.keys[p] = key
+			}
+			if meta, ok := resource.Value.Metadata[p]; ok {
+				c.metadata[p] = meta
 			}
 		}
 		for _, p := range resource.Value.TenantGoverned {
@@ -216,4 +250,13 @@ func (c *catalog) DescriptionKey(p authz.Permission) (string, bool) {
 		return "", false
 	}
 	return c.keys[p], true
+}
+
+// Metadata returns the governance metadata of p, and whether p is declared at
+// all. A declared permission whose module supplied none answers the zero value.
+func (c *catalog) Metadata(p authz.Permission) (authz.PermissionMeta, bool) {
+	if !c.set[p] {
+		return authz.PermissionMeta{}, false
+	}
+	return c.metadata[p], true
 }

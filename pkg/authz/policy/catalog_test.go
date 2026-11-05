@@ -98,6 +98,75 @@ func TestTheCatalogTranslatesAPairBackToItsPermission(t *testing.T) {
 	}
 }
 
+// TestTheGovernedPermissionsCarryTheirGovernanceMetadata holds the catalog's
+// metadata for the closed governance set: the group each permission belongs to
+// and whether granting it is dangerous. The capability fills this in
+// declaredPermissions, so a permission that quietly loses its mark would make
+// the management surface show a dangerous grant as ordinary.
+func TestTheGovernedPermissionsCarryTheirGovernanceMetadata(t *testing.T) {
+	reg := core.New()
+	reg.Register(Module())
+	catalog := mustBuildCatalog(t, reg)
+
+	want := map[authz.Permission]authz.PermissionMeta{
+		authz.PermissionTenantRoleRead:      {Group: "authorization"},
+		authz.PermissionTenantRoleManage:    {Group: "authorization", Dangerous: true},
+		authz.PermissionMembershipManage:    {Group: "membership", Dangerous: true},
+		authz.PermissionIDPManage:           {Group: "identity", Dangerous: true},
+		authz.PermissionTenantSettingsRead:  {Group: "settings"},
+		authz.PermissionTenantSettingsWrite: {Group: "settings", Dangerous: true},
+	}
+	governed := catalog.TenantGoverned()
+	if len(governed) != len(want) {
+		t.Fatalf("the catalog governs %d permissions, the case describes %d", len(governed), len(want))
+	}
+	for _, permission := range governed {
+		meta, ok := catalog.Metadata(permission)
+		if !ok {
+			t.Errorf("Metadata(%q) reports the permission undeclared", permission)
+			continue
+		}
+		if meta != want[permission] {
+			t.Errorf("Metadata(%q) = %+v, want %+v", permission, meta, want[permission])
+		}
+	}
+
+	// A declared permission outside the governed set carries no metadata: the
+	// zero value, and the second result true because the permission is declared.
+	if meta, ok := catalog.Metadata(authz.PermissionRoleRead); !ok || meta != (authz.PermissionMeta{}) {
+		t.Errorf("Metadata(platform role read) = %+v, %v, want the zero metadata and declared", meta, ok)
+	}
+	// An undeclared permission answers false.
+	if _, ok := catalog.Metadata("crm.undeclared"); ok {
+		t.Error("an undeclared permission answers metadata")
+	}
+}
+
+// TestTheCatalogUnionsAModulesDeclaredMetadata holds the other half of the
+// metadata contract: a module declaring a permission of its own declares its
+// metadata beside it, and the catalog carries it through the union.
+func TestTheCatalogUnionsAModulesDeclaredMetadata(t *testing.T) {
+	reg := core.New()
+	reg.Register(core.Module{
+		Name: "stand-in.metadata",
+		Resources: []any{authz.PermissionSpec{
+			Permissions: []authz.Permission{"crm.deal.manage"},
+			Metadata: map[authz.Permission]authz.PermissionMeta{
+				"crm.deal.manage": {Group: "deals", Dangerous: true},
+			},
+		}},
+	})
+	catalog := mustBuildCatalog(t, reg)
+
+	meta, ok := catalog.Metadata("crm.deal.manage")
+	if !ok {
+		t.Fatal("Metadata(crm.deal.manage) reports the declared permission undeclared")
+	}
+	if want := (authz.PermissionMeta{Group: "deals", Dangerous: true}); meta != want {
+		t.Errorf("Metadata(crm.deal.manage) = %+v, want %+v", meta, want)
+	}
+}
+
 // TestACatalogRefusesAGovernedPermissionItDoesNotDeclare holds the one shape the
 // governed metadata is checked for: a module marking a permission governed
 // without listing it in its own Permissions is a startup ErrUnknownPermission.

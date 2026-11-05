@@ -2,6 +2,7 @@ package policy
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,54 @@ func TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDoma
 	assertPlatformAdministratorWithdrawn(t, handle)
 	applyMigration(t, handle, "sqlite/0002_tenant_administration.sql")
 	assertPlatformAdministratorWithdrawn(t, handle)
+}
+
+// The third SQLite migration adds the role's free-text description and the
+// (tenant, role, account) index the role-usage read pages by. The column
+// defaults to the empty string and refuses a null, so an existing row reads back
+// an empty description rather than a broken one; the index's column order is
+// what makes the cursor page a range read rather than a scan.
+func TestTheSqliteRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex(t *testing.T) {
+	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
+	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")
+	applyMigration(t, handle, "sqlite/0003_role_description.sql")
+
+	assertColumnType(t, handle, "authz_roles", "description", "TEXT")
+
+	now := time.Now().UTC()
+	if err := handle.Exec(
+		"INSERT INTO authz_roles (tenant_id, role, builtin, description_key, created_at) VALUES (?,?,?,?,?)",
+		"acme", "roleA", false, "k", now).Error; err != nil {
+		t.Fatalf("writing a role that names no description: %v", err)
+	}
+	var description string
+	if err := handle.Raw(
+		"SELECT description FROM authz_roles WHERE tenant_id = ? AND role = ?", "acme", "roleA").
+		Row().Scan(&description); err != nil {
+		t.Fatalf("reading the description: %v", err)
+	}
+	if description != "" {
+		t.Errorf("a role written with no description reads back %q, want the empty default", description)
+	}
+	if err := handle.Exec(
+		"INSERT INTO authz_roles (tenant_id, role, builtin, description_key, description, created_at) VALUES (?,?,?,?,?,?)",
+		"acme", "roleB", false, "k", nil, now).Error; err == nil {
+		t.Error("the description column accepted a null")
+	}
+
+	assertIndexesExist(t, handle, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
+		"authz_bindings_by_role_account")
+	var columns []struct{ Name string }
+	if err := handle.Raw("PRAGMA index_info(authz_bindings_by_role_account)").Scan(&columns).Error; err != nil {
+		t.Fatalf("reading the index columns: %v", err)
+	}
+	got := make([]string, len(columns))
+	for i, column := range columns {
+		got[i] = column.Name
+	}
+	if want := []string{"tenant_id", "role", "account_id"}; !slices.Equal(got, want) {
+		t.Errorf("authz_bindings_by_role_account covers %v, want %v", got, want)
+	}
 }
 
 // seedTenantAdministrationRows writes one platform-administrator role, grant and

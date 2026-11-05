@@ -87,7 +87,13 @@ func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 				"Permissions []authz.Permission",
 				"TenantGoverned []authz.Permission",
 				"DescriptionKeys map[authz.Permission]string",
+				"Metadata map[authz.Permission]authz.PermissionMeta",
 			},
+		},
+		{
+			"PermissionMeta",
+			structFields(t, PermissionMeta{}),
+			[]string{"Group string", "Dangerous bool"},
 		},
 		{
 			"Binding",
@@ -97,7 +103,12 @@ func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 		{
 			"RoleRecord",
 			structFields(t, RoleRecord{}),
-			[]string{"Tenant string", "Role authz.Role", "Builtin bool", "DescriptionKey string", "CreatedAt time.Time"},
+			[]string{"Tenant string", "Role authz.Role", "Builtin bool", "DescriptionKey string", "Description string", "CreatedAt time.Time"},
+		},
+		{
+			"AccountIdentity",
+			structFields(t, AccountIdentity{}),
+			[]string{"DisplayName string", "Active bool"},
 		},
 		{
 			"GrantRecord",
@@ -141,6 +152,7 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 				"DescriptionKey func(authz.Permission) (string, bool)",
 				"Governed func(authz.Permission) bool",
 				"Has func(authz.Permission) bool",
+				"Metadata func(authz.Permission) (authz.PermissionMeta, bool)",
 				"ObjectAction func(authz.Permission) (string, string, bool)",
 				"PermissionOf func(string, string) (authz.Permission, bool)",
 				"TenantGoverned func() []authz.Permission",
@@ -161,6 +173,13 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			[]string{"IsMember func(context.Context, string, string) (bool, error)"},
 		},
 		{
+			"AccountIdentityReader",
+			interfaceMethods(t, (*AccountIdentityReader)(nil)),
+			[]string{
+				"Identities func(context.Context, string, []string) (map[string]authz.AccountIdentity, error)",
+			},
+		},
+		{
 			"WriteGuard",
 			interfaceMethods(t, (*WriteGuard)(nil)),
 			[]string{"Denied func(context.Context, string, authz.WriteOp) (bool, error)"},
@@ -176,10 +195,12 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			[]string{
 				"Bindings func(context.Context, string) ([]authz.Binding, error)",
 				"BindingsOf func(context.Context, string, string) ([]authz.Binding, error)",
+				"BindingsOfRole func(context.Context, string, authz.Role, string, int) ([]authz.Binding, error)",
 				"ClearAccountBindings func(context.Context, string, string) error",
 				"DeleteBinding func(context.Context, string, string, authz.Role) error",
 				"DeleteGrant func(context.Context, authz.GrantRecord) error",
 				"DeleteRole func(context.Context, string, authz.Role) error",
+				"GrantCounts func(context.Context, string) (map[authz.Role]int, error)",
 				"Grants func(context.Context, string, authz.Role) ([]authz.GrantRecord, error)",
 				"MarkRoleBuiltin func(context.Context, string, authz.Role) error",
 				"PutBinding func(context.Context, authz.Binding) error",

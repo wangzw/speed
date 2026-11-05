@@ -3,6 +3,7 @@
 package policy
 
 import (
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -45,6 +46,41 @@ func TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDo
 	assertPlatformAdministratorWithdrawn(t, handle)
 	applyMigration(t, handle, "postgres/0002_tenant_administration.sql")
 	assertPlatformAdministratorWithdrawn(t, handle)
+}
+
+// The third PostgreSQL migration is the same schema change as the SQLite one:
+// the role's free-text description, defaulting to the empty string, and the
+// (tenant, role, account) index the role-usage page reads through.
+func TestThePostgresRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex(t *testing.T) {
+	handle := dbtest.Postgres(t, pgtest.Acquire(t), nil).DB()
+	applyMigration(t, handle, "postgres/0001_authz_policy.sql")
+	applyMigration(t, handle, "postgres/0003_role_description.sql")
+
+	assertColumnTypePostgres(t, handle, "authz_roles", "description", "text")
+	var nullable, defaultValue string
+	if err := handle.Raw(
+		`SELECT is_nullable, COALESCE(column_default, '') FROM information_schema.columns
+		 WHERE table_name = ? AND column_name = ?`, "authz_roles", "description").
+		Row().Scan(&nullable, &defaultValue); err != nil {
+		t.Fatalf("reading the description column's default: %v", err)
+	}
+	if nullable != "NO" {
+		t.Errorf("authz_roles.description is nullable, want NOT NULL")
+	}
+	if !strings.Contains(defaultValue, "''") {
+		t.Errorf("authz_roles.description defaults to %q, want the empty string", defaultValue)
+	}
+
+	assertIndexesExist(t, handle, "SELECT COUNT(*) FROM pg_indexes WHERE indexname = ?",
+		"authz_bindings_by_role_account")
+	var definition string
+	if err := handle.Raw("SELECT indexdef FROM pg_indexes WHERE indexname = ?",
+		"authz_bindings_by_role_account").Row().Scan(&definition); err != nil {
+		t.Fatalf("reading the index definition: %v", err)
+	}
+	if !strings.Contains(definition, "(tenant_id, role, account_id)") {
+		t.Errorf("authz_bindings_by_role_account covers %q, want (tenant_id, role, account_id)", definition)
+	}
 }
 
 // assertTenantLeadsTheKeyPostgres is assertTenantLeadsTheKey for PostgreSQL,

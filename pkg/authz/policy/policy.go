@@ -439,6 +439,11 @@ func (p *product) DescriptionKey(perm authz.Permission) (key string, ok bool) {
 	return p.catalog.DescriptionKey(perm)
 }
 
+// Metadata implements authz.Catalog.
+func (p *product) Metadata(perm authz.Permission) (authz.PermissionMeta, bool) {
+	return p.catalog.Metadata(perm)
+}
+
 // swap reads the whole policy and installs it as the current snapshot. It is
 // the same operation for every trigger — the startup load, a write, a delivered
 // event, the refresh ticker — because the snapshot is replaced as a whole and

@@ -123,6 +123,7 @@ type Catalog struct {
 	set         map[authz.Permission]bool
 	governed    []authz.Permission
 	governedSet map[authz.Permission]bool
+	metadata    map[authz.Permission]authz.PermissionMeta
 }
 
 // NewCatalog returns a Catalog declaring exactly perms.
@@ -131,7 +132,12 @@ func NewCatalog(perms ...authz.Permission) *Catalog {
 	for _, p := range perms {
 		set[p] = true
 	}
-	return &Catalog{perms: slices.Clone(perms), set: set, governedSet: map[authz.Permission]bool{}}
+	return &Catalog{
+		perms:       slices.Clone(perms),
+		set:         set,
+		governedSet: map[authz.Permission]bool{},
+		metadata:    map[authz.Permission]authz.PermissionMeta{},
+	}
 }
 
 // DeclareGoverned puts the permissions among perms that were declared into the
@@ -195,6 +201,27 @@ func (c *Catalog) PermissionOf(object, action string) (authz.Permission, bool) {
 // it and builds the real catalog, the way an assembly does.
 func (c *Catalog) DescriptionKey(p authz.Permission) (key string, ok bool) {
 	return "", c.set[p]
+}
+
+// DeclareMetadata gives one declared permission the governance metadata a
+// declaring module would have put in its PermissionSpec. A permission the
+// catalog does not declare is ignored, as a module's undeclared metadata entry
+// is.
+func (c *Catalog) DeclareMetadata(p authz.Permission, meta authz.PermissionMeta) {
+	if !c.set[p] {
+		return
+	}
+	c.metadata[p] = meta
+}
+
+// Metadata implements authz.Catalog. A declared permission a case did not
+// describe answers the zero metadata and true, which is the shape a module that
+// listed one permission without governance metadata declares.
+func (c *Catalog) Metadata(p authz.Permission) (authz.PermissionMeta, bool) {
+	if !c.set[p] {
+		return authz.PermissionMeta{}, false
+	}
+	return c.metadata[p], true
 }
 
 // routeKey is one (method, path) declaration's key.

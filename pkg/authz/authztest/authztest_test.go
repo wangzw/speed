@@ -188,6 +188,27 @@ func TestCatalogDeclaresWhatItWasGivenAndNothingElse(t *testing.T) {
 	}
 }
 
+// TestCatalogAnswersTheMetadataItWasGiven holds the fixture's metadata surface:
+// a declared permission carries what a case gave it, a declared permission
+// without metadata answers the zero value and true, and an undeclared one
+// answers false.
+func TestCatalogAnswersTheMetadataItWasGiven(t *testing.T) {
+	c := authztest.NewCatalog(authz.PermissionTenantRoleManage, authz.PermissionRoleRead)
+	c.DeclareMetadata(authz.PermissionTenantRoleManage, authz.PermissionMeta{Group: "authorization", Dangerous: true})
+	c.DeclareMetadata("crm.undeclared", authz.PermissionMeta{Group: "ignored"})
+
+	meta, ok := c.Metadata(authz.PermissionTenantRoleManage)
+	if !ok || meta != (authz.PermissionMeta{Group: "authorization", Dangerous: true}) {
+		t.Errorf("Metadata(TenantRoleManage) = %+v, %v, want the declared metadata", meta, ok)
+	}
+	if meta, ok := c.Metadata(authz.PermissionRoleRead); !ok || meta != (authz.PermissionMeta{}) {
+		t.Errorf("Metadata(RoleRead) = %+v, %v, want the zero metadata and declared", meta, ok)
+	}
+	if _, ok := c.Metadata("crm.undeclared"); ok {
+		t.Error("Metadata answered for a permission the catalog does not declare")
+	}
+}
+
 // TestGateRecordsDeclarations holds that a declaration is read back as the kind
 // it was made: a required permission, or open, and never both. A route
 // redeclared flips its kind, as the interface's one required-or-open shape says.

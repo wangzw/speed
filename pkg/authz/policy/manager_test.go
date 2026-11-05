@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -121,6 +122,139 @@ func TestBindingsOfScopesToOneTenant(t *testing.T) {
 	}
 	if len(bindings) != 1 || bindings[0].Tenant != "acme" || bindings[0].Role != "roleA" {
 		t.Fatalf("BindingsOf(acme, acc1) = %v, want only acme's row", bindings)
+	}
+}
+
+// PutRole carries the role's free-text description and its rewrite updates it.
+// Description is not DescriptionKey: the key stays the host's builtin-role
+// marker, while the description is what a reader shows for a role the
+// management surface created.
+func TestPutRoleWritesAndRewritesTheDescription(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	if err := f.PutRole(ctx, authz.RoleRecord{
+		Tenant: "acme", Role: "roleA", DescriptionKey: "authz.role.custom", Description: "First line",
+	}); err != nil {
+		t.Fatalf("PutRole(first): %v", err)
+	}
+	roles, err := f.Roles(ctx, "acme")
+	if err != nil || len(roles) != 1 {
+		t.Fatalf("Roles(acme) = %v, %v, want the one role", roles, err)
+	}
+	if roles[0].Description != "First line" {
+		t.Errorf("the description reads back as %q, want %q", roles[0].Description, "First line")
+	}
+	if roles[0].DescriptionKey != "authz.role.custom" {
+		t.Errorf("the description key reads back as %q, want it kept apart from the description", roles[0].DescriptionKey)
+	}
+
+	if err = f.PutRole(ctx, authz.RoleRecord{
+		Tenant: "acme", Role: "roleA", DescriptionKey: "authz.role.custom", Description: "Second line",
+	}); err != nil {
+		t.Fatalf("PutRole(second): %v", err)
+	}
+	roles, err = f.Roles(ctx, "acme")
+	if err != nil || len(roles) != 1 {
+		t.Fatalf("Roles(acme) after rewrite = %v, %v, want the one role", roles, err)
+	}
+	if roles[0].Description != "Second line" {
+		t.Errorf("the rewritten description reads back as %q, want %q", roles[0].Description, "Second line")
+	}
+}
+
+// GrantCounts counts each role's grants in one tenant in one grouped read. A role
+// with no grant is absent from the map, which a caller reads as zero, and
+// another tenant's grants are not counted.
+func TestGrantCountsCountsEachRolesGrantsInOneTenant(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	mustPutRole(t, ctx, f, "acme", "roleA")
+	mustPutRole(t, ctx, f, "acme", "roleB")
+	mustPutRole(t, ctx, f, "acme", "roleC")
+	mustPutRole(t, ctx, f, "globex", "roleA")
+	mustPutGrant(t, ctx, f, "acme", "roleA", "account", "read")
+	mustPutGrant(t, ctx, f, "acme", "roleA", "session", "revoke")
+	mustPutGrant(t, ctx, f, "acme", "roleB", "audit", "read")
+	mustPutGrant(t, ctx, f, "globex", "roleA", "account", "read")
+
+	counts, err := f.GrantCounts(ctx, "acme")
+	if err != nil {
+		t.Fatalf("GrantCounts(acme): %v", err)
+	}
+	if len(counts) != 2 {
+		t.Fatalf("GrantCounts(acme) = %v, want the two roles holding a grant", counts)
+	}
+	if got := counts["roleA"]; got != 2 {
+		t.Errorf("GrantCounts(acme)[roleA] = %d, want 2", got)
+	}
+	if got := counts["roleB"]; got != 1 {
+		t.Errorf("GrantCounts(acme)[roleB] = %d, want 1", got)
+	}
+	if _, counted := counts["roleC"]; counted {
+		t.Errorf("GrantCounts(acme) counted roleC, which holds no grant")
+	}
+	if globe, err := f.GrantCounts(ctx, "globex"); err != nil || len(globe) != 1 || globe["roleA"] != 1 {
+		t.Errorf("GrantCounts(globex) = %v, %v, want only that tenant's grant", globe, err)
+	}
+}
+
+// BindingsOfRole lists one role's bindings in one tenant, in account order, with
+// an exclusive account cursor and a page size. The role and the tenant both
+// scope it: another role's binding and another tenant's same-named role are not
+// on the page.
+func TestBindingsOfRoleFiltersAndPagesByAccount(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	mustPutRole(t, ctx, f, "acme", "roleA")
+	mustPutRole(t, ctx, f, "acme", "roleB")
+	mustPutRole(t, ctx, f, "globex", "roleA")
+	for _, account := range []string{"acc1", "acc2", "acc3"} {
+		mustPutBinding(t, ctx, f, "acme", account, "roleA")
+	}
+	mustPutBinding(t, ctx, f, "acme", "acc1", "roleB")
+	mustPutBinding(t, ctx, f, "globex", "acc1", "roleA")
+
+	accounts := func(bindings []authz.Binding) []string {
+		out := make([]string, len(bindings))
+		for i, b := range bindings {
+			out[i] = b.Account
+		}
+		return out
+	}
+	pageOf := func(after string, limit int) []string {
+		t.Helper()
+		bindings, err := f.BindingsOfRole(ctx, "acme", "roleA", after, limit)
+		if err != nil {
+			t.Fatalf("BindingsOfRole(acme, roleA, %q, %d): %v", after, limit, err)
+		}
+		for _, b := range bindings {
+			if b.Tenant != "acme" || b.Role != "roleA" {
+				t.Errorf("a binding reads back as %+v, want tenant acme role roleA", b)
+			}
+		}
+		return accounts(bindings)
+	}
+
+	if got, want := pageOf("", 0), []string{"acc1", "acc2", "acc3"}; !slices.Equal(got, want) {
+		t.Errorf("the unpaged read = %v, want %v", got, want)
+	}
+	if got, want := pageOf("", 2), []string{"acc1", "acc2"}; !slices.Equal(got, want) {
+		t.Errorf("the first page = %v, want %v", got, want)
+	}
+	if got, want := pageOf("acc2", 2), []string{"acc3"}; !slices.Equal(got, want) {
+		t.Errorf("the page after acc2 = %v, want %v", got, want)
+	}
+	if got := pageOf("acc3", 2); len(got) != 0 {
+		t.Errorf("the page after the last account = %v, want none", got)
+	}
+
+	otherRole, err := f.BindingsOfRole(ctx, "acme", "roleB", "", 0)
+	if err != nil || len(otherRole) != 1 || otherRole[0].Account != "acc1" {
+		t.Errorf("BindingsOfRole(acme, roleB) = %v, %v, want only roleB's binding", otherRole, err)
+	}
+	otherTenant, err := f.BindingsOfRole(ctx, "globex", "roleA", "", 0)
+	if err != nil || len(otherTenant) != 1 || otherTenant[0].Tenant != "globex" {
+		t.Errorf("BindingsOfRole(globex, roleA) = %v, %v, want only that tenant's binding", otherTenant, err)
 	}
 }
 
@@ -347,6 +481,8 @@ func TestEveryMethodRefusesAnEmptyTenant(t *testing.T) {
 		{"Grants", func() error { _, err := f.Grants(ctx, "", "roleA"); return err }},
 		{"Bindings", func() error { _, err := f.Bindings(ctx, ""); return err }},
 		{"BindingsOf", func() error { _, err := f.BindingsOf(ctx, "", "acc1"); return err }},
+		{"BindingsOfRole", func() error { _, err := f.BindingsOfRole(ctx, "", "roleA", "", 10); return err }},
+		{"GrantCounts", func() error { _, err := f.GrantCounts(ctx, ""); return err }},
 		{"PutRole", func() error { return f.PutRole(ctx, authz.RoleRecord{Role: "roleA"}) }},
 		{"DeleteRole", func() error { return f.DeleteRole(ctx, "", "roleA") }},
 		{"PutGrant", func() error {

@@ -284,6 +284,16 @@ func (m *managerStub) ClearAccountBindings(_ context.Context, tenant, account st
 	return m.errNow()
 }
 
+func (m *managerStub) GrantCounts(_ context.Context, tenant string) (map[authz.Role]int, error) {
+	m.note(managerCall{op: "GrantCounts", tenant: tenant})
+	return nil, m.errNow()
+}
+
+func (m *managerStub) BindingsOfRole(_ context.Context, tenant string, role authz.Role, _ string, _ int) ([]authz.Binding, error) {
+	m.note(managerCall{op: "BindingsOfRole", tenant: tenant, role: role})
+	return nil, m.errNow()
+}
+
 // auditStub keeps the rows it was asked to write and can be told to fail.
 type auditStub struct {
 	mu   sync.Mutex

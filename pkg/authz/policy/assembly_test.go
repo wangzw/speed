@@ -57,7 +57,8 @@ func createTables(t *testing.T, handle *gorm.DB) {
 	for _, statement := range []string{
 		`CREATE TABLE authz_roles (
 			tenant_id TEXT NOT NULL CHECK (tenant_id <> ''), role TEXT NOT NULL,
-			builtin BOOLEAN NOT NULL, description_key TEXT NOT NULL, created_at DATETIME NOT NULL,
+			builtin BOOLEAN NOT NULL, description_key TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '', created_at DATETIME NOT NULL,
 			PRIMARY KEY (tenant_id, role))`,
 		`CREATE TABLE authz_grants (
 			tenant_id TEXT NOT NULL CHECK (tenant_id <> ''), role TEXT NOT NULL,

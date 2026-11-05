@@ -228,6 +228,13 @@ func (c fixedCatalog) DescriptionKey(permission authz.Permission) (string, bool)
 	return "", ok
 }
 
+// Metadata answers no governance metadata: the seeding surface reads the
+// declared set and the translation, never a permission's governance metadata.
+func (c fixedCatalog) Metadata(permission authz.Permission) (authz.PermissionMeta, bool) {
+	_, ok := c.pairs[permission]
+	return authz.PermissionMeta{}, ok
+}
+
 // A permission declared after the builtin mark reaches the role through the
 // seeding surface: seedGrants hands every translated declared permission to
 // SeedGrants, which is the one write that adds to a builtin role. The number

@@ -22,6 +22,7 @@ type roleRow struct {
 	Role           string    `gorm:"column:role;primaryKey"`
 	Builtin        bool      `gorm:"column:builtin;not null"`
 	DescriptionKey string    `gorm:"column:description_key;not null"`
+	Description    string    `gorm:"column:description;not null"`
 	CreatedAt      time.Time `gorm:"column:created_at;not null"`
 }
 
@@ -87,6 +88,7 @@ func (p *product) Roles(ctx context.Context, tenant string) ([]authz.RoleRecord,
 			Role:           authz.Role(r.Role),
 			Builtin:        r.Builtin,
 			DescriptionKey: r.DescriptionKey,
+			Description:    r.Description,
 			CreatedAt:      r.CreatedAt,
 		})
 	}
@@ -144,6 +146,62 @@ func (p *product) BindingsOf(ctx context.Context, tenant, account string) ([]aut
 	return bindingsOf(rows), nil
 }
 
+// BindingsOfRole returns one page of the bindings one role holds within a
+// tenant, in account order.
+//
+// The account column is the cursor: after is exclusive, so a caller that holds
+// the last account of one page asks for the next with it and sees no row twice.
+// A positive limit caps the page, and a non-positive one returns every binding
+// after the cursor. The (tenant_id, role, account_id) index the migration adds
+// makes the page a range read.
+func (p *product) BindingsOfRole(ctx context.Context, tenant string, role authz.Role, after string, limit int) ([]authz.Binding, error) {
+	if err := requireTenant(tenant); err != nil {
+		return nil, err
+	}
+	query := p.crossing(ctx).Where("tenant_id = ? AND role = ?", tenant, string(role))
+	if after != "" {
+		query = query.Where("account_id > ?", after)
+	}
+	query = query.Order("account_id")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	var rows []bindingRow
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("authz/policy: listing the bindings of the role %q of tenant %q: %w", role, tenant, err)
+	}
+	return bindingsOf(rows), nil
+}
+
+// GrantCounts returns how many grants each role holds within a tenant, from one
+// GROUP BY read. The role list shows the count beside every role, so reading
+// every grant of the tenant and counting in the process would cost a row per
+// grant for one number per role. A role with no grant is absent from the map and
+// reads as zero: the map describes the rows the tenant has, not the roles it
+// could have.
+func (p *product) GrantCounts(ctx context.Context, tenant string) (map[authz.Role]int, error) {
+	if err := requireTenant(tenant); err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		Role  string
+		Count int
+	}
+	err := p.crossing(ctx).Model(&grantRow{}).
+		Select("role, COUNT(*) AS count").
+		Where("tenant_id = ?", tenant).
+		Group("role").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("authz/policy: counting the grants of tenant %q: %w", tenant, err)
+	}
+	counts := make(map[authz.Role]int, len(rows))
+	for _, row := range rows {
+		counts[authz.Role(row.Role)] = row.Count
+	}
+	return counts, nil
+}
+
 func bindingsOf(rows []bindingRow) []authz.Binding {
 	out := make([]authz.Binding, 0, len(rows))
 	for _, r := range rows {
@@ -178,6 +236,7 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 		Model:          tenancy.Model{TenantID: tenancy.ID(r.Tenant)},
 		Role:           string(r.Role),
 		DescriptionKey: r.DescriptionKey,
+		Description:    r.Description,
 		CreatedAt:      r.CreatedAt.UTC(),
 	}
 	if row.CreatedAt.IsZero() {
@@ -193,7 +252,7 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "role"}},
-			DoUpdates: clause.AssignmentColumns([]string{"description_key"}),
+			DoUpdates: clause.AssignmentColumns([]string{"description", "description_key"}),
 		}).Create(&row).Error; err != nil {
 			return fmt.Errorf("authz/policy: writing the role %q of tenant %q: %w", r.Role, r.Tenant, err)
 		}

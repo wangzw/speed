@@ -99,6 +99,12 @@ type Catalog interface {
 	// engine's, and the descriptor a renderer needs is the one the management
 	// surface holds as an optional capability.
 	DescriptionKey(p Permission) (key string, ok bool)
+	// Metadata returns the governance metadata the declaring module gave p, and
+	// whether p is declared at all. A declared permission whose module supplied
+	// no metadata answers the zero PermissionMeta and true; a management surface
+	// places it in the group it uses for ungrouped permissions. A permission no
+	// module declared answers (PermissionMeta{}, false).
+	Metadata(p Permission) (PermissionMeta, bool)
 }
 
 // Gate is the route declaration surface: it records the permission one
@@ -134,6 +140,17 @@ type Manager interface {
 	Bindings(ctx context.Context, tenant string) ([]Binding, error)
 	// BindingsOf returns every binding a subject holds within a tenant.
 	BindingsOf(ctx context.Context, tenant, account string) ([]Binding, error)
+	// BindingsOfRole returns one page of the bindings one role holds within a
+	// tenant, in account order. after is an exclusive account cursor: the empty
+	// string starts at the first account. A positive limit caps the page; a
+	// non-positive limit returns every binding after the cursor. A role with no
+	// binding is an empty page, not an error.
+	BindingsOfRole(ctx context.Context, tenant string, role Role, after string, limit int) ([]Binding, error)
+	// GrantCounts returns how many grants each role holds within a tenant, from
+	// one grouped read. A role holding no grant is absent from the map, which a
+	// caller reads as zero. It is the role list's permission count, so the
+	// caller need not fetch every grant of the tenant.
+	GrantCounts(ctx context.Context, tenant string) (map[Role]int, error)
 	// PutRole creates or rewrites a role without the builtin mark. A record
 	// carrying the mark is refused with ErrBuiltinRole, and a builtin role
 	// cannot be rewritten at all.
@@ -193,6 +210,19 @@ type Manager interface {
 // administrator's permissions.
 type MembershipChecker interface {
 	IsMember(ctx context.Context, tenant string, account string) (bool, error)
+}
+
+// AccountIdentityReader resolves the accounts a role-usage read names: the
+// display name to show and whether each account is still active.
+//
+// The capability holds no account table, so the answer is a host seam. It is
+// optional: an assembly that supplies none still serves a role's usage, with an
+// empty display name and an unknown activity state. An error means the answer
+// could not be read, and the caller treats it as a 503 rather than as an empty
+// or inactive set. The returned map is keyed by the account string the caller
+// passed; an account the host does not know is absent from it.
+type AccountIdentityReader interface {
+	Identities(ctx context.Context, tenant string, accounts []string) (map[string]AccountIdentity, error)
 }
 
 // WriteGuard reports whether a tenant's policy data rejects a management write.

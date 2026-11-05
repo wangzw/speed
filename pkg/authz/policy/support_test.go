@@ -49,6 +49,7 @@ func newProductOver(t *testing.T) *product {
 		t.Fatalf("installing the tenant filter: %v", err)
 	}
 	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")
+	applyMigration(t, handle, "sqlite/0003_role_description.sql")
 	reg := core.New()
 	reg.Register(Module())
 	return &product{
