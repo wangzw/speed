@@ -129,12 +129,10 @@ func TestASchemaWithoutTenantFacingStaysOffTheTenantSurface(t *testing.T) {
 	reg.Register(standIn("test.route-guard", routeGuardStub{}, (*speedhttp.TenantAdminRouteGuard)(nil)))
 	reg.Register(standIn("test.router", router, (*speedhttp.Router)(nil)))
 	reg.Register(standIn("test.logger", discardLogger{}, (*log.Logger)(nil)))
-	for _, name := range []string{
+	names = append(names,
 		"test.db", "test.event", "test.guard", "test.audit", "test.verification",
 		"test.write-settings", "test.route-guard", "test.router", "test.logger",
-	} {
-		names = append(names, name)
-	}
+	)
 	reg.Register(platformDeclarer())
 	reg.Register(tenantDeclarer())
 	reg.Register(settings.Module())
