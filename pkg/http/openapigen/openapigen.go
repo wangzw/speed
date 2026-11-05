@@ -4,8 +4,8 @@
 // The implementation lives in pkg/internal/openapigen. That location is not
 // visible to a host module under starters/, which is where a host's own
 // fragment is declared: Go's internal rule admits only importers inside the
-// pkg tree, and the personal-tenant fragment is a host policy rather than a
-// capability package. This package forwards the one function such a host needs,
+// pkg tree, and the host's self-service creation fragment is still declared
+// there. This package forwards the one function such a host needs,
 // so the generator keeps a single implementation and a host's generation test
 // runs the same code every pkg module's test runs.
 //
