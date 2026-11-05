@@ -72,6 +72,9 @@ var seamSignatures = map[string][]string{
 		"SignupStateOf(ctx context.Context, id AccountID) (SignupStatus, error)",
 		"PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error)",
 	},
+	"UsernameReservation": {
+		"ReservedUsername(ctx context.Context, username string) (bool, error)",
+	},
 	"MemberRoleReader": {
 		"MemberRoles(ctx context.Context, tenant string) (map[AccountID][]string, error)",
 	},

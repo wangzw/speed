@@ -9,7 +9,7 @@
 `authn.account` 是 authn 的账户存储模块，包 `pkg/authn/account`，登记名 `authn.account`。
 
 - 声明账户、标识、联系方式预留、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避的表及其迁移集，启动时探测这些表是否存在；读写只经 `pkg/db`，其他 authn 子包经本模块的接口读写，授权功能目录经接口只读，都不直接读写这些表；表结构见[核心数据结构](#核心数据结构)。
-- 排他交付 `Accounts`、`AccountAdmin`、`Signups`、`SignupVerification`、`Passwords`、`Memberships`、`MembershipCleanup`、`Throttle` 这些根包能力接口，每个接口各自是一个排他功能。
+- 排他交付 `Accounts`、`AccountAdmin`、`Signups`、`SignupVerification`、`UsernameReservation`、`Passwords`、`Memberships`、`MembershipCleanup`、`Throttle` 这些根包能力接口，每个接口各自是一个排他功能。
 - 生成账户标识 `AccountID`（库里是 UUIDv7（[REF-rfc9562](../../../references.md)）文本），保证它不可变、不复用。
 - 规范化标识：用户名、邮箱、手机在写入与查询两侧经同一个函数规范化；用户名还过保留字校验，校验只在写入口做。用户名一经写入，在账户存续期内不可删除、不可更换，删除用户名返回 `authn.ErrUsernameImmutable`；账户整体删除不受此限。
 - 维护邮箱与手机的联系方式与登录方式：每条邮箱或手机记录恒为联系方式，另带持有人选择的登录方式标记，短信首登开户写下的手机在建号时即由系统置为登录方式，以及账户在已证明邮箱中的默认联系地址：账户有已证明邮箱时恰有一封，持有人未指定时取最早证明的那一封并可以改选，没有已证明邮箱时没有（REQ-account-061、REQ-account-063、REQ-account-064）。账户只有一条邮箱地址时，它在被证明后由系统选作登录方式，之后持有人可以取消，取消的门槛是账户仍留有别的登录方式（REQ-account-068、REQ-account-069）。社交与企业外部身份是一类独立的登录方式，列在登录方式中，不在联系方式中（REQ-account-067）。
@@ -58,6 +58,7 @@
 | `AccountAdmin` | 写 | `authn.login`、`authn.admin`、宿主的命令行 |
 | `Signups` | 自助注册开户 | `authn.login` |
 | `SignupVerification` | 只读 | `authn.profile`、`authn.admin`、`authn.impersonation`、`authn.login`、`authn.invite`、`authz.admin`、`settings.admin`、`tenant.admin`、宿主 |
+| `UsernameReservation` | 保留用户名的只读答案 | `tenant.selfcreate` |
 | `Passwords` | 口令与服务密钥的校验与写入 | `authn.login.password`、`authn.token`、`authn.login` |
 | `Memberships` | 成员关系的读写 | `tenant.admission`、`authn.login`、`authn.impersonation`、`authn.admin`、`authz.policy` |
 | `MembershipCleanup` | 账户删除收尾的成员关系清理 | 宿主 |
@@ -162,6 +163,16 @@ type SignupVerification interface {
 | `PendingAccountByContact` | 只读反查 `authn_pending_contacts`：`kind` 取 `email` 或 `phone`，`value` 先规范化（失败返回 `ErrInvalidIdentifier`），按（`kind`, `value`）找未证明预留，只在所有者是 `signup_state = 1` 的账户时返回该账户标识且 `ok` 为真。`(kind, value)` 的全局唯一索引使同一地址至多一条预留，因此命中至多一个所有者；未命中、或唯一索引之外的写入造出多个所有者时 `ok` 为假，不猜归属。db 不可用返回 `ErrUnavailable`。**唯一调用方是 `authn.invite` 的接受路径**，参数是邀请令牌已经证明控制权的邮箱。安全前提是这条控制权：令牌被送达该地址并由持有者出示，与本模块的 `sms-code` 同类；返回的账户标识让调用方能在该账户上写已验证标识与成员行，所以调用方不得用未经证明控制的地址调用它。调用方把读取失败答 503，不按未命中处理：把读失败读成未命中会让接受路径新建第二个账户。 |
 
 `PendingAccountByContact` 只回答「这条未证明预留属于谁」，不读 `authn_identifiers`——地址已经是某账户标识的情况由 `Accounts.Lookup` 覆盖，邀请接受先查 `Lookup`、未命中才用本方法反查。两个方法都是请求期活读，不读账户快照缓存。
+
+### UsernameReservation
+
+```go
+type UsernameReservation interface {
+	ReservedUsername(ctx context.Context, username string) (bool, error)
+}
+```
+
+`ReservedUsername` 先把名字规范化，形状不合返回 `ErrInvalidIdentifier`；再回答它是否属于用户名写入所拒绝的集合：内置保留名、部署经 `authn.account.reserved-usernames` 追加的名字，以及 `personal-` 前缀。答案是同一个集合，不另立一份；调用方是 `tenant.selfcreate`，它据此拒绝与用户名冲突的业务组织别名。
 
 ### Passwords
 
@@ -1176,6 +1187,7 @@ type Provisioner interface {
 | `Provisioner` 钩子与账户属性集 | 已实现 | `pkg/authn/account/admin.go` `SetAttributes`；`pkg/authn/provision.go` `Provisioner`；`pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`AccountAttributesMax` |
 | 账户与口令的配置项、设置声明与启动自检 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/account/params.go`；`pkg/authn/account/relax.go` |
 | 自助注册开户、注册验证状态与联系方式预留：`Signups.Register`、`SignupVerification.SignupStateOf`、`SignupVerification.PendingAccountByContact`、`authn_pending_contacts` 预留表与它的全局唯一索引、`signup_state` 与 `signup_verified_at` 列、按用户名的注册退避、未验证账户的清理 | 部分实现 | `pkg/authn/account/signup.go` `(*product).Register`、`(*product).SignupStateOf`、`(*product).PendingAccountByContact`；`pkg/authn/account/admin.go` `(*product).AddIdentifier`、`(*product).RemoveIdentifier`、`writeEmailClaim`；`pkg/authn/account/migrations/postgres/0002_authn_signup.sql`、`0003_contact_claim.sql`、`pkg/authn/account/migrations/sqlite/0002_authn_signup.sql`、`0003_contact_claim.sql`；`pkg/authn/account/sweep.go` `(*product).sweepUnverified`、`(*product).deleteUnverified`、`(*product).unverified`；`pkg/authn/account/config.go` `settingsSchema`（`signup-ip-limit`、`signup-global-hourly`、`unverified-ttl`、`unverified-sweep-interval`）；`pkg/authn/account/relax.go` `relaxing`；`pkg/authn/account/throttle.go` `validScope` |
+| 保留用户名的只读答案 | 已实现 | `pkg/authn/reserved.go` `UsernameReservation`；`pkg/authn/account/reserved.go` `(*product).ReservedUsername`；`pkg/authn/account/reserved_test.go` `TestTheReservedAnswerSeamReportsTheEffectiveSet` |
 | 根包类型 `SignupState`、`SignupStatus`、`RegisterAccount`、`CreateAccount.UsernameVerifiedVia`、`ThrottleScope` 的 `signup-username` 取值与哨兵 `ErrContactRequired`、`ErrContactTaken` | 已实现 | `pkg/authn/signup.go` `SignupState`、`SignupStatus`、`RegisterAccount`、`Signups`、`SignupVerification`；`pkg/authn/internal/model/directory.go` `SignupState.Valid`、`CreateAccount.UsernameVerifiedVia`；`pkg/authn/throttle.go` `ScopeSignupUsername`；`pkg/authn/errors.go` `ErrContactRequired`、`ErrContactTaken` |
 | 用户账户的创建路径（导入除外）要求合法用户名 | 已实现 | `pkg/authn/account/admin.go` `usernameRequired`、`(*product).Create`；`pkg/authn/account/signup.go` `(*product).Register` |
 | 导入写入的用户账户要求合法用户名与保留用户名校验 | 已实现 | `pkg/authn/account/admin.go` `(*product).Create`、`usernameRequired`、`(*product).checkReservedUsername`；`pkg/authn/admin/account.go` `handleAccountCreate` |

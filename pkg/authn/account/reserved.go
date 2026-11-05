@@ -1,6 +1,7 @@
 package account
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -75,6 +76,19 @@ func (p *product) checkReservedUsername(value string) error {
 		return fmt.Errorf("%w: a username is a name the system keeps for itself", authn.ErrUsernameReserved)
 	}
 	return nil
+}
+
+// ReservedUsername implements authn.UsernameReservation. It normalizes the name
+// first, because the set the deployment appends is stored normalized, and then
+// answers whether the name is one of them or begins with the personal prefix.
+// The answer is the account module's set, so a surface that lets an account
+// choose a tenant alias refuses exactly what a username write refuses.
+func (p *product) ReservedUsername(_ context.Context, username string) (bool, error) {
+	normalized, err := NormalizeIdentifier(authn.IdentifierUsername, username)
+	if err != nil {
+		return false, err
+	}
+	return p.checkReservedUsername(normalized) != nil, nil
 }
 
 // parseUsernameList reads the text of the reserved-usernames setting as its

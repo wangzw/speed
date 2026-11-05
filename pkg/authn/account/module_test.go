@@ -41,16 +41,17 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 		core.Token((*authn.MembershipCleanup)(nil)),
 		core.Token((*authn.Throttle)(nil)),
 		core.Token((*provisioning.MembershipWriter)(nil)),
+		core.Token((*authn.UsernameReservation)(nil)),
 	}
 	if len(m.Provides) != len(want) {
-		t.Fatalf("Provides has %d entries, want the eight capabilities and the membership writer", len(m.Provides))
+		t.Fatalf("Provides has %d entries, want the eight capabilities, the membership writer and the reserved-username answer", len(m.Provides))
 	}
 	for _, provision := range m.Provides {
 		if !provision.Exclusive {
 			t.Errorf("the capability %v is not delivered exclusively", provision.Token)
 		}
 		if !containsToken(want, provision.Token) {
-			t.Errorf("the capability %v is not one of the eight", provision.Token)
+			t.Errorf("the capability %v is not one of the declared set", provision.Token)
 		}
 	}
 	if len(m.Resources) != 3 {
@@ -98,6 +99,9 @@ func TestTheProductSatisfiesEachCapability(t *testing.T) {
 	}
 	if _, ok := p.(provisioning.MembershipWriter); !ok {
 		t.Error("the product is not a MembershipWriter")
+	}
+	if _, ok := p.(authn.UsernameReservation); !ok {
+		t.Error("the product is not a UsernameReservation")
 	}
 }
 

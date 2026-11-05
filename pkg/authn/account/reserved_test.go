@@ -316,3 +316,34 @@ func TestRemovingAnAppendedReservedUsernameIsARelaxation(t *testing.T) {
 		})
 	}
 }
+
+// TestTheReservedAnswerSeamReportsTheEffectiveSet holds the read a surface
+// choosing a tenant alias makes: the built-in names, the deployment's appended
+// names and the personal prefix are answers about the set, a free name is not,
+// and a value outside the username shape is the normalizer's refusal rather
+// than a verdict on the set.
+func TestTheReservedAnswerSeamReportsTheEffectiveSet(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		h.withSettings().set(reservedPath, `["partner-support"]`)
+
+		cases := map[string]bool{
+			"api":             true,
+			"personal-alice":  true,
+			"partner-support": true,
+			"acme":            false,
+		}
+		for name, want := range cases {
+			got, err := h.p.ReservedUsername(ctx, name)
+			if err != nil {
+				t.Fatalf("ReservedUsername(%q): %v", name, err)
+			}
+			if got != want {
+				t.Errorf("ReservedUsername(%q) = %v, want %v", name, got, want)
+			}
+		}
+		if _, err := h.p.ReservedUsername(ctx, "Not A Name"); !errors.Is(err, authn.ErrInvalidIdentifier) {
+			t.Errorf("a name outside the shape gave %v, want ErrInvalidIdentifier", err)
+		}
+	})
+}

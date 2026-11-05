@@ -88,14 +88,15 @@ var migrationsFS = func() fs.FS {
 // satisfy. The method names of the interfaces this capability provides are
 // pairwise disjoint, which is what lets one instance satisfy all of them.
 var (
-	_ authn.Accounts           = (*product)(nil)
-	_ authn.AccountAdmin       = (*product)(nil)
-	_ authn.Signups            = (*product)(nil)
-	_ authn.SignupVerification = (*product)(nil)
-	_ authn.Passwords          = (*product)(nil)
-	_ authn.Memberships        = (*product)(nil)
-	_ authn.MembershipCleanup  = (*product)(nil)
-	_ authn.Throttle           = (*product)(nil)
+	_ authn.Accounts            = (*product)(nil)
+	_ authn.AccountAdmin        = (*product)(nil)
+	_ authn.Signups             = (*product)(nil)
+	_ authn.SignupVerification  = (*product)(nil)
+	_ authn.Passwords           = (*product)(nil)
+	_ authn.Memberships         = (*product)(nil)
+	_ authn.MembershipCleanup   = (*product)(nil)
+	_ authn.Throttle            = (*product)(nil)
+	_ authn.UsernameReservation = (*product)(nil)
 )
 
 // init registers this module with the process registry.
@@ -143,6 +144,9 @@ func Module() core.Module {
 			{Token: (*authn.Memberships)(nil), Exclusive: true},
 			{Token: (*authn.MembershipCleanup)(nil), Exclusive: true},
 			{Token: (*authn.Throttle)(nil), Exclusive: true},
+			// The reserved-username answer a surface choosing a tenant alias
+			// asks, so the one namespace refuses the one set of names.
+			{Token: (*authn.UsernameReservation)(nil), Exclusive: true},
 			// The transaction-aware membership write a provisioning
 			// implementation shares the account's transaction with.
 			{Token: (*provisioning.MembershipWriter)(nil), Exclusive: true},
