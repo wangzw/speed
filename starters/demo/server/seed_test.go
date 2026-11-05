@@ -1445,8 +1445,14 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	for _, id := range domains {
+		alias := id
+		if id == personal {
+			// A personal tenant's alias is the account's username, never the
+			// derived identifier.
+			alias = "alice"
+		}
 		roster.rows[tenant.ID(id)] = tenant.Tenant{
-			ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive,
+			ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive,
 		}
 		manager.roles[id] = []authz.RoleRecord{{Tenant: id, Role: tenantAdminRole}}
 	}

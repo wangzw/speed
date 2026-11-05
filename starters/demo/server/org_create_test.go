@@ -477,7 +477,7 @@ func TestOrgCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
 	}
 	addBusiness("biz-disabled", tenant.StatusDisabled)
 	personal := string(tenantpersonal.TenantID(orgCreateUnitAccount))
-	rig.roster.rows[tenant.ID(personal)] = tenant.Tenant{ID: tenant.ID(personal), Alias: personal, Status: tenant.StatusActive}
+	rig.roster.rows[tenant.ID(personal)] = tenant.Tenant{ID: tenant.ID(personal), Alias: "unit-user", Status: tenant.StatusActive}
 	rig.memberships.rows[orgCreateUnitAccount] = append(rig.memberships.rows[orgCreateUnitAccount],
 		authn.Membership{Account: orgCreateUnitAccount, Tenant: personal, Active: true, Source: "personal"})
 	rig.memberships.rows[orgCreateUnitAccount] = append(rig.memberships.rows[orgCreateUnitAccount],
