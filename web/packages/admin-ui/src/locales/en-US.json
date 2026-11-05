@@ -136,8 +136,14 @@
         "message": "{{impact}} Turn it off?"
       },
       "readOnly": {
-        "title": "This organization is read-only",
-        "description": "The deployment protects this organization, so its security policies cannot be changed here."
+        "protected": {
+          "title": "This organization is read-only",
+          "description": "The deployment protects this organization, so its security policies cannot be changed here."
+        },
+        "unavailable": {
+          "title": "Security policies are temporarily read-only",
+          "description": "This deployment cannot confirm right now whether changes can be saved, so these policies are read-only for the moment. Read them again and retry."
+        }
       },
       "auditNote": "These changes are written to the audit record.",
       "loading": "Loading security policies",

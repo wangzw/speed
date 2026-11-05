@@ -162,9 +162,10 @@ describe('OrganizationSecurityPage horizontal overflow in Chromium', () => {
     renderPage({ settings: envelope([MFA, SSO], false) })
     const section = await ready()
     expect(
-      await screen.findByText(enUS.organization.security.readOnly.title, {
-        exact: true,
-      }),
+      await screen.findByText(
+        enUS.organization.security.readOnly.protected.title,
+        { exact: true },
+      ),
     ).toBeVisible()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
     expectInsideBox(section)

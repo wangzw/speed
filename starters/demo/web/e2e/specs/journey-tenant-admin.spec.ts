@@ -1752,10 +1752,11 @@ test.describe('the tenant administrator manages the organization', () => {
         // This journey leaves both policies off. Turning one on would require
         // it of the single-factor review administrator from the next request
         // onward -- the write itself passes, the read after it is challenged --
-        // and every later step would meet that challenge. The optimistic save,
-        // the confirmation and the rollback are driven in the page's unit
-        // tests; the tenant surface's write path is driven in the settings
-        // module's own tests.
+        // and every later step would meet that challenge. The toggle itself is
+        // driven by `tenant-admin: an administrator turns a policy on, reads
+        // it back, and turns it off`, which signs in the multi-factor operator;
+        // the optimistic save, the confirmation and the rollback are also
+        // driven in the page's unit tests.
       })
 
       await test.step('step 18: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
@@ -2594,6 +2595,162 @@ test.describe('a policy the platform holds on', () => {
   })
 })
 
+test.describe('a policy the platform does not hold', () => {
+  test.use({
+    // Turning a tenant policy on would challenge the single-factor review
+    // administrator from the next tenant-scoped request onward. The review
+    // build seeds the operator's seasoned authenticator, so this branch names
+    // the operator the tenant's administrator and signs in with that factor;
+    // the session then satisfies the admission rule its own write switched on.
+    // The global layer stays off, so the tenant is free to choose the policy.
+    seedImpersonation: true,
+    tenantAdmins: { acme: [OPERATOR.identifier] },
+    viewport: { width: 1920, height: 1080 },
+  })
+
+  test('tenant-admin: an administrator turns a policy on, reads it back, and turns it off', async ({
+    demo,
+  }) => {
+    test.setTimeout(300_000)
+
+    const { page, accounts } = demo
+    const mfaTitle = copy('adminUi', 'organization.security.mfa.title')
+    const ssoTitle = copy('adminUi', 'organization.security.sso.title')
+    const mfaSwitch = (): Locator =>
+      page.getByRole('switch', {
+        name: copy('adminUi', 'organization.security.switchAria', {
+          title: mfaTitle,
+        }),
+        exact: true,
+      })
+    const ssoSwitch = (): Locator =>
+      page.getByRole('switch', {
+        name: copy('adminUi', 'organization.security.switchAria', {
+          title: ssoTitle,
+        }),
+        exact: true,
+      })
+    const refresh = (): Locator =>
+      page.getByRole('button', {
+        name: copy('adminUi', 'common.refresh'),
+        exact: true,
+      })
+
+    await signInOperatorWithTotp(page, accounts)
+    await openOrganizationPage(page, 'settings')
+
+    // The platform does not enforce either policy, so both are ordinary
+    // switches the tenant may move.
+    await expect(mfaSwitch()).not.toBeChecked()
+    await expect(mfaSwitch()).toBeEnabled()
+    await expect(ssoSwitch()).not.toBeChecked()
+    await expect(
+      page.getByText(copy('adminUi', 'organization.security.status.disabled'), {
+        exact: true,
+      }),
+    ).toHaveCount(2)
+
+    await test.step('turning the policy on saves it immediately', async () => {
+      // REQ-tenant-admin-017: enabling needs no dialog, saves on its own and
+      // leaves the row saying so.
+      await mfaSwitch().click()
+      await expect(mfaSwitch()).toBeChecked()
+      await expect(
+        page.getByText(copy('adminUi', 'organization.security.saved'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(mfaSwitch()).toBeEnabled()
+      await expect(
+        page.getByText(copy('adminUi', 'organization.security.status.enabled'), {
+          exact: true,
+        }),
+      ).toHaveCount(1)
+      await expect(ssoSwitch()).not.toBeChecked()
+    })
+
+    await test.step('a fresh read still reports the policy on', async () => {
+      // The refresh issues a new tenant-scoped read, so this is the stored
+      // value rather than the optimistic one the click left on screen.
+      await refresh().click()
+      await expect(mfaSwitch()).toBeChecked()
+      await expect(
+        page.getByText(copy('adminUi', 'organization.security.status.enabled'), {
+          exact: true,
+        }),
+      ).toHaveCount(1)
+      await expect(ssoSwitch()).not.toBeChecked()
+    })
+
+    await test.step('turning it off asks first and then saves the disabled state', async () => {
+      // REQ-tenant-admin-017: a close names the impact and waits for the
+      // two-step guard before anything is written.
+      await mfaSwitch().click()
+      const dialog = page.getByRole('dialog', {
+        name: copy('adminUi', 'organization.security.confirm.title', {
+          title: mfaTitle,
+        }),
+        exact: true,
+      })
+      await expect(dialog).toBeVisible()
+      await expect(
+        dialog.getByText(
+          copy('adminUi', 'organization.security.confirm.message', {
+            title: mfaTitle,
+            impact: copy('adminUi', 'organization.security.mfa.impact'),
+          }),
+          { exact: true },
+        ),
+      ).toBeVisible()
+      // The guard has changed nothing yet: the dialog is still the only
+      // interactive surface, and the page behind it is inert (the modal marks
+      // the background aria-hidden, so the switch is not a role query while
+      // the dialog is open). The write is observed from the row after the
+      // second confirmation closes it.
+      await expect(dialog).toBeVisible()
+
+      await dialog
+        .getByRole('button', {
+          name: copy('adminUi', 'common.confirm'),
+          exact: true,
+        })
+        .click()
+      const again = dialog.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(again).toBeEnabled()
+      await again.click()
+      await expect(dialog).toHaveCount(0)
+
+      await expect(mfaSwitch()).not.toBeChecked()
+      await expect(mfaSwitch()).toBeEnabled()
+      await expect(
+        page.getByText(copy('adminUi', 'organization.security.saved'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        page.getByText(copy('adminUi', 'organization.security.status.disabled'), {
+          exact: true,
+        }),
+      ).toHaveCount(2)
+      await expect(ssoSwitch()).not.toBeChecked()
+    })
+
+    await test.step('a fresh read still reports the policy off', async () => {
+      await refresh().click()
+      await expect(mfaSwitch()).not.toBeChecked()
+      await expect(
+        page.getByText(copy('adminUi', 'organization.security.status.disabled'), {
+          exact: true,
+        }),
+      ).toHaveCount(2)
+      await expect(ssoSwitch()).not.toBeChecked()
+    })
+  })
+})
+
 test.describe('a protected business tenant is read-only', () => {
   test.use({
     seedProtectedTenant: true,
@@ -2618,13 +2775,17 @@ test.describe('a protected business tenant is read-only', () => {
     // The surface says why it cannot be changed and renders no switch at all;
     // the two policies are still listed with their titles.
     await expect(
-      page.getByText(copy('adminUi', 'organization.security.readOnly.title'), {
-        exact: true,
-      }),
+      page.getByText(
+        copy('adminUi', 'organization.security.readOnly.protected.title'),
+        { exact: true },
+      ),
     ).toBeVisible()
     await expect(
       page.getByText(
-        copy('adminUi', 'organization.security.readOnly.description'),
+        copy(
+          'adminUi',
+          'organization.security.readOnly.protected.description',
+        ),
         { exact: true },
       ),
     ).toBeVisible()

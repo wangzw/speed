@@ -136,8 +136,14 @@
         "message": "{{impact}}确定关闭吗？"
       },
       "readOnly": {
-        "title": "此组织为只读",
-        "description": "该组织由部署方保护，安全策略不能在这里修改。"
+        "protected": {
+          "title": "此组织为只读",
+          "description": "该组织由部署方保护，安全策略不能在这里修改。"
+        },
+        "unavailable": {
+          "title": "暂时无法修改安全策略",
+          "description": "目前无法确认更改能否保存，因此这些策略暂时为只读。重新读取后可以再试。"
+        }
       },
       "auditNote": "这些变更会写入审计记录。",
       "loading": "正在加载安全策略",

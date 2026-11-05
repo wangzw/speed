@@ -9,7 +9,7 @@
  * server refuses. A protected tenant renders no switch at all and says why.
  */
 
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { OrganizationSecurityPage } from './OrganizationSecurityPage.js'
@@ -71,20 +71,26 @@ const SSO: AdminTenantSetting = {
 function envelope(
   settings: readonly AdminTenantSetting[],
   writable = true,
+  readOnlyReason = writable ? '' : 'protected',
 ): AdminTenantSettings {
   return {
     settings: [...settings],
     writable,
-    read_only_reason: writable ? '' : 'protected',
+    read_only_reason: readOnlyReason,
   }
 }
 
 function renderPage({
   settings = envelope([MFA, SSO]),
+  listTenantSettings,
   writeTenantSetting,
   language = 'zh-CN',
 }: {
   readonly settings?: AdminTenantSettings
+  /** Counts or rewrites the read the page issues, retries included. */
+  readonly listTenantSettings?: (
+    answer: AdminTenantSettings,
+  ) => Promise<AdminTenantSettings>
   readonly writeTenantSetting?: (
     input: AdminTenantSetSettingInput,
   ) => Promise<void>
@@ -92,7 +98,10 @@ function renderPage({
 } = {}) {
   const operations = createAdminOperations(
     makeAdminBackend({
-      listTenantSettings: () => Promise.resolve(settings),
+      listTenantSettings: () =>
+        listTenantSettings === undefined
+          ? Promise.resolve(settings)
+          : listTenantSettings(settings),
       ...(writeTenantSetting === undefined ? {} : { writeTenantSetting }),
     }),
   )
@@ -406,11 +415,21 @@ describe('OrganizationSecurityPage', () => {
     renderPage({ settings: envelope([MFA, SSO], false) })
 
     expect(
-      await screen.findByText(zhCN.organization.security.readOnly.title),
+      await screen.findByText(
+        zhCN.organization.security.readOnly.protected.title,
+      ),
     ).toBeInTheDocument()
     expect(
-      screen.getByText(zhCN.organization.security.readOnly.description),
+      screen.getByText(
+        zhCN.organization.security.readOnly.protected.description,
+      ),
     ).toBeInTheDocument()
+    // The protected reason is not the transient one.
+    expect(
+      screen.queryByText(
+        zhCN.organization.security.readOnly.unavailable.title,
+      ),
+    ).toBeNull()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
     // The rows and the audit note still render.
     expect(
@@ -424,6 +443,54 @@ describe('OrganizationSecurityPage', () => {
     expect(refresh).toBeEnabled()
     await user.click(refresh)
     expect(refresh).toBeInTheDocument()
+  })
+
+  it('names an unanswerable write seam as temporarily read-only and re-reads on retry', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    renderPage({
+      settings: envelope([MFA, SSO], false, 'unavailable'),
+      listTenantSettings: (answer) => {
+        reads += 1
+        return Promise.resolve(answer)
+      },
+    })
+
+    // The transient reason has its own explanation; the protected one would
+    // claim the deployment protects a tenant whose seam merely could not
+    // answer.
+    expect(
+      await screen.findByText(
+        zhCN.organization.security.readOnly.unavailable.title,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        zhCN.organization.security.readOnly.unavailable.description,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        zhCN.organization.security.readOnly.protected.title,
+      ),
+    ).toBeNull()
+    expect(
+      screen.queryByText(
+        zhCN.organization.security.readOnly.protected.description,
+      ),
+    ).toBeNull()
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
+
+    // Reading is still allowed, so the notice offers a re-read rather than
+    // sending the reader away.
+    const before = reads
+    expect(before).toBeGreaterThan(0)
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.organization.security.retry,
+      }),
+    )
+    await waitFor(() => expect(reads).toBeGreaterThan(before))
   })
 
   it('falls back to the bundled policy copy when the server omits it', async () => {
@@ -473,6 +540,21 @@ describe('OrganizationSecurityPage', () => {
   it('has no axe violations', async () => {
     renderPage()
     await screen.findAllByRole('switch')
+    await expectNoAxeViolations()
+  })
+
+  it('has no axe violations in either read-only state', async () => {
+    renderPage({ settings: envelope([MFA, SSO], false, 'protected') })
+    await screen.findByText(
+      zhCN.organization.security.readOnly.protected.title,
+    )
+    await expectNoAxeViolations()
+
+    cleanup()
+    renderPage({ settings: envelope([MFA, SSO], false, 'unavailable') })
+    await screen.findByText(
+      zhCN.organization.security.readOnly.unavailable.title,
+    )
     await expectNoAxeViolations()
   })
 })

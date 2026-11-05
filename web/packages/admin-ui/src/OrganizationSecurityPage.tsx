@@ -24,7 +24,12 @@
  *
  * A tenant the host's settings write seam protects is read-only as a whole.
  * The page says so above the section and renders no switch at all; the
- * refresh action stays available because reading is still allowed.
+ * refresh action stays available because reading is still allowed. The
+ * envelope names why: "protected" means the seam refused the tenant, and
+ * "unavailable" means the seam could not answer at all. The two are not the
+ * same fact -- the deployment protects one tenant, while the other's write
+ * claim is merely unknown for now -- so the notice says which one it is, and
+ * only the transient one offers a re-read in place.
  *
  * Every read and write goes through the organization operations bundle, so
  * the page builds no client and writes no query key.
@@ -33,6 +38,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import Skeleton from '@mui/material/Skeleton'
@@ -461,6 +467,13 @@ export function OrganizationSecurityPage({
 
   const data = settings.data
   const pending = settings.isPending && data === undefined
+  // The server's closed set is "" (writable), "protected" and "unavailable".
+  // Any non-empty reason it does not name is treated as the durable one: a
+  // refusal is the answer that must stand if the client and server drift,
+  // never a transient state the page would invite the reader to retry.
+  const readOnly = data !== undefined && !data.writable
+  const readOnlyReason: 'protected' | 'unavailable' =
+    data?.read_only_reason === 'unavailable' ? 'unavailable' : 'protected'
 
   return (
     <Box>
@@ -481,14 +494,30 @@ export function OrganizationSecurityPage({
         sx={{ mb: 2 }}
       />
 
-      {data !== undefined && !data.writable && (
-        <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
-          <Typography variant="subtitle2">
-            {t('organization.security.readOnly.title')}
+      {readOnly && (
+        <Alert
+          severity={readOnlyReason === 'unavailable' ? 'warning' : 'info'}
+          variant="outlined"
+          sx={{ mb: 2 }}
+        >
+          {/* A notice is not a section heading: rendered as a heading it
+              would follow the page's h1 without the intervening levels. */}
+          <Typography variant="subtitle2" component="p">
+            {t(`organization.security.readOnly.${readOnlyReason}.title`)}
           </Typography>
           <Typography variant="body2">
-            {t('organization.security.readOnly.description')}
+            {t(`organization.security.readOnly.${readOnlyReason}.description`)}
           </Typography>
+          {readOnlyReason === 'unavailable' && (
+            <Button
+              size="small"
+              sx={{ mt: 1 }}
+              disabled={refresh.busy}
+              onClick={refresh.refresh}
+            >
+              {t('organization.security.retry')}
+            </Button>
+          )}
         </Alert>
       )}
 
