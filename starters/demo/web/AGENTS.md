@@ -195,8 +195,11 @@ program beside this directory embeds with `go:embed` and serves through
   the pane an older `?section=` named, else `/account/profile`, carrying the
   rest of the query along so `/account?verify=1` and `/account?change=email`
   still land where they meant to. Each pane composes a `@speed/ui-kit`
-  `PageLayout` naming it, and every block inside a pane is its own outlined
-  card. The four panes are entries of the account entry's menu, each with its
+  `PageLayout` naming it, with a breadcrumb whose first step is the
+  account's display name (its username when no display name is set) as
+  plain text -- the panes are the user's own pages, and there is no account
+  home page above them to link to -- and every block inside a pane is its
+  own outlined card. The four panes are entries of the account entry's menu, each with its
   own glyph. The appearance section is `account-ui`'s controlled
   `AppearanceSection`: the page maps the shipped preset shelf to this
   bundle's names and passes the provider's active preset and setter

@@ -53,7 +53,7 @@ import type { AuthSnapshot } from '@speed/auth-core'
 import { ACCOUNT_UI_NAMESPACE } from '@speed/account-ui'
 import { ImpersonationNoticeProvider } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
-import { isPlainPrimaryClick, RouteGuard } from '@speed/layout-kit'
+import { RouteGuard } from '@speed/layout-kit'
 import type {
   AppShellNavItem,
   AppShellShellLayout,
@@ -80,7 +80,7 @@ import {
   useRedirect,
 } from '@speed/route-kit'
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
-import type { MouseEvent, ReactElement, ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { contactVerificationPending } from './contact-verification.js'
 import {
   tenantAdminTenantsList,
@@ -135,7 +135,6 @@ import {
   organizationAdminProtectedRoles,
 } from './organization-admin.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
-import { DemoNavLabel } from './nav-label.js'
 import { AdminNavIcon } from './nav-icons.js'
 import { TenantMembershipNoticeHost } from './tenant-membership-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
@@ -320,6 +319,12 @@ function AppFrame({
   // each frame renders the toggle (the collapse props are supplied) and reports
   // each flip here, so the collapse carries across the tenant/admin switch.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // The organization surface's crumb names the organization whose pages these
+  // are, from the same caller-tenant list the account menu renders. It is not
+  // the navigation word 「Home」 and it is not a link: the crumb answers
+  // "which organization", and leaving the surface is the sidebar's and the
+  // account menu's business.
+  const selfTenants = useSelfTenantState()
 
   // The invitation landing renders outside both shells: an invitee arrives
   // before any session exists. Only a matched (present, ready) declaration
@@ -423,21 +428,25 @@ function AppFrame({
     const hasFeature =
       presence.state === 'ready' ? presence.has : (): boolean => false
     const matchedLabel = match?.declaration.label
+    // The organization's display name, the crumb's first step. The admission
+    // having settled `allowed` guarantees the tenant is known; the recorded
+    // alias covers a list that has not answered yet, and the id is the last
+    // resort so the crumb never goes blank.
+    const organizationName =
+      organizationAdmission.status === 'allowed'
+        ? (selfTenants.tenants.find(
+            (tenant) => tenant.id === organizationAdmission.tenantId,
+          )?.alias ??
+          getRecordedTenantAlias(organizationAdmission.tenantId) ??
+          organizationAdmission.tenantId)
+        : ''
+    // The first step names the organization and is not a destination: the
+    // organization surface has no root page of its own, so a link here could
+    // only go to the tenant home while wearing the organization's name. The
+    // crumb states which organization these pages belong to; leaving it is
+    // the sidebar's and the account menu's business.
     const breadcrumbs = [
-      {
-        label: <DemoNavLabel labelKey="nav.home" />,
-        href: TENANT_HOME_PATH,
-        // The crumb keeps its href for a modifier or new-tab click; a plain
-        // primary click is the host's to route in place, like every other
-        // in-app link. Without this the click would reload the document.
-        onClick: (event: MouseEvent<HTMLAnchorElement>) => {
-          if (!isPlainPrimaryClick(event)) {
-            return
-          }
-          event.preventDefault()
-          navigate(TENANT_HOME_PATH)
-        },
-      },
+      { label: organizationName },
       ...(matchedLabel === undefined ? [] : [{ label: matchedLabel }]),
     ]
     return (

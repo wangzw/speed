@@ -1415,6 +1415,79 @@ describe('the account page', () => {
     expect(window.location.pathname).toBe('/account/profile')
   })
 
+  it('starts an account pane breadcrumb at the display name, without linking it', async () => {
+    window.history.replaceState({}, '', '/account/profile')
+    const session = createTestSession(authenticatedSnapshot())
+    renderDemoApp({ session })
+    const displayName = session.getSnapshot().principal?.display_name ?? ''
+
+    await screen.findByRole('heading', {
+      level: 1,
+      name: demoEnUS.account.sections.profile,
+    })
+    // The trail names the account first, by the same display name the
+    // shell's account entry shows. It is not a destination -- there is no
+    // account home page above the panes -- and the pane names the current
+    // step.
+    const trail = within(
+      await screen.findByRole('navigation', { name: 'Breadcrumb' }),
+    )
+    expect(trail.getByText(displayName)).toBeInTheDocument()
+    expect(trail.queryByRole('link', { name: displayName })).toBeNull()
+    expect(
+      trail.getByText(demoEnUS.account.sections.profile),
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to the username when the account has no display name', async () => {
+    window.history.replaceState({}, '', '/account/profile')
+    const username = 'ada'
+    const base = createBackend('data')
+    bindRequestFn(<T,>(url: string): Promise<T> => {
+      if (!url.includes('/api/v1/auth/me')) {
+        return base<T>(url)
+      }
+      return base<T>(url).then(
+        (body) =>
+          ({
+            ...(body as Record<string, unknown>),
+            identifiers: [
+              {
+                id: 'username-1',
+                kind: 'username',
+                value: username,
+                proven: true,
+                contact: false,
+                default_contact: false,
+                sign_in: true,
+                verified_at: null,
+                verified_via: null,
+              },
+            ],
+          }) as T,
+      )
+    })
+    const snapshot = authenticatedSnapshot()
+    renderDemoApp({
+      session: createTestSession({
+        ...snapshot,
+        principal:
+          snapshot.principal === null
+            ? null
+            : { ...snapshot.principal, display_name: '' },
+      }),
+    })
+
+    await screen.findByRole('heading', {
+      level: 1,
+      name: demoEnUS.account.sections.profile,
+    })
+    const trail = within(
+      await screen.findByRole('navigation', { name: 'Breadcrumb' }),
+    )
+    expect(trail.getByText(username)).toBeInTheDocument()
+  })
+
   it('offers the appearance section ahead of the preferences section', async () => {
     window.history.replaceState({}, '', '/account?section=preferences')
     bindRequestFn(createBackend('data'))

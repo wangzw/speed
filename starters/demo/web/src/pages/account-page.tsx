@@ -100,7 +100,7 @@ import {
   SocialBindingsSection,
   useSocialMethodsAvailable,
 } from '@speed/account-ui'
-import { useFeature, useStepUpGate } from '@speed/auth-core'
+import { useAuthState, useFeature, useStepUpGate } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import {
   useLocationPath,
@@ -603,6 +603,25 @@ export function AccountSettingsPage({
   const usernames = identifiers.filter(
     (identifier) => identifier.kind === 'username',
   )
+  // The pane's breadcrumb starts at the account's display name -- the same
+  // name the shell's account entry shows -- with the username as the
+  // fallback for an account that never set one. These are the user's own
+  // pages, so the first step says whose; it is not a link, because there is
+  // no account home page above the panes.
+  const snapshot = useAuthState()
+  const displayName =
+    snapshot.state === 'authenticated'
+      ? (snapshot.principal?.display_name.trim() ?? '')
+      : ''
+  const accountName =
+    displayName === '' ? usernames[0]?.value : displayName
+  const breadcrumbs =
+    accountName === undefined
+      ? undefined
+      : [
+          { label: accountName },
+          { label: t(`account.sections.${section}`) },
+        ]
   const separator = t('account.rows.separator')
   const boundPhone = identifiers.find(
     (identifier) => identifier.kind === 'phone',
@@ -648,7 +667,10 @@ export function AccountSettingsPage({
     setPhoneFormOpen(false)
   }
   return (
-    <PageLayout title={t(`account.sections.${section}`)}>
+    <PageLayout
+      title={t(`account.sections.${section}`)}
+      breadcrumbs={breadcrumbs}
+    >
       {/* A step-up or enroll round trip started here lands back here with a
           refusal's problem code in the fragment: this page is the surface
           that reads it (the redirect's `return_to`) and words it. */}

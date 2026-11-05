@@ -1107,11 +1107,12 @@ describe('the organization admin route admission', () => {
     expect(requested).not.toContain('/api/v1/tenants/acme/roles')
   })
 
-  it('routes the organization breadcrumb Home in place', async () => {
-    const user = userEvent.setup()
+  it('names the organization first in the breadcrumb without linking it', async () => {
+    // The organization's display name is the caller tenant list's alias.
+    const organizationName = 'acme'
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', alias: organizationName, kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: ['authn.membership.manage'],
@@ -1123,8 +1124,18 @@ describe('the organization admin route admission', () => {
     const trail = within(
       screen.getByRole('navigation', { name: 'Breadcrumb' }),
     )
-    await user.click(trail.getByRole('link', { name: demoEnUS.nav.home }))
-    await waitFor(() => expect(window.location.pathname).toBe('/'))
-    expect(await screen.findByText(demoEnUS.home.heading)).toBeInTheDocument()
+    // The trail starts at the organization, not at the tenant navigation's
+    // 「Home」 entry: it names the organization the pages belong to.
+    expect(
+      trail.queryByRole('link', { name: demoEnUS.nav.home }),
+    ).toBeNull()
+    expect(trail.getByText(organizationName)).toBeInTheDocument()
+    // The organization step is not a destination. The surface has no root
+    // page, so linking it could only send the viewer to the tenant home
+    // under the organization's name.
+    expect(
+      trail.queryByRole('link', { name: organizationName }),
+    ).toBeNull()
+    expect(trail.getByText(organizationName)).not.toHaveAttribute('aria-current')
   })
 })
