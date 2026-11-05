@@ -446,6 +446,29 @@ export const reviewTenantPolicies = {
     'objectstore.metadata',
     'sms',
   ],
+  /**
+   * Platform-level keys the zero-visibility probe must find in the platform
+   * listing. The listing is dynamic, so the probe asserts this set is a subset
+   * of it rather than comparing equality: a listing that came back empty (or
+   * lost a declaration) fails here instead of passing vacuously.
+   */
+  platformKeys: [
+    'jobs.db.poll-interval',
+    'jobs.db.claim-batch',
+    'jobs.db.lease',
+    'jobs.db.retry-base',
+    'jobs.db.retry-max',
+    'notification.delivery.per-recipient-hourly',
+    'notification.delivery.per-recipient-daily',
+    'notification.delivery.global-hourly',
+    'notification.delivery.tenant-distinct-hourly',
+    'notification.delivery.attempt-hourly',
+    'objectstore.metadata.upload-window',
+    'objectstore.metadata.object-ttl',
+    'objectstore.metadata.url-ttl',
+    'sms.ceiling-hourly',
+    'sms.registry.sending-enabled',
+  ],
 } as const
 
 /** The template's seeded operator entry; the member entry is appended to it. */

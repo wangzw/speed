@@ -23,6 +23,7 @@ import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { totpCode } from '../helpers/totp'
 import { writeReviewConfig, type ReviewConfig } from './config'
 import { startDNSStub, type DNSStub } from './dns-stub'
 import {
@@ -325,15 +326,59 @@ function cookieHeader(setCookie: readonly string[]): string {
     .join('; ')
 }
 
+/** The description of one open login flow, as the flow routes answer it. */
+interface FlowReply {
+  readonly seq: number
+  readonly nextKind: string
+  readonly factors: readonly { readonly id: string; readonly kind: string }[]
+  readonly accessToken: string
+}
+
+/** Read the flow fields the API sign-in needs out of one flow answer. */
+function parseFlowReply(body: string): FlowReply {
+  const parsed = JSON.parse(body) as {
+    readonly seq?: unknown
+    readonly next?: {
+      readonly kind?: unknown
+      readonly factors?: unknown
+    }
+    readonly access_token?: unknown
+  }
+  const factors = Array.isArray(parsed.next?.factors)
+    ? parsed.next.factors.flatMap((entry) => {
+        if (entry === null || typeof entry !== 'object') return []
+        const factor = entry as { readonly id?: unknown; readonly kind?: unknown }
+        if (typeof factor.id !== 'string' || typeof factor.kind !== 'string') {
+          return []
+        }
+        return [{ id: factor.id, kind: factor.kind }]
+      })
+    : []
+  return {
+    seq: typeof parsed.seq === 'number' ? parsed.seq : 0,
+    nextKind: typeof parsed.next?.kind === 'string' ? parsed.next.kind : '',
+    factors,
+    accessToken:
+      typeof parsed.access_token === 'string' ? parsed.access_token : '',
+  }
+}
+
 /**
  * Sign one account in through the product's own password flow and answer the
  * access token. The flow keeps its state in a cookie, so the answer's cookie is
- * carried to the completing call; the token is what the API write below uses.
+ * carried to the completing call; the token is what the API requests below use.
+ *
+ * An account holding a second factor parks the flow on that factor. When the
+ * caller names the authenticator seed, the flow selects the authenticator
+ * factor, answers its challenge with the code the review seed produces, and
+ * completes with the elevated session; a flow that asks for a factor the caller
+ * did not name fails loudly rather than completing at the wrong level.
  */
 async function signInThroughApi(
   origin: string,
   identifier: string,
   password: string,
+  totpSecret?: string,
 ): Promise<string> {
   const start = await callApi(`${origin}/api/v1/auth/flows`, {
     method: 'POST',
@@ -351,24 +396,66 @@ async function signInThroughApi(
     )
   }
   const cookie = cookieHeader(start.setCookie)
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(cookie === '' ? {} : { Cookie: cookie }),
+  }
+  const started = parseFlowReply(start.body)
+  let seq = started.seq
+  if (started.nextKind === 'factor') {
+    if (totpSecret === undefined) {
+      throw new Error(
+        `the API sign-in of ${identifier} asks for a second factor and no authenticator seed was given`,
+      )
+    }
+    const totp = started.factors.find((factor) => factor.kind === 'totp')
+    if (totp === undefined) {
+      throw new Error(
+        `the API sign-in of ${identifier} offers no authenticator factor`,
+      )
+    }
+    const challenge = await callApi(`${origin}/api/v1/auth/flows/answer`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ seq, step: 'factor', input: { factor: totp.id } }),
+    })
+    if (challenge.status !== 200) {
+      throw new Error(
+        `selecting the authenticator of ${identifier} answered ${challenge.status}:\n${challenge.body}`,
+      )
+    }
+    seq = parseFlowReply(challenge.body).seq
+    const passed = await callApi(`${origin}/api/v1/auth/flows/answer`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        seq,
+        step: 'factor',
+        input: { factor: totp.id, code: totpCode(totpSecret) },
+      }),
+    })
+    if (passed.status !== 200) {
+      throw new Error(
+        `answering the authenticator of ${identifier} answered ${passed.status}:\n${passed.body}`,
+      )
+    }
+    seq = parseFlowReply(passed.body).seq
+  }
   const answer = await callApi(`${origin}/api/v1/auth/flows/answer`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(cookie === '' ? {} : { Cookie: cookie }),
-    },
-    body: JSON.stringify({ step: 'complete' }),
+    headers,
+    body: JSON.stringify({ seq, step: 'complete' }),
   })
   if (answer.status !== 200) {
     throw new Error(
       `completing the API sign-in of ${identifier} answered ${answer.status}:\n${answer.body}`,
     )
   }
-  const parsed = JSON.parse(answer.body) as { readonly access_token?: unknown }
-  if (typeof parsed.access_token !== 'string' || parsed.access_token === '') {
+  const parsed = parseFlowReply(answer.body)
+  if (parsed.accessToken === '') {
     throw new Error(`the API sign-in of ${identifier} answered no access token`)
   }
-  return parsed.access_token
+  return parsed.accessToken
 }
 
 /** The input of one settings write the fixture makes through the product. */
@@ -376,6 +463,11 @@ export interface TenantSettingWriteInput {
   readonly tenant: string
   readonly identifier: string
   readonly password: string
+  /**
+   * The authenticator seed the account's second-factor step needs. Omitted for
+   * an account that signs in on the password alone.
+   */
+  readonly totpSecret?: string
   readonly namespace: string
   readonly key: string
   readonly value: string
@@ -386,6 +478,83 @@ export interface TenantSettingWriteAnswer {
   readonly status: number
   /** The problem type the refusal named; empty when the answer was not a problem. */
   readonly problemType: string
+}
+
+/** One declared setting item, by the key and the namespace that declared it. */
+export interface SettingsItem {
+  readonly key: string
+  readonly namespace: string
+}
+
+/** One settings read: the status it answered and the items it returned. */
+export interface SettingsReadAnswer {
+  readonly status: number
+  readonly items: readonly SettingsItem[]
+}
+
+/** The account an API settings session signs in as. */
+export interface SettingsAccount {
+  readonly identifier: string
+  readonly password: string
+}
+
+/**
+ * The input of the tenant surface's zero-visibility probe: the tenant
+ * administrator's account, the platform items to address from the tenant, and
+ * the namespaces to read as a namespace.
+ */
+export interface TenantSettingsProbeInput extends SettingsAccount {
+  readonly tenant: string
+  readonly items: readonly SettingsItem[]
+  readonly namespaces: readonly string[]
+}
+
+/** What the tenant surface answered to one zero-visibility probe. */
+export interface TenantSettingsProbeAnswer {
+  readonly read: SettingsReadAnswer
+  readonly writes: Readonly<Record<string, TenantSettingWriteAnswer>>
+  readonly deletes: Readonly<Record<string, TenantSettingWriteAnswer>>
+  readonly namespaceReads: Readonly<Record<string, number>>
+}
+
+/** Read the platform listing's items out of its top-level JSON array. */
+function platformSettingsItems(body: string): readonly SettingsItem[] {
+  const parsed = JSON.parse(body) as unknown
+  if (!Array.isArray(parsed)) return []
+  return parsed.flatMap((entry) => {
+    if (entry === null || typeof entry !== 'object') return []
+    const item = entry as { readonly key?: unknown; readonly namespace?: unknown }
+    if (typeof item.key !== 'string' || typeof item.namespace !== 'string') {
+      return []
+    }
+    return [{ key: item.key, namespace: item.namespace }]
+  })
+}
+
+/** Read the tenant envelope's items out of its `settings` array. */
+function tenantSettingsItems(body: string): readonly SettingsItem[] {
+  const parsed = JSON.parse(body) as { readonly settings?: unknown }
+  if (!Array.isArray(parsed.settings)) return []
+  return parsed.settings.flatMap((entry) => {
+    if (entry === null || typeof entry !== 'object') return []
+    const item = entry as { readonly key?: unknown; readonly namespace?: unknown }
+    if (typeof item.key !== 'string' || typeof item.namespace !== 'string') {
+      return []
+    }
+    return [{ key: item.key, namespace: item.namespace }]
+  })
+}
+
+/** The problem type one refusal named; empty when it named none. */
+function problemTypeOf(body: string): string {
+  if (body === '') return ''
+  try {
+    const problem = JSON.parse(body) as { readonly type?: unknown }
+    return typeof problem.type === 'string' ? problem.type : ''
+  } catch {
+    // A refusal that is not a problem document names no type.
+    return ''
+  }
 }
 
 /**
@@ -492,15 +661,39 @@ export interface ReviewServer {
    * Make one settings write through the product's own API, as the named
    * account, and answer the status and problem type.
    *
-   * A read-only tenant's settings page renders no switch, so the refused write
-   * has no rendered control to drive. This is the assembly layer's one product
-   * request: it signs the account in through the public password flow and
-   * sends the same PUT the page would. A spec asserts the rendered read-only
-   * state first and this answer beside it, never in place of it.
+   * The settings surface renders no control for every refusal this drives: a
+   * read-only tenant has no switch, a platform-enforced policy's switch is
+   * disabled, and a platform-level key is not on the page at all. This is the
+   * assembly layer's product request: it signs the account in through the
+   * public password flow (with the authenticator step when the account holds a
+   * second factor) and sends the same PUT the page would. A spec asserts the
+   * rendered state first and this answer beside it, never in place of it.
    */
   writeTenantSetting(
     input: TenantSettingWriteInput,
   ): Promise<TenantSettingWriteAnswer>
+  /**
+   * Read the platform settings listing as the named platform administrator.
+   *
+   * The platform listing is the dynamic answer to "which keys exist at all";
+   * the tenant-surface probe below takes this answer as its item set rather
+   * than a hardcoded list, so a declaration that disappears from the build is
+   * visible as a missing key.
+   */
+  readPlatformSettings(input: SettingsAccount): Promise<SettingsReadAnswer>
+  /**
+   * Probe the tenant settings surface as the named tenant administrator in one
+   * session: read the full listing, PUT and DELETE each named platform item,
+   * and read each named namespace.
+   *
+   * The tenant surface has no per-namespace read route, so the namespace read
+   * is answered by the router (404 or 405) rather than by the settings module.
+   * The PUT and DELETE targets are platform-level items, which have no tenant
+   * access; both must answer the same bare 404 an undeclared key gets.
+   */
+  probeTenantSettings(
+    input: TenantSettingsProbeInput,
+  ): Promise<TenantSettingsProbeAnswer>
   /** Run a hook before SIGTERM; hooks run in reverse registration order. */
   beforeStop(hook: () => Promise<void> | void): void
   /** Request shutdown, wait for exit, and clean up unless kept. */
@@ -835,6 +1028,7 @@ export async function startReviewServer(
           reviewConfig.origin,
           input.identifier,
           input.password,
+          input.totpSecret,
         )
         const answer = await callApi(
           `${reviewConfig.origin}/api/v1/tenants/${input.tenant}/settings/` +
@@ -849,20 +1043,88 @@ export async function startReviewServer(
             body: JSON.stringify({ value: input.value }),
           },
         )
-        let problemType = ''
-        if (answer.status >= 400 && answer.body !== '') {
-          try {
-            const problem = JSON.parse(answer.body) as {
-              readonly type?: unknown
-            }
-            if (typeof problem.type === 'string') {
-              problemType = problem.type
-            }
-          } catch {
-            // A refusal that is not a problem document names no type.
+        return {
+          status: answer.status,
+          problemType:
+            answer.status >= 400 ? problemTypeOf(answer.body) : '',
+        }
+      },
+      async readPlatformSettings(
+        input: SettingsAccount,
+      ): Promise<SettingsReadAnswer> {
+        const token = await signInThroughApi(
+          reviewConfig.origin,
+          input.identifier,
+          input.password,
+        )
+        const answer = await callApi(
+          `${reviewConfig.origin}/api/v1/system/settings?layer=global`,
+          {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        )
+        return {
+          status: answer.status,
+          items: answer.status === 200 ? platformSettingsItems(answer.body) : [],
+        }
+      },
+      async probeTenantSettings(
+        input: TenantSettingsProbeInput,
+      ): Promise<TenantSettingsProbeAnswer> {
+        const token = await signInThroughApi(
+          reviewConfig.origin,
+          input.identifier,
+          input.password,
+        )
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          'X-Tenant': input.tenant,
+        }
+        const base =
+          `${reviewConfig.origin}/api/v1/tenants/` +
+          `${encodeURIComponent(input.tenant)}/settings`
+        const read = await callApi(base, { method: 'GET', headers })
+        const writes: Record<string, TenantSettingWriteAnswer> = {}
+        const deletes: Record<string, TenantSettingWriteAnswer> = {}
+        for (const item of input.items) {
+          const url =
+            `${base}/${encodeURIComponent(item.namespace)}/` +
+            encodeURIComponent(item.key)
+          const write = await callApi(url, {
+            method: 'PUT',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: true }),
+          })
+          writes[item.key] = {
+            status: write.status,
+            problemType:
+              write.status >= 400 ? problemTypeOf(write.body) : '',
+          }
+          const removed = await callApi(url, { method: 'DELETE', headers })
+          deletes[item.key] = {
+            status: removed.status,
+            problemType:
+              removed.status >= 400 ? problemTypeOf(removed.body) : '',
           }
         }
-        return { status: answer.status, problemType }
+        const namespaceReads: Record<string, number> = {}
+        for (const namespace of input.namespaces) {
+          const namespaceRead = await callApi(
+            `${base}/${encodeURIComponent(namespace)}`,
+            { method: 'GET', headers },
+          )
+          namespaceReads[namespace] = namespaceRead.status
+        }
+        return {
+          read: {
+            status: read.status,
+            items: read.status === 200 ? tenantSettingsItems(read.body) : [],
+          },
+          writes,
+          deletes,
+          namespaceReads,
+        }
       },
       beforeStop(hook: () => Promise<void> | void): void {
         hooks.push(hook)

@@ -259,6 +259,24 @@ gates cannot decide for a spec.
   `outputDir`, the HTML reporter's `outputFolder`, any `outputFile` — is under
   the run's own `/tmp` root, and the honesty gate rejects a path that is not.
 
+### Registered off-UI API assertions
+
+Three settings refusals have no rendered control to drive. Each is registered
+here, and each is driven through the product's API by the same administrator
+account in its own API session, beside the rendered assertion — never instead
+of it. The rendered assertion still carries the journey; the API answer is the
+sibling evidence for a refusal the page cannot express.
+
+| Refusal | Rendered assertion | API assertion |
+|---|---|---|
+| A protected tenant's settings write | `tenant-admin: the protected organization renders no switch and its write is refused` renders the read-only notice and no switch | `PUT` on a policy answers `403` `urn:speed:settings:protected` |
+| A platform-enforced policy is turned off | `tenant-admin: a platform-enforced policy is read-only and cannot be turned off` renders the policy's switch checked and disabled with the platform-enforced notice | `PUT` on that policy answers `409` `urn:speed:settings:tenant-admission-enforced` |
+| A platform-level setting is addressed from the tenant | the main journey's settings step renders neither the platform keys nor their namespaces | the tenant listing returns only the two tenant keys; `PUT` and `DELETE` on each platform key answer `404`; a namespace read answers `404` or `405` |
+
+None of the three counts toward REQ-tenant-admin-020: that requirement is
+about refusing a `layer` or `tenant` query parameter with `400`, and no API
+assertion here sends either parameter.
+
 ## Adding a journey spec
 
 Every spec declares, in its header comment:

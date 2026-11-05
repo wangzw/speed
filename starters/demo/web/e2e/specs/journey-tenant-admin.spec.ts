@@ -55,17 +55,21 @@
  *    to the account's non-personal membership; the history visit keeps the
  *    personal tenant current, which is the state the requirement describes.
  *
- * The settings surface's two refusal states have their own servers and
- * administrators. A platform-held policy needs a multi-factor administrator,
- * because the admission layer would challenge every tenant-scoped request of
- * a single-factor one; that server names the review build's operator, whose
+ * The settings surface's three refusals have no rendered control to drive.
+ * A platform-held policy needs a multi-factor administrator, because the
+ * admission layer would challenge every tenant-scoped request of a
+ * single-factor one; that server names the review build's operator, whose
  * seasoned authenticator its seed provides, as the tenant's administrator,
  * and the branch signs in with that factor before reading the policy as an
- * enforced, disabled switch. A tenant the review build protects is
- * read-only as a whole, so its page renders no switch at all; the refused
- * write has no rendered control there, and the review server fixture makes
- * that one write through the product's API beside the rendered assertion, as
- * the same administrator.
+ * enforced, disabled switch. A tenant the review build protects is read-only
+ * as a whole, so its page renders no switch at all. A platform-level setting
+ * is neither rendered nor addressable from the tenant surface. In all three
+ * cases the review server fixture makes the same request through the
+ * product's API beside the rendered assertion, as the same administrator
+ * account: the protected write answers 403, the enforced policy's disable
+ * answers 409, and the tenant surface answers the platform keys' writes and
+ * deletes with 404. Those API answers are sibling evidence; the rendered
+ * state above each one carries the journey.
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts; the invitation notice's subject is read from the backend
@@ -75,7 +79,7 @@
  * the review carrier writes when a notice is delivered.
  */
 // @journey journey-tenant-admin.md
-// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021
+// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import {
@@ -1658,6 +1662,58 @@ test.describe('the tenant administrator manages the organization', () => {
           await expect(page.getByText(namespace, { exact: false })).toHaveCount(0)
         }
 
+        // REQ-tenant-admin-018 / REQ-tenant-admin-019 / REQ-tenant-admin-062:
+        // the platform settings are invisible from this surface. A platform
+        // operator lists every declared platform setting; the plan's fifteen
+        // platform keys must all be in that dynamic listing, so an empty
+        // listing (or one that lost a declaration) fails here. The tenant
+        // administrator's own session then reads the full listing and
+        // addresses each platform item: the read returns exactly the two
+        // tenant keys, and every write and delete answers the bare 404 an
+        // undeclared key gets. A namespace read has no tenant route at all,
+        // so the router answers 404 or 405.
+        const platformSettings = await server.readPlatformSettings({
+          identifier: OPERATOR.identifier,
+          password: OPERATOR.password,
+        })
+        expect(platformSettings.status).toBe(200)
+        const platformItems = platformSettings.items.filter(
+          (item) =>
+            !(reviewTenantPolicies.keys as readonly string[]).includes(
+              item.key,
+            ),
+        )
+        const platformKeys = new Set(platformItems.map((item) => item.key))
+        for (const key of reviewTenantPolicies.platformKeys) {
+          expect(
+            platformKeys.has(key),
+            `the platform listing is missing ${key}`,
+          ).toBe(true)
+        }
+
+        const probe = await server.probeTenantSettings({
+          tenant: TENANT,
+          identifier: reviewTenantAdmin.identifier,
+          password: reviewTenantAdmin.password,
+          items: platformItems,
+          namespaces: [...new Set(platformItems.map((item) => item.namespace))],
+        })
+        expect(probe.read.status).toBe(200)
+        expect(probe.read.items.map((item) => item.key).sort()).toEqual(
+          [...reviewTenantPolicies.keys].sort(),
+        )
+        for (const item of platformItems) {
+          expect(probe.writes[item.key]?.status, `PUT ${item.key}`).toBe(404)
+          expect(probe.deletes[item.key]?.status, `DELETE ${item.key}`).toBe(
+            404,
+          )
+        }
+        for (const [namespace, status] of Object.entries(
+          probe.namespaceReads,
+        )) {
+          expect([404, 405], `GET namespace ${namespace}`).toContain(status)
+        }
+
         // This journey leaves both policies off. Turning one on would require
         // it of the single-factor review administrator from the next request
         // onward -- the write itself passes, the read after it is challenged --
@@ -2434,7 +2490,7 @@ test.describe('a policy the platform holds on', () => {
   }) => {
     test.setTimeout(300_000)
 
-    const { page, accounts } = demo
+    const { page, server, accounts } = demo
 
     await signInOperatorWithTotp(page, accounts)
     await openOrganizationPage(page, 'settings')
@@ -2480,6 +2536,26 @@ test.describe('a policy the platform holds on', () => {
     })
     await expect(ssoSwitch).not.toBeChecked()
     await expect(ssoSwitch).toBeEnabled()
+
+    // REQ-tenant-admin-018: the rendered state above promises that turning
+    // the enforced policy off cannot land, and the disabled switch offers no
+    // control to drive. The same administrator account makes that write
+    // through the product's API, in its own authenticated session, and the
+    // server refuses it as a conflict; the answer is the sibling evidence
+    // for the read-only rendering, never a replacement for it.
+    const refusal = await server.writeTenantSetting({
+      tenant: 'acme',
+      identifier: OPERATOR.identifier,
+      password: OPERATOR.password,
+      totpSecret: TOTP_SEED,
+      namespace: 'tenant.admission',
+      key: 'require-mfa',
+      value: 'false',
+    })
+    expect(refusal.status).toBe(409)
+    expect(refusal.problemType).toBe(
+      'urn:speed:settings:tenant-admission-enforced',
+    )
   })
 })
 

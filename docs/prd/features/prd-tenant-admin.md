@@ -170,51 +170,51 @@
 
 ### REQ-tenant-admin-016
 
-组织管理面必须只呈现租户层真正拥有的设置项；本轮是「要求多因素认证」与「要求企业单点登录」两项准入策略。每项必须给出说明、当前状态、生效范围与关闭后的影响。
+组织管理面的「安全与访问」页必须只呈现租户层真正拥有的设置项；本轮是「要求多因素认证」与「要求企业单点登录」两项准入策略。每项必须给出说明、当前状态、生效范围与关闭后的影响。受保护租户只渲染只读说明，不渲染开关。
 
-- **验收**：页面只出现这两项，各自带标题、说明、状态、生效范围与关闭影响；不出现键值表、命名空间导航、搜索或批量保存；平台级设置的名称、值、来源与存在性都不出现。
+- **验收**：页面只出现这两项，各自带标题、说明、状态、生效范围与关闭影响；不出现键值表、命名空间导航、搜索或批量保存；平台级设置的名称、值、来源与存在性都不出现；受保护租户只渲染只读说明，不渲染开关。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（step 12）。
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步：两项策略的呈现与平台级名称不出现）、`tenant-admin: a platform-enforced policy is read-only and cannot be turned off` 与 `tenant-admin: the protected organization renders no switch and its write is refused`；设置步的零可见 API 断言见 REQ-tenant-admin-019。
 
 ### REQ-tenant-admin-017
 
-组织管理面必须允许租户管理员为当前租户开启或关闭一项准入策略；关闭必须先经一次说明影响的确认，开启即时保存。
+组织管理面必须允许租户管理员为当前租户开启或关闭一项准入策略；关闭必须先经一次说明影响的确认，开启即时保存。关闭在平台未强制时写入租户层 false，不删除租户层行。
 
-- **验收**：开启后页面立即显示已启用，重新读取仍为已启用；关闭时先出现确认，确认后显示未启用；写入失败时开关回滚到原值并显示可读的拒绝原因；请求在途时同一开关不可再次提交。
+- **验收**：开启后页面立即显示已启用，重新读取仍为已启用；关闭时先出现确认，确认后显示未启用；平台未强制时关闭写入成功，租户层写入 false 且有效值随之变为假；写入失败时开关回滚到原值并显示可读的拒绝原因；请求在途时同一开关不可再次提交。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：未实现。评审装配的租户管理员是单因素账户，开启策略会让其后的租户请求被准入层质询，主旅程只断言两项策略与平台级名称不出现；乐观保存、确认与回滚由前端单测覆盖，写路径由设置模块的测试覆盖。
 
 ### REQ-tenant-admin-018
 
-一项准入策略的有效值必须是平台层值与租户层值的逻辑或：平台层为真时策略对租户强制生效，租户层不能把它关闭；平台层为假时租户层可以自行开启。页面必须标出平台强制状态，并把该策略的开关只读为开。
+一项准入策略的有效值必须是平台层值与租户层值的逻辑或：平台层为真时策略对租户强制生效，租户层不能把它关闭；平台层为假时租户层可以自行开启。页面必须标出平台强制状态，并把该策略的开关只读为开。平台强制时提交关闭必须被拒绝，且不改变任何层。
 
-- **验收**：平台为真、租户为假时有效值为真，开关只读为开并显示「平台强制启用」，没有关闭入口；平台为假、租户为真时有效值为真；两层都为假时有效值为假；来源层在平台强制时为 `global`，平台未强制而租户层有行时为 `tenant`，两层都无行时为 `default`。
+- **验收**：平台为真、租户为假时有效值为真，开关只读为开并显示「平台强制启用」，没有关闭入口；平台为假、租户为真时有效值为真；两层都为假时有效值为假；来源层在平台强制时为 `global`，平台未强制而租户层有行时为 `tenant`，两层都无行时为 `default`；平台强制时通过产品 API 提交关闭得到 409，租户层与全局层都不变，不产生成功审计。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: a platform-enforced policy is read-only and cannot be turned off`（UI 只读）及其后的 off-UI 409 断言。
 
 ### REQ-tenant-admin-019
 
-组织管理面必须让平台级设置对租户完全不可见：全量读不得返回它们，单键读、写、删与任何按命名空间寻址都必须与不存在的键得到同一个答案。
+组织管理面必须让平台级设置对租户完全不可见：全量读不得返回它们；`TenantAccess` 非 `TenantNone` 的项可见，其中只有 `TenantReadWrite` 的项可写；未声明、`TenantNone` 与不存在的键得到同一个答案。
 
-- **验收**：全量读只含两项准入策略；对任一未声明为租户级的键（如 `authn.*`、`ratelimit.*`、`notification.delivery.*` 下的键）发起读、写、删都得到 404，响应体不含键名、值、来源、默认值或存在性；按命名空间读的入口不存在，请求得到 404 或 405，不返回设置内容。
+- **验收**：全量读只含两项准入策略；`TenantAccess` 为 `TenantRead` 的项可见但写与删得到 403 `read-only`；`TenantNone` 或未声明的键（如 `authn.*`、`ratelimit.*`、`notification.delivery.*` 下的键）读、写、删都得到不携带内容的 404，响应体不含键名、值、来源、默认值或存在性；按命名空间读的端点已删除，请求由路由层返回 404 或 405，不返回设置内容。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（step 12 的负向断言）。
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步：租户全量读的键集合只含两项；对平台级键的写与删均 404；按命名空间读 404/405）。
 
 ### REQ-tenant-admin-020
 
-组织管理面必须在平台层要求一项策略时拒绝把它关闭的写入；被拒绝的写入不得改变任何层，也不得产生成功审计。
+组织管理面必须把作用层固定在路径点名的租户上：不接受 `layer` 或 `tenant` 查询参数，出现即 400；每一条写与删都固定作用于路径租户的层，没有第二条通道把一次写指到全局层或另一个租户。
 
-- **验收**：平台强制时提交关闭得到 409，租户层值与全局值都不变，没有成功审计；提交开启或移除租户行成功，有效值仍为真；平台未强制时关闭写入成功，有效值随之变为假。
+- **验收**：请求带 `layer` 或 `tenant` 查询参数（无论取值）时，读与写都得到 400，动作不执行；写与删只落在路径租户的租户层，全局层与另一租户的行不变。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：未实现。作用层由路由固定到路径租户，`layer` 与 `tenant` 参数在路由层被拒绝；该行为由路由声明与设置模块的测试覆盖，当前 e2e 不发送这两个参数。
 
 ### REQ-tenant-admin-021
 
-组织管理面必须遮蔽敏感设置项的值，并拒绝把遮蔽串写回敏感项。
+组织管理面必须遮蔽敏感设置项的值，并拒绝把遮蔽串写回敏感项。遮蔽与写回拒绝的机制已实现；当前没有租户级敏感项。
 
-- **验收**：读取敏感项时只返回遮蔽文本，同一视图中的非敏感项返回原值；把遮蔽串作为值提交给敏感项得到 422，租户层值与审计都不变。
+- **验收**：读取敏感项时只返回遮蔽文本，同一视图中的非敏感项返回原值；把遮蔽串作为值提交给敏感项得到 422，租户层值与审计都不变；本轮两项准入策略都不敏感，租户面没有可驱动的敏感项。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：未实现。当前无租户级敏感项，机制由设置模块的合成声明测试覆盖。
 
 ### REQ-tenant-admin-022
 
@@ -535,3 +535,11 @@
 - **验收**：投递成功时面板显示已发送；投递失败时面板显示失败，接受链接仍可复制，邀请仍在列表中且可接受；未配置邮件时面板显示未配置并说明本部署不发送邀请邮件；这些结果都不改变邀请的待接受状态。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization`
+
+### REQ-tenant-admin-062
+
+组织管理面的租户设置能力只覆盖两项租户级准入策略；一项策略的有效值取平台层值与租户层值的逻辑或，平台层为真时该项对租户只读为开，平台级设置对租户零可见。本项是能力总述，细项验收见 REQ-tenant-admin-016、REQ-tenant-admin-017 与 REQ-tenant-admin-018，零可见的细项见 REQ-tenant-admin-019。
+
+- **验收**：两项策略是租户面可见设置的全集；平台为真时该项只读为开且标出平台强制；两项的任一组合下有效值都等于两层值的或；任一平台级设置键在租户面不可见、不可写、不可删。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步）、`tenant-admin: a platform-enforced policy is read-only and cannot be turned off` 与 `tenant-admin: the protected organization renders no switch and its write is refused`。

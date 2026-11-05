@@ -133,6 +133,7 @@ flowchart TD
 - `REQ-tenant-admin-015`
 - `REQ-tenant-admin-016`
 - `REQ-tenant-admin-017`
+- `REQ-tenant-admin-018`
 - `REQ-tenant-admin-019`
 - `REQ-tenant-admin-022`
 - `REQ-tenant-admin-023`
@@ -167,6 +168,7 @@ flowchart TD
 - `REQ-tenant-admin-059`
 - `REQ-tenant-admin-060`
 - `REQ-tenant-admin-061`
+- `REQ-tenant-admin-062`
 - `REQ-tenancy-008`
 - `REQ-tenancy-009`
 - `REQ-tenancy-010`
