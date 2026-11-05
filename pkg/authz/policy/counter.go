@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
@@ -77,6 +78,57 @@ func (p *product) SoleTenantAdminTenant(ctx context.Context, account string) (st
 		return id, true, nil
 	}
 	return "", false, nil
+}
+
+// LockAccountAdministration implements authz.TenantAdminCounter: it takes the
+// tenant lock of every tenant in which account holds a tenant-administrator
+// binding, in identifier order, and answers one release for all of them.
+//
+// The tenants are read from the bindings, not from the roster: the lock's job
+// is to exclude every other removal that judges one of these tenants' floors,
+// and a tenant that is not in service is still a floor some other path counts
+// against. Locking it costs nothing and closing the set over the roster would
+// make a changing status a hole in the exclusion.
+//
+// The release is idempotent, and a lock that cannot be taken releases the ones
+// already taken before returning the failure, so a deletion that does not
+// proceed holds nothing.
+func (p *product) LockAccountAdministration(ctx context.Context, account string) (func(), error) {
+	if account == "" {
+		return func() {}, nil
+	}
+	rows, err := p.adminBindings(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	tenants := make([]string, 0, len(rows))
+	for id, tally := range rows {
+		if tally.holds {
+			tenants = append(tenants, id)
+		}
+	}
+	slices.Sort(tenants)
+
+	held := make([]func(), 0, len(tenants))
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			// Reverse order, so the locks come back the way they were taken.
+			for i := len(held) - 1; i >= 0; i-- {
+				held[i]()
+			}
+		})
+	}
+	for _, id := range tenants {
+		lease, lockErr := p.tenantLock.Lock(ctx, id)
+		if lockErr != nil {
+			release()
+			return nil, fmt.Errorf("authz/policy: taking the tenant lock of %q for account %q: %w",
+				id, account, lockErr)
+		}
+		held = append(held, lease)
+	}
+	return release, nil
 }
 
 // adminTally is one tenant's tenant-administrator bindings: how many the

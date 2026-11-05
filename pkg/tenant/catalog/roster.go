@@ -676,11 +676,13 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 //
 // The write and the read that names a conflict run on one connection (write).
 //
-// The profile columns and the creation time are not written here. A rewrite
-// takes the alias, the status and the disable source, so it cannot put back a
-// profile another path changed, and an insert it performs takes the migration's
-// profile defaults and a null creation time. Updating a profile is SetProfile's
-// work.
+// The profile columns are not written here. A rewrite takes the alias, the
+// status and the disable source, so it cannot put back a profile another path
+// changed; an insert it performs takes the migration's profile defaults. The
+// creation time is written on an insert and only on an insert: a registration
+// made through Put records the real moment in UTC, exactly as Create does, while
+// the upsert's update clause leaves an existing row's time alone. Updating a
+// profile is SetProfile's work.
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 	if err := checkWrite(t); err != nil {
 		return err
@@ -715,6 +717,12 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 			Alias:      t.Alias,
 			Status:     int(t.Status),
 			DisabledBy: int(t.DisabledBy),
+
+			// The creation time is the roster's to record, as on Create. The
+			// update clause does not name the column, so an existing row keeps
+			// the time it has; a value left to gorm's auto-create would be
+			// local rather than UTC.
+			CreatedAt: creationTime(),
 		})
 		if written.Error != nil {
 			return written.Error

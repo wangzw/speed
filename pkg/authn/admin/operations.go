@@ -417,6 +417,8 @@ var accountDeleteOperation = speedhttp.NewReplyOperation[accountIDInput](
 	nil,
 	speedhttp.Failures(commonFailures(),
 		speedhttp.ProblemResponse(http.StatusForbidden, "The caller is impersonating or may not delete the account"),
+		problemResponse(http.StatusConflict, mount.CodeAccountLastTenantAdmin,
+			"The account is the only tenant administrator of an active business tenant; the detail names that tenant, and the role has to be handed to another administrator first"),
 		speedhttp.Response{Status: http.StatusNotFound, Description: "No such account"},
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 		speedhttp.Response{Status: http.StatusNoContent, Description: "The account was deleted"},

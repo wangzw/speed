@@ -361,3 +361,39 @@ func readCreatedAt(t *testing.T, r *roster, id string) *time.Time {
 	}
 	return held[0].CreatedAt
 }
+
+// TestPutRecordsTheCreationTimeInUTC holds the registration path's time: an
+// insert through Put records the real moment in UTC, as Create does, and a
+// rewrite of the same row leaves that moment alone.
+//
+// The case forces the handle's auto-create clock into a non-UTC zone. A value
+// left to gorm would be taken from that clock and land with the offset; only an
+// explicit UTC value can pass.
+func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
+	r := rosterOver(t, "")
+	r.handle.NowFunc = func() time.Time {
+		return time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("UTC+8", 8*60*60))
+	}
+	if err := r.Put(context.Background(), tenant.Tenant{
+		ID: "t_put", Alias: "put", Status: tenant.StatusActive,
+	}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	created := readCreatedAt(t, r, "t_put")
+	if created == nil {
+		t.Fatal("a row inserted through Put reads no creation time, want the moment of registration")
+	}
+	if _, offset := created.Zone(); offset != 0 {
+		t.Errorf("the creation time is %v, want UTC", created)
+	}
+
+	if err := r.Put(context.Background(), tenant.Tenant{
+		ID: "t_put", Alias: "put-renamed", Status: tenant.StatusDisabled,
+	}); err != nil {
+		t.Fatalf("rewriting through Put: %v", err)
+	}
+	rewritten := readCreatedAt(t, r, "t_put")
+	if !sameTime(created, rewritten) {
+		t.Errorf("the creation time became %v after a rewrite, want %v", rewritten, created)
+	}
+}

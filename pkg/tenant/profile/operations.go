@@ -31,16 +31,17 @@ type profileInput struct {
 type profileWriteInput struct {
 	Tenant string `path:"tenant" description:"The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused."`
 
-	DisplayName  string `json:"displayName" required:"true" description:"The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias."`
+	DisplayName  string `json:"display_name" required:"true" description:"The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias."`
 	Description  string `json:"description" required:"true" description:"A longer account of the organization, at most 500 runes. Empty clears it."`
-	ContactEmail string `json:"contactEmail" required:"true" description:"The organization's contact address, one bare email address of at most 254 bytes. Empty clears it."`
+	ContactEmail string `json:"contact_email" required:"true" description:"The organization's contact address, one bare email address of at most 254 bytes. Empty clears it."`
 	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it."`
 }
 
 // profileWriteFields are the body members a write must carry. The declaration
 // marks them required; the entry point's binding enforces body presence and not
-// member presence, so the prescreen holds the members.
-var profileWriteFields = []string{"displayName", "description", "contactEmail", "website"}
+// member presence, so the prescreen holds the members. The names are the JSON
+// names, the same snake_case the platform registration body uses.
+var profileWriteFields = []string{"display_name", "description", "contact_email", "website"}
 
 // profileBody is the 200 answer of a read and of a write: the profile view.
 type profileBody = struct {

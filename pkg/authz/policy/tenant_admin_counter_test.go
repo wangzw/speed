@@ -231,3 +231,67 @@ func TestTheCounterAnswersTheFirstTenantByIdentifier(t *testing.T) {
 		t.Errorf("SoleTenantAdminTenant = (%q, %t), want (acme, true)", id, sole)
 	}
 }
+
+// TestLockAccountAdministrationSerialisesOneTenantsDeletions holds the lock a
+// deletion takes: one holding of the lock excludes another account's deletion
+// in the same tenant, so the two cannot each read the other's binding as
+// present and then together leave the tenant with no administrator. The release
+// is idempotent, and a second acquire succeeds once the first is released.
+func TestLockAccountAdministrationSerialisesOneTenantsDeletions(t *testing.T) {
+	p := newProductOver(t)
+	bindTenantAdmin(t, p, "acme", "acc1")
+	bindTenantAdmin(t, p, "acme", "acc2")
+	bindTenantAdmin(t, p, "globex", "acc1")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	first, err := p.LockAccountAdministration(ctx, "acc1")
+	if err != nil {
+		t.Fatalf("LockAccountAdministration(acc1): %v", err)
+	}
+
+	acquired := make(chan func(), 1)
+	failed := make(chan error, 1)
+	go func() {
+		release, lockErr := p.LockAccountAdministration(ctx, "acc2")
+		if lockErr != nil {
+			failed <- lockErr
+			return
+		}
+		acquired <- release
+	}()
+
+	select {
+	case <-acquired:
+		t.Fatal("a second deletion in the same tenant took the lock while the first held it")
+	case lockErr := <-failed:
+		t.Fatalf("the second LockAccountAdministration failed: %v", lockErr)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Releasing twice is idempotent; the second call must not release anything
+	// the second deletion now holds.
+	first()
+	first()
+
+	select {
+	case release := <-acquired:
+		release()
+	case lockErr := <-failed:
+		t.Fatalf("the second LockAccountAdministration failed: %v", lockErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the second deletion did not take the lock after the first was released")
+	}
+}
+
+// An account with no tenant-administrator binding locks nothing and answers a
+// release that is safe to call.
+func TestLockAccountAdministrationLocksNothingForAnUnboundAccount(t *testing.T) {
+	p := newProductOver(t)
+	release, err := p.LockAccountAdministration(t.Context(), "acc-with-no-binding")
+	if err != nil {
+		t.Fatalf("LockAccountAdministration: %v", err)
+	}
+	release()
+	release()
+}

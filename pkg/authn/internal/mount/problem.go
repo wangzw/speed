@@ -43,6 +43,7 @@ const (
 	CodePasswordResetUnavailable       = "password-reset-unavailable"       // 403
 	CodeFactorNotFound                 = "factor-not-found"                 // 404
 	CodeConflict                       = "conflict"                         // 409
+	CodeAccountLastTenantAdmin         = "account-last-tenant-admin"        // 409
 	CodeLoginIdentifierRequired        = "login-identifier-required"        // 409
 	CodeLastLoginMethod                = "last-login-method"                // 409
 	CodeUsernameImmutable              = "username-immutable"               // 409
@@ -75,6 +76,7 @@ var statusOf = map[string]int{
 	CodePasswordResetUnavailable:       http.StatusForbidden,
 	CodeFactorNotFound:                 http.StatusNotFound,
 	CodeConflict:                       http.StatusConflict,
+	CodeAccountLastTenantAdmin:         http.StatusConflict,
 	CodeLoginIdentifierRequired:        http.StatusConflict,
 	CodeLastLoginMethod:                http.StatusConflict,
 	CodeUsernameImmutable:              http.StatusConflict,

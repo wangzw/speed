@@ -244,6 +244,15 @@ var (
 	// Outwardly it is a 409.
 	ErrLastTenantAdmin = errors.New("authn: the last tenant administrator binding of a tenant cannot be removed")
 
+	// ErrAccountLastTenantAdmin reports an account deletion refused because the
+	// account is the only tenant administrator of an active business tenant.
+	// Outwardly it is a 409 account-last-tenant-admin, a code of its own rather
+	// than the generic conflict, so a surface can tell this refusal from the
+	// other 409s and name the tenant the account still governs. It is distinct
+	// from ErrLastTenantAdmin: that one is a membership removal's refusal, this
+	// one is the account deletion's.
+	ErrAccountLastTenantAdmin = errors.New("authn: the account is the last tenant administrator of an organization")
+
 	// ErrAccountUnavailable reports a disabled account on an external login path,
 	// where the caller has already proved who they are at the provider, or a
 	// password write whose transaction found the account no longer enabled, no
@@ -471,3 +480,22 @@ func (e *LinkRequiredError) Error() string { return ErrLinkRequired.Error() }
 
 // Unwrap returns ErrLinkRequired, so errors.Is holds for the refusal.
 func (e *LinkRequiredError) Unwrap() error { return ErrLinkRequired }
+
+// AccountLastTenantAdminError is ErrAccountLastTenantAdmin with the tenant the
+// account still administers. It changes no answer: errors.Is on
+// ErrAccountLastTenantAdmin still holds for it. The identifier is what lets a
+// surface name the organization an operator has to hand to another
+// administrator before the account can be deleted. Error returns the
+// sentinel's text and carries no identifier, because errors reach logs.
+type AccountLastTenantAdminError struct {
+	// Tenant is the identifier of the active business tenant whose only
+	// tenant-administrator binding names the account.
+	Tenant string
+}
+
+// Error returns the sentinel's text, so an error that reaches a log names no
+// tenant.
+func (e *AccountLastTenantAdminError) Error() string { return ErrAccountLastTenantAdmin.Error() }
+
+// Unwrap returns ErrAccountLastTenantAdmin, so errors.Is holds for the refusal.
+func (e *AccountLastTenantAdminError) Unwrap() error { return ErrAccountLastTenantAdmin }

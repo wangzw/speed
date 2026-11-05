@@ -106,6 +106,7 @@ import (
 	tenantadmin "github.com/vislake/speed/pkg/tenant/admin"
 	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
+	tenantprofile "github.com/vislake/speed/pkg/tenant/profile"
 	"github.com/vislake/speed/pkg/tenant/resolve"
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
 
@@ -331,6 +332,11 @@ var (
 		tenantcatalog.ModuleName,
 		tenantadmin.ModuleName,
 		tenantself.ModuleName,
+		// The organization profile surface: a tenant administrator edits its
+		// own organization's display name, description, contact email and
+		// website, on the API endpoint where tenant resolution and the tenant
+		// administration guard reach it. See pkg/tenant/profile.
+		tenantprofile.ModuleName,
 		auditjournal.ModuleName,
 		auditadmin.ModuleName,
 		authzpolicy.ModuleName,

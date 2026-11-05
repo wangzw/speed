@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authz"
 )
 
 // hookTimeout bounds the cleanup hooks of one call, which run after the state
@@ -128,11 +127,19 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 	if err := checkID(id); err != nil {
 		return err
 	}
+	// The locks are taken before the check and held through the cleanup, so
+	// this deletion and any other removal that judges one of the same tenants'
+	// floors run one after the other (see refuseDeletingTheLastTenantAdmin).
+	release, err := p.lockAccountAdministration(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := p.refuseDeletingTheLastTenantAdmin(ctx, id); err != nil {
 		return err
 	}
 	b := &batch{}
-	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
+	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Exec("UPDATE "+tableAccounts+" SET updated_at = ? WHERE id = ?", p.at(), id.String())
 		if res.Error != nil {
 			return res.Error
@@ -158,17 +165,40 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 	})
 }
 
+// lockAccountAdministration takes the counter's tenant locks for every tenant
+// in which the account administers, and answers the release. An assembly with
+// no counter locks nothing: its deletion path has no floor to serialise. A lock
+// that cannot be taken is ErrUnavailable and the deletion does not run, because
+// an unknown floor must not be read as permission.
+func (p *product) lockAccountAdministration(ctx context.Context, id authn.AccountID) (func(), error) {
+	counter := p.tenantAdminCounter
+	if counter == nil {
+		return func() {}, nil
+	}
+	release, err := counter.LockAccountAdministration(ctx, id.String())
+	if err != nil {
+		p.logger.Error(ModuleName+": the last-administrator locks could not be taken, so the account was not deleted",
+			slog.String("account", id.String()), slog.String("cause", err.Error()))
+		return nil, fmt.Errorf("%w: taking the last tenant-administrator locks: %w", authn.ErrUnavailable, err)
+	}
+	return release, nil
+}
+
 // refuseDeletingTheLastTenantAdmin asks the optional counter before the
 // tombstone is written. An account that is the only tenant administrator of an
-// active business tenant is refused with authn.ErrLastTenantAdmin and nothing
-// is erased; the role has to be handed to another administrator first.
+// active business tenant is refused with authn.ErrAccountLastTenantAdmin and
+// nothing is erased; the role has to be handed to another administrator first.
+// The refusal carries the tenant's identifier, so a surface can name the
+// organization the operator has to hand over.
 //
-// The check runs before the deletion's transaction, not inside it: the counter
-// reads the policy table through another module's handle, and a statement made
-// while this module held its write transaction would compete for the one
-// connection an in-memory database has. The window that opens between the check
-// and the commit is the administration's to narrow — a binding added there
-// leaves the account refused until the delete is repeated.
+// The check runs after lockAccountAdministration has taken the tenant locks the
+// deletion shares with every other path that judges those tenants' floors, and
+// the deletion's transaction and binding cleanup run before the locks are
+// released. Two deletions in one tenant therefore cannot each read the other
+// administrator as present and then together leave the tenant with none: the
+// second either sees the first's committed cleanup (and is refused) or runs
+// first. The same lock serialises a deletion against a binding or membership
+// removal of one of those tenants.
 //
 // A tombstone is not checked: the call is finishing a cleanup whose hooks did
 // not complete, and the live account the floor protects is already gone. An
@@ -201,9 +231,7 @@ func (p *product) refuseDeletingTheLastTenantAdmin(ctx context.Context, id authn
 		return fmt.Errorf("%w: reading the last tenant administrator: %w", authn.ErrUnavailable, err)
 	}
 	if sole {
-		return fmt.Errorf("%w: account %q is the only %q of tenant %q; handing the role to another "+
-			"administrator is what lets the account be deleted",
-			authn.ErrLastTenantAdmin, id, authz.TenantAdminRole, tenantID)
+		return &authn.AccountLastTenantAdminError{Tenant: tenantID}
 	}
 	return nil
 }

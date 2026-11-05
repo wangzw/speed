@@ -13,11 +13,12 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// writeBody is the write request as a case builds it.
+// writeBody is the write request as a case builds it. The names are the JSON
+// names the API declares: snake_case, as every management write body uses.
 type writeBody struct {
-	DisplayName  string `json:"displayName"`
+	DisplayName  string `json:"display_name"`
 	Description  string `json:"description"`
-	ContactEmail string `json:"contactEmail"`
+	ContactEmail string `json:"contact_email"`
 	Website      string `json:"website"`
 }
 
@@ -343,7 +344,7 @@ func TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit(t *testing.T) {
 func TestABodyThatIsNotOneJSONObjectIsABadRequest(t *testing.T) {
 	r := newRig(t)
 
-	w := r.doRaw(http.MethodPatch, profileTarget, `{"displayName": 3}`)
+	w := r.doRaw(http.MethodPatch, profileTarget, `{"display_name": 3}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body %q", w.Code, w.Body.String())
 	}
@@ -360,7 +361,7 @@ func TestABodyThatIsNotOneJSONObjectIsABadRequest(t *testing.T) {
 func TestAWriteMissingAFieldIsABadRequest(t *testing.T) {
 	r := newRig(t)
 
-	w := r.doRaw(http.MethodPatch, profileTarget, `{"displayName": "Acme"}`)
+	w := r.doRaw(http.MethodPatch, profileTarget, `{"display_name": "Acme"}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body %q", w.Code, w.Body.String())
 	}

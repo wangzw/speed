@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantprofile "github.com/vislake/speed/pkg/tenant/profile"
 )
 
 // tenancyProductOf builds the host product over the unit fakes.
@@ -658,6 +659,29 @@ func TestTheBaselineAssemblesTheTenantAdminCounter(t *testing.T) {
 	}
 	t.Errorf("%q is in the baseline roster but does not provide authz.TenantAdminCounter: "+
 		"the account deletion would lose the last-administrator guard", authzpolicy.ModuleName)
+}
+
+// TestTheBaselineServesTheOrganizationProfile holds the host's side of the
+// organization profile surface: the module is in the baseline serve roster, and
+// the binary declares its feature. Without the roster entry the routes never
+// mount and the merged contract never names them, however complete the module
+// itself is.
+func TestTheBaselineServesTheOrganizationProfile(t *testing.T) {
+	if !slices.Contains(baselineServe, tenantprofile.ModuleName) {
+		t.Fatalf("the baseline serve roster does not name %q: the demo would serve no "+
+			"organization profile route", tenantprofile.ModuleName)
+	}
+	declared, err := declaredVocabulary()
+	if err != nil {
+		t.Fatalf("reading this binary's declarations: %v", err)
+	}
+	for _, entry := range declared {
+		if entry.Name == "tenant.profile" && entry.Module == tenantprofile.ModuleName {
+			return
+		}
+	}
+	t.Errorf("this binary does not declare the feature tenant.profile under %q: the frontend "+
+		"cannot discover the organization profile surface", tenantprofile.ModuleName)
 }
 
 // TestTheProvisionerRefusesATakenIdentifierWithoutTouchingItsPolicy holds the

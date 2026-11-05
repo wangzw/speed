@@ -87,7 +87,7 @@
       "TenantProfileWrite": {
         "additionalProperties": false,
         "properties": {
-          "contactEmail": {
+          "contact_email": {
             "description": "The organization's contact address, one bare email address of at most 254 bytes. Empty clears it.",
             "type": "string"
           },
@@ -95,7 +95,7 @@
             "description": "A longer account of the organization, at most 500 runes. Empty clears it.",
             "type": "string"
           },
-          "displayName": {
+          "display_name": {
             "description": "The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias.",
             "type": "string"
           },
@@ -105,9 +105,9 @@
           }
         },
         "required": [
-          "displayName",
+          "display_name",
           "description",
-          "contactEmail",
+          "contact_email",
           "website"
         ],
         "type": "object"

@@ -16,11 +16,12 @@ import (
 
 // profileWriteBody is the profile write's JSON body as a case sends it. The
 // handler's declared input also carries the path's identifier, which JSON does
-// not carry.
+// not carry. The names are snake_case, the same shape the registration body
+// uses.
 type profileWriteBody struct {
-	DisplayName  string `json:"displayName"`
+	DisplayName  string `json:"display_name"`
 	Description  string `json:"description"`
-	ContactEmail string `json:"contactEmail"`
+	ContactEmail string `json:"contact_email"`
 	Website      string `json:"website"`
 }
 
@@ -239,7 +240,7 @@ func TestTheProfileUpdateRefusesShapeAndMissingTenantsBeforeTheAudit(t *testing.
 	t.Run("a member is absent", func(t *testing.T) {
 		r := newRig(t)
 		r.catalog.found = true
-		w := r.do(http.MethodPatch, pathTenants+"/t_acme/profile", map[string]string{"displayName": "Acme"})
+		w := r.do(http.MethodPatch, pathTenants+"/t_acme/profile", map[string]string{"display_name": "Acme"})
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body.String())
 		}

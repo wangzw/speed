@@ -250,6 +250,17 @@ func (m *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // missing object is errNotFound, which a reply handler writes as a bare 404; a
 // failure the route did not cause that no sentinel names is a 503.
 func (m *product) answer(op string, err error) error {
+	// The account-deletion floor has a code of its own, and the tenant in the
+	// detail: a surface can tell this refusal from every other 409 and name the
+	// organization whose only administrator the account still is.
+	var lastAdmin *authn.AccountLastTenantAdminError
+	if errors.As(err, &lastAdmin) {
+		return speedhttp.Fault{
+			Status: http.StatusConflict,
+			Type:   typePrefix + mount.CodeAccountLastTenantAdmin,
+			Detail: lastAdmin.Tenant,
+		}
+	}
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrSessionNotFound),
 		errors.Is(err, authn.ErrProviderNotFound), errors.Is(err, authn.ErrNotImpersonating):

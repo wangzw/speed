@@ -32,4 +32,25 @@ type TenantAdminCounter interface {
 	// guard could not answer: the caller must treat it as unavailable and never
 	// as permission.
 	SoleTenantAdminTenant(ctx context.Context, account string) (tenant string, sole bool, err error)
+
+	// LockAccountAdministration takes the tenant lock of every tenant in which
+	// account holds a tenant-administrator binding, and answers one function
+	// that releases them all. A deletion holds it from before
+	// SoleTenantAdminTenant until its cleanup has removed the account's
+	// bindings, so two deletions in one tenant cannot each read the other as
+	// present and then together leave the tenant with no administrator. It is
+	// the same lock Manager.DeleteBinding and MembershipGuard take, so a
+	// deletion, a binding removal and a membership removal of one tenant cannot
+	// interleave across the check.
+	//
+	// The tenants are locked in identifier order, so two deletions that
+	// administer overlapping tenant sets cannot deadlock. The release is
+	// idempotent. An error means the lock could not be taken and the deletion
+	// must not proceed; it is never permission. An account with no
+	// tenant-administrator binding locks nothing and answers a no-op release.
+	//
+	// One caveat travels with the implementation: the in-process default
+	// serialises one process, and replicas that do not share a database are a
+	// non-guarantee of the assembly (see authz.TenantLock).
+	LockAccountAdministration(ctx context.Context, account string) (release func(), err error)
 }

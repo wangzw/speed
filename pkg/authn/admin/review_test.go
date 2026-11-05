@@ -1547,3 +1547,29 @@ func TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers(t *testing.T) {
 		})
 	}
 }
+
+// TestAccountDeleteAnswersTheLastAdministratorWithItsOwnCode holds the
+// account-deletion refusal: a dedicated problem code, not the generic conflict
+// the membership removal uses, and the affected tenant in the detail so a
+// surface can name the organization the operator has to hand over.
+func TestAccountDeleteAnswersTheLastAdministratorWithItsOwnCode(t *testing.T) {
+	r := newRig(t)
+	r.accountAdm.err = &authn.AccountLastTenantAdminError{Tenant: "acme"}
+
+	rec := r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID), nil, fresh()...)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body %s", rec.Code, rec.Body.String())
+	}
+	if got := problemCode(t, rec.Body.String()); got != mount.CodeAccountLastTenantAdmin {
+		t.Errorf("problem code = %q, want %q", got, mount.CodeAccountLastTenantAdmin)
+	}
+	var p struct {
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decoding the problem body: %v", err)
+	}
+	if p.Detail != "acme" {
+		t.Errorf("problem detail = %q, want the tenant acme", p.Detail)
+	}
+}

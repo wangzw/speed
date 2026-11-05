@@ -223,6 +223,10 @@ func platformDefaultsDocument() map[string]any {
 			// resolves no tenant: the answer is about the caller, not about one
 			// tenant.
 			"self": map[string]any{"endpoints": []any{"account"}},
+			// The organization profile routes are tenant-scoped and mount on the
+			// API endpoint, where tenant resolution and the tenant administration
+			// guard reach them.
+			"profile": map[string]any{"endpoints": []any{"api"}},
 		},
 
 		// The authorization layer: the guard enforces the API endpoint, the

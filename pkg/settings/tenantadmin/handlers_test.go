@@ -373,11 +373,15 @@ func TestPlatformOnlyNamespacesAreInvisible(t *testing.T) {
 		decl("ratelimit.window", "ratelimit", reflect.TypeFor[time.Duration](), "1m0s", settings.Item{}),
 		decl("tenant.admission.open", "tenant.admission", reflect.TypeFor[bool](), "true", settings.Item{}),
 		decl("authn.session.idle-timeout", "authn.session", reflect.TypeFor[int](), "30", settings.Item{}),
+		decl("org.create.max-organizations", "org.create", reflect.TypeFor[int](), "5", settings.Item{}),
+		decl("org.create.max-per-hour", "org.create", reflect.TypeFor[int](), "3", settings.Item{}),
 	}
 	r.store.values["app.mode"] = "manual"
 	r.store.values["ratelimit.window"] = time.Minute
 	r.store.values["tenant.admission.open"] = true
 	r.store.values["authn.session.idle-timeout"] = 60
+	r.store.values["org.create.max-organizations"] = 5
+	r.store.values["org.create.max-per-hour"] = 3
 
 	w := r.do(http.MethodGet, base, nil)
 	if w.Code != http.StatusOK {
@@ -389,7 +393,12 @@ func TestPlatformOnlyNamespacesAreInvisible(t *testing.T) {
 		t.Fatalf("the listing holds %+v, want only app.mode", views)
 	}
 
-	for _, target := range []string{base + "/ratelimit", base + "/tenant.admission", base + "/authn.session"} {
+	for _, target := range []string{
+		base + "/ratelimit",
+		base + "/tenant.admission",
+		base + "/authn.session",
+		base + "/org.create",
+	} {
 		if w := r.do(http.MethodGet, target, nil); w.Code != http.StatusNotFound {
 			t.Errorf("%s ended with %d, want 404", target, w.Code)
 		}
@@ -400,33 +409,53 @@ func TestPlatformOnlyNamespacesAreInvisible(t *testing.T) {
 // action does not run: the host's seam is not asked, no audit row lands and the
 // settings module is not called.
 func TestAWriteToAPlatformOnlyNamespaceIsA404(t *testing.T) {
-	r := newRig(t)
-	r.store.declared = []settings.DeclaredItem{
-		decl("authn.session.idle-timeout", "authn.session", reflect.TypeFor[int](), "30", settings.Item{}),
-	}
-	for name, tc := range map[string]struct {
-		method string
-		body   any
+	for _, tc := range []struct {
+		name      string
+		namespace string
+		key       string
+		declared  settings.DeclaredItem
 	}{
-		"set":    {http.MethodPut, map[string]any{"value": 60}},
-		"delete": {http.MethodDelete, nil},
+		{
+			name:      "authn",
+			namespace: "authn.session",
+			key:       "idle-timeout",
+			declared:  decl("authn.session.idle-timeout", "authn.session", reflect.TypeFor[int](), "30", settings.Item{}),
+		},
+		{
+			name:      "org.create",
+			namespace: "org.create",
+			key:       "max-organizations",
+			declared:  decl("org.create.max-organizations", "org.create", reflect.TypeFor[int](), "5", settings.Item{}),
+		},
 	} {
-		t.Run(name, func(t *testing.T) {
-			w := r.do(tc.method, base+"/authn.session/idle-timeout", tc.body)
-			if w.Code != http.StatusNotFound {
-				t.Fatalf("the request ended with %d, want 404: %s", w.Code, w.Body.String())
-			}
-			if w.Body.Len() != 0 {
-				t.Errorf("the 404 carried the body %q, want none", w.Body.String())
-			}
-			if got := r.writeSeam.askedTenants(); len(got) != 0 {
-				t.Errorf("the write seam was asked about %v, want no seam call", got)
-			}
-			if got := r.audit.entries(); len(got) != 0 {
-				t.Errorf("the audit recorded %v, want none", got)
-			}
-			if got := r.store.ops(); len(got) != 0 {
-				t.Errorf("the settings surface was reached (%v)", got)
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.store.declared = []settings.DeclaredItem{tc.declared}
+			for name, write := range map[string]struct {
+				method string
+				body   any
+			}{
+				"set":    {http.MethodPut, map[string]any{"value": 60}},
+				"delete": {http.MethodDelete, nil},
+			} {
+				t.Run(name, func(t *testing.T) {
+					w := r.do(write.method, base+"/"+tc.namespace+"/"+tc.key, write.body)
+					if w.Code != http.StatusNotFound {
+						t.Fatalf("the request ended with %d, want 404: %s", w.Code, w.Body.String())
+					}
+					if w.Body.Len() != 0 {
+						t.Errorf("the 404 carried the body %q, want none", w.Body.String())
+					}
+					if got := r.writeSeam.askedTenants(); len(got) != 0 {
+						t.Errorf("the write seam was asked about %v, want no seam call", got)
+					}
+					if got := r.audit.entries(); len(got) != 0 {
+						t.Errorf("the audit recorded %v, want none", got)
+					}
+					if got := r.store.ops(); len(got) != 0 {
+						t.Errorf("the settings surface was reached (%v)", got)
+					}
+				})
 			}
 		})
 	}
