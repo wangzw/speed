@@ -62,6 +62,28 @@ type MembershipLifecycle interface {
 	MembershipRemoved(ctx context.Context, id AccountID, tenant string) error
 }
 
+// MemberRoleReader is the optional seam a module that holds role bindings
+// implements, so that a member listing can show each member's roles without the
+// membership store learning about policy. The policy module ships the
+// implementation beside its other seams.
+//
+// It is a bulk read: one call answers every member of a tenant, because a page
+// of members would otherwise ask once per row. An implementation reports role
+// names, not grants. The names are the tenant's own role identifiers, sorted
+// ascending and without duplicates; an account with no binding is absent from
+// the map or maps to an empty slice.
+//
+// The seam is optional. An assembly with no implementation has no roles to show,
+// and a read that fails is the seam being unavailable; the caller decides
+// whether to degrade the listing or fail it, and this interface states no such
+// policy.
+type MemberRoleReader interface {
+	// MemberRoles answers the role names every account holds in the tenant,
+	// keyed by account. The tenant is the string form of a tenant identifier as
+	// everywhere else in this package, and an empty one is ErrInvalidArgument.
+	MemberRoles(ctx context.Context, tenant string) (map[AccountID][]string, error)
+}
+
 // MembershipCleanup removes a membership on the account-deletion path. The
 // account module delivers it beside Memberships.
 //

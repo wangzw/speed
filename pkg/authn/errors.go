@@ -253,6 +253,14 @@ var (
 	// one is the account deletion's.
 	ErrAccountLastTenantAdmin = errors.New("authn: the account is the last tenant administrator of an organization")
 
+	// ErrCannotSuspendSelf reports a membership write that would suspend the
+	// caller's own membership in the tenant. It keeps a tenant with at least one
+	// active administrator: a tenant-administrator may not stop themselves from
+	// governing it, while another administrator may. Outwardly it is a 409 with
+	// the code authn.cannot_suspend_self, whose problem type is
+	// urn:speed:authn:cannot-suspend-self; the member route maps it.
+	ErrCannotSuspendSelf = errors.New("authn: an administrator cannot suspend their own membership")
+
 	// ErrAccountUnavailable reports a disabled account on an external login path,
 	// where the caller has already proved who they are at the provider, or a
 	// password write whose transaction found the account no longer enabled, no

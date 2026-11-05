@@ -72,6 +72,9 @@ var seamSignatures = map[string][]string{
 		"SignupStateOf(ctx context.Context, id AccountID) (SignupStatus, error)",
 		"PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error)",
 	},
+	"MemberRoleReader": {
+		"MemberRoles(ctx context.Context, tenant string) (map[AccountID][]string, error)",
+	},
 	"Memberships": {
 		"IsMember(ctx context.Context, id AccountID, tenant string) (bool, error)",
 		"Membership(ctx context.Context, tenant string, id AccountID) (Membership, bool, error)",
@@ -113,6 +116,9 @@ var seamSignatures = map[string][]string{
 	},
 	"EmailResetCodeSender": {
 		"SendResetCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error",
+	},
+	"InviteNotifier": {
+		"Notify(ctx context.Context, notice InviteNotice) (InviteDelivery, error)",
 	},
 	"HumanVerifier": {
 		"Required(scope HumanScope) bool",
