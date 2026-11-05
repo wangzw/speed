@@ -11295,13 +11295,21 @@
     },
     "/api/v1/tenants/{tenant}/members": {
       "get": {
-        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
+        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
         "operationId": "authn.admin.members.list",
         "parameters": [
           {
             "description": "Narrows the page to the members whose account display name or login identifiers begin with this text; absent or empty selects every member. The display name is matched as a byte prefix of the stored value, and an identifier after the query is lower-cased, the form usernames and email addresses are stored in.",
             "in": "query",
             "name": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Narrows the page to the members holding this role name in the tenant, matched exactly; absent or empty selects every member. A name no role of the tenant uses selects no member and is still a 200, so the parameter does not reveal which role names exist. A role filter needs the policy module's member role reader; an assembly without one answers 503.",
+            "in": "query",
+            "name": "role",
             "schema": {
               "type": "string"
             }
@@ -11315,7 +11323,7 @@
             }
           },
           {
-            "description": "The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last membership on that page.",
+            "description": "The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last matching membership on that page.",
             "in": "query",
             "name": "after",
             "schema": {
@@ -16705,10 +16713,10 @@
         "type": "object"
       },
       "AuthzAdminGrantView": {
-        "description": "One permission grant of a role: the (resource, action) pair the policy engine matches on.",
+        "description": "One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on.",
         "properties": {
           "action": {
-            "description": "The action the grant matches on.",
+            "description": "The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed.",
             "type": "string"
           },
           "created_at": {
@@ -16716,8 +16724,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "permission": {
+            "description": "The permission the (resource, action) pair translates to, for example authz.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries.",
+            "type": "string"
+          },
           "resource": {
-            "description": "The resource the grant matches on.",
+            "description": "The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed.",
             "type": "string"
           },
           "role": {
@@ -16732,6 +16744,7 @@
         "required": [
           "tenant",
           "role",
+          "permission",
           "resource",
           "action",
           "created_at"
@@ -16834,10 +16847,10 @@
         "type": "object"
       },
       "AuthzTenantAdminGrantView": {
-        "description": "One permission grant of a role: the (resource, action) pair the policy engine matches on.",
+        "description": "One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on.",
         "properties": {
           "action": {
-            "description": "The action the grant matches on.",
+            "description": "The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed.",
             "type": "string"
           },
           "created_at": {
@@ -16845,8 +16858,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "permission": {
+            "description": "The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries.",
+            "type": "string"
+          },
           "resource": {
-            "description": "The resource the grant matches on.",
+            "description": "The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed.",
             "type": "string"
           },
           "role": {
@@ -16861,6 +16878,7 @@
         "required": [
           "tenant",
           "role",
+          "permission",
           "resource",
           "action",
           "created_at"

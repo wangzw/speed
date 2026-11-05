@@ -1746,14 +1746,16 @@ export interface AuthzAdminRoleWrite {
  }
 
 /**
- * One permission grant of a role: the (resource, action) pair the policy engine matches on.
+ * One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on.
  */
 export interface AuthzAdminGrantView {
-  /** The action the grant matches on. */
+  /** The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   action: string;
   /** When the grant was written, as an RFC 3339 instant in UTC. */
   created_at: string;
-  /** The resource the grant matches on. */
+  /** The permission the (resource, action) pair translates to, for example authz.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries. */
+  permission: string;
+  /** The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   resource: string;
   /** The role holding the grant. */
   role: string;
@@ -1942,14 +1944,16 @@ export interface AuthzTenantAdminRoleWrite {
  }
 
 /**
- * One permission grant of a role: the (resource, action) pair the policy engine matches on.
+ * One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on.
  */
 export interface AuthzTenantAdminGrantView {
-  /** The action the grant matches on. */
+  /** The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   action: string;
   /** When the grant was written, as an RFC 3339 instant in UTC. */
   created_at: string;
-  /** The resource the grant matches on. */
+  /** The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries. */
+  permission: string;
+  /** The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   resource: string;
   /** The role holding the grant. */
   role: string;
@@ -2959,11 +2963,15 @@ export type AuthnAdminMembersListParams = {
  */
 query?: string;
 /**
+ * Narrows the page to the members holding this role name in the tenant, matched exactly; absent or empty selects every member. A name no role of the tenant uses selects no member and is still a 200, so the parameter does not reveal which role names exist. A role filter needs the policy module's member role reader; an assembly without one answers 503.
+ */
+role?: string;
+/**
  * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
  */
 limit?: number;
 /**
- * The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last membership on that page.
+ * The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last matching membership on that page.
  */
 after?: string;
 };
@@ -10542,7 +10550,7 @@ export const useAuthnInviteRevoke = <TError = Problem | void,
     }
 
 /**
- * Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
+ * Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
  * @summary List a tenant's members
  */
 export const authnAdminMembersList = (
