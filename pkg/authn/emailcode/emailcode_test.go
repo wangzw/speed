@@ -203,11 +203,14 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	if p := m.Provides[1]; p.Token != core.Token((*authn.EmailResetCodeSender)(nil)) || !p.Exclusive {
 		t.Errorf("Provides[1] = %+v, want authn.EmailResetCodeSender exclusively", p)
 	}
-	if len(m.Requires) != 1 {
-		t.Fatalf("Requires = %+v, want the mail sending capability alone", m.Requires)
+	if len(m.Requires) != 2 {
+		t.Fatalf("Requires = %+v, want the mail sending capability and the message localizer", m.Requires)
 	}
 	if r := m.Requires[0]; r.Token != core.Token((*mail.Sender)(nil)) || r.Optional {
 		t.Errorf("Requires[0] = %+v, want mail.Sender as a required dependency", r)
+	}
+	if r := m.Requires[1]; r.Token != core.Token((*i18n.Localizer)(nil)) || r.Optional {
+		t.Errorf("Requires[1] = %+v, want i18n.Localizer as a required dependency", r)
 	}
 	var catalogs int
 	for _, res := range m.Resources {
@@ -392,7 +395,7 @@ func TestAnAssemblyWithNoLocalizerStopsTheStartup(t *testing.T) {
 	if err == nil {
 		t.Fatal("the module started with no localizer in the assembly")
 	}
-	if !strings.Contains(err.Error(), "localizer") {
+	if !strings.Contains(strings.ToLower(err.Error()), "localizer") {
 		t.Errorf("the failure does not name the missing localizer: %v", err)
 	}
 	for _, key := range messageKeys {

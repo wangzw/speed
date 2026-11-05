@@ -50,7 +50,9 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/authz"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
@@ -58,6 +60,7 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
 // personalModuleName is the name this host module is registered under, and the
@@ -350,27 +353,41 @@ func init() {
 
 // personalModule is the descriptor of this host's personal-tenant policy.
 //
-// The roster, the memberships, the policy manager, the seeding surface, the
-// permission catalog and the audit module are required: the ensure writes all
-// five pieces, the deletion writes the audit row, and an assembly that names
-// this module without one of them cannot run it. The HTTP entry point, the
-// feature board, the route-declaration surface and the logger are optional:
-// without an entry point the routes are not mounted, without a board the
-// conditional feature is simply absent from the document, and without the
-// gateway's registration surface the route is guarded by the gateway's default
-// and an impersonating caller is answered by the gateway instead of the handler.
+// The roster and the transaction-aware roster write, the policy manager and its
+// transaction-aware surface, the seeding surface, the permission catalog, the
+// audit module and the kind resolver are declared in Requires: the ensure and
+// the provisioning seam write all five pieces, the deletion writes the audit
+// row, and an assembly that names this module without one of them cannot run
+// it. The HTTP entry point, the feature board, the gateway's registration
+// surface, the logger and the event bus are taken up in Init: without an entry
+// point the routes are not mounted, without a board the conditional feature is
+// simply absent from the document, without the bus the hooks are the only
+// route, and without the gateway's registration surface the route is guarded by
+// the gateway's default and an impersonating caller is answered by the gateway
+// instead of the handler.
 //
-// The module provides the account lifecycle hook: the personal tenant follows
-// the account that owns it, and the account module calls the hooks after its own
-// transaction commits. Where the assembly also carries an event bus, the module
-// subscribes the account events and runs the same idempotent hooks again, so a
-// process that stopped between the account's commit and the hooks leaves nothing
-// for good: the staging outbox delivers the event after the restart.
+// The module provides the account lifecycle hook and the account provisioning
+// seam. The seam is the one the account module requires: the personal tenant is
+// written inside the account's own transaction, through the transaction handle
+// the seam is handed, so a failure on either side leaves neither. The lifecycle
+// hooks follow the same account after its transaction commits, and the segment
+// they run is idempotent over what the seam already wrote. Where the assembly
+// also carries an event bus, the module subscribes the account events and runs
+// the same idempotent hooks again, so a process that stopped between the
+// account's commit and the hooks leaves nothing for good: the staging outbox
+// delivers the event after the restart.
 //
 // It requires tenant.KindResolver: the caller tenant read tells a personal row
 // from a business one by that answer, and an assembly that carries this policy
 // without a resolver fails at dependency resolution rather than serving every
 // tenant as business. personalKindModule delivers it.
+//
+// The account module's membership read, deletion removal and transaction-aware
+// membership write are taken up in Init, not declared in Requires: this module
+// provides a capability the account module requires, so a requirement in the
+// other direction would be a cycle. The optional capabilities are taken up
+// there too because the modules delivering them can sit downstream of the
+// account module, and an optional requirement still draws an ordering edge.
 //
 // The descriptor declares its OpenAPI fragment on the account endpoint: the
 // contract belongs to the application's own second-level generation, not to a
@@ -380,8 +397,11 @@ func personalModule() core.Module {
 		Name: personalModuleName,
 		Requires: []core.Requirement{
 			{Token: (*tenant.Catalog)(nil)},
-			{Token: (*authn.Memberships)(nil)},
-			{Token: (*authn.MembershipCleanup)(nil)},
+			// The transaction-aware roster and policy writes the seam uses
+			// inside the account's transaction. Neither comes from the account
+			// module, so declaring them keeps the construction order acyclic.
+			{Token: (*tenantcatalog.TxCatalog)(nil)},
+			{Token: (*authzpolicy.TxManager)(nil)},
 			{Token: (*authz.Manager)(nil)},
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
@@ -391,15 +411,11 @@ func personalModule() core.Module {
 			// must not start: the failure belongs at dependency resolution, not
 			// at each list request.
 			{Token: (*tenant.KindResolver)(nil)},
-			{Token: (*speedhttp.Router)(nil), Optional: true},
-			{Token: (*feature.Board)(nil), Optional: true},
-			{Token: (*authn.Gate)(nil), Optional: true},
-			{Token: (*log.Logger)(nil), Optional: true},
-			{Token: (*event.Bus)(nil), Optional: true},
-			{Token: (*authn.Accounts)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.AccountLifecycle)(nil)},
+			// The in-transaction provisioning seam the account module requires.
+			{Token: (*provisioning.AccountProvisioning)(nil)},
 		},
 		Resources: []any{
 			personalSchema(),
@@ -478,9 +494,19 @@ func readPersonalConfig(reg *core.Registry) (personalConfig, error) {
 // and the switch it runs on. It provides authn.AccountLifecycle, so the account
 // module's status change and deletion reach the personal tenant through it.
 type personalProduct struct {
-	config      personalConfig
-	roster      tenant.Catalog
-	memberships authn.Memberships
+	config personalConfig
+	roster tenant.Catalog
+	// txRoster and txManager are the transaction-aware writes the provisioning
+	// seam runs on the account's transaction. The context-taking surfaces above
+	// open a transaction of their own and are the route's path.
+	txRoster  tenantcatalog.TxCatalog
+	txManager authzpolicy.TxManager
+	// membershipWriter is the account module's transaction-aware membership
+	// write. It is taken up in Init because the account module requires the
+	// provisioning seam this module provides, and a requirement the other way
+	// would be a cycle.
+	membershipWriter provisioning.MembershipWriter
+	memberships      authn.Memberships
 	// membershipCleanup is the account-deletion removal path, which does not ask
 	// the membership guard: the host's own guard refuses every removal in a
 	// personal tenant, and the deletion's cleanup still has to collect the rows
@@ -518,13 +544,13 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the tenant roster: %w", personalModuleName, err)
 	}
-	memberships, err := core.Resolve[authn.Memberships](reg)
+	txRoster, err := core.Resolve[tenantcatalog.TxCatalog](reg)
 	if err != nil {
-		return nil, fmt.Errorf("%s: taking up the memberships: %w", personalModuleName, err)
+		return nil, fmt.Errorf("%s: taking up the transaction-aware tenant roster: %w", personalModuleName, err)
 	}
-	membershipCleanup, err := core.Resolve[authn.MembershipCleanup](reg)
+	txManager, err := core.Resolve[authzpolicy.TxManager](reg)
 	if err != nil {
-		return nil, fmt.Errorf("%s: taking up the account-deletion membership removal: %w", personalModuleName, err)
+		return nil, fmt.Errorf("%s: taking up the transaction-aware policy manager: %w", personalModuleName, err)
 	}
 	manager, err := core.Resolve[authz.Manager](reg)
 	if err != nil {
@@ -543,29 +569,16 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 		return nil, fmt.Errorf("%s: taking up the audit capability: %w", personalModuleName, err)
 	}
 	p := &personalProduct{
-		config:            cfg,
-		roster:            roster,
-		memberships:       memberships,
-		membershipCleanup: membershipCleanup,
-		manager:           manager,
-		seeder:            seeder,
-		catalog:           catalog,
-		audit:             auditor,
-		logger:            log.Default(),
-		seen:              newPersonalSeenEvents(personalSeenEventsCapacity),
-	}
-	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
-		p.logger = delivered.Named(personalModuleName)
-	}
-	if accounts, found, err := optionalPersonal[authn.Accounts](reg, "the account read surface"); err != nil {
-		return nil, err
-	} else if found {
-		p.accounts = accounts
-	}
-	if bus, found, err := optionalPersonal[event.Bus](reg, "the event bus"); err != nil {
-		return nil, err
-	} else if found {
-		p.bus = bus
+		config:    cfg,
+		roster:    roster,
+		txRoster:  txRoster,
+		txManager: txManager,
+		manager:   manager,
+		seeder:    seeder,
+		catalog:   catalog,
+		audit:     auditor,
+		logger:    log.Default(),
+		seen:      newPersonalSeenEvents(personalSeenEventsCapacity),
 	}
 	return p, nil
 }
@@ -580,6 +593,34 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 // tenant's lifecycle. Subscribing it here rather than in New is what the bus
 // requires: it accepts subscriptions in Init.
 func (p *personalProduct) wire(reg *core.Registry) error {
+	// The account module delivers these, and it is constructed after this
+	// module because it requires the provisioning seam this one provides. The
+	// optional capabilities can be delivered by modules downstream of the
+	// account module. Every instance exists by Init, so taking both groups up
+	// here keeps the construction graph acyclic.
+	var err error
+	if delivered, loggerErr := core.Resolve[log.Logger](reg); loggerErr == nil {
+		p.logger = delivered.Named(personalModuleName)
+	}
+	if bus, found, busErr := optionalPersonal[event.Bus](reg, "the event bus"); busErr != nil {
+		return busErr
+	} else if found {
+		p.bus = bus
+	}
+	if p.memberships, err = core.Resolve[authn.Memberships](reg); err != nil {
+		return fmt.Errorf("%s: taking up the memberships: %w", personalModuleName, err)
+	}
+	if p.membershipCleanup, err = core.Resolve[authn.MembershipCleanup](reg); err != nil {
+		return fmt.Errorf("%s: taking up the account-deletion membership removal: %w", personalModuleName, err)
+	}
+	if p.membershipWriter, err = core.Resolve[provisioning.MembershipWriter](reg); err != nil {
+		return fmt.Errorf("%s: taking up the transaction-aware membership write: %w", personalModuleName, err)
+	}
+	if accounts, found, accountsErr := optionalPersonal[authn.Accounts](reg, "the account read surface"); accountsErr != nil {
+		return accountsErr
+	} else if found {
+		p.accounts = accounts
+	}
 	p.subscribe()
 	if !p.config.Enabled {
 		p.logger.Info(personalModuleName + ": the personal tenant is off; the route is not mounted")

@@ -58,9 +58,9 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // carrier into the same command, and without one there is nothing to deliver
 // through. The capability is not exclusive here — the mail carrier's own module
 // owns that claim, so a command names exactly one carrier and this module reads
-// it. The i18n Localizer is taken up in New rather than declared, because the
-// module's messages are its own catalog and its absence has to be reported with
-// the key it cannot render.
+// it. The i18n Localizer is declared so this module is constructed after the
+// one delivering it, and taken up in New, where an absent one is reported with
+// the key the module cannot render.
 //
 // It declares one configuration item, accept-base-url, read in Prepare so an
 // origin the code cannot join a link to stops the startup. Before that, Prepare
@@ -74,6 +74,7 @@ func Module() core.Module {
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*mail.Sender)(nil)},
+			{Token: (*i18n.Localizer)(nil)},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.InviteNotifier)(nil), Exclusive: true},

@@ -569,12 +569,13 @@ with nothing to reconcile writes nothing and says so. A permission a module decl
 after an earlier run is added on the next run through the host's seeding
 surface, so each administration role keeps everything the process declares while
 the management surface stays unable to change it. The command names the personal
-tenant module too, so its account-creation hook builds every seeded account's
-personal tenant at seed time when `org.personal.enabled` is on; with the
-switch off the hook builds nothing. The run has no HTTP entry point: the
-personal module skips its backfill route and the audit journal skips its
-request-level layer, while the account lifecycle hooks and the statement-level
-audit rows keep working. Routes belong to the serve command. The tenant-admin role the seed writes in a
+tenant module too, so its provisioning seam writes every seeded account's
+personal tenant inside the account's own transaction when
+`org.personal.enabled` is on; with the switch off the seam writes nothing. The
+account creation hook then converges what the seam wrote. The run has no HTTP
+entry point: the personal module skips its backfill route and the audit journal
+skips its request-level layer, while the account lifecycle hooks and the
+statement-level audit rows keep working. Routes belong to the serve command. The tenant-admin role the seed writes in a
 business tenant is builtin; the personal tenant's tenant-admin is not, because
 the host adds its grants with the seeding surface and revokes the ones outside
 the allowlist with the manager.

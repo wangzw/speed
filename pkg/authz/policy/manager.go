@@ -226,11 +226,17 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 	if err != nil {
 		return err
 	}
+	changed := false
 	err = p.write(ctx, func(tx *gorm.DB) error {
-		return putRoleIn(ctx, tx, r, row)
+		var writeErr error
+		changed, writeErr = putRoleIn(ctx, tx, r, row)
+		return writeErr
 	})
 	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	return p.afterWrite(ctx)
 }
@@ -262,22 +268,28 @@ func roleRowFor(r authz.RoleRecord) (roleRow, error) {
 	return row, nil
 }
 
-// putRoleIn writes a role inside the transaction it is handed.
-func putRoleIn(ctx context.Context, tx *gorm.DB, r authz.RoleRecord, row roleRow) error {
-	builtin, found, err := roleState(ctx, tx, r.Tenant, r.Role)
+// putRoleIn writes a role inside the transaction it is handed. It reports
+// whether the call changed anything: a rewrite of a row that already carries
+// the same description and description key is the same role, and a caller has
+// nothing to reload or announce for it.
+func putRoleIn(ctx context.Context, tx *gorm.DB, r authz.RoleRecord, row roleRow) (bool, error) {
+	held, found, err := roleRowState(ctx, tx, r.Tenant, r.Role)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if found && builtin {
-		return fmt.Errorf("%w: the role %q of tenant %q is builtin", authz.ErrBuiltinRole, r.Role, r.Tenant)
+	if found && held.Builtin {
+		return false, fmt.Errorf("%w: the role %q of tenant %q is builtin", authz.ErrBuiltinRole, r.Role, r.Tenant)
+	}
+	if found && held.Description == row.Description && held.DescriptionKey == row.DescriptionKey {
+		return false, nil
 	}
 	if err := tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "role"}},
 		DoUpdates: clause.AssignmentColumns([]string{"description", "description_key"}),
 	}).Create(&row).Error; err != nil {
-		return fmt.Errorf("authz/policy: writing the role %q of tenant %q: %w", r.Role, r.Tenant, err)
+		return false, fmt.Errorf("authz/policy: writing the role %q of tenant %q: %w", r.Role, r.Tenant, err)
 	}
-	return nil
+	return true, nil
 }
 
 // MarkRoleBuiltin freezes an existing role against the management surface: it
@@ -516,11 +528,17 @@ func (p *product) PutBinding(ctx context.Context, b authz.Binding) error {
 	if err := p.checkBinding(ctx, b); err != nil {
 		return err
 	}
+	changed := false
 	err := p.write(ctx, func(tx *gorm.DB) error {
-		return putBindingIn(ctx, tx, b)
+		var writeErr error
+		changed, writeErr = putBindingIn(ctx, tx, b)
+		return writeErr
 	})
 	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	return p.afterWrite(ctx)
 }
@@ -542,18 +560,30 @@ func (p *product) checkBinding(ctx context.Context, b authz.Binding) error {
 	return p.requirePlatformMember(ctx, b)
 }
 
-// putBindingIn writes a binding inside the transaction it is handed.
-func putBindingIn(ctx context.Context, tx *gorm.DB, b authz.Binding) error {
+// putBindingIn writes a binding inside the transaction it is handed. It reports
+// whether the call changed anything: binding a subject to a role it already
+// holds is no work, and a caller has nothing to reload or announce for it.
+func putBindingIn(ctx context.Context, tx *gorm.DB, b authz.Binding) (bool, error) {
 	if _, found, err := roleState(ctx, tx, b.Tenant, b.Role); err != nil {
-		return err
+		return false, err
 	} else if !found {
-		return fmt.Errorf("%w: the role %q of tenant %q was not created", authz.ErrUnknownRole, b.Role, b.Tenant)
+		return false, fmt.Errorf("%w: the role %q of tenant %q was not created", authz.ErrUnknownRole, b.Role, b.Tenant)
+	}
+	var held []bindingRow
+	err := tx.WithContext(tenancy.CrossTenant(ctx)).
+		Where("tenant_id = ? AND account_id = ? AND role = ?", b.Tenant, b.Account, string(b.Role)).
+		Limit(1).Find(&held).Error
+	if err != nil {
+		return false, fmt.Errorf("authz/policy: reading the binding of tenant %q: %w", b.Tenant, err)
+	}
+	if len(held) > 0 {
+		return false, nil
 	}
 	rule := []string{b.Account, string(b.Role), b.Tenant}
 	if err := persist.New(ctx, tx, tenancy.ID(b.Tenant)).AddPolicy("g", "g", rule); err != nil {
-		return fmt.Errorf("authz/policy: writing the binding of tenant %q: %w", b.Tenant, err)
+		return false, fmt.Errorf("authz/policy: writing the binding of tenant %q: %w", b.Tenant, err)
 	}
-	return nil
+	return true, nil
 }
 
 // DeleteBinding removes a subject's binding to a role within a tenant.
@@ -781,18 +811,28 @@ func (p *product) write(ctx context.Context, fn func(tx *gorm.DB) error) error {
 // and never authz_roles. The clause is inert where the dialect has no row locks
 // (SQLite ignores it and its single writer already serialises the writes).
 func roleState(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (builtin, found bool, err error) {
+	row, found, err := roleRowState(ctx, tx, tenant, role)
+	if err != nil {
+		return false, false, err
+	}
+	return row.Builtin, found, nil
+}
+
+// roleRowState reads the role's row, locking it for the rest of the
+// transaction. found is false when the tenant has no such role.
+func roleRowState(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (roleRow, bool, error) {
 	var rows []roleRow
-	err = tx.WithContext(tenancy.CrossTenant(ctx)).
+	err := tx.WithContext(tenancy.CrossTenant(ctx)).
 		Where("tenant_id = ? AND role = ?", tenant, string(role)).
 		Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
 		Limit(1).Find(&rows).Error
 	if err != nil {
-		return false, false, fmt.Errorf("authz/policy: reading the role %q of tenant %q: %w", role, tenant, err)
+		return roleRow{}, false, fmt.Errorf("authz/policy: reading the role %q of tenant %q: %w", role, tenant, err)
 	}
 	if len(rows) == 0 {
-		return false, false, nil
+		return roleRow{}, false, nil
 	}
-	return rows[0].Builtin, true, nil
+	return rows[0], true, nil
 }
 
 // requireEditableRole refuses a write on a role that is absent or builtin.

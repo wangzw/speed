@@ -304,3 +304,56 @@ func TestTheAccountModuleDoesNotStartWithoutAProvisioningSeam(t *testing.T) {
 		t.Errorf("the startup failed with %v, want the missing provisioning provider", err)
 	}
 }
+
+// A status change moves the account's own state and calls the lifecycle hooks;
+// it does not run the provisioning seam. What a status change leaves in place is
+// the data the account owns for the whole of its life, and re-writing it would
+// be a second, unrelated decision.
+func TestSetStatusDoesNotCallTheProvisioningSeam(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		seam := provisioningtest.New()
+		h.p.provisioning = seam
+		id := h.user("alice", "password123")
+		if calls := seam.Creates(); len(calls) != 1 {
+			t.Fatalf("the creation called the seam %d time(s), want once", len(calls))
+		}
+
+		if err := h.p.SetStatus(t.Context(), id, authn.StatusDisabled, authn.ReasonAdmin); err != nil {
+			t.Fatalf("disabling: %v", err)
+		}
+		if err := h.p.SetStatus(t.Context(), id, authn.StatusActive, authn.ReasonAdmin); err != nil {
+			t.Fatalf("enabling: %v", err)
+		}
+		if calls := seam.Creates(); len(calls) != 1 {
+			t.Errorf("the status changes called the creation seam; it was called %d time(s) in all", len(calls))
+		}
+		if calls := seam.Deletions(); len(calls) != 0 {
+			t.Errorf("the status changes called the deletion seam %d time(s), want none", len(calls))
+		}
+	})
+}
+
+// A service account has no username and owns no organization. The seam is still
+// reached on its creation, and the facts say what the account is: kind service
+// and an empty username, so an implementation writes nothing for it.
+func TestAServiceAccountReachesTheSeamWithoutAUsername(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		seam := provisioningtest.New()
+		h.p.provisioning = seam
+
+		created, err := h.p.Create(t.Context(), authn.CreateAccount{Kind: authn.KindService, Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating a service account: %v", err)
+		}
+		calls := seam.Creates()
+		if len(calls) != 1 {
+			t.Fatalf("the seam was called %d time(s), want once", len(calls))
+		}
+		want := provisioning.AccountFacts{
+			ID: created.ID.String(), Kind: string(authn.KindService), Status: "active",
+		}
+		if calls[0] != want {
+			t.Errorf("the seam was handed %+v, want %+v", calls[0], want)
+		}
+	})
+}

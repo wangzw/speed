@@ -63,8 +63,12 @@ func (p *product) PutRoleTx(ctx context.Context, tx *gorm.DB, r authz.RoleRecord
 	if err != nil {
 		return nil, err
 	}
-	if err := putRoleIn(ctx, crossingTx(ctx, tx), r, row); err != nil {
+	changed, err := putRoleIn(ctx, crossingTx(ctx, tx), r, row)
+	if err != nil {
 		return nil, err
+	}
+	if !changed {
+		return nil, nil
 	}
 	return p.afterWriteTx(), nil
 }
@@ -104,8 +108,12 @@ func (p *product) PutBindingTx(ctx context.Context, tx *gorm.DB, b authz.Binding
 	if err := p.checkBinding(ctx, b); err != nil {
 		return nil, err
 	}
-	if err := putBindingIn(ctx, crossingTx(ctx, tx), b); err != nil {
+	changed, err := putBindingIn(ctx, crossingTx(ctx, tx), b)
+	if err != nil {
 		return nil, err
+	}
+	if !changed {
+		return nil, nil
 	}
 	return p.afterWriteTx(), nil
 }

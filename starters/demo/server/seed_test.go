@@ -15,6 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	authnaccount "github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -414,10 +415,14 @@ func withSeededAccounts(t *testing.T, dsn string,
 	reg.Register(config.Module())
 	reg.Register(sqlite.Module())
 	reg.Register(authnaccount.Module())
+	// The account module requires a provisioning seam, and this case drives the
+	// account store without the host's personal-tenant policy. The stand-in is
+	// the documented assembly for that: it records the calls and writes nothing.
+	reg.Register(provisioningtest.Module())
 	reg.Supply(reader, config.ModuleName)
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageInit,
-		Participants: []string{sqlite.ModuleName, authnaccount.ModuleName},
+		Participants: []string{sqlite.ModuleName, authnaccount.ModuleName, provisioningtest.ModuleName},
 		Action: func(ctx context.Context, reg *core.Registry) error {
 			accounts, err := core.Resolve[authn.Accounts](reg)
 			if err != nil {

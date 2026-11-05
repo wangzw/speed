@@ -219,3 +219,82 @@ func TestClearAccountBindingsTxWritesInTheCallersTransaction(t *testing.T) {
 		t.Fatalf("the empty clear: %v", err)
 	}
 }
+
+// A role rewrite that changes none of the row's fields returns no after work:
+// the doc's contract is that a write which changed nothing returns a nil
+// closure, and an idempotent rewrite is exactly that case.
+func TestPutRoleTxAnUnchangedRewriteReturnsNoAfter(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	record := authz.RoleRecord{Tenant: "acme", Role: "roleA", DescriptionKey: "k", Description: "d"}
+	if err := f.PutRole(ctx, record); err != nil {
+		t.Fatalf("PutRole: %v", err)
+	}
+
+	if err := f.handle.Transaction(func(tx *gorm.DB) error {
+		after, err := f.PutRoleTx(ctx, tx, record)
+		if err != nil {
+			return err
+		}
+		if after != nil {
+			t.Error("an unchanged role rewrite returned after work")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("the unchanged rewrite: %v", err)
+	}
+
+	changed := record
+	changed.Description = "rewritten"
+	if err := f.handle.Transaction(func(tx *gorm.DB) error {
+		after, err := f.PutRoleTx(ctx, tx, changed)
+		if err != nil {
+			return err
+		}
+		if after == nil {
+			t.Error("a role rewrite that changed the description returned no after work")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("the changed rewrite: %v", err)
+	}
+}
+
+// A binding the subject already holds returns no after work; the same write
+// after a clear writes the row again and returns the closure that announces it.
+func TestPutBindingTxAnExistingBindingReturnsNoAfter(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	mustPutRole(t, ctx, f, "acme", "roleA")
+	mustPutBinding(t, ctx, f, "acme", "acc1", "roleA")
+	binding := authz.Binding{Tenant: "acme", Account: "acc1", Role: "roleA"}
+
+	if err := f.handle.Transaction(func(tx *gorm.DB) error {
+		after, err := f.PutBindingTx(ctx, tx, binding)
+		if err != nil {
+			return err
+		}
+		if after != nil {
+			t.Error("a binding already held returned after work")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("the repeated binding: %v", err)
+	}
+
+	if err := f.ClearAccountBindings(ctx, "acme", "acc1"); err != nil {
+		t.Fatalf("clearing the binding: %v", err)
+	}
+	if err := f.handle.Transaction(func(tx *gorm.DB) error {
+		after, err := f.PutBindingTx(ctx, tx, binding)
+		if err != nil {
+			return err
+		}
+		if after == nil {
+			t.Error("a binding written after a clear returned no after work")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("the fresh binding: %v", err)
+	}
+}

@@ -122,11 +122,14 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	if p := m.Provides[0]; p.Token != core.Token((*authn.InviteNotifier)(nil)) || !p.Exclusive {
 		t.Errorf("Provides[0] = %+v, want authn.InviteNotifier exclusively", p)
 	}
-	if len(m.Requires) != 1 {
-		t.Fatalf("Requires = %+v, want the mail sending capability alone", m.Requires)
+	if len(m.Requires) != 2 {
+		t.Fatalf("Requires = %+v, want the mail sending capability and the message localizer", m.Requires)
 	}
 	if r := m.Requires[0]; r.Token != core.Token((*mail.Sender)(nil)) || r.Optional {
 		t.Errorf("Requires[0] = %+v, want mail.Sender as a required dependency", r)
+	}
+	if r := m.Requires[1]; r.Token != core.Token((*i18n.Localizer)(nil)) || r.Optional {
+		t.Errorf("Requires[1] = %+v, want i18n.Localizer as a required dependency", r)
 	}
 	var schemas, catalogs int
 	for _, res := range m.Resources {

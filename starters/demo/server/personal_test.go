@@ -25,7 +25,9 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/authz"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/config"
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
@@ -34,6 +36,7 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
 // The account the unit cases ensure for. It is not a UUID so the derived
@@ -1293,6 +1296,26 @@ type stubBoard struct{ posted []string }
 
 func (b *stubBoard) Post(module, name string) { b.posted = append(b.posted, module+" "+name) }
 
+// supplyAccountSeams supplies what the module takes up from the account module
+// in Init, so a case that calls wire without an assembly can resolve them.
+func supplyAccountSeams(reg *core.Registry) {
+	reg.Register(core.Module{
+		Name:     "test.memberships",
+		Provides: []core.Provision{{Token: (*authn.Memberships)(nil)}},
+	})
+	reg.Register(core.Module{
+		Name:     "test.membership-cleanup",
+		Provides: []core.Provision{{Token: (*authn.MembershipCleanup)(nil)}},
+	})
+	reg.Register(core.Module{
+		Name:     "test.membership-writer",
+		Provides: []core.Provision{{Token: (*provisioning.MembershipWriter)(nil)}},
+	})
+	reg.Supply(&struct{ authn.Memberships }{}, "test.memberships")
+	reg.Supply(&struct{ authn.MembershipCleanup }{}, "test.membership-cleanup")
+	reg.Supply(&struct{ provisioning.MembershipWriter }{}, "test.membership-writer")
+}
+
 // TestTheWireRegistersTheRouteTheGateAndTheFeature holds the three writes the
 // module makes when it is switched on: the route, the gateway's let-through for
 // an impersonating caller, and the conditional feature the frontend reads to
@@ -1318,6 +1341,7 @@ func TestTheWireRegistersTheRouteTheGateAndTheFeature(t *testing.T) {
 	reg.Supply(router, "test.router")
 	reg.Supply(gate, "test.gate")
 	reg.Supply(board, "test.board")
+	supplyAccountSeams(reg)
 
 	product := &personalProduct{
 		config: personalConfig{Enabled: true},
@@ -1359,6 +1383,7 @@ func TestTheWireRegistersNothingWithTheSwitchOff(t *testing.T) {
 	reg.Supply(&stubRouter{endpoint: endpoint}, "test.router")
 	reg.Supply(gate, "test.gate")
 	reg.Supply(board, "test.board")
+	supplyAccountSeams(reg)
 
 	product := &personalProduct{config: personalConfig{Enabled: false}, logger: log.Default()}
 	if err := product.wire(reg); err != nil {
@@ -2223,6 +2248,8 @@ func TestThePersonalFeatureWithoutAKindResolverFailsTheStartup(t *testing.T) {
 	reg.Register(personalModule())
 	standIns := []core.Module{
 		standInCapability("test.catalog", &struct{ tenant.Catalog }{}, (*tenant.Catalog)(nil)),
+		standInCapability("test.tx-catalog", &struct{ tenantcatalog.TxCatalog }{}, (*tenantcatalog.TxCatalog)(nil)),
+		standInCapability("test.tx-manager", &struct{ authzpolicy.TxManager }{}, (*authzpolicy.TxManager)(nil)),
 		standInCapability("test.memberships", &struct{ authn.Memberships }{}, (*authn.Memberships)(nil)),
 		standInCapability("test.membership-cleanup", &struct{ authn.MembershipCleanup }{}, (*authn.MembershipCleanup)(nil)),
 		standInCapability("test.manager", &struct{ authz.Manager }{}, (*authz.Manager)(nil)),

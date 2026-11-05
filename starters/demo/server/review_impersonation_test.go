@@ -39,6 +39,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/mfa"
 	mfatotp "github.com/vislake/speed/pkg/authn/mfa/totp"
+	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -228,10 +229,13 @@ func withReviewDatabase(t *testing.T, configPath string,
 	reg.Register(config.Module())
 	reg.Register(sqlite.Module())
 	reg.Register(authnaccount.Module())
+	// The account module requires a provisioning seam. This case drives the
+	// account store alone; the stand-in records the calls and writes nothing.
+	reg.Register(provisioningtest.Module())
 	reg.Supply(reader, config.ModuleName)
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageInit,
-		Participants: []string{sqlite.ModuleName, authnaccount.ModuleName},
+		Participants: []string{sqlite.ModuleName, authnaccount.ModuleName, provisioningtest.ModuleName},
 		Action: func(ctx context.Context, reg *core.Registry) error {
 			database, err := core.Resolve[db.Database](reg)
 			if err != nil {

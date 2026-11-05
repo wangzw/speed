@@ -576,7 +576,11 @@ type variantGroup struct {
 // standing up is what makes the differential comparison meaningful. A variant
 // that stops starting fails the case; only a debt written down here, with its
 // reason, may be left out of the guarantee.
-var mayNotStartGroups = map[string]string{}
+var mayNotStartGroups = map[string]string{
+	"org.personal": "authn.account requires the account provisioning seam this module provides, " +
+		"so an assembly without it does not start: a user account's personal tenant is written " +
+		"in the account's own transaction",
+}
 
 // variantStartOutcome decides what a variant's readiness result means. A run
 // that became ready passes. One that did not fails unless mayNotStartGroups

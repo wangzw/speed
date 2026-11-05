@@ -17,6 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -655,13 +656,20 @@ func TestThePersonalModuleDeclaresTheLifecycleAndTheAudit(t *testing.T) {
 		t.Errorf("the module does not require the audit capability")
 	}
 	lifecycleProvided := false
+	provisioningProvided := false
 	for _, provision := range module.Provides {
 		if provision.Token == (*authn.AccountLifecycle)(nil) {
 			lifecycleProvided = true
 		}
+		if provision.Token == (*provisioning.AccountProvisioning)(nil) {
+			provisioningProvided = true
+		}
 	}
 	if !lifecycleProvided {
 		t.Errorf("the module does not provide the account lifecycle hook")
+	}
+	if !provisioningProvided {
+		t.Errorf("the module does not provide the account provisioning seam the account module requires")
 	}
 }
 

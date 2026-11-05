@@ -17,9 +17,10 @@ import (
 // differential_exemptions_review_test.go, because its configuration sets these
 // switches differently.
 //
-// org.personal is not exempt: the compiled default turns its switch on, so
-// the baseline template mounts its route and removing it lowers the account
-// endpoint's route count. See TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration.
+// org.personal is not exempt from the route-count table, but its removal is not
+// measurable there: the account module requires the provisioning seam it
+// provides, so a run without it does not start at all. That failure is held
+// instead. See TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration.
 var mayLeaveRouteCountUnchanged = map[string]string{
 	"sms.admin": "its management routes are mounted only on the endpoints sms.admin.endpoints names, " +
 		"and the item has no default: the baseline template mounts no SMS management surface because " +
@@ -30,10 +31,10 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 // baseline exemption to its stated reason over the template this build's case
 // runs: dropping the module leaves every endpoint it describes at the same
 // route count. It also holds the personal module out of the table: the compiled
-// default enables org.personal, so removing it lowers the account
-// endpoint's route count and an exemption claiming otherwise would be false. A
-// configuration that turns the switch off reddens the organization half, which is
-// the check retiring a default that moved back.
+// default enables org.personal, so an exemption claiming its removal is vacuous
+// would be false. Since the account module requires the provisioning seam this
+// module provides, dropping it fails the startup instead of lowering a route
+// count; the case holds that failure.
 func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	names := make([]string, 0, len(mayLeaveRouteCountUnchanged))
 	for name := range mayLeaveRouteCountUnchanged {
@@ -41,7 +42,7 @@ func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T)
 	}
 	sort.Strings(names)
 
-	groups := make([]variantGroup, 0, len(names)+1)
+	groups := make([]variantGroup, 0, len(names))
 	for _, name := range names {
 		groups = append(groups, variantGroupNamed(t, name))
 	}
@@ -52,11 +53,16 @@ func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T)
 	}
 
 	topo := topology{name: "exemptions", ports: listenerCount}
-	before, after := removalRouteCounts(t, topo, append(groups, personal))
+	before, after := removalRouteCounts(t, topo, groups)
 	for _, group := range groups {
 		assertRouteCountsUnchanged(t, group, before, after[group.id])
 	}
-	assertRouteCountsLowered(t, personal, before, after[personal.id])
+
+	variant, _ := launch(t, topo, personal.modules)
+	if err := variant.waitReady(startLimit); err == nil {
+		t.Fatalf("dropping %v left a run that starts, want the account module's required "+
+			"provisioning seam to stop it", personal.modules)
+	}
 }
 
 // assertRouteCountsUnchanged holds an exemption's stated reason to the run:
