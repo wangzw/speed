@@ -79,17 +79,21 @@ props and the tenant/protected-role hooks), `OrganizationAdminBreadcrumb.tsx`
 `OrganizationAdminOperationsProvider`, `useOrganizationAdminOperations`) and
 `organization-pages.tsx` (`OrganizationInvitationsPage`, `OrganizationSsoPage`,
 `OrganizationPermissionsPage`, `OrganizationSettingsPage`) exist in `src/`, and
-`src/index.ts` exports them. The invitations wrapper runs the shared page
-in tenant mode: the member write form (whose account field searches the
-platform roster) is not rendered, the inviter identity resolves from the
-members read's `display_name` rather than a platform account read, the
-member table's name column takes `display_name` while its account column
-shows the recorded account identifier without resolving it, and an
-inviter that read cannot resolve renders its recorded identifier with the
-unresolved note. The roles wrapper runs the shared permissions page in
-tenant mode: the governed permission catalog, the tenant roles, grants
-and bindings, the tenant member picker in place of the platform account
-search, member-read identities for binding rows, and the host's
+`src/index.ts` exports them. The invitations wrapper renders the
+organization-only `OrganizationMembersPage` with the current tenant: the
+page carries the members table and the invitations table, each with
+cursor pagination; the members section filters by a role drawn from the
+tenant's role list; and each member row opens a management panel that
+owns bind/unbind, suspend/resume and remove. The inviter identity resolves
+from the members read's `display_name` rather than a platform account
+read, the member table's name column takes `display_name` while its
+account column shows the recorded account identifier without resolving
+it, and an inviter that read cannot resolve renders its recorded
+identifier with the unresolved note. The roles wrapper runs the shared
+permissions page in tenant mode: the governed permission catalog, the
+tenant roles, grants and bindings, the tenant member picker in place of
+the platform account search, member-read identities for binding rows, and
+the host's
 `protectedRoles` read-only beside the server's builtin roles. The settings
 wrapper runs the shared settings page in tenant mode: only the tenant
 layer, with the server-reported source column and no layer control. The

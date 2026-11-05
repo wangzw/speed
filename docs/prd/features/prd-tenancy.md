@@ -437,7 +437,7 @@
 
 - **验收**：选择一个有成员持有的角色后，列表只含在该租户持有该角色名的成员，其他成员不出现；选择一个没有成员持有的角色后，列表为空且读取成功；同时给出文本查询时，结果只含同时满足文本查询与角色筛选的成员；清空角色筛选后恢复按文本查询筛选的列表。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 5 覆盖按角色筛选收窄列表与清除筛选后恢复。没有成员持有该角色时的空列表、角色筛选与文本查询同时给出时的组合结果，未由 e2e 覆盖，分别由 `pkg/authn/admin/members_test.go` 的 `TestTheMemberListFiltersByRoleExactly` 与 `TestTheMemberListCombinesTheRoleFilterWithTheQuery` 覆盖。
 
 ### REQ-tenancy-053
 

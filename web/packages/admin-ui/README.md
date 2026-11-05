@@ -92,16 +92,20 @@ its read hook), `organizationAdminRoutes`, `OrganizationAdminOperations` /
 (`OrganizationAdminOperationsProvider`, `useOrganizationAdminOperations`), and
 the `OrganizationInvitationsPage`, `OrganizationSsoPage`,
 `OrganizationPermissionsPage` and `OrganizationSettingsPage` wrappers. The
-invitations wrapper runs the shared page in tenant mode: the member write
-form's platform account search is not rendered, the inviter identity
-resolves from the members read's `display_name`, the member table takes
-`display_name` for its name column and shows the recorded account
-identifier in its account column without resolving it, and an inviter
-that read cannot resolve renders its recorded identifier with the
-unresolved note. The roles wrapper runs the shared permissions page in
-tenant mode: the governed permission catalog, the tenant roles, grants
-and bindings, the member picker that replaces the platform account search,
-the member-read identity for binding rows, and the host's `protectedRoles`
+invitations wrapper renders the organization-only
+`OrganizationMembersPage` with the current tenant: the members table and
+the invitations table each paginate by cursor, the members section filters
+by a role drawn from the tenant's role list, and each member row opens a
+management panel that owns bind/unbind, suspend/resume and remove. The
+inviter identity resolves from the members read's `display_name`, the
+member table takes `display_name` for its name column and shows the
+recorded account identifier in its account column without resolving it,
+and an inviter that read cannot resolve renders its recorded identifier
+with the unresolved note. The roles wrapper runs the shared permissions
+page in tenant mode: the governed permission catalog, the tenant roles,
+grants and bindings, the member picker that replaces the platform account
+search, the member-read identity for binding rows, and the host's
+`protectedRoles`
 rendered read-only beside the server's builtin roles. The settings wrapper
 runs the shared settings page in tenant mode: only the tenant layer, with
 the server-reported source column. The shared pages render through the
@@ -437,13 +441,16 @@ beside the server's builtin ones; absent, no role is treated as
 protected. The provider publishes the operations bundle through
 `OrganizationAdminOperationsProvider`, so a page reads it with
 `useOrganizationAdminOperations`; the shipped `organizationAdminOperations`
-answers with none mounted. The wrappers that ship compose the existing
-pages in tenant mode:
+answers with none mounted. The wrappers that ship scope their pages to
+the current tenant:
 
-- the invitations page is given the current tenant and runs in tenant
-  mode: the member write form's platform account search is not rendered,
-  the inviter identity resolves from the members read's `display_name`,
-  the member table's name column takes `display_name` while its account
+- the invitations page is given the current tenant and renders the
+  organization-only `OrganizationMembersPage`: the members table and the
+  invitations table each paginate by cursor, the members section filters
+  by a role drawn from the tenant's role list, each member row opens a
+  management panel that owns bind/unbind, suspend/resume and remove, the
+  inviter identity resolves from the members read's `display_name`, the
+  member table's name column takes `display_name` while its account
   column shows the recorded account identifier without resolving it, and
   the page issues no `/api/v1/system` request;
 - the SSO page is locked to the current tenant;

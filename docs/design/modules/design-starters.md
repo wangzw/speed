@@ -127,7 +127,7 @@ starters/demo/
 
 **日志邮件与短信承载注册验证的走查。** `mail.log` 实现 `pkg/mail.Sender`，把渲染后的邮件写进进程日志，验证码落在 `verification_code` 字段（同样避开已登记的敏感键名 `code`）。审查走查链是：登录页切到注册模式，提交用户名、邮箱与口令 → 自动登录 → 落在 `/account?verify=1`（账户页的邮箱验证节；应用栏之下的验证提示也指向那里）→ 从 `mail.log` 的日志读邮箱验证码 → 提交验证 → `verification.state` 变为 `verified`，注册限制解除。个人租户在账户创建时已由 `AccountCreated` 钩子建立，不依赖这次验证。手机走查仍可在账户页经 `sms.log` 的日志读码验证手机，但手机验证不解除注册限制，只作为登录方式与额外安全因素。
 
-**邀请通知也经日志邮件走查。** `authn.invitemail` 把 tenant、接受链接与期限渲染成主题、纯文本与 HTML，`mail.log` 把它写进进程日志；走查从日志里取 `<accept-base-url>/invitations/<token>`，令牌落在这条链接里、不单列。签发应答同时带 `email_delivery: sent` 与同一枚令牌，所以走查可以核对界面上的链接与邮件里的链接一致；重发产生一条新邀请，旧链接随之失效。接受页是前端声明 `/invitations/:token`，不是 API 路由。
+**邀请通知也经日志邮件走查。** `authn.invitemail` 把 tenant、接受链接与期限渲染成主题、纯文本与 HTML，`mail.log` 把它写进进程日志；日志层按已登记的令牌前缀 `spd_inv_` 打码，邮件正文里的接受链接因此只保留落点，令牌被替换为脱敏形式。走查比对邮件里的落点 `<accept-base-url>/invitations/` 与租户，界面一次性面板的接受链接取自签发应答，两者不逐字比对。重发产生一条新邀请，旧链接随之失效。接受页是前端声明 `/invitations/:token`，不是 API 路由。
 
 **匿名口令重置在审查装配里打开。** `review/sqlite.yaml` 把 `authn.login.password-reset` 写为 `open`，并在 `sms.registry.templates` 里声明 `authn.code.reset`；邮箱重置由 `authn.emailcode` 的 `EmailResetCodeSender` 提供，码仍落在 `mail.log` 的 `verification_code`。邮箱走查链是：注册并证明邮箱 → 退出 → 登录页的「忘记口令」→ 选邮箱 → 从日志读码 → 设新口令 → 新口令登录。短信走查链在邮箱链之前加一步「在账户页添加并验证手机」（经 `sms.log` 的日志读码），否则该账户没有 `sms-code` 手机，短信分支只会走抑制路径。第二个浏览器上下文的旧会话在本副本立即失效，其他副本最多一个 `check-ttl` 之后失效。基线不打开该设置，也没有投递载体，发现文档因此不发布该能力。Fly 部署把该设置写为 `open`，邮件由 `mail.smtp` 投递；短信这一类不在部署里，部署只有邮箱渠道。
 

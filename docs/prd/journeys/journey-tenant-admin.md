@@ -37,8 +37,8 @@
 9. 租户管理员刷新成员与邀请页，看到该同事作为成员出现，成员行显示其角色与加入时间；邀请列表中该邀请的状态为已接受。
 10. 租户管理员打开角色页，创建一个名为「支持」的非内建角色，并授予一项自己在当前租户持有、治理的权限。授予后该角色的授权中出现这项权限。
 11. 租户管理员回到成员与邀请页，打开刚加入同事的管理区。管理区列出该同事在当前租户的角色绑定；绑定「支持」角色后绑定列表出现该角色，该同事因此持有该角色的权限；解除后绑定列表不再出现该角色，再次绑定后恢复。
-12. 租户管理员在管理区停用该同事，确认文案说明该同事将暂时无法访问本组织、角色绑定保留且可随时恢复。停用后该同事带着该租户的业务请求得到与非成员相同的不可访问结果，成员列表仍包含它且角色绑定仍在；恢复后访问与权限恢复。
-13. 租户管理员打开自己的管理区。停用控件不可用并说明不能停用自己；绕过界面直接发起停用自己得到专用错误，成员关系保持启用。
+12. 租户管理员在管理区停用该同事，确认文案说明该同事将暂时无法访问本组织、角色绑定保留且可随时恢复。停用后成员列表仍包含它，状态为停用，角色绑定仍在；恢复后状态回到启用。停用后该同事带着该租户的业务请求按非成员处理这一面不在 e2e 内驱动，由后端用例覆盖（`pkg/authn/account/memberships_test.go` 的 `TestAMembershipIsSuspendedResumedAndReadAsAMember`）。
+13. 租户管理员打开自己的管理区。停用控件不可用并说明不能停用自己。绕过界面直接发起停用自己得到专用错误，成员关系保持启用，这一面不在 e2e 内驱动，由后端用例覆盖（`pkg/authn/admin/members_test.go` 的 `TestTheMemberWriteRefusesSuspendingTheCaller`）。
 14. 租户管理员绕过界面，直接提交一项平台域权限的授予请求，目标为「支持」角色。服务端拒绝该请求，该角色的授权不发生改变；界面把这次写入显示为失败，并仍然不显示该权限。端到端不可达：授予选择器只提供受治理的租户权限，页面没有提交平台域权限的控件；诚实门禁禁止直接调用接口，用例断言选择器不提供该权限。
 15. 租户管理员在组织管理面的角色页分别尝试创建一个名为 `platform-admin` 的角色、把 `platform-admin` 授予「支持」角色、把 `platform-admin` 绑定给该同事。三次尝试都被服务端拒绝，页面显示失败提示，当前租户的角色、授权与绑定都不变。端到端不可达的是把 `platform-admin` 授予「支持」角色这一分支：授予选择器只提供受治理的租户权限，页面无法把 `platform-admin` 作为授予目标；诚实门禁禁止直接调用接口，用例断言选择器不提供该角色。
 16. 租户管理员尝试解除自己的 `tenant-admin` 绑定。界面显示失败提示，绑定仍在；该租户只有这一条 `tenant-admin` 绑定时，任何解除该绑定的尝试同样被拒绝。
@@ -57,7 +57,7 @@
 - 成员列表逐行显示显示名、账户、角色、状态、来源与加入时间；文本搜索与角色筛选可用，角色筛选可经地址中的角色参数直达。
 - 受邀同事是该业务租户的成员，并持有「支持」角色及其治理权限。
 - 邀请按待接受、已过期、已接受与已撤销筛选；重发后旧链接失效，新链接经一次性面板与通知邮件送达；一次性面板关闭前要求确认，只有当前签发或重发的邀请提供复制链接。
-- 停用成员保留其角色绑定，恢复后访问与权限恢复；停用自己的尝试被专用错误拒绝，页面在操作前已禁用并说明原因。
+- 停用成员保留其角色绑定，列表状态与打开的管理区同步切换；停用控件在操作前已禁用并说明不能停用自己，绕过界面的自停用拒绝与停用后的非成员访问由后端用例覆盖。
 - 移除成员的确认文案说明会清除全部角色绑定且不可撤销；最后管理员冲突在失败提示旁说明必须保留至少一名活跃的 `tenant-admin`。
 - 角色页中存在「支持」角色，其授权只含租户管理员授予的治理权限；平台域权限没有被授予。
 - 租户管理员的 `tenant-admin` 绑定仍在，该租户至少保留一条 `tenant-admin` 绑定。
@@ -191,4 +191,4 @@ flowchart TD
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 覆盖账户菜单分组与首页卡片、成员搜索与角色筛选、邀请签发/筛选/重发/撤销与一次性面板、角色与授权、成员管理区的绑定与解绑、停用与恢复、停用自己拒绝、移除、设置与租户切换；邀请通知邮件的链接从邮件日志读取并与一次性面板比对；`tenant-admin: the organization registers, verifies, disables and removes an SSO provider` 覆盖企业身份提供方的登记、域验证、启停与删除；`tenant-admin: the system tenant shows no entry and every direct visit returns home` 覆盖 `system` 租户不出现入口且直达管理地址回到租户首页；`tenant-admin: impersonating the administrator renders no organization surface` 覆盖冒充期间管理面不渲染；`tenant-admin: the unproved administrator is refused, proves the address and retries` 覆盖邮箱未证明时写入被拒绝、证明后同一写入成功。
+`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 覆盖账户菜单分组与首页卡片、成员搜索与角色筛选、邀请签发/筛选/重发/撤销与一次性面板、角色与授权、成员管理区的绑定与解绑、停用与恢复、停用自己控件禁用与原因说明、移除、设置与租户切换；邀请通知邮件的落点与租户从邮件日志读取，并与一次性面板的接受链接比对落点；停用后业务请求不可访问与绕过界面的自停用拒绝不在 e2e 内驱动，由后端用例覆盖；`tenant-admin: the organization registers, verifies, disables and removes an SSO provider` 覆盖企业身份提供方的登记、域验证、启停与删除；`tenant-admin: the system tenant shows no entry and every direct visit returns home` 覆盖 `system` 租户不出现入口且直达管理地址回到租户首页；`tenant-admin: impersonating the administrator renders no organization surface` 覆盖冒充期间管理面不渲染；`tenant-admin: the unproved administrator is refused, proves the address and retries` 覆盖邮箱未证明时写入被拒绝、证明后同一写入成功。

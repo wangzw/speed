@@ -153,6 +153,8 @@ reason the regions are separate control groups:
   actions.
 - `packages/admin-ui/src/InvitationsPage.tsx` — `InvitationsPage`:
   invitations table and members table.
+- `packages/admin-ui/src/OrganizationMembersPage.tsx` —
+  `OrganizationMembersPage`: members table and invitations table.
 
 Adding a multi-region component means adding an entry with a reason; the
 rule's scan test (`no-double-feedback-region.test.mjs`) reads every

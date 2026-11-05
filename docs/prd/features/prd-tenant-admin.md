@@ -470,7 +470,7 @@
 
 - **验收**：带某个角色名参数的地址打开成员页时，列表按该角色筛选，控件显示该角色；选择另一个角色后地址随之更新；清除筛选后该参数从地址移除并恢复未筛选；角色列表读取失败时保留当前筛选并说明无法加载选项，提供重试；筛选与搜索同时给出时，结果同时满足两者；没有匹配时显示与角色筛选对应的空态。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 的 step 5 覆盖按角色筛选收窄成员列表，带角色参数的地址直达筛选视图，以及清除筛选后恢复未筛选。角色列表读取失败时保留当前筛选并提供重试，角色没有成员持有时显示筛选空态，未由 e2e 覆盖，由 `web/packages/admin-ui/src/OrganizationMembersPage.test.tsx` 覆盖；筛选与文本搜索同时生效的服务端组合未由 e2e 覆盖，由 `pkg/authn/admin/members_test.go` 的 `TestTheMemberListCombinesTheRoleFilterWithTheQuery` 覆盖。
 
 ### REQ-tenant-admin-054
 
