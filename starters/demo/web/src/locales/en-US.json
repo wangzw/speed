@@ -195,11 +195,6 @@
   },
   "organization": {
     "personal": "Organization",
-    "failure": {
-      "title": "Could not prepare your organization",
-      "description": "Something went wrong while preparing your organization. Please try again.",
-      "retry": "Try again"
-    },
     "accessFailed": {
       "title": "Could not check organization access",
       "description": "We could not load what we need to open this organization. Please try again.",

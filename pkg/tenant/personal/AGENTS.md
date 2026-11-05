@@ -2,7 +2,7 @@
 
 The tenant capability's personal-tenant module: it implements
 `provisioning.AccountProvisioning`, `authn.AccountLifecycle` and
-`tenant.KindResolver`, and mounts `POST /api/v1/orgs/personal`.
+`tenant.KindResolver`.
 
 ## Boundaries
 
@@ -20,10 +20,11 @@ The tenant capability's personal-tenant module: it implements
 - **A service account owns no organization.** Both provisioning methods return
   nil for `kind=service` and write nothing.
 - **The alias is the username.** The personal tenant is addressed by the
-  account's username; its identifier remains `personal-<accountID>`. An empty
-  username — the defensive fallback until SSO JIT always supplies one — derives
-  the alias from the identifier. The username namespace reserves the
-  `personal-` prefix, so the fallback cannot collide with a username.
+  account's username; its identifier remains `personal-<accountID>`. A user
+  account always has a username: SSO JIT obtains one through `usernameStrategy`
+  (a claim or user confirmation), a service account owns no personal tenant,
+  and the write surface produces no username-less user account. The seam refuses
+  an empty username with `ErrUsernameMissing`; no derived alias exists.
 - **An existing tenant row is a replay, not a failure.**
   `tenant.ErrTenantExists` continues with the remaining steps.
   `tenant.ErrAliasConflict` becomes this module's exported `ErrAliasConflict`,
@@ -43,9 +44,8 @@ The tenant capability's personal-tenant module: it implements
   a late event cannot apply a state the account has left. Events are
   de-duplicated in a bounded in-memory set.
 - **The module is always in force when assembled.** There is no configuration
-  item. It declares the static feature `org.personal`. The backfill route mounts
-  whenever an HTTP entry point is present, and is registered `Impersonable` so
-  an impersonator builds or reads back the impersonated account's own space.
+  item. It declares the static feature `org.personal` and mounts no HTTP route:
+  the account's transaction is the guarantee that the personal tenant exists.
 - **The module provides `tenant.KindResolver` rather than requiring one.** It is
   the one place that knows which identifiers are personal. `tenant.self` takes
   it optionally; an assembly without this module reads every tenant as
@@ -64,20 +64,15 @@ go -C pkg test -race ./tenant/personal/...
 go -C pkg vet ./tenant/personal/...
 ```
 
-The OpenAPI fragment is generated from the operation declarations. Regenerate it
-with:
-
-```
-UPDATE_FRAGMENTS=1 go -C pkg test ./tenant/personal -run TestTheFragmentIsGeneratedFromTheDeclarations
-```
-
 `provisioning_test.go` pins the five transaction-aware writes, the service-account
-no-op, the replay, the alias sentinel and the after-commit collector.
-`lifecycle_test.go` pins the create, disable, enable and deletion hooks, their
-order and their idempotence. `ensure_test.go` pins the backfill and the kind
-resolver. `events_test.go` pins the compensation. `integration_test.go` drives
+no-op, the replay, the empty-username refusal, the alias sentinel and the
+after-commit collector. `lifecycle_test.go` pins the create, disable, enable and
+deletion hooks, their order and their idempotence. `ensure_test.go` pins the
+post-commit completion, the username refusal and the kind resolver.
+`events_test.go` pins the compensation. `integration_test.go` drives
 the real account, roster and policy modules over one SQLite database and pins
 the shared transaction: a failure after the tenant row is written leaves no
 account, an alias conflict leaves no account, a failed tombstone leaves the
 account in service, a committed creation leaves its audit row, and a deletion
-removes the other members of the personal tenant. `module_test.go` pins the descriptor and the mounted route.
+removes the other members of the personal tenant. `module_test.go` pins the
+descriptor.

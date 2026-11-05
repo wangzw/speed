@@ -295,7 +295,7 @@ func (m *fakeMemberships) Membership(_ context.Context, tenantID string, id auth
 }
 
 // fakeGrants is the grant table the manager and the seeding surface share, as
-// the two share one in the process: the ensure reads what it seeded.
+// the two share one in the process: the lifecycle reads what the seam seeded.
 type fakeGrants struct {
 	mu   sync.Mutex
 	sets map[string]map[authz.Role]map[authz.Grant]struct{}

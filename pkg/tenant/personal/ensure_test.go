@@ -3,18 +3,16 @@ package personal
 import (
 	"context"
 	"errors"
-	"net/http"
 	"sync"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
-	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The backfill writes the same five pieces, and a second call changes nothing.
+// The ensure writes the same five pieces, and a second call changes nothing.
 func TestEnsureIsIdempotent(t *testing.T) {
 	p, roster, memberships, manager, _ := unitProduct()
 	ctx := context.Background()
@@ -46,7 +44,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	}
 }
 
-// The backfill names the tenant's alias after the account's username.
+// The ensure names the tenant's alias after the account's username.
 func TestEnsureNamesTheAliasAfterTheUsername(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	p.accounts = &fakeAccounts{identifiers: []authn.Identifier{
@@ -62,16 +60,33 @@ func TestEnsureNamesTheAliasAfterTheUsername(t *testing.T) {
 	}
 }
 
-// Without the account read surface the alias falls back to the derived
-// identifier.
-func TestEnsureFallsBackToTheDerivedAliasWithoutAnAccountRead(t *testing.T) {
-	p, roster, _, _, _ := unitProduct()
-	if _, err := p.ensure(context.Background(), unitAccount); err != nil {
-		t.Fatalf("the ensure: %v", err)
+// A username the ensure cannot read is a refusal, not a derived alias: the
+// personal tenant's alias is always the account's username.
+func TestEnsureRefusesWhenTheUsernameCannotBeRead(t *testing.T) {
+	cases := []struct {
+		name     string
+		accounts accountReader
+	}{
+		{name: "no account read surface", accounts: nil},
+		{name: "no username identifier", accounts: &fakeAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: "alice@example.com"},
+		}}},
+		{name: "empty username identifier", accounts: &fakeAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierUsername, Value: ""},
+		}}},
 	}
-	id := TenantID(unitAccount)
-	if row := roster.rows[id]; row.Alias != string(id) {
-		t.Errorf("the alias is %q, want the derived identifier %q", row.Alias, id)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, roster, _, _, _ := unitProduct()
+			p.accounts = tc.accounts
+			_, err := p.ensure(context.Background(), unitAccount)
+			if !errors.Is(err, ErrUsernameMissing) {
+				t.Fatalf("the ensure gave %v, want ErrUsernameMissing", err)
+			}
+			if len(roster.rows) != 0 {
+				t.Errorf("the refused ensure wrote %v", roster.rows)
+			}
+		})
 	}
 }
 
@@ -90,7 +105,7 @@ func TestEnsureReportsAHeldAlias(t *testing.T) {
 func TestEnsureRefusesADisabledTenant(t *testing.T) {
 	p, roster, memberships, manager, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDisabled}
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusDisabled}
 	memberships.rows[unitAccount] = []authn.Membership{{Account: unitAccount, Tenant: string(id), Active: true}}
 	before := len(manager.bindings[string(id)])
 	_, err := p.ensure(context.Background(), unitAccount)
@@ -107,7 +122,7 @@ func TestEnsureRefusesADisabledTenant(t *testing.T) {
 func TestEnsureClosesALostRaceWithAFailedAuditRow(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusActive}
 	roster.creates = 0
 	roster.createErr = tenant.ErrTenantExists
 	result, err := p.ensure(context.Background(), unitAccount)
@@ -153,142 +168,6 @@ func TestTheAllowlistKeepsOnlyGovernedBusinessPermissions(t *testing.T) {
 	}
 }
 
-// The handler refuses a caller with no identity, a service account and a
-// static-table subject before the ensure runs, and writes nothing for any of
-// them.
-func TestHandleEnsureRefusesCallersThatOwnNoOrganization(t *testing.T) {
-	p, roster, memberships, manager, seeder := unitProduct()
-
-	_, err := p.handleEnsure(context.Background(), struct{}{})
-	if fault := faultOf(t, err); fault.Status != http.StatusUnauthorized {
-		t.Errorf("an unauthenticated ensure answered %d, want 401", fault.Status)
-	}
-
-	refused := []struct {
-		name string
-		ctx  context.Context
-	}{
-		{
-			name: "service account",
-			ctx: authntest.Context(t, context.Background(),
-				authntest.WithAccount("svc-automation"),
-				authntest.WithMethods(authn.MethodClientSecret)),
-		},
-		{
-			name: "static-table subject",
-			ctx: authntest.Context(t, context.Background(),
-				authntest.WithAccount("static.ops"),
-				authntest.WithBackend("static")),
-		},
-	}
-	for _, caller := range refused {
-		t.Run(caller.name, func(t *testing.T) {
-			_, err := p.handleEnsure(caller.ctx, struct{}{})
-			if fault := faultOf(t, err); fault.Status != http.StatusForbidden {
-				t.Errorf("a %s's ensure answered %d, want 403", caller.name, fault.Status)
-			}
-		})
-	}
-	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
-		manager.putBinding != 0 || seeder.seed != 0 || len(p.audit.(*fakeAudit).rows()) != 0 {
-		t.Errorf("a refused ensure wrote tenant=%d membership=%d role=%d binding=%d seed=%d audit=%d, want none",
-			roster.creates, memberships.puts, manager.putRole, manager.putBinding, seeder.seed,
-			len(p.audit.(*fakeAudit).rows()))
-	}
-}
-
-// The handler's success answer carries the tenant's identifier, alias, kind and
-// whether this call registered it.
-func TestHandleEnsureAnswersTheTenantAndKind(t *testing.T) {
-	p, _, _, _, _ := unitProduct()
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-
-	reply, err := p.handleEnsure(ctx, struct{}{})
-	if err != nil {
-		t.Fatalf("the ensure: %v", err)
-	}
-	wantID := string(TenantID(unitAccount))
-	if reply.Tenant.ID != wantID || reply.Tenant.Alias != wantID {
-		t.Errorf("the answer names %q/%q, want both %q", reply.Tenant.ID, reply.Tenant.Alias, wantID)
-	}
-	if reply.Tenant.Kind != personalKind {
-		t.Errorf("the answer's kind is %q, want %q", reply.Tenant.Kind, personalKind)
-	}
-	if !reply.Created {
-		t.Errorf("the first ensure answered created=false, want true")
-	}
-
-	second, err := p.handleEnsure(ctx, struct{}{})
-	if err != nil {
-		t.Fatalf("the second ensure: %v", err)
-	}
-	if second.Created {
-		t.Errorf("the second ensure answered created=true, want false")
-	}
-}
-
-// The handler maps the disabled-tenant refusal to 409 tenant-unavailable and
-// writes nothing.
-func TestHandleEnsureAnswersADisabledTenant409(t *testing.T) {
-	p, roster, memberships, manager, seeder := unitProduct()
-	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDisabled}
-	memberships.rows[unitAccount] = []authn.Membership{
-		{Account: unitAccount, Tenant: string(id), Active: true, Source: "admin"},
-	}
-
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	_, err := p.handleEnsure(ctx, struct{}{})
-	fault := faultOf(t, err)
-	if fault.Status != http.StatusConflict || fault.Type != personalProblemPrefix+tenantUnavailableCode {
-		t.Errorf("the ensure answered %d %q, want 409 %q",
-			fault.Status, fault.Type, personalProblemPrefix+tenantUnavailableCode)
-	}
-	if memberships.puts != 0 || manager.putRole != 0 || manager.putBinding != 0 || seeder.seed != 0 {
-		t.Errorf("the refused ensure wrote membership=%d role=%d binding=%d seed=%d, want none",
-			memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
-	}
-}
-
-// The handler maps an alias another tenant holds and a derived identifier
-// outside the roster's domain to 409 identifier-unavailable.
-func TestHandleEnsureAnswersAnIdentifierConflict409(t *testing.T) {
-	t.Run("the alias is held by another tenant", func(t *testing.T) {
-		p, roster, _, _, _ := unitProduct()
-		roster.createErr = tenant.ErrAliasConflict
-		ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-		_, err := p.handleEnsure(ctx, struct{}{})
-		fault := faultOf(t, err)
-		if fault.Status != http.StatusConflict || fault.Type != personalProblemPrefix+identifierUnavailableCode {
-			t.Errorf("the ensure answered %d %q, want 409 %q",
-				fault.Status, fault.Type, personalProblemPrefix+identifierUnavailableCode)
-		}
-	})
-	t.Run("the derived identifier is outside the roster's domain", func(t *testing.T) {
-		p, _, _, _, _ := unitProduct()
-		_, err := p.ensure(context.Background(), authn.AccountID("outside the domain"))
-		if !errors.Is(err, ErrIdentifierUnavailable) {
-			t.Fatalf("the ensure gave %v, want ErrIdentifierUnavailable", err)
-		}
-	})
-}
-
-// The handler maps a dependency failure to 503 and does not repeat the cause.
-func TestHandleEnsureAnswersADependencyFailure503WithoutTheCause(t *testing.T) {
-	p, roster, _, _, _ := unitProduct()
-	roster.createErr = errors.New("the tenant table is unavailable")
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-
-	_, err := p.handleEnsure(ctx, struct{}{})
-	fault := faultOf(t, err)
-	if fault.Status != http.StatusServiceUnavailable {
-		t.Fatalf("the ensure answered %d, want 503", fault.Status)
-	}
-	if fault.Detail != "" {
-		t.Errorf("the 503 fault carries %q, want no cause", fault.Detail)
-	}
-}
-
 // Concurrent ensures with the same account collide on the deterministic
 // identifier: one creates the tenant and the rest read it back.
 func TestEnsureCreatesOneTenantUnderConcurrentCalls(t *testing.T) {
@@ -331,7 +210,7 @@ func TestEnsureCreatesOneTenantUnderConcurrentCalls(t *testing.T) {
 func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusActive}
 	roster.lagging[id] = true
 
 	result, err := p.ensure(context.Background(), unitAccount)
@@ -346,35 +225,6 @@ func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
 	}
 	if roster.entered != 1 {
 		t.Errorf("the roster was caught up %d time(s), want once", roster.entered)
-	}
-}
-
-// stuckLaggingRoster is a roster whose table holds the row while its snapshot
-// keeps missing it: EnterRegistered cannot catch it up, which is the lag the
-// ensure reports as ErrRosterLagging.
-type stuckLaggingRoster struct{ *fakeRoster }
-
-func (r stuckLaggingRoster) EnterRegistered(ctx context.Context, _ tenant.ID) (context.Context, error) {
-	return ctx, nil
-}
-
-// A roster whose snapshot stays behind the table answers ErrRosterLagging, and
-// the handler maps it to 503.
-func TestEnsureReportsARosterThatStaysBehind(t *testing.T) {
-	p, roster, _, _, _ := unitProduct()
-	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
-	roster.lagging[id] = true
-	p.roster = stuckLaggingRoster{roster}
-
-	if _, err := p.ensure(context.Background(), unitAccount); !errors.Is(err, ErrRosterLagging) {
-		t.Fatalf("the ensure gave %v, want ErrRosterLagging", err)
-	}
-
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	_, err := p.handleEnsure(ctx, struct{}{})
-	if fault := faultOf(t, err); fault.Status != http.StatusServiceUnavailable {
-		t.Errorf("the ensure answered %d, want 503", fault.Status)
 	}
 }
 
@@ -414,7 +264,7 @@ func TestEnsureMigratesTheLegacyOwnerRole(t *testing.T) {
 	p, roster, memberships, manager, seeder := unitProduct()
 	ctx := context.Background()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusActive}
 	memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: string(id), Active: true, Source: personalMemberSource},
 	}
@@ -462,14 +312,4 @@ func TestEnsureMigratesTheLegacyOwnerRole(t *testing.T) {
 			t.Errorf("the legacy owner binding survived: %+v", bindings)
 		}
 	}
-}
-
-// faultOf answers the fault a handler returned.
-func faultOf(t *testing.T, err error) speedhttp.Fault {
-	t.Helper()
-	var fault speedhttp.Fault
-	if !errors.As(err, &fault) {
-		t.Fatalf("the handler gave %v, want a fault", err)
-	}
-	return fault
 }

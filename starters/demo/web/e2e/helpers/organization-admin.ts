@@ -358,8 +358,8 @@ export function tenantSwitcher(page: Page, name: string): Locator {
 
 /**
  * Move the tenant area to `target` through the switcher. `current` names the
- * trigger as it stands; the target row is waited for, because a personal
- * tenant may be backfilled after the frame settles.
+ * trigger as it stands; the target row is waited for, because the caller
+ * tenant list may still be settling when the switcher opens.
  */
 export async function switchTenant(
   page: Page,

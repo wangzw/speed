@@ -1005,8 +1005,8 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 		if applicationOwned, declared := expected["POST /api/v1/orgs"]; !declared || !applicationOwned {
 			// The named anchor: the host's own self-service creation route,
 			// declared by a module in this package, is the leg that proves
-			// registration and marking agree. The personal-tenant route used to
-			// be the anchor; it is a platform module's route now.
+			// registration and marking agree. It is the only application-owned
+			// operation in the baseline document.
 			t.Errorf("the host's route POST /api/v1/orgs is not among the application-owned operations")
 		}
 		present := map[string]bool{}

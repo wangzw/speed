@@ -41,7 +41,6 @@ import {
   clearSelfTenants,
   getSelfTenantState,
   loadSelfTenants,
-  personalTenantId,
 } from './tenant-self.js'
 import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
 import {
@@ -109,8 +108,8 @@ describe('the caller tenant list store', () => {
     await loadSelfTenants()
 
     // The failure is not an empty answer: the rows already on hand stay, and
-    // the unsettled flag is what keeps the personal-tenant ensure from reading
-    // this failure as "no memberships".
+    // the unsettled flag keeps a failed read from settling a current tenant or
+    // standing in for "no memberships".
     expect(getSelfTenantState()).toEqual({
       tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
       settled: false,
@@ -203,12 +202,6 @@ describe('the caller tenant list store', () => {
     // The id and the alias diverge after a rename; the request surface carries
     // the alias and never the id.
     expect(getCurrentTenantAlias()).toBe('globex-renamed')
-  })
-})
-
-describe('the derived personal tenant identifier', () => {
-  it('is the server prefix plus the account identifier, exactly', () => {
-    expect(personalTenantId('account-1')).toBe('personal-account-1')
   })
 })
 

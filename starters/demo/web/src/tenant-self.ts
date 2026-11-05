@@ -7,9 +7,9 @@
  * identifier as the read answers it, each row carrying its host-answered
  * `kind`. `settled` says whether the LAST read produced a real answer: a
  * failure is not an empty list, so it leaves the rows already on hand in
- * place and clears the flag. The personal-tenant trigger reads exactly that
- * distinction -- it may only ask the server for a space when the list settled
- * empty, never when the read failed.
+ * place and clears the flag. The settlement and the failure rendering read
+ * exactly that distinction: a failed read must never settle a current tenant
+ * or be mistaken for "no memberships".
  *
  * The list belongs to an identity, not to the page: a sign-out clears it, and
  * the always-mounted root clears and re-reads it whenever the acting account
@@ -148,26 +148,4 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
 /** One listed tenant's alias, or null when the list does not hold it. */
 export function selfTenantAlias(tenantId: string): string | null {
   return state.tenants.find((tenant) => tenant.id === tenantId)?.alias ?? null
-}
-
-/**
- * The server's personal-tenant identifier prefix (starters/demo/server's
- * personalIDPrefix). It is no longer how a tenant's kind is recognised: the
- * read carries `kind`, and labels and the default settlement branch on that.
- * The prefix survives only for the derived identifier below, which the
- * personal-tenant ensure compares against the list to decide whether the
- * caller's own space is still missing.
- */
-export const PERSONAL_TENANT_ID_PREFIX = 'personal-'
-
-/**
- * The identifier the host's personal-tenant server derives for an account:
- * the fixed prefix plus the account identifier. The list's `kind` says which
- * rows are personal, so this value is used for exactly one thing: the ensure
- * trigger compares it EXACTLY against the list to tell whether the caller's
- * own space is missing. Another account's personal tenant starts with the same
- * prefix but is not the caller's, so a prefix test would suppress the ensure.
- */
-export function personalTenantId(accountId: string): string {
-  return `${PERSONAL_TENANT_ID_PREFIX}${accountId}`
 }

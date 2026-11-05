@@ -89,8 +89,8 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	}
 
 	// The personal assembly answers the read through the program: the seeded
-	// account reads its own personal tenant, which the seed's account-creation
-	// hook built before any browser called the backfill.
+	// account reads its own personal tenant, which the account's creation
+	// transaction built before the first request arrives.
 	base, token := orgCreateServe(t, "")
 	read := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
 		base+"/api/v1/auth/me/tenants", nil,

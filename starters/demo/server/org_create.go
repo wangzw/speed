@@ -18,10 +18,10 @@ package main
 // settings (org.create.max-organizations and org.create.max-per-hour); the
 // switch and the bounds' shape are configuration.
 //
-// The route coexists with POST /api/v1/orgs/personal. Both are exact routes on
-// the same account endpoint, whose /api/v1/orgs claim is configuration and
-// stays claimed either way: with this module's switch off the path reaches the
-// endpoint's own 404 rather than being taken over by the personal prefix.
+// The route is an exact route on the account endpoint, whose /api/v1/orgs
+// claim is configuration and stays claimed either way: with this module's
+// switch off the path reaches the endpoint's own 404. The personal tenant is
+// written in the account's transaction and has no route of its own.
 
 import (
 	"context"

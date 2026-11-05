@@ -744,11 +744,10 @@ describe('the admin area', () => {
   })
 
   it('sends a viewer whose address is unproved to the verification page', async () => {
-    // A registration that has not proved its address settles no tenant: the
-    // personal tenant's ensure refuses a pending account and the roster is
-    // staff-only, so the platform permission set is never read and the area
-    // would wait forever. The verification page is the one place that lifts
-    // the state, so the admin URL lands there instead of on the wait.
+    // A registration that has not proved its address is sent to the
+    // verification page: proof is the gate the admin area requires, and the
+    // verification page is the one place that lifts the state, so the admin
+    // URL lands there instead of on the wait.
     window.history.replaceState({}, '', '/admin/tenants')
     bindRequestFn(<T,>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me') {

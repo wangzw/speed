@@ -196,8 +196,8 @@ The walkthrough is: register a username, email and password; sign in with the
 password through the ordinary flow; add the email under the account's own
 identifiers; read the code from the `log mail:` line; submit it to
 `POST /api/v1/auth/identifiers/verify`; watch `/api/v1/auth/me` report
-`verification.state = verified`; then call the personal backfill, which reads
-back the tenant the account's transaction wrote. Registration
+`verification.state = verified`; then read the account's own tenant list,
+which names the tenant the account's transaction wrote. Registration
 itself sends no mail, and `sms.log` verifies a phone the same way without
 lifting the registration limit.
 
@@ -575,9 +575,9 @@ personal tenant inside the account's own transaction. There is no switch: the
 module is always in force when assembled, and an account without its space is
 not a state the command can produce. The account creation hook then converges
 what the seam wrote. The run has no HTTP
-entry point: the personal module skips its backfill route and the audit journal
-skips its request-level layer, while the account lifecycle hooks and the
-statement-level audit rows keep working. Routes belong to the serve command. The tenant-admin role the seed writes in a
+entry point: the audit journal skips its request-level layer, while the
+account lifecycle hooks and the statement-level audit rows keep working.
+Routes belong to the serve command. The tenant-admin role the seed writes in a
 business tenant is builtin; the personal tenant's tenant-admin is not, because
 the host adds its grants with the seeding surface and revokes the ones outside
 the allowlist with the manager.
@@ -1040,7 +1040,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   (`pkg/tenant/personal`, module name `org.personal`, named in
   `baselineServe` and in the `seed` command). It implements
   `provisioning.AccountProvisioning`, `authn.AccountLifecycle` and
-  `tenant.KindResolver`, and it mounts the backfill route. The host writes no
+  `tenant.KindResolver`. The host writes no
   policy body of its own. There is no switch: the module is always in force
   when assembled, and the account's transaction writes its personal tenant.
 
@@ -1051,9 +1051,10 @@ names the fixed part of that wiring, and no configuration file repeats it:
   and identity-provider management — the set is empty here because
   neither the notification surface nor the object store declares a permission
   point), and the account's binding. The tenant's identifier is
-  `personal-<account-id>`; its alias is the account's username, with the
-  derived identifier as the defensive fallback when the seam is handed no
-  username. A service account writes nothing. The status and deletion hooks
+  `personal-<account-id>`; its alias is the account's username. A user account
+  always has a username; the seam refuses an empty one with
+  `ErrUsernameMissing` and no derived alias exists. A service account writes
+  nothing. The status and deletion hooks
   follow the account after its commit, and the deletion hook winds the tenant
   down when the transaction's own tombstone has not already done so.
   `ProvisionAccountDeletion` clears the account's bindings, deletes the
@@ -1069,29 +1070,12 @@ names the fixed part of that wiring, and no configuration file repeats it:
   provisioner's builtin exemption and the seed's skip — all call the module's
   exported `IsPersonalTenantID`, so the prefix is spelled once.
 
-  The route `POST /api/v1/orgs/personal` on the `account` endpoint is the
-  backfill: a caller whose own personal tenant is missing from its membership
-  list asks for one. The account's transaction normally built it, so the
-  common answer reads it back without writing; a membership in another tenant
-  is not a refusal — every account owns its personal tenant — so the backfill
-  creates one beside them when it is missing. The route requires an
-  authenticated caller and settles it for the effective account: it is
-  registered `Impersonable`, so an impersonating identity reaches the handler,
-  which builds or reads back the impersonated account's personal tenant rather
-  than answering the gateway's default 401. It refuses a service account or a
-  static-credential principal 403. Registration verification is not an
-  eligibility fact: an unverified account gets its personal tenant, and the
-  verification gate limits what it may do inside the organization. An existing
-  membership is left alone, and a tenant row whose status is not enabled
-  answers 409 `tenant-unavailable` without writing anything. An alias collision
-  or a derived identifier outside the roster domain answers 409
-  `identifier-unavailable`. A dependency failure is a 503 with no part of the
-  result. The two 409s carry `urn:speed:org:<code>` types, so a frontend that
-  must render them by code can distinguish them; `@speed/api-client` degrades
-  every other problem type to `client.http.<status>`. The frontend calls the
-  backfill from the tenant frame when an authenticated, non-impersonating
-  viewer's own personal tenant is absent from its settled membership list,
-  regardless of the account's verification state or its other memberships. A
+  The personal tenant has no HTTP route: the account's transaction is the
+  guarantee that it exists, and an unverified account gets it like any other.
+  Registration verification limits what the account may do inside the
+  organization, not whether the space exists. The tenant frame settles the
+  current tenant from the caller tenant list, where the account's personal
+  tenant is one row. A
   registration completed through SMS lands on `/` (the tenant home) when the
   personal-tenant feature is served and on `/account` otherwise. A registration
   completed through a social or enterprise provider always lands on `/` (the
@@ -1100,7 +1084,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   registration stays on that link's accept page instead of navigating, and a
   social or enterprise callback returns to that invitation path. The
   verification notice is rendered by the account surface independently of the
-  backfill.
+  tenant list.
 - **The tenancy policy seams** are the host's answers to what the tenant and
   authorization capabilities leave open (`server/tenancy.go`, named in
   `baselineServe` and in the `seed` command). The module provides

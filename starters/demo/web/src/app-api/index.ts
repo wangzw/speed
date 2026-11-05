@@ -1862,37 +1862,6 @@ export interface OrganizationCreatedReply {
 }
 
 /**
- * The tenant kind; the frontend renders the personal organization label from it
- */
-export type OrganizationPersonalTenantKind = typeof OrganizationPersonalTenantKind[keyof typeof OrganizationPersonalTenantKind];
-
-
-export const OrganizationPersonalTenantKind = {
-  personal: 'personal',
-} as const;
-
-/**
- * The personal tenant the ensure names.
- */
-export interface OrganizationPersonalTenant {
-  /** The request-surface name. It is the account's username, or the derived identifier when the account carries no username */
-  alias: string;
-  /** The tenant identifier, derived deterministically from the account identifier: the fixed prefix "personal-" followed by the account identifier. The scoped tables hold it, so it takes no phone number, display name or other personal data, and it does not change with the request language */
-  id: string;
-  /** The tenant kind; the frontend renders the personal organization label from it */
-  kind: OrganizationPersonalTenantKind;
-}
-
-/**
- * The answer to a successful ensure: the caller's personal tenant and whether this call registered it.
- */
-export interface OrganizationPersonalReply {
-  /** Whether this call registered the tenant */
-  created: boolean;
-  tenant: OrganizationPersonalTenant;
-}
-
-/**
  * An RFC 9457 problem document. This is the entry point's default error shape, which a host-supplied ErrorResponder may replace.
  */
 export interface Problem {
@@ -7416,69 +7385,6 @@ export const useOrgCreateCreate = <TError = Problem,
         TContext
       > => {
       return useMutation(getOrgCreateCreateMutationOptions(options), queryClient);
-    }
-
-/**
- * Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the module's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier is derived from the account identifier, and the alias is the account's username; the answer names the tenant and whether this call created it.
- * @summary Ensure the caller's personal tenant exists and is complete
- */
-export const orgPersonalEnsure = (
-
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<OrganizationPersonalReply>(
-      {url: `/api/v1/orgs/personal`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getOrgPersonalEnsureMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof orgPersonalEnsure>>, TError,void, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof orgPersonalEnsure>>, TError,void, TContext> => {
-
-const mutationKey = ['orgPersonalEnsure'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof orgPersonalEnsure>>, void> = () => {
-
-
-          return  orgPersonalEnsure()
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type OrgPersonalEnsureMutationResult = NonNullable<Awaited<ReturnType<typeof orgPersonalEnsure>>>
-
-    export type OrgPersonalEnsureMutationError = Problem
-
-    /**
- * @summary Ensure the caller's personal tenant exists and is complete
- */
-export const useOrgPersonalEnsure = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof orgPersonalEnsure>>, TError,void, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof orgPersonalEnsure>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getOrgPersonalEnsureMutationOptions(options), queryClient);
     }
 
 /**

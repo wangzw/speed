@@ -6,21 +6,15 @@
 // authn/provisioning.AccountProvisioning, so an account and the space it owns
 // either both come into being or neither does. The identity's alias is the
 // account's username, which is how a personal organization is addressed on the
-// request surface; a defensive fallback derives the alias from the account
-// identifier when the seam is handed none. The service account owns no
-// organization and the seam writes nothing for it.
+// request surface; a user account always has a username, and the seam refuses
+// one that carries none. The service account owns no organization and the seam
+// writes nothing for it.
 //
 // The module also implements authn.AccountLifecycle: after the account's
 // transaction has committed the create hook completes anything the seam left
 // unfinished, the two status hooks move the tenant with the account, and the
 // deletion hook winds the tenant down. Those hooks are idempotent and are the
 // retry path; the transaction seam is the authority.
-//
-// The backfill route POST /api/v1/orgs/personal is the module's second entry
-// point: an authenticated caller whose own personal tenant is missing from its
-// membership list asks for one, and a caller that already holds it reads it
-// back. The route acts for the effective account, so an impersonating identity
-// builds or reads back the impersonated account's own personal tenant.
 //
 // The module is always in force when an assembly names it: there is no
 // configuration switch, because a user account without its personal tenant is
@@ -29,11 +23,9 @@ package personal
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -46,7 +38,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/feature"
-	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
@@ -84,18 +75,12 @@ func IsPersonalTenantID(id string) bool {
 	return strings.HasPrefix(id, IDPrefix)
 }
 
-// personalPathFragment is the ensure route as the fragment writes it.
-const personalPathFragment = "/orgs/personal"
-
-// personalEndpoint is the listening endpoint the route is mounted on. It is
-// fixed: the route is deliberately on the one endpoint that resolves no tenant.
-const personalEndpoint = "account"
-
-// The description key and role the ensure writes in every personal tenant.
+// personalTenantAdminRole is the role the module writes in every personal
+// tenant.
 const personalTenantAdminRole = authz.TenantAdminRole
 
 // legacyPersonalOwnerRole is the role the old personal-tenant model wrote. The
-// backfill removes it, with its grants and bindings, once the tenant-admin role
+// ensure removes it, with its grants and bindings, once the tenant-admin role
 // and the account's binding are in place.
 const legacyPersonalOwnerRole = authz.Role("owner")
 
@@ -103,14 +88,11 @@ const legacyPersonalOwnerRole = authz.Role("owner")
 // tenant-admin role.
 const personalTenantAdminDescriptionKey = "authz.role.tenantAdmin"
 
-// personalMemberSource is the membership source the seam and the backfill
-// write. The account module publishes it on the membership event; "personal"
-// names this module's own provisioning rather than an administrator, an
-// invitation or an import.
+// personalMemberSource is the membership source the seam and the ensure write.
+// The account module publishes it on the membership event; "personal" names this
+// module's own provisioning rather than an administrator, an invitation or an
+// import.
 const personalMemberSource = "personal"
-
-// personalKind is the answer's tenant kind.
-const personalKind = "personal"
 
 // personalBusinessPermissions is the set of business-resource permissions a
 // personal tenant's tenant-admin may hold. It is written out in code and not
@@ -153,13 +135,6 @@ func personalAllowlist(catalog authz.Catalog, business []authz.Permission) []aut
 	return out
 }
 
-// The problem types the module writes.
-const (
-	personalProblemPrefix     = "urn:speed:org:"
-	tenantUnavailableCode     = "tenant-unavailable"
-	identifierUnavailableCode = "identifier-unavailable"
-)
-
 // The audit vocabulary the module writes, one action per tenant-side write.
 const (
 	personalCreateAction   = "org.personal.tenant.create"
@@ -171,7 +146,7 @@ const (
 	personalDetailTenant   = "tenant"
 )
 
-// The ensure's own refusals.
+// The module's refusals.
 var (
 	// ErrTenantUnavailable refuses an account whose personal tenant row exists
 	// and is not enabled.
@@ -179,32 +154,7 @@ var (
 	// ErrIdentifierUnavailable refuses an identifier or alias the personal
 	// tenant cannot take.
 	ErrIdentifierUnavailable = errors.New("the personal tenant's identifier or alias is unavailable")
-	// ErrRosterLagging reports a row the create saw in the table and this
-	// replica's roster snapshot does not carry yet.
-	ErrRosterLagging = errors.New("the roster's snapshot has not caught up with the tenant row")
 )
-
-// fragmentTitle and fragmentVersion are the info section the fragment
-// generates. The generation test compares the committed bytes with what these
-// name.
-const (
-	fragmentTitle   = "organization personal"
-	fragmentVersion = "1.0.0"
-)
-
-//go:embed openapi/tenant.personal.json
-var openAPIFragment []byte
-
-// personalSpec is the API root the module's fragment and route hang off.
-var personalSpec = speedhttp.Spec{
-	Endpoint: personalEndpoint,
-	Prefix:   "api",
-	Version:  "v1",
-	Document: openAPIFragment,
-}
-
-// RoutePath is the absolute path the ensure is mounted on.
-var RoutePath = personalSpec.ResolvePath(personalPathFragment)
 
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -251,8 +201,6 @@ func Module() core.Module {
 			{Token: (*tenant.KindResolver)(nil)},
 		},
 		Resources: []any{
-			personalSpec,
-			personalOperations,
 			feature.Spec{Name: FeatureName},
 		},
 
@@ -359,8 +307,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}, nil
 }
 
-// wire takes up the optional capabilities, subscribes the compensation and
-// mounts the backfill route.
+// wire takes up the optional capabilities and subscribes the compensation.
 func (p *product) wire(reg *core.Registry) error {
 	var err error
 	if delivered, loggerErr := core.Resolve[log.Logger](reg); loggerErr == nil {
@@ -386,28 +333,6 @@ func (p *product) wire(reg *core.Registry) error {
 		p.accounts = accounts
 	}
 	p.subscribe()
-
-	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")
-	if err != nil {
-		return err
-	}
-	if !found {
-		p.logger.Info(ModuleName + ": the run has no HTTP entry point; the backfill route is not mounted")
-		return nil
-	}
-	endpoint, err := router.Endpoint(personalEndpoint)
-	if err != nil {
-		return fmt.Errorf("%s: %w: %q: %w", ModuleName, speedhttp.ErrUnknownEndpoint, personalEndpoint, err)
-	}
-	endpoint.Route(personalEnsureOperation.Method, RoutePath,
-		personalEnsureOperation.Handle(p.handleEnsure))
-	if gate, found, gateErr := optional[authn.Gate](reg, "the authentication gateway"); gateErr != nil {
-		return gateErr
-	} else if found {
-		gate.Impersonable(personalEndpoint, http.MethodPost, RoutePath)
-	}
-	p.logger.Info(ModuleName+": the personal tenant is in force",
-		"endpoint", personalEndpoint, "route", RoutePath)
 	return nil
 }
 

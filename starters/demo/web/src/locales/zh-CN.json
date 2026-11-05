@@ -195,11 +195,6 @@
   },
   "organization": {
     "personal": "组织",
-    "failure": {
-      "title": "无法准备你的组织",
-      "description": "准备组织时出了问题，请稍后重试。",
-      "retry": "重试"
-    },
     "accessFailed": {
       "title": "无法核实组织访问权限",
       "description": "打开这个组织所需的信息没能加载，请重试。",

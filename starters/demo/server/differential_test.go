@@ -694,6 +694,7 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 	sort.Strings(names)
 
 	var groups []variantGroup
+	built := map[string]bool{}
 	group := func(id string, seed map[string]bool) {
 		members := withDependents(seed, modules)
 		var removal []string
@@ -707,6 +708,7 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 		}
 		sort.Strings(removal)
 		groups = append(groups, variantGroup{id: id, modules: removal})
+		built[id] = true
 	}
 
 	for _, name := range names {
@@ -728,6 +730,20 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 	sort.Strings(extras)
 	for _, name := range extras {
 		group(name, map[string]bool{name: true})
+	}
+
+	// A module whose removal is expected to stop the run is a seed of its own
+	// even when it declares no fragment of its own: dropping it is how the case
+	// holds its startup property.
+	var mustNotStart []string
+	for name := range mayNotStartGroups {
+		mustNotStart = append(mustNotStart, name)
+	}
+	sort.Strings(mustNotStart)
+	for _, name := range mustNotStart {
+		if modules[name] != nil && !built[name] {
+			group(name, map[string]bool{name: true})
+		}
 	}
 
 	// The endpoint-wide variants name every routing module assembled for that

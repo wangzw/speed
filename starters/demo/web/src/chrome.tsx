@@ -188,14 +188,13 @@ export function tenantAlias(
 
 /**
  * The names and kinds the host has recorded for known tenant ids: the aliases
- * the roster reported, the aliases learned from an operation's answer, and the
- * kind an operation's answer carried. The switcher's rows come from the caller
- * tenant list; this cache is the source for a tenant that list does not hold --
- * a platform staff member entering a tenant they are not a member of, and the
- * personal tenant the backfill just created, whose membership re-read may not
- * have landed yet. A tenant the cache does not hold and the caller list does
- * not list has no alias, and the request surface announces none rather than a
- * stale default.
+ * the roster reported and the aliases and kinds learned from an operation's
+ * answer. The switcher's rows come from the caller tenant list; this cache is
+ * the source for a tenant that list does not hold -- a platform staff member
+ * entering a tenant they are not a member of, or an invitation's accepted
+ * tenant whose membership read has not landed yet. A tenant the cache does not
+ * hold and the caller list does not list has no alias, and the request surface
+ * announces none rather than a stale default.
  */
 interface RecordedTenant {
   readonly alias: string
@@ -218,11 +217,10 @@ export function setTenantAliases(aliases: ReadonlyMap<string, string>): void {
 
 /**
  * Records one tenant's current alias, leaving the rest as they were, and its
- * kind when the answer carries one. The personal tenant's alias is written
- * here before the frame announces it as the current tenant: no roster read
- * carries it, so without this record the request surface could not name the
- * tenant it is about to act in. The kind rides along so the switcher can label
- * that row before the membership re-read lists it.
+ * kind when the answer carries one. An operation's answer that lands the
+ * viewer in a tenant records it here before the caller tenant list re-reads,
+ * so the request surface can name the tenant it is about to act in and the
+ * switcher can label the row.
  */
 export function setTenantAlias(
   tenantId: string,
@@ -250,7 +248,7 @@ export function getRecordedTenantAlias(tenantId: string): string | null {
 
 /** One tenant's kind as an operation's answer recorded it, or null when none
  * did. The switcher labels a row the caller tenant read does not list by
- * this, rather than by deriving the personal identifier again. */
+ * this. */
 export function getRecordedTenantKind(tenantId: string): SelfTenantKind | null {
   return recordedTenants.get(tenantId)?.kind ?? null
 }

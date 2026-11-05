@@ -85,7 +85,6 @@ import { contactVerificationPending } from './contact-verification.js'
 import {
   tenantAdminTenantsList,
   useAuthnProfileGet,
-  orgPersonalEnsure,
 } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import {
@@ -95,7 +94,6 @@ import {
   getRecordedTenantKind,
   persistColorModePreference,
   setCurrentTenantId,
-  setTenantAlias,
   setTenantAliases,
   TenantRosterFailure,
   UserMenu,
@@ -147,7 +145,6 @@ import { SignInView } from './pages/sign-in-view.js'
 import {
   ACCOUNT_PATH,
   invitationPath,
-  isAccountLevelPath,
   isOrganizationAdminPath,
   PASSWORD_RESET_PATH,
 } from './paths.js'
@@ -155,7 +152,6 @@ import { DEMO_NAMESPACE } from './resources.js'
 import {
   clearSelfTenants,
   loadSelfTenants,
-  personalTenantId,
   selfTenantAlias,
   useSelfTenantState,
 } from './tenant-self.js'
@@ -231,8 +227,8 @@ export function DemoApp({
   // mounted: the admin area's session gate unmounts TenantFrame, and a
   // viewer who signs in again from there would otherwise inherit the ended
   // account's tenant -- under a personal tenant, another account's tenant --
-  // for the window before the roster or the ensure settles. TenantFrame
-  // re-syncs its own state with this clearing below.
+  // for the window before the roster or the caller tenant list settles.
+  // TenantFrame re-syncs its own state with this clearing below.
   useEffect(() => {
     if (!authenticated) {
       setCurrentTenantId(null)
@@ -584,11 +580,8 @@ function TenantFrame({
   // The assembled client: its event-stream opener feeds the notification
   // surface's live subscription below.
   const { api } = useAppServices()
-  // The page the frame is rendering. The personal-tenant failure placeholder
-  // replaces only the pages that read tenant data; the account-level pages
-  // read none and stay usable (src/paths.ts).
+  // The page the frame is rendering.
   const { path: pathname } = useLocationPath()
-  const accountLevel = isAccountLevelPath(pathname)
   // The notification surfaces and the roster are feature-gated; the hooks fail
   // closed, so a pending or failed document opens and reads nothing.
   const inboxServed = useFeature('notification.inbox')
@@ -607,11 +600,6 @@ function TenantFrame({
     [emailChannelServed, smsChannelServed],
   )
   const rosterServed = useFeature('tenant.admin')
-  // The host's personal-tenant policy: when this feature is in force, an
-  // account whose own personal tenant is missing from its membership list asks
-  // the server to backfill it, and a registration lands in the tenant area with
-  // it (src/pages/sign-in-view.tsx).
-  const personalServed = useFeature('org.personal')
   const snapshot = useAuthState()
   const authenticated = snapshot.state === 'authenticated'
   // Whose identity this session acts as right now. A start or end swaps it,
@@ -708,9 +696,8 @@ function TenantFrame({
   }, [tenantId, pathname, navigate, authenticated, featuresReady])
   // The caller's own tenant list: the memberships read the root loads, and
   // the fact the current tenant settles from. A read that has not settled
-  // (a failure included) is not an empty answer, so neither the settlement
-  // nor the personal-tenant backfill may treat it as "the personal tenant is
-  // missing".
+  // (a failure included) is not an empty answer, so the settlement never
+  // treats it as "no tenants".
   const selfState = useSelfTenantState()
   // The platform roster is a platform management read: only a caller whose
   // platform permission set holds tenant.read may issue it. The set is
@@ -723,20 +710,8 @@ function TenantFrame({
   // Whether the current tenant is a SETTLED context rather than an unknown
   // one. A tenant-scoped surface that opens a connection (the notification
   // stream) waits for this: a new account would otherwise open the stream
-  // before its personal tenant's backfill completes and be refused 404.
+  // before its caller tenant list settles and be refused 404.
   const [tenantSettled, setTenantSettled] = useState(false)
-  // The backfill's retryable failure: the tenant-reading pages then render a
-  // retry instead of their content, while the account-level pages keep
-  // rendering.
-  const [personalFailure, setPersonalFailure] = useState(false)
-  // A retry tick: the failure view's control bumps it, which re-runs the
-  // backfill effect.
-  const [personalRetry, setPersonalRetry] = useState(0)
-  // The personal tenant this identity's backfill already answered. The
-  // membership re-read after a successful answer may lag the write, and the
-  // backfill asks once per missing tenant rather than on every list it does not
-  // yet reflect; an identity change clears it.
-  const [personalBackfilled, setPersonalBackfilled] = useState<string | null>(null)
   // The identity-change gap. Ending an impersonation re-decides the current
   // tenant from the caller tenant list and the roster, and until those reads
   // land the current tenant is unknown -- the settled facts belong to the
@@ -910,14 +885,6 @@ function TenantFrame({
     setTenantId,
   ])
 
-  // Reset the personal-tenant facts the moment the identity they belong to
-  // changes: a started or ended impersonation swaps the effective account, and
-  // a decision taken for the previous identity must not carry over.
-  useEffect(() => {
-    setPersonalFailure(false)
-    setPersonalBackfilled(null)
-  }, [principalId, generation, impersonating])
-
   // The router's navigate callback changes identity with the location, so an
   // effect that depended on it would re-run on every route change. The effect
   // reads the latest callback through a ref instead.
@@ -926,81 +893,6 @@ function TenantFrame({
     navigateRef.current = navigate
   }, [navigate])
 
-  // The personal-tenant backfill. It asks the server only when the caller's own
-  // personal tenant is missing from its settled membership list:
-  // authenticated, not impersonating, the org.personal policy served, the
-  // caller tenant list settled, and the identifier derived from the principal
-  // absent from that list. A failed list read is not a missing tenant, so it
-  // never triggers. The list's other rows are irrelevant: an account in
-  // business tenants still owns its personal tenant.
-  //
-  // The server decides the answer: 200 records the tenant's alias before it is
-  // announced (no roster read carries it), makes it the current tenant when
-  // none is settled, and re-reads the list so the switcher gets the new row from
-  // the membership source; every failure is the tenant area's retryable
-  // failure.
-  useEffect(() => {
-    if (!authenticated || impersonating || !featuresReady || !personalServed) {
-      return undefined
-    }
-    if (principalId === '' || !selfState.settled) {
-      return undefined
-    }
-    const personalId = personalTenantId(principalId)
-    if (selfState.tenants.some((tenant) => tenant.id === personalId)) {
-      return undefined
-    }
-    if (personalBackfilled === personalId) {
-      return undefined
-    }
-    let cancelled = false
-    setPersonalFailure(false)
-    void Promise.resolve()
-      .then(() => orgPersonalEnsure())
-      .then((answer) => {
-        if (cancelled) {
-          return
-        }
-        setPersonalBackfilled(answer.tenant.id)
-        setTenantAlias(answer.tenant.id, answer.tenant.alias, answer.tenant.kind)
-        // Read the cell, not this render's state: the settlement effect above
-        // runs earlier in the same commit and writes it synchronously, so a
-        // tenant it just settled (the roster's staff default, for one) is
-        // already visible here even though React has not re-rendered. The
-        // cell is also what the effect's guard reads, so the current tenant
-        // settling is not a reason to run this effect again -- the tenant it
-        // settles is not the missing personal one, and re-running would ask
-        // for the same backfill a second time while the first is in flight.
-        if (getCurrentTenantId() === null) {
-          setTenantId(answer.tenant.id)
-          setTenantSettled(true)
-        }
-        // Read the membership list again: the new space is a membership, and
-        // the switcher must get its row from that source, not from this
-        // answer.
-        void loadSelfTenants()
-      })
-      .catch(() => {
-        if (cancelled) {
-          return
-        }
-        setPersonalFailure(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [
-    authenticated,
-    impersonating,
-    featuresReady,
-    personalServed,
-    selfState,
-    principalId,
-    generation,
-    personalRetry,
-    personalBackfilled,
-    setTenantId,
-  ])
   // The switcher's rows: every member tenant from the caller tenant read, in
   // its (identifier) order, plus the current tenant when the list does not
   // hold it -- a platform staff member entering a tenant they are not a member
@@ -1016,9 +908,9 @@ function TenantFrame({
   if (tenantId !== null && !menuTenants.some((row) => row.id === tenantId)) {
     const alias = getRecordedTenantAlias(tenantId)
     if (alias !== null) {
-      // The kind an operation's answer recorded (the personal backfill's, for
-      // one) lets the switcher label a row the caller tenant read does not
-      // list yet; a row with none renders its alias.
+      // The kind an operation's answer recorded lets the switcher label a row
+      // the caller tenant read does not list yet; a row with none renders its
+      // alias.
       menuTenants.push({
         id: tenantId,
         alias,
@@ -1126,8 +1018,8 @@ function TenantFrame({
           on every pushed frame. Mounted here, inside the tenant area,
           because the notification endpoints are tenant-scoped. It opens only
           once the session is authenticated, the process serves
-          notification.stream, AND the tenant context has settled: a new
-          account's personal tenant arrives through the ensure, and a
+          notification.stream, AND the tenant context has settled: the
+          caller tenant list settles the account's personal tenant, and a
           connection opened before it settles would announce no alias and be
           refused. An absent feature would otherwise open a
           connection the server must refuse with a bare 404 on every mount,
@@ -1236,19 +1128,7 @@ function TenantFrame({
             channels={notificationChannels}
           >
             <Box sx={{ p: 3 }}>
-              {/* The retryable failure replaces only the pages that read
-                  tenant data. The account-level pages (the account settings
-                  page and the binding callback) read none, so they keep
-                  rendering while the ensure retries -- otherwise a sustained
-                  failure would lock a new account out of adding a username,
-                  setting a password, or revoking a session. */}
-              {personalFailure && tenantId === null && !accountLevel ? (
-                <TenantProvisionFailure
-                  onRetry={() => setPersonalRetry((current) => current + 1)}
-                />
-              ) : (
-                children
-              )}
+              {children}
             </Box>
           </NotificationPresenceProvider>
         </ProductShell>
@@ -1389,11 +1269,10 @@ function AdminAreaGate({
   const snapshot = useAuthState()
   useAdminTenantSettle(snapshot.state === 'authenticated')
   const permissionRead = usePermissionRead()
-  // An account whose address is still unproved never settles a tenant: the
-  // personal tenant's ensure refuses a pending account and the roster is a
-  // staff-only read, so the permission set below is never read and the area
-  // would wait forever. The verification page is the one place that lifts the
-  // state, so a pending viewer who reaches the admin is sent there instead.
+  // An account whose address is still unproved is sent to the verification
+  // page before the area's permission read: proof of the address is the gate
+  // the admin area requires, and the verification page is the one place that
+  // lifts the state.
   // Only a READ state counts: a failed profile read leaves the verification
   // state unknown, and answering "not pending" to a failure is the same
   // mistake as reading a failed permission read as an empty set.
@@ -1642,39 +1521,6 @@ function OrganizationAccessFailed(): ReactElement {
       <Button onClick={retry} disabled={retrying}>
         {t('organization.accessFailed.retry')}
       </Button>
-    </Box>
-  )
-}
-
-/**
- * The tenant area's retryable failure while the personal tenant could not be
- * backfilled. It takes
- * the place of the pages that read tenant data, because no tenant is current
- * and their tenant-scoped reads cannot answer; retrying the ensure is the one
- * action that can settle them. The account-level pages read no tenant data
- * and are rendered instead of this view (src/app.tsx).
- */
-function TenantProvisionFailure({
-  onRetry,
-}: {
-  readonly onRetry: () => void
-}): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
-  return (
-    <Box
-      component="section"
-      role="alert"
-      sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 640 }}
-    >
-      <Typography variant="h5" component="h2">
-        {t('organization.failure.title')}
-      </Typography>
-      <Typography variant="body1">
-        {t('organization.failure.description')}
-      </Typography>
-      <Box>
-        <Button onClick={onRetry}>{t('organization.failure.retry')}</Button>
-      </Box>
     </Box>
   )
 }

@@ -3,6 +3,7 @@ package personal
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -68,17 +69,21 @@ func TestProvisionAccountWritesTheFivePiecesOnTheAccountTransaction(t *testing.T
 	}
 }
 
-// A user account without a username — the defensive case the seam tolerates —
-// gets the derived identifier as its alias.
-func TestProvisionAccountFallsBackToTheDerivedAliasWithoutAUsername(t *testing.T) {
-	p, roster, _, _ := provisioningProduct()
+// A user account always carries a username, so the seam refuses an empty one
+// instead of deriving an alias from the identifier.
+func TestProvisionAccountRefusesAUserAccountWithoutAUsername(t *testing.T) {
+	p, roster, manager, writer := provisioningProduct()
 	facts := provisioning.AccountFacts{ID: "acc-1", Kind: string(authn.KindUser), Status: "active"}
-	if err := p.ProvisionAccount(context.Background(), &gorm.DB{}, facts); err != nil {
-		t.Fatalf("provisioning: %v", err)
+	err := p.ProvisionAccount(context.Background(), &gorm.DB{}, facts)
+	if err == nil {
+		t.Fatal("provisioning a user account without a username succeeded")
 	}
-	wantID := TenantID(authn.AccountID(facts.ID))
-	if len(roster.created) != 1 || roster.created[0].Alias != string(wantID) {
-		t.Errorf("the tenant rows are %+v, want the alias %q", roster.created, wantID)
+	if !strings.Contains(err.Error(), "username") {
+		t.Errorf("the refusal %q does not name the missing username", err)
+	}
+	if len(roster.created)+len(manager.roles)+len(manager.binding)+len(writer.put) != 0 {
+		t.Errorf("the refused provisioning wrote tenant=%v roles=%v bindings=%v memberships=%v",
+			roster.created, manager.roles, manager.binding, writer.put)
 	}
 }
 

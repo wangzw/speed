@@ -20,6 +20,13 @@ import (
 // without depending on the roster's own error text.
 var ErrAliasConflict = errors.New("personal: the personal tenant's alias is held by another tenant")
 
+// ErrUsernameMissing refuses a user account that carries no username. The
+// personal tenant's alias is always the account's username, so an account
+// without one is the write input's invariant broken rather than a case to
+// provision around: the seam writes nothing and the account's transaction
+// rolls back.
+var ErrUsernameMissing = errors.New("personal: the user account has no username")
+
 // The product is the account provisioning seam the descriptor provides.
 var _ provisioning.AccountProvisioning = (*product)(nil)
 
@@ -41,13 +48,12 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 	personalID := TenantID(account)
 	// The alias is the account's username: it is how the personal organization
 	// is addressed on the request surface, and the username is already unique in
-	// the namespace the roster's alias column carries. An empty username is the
-	// defensive fallback — a JIT account is required to have one from T4b on —
-	// and derives the alias from the identifier, which the username namespace
-	// reserves.
+	// the namespace the roster's alias column carries. A user account always has
+	// a username, so an empty one is refused rather than replaced by a derived
+	// alias.
 	alias := facts.Username
 	if alias == "" {
-		alias = string(personalID)
+		return fmt.Errorf("%w: account %q", ErrUsernameMissing, facts.ID)
 	}
 	now := time.Now().UTC()
 

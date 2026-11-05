@@ -233,10 +233,10 @@ program beside this directory embeds with `go:embed` and serves through
   rather than a route of its own. A password registration's automatic sign-in
   lands on `${ACCOUNT_PATH}?verify=1` (`src/pages/sign-in-view.tsx`); the group
   address redirects that to `/account/profile?verify=1`, where the pane reads
-  the flag and passes `autoSend`. The tenant frame does not read the profile's
-  `verification.state` for the ensure: it calls the personal-tenant ensure
-  whenever an authenticated, non-impersonating viewer has no current tenant,
-  and an unverified account gets its organization like any other. A persistent
+  the flag and passes `autoSend`. A tenant frame's current tenant comes from
+  the caller tenant list; an unverified account gets its personal organization
+  like any other, so verification limits what the account may do, not whether
+  the space exists. A persistent
   notice below the app bar
   (`src/contact-verification-banner.tsx`) shows the target address and the
   verify/change links while pending; verify goes to `/account?verify=1`, change

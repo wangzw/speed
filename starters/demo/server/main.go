@@ -402,8 +402,7 @@ var (
 
 		// The platform's personal-tenant module: every user account owns a
 		// personal tenant, written in the account's own transaction. It is always
-		// in force when assembled; there is no switch. It mounts
-		// POST /api/v1/orgs/personal on the account endpoint, declares the static
+		// in force when assembled; there is no switch. It declares the static
 		// feature org.personal, delivers the tenant kind resolver and implements
 		// the account lifecycle. See pkg/tenant/personal.
 		tenantpersonal.ModuleName,
@@ -624,13 +623,11 @@ func addStack(root *config.Command, s stack) {
 	// requires, so the account-creation hook runs while this command writes the
 	// preset accounts. Every seeded account therefore has its personal tenant
 	// before the first request arrives; without the module, the accounts exist
-	// with no space until a browser calls the backfill. The module is always in
-	// force when assembled, so there is no other switch for this command to
-	// honour.
+	// with no space. The module is always in force when assembled, so there is
+	// no other switch for this command to honour.
 	//
 	// Neither module needs an HTTP entry point here: the journal skips its
-	// request-level layer and the personal module skips its backfill route when
-	// the run has no router, while the account lifecycle hooks keep working.
+	// request-level layer, while the account lifecycle hooks keep working.
 	// Routes belong to the serve command.
 	//
 	// It names the seed guard because this is the command that writes the

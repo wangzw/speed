@@ -1,13 +1,13 @@
 /**
  * The live notification subscription and the tenant context.
  *
- * The notification endpoints are tenant-scoped, and a new account's current
- * tenant arrives through the personal-tenant ensure. In one tab a session
- * ends and a new account signs in (the walkthrough's login-mode case): the
- * ended session's tenant must not stay behind, and the subscription must not
- * open -- nor the bell read its unread count -- against a tenant that has not
- * settled. A connection opened early carries a tenant the caller is not a
- * member of and is refused with a bare 404.
+ * The notification endpoints are tenant-scoped, and the current tenant comes
+ * from the caller tenant list the root reads. In one tab a session ends and a
+ * new account signs in (the walkthrough's login-mode case): the ended
+ * session's tenant must not stay behind, and the subscription must not open --
+ * nor the bell read its unread count -- against a tenant that has not settled.
+ * A connection opened early carries a tenant the caller is not a member of and
+ * is refused with a bare 404.
  */
 
 import { act, waitFor } from '@testing-library/react'
@@ -28,13 +28,14 @@ import {
 } from './test-utils/session.js'
 
 const ROSTER_PATH = '/api/v1/system/tenants'
-const ENSURE_PATH = '/api/v1/orgs/personal'
+const SELF_PATH = '/api/v1/auth/me/tenants'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 
 const PERSONAL_ID = 'personal-account-1'
+const PERSONAL_ALIAS = 'notice-member'
 
 /** The caller's own profile: no self-registration, so the verification gate
- * lets the personal-tenant ensure run. */
+ * lets the tenant context settle. */
 const PROFILE = {
   account_id: 'account-1',
   kind: 'user',
@@ -63,7 +64,7 @@ beforeEach(() => {
 })
 
 describe('the live subscription and the tenant context', () => {
-  it('waits for the personal tenant before opening the stream or reading the count', async () => {
+  it('waits for the caller tenant list before opening the stream or reading the count', async () => {
     const calls: string[] = []
     const closes: string[] = []
     const openStream = vi.fn(() => ({
@@ -71,15 +72,15 @@ describe('the live subscription and the tenant context', () => {
         closes.push('close')
       },
     }))
-    let resolveEnsure: (value: unknown) => void = () => undefined
-    const ensurePending = new Promise((resolve) => {
-      resolveEnsure = resolve
+    let resolveSelf: (value: unknown) => void = () => undefined
+    const selfPending = new Promise((resolve) => {
+      resolveSelf = resolve
     })
     bindRequestFn((async (path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
       calls.push(`${method} ${path}`)
-      if (method === 'GET' && path === '/api/v1/auth/me/tenants') {
-        return { tenants: [] }
+      if (method === 'GET' && path === SELF_PATH) {
+        return selfPending
       }
       if (method === 'GET' && path === ROSTER_PATH) {
         throw Object.assign(new Error('the roster read was refused'), {
@@ -88,9 +89,6 @@ describe('the live subscription and the tenant context', () => {
       }
       if (method === 'GET' && path === '/api/v1/auth/me') {
         return PROFILE
-      }
-      if (method === 'POST' && path === ENSURE_PATH) {
-        return ensurePending
       }
       throw new Error(`unexpected ${method} ${path}`)
     }) as RequestFn)
@@ -110,20 +108,19 @@ describe('the live subscription and the tenant context', () => {
       ),
     )
 
-    // The roster refused and the ensure is in flight: the ended session's
-    // tenant is gone and the new context has not settled, so neither
+    // The roster refused and the caller tenant read is in flight: the ended
+    // session's tenant is gone and the new context has not settled, so neither
     // tenant-scoped surface may open.
-    await waitFor(() => expect(calls).toContain(`POST ${ENSURE_PATH}`))
+    await waitFor(() => expect(calls).toContain(`GET ${SELF_PATH}`))
     expect(getCurrentTenantId()).toBeNull()
     expect(openStream).not.toHaveBeenCalled()
     expect(calls).not.toContain(`GET ${UNREAD_PATH}`)
 
-    resolveEnsure({
-      tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
-      created: true,
+    resolveSelf({
+      tenants: [{ id: PERSONAL_ID, alias: PERSONAL_ALIAS, kind: 'personal' }],
     })
 
-    // The ensure settled the personal tenant, and both surfaces follow. The
+    // The list settled the current tenant, and both surfaces follow. The
     // harness renders the production stack, StrictMode included, so the
     // subscriber mounts, is torn down and mounts again: exactly one of the
     // two connections stays live.

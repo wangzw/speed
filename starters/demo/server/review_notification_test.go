@@ -28,7 +28,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/notification"
-	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // The accounts the notification cases register. They are not seed rows, and
@@ -168,7 +168,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 		reviewNotifyUsername, reviewNotifyEmail, reviewNotifyPassword)
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
-		"X-Tenant":      ensureReviewTenant(t, client, base, token),
+		"X-Tenant":      personalTenantAlias(t, client, base, token),
 	}
 
 	// The review-only tenant control is offered by the feature document: the
@@ -346,7 +346,7 @@ func TestReviewNotificationRendersInTheRecipientsLanguage(t *testing.T) {
 
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
-		"X-Tenant":      ensureReviewTenant(t, client, base, token),
+		"X-Tenant":      personalTenantAlias(t, client, base, token),
 	}
 
 	// The worker's first window for this tenant renders the notice — and the
@@ -408,24 +408,33 @@ func registerReviewMember(t *testing.T, client *http.Client, base string, serve 
 	return token
 }
 
-// ensureReviewTenant ensures the caller's personal tenant and answers its
-// alias, which the tenant-scoped routes read from the X-Tenant header.
-func ensureReviewTenant(t *testing.T, client *http.Client, base, token string) string {
+// personalTenantAlias reads the caller's own personal tenant from the account's
+// tenant list and answers its alias, which the tenant-scoped routes read from
+// the X-Tenant header. The account's creation transaction wrote the tenant; the
+// host has no backfill route.
+func personalTenantAlias(t *testing.T, client *http.Client, base, token string) string {
 	t.Helper()
-	ensured := send(t, client, http.MethodPost, base+tenantpersonal.RoutePath, nil,
+	read := send(t, client, http.MethodGet, base+"/api/v1/auth/me/tenants", nil,
 		map[string]string{"Authorization": "Bearer " + token})
-	if ensured.status != http.StatusOK {
-		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)
+	if read.status != http.StatusOK {
+		t.Fatalf("GET the caller's tenants answered %d:\n%s", read.status, read.body)
 	}
-	var personal struct {
-		Tenant struct {
+	var answer struct {
+		Tenants []struct {
 			Alias string `json:"alias"`
-		} `json:"tenant"`
+			Kind  string `json:"kind"`
+		} `json:"tenants"`
 	}
-	if err := json.Unmarshal(ensured.body, &personal); err != nil || personal.Tenant.Alias == "" {
-		t.Fatalf("the personal ensure named no tenant (%v):\n%s", err, ensured.body)
+	if err := json.Unmarshal(read.body, &answer); err != nil {
+		t.Fatalf("the tenant list is not JSON: %v\n%s", err, read.body)
 	}
-	return personal.Tenant.Alias
+	for _, entry := range answer.Tenants {
+		if entry.Kind == string(tenant.KindPersonal) && entry.Alias != "" {
+			return entry.Alias
+		}
+	}
+	t.Fatalf("the caller's tenant list carries no personal tenant:\n%s", read.body)
+	return ""
 }
 
 // readJSON makes one authorized GET and decodes its answer.

@@ -33,8 +33,7 @@ const personalMemberPage = 100
 // AccountCreated implements authn.AccountLifecycle: the account gets its
 // personal tenant, its membership and its tenant-admin binding as soon as the
 // account exists, so no account is ever without a tenant. The seam wrote them
-// in the account's transaction; this call completes anything it did not, and
-// the backfill route is the third path to the same idempotent ensure.
+// in the account's transaction; this call completes anything it did not.
 //
 // A service account has no personal tenant, and an account already deleted is
 // no work: both answer nil. A retry that arrives after the tenant was deleted

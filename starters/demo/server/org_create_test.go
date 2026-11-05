@@ -2,8 +2,7 @@ package main
 
 // The self-service organization creation cases: the decision order and the four
 // upper bounds at the unit level, over stand-ins for the module's seams, and the
-// route's coexistence with the personal-tenant route through the running
-// program.
+// route through the running program.
 
 import (
 	"bytes"
@@ -853,7 +852,7 @@ func TestOrgCreateFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 // both routes answer for an authenticated caller, three creations are admitted
 // and the fourth is the hourly refusal, and the feature document carries
 // org.create.
-func TestTheOrganizationCreateRouteCoexistsWithThePersonalRoute(t *testing.T) {
+func TestTheOrganizationCreateRouteRateLimits(t *testing.T) {
 	base, token := orgCreateServe(t, "")
 	client := &http.Client{Timeout: 10 * time.Second}
 	headers := map[string]string{"Authorization": "Bearer " + token}
@@ -874,11 +873,6 @@ func TestTheOrganizationCreateRouteCoexistsWithThePersonalRoute(t *testing.T) {
 		t.Errorf("the rate refusal does not carry %q:\n%s", orgRateLimitedCode, limited.body)
 	}
 
-	personal := send(t, client, http.MethodPost, base+"/api/v1/orgs/personal", nil, headers)
-	if personal.status != http.StatusOK {
-		t.Errorf("POST /api/v1/orgs/personal answered %d, want 200:\n%s", personal.status, personal.body)
-	}
-
 	features := authenticatedGet(t, base+"/api/v1/features", token)
 	var document struct {
 		Features []string `json:"features"`
@@ -892,8 +886,7 @@ func TestTheOrganizationCreateRouteCoexistsWithThePersonalRoute(t *testing.T) {
 }
 
 // TestTheOrganizationCreateRouteIsAbsentWhenTheSwitchIsOff runs the program
-// with org.create.enabled false: the route is a 404 that the personal prefix
-// does not take over, the personal route still answers, and the feature is
+// with org.create.enabled false: the route is a 404, and the feature is
 // absent.
 func TestTheOrganizationCreateRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
 	base, token := orgCreateServe(t, "org:\n  create:\n    enabled: false\n")
@@ -904,11 +897,6 @@ func TestTheOrganizationCreateRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
 		map[string]string{"display_name": "Acme"}, headers)
 	if absent.status != http.StatusNotFound {
 		t.Fatalf("POST /api/v1/orgs with the switch off answered %d, want 404:\n%s", absent.status, absent.body)
-	}
-
-	personal := send(t, client, http.MethodPost, base+"/api/v1/orgs/personal", nil, headers)
-	if personal.status != http.StatusOK {
-		t.Errorf("POST /api/v1/orgs/personal answered %d, want 200:\n%s", personal.status, personal.body)
 	}
 
 	features := authenticatedGet(t, base+"/api/v1/features", token)
@@ -928,6 +916,19 @@ func TestTheOrganizationCreateRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
 // orgCreateServe starts a seeded serve with the caller's extra configuration
 // and answers the backend base URL and a token for the account with no
 // membership and no email address (the configuration's second seed account).
+// The personal tenant is written inside the account's transaction, so the
+// account endpoint mounts no personal-tenant route: a POST there is the
+// endpoint's own 404, not an ensure answer.
+func TestThePersonalRouteIsNotMounted(t *testing.T) {
+	base, token := orgCreateServe(t, "")
+	client := &http.Client{Timeout: 10 * time.Second}
+	res := send(t, client, http.MethodPost, base+"/api/v1/orgs/personal", nil,
+		map[string]string{"Authorization": "Bearer " + token})
+	if res.status != http.StatusNotFound {
+		t.Errorf("POST /api/v1/orgs/personal answered %d, want 404:\n%s", res.status, res.body)
+	}
+}
+
 func orgCreateServe(t *testing.T, extra string) (string, string) {
 	t.Helper()
 	ports := freePorts(t, listenerCount)

@@ -764,7 +764,7 @@ func (a *fakeAudit) rows() []audit.Entry {
 }
 
 // fakeAccounts is the account read the module makes for the event compensation
-// and for the backfill's username.
+// and for the ensure's username.
 type fakeAccounts struct {
 	kind          authn.AccountKind
 	status        authn.AccountStatus
@@ -812,6 +812,13 @@ func unitProduct() (*product, *fakeRoster, *fakeMemberships, *fakeManager, *fake
 		audit:             auditor,
 		logger:            log.Default(),
 		seen:              newSeenEvents(seenEventsCapacity),
+		// A user account always carries a username, and the unit product models
+		// one so the ensure and the creation hook can name the alias.
+		accounts: &fakeAccounts{
+			kind:        authn.KindUser,
+			status:      authn.StatusActive,
+			identifiers: []authn.Identifier{{Kind: authn.IdentifierUsername, Value: "unit-user"}},
+		},
 	}, roster, memberships, manager, seeder
 }
 

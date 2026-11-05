@@ -9,7 +9,7 @@
 | [tenant](design-tenant.md) | 租户：请求侧的租户解析、名册与生命周期、共享表加租户列的语句过滤 |
 | [tenant-admission](design-tenant-admission.md) | 租户准入层：身份是否获准进入已解析的租户、租户级认证强度要求、冒充的租户范围 |
 | [tenant-admin](design-tenant-admin.md) | 租户管理面：名册的平台域读写路由、判定与审计 |
-| [tenant-personal](design-tenant-personal.md) | 个人租户：账户事务内的建立与墓碑、生命周期钩子、补齐路由与种类解析 |
+| [tenant-personal](design-tenant-personal.md) | 个人租户：账户事务内的建立与墓碑、生命周期钩子、提交后的幂等补完与种类解析 |
 
 ## 实现状态
 

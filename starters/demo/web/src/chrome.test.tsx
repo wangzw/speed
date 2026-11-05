@@ -116,14 +116,15 @@ describe('the tenant alias layer', () => {
   })
 
   it('records an operation answer’s kind and keeps it across a roster read', () => {
-    // The personal backfill answers the tenant, its alias and its kind; the
-    // label of a row the caller tenant read has not listed yet comes from this
-    // record. A later roster read carries aliases only, and must not drop it.
-    setTenantAlias('personal-account-1', 'personal-account-1', 'personal')
-    expect(getRecordedTenantKind('personal-account-1')).toBe('personal')
+    // An operation that lands the viewer in a tenant can answer the alias and
+    // the kind; the label of a row the caller tenant read has not listed yet
+    // comes from this record. A later roster read carries aliases only, and
+    // must not drop it.
+    setTenantAlias('acme', 'acme', 'business')
+    expect(getRecordedTenantKind('acme')).toBe('business')
 
-    setTenantAliases(new Map([['personal-account-1', 'renamed']]))
-    expect(getRecordedTenantKind('personal-account-1')).toBe('personal')
+    setTenantAliases(new Map([['acme', 'renamed']]))
+    expect(getRecordedTenantKind('acme')).toBe('business')
     expect(getRecordedTenantKind('unknown')).toBeNull()
   })
 })

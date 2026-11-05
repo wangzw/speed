@@ -23,10 +23,10 @@
  *
  * Input is the merged document the host's `gen` command writes,
  * contracts/api.json at the repository root -- the platform fragments
- * plus the app's own. The app's own fragment is the host's personal-tenant
- * route (`server/personal-openapi.json`, served on the account endpoint);
- * it enters both the document and this generated surface, and never the
- * published package's (which stays platform-only by design).
+ * plus the app's own. The app's own fragment is the host's self-service
+ * organization creation (`server/org-create-openapi.json`, served on the
+ * account endpoint); it enters both the document and this generated surface,
+ * and never the published package's (which stays platform-only by design).
  *
  * Config paths are relative to this file's directory
  * (starters/demo/web/), which is the working directory `pnpm api:gen`

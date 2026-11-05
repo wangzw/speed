@@ -86,12 +86,9 @@ export function authenticatedSnapshot(options: {
       system: options.system ?? null,
     },
     // The suite's session serves the platform vocabulary a baseline
-    // deployment serves, less the personal tenant's static feature. The
-    // personal tenant is on by default in a real assembly, but the app's
-    // backfill then issues an ensure request a rendering suite's inert client
-    // cannot answer and settles a current tenant these suites do not model.
-    // A suite that exercises the personal tenant passes its own feature
-    // state (app-personal-tenant).
+    // deployment serves, less the personal tenant's static feature: a suite
+    // that exercises the personal module (its registration landing, for one)
+    // passes its own feature state.
     features: options.features ?? {
       state: 'ready',
       names: new Set(FEATURE_NAMES.filter((name) => name !== 'org.personal')),

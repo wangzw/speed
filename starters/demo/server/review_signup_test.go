@@ -6,7 +6,8 @@ package main
 // advertises no registration entry, the review build does, a registration sends
 // no mail, the signed-in account adds its address, the code read out of the
 // review mail log verifies it, and the profile reports registered and verified
-// before the personal tenant is ensured.
+// while the account's own tenant list names the personal tenant its creation
+// wrote.
 
 import (
 	"encoding/json"
@@ -19,7 +20,6 @@ import (
 
 	maillog "github.com/vislake/speed/pkg/mail/log"
 	"github.com/vislake/speed/pkg/tenant"
-	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
 // reviewMailLogMarker is what the review mail carrier writes for each message;
@@ -95,10 +95,10 @@ func TestReviewBaselineHasNoRegistrationEntry(t *testing.T) {
 
 // TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant is the
 // walkthrough itself: the review build has the register entry, registering sends
-// no mail, the account signs in with the password, its creation hook has already
-// built the personal tenant, adding the address sends one code, the code read
-// from the review mail log verifies the address, the profile turns verified,
-// and the backfill reads the same tenant back.
+// no mail, the account signs in with the password, its creation transaction has
+// already built the personal tenant, adding the address sends one code, the
+// code read from the review mail log verifies the address, the profile turns
+// verified, and the account's tenant list still names the same tenant.
 func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
@@ -166,24 +166,14 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 
 	// The organization exists before the address is proved: the account's
 	// transaction wrote the personal tenant, and the verification notice is a
-	// separate surface. The backfill after verification below reads the same
-	// tenant back.
-	early := send(t, client, http.MethodPost, base+tenantpersonal.RoutePath, nil, auth)
-	if early.status != http.StatusOK {
-		t.Fatalf("the backfill before verification answered %d:\n%s", early.status, early.body)
+	// separate surface. The read after verification below finds the same tenant.
+	personal := readPersonalTenant(t, client, base, auth)
+	if personal.ID == "" || personal.Kind != string(tenant.KindPersonal) {
+		t.Errorf("the account's tenant is %+v, want the personal tenant its creation wrote", personal)
 	}
-	var personal struct {
-		Tenant struct {
-			ID   string `json:"id"`
-			Kind string `json:"kind"`
-		} `json:"tenant"`
-		Created bool `json:"created"`
-	}
-	if err := json.Unmarshal(early.body, &personal); err != nil {
-		t.Fatalf("the backfill's answer is not JSON: %v\n%s", err, early.body)
-	}
-	if personal.Created || personal.Tenant.ID == "" || personal.Tenant.Kind != string(tenant.KindPersonal) {
-		t.Errorf("the backfill answered %+v, want the tenant the creation hook built", personal)
+	if personal.Alias != reviewSignupUsername {
+		t.Errorf("the personal tenant's alias is %q, want the account's username %q",
+			personal.Alias, reviewSignupUsername)
 	}
 
 	// Adding the address sends the code; the review mail carrier writes it to the
@@ -217,26 +207,48 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q after the code was accepted, want verified", state)
 	}
 
-	// The proved address lifts the registration limit; the organization the creation
-	// hook built is read back unchanged.
-	ensured := send(t, client, http.MethodPost, base+tenantpersonal.RoutePath, nil, auth)
-	if ensured.status != http.StatusOK {
-		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)
+	// The proved address lifts the registration limit; the organization the
+	// creation wrote is the same row.
+	again := readPersonalTenant(t, client, base, auth)
+	if again.ID != personal.ID || again.Alias != personal.Alias {
+		t.Errorf("the tenant after verification is %+v, want the existing one %+v", again, personal)
 	}
-	var again struct {
-		Tenant struct {
-			ID   string `json:"id"`
-			Kind string `json:"kind"`
-		} `json:"tenant"`
-		Created bool `json:"created"`
+}
+
+// personalTenantView is the personal row the caller tenant read answers.
+type personalTenantView struct {
+	ID    string
+	Alias string
+	Kind  string
+}
+
+// readPersonalTenant answers the caller's own personal tenant from the account's
+// tenant list, the read the tenant switcher and the request surface use.
+func readPersonalTenant(t *testing.T, client *http.Client, base string,
+	headers map[string]string,
+) personalTenantView {
+	t.Helper()
+	read := send(t, client, http.MethodGet, base+"/api/v1/auth/me/tenants", nil, headers)
+	if read.status != http.StatusOK {
+		t.Fatalf("GET the caller's tenants answered %d:\n%s", read.status, read.body)
 	}
-	if err := json.Unmarshal(ensured.body, &again); err != nil {
-		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, ensured.body)
+	var answer struct {
+		Tenants []struct {
+			ID    string `json:"id"`
+			Alias string `json:"alias"`
+			Kind  string `json:"kind"`
+		} `json:"tenants"`
 	}
-	if again.Created || again.Tenant.ID != personal.Tenant.ID {
-		t.Errorf("the ensure after verification answered %+v, want the existing tenant %q",
-			again, personal.Tenant.ID)
+	if err := json.Unmarshal(read.body, &answer); err != nil {
+		t.Fatalf("the tenant list is not JSON: %v\n%s", err, read.body)
 	}
+	for _, entry := range answer.Tenants {
+		if entry.Kind == string(tenant.KindPersonal) {
+			return personalTenantView{ID: entry.ID, Alias: entry.Alias, Kind: entry.Kind}
+		}
+	}
+	t.Fatalf("the caller's tenant list carries no personal tenant:\n%s", read.body)
+	return personalTenantView{}
 }
 
 // readVerification reads the profile's registration state.

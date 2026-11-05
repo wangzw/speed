@@ -1,11 +1,10 @@
 package personal
 
-// The backfill: POST /api/v1/orgs/personal. A caller whose own personal tenant
-// is missing from its membership list (an account whose provisioning
-// transaction and creation hook both failed) asks for one, and a caller that
-// already holds it reads it back. The backfill's caller list is the client's
-// own, and it is deliberately not qualified by the account's other
-// memberships: an account in business tenants still owns its personal tenant.
+// The idempotent completion of a personal tenant. The account-creation
+// transaction is the guarantee that the tenant exists; the lifecycle hook runs
+// this after the transaction commits to complete anything the seam left
+// unfinished. It never creates a tenant for an account whose username cannot be
+// read: the alias is always the account's username.
 //
 // The ensure writes the same five pieces the transaction seam writes, through
 // the context-taking surfaces, each idempotent. A membership row that exists is
@@ -16,8 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,65 +22,13 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
-	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// personalResult is the ensure's outcome before it is rendered.
+// personalResult is the ensure's outcome.
 type personalResult struct {
 	Tenant  tenant.Tenant
 	Created bool
-}
-
-// handleEnsure serves POST /api/v1/orgs/personal.
-func (p *product) handleEnsure(ctx context.Context, _ struct{}) (OrganizationPersonalReply, error) {
-	id, ok := authn.FromContext(ctx)
-	if !ok {
-		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusUnauthorized}
-	}
-	if slices.Contains(id.Methods(), authn.MethodClientSecret) {
-		// A service account authenticates only with its client secret, so the
-		// method is the account kind.
-		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
-	}
-	account := id.Account()
-	if account == "" || account.IsStatic() {
-		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
-	}
-	result, err := p.ensure(ctx, account)
-	switch {
-	case err == nil:
-		return OrganizationPersonalReply{
-			Tenant: OrganizationPersonalTenant{
-				ID:    string(result.Tenant.ID),
-				Alias: result.Tenant.Alias,
-				Kind:  personalKind,
-			},
-			Created: result.Created,
-		}, nil
-	case errors.Is(err, ErrTenantUnavailable):
-		p.logger.Warn(ModuleName+": the personal tenant is not enabled",
-			"account", account.String(), "tenant", string(TenantID(account)), "cause", err.Error())
-		return OrganizationPersonalReply{}, speedhttp.Fault{
-			Status: http.StatusConflict,
-			Type:   personalProblemPrefix + tenantUnavailableCode,
-		}
-	case errors.Is(err, ErrIdentifierUnavailable):
-		p.logger.Warn(ModuleName+": the personal tenant's identifier is unavailable",
-			"account", account.String(), "tenant", string(TenantID(account)), "cause", err.Error())
-		return OrganizationPersonalReply{}, speedhttp.Fault{
-			Status: http.StatusConflict,
-			Type:   personalProblemPrefix + identifierUnavailableCode,
-		}
-	case errors.Is(err, ErrRosterLagging):
-		p.logger.Warn(ModuleName+": the roster's snapshot lags the personal tenant row",
-			"account", account.String(), "tenant", string(TenantID(account)), "cause", err.Error())
-		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
-	default:
-		p.logger.Error(ModuleName+": the personal tenant could not be ensured",
-			"account", account.String(), "tenant", string(TenantID(account)), "cause", err.Error())
-		return OrganizationPersonalReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
-	}
 }
 
 // auditRequired writes the mandatory row of an action.
@@ -249,26 +194,26 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 }
 
 // usernameOf reads the account's username, which names its personal tenant's
-// alias. An assembly without the account read surface cannot answer, and the
-// derived alias is then the fallback; an account the store no longer holds
-// answers the same way, because the backfill will fail on its own step.
+// alias. An assembly without the account read surface, an account the store no
+// longer holds and an account with no username identifier are all refusals: the
+// alias is always the username, never a derived identifier.
 func (p *product) usernameOf(ctx context.Context, account authn.AccountID) (string, error) {
 	if p.accounts == nil {
-		return "", nil
+		return "", fmt.Errorf("%w: the assembly has no account read surface", ErrUsernameMissing)
 	}
 	identifiers, err := p.accounts.Identifiers(ctx, account)
 	if err != nil {
 		if errors.Is(err, authn.ErrAccountNotFound) {
-			return "", nil
+			return "", fmt.Errorf("%w: account %q", ErrUsernameMissing, account)
 		}
 		return "", fmt.Errorf("reading the account's username: %w", err)
 	}
 	for _, identifier := range identifiers {
-		if identifier.Kind == authn.IdentifierUsername {
+		if identifier.Kind == authn.IdentifierUsername && identifier.Value != "" {
 			return identifier.Value, nil
 		}
 	}
-	return "", nil
+	return "", fmt.Errorf("%w: account %q", ErrUsernameMissing, account)
 }
 
 // registeredTenant reads the personal tenant's row back.
@@ -282,18 +227,15 @@ func (p *product) registeredTenant(ctx context.Context, id tenant.ID) (tenant.Te
 		return tenant.Tenant{}, fmt.Errorf("reading the personal tenant back: %w", err)
 	}
 	if !found {
-		return tenant.Tenant{}, fmt.Errorf("%w: identifier %q", ErrRosterLagging, id)
+		return tenant.Tenant{}, fmt.Errorf("the roster's snapshot still does not carry the "+
+			"personal tenant %q after catching up", id)
 	}
 	return held, nil
 }
 
 // createTenant registers the personal tenant. A row the roster's table already
-// holds is read back instead. The alias is the account's username when one was
-// read, and the derived identifier otherwise.
+// holds is read back instead. The alias is the account's username.
 func (p *product) createTenant(ctx context.Context, id tenant.ID, alias string) (tenant.Tenant, bool, bool, error) {
-	if alias == "" {
-		alias = string(id)
-	}
 	record := tenant.Tenant{ID: id, Alias: alias, Status: tenant.StatusActive}
 	err := p.roster.Create(ctx, record)
 	switch {

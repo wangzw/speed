@@ -86,8 +86,8 @@ app's own fragments are members too, and their operations carry the
 application-owner tag `gen` writes from the declaring module's Go
 package, which `web/orval.config.ts`'s `input.filters` excludes, so this
 surface stays platform-only: the app's own API is generated into the
-app's own SDK through the app-owned flow -- the starter's personal-tenant
-ensure is the app fragment that exercises that leg), the
+app's own SDK through the app-owned flow -- the starter's self-service
+organization creation is the app fragment that exercises that leg), the
 runtime binding, the regeneration
 tooling (config + fixup script), and a unit case that holds the committed
 surface to the committed document's platform operations in both directions:
