@@ -549,3 +549,38 @@ func TestTheFragmentNamesNoPlatformKeyOrOldWording(t *testing.T) {
 		}
 	}
 }
+
+// A platform-only item is invisible on both write routes as it is on the read:
+// the tenant may not learn which org.create key exists by watching the status
+// change, so PUT and DELETE answer the same bare 404 an undeclared key gets and
+// reach neither the seam, the audit nor the store.
+func TestAPlatformOnlyKeyIsA404OnBothWriteRoutes(t *testing.T) {
+	for _, key := range []string{"/org.create/max-organizations", "/org.create/max-per-hour"} {
+		for _, method := range []string{http.MethodPut, http.MethodDelete} {
+			t.Run(method+" "+key, func(t *testing.T) {
+				r := newRig(t)
+				r.store.declared = admissionDeclared()
+				var body any
+				if method == http.MethodPut {
+					body = map[string]any{"value": 10}
+				}
+				w := r.do(method, base+key, body)
+				if w.Code != http.StatusNotFound {
+					t.Fatalf("the request ended with %d, want 404", w.Code)
+				}
+				if w.Body.Len() != 0 {
+					t.Errorf("the 404 carried the body %q, want none", w.Body.String())
+				}
+				if got := r.audit.entries(); len(got) != 0 {
+					t.Errorf("a platform-only key reached the audit: %v", got)
+				}
+				if got := r.store.ops(); len(got) != 0 {
+					t.Errorf("a platform-only key reached the settings surface: %v", got)
+				}
+				if got := r.writeSeam.askedTenants(); len(got) != 0 {
+					t.Errorf("a platform-only key reached the write seam: %v", got)
+				}
+			})
+		}
+	}
+}
