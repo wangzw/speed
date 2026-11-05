@@ -46,6 +46,13 @@ const workspaceRoot = sibling('../../../web')
 
 const devServer = devServerPlan(process.env)
 
+// The bundle's destination. The end-to-end harness exports an absolute path
+// (server/dist-e2e); a relative value a person writes resolves against this
+// package, not the repository root. The value is trimmed, and an empty or
+// whitespace-only export falls back to the default rather than becoming an
+// outDir of the empty string.
+const outDir = process.env.DEMO_WEB_OUT_DIR?.trim() || '../server/dist'
+
 export default defineConfig({
   resolve: {
     alias: speedAliases(),
@@ -53,8 +60,10 @@ export default defineConfig({
   build: {
     // The bundle lands in the Go module beside this package, because go:embed
     // reaches only files in the embedding package's own directory tree: a
-    // pattern may not climb out with `..`.
-    outDir: '../server/dist',
+    // pattern may not climb out with `..`. The end-to-end harness sets
+    // DEMO_WEB_OUT_DIR to server/dist-e2e so its build never touches the dev
+    // tree's dist.
+    outDir,
     // That directory is not emptied before the build. It is the directory the
     // Go program embeds, and it carries a committed stand-in file
     // (placeholder.txt) so that go:embed has something to embed: go:embed

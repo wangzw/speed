@@ -10,18 +10,19 @@
  * name shape. A fresh directory -- this run's, or one belonging to a run
  * happening in parallel -- is inside the window and is never touched.
  *
- * The Go program embeds starters/demo/server/dist, so the front end is built
- * first; the review binary is built second and lands in the harness directory
- * under /tmp. A manifest records where the binary is and which tree it came
- * from, and every per-test server fixture starts that same binary. Building
- * here rather than in each fixture keeps a run from repeating a minute of
- * compilation per test, and keeps the build's output out of the tree.
+ * The Go program embeds starters/demo/server/dist-e2e in an e2e-tagged build,
+ * so the front end is built first; the review binary is built second and lands
+ * in the harness directory under /tmp. A manifest records where the binary is
+ * and which tree it came from, and every per-test server fixture starts that
+ * same binary. Building here rather than in each fixture keeps a run from
+ * repeating a minute of compilation per test, and keeps the build's output out
+ * of the tree.
  *
  * A failed build fails the run with the command's whole output: a harness that
  * silently fell back to a stale binary would report journeys it never ran.
  */
 import { execFile } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
@@ -63,12 +64,18 @@ function build(
   args: readonly string[],
   cwd: string,
   what: string,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(
       file,
       [...args],
-      { cwd, env: process.env, timeout: BUILD_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 },
+      {
+        cwd,
+        env: { ...process.env, ...env },
+        timeout: BUILD_TIMEOUT_MS,
+        maxBuffer: 32 * 1024 * 1024,
+      },
       (error, stdout, stderr) => {
         // Standard error is diagnostics even when the command succeeded.
         if (stderr.trim() !== '') {
@@ -113,33 +120,52 @@ export default async function globalSetup(): Promise<void> {
 
   await mkdir(HARNESS_DIR, { recursive: true })
 
-  // The front end first: the Go program embeds the dist directory the build
-  // writes, so a binary built before it would carry the previous bundle.
+  // The front end first: the Go program embeds the directory the build writes,
+  // and an e2e-tagged build embeds server/dist-e2e rather than the dev tree's
+  // server/dist, so a binary built before the bundle carries nothing. The
+  // variable keeps this build off the tree `make dev` is using.
+  //
+  // The directory is emptied first: vite's empty-outdir safeguard keeps the
+  // placeholders go:embed needs, so a build over a previous bundle leaves the
+  // stale hashed files in place. Emptying it makes each binary embed exactly
+  // what this run built. The tracked placeholder.txt stays, because go:embed
+  // refuses a directory with no files and a clean checkout has nothing else
+  // here until this build writes it. server/dist is untouched.
+  const bundleDir = join(SERVER_DIR, 'dist-e2e')
+  await mkdir(bundleDir, { recursive: true })
+  const stale = await readdir(bundleDir)
+  await Promise.all(
+    stale
+      .filter((name) => name !== 'placeholder.txt')
+      .map((name) => rm(join(bundleDir, name), { recursive: true, force: true })),
+  )
   await build(
     'pnpm',
     ['-C', WEB_DIR, 'build'],
     REPO_ROOT,
     'building the demo front end',
+    { DEMO_WEB_OUT_DIR: join(SERVER_DIR, 'dist-e2e') },
   )
 
   const binary = join(HARNESS_DIR, BINARY_NAME)
   await build(
     'go',
-    ['-C', SERVER_DIR, 'build', '-tags', 'review', '-o', binary, '.'],
+    ['-C', SERVER_DIR, 'build', '-tags', 'review,e2e', '-o', binary, '.'],
     REPO_ROOT,
     'building the review binary',
   )
 
   // The deployment build is the default build: every capability is compiled in,
   // and what the deployment starts is decided at run time from the rendered
-  // configuration. It embeds the same front-end bundle, so it is built after the
-  // front end like the review binary. The review-only test controls and loopback
-  // guard are absent from it, which is what keeps the deployment journey's
-  // feature set the deployment's own.
+  // configuration. Only the e2e tag is added, which switches the embedded bundle
+  // to dist-e2e; it embeds the same front end, so it is built after the build
+  // like the review binary. The review-only test controls and loopback guard are
+  // absent from it, which is what keeps the deployment journey's feature set the
+  // deployment's own.
   const deployBinary = join(HARNESS_DIR, DEPLOY_BINARY_NAME)
   await build(
     'go',
-    ['-C', SERVER_DIR, 'build', '-o', deployBinary, '.'],
+    ['-C', SERVER_DIR, 'build', '-tags', 'e2e', '-o', deployBinary, '.'],
     REPO_ROOT,
     'building the default binary',
   )

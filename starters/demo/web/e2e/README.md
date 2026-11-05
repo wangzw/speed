@@ -38,16 +38,22 @@ remembering to run it.
 
 ## What the harness does
 
-- **Global setup** (`global-setup.ts`) runs once per invocation. The Go program
-  embeds `starters/demo/server/dist`, so it builds the front end first
-  (`pnpm -C starters/demo/web build`), then two binaries: the review binary
-  (`go -C starters/demo/server build -tags review`) and the default binary
-  (`go -C starters/demo/server build`, with no tag). The default binary is the
+- **Global setup** (`global-setup.ts`) runs once per invocation. An e2e-tagged
+  Go build embeds `starters/demo/server/dist-e2e`, so it builds the front end
+  first (`pnpm -C starters/demo/web build`) with `DEMO_WEB_OUT_DIR` pointed
+  there: the harness passes the directory's absolute path, and a person
+  reproducing the command by hand writes the web-root-relative
+  `../server/dist-e2e`, because vite resolves a relative `outDir` against the
+  web package. It then builds two binaries: the review binary
+  (`go -C starters/demo/server build -tags review,e2e`) and the default binary
+  (`go -C starters/demo/server build -tags e2e`). The default binary is the
   deployment assembly -- every capability compiled in and no review controls;
-  run-time configuration decides which capabilities start. Both binaries and
-  the bundle go under `<root>/harness`, and a manifest records the binaries and
-  the tree they came from. Every per-test server starts its binary from that
-  build; a failed build fails the run with the command's whole output. A successful build still prints its
+  run-time configuration decides which capabilities start. Both binaries go
+  under `<root>/harness`, and a manifest records the binaries and the tree they
+  came from. The bundle stays in `starters/demo/server/dist-e2e`, outside the
+  tree `make dev` builds into, so the run never touches
+  `starters/demo/server/dist`. Every per-test server starts its binary from
+  that build; a failed build fails the run with the command's whole output. A successful build still prints its
   standard error, and a warning in either stream fails the run: the harness
   does not swallow a bundler or compiler warning.
 - **One server per spec** (`fixtures/server.ts`). The server fixture creates a
@@ -253,7 +259,7 @@ gates cannot decide for a spec.
 Every spec declares, in its header comment:
 
 ```ts
-// @journey journey-first-registration-to-personal-workspace.md
+// @journey journey-first-registration-to-personal-organization.md
 // @covers REQ-signin-001, REQ-signup-001
 ```
 
@@ -300,18 +306,18 @@ covered nor registered non-covered fails `make repo-check`.
 
 ## Where the artifacts are
 
-Each run mints an id and keeps everything under `/tmp/speed-e2e-<run-id>`, so
+Each run mints an id and keeps its artifacts under `/tmp/speed-e2e-<run-id>`, so
 two runs in different worktrees never share a manifest or an output directory
 (Playwright clears `outputDir` when it starts). The id travels in
 `SPEED_E2E_RUN_ID` from the config process to the global setup and the fixture
 workers.
 
 **At most one run per checkout at a time.** The front-end build writes
-`starters/demo/server/dist` inside the checkout (the Go program embeds that
-directory), and both binaries are built from it, so this one product is not
-per-run. Two runs on the same checkout would race on the directory and could
-embed a half-written bundle; two runs in different worktrees are isolated
-because each worktree owns its own `dist`.
+`starters/demo/server/dist-e2e` inside the checkout (the e2e-tagged binaries
+embed that directory), and both binaries are built from it, so this one
+product is not per-run. Two runs on the same checkout would race on the
+directory and could embed a half-written bundle; two runs in different
+worktrees are isolated because each worktree owns its own `dist-e2e`.
 
 | Path | Contents |
 |---|---|
@@ -320,8 +326,9 @@ because each worktree owns its own `dist`.
 | `<root>/report` | The HTML report (`open: 'never'`); open it to read a failed run's attachments |
 
 `<root>` is `/tmp/speed-e2e-<run-id>`, computed in `fixtures/paths.ts` and used
-by the config for every artifact path. Nothing the tier writes lands in the
-repository. A failed spec also keeps its server's temporary directory (under
+by the config for every artifact path. The tier leaves nothing in the
+repository except the git-ignored `starters/demo/server/dist-e2e` it builds
+into. A failed spec also keeps its server's temporary directory (under
 the system temp directory) so the sqlite file and configuration can be
 inspected; the path is attached to the failure.
 

@@ -22,6 +22,14 @@
 # file a build never touches, force-added despite this rule. See web/README.md.
 /web/node_modules/
 /server/dist/
+# The end-to-end tier's own bundle, a build product like dist. It has the same
+# need for one tracked file: an e2e-tagged build embeds server/dist-e2e, and
+# go:embed refuses a directory with no files, so server/dist-e2e/placeholder.txt
+# is committed -- force-added despite this rule and kept in place by the
+# harness's clean step. The exception below re-admits that one file while
+# everything a build writes stays ignored.
+/server/dist-e2e/*
+!/server/dist-e2e/placeholder.txt
 
 # The compiled server binary: a `go build` (or `go run`'s cached build) run in
 # server/ leaves it beside the module, named for the package. It is a build

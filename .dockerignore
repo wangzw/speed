@@ -18,6 +18,7 @@
 # carry artifacts from earlier runs.
 **/node_modules
 **/dist
+**/dist-e2e
 **/.playwright-cli
 **/__screenshots__
 **/coverage

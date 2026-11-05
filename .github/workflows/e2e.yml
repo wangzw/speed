@@ -10,8 +10,9 @@
 # Chromium is not part of the .mise.toml toolchain, so this job installs it and
 # then calls the repository's own entry point; the command list stays in the
 # Makefile (`make e2e`), exactly as ci.yml, browser.yml and integration.yml
-# keep theirs. The global setup builds the front end and the review binary
-# itself, into the run's own /tmp root.
+# keep theirs. The global setup builds the front end into the git-ignored
+# starters/demo/server/dist-e2e in the checkout, because the e2e-tagged
+# binaries embed it, and builds the binaries into the run's own /tmp root.
 #
 # The cron is off the hour on purpose, like integration.yml's and
 # browser.yml's.

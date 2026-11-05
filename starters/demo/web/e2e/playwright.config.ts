@@ -11,12 +11,15 @@
  * ports and signs its own accounts in, so journeys never share state and two
  * workers would race for the ports and for the clock a journey depends on.
  *
- * Artifacts land under the run's own /tmp root, never beside the source: a
- * failure screenshot or trace is for the operator running the tier, and the
- * honesty gate holds every artifact path to /tmp so a passing run cannot
- * leave a file in the tree. The root carries a per-run id, so two concurrent
- * runs never share an output directory (Playwright clears it on startup) or
- * the harness binary the fixtures start.
+ * Artifacts and the binaries the fixtures start land under the run's own /tmp
+ * root, never beside the source: a failure screenshot or trace is for the
+ * operator running the tier, the honesty gate holds every artifact path to
+ * /tmp so a passing run cannot leave a file in the tree, and the root carries
+ * a per-run id, so two concurrent runs never share an output directory
+ * (Playwright clears it on startup) or a harness binary. The front end is the
+ * exception: an e2e-tagged binary embeds it, so the global setup builds it
+ * into the git-ignored starters/demo/server/dist-e2e inside the checkout --
+ * the one thing a run writes there.
  *
  * The run directory does not accumulate: global setup removes directories
  * older than the retention window before the run starts, and the last reporter

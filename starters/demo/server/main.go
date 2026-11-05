@@ -39,7 +39,6 @@ package main
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -396,8 +395,8 @@ var (
 
 		// The host's own personal-tenant policy: on by default, a deployment
 		// may turn it off. When on it mounts
-		// POST /api/v1/workspace/personal on the account endpoint and declares the
-		// conditional feature workspace.personal. It requires the kind resolver,
+		// POST /api/v1/orgs/personal on the account endpoint and declares the
+		// conditional feature org.personal. It requires the kind resolver,
 		// which the module beside it delivers. See personal.go.
 		personalModuleName,
 		personalKindModuleName,
@@ -444,17 +443,17 @@ var (
 	}
 )
 
-//go:embed dist
-var webBundle embed.FS
-
-// init registers the frontend host module. The bundle it serves is whatever
-// dist/ holds, which is the built frontend once `pnpm build` has run in the
-// frontend package beside this module and nothing servable before that: a
-// checkout that has not built the frontend answers 404 on the endpoint, which
-// is the host module's designed answer for a bundle with no entry document.
-// The module is the same either way — it serves whatever the embed.FS carries.
+// init registers the frontend host module. The directory it serves is selected
+// at build time: the default build embeds dist/, the built frontend once
+// `pnpm build` has run in the frontend package beside this module, and a build
+// with the e2e tag embeds dist-e2e/, which the end-to-end harness produces, so
+// that tier never writes the working tree's dist/. A checkout that has not
+// built the frontend carries nothing servable and answers 404 on the endpoint,
+// which is the host module's designed answer for a bundle with no entry
+// document. The module is the same either way — it serves whatever the
+// embed.FS carries.
 func init() {
-	sub, err := fs.Sub(webBundle, "dist")
+	sub, err := fs.Sub(webBundle, webBundleRoot)
 	if err != nil {
 		panic("demo: the embedded frontend bundle: " + err.Error())
 	}

@@ -7,15 +7,16 @@
  * other's failure screenshots. The run id is minted once and carried in the
  * environment, so the config process, the global setup and every fixture
  * worker agree on it even though they are separate processes. The front-end
- * build is the exception: it writes `starters/demo/server/dist` inside the
+ * build is the exception: it writes `starters/demo/server/dist-e2e` inside the
  * checkout and both binaries embed that directory, so at most one run may
  * execute in one checkout at a time. Two checkouts are isolated because each
- * owns its own `dist`.
+ * owns its own `dist-e2e`.
  *
  * The root, the harness build and the manifest stay under /tmp: a run must
- * leave nothing in the tree except the build products the front-end build
- * already writes (starters/demo/server/dist, which the Go program embeds).
- * The honesty gate (tools/check_e2e_honesty.py) holds the /tmp requirement.
+ * leave nothing in the tree except the git-ignored bundle its front-end build
+ * writes (starters/demo/server/dist-e2e, which the e2e-tagged binaries
+ * embed). The honesty gate (tools/check_e2e_honesty.py) holds the /tmp
+ * requirement.
  *
  * Every path is derived from this file's own URL rather than the process's
  * working directory: the tier is run through `pnpm -C starters/demo/web`, but a

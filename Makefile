@@ -65,7 +65,7 @@ each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$fai
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
-        vet-integration vet-review test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
+        vet-integration vet-review vet-web-bundle test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
         modules-present web-check web-a11y web-browser e2e e2e-install dev fly
 
 # A target name may carry a digit (web-a11y, e2e), so the name pattern admits
@@ -164,6 +164,17 @@ vet-integration: modules-present ## Compile every module's integration cases, ru
 # tree.
 vet-review: modules-present ## Compile the review build, running nothing
 	@failed=; $(call each,$(MODULES),vet review,go -C $$it vet -tags=review ./...); $(each-end)
+
+# The end-to-end tier's binaries embed a web bundle of their own rather than
+# the dev tree's dist: the `e2e` tag switches the embedded directory to
+# dist-e2e. Its files carry that tag and no leg above compiles them, and a tag
+# no leg passes takes its files out of every leg at once, so compiling them
+# here keeps the variant from rotting into not building and gives the tag the
+# leg tools/check_test_tiers.py requires of every tag written in the tree. Only
+# the demo program carries the tag, so the leg runs from that module rather
+# than over every module in the workspace.
+vet-web-bundle: ## Compile the e2e-tagged build that embeds dist-e2e, running nothing
+	@go -C starters/demo/server vet -tags=e2e ./...
 
 # The cases compiled only under the review tag are executed here: vet-review
 # above only builds them, so deleting or breaking the review guard would leave
@@ -279,8 +290,10 @@ web-browser: ## Run the frontend's browser tier in Chromium (geometry, focus ord
 # browser, against a real sqlite file and real HTTP. It is deliberately not
 # part of `check` -- it needs Chromium and a built backend and is slower than
 # the commit gate -- and tools/check_e2e_honesty.py holds that `check` does not
-# reach it. The harness builds the frontend and the review binary into /tmp in
-# its global setup; `e2e-install` provisions the one browser it drives.
+# reach it. The harness builds its own front end into
+# starters/demo/server/dist-e2e and its binaries into /tmp in its global setup,
+# so it may run beside `make dev`; `e2e-install` provisions the one browser it
+# drives.
 e2e-install: ## Install the Chromium build the end-to-end tier drives
 	@pnpm -C web exec playwright install chromium
 
@@ -331,6 +344,7 @@ check: ## Run everything a commit is gated on (no external service needed)
 	@$(MAKE) test-race
 	@$(MAKE) vet-integration
 	@$(MAKE) vet-review
+	@$(MAKE) vet-web-bundle
 	@$(MAKE) test-review
 	@$(MAKE) lint
 	@$(MAKE) tidy-check
