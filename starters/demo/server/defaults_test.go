@@ -143,7 +143,8 @@ type compiledDefaults struct {
 			Endpoints []string `config:"endpoints"`
 		} `config:"admission"`
 		Admin struct {
-			Endpoints []string `config:"endpoints"`
+			Endpoints       []string `config:"endpoints"`
+			TenantEndpoints []string `config:"tenant-endpoints"`
 		} `config:"admin"`
 		Self struct {
 			Endpoints []string `config:"endpoints"`
@@ -321,6 +322,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "tenant.resolve.extractor", doc.Tenant.Resolve.Extractor, "header")
 	wantStrings(t, "tenant.admission.endpoints", doc.Tenant.Admission.Endpoints, []string{"api"})
 	wantStrings(t, "tenant.admin.endpoints", doc.Tenant.Admin.Endpoints, []string{"admin"})
+	wantStrings(t, "tenant.admin.tenant-endpoints", doc.Tenant.Admin.TenantEndpoints, []string{"api"})
 	wantStrings(t, "tenant.self.endpoints", doc.Tenant.Self.Endpoints, []string{"account"})
 	wantStrings(t, "tenant.profile.endpoints", doc.Tenant.Profile.Endpoints, []string{"api"})
 	wantStrings(t, "authz.guard.endpoints", doc.Authz.Guard.Endpoints, []string{"api"})

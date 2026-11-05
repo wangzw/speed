@@ -43,6 +43,10 @@ const (
 // surfacePlatform is the surface a platform staff member's write comes through.
 const surfacePlatform = "platform"
 
+// surfaceTenant is the surface an organization's own owner's write comes
+// through: the tenant-surface routes under /api/v1/tenants.
+const surfaceTenant = "tenant"
+
 // newActionID mints the action identifier a write's audit rows are linked by. It
 // is made after the decision and before the mandatory row, so the permitted row
 // and any failed row beside it carry the same value.

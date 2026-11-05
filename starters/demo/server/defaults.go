@@ -218,7 +218,10 @@ func platformDefaultsDocument() map[string]any {
 				"endpoints":          []any{"api"},
 				"sso-exempt-tenants": []any{"system"},
 			},
-			"admin": map[string]any{"endpoints": []any{"admin"}},
+			"admin": map[string]any{
+				"endpoints":        []any{"admin"},
+				"tenant-endpoints": []any{"api"},
+			},
 			// The caller's own tenant list mounts on the account endpoint, which
 			// resolves no tenant: the answer is about the caller, not about one
 			// tenant.

@@ -30,8 +30,9 @@ import (
 // none.
 
 // managementBody is the configuration a default drive runs on: one endpoint of
-// the entry point, "public", that the management routes are mounted on.
-const managementBody = `{"tenant": {"admin": {"endpoints": ["public"]}}}`
+// the entry point, "public", that both the platform and the tenant-surface
+// routes are mounted on.
+const managementBody = `{"tenant": {"admin": {"endpoints": ["public"], "tenant-endpoints": ["public"]}}}`
 
 // recordingModule is this module's descriptor with its New wrapped to record the
 // product it built. The wrapper records the instance and returns it unchanged,
@@ -58,9 +59,10 @@ type managementAssembly struct {
 	// body is the configuration. The zero value uses managementBody.
 	body string
 	// noCatalog, noGuard, noAudit, noVerification, noWriteGuard and
-	// noProvisioner and noOrganization leave out the stand-in for the required
-	// capability named, so the drive reaches resolution without it.
-	noCatalog, noGuard, noAudit, noVerification, noWriteGuard, noProvisioner, noOrganization bool
+	// noProvisioner and noOrganization and noRouteGuard leave out the stand-in
+	// for the required capability named, so the drive reaches resolution without
+	// it.
+	noCatalog, noGuard, noAudit, noVerification, noWriteGuard, noProvisioner, noOrganization, noRouteGuard bool
 	// noRouter leaves the entry point out, which fails Init.
 	noRouter bool
 	// catalog is the roster stand-in delivered as that capability.
@@ -139,6 +141,11 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 		reg.Register(standIn("stand-in.organization", o, (*tenant.OrganizationWriter)(nil)))
 		names = append(names, "stand-in.organization")
 	}
+	if !a.noRouteGuard {
+		reg.Register(standIn("stand-in.route-guard", stubTenantAdminGuard{},
+			(*speedhttp.TenantAdminRouteGuard)(nil)))
+		names = append(names, "stand-in.route-guard")
+	}
 	if !a.noAudit {
 		reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
 		names = append(names, "stand-in.audit")
@@ -206,6 +213,7 @@ func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 		"no write guard":  {noWriteGuard: true},
 		"no provisioner":  {noProvisioner: true},
 		"no organization": {noOrganization: true},
+		"no route guard":  {noRouteGuard: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var built any
@@ -322,6 +330,9 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 		{http.MethodDelete, "/api/v1/system/tenants/:tenant"}:        true,
 		{http.MethodPatch, "/api/v1/system/tenants/:tenant/profile"}: true,
 		{http.MethodPost, "/api/v1/system/tenants/:tenant/status"}:   true,
+		// The tenant surface: the organization's own owner.
+		{http.MethodPut, "/api/v1/tenants/:tenant/owner"}: true,
+		{http.MethodDelete, "/api/v1/tenants/:tenant"}:    true,
 	}
 	got := router.endpoint("public").registered()
 	if len(got) != len(want) {
@@ -407,7 +418,7 @@ func TestTheModuleDeclaresItsPermissionVocabulary(t *testing.T) {
 // do not collide with the rows the authorization capability carries, which would
 // fail the resolution outright.
 func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
-	body := `{"tenant": {"admin": {"endpoints": ["public"]}}, "authz": {"guard": {"endpoints": ["public"]}}}`
+	body := `{"tenant": {"admin": {"endpoints": ["public"], "tenant-endpoints": ["public"]}}, "authz": {"guard": {"endpoints": ["public"]}}}`
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
 	catalog := authztest.NewCatalog(PermissionTenantRead, PermissionTenantManage)
@@ -433,6 +444,7 @@ func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
 		{"stand-in.write-guard", &stubWriteGuard{}, (*tenant.WriteGuard)(nil)},
 		{"stand-in.provisioner", &stubProvisioner{}, (*tenant.Provisioner)(nil)},
 		{"stand-in.organization", &stubOrganization{}, (*tenant.OrganizationWriter)(nil)},
+		{"stand-in.route-guard", stubTenantAdminGuard{}, (*speedhttp.TenantAdminRouteGuard)(nil)},
 		{"stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)},
 		{"stand-in.verification", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)},
 		{"stand-in.router", newStubRouter("public"), (*speedhttp.Router)(nil)},

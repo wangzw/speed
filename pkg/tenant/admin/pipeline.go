@@ -128,64 +128,50 @@ func (p *product) guardRoute(method string, perm authz.Permission, next gin.Hand
 	}
 }
 
-// platformStaffKey is where guardDeleteRoute puts its answer for the deletion
-// handler: whether the caller reached the route as platform staff rather than
-// as the organization's owner.
-type platformStaffKey struct{}
-
-// withPlatformStaff records the deletion guard's answer on the request context.
-func withPlatformStaff(c *gin.Context, staff bool) {
-	ctx := context.WithValue(c.Request.Context(), platformStaffKey{}, staff)
-	c.Request = c.Request.WithContext(ctx)
-}
-
-// isPlatformStaff reads the deletion guard's answer. The zero value is false: a
-// handler reached without the guard is treated as an owner, so the ownership
-// check stays in force.
-func isPlatformStaff(ctx context.Context) bool {
-	staff, _ := ctx.Value(platformStaffKey{}).(bool)
-	return staff
-}
-
-// guardDeleteRoute puts the organization-deletion route's decision in front of
-// its handler. The caller may be platform staff holding tenant.manage in the
-// platform domain, or the organization's own owner. A tenant administrator who
-// is neither is refused.
+// guardOwnerRoute puts the tenant-surface organization-lifecycle route's
+// decision in front of its handler. The tenant surface is the organization's
+// own: the acting account must be the row's OwnerAccount, and no platform
+// permission is asked.
 //
-// The identity and registration checks are the same as guardRoute's. The
-// platform permission is asked without writing its refusal first, because a
-// denial falls through to the ownership check; only a caller that is neither
-// platform staff nor the owner gets the guard's own 403.
-func (p *product) guardDeleteRoute(next gin.HandlerFunc) gin.HandlerFunc {
+// The identity and registration checks are the same as guardRoute's. The owner
+// is read from the roster before anything else; a caller that is not the owner
+// is refused with the guard's 403, and a platform staff member who is not the
+// owner is refused the same way. An empty OwnerAccount names no owner no account
+// can be, so it is refused too. The path-tenant layer has already held the path
+// segment to the tenant the request resolved to, so the read here names the
+// resolved tenant, never the segment as written.
+func (p *product) guardOwnerRoute(method string, next gin.HandlerFunc) gin.HandlerFunc {
+	write := method != http.MethodGet
 	return func(c *gin.Context) {
 		id, ok := authn.FromContext(c.Request.Context())
 		if !ok {
 			writeNoIdentity401(c, realmOf(c))
 			return
 		}
-		if !p.requireVerifiedAccount(c, id) {
+		if write && !p.requireVerifiedAccount(c, id) {
 			return
 		}
-		// The owner is decided first: an owner needs no platform permission to
-		// end the organization they own. Everybody else must hold tenant.manage
-		// in the platform domain, and the guard writes that refusal itself.
-		segment := c.Param("tenant")
-		got, found, err := p.catalog.Get(c.Request.Context(), tenant.ID(segment))
+		tenantID, ok := tenant.FromContext(c.Request.Context())
+		if !ok {
+			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusNotFound})
+			return
+		}
+		got, found, err := p.catalog.Get(c.Request.Context(), tenantID)
 		if err != nil {
-			p.logger.Error(ModuleName+": the tenant could not be read, so the deletion was not carried out",
+			p.logger.Error(ModuleName+": the tenant could not be read, so the write was not carried out",
 				slog.String("cause", err.Error()))
 			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
 			return
 		}
-		if found && got.OwnerAccount != "" && got.OwnerAccount == id.Actor().String() {
-			withPlatformStaff(c, false)
+		if !found {
+			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusNotFound})
+			return
+		}
+		if got.OwnerAccount != "" && got.OwnerAccount == id.Actor().String() {
 			next(c)
 			return
 		}
-		if p.guard.RequirePermissionIn(c, PermissionTenantManage, authz.PlatformDomain) {
-			withPlatformStaff(c, true)
-			next(c)
-		}
+		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusForbidden})
 	}
 }
 
@@ -343,7 +329,7 @@ func (p *product) failureOf(op string, err error) error {
 	switch {
 	case errors.Is(err, tenant.ErrTenantExists), errors.Is(err, tenant.ErrAliasConflict),
 		errors.Is(err, tenant.ErrTenantDeleted), errors.Is(err, tenant.ErrOwnerNotMember),
-		errors.Is(err, tenant.ErrOwnerChanged):
+		errors.Is(err, tenant.ErrOwnerInactive), errors.Is(err, tenant.ErrOwnerChanged):
 		return speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	case errors.Is(err, tenant.ErrInvalidTenant):
 		return speedhttp.Fault{Status: http.StatusNotFound}

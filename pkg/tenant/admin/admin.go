@@ -1,6 +1,7 @@
 // Package admin is the tenant capability's management module: it mounts the
-// roster-management routes under /api/v1/system/tenants and delivers no capability of
-// its own.
+// roster-management routes under /api/v1/system/tenants for platform staff and
+// the organization-lifecycle routes under /api/v1/tenants for the organization's
+// own owner, and delivers no capability of its own.
 //
 // The module holds no data and no rule. Every route's action is a call on the
 // roster — reached through the tenant.Catalog capability — so the roster owns
@@ -14,15 +15,19 @@
 // verification state on a write and refuses one whose email address is not
 // proved with 403 contact-required, then asks the handler-internal authz.guard
 // API for tenant.read on a read or tenant.manage on a write, in the platform
-// domain, and answers a shortfall before anything else runs. A read that is
-// allowed ends there; a write runs its shape checks, asks the host's
-// tenant.WriteGuard on the status route, lands a mandatory audit row outside any
-// transaction and before the action, calls the roster — or, for a registration,
-// the host's tenant.Provisioner, which creates the tenant and its first
-// administrator together — and maps a refusal to its answer.
+// domain, and answers a shortfall before anything else runs. The tenant-surface
+// routes instead hold the path tenant to the request's resolved tenant and
+// admit only the row's owner, asking no permission. A write runs its shape
+// checks, asks the host's tenant.WriteGuard on the status route, lands a
+// mandatory audit row outside any transaction and before the action, calls the
+// roster — or, for a registration, the host's tenant.Provisioner, which creates
+// the tenant and its first administrator together — and maps a refusal to its
+// answer.
 //
-// The routes are mounted on the endpoints the tenant.admin.endpoints list
-// names, and the start diagnostics name the endpoints and the groups.
+// The platform routes are mounted on the endpoints the tenant.admin.endpoints
+// list names, and the tenant-surface routes on the endpoints
+// tenant.admin.tenant-endpoints names; the start diagnostics name both lists and
+// the groups.
 package admin
 
 import (
@@ -52,11 +57,13 @@ const ModuleName = "tenant.admin"
 // module's own name, as a registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
-// The configuration item this module accepts, relative to its namespace, and
+// The configuration items this module accepts, relative to its namespace, and
 // the full path a failure names.
 const (
-	endpointsItem = "endpoints"
-	endpointsKey  = ConfigNamespace + "." + endpointsItem
+	endpointsItem       = "endpoints"
+	endpointsKey        = ConfigNamespace + "." + endpointsItem
+	tenantEndpointsItem = "tenant-endpoints"
+	tenantEndpointsKey  = ConfigNamespace + "." + tenantEndpointsItem
 )
 
 // allEndpoints is the name that stands for every endpoint in an endpoint list.
@@ -87,21 +94,49 @@ var ErrInvalidConfig = errors.New("tenant.admin: a configuration this module can
 // the merged document.
 const defaultEndpoint = "admin"
 
+// defaultTenantEndpoint is the endpoint name the tenant-surface fragment is
+// declared against. The tenant-surface routes need the endpoint that carries
+// tenant resolution and the tenant administration guard, which the demo names
+// "api"; the declaration uses that conventional name for the same reason
+// defaultEndpoint uses "admin".
+const defaultTenantEndpoint = "api"
+
 // openAPIFragment is this module's OpenAPI fragment, read at build time. It is
 // generated from the operations this module declares, not written by hand.
 //
 //go:embed openapi/tenant.admin.json
 var openAPIFragment []byte
 
-// tenantAdminSpec is the API root this module's fragment and routes hang off.
-// The fragment is generated from operations; the routes are mounted from the
-// same declarations and resolved against this root.
+// tenantOwnerFragment is the fragment of the organization-lifecycle routes that
+// belong to the tenant surface. It is a second fragment because a Spec carries
+// one scope: the platform routes live under /api/v1/system/tenants, while the
+// owner transfer and the organization deletion are addressed by the tenant
+// under /api/v1/tenants and decided by the caller's ownership.
+//
+//go:embed openapi/tenant.owner.json
+var tenantOwnerFragment []byte
+
+// tenantAdminSpec is the API root the platform management routes hang off. The
+// fragment is generated from operations; the routes are mounted from the same
+// declarations and resolved against this root.
 var tenantAdminSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
 	Version:  "v1",
 	Scope:    speedhttp.ScopeSystem,
 	Document: openAPIFragment,
+}
+
+// tenantOwnerSpec is the API root the tenant-surface organization-lifecycle
+// routes hang off. It is the tenants scope, so every path names the tenant
+// first and the path-tenant layer holds the segment to the tenant the request
+// resolved to.
+var tenantOwnerSpec = speedhttp.Spec{
+	Endpoint: defaultTenantEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Scope:    speedhttp.ScopeTenants,
+	Document: tenantOwnerFragment,
 }
 
 // init registers this module with the process registry. Registration travels
@@ -113,14 +148,16 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Module is the descriptor a host registers.
 //
 // The roster, the handler-internal guard, the audit capability, the
-// email-verification read and the host's two write seams are required. That the
-// guard is required is what makes the per-request decision available; that the
-// audit capability is required is what makes an assembly without one fail
-// before any instance is built, rather than at the first write; the
-// verification read is what lets a write refuse an account whose email address
-// is not proved; the write guard is what lets the host declare a tenant that
-// may not be disabled; and the provisioner is what creates a tenant together
-// with its first administrator. The roster is delivered exclusively by the
+// email-verification read, the tenant administration route guard and the host's
+// two write seams are required. That the guard is required is what makes the
+// per-request decision available; that the audit capability is required is what
+// makes an assembly without one fail before any instance is built, rather than
+// at the first write; the verification read is what lets a write refuse an
+// account whose email address is not proved; the tenant administration route
+// guard is what holds a tenant-surface path to the request's resolved tenant;
+// the write guard is what lets the host declare a tenant that may not be
+// disabled; and the provisioner is what creates a tenant together with its first
+// administrator. The roster is delivered exclusively by the
 // roster module and the guard by the enforcement module, so the closure of a
 // command that takes this one in does not pull them in: the host writes them
 // down. The write guard and the provisioner are host-supplied seams, so a
@@ -153,12 +190,15 @@ func Module() core.Module {
 			{Token: (*tenant.WriteGuard)(nil)},
 			{Token: (*tenant.Provisioner)(nil)},
 			{Token: (*tenant.OrganizationWriter)(nil)},
+			{Token: (*speedhttp.TenantAdminRouteGuard)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
 			schema(), permissionSpec(), translationSpec(), messageCatalog,
 			tenantAdminSpec,
+			tenantOwnerSpec,
 			operations,
+			tenantOperations,
 			// The roster management surface: its routes are mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.
@@ -223,6 +263,10 @@ type product struct {
 	// the two writes that span the roster, the policy store and the membership
 	// store and therefore have to be one transaction.
 	organization tenant.OrganizationWriter
+	// routeGuard is the tenant administration guard the tenant-scoped
+	// organization-lifecycle routes are wrapped with: the path-tenant identity
+	// rule plus the refusal of the platform domain.
+	routeGuard speedhttp.TenantAdminRouteGuard
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -264,6 +308,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the organization writer: %w", ModuleName, err)
 	}
+	routeGuard, err := core.Resolve[speedhttp.TenantAdminRouteGuard](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the tenant administration guard: %w", ModuleName, err)
+	}
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
@@ -280,6 +328,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 		writeGuard:   writeGuard,
 		provisioner:  provisioner,
 		organization: organization,
+		routeGuard:   routeGuard,
 		logger:       log.Default(),
 		cfg:          cfg,
 	}, nil
@@ -344,6 +393,7 @@ func (p *product) wire(reg *core.Registry) error {
 func (p *product) diagnose() {
 	p.logger.Info(ModuleName+": the management routes are mounted",
 		"endpoints", p.cfg.endpoints,
+		"tenant-endpoints", p.cfg.tenantEndpoints,
 		"groups", managementGroups)
 }
 
@@ -363,8 +413,15 @@ func schema() config.Schema {
 			endpointsItem: {
 				Origins:  config.OriginPrimary,
 				Required: true,
-				Description: "the listening endpoints the management routes are mounted on, by the " +
+				Description: "the listening endpoints the platform management routes are mounted on, by the " +
 					"names the entry point's own configuration gives them; concrete names only, never *",
+			},
+			tenantEndpointsItem: {
+				Origins: config.OriginPrimary,
+				Description: "the listening endpoints the tenant-surface owner-transfer and organization-deletion " +
+					"routes are mounted on, by the names the entry point's own configuration gives them; concrete " +
+					"names only, never *. They must be endpoints that carry tenant resolution and the tenant " +
+					"administration guard. Unset means the API endpoint, [\"api\"]",
 			},
 		},
 	}
@@ -380,15 +437,21 @@ var configDefaults = moduleConfig{}
 
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// Endpoints names the listening endpoints the management routes are mounted
-	// on, by the entry point's own names. The list is a set of concrete names:
-	// the name that stands for every endpoint is not accepted.
+	// Endpoints names the listening endpoints the platform management routes
+	// are mounted on, by the entry point's own names. The list is a set of
+	// concrete names: the name that stands for every endpoint is not accepted.
 	Endpoints []string `config:"endpoints"`
+	// TenantEndpoints names the listening endpoints the tenant-surface
+	// organization-lifecycle routes are mounted on. They must carry tenant
+	// resolution and the tenant administration guard. Unset means the API
+	// endpoint.
+	TenantEndpoints []string `config:"tenant-endpoints"`
 }
 
 // resolved is the configuration this module runs on.
 type resolved struct {
-	endpoints []string
+	endpoints       []string
+	tenantEndpoints []string
 }
 
 // resolve turns decoded configuration into what the module runs on, refusing
@@ -396,33 +459,51 @@ type resolved struct {
 // ErrInvalidConfig: a management surface mounted nowhere, or on every endpoint,
 // is a shape this module will not run on.
 func (c moduleConfig) resolve() (resolved, error) {
-	if len(c.Endpoints) == 0 {
-		return resolved{}, fmt.Errorf("%w: %s is empty. The management routes are mounted on the "+
-			"endpoints this module is told to and on none by default; list the endpoints that should "+
-			"carry them, or leave this module out of the command", ErrInvalidConfig, endpointsKey)
+	endpoints, err := resolveEndpoints(endpointsKey, "management", c.Endpoints, true)
+	if err != nil {
+		return resolved{}, err
 	}
-	seen := make(map[string]struct{}, len(c.Endpoints))
-	for i, name := range c.Endpoints {
+	tenantEndpoints, err := resolveEndpoints(tenantEndpointsKey, "tenant-surface organization-lifecycle",
+		c.TenantEndpoints, false)
+	if err != nil {
+		return resolved{}, err
+	}
+	return resolved{endpoints: endpoints, tenantEndpoints: tenantEndpoints}, nil
+}
+
+// resolveEndpoints validates one endpoint list the same way. required says an
+// empty list is a failure; otherwise an empty list takes the API endpoint.
+func resolveEndpoints(key, what string, list []string, required bool) ([]string, error) {
+	if len(list) == 0 {
+		if !required {
+			return []string{defaultTenantEndpoint}, nil
+		}
+		return nil, fmt.Errorf("%w: %s is empty. The %s routes are mounted on the "+
+			"endpoints this module is told to and on none by default; list the endpoints that should "+
+			"carry them, or leave this module out of the command", ErrInvalidConfig, key, what)
+	}
+	seen := make(map[string]struct{}, len(list))
+	for i, name := range list {
 		switch name {
 		case "":
-			return resolved{}, fmt.Errorf("%w: %s holds an empty name at position %d",
-				ErrInvalidConfig, endpointsKey, i)
+			return nil, fmt.Errorf("%w: %s holds an empty name at position %d",
+				ErrInvalidConfig, key, i)
 		case allEndpoints:
-			return resolved{}, fmt.Errorf("%w: %s holds %q at position %d. This module takes concrete "+
-				"endpoint names only: mounting the management routes on every endpoint would put them "+
+			return nil, fmt.Errorf("%w: %s holds %q at position %d. This module takes concrete "+
+				"endpoint names only: mounting the %s routes on every endpoint would put them "+
 				"on the public ones, where no gateway guards them",
-				ErrInvalidConfig, endpointsKey, allEndpoints, i)
+				ErrInvalidConfig, key, allEndpoints, i, what)
 		}
 		// The list is a set. The entry point holds one endpoint per name, so a
-		// name written twice would register every management route on that
-		// endpoint twice, which the route engine refuses as a conflict.
+		// name written twice would register every route on that endpoint twice,
+		// which the route engine refuses as a conflict.
 		if _, twice := seen[name]; twice {
-			return resolved{}, fmt.Errorf("%w: %s names the endpoint %q twice, which would register "+
-				"every management route on it twice", ErrInvalidConfig, endpointsKey, name)
+			return nil, fmt.Errorf("%w: %s names the endpoint %q twice, which would register "+
+				"every %s route on it twice", ErrInvalidConfig, key, name, what)
 		}
 		seen[name] = struct{}{}
 	}
-	return resolved{endpoints: c.Endpoints}, nil
+	return list, nil
 }
 
 // readConfig decodes this module's section and validates it. Prepare and New

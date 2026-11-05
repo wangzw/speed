@@ -1,12 +1,15 @@
 # pkg/tenant/admin
 
 The tenant capability's management module. It mounts the roster-management routes
-under `/api/v1/system/tenants` and delivers no capability of its own: a route's
-action is a call on the roster — reached through the `tenant.Catalog` capability —
-except registration, which goes through the host's `tenant.Provisioner` so a
-tenant and its first administrator come into being together. The module holds no
-tenant, no rule and no data of its own. It builds no table, caches nothing and
-migrates nothing.
+under `/api/v1/system/tenants` (platform staff) and the organization-lifecycle
+routes under `/api/v1/tenants` (the organization's own owner), and delivers no
+capability of its own: a route's action is a call on the roster — reached through
+the `tenant.Catalog` capability — except registration, which goes through the
+host's `tenant.Provisioner` so a tenant and its first administrator come into
+being together, and an owner transfer or organization deletion, which goes
+through the host's `tenant.OrganizationWriter`. The module holds no tenant, no
+rule and no data of its own. It builds no table, caches nothing and migrates
+nothing.
 
 The descriptor declares the static feature `tenant.admin`, present whenever the
 module is in force.
@@ -27,27 +30,33 @@ types and the sentinels in `pkg/tenant`.
 
 ## Routes and the permissions they are held to
 
-Every route is mounted under the base path `/api/v1/system`, on the endpoints the
-module's configuration lists. A route is addressed by a natural key — a tenant
-identifier, the same key the roster keys a row by — so no opaque row identifier
-ever appears in a path. The whole surface is one group, `tenants`, and it is
-always mounted, because the roster it reads and writes is required. This set is
-the module's whole route surface.
+The platform routes are mounted under `/api/v1/system` on the endpoints
+`tenant.admin.endpoints` lists; the tenant-surface routes are mounted under
+`/api/v1/tenants` on the endpoints `tenant.admin.tenant-endpoints` lists. A route
+is addressed by a natural key — a tenant identifier, the same key the roster keys
+a row by — so no opaque row identifier ever appears in a path. The surface is one
+group, `tenants`, and it is always mounted, because the roster it reads and
+writes is required. This set is the module's whole route surface.
 
-| Group | Method and path | Permission |
+| Surface | Method and path | Decision |
 |---|---|---|
-| Tenants | `GET /api/v1/system/tenants` | `tenant.read` |
-| Tenants | `POST /api/v1/system/tenants` | `tenant.manage` |
-| Tenants | `GET /api/v1/system/tenants/:id` | `tenant.read` |
-| Tenants | `PUT /api/v1/system/tenants/:id/owner` | `tenant.manage` |
-| Tenants | `DELETE /api/v1/system/tenants/:id` | `tenant.manage`, or the organization's owner |
-| Tenants | `PATCH /api/v1/system/tenants/:id/profile` | `tenant.manage` |
-| Tenants | `POST /api/v1/system/tenants/:id/status` | `tenant.manage` |
+| Platform | `GET /api/v1/system/tenants` | `tenant.read` |
+| Platform | `POST /api/v1/system/tenants` | `tenant.manage` |
+| Platform | `GET /api/v1/system/tenants/:id` | `tenant.read` |
+| Platform | `PUT /api/v1/system/tenants/:id/owner` | `tenant.manage` |
+| Platform | `DELETE /api/v1/system/tenants/:id` | `tenant.manage` |
+| Platform | `PATCH /api/v1/system/tenants/:id/profile` | `tenant.manage` |
+| Platform | `POST /api/v1/system/tenants/:id/status` | `tenant.manage` |
+| Tenant | `PUT /api/v1/tenants/:tenant/owner` | the organization's owner |
+| Tenant | `DELETE /api/v1/tenants/:tenant` | the organization's owner |
 
-A read route is held to `tenant.read` and a write route to `tenant.manage`; the
-deletion route also admits the organization's own owner, which is ownership
-rather than a permission code. Each route's action is one roster call, one
-organization write or one profile write:
+A platform read route is held to `tenant.read` and a platform write route to
+`tenant.manage`. The tenant-surface routes ask no permission: the
+`TenantAdminRouteGuard` holds the path tenant to the resolved tenant and refuses
+the platform domain, then the handler admits only the account named by the row's
+`OwnerAccount`. An owner therefore does not pass through `/system`, and platform
+staff who are not the owner do not pass through the tenant surface. Each route's
+action is one roster call, one organization write or one profile write:
 
 | Route | Action |
 |---|---|
@@ -56,6 +65,8 @@ organization write or one profile write:
 | `GET /tenants/:id` | `Get`, one tenant by identifier |
 | `PUT /tenants/:id/owner` | `OrganizationWriter.TransferOwner` |
 | `DELETE /tenants/:id` | `OrganizationWriter.DeleteOrganization`; `WriteGuard` first |
+| `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner`, the same call |
+| `DELETE /tenants/:tenant` | `OrganizationWriter.DeleteOrganization`, the same call |
 | `PATCH /tenants/:id/profile` | `SetProfile`, the four descriptive fields, and nothing else |
 | `POST /tenants/:id/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
@@ -91,20 +102,25 @@ key.
   roster has no alias-only write, and the management surface has no rename
   route. A registration starts the tenant `active` and makes the creator its
   owner and first tenant-admin.
-- **The owner transfer is platform staff's and goes through
-  `OrganizationWriter`.** The target must be an active member; the transfer
-  grants it `tenant-admin` when it does not hold it, writes the roster owner,
-  and removes the previous owner's bindings and membership in one transaction.
-  The mandatory audit row lands before the write; a refusal closes it with a
-  linked failed row.
-- **The deletion admits platform staff or the organization's owner.** The
-  handler reads the tenant and lets the owner through before asking the guard;
-  everybody else needs `tenant.manage` in the platform domain. There is no
-  `tenant.delete` permission code. An owner-initiated deletion passes the owner
-  it observed to `OrganizationWriter`, so a transfer that wins the race answers
-  409 `ErrOwnerChanged`. The deletion asks `WriteGuard` for `WriteDelete`,
-  lands the mandatory audit row, and leaves a tombstone with the core relations
-  removed; a tombstone read is still a 200 with `status=deleted`.
+- **The owner transfer has one implementation and two surfaces.** The platform
+  route asks `tenant.manage` in the platform domain; the tenant route asks no
+  permission and admits only the row's owner. Both call
+  `OrganizationWriter.TransferOwner` and take the same tenant lock. The target
+  must be an active member whose account is active; the transfer grants it
+  `tenant-admin` when it does not hold it, writes the roster owner, and removes
+  the previous owner's bindings and membership in one transaction. The mandatory
+  audit row lands before the write with `surface=platform` or `surface=tenant`;
+  a refusal closes it with a linked failed row.
+- **The deletion has one implementation and two surfaces.** The platform route
+  asks `tenant.manage` in the platform domain and passes no owner expectation;
+  the tenant route asks no permission, admits only the row's owner, and passes
+  the caller as the observed owner, so a transfer that wins the race answers 409
+  `ErrOwnerChanged`. An owner does not pass through the platform route unless it
+  also holds `tenant.manage`; platform staff who are not the owner do not pass
+  through the tenant route. There is no `tenant.delete` permission code. The
+  deletion asks `WriteGuard` for `WriteDelete`, lands the mandatory audit row
+  naming the surface, and leaves a tombstone with the core relations removed; a
+  tombstone read is still a 200 with `status=deleted`.
 - **The profile write goes through `SetProfile`, never `Put`.** The body carries
   all four descriptive fields; an empty value clears the stored one. `Put`
   writes the status and disable source too, so a profile update through it would
@@ -159,15 +175,18 @@ key.
   `TestTheGateRefusesBeforeTheBodyShape`,
   `TestTheGateReadsTheActorNotTheImpersonationTarget`,
   `TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead`.
-- **The decision is made in the platform domain, whatever tenant the request
-  carries.** The roster is the process's own table of which tenants exist and not
+- **The platform decision is made in the platform domain, whatever tenant the
+  request carries.** The roster is the process's own table of which tenants exist and not
   a tenant's, so the handler asks through the guard's explicit-domain form with
   `authz.PlatformDomain` and the request's tenant never steers it: deciding in the
   request's own tenant would let a caller authorized in one tenant reach the whole
   roster by sending a tenant header. Listing the roster is a platform read, not a
   cross-tenant one — the roster's table is not tenant-scoped and its reads are
   outside the filter — so it opens no cross-tenant context and needs no
-  cross-tenant permission.
+  cross-tenant permission. The tenant-surface decision is different: the
+  `TenantAdminRouteGuard` has held the path tenant to the tenant the request
+  resolved to, and the handler admits only that row's owner. Neither surface asks
+  the guard for a permission on the tenant route.
 - **The mandatory audit of a write lands before the action, outside any
   transaction.** A write's audit row is written before the roster is called; a row
   that does not land is answered 503 and the action is not carried out, so a
@@ -178,8 +197,9 @@ key.
   `tenant.status`, `tenant.profile.update`, `tenant.owner.transfer` and
   `tenant.delete` — one per write route, and a read
   writes no audit row of its own. A profile update's rows carry
-  `surface=platform` in their detail, which tells them apart from the tenant
-  profile module's rows for the same action.
+  `surface=platform`; a transfer's and a deletion's rows carry the surface the
+  request actually used (`platform` or `tenant`), so the two routes of one action
+  are distinguishable.
 - **The refusal mapping is closed and fail-closed.** An identifier the roster's
   table already holds — as an identifier or as an alias, since the two share one
   namespace — is a 409; an alias another tenant holds as an alias or as its
@@ -188,7 +208,8 @@ key.
   in the log and never reaches the caller. A 404 and a 503 carry no problem type —
   they say something is not there or a dependency could not answer and not which
   refusal it was — while a 409 carries the capability's type prefix
-  `urn:speed:tenant:`. The write guard's refusal is the capability's third code,
+  `urn:speed:tenant:`. A transfer whose target account is not active is a 409
+  (`tenant.ErrOwnerInactive`). The write guard's refusal is the capability's third code,
   a 403 `urn:speed:tenant:protected`: the tenant exists and the host declares it
   off-limits to a disable by the operator. `tenant.ErrTenantDisabled` and `tenant.ErrNoTenantInContext`
   are not mapped: they are the resolution and scoping paths' sentinels, and no
@@ -219,16 +240,19 @@ key.
   mounts no management face, and a host that wants one writes this module into its
   command rather than hand-writing the same routes, decision and audit preamble.
 - **It requires the roster, the handler-internal guard, the audit capability, the
-  registration-verification read and the host's three write seams.** A command
+  registration-verification read, the tenant administration route guard and the
+  host's three write seams.** A command
   that brings this one in without the roster to act on, the guard to decide
   with, the audit to record through, the `authn.SignupVerification` read to gate
-  a write on, the `tenant.WriteGuard` to protect a tenant, the
+  a write on, the `speedhttp.TenantAdminRouteGuard` to hold the tenant-surface
+  path tenant, the `tenant.WriteGuard` to protect a tenant, the
   `tenant.Provisioner` to open a tenant with its first administrator, or the
   `tenant.OrganizationWriter` to transfer an owner and delete an organization,
   fails the startup before any route is mounted, rather than answering every
   route with a refusal or a write that cannot land. The write guard, the
   provisioner and the organization writer are the host's to supply: none is a
-  `pkg/` capability, and the roster knows none of them. The HTTP entry
+  `pkg/` capability, and the roster knows none of them. The tenant
+  administration route guard is delivered by `tenant.resolve`. The HTTP entry
   point is taken up in `Init` and is
   required — a command that mounts the management routes and has no entry point
   has nothing to mount on, which is `authz.ErrNoRouter`. The logger is the one
@@ -245,7 +269,7 @@ key.
 ## Configuration
 
 - **`tenant.admin.endpoints`** (configuration, a list of strings): the endpoints
-  the management routes are mounted on, by the names the entry point's own
+  the platform management routes are mounted on, by the names the entry point's own
   configuration gives them. It is required and has no default — a management
   surface mounted nowhere would silently drop every route — and it takes concrete
   names only, never `*`, because mounting the routes on every endpoint would put
@@ -253,6 +277,11 @@ key.
   primary source alone. A shape the module cannot run on — an empty list, an empty
   name, `*`, a name written twice — is `tenant.admin`'s `ErrInvalidConfig`; a name
   the entry point does not declare is `authz.ErrUnknownEndpoint` at startup.
+- **`tenant.admin.tenant-endpoints`** (configuration, a list of strings): the
+  endpoints the tenant-surface owner-transfer and organization-deletion routes are
+  mounted on. Unset means `["api"]`. It takes concrete names only, never `*`, and
+  an endpoint it names must carry tenant resolution and the tenant administration
+  route guard. The same shape checks and failures apply.
 
 ## Running it
 

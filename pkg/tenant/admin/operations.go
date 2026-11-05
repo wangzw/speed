@@ -12,6 +12,9 @@ import (
 const (
 	fragmentTitle   = "tenant.admin"
 	fragmentVersion = "1.0.0"
+
+	// tenantOwnerFragmentTitle is the title of the tenant-surface fragment.
+	tenantOwnerFragmentTitle = "tenant.owner"
 )
 
 // The routes as the fragment writes them: relative to the API root the module's
@@ -23,6 +26,13 @@ const (
 	pathTenantStatusFragment  = "/tenants/:tenant/status"
 	pathTenantProfileFragment = "/tenants/:tenant/profile"
 	pathTenantOwnerFragment   = "/tenants/:tenant/owner"
+)
+
+// The tenant-surface routes, relative to the tenants-scope API root. The
+// absolute paths are /api/v1/tenants/:tenant/owner and /api/v1/tenants/:tenant.
+const (
+	pathOwnerTransferFragment = "/:tenant/owner"
+	pathOrganizationFragment  = "/:tenant"
 )
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -240,16 +250,22 @@ var transferOwnerOperation = speedhttp.NewReplyOperation[transferOwnerInput](
 // deleteOperation declares DELETE /tenants/:tenant: it writes the tenant's
 // tombstone and cleans its core relations. Its handler builds the answer because
 // an unknown tenant is a bare 404.
+//
+// This is the platform surface: it requires tenant.manage in the platform
+// domain. An organization's owner deletes through the tenant surface
+// (tenantDeleteOperation) and is refused here unless they also hold that
+// permission; the two surfaces share the write and its locks.
 var deleteOperation = speedhttp.NewReplyOperation[getTenantInput](
 	"tenant.admin.tenants.delete",
 	http.MethodDelete,
 	pathTenantFragment,
 	"Delete one tenant",
-	"Deletes one tenant the owner or platform staff names. The write is a tombstone: the identifier and the "+
+	"Deletes one tenant platform staff names. The write is a tombstone: the identifier and the "+
 		"alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are "+
 		"removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not "+
 		"part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written "+
-		"and the request is answered 503. A tombstone is a 409: deletion is terminal.",
+		"and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner "+
+		"reaches the tenant surface, not this route.",
 	nil,
 	[]speedhttp.Response{
 		{
@@ -260,14 +276,14 @@ var deleteOperation = speedhttp.NewReplyOperation[getTenantInput](
 			"The identifier is outside the identifier domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller is neither platform staff nor the organization's owner, the caller has not proved an "+
+			"The caller holds no tenant.manage in the platform domain, the caller has not proved an "+
 				"email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"),
 		{
 			Status:      http.StatusNotFound,
 			Description: "No tenant carries the identifier",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The tenant is a tombstone, or an owner-initiated deletion lost the organization to a transfer"),
+			"The tenant is a tombstone"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )
@@ -355,6 +371,93 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 	},
 )
 
+// ownerTransferInput is the request of the tenant-surface owner transfer: the
+// tenant in the path and the account that becomes its owner in the body. The
+// path segment is held to the resolved tenant by the tenant administration
+// guard before the handler runs.
+type ownerTransferInput struct {
+	Tenant  string `path:"tenant" description:"The organization's identifier as the request surface addresses it. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused."`
+	Account string `json:"account" required:"true" description:"The account identifier of the active member that becomes the organization's owner."`
+}
+
+// tenantTransferOwnerOperation declares PUT /:tenant/owner on the tenant
+// surface: the organization's own owner hands its ownership on. Its handler
+// builds the answer because an unknown tenant is a bare 404.
+var tenantTransferOwnerOperation = speedhttp.NewReplyOperation[ownerTransferInput](
+	"tenant.admin.owner.transfer",
+	http.MethodPut,
+	pathOwnerTransferFragment,
+	"Transfer the caller's organization to another member",
+	"Hands one organization's ownership on, called by the organization's current owner. The tenant surface "+
+		"decides by owner identity: the acting account must be the row's OwnerAccount, and no platform "+
+		"permission is asked. The target must be an active member of the organization whose account is active; "+
+		"the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding "+
+		"in the organization and is removed from it. The transfer and those writes are one transaction, under "+
+		"the tenant lock the platform surface takes too. A mandatory audit row lands before the write; if it "+
+		"cannot, nothing is written and the request is answered 503.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The account identifier of the active member that becomes the owner.",
+		Required:    true,
+		Name:        "TenantOwnerTransfer",
+	},
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusNoContent,
+			Description: "The ownership was transferred",
+		},
+		speedhttp.ProblemResponse(http.StatusBadRequest,
+			"The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"),
+		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller is not the organization's owner, or the caller has not proved an email address (contact-required)"),
+		{
+			Status:      http.StatusNotFound,
+			Description: "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain",
+		},
+		speedhttp.ProblemResponse(http.StatusConflict,
+			"The target is not an active member, the target's account is not active, or the tenant is a tombstone"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+	},
+)
+
+// tenantDeleteOperation declares DELETE /:tenant on the tenant surface: the
+// organization's own owner ends it. Its handler builds the answer because an
+// unknown tenant is a bare 404.
+var tenantDeleteOperation = speedhttp.NewReplyOperation[getTenantInput](
+	"tenant.admin.owner.delete",
+	http.MethodDelete,
+	pathOrganizationFragment,
+	"Delete the caller's own organization",
+	"Deletes one organization, called by the organization's current owner. The tenant surface decides by "+
+		"owner identity: the acting account must be the row's OwnerAccount, and no platform permission is "+
+		"asked. The write is a tombstone: the identifier and the alias stay and are never reusable, and the "+
+		"organization's memberships, bindings, roles and grants are removed in the same transaction, under the "+
+		"same tenant lock the platform surface takes. A protected tenant is refused by the host's write guard. "+
+		"A mandatory audit row lands before the write; if it cannot, nothing is written and the request is "+
+		"answered 503. A tombstone is a 409: deletion is terminal.",
+	nil,
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusNoContent,
+			Description: "The organization was deleted",
+		},
+		speedhttp.ProblemResponse(http.StatusBadRequest,
+			"The identifier is outside the identifier domain"),
+		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller is not the organization's owner, the caller has not proved an email address "+
+				"(contact-required), or the tenant is protected (urn:speed:tenant:protected)"),
+		{
+			Status:      http.StatusNotFound,
+			Description: "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain",
+		},
+		speedhttp.ProblemResponse(http.StatusConflict,
+			"The tenant is a tombstone, or the caller stopped owning the organization before the write committed"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+	},
+)
+
 // operations is this module's declaration of the API it serves. The fragment is
 // generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
@@ -365,4 +468,12 @@ var operations = speedhttp.Operations{
 	deleteOperation,
 	setProfileOperation,
 	setStatusOperation,
+}
+
+// tenantOperations is this module's declaration of the tenant-surface API. The
+// fragment is generated from it; the routes are mounted from the same
+// declarations.
+var tenantOperations = speedhttp.Operations{
+	tenantTransferOwnerOperation,
+	tenantDeleteOperation,
 }

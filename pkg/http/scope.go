@@ -36,7 +36,13 @@ func (s Scope) Valid() bool {
 // tenantPathPrefix is the leading segment every path of a tenants-scope
 // fragment carries: the tenant is part of the address, not a query value, so
 // the level and the tenant the operation acts on are both on the request line.
+// A route on the tenant resource itself names the tenant and no further segment,
+// so the bare tenant segment is accepted as well.
 const tenantPathPrefix = "/{tenant}/"
+
+// tenantPathRoot is the tenant segment alone: the resource-level route under the
+// tenants scope, such as the organization deletion.
+const tenantPathRoot = "/{tenant}"
 
 // scopeRoot is the segment a scope contributes to the API root. The ordinary
 // surface has no value here.
@@ -48,5 +54,5 @@ func (s Scope) joinsPath(path string) bool {
 	if s != ScopeTenants {
 		return true
 	}
-	return strings.HasPrefix(path, tenantPathPrefix)
+	return path == tenantPathRoot || strings.HasPrefix(path, tenantPathPrefix)
 }

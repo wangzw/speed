@@ -355,7 +355,7 @@
     },
     "/tenants/{tenant}": {
       "delete": {
-        "description": "Deletes one tenant the owner or platform staff names. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal.",
+        "description": "Deletes one tenant platform staff names. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.",
         "operationId": "tenant.admin.tenants.delete",
         "parameters": [
           {
@@ -400,7 +400,7 @@
                 }
               }
             },
-            "description": "The caller is neither platform staff nor the organization's owner, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
+            "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
           },
           "404": {
             "description": "No tenant carries the identifier"
@@ -413,7 +413,7 @@
                 }
               }
             },
-            "description": "The tenant is a tombstone, or an owner-initiated deletion lost the organization to a transfer"
+            "description": "The tenant is a tombstone"
           },
           "503": {
             "content": {

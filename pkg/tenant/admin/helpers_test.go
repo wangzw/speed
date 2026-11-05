@@ -25,21 +25,30 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
 // The stubs implement the seams the module takes up, so a stub and an interface
 // cannot drift apart without failing the build.
 var (
-	_ tenant.Catalog            = (*stubCatalog)(nil)
-	_ tenant.WriteGuard         = (*stubWriteGuard)(nil)
-	_ tenant.Provisioner        = (*stubProvisioner)(nil)
-	_ tenant.OrganizationWriter = (*stubOrganization)(nil)
-	_ guard.Guard               = (*stubGuard)(nil)
-	_ audit.Audit               = (*recordingAudit)(nil)
-	_ speedhttp.Router          = (*stubRouter)(nil)
-	_ speedhttp.Endpoint        = (*stubEndpoint)(nil)
-	_ log.Logger                = loggerStub{}
+	_ tenant.Catalog                  = (*stubCatalog)(nil)
+	_ tenant.WriteGuard               = (*stubWriteGuard)(nil)
+	_ tenant.Provisioner              = (*stubProvisioner)(nil)
+	_ tenant.OrganizationWriter       = (*stubOrganization)(nil)
+	_ guard.Guard                     = (*stubGuard)(nil)
+	_ audit.Audit                     = (*recordingAudit)(nil)
+	_ speedhttp.Router                = (*stubRouter)(nil)
+	_ speedhttp.Endpoint              = (*stubEndpoint)(nil)
+	_ speedhttp.TenantAdminRouteGuard = (*stubTenantAdminGuard)(nil)
+	_ log.Logger                      = loggerStub{}
 )
+
+// stubTenantAdminGuard is the tenant administration guard's stand-in: the
+// path-tenant reconciliation is the real guard's work and a case drives the
+// handler with the tenant already in the context, so this guard passes through.
+type stubTenantAdminGuard struct{}
+
+func (stubTenantAdminGuard) GuardTenantAdmin(next gin.HandlerFunc) gin.HandlerFunc { return next }
 
 // catalogCall is one call the stub roster recorded: the method's name and the
 // arguments that name a row, so a case can hold what the handler passed on and
@@ -427,6 +436,7 @@ type rig struct {
 	provisioner  *stubProvisioner
 	organization *stubOrganization
 	guard        *stubGuard
+	routeGuard   stubTenantAdminGuard
 	audit        *recordingAudit
 	router       *stubRouter
 	logs         *logBuffer
@@ -460,10 +470,11 @@ func newRig(t *testing.T) *rig {
 		provisioner:  r.provisioner,
 		organization: r.organization,
 		guard:        r.guard,
+		routeGuard:   r.routeGuard,
 		audit:        r.audit,
 		verification: r.signup,
 		logger:       logs.logger(),
-		cfg:          resolved{endpoints: []string{"public"}},
+		cfg:          resolved{endpoints: []string{"public"}, tenantEndpoints: []string{"public"}},
 	}
 	r.engine = r.mount()
 	return r
@@ -524,6 +535,9 @@ func (r *rig) mount() *gin.Engine {
 	for _, rt := range r.p.routes() {
 		engine.Handle(rt.method, rt.path, withRealm("public", rt.handler))
 	}
+	for _, rt := range r.p.tenantRoutes() {
+		engine.Handle(rt.method, rt.path, withRealm("public", rt.handler))
+	}
 	return engine
 }
 
@@ -540,6 +554,29 @@ func (r *rig) do(method, target string, body any, opts ...authntest.Option) *htt
 		reader = bytes.NewReader(encoded)
 	}
 	return r.send(method, target, reader, body != nil, authntest.Context(r.t, context.Background(), opts...))
+}
+
+// tenantPath resolves a mounted route's :tenant parameter to a concrete
+// identifier, the way a request line carries it.
+func tenantPath(path, id string) string {
+	return strings.Replace(path, ":tenant", id, 1)
+}
+
+// doInTenant sends one request through the engine with the resolved tenant the
+// tenant-surface routes read, the identity the options build and, when a body is
+// given, a JSON body.
+func (r *rig) doInTenant(method, target, tenantID string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
+	r.t.Helper()
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			r.t.Fatalf("encoding the body: %v", err)
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	ctx := tenantctx.WithID(authntest.Context(r.t, context.Background(), opts...), tenantID)
+	return r.send(method, target, reader, body != nil, ctx)
 }
 
 // doRaw sends a body as written, so a case can put a body the handler cannot

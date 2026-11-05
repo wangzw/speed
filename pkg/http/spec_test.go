@@ -225,6 +225,15 @@ func TestATenantsScopePathNamesTheTenantFirst(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("a tenant-scoped fragment was refused: %v", err)
 	}
+	// The tenant resource itself is addressed by the bare tenant segment: a
+	// resource-level operation such as the organization deletion names the
+	// tenant and no further path.
+	if err := validateSpec("billing", Spec{
+		Endpoint: "public", Prefix: "api", Version: "v1", Scope: ScopeTenants,
+		Document: []byte(`{"openapi":"3.1.0","paths":{"/{tenant}":{}}}`),
+	}); err != nil {
+		t.Fatalf("a tenants-scope operation on the tenant resource itself was refused: %v", err)
+	}
 	if got := (Spec{Prefix: "api", Version: "v1", Scope: ScopeTenants}).ResolvePath("/{tenant}/members"); got != "/api/v1/tenants/{tenant}/members" {
 		t.Errorf("ResolvePath under the tenant scope is %q", got)
 	}

@@ -96,8 +96,9 @@ func TestPlatformStaffDeleteWithoutAnOwnerExpectation(t *testing.T) {
 	}
 }
 
-// The organization's owner deletes without platform permission, and the
-// deletion carries the owner it observed so a racing transfer refuses it.
+// The organization's owner deletes through the tenant surface without platform
+// permission, and the deletion carries the owner it observed so a racing
+// transfer refuses it.
 func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -107,13 +108,97 @@ func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 	}
 	r.catalog.found = true
 
-	w := r.do(http.MethodDelete, pathTenants+"/t_acme", nil)
+	w := r.doInTenant(http.MethodDelete, tenantPath(pathOrganization, "t_acme"), "t_acme", nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
 	}
 	calls := r.organization.recorded()
 	if len(calls) != 1 || calls[0].expectedOwner != authntest.DefaultAccount.String() {
 		t.Fatalf("the organization writer was called %+v, want the observed owner", calls)
+	}
+	rows := r.audit.entries()
+	if len(rows) != 1 || rows[0].Detail[detailSurface] != surfaceTenant {
+		t.Errorf("audit rows = %+v, want one naming the tenant surface", rows)
+	}
+}
+
+// The owner cannot delete through the platform surface: the platform route asks
+// tenant.manage in the platform domain and has no ownership branch. An owner
+// without that permission is refused there and must use the tenant surface.
+func TestTheOwnerCannotDeleteThroughThePlatformSurface(t *testing.T) {
+	r := newRig(t)
+	r.guard.allow = false
+	r.catalog.held = tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		OwnerAccount: authntest.DefaultAccount.String(),
+	}
+	r.catalog.found = true
+
+	w := r.do(http.MethodDelete, pathTenant, nil)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (body %s)", w.Code, w.Body.String())
+	}
+	if calls := r.organization.recorded(); len(calls) != 0 {
+		t.Errorf("the writer was called %+v, want no call", calls)
+	}
+}
+
+// The owner transfers through the tenant surface; the same organization writer
+// the platform route calls performs it, and the audit row names the tenant
+// surface.
+func TestTheOwnerTransfersThroughTheTenantSurface(t *testing.T) {
+	r := newRig(t)
+	r.guard.allow = false
+	r.catalog.held = tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		OwnerAccount: authntest.DefaultAccount.String(),
+	}
+	r.catalog.found = true
+
+	w := r.doInTenant(http.MethodPut, tenantPath(pathOwnerTransfer, "t_acme"), "t_acme", map[string]any{"account": "acc-2"})
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
+	}
+	calls := r.organization.recorded()
+	if len(calls) != 1 || calls[0].op != "TransferOwner" || calls[0].id != "t_acme" || calls[0].owner != "acc-2" {
+		t.Fatalf("the organization writer was called %+v, want one TransferOwner of t_acme to acc-2", calls)
+	}
+	rows := r.audit.entries()
+	if len(rows) != 1 || rows[0].Detail[detailSurface] != surfaceTenant {
+		t.Errorf("audit rows = %+v, want one naming the tenant surface", rows)
+	}
+}
+
+// A platform staff member who is not the organization's owner cannot use the
+// tenant surface: the tenant route decides by owner identity, not by the
+// platform permission the same account may hold.
+func TestPlatformStaffCannotUseTheTenantSurfaceWithoutBeingTheOwner(t *testing.T) {
+	for name, call := range map[string]func(*rig) int{
+		"transfer": func(r *rig) int {
+			return r.doInTenant(http.MethodPut, tenantPath(pathOwnerTransfer, "t_acme"), "t_acme", map[string]any{"account": "acc-2"}).Code
+		},
+		"delete": func(r *rig) int {
+			return r.doInTenant(http.MethodDelete, tenantPath(pathOrganization, "t_acme"), "t_acme", nil).Code
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			r.guard.allow = true
+			r.catalog.held = tenant.Tenant{
+				ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+				OwnerAccount: "acc-owner",
+			}
+			r.catalog.found = true
+			if code := call(r); code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", code)
+			}
+			if calls := r.organization.recorded(); len(calls) != 0 {
+				t.Errorf("the writer was called %+v, want no call", calls)
+			}
+			if rows := r.audit.entries(); len(rows) != 0 {
+				t.Errorf("audit rows = %+v, want none", rows)
+			}
+		})
 	}
 }
 
@@ -138,7 +223,7 @@ func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
 		}
 	}
 
-	w := r.do(http.MethodDelete, pathTenants+"/t_acme", nil)
+	w := r.doInTenant(http.MethodDelete, tenantPath(pathOrganization, "t_acme"), "t_acme", nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
 	}

@@ -33,7 +33,7 @@ type seams struct {
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),
-		Endpoints: []string{"admin"},
+		Endpoints: []string{"admin", "api"},
 		Stubs: []core.Module{
 			routecontract.StandIn("stand-in.seams", &seams{},
 				(*tenant.Catalog)(nil), (*tenant.WriteGuard)(nil), (*tenant.Provisioner)(nil),
@@ -42,7 +42,10 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 				(*authn.SignupVerification)(nil)),
 		},
 		Config: map[string]any{
-			ConfigNamespace: map[string]any{"endpoints": []string{"admin"}},
+			ConfigNamespace: map[string]any{
+				"endpoints":        []string{"admin"},
+				"tenant-endpoints": []string{"api"},
+			},
 		},
 	})
 }

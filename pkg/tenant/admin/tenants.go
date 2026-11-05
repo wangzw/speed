@@ -162,24 +162,19 @@ func (p *product) handleTenantTransferOwner(ctx context.Context, in transferOwne
 }
 
 // handleTenantDelete answers DELETE /api/v1/system/tenants/:tenant: it writes
-// the tenant's tombstone and cleans its core relations. It is a write, so the
-// action is tenant.manage for platform staff and the owner's own authority for
-// an owner.
+// the tenant's tombstone and cleans its core relations. It is platform staff's
+// route: the action is tenant.manage in the platform domain.
 //
-// The route's guard has already decided that the caller is platform staff or
-// the organization's owner. The tenant is read for the existence answers before
-// the audit: an identifier no row carries is a bare 404 and a tombstone a 409.
-// A protected tenant is refused by the host's write guard, as the status route
-// refuses a disable. The mandatory audit row lands before the deletion; a
-// refusal closes it with a linked failed row.
+// The organization's owner does not reach this route; the owner's own deletion
+// is the tenant-surface route (handleTenantOwnerDelete), which shares the write
+// and the locks and carries the caller as the owner it expects. Platform staff
+// carry no ownership expectation here.
 //
-// An owner-initiated deletion carries the caller as the owner it expects, so a
-// transfer that wins the race leaves the deletion a 409 rather than deleting
-// the organization the caller no longer governs. The expected value is the
-// caller's own actor, not the owner this handler's read returns: a transfer can
-// commit between the guard's read and this one, and the second read would
-// otherwise name the new owner as its own expectation. Platform staff carry no
-// such expectation.
+// The tenant is read for the existence answers before the audit: an identifier
+// no row carries is a bare 404 and a tombstone a 409. A protected tenant is
+// refused by the host's write guard, as the status route refuses a disable. The
+// mandatory audit row lands before the deletion; a refusal closes it with a
+// linked failed row.
 func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	if !tenant.IsIdentifier(in.ID) {
 		return nil, badRequest()
@@ -204,18 +199,6 @@ func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *
 		return nil, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
 	}
 
-	// The expected owner is the caller, not the row read here: the guard already
-	// decided this request is the owner's by reading the row, and a transfer
-	// that commits between that read and this one must make the deletion a 409,
-	// not silently adopt the new owner as the expectation.
-	expectedOwner := ""
-	if !isPlatformStaff(ctx) {
-		id, ok := authn.FromContext(ctx)
-		if !ok {
-			return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
-		}
-		expectedOwner = id.Actor().String()
-	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, in.ID, map[string]string{
 		detailActionID: actionID,
@@ -224,8 +207,109 @@ func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *
 	})); err != nil {
 		return nil, err
 	}
-	if err := p.organization.DeleteOrganization(ctx, tenant.ID(in.ID), expectedOwner); err != nil {
+	if err := p.organization.DeleteOrganization(ctx, tenant.ID(in.ID), ""); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, in.ID, actionID))
+		return nil, p.failureOf("deleting a tenant", err)
+	}
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
+}
+
+// handleTenantOwnerTransfer answers PUT /api/v1/tenants/:tenant/owner: the
+// organization's own owner hands its ownership to an active member. The tenant
+// surface's guard has already held the path tenant to the resolved tenant,
+// refused the platform domain and decided that the caller is the row's owner;
+// this handler reads the row again for its existence answers, lands the
+// mandatory audit row and calls the same organization writer the platform
+// surface calls.
+//
+// The tenant is the identifier the request resolved to, never the path segment
+// as written, so an alias addresses the same tenant.
+func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransferInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if _, err := authn.ParseAccountID(in.Account); err != nil {
+		return nil, badRequest()
+	}
+	tenantID, ok := tenant.FromContext(ctx)
+	if !ok {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	got, found, err := p.catalog.Get(ctx, tenantID)
+	if err != nil {
+		return p.replyFailure("reading a tenant", err)
+	}
+	if !found {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	if got.Status == tenant.StatusDeleted {
+		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
+	}
+
+	actionID := newActionID()
+	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, string(tenantID), map[string]string{
+		detailActionID: actionID,
+		detailTenant:   string(tenantID),
+		detailSurface:  surfaceTenant,
+	})); err != nil {
+		return nil, err
+	}
+	if err := p.organization.TransferOwner(ctx, tenantID, in.Account); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, string(tenantID), actionID))
+		return nil, p.failureOf("transferring a tenant's owner", err)
+	}
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
+}
+
+// handleTenantOwnerDelete answers DELETE /api/v1/tenants/:tenant: the
+// organization's own owner ends it. The tenant surface's guard has already held
+// the path tenant to the resolved tenant, refused the platform domain and
+// decided that the caller is the row's owner; this handler reads the row again
+// for its existence answers and the write guard, lands the mandatory audit row
+// naming the tenant surface, and calls the same organization writer the platform
+// surface calls.
+//
+// The expected owner is the caller, not the owner this handler's read returns: a
+// transfer can commit between the guard's read and this one, and the second read
+// would otherwise name the new owner as its own expectation. A transfer that
+// wins the race therefore leaves the old owner's deletion a 409
+// (tenant.ErrOwnerChanged) rather than deleting an organization the caller no
+// longer governs.
+func (p *product) handleTenantOwnerDelete(ctx context.Context, in getTenantInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	tenantID, ok := tenant.FromContext(ctx)
+	if !ok {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	got, found, err := p.catalog.Get(ctx, tenantID)
+	if err != nil {
+		return p.replyFailure("reading a tenant", err)
+	}
+	if !found {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	if got.Status == tenant.StatusDeleted {
+		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
+	}
+	denied, err := p.writeGuard.Denied(ctx, tenantID, tenant.WriteDelete)
+	if err != nil {
+		p.logger.Error(ModuleName+": the write guard could not answer, so the deletion was not carried out",
+			slog.String("tenant", string(tenantID)), slog.String("cause", err.Error()))
+		return nil, speedhttp.Fault{Status: http.StatusServiceUnavailable}
+	}
+	if denied {
+		return nil, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
+	}
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
+	}
+	actionID := newActionID()
+	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, string(tenantID), map[string]string{
+		detailActionID: actionID,
+		detailTenant:   string(tenantID),
+		detailSurface:  surfaceTenant,
+	})); err != nil {
+		return nil, err
+	}
+	if err := p.organization.DeleteOrganization(ctx, tenantID, id.Actor().String()); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, string(tenantID), actionID))
 		return nil, p.failureOf("deleting a tenant", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
