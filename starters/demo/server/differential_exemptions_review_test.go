@@ -6,27 +6,30 @@ import "testing"
 
 // mayLeaveRouteCountUnchanged is the review build's exemption table: the routing
 // modules whose removal cannot lower an endpoint's route count over the review
-// configuration, each with the reason. It is deliberately not the baseline
-// build's table: the review build names org.personal and the module is always
-// in force, so its route is mounted and removing it lowers the account
-// endpoint's route count. No module is exempt here. The human-verification gate is off, but the
-// sms and login modules require the verifier, so dropping it drops them too and
-// lowers the route counts. See differential_exemptions_default_test.go for the
-// baseline build's table.
+// configuration, each with the reason. No module is exempt here. The review
+// build names org.personal, and removing it does not lower a route count: the
+// account module requires the provisioning seam the personal module provides,
+// so the run does not start at all. That failure is held by the startup
+// assertion below and by TestEveryRoutingVariantMustStart, not by this table.
+// The human-verification gate is off, but the sms and login modules require the
+// verifier, so dropping it drops them too and lowers the route counts. See
+// differential_exemptions_default_test.go for the baseline build's table.
 var mayLeaveRouteCountUnchanged = map[string]string{}
 
 // TestReviewRouteCountExemptionsAreTrueForItsConfiguration holds each review
 // build's exemption to its stated reason and holds the baseline template's
-// organization and SMS-management exemptions out: the review build names
-// org.personal and the admin endpoint for sms.admin, so removing
-// either lowers a route count and an exemption claiming otherwise would be
-// false. The human-verification module is a required dependency of sms and
-// login: dropping it drops its dependents, so its removal lowers the counts and
-// it is not exempt. Making the verifier optional again would make the removal
-// vacuous and redden the human-verification half, which is the check retiring
-// the wrong state. A build that leaves the personal module out
-// reddens the organization half, and one that mounts no SMS management surface
-// reddens the sms.admin half.
+// organization and SMS-management exemptions out: the review build names the
+// admin endpoint for sms.admin, so removing it lowers a route count and an
+// exemption claiming otherwise would be false. org.personal is not exempt
+// either, but its removal is not measured as a route count: the account module
+// requires the provisioning seam the personal module provides, so the variant
+// does not start at all. The case holds that startup failure instead, which is
+// the same treatment the baseline build gives the module. The
+// human-verification module is a required dependency of sms and login: dropping
+// it drops its dependents, so its removal lowers the counts and it is not
+// exempt. Making the verifier optional again would make the removal vacuous and
+// redden the human-verification half, which is the check retiring the wrong
+// state. One that mounts no SMS management surface reddens the sms.admin half.
 func TestReviewRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	if reason, exempt := mayLeaveRouteCountUnchanged["org.personal"]; exempt {
 		t.Errorf("the review build exempts org.personal (%q), but the review build "+
@@ -44,10 +47,17 @@ func TestReviewRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	smsAdmin := variantGroupNamed(t, "sms.admin")
 
 	topo := topology{name: "exemptions", ports: listenerCount}
-	before, after := removalRouteCounts(t, topo, []variantGroup{humanVerify, personal, smsAdmin})
+	before, after := removalRouteCounts(t, topo, []variantGroup{humanVerify, smsAdmin})
 	// The verifier is required by sms and login, so its removal drops them
 	// as well: the removal is not vacuous even with both surfaces off.
 	assertRouteCountsLowered(t, humanVerify, before, after[humanVerify.id])
-	assertRouteCountsLowered(t, personal, before, after[personal.id])
 	assertRouteCountsLowered(t, smsAdmin, before, after[smsAdmin.id])
+
+	// The personal module's removal is a startup failure, not a vacuous route
+	// count: the account module requires the seam it provides.
+	variant, _ := launch(t, topo, personal.modules)
+	if err := variant.waitReady(startLimit); err == nil {
+		t.Fatalf("dropping %v left a run that starts, want the account module's required "+
+			"provisioning seam to stop it", personal.modules)
+	}
 }
