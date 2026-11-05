@@ -548,7 +548,7 @@
       "remove": "Delete",
       "removeAria": "Delete role {{role}}",
       "removeTitle": "Delete role",
-      "removeMessage": "Deleting role \"{{role}}\" revokes all of its grants and bindings.",
+      "removeMessage": "Deleting role \"{{role}}\" also revokes all of its grants and bindings; this cannot be undone.",
       "removeConfirm": "Delete",
       "saved": "Role \"{{role}}\" saved",
       "removed": "Role \"{{role}}\" deleted",

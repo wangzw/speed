@@ -548,7 +548,7 @@
       "remove": "删除",
       "removeAria": "删除角色 {{role}}",
       "removeTitle": "删除角色",
-      "removeMessage": "删除角色「{{role}}」会一并撤销其全部授权与绑定。",
+      "removeMessage": "删除角色「{{role}}」会一并撤销其全部授权与绑定，此操作不可恢复。",
       "removeConfirm": "删除",
       "saved": "角色「{{role}}」已保存",
       "removed": "角色「{{role}}」已删除",
