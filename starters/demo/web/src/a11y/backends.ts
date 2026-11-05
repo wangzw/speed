@@ -236,6 +236,7 @@ const TENANT_PERMISSION: AuthzTenantAdminPermissionView = {
 const TENANT_GRANT: AuthzTenantAdminGrantView = {
   action: 'read',
   created_at: INSTANT,
+  permission: TENANT_PERMISSION.permission,
   resource: 'tenant.settings',
   role: TENANT_ROLE.role,
   tenant: TENANT.id,

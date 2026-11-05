@@ -407,6 +407,14 @@ describe('the page structure', () => {
     renderPage(backend)
 
     expect(await screen.findByText(ADA.display_name)).toBeInTheDocument()
+    // The page opens with the members-and-invitations title, and the two
+    // sections follow it as h2s.
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: zhCN.invitations.title,
+      }),
+    ).toBeInTheDocument()
     const headings = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
@@ -477,6 +485,33 @@ describe('the page structure', () => {
 })
 
 describe('the member search and paging', () => {
+  it('retries a failed member read from the error placeholder', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    const { backend } = scripted({
+      listMembers: () => {
+        attempts += 1
+        return attempts === 1
+          ? Promise.reject(new Error('members unavailable'))
+          : Promise.resolve({ members: [ADA, BOB], next_cursor: '' })
+      },
+    })
+    renderPage(backend)
+
+    expect(
+      await screen.findByText(zhCN.members.error.title),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.members.retry }),
+    )
+    expect(
+      (await screen.findAllByText(ADA.display_name)).length,
+    ).toBeGreaterThan(0)
+    expect(
+      screen.queryByText(zhCN.members.error.title),
+    ).toBeNull()
+  })
+
   it('debounces the search and sends it as the server query', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({

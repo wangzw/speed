@@ -1151,6 +1151,29 @@ describe('InvitationsPage', () => {
     expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
   })
 
+  it.each([
+    ['sent', zhCN.invitations.issued.delivery.sent],
+    ['failed', zhCN.invitations.issued.delivery.failed],
+    ['not_configured', zhCN.invitations.issued.delivery.not_configured],
+  ] as const)(
+    'reports the %s delivery outcome beside the one-time value',
+    async (delivery, expected) => {
+      const user = userEvent.setup()
+      const operations = withTenant({
+        issueInvitation: () =>
+          Promise.resolve(issuedInvitationFixture({ email_delivery: delivery })),
+      })
+      renderWithProviders(<InvitationsPage />, { operations })
+      await pickTenant(user)
+      await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+      await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
+      expect(await screen.findByText(expected)).toBeInTheDocument()
+      // A failed or unconfigured carrier is why the operator still has to
+      // hand the link over, so the token stays on screen in every outcome.
+      expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
+    },
+  )
+
   it('shows the acceptance value in a named, closable live region', async () => {
     const user = userEvent.setup()
     const operations = withTenant()
