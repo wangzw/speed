@@ -82,7 +82,12 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 	case errors.Is(err, tenant.ErrTenantExists):
 		// The row is already there; the remaining steps are the replay.
 	case errors.Is(err, tenant.ErrAliasConflict):
-		return fmt.Errorf("%w: %w", ErrAliasConflict, err)
+		// The username is one namespace with the roster's aliases. A business
+		// organization already holding the name means the account cannot take
+		// its username, which the account module answers as a taken identifier;
+		// carrying that class keeps the refusal a 409 rather than an outage.
+		return fmt.Errorf("%w: %w", authn.ErrAccountExists,
+			fmt.Errorf("%w: %w", ErrAliasConflict, err))
 	default:
 		return fmt.Errorf("registering the personal tenant in the account's transaction: %w", err)
 	}

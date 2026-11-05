@@ -12,6 +12,7 @@ package personal_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -240,8 +241,12 @@ func TestAnAliasConflictLeavesNoAccount(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("registering the business tenant: %v", err)
 		}
-		if _, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "bob", Via: "admin"}); err == nil {
+		_, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "bob", Via: "admin"})
+		if err == nil {
 			t.Fatal("creating an account under a held alias succeeded")
+		}
+		if !errors.Is(err, authn.ErrAccountExists) {
+			t.Errorf("the alias conflict gave %v, want the account module's ErrAccountExists", err)
 		}
 		if n := a.count(t, "authn_accounts", ""); n != 0 {
 			t.Errorf("the refused creation left %d account row(s), want none", n)

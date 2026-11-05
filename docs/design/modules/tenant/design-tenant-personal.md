@@ -55,7 +55,7 @@
 |---|---|
 | `ModuleName`、`FeatureName` | 命令树与特性文档里的名字；两者都是 `org.personal` |
 | `IDPrefix`、`TenantID`、`IsPersonalTenantID` | 派生与识别个人租户标识 |
-| `ErrAliasConflict` | 用户名被业务组织持有的别名冲突，包装 `tenant.ErrAliasConflict` |
+| `ErrAliasConflict` | 用户名被业务组织持有的别名冲突，包装 `tenant.ErrAliasConflict` 与账户模块的 `authn.ErrAccountExists` |
 | `ErrUsernameMissing` | 用户账户没有用户名时的拒绝 |
 | `ErrTenantUnavailable`、`ErrIdentifierUnavailable` | 提交后补完的两类拒绝 |
 
@@ -135,7 +135,7 @@ sequenceDiagram
 
 `ProvisionAccount` 只对 `kind=user` 生效。它为租户标识派生 `TenantID(account)`，把别名写作用户名；用户账户总有用户名，用户名为空时以 `ErrUsernameMissing` 拒绝，账户事务回滚。五次写入的次序是租户行、成员关系、角色、授予（允许集为空时这一步没有行）、绑定；每一步交回的提交后闭包都追加到 `provisioning.AfterCommitOf(ctx)`。租户行这次真正建立时，创建的审计行也作为一个提交后闭包写入；幂等重放不再记一行。
 
-租户行返回 `tenant.ErrTenantExists` 是幂等重放：租户行已在，剩下的四步继续补完。返回 `tenant.ErrAliasConflict` 是本模块导出的 `ErrAliasConflict`，同时包装名册的哨兵，账户事务回滚。其余失败原样返回，事务同样回滚。
+租户行返回 `tenant.ErrTenantExists` 是幂等重放：租户行已在，剩下的四步继续补完。返回 `tenant.ErrAliasConflict` 是本模块导出的 `ErrAliasConflict`，同时包装名册的哨兵与账户模块的 `authn.ErrAccountExists`，账户事务回滚；账户创建因此把“用户名被业务组织占用”答成与用户名已存在相同的冲突，而不是依赖不可用。其余失败原样返回，事务同样回滚。
 
 ### 事务内删除
 
@@ -162,7 +162,7 @@ sequenceDiagram
 | 服务账户 | 建立与删除都什么也不写，返回 nil |
 | 用户账户没有用户名 | `ErrUsernameMissing`，账户事务回滚 |
 | 租户行已存在 | 幂等重放，剩余四步继续 |
-| 别名被业务组织持有 | `ErrAliasConflict`，同时匹配 `tenant.ErrAliasConflict`，账户事务回滚 |
+| 别名被业务组织持有 | `ErrAliasConflict`，同时匹配 `tenant.ErrAliasConflict` 与 `authn.ErrAccountExists`，账户事务回滚 |
 | 其他名册失败 | 原样传播，账户事务回滚 |
 | 删除时角色内置 | 容忍 `authz.ErrBuiltinRole`，继续写墓碑 |
 | 删除时租户行不存在 | 容忍 `tenant.ErrInvalidTenant`，没有要写的墓碑 |
