@@ -150,13 +150,16 @@ func (p *product) accountIdentities(ctx context.Context, tenant string, accounts
 // the manager refuses is a 409 with a failed row beside the permitted one.
 //
 // The body carries the role's free-text description; the legacy description_key
-// is still accepted for the incremental contract, and a non-empty description
-// wins over it. A description longer than authz.RoleDescriptionMax characters is
-// a 400 before the write guard, the audit and the manager.
+// is still accepted for the incremental contract. description takes priority
+// whenever the member is present, including as an explicit empty string; the key
+// is used only when description is absent. A description longer than
+// authz.RoleDescriptionMax characters is a 400 before the write guard, the audit
+// and the manager.
 func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{}, error) {
 	role := authz.Role(in.Role)
-	// The description is the request's to set, and the free text wins over the
-	// legacy key when both are present. The role name is not writable: it comes
+	// The description is the request's to set: when the member is present, even
+	// as an explicit empty string, it takes priority, and description_key is used
+	// only when description is absent. The role name is not writable: it comes
 	// from the path, which is the binding's key.
 	if in.Description != nil && utf8.RuneCountInString(*in.Description) > authz.RoleDescriptionMax {
 		return struct{}{}, badRequest()

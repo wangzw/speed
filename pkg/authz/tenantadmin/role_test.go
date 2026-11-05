@@ -1,6 +1,7 @@
 package tenantadmin
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -87,6 +88,33 @@ func TestARoleListWhoseManagerFailsIsMapped(t *testing.T) {
 			t.Fatalf("the refusal %q carries a roles view, want none", w.Body.String())
 		}
 	})
+}
+
+// grantCountsFailingManager fails the grouped grant read the role list makes,
+// so a case holds that a failure there is mapped like any other manager failure.
+type grantCountsFailingManager struct {
+	*stubManager
+}
+
+func (grantCountsFailingManager) GrantCounts(context.Context, string) (map[authz.Role]int, error) {
+	return nil, errors.New("the grant table is down")
+}
+
+// TestAFailedGrantCountIsA503 holds the permission count's failure rule: the
+// grouped read that fills permission_count cannot answer, so the whole list is
+// a 503 with no roles body, symmetrical with the platform surface.
+func TestAFailedGrantCountIsA503(t *testing.T) {
+	r := newRig(t, authz.PermissionTenantRoleRead)
+	r.p.manager = grantCountsFailingManager{stubManager: r.manager}
+	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
+	w := r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet,
+		"/api/v1/tenants/t1/roles", params("tenant", "t1"), nil)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a failed grant count answered %d, want 503", w.Code)
+	}
+	if hasKey(t, w.Body.String(), "roles") {
+		t.Fatalf("the refusal %q carries a role list, want none", w.Body.String())
+	}
 }
 
 // TestAnonymousRequestsAreRefusedOnEveryRoleRoute holds the caller check on the

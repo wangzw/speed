@@ -215,6 +215,51 @@ func TestTheRoleBindingPageReportsIdentityAndCursors(t *testing.T) {
 	}
 }
 
+// TestTheRoleBindingPageWithoutAnIdentityReader holds the absent seam's
+// degradation: the page still answers 200 with its bindings and cursor, and each
+// row carries an empty display name and a null activity instead of inventing an
+// inactive account.
+func TestTheRoleBindingPageWithoutAnIdentityReader(t *testing.T) {
+	first := time.Date(2024, 5, 6, 7, 8, 9, 0, time.FixedZone("plus-one", 3600))
+	r := newRig(t)
+	r.manager.bindings = []authz.Binding{
+		{Tenant: "t1", Account: "acct-1", Role: "editor", GrantedAt: first},
+		{Tenant: "t1", Account: "acct-2", Role: "editor", GrantedAt: first},
+	}
+
+	w := r.send(r.engine(), http.MethodGet, "/api/v1/tenants/t1/roles/editor/bindings?limit=1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("a page without an identity reader answered %d, want 200; body = %q", w.Code, w.Body.String())
+	}
+	for _, name := range []string{"bindings", "next_cursor"} {
+		if !hasKey(t, w.Body.String(), name) {
+			t.Errorf("the answer %q has no %s member, want both page members present", w.Body.String(), name)
+		}
+	}
+
+	var page struct {
+		Bindings   []AuthzTenantAdminRoleBindingView `json:"bindings"`
+		NextCursor string                            `json:"next_cursor"`
+	}
+	decodeInto(t, w.Body.String(), &page)
+	if len(page.Bindings) != 1 {
+		t.Fatalf("the page carries %d rows, want one", len(page.Bindings))
+	}
+	row := page.Bindings[0]
+	if row.Account != "acct-1" {
+		t.Errorf("the row's account = %q, want acct-1", row.Account)
+	}
+	if row.DisplayName != "" {
+		t.Errorf("the row's display name = %q, want empty with no identity reader", row.DisplayName)
+	}
+	if row.Active != nil {
+		t.Errorf("the row's active = %v, want null with no identity reader", row.Active)
+	}
+	if page.NextCursor != "acct-1" {
+		t.Errorf("the page's next_cursor = %q, want acct-1", page.NextCursor)
+	}
+}
+
 // TestTheRoleBindingPageIsGovernedReadOnly holds the route's decision and its
 // shape refusals: it is a read behind authz.tenant.role.read, filters by the
 // path role, refuses a negative limit, caps an oversized one and refuses the

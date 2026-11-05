@@ -143,9 +143,11 @@ write that lands answers 204 and no body.
   `Seeder`, so no route can add a grant to a builtin role either.
 - **The role write body carries the description, never the builtin mark.** The
   body's `description` is the role's free text; the legacy `description_key` is
-  still accepted for the incremental contract, and a non-empty description wins
-  over it. A description longer than `authz.RoleDescriptionMax` characters is a
-  400 before the write guard, the audit and the `Manager`. The mark freezes a
+  still accepted for the incremental contract. `description` takes priority
+  whenever the member is present, including as an explicit empty string; the key
+  is used only when `description` is absent. A description longer than
+  `authz.RoleDescriptionMax` characters is a 400 before the write guard, the
+  audit and the `Manager`. The mark freezes a
   role against the management surface — it cannot be rewritten, deleted or
   re-granted here, and no path clears it — so the management surface does not set
   it: the host's seeding step does, through `Manager.MarkRoleBuiltin`, and the

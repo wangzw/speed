@@ -56,8 +56,9 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 	if err := refuseRoleRowWrite(role); err != nil {
 		return struct{}{}, err
 	}
-	// The description is the request's to set, and the free text wins over the
-	// legacy key when both are present. The role name is not writable: it comes
+	// The description is the request's to set: when the member is present, even
+	// as an explicit empty string, it takes priority, and description_key is used
+	// only when description is absent. The role name is not writable: it comes
 	// from the path, which is the binding's key.
 	if in.Description != nil && utf8.RuneCountInString(*in.Description) > authz.RoleDescriptionMax {
 		return struct{}{}, badRequest()

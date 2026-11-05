@@ -84,19 +84,20 @@ type roleBindingListInput struct {
 // object: the route's body prescreen drops the members the declaration does not
 // describe instead of refusing them.
 //
-// The free-text description is preferred over the legacy i18n key when both are
-// present. The key stays accepted so a client written before the change keeps
-// working. The role name is not a body member: the name is the binding's key and
-// a role is never renamed.
+// The free-text description takes priority whenever the member is present,
+// including as an explicit empty string; the legacy i18n key is used only when
+// description is absent. The key stays accepted so a client written before the
+// change keeps working. The role name is not a body member: the name is the
+// binding's key and a role is never renamed.
 type roleWriteInput struct {
 	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description. The builtin mark and the role name are not part of the body; a member sent under those names reaches nothing."`
 
 	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 
-	DescriptionKey string `json:"description_key" description:"Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. description wins when both are present."`
+	DescriptionKey string `json:"description_key" description:"Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. It is used only when description is absent; an explicit empty description still takes priority."`
 
-	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. It wins over description_key when present. An over-long value is a 400."`
+	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. When the member is present, including as an explicit empty string, it takes priority over description_key; the key is used only when description is absent. An over-long value is a 400."`
 }
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -231,8 +232,9 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	http.MethodPut,
 	pathRoleFragment,
 	"Create or rewrite a role",
-	"The request carries the role's description, free text or the legacy i18n key; description wins when "+
-		"both are present, and a description longer than 500 characters is a 400. The role name is not "+
+	"The request carries the role's description, free text or the legacy i18n key; description takes "+
+		"priority whenever the member is present, including as an explicit empty string, and the key is used "+
+		"only when description is absent. A description longer than 500 characters is a 400. The role name is not "+
 		"writable: a role is never renamed, because the name is the key a binding holds. The builtin mark "+
 		"is not writable here either. platform-admin and tenant-admin are reserved: the tenant surface "+
 		"cannot create, rewrite or delete either role row. A mandatory audit row is written before the "+
