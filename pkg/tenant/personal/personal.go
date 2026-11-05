@@ -243,6 +243,7 @@ func Module() core.Module {
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
 			{Token: (*audit.Audit)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.AccountLifecycle)(nil)},
