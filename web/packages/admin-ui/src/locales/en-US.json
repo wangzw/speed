@@ -613,6 +613,7 @@
         "membership": "Membership",
         "identity": "Identity",
         "settings": "Settings",
+        "profile": "Organization profile",
         "other": "Other"
       },
       "column": {

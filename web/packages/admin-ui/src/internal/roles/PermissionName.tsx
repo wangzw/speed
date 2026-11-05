@@ -86,6 +86,7 @@ export const PERMISSION_GROUPS = [
   'membership',
   'identity',
   'settings',
+  'profile',
   'other',
 ] as const
 

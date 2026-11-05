@@ -115,6 +115,14 @@ const CATALOG: readonly AdminTenantPermission[] = [
   permission('legacy.read', 'Legacy read', 'not-a-group', false, false),
 ]
 
+/** The default catalog plus the tenant profile permissions the server groups
+ * under `profile`, on top of the deliberately unknown `not-a-group` entry. */
+const PROFILE_CATALOG: readonly AdminTenantPermission[] = [
+  ...CATALOG,
+  permission('tenant.profile.read', 'Read the organization profile', 'profile'),
+  permission('tenant.profile.write', 'Write the organization profile', 'profile'),
+]
+
 function grant(
   code: string,
   resource: string,
@@ -1085,6 +1093,111 @@ describe('the permission catalog reference', () => {
     expect(
       screen.getByLabelText(zhCN.permissions.catalog.search.label),
     ).not.toBeVisible()
+  })
+})
+
+describe('the profile permission group', () => {
+  it('groups the tenant profile permissions under profile, before other', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      listTenantPermissions: () => Promise.resolve(PROFILE_CATALOG),
+    })
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.permissions.catalog.expand }),
+    )
+
+    const catalog = section(zhCN.permissions.catalog.title)
+    // The shared order is unchanged and profile sits after the other tenant
+    // groups but ahead of the fallback group.
+    const headings = within(catalog)
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent)
+    const order = [
+      zhCN.permissions.catalog.group.authorization,
+      zhCN.permissions.catalog.group.membership,
+      zhCN.permissions.catalog.group.settings,
+      zhCN.permissions.catalog.group.profile,
+      zhCN.permissions.catalog.group.other,
+    ].map((label) => headings.indexOf(label))
+    expect(order.every((index) => index >= 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+
+    // Both profile permissions render under the profile heading, not other.
+    const profileHeading = within(catalog)
+      .queryAllByRole('heading')
+      .find(
+        (heading) =>
+          heading.textContent === zhCN.permissions.catalog.group.profile,
+      )
+    expect(profileHeading).toBeDefined()
+    const profileSection = profileHeading?.parentElement as HTMLElement
+    expect(
+      within(profileSection).getByText('tenant.profile.read'),
+    ).toBeInTheDocument()
+    expect(
+      within(profileSection).getByText('tenant.profile.write'),
+    ).toBeInTheDocument()
+    expect(within(profileSection).queryByText('legacy.read')).toBeNull()
+
+    // A permission naming a group the vocabulary does not carry still falls
+    // into other.
+    const otherHeading = within(catalog)
+      .queryAllByRole('heading')
+      .find(
+        (heading) =>
+          heading.textContent === zhCN.permissions.catalog.group.other,
+      )
+    expect(otherHeading).toBeDefined()
+    const otherSection = otherHeading?.parentElement as HTMLElement
+    expect(within(otherSection).getByText('legacy.read')).toBeInTheDocument()
+    expect(
+      within(otherSection).queryByText('tenant.profile.read'),
+    ).toBeNull()
+  })
+
+  it('groups the grantable profile permissions under profile in the grant picker', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      listTenantPermissions: () => Promise.resolve(PROFILE_CATALOG),
+    })
+    renderRolesPage(backend)
+    await selectRole(user, ROLE_AUDITOR.role)
+    await screen.findByText(
+      text(zhCN.permissions.grants.forRole, { role: ROLE_AUDITOR.role }),
+    )
+
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.grants.permissionLabel,
+      }),
+    )
+    const listbox = await screen.findByRole('listbox')
+    const profileLabel = zhCN.permissions.catalog.group.profile
+    expect(
+      within(listbox).getByText(profileLabel),
+    ).toBeInTheDocument()
+
+    // An option's group is the nearest preceding ListSubheader. MUI clones
+    // every child, subheaders included, with role="option", so the class is
+    // the reliable boundary marker.
+    const groupOf = (code: string): string => {
+      const option = within(listbox).getByText(code).closest('[role="option"]')
+      expect(option).not.toBeNull()
+      for (
+        let node = (option as HTMLElement).previousElementSibling;
+        node !== null;
+        node = node.previousElementSibling
+      ) {
+        if (node.classList.contains('MuiListSubheader-root')) {
+          return node.textContent ?? ''
+        }
+      }
+      return ''
+    }
+    expect(groupOf('tenant.profile.read')).toBe(profileLabel)
+    expect(groupOf('tenant.profile.write')).toBe(profileLabel)
   })
 })
 
