@@ -2002,7 +2002,17 @@ export interface AuthzTenantAdminGrantView {
 }
 
 /**
- * The layer the reported value comes from: "tenant" when this tenant layer holds an explicit row, "global" when it does not and the global layer does, "default" when neither does and the value is the declared default.
+ * The control the surface renders for the item.
+ */
+export type SettingsTenantAdminSettingControl = typeof SettingsTenantAdminSettingControl[keyof typeof SettingsTenantAdminSettingControl];
+
+
+export const SettingsTenantAdminSettingControl = {
+  switch: 'switch',
+} as const;
+
+/**
+ * The layer the effective value comes from: "global" when the platform policy is on or the global layer holds a row, "tenant" when the tenant holds a row and the platform is not forcing the item, "default" when neither holds a row.
  */
 export type SettingsTenantAdminSettingSource = typeof SettingsTenantAdminSettingSource[keyof typeof SettingsTenantAdminSettingSource];
 
@@ -2014,31 +2024,60 @@ export const SettingsTenantAdminSettingSource = {
 } as const;
 
 /**
- * One declared setting item as the tenant management surface shows it. The declaration fields come from the key table; written and has_row come from that tenant layer's rows, and value and source from the resolved read. Every value-bearing field is text in the declared type's own form, so a duration reads as "5m0s" rather than as a count of nanoseconds.
+ * How much of the item the tenant surface exposes: "read" for a visible but unwritable item, "read-write" for one the tenant may change.
+ */
+export type SettingsTenantAdminSettingTenantAccess = typeof SettingsTenantAdminSettingTenantAccess[keyof typeof SettingsTenantAdminSettingTenantAccess];
+
+
+export const SettingsTenantAdminSettingTenantAccess = {
+  read: 'read',
+  'read-write': 'read-write',
+} as const;
+
+/**
+ * One declared setting item as the tenant management surface shows it. The declaration fields and the item's control metadata come from the key table; the three value fields come from the tenant layer's rows and the global layer's rows, and every value-bearing field is text in the declared type's own form.
  */
 export interface SettingsTenantAdminSetting {
-  /** The declared default in the declared type's text form, empty for a sensitive item */
-  default: string;
-  /** The human-readable text the declaring module gave the item. */
+  /** The control the surface renders for the item. */
+  control: SettingsTenantAdminSettingControl;
+  /** How destructive turning the item off is: "critical" when the surface must confirm the change first, empty when there is no such warning. */
+  danger: string;
+  /** The item's description, rendered in the request's language from the declaration's key, falling back to the declared English text when no localizer is assembled. */
   description: string;
-  /** The declared rule over the item's values, empty when every value of the type is admitted */
-  domain: string;
-  /** Whether the tenant layer holds a row for the item. For a non-sensitive item, written is empty both when no row is held and when the row's text is empty; a sensitive item's written is the mask string whether or not a row exists. */
+  /** When a change to the item takes effect: "immediate" when it applies as soon as it is saved, empty when the declaration names none. */
+  effect: string;
+  /** The text the item resolves to: the platform policy OR the tenant policy, in the declared type's text form. The mask string for a sensitive item. */
+  effective_value: string;
+  /** Whether the tenant layer holds an explicit row for the item, whether or not the platform policy is forcing the effective value. */
   has_row: boolean;
   /** The full setting key: the declaring module's namespace joined with the item's own segment by a dot. */
   key: string;
-  /** The module that declared the item */
-  namespace: string;
-  /** Whether the item is a credential. A sensitive item's default is empty and its written and value carry a fixed mask string; has_row still reports whether the tenant layer holds a row. */
-  sensitive: boolean;
-  /** The layer the reported value comes from: "tenant" when this tenant layer holds an explicit row, "global" when it does not and the global layer does, "default" when neither does and the value is the declared default. */
+  /** Whether the platform layer holds this policy on, so that a tenant write turning it off answers 409 tenant-admission-enforced. */
+  locked_by_platform: boolean;
+  /** The global layer's value in the declared type's text form, the declared default when the global layer holds no row. The mask string for a sensitive item. */
+  platform_value: string;
+  /** The layer the effective value comes from: "global" when the platform policy is on or the global layer holds a row, "tenant" when the tenant holds a row and the platform is not forcing the item, "default" when neither holds a row. */
   source: SettingsTenantAdminSettingSource;
-  /** The declared type's name as reflection reports it, such as "string", "int", "bool" or "time.Duration"; the item's values are stored and rendered in that type's text form. */
+  /** How much of the item the tenant surface exposes: "read" for a visible but unwritable item, "read-write" for one the tenant may change. */
+  tenant_access: SettingsTenantAdminSettingTenantAccess;
+  /** The tenant layer's value in the declared type's text form, the declared default when the tenant holds no row. The mask string for a sensitive item. */
+  tenant_value: string;
+  /** The item's title, rendered in the request's language from the declaration's key, falling back to the declared English text when no localizer is assembled. */
+  title: string;
+  /** The declared type's name as reflection reports it. The tenant surface renders switches, so this is "bool". */
   type: string;
-  /** The text the item resolves to after the three-level fallback, the mask string for a sensitive item */
-  value: string;
-  /** The text the tenant layer holds, the mask string for a sensitive item */
-  written: string;
+}
+
+/**
+ * The tenant settings surface's read answer: the declared items it exposes and whether the tenant's settings may be written at all.
+ */
+export interface SettingsTenantAdminSettings {
+  /** Why the surface is read-only, empty when writable is true. The closed set is the refusal code this capability writes for the same condition; currently only "protected". */
+  read_only_reason: string;
+  /** The items whose declarations expose them to a tenant, each with its platform value, tenant value and effective value. */
+  settings: SettingsTenantAdminSetting[];
+  /** Whether this tenant's settings may be written through this surface. False when the host's settings write seam refuses the tenant, in which case every write route answers 403 protected. */
+  writable: boolean;
 }
 
 /**
@@ -2803,7 +2842,7 @@ export const SettingsAdminSettingsSetLayer = {
 } as const;
 
 export type SettingsAdminSettingsSetBody = {
-  /** The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. */
+  /** The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. The mask string a sensitive item is shown as is refused with 422 masked-value before the audit and the store. */
   value: unknown;
 };
 
@@ -3079,7 +3118,7 @@ export type AuthzTenantadminGrantsList200 = {
 };
 
 export type SettingsTenantadminSettingsSetBody = {
-  /** The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. */
+  /** The value to store, in the JSON form the item's declared type is read from: a boolean for a switch. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. The mask string a sensitive item is shown as is refused with 422 masked-value before anything runs. */
   value: unknown;
 };
 
@@ -8443,7 +8482,7 @@ export const useSettingsAdminSettingsRemove = <TError = Problem | void,
     }
 
 /**
- * Writes one row for the setting named by the namespace and key path segments on the selected layer. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as "300s" is stored as "5m0s"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
+ * Writes one row for the setting named by the namespace and key path segments on the selected layer. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as "300s" is stored as "5m0s"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A value of the mask string a sensitive item is shown as is 422 masked-value before the audit and the store. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
  * @summary Write one setting row on the selected layer
  */
 export const settingsAdminSettingsSet = (
@@ -11575,8 +11614,8 @@ export const useAuthzTenantadminGrantsPut = <TError = Problem,
     }
 
 /**
- * Returns every item in the declaration listing, including keys declared by modules that do not run in this process, each with the value it resolves to on the layer of the tenant in the path. The platform-only namespaces are left out. Resolution walks the three-level fallback: the tenant row, then the global row, then the declared default; source reports which of the three the value came from. Every value-bearing field is text in the declared type's own form; for a sensitive item default is empty and written and value carry a fixed mask string. A failure to read the layer's rows or to resolve a value answers 503 rather than leaving the item out.
- * @summary List every declared setting with its value on the tenant layer
+ * Returns the items whose declarations expose them to a tenant: a schema that declares itself tenant-facing and an item that states a tenant access. No namespace is included or excluded by its name. Each item carries the platform layer's value, the tenant layer's value and their boolean OR, its control metadata, whether the platform layer locks it, whether the tenant layer holds a row, and the layer the effective value comes from. Titles and descriptions are rendered in the request's language. The envelope also says whether the host's settings write seam would accept a write to this tenant. A failure to read either layer, or to ask the seam, answers 503 rather than leaving an item out.
+ * @summary List the declared settings the tenant surface exposes
  */
 export const settingsTenantadminSettingsList = (
     tenant: string,
@@ -11584,7 +11623,7 @@ export const settingsTenantadminSettingsList = (
 ) => {
 
 
-      return speedRequest<SettingsTenantAdminSetting[]>(
+      return speedRequest<SettingsTenantAdminSettings>(
       {url: `/api/v1/tenants/${tenant}/settings`, method: 'GET', signal
     },
       );
@@ -11623,7 +11662,7 @@ export type SettingsTenantadminSettingsListQueryError = Problem
 
 
 /**
- * @summary List every declared setting with its value on the tenant layer
+ * @summary List the declared settings the tenant surface exposes
  */
 
 export function useSettingsTenantadminSettingsList<TData = Awaited<ReturnType<typeof settingsTenantadminSettingsList>>, TError = Problem>(
@@ -11645,81 +11684,7 @@ export function useSettingsTenantadminSettingsList<TData = Awaited<ReturnType<ty
 
 
 /**
- * Returns the declared items whose namespace equals the path segment, that is the group one module declared, each carrying the same fields and resolved the same way as on the all-items route. The declaration listing is not narrowed to the modules running in this process, and the platform-only namespaces are left out. A namespace no declared item belongs to, or one whose items are all platform-only, answers 404 without a problem document.
- * @summary List the declared settings one namespace declares on the tenant layer
- */
-export const settingsTenantadminSettingsListNamespace = (
-    tenant: string,
-    namespace: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<SettingsTenantAdminSetting[]>(
-      {url: `/api/v1/tenants/${tenant}/settings/${namespace}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getSettingsTenantadminSettingsListNamespaceQueryKey = (tenant: string,
-    namespace: string,) => {
-    return [
-    `/api/v1/tenants/${tenant}/settings/${namespace}`
-    ] as const;
-    }
-
-
-export const getSettingsTenantadminSettingsListNamespaceQueryOptions = <TData = Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError = Problem | void>(tenant: string,
-    namespace: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError, TData>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getSettingsTenantadminSettingsListNamespaceQueryKey(tenant,namespace);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>> = ({ signal }) => settingsTenantadminSettingsListNamespace(tenant,namespace, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && namespace !== null && namespace !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type SettingsTenantadminSettingsListNamespaceQueryResult = NonNullable<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>>
-export type SettingsTenantadminSettingsListNamespaceQueryError = Problem | void
-
-
-/**
- * @summary List the declared settings one namespace declares on the tenant layer
- */
-
-export function useSettingsTenantadminSettingsListNamespace<TData = Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError = Problem | void>(
- tenant: string,
-    namespace: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError, TData>, }
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getSettingsTenantadminSettingsListNamespaceQueryOptions(tenant,namespace,options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Drops the layer of the tenant in the path's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item and must not belong to a platform-only namespace, otherwise the answer is 404; deleting a row the layer does not hold is not an error. Once the row is gone the item resolves through the fallback again. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
+ * Drops the layer of the tenant in the path's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item the tenant surface exposes. A key with no tenant access, whether undeclared or declared on the platform surface alone, is 404 — the same answer an undeclared key gets. An item declared read-only is 403 read-only: it is visible, and the refusal names why the row cannot be dropped rather than hiding the item. Deleting a row the layer does not hold is not an error. Dropping the tenant row while the platform layer holds the policy on is allowed: the effective value stays on, so there is no disable to refuse. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
  * @summary Drop the tenant layer's explicit row for one setting
  */
 export const settingsTenantadminSettingsRemove = (
@@ -11784,7 +11749,7 @@ export const useSettingsTenantadminSettingsRemove = <TError = Problem | void,
     }
 
 /**
- * Writes one row for the setting named by the namespace and key path segments on the layer of the tenant in the path. The full key `<namespace>.<key>` must match a declared item and must not belong to a platform-only namespace, otherwise the answer is 404. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as "300s" is stored as "5m0s"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
+ * Writes one row for the setting named by the namespace and key path segments on the layer of the tenant in the path. The full key `<namespace>.<key>` must match a declared item the tenant surface exposes. A key with no tenant access, whether undeclared or declared on the platform surface alone, is 404 — the same answer an undeclared key gets. An item declared read-only is 403 read-only: it is visible, and the refusal names why the write cannot be made rather than hiding the item. A value of the mask string a sensitive item is shown as is 422 masked-value before the seam, the audit and the store. A write turning a boolean switch off while the platform layer holds it on is 409 tenant-admission-enforced, also before the seam, the audit and the store. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. The value is encoded under the item's declared type and then held to its declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
  * @summary Write one setting row on the tenant layer
  */
 export const settingsTenantadminSettingsSet = (
