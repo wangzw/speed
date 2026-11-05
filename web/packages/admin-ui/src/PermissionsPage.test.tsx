@@ -26,6 +26,7 @@ import type {
   AdminRole,
   AdminWriteRoleInput,
 } from './operations.js'
+import type { AdminTenantPermission } from './organization-operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
 import { OrganizationPermissionsPage } from './organization-pages.js'
@@ -89,7 +90,10 @@ function role(overrides: Partial<AdminRole> = {}): AdminRole {
     tenant: 'acme',
     role: 'editor',
     builtin: false,
+    can_manage: true,
+    description: '',
     description_key: 'role.editor',
+    permission_count: 0,
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
@@ -109,6 +113,20 @@ function grant(overrides: Partial<AdminGrant> = {}): AdminGrant {
 
 function permission(value: string, description = ''): AdminPermission {
   return { permission: value, description }
+}
+
+/** A permission of the tenant-governed catalog. */
+function tenantPermission(
+  value: string,
+  description = '',
+): AdminTenantPermission {
+  return {
+    permission: value,
+    description,
+    dangerous: false,
+    grantable: true,
+    group: '',
+  }
 }
 
 /** A searchable account row: a display name beside an opaque id. */
@@ -161,7 +179,7 @@ function tenantModeOperations(
     makeAdminBackend({
       listTenantRoles: () => Promise.resolve([role({ role: 'tenant-operator' })]),
       listTenantPermissions: () =>
-        Promise.resolve([permission('tenant.deal.read')]),
+        Promise.resolve([tenantPermission('tenant.deal.read')]),
       listTenantGrants: () => Promise.resolve([]),
       listTenantBindings: () => Promise.resolve([]),
       listTenantAccountBindings: () => Promise.resolve([]),
@@ -1894,7 +1912,7 @@ describe('PermissionsPage tenant mode', () => {
       Promise.resolve([role({ role: 'tenant-operator' })]),
     )
     const listTenantPermissions = vi.fn(() =>
-      Promise.resolve([permission('tenant.deal.read')]),
+      Promise.resolve([tenantPermission('tenant.deal.read')]),
     )
     const listMembers = vi.fn(() => Promise.resolve([member()]))
     const operations = tenantModeOperations({

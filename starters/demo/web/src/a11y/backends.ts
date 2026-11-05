@@ -222,14 +222,20 @@ const SETTING: SettingsAdminSetting = {
  */
 const TENANT_ROLE: AuthzTenantAdminRoleView = {
   builtin: false,
+  can_manage: true,
   created_at: INSTANT,
+  description: '',
   description_key: 'role.support',
+  permission_count: 0,
   role: 'support',
   tenant: TENANT.id,
 }
 
 const TENANT_PERMISSION: AuthzTenantAdminPermissionView = {
+  dangerous: false,
   description: 'Read the tenant settings',
+  grantable: true,
+  group: '',
   permission: 'settings.tenant.read',
 }
 

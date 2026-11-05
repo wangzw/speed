@@ -38,7 +38,10 @@ const ROLE: AdminRole = {
   tenant: 'acme',
   role: 'editor',
   builtin: false,
+  can_manage: true,
+  description: '',
   description_key: 'role.editor',
+  permission_count: 0,
   created_at: '2026-10-15T12:00:00Z',
 }
 
