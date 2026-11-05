@@ -82,7 +82,10 @@ const ROLE_OPERATOR: AdminTenantRole = {
   tenant: TENANT,
   role: 'tenant-operator',
   builtin: false,
+  description: '',
   description_key: 'role.tenantOperator',
+  permission_count: 0,
+  can_manage: false,
   created_at: '2026-01-01T00:00:00Z',
 }
 
@@ -90,14 +93,27 @@ const ROLE_SUPER: AdminTenantRole = {
   tenant: TENANT,
   role: 'tenant-super',
   builtin: false,
+  description: '',
   description_key: 'role.tenantSuper',
+  permission_count: 0,
+  can_manage: false,
   created_at: '2026-01-01T00:00:00Z',
 }
 
+function tenantPermission(value: string): AdminTenantPermission {
+  return {
+    permission: value,
+    description: '',
+    dangerous: false,
+    grantable: true,
+    group: '',
+  }
+}
+
 const PERMISSIONS: readonly AdminTenantPermission[] = [
-  { permission: 'authz.tenant.role.read', description: '' },
-  { permission: 'authz.tenant.role.manage', description: '' },
-  { permission: 'authn.account.delete', description: '' },
+  tenantPermission('authz.tenant.role.read'),
+  tenantPermission('authz.tenant.role.manage'),
+  tenantPermission('authn.account.delete'),
 ]
 
 const OPERATOR_BINDING: AdminTenantBinding = {
@@ -123,19 +139,22 @@ const SUPER_GRANT: AdminTenantGrant = {
  * so the panel's escalation check has to map one back to the other.
  */
 const GOVERNED_PERMISSIONS: readonly AdminTenantPermission[] = [
-  { permission: 'authz.tenant.role.read', description: '' },
-  { permission: 'authz.tenant.role.manage', description: '' },
-  { permission: 'authn.membership.manage', description: '' },
-  { permission: 'authn.idp.manage', description: '' },
-  { permission: 'settings.tenant.read', description: '' },
-  { permission: 'settings.tenant.write', description: '' },
+  tenantPermission('authz.tenant.role.read'),
+  tenantPermission('authz.tenant.role.manage'),
+  tenantPermission('authn.membership.manage'),
+  tenantPermission('authn.idp.manage'),
+  tenantPermission('settings.tenant.read'),
+  tenantPermission('settings.tenant.write'),
 ]
 
 const ROLE_GOVERNED: AdminTenantRole = {
   tenant: TENANT,
   role: 'tenant-admin',
   builtin: false,
+  description: '',
   description_key: '',
+  permission_count: 0,
+  can_manage: false,
   created_at: '2026-01-01T00:00:00Z',
 }
 
