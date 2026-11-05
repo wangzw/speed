@@ -954,6 +954,43 @@ describe('AppShell', () => {
       return element
     }
 
+    it('starts its first row on the rule under the brand row', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          header={<span>Speed Admin</span>}
+        >
+          content
+        </AppShell>,
+      )
+
+      // The sidebar shape separates the brand row from the column with its
+      // own rule, so the list carries no top inset of its own: a second inset
+      // under that rule reads as a brand row that sits too high.
+      const list = getByRole('navigation', {
+        name: zhCN.appShell.navLabel,
+      }).querySelector('ul')
+      expect(list).not.toBeNull()
+      expect(getComputedStyle(list as Element).paddingTop).toBe('0px')
+    })
+
+    it('keeps the list inset in the topbar shape, where no rule separates it', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS} header={<span>Speed Admin</span>}>
+          content
+        </AppShell>,
+      )
+
+      const list = getByRole('navigation', {
+        name: zhCN.appShell.navLabel,
+      }).querySelector('ul')
+      expect(list).not.toBeNull()
+      expect(getComputedStyle(list as Element).paddingTop).toBe('8px')
+    })
+
     it('renders no app bar and no banner landmark at md+, keeping the brand before and the actions after the nav landmark inside the drawer paper', () => {
       mockMatchMedia(true)
       const { queryByRole, getByRole, getByText } = renderWithProviders(

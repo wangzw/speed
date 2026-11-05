@@ -167,6 +167,7 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { alpha, useTheme } from '@mui/material/styles'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
@@ -777,6 +778,7 @@ function NavList({
   entries,
   onNavigate,
   narrow = false,
+  flushTop = false,
 }: {
   readonly entries: readonly AppShellNavEntry[]
   /**
@@ -788,9 +790,14 @@ function NavList({
   readonly onNavigate?: () => void
   /** Whether the list renders in the collapsed icon-only rail. */
   readonly narrow?: boolean
+  /** Drops the list's own top inset, so the first row starts on the line
+   * below the chrome above it -- the sidebar shape's brand row is separated
+   * from the entries by a rule, and a second inset under that rule reads as
+   * a mis-centred brand row. */
+  readonly flushTop?: boolean
 }) {
   return (
-    <List>
+    <List sx={flushTop ? { pt: 0 } : undefined}>
       {entries.map((entry) =>
         isNavGroup(entry) ? (
           <NavGroupItem
@@ -1042,7 +1049,11 @@ export function AppShell({
   // growing, scrolling region, so navFooter sits at the paper's bottom
   // edge. In the topbar layout that edge is the account entry's only
   // home -- the fixed app bar carries the rest of the chrome.
-  const navContent = (onNavigate?: () => void, narrow = false) => (
+  const navContent = (
+    onNavigate?: () => void,
+    narrow = false,
+    flushTop = false,
+  ) => (
     <Box
       component="nav"
       aria-label={resolvedNavLabel}
@@ -1072,7 +1083,12 @@ export function AppShell({
         },
       }}
     >
-      <NavList entries={navItems} onNavigate={onNavigate} narrow={narrow} />
+      <NavList
+        entries={navItems}
+        onNavigate={onNavigate}
+        narrow={narrow}
+        flushTop={flushTop}
+      />
     </Box>
   )
 
@@ -1152,15 +1168,32 @@ export function AppShell({
           // The rail holds a control at the touch-target minimum, cleared
           // on each side by the focus ring's reach; the rail's own floor
           // is that sum, so these insets are the ring's, not a spacing
-          // step's. An expanded sidebar uses the drawer's own spacing
-          // (16px) so the brand lines up with the nav entries below it.
-          px: sidebarCollapsed ? `${RAIL_ROW_INSET_PX}px` : 2,
+          // step's. An expanded sidebar starts the brand on the navigation
+          // icons' drawn edge: those glyphs are drawn inside a 24px box with
+          // a few pixels of inset of their own, so the box's left edge (16px)
+          // would leave the word sitting left of every icon below it.
+          ...(sidebarCollapsed
+            ? // The rail holds the collapse toggle alone: centred in the
+              // paper, not pinned to its leading edge.
+              { px: `${RAIL_ROW_INSET_PX}px`, justifyContent: 'center' }
+            : { pl: 2.5, pr: 2 }),
+          // The bar's own height, not a spacing step's: this row is the
+          // sidebar's copy of the top bar's chrome, so the two shapes start
+          // their content on the same line (64px, the toolbar's minimum, plus
+          // the rule below).
+          minHeight: 64,
           py: 1,
         }}
       >
         <Box
           sx={{
-            flexGrow: 1,
+            // The rail keeps the brand in the accessibility tree but has no
+            // room to paint any of it: a box that merely shrinks past the
+            // text leaves a clipped half-glyph at the paper's edge, so the
+            // collapsed rail takes the box to zero width instead.
+            ...(sidebarCollapsed
+              ? { flexGrow: 0, flexShrink: 0, width: 0 }
+              : { flexGrow: 1 }),
             display: 'flex',
             alignItems: 'center',
             minWidth: 0,
@@ -1481,8 +1514,13 @@ export function AppShell({
               <>
                 {spacer}
                 {sidebarLayout && sidebarTopRow}
+                {/* The brand row is chrome above the navigation, as the app
+                    bar is above the content in the topbar shape. The rule is
+                    the theme's own Divider -- the same component and recipe
+                    the account row uses at the paper's bottom. */}
+                {sidebarLayout && sidebarTopRow !== null ? <Divider /> : null}
                 {renderNavSlot(navHeader, permanentSlotState)}
-                {navContent(undefined, sidebarCollapsed)}
+                {navContent(undefined, sidebarCollapsed, sidebarLayout)}
                 {renderNavSlot(navFooter, permanentSlotState)}
                 {sidebarLayout && sidebarBottomRow(permanentSlotState)}
               </>,

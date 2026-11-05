@@ -433,6 +433,67 @@ describe('AppShell sidebar layout in Chromium', () => {
     ),
   } as const
 
+  it('starts the brand on the navigation icons’ drawn edge', async () => {
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={[
+          {
+            id: 'home',
+            label: 'Home',
+            href: '/home',
+            icon: (
+              <svg viewBox="0 0 24 24" width={24} height={24}>
+                <path d="M4 4h16v16H4z" />
+              </svg>
+            ),
+          },
+        ]}
+        header={<span>Brand</span>}
+      >
+        <div />
+      </AppShell>,
+    )
+
+    const brand = screen.getByText('Brand').getBoundingClientRect()
+    const icon = screen
+      .getByRole('navigation')
+      .querySelector('svg') as SVGSVGElement | null
+    expect(icon).not.toBeNull()
+    const box = (icon as SVGSVGElement).getBoundingClientRect()
+    const drawn = (icon as SVGSVGElement).querySelector('path') as SVGPathElement
+    // The glyph is drawn inside its own box with a few pixels of inset, so the
+    // brand starts on the drawn edge rather than on the box's.
+    expect(brand.left).toBeCloseTo(box.left + drawn.getBBox().x, 0)
+  })
+
+  it('separates the brand row from the navigation below it', async () => {
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell shellLayout="sidebar" navItems={NAV_ITEMS} header={<span>Brand</span>}>
+        <div />
+      </AppShell>,
+    )
+
+    const brand = screen.getByText('Brand')
+    const topRow = brand.parentElement?.parentElement as HTMLElement | null
+    expect(topRow).not.toBeNull()
+    // The rule is the theme's own Divider -- the same component and recipe the
+    // account row uses at the paper's bottom -- so it carries that theme's
+    // border rather than a border drawn on the row itself.
+    const divider = (topRow as HTMLElement).nextElementSibling as HTMLElement | null
+    expect(divider).not.toBeNull()
+    const style = getComputedStyle(divider as HTMLElement)
+    expect(style.borderBottomStyle).toBe('solid')
+    expect(style.borderBottomWidth).toBe('1px')
+    const nav = screen.getByRole('navigation')
+    expect(
+      nav.getBoundingClientRect().top -
+        (divider as HTMLElement).getBoundingClientRect().bottom,
+    ).toBeLessThanOrEqual(1)
+  })
+
   it('starts main at the viewport top and keeps the sidebar in place while the content scrolls, with no banner', async () => {
     await page.viewport(1280, VIEWPORT_HEIGHT)
     renderShell(
@@ -593,9 +654,13 @@ describe('AppShell sidebar layout in Chromium', () => {
     // the accessibility tree, so a screen-reader user can still identify
     // the product from the rail. A display:none / visibility:hidden /
     // aria-hidden implementation would drop it from `getByRole`.
+    const brand = screen.getByRole('link', { name: 'Speed Admin' })
+    expect(brand).toBeInTheDocument()
+    // Nothing of the brand paints in the rail: a box that only shrinks past
+    // its text leaves a clipped half-glyph at the paper's edge.
     expect(
-      screen.getByRole('link', { name: 'Speed Admin' }),
-    ).toBeInTheDocument()
+      (brand.parentElement as HTMLElement).getBoundingClientRect().width,
+    ).toBeCloseTo(0, 0)
     for (const control of [
       screen.getByRole('button', { name: 'Search' }),
       screen.getByRole('button', { name: 'Account' }),
