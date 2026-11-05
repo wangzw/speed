@@ -7,9 +7,12 @@
  * function bound into the runtime seam (bindRequestFn, the same seam a
  * host's real client fills). This rig binds a scripted function there and
  * records the request leg of each generated call (the HTTP method, the
- * path, and the query parameters the generated call carried -- the
+ * path and the query parameters the generated call carried -- the
  * transport's serialization is its own, but the parameter *names and
- * values* a caller supplies reach the seam as `options.query`). It is how
+ * values* a caller supplies reach the seam as `options.query`). A caller
+ * that also needs the request body opts in with `recordBody`; the body is
+ * not recorded by default, so an assertion written before bodies were
+ * observable keeps comparing only the leg it names. It is how
  * the seam's own suite proves which endpoint each member drives, and how
  * a page's suite proves the parameters it sends, without an HTTP
  * transport.
@@ -29,11 +32,19 @@ export interface ObservedCall {
   readonly path: string
   /** The query parameters the generated call carried, if any. */
   readonly query?: RequestOptions['query']
+  /** The request body the generated call carried, when the rig records it. */
+  readonly body?: unknown
 }
 
 /** One scripted endpoint: the value the generated call resolves with
  * (the operation's typed body), keyed by the request leg. */
 export type AdminResponder = (call: ObservedCall) => unknown
+
+/** How a rig call records its request leg. */
+export interface RequestRigOptions {
+  /** Record each call's request body beside its method, path and query. */
+  readonly recordBody?: boolean
+}
 
 /**
  * Binds a scripted request function and returns the recorded calls. Each
@@ -41,6 +52,7 @@ export type AdminResponder = (call: ObservedCall) => unknown
  */
 export function bindAdminRequest(
   respond: AdminResponder,
+  rig: RequestRigOptions = {},
 ): ObservedCall[] {
   const calls: ObservedCall[] = []
   const requestFn: RequestFn = (async <T>(
@@ -48,8 +60,14 @@ export function bindAdminRequest(
     options?: RequestOptions,
   ): Promise<T> => {
     const method = options?.method ?? 'GET'
-    calls.push({ method, path, query: options?.query })
-    return (await respond({ method, path, query: options?.query })) as T
+    const call: ObservedCall = {
+      method,
+      path,
+      query: options?.query,
+      ...(rig.recordBody ? { body: options?.body } : {}),
+    }
+    calls.push(call)
+    return (await respond(call)) as T
   }) as RequestFn
   bindRequestFn(requestFn)
   return calls

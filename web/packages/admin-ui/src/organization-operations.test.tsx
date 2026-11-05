@@ -51,6 +51,9 @@ function readResponder(call: ObservedCall): unknown {
   if (call.path === `/api/v1/tenants/${TENANT}/roles/tenant-admin/grants`) {
     return { grants: [] }
   }
+  if (call.path === `/api/v1/tenants/${TENANT}/roles/tenant-admin/bindings`) {
+    return { bindings: [], next_cursor: '' }
+  }
   if (call.path === `/api/v1/tenants/${TENANT}/bindings`) {
     return { bindings: [] }
   }
@@ -66,12 +69,18 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
       const roles = operations.useTenantRoles(TENANT)
       const permissions = operations.useTenantPermissions(TENANT)
       const grants = operations.useTenantGrants(TENANT, 'tenant-admin')
+      const roleBindings = operations.useTenantRoleBindings(
+        TENANT,
+        'tenant-admin',
+        { limit: 50 },
+      )
       const bindings = operations.useTenantBindings(TENANT)
       const settled = [
         settings,
         roles,
         permissions,
         grants,
+        roleBindings,
         bindings,
       ].every((read) => read.isSuccess)
       return <p>{settled ? 'settled' : 'loading'}</p>
@@ -83,6 +92,7 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
         `/api/v1/tenants/${TENANT}/bindings`,
         `/api/v1/tenants/${TENANT}/permissions`,
         `/api/v1/tenants/${TENANT}/roles`,
+        `/api/v1/tenants/${TENANT}/roles/tenant-admin/bindings`,
         `/api/v1/tenants/${TENANT}/roles/tenant-admin/grants`,
         `/api/v1/tenants/${TENANT}/settings`,
       ].sort(),
@@ -157,6 +167,50 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
       expect(call.path.startsWith(`/api/v1/tenants/${TENANT}/`)).toBe(true)
       expect(call.path.startsWith('/api/v1/system')).toBe(false)
     }
+  })
+
+  it('writes a role description without the legacy description key', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest(
+      (call) => {
+        if (
+          call.method === 'PUT' &&
+          call.path === `/api/v1/tenants/${TENANT}/roles/ops`
+        ) {
+          return undefined
+        }
+        throw new Error(`unexpected request: ${call.method} ${call.path}`)
+      },
+      { recordBody: true },
+    )
+    function WriteProbe() {
+      const operations = useOrganizationAdminOperations()
+      const write = operations.useTenantWriteRole()
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            write.mutate({
+              tenant: TENANT,
+              role: 'ops',
+              description: 'Runs the operations.',
+            })
+          }
+        >
+          write
+        </button>
+      )
+    }
+    renderWithProviders(<WriteProbe />)
+    await user.click(screen.getByRole('button', { name: 'write' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({
+      method: 'PUT',
+      path: `/api/v1/tenants/${TENANT}/roles/ops`,
+      query: undefined,
+      body: { description: 'Runs the operations.' },
+    })
+    expect(calls[0]?.body).not.toHaveProperty('description_key')
   })
 })
 
@@ -462,6 +516,7 @@ describe('the organization operations bundle', () => {
       'useTenantRoles',
       'useTenantPermissions',
       'useTenantGrants',
+      'useTenantRoleBindings',
       'useTenantBindings',
     ]) {
       expect(members).toContain(member)
