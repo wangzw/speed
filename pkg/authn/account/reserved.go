@@ -58,9 +58,19 @@ func (p *product) reservedUsernames() map[string]bool {
 	return reserved
 }
 
+// personalUsernamePrefix is reserved as a prefix, not as a literal name. A
+// personal tenant's alias is its owner's username, and the prefix is the one the
+// old personal identifiers carried; keeping it out of the username namespace
+// means no personal alias can read as one of those identifiers.
+const personalUsernamePrefix = "personal-"
+
 // checkReservedUsername refuses a normalized username that is in the effective
-// set. The error names the class and never the value.
+// set or begins with the reserved personal prefix. The error names the class and
+// never the value.
 func (p *product) checkReservedUsername(value string) error {
+	if strings.HasPrefix(value, personalUsernamePrefix) {
+		return fmt.Errorf("%w: a username is a name the system keeps for itself", authn.ErrUsernameReserved)
+	}
 	if p.reservedUsernames()[value] {
 		return fmt.Errorf("%w: a username is a name the system keeps for itself", authn.ErrUsernameReserved)
 	}

@@ -39,7 +39,6 @@ the module's whole route surface.
 | Tenants | `GET /api/v1/system/tenants` | `tenant.read` |
 | Tenants | `POST /api/v1/system/tenants` | `tenant.manage` |
 | Tenants | `GET /api/v1/system/tenants/:id` | `tenant.read` |
-| Tenants | `PATCH /api/v1/system/tenants/:id` | `tenant.manage` |
 | Tenants | `PATCH /api/v1/system/tenants/:id/profile` | `tenant.manage` |
 | Tenants | `POST /api/v1/system/tenants/:id/status` | `tenant.manage` |
 
@@ -51,12 +50,11 @@ route's action is one `tenant.Catalog` call:
 | `GET /tenants` | `List`, every tenant, in the roster's order (by identifier) |
 | `POST /tenants` | `Provisioner`, a tenant and its first tenant-admin |
 | `GET /tenants/:id` | `Get`, one tenant by identifier |
-| `PATCH /tenants/:id` | `SetAlias`, a new alias |
 | `PATCH /tenants/:id/profile` | `SetProfile`, the four descriptive fields, and nothing else |
 | `POST /tenants/:id/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
 A read answers 200 with a view; a write that creates a record answers 201 with the
-record's view, and a write that lands without one (rename, status) answers 204 and
+record's view, and a write that lands without one (status) answers 204 and
 no body.
 
 The two permissions are this module's own: the tenant capability names none, so
@@ -94,11 +92,6 @@ key.
   registration's profile fields are optional and go to the provisioner with the
   row; both paths normalize and validate through the root package's
   `tenant.Profile`.
-- **The rename goes through `SetAlias`, never `Put`.** `Put` takes the whole row's
-  new values and writes the status back with the alias, so a rename through it
-  would carry whatever status this process last read, and a tenant another replica
-  disabled in the window between the snapshot and the table would be served again.
-  `SetAlias` writes the alias column alone and reads no status.
 - **One decision order, for every route, read and write alike.** The route's guard
   wrapper reads the caller first: a request with no identity is a 401 — the
   problem the admission and authorization layers write for a route that requires
@@ -177,11 +170,13 @@ key.
   roster write reached from a management route answers them, so one that arrives
   here falls to the same 503 an unknown failure gets.
 - **A shape refusal happens after the decision and before the action.** A
-  registration or a rename whose identifier or alias is outside the identifier
-  domain, a body the handler cannot read, and a status outside the closed set
+  registration whose identifier is outside the identifier domain or whose alias
+  is outside the slug domain, a body the handler cannot read, and a status
+  outside the closed set
   `active`/`disabled` are 400s and reach neither the roster nor the audit. The
-  checks use the root package's `tenant.IsIdentifier`; this module re-judges no
-  value, it only refuses one outside the role the root package defines. A read
+  checks use the root package's `tenant.IsIdentifier` and `tenant.IsAlias`; this
+  module re-judges no value, it only refuses one outside the role the root
+  package defines. A read
   runs no shape check of its own: whether an identifier names a tenant is the
   roster's to answer, and one it does not hold is a 404.
 - **The module decides its own routes in a guard wrapper and declares them

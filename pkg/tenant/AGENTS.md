@@ -218,8 +218,8 @@ before writing a scoped model.
 - **A tenant-scoped route's path tenant is held to the resolved tenant by a
   route-level guard, not an endpoint layer.** `pkg/tenant/pathguard` resolves the
   `tenant` path segment through the roster — alias and identifier, refusing a
-  segment that names none or two — and compares identifiers, so a renamed alias
-  and the identifier both address the same tenant. `resolve.Module` delivers it
+  segment that names none or two — and compares identifiers, so the alias and
+  the identifier both address the same tenant. `resolve.Module` delivers it
   as the `pkg/http` `RouteGuard` capability; `pkg/authn/mount` applies it to every
   `ScopeTenants` registration and refuses one when no guard is delivered. The
   members, invitations and SSO groups manage the system tenant itself and are

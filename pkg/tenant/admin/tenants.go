@@ -66,7 +66,7 @@ func (p *product) handleTenantGet(ctx context.Context, in getTenantInput, _ *spe
 // active, the mandatory audit row lands before the provisioner runs, and a
 // failure of the provisioner is closed with a linked failed row.
 func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenantCreatedBody, error) {
-	if !tenant.IsIdentifier(in.ID) || !tenant.IsIdentifier(in.Alias) {
+	if !tenant.IsIdentifier(in.ID) || !tenant.IsAlias(in.Alias) {
 		return tenantCreatedBody{}, badRequest()
 	}
 	// The profile is optional here and judged by the same root-package rules the
@@ -100,51 +100,6 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 		return tenantCreatedBody{}, p.failureOf("registering a tenant", err)
 	}
 	return tenantCreatedBody{Tenant: tenantViewOf(created)}, nil
-}
-
-// aliasBody is the rename request's body as a case builds it. The route's
-// declared input pairs the same alias with the path's identifier.
-type aliasBody struct {
-	Alias string `json:"alias"`
-}
-
-// handleTenantSetAlias answers PATCH /api/v1/system/tenants/:tenant: it changes
-// one tenant's alias and nothing else. It is a write, so the action is
-// tenant.manage.
-//
-// The write goes through Catalog.SetAlias, which writes the alias column alone.
-// It never goes through Put: Put takes the whole row's new values and writes the
-// status back with the alias, so a rename would carry whatever status this
-// process last read, and a tenant another replica disabled in that window — the
-// gap between the snapshot and the table — would be served again. Both fields
-// are checked against the identifier domain, and a tenant the roster does not
-// hold is a 404 before the audit row is written. A tombstone reaches SetAlias
-// and is refused with tenant.ErrTenantDeleted, answered a 409: the row and the
-// alias stay, and a rename does not revive it. The mandatory audit row lands
-// before SetAlias runs.
-func (p *product) handleTenantSetAlias(ctx context.Context, in setAliasInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	if !tenant.IsIdentifier(in.ID) || !tenant.IsIdentifier(in.Alias) {
-		return nil, badRequest()
-	}
-	_, ok, err := p.catalog.Get(ctx, tenant.ID(in.ID))
-	if err != nil {
-		return p.replyFailure("reading a tenant", err)
-	}
-	if !ok {
-		return speedhttp.EmptyReply(http.StatusNotFound), nil
-	}
-	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantUpdate, in.ID, map[string]string{
-		detailActionID: actionID,
-		detailTenant:   in.ID,
-	})); err != nil {
-		return nil, err
-	}
-	if err := p.catalog.SetAlias(ctx, tenant.ID(in.ID), in.Alias); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantUpdate, in.ID, actionID))
-		return p.replyFailure("renaming a tenant", err)
-	}
-	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
 // handleTenantSetProfile answers PATCH /api/v1/system/tenants/:tenant/profile:

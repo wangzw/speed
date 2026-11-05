@@ -12,12 +12,12 @@ import (
 
 // The problem type a write from an unverified self-registration answers with is
 // the authentication capability's code, read from that capability's exported
-// constant rather than restated here: a rename on that side has to reach this
+// constant rather than restated here: a change on that side has to reach this
 // surface, and a copy would let the two drift silently.
 
 // gateWrites is every write route, with what a case sends to it. Each request is
 // one the roster accepts once it is reached: the identifier and alias are inside
-// the identifier domain and the status is in the closed set.
+// their domains and the status is in the closed set.
 var gateWrites = []struct {
 	name   string
 	method string
@@ -29,8 +29,10 @@ var gateWrites = []struct {
 		map[string]any{"id": "acme", "alias": "acme"},
 	},
 	{
-		"the rename", http.MethodPatch, "/api/v1/system/tenants/acme",
-		map[string]any{"alias": "acme-two"},
+		"the profile update", http.MethodPatch, "/api/v1/system/tenants/acme/profile",
+		map[string]any{
+			"display_name": "Acme", "description": "", "contact_email": "", "website": "",
+		},
 	},
 	{
 		"the status change", http.MethodPost, "/api/v1/system/tenants/acme/status",

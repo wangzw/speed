@@ -259,8 +259,8 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // answers with.
 //
 // The mapping is closed and fail-closed. An identifier the roster's table
-// already holds is a 409; an alias another tenant holds is a 409; a write or a
-// rename that reaches a tombstone is a 409; an identifier no row carries is a
+// already holds is a 409; an alias another tenant holds is a 409; a write that
+// reaches a tombstone is a 409; an identifier no row carries is a
 // 404; any other failure is a 503 whose cause stays in the log and never
 // reaches the caller. A 404 and a 503 carry no problem type — they say something
 // is not there or a dependency could not answer and not which refusal it was —

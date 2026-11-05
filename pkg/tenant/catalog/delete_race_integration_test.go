@@ -67,8 +67,8 @@ func TestAConcurrentDeletionIsNotOverwrittenOnPostgres(t *testing.T) {
 		"Put": func(ctx context.Context, r *roster) error {
 			return r.Put(ctx, tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive})
 		},
-		"SetAlias": func(ctx context.Context, r *roster) error {
-			return r.SetAlias(ctx, "t_acme", "renamed")
+		"SetOwner": func(ctx context.Context, r *roster) error {
+			return r.SetOwner(ctx, "t_acme", "acct-2")
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

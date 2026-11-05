@@ -43,7 +43,7 @@ func TestCreateRegistersATenantTheWriterSeesAtOnce(t *testing.T) {
 		got.DisabledBy != want.DisabledBy || got.Profile != want.Profile {
 		t.Fatalf("the writer reads (%+v, %v, %v) back, want %+v", got, ok, err, want)
 	}
-	if got.CreatedAt == nil {
+	if got.CreatedAt.IsZero() {
 		t.Fatalf("the writer reads no creation time back, want the moment of creation")
 	}
 }

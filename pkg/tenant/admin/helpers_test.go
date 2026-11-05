@@ -46,7 +46,7 @@ var (
 type catalogCall struct {
 	op      string
 	id      tenant.ID
-	alias   string
+	owner   string
 	tenant  tenant.Tenant
 	status  tenant.Status
 	profile tenant.Profile
@@ -65,7 +65,6 @@ type stubCatalog struct {
 	err   error
 
 	getErr        error
-	setAliasErr   error
 	setStatusErr  error
 	setProfileErr error
 	// during runs at the start of SetProfile, before the call is recorded, so a
@@ -139,9 +138,9 @@ func (s *stubCatalog) Delete(_ context.Context, id tenant.ID) error {
 	return errors.New("the management surface must not delete a tenant")
 }
 
-func (s *stubCatalog) SetAlias(_ context.Context, id tenant.ID, alias string) error {
-	s.record(catalogCall{op: "SetAlias", id: id, alias: alias})
-	return s.errOr(s.setAliasErr)
+func (s *stubCatalog) SetOwner(_ context.Context, id tenant.ID, owner string) error {
+	s.record(catalogCall{op: "SetOwner", id: id, owner: owner})
+	return errors.New("the management surface must not transfer a tenant's owner")
 }
 
 func (s *stubCatalog) SetProfile(_ context.Context, id tenant.ID, profile tenant.Profile) error {

@@ -31,11 +31,14 @@ type row struct {
 	Status     int    `gorm:"column:status;not null"`
 	DisabledBy int    `gorm:"column:disabled_by;not null"`
 
+	OwnerAccount string `gorm:"column:owner_account;not null"`
+
 	DisplayName  string     `gorm:"column:display_name;not null"`
 	Description  string     `gorm:"column:description;not null"`
 	ContactEmail string     `gorm:"column:contact_email;not null"`
 	Website      string     `gorm:"column:website;not null"`
-	CreatedAt    *time.Time `gorm:"column:created_at"`
+	CreatedAt    time.Time  `gorm:"column:created_at;not null"`
+	DeletedAt    *time.Time `gorm:"column:deleted_at"`
 }
 
 // TableName fixes the table this type maps to.
@@ -74,14 +77,15 @@ func buildSnapshot(rows []row) *snapshot {
 }
 
 // tenantOf reads one row as the roster serves it: the status and the disable
-// source through their closed sets, and the profile and the creation time as
-// the table holds them. A creation time the table does not hold stays nil.
+// source through their closed sets, and the owner, the profile, the creation
+// time and the deletion time as the table holds them.
 func tenantOf(r row) tenant.Tenant {
 	return tenant.Tenant{
-		ID:         tenant.ID(r.ID),
-		Alias:      r.Alias,
-		Status:     tenant.Status(r.Status),
-		DisabledBy: disabledByOf(r.DisabledBy),
+		ID:           tenant.ID(r.ID),
+		Alias:        r.Alias,
+		Status:       tenant.Status(r.Status),
+		DisabledBy:   disabledByOf(r.DisabledBy),
+		OwnerAccount: r.OwnerAccount,
 		Profile: tenant.Profile{
 			DisplayName:  r.DisplayName,
 			Description:  r.Description,
@@ -89,6 +93,7 @@ func tenantOf(r row) tenant.Tenant {
 			Website:      r.Website,
 		},
 		CreatedAt: r.CreatedAt,
+		DeletedAt: r.DeletedAt,
 	}
 }
 

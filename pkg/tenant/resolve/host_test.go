@@ -390,7 +390,7 @@ func (fakeRoster) Delete(context.Context, tenant.ID) error {
 	return errors.New("not used by the resolution layer")
 }
 
-func (fakeRoster) SetAlias(context.Context, tenant.ID, string) error {
+func (fakeRoster) SetOwner(context.Context, tenant.ID, string) error {
 	return errors.New("not used by the resolution layer")
 }
 

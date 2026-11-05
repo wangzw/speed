@@ -203,7 +203,7 @@ func TestDeletingAnAccountWithASecondTenantAdministratorProceeds(t *testing.T) {
 func TestAPersonalTenantDoesNotProtectTheAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
-		id := h.user("personal-owner", "correct horse battery")
+		id := h.user("tenant-owner", "correct horse battery")
 		h.p.tenantAdminCounter = &fakeTenantAdminCounter{tenant: "personal-" + id.String(), sole: false}
 
 		if err := h.p.Delete(ctx, id, authn.ReasonAdmin); err != nil {

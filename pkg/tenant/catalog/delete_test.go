@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -21,14 +22,18 @@ func insertRow(id, alias string, status tenant.Status, source tenant.DisabledBy)
 		id, alias, int(status), int(source))
 }
 
-// requireRow asserts that one roster row holds exactly these three values,
-// read back from the table rather than from the snapshot.
+// requireRow asserts that one roster row holds exactly these values, read back
+// from the table rather than from the snapshot. The creation and deletion
+// instants are the roster's to write and vary by call, so they are cleared on
+// both sides; a case that cares about one reads it directly.
 func requireRow(t *testing.T, r *roster, id string, want row) {
 	t.Helper()
 	got, ok := rowOf(t, r, id)
 	if !ok {
 		t.Fatalf("the table holds no row for %q, want %+v", id, want)
 	}
+	got.CreatedAt, want.CreatedAt = time.Time{}, time.Time{}
+	got.DeletedAt, want.DeletedAt = nil, nil
 	if got != want {
 		t.Fatalf("the row for %q is %+v, want %+v", id, got, want)
 	}
@@ -58,6 +63,47 @@ func TestDeleteWritesTheTerminalStateAndKeepsTheName(t *testing.T) {
 	}
 	if got.DisabledBy != tenant.DisabledByOperator {
 		t.Fatalf("the deleted tenant's disable source is %s, want the operator's", got.DisabledBy)
+	}
+}
+
+// Delete records the instant of the terminal write beside the state, and keeps
+// the identifier, the alias and the owner: the tombstone is the row it was,
+// marked rather than emptied.
+func TestDeleteWritesTheDeletionInstantAndKeepsTheOwner(t *testing.T) {
+	r := rosterOver(t, "INSERT INTO tenants (id, alias, status, owner_account) VALUES "+
+		"('t_acme', 'acme', 1, 'acct-1')")
+	before := time.Now().UTC().Add(-time.Minute)
+
+	if err := r.Delete(context.Background(), "t_acme"); err != nil {
+		t.Fatalf("deleting a tenant: %v", err)
+	}
+
+	held, ok := rowOf(t, r, "t_acme")
+	if !ok {
+		t.Fatal("the deleted tenant left the table")
+	}
+	if held.Status != int(tenant.StatusDeleted) {
+		t.Errorf("the row reads status %d, want deleted", held.Status)
+	}
+	if held.OwnerAccount != "acct-1" || held.Alias != "acme" || held.ID != "t_acme" {
+		t.Errorf("the tombstone is %+v, want the owner, alias and identifier kept", held)
+	}
+	if held.DeletedAt == nil {
+		t.Fatal("the row carries no deletion instant, want the moment of Delete")
+	}
+	if held.DeletedAt.Before(before) {
+		t.Errorf("the deletion instant is %v, want no earlier than %v", held.DeletedAt, before)
+	}
+	if _, offset := held.DeletedAt.Zone(); offset != 0 {
+		t.Errorf("the deletion instant is %v, want UTC", held.DeletedAt)
+	}
+
+	got, ok, err := r.Get(context.Background(), "t_acme")
+	if err != nil || !ok {
+		t.Fatalf("the roster no longer holds the tenant just deleted: found=%v err=%v", ok, err)
+	}
+	if got.OwnerAccount != "acct-1" || got.DeletedAt == nil || !got.DeletedAt.Equal(*held.DeletedAt) {
+		t.Errorf("the snapshot reads %+v, want the owner and instant the table holds", got)
 	}
 }
 
@@ -127,8 +173,11 @@ func TestATombstoneRefusesEveryWrite(t *testing.T) {
 		"SetStatusByAccount active": {func(r *roster) error {
 			return r.SetStatusByAccount(context.Background(), "t_acme", tenant.StatusActive)
 		}, tenant.ErrTenantDeleted},
-		"SetAlias": {func(r *roster) error {
-			return r.SetAlias(context.Background(), "t_acme", "renamed")
+		"SetProfile": {func(r *roster) error {
+			return r.SetProfile(context.Background(), "t_acme", tenant.Profile{})
+		}, tenant.ErrTenantDeleted},
+		"SetOwner": {func(r *roster) error {
+			return r.SetOwner(context.Background(), "t_acme", "acct-2")
 		}, tenant.ErrTenantDeleted},
 		"Create": {func(r *roster) error {
 			return r.Create(context.Background(), tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive})

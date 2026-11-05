@@ -51,7 +51,7 @@ func (*roster) SetStatusByAccount(context.Context, tenant.ID, tenant.Status) err
 	return errUnused
 }
 func (*roster) Delete(context.Context, tenant.ID) error           { return errUnused }
-func (*roster) SetAlias(context.Context, tenant.ID, string) error { return errUnused }
+func (*roster) SetOwner(context.Context, tenant.ID, string) error { return errUnused }
 func (*roster) SetProfile(context.Context, tenant.ID, tenant.Profile) error {
 	return errUnused
 }

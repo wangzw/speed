@@ -70,13 +70,6 @@ type getTenantInput struct {
 	ID string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
 }
 
-// setAliasInput is the request of a rename: the identifier in the path and the
-// new alias in the body.
-type setAliasInput struct {
-	ID    string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
-	Alias string `json:"alias" required:"true" description:"The new alias; an alias another tenant holds is refused with a 409."`
-}
-
 // setProfileInput is the request of a profile update: the identifier in the
 // path and the four descriptive fields in the body, each of which must be
 // present. A field the body carries empty clears the stored value.
@@ -156,7 +149,7 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier or the alias is outside the identifier domain"),
+			"The identifier is outside the identifier domain, or the alias is outside the slug domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
@@ -197,43 +190,6 @@ var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 	},
 )
 
-// setAliasOperation declares PATCH /tenants/:tenant: it changes one
-// tenant's alias and nothing else. Its handler builds the answer because the
-// success is a 204 and an unknown tenant is a bare 404.
-var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
-	"tenant.admin.tenants.setAlias",
-	http.MethodPatch,
-	pathTenantFragment,
-	"Change one tenant's alias",
-	"Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path "+
-		"identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, "+
-		"an alias another tenant holds is a 409, and a tenant the roster holds as a tombstone is a 409: deletion "+
-		"is terminal and a rename does not revive it. A mandatory audit row lands before the write; if it "+
-		"cannot, the alias is unchanged and the request is answered 503.",
-	&speedhttp.RequestBody{
-		MediaType:   "application/json",
-		Description: "The new alias, which must be an identifier.",
-		Required:    true,
-	},
-	[]speedhttp.Response{
-		{
-			Status:      http.StatusNoContent,
-			Description: "The alias was changed",
-		},
-		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier or the alias is outside the identifier domain"),
-		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
-		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
-		{
-			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier",
-		},
-		speedhttp.ProblemResponse(http.StatusConflict, "The alias is already taken, or the tenant is a tombstone"),
-		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
-	},
-)
-
 // setProfileOperation declares PATCH /tenants/:tenant/profile: it writes one
 // tenant's organization profile and nothing else. Its handler builds the answer
 // because an unknown tenant is a bare 404.
@@ -244,7 +200,7 @@ var setProfileOperation = speedhttp.NewReplyOperation[setProfileInput](
 	"Write one tenant's organization profile",
 	"Writes one tenant's organization profile and nothing else: the display name, description, contact email "+
 		"and website. The identifier, alias, state and creation time are not written, so a profile update "+
-		"cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; "+
+		"cannot undo a disable or a deletion another path committed. The body carries all four fields; "+
 		"an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a "+
 		"404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform "+
 		"in its detail; if it cannot, nothing is written and the request is answered 503.",
@@ -323,7 +279,6 @@ var operations = speedhttp.Operations{
 	listOperation,
 	createOperation,
 	getOperation,
-	setAliasOperation,
 	setProfileOperation,
 	setStatusOperation,
 }

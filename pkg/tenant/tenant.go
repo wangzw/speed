@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -33,8 +34,8 @@ import (
 //
 // It is what the tenant column of a scoped table holds, and what the logs, the
 // startup account and error text name. The name that appears on the request
-// surface is an alias the roster maps to one of these, so renaming a tenant
-// rewrites no row of any scoped table.
+// surface is an alias the roster maps to one of these — a public slug, supplied
+// when the tenant is created and never changed afterwards.
 //
 // An identifier is supplied by whoever creates the tenant, not generated here.
 // A host migrating from an existing system carries its own numbering across,
@@ -80,6 +81,21 @@ func IsIdentifier(s string) bool {
 	return s != "" && strings.IndexFunc(s, func(r rune) bool {
 		return unicode.IsSpace(r) || unicode.IsControl(r)
 	}) < 0
+}
+
+// aliasShape is the form an alias takes: a DNS-label-shaped slug of three to
+// sixty-three lower-case letters, digits and dashes, beginning with a letter or
+// a digit. It is the same form a username takes, because a personal tenant's
+// alias is its owner's username and the two share one unique namespace on the
+// roster's alias column.
+var aliasShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,62}$`)
+
+// IsAlias reports whether s is a value the alias's domain admits. An alias is
+// the public name a request surface carries, so it is held to the slug form
+// rather than to the identifier's looser one; a tenant's internal identifier is
+// not.
+func IsAlias(s string) bool {
+	return aliasShape.MatchString(s)
 }
 
 // Status is a tenant's state. The set of values is closed: adding one changes
@@ -243,9 +259,10 @@ func (p Profile) Validate() error {
 type Tenant struct {
 	// ID is the immutable identifier.
 	ID ID
-	// Alias is the name the request surface carries. It is unique across
-	// the roster and may be changed. Nothing is decided by it: resolution
-	// replaces it with the identifier before anything reads a tenant.
+	// Alias is the name the request surface carries. It is a slug, unique
+	// across the roster, chosen when the tenant is created and never changed.
+	// Nothing is decided by it: resolution replaces it with the identifier
+	// before anything reads a tenant.
 	Alias string
 	// Status says whether this tenant is served, and whether it has been
 	// deleted.
@@ -253,10 +270,19 @@ type Tenant struct {
 	// DisabledBy says who disabled this tenant. It is read only while Status
 	// is StatusDisabled, and enabling a tenant clears it.
 	DisabledBy DisabledBy
+	// OwnerAccount is the account that owns the organization. A business
+	// organization carries one, written by its creation or transfer seam; a
+	// personal organization's owner is its account itself, and the system
+	// tenant carries none. It is empty here until those seams write it.
+	OwnerAccount string
 	// Profile is the organization profile the tenant carries.
 	Profile Profile
-	// CreatedAt is when the tenant was registered. It is nil for a row that
-	// predates the column: the roster does not invent a time for a tenant
-	// whose creation it did not witness.
-	CreatedAt *time.Time
+	// CreatedAt is when the tenant was registered. Every row carries one: the
+	// roster writes the moment of creation in UTC, never a value a caller
+	// chooses.
+	CreatedAt time.Time
+	// DeletedAt is when the tenant was written as deleted, or nil while the
+	// row is not a tombstone. It records the moment of Delete's terminal write;
+	// Status stays the state a request is resolved by.
+	DeletedAt *time.Time
 }

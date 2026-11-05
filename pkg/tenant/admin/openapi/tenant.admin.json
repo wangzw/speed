@@ -32,7 +32,7 @@
         "type": "object"
       },
       "TenantAdminTenant": {
-        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time when known, and who disabled it while it is disabled.",
+        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time and who disabled it while it is disabled.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
@@ -43,7 +43,7 @@
             "type": "string"
           },
           "createdAt": {
-            "description": "When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for.",
+            "description": "When the tenant was registered, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
           },
@@ -88,7 +88,8 @@
           "description",
           "contactEmail",
           "website",
-          "status"
+          "status",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -275,7 +276,7 @@
                 }
               }
             },
-            "description": "The identifier or the alias is outside the identifier domain"
+            "description": "The identifier is outside the identifier domain, or the alias is outside the slug domain"
           },
           "401": {
             "content": {
@@ -418,124 +419,11 @@
           }
         ],
         "summary": "Read one tenant the roster holds"
-      },
-      "patch": {
-        "description": "Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, an alias another tenant holds is a 409, and a tenant the roster holds as a tombstone is a 409: deletion is terminal and a rename does not revive it. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.",
-        "operationId": "tenant.admin.tenants.setAlias",
-        "parameters": [
-          {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
-            "in": "path",
-            "name": "tenant",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "alias": {
-                    "description": "The new alias; an alias another tenant holds is refused with a 409.",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "alias"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "description": "The new alias, which must be an identifier.",
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "The alias was changed"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identifier or the alias is outside the identifier domain"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The request carries no identity"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
-          },
-          "404": {
-            "description": "No tenant carries the identifier"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The alias is already taken, or the tenant is a tombstone"
-          },
-          "413": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The request body is over the endpoint's limit"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "A dependency could not answer"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Change one tenant's alias"
       }
     },
     "/tenants/{tenant}/profile": {
       "patch": {
-        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.",
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.",
         "operationId": "tenant.admin.tenants.profile",
         "parameters": [
           {

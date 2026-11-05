@@ -30,14 +30,14 @@ var profileColumns = []profileColumn{
 	{name: "description", notNull: true, def: "''"},
 	{name: "contact_email", notNull: true, def: "''"},
 	{name: "website", notNull: true, def: "''"},
-	{name: "created_at", notNull: false},
+	{name: "created_at", notNull: true, def: "CURRENT_TIMESTAMP"},
 }
 
 // TestTheMigrationsDeclareTheOrganizationProfileForBothDialects holds each
 // dialect's migration set to the five columns and their defaults. The DDL is
 // applied to a SQLite table because these columns use no dialect-specific
-// construct beyond the nullable time type, so both files can be exercised
-// without the compose stack.
+// construct beyond the time type, so both files can be exercised without the
+// compose stack.
 func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
@@ -106,7 +106,11 @@ func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T)
 				Description  string
 				ContactEmail string
 				Website      string
-				CreatedAt    *time.Time
+				// The value's driver type differs by dialect: SQLite hands the
+				// TIMESTAMP column back as a time, and the PostgreSQL type name
+				// applied to SQLite as text. The case is about the default being
+				// there, so the value is read as text.
+				CreatedAt sql.NullString
 			}
 			if err := handle.Raw(
 				"SELECT display_name, description, contact_email, website, created_at " +
@@ -116,8 +120,8 @@ func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T)
 			if got.DisplayName != "" || got.Description != "" || got.ContactEmail != "" || got.Website != "" {
 				t.Errorf("an existing row reads its profile as %+v, want every field empty", got)
 			}
-			if got.CreatedAt != nil {
-				t.Errorf("an existing row reads a creation time %v, want none", got.CreatedAt)
+			if !got.CreatedAt.Valid || got.CreatedAt.String == "" {
+				t.Errorf("an existing row reads no creation time, want the migration's default instant")
 			}
 		})
 	}
@@ -173,8 +177,8 @@ func TestSetProfileWritesOnlyTheProfileColumns(t *testing.T) {
 	if err := r.SetStatus(ctx, "t_acme", tenant.StatusDisabled); err != nil {
 		t.Fatalf("disabling the tenant: %v", err)
 	}
-	if err := r.SetAlias(ctx, "t_acme", "acme-renamed"); err != nil {
-		t.Fatalf("renaming the tenant: %v", err)
+	if err := r.handle.Exec("UPDATE tenants SET alias = 'acme-renamed' WHERE id = 't_acme'").Error; err != nil {
+		t.Fatalf("renaming the tenant around the roster: %v", err)
 	}
 	before, ok := rowOf(t, r, "t_acme")
 	if !ok {
@@ -211,7 +215,8 @@ func TestSetProfileWritesOnlyTheProfileColumns(t *testing.T) {
 		t.Errorf("the profile columns read %+v, want %+v", columns, profile)
 	}
 	if after.Alias != before.Alias || after.Status != before.Status ||
-		after.DisabledBy != before.DisabledBy || !sameTime(readCreatedAt(t, r, "t_acme"), nil) {
+		after.DisabledBy != before.DisabledBy || after.OwnerAccount != before.OwnerAccount ||
+		!after.CreatedAt.Equal(before.CreatedAt) || !sameTime(after.DeletedAt, before.DeletedAt) {
 		t.Errorf("SetProfile changed more than the profile: before %+v, after %+v", before, after)
 	}
 
@@ -301,10 +306,11 @@ func TestReadRefusesAnInvalidStoredProfile(t *testing.T) {
 	}
 }
 
-// TestCreatedAtIsNullForAnExistingRowAndSetForANewOne holds the nullable time:
-// a row that predates the column keeps no time, and a creation writes the
-// moment it happened in UTC.
-func TestCreatedAtIsNullForAnExistingRowAndSetForANewOne(t *testing.T) {
+// TestCreatedAtIsMandatoryForEveryRow holds the column's NOT NULL shape: a row
+// written around the roster takes the migration's default instant, and a
+// creation writes the moment it happened in UTC. There is no nullable case to
+// fall back to.
+func TestCreatedAtIsMandatoryForEveryRow(t *testing.T) {
 	r := rosterOver(t, insert("t_old", "old"))
 	if err := r.read(context.Background()); err != nil {
 		t.Fatalf("reading: %v", err)
@@ -313,8 +319,8 @@ func TestCreatedAtIsNullForAnExistingRowAndSetForANewOne(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("reading the existing tenant: found=%v err=%v", ok, err)
 	}
-	if old.CreatedAt != nil {
-		t.Errorf("an existing row reads a creation time %v, want none", old.CreatedAt)
+	if old.CreatedAt.IsZero() {
+		t.Error("an existing row reads no creation time, want the migration's default instant")
 	}
 
 	before := time.Now().UTC().Add(-time.Minute)
@@ -329,9 +335,6 @@ func TestCreatedAtIsNullForAnExistingRowAndSetForANewOne(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("reading the created tenant: found=%v err=%v", ok, err)
 	}
-	if created.CreatedAt == nil {
-		t.Fatal("a created row reads no creation time, want the moment of creation")
-	}
 	if created.CreatedAt.Before(before) || created.CreatedAt.After(after) {
 		t.Errorf("the creation time is %v, want between %v and %v", created.CreatedAt, before, after)
 	}
@@ -340,7 +343,7 @@ func TestCreatedAtIsNullForAnExistingRowAndSetForANewOne(t *testing.T) {
 	}
 }
 
-// sameTime reports whether two nullable times name the same instant, with both
+// sameTime reports whether two optional times name the same instant, with both
 // nil counting as the same one.
 func sameTime(a, b *time.Time) bool {
 	if a == nil || b == nil {
@@ -350,9 +353,9 @@ func sameTime(a, b *time.Time) bool {
 }
 
 // readCreatedAt reads one row's creation time straight from the table.
-func readCreatedAt(t *testing.T, r *roster, id string) *time.Time {
+func readCreatedAt(t *testing.T, r *roster, id string) time.Time {
 	t.Helper()
-	var held []struct{ CreatedAt *time.Time }
+	var held []struct{ CreatedAt time.Time }
 	if err := r.handle.Raw("SELECT created_at FROM tenants WHERE id = ?", id).Scan(&held).Error; err != nil {
 		t.Fatalf("reading the creation time of %q: %v", id, err)
 	}
@@ -380,7 +383,7 @@ func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 	created := readCreatedAt(t, r, "t_put")
-	if created == nil {
+	if created.IsZero() {
 		t.Fatal("a row inserted through Put reads no creation time, want the moment of registration")
 	}
 	if _, offset := created.Zone(); offset != 0 {
@@ -393,7 +396,7 @@ func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
 		t.Fatalf("rewriting through Put: %v", err)
 	}
 	rewritten := readCreatedAt(t, r, "t_put")
-	if !sameTime(created, rewritten) {
+	if !rewritten.Equal(created) {
 		t.Errorf("the creation time became %v after a rewrite, want %v", rewritten, created)
 	}
 }

@@ -95,12 +95,12 @@ func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 
 // TestTheProfileUpdateWritesOnlyTheProfile holds the write's seam: PATCH
 // /tenants/:tenant/profile reads the tenant for the 404 and calls SetProfile,
-// never Put, SetAlias or SetStatus, so it cannot undo a rename, a disable or a
+// never Put or SetStatus, so it cannot undo a disable or a
 // deletion another path committed.
 func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 	r := newRig(t)
 	created := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive, CreatedAt: &created}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive, CreatedAt: created}
 	r.catalog.found = true
 
 	w := r.do(http.MethodPatch, pathTenants+"/t_acme/profile", fullProfile())
@@ -134,7 +134,7 @@ func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 		got.Tenant.ContactEmail != want.ContactEmail || got.Tenant.Website != want.Website {
 		t.Errorf("the answer carries %+v, want the written profile %+v", got.Tenant, want)
 	}
-	if got.Tenant.CreatedAt == nil || !got.Tenant.CreatedAt.Equal(created) {
+	if !got.Tenant.CreatedAt.Equal(created) {
 		t.Errorf("createdAt = %v, want %v", got.Tenant.CreatedAt, created)
 	}
 }
@@ -266,52 +266,36 @@ func TestTheProfileUpdateRefusesShapeAndMissingTenantsBeforeTheAudit(t *testing.
 	})
 }
 
-// The profile view carries the four descriptive fields and the optional
-// creation time, omitted for a row that predates the column.
-func TestTheTenantViewCarriesTheProfileAndAnOptionalCreatedAt(t *testing.T) {
+// The profile view carries the four descriptive fields and the mandatory
+// creation time.
+func TestTheTenantViewCarriesTheProfileAndTheCreationTime(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	t.Run("with a creation time", func(t *testing.T) {
-		r := newRig(t)
-		r.catalog.held = tenant.Tenant{
-			ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
-			Profile: tenant.Profile{
-				DisplayName: "Acme", Description: "The Acme corporation",
-				ContactEmail: "ops@acme.test", Website: "https://acme.test",
-			},
-			CreatedAt: &created,
-		}
-		r.catalog.found = true
+	r := newRig(t)
+	r.catalog.held = tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		Profile: tenant.Profile{
+			DisplayName: "Acme", Description: "The Acme corporation",
+			ContactEmail: "ops@acme.test", Website: "https://acme.test",
+		},
+		CreatedAt: created,
+	}
+	r.catalog.found = true
 
-		w := r.do(http.MethodGet, pathTenants+"/t_acme", nil)
-		if w.Code != http.StatusOK {
-			t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
-		}
-		var got struct {
-			Tenant tenantView `json:"tenant"`
-		}
-		decode(t, w, &got)
-		if got.Tenant.DisplayName != "Acme" || got.Tenant.Description != "The Acme corporation" ||
-			got.Tenant.ContactEmail != "ops@acme.test" || got.Tenant.Website != "https://acme.test" {
-			t.Errorf("the view = %+v, want the profile fields", got.Tenant)
-		}
-		if got.Tenant.CreatedAt == nil || !got.Tenant.CreatedAt.Equal(created) {
-			t.Errorf("createdAt = %v, want %v", got.Tenant.CreatedAt, created)
-		}
-	})
-	t.Run("without a creation time", func(t *testing.T) {
-		r := newRig(t)
-		r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
-		r.catalog.found = true
-
-		w := r.do(http.MethodGet, pathTenants+"/t_acme", nil)
-		var got struct {
-			Tenant map[string]any `json:"tenant"`
-		}
-		decode(t, w, &got)
-		if _, present := got.Tenant["createdAt"]; present {
-			t.Errorf("createdAt is present %v for a row without one, want it omitted", got.Tenant["createdAt"])
-		}
-	})
+	w := r.do(http.MethodGet, pathTenants+"/t_acme", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+	var got struct {
+		Tenant tenantView `json:"tenant"`
+	}
+	decode(t, w, &got)
+	if got.Tenant.DisplayName != "Acme" || got.Tenant.Description != "The Acme corporation" ||
+		got.Tenant.ContactEmail != "ops@acme.test" || got.Tenant.Website != "https://acme.test" {
+		t.Errorf("the view = %+v, want the profile fields", got.Tenant)
+	}
+	if !got.Tenant.CreatedAt.Equal(created) {
+		t.Errorf("createdAt = %v, want %v", got.Tenant.CreatedAt, created)
+	}
 }
 
 // The profile route is a management write: tenant.manage in the platform

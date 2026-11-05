@@ -92,10 +92,11 @@ var (
 	ErrNoConnection = errors.New("tenant: the roster got no connection of the delivered database in time")
 
 	// ErrInvalidTenant reports a tenant this module will not act on: one
-	// whose own shape is wrong — an empty identifier or alias, or either
-	// carrying blanks or control characters — or an identifier no row of the
-	// roster carries, which is what a caller asking to change the state of a
-	// tenant that is not there, or to enter one, is told.
+	// whose own shape is wrong — an empty identifier or alias, an alias outside
+	// the lower-case slug form, an identifier carrying blanks or control
+	// characters, an owner value that is neither empty nor an identifier — or an
+	// identifier no row of the roster carries, which is what a caller asking to
+	// change the state of a tenant that is not there, or to enter one, is told.
 	//
 	// The cases are one sentinel because the caller's move is the same either
 	// way: check the value it passed, against the shape and against the
@@ -135,9 +136,9 @@ var (
 	ErrTenantDisabled = errors.New("tenant: the tenant is not being served")
 
 	// ErrTenantDeleted reports a tenant the roster holds as a tombstone: a
-	// write path asked to change one — SetStatus, SetStatusByAccount, SetAlias
-	// or Put — or Enter asked to enter one. The row, the identifier and the
-	// alias stay, but the tenant is terminal: it is not served and no call
+	// write path asked to change one — SetStatus, SetStatusByAccount, SetProfile,
+	// SetOwner or Put — or Enter asked to enter one. The row, the identifier and
+	// the alias stay, but the tenant is terminal: it is not served and no call
 	// serves it again.
 	//
 	// The fix is to drop the work the caller was doing for it. A deleted tenant
@@ -154,8 +155,8 @@ var (
 	ErrTenantDeleted = errors.New("tenant: the tenant has been deleted")
 
 	// ErrAliasConflict reports a write that would put one alias on two
-	// tenants. The fix is to change one of them, or to rename the tenant
-	// that already holds it.
+	// tenants. The fix is to change one of them; an alias is chosen when the
+	// tenant is created and is never changed afterwards.
 	ErrAliasConflict = errors.New("tenant: two tenants would share one alias")
 
 	// ErrTenantExists reports a creation naming an identifier the roster's

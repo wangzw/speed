@@ -52,7 +52,7 @@ func TestTheReadAnswersTheProfileWithoutTheDisableSource(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("profile = %+v, want %+v", got, want)
 	}
-	if got.CreatedAt == nil || !got.CreatedAt.Equal(sampleCreatedAt) {
+	if !got.CreatedAt.Equal(sampleCreatedAt) {
 		t.Errorf("createdAt = %v, want %v", got.CreatedAt, sampleCreatedAt)
 	}
 
@@ -430,13 +430,11 @@ func TestTheWriteMapsARosterFailure(t *testing.T) {
 	}
 }
 
-// TestTheViewOmitsAnUnknownCreationTime holds the nullable column's rendering: a
-// row that predates it carries no createdAt rather than a zero time.
-func TestTheViewOmitsAnUnknownCreationTime(t *testing.T) {
+// TestTheViewAlwaysCarriesTheCreationTime holds the mandatory column's
+// rendering: every row has one, so the field is present rather than omitted.
+func TestTheViewAlwaysCarriesTheCreationTime(t *testing.T) {
 	r := newRig(t)
-	held := sampleTenant()
-	held.CreatedAt = nil
-	r.catalog.held = held
+	r.catalog.held = sampleTenant()
 
 	w := r.do(http.MethodGet, profileTarget, nil)
 	if w.Code != http.StatusOK {
@@ -446,8 +444,7 @@ func TestTheViewOmitsAnUnknownCreationTime(t *testing.T) {
 		Profile map[string]json.RawMessage `json:"profile"`
 	}
 	decode(t, w, &body)
-	if _, present := body.Profile["createdAt"]; present {
-		t.Errorf("the view carries createdAt %q for a row with no creation time",
-			string(body.Profile["createdAt"]))
+	if _, present := body.Profile["createdAt"]; !present {
+		t.Error("the view omits createdAt, want the creation time every row carries")
 	}
 }

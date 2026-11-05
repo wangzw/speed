@@ -395,7 +395,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		}
 
 		proved := read(authn.CreateAccount{
-			ID: "legacy_proved", Username: "legacy_proved", Via: "import",
+			ID: "legacy_proved", Username: "legacy-proved", Via: "import",
 			Email: "proved@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
 			EmailFlags: authn.IdentifierFlags{SignIn: true, Contact: true},
 		})
@@ -407,7 +407,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		// A source record that did not call its address a contact does not make
 		// it anything else here: a registered address is always a contact.
 		noContact := read(authn.CreateAccount{
-			ID: "legacy_no_contact", Username: "legacy_no_contact", Via: "import",
+			ID: "legacy_no_contact", Username: "legacy-no-contact", Via: "import",
 			Email: "nocontact@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
 			EmailFlags: authn.IdentifierFlags{SignIn: true},
 		})
@@ -417,7 +417,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		}
 
 		unproved := read(authn.CreateAccount{
-			ID: "legacy_unproved", Username: "legacy_unproved", Via: "import",
+			ID: "legacy_unproved", Username: "legacy-unproved", Via: "import",
 			Email: "unproved@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
 			EmailFlags: authn.IdentifierFlags{Contact: true}, DefaultContact: true,
 		})
@@ -427,7 +427,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		}
 
 		phone := read(authn.CreateAccount{
-			ID: "legacy_phone", Username: "legacy_phone", Via: "import",
+			ID: "legacy_phone", Username: "legacy-phone", Via: "import",
 			Phone: "+8613800000002", PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
 			PhoneFlags: authn.IdentifierFlags{},
 		})

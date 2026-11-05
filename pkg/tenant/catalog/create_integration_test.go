@@ -68,7 +68,7 @@ func TestConcurrentCreationsOfOneIdentifierAreOneTenant(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			errs[i] = replicas[i%2].Create(context.Background(), tenant.Tenant{
-				ID: "t_acme", Alias: fmt.Sprintf("acme_%d", i), Status: tenant.StatusActive,
+				ID: "t_acme", Alias: fmt.Sprintf("acme-%d", i), Status: tenant.StatusActive,
 			})
 		}(i)
 	}
@@ -89,7 +89,7 @@ func TestConcurrentCreationsOfOneIdentifierAreOneTenant(t *testing.T) {
 		t.Fatal("no creation of the identifier succeeded")
 	}
 	held, ok := rowOf(t, first, "t_acme")
-	if !ok || held.Alias != fmt.Sprintf("acme_%d", won) {
+	if !ok || held.Alias != fmt.Sprintf("acme-%d", won) {
 		t.Fatalf("the table holds %+v, want the row creation %d wrote", held, won)
 	}
 }

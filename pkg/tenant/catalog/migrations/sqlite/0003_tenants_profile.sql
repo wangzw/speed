@@ -4,12 +4,13 @@
 -- this build invents would be a name nobody chose. The four columns are
 -- NOT NULL because an empty string is the profile's absent value, not NULL.
 --
--- created_at is nullable on purpose. A row that predates the column has no
--- creation time this build witnessed, and the roster leaves it NULL rather
--- than writing a zero time the request face would render as a real one. New
--- rows are written with the moment of their creation in UTC.
+-- created_at is NOT NULL with the registration's own moment. An existing
+-- database is rebuilt rather than migrated, so there is no row without one and
+-- no nullable compatibility to keep. The roster writes the real UTC instant on
+-- every registration; the default is the fallback a row written around that
+-- path takes, never a value a caller chooses.
 ALTER TABLE tenants ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE tenants ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE tenants ADD COLUMN contact_email TEXT NOT NULL DEFAULT '';
 ALTER TABLE tenants ADD COLUMN website TEXT NOT NULL DEFAULT '';
-ALTER TABLE tenants ADD COLUMN created_at TIMESTAMP NULL;
+ALTER TABLE tenants ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;

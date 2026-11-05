@@ -97,52 +97,6 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	}
 }
 
-// The rename goes through SetAlias, never Get and then Put. Put takes the whole
-// row's new values and would write the status back with the alias, so a rename
-// through it carries whatever status this process last read and serves a tenant
-// another replica disabled in that window. The route reaches the roster with a
-// read for the 404 and then SetAlias, and never Put.
-func TestTheRenameUsesSetAliasNotPut(t *testing.T) {
-	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
-	r.catalog.found = true
-
-	w := r.do(http.MethodPatch, pathTenants+"/t_acme", aliasBody{Alias: "acme-2"})
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
-	}
-	if w.Body.Len() != 0 {
-		t.Errorf("a 204 carried a body: %q", w.Body.String())
-	}
-	var ops []string
-	for _, call := range r.catalog.recorded() {
-		ops = append(ops, call.op)
-	}
-	if len(ops) != 2 || ops[0] != "Get" || ops[1] != "SetAlias" {
-		t.Fatalf("roster calls = %v, want exactly [Get SetAlias]", ops)
-	}
-	last := r.catalog.recorded()[1]
-	if last.id != "t_acme" || last.alias != "acme-2" {
-		t.Errorf("SetAlias got (%q, %q), want (t_acme, acme-2)", last.id, last.alias)
-	}
-}
-
-func TestTheRenameOfAnUnknownTenantIs404(t *testing.T) {
-	r := newRig(t)
-	w := r.do(http.MethodPatch, pathTenants+"/t_ghost", aliasBody{Alias: "ghost"})
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 (body %s)", w.Code, w.Body.String())
-	}
-	for _, call := range r.catalog.recorded() {
-		if call.op == "SetAlias" {
-			t.Fatal("a rename of an unknown tenant reached SetAlias")
-		}
-	}
-	if len(r.audit.entries()) != 0 {
-		t.Error("a rename of an unknown tenant wrote an audit row")
-	}
-}
-
 func TestTheStatusChangePassesTheTargetOn(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants+"/t_acme/status", statusBody{Status: "disabled"})
@@ -168,8 +122,7 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 	}{
 		"list":   {http.MethodGet, pathTenants, nil, PermissionTenantRead},
 		"get":    {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"}, PermissionTenantManage},
-		"rename": {http.MethodPatch, pathTenants + "/t", aliasBody{Alias: "a"}, PermissionTenantManage},
+		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}, PermissionTenantManage},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
 	}
 	for name, tc := range cases {
@@ -199,8 +152,7 @@ func TestARequestWithNoIdentityIsA401(t *testing.T) {
 	}{
 		"list":   {http.MethodGet, pathTenants, nil},
 		"get":    {http.MethodGet, pathTenants + "/t", nil},
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"}},
-		"rename": {http.MethodPatch, pathTenants + "/t", aliasBody{Alias: "a"}},
+		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -231,7 +183,7 @@ func TestAGuardRefusalReachesNoRoster(t *testing.T) {
 	t.Run("denial", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.allow = false
-		w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"})
+		w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"})
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", w.Code)
 		}
@@ -242,7 +194,7 @@ func TestAGuardRefusalReachesNoRoster(t *testing.T) {
 	t.Run("outage", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.err = errors.New("engine down")
-		w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"})
+		w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"})
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("status = %d, want 503", w.Code)
 		}
@@ -261,8 +213,7 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 		target string
 		body   any
 	}{
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"}},
-		"rename": {http.MethodPatch, pathTenants + "/t", aliasBody{Alias: "a"}},
+		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "disabled"}},
 	}
 	for name, tc := range writes {
@@ -326,8 +277,7 @@ func TestEachWriteCarriesItsOwnAuditAction(t *testing.T) {
 		body   any
 		want   string
 	}{
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"}, actionTenantCreate},
-		"rename": {http.MethodPatch, pathTenants + "/t", aliasBody{Alias: "a"}, actionTenantUpdate},
+		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}, actionTenantCreate},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "disabled"}, actionTenantStatus},
 	}
 	for name, tc := range cases {
@@ -373,7 +323,7 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				r := newRig(t)
 				r.provisioner.fail(tc.err)
-				w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"})
+				w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"})
 				if w.Code != tc.status {
 					t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.status, w.Body.String())
 				}
@@ -381,32 +331,6 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 					if got := problemOf(t, w); got.Type != tc.typ {
 						t.Errorf("problem type = %q, want %q", got.Type, tc.typ)
 					}
-				}
-			})
-		}
-	})
-
-	t.Run("rename", func(t *testing.T) {
-		for name, tc := range map[string]struct {
-			err    error
-			status int
-			typ    string
-		}{
-			"an alias another holds": {tenant.ErrAliasConflict, http.StatusConflict, typePrefix + conflictCode},
-			"a tombstone":            {tenant.ErrTenantDeleted, http.StatusConflict, typePrefix + conflictCode},
-		} {
-			t.Run(name, func(t *testing.T) {
-				// The read the rename makes for its 404 succeeds, so the failure
-				// comes from the write.
-				r := newRig(t)
-				r.catalog.found = true
-				r.catalog.setAliasErr = tc.err
-				w := r.do(http.MethodPatch, pathTenants+"/t", aliasBody{Alias: "a"})
-				if w.Code != tc.status {
-					t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.status, w.Body.String())
-				}
-				if got := problemOf(t, w); got.Type != tc.typ {
-					t.Errorf("problem type = %q, want %q", got.Type, tc.typ)
 				}
 			})
 		}
@@ -463,9 +387,9 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 		"create with a blank identifier":    {http.MethodPost, pathTenants, createBody{ID: "t acme", Alias: "acme"}},
 		"create with an empty identifier":   {http.MethodPost, pathTenants, createBody{Alias: "acme"}},
 		"create with a blank alias":         {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "a b"}},
+		"create with a short alias":         {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "ab"}},
+		"create with an underscored alias":  {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "a_b"}},
 		"create with a body it cannot read": {http.MethodPost, pathTenants, "not-an-object"},
-		"rename with a blank identifier":    {http.MethodPatch, pathTenants + "/t%20acme", aliasBody{Alias: "a"}},
-		"rename with an empty alias":        {http.MethodPatch, pathTenants + "/t_acme", aliasBody{}},
 		"status outside the closed set":     {http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "pending"}},
 		"status the closed set keeps for deletion": {
 			http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "deleted"},
@@ -523,14 +447,9 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 		disabledBy string
 	}{
 		"active": {
-			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-			wantStatus: "active",
-			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "status"},
-		},
-		"active with a creation time": {
 			row: tenant.Tenant{
 				ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
-				CreatedAt: &createdAt,
+				CreatedAt: createdAt,
 			},
 			wantStatus: "active",
 			wantKeys: []string{
@@ -546,7 +465,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "disabledBy",
+				"status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
 		},
@@ -558,14 +477,14 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "disabledBy",
+				"status", "createdAt", "disabledBy",
 			},
 			disabledBy: "account",
 		},
 		"deleted": {
 			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted},
 			wantStatus: "deleted",
-			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "status"},
+			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "status", "createdAt"},
 		},
 		"a status this build does not know": {
 			row: tenant.Tenant{
@@ -575,7 +494,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "disabledBy",
+				"status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
 		},

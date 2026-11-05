@@ -295,17 +295,18 @@ func TestTheWriteGuardIsAskedAfterTheShapeChecks(t *testing.T) {
 
 // TestTheWriteGuardIsNotAskedOnAnyOtherRoute holds the guard's scope: only the
 // status route writes a transition a host protects. A registration goes through
-// the provisioner and a rename writes an alias, and neither asks the guard.
+// the provisioner and a profile write names the profile columns, and neither
+// asks the guard.
 func TestTheWriteGuardIsNotAskedOnAnyOtherRoute(t *testing.T) {
 	cases := map[string]struct {
 		method string
 		target string
 		body   any
 	}{
-		"list":   {http.MethodGet, pathTenants, nil},
-		"get":    {http.MethodGet, pathTenants + "/t_acme", nil},
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"}},
-		"rename": {http.MethodPatch, pathTenants + "/t_acme", aliasBody{Alias: "acme-2"}},
+		"list":    {http.MethodGet, pathTenants, nil},
+		"get":     {http.MethodGet, pathTenants + "/t_acme", nil},
+		"create":  {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"}},
+		"profile": {http.MethodPatch, pathTenants + "/t_acme/profile", fullProfile()},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

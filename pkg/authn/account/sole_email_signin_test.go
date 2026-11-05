@@ -84,7 +84,7 @@ func TestAnImportKeepsTheSignInAxisOfItsSourceRecord(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		imported, err := h.p.Create(ctx, authn.CreateAccount{
-			ID: "legacy_unchosen", Username: "legacy_unchosen", Via: "import",
+			ID: "legacy_unchosen", Username: "legacy-unchosen", Via: "import",
 			Email: "legacy@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
 			EmailFlags: authn.IdentifierFlags{Contact: true},
 		})

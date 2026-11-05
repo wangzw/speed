@@ -13,7 +13,6 @@ import (
 // that links to it.
 const (
 	actionTenantCreate        = "tenant.create"
-	actionTenantUpdate        = "tenant.update"
 	actionTenantStatus        = "tenant.status"
 	actionTenantProfileUpdate = "tenant.profile.update"
 )

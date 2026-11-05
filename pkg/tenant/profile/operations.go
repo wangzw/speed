@@ -92,7 +92,7 @@ var setOperation = speedhttp.NewReplyOperation[profileWriteInput](
 	"Write a tenant's organization profile",
 	"Writes one tenant's organization profile and nothing else: the display name, description, contact email "+
 		"and website. The identifier, alias, state and creation time are not written, so a profile update cannot "+
-		"undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty "+
+		"undo a disable or a deletion another path committed. The body carries all four fields; an empty "+
 		"value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the "+
 		"caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a "+
 		"400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row "+

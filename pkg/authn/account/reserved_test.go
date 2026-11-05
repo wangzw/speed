@@ -52,6 +52,25 @@ func TestABuiltInReservedUsernameIsRefusedAtEveryWriteSurface(t *testing.T) {
 	}
 }
 
+// TestAPersonalPrefixedUsernameIsReserved holds the one prefix the reserved set
+// keeps besides its literal names. A personal tenant's alias is its owner's
+// username, and a name beginning with the prefix the old personal identifiers
+// used may not be taken, so no personal alias can read as such an identifier.
+func TestAPersonalPrefixedUsernameIsReserved(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "personal-owner", Via: "admin"}); !errors.Is(err, authn.ErrUsernameReserved) {
+			t.Errorf("a personal-prefixed name gave %v, want ErrUsernameReserved", err)
+		}
+		if got := h.count(tableAccounts, ""); got != 0 {
+			t.Errorf("a refused Create wrote %d account row(s), want none", got)
+		}
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "personal", Via: "admin"}); err != nil {
+			t.Errorf("the prefix's stem was refused: %v", err)
+		}
+	})
+}
+
 // TestAnEmptyUsernameIsAShapeFailureAtEveryWriteSurface holds that a missing or
 // blank username is the username field's own failure: the answer names the
 // field (400 username-invalid), the same as a badly formed one, rather than

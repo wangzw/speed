@@ -89,7 +89,7 @@ func TestAConcurrentAliasConflictIsReportedAsOne(t *testing.T) {
 				defer wg.Done()
 				errs[i][side] = r.Put(ctx, tenant.Tenant{
 					ID:     tenant.ID(fmt.Sprintf("%s_%d", prefix, i)),
-					Alias:  fmt.Sprintf("alias_%d", i),
+					Alias:  fmt.Sprintf("alias-%d", i),
 					Status: tenant.StatusActive,
 				})
 			}(i, side, prefix)

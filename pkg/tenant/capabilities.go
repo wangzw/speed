@@ -79,7 +79,8 @@ type Admission interface {
 // none of them needs a tenant in its context.
 //
 // A method that reads the table or writes it — Put, Create, SetStatus,
-// SetStatusByAccount, Delete, and an entry the snapshot would refuse — runs its
+// SetStatusByAccount, Delete, SetProfile, SetOwner, and an entry the snapshot
+// would refuse — runs its
 // statements on a connection of the
 // delivered pool of its own, not in the caller's transaction, taken through the
 // database module's Connection within five seconds. No connection within them
@@ -120,6 +121,8 @@ type Catalog interface {
 	ByAlias(ctx context.Context, alias string) (Tenant, bool, error)
 	// Put registers a tenant, or rewrites the row its identifier already
 	// has. Alias, status and disable source are taken from the value as given.
+	// The owner is written on an insert and left alone on a rewrite: Put is not
+	// the transfer path, SetOwner is.
 	//
 	// It is idempotent by identifier. A second tenant arriving with an
 	// alias another one holds is refused, and nothing is written. A row that
@@ -132,8 +135,9 @@ type Catalog interface {
 	// Create registers a tenant that is not registered yet, and refuses one
 	// whose identifier the roster's table already holds with ErrTenantExists,
 	// writing nothing — a tombstone's identifier included, so a deleted tenant
-	// is never registered a second time. An alias another tenant holds is
-	// refused as Put refuses it, and a value whose status is StatusDeleted or
+	// is never registered a second time. The value's owner, profile and the
+	// moment of creation are written with the row. An alias another tenant holds
+	// is refused as Put refuses it, and a value whose status is StatusDeleted or
 	// whose disable source is not the operator's is refused with
 	// ErrInvalidTenant, as Put refuses it.
 	//
@@ -160,24 +164,26 @@ type Catalog interface {
 	// with ErrInvalidTenant.
 	SetStatusByAccount(ctx context.Context, id ID, s Status) error
 	// Delete writes one tenant as deleted, the terminal state: the row, the
-	// identifier and the alias stay, the source column is left as it is, and
-	// the tenant is never served again. Deleting a tombstone again writes
-	// nothing and returns nil. An identifier no row carries, or one outside
-	// the domain, is refused with ErrInvalidTenant.
+	// identifier, the alias, the owner and the disable source stay, status
+	// reads as deleted, and the moment is recorded in the deletion column. The
+	// tenant is never served again. Deleting a tombstone again writes nothing
+	// and returns nil. An identifier no row carries, or one outside the domain,
+	// is refused with ErrInvalidTenant.
 	Delete(ctx context.Context, id ID) error
-	// SetAlias changes one tenant's alias and nothing else. It is how a rename
-	// is written, and Put is not: Put takes the whole row's new values and
-	// writes alias and status back together, so a rename through it carries
-	// the status this process last read, and a tenant another replica disabled
-	// in that window is served again. Only the alias column is written here,
-	// and the status is read from nowhere. An alias another tenant holds is
-	// refused as Put refuses it, as ErrAliasConflict naming the holder, and a
-	// tombstone is refused with ErrTenantDeleted: its alias stays with the row.
-	SetAlias(ctx context.Context, id ID, alias string) error
+	// SetOwner writes one tenant's owner account and nothing else. It is the
+	// transfer path: the alias, the status, the profile and the creation time
+	// are not named, so a transfer cannot undo a disable or a profile update
+	// committed in the same window. A business organization always has an owner,
+	// so the empty value is refused with ErrInvalidTenant, as is a value carrying
+	// a blank or a control character. Writing the owner a row already carries is
+	// a no-op. An identifier no row carries is refused with ErrInvalidTenant, and
+	// a tombstone with ErrTenantDeleted: its owner stays with the row.
+	SetOwner(ctx context.Context, id ID, owner string) error
 	// SetProfile rewrites one tenant's organization profile and nothing else:
 	// the display name, the description, the contact email and the website.
-	// The alias, the status, the disable source and the creation time are not
-	// written, so a profile update cannot undo a rename, a disable or a
+	// The alias, the owner, the status, the disable source and the creation
+	// time are not
+	// written, so a profile update cannot undo a disable or a
 	// deletion another path committed in the same window. Put is not the route
 	// for this write: it takes the whole row's values, the profile included
 	// only as it stands.

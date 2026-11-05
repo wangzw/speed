@@ -634,18 +634,19 @@ func agrees(s *snapshot, id tenant.ID, t tenant.Tenant, held bool) bool {
 }
 
 // sameTenant reports whether two readings name the same tenant. It compares the
-// creation instants rather than the pointers that hold them: two reads of one
-// row build two time values, and a struct comparison would take their
-// addresses as the tenant's identity.
+// creation instants and the deletion instants rather than the pointers that
+// hold them: two reads of one row build two values, and a struct comparison
+// would take their addresses as the tenant's identity.
 func sameTenant(a, b tenant.Tenant) bool {
 	if a.ID != b.ID || a.Alias != b.Alias || a.Status != b.Status ||
-		a.DisabledBy != b.DisabledBy || a.Profile != b.Profile {
+		a.DisabledBy != b.DisabledBy || a.OwnerAccount != b.OwnerAccount ||
+		a.Profile != b.Profile || !a.CreatedAt.Equal(b.CreatedAt) {
 		return false
 	}
-	if a.CreatedAt == nil || b.CreatedAt == nil {
-		return a.CreatedAt == nil && b.CreatedAt == nil
+	if a.DeletedAt == nil || b.DeletedAt == nil {
+		return a.DeletedAt == nil && b.DeletedAt == nil
 	}
-	return a.CreatedAt.Equal(*b.CreatedAt)
+	return a.DeletedAt.Equal(*b.DeletedAt)
 }
 
 // contextLogger is how an entered tenant reaches the logger a context carries.
@@ -676,13 +677,14 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 //
 // The write and the read that names a conflict run on one connection (write).
 //
-// The profile columns are not written here. A rewrite takes the alias, the
-// status and the disable source, so it cannot put back a profile another path
-// changed; an insert it performs takes the migration's profile defaults. The
+// The profile and owner columns are not written by a rewrite. A rewrite takes
+// the alias, the status and the disable source, so it cannot put back a profile
+// another path changed or an owner another path transferred; an insert it
+// performs takes the migration's profile defaults and the value's owner. The
 // creation time is written on an insert and only on an insert: a registration
 // made through Put records the real moment in UTC, exactly as Create does, while
 // the upsert's update clause leaves an existing row's time alone. Updating a
-// profile is SetProfile's work.
+// profile is SetProfile's work and transferring an owner is SetOwner's.
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 	if err := checkWrite(t); err != nil {
 		return err
@@ -717,6 +719,10 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 			Alias:      t.Alias,
 			Status:     int(t.Status),
 			DisabledBy: int(t.DisabledBy),
+
+			// The owner is written on an insert and never by the update clause,
+			// so a rewrite cannot transfer an organization's ownership.
+			OwnerAccount: t.OwnerAccount,
 
 			// The creation time is the roster's to record, as on Create. The
 			// update clause does not name the column, so an existing row keeps
@@ -836,11 +842,12 @@ func failedPut(session *gorm.DB, t tenant.Tenant, err error) error {
 	return failedAlias(session, t.ID, t.Alias, err)
 }
 
-// failedAlias names the conflict a failed write on one tenant's alias ran into —
-// Put, and SetAlias — when the alias turns out to be held by another tenant, and
-// returns the failure as it stands otherwise. A write that meets the alias
-// column's unique index in a race reaches the same conflict the check inside the
-// write reports, and the caller is owed the same answer for it.
+// failedAlias names the conflict a failed write on one tenant's alias ran into
+// — Put, and Create through failedCreate — when the alias turns out to be held
+// by another tenant, and returns the failure as it stands otherwise. A write
+// that meets the alias column's unique index in a race reaches the same conflict
+// the check inside the write reports, and the caller is owed the same answer for
+// it.
 func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error {
 	if errors.Is(err, tenant.ErrAliasConflict) {
 		return err
@@ -904,6 +911,8 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 			Status:     int(t.Status),
 			DisabledBy: int(t.DisabledBy),
 
+			OwnerAccount: t.OwnerAccount,
+
 			DisplayName:  t.Profile.DisplayName,
 			Description:  t.Profile.Description,
 			ContactEmail: t.Profile.ContactEmail,
@@ -926,9 +935,8 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 
 // creationTime is the moment a registration is recorded at, in UTC. A new
 // value each call: two registrations, however close, do not share one.
-func creationTime() *time.Time {
-	now := time.Now().UTC()
-	return &now
+func creationTime() time.Time {
+	return time.Now().UTC()
 }
 
 // tenantExists is the refusal of a creation whose identifier is taken.
@@ -1063,13 +1071,15 @@ func (r *roster) SetStatusByAccount(ctx context.Context, id tenant.ID, s tenant.
 // Delete implements tenant.Catalog, and is the one way to reach the terminal
 // state.
 //
-// It writes the status column and nothing else: the row, the identifier, the
-// alias and the disable source stay, so a scoped table's data still has a
-// tenant to be found under and the alias cannot be registered again while the
-// row carries it. Deleting a tombstone again is a no-op that returns nil, so a
-// sweep retrying a deletion converges. An identifier no row carries, or one
-// outside the domain, is refused with ErrInvalidTenant, as the status paths
-// refuse it.
+// It writes the status column and the deletion instant together: the row, the
+// identifier, the alias, the owner and the disable source stay, so a scoped
+// table's data still has a tenant to be found under and the alias cannot be
+// registered again while the row carries it. The instant is recorded in UTC and
+// is the moment the terminal state was reached; the status stays the state a
+// request is resolved by. Deleting a tombstone again is a no-op that returns
+// nil, so a sweep retrying a deletion converges. An identifier no row carries,
+// or one outside the domain, is refused with ErrInvalidTenant, as the status
+// paths refuse it.
 func (r *roster) Delete(ctx context.Context, id tenant.ID) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
@@ -1086,76 +1096,79 @@ func (r *roster) Delete(ctx context.Context, id tenant.ID) error {
 			return false, nil
 		}
 		return true, tx.Model(&row{}).Where("id = ?", string(id)).
-			Update("status", int(tenant.StatusDeleted)).Error
+			Updates(map[string]any{
+				"status":     int(tenant.StatusDeleted),
+				"deleted_at": deletionTime(),
+			}).Error
 	}, nil)
 	return err
 }
 
-// SetAlias implements tenant.Catalog, and is the only way to rename a tenant.
+// deletionTime is the moment a tenant was written as deleted, in UTC. A new
+// value each call, as creationTime is.
+func deletionTime() time.Time {
+	return time.Now().UTC()
+}
+
+// SetOwner implements tenant.Catalog, and is the transfer write.
 //
-// Only the alias column is written; the status is left as the row holds it.
-// That is the whole difference between this and Put: Put takes the whole row's
-// new values, so a rename through it writes back the status its caller read,
-// and a tenant another replica disabled between that read and this write would
-// be served again. This method reads no status and writes none. A tombstone is
-// refused with ErrTenantDeleted: its alias stays with the row, so a rename
-// cannot free the name for another tenant.
+// It writes the owner_account column and nothing else. The alias, the status,
+// the profile, the creation time and the deletion time are not named, so a
+// transfer cannot undo a disable or a profile update committed in the same
+// window. The owner must be an identifier: the empty string is refused because
+// a business organization always has one, and so is a value carrying a blank or
+// a control character.
 //
-// Existence is checked with its own read rather than inferred from the update's
-// affected-row count, as SetStatus checks it, so that a driver reporting zero
-// rows for a value written as it already was cannot turn an existing tenant
-// into one that is not there. The update carries the tombstone condition itself,
-// so a deletion committed between the checks and the write cannot have its alias
-// rewritten — which would free the name for another tenant — and a statement that
-// updated no row is read again to answer ErrTenantDeleted. The alias is checked
-// and its race answered as Put answers it, on the write's one connection (write).
-func (r *roster) SetAlias(ctx context.Context, id tenant.ID, alias string) error {
+// A tombstone is refused with ErrTenantDeleted: its owner stays with the row.
+// Writing the owner a row already carries is a no-op that returns nil and reads
+// nothing from the table, so a repeated transfer costs no reread. An identifier
+// no row carries is refused with ErrInvalidTenant. The update carries the
+// tombstone condition itself, so a deletion committed between the check and the
+// write leaves the row as it is; a statement that updated no row is read again
+// to tell a tombstone from a tenant that is no longer there.
+func (r *roster) SetOwner(ctx context.Context, id tenant.ID, owner string) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
 	}
-	if err := checkField("alias", alias); err != nil {
+	if err := checkField("owner", owner); err != nil {
 		return err
 	}
-	return r.write(ctx, func(tx *gorm.DB) error {
+	_, err := r.writeResult(ctx, func(tx *gorm.DB) (bool, error) {
 		held, err := lookUp(tx, "id", string(id))
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(held) == 0 {
-			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+			return false, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
 		}
 		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
-			return tombstone(id)
+			return false, tombstone(id)
 		}
-		holder, err := lookUp(tx, "alias", alias)
-		if err != nil {
-			return err
-		}
-		if len(holder) > 0 && holder[0].ID != string(id) {
-			return fmt.Errorf("%w: alias %q is held by tenant %q",
-				tenant.ErrAliasConflict, alias, holder[0].ID)
+		if held[0].OwnerAccount == owner {
+			return false, nil
 		}
 		written := tx.Model(&row{}).
 			Where("id = ? AND status <> ?", string(id), int(tenant.StatusDeleted)).
-			Update("alias", alias)
+			Update("owner_account", owner)
 		if written.Error != nil {
-			return written.Error
+			return false, written.Error
 		}
 		if written.RowsAffected > 0 {
-			return nil
+			return true, nil
 		}
-		return missingOrTombstone(tx, id)
-	}, func(session *gorm.DB, err error) error { return failedAlias(session, id, alias, err) })
+		return false, missingOrTombstone(tx, id)
+	}, nil)
+	return err
 }
 
 // SetProfile implements tenant.Catalog, and writes the organization profile
 // alone.
 //
-// The four profile columns are the whole statement. The alias, the status, the
-// disable source and the creation time are not named, so a profile update
-// cannot put back a value this process read before another path changed it: a
-// rename, a disable or a deletion committed in the window stays. The tombstone
-// condition is in the statement itself, as it is in SetStatus and SetAlias, so
+// The four profile columns are the whole statement. The alias, the owner, the
+// status, the disable source and the creation time are not named, so a profile
+// update cannot put back a value this process read before another path changed
+// it: a disable or a deletion committed in the window stays. The tombstone
+// condition is in the statement itself, as it is in SetStatus and SetOwner, so
 // a deletion committed between the checks and the write leaves the row as it
 // is; a statement that updated no row is read again to tell a tombstone from a
 // tenant that is no longer there.
@@ -1247,10 +1260,15 @@ func (r *roster) afterWrite(ctx context.Context) error {
 
 // checkTenant refuses a tenant this module will not act on.
 //
-// The identifier and alias are judged by the shape this module can judge: not
-// empty, and free of blanks and control characters. How long an identifier may
-// be is the declaring party's to say, in the column its migration declares —
-// this module defines no length and so cannot check one. The profile is judged
+// The identifier is judged by the shape this module can judge: not empty, and
+// free of blanks and control characters. The alias is judged by the slug form
+// every request surface carries, which is also the username's form because a
+// personal tenant's alias is its owner's username. The owner is optional here:
+// an empty value is "no owner yet", which the creation and transfer seams are
+// responsible for filling on a business organization, and a value that is
+// present is held to the identifier's own domain. How long an identifier may be
+// is the declaring party's to say, in the column its migration declares — this
+// module defines no length and so cannot check one. The profile is judged
 // against tenant.Profile.Validate, whose bounds and shapes this module states
 // nowhere else: a row the table holds has to pass the same check a write does,
 // because the table can be written without this module's write paths.
@@ -1258,8 +1276,12 @@ func checkTenant(t tenant.Tenant) error {
 	if err := checkField("identifier", string(t.ID)); err != nil {
 		return err
 	}
-	if err := checkField("alias", t.Alias); err != nil {
+	if err := checkAlias(t.Alias); err != nil {
 		return err
+	}
+	if t.OwnerAccount != "" && !tenant.IsIdentifier(t.OwnerAccount) {
+		return fmt.Errorf("%w: the owner account carries a blank or a control character",
+			tenant.ErrInvalidTenant)
 	}
 	return t.Profile.Validate()
 }
@@ -1288,13 +1310,26 @@ func checkWrite(t tenant.Tenant) error {
 	return nil
 }
 
-// checkField refuses a field that is empty or carries a character an alias
+// checkAlias refuses an alias outside the slug form the roster serves. The form
+// is stated once by tenant.IsAlias; the empty case is judged first because its
+// fix is the caller's to choose a name rather than to correct one.
+func checkAlias(alias string) error {
+	if alias == "" {
+		return fmt.Errorf("%w: the alias is empty", tenant.ErrInvalidTenant)
+	}
+	if !tenant.IsAlias(alias) {
+		return fmt.Errorf("%w: the alias is not a lower-case slug of 3 to 63 letters, digits and dashes",
+			tenant.ErrInvalidTenant)
+	}
+	return nil
+}
+
+// checkField refuses an identifier that is empty or carries a character it
 // could not survive.
 //
-// Blanks and control characters are refused in both fields and anywhere in
-// them. An identifier ends up in log lines, diagnostics and error text, where a
-// newline splits one record into two; an alias arrives from a subdomain label,
-// a path segment or a header, and none of those can carry a blank.
+// Blanks and control characters are refused anywhere in it. An identifier ends
+// up in log lines, diagnostics and error text, where a newline splits one
+// record into two.
 //
 // The domain itself is tenant.IsIdentifier, so this module states the rule
 // once. The empty case is judged first anyway, because the two failures have

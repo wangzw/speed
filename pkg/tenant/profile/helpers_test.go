@@ -149,8 +149,8 @@ func (s *stubCatalog) Delete(context.Context, tenant.ID) error {
 	return errors.New("the profile surface must not delete a tenant")
 }
 
-func (s *stubCatalog) SetAlias(context.Context, tenant.ID, string) error {
-	return errors.New("the profile surface must not rename a tenant")
+func (s *stubCatalog) SetOwner(context.Context, tenant.ID, string) error {
+	return errors.New("the profile surface must not transfer a tenant's owner")
 }
 
 func (s *stubCatalog) SetProfile(_ context.Context, id tenant.ID, profile tenant.Profile) error {
@@ -561,7 +561,6 @@ var sampleCreatedAt = time.Date(2026, time.November, 5, 9, 30, 0, 0, time.UTC)
 
 // sampleTenant is a tenant with every profile field set.
 func sampleTenant() tenant.Tenant {
-	created := sampleCreatedAt
 	return tenant.Tenant{
 		ID:     "acme",
 		Alias:  "acme",
@@ -572,7 +571,7 @@ func sampleTenant() tenant.Tenant {
 			ContactEmail: "ops@acme.test",
 			Website:      "https://acme.test",
 		},
-		CreatedAt: &created,
+		CreatedAt: sampleCreatedAt,
 	}
 }
 

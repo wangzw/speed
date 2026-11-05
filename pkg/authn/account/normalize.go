@@ -23,10 +23,12 @@ const (
 
 var (
 	// usernameShape is the form a normalized username takes. It holds no @, so a
-	// username and an email address are told apart by that character alone.
-	usernameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
+	// username and an email address are told apart by that character alone. The
+	// form is the same one a tenant alias takes, because a personal tenant's
+	// alias is its owner's username and the two share one namespace.
+	usernameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,62}$`)
 	// usernamePrefixShape is the form a prefix of a normalized username takes.
-	usernamePrefixShape = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+	usernamePrefixShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	// phoneShape is E.164: a plus sign, a country code that does not begin with
 	// zero, and at most fifteen digits in all.
 	phoneShape = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
@@ -52,9 +54,10 @@ func errNotWellFormed(kind authn.IdentifierKind, rule string) error {
 // would find nothing and report no error.
 //
 // A username is put through NFKC and lower-cased, and has to match
-// [a-z0-9][a-z0-9._-]{2,63}: it holds no @, does not begin with the static
-// credential table's prefix and is not the shape of a UUID, which is what an
-// account identifier looks like. An email address is trimmed and lower-cased,
+// [a-z0-9][a-z0-9-]{2,62}: it holds no @, no dot and no underscore, does not
+// begin with the static credential table's prefix and is not the shape of a
+// UUID, which is what an account identifier looks like. An email address is
+// trimmed and lower-cased,
 // has to be ASCII, hold exactly one @ with something on each side, and be at
 // most 254 bytes; no alias is folded, so a sub-address and a dot stay as written.
 // A phone number has to be E.164, a plus sign and 7 to 15 digits, written as it
@@ -80,7 +83,7 @@ func normalizeUsername(value string) (string, error) {
 	folded := strings.ToLower(norm.NFKC.String(value))
 	switch {
 	case !usernameShape.MatchString(folded):
-		return "", errNotWellFormed(authn.IdentifierUsername, "is not 3 to 64 of [a-z0-9._-] beginning with a letter or a digit")
+		return "", errNotWellFormed(authn.IdentifierUsername, "is not 3 to 63 of [a-z0-9-] beginning with a letter or a digit")
 	case strings.HasPrefix(folded, authn.StaticPrefix):
 		return "", errNotWellFormed(authn.IdentifierUsername, "begins with the prefix of the static credential table")
 	case isUUIDShaped(folded):
@@ -134,7 +137,7 @@ func normalizePrefix(kind authn.IdentifierKind, prefix string) (string, error) {
 	case authn.IdentifierUsername:
 		folded = strings.ToLower(norm.NFKC.String(prefix))
 		if !usernamePrefixShape.MatchString(folded) {
-			return "", errNotWellFormed(kind, "prefix is not of [a-z0-9._-] beginning with a letter or a digit")
+			return "", errNotWellFormed(kind, "prefix is not of [a-z0-9-] beginning with a letter or a digit")
 		}
 	case authn.IdentifierEmail:
 		folded = strings.ToLower(strings.TrimSpace(prefix))

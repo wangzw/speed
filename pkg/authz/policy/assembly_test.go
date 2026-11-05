@@ -156,7 +156,7 @@ func (rosterStub) SetStatusByAccount(context.Context, tenant.ID, tenant.Status) 
 	return nil
 }
 func (rosterStub) Delete(context.Context, tenant.ID) error           { return nil }
-func (rosterStub) SetAlias(context.Context, tenant.ID, string) error { return nil }
+func (rosterStub) SetOwner(context.Context, tenant.ID, string) error { return nil }
 func (rosterStub) SetProfile(context.Context, tenant.ID, tenant.Profile) error {
 	return nil
 }

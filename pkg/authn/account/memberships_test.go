@@ -143,7 +143,7 @@ func TestMembersFiltersByDisplayNameOrIdentifier(t *testing.T) {
 		if err := h.p.SetDisplayName(ctx, named, "Ada Lovelace"); err != nil {
 			t.Fatalf("setting the display name: %v", err)
 		}
-		login := h.user("ada.login", "")
+		login := h.user("ada-login", "")
 		other := h.user("bob", "")
 		for _, id := range []authn.AccountID{named, login, other} {
 			if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}); err != nil {
@@ -158,8 +158,7 @@ func TestMembersFiltersByDisplayNameOrIdentifier(t *testing.T) {
 		}{
 			{"every member with no query", "", []authn.AccountID{named, login, other}},
 			{"a display-name prefix", "Ada L", []authn.AccountID{named}},
-			{"an identifier prefix after lower-casing", "ada.log", []authn.AccountID{login}},
-			{"a query neither matches", "zzz", nil},
+			{"an identifier prefix after lower-casing", "ada-log", []authn.AccountID{login}}, {"a query neither matches", "zzz", nil},
 		}
 		for _, c := range cases {
 			got, err := h.p.Members(ctx, "acme", authn.MemberQuery{Query: c.query})
