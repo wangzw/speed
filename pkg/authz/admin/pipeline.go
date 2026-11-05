@@ -179,11 +179,11 @@ func (p *product) requireVerifiedAccount(c *gin.Context, id authn.Identity) bool
 // The entry point's binding is closed and header-strict — a member the input
 // does not declare is a 400, and a Content-Type other than application/json is a
 // 415 — while this surface's role write accepts a JSON object whatever its
-// media type and forwards only the description key. A member such as `builtin`
-// reaches nothing: it is dropped here, before the binding, and the handler
-// builds its record from the declared field alone. A body that is not one JSON
-// object is refused with this module's bad-request code, the answer the shape
-// refusal has always carried.
+// media type and forwards only the description and the legacy description key.
+// A member such as `builtin` reaches nothing: it is dropped here, before the
+// binding, and the handler builds its record from the declared fields alone. A
+// body that is not one JSON object is refused with this module's bad-request
+// code, the answer the shape refusal has always carried.
 func prescreenRoleWrite(next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Body == nil {
@@ -206,21 +206,30 @@ func prescreenRoleWrite(next gin.HandlerFunc) gin.HandlerFunc {
 		}
 		if members == nil {
 			// A literal null decoded into no object. The write is a role with no
-			// description key, which is the value the surface's original body
-			// reader left behind.
+			// description, which is the value the surface's original body reader
+			// left behind.
 			members = map[string]json.RawMessage{}
 		}
-		kept := make(map[string]json.RawMessage, 1)
-		if value, ok := members["description_key"]; ok {
-			// The declared field is a string. A value of another shape is refused
+		kept := make(map[string]json.RawMessage, 2)
+		for _, name := range []string{"description", "description_key"} {
+			value, ok := members[name]
+			if !ok {
+				continue
+			}
+			// The declared fields are strings. A value of another shape is refused
 			// here with this module's code, the answer the surface's original body
 			// reader gave it, rather than reaching the entry point's untyped 400.
 			var text string
 			if valueErr := json.Unmarshal(value, &text); valueErr != nil {
+				// A literal null names no text, the same absence an omitted member
+				// is; any other non-string value is a shape refusal.
+				if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+					continue
+				}
 				refuseBadRequest(c)
 				return
 			}
-			kept["description_key"] = value
+			kept[name] = value
 		}
 		encoded, err := json.Marshal(kept)
 		if err != nil {

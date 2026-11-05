@@ -325,6 +325,17 @@ func provide(name string, token core.Token, instance any) core.Module {
 	}
 }
 
+// subjectStub answers the caller's held permissions with the platform
+// administrator's set, so the role list on the assembled chain is read as one a
+// caller may manage. The zero value holds nothing.
+type subjectStub struct {
+	held []authz.Permission
+}
+
+func (s subjectStub) Held(context.Context, authz.Domain, string) ([]authz.Permission, error) {
+	return append([]authz.Permission(nil), s.held...), nil
+}
+
 // signupStub answers every account's self-registration state with the state a
 // case scripts. The zero value reports SignupNone, which is what an account
 // created outside self-registration reads as, so the end-to-end cases write with
@@ -455,12 +466,13 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 	reg.Register(provide("stand-in.manager", (*authz.Manager)(nil), a.manager))
 	reg.Register(provide("stand-in.audit", (*audit.Audit)(nil), a.audit))
 	reg.Register(provide("stand-in.verification", (*authn.SignupVerification)(nil), signupStub{}))
+	reg.Register(provide("stand-in.subject", (*authz.SubjectPermissions)(nil), subjectStub{}))
 
 	modules := []core.Module{entry, gateway, enforcement, management}
 	participants := []string{
 		speedhttp.ModuleName, gate.ModuleName, guard.ModuleName, admin.ModuleName,
 		"stand-in.backend", "stand-in.logger", "stand-in.enforcer", "stand-in.catalog",
-		"stand-in.manager", "stand-in.audit", "stand-in.verification",
+		"stand-in.manager", "stand-in.audit", "stand-in.verification", "stand-in.subject",
 	}
 	if a.resolve {
 		body = `{

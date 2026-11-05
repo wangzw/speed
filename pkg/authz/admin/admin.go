@@ -97,15 +97,17 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Module is the descriptor a host registers.
 //
 // The policy manager, the permission catalog, the handler-internal guard, the
-// audit capability and the registration-verification read are required. The
-// manager and the catalog are delivered exclusively by the policy module and the
-// guard by the enforcement module, so the closure of a command that takes this
-// one in does not pull them in: the host writes them down. The guard being
-// required is what makes the per-request decision available; the audit
-// capability being required is what makes an assembly without one fail before
-// any instance is built, rather than at the first write; the verification read
-// is what lets a write refuse an account whose self-registration has not proved
-// an email address. The logger is taken up so that it is initialised first, and
+// audit capability, the registration-verification read and the caller's
+// permission read are required. The manager and the catalog are delivered
+// exclusively by the policy module and the guard by the enforcement module, so
+// the closure of a command that takes this one in does not pull them in: the
+// host writes them down. The guard being required is what makes the per-request
+// decision available; the audit capability being required is what makes an
+// assembly without one fail before any instance is built, rather than at the
+// first write; the verification read is what lets a write refuse an account
+// whose self-registration has not proved an email address; the permission read
+// is what lets the role list tell a caller whether it may manage roles. The
+// logger is taken up so that it is initialised first, and
 // the message localizer so that the catalog route can render a permission's
 // description in the request's language; both are optional, and an assembly
 // without the localizer answers the description as an empty string.
@@ -134,6 +136,7 @@ func Module() core.Module {
 			{Token: (*guard.Guard)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*authn.SignupVerification)(nil)},
+			{Token: (*authz.SubjectPermissions)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -195,6 +198,14 @@ type product struct {
 	// got. A write route reads it before the permission decision, so an account
 	// that has not proved an email address cannot change policy data.
 	verification authn.SignupVerification
+	// subject reads the permissions the caller holds in the platform domain. The
+	// role list publishes whether the caller may manage roles, so that a client
+	// renders the grant and binding controls only for a caller that can use them.
+	subject authz.SubjectPermissions
+	// identities resolves the accounts a role's usage names, nil when the
+	// assembly delivers none. With none the role list's member count is null: the
+	// count cannot be read, and the binding count is not a stand-in for it.
+	identities authz.AccountIdentityReader
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -236,6 +247,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the signup-verification read: %w", ModuleName, err)
 	}
+	subject, err := core.Resolve[authz.SubjectPermissions](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the caller's permission read: %w", ModuleName, err)
+	}
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
@@ -250,6 +265,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 		guard:        guardAPI,
 		audit:        auditor,
 		verification: verification,
+		subject:      subject,
 		logger:       log.Default(),
 		cfg:          cfg,
 	}, nil
@@ -272,9 +288,10 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 }
 
 // wire runs in Init, where every instance exists. It takes up the optional
-// message localizer, the optional route-declaration surface, the optional host
-// write guard and the logger, resolves the configured endpoints, mounts the
-// routes, declares them open, and writes the start diagnostic.
+// message localizer, the optional account-identity reader, the optional
+// route-declaration surface, the optional host write guard and the logger,
+// resolves the configured endpoints, mounts the routes, declares them open, and
+// writes the start diagnostic.
 //
 // The entry point is required: a command that mounts routes and has no entry
 // point has nothing to mount them on, and the failure names the module so the
@@ -301,6 +318,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.localizer = localizer
+	}
+	if identities, found, err := optional[authz.AccountIdentityReader](reg, "the account-identity reader"); err != nil {
+		return err
+	} else if found {
+		p.identities = identities
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

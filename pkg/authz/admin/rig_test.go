@@ -51,6 +51,13 @@ type rig struct {
 	manager *stubManager
 	catalog *stubCatalog
 	guard   *stubGuard
+	// subject answers the caller's held permissions. The zero value holds none,
+	// so the role list's can_manage is false unless a case grants role.manage.
+	subject *stubSubjectPermissions
+	// identities answers the role-usage account reads. Nil leaves the seam
+	// absent, the assembly that publishes a null member count; a case that holds
+	// the count sets it with withIdentities.
+	identities *stubIdentityReader
 	// writeGuard is the optional host seam the write routes consult. The zero
 	// value permits and records, so the rig always has a guard a case can
 	// observe or redirect; a case that holds the absent-seam behaviour sets the
@@ -79,6 +86,7 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 		manager:    &stubManager{},
 		catalog:    newStubCatalog(perms...),
 		guard:      &stubGuard{allow: true},
+		subject:    &stubSubjectPermissions{},
 		writeGuard: &stubWriteGuard{},
 		audit:      &recordingAudit{},
 		router:     newStubRouter("public"),
@@ -89,12 +97,27 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 		manager:      r.manager,
 		catalog:      r.catalog,
 		guard:        r.guard,
+		subject:      r.subject,
 		writeGuard:   r.writeGuard,
 		audit:        r.audit,
 		verification: r.signup,
 		logger:       logs.logger(),
 		cfg:          resolved{endpoints: []string{"public"}},
 	}
+	// The rig's identity reader starts absent, and an absent seam is a nil
+	// interface: assigning a typed nil pointer would make the handler believe the
+	// assembly delivered a reader and call it.
+	if r.identities != nil {
+		r.p.identities = r.identities
+	}
+	return r
+}
+
+// withIdentities assembles the account-identity reader, the way an assembly that
+// knows its accounts does, so a case can hold the role list's member count.
+func (r *rig) withIdentities(reader *stubIdentityReader) *rig {
+	r.identities = reader
+	r.p.identities = reader
 	return r
 }
 

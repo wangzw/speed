@@ -183,6 +183,18 @@ func TestTheRoleListViewCarriesEveryField(t *testing.T) {
 	if v.Tenant != "t1" || v.Role != "editor" || !v.Builtin || v.DescriptionKey != "authz.role.editor" {
 		t.Fatalf("the view = %+v, want tenant t1, role editor, builtin true, the description key", v)
 	}
+	if v.Description != "authz.role.editor" {
+		t.Fatalf("the view's description = %q, want the key itself with no localizer", v.Description)
+	}
+	if v.PermissionCount != 0 {
+		t.Fatalf("the view's permission_count = %d, want zero with no grant", v.PermissionCount)
+	}
+	if v.MemberCount != nil {
+		t.Fatalf("the view's member_count = %v, want null with no identity reader", *v.MemberCount)
+	}
+	if v.CanManage {
+		t.Fatal("the view says can_manage with a caller holding no permissions")
+	}
 	if !v.CreatedAt.Equal(created) || v.CreatedAt.Location() != time.UTC {
 		t.Fatalf("the view's created_at = %v (%v), want the same instant in UTC", v.CreatedAt, v.CreatedAt.Location())
 	}

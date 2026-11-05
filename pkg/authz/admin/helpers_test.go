@@ -25,14 +25,116 @@ import (
 // module takes up, so a stub and an interface cannot drift apart without failing
 // the build.
 var (
-	_ authz.Manager      = (*stubManager)(nil)
-	_ authz.Catalog      = (*stubCatalog)(nil)
-	_ authz.WriteGuard   = (*stubWriteGuard)(nil)
-	_ guard.Guard        = (*stubGuard)(nil)
-	_ audit.Audit        = (*recordingAudit)(nil)
-	_ speedhttp.Router   = (*stubRouter)(nil)
-	_ speedhttp.Endpoint = (*stubEndpoint)(nil)
+	_ authz.Manager               = (*stubManager)(nil)
+	_ authz.Catalog               = (*stubCatalog)(nil)
+	_ authz.SubjectPermissions    = (*stubSubjectPermissions)(nil)
+	_ authz.AccountIdentityReader = (*stubIdentityReader)(nil)
+	_ authz.WriteGuard            = (*stubWriteGuard)(nil)
+	_ guard.Guard                 = (*stubGuard)(nil)
+	_ audit.Audit                 = (*recordingAudit)(nil)
+	_ speedhttp.Router            = (*stubRouter)(nil)
+	_ speedhttp.Endpoint          = (*stubEndpoint)(nil)
 )
+
+// subjectCall is one permission read the stub subject recorded: the domain it
+// was asked about and the subject it was asked for.
+type subjectCall struct {
+	domain  authz.Domain
+	subject string
+}
+
+// stubSubjectPermissions answers the caller's held permissions from what a case
+// scripts and records every read, so a case can hold both the set the handler
+// used and the domain and subject it asked about. The zero value holds nothing
+// and fails nothing.
+type stubSubjectPermissions struct {
+	mu    sync.Mutex
+	held  []authz.Permission
+	err   error
+	calls []subjectCall
+}
+
+func (s *stubSubjectPermissions) Held(_ context.Context, domain authz.Domain, subject string) ([]authz.Permission, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, subjectCall{domain: domain, subject: subject})
+	if s.err != nil {
+		return nil, s.err
+	}
+	return append([]authz.Permission(nil), s.held...), nil
+}
+
+// answer sets the permissions every later read returns.
+func (s *stubSubjectPermissions) answer(held ...authz.Permission) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.held = append([]authz.Permission(nil), held...)
+}
+
+// fail makes every later read report err.
+func (s *stubSubjectPermissions) fail(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.err = err
+}
+
+// asked returns the domain and subject of every read.
+func (s *stubSubjectPermissions) asked() []subjectCall {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]subjectCall(nil), s.calls...)
+}
+
+// identityCall is one identity read the stub reader recorded.
+type identityCall struct {
+	tenant   string
+	accounts []string
+}
+
+// stubIdentityReader answers the accounts a role-usage read names from what a
+// case scripts, and records every read. The zero value knows no account, which
+// is a host that cannot vouch for any activity state, and fails nothing.
+type stubIdentityReader struct {
+	mu         sync.Mutex
+	identities map[string]authz.AccountIdentity
+	err        error
+	calls      []identityCall
+}
+
+func (r *stubIdentityReader) Identities(_ context.Context, tenant string, accounts []string) (map[string]authz.AccountIdentity, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, identityCall{tenant: tenant, accounts: append([]string(nil), accounts...)})
+	if r.err != nil {
+		return nil, r.err
+	}
+	out := make(map[string]authz.AccountIdentity, len(r.identities))
+	for account, identity := range r.identities {
+		out[account] = identity
+	}
+	return out, nil
+}
+
+// answer sets the identity every later read returns for each account.
+func (r *stubIdentityReader) answer(identities map[string]authz.AccountIdentity) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.identities = identities
+}
+
+// fail makes every later read report err.
+func (r *stubIdentityReader) fail(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.err = err
+}
+
+// asked returns the tenant and accounts of every read.
+func (r *stubIdentityReader) asked() []identityCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]identityCall(nil), r.calls...)
+}
 
 // managerCall is one call the stub manager recorded: the method's name and the
 // arguments that name a row, so a case can hold what the handler passed on.

@@ -63,15 +63,18 @@ func recordingModule(record *any) core.Module {
 type managementAssembly struct {
 	// body is the configuration. The zero value uses managementBody.
 	body string
-	// noManager, noCatalog, noGuard, noAudit and noVerification leave out the
-	// stand-in for the required capability named, so the drive reaches
+	// noManager, noCatalog, noGuard, noAudit, noVerification and noSubject leave
+	// out the stand-in for the required capability named, so the drive reaches
 	// resolution without it.
-	noManager, noCatalog, noGuard, noAudit, noVerification bool
+	noManager, noCatalog, noGuard, noAudit, noVerification, noSubject bool
 	// manager and catalog, when set, are the stand-ins delivered as those
 	// capabilities; a case that holds the product to what New took up sets them
 	// to the very instances it reads back.
 	manager authz.Manager
 	catalog authz.Catalog
+	// subject, when set, is the stand-in delivered as the caller's permission
+	// read; nil uses one that holds nothing.
+	subject authz.SubjectPermissions
 	// verification, when set, is the stand-in delivered as the signup-state
 	// read; nil uses one that reports no self-registration.
 	verification authn.SignupVerification
@@ -85,6 +88,9 @@ type managementAssembly struct {
 	// hold that Init takes up what the assembly delivers, nil to hold the
 	// absent-seam assembly.
 	writeGuard authz.WriteGuard
+	// identities is the optional host seam the role list reads a role's members
+	// through; nil holds the absent-seam assembly.
+	identities authz.AccountIdentityReader
 	// logger is the logging capability, taken up in Init; nil uses a recorder.
 	logger *slog.Logger
 	// record, when set, receives the product New built.
@@ -142,6 +148,14 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 		reg.Register(standIn("stand-in.verification", v, (*authn.SignupVerification)(nil)))
 		names = append(names, "stand-in.verification")
 	}
+	if !a.noSubject {
+		s := a.subject
+		if s == nil {
+			s = &stubSubjectPermissions{}
+		}
+		reg.Register(standIn("stand-in.subject", s, (*authz.SubjectPermissions)(nil)))
+		names = append(names, "stand-in.subject")
+	}
 	logger := a.logger
 	if logger == nil {
 		logger = (&logBuffer{}).logger()
@@ -163,6 +177,10 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	if a.writeGuard != nil {
 		reg.Register(standIn("stand-in.write-guard", a.writeGuard, (*authz.WriteGuard)(nil)))
 		names = append(names, "stand-in.write-guard")
+	}
+	if a.identities != nil {
+		reg.Register(standIn("stand-in.identities", a.identities, (*authz.AccountIdentityReader)(nil)))
+		names = append(names, "stand-in.identities")
 	}
 	if action == nil {
 		action = func(context.Context, *core.Registry) error { return nil }
@@ -194,10 +212,11 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	gate := authztest.NewGate()
 	logger := (&logBuffer{}).logger()
 
-	t.Run("New takes the manager and the catalog up", func(t *testing.T) {
+	t.Run("New takes the manager, the catalog and the subject read up", func(t *testing.T) {
 		var instance any
+		subject := &stubSubjectPermissions{}
 		err := managementAssembly{
-			manager: manager, catalog: catalog, record: &instance,
+			manager: manager, catalog: catalog, subject: subject, record: &instance,
 		}.drive(t, core.StageNew, nil)
 		if err != nil {
 			t.Fatalf("the drive failed: %v", err)
@@ -208,6 +227,9 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 		}
 		if any(p.catalog) != any(catalog) {
 			t.Errorf("New took up catalog %v, want the delivered %v", p.catalog, catalog)
+		}
+		if any(p.subject) != any(subject) {
+			t.Errorf("New took up the permission read %v, want the delivered %v", p.subject, subject)
 		}
 	})
 
@@ -233,6 +255,30 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 		}
 	})
 
+	t.Run("Init takes the optional account-identity reader up", func(t *testing.T) {
+		reader := &stubIdentityReader{}
+		var instance any
+		err := managementAssembly{identities: reader, record: &instance}.drive(t, core.StageInit, nil)
+		if err != nil {
+			t.Fatalf("the drive failed: %v", err)
+		}
+		p := productOfAssembly(t, instance)
+		if any(p.identities) != any(reader) {
+			t.Errorf("Init took up identity reader %v, want the delivered %v", p.identities, reader)
+		}
+	})
+
+	t.Run("the absent identity reader leaves the seam nil", func(t *testing.T) {
+		var instance any
+		err := managementAssembly{record: &instance}.drive(t, core.StageInit, nil)
+		if err != nil {
+			t.Fatalf("the drive failed: %v", err)
+		}
+		if p := productOfAssembly(t, instance); p.identities != nil {
+			t.Errorf("the product holds an identity reader the assembly did not deliver: %v", p.identities)
+		}
+	})
+
 	t.Run("the optional surface is not taken up before Init", func(t *testing.T) {
 		var instance any
 		err := managementAssembly{
@@ -254,14 +300,16 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// The five required capabilities are each another module's to deliver: a command
+// The six required capabilities are each another module's to deliver: a command
 // that brings this one in without the manager, the catalog, the handler-internal
-// guard, the audit capability or the registration-verification read fails
-// resolution with ErrMissingProvider, before New builds anything. The manager and
-// the catalog are what New takes up to read and write the policy tables through;
-// the guard is what makes the per-request decision available; the audit
-// capability is what makes a write's mandatory row land; the verification read is
-// what lets a write refuse an account that has not proved an email address.
+// guard, the audit capability, the registration-verification read or the
+// caller's permission read fails resolution with ErrMissingProvider, before New
+// builds anything. The manager and the catalog are what New takes up to read and
+// write the policy tables through; the guard is what makes the per-request
+// decision available; the audit capability is what makes a write's mandatory row
+// land; the verification read is what lets a write refuse an account that has
+// not proved an email address; the permission read is what lets the role list
+// tell a caller whether it may manage roles.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
 		"no manager":      {noManager: true},
@@ -269,6 +317,7 @@ func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 		"no guard":        {noGuard: true},
 		"no audit":        {noAudit: true},
 		"no verification": {noVerification: true},
+		"no subject":      {noSubject: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var built any

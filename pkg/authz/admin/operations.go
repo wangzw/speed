@@ -63,10 +63,12 @@ type bindingInput struct {
 }
 
 // roleWriteInput is the request of a role write: the role named in the path and
-// the i18n key of its description in the body. The builtin mark is not part of
-// the request — a client cannot set it, and the field a client sends for it
-// reaches nothing. The mark is what freezes a role for good, so it is set by the
-// host that seeds the policy data through Manager.MarkRoleBuiltin, never by the
+// its description in the body. The body carries free text in description; the
+// legacy description_key is still accepted for the incremental contract, and a
+// non-empty description wins over it. The builtin mark is not part of the
+// request — a client cannot set it, and the field a client sends for it reaches
+// nothing. The mark is what freezes a role for good, so it is set by the host
+// that seeds the policy data through Manager.MarkRoleBuiltin, never by the
 // management surface.
 //
 // The blank field publishes the body schema's description and opens the object:
@@ -74,12 +76,14 @@ type bindingInput struct {
 // describe instead of refusing them, so the schema must not claim a refusal the
 // route does not make.
 type roleWriteInput struct {
-	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description key only. The builtin mark is not part of the body; a member sent under that name reaches nothing."`
+	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description, or the legacy description key. The builtin mark is not part of the body; a member sent under that name reaches nothing."`
 
 	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 
-	DescriptionKey string `json:"description_key" required:"true" description:"The i18n key of the role's description text. It is stored as given and not resolved by this surface."`
+	DescriptionKey string `json:"description_key" description:"Deprecated: the i18n key of the role's description text, accepted for a client that still sends it. description wins when both are present."`
+
+	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. It wins over description_key when present. An over-long value is a 400."`
 }
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -155,7 +159,9 @@ var roleListOperation = speedhttp.NewOperation[tenantInput, roleListBody](
 	http.MethodGet,
 	pathRolesFragment,
 	"List a tenant's roles",
-	"Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is "+
+	"Lists every role stored for the tenant, one view each, ordered by role name ascending. Each view carries "+
+		"the role's description, how many grants it holds, how many active members hold it (null when the "+
+		"assembly delivers no account-identity reader) and whether the caller may manage roles. The tenant is "+
 		"the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields "+
 		"an empty list. The list is not paginated.",
 	nil,
@@ -180,11 +186,12 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	http.MethodPut,
 	pathRoleFragment,
 	"Create or rewrite a role",
-	"The request carries the role's description key only. The builtin mark is not writable here: it is "+
-		"set by the host that seeds the policy data, and once set it cannot be cleared through this surface.",
+	"The request carries the role's free-text description. The legacy description_key is still accepted; "+
+		"a non-empty description wins over it. The builtin mark is not writable here: it is set by the host "+
+		"that seeds the policy data, and once set it cannot be cleared through this surface.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The role's description key.",
+		Description: "The role's description.",
 		Required:    true,
 		Name:        "AuthzAdminRoleWrite",
 	},
@@ -194,7 +201,7 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 			Description: "The role was written",
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The body is not one object, or the tenant is empty"),
+			"The body is not one object, the tenant is empty, or the description is longer than 500 characters"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"),

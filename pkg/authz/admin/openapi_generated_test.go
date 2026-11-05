@@ -63,7 +63,7 @@ func TestTheRoleWriteBodySchemaCarriesTheOldContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("the fragment carries no AuthzAdminRoleWrite schema")
 	}
-	const description = "The body of a role write: the role's description key only. " +
+	const description = "The body of a role write: the role's description, or the legacy description key. " +
 		"The builtin mark is not part of the body; a member sent under that name reaches nothing."
 	if schema["description"] != description {
 		t.Errorf("the write body schema description reads %v, want the one the hand-written fragment carried", schema["description"])

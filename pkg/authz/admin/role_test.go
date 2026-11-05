@@ -31,8 +31,8 @@ func TestListingRolesRequiresRoleRead(t *testing.T) {
 		t.Fatalf("the read asked the guard for %v, want [authz.role.read]", got)
 	}
 	got := r.manager.recorded()
-	if len(got) != 1 || got[0].op != "Roles" || got[0].tenant != "t1" {
-		t.Fatalf("the manager calls = %+v, want one Roles for the path identifier t1", got)
+	if len(got) != 2 || got[0].op != "Roles" || got[0].tenant != "t1" || got[1].op != "GrantCounts" || got[1].tenant != "t1" {
+		t.Fatalf("the manager calls = %+v, want Roles and GrantCounts for the path identifier t1", got)
 	}
 	if !strings.Contains(w.Body.String(), "editor") {
 		t.Fatalf("the answer %q does not carry the listed role", w.Body.String())

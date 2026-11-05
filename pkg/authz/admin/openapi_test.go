@@ -17,6 +17,7 @@ import (
 type seams struct {
 	authz.Manager
 	authz.Catalog
+	authz.SubjectPermissions
 	guard.Guard
 	audit.Audit
 	authn.SignupVerification
@@ -34,8 +35,8 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Endpoints: []string{"admin"},
 		Stubs: []core.Module{
 			routecontract.StandIn("stand-in.seams", &seams{},
-				(*authz.Manager)(nil), (*authz.Catalog)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil),
-				(*authn.SignupVerification)(nil)),
+				(*authz.Manager)(nil), (*authz.Catalog)(nil), (*authz.SubjectPermissions)(nil),
+				(*guard.Guard)(nil), (*audit.Audit)(nil), (*authn.SignupVerification)(nil)),
 		},
 		Config: map[string]any{
 			ConfigNamespace: map[string]any{"endpoints": []string{"admin"}},

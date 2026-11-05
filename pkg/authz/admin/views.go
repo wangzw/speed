@@ -42,24 +42,59 @@ func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission) A
 }
 
 // AuthzAdminRoleView is one role as the role routes show it.
+//
+// The description is the text a client shows: the operator's free text for a
+// role this surface created, and a builtin role's key rendered in the request's
+// language. DescriptionKey stays published for the incremental contract — a
+// client written against the earlier fragment still reads it — and is empty for
+// a role the management surface created.
 type AuthzAdminRoleView struct {
 	_ struct{} `description:"One role of a tenant as the role routes report it."`
 
-	Tenant         string    `json:"tenant" required:"true" description:"The tenant the role belongs to."`
-	Role           string    `json:"role" required:"true" description:"The role name within the tenant."`
-	Builtin        bool      `json:"builtin" required:"true" description:"True for a builtin role: the management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
-	DescriptionKey string    `json:"description_key" required:"true" description:"The i18n key of the role's description text; stored as given and not resolved by this surface."`
-	CreatedAt      time.Time `json:"created_at" required:"true" description:"When the role was written, as an RFC 3339 instant in UTC."`
+	Tenant          string    `json:"tenant" required:"true" description:"The tenant the role belongs to."`
+	Role            string    `json:"role" required:"true" description:"The role name within the tenant."`
+	Builtin         bool      `json:"builtin" required:"true" description:"True for a builtin role: the management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
+	Description     string    `json:"description" required:"true" description:"The role's description as a client shows it: the operator's free text for a role this surface created, or a builtin role's description key rendered in the request's language. With no message localizer assembled, a builtin role answers its key itself, the i18n fallback."`
+	DescriptionKey  string    `json:"description_key" required:"true" description:"The i18n key of the role's description text; stored as given and not resolved by this surface. Empty for a role the management surface created from free text. Kept for the incremental contract."`
+	PermissionCount int       `json:"permission_count" required:"true" description:"How many permission grants the role holds, from one grouped read of the tenant's grants."`
+	MemberCount     *int      `json:"member_count" description:"How many active members hold the role. Null when the assembly delivers no account-identity reader: the count cannot be read, and the binding count is not a stand-in for it."`
+	CanManage       bool      `json:"can_manage" required:"true" description:"True when the caller holds authz.role.manage in the platform domain, so a client renders the role, grant and binding controls. False hides them; the route guard still refuses a write the caller may not make."`
+	CreatedAt       time.Time `json:"created_at" required:"true" description:"When the role was written, as an RFC 3339 instant in UTC."`
 }
 
-func roleViewOf(r authz.RoleRecord) AuthzAdminRoleView {
+// roleViewOf builds one role's view. permissionCount is the role's grant count;
+// memberCount is nil when the assembly delivers no identity reader; canManage is
+// the caller's platform-domain role.manage.
+func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permissionCount int, memberCount *int, canManage bool) AuthzAdminRoleView {
 	return AuthzAdminRoleView{
-		Tenant:         r.Tenant,
-		Role:           string(r.Role),
-		Builtin:        r.Builtin,
-		DescriptionKey: r.DescriptionKey,
-		CreatedAt:      r.CreatedAt.UTC(),
+		Tenant:          r.Tenant,
+		Role:            string(r.Role),
+		Builtin:         r.Builtin,
+		Description:     p.roleDescription(ctx, r),
+		DescriptionKey:  r.DescriptionKey,
+		PermissionCount: permissionCount,
+		MemberCount:     memberCount,
+		CanManage:       canManage,
+		CreatedAt:       r.CreatedAt.UTC(),
 	}
+}
+
+// roleDescription renders the text a client shows for a role. A builtin role's
+// description is the localised text of the key the host seeded — the key itself
+// when no localizer is assembled, the i18n fallback; a builtin role with no key
+// answers its free text. A role the management surface created carries the
+// operator's free text as written.
+func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) string {
+	if !r.Builtin {
+		return r.Description
+	}
+	if r.DescriptionKey == "" {
+		return r.Description
+	}
+	if p.localizer == nil {
+		return r.DescriptionKey
+	}
+	return p.localizer.Localize(ctx, i18n.Key(r.DescriptionKey), nil)
 }
 
 // AuthzAdminGrantView is one permission grant as the grant routes show it. The

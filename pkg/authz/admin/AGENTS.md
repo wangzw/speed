@@ -141,16 +141,31 @@ write that lands answers 204 and no body.
   permissions is a 409 — the target exists but cannot be changed — and the
   `Manager` judges that one. The module holds `Manager` alone and never a
   `Seeder`, so no route can add a grant to a builtin role either.
-- **The role write body carries the description key only, never the builtin
-  mark.** The mark freezes a role against the management surface — it cannot be
-  rewritten, deleted or re-granted here, and no path clears it — so the
-  management surface does not set it: the host's seeding step does, through
-  `Manager.MarkRoleBuiltin`, and the host's seeding surface is the one write
-  that adds a grant to the role afterwards. A `builtin` member a client sends
-  reaches nothing: the route's body prescreen drops every member the declaration
-  does not carry before the entry point binds the declared input, the typed
-  handler builds its record from the declared field alone, and `PutRole` refuses
-  a record that carries the mark.
+- **The role write body carries the description, never the builtin mark.** The
+  body's `description` is the role's free text; the legacy `description_key` is
+  still accepted for the incremental contract, and a non-empty description wins
+  over it. A description longer than `authz.RoleDescriptionMax` characters is a
+  400 before the write guard, the audit and the `Manager`. The mark freezes a
+  role against the management surface — it cannot be rewritten, deleted or
+  re-granted here, and no path clears it — so the management surface does not set
+  it: the host's seeding step does, through `Manager.MarkRoleBuiltin`, and the
+  host's seeding surface is the one write that adds a grant to the role
+  afterwards. A `builtin` member a client sends reaches nothing: the route's body
+  prescreen drops every member the declaration does not carry before the entry
+  point binds the declared input, the typed handler builds its record from the
+  declared fields alone, and `PutRole` refuses a record that carries the mark.
+- **The role view describes a role and counts its use.** Its `description` is
+  the operator's free text for a role this surface created, and a builtin role's
+  description key rendered through the optional localizer in the request's
+  language — the key itself when no localizer is assembled. `description_key`
+  stays published for the incremental contract. `permission_count` is one
+  grouped read of the tenant's grants. `member_count` counts the active accounts
+  holding the role from one binding read and one batch identity read through the
+  optional `authz.AccountIdentityReader`; with no reader the field is null and
+  the binding count is not used as a stand-in, and an identity read that fails is
+  a 503. `can_manage` reports whether the caller holds `authz.role.manage` in the
+  platform domain, read through the required `authz.SubjectPermissions`; a read
+  that fails is a 503, never a hidden set of controls.
 - **The refusal mapping is closed and fail-closed.** An unknown role, a tenant
   mismatch and a platform membership the checker refuses are 400s; a builtin role
   and the last tenant administrator of a domain are 409s; any other failure of
@@ -180,19 +195,23 @@ write that lands answers 204 and no body.
   states `StateEnabled` and never `StateAuto`: whether the management routes exist
   is a decision of the command tree, not a conclusion a configuration infers.
 - **It requires the policy manager, the catalog, the handler-internal guard, the
-  audit capability and the registration-verification read, and each is another
-  module's to deliver.** A command that brings this one in without the `Manager`
-  to write through, the `Catalog` to hold a grant to, the guard to decide with,
-  the `Audit` to record through, or the `authn.SignupVerification` read to gate a
-  write on, fails the startup before any route is mounted, rather than answering
-  every route with a refusal or a write that cannot land. The HTTP entry point is
-  taken up in `Init` and is required — a command that mounts the management
-  routes and has no entry point has nothing to mount on, which is
-  `authz.ErrNoRouter`. The logger, the message localizer and the host's
-  `authz.WriteGuard` are the optional requirements; the logger, the localizer,
-  the write guard and the route-declaration surface are taken up in `Init`. With
-  no localizer the catalog view's description is the empty string; with no write
-  guard a write route does not consult that seam.
+  audit capability, the registration-verification read and the caller's
+  permission read, and each is another module's to deliver.** A command that
+  brings this one in without the `Manager` to write through, the `Catalog` to
+  hold a grant to, the guard to decide with, the `Audit` to record through, the
+  `authn.SignupVerification` read to gate a write on, or the
+  `authz.SubjectPermissions` read to tell a caller whether it may manage roles,
+  fails the startup before any route is mounted, rather than answering every
+  route with a refusal or a write that cannot land. The HTTP entry point is taken
+  up in `Init` and is required — a command that mounts the management routes and
+  has no entry point has nothing to mount on, which is `authz.ErrNoRouter`. The
+  logger, the message localizer, the host's `authz.WriteGuard` and the host's
+  `authz.AccountIdentityReader` are the optional requirements; the logger, the
+  localizer, the identity reader, the write guard and the route-declaration
+  surface are taken up in `Init`. With no localizer the catalog view's
+  description is the empty string and a builtin role answers its key; with no
+  identity reader the role list's member count is null; with no write guard a
+  write route does not consult that seam.
 - **The answer is a view, built field by field.** Every route answers with a view
   assembled from a root-package value and never the value as it stands, so a field
   added to a record later does not reach a client by being there.
