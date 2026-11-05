@@ -31,7 +31,6 @@
 
 import { useCallback, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement, ReactNode } from 'react'
-import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Collapse from '@mui/material/Collapse'
@@ -44,10 +43,7 @@ import Typography from '@mui/material/Typography'
 import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { ImpersonationEndMenuItem } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
-import {
-  NOTIFICATION_BADGE_MAX,
-  useNotificationUnread,
-} from '@speed/notification-ui'
+import { useNotificationUnread } from '@speed/notification-ui'
 import type { NotificationUnread } from '@speed/notification-ui'
 import { Avatar, avatarInitials } from '@speed/layout-kit'
 import type { AppShellNavItem } from '@speed/layout-kit'
@@ -725,7 +721,7 @@ export function UserMenu({
   }
 
   return (
-    <Box>
+    <Box sx={{ position: 'relative', display: 'inline-flex' }}>
       <IconButton
         color="inherit"
         size={narrow ? 'small' : 'medium'}
@@ -741,20 +737,12 @@ export function UserMenu({
         data-testid="user-menu-trigger"
         onClick={(event) => setAnchorEl(event.currentTarget)}
       >
-        <Badge
-          color="error"
-          max={NOTIFICATION_BADGE_MAX}
-          overlap="circular"
-          sx={unreadBadgeSx}
-          badgeContent={
-            unread.badgeText === null ? undefined : (
-              <span aria-hidden="true">{unread.badgeText}</span>
-            )
-          }
-        >
-          <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
-        </Badge>
+        <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
       </IconButton>
+      <AccountUnreadOverlay
+        text={unread.badgeText}
+        placement={narrow ? 'header-narrow' : 'header'}
+      />
       <TenantSwitchAnnouncement tenantName={switchedTenant} />
       <Menu
         id={menuId}
@@ -879,15 +867,67 @@ function OrganizationTile({ name }: { readonly name: string }): ReactElement {
   )
 }
 
-/** The unread badge's ink: a pale `error.light` fill under the neutral-900
- * ink. A solid `error.main` fill reads as black in the glass preset, whose
- * semantic tones are deepened for its pastel canvas; `error.dark` on the pale
- * fill only clears contrast in that same preset (2.3:1 in the default one,
- * 4.4:1 in ascii), while the neutral ink clears it everywhere, in both
- * modes. */
-const unreadBadgeSx = {
-  '& .MuiBadge-badge': { bgcolor: 'error.light', color: 'grey.900' },
-} as const
+/**
+ * The unread count, painted over the account avatar from outside the control.
+ *
+ * It is a sibling of the trigger rather than a child, because WCAG 2.5.3
+ * counts every visible character inside a control: a digit rendered inside
+ * the button would be text the trigger's accessible name has to contain, and
+ * the name says the count as a sentence ("Notifications: 1 unread"). Painting
+ * it outside leaves the control's visible text to the initials it already
+ * announces; the phrase still reaches a screen reader through the name.
+ *
+ * The ink is a pale `error.light` fill under the neutral-900 ink: a solid
+ * `error.main` fill reads as black in the glass preset, whose semantic tones
+ * are deepened for its pastel canvas, while `error.dark` on the pale fill
+ * only clears contrast in that same preset. The neutral ink clears it in
+ * every preset, in both modes.
+ */
+function AccountUnreadOverlay({
+  text,
+  placement,
+}: {
+  readonly text: string | null
+  /** Where the trigger sits: the header avatar, or the navigation column's
+   * account row (whose avatar is on the row's leading edge, or centered in
+   * the collapsed rail). */
+  readonly placement: 'header' | 'header-narrow' | 'row' | 'row-narrow'
+}): ReactElement | null {
+  if (text === null) {
+    return null
+  }
+  const anchor =
+    placement === 'header' || placement === 'header-narrow'
+      ? // Inside the trigger's own box: the overlay is a sibling with
+        // `pointer-events: none`, so any part that hung past the button would
+        // be a dead sliver of the badge.
+        { top: '0px', right: '0px' }
+      : placement === 'row'
+        ? { top: '7px', left: '41px' }
+        : { top: '7px', left: '50%', transform: 'translate(5px, 0)' }
+  return (
+    <Box
+      component="span"
+      aria-hidden="true"
+      sx={(theme) => ({
+        ...anchor,
+        position: 'absolute',
+        pointerEvents: 'none',
+        minWidth: theme.spacing(2.25),
+        px: theme.spacing(0.5),
+        borderRadius: 999,
+        bgcolor: 'error.light',
+        color: 'grey.900',
+        typography: 'caption',
+        fontWeight: 700,
+        lineHeight: 1.5,
+        textAlign: 'center',
+      })}
+    >
+      {text}
+    </Box>
+  )
+}
 
 /** The sign-out glyph: a door with an outward arrow, decorative only. */
 function SignOutIcon() {
@@ -1370,7 +1410,7 @@ export function AccountEntry({
     <Box data-testid="account-entry" sx={{ width: '100%' }}>
       <Divider />
       <TenantSwitchAnnouncement tenantName={switchedTenant} />
-      <Box sx={{ pt: '12px', pb: '12px' }}>
+      <Box sx={{ pt: '12px', pb: '12px', position: 'relative' }}>
         <Button
           fullWidth
           color="inherit"
@@ -1399,19 +1439,7 @@ export function AccountEntry({
               width: narrow ? 'auto' : '36px',
             }}
           >
-            <Badge
-              color="error"
-              max={NOTIFICATION_BADGE_MAX}
-              overlap="circular"
-          sx={unreadBadgeSx}
-              badgeContent={
-                unread.badgeText === null ? undefined : (
-                  <span aria-hidden="true">{unread.badgeText}</span>
-                )
-              }
-            >
-              <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
-            </Badge>
+            <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
           </Box>
           {/* The glyph's initials and the display name are two text nodes.
               Without a separator their text coalesces into one word ("TUJane
@@ -1451,6 +1479,10 @@ export function AccountEntry({
             </>
           )}
         </Button>
+        <AccountUnreadOverlay
+          text={unread.badgeText}
+          placement={narrow ? 'row-narrow' : 'row'}
+        />
       </Box>
       <Menu
         id={menuId}

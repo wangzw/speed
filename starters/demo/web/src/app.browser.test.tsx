@@ -1,18 +1,25 @@
 /**
- * The header admin entry's surface in a real browser.
+ * The admin entry's surface in a real browser.
  *
- * The entry is an action, not a label: its full form wears the outlined
- * action pill, and the collapsed rail keeps the icon-only button. jsdom
- * carries the class names too, but the class is the whole subject here --
- * the two tiers differ only in the material they are built from -- so the
- * browser tier owns the case beside the demo's other geometry cases.
+ * The entry is an account-menu item: the bar carries no control of its own,
+ * and the platform's own organization is where the entry is offered. The
+ * browser tier owns the case beside the demo's other geometry cases because
+ * the assertion is about what the rendered menu offers -- a real menu item,
+ * a real link -- rather than about class names alone.
  */
 
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
-import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
+import {
+  NOTIFICATION_UI_NAMESPACE,
+  notificationUiResources,
+} from '@speed/notification-ui'
+import { createSpeedI18n } from '@speed/product-shell/bootstrap'
+import { createBackend } from './a11y/backends.js'
+import { setCurrentTenantId, setTenantAliases } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
 import {
@@ -21,34 +28,73 @@ import {
 } from './test-utils/session.js'
 
 describe('the admin entry surface', () => {
-  it('is the outlined action pill, and the collapsed rail keeps the icon form', async () => {
+  it('is a menu item in the platform organization, and a real link', async () => {
     await page.viewport(1100, 900)
+    // The platform's own organization: the entry is offered only there.
+    setCurrentTenantId('system')
+    setTenantAliases(new Map([['system', 'system']]))
     const session = createTestSession(
       authenticatedSnapshot({ system: ['tenant.read'] }),
     )
-    const { i18n } = renderDemoApp({ session, shellLayout: 'sidebar' })
+    renderDemoApp({ session, shellLayout: 'sidebar' })
     const user = userEvent.setup()
 
-    const entry = await screen.findByRole('link', {
+    await user.click(await screen.findByTestId('account-entry-trigger'))
+    const entry = await screen.findByRole('menuitem', {
       name: demoEnUS.nav.admin,
     })
-    // The entry still links, and its full form is the outlined pill.
-    expect(entry).toHaveClass('MuiButton-outlined')
+    // It is an action and a destination at once: a menu item whose element is
+    // the anchor, so a modified click keeps the browser's own behaviour.
+    expect(entry.tagName).toBe('A')
+    expect(entry.getAttribute('href')).not.toBeNull()
 
-    const tLayout = i18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
-    await user.click(
-      screen.getByRole('button', {
-        name: tLayout('appShell.collapseNav'),
-      }),
+    // The bar itself carries no such control: the entry lives in the menu.
+    expect(
+      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
+    ).toBeNull()
+  })
+
+  it('paints the unread count beside the trigger, fully inside its hit box', async () => {
+    await page.viewport(1100, 900)
+    // The scripted backend answers one unread message.
+    bindRequestFn(createBackend('data'))
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    const trigger = await screen.findByTestId('user-menu-trigger')
+    const phrase = createSpeedI18n({
+      supportedLanguages: ['en-US'],
+      defaultLanguage: 'en-US',
+      storage: null,
+      urlParameterName: null,
+      navigatorLanguages: [],
+      namespaces: [
+        {
+          namespace: NOTIFICATION_UI_NAMESPACE,
+          resources: notificationUiResources,
+        },
+      ],
+    }).getFixedT('en-US', NOTIFICATION_UI_NAMESPACE)('bell.labelWithCount', {
+      n: '1',
+    })
+    await waitFor(() =>
+      expect(trigger).toHaveAccessibleName(new RegExp(phrase)),
     )
 
-    await waitFor(() => {
-      const links = screen.queryAllByRole('link', {
-        name: demoEnUS.nav.admin,
-      })
-      expect(links).toHaveLength(1)
-      expect(links[0]).not.toHaveClass('MuiButton-outlined')
-      expect(links[0]?.closest('.MuiIconButton-root')).not.toBeNull()
-    })
+    const overlay = Array.from(
+      (trigger.parentElement as HTMLElement).querySelectorAll('[aria-hidden="true"]'),
+    ).find((node) => (node.textContent ?? '').trim() === '1')
+    expect(overlay).toBeDefined()
+    const triggerRect = trigger.getBoundingClientRect()
+    const overlayRect = (overlay as Element).getBoundingClientRect()
+    // Every pixel of the count sits over the button: the overlay takes no
+    // pointer events, so a part hanging past the trigger would be a dead
+    // sliver where a click does nothing.
+    expect(overlayRect.left).toBeGreaterThanOrEqual(triggerRect.left - 0.5)
+    expect(overlayRect.top).toBeGreaterThanOrEqual(triggerRect.top - 0.5)
+    expect(overlayRect.right).toBeLessThanOrEqual(triggerRect.right + 0.5)
+    expect(overlayRect.bottom).toBeLessThanOrEqual(triggerRect.bottom + 0.5)
+    // The digit stays out of the control's own text: a visible character
+    // inside the button would have to appear in the accessible name.
+    expect(trigger).not.toHaveTextContent('1')
   })
 })

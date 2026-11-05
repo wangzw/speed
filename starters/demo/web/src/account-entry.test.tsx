@@ -208,6 +208,19 @@ describe('the account entry in the navigation column', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('puts one account trigger in the sidebar shape, not two', async () => {
+    // The sidebar shape moves the header's user slot into the drawer paper's
+    // bottom row, directly under the account row: both triggers at once would
+    // stack two controls for one menu in the same corner.
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+      shellLayout: 'sidebar',
+    })
+
+    await screen.findByTestId('account-entry-trigger')
+    expect(screen.queryByTestId('user-menu-trigger')).toBeNull()
+  })
+
   it('keeps only the avatar in the collapsed rail, still named by the account', async () => {
     const user = userEvent.setup()
     renderDemoApp({

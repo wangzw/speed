@@ -424,7 +424,13 @@ describe('the colour mode preference', () => {
  * 'both' here because the comparison needs both mounted at once; the entries
  * themselves come from the one shared list in chrome.tsx.
  */
-vi.mock('./account-entry.js', () => ({ ACCOUNT_ENTRY: 'both' }))
+vi.mock('./account-entry.js', () => ({
+  ACCOUNT_ENTRY: 'both',
+  // The predicate the assembly asks instead of comparing the constant at each
+  // call site: this stub stands for the real module's answer for 'both'.
+  accountEntryInUserSlot: (shellLayout?: string) => shellLayout !== 'sidebar',
+  accountEntryInNavFooter: () => true,
+}))
 
 /** The entries every account menu carries unconditionally, in render order.
  * The organization admin group joins the list only while the caller's admission
@@ -607,7 +613,8 @@ describe('the header account menu in the temporary drawer', () => {
     // The case above injects the close channel into UserMenu, so it cannot
     // prove the assembled app passes the slot's own channel through. This
     // case drives the app instead: the sidebar shell below md, its temporary
-    // drawer, and the avatar menu inside it.
+    // drawer, and the account row's menu inside it -- the sidebar shape keeps
+    // the entry in the row and renders no avatar menu.
     mockMatchMedia(false)
     window.history.replaceState({}, '', '/')
     setCurrentTenantId('acme')
@@ -658,9 +665,10 @@ describe('the header account menu in the temporary drawer', () => {
       screen.getByRole('button', { name: tLayout('appShell.openNav') }),
     )
 
-    // The avatar menu is the drawer's userMenu slot. Its organization group is
-    // the admission's entries, resolved from the scripted reads.
-    await user.click(screen.getByTestId('user-menu-trigger'))
+    // The account row in the drawer paper is the account entry this shape
+    // renders. Its organization group is the admission's entries, resolved
+    // from the scripted reads.
+    await user.click(screen.getByTestId('account-entry-trigger'))
     const menu = await screen.findByRole('menu')
     const group = await within(menu).findByRole('group', {
       name: demoEnUS.nav.organizationAdmin,

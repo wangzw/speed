@@ -23,8 +23,8 @@
  * the brand and the account menu. The menu's destination entry is the way back
  * to the tenant area, so the admin is not a navigation dead end; the admin
  * resolves no tenant, so that menu carries no organization list.
- * The account entry follows the same ACCOUNT_ENTRY constant as the tenant
- * frame (src/account-entry): by default it is the row at the bottom of the
+ * The account entry follows the same placement predicate as the tenant frame
+ * (src/account-entry): by default it is the row at the bottom of the
  * navigation column, and the header carries no avatar menu.
  */
 
@@ -41,7 +41,10 @@ import type { AppShellShellLayout } from '@speed/layout-kit'
 import { useLocationPath, useNavigate, useNavItems } from '@speed/route-kit'
 import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
-import { ACCOUNT_ENTRY } from '../account-entry.js'
+import {
+  accountEntryInNavFooter,
+  accountEntryInUserSlot,
+} from '../account-entry.js'
 import { useAppServices } from '../app-services.js'
 import { CallbackLandingNotice } from '../callback-error-notice.js'
 import { AccountEntry, AppBrand, UserMenu } from '../chrome.js'
@@ -145,17 +148,20 @@ export function AdminArea({
       // The bar carries the account menu alone: the way back to the tenant
       // area is the menu's destination entry, beside the same account panes
       // the tenant frame offers.
-      headerActions={() =>
-        ACCOUNT_ENTRY === 'sidebar' ? null : (
-          <UserMenu destination={destination} />
-        )
+      // The sidebar shape carries the account entry in its bottom row
+      // already, and a slot that renders nothing would still reserve a row
+      // under it, so the slot is passed only when it holds the menu.
+      headerActions={
+        accountEntryInUserSlot(shellLayout)
+          ? () => <UserMenu destination={destination} />
+          : undefined
       }
       // The account entry's placement follows the tenant frame's constant:
       // a row at the bottom of the navigation column by default, the header
       // menu only when the host puts it there. The admin resolves no tenant,
       // so the menu carries no organization list.
       navFooter={(rail) =>
-        ACCOUNT_ENTRY === 'header' ? null : (
+        !accountEntryInNavFooter(shellLayout) ? null : (
           <AccountEntry
             narrow={rail.narrow}
             closeDrawer={rail.closeDrawer}
@@ -192,8 +198,10 @@ export function AdminArea({
     >
       {/* A step-up round trip started from this admin page lands back here
           with a refusal's problem code in the fragment: the admin area
-          reads it and words it above the page. */}
-      <Box sx={{ mb: 2, maxWidth: 960 }}>
+          reads it and words it above the page. With no refusal the notice
+          renders nothing, and this wrapper goes with it -- an empty box would
+          still reserve its bottom margin above every page. */}
+      <Box sx={{ mb: 2, maxWidth: 960, '&:empty': { display: 'none' } }}>
         <CallbackLandingNotice namespace={ADMIN_UI_NAMESPACE} />
       </Box>
       {children}

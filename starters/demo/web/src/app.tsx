@@ -108,7 +108,10 @@ import type {
   AccountMenuOrganizations,
   DemoTenant,
 } from './chrome.js'
-import { ACCOUNT_ENTRY } from './account-entry.js'
+import {
+  accountEntryInNavFooter,
+  accountEntryInUserSlot,
+} from './account-entry.js'
 import { AdminArea } from './admin/admin-area.js'
 import {
   adminShellRoutes,
@@ -1153,20 +1156,18 @@ function TenantFrame({
               <ContactVerificationBanner />
             </>
           }
-          // The bar carries no notification control of its own: the unread
-          // count rides the account avatar (`notifications` below), and the
-          // inbox is one entry of the account menu. The badge is offered only
-          // when the deployment serves notification.inbox -- a deployment
-          // without that endpoint has nothing to count, and the read would be
-          // refused on every mount.
-          headerActions={() => null}
+          // The bar carries no controls of its own any more: the unread count
+          // rides the account avatar (`notifications` below) and the inbox is
+          // one entry of the account menu. No header-actions slot is passed at
+          // all -- a slot that renders nothing still makes the sidebar shape
+          // reserve its bottom row.
           sidebarCollapsed={sidebarCollapsed}
           onSidebarCollapsedChange={onSidebarCollapsedChange}
           // The account entry, its organization list and the admin entry are
           // one menu: both placements receive the same values, so the header
           // dropdown and the sidebar row cannot drift into two menus.
           navFooter={(rail) =>
-            ACCOUNT_ENTRY === 'header' ? null : (
+            !accountEntryInNavFooter(shellLayout) ? null : (
               <AccountEntry
                 narrow={rail.narrow}
                 closeDrawer={rail.closeDrawer}
@@ -1177,25 +1178,34 @@ function TenantFrame({
               />
             )
           }
-          userMenu={(rail) => (
-            <>
-              {/* The chip sits ahead of the account menu: while an
-                  impersonation is in force it is the persistent visible
-                  indication, and it toggles the notice (its close control
-                  moves focus here). */}
-              <ImpersonationChip narrow={rail.narrow} />
-              {ACCOUNT_ENTRY === 'sidebar' ? null : (
-                <UserMenu
-                  narrow={rail.narrow}
-                  closeDrawer={rail.closeDrawer}
-                  organizationItems={organizationItems}
-                  organizations={organizations}
-                  destination={adminDestination}
-                  notifications={inboxServed}
-                />
-              )}
-            </>
-          )}
+          // The slot is passed only when it has something to hold: the
+          // sidebar shape has no user menu (its account row carries the
+          // entry) and keeps the chip alone while an impersonation is in
+          // force. A slot that renders nothing still makes that shape reserve
+          // the row, which reads as padding under the account row.
+          userMenu={
+            accountEntryInUserSlot(shellLayout) || impersonating
+              ? (rail) => (
+                  <>
+                    {/* The chip sits ahead of the account menu: while an
+                        impersonation is in force it is the persistent visible
+                        indication, and it toggles the notice (its close
+                        control moves focus here). */}
+                    <ImpersonationChip narrow={rail.narrow} />
+                    {accountEntryInUserSlot(shellLayout) ? (
+                      <UserMenu
+                        narrow={rail.narrow}
+                        closeDrawer={rail.closeDrawer}
+                        organizationItems={organizationItems}
+                        organizations={organizations}
+                        destination={adminDestination}
+                        notifications={inboxServed}
+                      />
+                    ) : null}
+                  </>
+                )
+              : undefined
+          }
           signIn={<SignInView />}
         >
           {/* The notification surface's feature-presence facts: the

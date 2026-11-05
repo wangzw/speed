@@ -8,7 +8,13 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('./account-entry.js', () => ({ ACCOUNT_ENTRY: 'header' }))
+vi.mock('./account-entry.js', () => ({
+  ACCOUNT_ENTRY: 'header',
+  // The predicate the assembly asks instead of comparing the constant at each
+  // call site: this stub stands for the real module's answer for 'header'.
+  accountEntryInUserSlot: (shellLayout?: string) => shellLayout !== 'sidebar',
+  accountEntryInNavFooter: (shellLayout?: string) => shellLayout === 'sidebar',
+}))
 
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
@@ -40,5 +46,20 @@ describe('the account entry in the header', () => {
     await waitFor(() =>
       expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
     )
+  })
+})
+
+describe('the account entry when the shell shape and the constant disagree', () => {
+  it('keeps the row as the only entry in the sidebar shape', async () => {
+    // The sidebar shape's bottom row sits under the account row, so that
+    // shape never renders the header menu; the row is then the only entry,
+    // whatever this constant says.
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+      shellLayout: 'sidebar',
+    })
+
+    expect(await screen.findByTestId('account-entry-trigger')).toBeInTheDocument()
+    expect(screen.queryByTestId('user-menu-trigger')).toBeNull()
   })
 })

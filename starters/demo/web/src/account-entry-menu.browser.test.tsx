@@ -227,6 +227,19 @@ function menuItemLabelLeft(item: HTMLElement): number | undefined {
       return range.getBoundingClientRect().left
     }
   }
+  // An entry may carry its label in a box of its own: the notification
+  // centre's row puts the unread count after the label, and the organization
+  // row is the same shape. The first element child is the entry's icon cell,
+  // so the label is the first later child that paints text of its own.
+  for (const child of Array.from(item.children).slice(1)) {
+    if (child.getAttribute('aria-hidden') === 'true') {
+      continue
+    }
+    if ((child.textContent ?? '').trim() === '') {
+      continue
+    }
+    return child.getBoundingClientRect().left
+  }
   return undefined
 }
 
@@ -477,11 +490,13 @@ describe('the account menu across theme presets', () => {
           }
         }
 
-        // The menu's own dividers are visible rules too.
+        // The menu's own dividers are visible rules too: after the
+        // organization row, after the notification centre, and before
+        // sign-out.
         const dividers = within(paper).getAllByRole('separator')
-        if (dividers.length !== 2) {
+        if (dividers.length !== 3) {
           issues.push(
-            `${label}: expected 2 menu dividers, found ${dividers.length}`,
+            `${label}: expected 3 menu dividers, found ${dividers.length}`,
           )
         }
         dividers.forEach((divider, index) => {

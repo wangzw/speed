@@ -64,7 +64,11 @@ describe('the account menu over one unread notification', () => {
     await waitFor(() =>
       expect(trigger).toHaveAccessibleName(triggerName('1')),
     )
-    expect(within(trigger).getByText('1')).toBeInTheDocument()
+    // The count is painted beside the trigger, not inside it: a digit inside
+    // the control would be visible text its accessible name must contain.
+    const wrapper = trigger.parentElement as HTMLElement
+    expect(within(wrapper).getByText('1')).toBeInTheDocument()
+    expect(trigger).not.toHaveTextContent('1')
   })
 
   it('counts the notification-centre row and carries the count in its name', async () => {
