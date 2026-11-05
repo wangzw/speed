@@ -138,6 +138,14 @@ export interface ReviewConfigInput {
    */
   readonly schedulerTick?: string
   /**
+   * Raise `ratelimit.limit` to this positive integer in the seed settings. Off
+   * by default: the template keeps the declared hundred, and only a journey
+   * whose own steps make more than that from one identity inside one counting
+   * window asks for a higher value. It is a deployment setting the binary's own
+   * seed writes -- assembly, not a manufactured product state.
+   */
+  readonly identityQuota?: string
+  /**
    * Seed the tenant-SSO journey's state through the binary's own `seed` command:
    * the enterprise fixture's fixed user as the target tenant's administrator.
    * Off by default: the account and its administrator binding exist for the
@@ -991,6 +999,21 @@ export async function writeReviewConfig(
       '\n  settings:\n',
       '\n  settings:\n    - key: "tenant.admission.require-mfa"\n      value: "true"\n',
       'platform admission floor',
+    )
+  }
+
+  // A journey whose own steps make more than the declared hundred requests a
+  // minute from one identity asks for a higher per-identity quota. The counting
+  // layer stays assembled; only its threshold moves, and a deployment keeps the
+  // declared default. It is written into this server's seed, so the settings
+  // surface still reports the row as a deployment setting rather than a value
+  // manufactured around the product.
+  if (input.identityQuota !== undefined) {
+    body = replaceOnce(
+      body,
+      '\n  settings:\n',
+      `\n  settings:\n    - key: "ratelimit.limit"\n      value: ${quoted(input.identityQuota)}\n`,
+      'per-identity quota',
     )
   }
 

@@ -156,6 +156,14 @@ export const test = base.extend<{
    * every other spec keeps the template's two-second tick.
    */
   schedulerTick: string | undefined
+  /**
+   * Raise `ratelimit.limit` for this spec's server. A journey whose steps make
+   * more than the declared hundred requests from one identity inside one
+   * counting window sets a higher positive integer; every other spec keeps the
+   * declared default, which the settings surface then still reports as the
+   * declaration.
+   */
+  identityQuota: string | undefined
 }>({
   seedMember: [false, { option: true }],
   seedImpersonation: [false, { option: true }],
@@ -173,6 +181,7 @@ export const test = base.extend<{
   recentWindow: [undefined, { option: true }],
   mfaRequired: [false, { option: true }],
   schedulerTick: [undefined, { option: true }],
+  identityQuota: [undefined, { option: true }],
   server: async (
     {
       seedMember,
@@ -191,6 +200,7 @@ export const test = base.extend<{
       recentWindow,
       mfaRequired,
       schedulerTick,
+      identityQuota,
     },
     use,
     testInfo,
@@ -212,6 +222,7 @@ export const test = base.extend<{
       recentWindow,
       mfaRequired,
       schedulerTick,
+      identityQuota,
     })
     try {
       await use(server)

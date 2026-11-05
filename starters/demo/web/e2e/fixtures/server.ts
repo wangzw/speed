@@ -542,17 +542,25 @@ function platformSettingsItems(body: string): readonly SettingsItem[] {
   })
 }
 
-/** Read the tenant envelope's items out of its `settings` array. */
+/**
+ * Read the tenant envelope's items out of its `settings` array.
+ *
+ * The tenant item carries the full key and no separate namespace: the
+ * declaring module is the key's leading segment, and the surface renders the
+ * key rather than splitting it. The namespace field is therefore empty here;
+ * the callers that address a write take their items from the platform listing,
+ * which does carry one.
+ */
 function tenantSettingsItems(body: string): readonly SettingsItem[] {
   const parsed = JSON.parse(body) as { readonly settings?: unknown }
   if (!Array.isArray(parsed.settings)) return []
   return parsed.settings.flatMap((entry) => {
     if (entry === null || typeof entry !== 'object') return []
-    const item = entry as { readonly key?: unknown; readonly namespace?: unknown }
-    if (typeof item.key !== 'string' || typeof item.namespace !== 'string') {
+    const item = entry as { readonly key?: unknown }
+    if (typeof item.key !== 'string') {
       return []
     }
-    return [{ key: item.key, namespace: item.namespace }]
+    return [{ key: item.key, namespace: '' }]
   })
 }
 
@@ -776,6 +784,7 @@ export async function startReviewServer(
     readonly recentWindow?: string
     readonly mfaRequired?: boolean
     readonly schedulerTick?: string
+    readonly identityQuota?: string
   } = {},
 ): Promise<ReviewServer> {
   const manifest = await readHarnessManifest()
@@ -880,6 +889,7 @@ export async function startReviewServer(
       recentWindow: options.recentWindow,
       mfaRequired: options.mfaRequired,
       schedulerTick: options.schedulerTick,
+      identityQuota: options.identityQuota,
     })
     await runCommand(
       manifest.binary,
@@ -915,6 +925,7 @@ export async function startReviewServer(
         recentWindow: options.recentWindow,
         mfaRequired: options.mfaRequired,
         schedulerTick: options.schedulerTick,
+        identityQuota: options.identityQuota,
       })
       const configLocator = `file:${config.path}`
       const from = log.mark()

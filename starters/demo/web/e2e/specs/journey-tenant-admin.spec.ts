@@ -402,6 +402,11 @@ test.describe('the tenant administrator manages the organization', () => {
   test.use({
     seedTenantAdmin: true,
     seedInvitee: true,
+    // The journey's steps, and the platform-item probe inside step 17, make
+    // more than the declared hundred requests a minute from this one account.
+    // The review server raises the per-identity quota so the journey reaches
+    // the product instead of the counting layer; the layer stays assembled.
+    identityQuota: '10000',
     viewport: { width: 1920, height: 1080 },
   })
 
@@ -1672,8 +1677,14 @@ test.describe('the tenant administrator manages the organization', () => {
         // tenant keys, and every write and delete answers the bare 404 an
         // undeclared key gets. A namespace read has no tenant route at all,
         // so the router answers 404 or 405.
+        //
+        // This server does not run the impersonation fixture, so the seed
+        // writes the operator's address as an administrator's assertion it
+        // does not prove: the address is a contact, not a login way. The
+        // username beside it is the login name, which is what the API sign-in
+        // takes here.
         const platformSettings = await server.readPlatformSettings({
-          identifier: OPERATOR.identifier,
+          identifier: OPERATOR.username,
           password: OPERATOR.password,
         })
         expect(platformSettings.status).toBe(200)
