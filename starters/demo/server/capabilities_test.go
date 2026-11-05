@@ -9,6 +9,7 @@ package main
 import (
 	"testing"
 
+	"github.com/vislake/speed/pkg/authn/invitemail"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/feature"
 )
@@ -67,6 +68,23 @@ func TestTheLogCarriersAreInEveryBuild(t *testing.T) {
 				"consider it", name)
 		}
 	}
+}
+
+// TestTheDefaultBuildCarriesTheInvitationNotifier holds the invitation email
+// channel in the ceiling: it is compiled into every build and named for serve,
+// so a deployment that sets its accept base URL sends the notice and a bare run
+// reports not_configured, without a separate binary.
+func TestTheDefaultBuildCarriesTheInvitationNotifier(t *testing.T) {
+	if _, ok := core.ProcessRegistry.Lookup(invitemail.ModuleName); !ok {
+		t.Errorf("the default build registers no %q", invitemail.ModuleName)
+	}
+	for _, name := range capabilityModules {
+		if name == invitemail.ModuleName {
+			return
+		}
+	}
+	t.Errorf("capabilityModules does not name %q, so no serve run considers it",
+		invitemail.ModuleName)
 }
 
 // TestDefaultBuildCarriesNoReviewControl holds the other side of the split: the

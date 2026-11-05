@@ -1,0 +1,5 @@
+{
+  "authn.invitemail.subject": "邀请你加入 {{tenant}}",
+  "authn.invitemail.body_text": "你被邀请加入「{{tenant}}」。请打开以下链接接受邀请：\n\n{{accept_url}}\n\n此链接在 {{expires_at}} 前有效。任何获得此链接的人都能加入该组织，请勿转发给他人。",
+  "authn.invitemail.body_html": "<p>你被邀请加入「{{tenant}}」。</p><p><a href=\"{{accept_url}}\">{{accept_url}}</a></p><p>此链接在 {{expires_at}} 前有效。任何获得此链接的人都能加入该组织，请勿转发给他人。</p>"
+}

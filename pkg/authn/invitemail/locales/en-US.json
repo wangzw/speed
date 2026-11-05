@@ -1,0 +1,5 @@
+{
+  "authn.invitemail.subject": "You are invited to join {{tenant}}",
+  "authn.invitemail.body_text": "You have been invited to join \"{{tenant}}\". Open this link to accept the invitation:\n\n{{accept_url}}\n\nThis link works until {{expires_at}}. Anyone who has the link can join the organization, so do not forward it.",
+  "authn.invitemail.body_html": "<p>You have been invited to join &quot;{{tenant}}&quot;.</p><p><a href=\"{{accept_url}}\">{{accept_url}}</a></p><p>This link works until {{expires_at}}. Anyone who has the link can join the organization, so do not forward it.</p>"
+}

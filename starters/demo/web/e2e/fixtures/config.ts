@@ -639,16 +639,17 @@ export async function writeReviewConfig(
     `root: ${quoted(objectsRoot)}`,
     'object store root',
   )
-  // The template names the published origin in three places: the public URL
-  // the authn gate advertises, the WebAuthn origin, and the ops document's
-  // server list. All three follow the port the browser actually opens, which
-  // is also where the operations probes answer now that one listener carries
-  // both surfaces.
+  // The template names the published origin in four places: the public URL
+  // the authn gate advertises, the WebAuthn origin, the ops document's server
+  // list, and the invitation notice's acceptance landing. All four follow the
+  // port the browser actually opens, which is also where the operations probes
+  // answer now that one listener carries both surfaces. The notice's link must
+  // land on this run's own acceptance page, not a fixed port.
   body = replaceAll(
     body,
     '"http://localhost:8080"',
     quoted(origin),
-    3,
+    4,
     'public origin',
   )
   // The social journey drives a real round trip through a provider the harness

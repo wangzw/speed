@@ -140,6 +140,13 @@ authn:
   humanverify:
     mode: off
     phone-mode: off
+  # REVIEW: the invitation notice. authn.invitemail joins this origin to the
+  # public acceptance landing (/invitations/<token>) and renders the notice;
+  # mail.carrier: log below writes the message, link included, to the process
+  # output. The run serves the frontend here, so the link lands on this
+  # assembly's own acceptance page.
+  invitemail:
+    accept-base-url: "http://localhost:8080"
 
 # The SMS sending family. sms.registry holds the templates the SMS module sends
 # its codes under; the login, second-factor and enrollment names and the

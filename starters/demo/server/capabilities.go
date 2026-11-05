@@ -29,6 +29,7 @@ package main
 
 import (
 	"github.com/vislake/speed/pkg/authn/emailcode"
+	"github.com/vislake/speed/pkg/authn/invitemail"
 	githublogin "github.com/vislake/speed/pkg/authn/login/github"
 	googlelogin "github.com/vislake/speed/pkg/authn/login/google"
 	smslogin "github.com/vislake/speed/pkg/authn/login/sms"
@@ -85,13 +86,16 @@ var capabilityModules = []string{
 	mfasmssms.ModuleName,
 	smsadmin.ModuleName,
 
-	// The mail capability's carriers and the verification code sender over
-	// them. mail.smtp reaches a relay; mail.log writes each message to the
-	// process log and is the fallback when no other carrier is configured.
-	// Both are compiled in, and the run selects one through mail.carrier.
+	// The mail capability's carriers and the notices over them. mail.smtp
+	// reaches a relay; mail.log writes each message to the process log and is
+	// the fallback when no other carrier is configured. Both are compiled in,
+	// and the run selects one through mail.carrier. authn.emailcode renders a
+	// verification code, and authn.invitemail an invitation notice, into the
+	// carrier's message.
 	smtp.ModuleName,
 	maillog.ModuleName,
 	emailcode.ModuleName,
+	invitemail.ModuleName,
 
 	// The SMS log carrier. It is built through the same sms.NewModule a vendor
 	// carrier uses, writes each resolved message to the process log, and is the
