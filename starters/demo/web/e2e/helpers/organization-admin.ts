@@ -132,7 +132,7 @@ const ORGANIZATION_PAGES: Record<
   },
   sso: { nav: 'organization.nav.sso', title: 'sso.title' },
   roles: { nav: 'organization.nav.roles', title: 'permissions.title' },
-  settings: { nav: 'organization.nav.settings', title: 'settings.title' },
+  settings: { nav: 'organization.nav.settings', title: 'organization.nav.settings' },
 }
 
 /**

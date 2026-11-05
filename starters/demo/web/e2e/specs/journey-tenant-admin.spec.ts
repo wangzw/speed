@@ -1678,7 +1678,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           page.getByRole('heading', {
             level: 1,
-            name: copy('adminUi', 'settings.title'),
+            name: copy('adminUi', 'organization.nav.settings'),
             exact: true,
           }),
         ).toHaveCount(0)
@@ -2253,7 +2253,7 @@ test.describe('an impersonated session hides the organization', () => {
         await expect(
           page.getByRole('heading', {
             level: 1,
-            name: copy('adminUi', 'settings.title'),
+            name: copy('adminUi', 'organization.nav.settings'),
             exact: true,
           }),
         ).toHaveCount(0)
