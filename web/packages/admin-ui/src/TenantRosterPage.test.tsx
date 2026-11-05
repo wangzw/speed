@@ -93,16 +93,7 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     expect(await screen.findByText('Gone Co')).toBeInTheDocument()
     expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
-    // A tombstone is terminal: the row carries no rename input and no
-    // enable/disable toggle.
-    expect(
-      screen.queryByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'gone' })),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', {
-        name: text(zhCN.tenants.rename.submitAria, { id: 'gone' }),
-      }),
-    ).toBeNull()
+    // A tombstone is terminal: the row carries no enable/disable toggle.
     expect(
       screen.queryByRole('button', {
         name: text(zhCN.tenants.enableAria, { id: 'gone' }),
@@ -145,7 +136,6 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
     const gated = [
       screen.getByRole('button', { name: zhCN.common.refresh }),
-      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
       screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
       screen.getByRole('button', { name: text(zhCN.tenants.enableAria, { id: 'old' }) }),
     ]
@@ -236,17 +226,9 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    // The two rows carry the same controls distinguished only by the tenant
-    // id baked into each accessible name -- never two identical "Rename"
+    // The two rows carry the same control distinguished only by the tenant
+    // id baked into each accessible name -- never two identical "Disable"
     // buttons.
-    expect(
-      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'globex' }) }),
-    ).toBeInTheDocument()
-    expect(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))).toBeInTheDocument()
-    expect(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'globex' }))).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
     ).toBeInTheDocument()
@@ -255,7 +237,7 @@ describe('TenantRosterPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('announces a landed rename and a landed status change', async () => {
+  it('announces a landed status change', async () => {
     const user = userEvent.setup()
     const tenants: AdminTenant[] = [
       tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
@@ -263,41 +245,18 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () => Promise.resolve(tenants),
-        setTenantAlias: () => Promise.resolve(),
+        setTenantStatus: () => Promise.resolve(),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
     // The success notice is a standing status region: mounted clipped until a
-    // write lands, then filled with the confirmation. The rename's lands here.
-    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
+    // write lands, then filled with the confirmation.
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
     expect(
-      await screen.findByText(text(zhCN.tenants.renamed, { id: 'acme' })),
+      await screen.findByText(text(zhCN.tenants.disabledToast, { id: 'acme' })),
     ).toBeInTheDocument()
-  })
-
-  it('renames a tenant through the row control', async () => {
-    const user = userEvent.setup()
-    const calls: string[] = []
-    const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
-    ]
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        listTenants: () => Promise.resolve(tenants),
-        setTenantAlias: (input) => {
-          calls.push(`${input.id}:${input.alias}`)
-          return Promise.resolve()
-        },
-      }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('Acme')
-    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
-    expect(calls).toEqual(['acme:Acme-Inc'])
   })
 
   it('opens with the page header: the title as h1, a breadcrumb trail, and a refresh action', async () => {
@@ -338,15 +297,14 @@ describe('TenantRosterPage', () => {
             tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
           ])
         },
-        setTenantAlias: () => pending.promise,
+        setTenantStatus: () => pending.promise,
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
     expect(reads).toHaveLength(1)
 
-    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
 
     // The row's scope is in flight, so the page-level refresh is
     // natively disabled. The scope is chosen, so the disabled control
@@ -541,25 +499,6 @@ describe('TenantRosterPage', () => {
     expect(screen.getByLabelText(zhCN.tenants.create.aliasLabel)).toHaveValue('Acme')
   })
 
-  it('clears the rename input once a rename lands', async () => {
-    const user = userEvent.setup()
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
-        setTenantAlias: () => Promise.resolve(),
-      }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('Acme')
-
-    const input = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
-    await user.type(input, 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }))
-
-    await waitFor(() => expect(input).toHaveValue(''))
-  })
-
   it('marks an identifier input invalid while it carries a blank', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(makeAdminBackend())
@@ -629,37 +568,6 @@ describe('TenantRosterPage', () => {
     expect(created).toEqual([])
   })
 
-  it('withholds a rename whose alias carries a blank', async () => {
-    const user = userEvent.setup()
-    const calls: string[] = []
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
-        setTenantAlias: (input) => {
-          calls.push(`${input.id}:${input.alias}`)
-          return Promise.resolve()
-        },
-      }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('Acme')
-
-    const input = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
-    await user.type(input, 'Acme Inc')
-    const submit = screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) })
-    expect(input).toHaveAttribute('aria-invalid', 'true')
-    expect(submit).toBeDisabled()
-    fireEvent.click(submit)
-    // The write is dispatched asynchronously, so a request made from the
-    // click has not landed yet in this tick. Flush the queue before
-    // claiming none was made; the disabled mirror alone is not proof.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    expect(calls).toEqual([])
-  })
-
   it('renders the retryable error placeholder when the read fails', async () => {
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -715,24 +623,19 @@ describe('TenantRosterPage', () => {
             tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
             tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
           ]),
-        setTenantAlias: (input) =>
+        setTenantStatus: (input) =>
           input.id === 'acme'
             ? Promise.reject({ code: 'tenant.conflict' })
-            : Promise.resolve(),
-        setTenantStatus: (input) =>
-          input.id === 'globex'
-            ? Promise.reject({ code: 'tenant.bad_request' })
-            : Promise.resolve(),
+            : Promise.reject({ code: 'tenant.bad_request' }),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const acmeAlias = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
-    await user.type(acmeAlias, 'Acme-Inc')
-    await user.click(
-      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
-    )
+    const acmeToggle = screen.getByRole('button', {
+      name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+    })
+    await user.click(acmeToggle)
     // The same resolved text stands in the row marker and in the region.
     expect(
       await screen.findAllByText(zhCN.errors.tenant.conflict),
@@ -747,16 +650,8 @@ describe('TenantRosterPage', () => {
     ).toHaveLength(2)
 
     // Each row marks its own failure; the other row is untouched.
-    expect(acmeAlias).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'globex' }))).toHaveAttribute(
-      'aria-invalid',
-      'false',
-    )
+    expect(acmeToggle).toHaveAttribute('aria-invalid', 'true')
     expect(globexToggle).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) })).toHaveAttribute(
-      'aria-invalid',
-      'false',
-    )
     // Two results, one per row scope: no page-level aggregate.
     expect(
       screen.getAllByRole('alert').map((alert) => alert.textContent),
@@ -764,41 +659,6 @@ describe('TenantRosterPage', () => {
       zhCN.errors.tenant.conflict,
       zhCN.errors.tenant.bad_request,
     ])
-  })
-
-  it('marks the refused rename inline and brings its region into view', async () => {
-    mockMatchMedia(false)
-    const scrollIntoView = stubScrollIntoView()
-    const user = userEvent.setup()
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
-        setTenantAlias: () => Promise.reject({ code: 'tenant.conflict' }),
-      }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText('Acme')
-
-    const input = screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }))
-    await user.type(input, 'Acme-Inc')
-    await user.click(
-      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
-    )
-
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.errors.tenant.conflict)
-    expect(input).toHaveAttribute('aria-invalid', 'true')
-    const hintId = input.getAttribute('aria-describedby')
-    expect(hintId).not.toBeNull()
-    expect(document.getElementById(hintId as string)?.textContent).toBe(
-      alert.textContent,
-    )
-    expect(scrollIntoView).toHaveBeenCalledWith({
-      behavior: 'smooth',
-      block: 'center',
-    })
-    await expectNoAxeViolations()
   })
 
   it('marks the refused status change inline and jumps under reduced motion', async () => {
@@ -853,15 +713,6 @@ describe('TenantRosterPage', () => {
       await screen.findByText(text(zhCN.tenants.created, { id: 'globex' })),
     ).toBeInTheDocument()
 
-    // The row's rename names its tenant.
-    await user.type(screen.getByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'acme' })), 'Acme-Inc')
-    await user.click(
-      screen.getByRole('button', { name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }) }),
-    )
-    expect(
-      await screen.findByText(text(zhCN.tenants.renamed, { id: 'acme' })),
-    ).toBeInTheDocument()
-
     // The row's status change names its tenant and the new state.
     await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
     expect(
@@ -871,43 +722,36 @@ describe('TenantRosterPage', () => {
     expect(screen.getByText(text(zhCN.tenants.created, { id: 'globex' }))).toBeInTheDocument()
   })
 
-  it('resets every row scope and inline marker on refresh without losing a rename draft', async () => {
+  it('resets the row scope and inline marker on refresh', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
-        setTenantAlias: () =>
+        setTenantStatus: () =>
           Promise.reject({ status: 400, code: 'client.http.400' }),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    const alias = screen.getByLabelText(
-      text(zhCN.tenants.rename.ariaWithId, { id: 'acme' }),
-    )
-    await user.type(alias, 'Acme-Inc')
-    await user.click(
-      screen.getByRole('button', {
-        name: text(zhCN.tenants.rename.submitAria, { id: 'acme' }),
-      }),
-    )
+    const toggle = screen.getByRole('button', {
+      name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+    })
+    await user.click(toggle)
 
     // The refusal marks the row's own control and region.
-    await waitFor(() => expect(alias).toHaveAttribute('aria-invalid', 'true'))
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-invalid', 'true'))
     expect(screen.getByRole('alert')).toBeInTheDocument()
 
     // The refresh bumps the generation every row watches: the row resets
-    // its own scope and marker without being remounted, so the draft the
-    // operator had typed is still there.
+    // its own scope and marker without being remounted.
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
     await waitFor(() =>
-      expect(alias).toHaveAttribute('aria-invalid', 'false'),
+      expect(toggle).toHaveAttribute('aria-invalid', 'false'),
     )
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(alias).toHaveValue('Acme-Inc')
   })
 
   it('clears a landed row confirmation on refresh', async () => {

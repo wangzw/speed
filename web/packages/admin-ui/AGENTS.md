@@ -318,7 +318,7 @@ What the pages reach through the bundle, grouped by surface:
 
 | Members | Routes |
 |---|---|
-| `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantAlias`, `useSetTenantStatus` | `/api/v1/system/tenants/tenants[/:id]` (list / get / create / alias / status) |
+| `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantStatus` | `/api/v1/system/tenants/tenants[/:id]` (list / get / create / status) |
 | `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/api/v1/system/permissions`, `/api/v1/system/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/api/v1/system/tenants/:tenant/bindings[/:account[/:role]]` |
 | `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useCreateAccount`, `usePatchAccount`, `useSetAccountStatus`, `useSetMFARequired`, `useResetPassword`, `useAddIdentifier`, `useCreateSecret`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/api/v1/system/auth/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions|/status|/mfa-required|/password|/identifiers]]`, `/api/v1/system/auth/sessions/:id` |
 | `useImpersonations`, `useRevokeImpersonation` | `/api/v1/system/tenants/{tenant}/impersonations[/:id]` |

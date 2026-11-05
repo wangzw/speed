@@ -86,7 +86,6 @@ import type {
   AdminRoleRef,
   AdminSetSettingInput,
   AdminSetSmsTemplateEnabledInput,
-  AdminSetTenantAliasInput,
   AdminSetTenantStatusInput,
   AdminSetting,
   AdminSmsTemplatePage,
@@ -122,7 +121,6 @@ export interface AdminBackend {
   listTenants: () => Promise<readonly AdminTenant[]>
   getTenant: (query: AdminTenantQuery) => Promise<AdminTenant>
   createTenant: (input: AdminCreateTenantInput) => Promise<AdminTenant>
-  setTenantAlias: (input: AdminSetTenantAliasInput) => Promise<void>
   setTenantStatus: (input: AdminSetTenantStatusInput) => Promise<void>
   listSettings: (
     namespace: string | undefined,
@@ -274,7 +272,6 @@ export function makeAdminBackend(
       Promise.resolve(
         tenantFixture({ id: input.id, alias: input.alias, status: 'active' }),
       ),
-    setTenantAlias: () => Promise.resolve(),
     setTenantStatus: () => Promise.resolve(),
     listSettings: () => Promise.resolve([]),
     setSetting: () => Promise.resolve(),
@@ -575,19 +572,6 @@ export function createAdminOperations(
           backend.createTenant(input),
         onSuccess: () => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
-        },
-      })
-    },
-    useSetTenantAlias: () => {
-      const client = useQueryClient()
-      return useMutation({
-        mutationFn: (input: AdminSetTenantAliasInput) =>
-          backend.setTenantAlias(input),
-        onSuccess: (_answer, input) => {
-          void client.invalidateQueries({ queryKey: TENANTS_KEY })
-          // The detail read keys by id; the list key is not its prefix, so
-          // it is invalidated on its own (as the shipped bundle does).
-          void client.invalidateQueries({ queryKey: tenantKey(input.id) })
         },
       })
     },

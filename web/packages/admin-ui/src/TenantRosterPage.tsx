@@ -3,8 +3,9 @@
  *
  * The platform side of the tenant story: it lists the whole roster (the
  * tenants the process serves) as a table (identifier, alias, status and
- * the row's write controls), registers a tenant not registered yet,
- * renames a tenant's alias and enables or disables a tenant. Switching
+ * the row's write control), registers a tenant not registered yet and
+ * enables or disables a tenant. An alias is immutable after creation, so the
+ * alias cell is read-only and the page offers no rename control. Switching
  * the current session's tenant is the tenant-side action and lives in
  * @speed/tenancy-ui; managing the roster is this page, and the two share
  * neither a control nor a query key.
@@ -16,7 +17,7 @@
  * value outside that closed set renders the generic label, never a raw
  * value. A disabled row also shows who disabled it (an operator or the
  * account's own state). A deleted row is a tombstone: its state is terminal,
- * so the row carries no write controls at all. A failed list render settles
+ * so the row carries no write control at all. A failed list render settles
  * into the retryable error placeholder.
  *
  * The identifier and alias inputs carry a helper that names the rule the
@@ -26,25 +27,23 @@
  * the browser and the generic bad-request text is never what the operator
  * meets. The server still judges every write. A write that lands clears
  * the input that carried it -- the create form's identifier and alias
- * together, a row's rename draft on its own -- so the next edit starts
- * empty, and it names the tenant it changed in its scope's success
- * message; a refused write keeps the input so it can be corrected.
+ * together -- so the next edit starts empty, and it names the tenant it
+ * changed in its scope's success message; a refused write keeps the input
+ * so it can be corrected.
  *
- * The create form is one feedback scope. Each row's rename and
- * enable/disable controls are a scope of their own, with the region and
- * the inline marker inside that row, so one row's refusal never reads as
- * another row's. A refusal resolves through the admin-ui namespace's
- * whitelist (a roster collision reads the conflict text), never a raw key,
- * and brings its region into view.
+ * The create form is one feedback scope. Each row's enable/disable control
+ * is a scope of its own, with the region and the inline marker inside that
+ * row, so one row's refusal never reads as another row's. A refusal resolves
+ * through the admin-ui namespace's whitelist (a roster collision reads the
+ * conflict text), never a raw key, and brings its region into view.
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and a
  * refresh action that re-reads the roster. The refresh action is disabled
  * while a write in any of the page's scopes -- the create form or any
- * row's rename/status slot -- is in flight. It first resets the create
- * form's scope and bumps a refresh generation the rows watch, so every row
- * clears its own scope and inline marker without being remounted and
- * without losing an unsubmitted rename draft. The async section's
+ * row's status slot -- is in flight. It first resets the create form's scope
+ * and bumps a refresh generation the rows watch, so every row clears its own
+ * scope and inline marker without being remounted. The async section's
  * placeholders render at the next level down, so the heading order never
  * skips.
  */
@@ -114,21 +113,16 @@ function disabledByLabel(
 }
 
 /**
- * One row's write controls: the rename draft and the enable/disable
- * toggle. The draft lives here, per row; a landed rename clears it, while
- * a typed value the identifier domain would refuse marks the input and
- * holds the rename submit disabled.
+ * One row's write control: the enable/disable toggle.
  *
- * The row is its own feedback scope: its rename and enable/disable share
- * one slot and one region inside the row, so a refusal in one row never
- * shows in another row's region and a success names this tenant. A failed
- * action marks its own control -- the draft field for a rename, the toggle
- * for a status change -- with the same resolved text the region shows.
+ * The row is its own feedback scope, with one slot and one region inside the
+ * row, so a refusal in one row never shows in another row's region and a
+ * success names this tenant. A failed action marks its own toggle with the
+ * same resolved text the region shows.
  *
- * Every control here repeats across the rows, so each carries the row's
- * own tenant id in its accessible name (the input, the rename submit, the
- * enable/disable toggle) -- a screen-reader user hears "rename tenant
- * acme", never a bare "rename" indistinguishable from the row above.
+ * Every control here repeats across the rows, so the toggle carries the row's
+ * own tenant id in its accessible name -- a screen-reader user hears "disable
+ * tenant acme", never a bare "disable" indistinguishable from the row above.
  */
 function TenantRowActions({
   tenant,
@@ -142,21 +136,13 @@ function TenantRowActions({
 }) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
-  // Temporary: the alias route and this control are removed in T6. An
-  // alias is immutable after a tenant is registered, so PATCH
-  // /tenants/:id survives only to refuse the change; this row's rename
-  // keeps its caller until T6 takes both away.
-  const renameTenant = operations.useSetTenantAlias()
   const setStatus = operations.useSetTenantStatus()
   // The row's own scope, with its region inside this row.
   const feedback = useWriteFeedback()
   const regionRef = useFailureScroll(feedback.outcome)
-  const [alias, setAlias] = useState('')
-  // Which of the row's two writes the current failure names, so the
-  // inline marker sits on the control that was refused.
-  const [failedAction, setFailedAction] = useState<'rename' | 'status' | null>(
-    null,
-  )
+  // Whether the current failure names this row's toggle, so the inline
+  // marker sits on the control that was refused.
+  const [failed, setFailed] = useState(false)
   const resolveErrorText = useAdminUiErrorText()
   const failureText = failureTextOf(feedback.outcome, resolveErrorText)
   const statusErrorId = `tenant-status-error-${encodeURIComponent(tenant.id)}`
@@ -164,8 +150,6 @@ function TenantRowActions({
   // The page's refresh action re-reads the roster and bumps the generation:
   // this row then clears its scope and its inline marker, because a result
   // written before the re-read would describe the page as it stood then.
-  // The row is not remounted -- a rename draft the operator has not
-  // submitted stays in the field -- so the change is observed here.
   const generationRef = useRef(refreshGeneration)
   useEffect(() => {
     if (generationRef.current === refreshGeneration) {
@@ -173,7 +157,7 @@ function TenantRowActions({
     }
     generationRef.current = refreshGeneration
     feedback.reset()
-    setFailedAction(null)
+    setFailed(false)
   }, [refreshGeneration, feedback.reset])
 
   // The page's refresh action disables while any scope in the page is
@@ -185,29 +169,9 @@ function TenantRowActions({
   }, [feedback.pending, onWritePendingChange, tenant.id])
 
   const disabled = tenant.status === 'disabled'
-  // An empty draft is not-yet-an-error; a non-empty one the domain would
-  // refuse is.
-  const aliasRejected = alias !== '' && isRejectedIdentifier(alias)
-
-  const rename = () => {
-    setFailedAction(null)
-    void feedback.run(async () => {
-      try {
-        // Temporary: this alias call goes away with the route in T6.
-        await renameTenant.mutateAsync({ id: tenant.id, alias })
-        // A landed rename clears the draft so the next edit starts empty;
-        // a refused one keeps it for a retry.
-        setAlias('')
-        return t('tenants.renamed', { id: tenant.id })
-      } catch (error) {
-        setFailedAction('rename')
-        throw error
-      }
-    })
-  }
 
   const toggleStatus = () => {
-    setFailedAction(null)
+    setFailed(false)
     void feedback.run(async () => {
       try {
         await setStatus.mutateAsync({
@@ -219,7 +183,7 @@ function TenantRowActions({
           { id: tenant.id },
         )
       } catch (error) {
-        setFailedAction('status')
+        setFailed(true)
         throw error
       }
     })
@@ -235,34 +199,6 @@ function TenantRowActions({
         rowGap: 1,
       }}
     >
-      <TextField
-        size="small"
-        value={alias}
-        onChange={(event) => setAlias(event.target.value)}
-        label={t('tenants.rename.label')}
-        error={aliasRejected || failedAction === 'rename'}
-        helperText={
-          failedAction === 'rename'
-            ? (failureText ?? undefined)
-            : t('tenants.identifierHelper')
-        }
-        slotProps={{
-          htmlInput: {
-            'aria-label': t('tenants.rename.ariaWithId', { id: tenant.id }),
-          },
-        }}
-      />
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        aria-label={t('tenants.rename.submitAria', { id: tenant.id })}
-        disabled={feedback.pending || aliasRejected}
-        loading={feedback.pending}
-        onClick={rename}
-      >
-        {t('tenants.rename.submit')}
-      </Button>
       <Button
         type="button"
         size="small"
@@ -272,17 +208,15 @@ function TenantRowActions({
             ? t('tenants.enableAria', { id: tenant.id })
             : t('tenants.disableAria', { id: tenant.id })
         }
-        aria-invalid={failedAction === 'status'}
-        aria-describedby={
-          failedAction === 'status' ? statusErrorId : undefined
-        }
+        aria-invalid={failed}
+        aria-describedby={failed ? statusErrorId : undefined}
         disabled={feedback.pending}
         loading={feedback.pending}
         onClick={toggleStatus}
       >
         {disabled ? t('tenants.enable') : t('tenants.disable')}
       </Button>
-      {failedAction === 'status' && failureText !== null && (
+      {failed && failureText !== null && (
         <Typography
           id={statusErrorId}
           variant="caption"
@@ -350,8 +284,7 @@ export function TenantRosterPage({
 
   // The refresh action resets the create form's scope and bumps the refresh
   // generation the rows watch; both happen before the roster is re-read.
-  // Every row scope is reset by its own row, not remounted, and an
-  // unsubmitted rename draft survives.
+  // Every row scope is reset by its own row, not remounted.
   const [refreshGeneration, setRefreshGeneration] = useState(0)
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenants', tenants)],
@@ -449,9 +382,9 @@ export function TenantRosterPage({
     {
       id: 'actions',
       header: t('tenants.column.actions'),
-      // A tombstone is read-only: deletion is terminal, so neither the
-      // rename nor the status route can change it. The cell is empty and
-      // the row's write scope is never mounted.
+      // A tombstone is read-only: deletion is terminal, so the status route
+      // cannot change it. The cell is empty and the row's write scope is
+      // never mounted.
       cell: (tenant) =>
         tenant.status === 'deleted' ? null : (
           <TenantRowActions
@@ -482,7 +415,7 @@ export function TenantRosterPage({
             busy={pageRefresh.busy}
             // A re-read mid-write would race the write: the control is
             // disabled while any scope on the page -- the create form's or
-            // any row's rename/status slot -- has a write in flight.
+            // any row's status slot -- has a write in flight.
             writePending={createFeedback.pending || pendingRowWrites.size > 0}
             label={t('common.refresh')}
             onClick={pageRefresh.refresh}

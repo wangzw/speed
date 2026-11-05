@@ -1,13 +1,13 @@
 /**
  * TenantDetailPage: one tenant's administration detail.
  *
- * The roster's row-level rename and enable/disable controls live on the
- * roster page; this page is the tenant in full -- its identifier, alias
- * and status read from GET /api/v1/system/tenants/:id, with the same two
- * writes (rename by PATCH, enable/disable by the status route) gathered
- * into the main column. It is a detail page: a main column carrying the
- * subject and its controls, beside a fixed-width side column carrying the
- * tenant's metadata and a way back to the roster.
+ * The roster's row-level enable/disable control lives on the roster page; this
+ * page is the tenant in full -- its identifier, alias and status read from GET
+ * /api/v1/system/tenants/:id, with the same enable/disable write gathered into
+ * the main column. It is a detail page: a main column carrying the subject and
+ * its control, beside a fixed-width side column carrying the tenant's metadata
+ * and a way back to the roster. An alias is immutable after creation, so the
+ * alias cell is read-only and carries its explanation.
  *
  * The read is an operation on the console operations bundle, so the page
  * builds no client and writes no query key. The status renders from the
@@ -17,13 +17,10 @@
  * state). A deleted tenant is a tombstone: its state is terminal, so the
  * page renders no write control at all. A refused read settles
  * into a permission placeholder (403) or the retryable error placeholder
- * (any other failure). The rename and the enable/disable are one control
- * group, so they report through one feedback scope whose region sits
- * directly under their controls: each landed write confirms and names this
- * tenant, and a refusal resolves the answer's code through the admin-ui
- * whitelist. The rename input
- * marks itself invalid while the alias breaks the identifier domain and
- * holds its submit disabled then, so an inadmissible alias is never sent.
+ * (any other failure). The enable/disable reports through a feedback scope
+ * whose region sits directly under its control: each landed write confirms
+ * and names this tenant, and a refusal resolves the answer's code through
+ * the admin-ui whitelist.
  * The page also links to the tenant-addressed administration pages
  * (permissions, invitations and members, SSO providers, impersonation
  * records), carrying this tenant in the `tenant` query parameter those
@@ -37,17 +34,15 @@
  * link; `relatedHref` overrides a resolved target. The page opens with
  * ui-kit's PageHeader, so the heading order never skips; its refresh action
  * resets the actions scope and re-reads the tenant, and is natively
- * disabled while either of the two writes is in flight. A host may append
+ * disabled while the write is in flight. A host may append
  * its own sections to the main column and its own content to the side
  * column, both of which receive the loaded tenant.
  */
 
-import { useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   ListSkeleton,
@@ -57,7 +52,6 @@ import {
 import { AdminAsyncSection } from './internal/async-section.js'
 import { AdminLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
-import { isRejectedIdentifier } from './internal/identifier.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { useAdminHasFeature } from './internal/features.js'
 import {
@@ -183,26 +177,21 @@ export function TenantDetailPage({
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const tenant = operations.useTenant({ id })
-  const renameTenant = operations.useSetTenantAlias()
   const setStatus = operations.useSetTenantStatus()
-  const [alias, setAlias] = useState('')
-  // The actions section is one control group, so its rename and its
-  // enable/disable share one scope and one region under the controls. Each
-  // landed write confirms and names this tenant; a refusal resolves through
-  // the console whitelist.
+  // The actions section is one control group; its enable/disable reports
+  // through one scope and one region under the control. Each landed write
+  // confirms and names this tenant; a refusal resolves through the console
+  // whitelist.
   const feedback = useWriteFeedback()
   const regionRef = useFailureScroll(feedback.outcome)
 
   // The refresh action re-reads the tenant -- the page's one body read --
   // and resets the actions scope first: a result written before the re-read
-  // would describe the page as it stood then. The typed alias draft is the
-  // operator's and stays.
+  // would describe the page as it stood then.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenant-detail', tenant)],
     feedback.reset,
   )
-
-  const aliasRejected = alias !== '' && isRejectedIdentifier(alias)
 
   // The tenant-addressed pages all read the tenant from the same query
   // parameter (tenantFromLocation seeds their selector), so a link carries
@@ -280,36 +269,6 @@ export function TenantDetailPage({
               rowGap: 1,
             }}
           >
-            {/* Transitional compatibility control, to be removed in T6. An
-                alias is immutable after a tenant is registered, so the
-                platform keeps PATCH /tenants/:id only to refuse the change;
-                this control stays so that route keeps its caller. T6 removes
-                both. */}
-            <TextField
-              size="small"
-              value={alias}
-              onChange={(event) => setAlias(event.target.value)}
-              label={t('tenantDetail.actions.renameLabel')}
-              error={aliasRejected}
-              helperText={t('tenants.identifierHelper')}
-            />
-            <Button
-              type="button"
-              variant="contained"
-              disabled={feedback.pending || aliasRejected}
-              loading={feedback.pending}
-              onClick={() => {
-                void feedback.run(async () => {
-                  await renameTenant.mutateAsync({ id: settled.id, alias })
-                  // A landed rename clears the draft; a refused one keeps
-                  // it so the alias can be corrected.
-                  setAlias('')
-                  return t('tenantDetail.actions.renamed', { id: settled.id })
-                })
-              }}
-            >
-              {t('tenantDetail.actions.renameSubmit')}
-            </Button>
             <Button
               type="button"
               variant="outlined"
@@ -335,8 +294,8 @@ export function TenantDetailPage({
                 : t('tenantDetail.actions.disable')}
             </Button>
           </Box>
-          {/* The actions section's one region, directly under the controls
-              whose writes report through it. */}
+          {/* The actions section's one region, directly under the control
+              whose write reports through it. */}
           <Box ref={regionRef}>
             <WriteFeedbackRegion outcome={feedback.outcome} />
           </Box>

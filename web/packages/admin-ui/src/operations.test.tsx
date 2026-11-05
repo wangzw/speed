@@ -252,35 +252,22 @@ describe('adminOperations', () => {
     })
   })
 
-  it('drives the tenant detail write endpoints', async () => {
+  it('drives the tenant status write endpoint', async () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest(answer)
     function Writes() {
-      const alias = adminOperations.useSetTenantAlias()
       const status = adminOperations.useSetTenantStatus()
       return (
-        <>
-          <button
-            onClick={() => alias.mutate({ id: 'acme', alias: 'Acme Inc' })}
-          >
-            setAlias
-          </button>
-          <button
-            onClick={() => status.mutate({ id: 'acme', status: 'disabled' })}
-          >
-            setStatus
-          </button>
-        </>
+        <button
+          onClick={() => status.mutate({ id: 'acme', status: 'disabled' })}
+        >
+          setStatus
+        </button>
       )
     }
     renderWithProviders(<Writes />, { operations: adminOperations })
-    await user.click(screen.getByRole('button', { name: 'setAlias' }))
     await user.click(screen.getByRole('button', { name: 'setStatus' }))
     await waitFor(() => {
-      expect(calls).toContainEqual({
-        method: 'PATCH',
-        path: '/api/v1/system/tenants/acme',
-      })
       expect(calls).toContainEqual({
         method: 'POST',
         path: '/api/v1/system/tenants/acme/status',

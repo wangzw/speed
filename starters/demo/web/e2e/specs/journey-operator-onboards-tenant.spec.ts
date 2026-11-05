@@ -1,6 +1,6 @@
 /**
- * J13 -- an operator onboards a tenant from the admin: register it, try to
- * rename it, invite its first member, and see the member land in it.
+ * J13 -- an operator onboards a tenant from the admin: register it, open its
+ * detail page, invite its first member, and see the member land in it.
  *
  * The operator is the seeded platform administrator. The review seed writes its
  * email address as an administrator's assertion, not as a proof of ownership,
@@ -27,10 +27,9 @@
  * alias acme holds -- and each is asserted to leave the roster unchanged. The
  * new tenant is registered with an alias that differs from its identifier, so
  * the accept summary (which names the tenant by identifier) and the account
- * menu's organization row (which names it by alias) cannot be confused. The
- * detail page's rename attempt is then refused with the alias-immutable copy:
- * the platform keeps that route only as a transitional compatibility route, so
- * the alias stays the value chosen at registration.
+ * menu's organization row (which names it by alias) cannot be confused. An
+ * alias is immutable after creation, so the detail page shows it read-only and
+ * offers no rename control.
  *
  * THE DOCUMENT'S STEP-10 RE-OPENED LINK IS NOT RENDERED BY THE PRODUCT, so this
  * spec leaves it undriven and reports the gap. The accept-view read returns an
@@ -110,9 +109,6 @@ const TENANT_ID = 'globex'
 
 /** The alias the tenant is registered with; it differs from the identifier. */
 const TENANT_ALIAS = 'globex-labs'
-
-/** A distinct alias the operator tries to switch to; the immutable-alias route refuses it. */
-const REFUSED_ALIAS = 'globex-renamed'
 
 /**
  * The role the operator creates in the new tenant and binds itself to. The
@@ -525,7 +521,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(rows.nth(1)).toContainText(TENANT_ID)
     })
 
-    await test.step("step 4: a rename is refused and the tenant keeps its registered alias", async () => {
+    await test.step("step 4: the detail page shows the tenant's identifier, alias and status", async () => {
       // REQ-platform-admin-011: the detail page is reached from the roster row
       // and shows the identifier, the alias and the status.
       await rosterRow(page, TENANT_ID)
@@ -540,50 +536,19 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       // Summary fields, in the page's own order: identifier, alias, status.
+      // An alias is immutable after creation: the cell is read-only and the
+      // page offers no rename control.
       await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
       await expect(summaryValue(page, 1)).toHaveText(TENANT_ALIAS)
       await expect(summaryValue(page, 2)).toHaveText(
         copy('adminUi', 'tenants.status.active'),
       )
-
-      const renameField = page.getByLabel(
-        copy('adminUi', 'tenantDetail.actions.renameLabel'),
-        { exact: true },
-      )
-      const renameSubmit = page.getByRole('button', {
-        name: copy('adminUi', 'tenantDetail.actions.renameSubmit'),
-        exact: true,
-      })
-
-      // An alias is immutable after creation. The platform keeps the rename
-      // route only as a transitional compatibility route, so the attempt is
-      // answered 409 with the alias-immutable problem type, the page renders
-      // its copy through the console whitelist, and the alias and the rest of
-      // the row stay as they were.
-      const refused = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PATCH' &&
-          new URL(response.url()).pathname ===
-            `/api/v1/system/tenants/${TENANT_ID}`,
-        { timeout: 15_000 },
-      )
-      await renameField.fill(REFUSED_ALIAS)
-      await renameSubmit.click()
-      const answer = await refused
-      expect(answer.status()).toBe(409)
-      expect(await answer.json()).toMatchObject({
-        type: 'urn:speed:tenant:alias-immutable',
-      })
       await expect(
-        page.getByText(copy('adminUi', 'errors.tenant.alias_immutable'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
-      await expect(summaryValue(page, 1)).toHaveText(TENANT_ALIAS)
-      await expect(summaryValue(page, 2)).toHaveText(
-        copy('adminUi', 'tenants.status.active'),
-      )
+        page.getByLabel(
+          copy('adminUi', 'tenantDetail.actions.renameLabel'),
+          { exact: true },
+        ),
+      ).toHaveCount(0)
 
       // The roster still shows the alias chosen at registration.
       await page

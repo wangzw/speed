@@ -100,7 +100,6 @@ export {
   type AdminAuditRecordQuery,
   type AdminAuditRecordsOptions,
   type AdminCreateTenantInput,
-  type AdminSetTenantAliasInput,
   type AdminSetTenantStatusInput,
   type AdminSetSettingInput,
   type AdminRemoveSettingInput,
