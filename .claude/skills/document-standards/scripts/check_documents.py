@@ -71,6 +71,12 @@ WHAT IS CHECKED
     * architecture.md carries its required sections in the fixed order,
       and the module-dependency and logical-deployment sections each
       carry a mermaid diagram
+    * when the Implementation Status roll-up lists more than one top-level
+      module, the Overview opens with Core Concepts -- carrying a mermaid
+      concept map and no second glossary table -- and continues with Design
+      Mainline carrying its problem/mechanism/location table
+    * a module's Worked Example and State at a Glance, when present, sit
+      under Core Algorithms and Flows and Core Data Structures respectively
     * a module document carries its mandatory sections in the fixed
       order, including the Non-Responsibilities subsection, and carries
       no section outside the standard's set
@@ -164,6 +170,17 @@ ARCHITECTURE_SECTIONS = [
     ("invariants", names("Architecture Invariants", "架构不变量"), True),
     ("status", names("Implementation Status", "实现状态"), True),
 ]
+CORE_CONCEPTS = names("Core Concepts", "核心概念")
+DESIGN_MAINLINE = names("Design Mainline", "设计主线")
+CORE_CONCEPTS_SECTION = [("core-concepts", CORE_CONCEPTS, True)]
+DESIGN_MAINLINE_SECTION = [("design-mainline", DESIGN_MAINLINE, True)]
+DESIGN_MAINLINE_COLUMNS = [
+    names("Problem", "问题"),
+    names("Mechanism", "机制"),
+    names("Where it is specified", "展开位置"),
+]
+WORKED_EXAMPLE = names("Worked Example", "走查")
+STATE_AT_A_GLANCE = names("State at a Glance", "状态一览")
 MODULE_SECTIONS = [
     ("responsibilities", names("Responsibilities", "职责"), True),
     ("glossary", names("Glossary", "术语表"), False),
@@ -177,6 +194,7 @@ MODULE_SECTIONS = [
     ("extension-points", names("Extension Points", "扩展点"), False),
     ("status", names("Implementation Status", "实现状态"), True),
 ]
+MODULE_SECTION_NAMES = {key: name for key, name, _ in MODULE_SECTIONS}
 NON_RESPONSIBILITIES = names("Non-Responsibilities", "非职责")
 ADR_SECTIONS = [
     ("context", names("Context", "背景"), True),
@@ -474,6 +492,20 @@ def parse_sections(text: str) -> list[Section]:
         for section in stack[1:]:
             section.lines.append((n, raw, in_fence, lang))
     return sections
+
+
+def section_end(sections: list[Section], parent: Section) -> int:
+    """The line of the next section at the same or a shallower level."""
+    following = [s.line for s in sections
+                 if s.level <= parent.level and s.line > parent.line]
+    return min(following) if following else 1 << 60
+
+
+def direct_children(sections: list[Section], parent: Section) -> list[Section]:
+    """The sections nested immediately below `parent`, in document order."""
+    end = section_end(sections, parent)
+    return [s for s in sections
+            if s.level == parent.level + 1 and parent.line < s.line < end]
 
 
 def _strip_line_comments(raw: str, in_comment: bool) -> tuple[str, bool]:
@@ -1064,6 +1096,24 @@ def status_entries(section: Section) -> list[tuple[int, str]]:
     return sorted(entries)
 
 
+def status_module_count(section: Section) -> int:
+    """The number of distinct top-level modules the status roll-up names.
+
+    A linked row counts by its link target, so a duplicate table row or a list
+    item for the same module counts once. A row with no link counts once on its
+    own; the missing link is already a finding, and dropping the row would make
+    the multi-module trigger vanish for a document that needs fixing anyway."""
+    linked: set[str] = set()
+    unlinked = 0
+    for _, row in status_entries(section):
+        targets = LINK_RE.findall(row)
+        if targets:
+            linked.add(normalize_heading(targets[0].split("#")[0]))
+        else:
+            unlinked += 1
+    return len(linked) if linked else unlinked
+
+
 def check_design_status(rel_path: str, sections: list[Section], language: str,
                         roll_up: bool) -> list[Finding]:
     found: list[Finding] = []
@@ -1118,21 +1168,185 @@ def aspect_parent(slug: str, slugs: set[str]) -> str | None:
     return None
 
 
+def nearest_h2(sections: list[Section], child: Section) -> Section | None:
+    return next((s for s in reversed(sections)
+                 if s.level == 2 and s.line < child.line), None)
+
+
+def check_module_readability_sections(rel: str, sections: list[Section],
+                                      language: str) -> list[Finding]:
+    """Worked Example and State at a Glance sit under their parent sections."""
+    found: list[Finding] = []
+    checks = [
+        (WORKED_EXAMPLE, "algorithms"),
+        (STATE_AT_A_GLANCE, "data-structures"),
+    ]
+    for section in sections:
+        if section.level != 3:
+            continue
+        for name, parent_key in checks:
+            key, wrong = match_section(section.title, [("readability", name, True)],
+                                       language)
+            if key is None:
+                continue
+            if wrong is not None:
+                found.append(Finding(rel, section.line,
+                                     f"section {section.title!r} is written in {wrong}; "
+                                     f"the document language is {language}"))
+                continue
+            parent = nearest_h2(sections, section)
+            if (parent is None or
+                    match_section(parent.title, MODULE_SECTIONS, language)[0] != parent_key):
+                parent_name = canonical(MODULE_SECTION_NAMES[parent_key], language)
+                found.append(Finding(rel, section.line,
+                                     f"section {section.title!r} must sit under "
+                                     f"{parent_name!r}"))
+    return found
+
+
 def check_module_document(rel: str, text: str, language: str) -> list[Finding]:
     """The fixed section set a module document obeys, wherever it lives --
     flat under modules/ or inside a module subdirectory."""
     found: list[Finding] = []
+    sections = parse_sections(text)
     found += check_heading_language(rel, text, language, MODULE_SECTIONS)
     found += check_section_order(rel, text, language, MODULE_SECTIONS)
     found += check_local_glossary(rel, text, language, MODULE_SECTIONS)
-    found += check_design_status(rel, parse_sections(text), language, roll_up=False)
-    responsibilities = [s for s in parse_sections(text) if s.level == 3
+    found += check_design_status(rel, sections, language, roll_up=False)
+    found += check_module_readability_sections(rel, sections, language)
+    responsibilities = [s for s in sections if s.level == 3
                         and normalize_heading(s.title)
                         == normalize_heading(canonical(NON_RESPONSIBILITIES, language))]
     if not responsibilities:
         found.append(Finding(rel, 0,
                              f"no {canonical(NON_RESPONSIBILITIES, language)!r} subsection; what a "
                              f"module does not own is written down"))
+    return found
+
+
+def overview_section(sections: list[Section], language: str) -> Section | None:
+    return next((s for s in sections if s.level == 2 and
+                 match_section(s.title, ARCHITECTURE_SECTIONS, language)[0] == "overview"), None)
+
+
+def check_core_concepts(rel_path: str, sections: list[Section], overview: Section,
+                        children: list[Section], language: str,
+                        module_count: int) -> list[Finding]:
+    """Core Concepts is the first Overview H3 when required, and whenever it
+    appears it carries a concept map and no second glossary table."""
+    required = module_count > 1
+    found: list[Finding] = []
+    core_sections: list[Section] = []
+    wrong_core: list[Section] = []
+    for section in sections:
+        if section.level != 3:
+            continue
+        key, wrong = match_section(section.title, CORE_CONCEPTS_SECTION, language)
+        if wrong is not None:
+            wrong_core.append(section)
+            found.append(Finding(rel_path, section.line,
+                                 f"section {section.title!r} is written in {wrong}; "
+                                 f"the document language is {language}"))
+        elif key is not None:
+            core_sections.append(section)
+    if len(core_sections) > 1:
+        found.append(Finding(rel_path, core_sections[1].line,
+                             "second Core Concepts subsection; the concept map has one owner"))
+    overview_core = [s for s in core_sections if s in children]
+    if overview_core:
+        first = children[0]
+        if first is not overview_core[0]:
+            found.append(Finding(rel_path, first.line,
+                                 f"Overview opens with {first.title!r}; Core Concepts is its "
+                                 f"first subsection"))
+    elif core_sections:
+        found.append(Finding(rel_path, core_sections[0].line,
+                             "Core Concepts must be the first H3 of the Overview"))
+    elif required and not wrong_core:
+        found.append(Finding(rel_path, overview.line,
+                             "Overview carries no Core Concepts subsection; a system with "
+                             "more than one top-level module states its core concepts"))
+    if core_sections:
+        core = core_sections[0]
+        if not any(lang.lower() == "mermaid" for _, lang, _ in core.fences()):
+            found.append(Finding(rel_path, core.line,
+                                 "Core Concepts carries no mermaid concept map"))
+        for (header_line, cells), _ in table_blocks(core.lines):
+            header_keys = {glossary_header_key(cell) for cell in cells}
+            normalized = {normalize_heading(cell) for cell in cells}
+            if "definition" in header_keys and (
+                    "term" in header_keys or
+                    "concept" in normalized or "概念" in normalized):
+                found.append(Finding(rel_path, header_line,
+                                     "Core Concepts carries a second glossary table; "
+                                     "definitions belong to the project glossary"))
+    return found
+
+
+def mainline_header_ok(cells: list[str]) -> bool:
+    """Whether a table header names the three Design Mainline concepts."""
+    normalized = {normalize_heading(cell) for cell in cells}
+    return all(
+        any(normalize_heading(column[lang]) in normalized for lang in LANGUAGES)
+        for column in DESIGN_MAINLINE_COLUMNS
+    )
+
+
+def check_design_mainline(rel_path: str, sections: list[Section], overview: Section,
+                          children: list[Section], language: str,
+                          module_count: int) -> list[Finding]:
+    """Design Mainline follows Core Concepts when required, and whenever it
+    appears it carries the problem/mechanism/location table."""
+    required = module_count > 1
+    found: list[Finding] = []
+    all_mainlines: list[Section] = []
+    overview_mainlines: list[Section] = []
+    wrong_in_overview = False
+    for section in sections:
+        if section.level != 3:
+            continue
+        key, wrong = match_section(section.title, DESIGN_MAINLINE_SECTION, language)
+        if wrong is not None:
+            found.append(Finding(rel_path, section.line,
+                                 f"section {section.title!r} is written in {wrong}; "
+                                 f"the document language is {language}"))
+            if section in children:
+                wrong_in_overview = True
+        elif key is not None:
+            all_mainlines.append(section)
+            if section in children:
+                overview_mainlines.append(section)
+    if len(all_mainlines) > 1:
+        found.append(Finding(rel_path, all_mainlines[1].line,
+                             "second Design Mainline subsection; the mainline has one owner"))
+    if not overview_mainlines:
+        if required and not wrong_in_overview:
+            found.append(Finding(rel_path, overview.line,
+                                 "Overview carries no Design Mainline subsection; a system with "
+                                 "more than one top-level module states its mainline"))
+        return found
+    mainline = overview_mainlines[0]
+    mainline_index = children.index(mainline)
+    core_index = next((index for index, section in enumerate(children)
+                       if match_section(section.title, CORE_CONCEPTS_SECTION,
+                                        language)[0] is not None), -1)
+    if core_index != -1 and mainline_index < core_index:
+        found.append(Finding(rel_path, mainline.line,
+                             "Design Mainline comes before Core Concepts; the concept map "
+                             "comes first"))
+    tables = table_blocks(mainline.lines)
+    if not tables:
+        found.append(Finding(rel_path, mainline.line,
+                             "Design Mainline carries no table; state the problem, the "
+                             "mechanism and where it is specified"))
+    elif not any(body for (_, _), body in tables):
+        found.append(Finding(rel_path, mainline.line,
+                             "Design Mainline table carries no data row; state at least "
+                             "one problem, mechanism and location"))
+    elif not any(mainline_header_ok(cells) for (_, cells), _ in tables):
+        found.append(Finding(rel_path, mainline.line,
+                             "Design Mainline table must carry the problem, mechanism "
+                             "and location columns"))
     return found
 
 
@@ -1276,8 +1490,23 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                                  "architecture.md already carries it"))
     if os.path.isfile(architecture):
         text = strip_comments(read(architecture))
+        rel_architecture = os.path.relpath(architecture, root)
+        sections = parse_sections(text)
+        overview = overview_section(sections, language)
+        children = direct_children(sections, overview) if overview is not None else []
+        status_count = 0
+        for section in sections:
+            if (section.level == 2 and
+                    match_section(section.title, ARCHITECTURE_SECTIONS, language)[0] == "status"):
+                status_count = status_module_count(section)
+        module_count = status_count
+        if overview is not None:
+            found += check_core_concepts(rel_architecture, sections, overview, children,
+                                         language, module_count)
+            found += check_design_mainline(rel_architecture, sections, overview, children,
+                                           language, module_count)
         rolled: set[str] = set()
-        for section in parse_sections(text):
+        for section in sections:
             if section.level == 2 and match_section(
                     section.title, ARCHITECTURE_SECTIONS, language)[0] == "status":
                 for n, row in status_entries(section):

@@ -8,9 +8,22 @@ the rest.
 
 The slug is lowercase kebab-case, matches the module's directory or package
 name in the code, and never changes.
+
+Module in context and Reading guide are prose before the fixed sections, not
+headings: the fixed order starts at Responsibilities. Keep Reading guide only
+when the document is long enough that it cannot be read linearly.
 -->
 
 # <Module name>
+
+<Module in context: where this module sits in the system, what it owns, what
+it does not own, and the one-sentence mental model a reader should hold
+before the responsibility list.>
+
+<!-- Keep only when the document is long enough that it cannot be read
+linearly; delete otherwise. -->
+<Reading guide: which sections a first reader takes in order, which are
+reference, and whether the race cases are a final self-check.>
 
 ## Responsibilities
 
@@ -76,6 +89,22 @@ classDiagram
 
 ## Core Data Structures
 
+<!-- Applicable only: keep in a module with a state machine. Delete otherwise.
+The third column names the actor -- the component itself or the entity it
+manages -- and does not repeat the first column. Name the actor in the header
+when it is the same for every row. One row per state; merge substate values
+into their parent row and explain them, unless the module treats them as
+first-class states. Keep the row to one sentence and list many substates after
+a colon. Chinese column names: 状态 | 一句话含义 | 当前动作 | 直觉画面. -->
+### State at a Glance
+
+<The closed value set states which values exist; this table states what each
+value means in operation.>
+
+| State | What it means | What is happening | Mental image |
+|---|---|---|---|
+| <state> | <one sentence> | <action> | <image> |
+
 ## Core Algorithms and Flows
 
 <!--
@@ -83,6 +112,14 @@ Complexity analysis is required for performance-sensitive algorithms and is
 not required for procedural flows.
 -->
 
+<!-- Applicable only: delete when the module has no core flow a reader must internalize.
+Place this at the start of Core Algorithms and Flows, before the exhaustive
+tables, and point to it from the Reading guide. Chinese heading: 走查. -->
+### Worked Example
+
+<One core flow a reader must internalize: the initial state, the event or
+call sequence, and the persisted state after each step. A sequence diagram
+shows message order; this trace shows what the persisted state becomes.>
 <!-- Applicable only: delete when the module has no non-trivial failure behaviour. -->
 ## Error and Failure Semantics
 

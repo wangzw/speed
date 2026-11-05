@@ -4,6 +4,8 @@ Read together with `SKILL.md`, whose common rules apply in full and are not repe
 
 **The premise for this document type**: a design document is the *final design conclusion*, not a design log. Alternatives considered, the choice made and the reasoning behind it belong to the ADR; the design document carries only the reference.
 
+**The reader this standard writes for**: a senior engineer who has not read the code. A design document must let that reader build the mental model before the exhaustive rules, without becoming a second-person tutorial and without recording the design process. The Overview and the module's opening carry that model; the fixed sections that follow are the reference a reviewer uses to verify it.
+
 ---
 
 ## 1. Layout and Naming
@@ -56,12 +58,16 @@ Templates: `templates/design-readme.md` and `templates/design-module-index.md`.
 The high-level view of the whole system.
 
 **Required sections:**
-- **Overview** — the system's shape and its decomposition into modules.
+- **Overview** — the system's shape and its decomposition into modules. It carries the reader from the concepts to the mainline before the exhaustive rules:
+  - **Core Concepts** — the first H3 of the Overview, required when the Implementation Status roll-up lists more than one top-level module. A short lead paragraph may precede it; the first H3 is still Core Concepts. When present, the lead paragraph is one sentence that frames the concepts; its absence is not a defect. It states, for each concept a reader must hold to follow the document, how it relates to the others, its lifecycle, and what it survives; a relationship table is allowed, and it carries a Mermaid concept map and the prose that states the constraints the map cannot show. A term registered in the project glossary is linked, never redefined; one link to the glossary file at first use in the section is enough, per-term anchors are optional, and the table may use plain terms without per-row links. A decision is referenced by ADR id, never restated. A table carrying term and definition columns — `Term | Definition`, `术语 | 定义`, `Term | Meaning`, or `Concept | Definition` — is a second glossary and is refused.
+  - **Design Mainline** — required under the same trigger, after Core Concepts. A `Problem | Mechanism | Where it is specified` table (Chinese canonical names: `问题 | 机制 | 展开位置`) with at least one data row states the problems the design must solve and the mechanism that solves each, so the reader knows where each thread continues. The three columns are required; extra columns are allowed.
 - **Module dependency graph** — mandatory diagram.
 - **Logical deployment architecture** — mandatory diagram.
 - **Cross-cutting design** — the concerns no single module owns: error model, authentication and authorization boundaries, data consistency and transaction boundaries, concurrency model, failure and degradation behaviour, observability, performance and capacity targets, security boundaries. **The criterion is the phrase before the list, not the list.** A concern no single module owns earns a heading whether or not it is named above; a named one that genuinely does not exist in the system is omitted. These are the concerns most systems have, not a set to be satisfied.
 - **Architecture invariants** — the rules the system must not violate, for example a strictly bottom-up dependency direction. These are what a review can actually adjudicate against, so each is stated so that a violation is recognizable.
 - **Implementation status** — one line per top-level module, linking to that module's own document (`modules/design-<slug>.md`, or `modules/<slug>/design-<slug>.md`). Roll-up only; the detail lives in the module document, and a module's sub-modules in its subdirectory's `README.md`. **A sub-module never appears here** — listing one here duplicates the roll-up its subdirectory already carries.
+
+**Incremental module documentation is supported.** A status row may link to a module document that has not been written yet: the architecture states the intended decomposition, and module documents are added and reviewed one at a time. The row names the eventual path; the design README index covers only documents that exist, and the checker does not require a status row's target to resolve.
 
 **Conditional sections** — include when the trigger holds, delete outright otherwise:
 - **Physical deployment architecture** — when the system runs as more than one process or replica.
@@ -85,6 +91,15 @@ Fixed section order, so modules can be read against each other and checked mecha
 9. **Concurrency and transaction boundaries** — when applicable.
 10. **Extension points** — when applicable.
 11. **Implementation status**.
+
+Within that order, two opening paragraphs and two H3s carry the reader's path:
+
+- **Module in context** — a short paragraph after the H1 and before `Responsibilities`. It states where the module sits in the system, what it owns, what it does not own, and the one-sentence mental model a reader should hold before the responsibility list. It is prose, not a new section.
+- **Reading guide** — a short paragraph immediately after Module in context, kept only when the document is long enough that it cannot be read linearly. It states which sections a first reader takes in order, which are reference, and whether the race cases are a final self-check.
+- **Worked Example** — an H3 at the start of Core Algorithms and Flows, before the exhaustive tables, pointed to from the Reading guide (Chinese canonical heading: `走查`). For each core flow a reader must internalize, give one concrete trace: the initial state, the event or call sequence, and the persisted state after each step. A protocol sequence diagram shows message order; the worked example shows what the persisted state becomes.
+- **State at a Glance** — an H3 under Core Data Structures in a module with a state machine (Chinese canonical heading: `状态一览`). A table with `State | What it means | What is happening | Mental image` (Chinese canonical columns: `状态 | 一句话含义 | 当前动作 | 直觉画面`), in addition to the closed value set. The third column names the actor — the component itself or the entity it manages — and does not repeat the first column. Name the actor in the column header when it is the same for every row; repeat it per row only when the actor changes. One row per `state`; merge `substate` values into their parent row and explain them, unless the module treats them as first-class states. Keep the merged row to one sentence; when a state has many substates, list them after a colon with a short phrase each. Split them into separate rows only when they differ in the operator's action. The closed set answers which values exist; this table answers what each value means.
+
+**Reader-facing references.** Across both architecture and module documents, a term registered in the project glossary is linked the first time the document uses it; the document does not restate the definition, and the link may point at the glossary file because per-term anchors are optional. One link to the glossary file at first use in the section is enough; do not repeat it per row. A non-obvious choice links its ADR at the first sentence that relies on it, not at the end of the section.
 
 The fixed order binds every module document, whether it sits flat under `modules/` or inside a module subdirectory. A sub-module document is a module document like any other and carries the whole order. The `README.md` of a module subdirectory is an index, not a module document, and follows section 2 instead.
 
@@ -139,4 +154,8 @@ The common checklist in `SKILL.md` applies as well.
 - [ ] Every implementation-status entry that claims implementation has a code anchor, and the entry states the status and no explanation
 - [ ] Status detail appears only in the document it belongs to; `architecture.md` carries one line per top-level module, a module subdirectory's `README.md` one line per sub-module
 - [ ] Every entry point appears in the tree's README index exactly once; every file appears in its module subdirectory's README index exactly once
+- [ ] Overview opens with Core Concepts and continues with Design Mainline when the status roll-up lists more than one top-level module; a short lead paragraph may precede Core Concepts and its absence is not a defect, a relationship table is allowed, and a definition table is refused
+- [ ] A module document opens with Module in context, and a long one with Reading guide; the Reading guide's order matches the heading order; Worked Example sits at the start of Core Algorithms and Flows; a state machine has State at a Glance
+- [ ] State at a Glance uses `Mental image` / `直觉画面`, names the actor in its third column without repeating the first column, and merges or explains substates with enough detail to read the row without the closed-set table
+- [ ] One glossary link at first use in the section is enough, and non-obvious choices link their ADR at the sentence that relies on them
 - [ ] `scripts/check_documents.py` was run and exits 0

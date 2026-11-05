@@ -387,6 +387,37 @@ class DesignTreeTests(CheckerCase):
         self.assert_red({"docs/design/architecture.md": broken}, "has no row for")
 
 
+HOST_MODULE = MODULE.replace("# core", "# host")
+
+CORE_CONCEPTS_ONLY = """
+### Core Concepts
+
+The core and host modules are the system's two top-level concepts.
+
+| Concept | Relationship | Lifecycle and scope |
+|---|---|---|
+| core | registers components | the process |
+| host | owns the core | the process |
+
+```mermaid
+flowchart TB
+    host --> core
+```
+
+The map shows the only relationship between the two concepts.
+"""
+
+DESIGN_MAINLINE_BLOCK = """
+### Design Mainline
+
+| Problem | Mechanism | Where it is specified |
+|---|---|---|
+| registration | the core module | Core Algorithms and Flows |
+"""
+
+CORE_CONCEPTS_BLOCK = CORE_CONCEPTS_ONLY + DESIGN_MAINLINE_BLOCK
+
+
 SUBDIR_FILES = dict(BASELINE)
 SUBDIR_FILES["docs/design/README.md"] = """# Widget System
 
@@ -401,9 +432,24 @@ A system that does one thing.
 | [api](modules/api/README.md) | the api module and its sub-modules |
 """
 SUBDIR_FILES["docs/design/architecture.md"] = ARCHITECTURE.replace(
+    "## Module Dependency Graph",
+    CORE_CONCEPTS_BLOCK + "\n## Module Dependency Graph").replace(
     "| [core](modules/design-core.md) | Not implemented |",
     "| [core](modules/design-core.md) | Not implemented |\n"
     "| [api](modules/api/design-api.md) | Not implemented |")
+
+TWO_MODULE_FILES = dict(BASELINE)
+TWO_MODULE_FILES["docs/design/README.md"] = DESIGN_README.replace(
+    "| [core](modules/design-core.md) | registration and lifecycle |",
+    "| [core](modules/design-core.md) | registration and lifecycle |\n"
+    "| [host](modules/design-host.md) | the host |")
+TWO_MODULE_FILES["docs/design/architecture.md"] = ARCHITECTURE.replace(
+    "## Module Dependency Graph",
+    CORE_CONCEPTS_BLOCK + "\n## Module Dependency Graph").replace(
+    "| [core](modules/design-core.md) | Not implemented |",
+    "| [core](modules/design-core.md) | Not implemented |\n"
+    "| [host](modules/design-host.md) | Not implemented |")
+TWO_MODULE_FILES["docs/design/modules/design-host.md"] = HOST_MODULE
 SUBDIR_FILES["docs/design/modules/api/README.md"] = """# api
 
 The api module.
@@ -491,6 +537,264 @@ class ModuleSubdirectoryTests(CheckerCase):
         broken = SUBDIR_FILES["docs/design/modules/api/README.md"].replace("## Index", "## 索引")
         self.assert_red({"docs/design/modules/api/README.md": broken},
                         "is written in zh-CN", base=SUBDIR_FILES)
+
+
+class ReadabilitySectionTests(CheckerCase):
+    def test_two_module_architecture_passes(self):
+        self.assert_green(base=TWO_MODULE_FILES)
+
+    def test_single_module_omits_the_two_sections(self):
+        self.assert_green()
+
+    def test_single_module_with_an_extra_status_list_item(self):
+        files = dict(BASELINE)
+        files["docs/design/architecture.md"] = ARCHITECTURE.replace(
+            "| [core](modules/design-core.md) | Not implemented |",
+            "| [core](modules/design-core.md) | Not implemented |\n\n"
+            "- [core](modules/design-core.md) Not implemented")
+        self.assert_green(files)
+
+    def test_two_modules_without_core_concepts(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            CORE_CONCEPTS_BLOCK, "")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "no Core Concepts subsection", base=TWO_MODULE_FILES)
+
+    def test_status_rows_count_without_module_documents(self):
+        files = dict(BASELINE)
+        files["docs/design/architecture.md"] = ARCHITECTURE.replace(
+            "| [core](modules/design-core.md) | Not implemented |",
+            "| [core](modules/design-core.md) | Not implemented |\n"
+            "| [host](modules/design-host.md) | Not implemented |")
+        self.assert_red(files, "no Core Concepts subsection")
+
+    def test_status_rows_with_core_concepts_pass(self):
+        files = dict(BASELINE)
+        files["docs/design/architecture.md"] = ARCHITECTURE.replace(
+            "## Module Dependency Graph",
+            CORE_CONCEPTS_BLOCK + "\n## Module Dependency Graph").replace(
+            "| [core](modules/design-core.md) | Not implemented |",
+            "| [core](modules/design-core.md) | Not implemented |\n"
+            "| [host](modules/design-host.md) | Not implemented |")
+        self.assert_green(files)
+
+    def test_core_concepts_not_first(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "### Core Concepts", "### System Shape\n\nThe shape.\n\n### Core Concepts")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "Core Concepts is its first subsection", base=TWO_MODULE_FILES)
+
+    def test_core_concepts_without_mermaid(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "```mermaid\nflowchart TB\n    host --> core\n```\n\n", "")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "no mermaid concept map", base=TWO_MODULE_FILES)
+
+    def test_core_concepts_without_prose(self):
+        minimal = """
+### Core Concepts
+
+```mermaid
+flowchart TB
+    host --> core
+```
+
+### Design Mainline
+
+| Problem | Mechanism | Where it is specified |
+|---|---|---|
+| registration | the core module | Core Algorithms and Flows |
+"""
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            CORE_CONCEPTS_BLOCK, minimal)
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "holds a diagram and no prose", base=TWO_MODULE_FILES)
+
+    def test_second_core_concepts_under_cross_cutting(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "## Cross-Cutting Design\n\n### Error Model",
+            "## Cross-Cutting Design\n\n### Core Concepts\n\nAgain.\n\n### Error Model")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "second Core Concepts subsection", base=TWO_MODULE_FILES)
+
+    def test_core_concepts_term_definition_table(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "The map shows the only relationship between the two concepts.",
+            "The map shows the only relationship between the two concepts.\n\n"
+            "| Term | Definition |\n|---|---|\n| core | the core |")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "second glossary table", base=TWO_MODULE_FILES)
+
+    def test_core_concepts_meaning_table(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "The map shows the only relationship between the two concepts.",
+            "The map shows the only relationship between the two concepts.\n\n"
+            "| Term | Meaning |\n|---|---|\n| core | the core |")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "second glossary table", base=TWO_MODULE_FILES)
+
+    def test_two_modules_without_design_mainline(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            DESIGN_MAINLINE_BLOCK, "")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "no Design Mainline subsection", base=TWO_MODULE_FILES)
+
+    def test_second_design_mainline(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            DESIGN_MAINLINE_BLOCK, DESIGN_MAINLINE_BLOCK + DESIGN_MAINLINE_BLOCK)
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "second Design Mainline subsection", base=TWO_MODULE_FILES)
+
+    def test_design_mainline_without_a_table(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "| Problem | Mechanism | Where it is specified |\n"
+            "|---|---|---|\n| registration | the core module | Core Algorithms and Flows |\n",
+            "The mainline is described in the sections below.\n")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "Design Mainline carries no table", base=TWO_MODULE_FILES)
+
+    def test_design_mainline_with_an_unrelated_table(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            DESIGN_MAINLINE_BLOCK,
+            """
+### Design Mainline
+
+| Metric | Value |
+|---|---|
+| coverage | 80% |
+""")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "problem, mechanism and location columns", base=TWO_MODULE_FILES)
+
+    def test_design_mainline_before_core_concepts(self):
+        core, mainline = CORE_CONCEPTS_BLOCK.split("### Design Mainline", 1)
+        mainline = "### Design Mainline" + mainline
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            CORE_CONCEPTS_BLOCK, mainline + "\n" + core)
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "comes before Core Concepts", base=TWO_MODULE_FILES)
+
+    def test_optional_core_concepts_in_single_module_passes(self):
+        block = """
+### Core Concepts
+
+The core module is the system's concept.
+
+```mermaid
+flowchart TB
+    core[core]
+```
+
+The map shows the module.
+"""
+        files = dict(BASELINE)
+        files["docs/design/architecture.md"] = ARCHITECTURE.replace(
+            "## Module Dependency Graph", block + "\n## Module Dependency Graph")
+        self.assert_green(files)
+
+    def test_optional_core_concepts_in_single_module_with_second_glossary(self):
+        block = """
+### Core Concepts
+
+The core module is the system's concept.
+
+```mermaid
+flowchart TB
+    core[core]
+```
+
+| Term | Definition |
+|---|---|
+| core | the core |
+"""
+        files = dict(BASELINE)
+        files["docs/design/architecture.md"] = ARCHITECTURE.replace(
+            "## Module Dependency Graph", block + "\n## Module Dependency Graph")
+        self.assert_red(files, "second glossary table")
+
+    def test_concept_definition_table(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "The map shows the only relationship between the two concepts.",
+            "The map shows the only relationship between the two concepts.\n\n"
+            "| Concept | Definition |\n|---|---|\n| core | the core |")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "second glossary table", base=TWO_MODULE_FILES)
+
+    def test_design_mainline_with_an_empty_table(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            DESIGN_MAINLINE_BLOCK,
+            """
+### Design Mainline
+
+| Problem | Mechanism | Where it is specified |
+|---|---|---|
+""")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "carries no data row", base=TWO_MODULE_FILES)
+
+    def test_second_design_mainline_under_cross_cutting(self):
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "## Cross-Cutting Design\n\n### Error Model",
+            "## Cross-Cutting Design\n\n### Design Mainline\n\nAgain.\n\n### Error Model")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "second Design Mainline subsection", base=TWO_MODULE_FILES)
+
+    def test_module_documents_without_status_rows_do_not_trigger(self):
+        files = dict(BASELINE)
+        files["docs/design/modules/design-host.md"] = HOST_MODULE
+        files["docs/design/README.md"] = (
+            DESIGN_README + "| [host](modules/design-host.md) | the host |\n")
+        code, report = self.run_on(files)
+        self.assertEqual(code, 1, report)
+        self.assertIn("has no row for", report)
+        self.assertNotIn("no Core Concepts subsection", report)
+
+    def test_duplicate_core_concepts_do_not_false_report_order(self):
+        core, mainline = CORE_CONCEPTS_BLOCK.split("### Design Mainline", 1)
+        mainline = "### Design Mainline" + mainline
+        broken = TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            CORE_CONCEPTS_BLOCK, core + mainline + core)
+        code, report = self.run_on({"docs/design/architecture.md": broken},
+                                   base=TWO_MODULE_FILES)
+        self.assertEqual(code, 1, report)
+        self.assertIn("second Core Concepts subsection", report)
+        self.assertNotIn("comes before Core Concepts", report)
+
+
+class ModuleReadabilityTests(CheckerCase):
+    def test_worked_example_outside_core_algorithms(self):
+        broken = MODULE.replace(
+            "## External Interface Contract",
+            "### Worked Example\n\nA trace.\n\n## External Interface Contract")
+        self.assert_red({"docs/design/modules/design-core.md": broken},
+                        "must sit under 'Core Algorithms and Flows'")
+
+    def test_state_at_a_glance_outside_core_data_structures(self):
+        broken = MODULE.replace(
+            "## External Interface Contract",
+            "### State at a Glance\n\nA table.\n\n## External Interface Contract")
+        self.assert_red({"docs/design/modules/design-core.md": broken},
+                        "must sit under 'Core Data Structures'")
+
+    def test_module_readability_sections_in_place(self):
+        block = """## Core Data Structures
+
+### State at a Glance
+
+| State | What it means | What the component is doing | Mental image |
+|---|---|---|---|
+| idle | nothing runs | waiting | a quiet room |
+
+## Core Algorithms and Flows
+
+### Worked Example
+
+A trace.
+
+"""
+        broken = MODULE.replace("## Implementation Status",
+                                block + "## Implementation Status")
+        self.assert_green({"docs/design/modules/design-core.md": broken})
 
 
 class AdrTreeTests(CheckerCase):
@@ -779,9 +1083,81 @@ graph TD
 }
 
 
+ZH_CORE_CONCEPTS_BLOCK = """
+### 核心概念
+
+核心与宿主是本系统的两个顶层概念。
+
+| 概念 | 关系 | 生命周期与范围 |
+|---|---|---|
+| 核心 | 注册组件 | 进程内 |
+| 宿主 | 拥有核心 | 进程内 |
+
+```mermaid
+flowchart TB
+    host --> core
+```
+
+概念图表达两个概念之间唯一的关系。
+
+### 设计主线
+
+| 问题 | 机制 | 展开位置 |
+|---|---|---|
+| 注册 | 核心模块 | 核心算法与流程 |
+"""
+
+ZH_TWO_MODULE_FILES = dict(ZH_FILES)
+ZH_TWO_MODULE_FILES["docs/design/README.md"] = ZH_FILES["docs/design/README.md"].replace(
+    "| [core](modules/design-core.md) | 注册与生命周期 |",
+    "| [core](modules/design-core.md) | 注册与生命周期 |\n"
+    "| [host](modules/design-host.md) | 宿主 |")
+ZH_TWO_MODULE_FILES["docs/design/architecture.md"] = (
+    ZH_FILES["docs/design/architecture.md"].replace(
+        "## 模块依赖图",
+        ZH_CORE_CONCEPTS_BLOCK + "\n## 模块依赖图").replace(
+        "| [core](modules/design-core.md) | 未实现 |",
+        "| [core](modules/design-core.md) | 未实现 |\n"
+        "| [host](modules/design-host.md) | 未实现 |"))
+ZH_TWO_MODULE_FILES["docs/design/modules/design-host.md"] = (
+    ZH_FILES["docs/design/modules/design-core.md"].replace("# core", "# host"))
+
+
 class ChineseTreeTests(CheckerCase):
     def test_conforming_chinese_tree_passes(self):
         self.assert_green(base=ZH_FILES)
+
+    def test_chinese_two_modules_pass(self):
+        self.assert_green(base=ZH_TWO_MODULE_FILES)
+
+    def test_chinese_two_modules_without_core_concepts(self):
+        broken = ZH_TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            ZH_CORE_CONCEPTS_BLOCK, "")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "no Core Concepts subsection", base=ZH_TWO_MODULE_FILES)
+
+    def test_chinese_document_with_english_heading(self):
+        broken = ZH_TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "### 核心概念", "### Core Concepts")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "is written in en", base=ZH_TWO_MODULE_FILES)
+
+    def test_chinese_core_concepts_term_table(self):
+        broken = ZH_TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "概念图表达两个概念之间唯一的关系。",
+            "概念图表达两个概念之间唯一的关系。\n\n"
+            "| 术语 | 定义 |\n|---|---|\n| 核心 | 注册组件 |")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "second glossary table", base=ZH_TWO_MODULE_FILES)
+
+    def test_chinese_design_mainline_wrong_language_only_reports_language(self):
+        broken = ZH_TWO_MODULE_FILES["docs/design/architecture.md"].replace(
+            "### 设计主线", "### Design Mainline")
+        code, report = self.run_on({"docs/design/architecture.md": broken},
+                                   base=ZH_TWO_MODULE_FILES)
+        self.assertEqual(code, 1, report)
+        self.assertIn("is written in en", report)
+        self.assertNotIn("no Design Mainline subsection", report)
 
     def test_heading_in_the_other_language(self):
         self.assert_red({"docs/design/modules/design-core.md":

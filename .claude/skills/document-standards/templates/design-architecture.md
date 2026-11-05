@@ -15,6 +15,40 @@ nothing else is incomplete.
 
 <The system's shape and its decomposition into modules.>
 
+<!--
+Required when the Implementation Status table lists more than one top-level
+module. Core Concepts is the first H3 of the Overview; a short lead paragraph
+may precede it, and its absence is not a defect. A relationship table is
+allowed; a definition table is not. Link the project glossary once for the
+terms' definitions; never restate one. Reference the ADR that records a
+decision; never restate its rationale.
+-->
+### Core Concepts
+
+<For each concept a reader must hold to follow this document: how it relates
+to the others, its lifecycle, and what it survives.>
+
+| Concept | Relationship | Lifecycle and scope |
+|---|---|---|
+| <concept> | <how it relates> | <what it survives> |
+
+```mermaid
+flowchart TB
+    concept_a[Concept A] --> concept_b[Concept B]
+```
+
+<The lifecycle view the diagram encodes, and the constraints the prose carries.>
+
+### Design Mainline
+
+<The problems the design must solve, the mechanism for each, and where the
+mechanism is specified. The table carries at least one data row; the three
+columns are required.>
+
+| Problem | Mechanism | Where it is specified |
+|---|---|---|
+| <problem> | <mechanism> | <section> |
+
 ## Module Dependency Graph
 
 ```mermaid

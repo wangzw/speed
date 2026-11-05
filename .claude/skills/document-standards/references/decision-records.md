@@ -97,6 +97,7 @@ A brief introduction, then the index **grouped by topic**, each record listed by
 **Required:**
 - **The index covers every record, each appearing exactly once.** A record absent from the index is an orphan, and an orphan is an error.
 - Grouping by topic is what makes the index worth having: a reader sees a topic's decisions together.
+- **A group for a foundational decision goes first.** The rest follow in a stable topic order; grouping is by topic, never by date.
 - **No date column and no status column.** The index names the decision and links it. When the record is revised, the index row stays as it is unless the title or the file name changed.
 
 Template: `templates/adr-readme.md`.
