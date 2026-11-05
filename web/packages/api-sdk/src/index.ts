@@ -1620,27 +1620,45 @@ export const TenantAdminTenantStatus = {
 } as const;
 
 /**
- * One tenant as the management routes render it: the identifier, the alias and the state, plus who disabled it while it is disabled.
+ * One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time when known, and who disabled it while it is disabled.
  */
 export interface TenantAdminTenant {
   /** The alias the request surface addresses the tenant by. */
   alias: string;
+  /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
+  contactEmail: string;
+  /** When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for. */
+  createdAt?: string;
+  /** The organization's description. Empty when its profile names none. */
+  description: string;
   /** Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled. */
   disabledBy?: TenantAdminTenantDisabledBy;
+  /** The organization's display name. Empty when its profile names none; a surface falls back to the alias then. */
+  displayName: string;
   /** The tenant's identifier, the natural key the roster keys the row by. */
   id: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
   status: TenantAdminTenantStatus;
+  /** The organization's absolute http or https address. Empty when its profile names none. */
+  website: string;
 }
 
 /**
- * The identifier and alias of a tenant to register. The state is not part of it, because a registered tenant starts active.
+ * The identifier, alias and optional profile of a tenant to register. The state is not part of it, because a registered tenant starts active.
  */
 export interface TenantAdminTenantRegistration {
   /** The alias to give the tenant; the roster refuses one another tenant already holds. */
   alias: string;
+  /** The organization's contact address, one bare email address of at most 254 bytes. */
+  contact_email?: string;
+  /** A longer account of the organization, at most 500 runes. */
+  description?: string;
+  /** The organization's display name, at most 100 runes. Empty when the registration names none. */
+  display_name?: string;
   /** The identifier to register; the roster refuses one it already holds. */
   id: string;
+  /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. */
+  website?: string;
 }
 
 /**
@@ -1691,6 +1709,17 @@ export interface AuthnAdminImpersonationList {
   next_cursor: string;
 }
 
+export interface TenantAdminTenantProfileWrite {
+  /** The organization's contact address, one bare email address of at most 254 bytes. Empty clears it. */
+  contact_email: string;
+  /** A longer account of the organization, at most 500 runes. Empty clears it. */
+  description: string;
+  /** The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias. */
+  display_name: string;
+  /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it. */
+  website: string;
+}
+
 /**
  * One role of a tenant as the role routes report it.
  */
@@ -1727,14 +1756,16 @@ export interface AuthzAdminRoleWrite {
  }
 
 /**
- * One permission grant of a role: the (resource, action) pair the policy engine matches on.
+ * One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on.
  */
 export interface AuthzAdminGrantView {
-  /** The action the grant matches on. */
+  /** The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   action: string;
   /** When the grant was written, as an RFC 3339 instant in UTC. */
   created_at: string;
-  /** The resource the grant matches on. */
+  /** The permission the (resource, action) pair translates to, for example authz.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries. */
+  permission: string;
+  /** The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   resource: string;
   /** The role holding the grant. */
   role: string;
@@ -1767,9 +1798,23 @@ export interface AuthnInvitePage {
 }
 
 /**
- * The answer of an issue: the invitation's view together with its one-time acceptance token.
+ * How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link.
+ */
+export type AuthnInviteIssuedEmailDelivery = typeof AuthnInviteIssuedEmailDelivery[keyof typeof AuthnInviteIssuedEmailDelivery];
+
+
+export const AuthnInviteIssuedEmailDelivery = {
+  sent: 'sent',
+  failed: 'failed',
+  not_configured: 'not_configured',
+} as const;
+
+/**
+ * The answer of an issue: the invitation's view together with its one-time acceptance token and the outcome of the notice.
  */
 export interface AuthnInviteIssued {
+  /** How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link. */
+  email_delivery: AuthnInviteIssuedEmailDelivery;
   /** The issued invitation; the token is delivered beside it, not inside it. */
   invitation: AuthnInviteInvitation;
   /** The acceptance token, handed out once */
@@ -1786,6 +1831,10 @@ export interface AuthnAdminMember {
   active: boolean;
   /** The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none. */
   display_name: string;
+  /** When the account joined the tenant, as an RFC 3339 instant in UTC. */
+  joined_at: string;
+  /** The role names the account holds in the tenant, ascending and without duplicates; always an array and never null, empty when it holds none. */
+  roles: string[];
   /** How the membership came to exist: admin, invite, import or jit:<provider identifier>. */
   source: string;
   /** True when the member is exempt from the tenant's enforced SSO requirement. */
@@ -1795,11 +1844,13 @@ export interface AuthnAdminMember {
 }
 
 /**
- * One page of a tenant's memberships, in ascending account-identifier order.
+ * One page of a tenant's memberships, in ascending account-identifier order, and the cursor of the next page.
  */
 export interface AuthnAdminMemberList {
   /** The memberships on this page; the empty array when the tenant has none. */
   members: AuthnAdminMember[];
+  /** The cursor of the next page, empty on the last page */
+  next_cursor: string;
 }
 
 /**
@@ -1836,6 +1887,51 @@ export interface AuthzTenantAdminPermissionView {
   group: string;
   /** The permission name as the catalog declares it, for example authz.tenant.role.read. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string. */
   permission: string;
+}
+
+/**
+ * The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again.
+ */
+export type TenantProfileViewStatus = typeof TenantProfileViewStatus[keyof typeof TenantProfileViewStatus];
+
+
+export const TenantProfileViewStatus = {
+  active: 'active',
+  disabled: 'disabled',
+  deleted: 'deleted',
+} as const;
+
+/**
+ * One tenant's organization profile: the read-only identity and state beside the four descriptive fields.
+ */
+export interface TenantProfileView {
+  /** The alias the request surface addresses the tenant by. */
+  alias: string;
+  /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
+  contactEmail: string;
+  /** When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for. */
+  createdAt?: string;
+  /** The organization's description. Empty when its profile names none. */
+  description: string;
+  /** The organization's display name. Empty when its profile names none; a surface falls back to the alias then. */
+  displayName: string;
+  /** The tenant's immutable identifier. */
+  id: string;
+  /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
+  status: TenantProfileViewStatus;
+  /** The organization's absolute http or https address. Empty when its profile names none. */
+  website: string;
+}
+
+export interface TenantProfileWrite {
+  /** The organization's contact address, one bare email address of at most 254 bytes. Empty clears it. */
+  contact_email: string;
+  /** A longer account of the organization, at most 500 runes. Empty clears it. */
+  description: string;
+  /** The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias. */
+  display_name: string;
+  /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it. */
+  website: string;
 }
 
 /**
@@ -1888,14 +1984,16 @@ export interface AuthzTenantAdminRoleBindingView {
 }
 
 /**
- * One permission grant of a role: the (resource, action) pair the policy engine matches on.
+ * One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on.
  */
 export interface AuthzTenantAdminGrantView {
-  /** The action the grant matches on. */
+  /** The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   action: string;
   /** When the grant was written, as an RFC 3339 instant in UTC. */
   created_at: string;
-  /** The resource the grant matches on. */
+  /** The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries. */
+  permission: string;
+  /** The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed. */
   resource: string;
   /** The role holding the grant. */
   role: string;
@@ -2313,6 +2411,8 @@ export const TenantSelfTenantsList200TenantsItemKind = {
 export type TenantSelfTenantsList200TenantsItem = {
   /** The tenant's alias, the name the request surface addresses it by. */
   alias: string;
+  /** The organization's display name, empty when its profile names none. A surface falls back to the alias then. */
+  displayName: string;
   /** The tenant's immutable identifier. */
   id: string;
   /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier. */
@@ -2807,6 +2907,14 @@ after?: string;
 };
 
 /**
+ * The tenant the identifier named.
+ */
+export type TenantAdminTenantsProfile200 = {
+  /** The tenant, with its identifier, alias and state. */
+  tenant: TenantAdminTenant;
+};
+
+/**
  * The tenant's roles.
  */
 export type AuthzAdminRolesList200 = {
@@ -2863,7 +2971,21 @@ limit?: number;
  * Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page.
  */
 after?: string;
+/**
+ * Narrow the page to one view: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states. Omitted lists every state. A value outside this set is refused with 400. Expiry is derived from the deadline, not stored.
+ */
+status?: AuthnInviteListStatus;
 };
+
+export type AuthnInviteListStatus = typeof AuthnInviteListStatus[keyof typeof AuthnInviteListStatus];
+
+
+export const AuthnInviteListStatus = {
+  pending: 'pending',
+  expired: 'expired',
+  accepted: 'accepted',
+  revoked: 'revoked',
+} as const;
 
 /**
  * The issue request: the invited address, which is normalized before it is stored, and an optional deadline.
@@ -2881,11 +3003,15 @@ export type AuthnAdminMembersListParams = {
  */
 query?: string;
 /**
+ * Narrows the page to the members holding this role name in the tenant, matched exactly; absent or empty selects every member. A name no role of the tenant uses selects no member and is still a 200, so the parameter does not reveal which role names exist. A role filter needs the policy module's member role reader; an assembly without one answers 503.
+ */
+role?: string;
+/**
  * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
  */
 limit?: number;
 /**
- * The account identifier of the last membership on the previous page, or empty for the first page.
+ * The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last matching membership on that page.
  */
 after?: string;
 };
@@ -2896,6 +3022,22 @@ after?: string;
 export type AuthzTenantadminPermissionsList200 = {
   /** Every permission of the governed set, one view each, in permission-name order. */
   permissions: AuthzTenantAdminPermissionView[];
+};
+
+/**
+ * The organization profile of one tenant.
+ */
+export type TenantProfileGet200 = {
+  /** The tenant's organization profile, with the identifier, alias and state it is read beside. */
+  profile: TenantProfileView;
+};
+
+/**
+ * The organization profile of one tenant.
+ */
+export type TenantProfileUpdate200 = {
+  /** The tenant's organization profile, with the identifier, alias and state it is read beside. */
+  profile: TenantProfileView;
 };
 
 /**
@@ -4654,7 +4796,7 @@ export const useAuthnProfilePatch = <TError = Problem,
     }
 
 /**
- * Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias and kind. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
+ * Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias, display name and kind. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
  * @summary List the tenants the caller holds an active membership in
  */
 export const tenantSelfTenantsList = (
@@ -8840,7 +8982,7 @@ export function useTenantAdminTenantsList<TData = Awaited<ReturnType<typeof tena
 
 
 /**
- * Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.
+ * Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier, the alias and optionally the profile's four descriptive fields; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.
  * @summary Register an active tenant
  */
 export const tenantAdminTenantsCreate = (
@@ -9451,6 +9593,72 @@ export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
         TContext
       > => {
       return useMutation(getAuthnAdminImpersonationsRevokeMutationOptions(options));
+    }
+
+/**
+ * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.
+ * @summary Write one tenant's organization profile
+ */
+export const tenantAdminTenantsProfile = (
+    tenant: string,
+    tenantAdminTenantProfileWrite: TenantAdminTenantProfileWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantAdminTenantsProfile200>(
+      {url: `/api/v1/system/tenants/${tenant}/profile`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: tenantAdminTenantProfileWrite, signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminTenantsProfileMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsProfile>>, TError,{tenant: string;data: TenantAdminTenantProfileWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsProfile>>, TError,{tenant: string;data: TenantAdminTenantProfileWrite}, TContext> => {
+
+const mutationKey = ['tenantAdminTenantsProfile'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsProfile>>, {tenant: string;data: TenantAdminTenantProfileWrite}> = (props) => {
+          const {tenant,data} = props ?? {};
+
+          return  tenantAdminTenantsProfile(tenant,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminTenantsProfileMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsProfile>>>
+    export type TenantAdminTenantsProfileMutationBody = TenantAdminTenantProfileWrite
+    export type TenantAdminTenantsProfileMutationError = Problem | void
+
+    /**
+ * @summary Write one tenant's organization profile
+ */
+export const useTenantAdminTenantsProfile = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsProfile>>, TError,{tenant: string;data: TenantAdminTenantProfileWrite}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminTenantsProfile>>,
+        TError,
+        {tenant: string;data: TenantAdminTenantProfileWrite},
+        TContext
+      > => {
+      return useMutation(getTenantAdminTenantsProfileMutationOptions(options));
     }
 
 /**
@@ -10199,7 +10407,7 @@ export const useAuthzTenantadminBindingsPut = <TError = Problem,
     }
 
 /**
- * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.
+ * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The status query narrows the page: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states; an absent status lists every state, and a value outside the set is refused with 400. Expiry is derived from the deadline, not stored, so an expired row still reads status pending. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. A read writes no audit row.
  * @summary One page of a tenant's invitations
  */
 export const authnInviteList = (
@@ -10274,7 +10482,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
 
 
 /**
- * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
+ * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201 with its one-time token. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
  * @summary Issue an invitation to an address in a tenant
  */
 export const authnInviteIssue = (
@@ -10404,7 +10612,7 @@ export const useAuthnInviteRevoke = <TError = Problem | void,
     }
 
 /**
- * Lists one tenant's memberships, one page at a time, in ascending account-identifier order. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
+ * Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
  * @summary List a tenant's members
  */
 export const authnAdminMembersList = (
@@ -10543,7 +10751,7 @@ export const useAuthnAdminMembersRemove = <TError = Problem | void,
     }
 
 /**
- * Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. Requires membership.manage with the path's tenant.
+ * Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. An administrator cannot suspend their own membership: that is a 409 cannot-suspend-self, while another administrator may suspend them. Requires membership.manage with the path's tenant.
  * @summary Write an account's membership in a tenant
  */
 export const authnAdminMembersPut = (
@@ -10745,6 +10953,142 @@ export function useAuthzTenantadminPermissionsList<TData = Awaited<ReturnType<ty
 
 
 
+
+/**
+ * Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, website and state, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier the roster does not hold is a 404. Reads write no audit row.
+ * @summary Read a tenant's organization profile
+ */
+export const tenantProfileGet = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantProfileGet200>(
+      {url: `/api/v1/tenants/${tenant}/profile`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getTenantProfileGetQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/profile`
+    ] as const;
+    }
+
+
+export const getTenantProfileGetQueryOptions = <TData = Awaited<ReturnType<typeof tenantProfileGet>>, TError = Problem | void>(tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof tenantProfileGet>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTenantProfileGetQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantProfileGet>>> = ({ signal }) => tenantProfileGet(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantProfileGet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type TenantProfileGetQueryResult = NonNullable<Awaited<ReturnType<typeof tenantProfileGet>>>
+export type TenantProfileGetQueryError = Problem | void
+
+
+/**
+ * @summary Read a tenant's organization profile
+ */
+
+export function useTenantProfileGet<TData = Awaited<ReturnType<typeof tenantProfileGet>>, TError = Problem | void>(
+ tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof tenantProfileGet>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getTenantProfileGetQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.
+ * @summary Write a tenant's organization profile
+ */
+export const tenantProfileUpdate = (
+    tenant: string,
+    tenantProfileWrite: TenantProfileWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantProfileUpdate200>(
+      {url: `/api/v1/tenants/${tenant}/profile`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: tenantProfileWrite, signal
+    },
+      );
+    }
+
+
+
+export const getTenantProfileUpdateMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantProfileUpdate>>, TError,{tenant: string;data: TenantProfileWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantProfileUpdate>>, TError,{tenant: string;data: TenantProfileWrite}, TContext> => {
+
+const mutationKey = ['tenantProfileUpdate'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantProfileUpdate>>, {tenant: string;data: TenantProfileWrite}> = (props) => {
+          const {tenant,data} = props ?? {};
+
+          return  tenantProfileUpdate(tenant,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantProfileUpdateMutationResult = NonNullable<Awaited<ReturnType<typeof tenantProfileUpdate>>>
+    export type TenantProfileUpdateMutationBody = TenantProfileWrite
+    export type TenantProfileUpdateMutationError = Problem | void
+
+    /**
+ * @summary Write a tenant's organization profile
+ */
+export const useTenantProfileUpdate = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantProfileUpdate>>, TError,{tenant: string;data: TenantProfileWrite}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof tenantProfileUpdate>>,
+        TError,
+        {tenant: string;data: TenantProfileWrite},
+        TContext
+      > => {
+      return useMutation(getTenantProfileUpdateMutationOptions(options));
+    }
 
 /**
  * Lists every role stored for the tenant, one view each, ordered by role name ascending. A tenant with no role yields an empty list. The list is not paginated.
