@@ -231,8 +231,9 @@ type Reconciler interface {
 
 // WriteSettings 报告一个租户的设置拒绝一次管理写。宿主实现它；它只收紧，
 // 不能让 Set 会拒绝的写通过。它只接收租户标识，宿主用它拒绝个人租户的写；
-// 平台专用命名空间的排除在 settings.tenantadmin 内部的封闭集合里。settings.tenantadmin
-// 以它为必需依赖，缺席即启动失败：个人租户的拒绝不能留到运行期才决定有没有。
+// 设置声明是否把一项暴露给租户，由 settings.tenantadmin 读声明时判定，
+// 不在这个接口里。settings.tenantadmin 以它为必需依赖，缺席即启动失败：
+// 个人租户的拒绝不能留到运行期才决定有没有。
 type WriteSettings interface {
     Denied(ctx context.Context, tenant string) (bool, error)
 }

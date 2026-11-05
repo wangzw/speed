@@ -8,7 +8,7 @@
 |---|---|
 | [settings](design-settings.md) | 设置：模块声明的运行期参数、三级回退、以快照读取、变更事件的发布与订阅 |
 | [settings-admin](design-settings-admin.md) | 设置管理面：按层的读写路由、按层判定、敏感遮蔽与审计前置 |
-| [settings-tenantadmin](design-settings-tenantadmin.md) | 租户设置管理面：租户层的读写路由、可写键允许集、`WriteSettings` 与审计前置 |
+| [settings-tenantadmin](design-settings-tenantadmin.md) | 租户设置管理面：租户层的读写路由、声明归属、有效值 OR 与平台下限、`WriteSettings` 与审计前置 |
 
 ## 实现状态
 

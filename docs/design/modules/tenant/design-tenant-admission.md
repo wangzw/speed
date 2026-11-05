@@ -104,7 +104,7 @@ type ScopeGuard interface {
 输入项的完整键表、取值域与缺省值只在 [design-authn-config](../authn/design-authn-config.md) 给出；本节写语义。
 
 - **`tenant.admission.endpoints`**（配置，字符串列表）：准入层所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`**（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。清单的结构同 `tenant.resolve.endpoints`，一般与它相同；对 `*` 的处置不同：解析层把 `*` 当作未声明的端名，以 `ErrUnknownEndpoint` 终止，准入层以 `ErrInvalidConfig` 终止。**清单必须是 `tenant.resolve.endpoints` 的子集**：本模块在 `Prepare` 里读对方清单，列出对方不解析的端即 `ErrInvalidConfig`。落在那样的端上的请求没有租户上下文，而本层对非冒充的无租户上下文请求一律放行，成员检查就不会发生；对方清单未写出或未声明时无从比较，那一档由解析层自己的必填与空清单规则处理。清单不得含普通作用域与平台管理作用域的认证挂载端；租户管理作用域的挂载端必须同时在本清单与解析清单里，覆盖关系的核对由网关执行。
-- **`tenant.admission.require-mfa`、`tenant.admission.require-sso`**（设置，布尔）：按租户取值，租户行、全局行、声明的默认值依次回退；默认关闭。
+- **`tenant.admission.require-mfa`、`tenant.admission.require-sso`**（设置，布尔）：按租户取值，有效值是全局层与租户层的 OR。全局层是平台下限，任一层显式写下真即要求该策略；两层都没有行时取声明的默认值，默认关闭。平台在租户已写下假行之后打开时，OR 让要求继续生效。
 - **`tenant.admission.sso-exempt-tenants`**（配置，字符串列表，可选，缺省为空）：不受 SSO 要求约束的租户标识。名单里的租户仍要过成员关系行与多因素要求，只是不必经本租户的提供方登录。示范装配把平台自己的 `system` 租户写进名单。名单只在列出本模块的端时一并生效；它不改变任何租户对多因素要求的取值。
 - **`tenant.admission.check-ttl`**（设置，时长）：成员结果与放行结果在进程内的缓存时长，只读全局层；0 关闭缓存，有上限。
 
@@ -251,8 +251,8 @@ sequenceDiagram
 | 成员 | `Memberships.IsMember(Account(), 租户)` 为假 | `Decider` 在场且 `Scope()` 为空：询问 `Decide(Decision{Action: ActionTenantAccess, Actor, Tenant})`，为真则终止判定并放行（计 `admitted-by-policy`），否则 **404**；`Decider` 缺席或身份带冒充范围时直接 **404** |
 | 成员出错 | `IsMember` 或 `Decide` 返回 error | **503**，不放行 |
 | 豁免 | 身份是冒充身份，或 `Methods` 含 `client-secret`（服务账户） | 跳过多因素强度与 SSO 强度的判定 |
-| 多因素强度 | 设置 `tenant.admission.require-mfa` 为真（租户层）且有效保障等级低于多因素（等级的导出见「有效保障等级」） | **401** `insufficient_user_authentication`，`acr_values="2"` |
-| SSO 强度 | 设置 `tenant.admission.require-sso` 为真（租户层）且 `Identity.Provider()` 为空或对应提供方不属于本租户；成员的 `sso_exempt` 为真时改为只要求多因素 | **401** `sso_required`，`acr_values="sso"`；`sso_exempt` 成员未达多因素时，应答同多因素强度判定 |
+| 多因素强度 | `tenant.admission.require-mfa` 的有效值为真（平台层 OR 租户层）且有效保障等级低于多因素（等级的导出见「有效保障等级」） | **401** `insufficient_user_authentication`，`acr_values="2"` |
+| SSO 强度 | `tenant.admission.require-sso` 的有效值为真（平台层 OR 租户层）且 `Identity.Provider()` 为空或对应提供方不属于本租户；成员的 `sso_exempt` 为真时改为只要求多因素 | **401** `sso_required`，`acr_values="sso"`；`sso_exempt` 成员未达多因素时，应答同多因素强度判定 |
 | 通过 | 以上均未命中 | 放行 |
 
 ```mermaid
