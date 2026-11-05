@@ -1085,6 +1085,21 @@ names the fixed part of that wiring, and no configuration file repeats it:
   social or enterprise callback returns to that invitation path. The
   verification notice is rendered by the account surface independently of the
   tenant list.
+- **Self-service organization creation is a platform module the host
+  assembles** (`pkg/tenant/selfcreate`, registry name `org.create`, named in
+  `baselineServe`). It mounts `POST /api/v1/orgs` on the account endpoint and
+  declares the conditional feature `org.create`; the switch is
+  `org.create.enabled` in the defaults document, and a deployment that turns it
+  off gets the account endpoint's own 404 on that path. The host writes no
+  creation logic: the module owns the eligibility checks, the alias and profile
+  shape, the two account bounds, the thirty-second creation lock and the audit
+  row. The host's `tenant.Provisioner` writes the tenant, its `tenant-admin`
+  role and the creator's membership and binding; the membership source is
+  `initial`, which the host reserves for a tenant's creator and keeps apart
+  from the `admin` source of later additions. The two numeric limits are
+  platform runtime settings declared by the module, not host configuration.
+  The personal tenant has no route of its own; the account's creation
+  transaction writes it.
 - **The tenancy policy seams** are the host's answers to what the tenant and
   authorization capabilities leave open (`server/tenancy.go`, named in
   `baselineServe` and in the `seed` command). The module provides

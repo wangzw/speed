@@ -302,6 +302,13 @@ func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
 	if !member {
 		t.Error("the creator is not an active member of the tenant it created")
 	}
+	held, found, err := memberships.Membership(context.Background(), "acme", "acct-1")
+	if err != nil || !found {
+		t.Fatalf("reading the creator's membership row: found=%t err=%v", found, err)
+	}
+	if held.Source != tenantCreatorMembershipSource {
+		t.Errorf("the creator's membership source is %q, want %q", held.Source, tenantCreatorMembershipSource)
+	}
 }
 
 // TestTheProvisionerWritesTheRosterRowBeforeTheCreatorRows holds the ruled

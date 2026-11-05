@@ -1,0 +1,1126 @@
+package selfcreate
+
+// The unit cases hold the decision order and the four upper bounds over
+// stand-ins for the module's seams. The assembly of the real modules is held by
+// the demo server's program-level cases; a transaction boundary is the one
+// thing a fake cannot answer.
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
+	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/tenant"
+	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
+)
+
+// unitAccount is the account the unit cases act as. It is not a UUID so a
+// failure message stays readable.
+const unitAccount = authn.AccountID("7c1e0f6a")
+
+// testNow is the instant the unit cases run at: fifteen minutes into an hour,
+// so Retry-After has a value the case can name.
+var testNow = time.Date(2026, time.November, 5, 10, 15, 0, 0, time.UTC)
+
+// fakeKV is the in-memory kv.KV the unit cases use. It honours the expiry rules
+// the contract states, because the creation lock and the hourly window are both
+// judged through them.
+type fakeKV struct {
+	mu     sync.Mutex
+	values map[string]kvEntry
+	// lockAttempts, when non-nil, is signalled once per SetIfAbsent call. The
+	// concurrent-lock case uses it to know every request has reached the lock
+	// before the winner's provisioner is released.
+	lockAttempts chan struct{}
+}
+
+type kvEntry struct {
+	value   []byte
+	expires time.Time
+}
+
+func newFakeKV() *fakeKV { return &fakeKV{values: map[string]kvEntry{}} }
+
+func (k *fakeKV) live(key string) (kvEntry, bool) {
+	entry, ok := k.values[key]
+	if !ok {
+		return kvEntry{}, false
+	}
+	if !entry.expires.IsZero() && !entry.expires.After(time.Now()) {
+		delete(k.values, key)
+		return kvEntry{}, false
+	}
+	return entry, true
+}
+
+func (k *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	entry, ok := k.live(key)
+	if !ok {
+		return nil, false, nil
+	}
+	return append([]byte(nil), entry.value...), true, nil
+}
+
+func (k *fakeKV) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	entry := kvEntry{value: append([]byte(nil), value...)}
+	if ttl > 0 {
+		entry.expires = time.Now().Add(ttl)
+	}
+	k.values[key] = entry
+	return nil
+}
+
+func (k *fakeKV) Delete(_ context.Context, key string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	delete(k.values, key)
+	return nil
+}
+
+func (k *fakeKV) IncrByFloat(ctx context.Context, key string, delta float64) (float64, error) {
+	return k.IncrByFloatWithTTL(ctx, key, delta, 0)
+}
+
+func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	entry, ok := k.live(key)
+	current := 0.0
+	if ok {
+		parsed, err := strconv.ParseFloat(string(entry.value), 64)
+		if err != nil {
+			return 0, kv.ErrNotNumeric
+		}
+		current = parsed
+	}
+	current += delta
+	entry.value = []byte(strconv.FormatFloat(current, 'f', -1, 64))
+	if !ok && ttl > 0 {
+		entry.expires = time.Now().Add(ttl)
+	}
+	k.values[key] = entry
+	return current, nil
+}
+
+func (k *fakeKV) CompareAndSwap(_ context.Context, key string, old, newVal []byte) (bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	entry, ok := k.live(key)
+	if !ok {
+		entry = kvEntry{}
+	}
+	if string(entry.value) != string(old) {
+		return false, nil
+	}
+	entry.value = append([]byte(nil), newVal...)
+	k.values[key] = entry
+	return true, nil
+}
+
+func (k *fakeKV) SetIfAbsent(_ context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	k.mu.Lock()
+	_, live := k.live(key)
+	if !live {
+		entry := kvEntry{value: append([]byte(nil), value...)}
+		if ttl > 0 {
+			entry.expires = time.Now().Add(ttl)
+		}
+		k.values[key] = entry
+	}
+	attempts := k.lockAttempts
+	k.mu.Unlock()
+	if attempts != nil {
+		attempts <- struct{}{}
+	}
+	return !live, nil
+}
+
+// fakeSettings is the settings.Store the unit cases read. Only Get is reached:
+// the module declares its two items and never writes one.
+type fakeSettings struct {
+	settings.Store
+
+	values map[string]int
+	err    error
+}
+
+func (s *fakeSettings) Get(_ settings.Layer, key string, target any) error {
+	if s.err != nil {
+		return s.err
+	}
+	value, ok := s.values[key]
+	if !ok {
+		return fmt.Errorf("no value for %q", key)
+	}
+	pointer, ok := target.(*int)
+	if !ok {
+		return fmt.Errorf("target for %q is %T, want *int", key, target)
+	}
+	*pointer = value
+	return nil
+}
+
+// fakeVerification is the signup read the unit cases use.
+type fakeVerification struct {
+	authn.SignupVerification
+
+	mu     sync.Mutex
+	status authn.SignupStatus
+	err    error
+	calls  int
+}
+
+func (v *fakeVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.calls++
+	return v.status, v.err
+}
+
+// fakeReservation is the reserved-name answer the unit cases use.
+type fakeReservation struct {
+	authn.UsernameReservation
+
+	mu       sync.Mutex
+	reserved map[string]bool
+	err      error
+	asked    []string
+}
+
+func (r *fakeReservation) ReservedUsername(_ context.Context, username string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.asked = append(r.asked, username)
+	return r.reserved[username], r.err
+}
+
+// fakeReservationOf builds the answer with the built-in names the account module
+// refuses and the personal prefix as a prefix.
+func newFakeReservation() *fakeReservation {
+	return &fakeReservation{reserved: map[string]bool{
+		"api": true, "admin": true, "system": true, "login": true, "root": true,
+	}}
+}
+
+// fakeRoster is the tenant.Catalog the unit cases use. Get, ByAlias and List are
+// the three the module reads.
+type fakeRoster struct {
+	tenant.Catalog
+
+	mu   sync.Mutex
+	rows map[tenant.ID]tenant.Tenant
+}
+
+func newFakeRoster() *fakeRoster {
+	return &fakeRoster{rows: map[tenant.ID]tenant.Tenant{}}
+}
+
+func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row, found := r.rows[id]
+	return row, found, nil
+}
+
+func (r *fakeRoster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, row := range r.rows {
+		if row.Alias == alias {
+			return row, true, nil
+		}
+	}
+	return tenant.Tenant{}, false, nil
+}
+
+func (r *fakeRoster) List(_ context.Context) ([]tenant.Tenant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rows := make([]tenant.Tenant, 0, len(r.rows))
+	for _, row := range r.rows {
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func (r *fakeRoster) put(t tenant.Tenant) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rows[t.ID] = t
+}
+
+// fakeMemberships is the authn.Memberships the unit cases use.
+type fakeMemberships struct {
+	authn.Memberships
+
+	rows map[authn.AccountID][]authn.Membership
+}
+
+func newFakeMemberships() *fakeMemberships {
+	return &fakeMemberships{rows: map[authn.AccountID][]authn.Membership{}}
+}
+
+func (m *fakeMemberships) Tenants(_ context.Context, id authn.AccountID) ([]authn.Membership, error) {
+	return append([]authn.Membership(nil), m.rows[id]...), nil
+}
+
+// provisionCall is one Provision request the stand-in saw.
+type provisionCall struct {
+	tenant  tenant.Tenant
+	creator string
+}
+
+// fakeProvisioner is the tenant.Provisioner the unit cases use.
+type fakeProvisioner struct {
+	tenant.Provisioner
+
+	mu    sync.Mutex
+	calls []provisionCall
+	err   error
+	// block, when non-nil, holds every call until it is closed. The lock case
+	// uses it to keep one creation in flight.
+	block chan struct{}
+}
+
+func (p *fakeProvisioner) Provision(_ context.Context, t tenant.Tenant, creator string) error {
+	if p.block != nil {
+		<-p.block
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls = append(p.calls, provisionCall{tenant: t, creator: creator})
+	return p.err
+}
+
+func (p *fakeProvisioner) recorded() []provisionCall {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]provisionCall(nil), p.calls...)
+}
+
+// recordedAudit is the audit.Audit the unit cases use.
+type recordedAudit struct {
+	audit.Audit
+
+	mu      sync.Mutex
+	entries []audit.Entry
+	err     error
+}
+
+func (a *recordedAudit) Record(_ context.Context, entry audit.Entry) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil {
+		return a.err
+	}
+	a.entries = append(a.entries, entry)
+	return nil
+}
+
+func (a *recordedAudit) rows() []audit.Entry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]audit.Entry(nil), a.entries...)
+}
+
+// rig is the product plus the stand-ins a case wants to steer.
+type rig struct {
+	product      *product
+	roster       *fakeRoster
+	memberships  *fakeMemberships
+	reservation  *fakeReservation
+	kv           *fakeKV
+	verification *fakeVerification
+	settings     *fakeSettings
+	provisioner  *fakeProvisioner
+	audit        *recordedAudit
+}
+
+func newRig() *rig {
+	rig := &rig{
+		roster:       newFakeRoster(),
+		memberships:  newFakeMemberships(),
+		reservation:  newFakeReservation(),
+		kv:           newFakeKV(),
+		verification: &fakeVerification{status: authn.SignupStatus{State: authn.SignupVerified}},
+		settings: &fakeSettings{values: map[string]int{
+			maxOrganizationsPath: 5,
+			maxPerHourPath:       3,
+		}},
+		provisioner: &fakeProvisioner{},
+		audit:       &recordedAudit{},
+	}
+	rig.product = &product{
+		config:        moduleConfig{Enabled: true},
+		roster:        rig.roster,
+		memberships:   rig.memberships,
+		verification:  rig.verification,
+		reservations:  rig.reservation,
+		settings:      rig.settings,
+		kv:            rig.kv,
+		provisioner:   rig.provisioner,
+		audit:         rig.audit,
+		logger:        log.Default(),
+		now:           func() time.Time { return testNow },
+		newIdentifier: func() string { return idPrefix + uuid.NewString() },
+	}
+	return rig
+}
+
+func (r *rig) ctx(t *testing.T, options ...authntest.Option) context.Context {
+	t.Helper()
+	if len(options) == 0 {
+		options = []authntest.Option{authntest.WithAccount(unitAccount)}
+	}
+	return authntest.Context(t, context.Background(), options...)
+}
+
+func (r *rig) create(t *testing.T, ctx context.Context, alias, displayName string) (OrganizationCreatedReply, error) {
+	t.Helper()
+	return r.product.handleCreate(ctx, createInput{
+		Alias:       alias,
+		DisplayName: displayName,
+		Description: "a description",
+	})
+}
+
+// attempts reads the number of creations counted in the account's current
+// hourly window.
+func (r *rig) attempts(t *testing.T) int {
+	t.Helper()
+	count, err := r.product.hourlyCount(context.Background(), unitAccount)
+	if err != nil {
+		t.Fatalf("reading the hourly count: %v", err)
+	}
+	return count
+}
+
+func faultOf(t *testing.T, err error) speedhttp.Fault {
+	t.Helper()
+	var fault speedhttp.Fault
+	if !errors.As(err, &fault) {
+		t.Fatalf("the refusal is %v, want a fault", err)
+	}
+	return fault
+}
+
+// TestCreateRequiresAnIdentity holds the first step: a context with no identity
+// is refused 401 and nothing is read or written.
+func TestCreateRequiresAnIdentity(t *testing.T) {
+	rig := newRig()
+	_, err := rig.create(t, context.Background(), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", fault.Status)
+	}
+	if len(rig.provisioner.recorded()) != 0 || rig.verification.calls != 0 {
+		t.Error("an anonymous request reached the verification read or the provisioner")
+	}
+}
+
+// TestCreateRefusesImpersonation holds the second step: an identity acting for
+// another account is refused 403 before the verification read, even though the
+// route is mounted so the gateway lets it through.
+func TestCreateRefusesImpersonation(t *testing.T) {
+	rig := newRig()
+	ctx := rig.ctx(t,
+		authntest.WithAccount("target-account"),
+		authntest.WithActor("operator-account"),
+		authntest.WithSession("session-1"),
+		authntest.WithScope("acme"),
+	)
+	_, err := rig.create(t, ctx, "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", fault.Status)
+	}
+	if rig.verification.calls != 0 || len(rig.provisioner.recorded()) != 0 {
+		t.Error("an impersonating request reached the verification read or the provisioner")
+	}
+}
+
+// TestCreateRefusesServiceAccountsAndStaticSubjects holds the third step.
+func TestCreateRefusesServiceAccountsAndStaticSubjects(t *testing.T) {
+	for name, options := range map[string][]authntest.Option{
+		"a service account": {authntest.WithAccount("api-client"), authntest.WithMethods(authn.MethodClientSecret)},
+		"a static subject": {
+			authntest.WithAccount("static.ops"),
+			authntest.WithBackend("static"),
+			authntest.WithMethods(authn.MethodStatic),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rig := newRig()
+			_, err := rig.create(t, rig.ctx(t, options...), "acme-inc", "Acme")
+			if fault := faultOf(t, err); fault.Status != http.StatusForbidden {
+				t.Errorf("status = %d, want 403", fault.Status)
+			}
+			if rig.verification.calls != 0 || len(rig.provisioner.recorded()) != 0 {
+				t.Error("the refused caller reached the verification read or the provisioner")
+			}
+		})
+	}
+}
+
+// TestCreateRequiresAProvedEmailAddress holds the fourth step: a pending address
+// is the authentication capability's contact-required refusal, a read failure is
+// a 503, and an account with no address to prove is admitted.
+func TestCreateRequiresAProvedEmailAddress(t *testing.T) {
+	cases := map[string]struct {
+		status authn.SignupStatus
+		err    error
+		want   int
+		typ    string
+	}{
+		"pending":  {status: authn.SignupStatus{State: authn.SignupPending}, want: http.StatusForbidden, typ: authn.ContactRequiredProblemType},
+		"verified": {status: authn.SignupStatus{State: authn.SignupVerified}, want: http.StatusCreated},
+		"none":     {status: authn.SignupStatus{State: authn.SignupNone}, want: http.StatusCreated},
+		"read failure": {
+			status: authn.SignupStatus{State: authn.SignupNone},
+			err:    errors.New("the account store is unavailable"),
+			want:   http.StatusServiceUnavailable,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			rig := newRig()
+			rig.verification.status = tc.status
+			rig.verification.err = tc.err
+			_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+			if tc.want == http.StatusCreated {
+				if err != nil {
+					t.Fatalf("the creation failed: %v", err)
+				}
+				return
+			}
+			fault := faultOf(t, err)
+			if fault.Status != tc.want {
+				t.Errorf("status = %d, want %d", fault.Status, tc.want)
+			}
+			if fault.Type != tc.typ {
+				t.Errorf("type = %q, want %q", fault.Type, tc.typ)
+			}
+			if len(rig.provisioner.recorded()) != 0 {
+				t.Error("the refused request reached the provisioner")
+			}
+		})
+	}
+}
+
+// TestCreateChecksTheEmailBeforeTheShape holds the order: a pending address is
+// refused even when the body is also invalid.
+func TestCreateChecksTheEmailBeforeTheShape(t *testing.T) {
+	rig := newRig()
+	rig.verification.status = authn.SignupStatus{State: authn.SignupPending}
+	_, err := rig.product.handleCreate(rig.ctx(t), createInput{})
+	fault := faultOf(t, err)
+	if fault.Status != http.StatusForbidden || fault.Type != authn.ContactRequiredProblemType {
+		t.Errorf("status/type = %d/%q, want 403/%q", fault.Status, fault.Type, authn.ContactRequiredProblemType)
+	}
+}
+
+// TestCreateValidatesTheAliasAndProfileShape holds the fifth step: the alias is
+// a slug, the display name is required, both fields are held to their bounds,
+// and the reserved set is the account module's answer.
+func TestCreateValidatesTheAliasAndProfileShape(t *testing.T) {
+	cases := map[string]createInput{
+		"a blank display name": {Alias: "acme-inc", DisplayName: "   "},
+		"a display name too long": {
+			Alias: "acme-inc", DisplayName: strings.Repeat("a", tenant.DisplayNameMaxRunes+1),
+		},
+		"a description too long": {
+			Alias: "acme-inc", DisplayName: "Acme",
+			Description: strings.Repeat("a", tenant.DescriptionMaxRunes+1),
+		},
+		"an empty alias":           {DisplayName: "Acme"},
+		"a two-character alias":    {Alias: "ab", DisplayName: "Acme"},
+		"an upper-case alias":      {Alias: "Acme", DisplayName: "Acme"},
+		"an underscore":            {Alias: "acme_inc", DisplayName: "Acme"},
+		"a leading dash":           {Alias: "-acme", DisplayName: "Acme"},
+		"a built-in reserved name": {Alias: "api", DisplayName: "Acme"},
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			rig := newRig()
+			_, err := rig.product.handleCreate(rig.ctx(t), input)
+			if fault := faultOf(t, err); fault.Status != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400", fault.Status)
+			}
+			if len(rig.provisioner.recorded()) != 0 {
+				t.Error("an invalid body reached the provisioner")
+			}
+		})
+	}
+}
+
+// TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix holds the reserved
+// seam: the alias is asked of the account module's set, and a name under the
+// personal prefix is one of the answers it refuses.
+func TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix(t *testing.T) {
+	rig := newRig()
+	rig.reservation.reserved["personal-alice"] = true
+	_, err := rig.create(t, rig.ctx(t), "personal-alice", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", fault.Status)
+	}
+	if len(rig.reservation.asked) != 1 || rig.reservation.asked[0] != "personal-alice" {
+		t.Errorf("the reserved answer was asked %v, want the alias", rig.reservation.asked)
+	}
+	if len(rig.provisioner.recorded()) != 0 {
+		t.Error("a reserved alias reached the provisioner")
+	}
+}
+
+// TestCreateReadsTheReservedAnswerFailure is the seam's outage: the creation is
+// not carried out and answers 503.
+func TestCreateReadsTheReservedAnswerFailure(t *testing.T) {
+	rig := newRig()
+	rig.reservation.err = errors.New("the settings store is unavailable")
+	_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", fault.Status)
+	}
+	if len(rig.provisioner.recorded()) != 0 {
+		t.Error("an unreadable reserved set reached the provisioner")
+	}
+}
+
+// TestCreateRefusesAnAliasTheRosterHolds holds the sixth step: one namespace for
+// aliases, identifiers and usernames. A slug another tenant carries as its
+// alias or its identifier, and a slug a personal tenant carries as its
+// username, are the same identifier-unavailable refusal.
+func TestCreateRefusesAnAliasTheRosterHolds(t *testing.T) {
+	cases := map[string]tenant.Tenant{
+		"an alias":      {ID: "tenant-1", Alias: "acme-inc", Status: tenant.StatusActive},
+		"an identifier": {ID: "acme-inc", Alias: "another", Status: tenant.StatusActive},
+		"a username":    {ID: tenantpersonal.TenantID(authn.AccountID("alice")), Alias: "acme-inc", Status: tenant.StatusActive},
+		"a tombstone":   {ID: "tenant-2", Alias: "acme-inc", Status: tenant.StatusDeleted},
+	}
+	for name, row := range cases {
+		t.Run(name, func(t *testing.T) {
+			rig := newRig()
+			rig.roster.put(row)
+			_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+			fault := faultOf(t, err)
+			if fault.Status != http.StatusConflict || fault.Type != problemPrefix+identifierUnavailable {
+				t.Errorf("status/type = %d/%q, want 409/%q", fault.Status, fault.Type,
+					problemPrefix+identifierUnavailable)
+			}
+			if len(rig.provisioner.recorded()) != 0 {
+				t.Error("a held alias reached the provisioner")
+			}
+			if got := rig.attempts(t); got != 0 {
+				t.Errorf("a held alias counted %d attempt(s), want none", got)
+			}
+		})
+	}
+}
+
+// TestCreateCountsOnlyActiveBusinessMemberships holds the cap: a personal
+// tenant, a disabled tenant and a suspended membership are not counted, and the
+// cap refuses the creation once the active business count reaches it.
+func TestCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
+	rig := newRig()
+	rig.settings.values[maxOrganizationsPath] = 4
+	addBusiness := func(name string, status tenant.Status) {
+		rig.roster.put(tenant.Tenant{ID: tenant.ID(name), Alias: name, Status: status})
+		rig.memberships.rows[unitAccount] = append(rig.memberships.rows[unitAccount],
+			authn.Membership{Account: unitAccount, Tenant: name, Active: true, Source: "admin"})
+	}
+	for i := range 3 {
+		addBusiness(fmt.Sprintf("biz-%d", i), tenant.StatusActive)
+	}
+	addBusiness("biz-disabled", tenant.StatusDisabled)
+	personal := string(tenantpersonal.TenantID(unitAccount))
+	rig.roster.put(tenant.Tenant{ID: tenant.ID(personal), Alias: "unit-user", Status: tenant.StatusActive})
+	rig.memberships.rows[unitAccount] = append(rig.memberships.rows[unitAccount],
+		authn.Membership{Account: unitAccount, Tenant: personal, Active: true, Source: "personal"})
+	rig.memberships.rows[unitAccount] = append(rig.memberships.rows[unitAccount],
+		authn.Membership{Account: unitAccount, Tenant: "biz-suspended", Active: false, Source: "admin"})
+
+	if _, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme"); err != nil {
+		t.Fatalf("the creation below the cap failed: %v", err)
+	}
+
+	// One more active business tenant reaches the cap. The fake provisioner
+	// does not write the new membership, so the case adds it itself.
+	addBusiness("biz-3", tenant.StatusActive)
+	_, err := rig.create(t, rig.ctx(t), "acme-two", "Acme Two")
+	fault := faultOf(t, err)
+	if fault.Status != http.StatusConflict || fault.Type != problemPrefix+organizationLimitCode {
+		t.Errorf("status/type = %d/%q, want 409/%q", fault.Status, fault.Type,
+			problemPrefix+organizationLimitCode)
+	}
+	if len(rig.provisioner.recorded()) != 1 {
+		t.Errorf("the provisioner was asked %d time(s), want once", len(rig.provisioner.recorded()))
+	}
+}
+
+// TestCreateLimitsTheHourlyCount holds the hourly bound: three creations in an
+// hour are admitted, the fourth is the rate refusal with a Retry-After, and the
+// next hour starts a new window.
+func TestCreateLimitsTheHourlyCount(t *testing.T) {
+	rig := newRig()
+	for i := range 3 {
+		if _, err := rig.create(t, rig.ctx(t), fmt.Sprintf("acme-%d", i), fmt.Sprintf("Acme %d", i)); err != nil {
+			t.Fatalf("creation %d below the hourly limit failed: %v", i, err)
+		}
+	}
+	_, err := rig.create(t, rig.ctx(t), "acme-four", "Acme Four")
+	fault := faultOf(t, err)
+	if fault.Status != http.StatusTooManyRequests || fault.Type != problemPrefix+rateLimitedCode {
+		t.Fatalf("status/type = %d/%q, want 429/%q", fault.Status, fault.Type, problemPrefix+rateLimitedCode)
+	}
+	if len(fault.Headers) != 1 || fault.Headers[0].Name != "Retry-After" {
+		t.Fatalf("headers = %+v, want one Retry-After", fault.Headers)
+	}
+	// The test instant is 10:15, so the window has 2700 seconds left.
+	if got := fault.Headers[0].Value; got != "2700" {
+		t.Errorf("Retry-After = %q, want %q", got, "2700")
+	}
+	if len(rig.provisioner.recorded()) != 3 {
+		t.Errorf("the provisioner was asked %d time(s), want three", len(rig.provisioner.recorded()))
+	}
+
+	rig.product.now = func() time.Time { return testNow.Add(time.Hour) }
+	if _, err := rig.create(t, rig.ctx(t), "acme-next-hour", "Acme Next Hour"); err != nil {
+		t.Errorf("the next hour's creation failed: %v", err)
+	}
+}
+
+// TestCreateDoesNotCountRefusalsBeforeTheCount holds the first half of the
+// counting rule: a request refused at a pre-check consumes no place. The shape
+// refusal, the alias refusal and the organization cap stand for every refusal
+// in steps 1-10, all of which return before recordAttempt.
+func TestCreateDoesNotCountRefusalsBeforeTheCount(t *testing.T) {
+	rig := newRig()
+	_, err := rig.product.handleCreate(rig.ctx(t), createInput{DisplayName: "Acme"})
+	if fault := faultOf(t, err); fault.Status != http.StatusBadRequest {
+		t.Fatalf("the shape refusal's status = %d, want 400", fault.Status)
+	}
+	if got := rig.attempts(t); got != 0 {
+		t.Fatalf("a shape refusal counted %d attempt(s), want none", got)
+	}
+
+	rig.settings.values[maxOrganizationsPath] = 1
+	rig.roster.put(tenant.Tenant{ID: "biz", Alias: "biz", Status: tenant.StatusActive})
+	rig.memberships.rows[unitAccount] = []authn.Membership{
+		{Account: unitAccount, Tenant: "biz", Active: true, Source: "admin"},
+	}
+	_, err = rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusConflict {
+		t.Fatalf("the cap refusal's status = %d, want 409", fault.Status)
+	}
+	if got := rig.attempts(t); got != 0 {
+		t.Errorf("a cap refusal counted %d attempt(s), want none", got)
+	}
+}
+
+// TestCreateCountsAProvisionerFailure holds the second half of the counting
+// rule: once the attempt is counted, a provisioner failure consumes it. With a
+// budget of three, one failed provision leaves room for two creations.
+func TestCreateCountsAProvisionerFailure(t *testing.T) {
+	rig := newRig()
+	rig.provisioner.err = errors.New("the roster is unavailable")
+	if _, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme"); err == nil {
+		t.Fatal("the failed provision returned no error")
+	}
+	if got := rig.attempts(t); got != 1 {
+		t.Fatalf("a failed provision counted %d attempt(s), want one", got)
+	}
+
+	rig.provisioner.err = nil
+	for i := range 2 {
+		if _, err := rig.create(t, rig.ctx(t), fmt.Sprintf("acme-%d", i), fmt.Sprintf("Acme %d", i)); err != nil {
+			t.Fatalf("creation %d after the failed provision failed: %v", i, err)
+		}
+	}
+	_, err := rig.create(t, rig.ctx(t), "acme-fourth", "Acme Fourth")
+	if fault := faultOf(t, err); fault.Status != http.StatusTooManyRequests {
+		t.Errorf("the fourth request's status = %d, want 429", fault.Status)
+	}
+}
+
+// TestCreateCountsAnAuditFailure holds the order the counting rule depends on:
+// the attempt is counted before the mandatory audit, so an audit failure
+// consumes it. With a budget of three, one failed audit leaves room for two
+// creations.
+func TestCreateCountsAnAuditFailure(t *testing.T) {
+	rig := newRig()
+	rig.audit.err = errors.New("the audit store is down")
+	_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusServiceUnavailable {
+		t.Fatalf("the audit refusal's status = %d, want 503", fault.Status)
+	}
+	if got := rig.attempts(t); got != 1 {
+		t.Fatalf("a failed audit counted %d attempt(s), want one", got)
+	}
+
+	rig.audit.err = nil
+	for i := range 2 {
+		if _, err = rig.create(t, rig.ctx(t), fmt.Sprintf("acme-%d", i), fmt.Sprintf("Acme %d", i)); err != nil {
+			t.Fatalf("creation %d after the failed audit failed: %v", i, err)
+		}
+	}
+	_, err = rig.create(t, rig.ctx(t), "acme-fourth", "Acme Fourth")
+	if fault := faultOf(t, err); fault.Status != http.StatusTooManyRequests {
+		t.Errorf("the fourth request's status = %d, want 429", fault.Status)
+	}
+}
+
+// TestCreateHoldsThePerAccountLock holds the creation lock: a live lock is the
+// 409 creation-in-progress refusal, and a completed request leaves the lock
+// free again.
+func TestCreateHoldsThePerAccountLock(t *testing.T) {
+	rig := newRig()
+	key := lockKeyOf(unitAccount)
+	if err := rig.kv.Set(context.Background(), key, []byte("held"), lockTTL); err != nil {
+		t.Fatalf("taking the stand-in lock: %v", err)
+	}
+	_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	fault := faultOf(t, err)
+	if fault.Status != http.StatusConflict || fault.Type != problemPrefix+creationInProgressCode {
+		t.Errorf("status/type = %d/%q, want 409/%q", fault.Status, fault.Type,
+			problemPrefix+creationInProgressCode)
+	}
+	if len(rig.provisioner.recorded()) != 0 {
+		t.Error("a locked request reached the provisioner")
+	}
+
+	if err := rig.kv.Delete(context.Background(), key); err != nil {
+		t.Fatalf("releasing the stand-in lock: %v", err)
+	}
+	if _, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme"); err != nil {
+		t.Fatalf("the creation after the lock was released failed: %v", err)
+	}
+	if _, held, err := rig.kv.Get(context.Background(), key); err != nil {
+		t.Fatalf("reading the lock back: %v", err)
+	} else if held {
+		t.Error("the completed request left the creation lock behind")
+	}
+}
+
+// TestCreateHoldsTheLockAgainstConcurrentRequests holds the lock's purpose: one
+// account's concurrent requests cannot both reach the provisioner. One wins and
+// holds the lock while its provisioner runs; every other request is the
+// creation-in-progress refusal.
+func TestCreateHoldsTheLockAgainstConcurrentRequests(t *testing.T) {
+	const requests = 8
+	rig := newRig()
+	release := make(chan struct{})
+	rig.provisioner.block = release
+	rig.kv.lockAttempts = make(chan struct{}, requests)
+
+	var wait sync.WaitGroup
+	statuses := make(chan int, requests)
+	ctx := rig.ctx(t)
+	for i := range requests {
+		wait.Add(1)
+		go func(i int) {
+			defer wait.Done()
+			_, err := rig.product.handleCreate(ctx, createInput{
+				Alias:       fmt.Sprintf("acme-%d", i),
+				DisplayName: fmt.Sprintf("Acme %d", i),
+			})
+			if err == nil {
+				statuses <- http.StatusCreated
+				return
+			}
+			var fault speedhttp.Fault
+			if errors.As(err, &fault) {
+				statuses <- fault.Status
+				return
+			}
+			statuses <- 0
+		}(i)
+	}
+	// Every request has reached the lock before the winner's provisioner is
+	// released, so the others meet a live lock rather than a released one.
+	for range requests {
+		<-rig.kv.lockAttempts
+	}
+	close(release)
+	wait.Wait()
+	close(statuses)
+
+	created, inProgress := 0, 0
+	for status := range statuses {
+		switch status {
+		case http.StatusCreated:
+			created++
+		case http.StatusConflict:
+			inProgress++
+		default:
+			t.Errorf("a concurrent request answered %d, want 201 or 409", status)
+		}
+	}
+	if created != 1 {
+		t.Errorf("%d requests were created, want one", created)
+	}
+	if inProgress != requests-1 {
+		t.Errorf("%d requests were refused creation-in-progress, want %d", inProgress, requests-1)
+	}
+	if got := len(rig.provisioner.recorded()); got != 1 {
+		t.Errorf("the provisioner was asked %d time(s), want once", got)
+	}
+	if got := rig.attempts(t); got != 1 {
+		t.Errorf("the concurrent requests counted %d attempt(s), want one", got)
+	}
+}
+
+// TestCreateWritesTheMandatoryAuditRow holds the audit step: the mandatory row
+// lands before the provisioner, and a cross-replica identifier or alias race is
+// a 409 that does not add a second row for the same request.
+func TestCreateWritesTheMandatoryAuditRow(t *testing.T) {
+	rig := newRig()
+	reply, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if err != nil {
+		t.Fatalf("the creation failed: %v", err)
+	}
+	rows := rig.audit.rows()
+	if len(rows) != 1 {
+		t.Fatalf("audit rows = %+v, want exactly one", rows)
+	}
+	row := rows[0]
+	if row.Action != auditAction || row.Outcome != outcomeSuccess {
+		t.Errorf("audit row = %+v, want action %q and outcome success", row, auditAction)
+	}
+	if row.Object != reply.Tenant.ID {
+		t.Errorf("audit object = %q, want the new tenant %q", row.Object, reply.Tenant.ID)
+	}
+	if row.Detail[detailAccount] != string(unitAccount) || row.Detail[detailTenant] != reply.Tenant.ID {
+		t.Errorf("audit detail = %+v, want the account and the tenant", row.Detail)
+	}
+	if row.Detail[detailActionID] == "" {
+		t.Error("the audit detail carries no action_id")
+	}
+
+	for name, cause := range map[string]error{
+		"identifier taken": fmt.Errorf("%w: identifier taken", tenant.ErrTenantExists),
+		"alias taken":      fmt.Errorf("%w: alias taken", tenant.ErrAliasConflict),
+	} {
+		t.Run(name, func(t *testing.T) {
+			rig := newRig()
+			rig.provisioner.err = cause
+			_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+			fault := faultOf(t, err)
+			if fault.Status != http.StatusConflict || fault.Type != problemPrefix+identifierUnavailable {
+				t.Errorf("status/type = %d/%q, want 409/%q", fault.Status, fault.Type,
+					problemPrefix+identifierUnavailable)
+			}
+			if rows := rig.audit.rows(); len(rows) != 1 || rows[0].Outcome != outcomeSuccess {
+				t.Errorf("audit rows after the race = %+v, want the one mandatory row", rows)
+			}
+		})
+	}
+}
+
+// TestCreateClosesAFailedProvisionWithAFailedRow holds the ordinary failure:
+// the mandatory row and a linked failed row, and a 503.
+func TestCreateClosesAFailedProvisionWithAFailedRow(t *testing.T) {
+	rig := newRig()
+	rig.provisioner.err = errors.New("the roster is unavailable")
+	_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", fault.Status)
+	}
+	rows := rig.audit.rows()
+	if len(rows) != 2 || rows[0].Outcome != outcomeSuccess || rows[1].Outcome != outcomeFailed {
+		t.Fatalf("audit rows = %+v, want the mandatory row and a linked failed row", rows)
+	}
+	if rows[0].Detail[detailActionID] != rows[1].Detail[detailActionID] {
+		t.Error("the two rows carry different action identifiers")
+	}
+}
+
+// TestCreateGeneratesTheIdentifier holds the identifier rule: one org-<uuid>
+// string with the caller's alias and profile, the active state and the creator
+// as owner, and the creator handed to the provisioner.
+func TestCreateGeneratesTheIdentifier(t *testing.T) {
+	rig := newRig()
+	reply, err := rig.create(t, rig.ctx(t), "  acme-inc  ", "  Acme  ")
+	if err != nil {
+		t.Fatalf("the creation failed: %v", err)
+	}
+	if reply.Tenant.Alias != "acme-inc" {
+		t.Errorf("alias = %q, want the trimmed alias", reply.Tenant.Alias)
+	}
+	if !strings.HasPrefix(reply.Tenant.ID, idPrefix) {
+		t.Errorf("id = %q, want the %q prefix", reply.Tenant.ID, idPrefix)
+	}
+	if _, err := uuid.Parse(strings.TrimPrefix(reply.Tenant.ID, idPrefix)); err != nil {
+		t.Errorf("the identifier's tail is not a UUID: %v", err)
+	}
+	if reply.Tenant.ID == reply.Tenant.Alias {
+		t.Error("the generated identifier equals the caller's alias")
+	}
+	if reply.Tenant.DisplayName != "Acme" {
+		t.Errorf("displayName = %q, want the trimmed value", reply.Tenant.DisplayName)
+	}
+	if reply.Tenant.Status != tenant.StatusActive.String() {
+		t.Errorf("status = %q, want active", reply.Tenant.Status)
+	}
+	calls := rig.provisioner.recorded()
+	if len(calls) != 1 {
+		t.Fatalf("the provisioner was asked %d time(s), want once", len(calls))
+	}
+	got := calls[0].tenant
+	if string(got.ID) != reply.Tenant.ID || got.Alias != reply.Tenant.Alias {
+		t.Errorf("the provisioned tenant is %q/%q, want the answered %q/%q",
+			got.ID, got.Alias, reply.Tenant.ID, reply.Tenant.Alias)
+	}
+	if got.Profile.DisplayName != "Acme" || got.Status != tenant.StatusActive {
+		t.Errorf("the provisioned tenant carries %+v, want the profile and the active state", got)
+	}
+	if got.OwnerAccount != string(unitAccount) {
+		t.Errorf("owner = %q, want the creator %q", got.OwnerAccount, unitAccount)
+	}
+	if calls[0].creator != string(unitAccount) {
+		t.Errorf("creator = %q, want the acting account %q", calls[0].creator, unitAccount)
+	}
+}
+
+// TestCreateRetriesAConflictingIdentifier holds the pre-check: a collision is
+// regenerated, three retries are allowed, and four collisions are the 409
+// identifier-unavailable refusal with no provision.
+func TestCreateRetriesAConflictingIdentifier(t *testing.T) {
+	rig := newRig()
+	for _, taken := range []string{"org-taken-1", "org-taken-2", "org-taken-3"} {
+		rig.roster.put(tenant.Tenant{ID: tenant.ID(taken), Alias: taken, Status: tenant.StatusActive})
+	}
+	sequence := []string{"org-taken-1", "org-taken-2", "org-taken-3", "org-free"}
+	next := 0
+	rig.product.newIdentifier = func() string {
+		out := sequence[next]
+		next++
+		return out
+	}
+	reply, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if err != nil {
+		t.Fatalf("the creation after three retries failed: %v", err)
+	}
+	if reply.Tenant.ID != "org-free" {
+		t.Errorf("the answer names %q, want the free identifier", reply.Tenant.ID)
+	}
+
+	rig = newRig()
+	for i := range identifierRetries + 1 {
+		taken := fmt.Sprintf("org-taken-%d", i)
+		rig.roster.put(tenant.Tenant{ID: tenant.ID(taken), Alias: taken, Status: tenant.StatusActive})
+	}
+	next = 0
+	rig.product.newIdentifier = func() string {
+		out := fmt.Sprintf("org-taken-%d", next)
+		next++
+		return out
+	}
+	_, err = rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	fault := faultOf(t, err)
+	if fault.Status != http.StatusConflict || fault.Type != problemPrefix+identifierUnavailable {
+		t.Errorf("status/type = %d/%q, want 409/%q", fault.Status, fault.Type,
+			problemPrefix+identifierUnavailable)
+	}
+	if len(rig.provisioner.recorded()) != 0 {
+		t.Error("the exhausted pre-check reached the provisioner")
+	}
+}
+
+// TestCreateNeverTakesTheAliasAsItsIdentifier holds the one namespace: a
+// generator that happens to mint the caller's alias is retried like any other
+// taken value.
+func TestCreateNeverTakesTheAliasAsItsIdentifier(t *testing.T) {
+	rig := newRig()
+	next := 0
+	rig.product.newIdentifier = func() string {
+		next++
+		if next == 1 {
+			return "acme-inc"
+		}
+		return "org-free"
+	}
+	reply, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if err != nil {
+		t.Fatalf("the creation failed: %v", err)
+	}
+	if reply.Tenant.ID != "org-free" || reply.Tenant.Alias != "acme-inc" {
+		t.Errorf("the answer is %q/%q, want org-free/acme-inc", reply.Tenant.ID, reply.Tenant.Alias)
+	}
+}
+
+// TestCreateReadsTheLimitsAtRequestTime holds the settings seam: the two items
+// come from the global layer of the runtime settings, and a read failure is a
+// 503 that creates nothing.
+func TestCreateReadsTheLimitsAtRequestTime(t *testing.T) {
+	rig := newRig()
+	rig.settings.values[maxOrganizationsPath] = 1
+	rig.roster.put(tenant.Tenant{ID: "biz", Alias: "biz", Status: tenant.StatusActive})
+	rig.memberships.rows[unitAccount] = []authn.Membership{
+		{Account: unitAccount, Tenant: "biz", Active: true, Source: "admin"},
+	}
+	_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusConflict {
+		t.Errorf("status with a one-organization cap = %d, want 409", fault.Status)
+	}
+
+	rig = newRig()
+	rig.settings.err = errors.New("the settings store is unavailable")
+	_, err = rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusServiceUnavailable {
+		t.Errorf("status when the settings read fails = %d, want 503", fault.Status)
+	}
+}
+
+// TestCreateRejectsAnUnusableLimit holds the fail-closed reading of a value the
+// declaration's domain does not admit.
+func TestCreateRejectsAnUnusableLimit(t *testing.T) {
+	rig := newRig()
+	rig.settings.values[maxPerHourPath] = 0
+	_, err := rig.create(t, rig.ctx(t), "acme-inc", "Acme")
+	if fault := faultOf(t, err); fault.Status != http.StatusServiceUnavailable {
+		t.Errorf("status with a zero hourly limit = %d, want 503", fault.Status)
+	}
+}
+
+// TestCreateWritesNoAuditRowForAPreCountRefusal holds the audit rule: a request
+// refused before the attempt is counted writes no row at all. The mandatory row
+// records an attempt, not a refused call.
+func TestCreateWritesNoAuditRowForAPreCountRefusal(t *testing.T) {
+	rig := newRig()
+	_, err := rig.product.handleCreate(rig.ctx(t), createInput{DisplayName: "Acme"})
+	if fault := faultOf(t, err); fault.Status != http.StatusBadRequest {
+		t.Fatalf("the shape refusal's status = %d, want 400", fault.Status)
+	}
+	if rows := rig.audit.rows(); len(rows) != 0 {
+		t.Errorf("a refused call wrote %+v, want no audit row", rows)
+	}
+}
+
+// Keep the compile-time surface honest about the stand-ins implementing the
+// interfaces they claim.
+var (
+	_ kv.KV                     = (*fakeKV)(nil)
+	_ settings.Store            = (*fakeSettings)(nil)
+	_ authn.SignupVerification  = (*fakeVerification)(nil)
+	_ authn.UsernameReservation = (*fakeReservation)(nil)
+	_ tenant.Provisioner        = (*fakeProvisioner)(nil)
+	_ tenant.Catalog            = (*fakeRoster)(nil)
+	_ authn.Memberships         = (*fakeMemberships)(nil)
+	_ audit.Audit               = (*recordedAudit)(nil)
+)

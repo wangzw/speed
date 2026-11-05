@@ -3,8 +3,12 @@
     "schemas": {
       "OrganizationCreateRequest": {
         "additionalProperties": false,
-        "description": "The display name and description of the organization to create. The identifier and alias are generated.",
+        "description": "The alias, display name and description of the organization to create. The identifier is generated.",
         "properties": {
+          "alias": {
+            "description": "The organization's public alias: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation.",
+            "type": "string"
+          },
           "description": {
             "description": "The organization's description; at most 500 runes after trimming.",
             "type": "string"
@@ -15,12 +19,13 @@
           }
         },
         "required": [
+          "alias",
           "display_name"
         ],
         "type": "object"
       },
       "OrganizationCreatedReply": {
-        "description": "The organization this call created, with the generated identifier and alias.",
+        "description": "The organization this call created.",
         "properties": {
           "tenant": {
             "$ref": "#/components/schemas/OrganizationCreatedTenant"
@@ -32,10 +37,10 @@
         "type": "object"
       },
       "OrganizationCreatedTenant": {
-        "description": "The created organization: the generated identifier and alias (the same string), the profile the caller gave, and the active state.",
+        "description": "The created organization: the generated identifier, the caller's alias and profile, and the active state.",
         "properties": {
           "alias": {
-            "description": "The request-surface name, equal to the identifier for a self-service organization.",
+            "description": "The request-surface name the caller chose; unique across the roster and immutable after creation.",
             "type": "string"
           },
           "description": {
@@ -107,7 +112,7 @@
   "paths": {
     "/orgs": {
       "post": {
-        "description": "Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The identifier and alias are generated together as one org-<uuid> string. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.",
+        "description": "Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated as org-<uuid>. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.",
         "operationId": "org.create.create",
         "requestBody": {
           "content": {
@@ -117,7 +122,7 @@
               }
             }
           },
-          "description": "The display name and description of the organization; the identifier and alias are generated.",
+          "description": "The alias, display name and description of the organization; the identifier is generated.",
           "required": true
         },
         "responses": {
@@ -139,7 +144,7 @@
                 }
               }
             },
-            "description": "The display name is missing or the profile is outside its bounds"
+            "description": "The alias or display name is missing or outside its bounds, or the alias is reserved"
           },
           "401": {
             "content": {
@@ -169,7 +174,7 @@
                 }
               }
             },
-            "description": "The caller cannot create an organization now: a creation is already in progress (creation-in-progress), the account holds the maximum number of active business organizations (organization-limit), or the generated identifier is unavailable (identifier-unavailable). The type field names which"
+            "description": "The caller cannot create an organization now: a creation is already in progress (creation-in-progress), the account holds the maximum number of active business organizations (organization-limit), or the alias or generated identifier is unavailable (identifier-unavailable). The type field names which"
           },
           "413": {
             "content": {

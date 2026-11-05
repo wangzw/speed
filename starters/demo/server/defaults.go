@@ -296,10 +296,12 @@ func platformDefaultsDocument() map[string]any {
 			"metadata": map[string]any{"content-endpoints": []any{"content"}},
 		},
 
-		// The host's self-service creation policy: a bare run lets a verified
+		// The self-service creation module's switch: a bare run lets a verified
 		// account open a business organization. The personal tenant has no switch
 		// — every user account owns one — so only org.create is written here. A
-		// deployment that turns this switch off makes POST /api/v1/orgs answer 404.
+		// deployment that turns this switch off makes POST /api/v1/orgs answer
+		// 404 and the feature org.create absent. The module is
+		// pkg/tenant/selfcreate; the host only assembles it.
 		"org": map[string]any{
 			"create": map[string]any{"enabled": true},
 		},

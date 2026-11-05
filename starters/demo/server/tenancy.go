@@ -64,6 +64,13 @@ const policyWriteGuardModuleName = tenancyModuleName + ".policy-write"
 // Go type cannot carry both.
 const settingsWriteGuardModuleName = tenancyModuleName + ".settings-write"
 
+// tenantCreatorMembershipSource is the membership source every tenant creation
+// writes for its creator. The creator is the tenant's initial user, so the
+// source says so rather than reading as a later administrator's addition; the
+// product reserves "admin" for the additions made after the tenant exists, and
+// "personal" for the personal tenant's own creation.
+const tenantCreatorMembershipSource = "initial"
+
 // init registers the three modules. The tenancy module is named on serve, which
 // stands the management surface up, and on seed, which writes the platform
 // administrator binding that asks the membership checker. The two write-guard
@@ -480,7 +487,7 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		Account: creatorID,
 		Tenant:  tenantID,
 		Active:  true,
-		Source:  authn.ReasonAdmin,
+		Source:  tenantCreatorMembershipSource,
 	}); err != nil {
 		return fmt.Errorf("%s: writing the creator's membership in the tenant: %w", tenancyModuleName, err)
 	}

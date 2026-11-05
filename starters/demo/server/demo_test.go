@@ -1002,12 +1002,16 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				}
 			}
 		}
-		if applicationOwned, declared := expected["POST /api/v1/orgs"]; !declared || !applicationOwned {
-			// The named anchor: the host's own self-service creation route,
-			// declared by a module in this package, is the leg that proves
-			// registration and marking agree. It is the only application-owned
-			// operation in the baseline document.
-			t.Errorf("the host's route POST /api/v1/orgs is not among the application-owned operations")
+		if applicationOwned, declared := expected["POST /api/v1/orgs"]; !declared {
+			// The named anchor: self-service creation is a platform module's
+			// route now, so it must be in the document and must not carry the
+			// application-owned tag. The generic loop below holds the tag to
+			// the declaring module's package; this names the route the move
+			// touched, so a fragment dropped from the imports is reported here
+			// rather than only as a smaller document.
+			t.Errorf("the document has no POST /api/v1/orgs, which the self-service creation module declares")
+		} else if applicationOwned {
+			t.Errorf("the self-service creation route is application-owned; it is a platform module's route")
 		}
 		present := map[string]bool{}
 		for path, methods := range doc.Paths {

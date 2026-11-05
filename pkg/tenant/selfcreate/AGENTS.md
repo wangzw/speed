@@ -1,0 +1,71 @@
+# pkg/tenant/selfcreate
+
+The tenancy capability's self-service organization module: it mounts
+`POST /api/v1/orgs` on the account endpoint and lets a verified account open a
+business organization through `tenant.Provisioner`.
+
+## Boundaries
+
+- **The module owns the decisions, not the writes.** It reads the roster, the
+  memberships, the signup state, the reserved-name answer, the two runtime
+  limits and the key-value store; it writes no tenant, role, grant or binding.
+  The tenant is opened by the host's `tenant.Provisioner`, and the creator's
+  membership source is the host's to write.
+- **The route carries no tenant.** It is mounted on the account endpoint, the
+  one endpoint that resolves no tenant. The request is decided by the caller's
+  own account.
+- **The route is one exact POST.** With `org.create.enabled` off the module
+  mounts nothing, and the path reaches the endpoint's own 404. The personal
+  tenant has no route: the account's transaction writes it.
+- **The feature name is `org.create`, and the registry name matches its first
+  segment.** The feature document requires a feature's first segment to equal
+  the declaring module's, and the name `org.create` is kept for the frontend that
+  gates entry points on it. The package path stays `pkg/tenant/selfcreate`; the
+  registry name is `org.create` (`ModuleName`).
+- **Aliases share one namespace with usernames.** The roster's `tenants.alias`
+  unique column is the arbiter; a personal tenant's alias is its owner's
+  username, so a business alias and a username collide there. The module also
+  refuses the account module's reserved set through `authn.UsernameReservation`,
+  and an alias equal to any tenant identifier.
+- **The two numeric limits are platform settings.** The schema never sets
+  `TenantFacing`, and every item leaves `TenantAccess`, `Control`, `Danger` and
+  `Effect` at their zero values. The tenant settings surface therefore hides
+  `org.create.*`, and its PUT/DELETE answer 404. The platform settings surface
+  edits both integers; a write is a JSON number, which the settings store coerces
+  to the declared `int`.
+- **The switch is configuration, not a setting.** `org.create.enabled` is read
+  from the primary source or the environment; it is not in `settings.Schema`.
+- **The upper bounds are the product's.** A verified email address, five active
+  business organizations per account, three attempts an hour per account, a
+  thirty-second creation lock, and a mandatory audit row before the provisioner.
+  A refusal before the attempt is counted writes no audit row and consumes no
+  count. A provisioner failure consumes the attempt and closes it with a linked
+  failed row.
+- **Multi-replica bounds need shared key-value storage.** Memory key-value keeps
+  only one replica's lock and counter.
+
+## Running it
+
+From the repository root:
+
+```
+go -C pkg test ./tenant/selfcreate/...
+go -C pkg test -race ./tenant/selfcreate/...
+go -C pkg vet ./tenant/selfcreate/...
+```
+
+The OpenAPI fragment is generated from the operation declarations. Regenerate it
+with:
+
+```
+UPDATE_FRAGMENTS=1 go -C pkg test ./tenant/selfcreate -run TestTheFragmentIsGeneratedFromTheDeclarations
+```
+
+`handlers_test.go` pins the decision order, the two bounds, the lock under
+concurrent requests, the audit rows, the alias namespace and the identifier
+pre-check. `settings_test.go` drives the real settings module over the module's
+declaration and writes both numeric limits on the global layer. `module_test.go`
+pins the descriptor, the switch, the feature and the registered route.
+`starters/demo/server/selfcreate_route_test.go` drives the real assembly: the
+route's hourly bound answers, the switch withdraws it, and the feature document
+follows.

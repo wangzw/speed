@@ -110,6 +110,7 @@ import (
 	tenantprofile "github.com/vislake/speed/pkg/tenant/profile"
 	"github.com/vislake/speed/pkg/tenant/resolve"
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
+	tenantselfcreate "github.com/vislake/speed/pkg/tenant/selfcreate"
 
 	// The platform modules whose HTTP fragments belong to the merged contract
 	// even though the baseline names neither for a run. The credential
@@ -407,12 +408,13 @@ var (
 		// the account lifecycle. See pkg/tenant/personal.
 		tenantpersonal.ModuleName,
 
-		// The host's own self-service organization creation: on by default, a
+		// The platform's self-service organization creation: on by default, a
 		// deployment may turn it off. When on it mounts POST /api/v1/orgs on the
-		// account endpoint and declares the conditional feature org.create. It
-		// requires the tenant provisioner and the signup-verification read, both
-		// of which the platform baseline provides. See org_create.go.
-		orgCreateModuleName,
+		// account endpoint and declares the conditional feature org.create. The
+		// creation logic lives in the common module, not here; the host assembles
+		// it beside the provisioner and the signup-verification read the platform
+		// baseline provides. See pkg/tenant/selfcreate.
+		tenantselfcreate.ModuleName,
 
 		// The host's own seed guard: a deployment listening off loopback must not
 		// run on the compiled demonstration seed, so it refuses at Prepare before

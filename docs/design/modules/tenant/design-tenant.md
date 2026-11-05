@@ -17,7 +17,7 @@
 - 在已认定身份与租户的请求上，判定这个账户是否被准入这个租户，并执行租户对其成员的认证强度要求与冒充的租户范围；这一层是准入层，全文见 [design-tenant-admission](design-tenant-admission.md)。
 - 把调用方本人持有有效成员关系的租户读成一个列表：一条不解析租户的路由，身份取自请求上下文，成员关系读自认证，租户的状态与别名读自名册。
 
-本功能目录由接口包与各实现子包组成。`pkg/tenant` 根包定义功能接口、数据类型、模型约定与准入层的定序锚点，**自身不注册模块，也不导出模块名常量**；解析住在自己的子包并注册一个模块，名册住在自己的子包并注册一个模块，两者各自排他交付（[ADR-tenant-packaging](../../../adr/adr-tenant-packaging.md)、[ADR-module-packaging](../../../adr/adr-module-packaging.md)）。准入层同样住在自己的子包并注册一个模块，全文见 [design-tenant-admission](design-tenant-admission.md)。另有一个只挂路由的子包 `pkg/tenant/self`，注册模块 `tenant.self`，不交付功能，全文见[调用方本人的租户读取](#调用方本人的租户读取)。下文的「解析模块」与「名册模块」分别指解析子包与名册子包所注册的模块，本文不写准入层的内部。
+本功能目录由接口包与各实现子包组成。`pkg/tenant` 根包定义功能接口、数据类型、模型约定与准入层的定序锚点，**自身不注册模块，也不导出模块名常量**；解析住在自己的子包并注册一个模块，名册住在自己的子包并注册一个模块，两者各自排他交付（[ADR-tenant-packaging](../../../adr/adr-tenant-packaging.md)、[ADR-module-packaging](../../../adr/adr-module-packaging.md)）。准入层同样住在自己的子包并注册一个模块，全文见 [design-tenant-admission](design-tenant-admission.md)。另有一个只挂路由的子包 `pkg/tenant/self`，注册模块 `tenant.self`，不交付功能，全文见[调用方本人的租户读取](#调用方本人的租户读取)。业务组织的自助创建住在 `pkg/tenant/selfcreate`，注册模块与特性 `org.create`，全文见 [design-tenant-selfcreate](design-tenant-selfcreate.md)。下文的「解析模块」与「名册模块」分别指解析子包与名册子包所注册的模块，本文不写准入层的内部。
 
 租户的认定、名册的维护与语句的过滤同属本功能目录，请求期的成员准入由本功能目录的准入层承担，按租户取值的参数归[设置模块](../settings/design-settings.md)，按租户的授权判定归授权，名册的管理面由 [tenant.admin](design-tenant-admin.md) 承担，调用方本人的租户列表由 [tenant.self](#调用方本人的租户读取) 承担（[ADR-tenant-scope](../../../adr/adr-tenant-scope.md)、[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
@@ -49,7 +49,7 @@
 | 术语 | 英文 | 适用范围 | 定义 |
 |---|---|---|---|
 | 取法 | extractor | 本模块与租户主题的决策记录 | 从请求侧取出一个租户名的一份实现。按名登记，由配置选定，一次运行里只有一份生效。 |
-| 别名 | alias | 本模块与租户主题的决策记录 | 请求侧出现的租户名。在名册上唯一，可改，不承担任何判定。 |
+| 别名 | alias | 本模块与租户主题的决策记录 | 请求侧出现的租户名。创建时由建立租户的一方给出，在名册上唯一，创建后不可改，不承担任何判定。 |
 | 标识 | ID | 本模块与租户主题的决策记录 | 一个租户的不可变标识。受约束表的那一列存它，日志与诊断写它。 |
 | 名册 | roster | 本模块与租户主题的决策记录 | 本模块自带的、记录全部租户及其别名、状态与停用来源的表，以及它在内存里的快照。 |
 | 墓碑 | tombstone | 本模块与租户主题的决策记录 | 名册上一行状态为已删除的租户。行、标识与别名保留，租户不再被服务，标识不得再次登记。 |
@@ -103,8 +103,6 @@ type Catalog interface {
     SetStatusByAccount(ctx context.Context, id ID, s Status) error
     // Delete 把一个租户写成已删除，终态：行、标识与别名保留，此后不再被服务。
     Delete(ctx context.Context, id ID) error
-    // SetAlias 只改一个租户的别名，不动它的状态。已删除报 ErrTenantDeleted。
-    SetAlias(ctx context.Context, id ID, alias string) error
     // List 列出全部租户，按标识排序。
     List(ctx context.Context) ([]Tenant, error)
     // Enter 返回一个属于这个租户的上下文，供不经请求侧的路径使用。
@@ -135,7 +133,7 @@ func IsIdentifier(s string) bool
 // Tenant 是名册上的一行。
 type Tenant struct {
     ID         ID          // 不可变标识
-    Alias      string      // 请求侧出现的名字，唯一，可改
+    Alias      string      // 请求侧出现的名字，创建时给出，唯一，不可改
     Status     Status      // 在册、停用或已删除
     DisabledBy DisabledBy  // 一次停用的来源；只在状态是停用时被读
 }
@@ -190,7 +188,7 @@ func FromContext(ctx context.Context) (ID, bool)
 
 **取值域之外的标识绑不进语句。** 空标识以 `ErrNoTenantInContext` 拒绝，含空白或控制字符的标识以 `ErrInvalidTenant` 拒绝；拒绝发生在驱动绑定参数的那一刻，因而对插入的租户列与按取值点名租户的条件同样成立，与语句跑在哪个句柄上、有没有装插件无关。这是约定随身带着的一道防线：一个没被填过的租户列里是空串，而非空约束挡得住 NULL、挡不住空串。拒绝之外取值仍一并交回，读值而丢弃错误的调用方——GORM 按主键取值给行做键时就是这样——拿到的是它要的字符串，而不是一个会让它 panic 的空值。
 
-**写进上下文的是标识，不是别名。** 别名可改，因而不承担任何判定；日志、启动诊断与错误文本一概写标识，需要人能认出来的场合另外带上别名（[ADR-tenant-identifier](../../../adr/adr-tenant-identifier.md)）。
+**写进上下文的是标识，不是别名。** 别名在创建时确定、此后不变，但仍不承担任何判定；日志、启动诊断与错误文本一概写标识，需要人能认出来的场合另外带上别名（[ADR-tenant-identifier](../../../adr/adr-tenant-identifier.md)）。
 
 **`Status` 的零值视为停用。** 零值必须有确定的读法，且不得落在宽松的一侧——认证把零值判决读成拒绝，结构与这一条同源（[ADR-authn-verdict](../../../adr/adr-authn-verdict.md)）。一行没有被写入状态，或者写入了本版本不认识的取值，读出来都是停用，那个租户因而不会被解析出来。`Put` 取整份记录，漏填状态即落成停用；调用方要它立即被服务，就把 `StatusActive` 写在明处。
 
@@ -231,13 +229,13 @@ type Extractor interface {
 
 **删除只写状态。** `Delete` 把一行写成 `StatusDeleted`，标识、别名与行本身不动；对已经删除的行重复调用什么也不写；名册上没有这一行、或标识不在取值域内，报 `ErrInvalidTenant`。名册上没有删行的动作（[ADR-tenant-deletion](../../../adr/adr-tenant-deletion.md)）。
 
-**终态对每一条写路径成立。** `SetStatus`、`SetStatusByAccount`、`SetAlias` 与 `Put` 遇到已删除的行一律以 `ErrTenantDeleted` 拒绝，什么也不写；`Create` 对表里已有的标识照旧以 `ErrTenantExists` 拒绝。标识因而拿不到第二次登记，别名随行保留、同样不再可用；要复用别名的运营者只能在删除之前改掉那一行的别名。
+**终态对每一条写路径成立。** `SetStatus`、`SetStatusByAccount`、`SetProfile`、`SetOwner` 与 `Put` 遇到已删除的行一律以 `ErrTenantDeleted` 拒绝，什么也不写；`Create` 对表里已有的标识照旧以 `ErrTenantExists` 拒绝。标识因而拿不到第二次登记，别名随行保留、同样不再可用。
 
 **来源只能由状态迁移写。** `Put` 与 `Create` 接受零值与 `DisabledByOperator`，遇到 `DisabledByAccount` 以 `ErrInvalidTenant` 拒绝：账户造成的停用只能经 `SetStatusByAccount` 记下，否则一个登记入口就能造出一条自动恢复的停用。
 
-`SetAlias` 只写别名一列。要改名的调用方用它，不用 `Put`：`Put` 取整行新值，一次改名会把它读到、此后可能已经过期的状态一并写回去——快照与表之间的窗口里另一个副本停用的那个租户，会因此被重新启用。别名的冲突处置与 `Put` 相同：撞上唯一约束以 `ErrAliasConflict` 作答并点名占有者。
+**别名在创建时确定，此后没有改名路径。** 一条写入只接受该行已带的别名；携带另一个别名的重写以 `ErrInvalidTenant` 拒绝，什么也不写。改名不在名册的接口上，也不在管理面上（[ADR-tenant-identifier](../../../adr/adr-tenant-identifier.md)）。别名的冲突处置与 `Put`、`Create` 相同：撞上唯一约束以 `ErrAliasConflict` 作答并点名占有者。
 
-**注册验证状态的门控落在写入口，不在 `Catalog`。** 租户的创建、更新与停用由提供写入口的那一层在它的权限判定之前、动作之前读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`）：发起者视为未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`，不触名册；服务账户与没有任何邮箱的账户（`SignupNone`）豁免；判据与账户怎么创建无关；读取状态失败答 503，不按放行处理。门控只收紧、不放行：它只多拒绝一类发起者，不改变写入口的权限判定。门控在服务端执行，不靠前端隐藏入口。[tenant.admin](design-tenant-admin.md) 的写路由按这条判据答 403 `contact-required`；宿主自建的租户写入口同样要在它的权限判定之前拒绝未验证账户，但可以按自己的路由契约给出拒绝格式。个人租户的建立是账户为自己开通空间，不受这条门控约束：未验证账户同样得到个人租户（[design-tenant-personal](design-tenant-personal.md)）。本模块的 `Catalog` 不读注册验证状态，也不写 403（见[非职责](#非职责)）。
+**注册验证状态的门控落在写入口，不在 `Catalog`。** 租户的创建、更新与停用由提供写入口的那一层在它的权限判定之前、动作之前读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`）：发起者视为未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`，不触名册；服务账户与没有任何邮箱的账户（`SignupNone`）豁免；判据与账户怎么创建无关；读取状态失败答 503，不按放行处理。门控只收紧、不放行：它只多拒绝一类发起者，不改变写入口的权限判定。门控在服务端执行，不靠前端隐藏入口。[tenant.admin](design-tenant-admin.md) 的写路由按这条判据答 403 `contact-required`；[tenant.selfcreate](design-tenant-selfcreate.md) 的创建路由同样在它的权限判定之前拒绝未验证账户，并按自己的路由契约给出拒绝格式。个人租户的建立是账户创建事务的一部分，不受这条门控约束：未验证账户同样得到个人租户（[design-tenant-personal](design-tenant-personal.md)）。本模块的 `Catalog` 不读注册验证状态，也不写 403（见[非职责](#非职责)）。
 
 **名册的读与写都不经隔离插件。** 名册表自己不内嵌受租户约束的模型约定，读写它的语句走的是与任何全局表相同的路径，既不要求上下文里有租户，也不因缺租户而失败。这一点与跨租户的途径无关：`CrossTenant` 是为受约束模型的语句设的，名册的语句本来就不在它的管界之内。
 
@@ -463,7 +461,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **请求期的失败按两档。** 没有身份：401，结构与其他已认证接口相同。成员关系读不出或名册读不出：503，成因只进日志，不当作空列表——空列表是一个关于成员关系的结论，故障不是；名册快照尚未发布（`ErrRosterMissing`）同属这一档。路由集里没有 403 与 404：它不判定权限，也没有寻址对象。
 
-**读取是只读的，也不构成授权判定。** 成员关系是一次表读，状态与别名取自名册快照，两者没有一致的时点；应答因而是这一刻的近似视图。名册的刷新窗口原样适用：另一个副本刚登记或刚改名的租户在本副本下一次刷新之前不在列表里，或带着旧别名。切换落在一个已经撤销成员关系或停用租户的入口上时，准入层按请求判定并答 404；清单不替它保底。
+**读取是只读的，也不构成授权判定。** 成员关系是一次表读，状态与别名取自名册快照，两者没有一致的时点；应答因而是这一刻的近似视图。名册的刷新窗口原样适用：另一个副本刚登记的租户在本副本下一次刷新之前不在列表里。切换落在一个已经撤销成员关系或停用租户的入口上时，准入层按请求判定并答 404；清单不替它保底。
 
 **应答不分页。** 切换器要列出全部有效租户，截断会静默漏掉一个。开销是账户成员关系条数的一次表读、每条一次快照查找，以及过滤——`Memberships.Tenants` 已按标识给出，过滤保持那个次序，不再排序。
 
@@ -514,7 +512,8 @@ classDiagram
         +SetStatus(id ID, s Status) error
         +SetStatusByAccount(id ID, s Status) error
         +Delete(id ID) error
-        +SetAlias(id ID, alias string) error
+        +SetProfile(id ID, profile Profile) error
+        +SetOwner(id ID, owner string) error
         +List() []Tenant, error
         +Enter(id ID) Context, error
         +EnterRegistered(id ID) Context, error
@@ -714,7 +713,7 @@ flowchart TD
 2. 账户生命周期联动调用 `SetStatusByAccount(ctx, "acme", StatusActive)`。这一行已停用而来源是运营者，按这一方法的判据什么也不写，返回 nil。持久状态不变。
 3. 停用期间调用 `Enter(ctx, "acme")` 以 `ErrTenantDisabled` 拒绝；同一时刻调用 `EnterRegistered(ctx, "acme")` 照常进入这个租户。持久状态不变。
 4. 运营者调用 `SetStatus(ctx, "acme", StatusActive)`。状态列写成在册，停用来源清回零值；快照随之重载。持久状态：行在册，来源为零值。
-5. 运营者调用 `Delete(ctx, "acme")`。状态列写成已删除，标识、别名与行本身不动。此后 `SetStatus`、`SetStatusByAccount`、`SetAlias` 与 `Put` 对这一个标识都以 `ErrTenantDeleted` 拒绝，`Create` 以 `ErrTenantExists` 拒绝；快照里的这一行是墓碑。经 `EnterRegistered` 仍能进入已删除的租户，用于清除或导出残留数据。
+5. 运营者调用 `Delete(ctx, "acme")`。状态列写成已删除，标识、别名与行本身不动。此后 `SetStatus`、`SetStatusByAccount`、`SetProfile`、`SetOwner` 与 `Put` 对这一个标识都以 `ErrTenantDeleted` 拒绝，`Create` 以 `ErrTenantExists` 拒绝；快照里的这一行是墓碑。经 `EnterRegistered` 仍能进入已删除的租户，用于清除或导出残留数据。
 
 这条走查固定的是来源规则的用途：一次停用能否被账户恢复撤销，取决于写这一行时用的是哪一个方法，而不取决于此刻的状态。
 
@@ -822,7 +821,7 @@ flowchart TD
 | `ErrAliasConflict` | 两个租户抢同一个别名，经 `Put` 或 `Create` | 点名该别名与占有它的那个标识；改掉其中一个 |
 | `ErrTenantExists` | `Create` 给的标识名册表里已经有一行，无论本副本的快照里有没有它；什么也没写 | 点名那个标识；要开一个新租户就换一个标识，要改既有的那一个走 `Put` 或 `SetStatus` |
 | `ErrTenantDisabled` | `Enter` 给的标识在名册表里，但那个租户已停用 | 点名那个标识与它的状态；这不是调用点的缺陷，要做的事等租户恢复服务，或者丢弃；停用期间仍属于那个租户的工作改走 `EnterRegistered`。与 `ErrInvalidTenant` 分开，因为两者的处置不同；请求侧把二者收成同一个 404 的理由——不向进程外的调用方暴露名册——在这里不成立，这里的读者是进程自己的代码 |
-| `ErrTenantDeleted` | 一条写路径的标识在名册表里，但那个租户已删除：`SetStatus`、`SetStatusByAccount`、`SetAlias`、`Put`；或者 `Enter` 给的标识指向一个已删除的租户 | 点名那个标识与它的状态；删除是终态，等不到恢复，调用方丢弃那件工作；残留数据的清除或导出经 `EnterRegistered` 进入。与 `ErrTenantDisabled` 分开，因为处置不同——停用可以等，删除不能；请求侧把二者与「没有这个租户」收成同一个 404 |
+| `ErrTenantDeleted` | 一条写路径的标识在名册表里，但那个租户已删除：`SetStatus`、`SetStatusByAccount`、`SetProfile`、`SetOwner`、`Put`；或者 `Enter` 给的标识指向一个已删除的租户 | 点名那个标识与它的状态；删除是终态，等不到恢复，调用方丢弃那件工作；残留数据的清除或导出经 `EnterRegistered` 进入。与 `ErrTenantDisabled` 分开，因为处置不同——停用可以等，删除不能；请求侧把二者与「没有这个租户」收成同一个 404 |
 | `ErrNoTenantInContext` | 受约束模型的语句在上下文中没有标识；跨租户的写把租户列写成空串或 NULL，或插入的行没写租户列；GORM 构造出的插入行不带租户列——选列、省列，或绑在那一列上的字段插入时不写；空标识在任何句柄上被绑定进语句；经一个内嵌了约定、却取不出一个租户列的模型的任何一条语句，不论上下文——约定放在 GORM 不读的地方，或落在两个列上；经一张取不出一个租户列的连接表的任何一条语句，以及以表名联接这样一张表的读，不论上下文；经一个声明了读判定不了的多对多关联的模型的任何一条语句，不论上下文 | 点名模型或连接表；由调用方给出租户——经受守护的端点，或不经请求侧时经 `Enter`——或显式标为跨租户并在行上写明租户；租户列被选列或省列排除的，把它点名进选列；模型取不出租户列的，错误文本点明缘由，把约定放到 GORM 读得到的地方，或只内嵌一次；连接表取不出租户列的，用 `joinForeignKey` 与 `joinReferences` 让受约束一侧键里的租户那一半落在同一列上；关联的读判定不了的，错误文本点名关联与连接表，以含租户列的整个键参与关联，或把接管租户列的字段声明成 `ID` |
 | `ErrExplicitTenantMismatch` | 一条写语句显式给出的租户列取值与上下文里的标识不同，或是一个读不出是不是那个标识的取值（表达式、子查询、NULL）——租户列按数据库的读法去认，键与列名的任何写法都算；或者一条按结构体主键寻址的写，主键里租户那一半写了别的租户；或者关联模式写进一条写语句条件的键，租户那一半写了别的租户；或者一条写的赋值目标是认不出是哪一列的原样 SQL，无论上下文跨不跨租户 | 点名该模型与写下的取值，目标认不出时点名那段原样文本；删掉显式写下的那个，或者改用 `CrossTenant`；目标认不出的，把它写成单独一个列名 |
 
@@ -952,8 +951,8 @@ flowchart TD
 | `Kind`、`KindResolver` 与本模块读取应答里的 `kind` | 已实现 | `pkg/tenant/kind.go` `Kind`、`KindBusiness`、`KindPersonal`、`KindResolver`；`pkg/tenant/self/self.go` `Module`；`pkg/tenant/self/handler.go` `handleTenants`；`pkg/tenant/self/operations.go` 的 `Kind` 字段 |
 | 本人租户读取：模块 `tenant.self`、`GET /api/v1/auth/me/tenants`、有效成员关系与名册状态的交集、按标识升序、401 与 503 | 已实现 | `pkg/tenant/self/self.go` `Module`、`handler.go` `handleTenants`、`openapi/tenant.self.json` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
-| 名册的读写接口与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`Delete`、`SetAlias`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot`、`disabledByOf`、`counts` |
-| 已删除的终态、墓碑的标识与别名不再复用、各条写路径对墓碑的拒绝 | 已实现 | `pkg/tenant/tenant.go` `StatusDeleted`；`pkg/tenant/catalog/roster.go` `Delete`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`SetAlias`、`enter` |
+| 名册的读写接口与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`Delete`、`SetProfile`、`SetOwner`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot`、`disabledByOf`、`counts` |
+| 已删除的终态、墓碑的标识与别名不再复用、各条写路径对墓碑的拒绝 | 已实现 | `pkg/tenant/tenant.go` `StatusDeleted`；`pkg/tenant/catalog/roster.go` `Delete`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`SetProfile`、`SetOwner`、`enter` |
 | 停用来源与账户联动的状态迁移（`DisabledBy`、`SetStatusByAccount`） | 已实现 | `pkg/tenant/tenant.go` `DisabledBy`、`DisabledByOperator`、`DisabledByAccount`；`pkg/tenant/catalog/roster.go` `SetStatus`、`SetStatusByAccount`、`Put`、`Create`；`pkg/tenant/catalog/migrations/` 的 `0002_tenants_disabled_by.sql` |
 | `ErrTenantDeleted`，以及进入方法对墓碑的处置 | 已实现 | `pkg/tenant/errors.go` `ErrTenantDeleted`；`pkg/tenant/catalog/roster.go` `enter`、`EnterRegistered`、`Delete`；`pkg/tenant/resolve/admit_test.go` `TestADeletedTenantAnswersLikeAnUnknownOne` |
 | 名册的语句经 `Connection` 取交付连接，表不在、取不到连接与其余失败分开作答，PostgreSQL 上在搜索路径列出的模式里读系统目录 | 已实现 | `pkg/tenant/catalog/roster.go` `onConnection`、`connectionWait`、`failedStatement`、`tableAbsent`、`namedSchemas`、`searchPath`、`quotedName`、`answered`、`lookUp`；`pkg/tenant/errors.go` `ErrNoConnection`、`ErrRosterMissing` |

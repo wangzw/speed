@@ -3,9 +3,11 @@
 The tenancy capability directory: the interface package a model embeds and a
 handler reads a tenant from, `pkg/tenant/resolve` — the module that reads a
 tenant name off the request surface — `pkg/tenant/catalog`, the module that
-keeps the roster and filters statements to the tenant they carry — and
+keeps the roster and filters statements to the tenant they carry —
 `pkg/tenant/admission`, the module that decides whether an identified caller may
-enter the tenant its request resolved to.
+enter the tenant its request resolved to — and the common modules that own the
+account's own space and the self-service creation of a business organization,
+`pkg/tenant/personal` and `pkg/tenant/selfcreate`.
 
 The API is the package's godoc. Read `Model`'s comment and `CrossTenant`'s
 before writing a scoped model.
@@ -190,6 +192,18 @@ before writing a scoped model.
   disabled, so the guard belongs to the management surface's operator route
   alone; `protection_test.go` scans the roster's identifiers so a check placed
   "once for every status write" fails there.
+- **Self-service creation is a common module, not a host module.**
+  `pkg/tenant/selfcreate` owns the whole `POST /api/v1/orgs` decision: the
+  caller's eligibility, the alias and profile shape, the two account bounds,
+  the creation lock, the audit row and the hand-off to `tenant.Provisioner`. A
+  host assembles it with the switch and the dependencies; a host that
+  reimplements the decisions has forked the product. The registry name is
+  `org.create`, not the package path's `tenant.selfcreate`, because the feature
+  document requires a feature's first segment to equal the declaring module's
+  and the feature name is the compatibility surface a frontend gates on. The
+  two numeric limits are a `settings.Schema` that is not tenant-facing, so the
+  tenant settings surface neither lists nor writes `org.create.*`.
+  `selfcreate/AGENTS.md` carries the rest.
 - **`Kind` is answered, not recorded.** The roster stores no kind column and the
   root package derives none from an identifier, a name or a permission set.
   `KindResolver` is the host seam: the caller tenant read takes it up
