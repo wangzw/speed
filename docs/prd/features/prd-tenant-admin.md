@@ -182,7 +182,7 @@
 
 - **验收**：开启后页面立即显示已启用，重新读取仍为已启用；关闭时先出现确认，确认后显示未启用；平台未强制时关闭写入成功，租户层写入 false 且有效值随之变为假；写入失败时开关回滚到原值并显示可读的拒绝原因；请求在途时同一开关不可再次提交。
 - **状态**：已实现
-- **端到端测试**：未实现。评审装配的租户管理员是单因素账户，开启策略会让其后的租户请求被准入层质询，主旅程只断言两项策略与平台级名称不出现；乐观保存、确认与回滚由前端单测覆盖，写路径由设置模块的测试覆盖。
+- **端到端测试**：starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts 的 `tenant-admin: an administrator turns a policy on, reads it back, and turns it off`（开启即时保存并重读为开；关闭先确认，确认后重读为关）。写入失败回滚由 OrganizationSecurityPage.test.tsx 覆盖。
 
 ### REQ-tenant-admin-018
 
