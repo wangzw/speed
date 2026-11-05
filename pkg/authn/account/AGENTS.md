@@ -96,6 +96,16 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   the membership hooks; its own `AccountDeleted` hook and the membership events
   are its paths, and its cleanup collects rows through
   `MembershipCleanup.RemoveMembershipForDeletion`, which asks neither.
+- **Deleting or suspending an account asks the optional owner counter first.**
+  `Delete` and a disable through `SetStatus` ask `authz.TenantOwnerCounter`
+  before they write anything. An account that owns an active business tenant
+  is refused with `authn.ErrAccountOwnsOrganization` — a
+  `*authn.AccountOwnsOrganizationError` whose `Tenant` names the organization
+  — and nothing is erased or disabled; the personal tenant does not count,
+  because the host's `WriteGuard` excludes it and it follows the account. A
+  counter that cannot answer is `ErrUnavailable`, never a pass. The deletion
+  asks the owner before the last-administrator floor, so an owner who is also
+  the only administrator gets the ownership refusal.
 - **Deleting an account asks the optional tenant-administrator counter before
   the tombstone.** `Delete` reads the row first and skips the check for a
   tombstone, so repeating a delete still finishes interrupted cleanup. A live

@@ -5,9 +5,12 @@ handler reads a tenant from, `pkg/tenant/resolve` — the module that reads a
 tenant name off the request surface — `pkg/tenant/catalog`, the module that
 keeps the roster and filters statements to the tenant they carry —
 `pkg/tenant/admission`, the module that decides whether an identified caller may
-enter the tenant its request resolved to — and the common modules that own the
+enter the tenant its request resolved to — the common modules that own the
 account's own space and the self-service creation of a business organization,
-`pkg/tenant/personal` and `pkg/tenant/selfcreate`.
+`pkg/tenant/personal` and `pkg/tenant/selfcreate`, and `pkg/tenant/ownership`,
+the module that performs the owner transfer and the organization deletion
+across the roster, the policy store and the membership store in one
+transaction.
 
 The API is the package's godoc. Read `Model`'s comment and `CrossTenant`'s
 before writing a scoped model.
@@ -92,8 +95,9 @@ before writing a scoped model.
   what a host command or a registration route has. `catalog.TxCatalog` is the
   form for a caller that already holds a transaction — an account's creation,
   where a user account's personal tenant is written in the account's
-  transaction — and its two methods take that `*gorm.DB` and write through it
-  and nothing else. They return the whole-roster reread as a closure for after
+  transaction — and its methods take that `*gorm.DB` and write through it and
+  nothing else. `GetTx` and `SetOwnerTx` join `CreateTx` and `DeleteTx`; the
+  ownership module's transfer and deletion use them. They return the whole-roster reread as a closure for after
   the caller's commit: a reread inside the transaction would see no write on
   another connection, and on a database held to one connection would wait for
   the transaction that called it. The methods are delivered as a capability of

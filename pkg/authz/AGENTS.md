@@ -52,6 +52,16 @@ lock. The lock is not reentrant: the membership-removal cascade and the
 account-deletion cleanup clear bindings through `Manager.ClearAccountBindings`,
 which takes no lock.
 
+`TenantOwnerCounter` is the seam the account's deletion and suspension paths
+ask beside the administrator floor: `OwnsActiveBusinessTenant` reads the
+roster's owner column and names the active business tenant an account owns.
+The policy subpackage delivers it from the same roster and write-guard reads
+`TenantAdminCounter` uses. The two are independent: the floor counts
+administrator bindings, the owner seam reads ownership, and the deletion asks
+the owner first so an owner who is also the only administrator gets the
+refusal that names the actual obstacle. `TenantOwnerCounter` is optional where
+the account module takes it up, and an error is unavailable, never permission.
+
 `TenantAdminCounter` is the root package's other seam over the floor, and the
 one the account-deletion path asks: `SoleTenantAdminTenant` names the active
 business tenant whose only tenant-administrator binding an account holds, and

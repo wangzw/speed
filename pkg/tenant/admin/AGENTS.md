@@ -39,19 +39,23 @@ the module's whole route surface.
 | Tenants | `GET /api/v1/system/tenants` | `tenant.read` |
 | Tenants | `POST /api/v1/system/tenants` | `tenant.manage` |
 | Tenants | `GET /api/v1/system/tenants/:id` | `tenant.read` |
-| Tenants | `PATCH /api/v1/system/tenants/:id` (transitional, removed in T6) | `tenant.manage` |
+| Tenants | `PUT /api/v1/system/tenants/:id/owner` | `tenant.manage` |
+| Tenants | `DELETE /api/v1/system/tenants/:id` | `tenant.manage`, or the organization's owner |
 | Tenants | `PATCH /api/v1/system/tenants/:id/profile` | `tenant.manage` |
 | Tenants | `POST /api/v1/system/tenants/:id/status` | `tenant.manage` |
 
-A read route is held to `tenant.read` and a write route to `tenant.manage`. Each
-route's action is one `tenant.Catalog` call:
+A read route is held to `tenant.read` and a write route to `tenant.manage`; the
+deletion route also admits the organization's own owner, which is ownership
+rather than a permission code. Each route's action is one roster call, one
+organization write or one profile write:
 
-| Route | Roster action |
+| Route | Action |
 |---|---|
 | `GET /tenants` | `List`, every tenant, in the roster's order (by identifier) |
-| `POST /tenants` | `Provisioner`, a tenant and its first tenant-admin |
+| `POST /tenants` | `Provisioner`, a tenant, its owner and its first tenant-admin |
 | `GET /tenants/:id` | `Get`, one tenant by identifier |
-| `PATCH /tenants/:id` | `Get`, then a refusal; no write method is called |
+| `PUT /tenants/:id/owner` | `OrganizationWriter.TransferOwner` |
+| `DELETE /tenants/:id` | `OrganizationWriter.DeleteOrganization`; `WriteGuard` first |
 | `PATCH /tenants/:id/profile` | `SetProfile`, the four descriptive fields, and nothing else |
 | `POST /tenants/:id/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
@@ -83,14 +87,24 @@ key.
   `tenant.ErrTenantExists`, answered a 409, and nothing is written. This is
   where `Create` and `Put` divide: `Put` rewrites the row its identifier names,
   the status and the disable source together, which is a seed's action, while
-  `Create` only inserts. An alias is chosen at creation and never changes, so a
-  rewrite carrying another alias is refused. A registration starts the tenant
-  `active`; there is no delete, and disabling is the only way to retire one.
-- **The alias route is a transitional compatibility route, removed in T6.** It
-  reads the tenant for its 404 and its tombstone refusal and then answers every
-  otherwise-valid request 409 `urn:speed:tenant:alias-immutable`, because an
-  alias cannot change after creation. It calls no write method, changes no
-  column and writes no audit row.
+  `Create` only inserts. An alias is chosen at creation and never changes; the
+  roster has no alias-only write, and the management surface has no rename
+  route. A registration starts the tenant `active` and makes the creator its
+  owner and first tenant-admin.
+- **The owner transfer is platform staff's and goes through
+  `OrganizationWriter`.** The target must be an active member; the transfer
+  grants it `tenant-admin` when it does not hold it, writes the roster owner,
+  and removes the previous owner's bindings and membership in one transaction.
+  The mandatory audit row lands before the write; a refusal closes it with a
+  linked failed row.
+- **The deletion admits platform staff or the organization's owner.** The
+  handler reads the tenant and lets the owner through before asking the guard;
+  everybody else needs `tenant.manage` in the platform domain. There is no
+  `tenant.delete` permission code. An owner-initiated deletion passes the owner
+  it observed to `OrganizationWriter`, so a transfer that wins the race answers
+  409 `ErrOwnerChanged`. The deletion asks `WriteGuard` for `WriteDelete`,
+  lands the mandatory audit row, and leaves a tombstone with the core relations
+  removed; a tombstone read is still a 200 with `status=deleted`.
 - **The profile write goes through `SetProfile`, never `Put`.** The body carries
   all four descriptive fields; an empty value clears the stored one. `Put`
   writes the status and disable source too, so a profile update through it would
@@ -204,14 +218,16 @@ key.
   mounts no management face, and a host that wants one writes this module into its
   command rather than hand-writing the same routes, decision and audit preamble.
 - **It requires the roster, the handler-internal guard, the audit capability, the
-  registration-verification read and the host's two write seams.** A command that
-  brings this one in without the roster to act on, the guard to decide with, the
-  audit to record through, the `authn.SignupVerification` read to gate a write
-  on, the `tenant.WriteGuard` to protect a tenant, or the `tenant.Provisioner` to
-  open a tenant with its first administrator, fails the startup before any route
-  is mounted, rather than answering every route with a refusal or a write that
-  cannot land. The write guard and the provisioner are the host's to supply:
-  neither is a `pkg/` capability, and the roster knows neither. The HTTP entry
+  registration-verification read and the host's three write seams.** A command
+  that brings this one in without the roster to act on, the guard to decide
+  with, the audit to record through, the `authn.SignupVerification` read to gate
+  a write on, the `tenant.WriteGuard` to protect a tenant, the
+  `tenant.Provisioner` to open a tenant with its first administrator, or the
+  `tenant.OrganizationWriter` to transfer an owner and delete an organization,
+  fails the startup before any route is mounted, rather than answering every
+  route with a refusal or a write that cannot land. The write guard, the
+  provisioner and the organization writer are the host's to supply: none is a
+  `pkg/` capability, and the roster knows none of them. The HTTP entry
   point is taken up in `Init` and is
   required — a command that mounts the management routes and has no entry point
   has nothing to mount on, which is `authz.ErrNoRouter`. The logger is the one

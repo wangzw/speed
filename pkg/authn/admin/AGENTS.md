@@ -88,9 +88,13 @@ The API is the package's godoc.
 - **The mandatory audit is written outside any transaction and before the
   action.** A write whose row does not land is answered 503 and the capability
   is not called; a write that fails after it gets a `failed` row linked to the
-  permitted one by `action_id`. The impersonation revocation is the one write
-  with no mandatory row: ending an impersonation is a move in the safe
-  direction and the impersonation module writes its own best-effort row.
+  permitted one by `action_id`. The impersonation revocation is one exception:
+  ending an impersonation is a move in the safe direction and the
+  impersonation module writes its own best-effort row. The account deletion is
+  the other: its row follows the commit, because the tombstone and the erase
+  are the transaction's product and a row written before it would describe an
+  action that may roll back. A failed deletion still gets a `failed`
+  compensation row, and the answer is the refusal it belongs to.
 - **The groups follow their capabilities.** The account and membership groups
   are always mounted. The session group follows the session store, the factor
   and password group the multi-factor module, the secret group the token
@@ -125,6 +129,11 @@ The API is the package's godoc.
   are chosen from its closed set, and the three highest-privilege writes (the
   password reset, the factor reset and the impersonation start) carry the
   strong-authentication requirement in addition to the fresh local one.
+- **An organization-owner refusal has its own 409.** A deletion or suspension
+  the account module refuses with `authn.ErrAccountOwnsOrganization` is mapped
+  to `409 urn:speed:authn:account-organization-owner`, with the organization
+  identifier in the problem detail. It is distinct from the last-administrator
+  refusal so the surface can ask for a transfer or an organization deletion.
 - **The settings key read is the multi-factor module's.** This module declares
   no key of its own; it reads `authn.mfa.recent-window` from the global layer,
   with the multi-factor module's failure direction, and a read that cannot be

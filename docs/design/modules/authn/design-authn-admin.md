@@ -176,10 +176,10 @@ type ScopeGuard interface {
 | 组 | 方法 路径 | 动作 | 额外要求 |
 |---|---|---|---|
 | 账户 | `GET\|POST B/accounts` | `account.read`、`account.create` | 列表键集分页（`Accounts.List`），可按状态、种类、标识前缀、显示名前缀过滤，标识前缀精确到一种标识类型；列表的查询参数是封闭集，出现集合外的参数即 400，已接受的过滤给空值即不过滤（显示名前缀按字节前缀、大小写敏感，不是合法 UTF-8 即 400）；创建的**用户**账户必须带一个合法用户名；没有用户名的请求在写入之前 400，不留下无法以口令登录的账户；邮箱已被别的账户预留或持有答 409 `email-taken`；服务账户以服务密钥登录，不受这条要求；创建服务账户另要 `client.manage`；强制审计 |
-| 账户 | `GET\|PATCH\|DELETE B/accounts/:id` | `account.read`、`account.update`、`account.delete` | `PATCH` 改显示名、属性与 `protected`（`SetDisplayName`、`SetAttributes`、`SetProtected`）；删除要新鲜的本地多因素；强制审计 |
+| 账户 | `GET\|PATCH\|DELETE B/accounts/:id` | `account.read`、`account.update`、`account.delete` | `PATCH` 改显示名、属性与 `protected`（`SetDisplayName`、`SetAttributes`、`SetProtected`）；删除要新鲜的本地多因素；删除的审计在提交之后尽力写，事务失败补一条 `failed` 行；账户拥有活跃业务组织时删除答 409 `account-organization-owner`；其余写强制审计 |
 | 因素与口令 | `POST B/accounts/:id/password` | `account.update` | 管理员提交临时口令，放在请求体里，从不回显、不进日志与审计，缺省置 `must_change`；发起者新鲜的本地多因素且 `MFA.Seasoned`；强制审计；成功后撤销该账户的全部会话 |
 | 账户 | `POST B/accounts/:id/identifiers`、`DELETE B/accounts/:id/identifiers/:identifier` | `account.update` | 添加用户名（登录名）与管理员断言的邮箱；邮箱是新的或尚未证明时 `verified_via` 写 `admin`，已有证明的同值行保留原证明；管理员断言的邮箱登记为联系方式，不使它成为登录方式，也不在证明之前作默认联系地址；归属视为未证明直到本人以证明渠道证明，登录方式仍由持有人另选；邮箱已被别的账户预留或持有答 409 `email-taken`；删除用户名答 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效，这条规则先于下一条；删除带口令凭据账户的最后一个被选作登录方式的已验证邮箱答 409 `login-identifier-required`；删除任何标识后账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，答 409 `last-login-method`（`ErrLastLoginMethod`），通行密钥不算，未验证的手机号也不算；强制审计 |
-| 账户 | `POST B/accounts/:id/status` | `account.disable` | 新鲜的本地多因素；强制审计；停用后同步清理会话（`AccountLifecycle`），清理失败 503，重试幂等 |
+| 账户 | `POST B/accounts/:id/status` | `account.disable` | 新鲜的本地多因素；强制审计；账户拥有活跃业务组织时停用答 409 `account-organization-owner`；停用后同步清理会话（`AccountLifecycle`），清理失败 503，重试幂等 |
 | 会话 | `GET B/accounts/:id/sessions`、`POST B/accounts/:id/revoke-sessions`、`DELETE B/sessions/:id` | `session.read`、`session.revoke` | `GET B/accounts/:id/sessions` 的每一行带 `current` 标记：该行是调用方自己的会话时为真，取自调用方身份的会话标识，其余为假，与自助路由 `GET B/sessions` 的同名标记同义；`DELETE B/sessions/:id` 先 `Sessions.Get` 解析会话所属账户，`Decision.Target` 填会话标识、`TargetAccount` 填账户；强制审计 |
 | 因素与口令 | `GET B/accounts/:id/factors`、`POST B/accounts/:id/mfa-required`、`POST B/accounts/:id/mfa-reset` | `account.read`、`account.update`、`mfa.reset` | 清单只交回种类、标签、状态；重置要新鲜的本地非短信多因素与 `MFA.Seasoned`；重置前核对目标账户持有口令凭据、被选作登录方式的已验证手机号与外部身份中的至少一种（`AccountAdmin.HasLoginWayOtherThanPasskey`），一种都没有（只剩因素，例如只有通行密钥，或只有未被选作登录方式的手机号）答 409 `last-login-method`（`ErrLastLoginMethod`），不调 `MFA.Reset`，补一条 `failed` 审计行；强制审计 |
 | 服务密钥 | `GET\|POST B/accounts/:id/secrets`、`DELETE B/accounts/:id/secrets/:secret` | `client.manage`（`GET` 为 `account.read`） | `GET` 经 `ListServiceSecrets`，只交标识、标签、期限与撤销状态；创建与撤销要新鲜的本地多因素；密钥只在创建应答里出现一次；撤销后同步撤销该密钥的 service 会话；强制审计 |
@@ -338,7 +338,7 @@ flowchart TD
     H -- 否 --> R6["401 insufficient_user_authentication"]
     H -- 是 --> I{"写操作?"}
     I -- 否 --> J["读取并应答<br/>读不写接口级审计"]
-    I -- 是 --> K{"强制审计写入<br/>事务之外、动作之前<br/>撤销冒充记录除外"}
+    I -- 是 --> K{"强制审计写入<br/>事务之外、动作之前<br/>撤销冒充记录与账户删除除外"}
     K -- 写失败 --> R7["503 动作不执行"]
     K -- 写成功 --> L["调用能力接口执行写"]
     L -- 失败 --> M["每个对象补一条 failed 审计行"] --> R8["按哨兵映射应答"]
@@ -353,7 +353,7 @@ flowchart TD
 - **注册验证状态的门控在身份确定之后、`Decide` 与强度核验之前。** 发起者视为未验证（`SignupPending`：有邮箱而没有一条已证明的）时，管理面人类写答 403 `contact-required`，不询问 `Decider`、不询问强度、不写审计；门控只收紧不放行。读路由、服务账户与没有邮箱的账户不受影响。冒充发起的路由在 `authn.impersonation`，按同一判据拒绝（见「注册验证状态的门控」）。
 - **停用自己的成员关系在 `Decide` 之后、强度核验与强制审计之前拒绝。** 只有 `PUT` 写 `active=false` 且路径上的账户就是生效调用者时成立，答 409 `cannot-suspend-self`，不写审计行、不调 `Memberships`；另一位管理员停用他、或调用者恢复自己都不受这条限制。判定在 handler 里，所以成员存储的 `Put` 仍是普通的幂等写。这条拒绝与「最后一名租户管理员不能移除」一起，使一个仍在服务的租户始终有至少一名能治理它的管理员。
 - **强度核验在 `Decide` 之后、审计之前。** 强度要求按路由表的「额外要求」列，核验失败答 401 加强认证挑战，不写审计，不执行动作。
-- **强制审计在事务之外、动作之前。** 管理面路由里只有撤销冒充记录不适用：它的审计是尽力档，由 `Impersonation.Revoke` 自己写，处理器跳过强制审计与补行（路由表）。接口级的审计写入另占一条连接、不加入调用方的事务；在调用方事务开着时调用它，SQLite 上等调用方占着的写锁，单连接库上等调用方占着的那条连接，等待超时后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功。处理器因此不在任何事务里调用 `audit.Record`，事务内只暂存发件箱事件，不调 `Bus.Publish`。
+- **强制审计在事务之外、动作之前。** 管理面路由里有两个例外。撤销冒充记录的审计是尽力档，由 `Impersonation.Revoke` 自己写，处理器跳过强制审计与补行（路由表）。账户删除的审计跟随提交：墓碑与抹除是那条事务的产物，提交之前写下的行会描述一次可能回滚的动作；处理器在 `Delete` 返回之后尽力写成功行，事务失败时补一条 `failed` 行并照常返回拒绝。接口级的审计写入另占一条连接、不加入调用方的事务；在调用方事务开着时调用它，SQLite 上等调用方占着的写锁，单连接库上等调用方占着的那条连接，等待超时后 `Record` 以 `ErrWriteFailed` 失败。处理器因此不在任何事务里调用 `audit.Record`，事务内只暂存发件箱事件，不调 `Bus.Publish`。
 - **写失败逐对象补一条 `failed` 行。** 审计与动作不在同一事务里，动作失败时审计里留一条已写而未生效的行，随后为每个已写出的对象补一条 `outcome=failed` 的行，用动作标识关联。
 - **读路由不写接口级审计。** 审计动作表是封闭集且不含任何读动作，读由请求级采集记录（[design-authn-events](design-authn-events.md)），所以 `authn.admin` 的读路由只读、不写审计，也不补 `failed` 行。
 - **事件由能力接口发出。** 写成功后的事件在能力接口自己的事务与发布路径里，`authn.admin` 不重复发布。

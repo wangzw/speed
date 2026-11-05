@@ -17,13 +17,13 @@
 - **不为请求认定租户。** 一条请求属于哪个租户由解析层认定（[design-tenant](design-tenant.md)）；本模块在平台域判定（见「访问控制」），不读请求解析出的租户，也不写上下文里的租户。
 - **不给自己授予任何权限。** 本模块向进程声明它自己的权限，但把每条路由登记为开放，让中间件把请求放行到 handler，由 handler 在内部判定。
 - **不管理租户内的账户、成员与角色。** 账户与成员关系归认证，角色归授权（[design-tenant](design-tenant.md) 的非职责、[design-authz](../design-authz.md)）。
-- **不导出、不删除、不搬迁租户数据，也不提供删除路由。** 名册上的删除是终态标记，由账户生命周期的宿主模块写入；本模块照此只对外提供 `SetStatus`，把已删除的行渲染成只读，不提供写进那个状态的路由，也不触碰受约束表里那个租户的数据（[design-tenant](design-tenant.md)）。
+- **不删除其他模块的租户数据，也不提供数据导出与搬迁。** 组织删除写名册的墓碑并清除核心关系；受约束表里的业务数据仍由声明那些表的模块清除，本模块不触碰那些数据，也不提供导出与搬迁（[design-tenant](design-tenant.md)）。
 
 ## 外部接口契约
 
 ### 登记
 
-`tenant.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 名册功能 `(*tenant.Catalog)(nil)`、handler 内判定 `(*guard.Guard)(nil)`、审计 `(*audit.Audit)(nil)`、注册验证状态读取接口 `(*authn.SignupVerification)(nil)`、写保护 `(*tenant.WriteGuard)(nil)` 与首任管理员的建立 `(*tenant.Provisioner)(nil)`，并可选取 `log.Logger`。名册与 guard 各由唯一模块排他交付，命令的依赖闭包不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`，永不 `StateAuto`：挂不挂管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明接口在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明接口的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这组路由的命令应同时点名授权模块。
+`tenant.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 名册功能 `(*tenant.Catalog)(nil)`、handler 内判定 `(*guard.Guard)(nil)`、审计 `(*audit.Audit)(nil)`、注册验证状态读取接口 `(*authn.SignupVerification)(nil)`、写保护 `(*tenant.WriteGuard)(nil)`、首任管理员的建立 `(*tenant.Provisioner)(nil)` 与所有者转移及组织删除 `(*tenant.OrganizationWriter)(nil)`，并可选取 `log.Logger`。名册与 guard 各由唯一模块排他交付，命令的依赖闭包不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`，永不 `StateAuto`：挂不挂管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明接口在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明接口的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这组路由的命令应同时点名授权模块。
 
 **本模块声明静态[特性](../../../glossary.md) `tenant.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "tenant.admin"}`；这个特性在场，表示本进程挂出名册管理面的路由（[feature](../design-feature.md)）。`tenant.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集且进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
@@ -36,26 +36,36 @@
 | 租户 | `GET /api/v1/system/tenants` | `tenant.read` |
 | 租户 | `POST /api/v1/system/tenants` | `tenant.manage` |
 | 租户 | `GET /api/v1/system/tenants/:tenant` | `tenant.read` |
-| 租户 | `PATCH /api/v1/system/tenants/:tenant` | `tenant.manage` |
+| 租户 | `PUT /api/v1/system/tenants/:tenant/owner` | `tenant.manage` |
+| 租户 | `DELETE /api/v1/system/tenants/:tenant` | `tenant.manage`，或组织所有者 |
+| 租户 | `PATCH /api/v1/system/tenants/:tenant/profile` | `tenant.manage` |
 | 租户 | `POST /api/v1/system/tenants/:tenant/status` | `tenant.manage` |
 
-每条路由的动作是一次 `tenant.Catalog` 调用（方法集与各方法的语义见 [design-tenant](design-tenant.md)）：
+每条路由的动作是一次名册调用、一次组织写或一次资料写（方法集与各方法的语义见 [design-tenant](design-tenant.md)、[design-tenant-ownership](design-tenant-ownership.md)）：
 
-| 路由 | 名册动作 |
+| 路由 | 动作 |
 |---|---|
 | `GET /tenants` | `List`，列出全部租户，按标识排序 |
-| `POST /tenants` | `Provisioner`，建立租户与它的首任管理员 |
+| `POST /tenants` | `Provisioner`，建立租户、它的所有者与首任管理员 |
 | `GET /tenants/:tenant` | `Get`，按标识取一个租户 |
-| `PATCH /tenants/:tenant` | `Get`，读名册后拒绝改名（过渡路由） |
+| `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner`，转移所有者 |
+| `DELETE /tenants/:tenant` | `OrganizationWriter.DeleteOrganization`，写墓碑并清核心关系 |
+| `PATCH /tenants/:tenant/profile` | `SetProfile`，只写四个资料列 |
 | `POST /tenants/:tenant/status` | `SetStatus`，改一个租户的状态 |
 
-**登记走 `Provisioner`，一个租户与它的首任管理员一起建立。** 开一个租户不是一个孤立的插入：租户的创建者是它的第一个租户管理员，租户、创建者的成员关系与那条绑定必须一同成立。本模块把这件事交给宿主提供的 `tenant.Provisioner`，它按角色 → 授予 → 名册行 → 内置标记 → 创建者的成员关系与绑定的次序写：名册行先于管理员行，失败后留下的是 seed 能对账的租户，内置标记先于管理员行，标记失败时留下的是未冻结的角色而不是半份管理关系。标识以 `personal-` 开头的租户例外：宿主把它当作个人域，它的 `tenant-admin` 不置内置，宿主才能撤销允许集之外的授予。名册行之前失败时它清掉自己写过的策略行，路由答 503 且不留租户；名册行之后失败时租户留在册，路由答 503，绝不报成功——`MarkRoleBuiltin` 失败重试一次，仍失败即返回错误，租户在册而角色未冻结，创建者的成员关系与绑定未写（见「并发与事务边界」的已知限制）。`Create` 以 `ErrTenantExists` 拒绝是例外：那表示另一个副本先登记了同一个标识，该域属于先到者；创建者的成员关系与绑定写在名册行之后，后到的这次尚未写这两行，因而只留下先到者的角色、授予与管理行，既不拆它的策略，也不冻结它的角色。一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行的状态、别名保持该行已有的值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。改状态走状态路由；状态路由只写启用与停用，删除是名册上的终态标记，本模块不为它开路由。
+**登记走 `Provisioner`，一个租户、它的所有者与首任管理员一起建立。** 开一个租户不是一个孤立的插入：租户的创建者是它的所有者，也是它的第一个租户管理员，租户、所有者的名册列、创建者的成员关系与那条绑定必须一同成立。本模块把这件事交给宿主提供的 `tenant.Provisioner`，它按角色 → 授予 → 名册行 → 内置标记 → 创建者的成员关系与绑定的次序写：名册行先于管理员行，失败后留下的是 seed 能对账的租户，内置标记先于管理员行，标记失败时留下的是未冻结的角色而不是半份管理关系。标识以 `personal-` 开头的租户例外：宿主把它当作个人域，它的 `tenant-admin` 不置内置，宿主才能撤销允许集之外的授予。名册行之前失败时它清掉自己写过的策略行，路由答 503 且不留租户；名册行之后失败时租户留在册，路由答 503，绝不报成功——`MarkRoleBuiltin` 失败重试一次，仍失败即返回错误，租户在册而角色未冻结，创建者的成员关系与绑定未写（见「并发与事务边界」的已知限制）。`Create` 以 `ErrTenantExists` 拒绝是例外：那表示另一个副本先登记了同一个标识，该域属于先到者；创建者的成员关系与绑定写在名册行之后，后到的这次尚未写这两行，因而只留下先到者的角色、授予与管理行，既不拆它的策略，也不冻结它的角色。一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。创建者的账户标识随 `Tenant.OwnerAccount` 传给 provisioner，名册行因而带着所有者。
 
-**别名创建后不可改，`PATCH /tenants/:tenant` 是过渡期的兼容路由。** 名册的写入接口只把别名当作创建时的值：一条携带另一个别名的重写以 `ErrInvalidTenant` 拒绝，什么也不写（[design-tenant](design-tenant.md) 的写接口）。这条路由因此一行也不写：格式检查通过、租户存在且不是墓碑时，它答 409 `urn:speed:tenant:alias-immutable`；没有成功的写，所以不落审计行。它保留到 T6，让旧客户端得到可读的拒绝，届时移除。组织改名要改的是显示名，显示名不承担寻址（[ADR-tenant-identifier](../../../adr/adr-tenant-identifier.md)）。
+**别名创建后不可改。** `Catalog` 不提供改名写，本模块也不提供改名路由；`Put` 的别名必须与既有别名一致。要换一个对外名字，只能新建一个组织并删除旧的。
 
-**状态路由的可写集合是 `active` 与 `disabled`。** 正文给出其中之一，其余取值是本模块拒绝的格式；`deleted` 是终态，不在可写集合里。登记的新租户起于 `active`：登记的正文给出标识与别名，状态不在这里给。改名与改状态遇到已删除的租户答 409；改状态的这一条由名册以 `tenant.ErrTenantDeleted` 拒绝。
+**所有者转移由平台员工发起。** 路由要求平台域的 `tenant.manage`；正文给出目标账户。目标必须是该组织的活跃成员，未持有 tenant-admin 时由 `OrganizationWriter` 授予；原所有者失去在组织里的全部绑定与成员关系。转移与这些写在同一条事务里。目标不是活跃成员是 409，名册没有该标识是 404，墓碑是 409。审计动作 `tenant.owner.transfer`。
 
-**受保护的租户拒绝停用。** 状态路由在一次停用的格式检查之后、审计之前问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行。`system` 租户与个人租户由宿主的实现声明为受保护（[design-tenant](design-tenant.md) 的写保护）。启用不是受写保护的写操作，不经过它。
+**组织删除由所有者或平台员工发起，不新增权限码。** 平台员工经平台域的 `tenant.manage` 通过；组织所有者经自己的所有权通过；两者都不是的租户管理员答 403。所有者发起的删除带上它观察到的所有者，转移抢先时以 `ErrOwnerChanged` 答 409。删前问 `tenant.WriteGuard` 的 `WriteDelete`，受保护的租户答 403 `urn:speed:tenant:protected`。写入是墓碑：状态写成 `deleted`、删除时刻落列，成员关系、绑定、角色与授予在同一条事务里清除；标识与别名留在墓碑上，永不复用。已删除的租户在读取里照常返回 200，只是状态是 `deleted`；对它的资料、状态、转移与删除写一律 409。审计动作 `tenant.delete`。
+
+**资料更新只经过 `SetProfile`。** 正文给出四个资料字段，全部必填，空串清空；标识、别名、所有者、状态与创建时间不在可写集合里。墓碑答 409；越出根包资料的取值域答 400。审计动作 `tenant.profile.update`，detail 带 `surface: platform`。
+
+**状态路由的可写集合是 `active` 与 `disabled`。** 正文给出其中之一，其余取值是本模块拒绝的格式；`deleted` 是终态，不在可写集合里。登记的新租户起于 `active`：登记的正文给出标识与别名，状态不在这里给。改状态与资料更新遇到已删除的租户，由名册以 `tenant.ErrTenantDeleted` 拒绝，本模块答 409。
+
+**受保护的租户拒绝停用与删除。** 状态路由在一次停用的格式检查之后、审计之前问 `tenant.WriteGuard`；删除路由同样在审计之前问 `tenant.WriteGuard` 的 `WriteDelete`。答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行。`system` 租户与个人租户由宿主的实现声明为受保护（[design-tenant](design-tenant.md) 的写保护）。启用不是受写保护的写操作，不经过它。
 
 ### 访问控制
 
@@ -63,15 +73,19 @@
 
 **判定顺序固定，写与读在判定之后分支。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与准入层、授权层一致的 realm 质询，不询问 guard 即返回。写路由随后读发起者的注册验证状态（见下），再向 guard 要本条路由的权限：不足即由 guard 写出它自己的拒绝——拒绝 403、故障 503——并返回。判定之后才分支：写解析正文、跑本条路由的格式检查、落强制档审计、调名册；读调名册并应答。
 
-**注册验证状态的门控在权限判定之前。** 写路由（登记、改名与改状态）在读完调用方身份之后，在权限判定、解析正文与落强制档审计之前，读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`）：发起者视为未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`（`authn.ErrContactRequired`），动作不执行；服务账户与没有任何邮箱的账户（`SignupNone`）豁免，读路由不受这条门控影响。判据与账户怎么创建无关，管理员预置与导入的发起者带着未证明邮箱时同样被拦。读取状态失败答 503，不按放行处理。门控只收紧、不放行：它只多拒绝一类发起者，不改变权限判定本身，也不让任何未通过权限判定的请求通过。门控在服务端执行，不依赖前端的入口隐藏。
+**注册验证状态的门控在权限判定之前。** 写路由（登记、转移、删除、资料与改状态）在读完调用方身份之后，在权限判定、解析正文与落强制档审计之前，读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`）：发起者视为未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`（`authn.ErrContactRequired`），动作不执行；服务账户与没有任何邮箱的账户（`SignupNone`）豁免，读路由不受这条门控影响。判据与账户怎么创建无关，管理员预置与导入的发起者带着未证明邮箱时同样被拦。读取状态失败答 503，不按放行处理。门控只收紧、不放行：它只多拒绝一类发起者，不改变权限判定本身，也不让任何未通过权限判定的请求通过。门控在服务端执行，不依赖前端的入口隐藏。
 
 **判定在平台域做出。** 名册是平台资产，不是某个租户的，所以一次名册操作是平台操作；handler 经 `RequirePermissionIn(c, perm, authz.PlatformDomain)` 显式指定平台域判定。若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到整个名册。**枚举也是平台操作**：`List` 读的名册表不是受租户约束的表，它本就在过滤之外，所以列出全部租户是一次平台域的读，不是一次跨租户读——它不建跨租户上下文，也不要求跨租户的权限。按 [ADR-http-api-path-scopes](../../../adr/adr-http-api-path-scopes.md) 的判据，名册路由虽然按租户寻址（`/api/v1/system/tenants/{tenant}`），但判定在平台域，因此留在 `tenant.resolve` 与 `tenant.admission` 两层之外，不挂在它们所守的端上。
 
-**每次写强制档审计，落在动作之前、事务之外。** 写路由在调名册之前写一行强制档审计；审计写不进则应答 503 且动作不执行。名册拒绝写时再尽力写一行 `failed`，与允许行以动作标识关联，它自己的失败只记 Error，不改变应答。模块不开自己的事务。登记与改状态各是一行强制档审计；过渡期的改名路由一行也不写，因而不落审计行；读路由不写审计行。
+**删除路由的判定是两档：平台员工或组织所有者。** handler 先读路径里的租户，若调用方的账户标识等于该行的 `OwnerAccount`，直接放行，不再问平台权限；否则向 guard 要平台域的 `tenant.manage`，不足即由 guard 写出 403。两档都不新增权限码：平台员工用 `tenant.manage`，所有者用所有权本身。所有者发起的删除把观察到的所有者交给 `OrganizationWriter`，转移抢先时以 `ErrOwnerChanged` 答 409。其余写路由仍是平台权限单档。
+
+**每次写强制档审计，落在动作之前、事务之外。** 写路由在调名册或组织写之前写一行强制档审计；审计写不进则应答 503 且动作不执行。写被拒绝时再尽力写一行 `failed`，与允许行以动作标识关联，它自己的失败只记 Error，不改变应答。登记、转移、删除、资料与改状态各是一行强制档审计；读路由不写审计行。本模块自己不开事务：资料与状态在名册自己的句柄上写，转移与删除的事务由 `OrganizationWriter` 打开。
 
 ### 视图
 
-**读的应答是 200 加一份视图，登记写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `tenant.Tenant` 构造，从不把值原样交给客户端，记录日后新增一个字段，不会因为它存在就出现在应答里。租户视图的字段：`id`、`alias`、`status`（`active`、`disabled` 或 `deleted`，由 `tenant.Status` 的字符串形式给出），以及 `disabledBy`（`operator` 或 `account`，由 `tenant.DisabledBy` 的字符串形式给出，只在状态是 `disabled` 时出现）。
+**读的应答是 200 加一份视图，登记写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `tenant.Tenant` 构造，从不把值原样交给客户端，记录日后新增一个字段，不会因为它存在就出现在应答里。租户视图的字段：`id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`status`（`active`、`disabled` 或 `deleted`，由 `tenant.Status` 的字符串形式给出）、`createdAt`，以及 `disabledBy`（`operator` 或 `account`，由 `tenant.DisabledBy` 的字符串形式给出，只在状态是 `disabled` 时出现）。四个资料字段为空串时照常出现，视图不隐藏它们；创建时间每一行都有，不是可空字段。
+
+已删除的租户在读取里照常返回 200，视图的 `status` 是 `deleted`，资料字段与创建时间原样返回；资料、状态、转移与删除写对它是 409。
 
 列出全部租户的应答是 200 加全部租户的视图，按标识排序（名册自身的次序）。名册是一个部署所服务的租户集合，不分页。
 
@@ -83,12 +97,12 @@
 - **配置命名空间与输入项**：`tenant.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
 - **管理端点**：`tenant.admin.endpoints` 列出的端，`/api/v1/system/tenants/*` 下的名册读写路由（路由见「路由」）。
 - **权限**：读路由询 `tenant.read`，写路由询 `tenant.manage`；本模块的权限经 `authz.PermissionSpec` 进入进程目录、经 `authz.TranslationSpec` 进入进程翻译（`tenant.read` 译成 `(tenant, read)`、`tenant.manage` 译成 `(tenant, manage)`）。
-- **问题应答**：`Problem.Type` 前缀 `urn:speed:tenant:`，其下的码 `bad-request`、`conflict`。写路由另在发起者为未验证账户时答 403 `contact-required`，这个码不属于该前缀。
+- **问题应答**：`Problem.Type` 前缀 `urn:speed:tenant:`，其下的码 `bad-request`、`conflict`、`protected`。写路由另在发起者为未验证账户时答 403 `contact-required`，这个码不属于该前缀。
 
 ### 对外接口
 
-- 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`），是本模块对宿主的接口。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口。改动它们是宿主可见的破坏性变更。
-- 租户视图的字段名（`id`、`alias`、`status`、`disabledBy`）与容器形态是应答结构：宿主与前端据此读应答。`status` 的取值集合与 `disabledBy` 的取值集合同样是应答结构。
+- 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`；删除路由另接受组织所有者），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`、`protected`），是本模块对宿主的接口。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口。改动它们是宿主可见的破坏性变更。
+- 租户视图的字段名（`id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`status`、`createdAt`、`disabledBy`）与容器形态是应答结构：宿主与前端据此读应答。`status` 的取值集合与 `disabledBy` 的取值集合同样是应答结构。
 - 特性名 `tenant.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或名册的代码。
 
@@ -96,7 +110,7 @@
 
 | 依赖 | 用途 |
 |---|---|
-| `pkg/tenant` | `tenant.Catalog`（名册的读写接口）、`tenant.Tenant`、`tenant.ID`、`tenant.IsIdentifier`、`tenant.Status`、写保护 `tenant.WriteGuard`、首任管理员建立 `tenant.Provisioner` 与哨兵 `tenant.ErrTenantExists`、`tenant.ErrAliasConflict`、`tenant.ErrInvalidTenant` |
+| `pkg/tenant` | `tenant.Catalog`（名册的读写接口）、`tenant.Tenant`、`tenant.ID`、`tenant.IsIdentifier`、`tenant.Status`、写保护 `tenant.WriteGuard`、首任管理员建立 `tenant.Provisioner`、所有者转移与组织删除 `tenant.OrganizationWriter` 与哨兵 `tenant.ErrTenantExists`、`tenant.ErrAliasConflict`、`tenant.ErrInvalidTenant`、`tenant.ErrOwnerNotMember`、`tenant.ErrOwnerChanged` |
 | `pkg/authz`、`pkg/authz/guard` | 权限声明与翻译（`authz.PermissionSpec`、`authz.TranslationSpec`）、handler 内判定（`guard.Guard.RequirePermissionIn`）、平台域 `authz.PlatformDomain`、路由声明接口 `authz.Gate` |
 | `pkg/audit` | 强制档审计 |
 | `pkg/authn` | 读请求上的身份（`authn.FromContext`）与发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`） |
@@ -112,7 +126,7 @@
 
 ## UML 图
 
-本模块不持状态、不做判定之外的分支，它的结构是一串跨模块的调用。图固定一次写路由的操作序：读调用方 → 读注册验证状态 → 向 guard 要权限 → 解析正文与格式检查 → 落强制档审计 → 调名册 → 映射拒绝。图上看不出的是这些约束：判定在**平台域**做出，不是请求解析出的租户；写路由在权限判定之前、审计之前读发起者的注册验证状态，**未验证账户答 403 `contact-required`、读取失败答 503**，动作都不执行，门控只收紧、不放行；审计落在**动作之前、事务之外**，写不进即 503 且动作不执行；guard 的拒绝（403）与故障（503）由 guard 自己写出，本模块不重写；名册的拒绝经本模块的封闭映射变成 400／404／409，其余失败落 503。读路由在「向 guard 要权限」之后直接调名册，不经正文、审计与写路径。
+本模块不持状态、不做判定之外的分支，它的结构是一串跨模块的调用。图固定一次写路由的操作序：读调用方 → 读注册验证状态 → 向 guard 要权限 → 解析正文与格式检查 → 落强制档审计 → 调名册 → 映射拒绝。图上看不出的是这些约束：判定在**平台域**做出，不是请求解析出的租户；写路由在权限判定之前、审计之前读发起者的注册验证状态，**未验证账户答 403 `contact-required`、读取失败答 503**，动作都不执行，门控只收紧、不放行；审计落在**动作之前、事务之外**，写不进即 503 且动作不执行；guard 的拒绝（403）与故障（503）由 guard 自己写出，本模块不重写；名册的拒绝经本模块的封闭映射变成 400／404／409，其余失败落 503。读路由在「向 guard 要权限」之后直接调名册，不经正文、审计与写路径。删除路由另有一条所有者分支：路径里的租户若以调用方为所有者，handler 跳过 guard 直接进入审计与组织写，图里画的是其余写路由的单档判定。
 
 ```mermaid
 sequenceDiagram
@@ -121,6 +135,7 @@ sequenceDiagram
     participant G as authz.guard
     participant A as audit
     participant R as tenant.Catalog
+    participant O as tenant.ownership
     C->>H: 写请求
     H->>H: 读调用方身份
     alt 无身份
@@ -141,8 +156,9 @@ sequenceDiagram
                 alt 审计写不进
                     H-->>C: 503，动作不执行
                 else 审计落地
-                    H->>R: Create / SetStatus
-                    alt 名册拒绝
+                    H->>R: Create / SetProfile / SetStatus
+                    H->>O: TransferOwner / DeleteOrganization
+                    alt 写被拒绝
                         H->>A: 记一行 failed
                         H-->>C: 400 / 404 / 409
                     else 落地
@@ -160,9 +176,10 @@ sequenceDiagram
 
 | 概念 | 结构 | 说明 |
 |---|---|---|
-| 租户视图 | `{id, alias, status, disabledBy?}` | 从 `tenant.Tenant` 逐字段构造；`status` 是 `active`、`disabled` 或 `deleted`；`disabledBy` 是 `operator` 或 `account`，只在状态为 `disabled` 时出现 |
-| 登记正文 | `{id, alias}` | `POST /tenants` 的正文；新租户起于 `active` |
-| 改名正文 | `{alias}` | `PATCH /tenants/:tenant` 的正文 |
+| 租户视图 | `{id, alias, displayName, description, contactEmail, website, status, createdAt, disabledBy?}` | 从 `tenant.Tenant` 逐字段构造；`status` 是 `active`、`disabled` 或 `deleted`；`disabledBy` 是 `operator` 或 `account`，只在状态为 `disabled` 时出现 |
+| 登记正文 | `{id, alias, display_name?, description?, contact_email?, website?}` | `POST /tenants` 的正文；新租户起于 `active`，创建者是所有者 |
+| 资料正文 | `{display_name, description, contact_email, website}` | `PATCH /tenants/:tenant/profile` 的正文；四个字段全部必填，空串清空 |
+| 转移正文 | `{account}` | `PUT /tenants/:tenant/owner` 的正文；目标必须是活跃成员 |
 | 状态正文 | `{status}` | `POST /tenants/:tenant/status` 的正文；取值闭集 `active`、`disabled` |
 
 视图与正文都是本模块自己的类型，不是根包的 `tenant.Tenant`：`Tenant` 是名册上的一行（含状态枚举），而交出去的是它的字符串化视图、收进来的是校验过的结构。
@@ -175,7 +192,7 @@ sequenceDiagram
 
 1. 调用方发 `POST /api/v1/system/tenants`，正文为 `{id: "acme", alias: "acme"}`。handler 依次读身份、读注册验证状态、向 guard 要权限，均通过。
 2. 格式检查通过之后、动作之前，handler 写一行强制档审计，动作标识为 `tenant.create`。持久状态：审计表多一行，名册与授权表未变。
-3. handler 调 `Provisioner.Provision`。它按角色 → 授予 → 名册行 → 内置标记 → 创建者的成员关系与绑定的次序写：角色与授予先落，随后名册表里出现 `acme` 这一行（状态为在册），随后该角色被置上内置标记，最后创建者的成员关系与绑定落行。名册行之前失败时，它清掉自己写过的策略行，路由答 503，名册里不留租户；名册行之后失败时，租户留在册，路由答 503。
+3. handler 调 `Provisioner.Provision`，交出的记录带创建者的账户标识作为所有者。它按角色 → 授予 → 名册行 → 内置标记 → 创建者的成员关系与绑定的次序写：角色与授予先落，随后名册表里出现 `acme` 这一行（状态为在册、所有者是创建者），随后该角色被置上内置标记，最后创建者的成员关系与绑定落行。名册行之前失败时，它清掉自己写过的策略行，路由答 503，名册里不留租户；名册行之后失败时，租户留在册，路由答 503。
 4. 全部成功时 handler 答 201 与租户视图。持久状态：名册里一行在册的 `acme`，它的首任管理员角色已冻结，创建者的成员关系与绑定已在。
 5. 标识已被占用时 `Create` 报 `ErrTenantExists`，handler 答 409；持久状态仍是先到者的那一行，后到的这次没有写成员关系与绑定。
 
@@ -194,16 +211,36 @@ sequenceDiagram
 1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
 2. 格式检查：`id` 与 `alias` 都要落在 `tenant.IsIdentifier` 的取值域内，否则 400。
 3. 落强制档审计（动作 `tenant.create`）。
-4. `Provisioner.Provision(Tenant{ID: id, Alias: alias, Status: tenant.StatusActive}, 发起者的账户标识)`。
+4. `Provisioner.Provision(Tenant{ID: id, Alias: alias, Status: tenant.StatusActive, OwnerAccount: 发起者的账户标识}, 发起者的账户标识)`。
 5. `ErrTenantExists` → 409；`ErrAliasConflict` → 409；其余 → 503。落地 → 201 加视图。
 
-### 改名（过渡路由）
+### 转移所有者
 
 1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
-2. 格式检查：路径的 `id` 落在 `tenant.IsIdentifier` 的取值域内、正文的 `alias` 落在 `tenant.IsAlias` 的取值域内，否则 400。
-3. `Catalog.Get(id)`；名册不持有该标识 → 404。
-4. 该租户是墓碑 → 409（`urn:speed:tenant:conflict`）。
-5. 其余 → 409（`urn:speed:tenant:alias-immutable`）。路由一行也不写，因而不落审计行。
+2. 格式检查：路径的 `id` 落在取值域内，正文的 `account` 是一个账户标识，否则 400。
+3. `Catalog.Get(id)`；名册不持有该标识 → 404；墓碑 → 409。
+4. 落强制档审计（动作 `tenant.owner.transfer`）。
+5. `OrganizationWriter.TransferOwner(id, account)`。它取租户锁，校验目标是活跃成员，在一条事务里授予 tenant-admin、写所有者、撤销原所有者的绑定与成员关系。
+6. `ErrOwnerNotMember` → 409；`ErrTenantDeleted` → 409；其余 → 503。落地 → 204。
+
+### 组织删除
+
+1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
+2. handler 读路径里的租户：调用方是所有者即放行；否则向 guard 要平台域的 `tenant.manage`，不足即由 guard 写出 403。
+3. 格式检查：路径的 `id` 落在取值域内，否则 400。
+4. `Catalog.Get(id)`；名册不持有该标识 → 404；墓碑 → 409。
+5. 问 `tenant.WriteGuard` 的 `WriteDelete`；拒绝答 403 `urn:speed:tenant:protected`，读取失败答 503。
+6. 落强制档审计（动作 `tenant.delete`）。所有者发起的删除记下它观察到的所有者。
+7. `OrganizationWriter.DeleteOrganization(id, expectedOwner)`。它取租户锁，在一条事务里写墓碑、清策略、清成员关系。
+8. `ErrOwnerChanged` → 409；`ErrTenantDeleted` → 409；其余 → 503。落地 → 204。
+
+### 资料更新
+
+1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
+2. 格式检查：路径的 `id` 落在取值域内，正文四个字段都存在并落在根包资料的取值域内，否则 400。
+3. `Catalog.Get(id)`；名册不持有该标识 → 404；墓碑 → 409。
+4. 落强制档审计（动作 `tenant.profile.update`，detail 带 `surface: platform`）。
+5. `Catalog.SetProfile(id, profile)`；失败按名册的哨兵映射，其余 → 503。落地 → 200 加视图。
 
 ### 改状态
 
@@ -221,12 +258,14 @@ sequenceDiagram
 |---|---|
 | 请求在格式上不可读（路径参数或正文）、状态取值不在闭集、标识或别名越出取值域 | 400（`Problem.Type` 为 `urn:speed:tenant:bad-request`），在调名册之前 |
 | 登记点名一个已被持有的标识 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantExists` |
-| 登记时别名被别的租户持有 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrAliasConflict` |
-| `GET`／`PATCH`／状态路由点名一个名册不持有的标识 | 404，不带 `Problem.Type` |
-| 改名或改状态点名一个已删除的租户 | 409（`urn:speed:tenant:conflict`） |
-| 改名的过渡路由在一个在册租户上提出 | 409（`urn:speed:tenant:alias-immutable`），一行也不写，不落审计行 |
+| 别名被别的租户持有 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrAliasConflict` |
+| `GET`／`PATCH`／`PUT`／`DELETE`／状态路由点名一个名册不持有的标识 | 404，不带 `Problem.Type` |
+| 资料、转移、删除或改状态点名一个已删除的租户 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantDeleted` |
+| 转移的目标不是活跃成员，或不是账户标识 | 409（`urn:speed:tenant:conflict`），组织写报 `tenant.ErrOwnerNotMember` |
+| 所有者发起的删除观察到所有者已变 | 409（`urn:speed:tenant:conflict`），组织写报 `tenant.ErrOwnerChanged` |
+| 删除路由的调用方既不是平台员工也不是组织所有者 | 403，由 guard 写出 |
 | 发起者视为未验证（`SignupPending`），而这是写路由 | 403 `contact-required`（`authn.ErrContactRequired`），动作不执行 |
-| 状态路由停用一个受保护的租户 | 403（`urn:speed:tenant:protected`），`WriteGuard` 答复拒绝，动作不执行；读失败答 503 |
+| 状态路由停用或删除路由删除一个受保护的租户 | 403（`urn:speed:tenant:protected`），`WriteGuard` 答复拒绝，动作不执行；读失败答 503 |
 | 注册验证状态读取失败 | 503，动作不执行，成因只进日志 |
 | 强制档审计写不进 | 503，动作不执行 |
 | 名册的其余失败、guard 的故障 | 503，不带 `Problem.Type`，成因只进日志 |
@@ -236,20 +275,22 @@ sequenceDiagram
 ## 并发与事务边界
 
 - 模块不持状态，可被多个协程并发使用。
-- **改状态的竞争由名册自己在写入时仲裁。** 一次改状态只写状态两列，不读整行再写回；两个副本同时改同一行时后写者生效，`ErrTenantDeleted` 由名册在写入时判定。过渡期的改名路由不写任何列，因而不参与写竞争。
+- **资料与改状态的竞争由名册自己在写入时仲裁。** 一次资料更新只写四个资料列，一次改状态只写状态两列，两者都不读整行再写回；两个副本同时改同一行时后写者生效，`ErrInvalidProfile` 与 `ErrTenantDeleted` 由名册在写入时判定。
+- **转移与删除的事务和各存储属于自己的写分开。** 这两个动作由 `OrganizationWriter` 开一条事务并取租户锁；本模块在动作之前写的强制档审计不在那条事务里。一次转移与一次所有者发起的删除并发时，锁把两者排成先后，只有一方生效（[design-tenant-ownership](design-tenant-ownership.md) 的并发与事务边界）。
 - **创建不是跨模块原子的，名册行之后的失败留下一个未冻结的角色。** `Provisioner` 按角色、授予、名册行、内置标记、创建者成员关系与绑定的次序写，名册行之后的任一步失败都不回滚名册行，路由答 503。`MarkRoleBuiltin` 失败重试一次；仍失败时租户在册、角色未冻结、创建者的成员关系与绑定未写。名册行之后的失败留下一个角色未被冻结的租户；下一次部署的 seed 会修复它；在那之前该角色照常生效，理论上只有管理面能碰到它，而这落在安全的一侧。seed 在每次运行对账名册里每个非个人租户的角色、授予与内置标记；成员关系与绑定只对 `seed.tenants[].admins` 点名的管理员对账。
-- 模块不开事务：一次动作是一次 `tenant.Catalog` 调用，事务在名册自己的句柄上开，与调用方的事务无处合并（[design-tenant](design-tenant.md)）。
+- **资料、状态与登记的事务在名册自己的句柄上。** 本模块不为它们开事务；一次动作是一次 `tenant.Catalog` 或 `Provisioner` 调用，调用方的事务无处合并（[design-tenant](design-tenant.md)）。转移与删除的事务由 `OrganizationWriter` 开。
 - 强制档审计落在任何事务之外，且在动作之前：审计不落则动作不执行，所以一次被审计拦下的写什么都没改。
-- **别名不是名册的一个写接口。** `Put` 携带另一个别名时以 `ErrInvalidTenant` 拒绝，`Create` 只在插入时写别名（见「登记走 `Create`」与 [design-tenant](design-tenant.md) 的写接口）。
+- **别名不是名册的一个写接口，资料与所有者的写也只动自己的列。** `Put` 携带另一个别名时以 `ErrInvalidTenant` 拒绝，`Create` 只在插入时写别名；`SetProfile` 只写四个资料列，`SetOwner` 只写所有者一列，`Put` 整行写入的形态在这里不可用（见「登记走 `Create`」与 [design-tenant](design-tenant.md) 的写接口）。
 
 ## 实现状态
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 管理面 `tenant.admin`（路由、判定、审计、回绝映射） | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/routes.go` `routes`、`mount`；`pkg/tenant/admin/tenants.go` `handleTenantList`、`handleTenantGet`、`handleTenantCreate`、`handleTenantSetAlias`、`handleTenantSetStatus`；`pkg/tenant/admin/pipeline.go` `require`、`auditRequired`、`answer` |
+| 管理面 `tenant.admin`（路由、判定、审计、回绝映射） | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/routes.go` `routes`、`mount`；`pkg/tenant/admin/tenants.go` `handleTenantList`、`handleTenantGet`、`handleTenantCreate`、`handleTenantTransferOwner`、`handleTenantDelete`、`handleTenantSetProfile`、`handleTenantSetStatus`；`pkg/tenant/admin/pipeline.go` `guardRoute`、`guardDeleteRoute`、`auditRequired`、`failureOf` |
+| 所有者转移与组织删除的平台路由，以及删除路由的所有者分支 | 已实现 | `pkg/tenant/admin/routes.go` `routes`；`pkg/tenant/admin/tenants.go` `handleTenantTransferOwner`、`handleTenantDelete`；`pkg/tenant/admin/pipeline.go` `guardDeleteRoute`；`pkg/tenant/admin/ownership_test.go` |
 | 管理面 `tenant.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/tenant/admin/operations.go`；`pkg/tenant/admin/openapi_generated_test.go`；片段 `pkg/tenant/admin/openapi/tenant.admin.json` |
 | 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/feature_test.go` `TestTheModuleDeclaresTheTenantAdminFeature` |
 | 租户写接口的注册验证门控（视为 `SignupPending` 时答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/tenant/admin/pipeline.go` `(*product).guardRoute`、`(*product).requireVerifiedAccount`；`pkg/tenant/admin/routes.go` `routes`；`pkg/tenant/admin/gate_test.go` |
 | 登记经 `tenant.Provisioner` 建立租户与它的首任租户管理员 | 已实现 | `pkg/tenant/admin/tenants.go` `handleTenantCreate`；`pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/protection.go` `Provisioner` |
-| 状态路由经 `tenant.WriteGuard` 拒绝受保护租户（`system`、个人租户） | 已实现 | `pkg/tenant/admin/tenants.go` `handleTenantSetStatus`；`pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/protection.go` `WriteGuard`、`WriteOp` |
-| 租户视图的 `deleted` 状态与 `disabledBy` 字段，以及墓碑上的改名与改状态拒绝 | 已实现 | `pkg/tenant/admin/views.go` `tenantViewOf`；`pkg/tenant/admin/pipeline.go` `(*product).failureOf`；`pkg/tenant/admin/tenants_test.go` `TestTheViewCarriesTheNamedFieldsPerState`、`TestTheFailureMappingIsClosed` |
+| 状态与删除路由经 `tenant.WriteGuard` 拒绝受保护租户（`system`、个人租户） | 已实现 | `pkg/tenant/admin/tenants.go` `handleTenantSetStatus`、`handleTenantDelete`；`pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/protection.go` `WriteGuard`、`WriteOp` |
+| 租户视图的 `deleted` 状态、资料字段与 `disabledBy` 字段，以及墓碑上的写拒绝 | 已实现 | `pkg/tenant/admin/views.go` `tenantViewOf`；`pkg/tenant/admin/pipeline.go` `failureOf`；`pkg/tenant/admin/tenants_test.go` `TestTheViewCarriesTheNamedFieldsPerState`、`TestTheFailureMappingIsClosed` |
