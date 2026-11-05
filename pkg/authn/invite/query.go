@@ -19,12 +19,72 @@ import (
 // the page's last row, so a later call resumes where this one stopped. An
 // expired pending invitation is listed as it is: it is still a pending row, and
 // hiding it would show an invitation that was sent as one that never was.
+//
+// The management route narrows the page with list and a status filter; this
+// method is the unfiltered listing.
 func (p *product) List(ctx context.Context, tenant string, page authn.Page) ([]Invitation, string, error) {
+	return p.list(ctx, tenant, page, listAll)
+}
+
+// listFilter narrows a listing to one view of an invitation. It is not a stored
+// state: pending and expired are both InvitationPending rows, split by whether
+// the deadline has passed, so expiry needs no sweeper and no write.
+type listFilter uint8
+
+// The views a listing can be narrowed to. The zero value lists every state.
+const (
+	listAll listFilter = iota
+	listPending
+	listExpired
+	listAccepted
+	listRevoked
+)
+
+// parseListFilter reads the status query's value. The empty value lists every
+// invitation; a value outside the closed set is ErrInvalidArgument, which the
+// route answers 400 rather than serving the unfiltered page.
+func parseListFilter(value string) (listFilter, error) {
+	switch value {
+	case "":
+		return listAll, nil
+	case "pending":
+		return listPending, nil
+	case "expired":
+		return listExpired, nil
+	case "accepted":
+		return listAccepted, nil
+	case "revoked":
+		return listRevoked, nil
+	}
+	return listAll, fmt.Errorf("%w: the status is not one of pending, expired, accepted or revoked",
+		authn.ErrInvalidArgument)
+}
+
+// list lists the invitations of a tenant, one page at a time, narrowed by
+// filter. The order, the cursor and the page size are the same whichever filter
+// is applied: one more row than the page is read, so whether another page
+// follows is known without a second query.
+//
+// An expired pending invitation is redeemable up to but not at its deadline,
+// which is the boundary the two pending filters share: pending reads
+// expires_at > now, expired reads expires_at <= now.
+func (p *product) list(ctx context.Context, tenant string, page authn.Page, filter listFilter) ([]Invitation, string, error) {
 	if tenant == "" {
 		return nil, "", nil
 	}
 	limit := page.EffectiveLimit()
+	now := p.at()
 	tx := p.conn(ctx).Where("tenant_id = ?", tenant)
+	switch filter {
+	case listPending:
+		tx = tx.Where("status = ? AND expires_at > ?", statusPending, now)
+	case listExpired:
+		tx = tx.Where("status = ? AND expires_at <= ?", statusPending, now)
+	case listAccepted:
+		tx = tx.Where("status = ?", statusAccepted)
+	case listRevoked:
+		tx = tx.Where("status = ?", statusRevoked)
+	}
 	if page.After != "" {
 		after, err := decodeCursor(page.After)
 		if err != nil {

@@ -6,11 +6,12 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 )
 
-// The audit action names this module writes, one per write route. A read writes
-// no audit row of its own.
+// The audit action names this module writes: one per write route, and the
+// best-effort row a failed notice leaves. A read writes no audit row of its own.
 const (
-	actionIssue  = "authn.invitation.issue"
-	actionRevoke = "authn.invitation.revoke"
+	actionIssue   = "authn.invitation.issue"
+	actionRevoke  = "authn.invitation.revoke"
+	actionDeliver = "authn.invitation.deliver"
 )
 
 // The outcomes this module writes. The permitted value of a mandatory row is
@@ -49,5 +50,17 @@ func failedAudit(action, object, actionID string) audit.Entry {
 		Object:  object,
 		Outcome: outcomeFailed,
 		Detail:  map[string]string{detailActionID: actionID},
+	}
+}
+
+// deliveryAudit builds the best-effort row a failed notice leaves. It names no
+// address and no token: the invitation and its tenant are enough to find the
+// issuance it belongs to, and the action identifier links it to the issue row.
+func deliveryAudit(object, tenant, actionID string) audit.Entry {
+	return audit.Entry{
+		Action:  actionDeliver,
+		Object:  object,
+		Outcome: outcomeFailed,
+		Detail:  map[string]string{detailActionID: actionID, detailTenant: tenant},
 	}
 }

@@ -57,7 +57,13 @@ acceptance itself refuses it, so no sweeper is needed.
   already revoked is an idempotent success.
 - **List** returns a tenant's invitations one page at a time: pending first,
   then by creation time descending and identifier descending. The cursor is
-  opaque and carries the sort key of the page's last row.
+  opaque and carries the sort key of the page's last row. The management read
+  narrows the page with its `status` query: `pending` is a pending row whose
+  deadline has not passed, `expired` is a pending row whose deadline has passed,
+  `accepted` and `revoked` are the terminal stored states, and an absent value
+  lists every state. The two pending views share the stored state — expiry is
+  read from the clock and `ExpiresAt`, never stored — and a value outside the
+  set is refused with 400.
 
 ## Routes and the decision
 
@@ -127,8 +133,13 @@ Without the variable the same test is the drift gate; `make check` runs it.
 - **One pending invitation per tenant and address**, guaranteed by a partial
   unique index and the superseding write of issue. A concurrent issuance of the
   same pair is `ErrInvitationPending`.
-- **The module does not deliver, queue or retry.** It hands the acceptance link
-  to the issuer once and knows nothing of delivery. It does not import the
+- **The module renders nothing and delivers nothing itself.** After a
+  successful management issue it asks the optional `authn.InviteNotifier` seam,
+  bounded to five seconds, and reports the outcome beside the one-time link as
+  `sent`, `failed` or `not_configured`. An absent notifier is `not_configured`,
+  not a failure. A failed notice is logged and closed with a best-effort
+  `authn.invitation.deliver` audit row, and the issue is still answered 201 with
+  its token. The module does not queue or retry, and it does not import the
   tenant module; a tenant identifier is a string here.
 - **The membership source is `invite`**, written into every membership row the
   module creates, so a subscriber of `authn.membership.changed` can tell an

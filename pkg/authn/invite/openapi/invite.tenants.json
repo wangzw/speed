@@ -58,8 +58,17 @@
         "type": "object"
       },
       "AuthnInviteIssued": {
-        "description": "The answer of an issue: the invitation's view together with its one-time acceptance token.",
+        "description": "The answer of an issue: the invitation's view together with its one-time acceptance token and the outcome of the notice.",
         "properties": {
+          "email_delivery": {
+            "description": "How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link.",
+            "enum": [
+              "sent",
+              "failed",
+              "not_configured"
+            ],
+            "type": "string"
+          },
           "invitation": {
             "$ref": "#/components/schemas/AuthnInviteInvitation",
             "description": "The issued invitation; the token is delivered beside it, not inside it."
@@ -71,7 +80,8 @@
         },
         "required": [
           "invitation",
-          "token"
+          "token",
+          "email_delivery"
         ],
         "type": "object"
       },
@@ -136,7 +146,7 @@
   "paths": {
     "/{tenant}/invitations": {
       "get": {
-        "description": "Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.",
+        "description": "Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The status query narrows the page: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states; an absent status lists every state, and a value outside the set is refused with 400. Expiry is derived from the deadline, not stored, so an expired row still reads status pending. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. A read writes no audit row.",
         "operationId": "authn.invite.list",
         "parameters": [
           {
@@ -152,6 +162,20 @@
             "in": "query",
             "name": "after",
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Narrow the page to one view: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states. Omitted lists every state. A value outside this set is refused with 400. Expiry is derived from the deadline, not stored.",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "pending",
+                "expired",
+                "accepted",
+                "revoked"
+              ],
               "type": "string"
             }
           },
@@ -236,7 +260,7 @@
         "summary": "One page of a tenant's invitations"
       },
       "post": {
-        "description": "Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.",
+        "description": "Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201 with its one-time token. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.",
         "operationId": "authn.invite.issue",
         "parameters": [
           {

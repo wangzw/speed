@@ -42,12 +42,13 @@ type AuthnInviteInvitation struct {
 }
 
 // AuthnInviteIssued is the answer of an issue: the invitation's view together
-// with its one-time acceptance token.
+// with its one-time acceptance token and the outcome of the notice.
 type AuthnInviteIssued struct {
-	_ struct{} `description:"The answer of an issue: the invitation's view together with its one-time acceptance token."`
+	_ struct{} `description:"The answer of an issue: the invitation's view together with its one-time acceptance token and the outcome of the notice."`
 
-	Invitation AuthnInviteInvitation `json:"invitation" required:"true" description:"The issued invitation; the token is delivered beside it, not inside it."`
-	Token      string                `json:"token" required:"true" description:"The acceptance token, handed out once"`
+	Invitation    AuthnInviteInvitation `json:"invitation" required:"true" description:"The issued invitation; the token is delivered beside it, not inside it."`
+	Token         string                `json:"token" required:"true" description:"The acceptance token, handed out once"`
+	EmailDelivery string                `json:"email_delivery" required:"true" enum:"sent,failed,not_configured" description:"How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link."`
 }
 
 // AuthnInviteView is the answer of the acceptance read: the invitation a token
@@ -91,11 +92,12 @@ type issueInput struct {
 }
 
 // listInput is the request of a page read: the tenant from the path and the
-// cursor and page cap from the query.
+// cursor, page cap and status from the query.
 type listInput struct {
 	Tenant string `path:"tenant" description:"The string form of the tenant identifier the invitation belongs to; the authn.membership.manage decision is made in this tenant."`
 	Limit  int    `query:"limit" description:"Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400."`
 	After  string `query:"after" description:"Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page."`
+	Status string `query:"status" enum:"pending,expired,accepted,revoked" description:"Narrow the page to one view: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states. Omitted lists every state. A value outside this set is refused with 400. Expiry is derived from the deadline, not stored."`
 }
 
 // revokeInput is the request of a revocation: the tenant and the invitation's
@@ -165,9 +167,11 @@ var issueOperation = speedhttp.NewOperation[issueInput, AuthnInviteIssued](
 		"bytes), then issues a pending invitation. A pending invitation for the same tenant and address "+
 		"is superseded in the same transaction, so its token stops working. expires_at is optional: "+
 		"when absent, the zero instant or the configured lifetime applies (168 hours by default), and "+
-		"a deadline not later than the current time is refused. Requires the "+
-		"authn.membership.manage decision in the tenant; failure to write the mandatory audit row "+
-		"answers 503 without issuing.",
+		"a deadline not later than the current time is refused. When the assembly has an invitation "+
+		"notifier, the acceptance notice is delivered to the address and email_delivery reports "+
+		"sent, failed or not_configured; a failed notice does not undo the invitation, which is still "+
+		"answered 201 with its one-time token. Requires the authn.membership.manage decision in the "+
+		"tenant; failure to write the mandatory audit row answers 503 without issuing.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The address to invite and an optional absolute deadline. Only email is required.",
@@ -196,9 +200,13 @@ var listOperation = speedhttp.NewOperation[listInput, AuthnInvitePage](
 	"One page of a tenant's invitations",
 	"Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, "+
 		"revoked) and then by creation time descending with the identifier as the tie-break. The "+
-		"cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable "+
-		"cursor is refused with 400 rather than served as the first page. Expired pending invitations "+
-		"are still listed with status pending. A read writes no audit row.",
+		"status query narrows the page: pending is a pending invitation whose deadline has not "+
+		"passed, expired is a pending invitation whose deadline has passed, and accepted and revoked "+
+		"are the terminal stored states; an absent status lists every state, and a value outside the "+
+		"set is refused with 400. Expiry is derived from the deadline, not stored, so an expired row "+
+		"still reads status pending. The cursor is opaque: pass the previous page's next_cursor as "+
+		"after to resume, and an unreadable cursor is refused with 400 rather than served as the "+
+		"first page. A read writes no audit row.",
 	nil,
 	speedhttp.Failures(managementFailures,
 		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The page query could not be read", typePrefix+"bad-request"),

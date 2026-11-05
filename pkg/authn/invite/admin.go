@@ -53,7 +53,10 @@ func (p *product) handleIssue(ctx context.Context, in issueInput) (AuthnInviteIs
 		p.auditBestEffort(ctx, failedAudit(actionIssue, in.Tenant, actionID))
 		return AuthnInviteIssued{}, p.answer("issuing an invitation", err)
 	}
-	return issuedViewOf(issued), nil
+	// The notice is best effort: the invitation is issued and its token is the
+	// one-time link whatever the delivery outcome, so the answer stays 201.
+	delivery := p.deliverInvite(ctx, issued, actionID)
+	return issuedViewOf(issued, delivery), nil
 }
 
 // handleList answers GET /admin/tenants/:tenant/invitations: one page of the
@@ -78,7 +81,11 @@ func (p *product) handleList(ctx context.Context, in listInput) (AuthnInvitePage
 	if in.Limit < 0 {
 		return AuthnInvitePage{}, p.badRequest()
 	}
-	invitations, next, err := p.List(ctx, in.Tenant, authn.Page{Limit: in.Limit, After: in.After})
+	filter, err := parseListFilter(in.Status)
+	if err != nil {
+		return AuthnInvitePage{}, p.badRequest()
+	}
+	invitations, next, err := p.list(ctx, in.Tenant, authn.Page{Limit: in.Limit, After: in.After}, filter)
 	if err != nil {
 		return AuthnInvitePage{}, p.answer("listing invitations", err)
 	}

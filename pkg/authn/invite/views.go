@@ -24,12 +24,14 @@ func invitationViewOf(v Invitation) AuthnInviteInvitation {
 	}
 }
 
-// issuedViewOf builds the answer of an issue: the invitation's view and the
-// acceptance token, handed out here once. The token must not be logged.
-func issuedViewOf(issued Issued) AuthnInviteIssued {
+// issuedViewOf builds the answer of an issue: the invitation's view, the
+// acceptance token handed out here once, and the notice's outcome. The token
+// must not be logged.
+func issuedViewOf(issued Issued, delivery authn.InviteDelivery) AuthnInviteIssued {
 	return AuthnInviteIssued{
-		Invitation: invitationViewOf(issued.Invitation),
-		Token:      issued.Token,
+		Invitation:    invitationViewOf(issued.Invitation),
+		Token:         issued.Token,
+		EmailDelivery: delivery.String(),
 	}
 }
 

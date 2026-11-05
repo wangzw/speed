@@ -16,8 +16,11 @@
 // under the base path's /invitations, is public: the token is the whole
 // credential, and there is no identity to read.
 //
-// The module delivers no message and does not retry: an acceptance link is
-// handed to the issuer once, and delivery is the issuer's or the host's.
+// The module renders no message and runs no retry loop. After a successful
+// management issue it asks the optional InviteNotifier seam, bounded to five
+// seconds, and reports the outcome beside the one-time link: a missing notifier
+// is not_configured, and a failed notice is logged and audited best-effort
+// without undoing the invitation.
 package invite
 
 import (
@@ -128,10 +131,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // takes this one in does not pull them in: the host writes them down. The audit
 // capability being required is what makes an assembly without one fail before
 // any instance is built, rather than at the first write. The decision seam, the
-// settings store, the event bus and the logger are taken up in Init and none is
-// required: the absence of a Decider is a legal assembly in which every
-// management request is refused, and without the settings the lifetime reads as
-// its declared default.
+// settings store, the event bus, the invitation notifier and the logger are
+// taken up in Init and none is required: the absence of a Decider is a legal
+// assembly in which every management request is refused, without the settings
+// the lifetime reads as its declared default, and without a notifier the issue
+// answer reports the notice as not_configured.
 //
 // The stance is StateEnabled and never StateAuto: whether to mount the
 // invitation routes is a decision on the command tree, not a conclusion a
@@ -220,12 +224,14 @@ type product struct {
 	audit   audit.Audit
 
 	// The optional capabilities. Each is nil when absent: a missing Decider
-	// refuses every management request, and without the settings the lifetime
-	// reads as its declared default.
-	store   settings.Store
-	bus     event.Bus
-	decider authn.Decider
-	logger  *slog.Logger
+	// refuses every management request, without the settings the lifetime reads
+	// as its declared default, and without a notifier the issuance answer
+	// reports the notice as not_configured.
+	store    settings.Store
+	bus      event.Bus
+	decider  authn.Decider
+	notifier authn.InviteNotifier
+	logger   *slog.Logger
 
 	// mu guards reported, which holds for each fault the one last written, so
 	// that a setting read on every issuance is reported once and not on each.
@@ -306,6 +312,9 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.bus, err = optional[event.Bus](reg, "the event bus"); err != nil {
+		return err
+	}
+	if p.notifier, err = optional[authn.InviteNotifier](reg, "the invitation notifier"); err != nil {
 		return err
 	}
 	if p.bus != nil && p.store != nil {
