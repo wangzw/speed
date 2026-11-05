@@ -177,9 +177,13 @@ function scriptReads(options: {
     if (path.endsWith('/bindings')) {
       return Promise.resolve({ bindings: [] } as T)
     }
-    // The organization settings page's tenant-layer read.
+    // The organization security page's tenant-settings read.
     if (path.endsWith('/settings')) {
-      return Promise.resolve([] as T)
+      return Promise.resolve({
+        settings: [],
+        writable: true,
+        read_only_reason: '',
+      } as T)
     }
     return Promise.reject(new Error(`unexpected request: ${path}`))
   }
@@ -1081,7 +1085,9 @@ describe('the organization admin route admission', () => {
       }),
     })
     expect(
-      await screen.findByRole('heading', { name: tAdmin('settings.title') }),
+      await screen.findByRole('heading', {
+        name: tAdmin('organization.nav.settings'),
+      }),
     ).toBeInTheDocument()
     expect(requested).toContain('/api/v1/tenants/acme/settings')
     // Neither the platform settings read nor any other platform asset is
@@ -1107,7 +1113,9 @@ describe('the organization admin route admission', () => {
       expect(window.location.pathname).toBe('/organization/admin/settings'),
     )
     expect(
-      await screen.findByRole('heading', { name: tAdmin('settings.title') }),
+      await screen.findByRole('heading', {
+        name: tAdmin('organization.nav.settings'),
+      }),
     ).toBeInTheDocument()
     // The denied page's reads were never issued.
     expect(requested).not.toContain('/api/v1/tenants/acme/roles')

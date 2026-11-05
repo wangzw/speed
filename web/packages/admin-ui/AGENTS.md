@@ -7,8 +7,8 @@ shape and one operations seam. The platform surface is the platform-staff
 console; the organization surface is the tenant-scoped half. The
 organization surface ships its context provider, route declarations,
 operation bundle
-and the invitations/membership, SSO, tenant roles/permissions and tenant
-settings page wrappers.
+and the invitations/membership, SSO, tenant roles/permissions and
+security and access page wrappers.
 
 User-visible text in this package calls the tenant an organization
 (「组织」 in the Chinese bundle). The tenancy mechanism keeps its own
@@ -62,7 +62,7 @@ mounted under a host-chosen prefix (`/organization/admin` in the demo)
 inside `@speed/product-shell`. It acts on the
 **current tenant the host supplies** and addresses every request at
 `/api/v1/tenants/{tenant}/...`: invitations and membership, SSO
-providers, tenant roles and permissions, and the tenant settings layer.
+providers, tenant roles and permissions, and security and access.
 It reads nothing under `/api/v1/system`. It does not own or switch the
 current tenant: the host mounts it inside the tenant frame and hands
 `OrganizationAdminProvider` the resolved tenant. The organization surface
@@ -95,8 +95,9 @@ tenant roles, grants and bindings, the tenant member picker in place of
 the platform account search, member-read identities for binding rows, and
 the host's
 `protectedRoles` read-only beside the server's builtin roles. The settings
-wrapper runs the shared settings page in tenant mode: only the tenant
-layer, with the server-reported source column and no layer control. The
+wrapper renders `OrganizationSecurityPage`: the two declared tenant
+admission policies as switches, with their status, effect, impact and the
+platform floor, saving each switch on its own and rendering no table. The
 shared pages render through `AdminPageHeader`, which prefers the
 organization breadcrumb context and falls back to the page's own platform
 trail otherwise, so neither surface leaks the other's trail.
@@ -229,7 +230,7 @@ tenant detail, the audit detail) carries neither, so it is reachable from
 a row without appearing in the navigation.
 
 The `organizationAdminRoutes` table declares invitations and membership, SSO
-providers, tenant roles and permissions, and the tenant settings layer.
+providers, tenant roles and permissions, and security and access.
 Its declarations carry the tenant-domain permission codes
 (`authn.membership.manage`, `authn.idp.manage`,
 `authz.tenant.role.read`, `settings.tenant.read`) and the tenant-scoped
@@ -330,8 +331,8 @@ What the pages reach through the bundle, grouped by surface:
 The organization surface reads through `OrganizationAdminOperations`:
 `/api/v1/tenants/{tenant}/invitations` and `/members`, the tenant's SSO
 providers, the tenant settings members
-(`useTenantSettingsList`, `useTenantSettingsRead`,
-`useTenantSettingsWrite`, `useTenantSettingsRemove`) and the tenant
+(`useTenantSettingsList`, `useTenantSettingsWrite`,
+`useTenantSettingsRemove`) and the tenant
 authorization members (`useTenantRoles`, `useTenantPermissions`,
 `useTenantGrants`, `useTenantBindings`, `useTenantAccountBindings`,
 `useTenantWriteRole`, `useTenantRemoveRole`, `useTenantGrantPermission`,
@@ -353,11 +354,18 @@ The view types are the generated response rows of each module's admin
 surface, named for the admin's own pages; only the write inputs stay
 hand-written, because they carry route parameters beside the body.
 
-The settings route addresses an item by its namespace and **the rest of
-the key under it** (`:key`), the full key being `<namespace>.<key>` — and
-a module name may itself contain a dot (`authn.session`), so the rest
-cannot be derived by splitting on the first dot. `settingKeyRest(fullKey,
-namespace)` computes the rest.
+The platform settings route addresses an item by its namespace and **the
+rest of the key under it** (`:key`), the full key being `<namespace>.<key>`
+— and a module name may itself contain a dot (`authn.session`), so the
+rest cannot be derived by splitting on the first dot.
+`settingKeyRest(fullKey, namespace)` computes the rest. The tenant security
+page receives only the full key and splits it at its last dot, the item
+segment carrying no dot of its own.
+
+`useTenantSettingsList` returns the surface's envelope
+(`settings`, `writable`, `read_only_reason`) rather than a bare row array:
+the wrapper page renders the two policies, and a protected tenant's answer
+is read-only as a whole.
 
 ### The write request bodies are declared by the platform fragment
 
@@ -503,8 +511,10 @@ request body.
   reachable code, so a refusal renders its own text rather than the
   generic fallback. A new write surface extends the whitelist with the
   codes it can meet. The tenant settings write can be answered with 403
-  `settings.protected`; the whitelist carries that code and both bundles
-  carry its leaf, so the refusal renders its own text. An address an
+  `settings.protected`, 403 `settings.read_only`, 409
+  `settings.tenant_admission_enforced` or 422 `settings.masked_value`; the
+  whitelist carries those codes and both bundles carry their leaves, so
+  each refusal renders its own text. An address an
   account create or identifier add collides with is the 409
   `authn.email_taken`, whose text names the address as already registered
   and asks for another -- an actionable refusal, not a restated status.
@@ -581,10 +591,13 @@ and the platform roster is never read. The invitations
 suite additionally covers tenant mode: the member write form absent, the
 inviter identity resolved from the members read, the member account
 column showing the recorded identifier, and an inviter that read cannot
-resolve left marked. The settings suite covers tenant mode: only the
-tenant endpoints are read and written, the query key is tenant-prefixed,
-and each row's source column prints the server-reported layer. The
-permissions suite covers tenant mode: the governed catalog, the member
+resolve left marked. The security page's suite covers the two declared
+policies only, the platform-enforced read-only switch, the two-step
+confirmation before turning a policy off, optimistic save and rollback on
+refusal, the protected tenant's switch-less read-only page, both
+languages, and axe. The platform settings suite covers the platform
+key/value table and its editable numeric inputs. The permissions suite
+covers tenant mode: the governed catalog, the member
 picker, member-read binding identities, and the host's protected roles
 read-only beside the builtin ones.
 

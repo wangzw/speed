@@ -81,7 +81,7 @@ import type {
   NotificationMessage,
   NotificationType,
   SettingsAdminSetting,
-  SettingsTenantAdminSetting,
+  SettingsTenantAdminSettings,
   SmsAdminTemplatesList200,
   TenantAdminTenant,
   TenantAdminTenantsGet200,
@@ -255,20 +255,53 @@ const TENANT_BINDING: AuthzTenantAdminBindingView = {
   tenant: TENANT.id,
 }
 
-/** One declared setting as the tenant layer reports it: the scan tenant holds
- * an explicit row, so the page marks it overridden. */
-const TENANT_SETTING: SettingsTenantAdminSetting = {
-  key: 'example.key',
-  namespace: 'example',
-  type: 'string',
-  description: 'An example setting',
-  domain: '',
-  sensitive: false,
-  default: 'value',
-  written: 'value',
-  has_row: true,
-  value: 'value',
-  source: 'tenant',
+/** The two sign-in policies the organization security page manages, as the
+ * tenant read reports them. The scan tenant is writable and neither policy
+ * is platform-enforced, so both switches render. */
+const TENANT_SETTINGS: SettingsTenantAdminSettings = {
+  settings: [
+    {
+      key: 'tenant.admission.require-mfa',
+      title: 'Require multi-factor authentication',
+      description: 'Members must sign in with a second factor.',
+      type: 'bool',
+      control: 'switch',
+      danger: 'critical',
+      effect: 'immediate',
+      tenant_access: 'read-write',
+      effective_value: 'true',
+      platform_value: 'false',
+      tenant_value: 'true',
+      locked_by_platform: false,
+      has_row: true,
+      source: 'tenant',
+    },
+    {
+      key: 'tenant.admission.require-sso',
+      title: 'Require enterprise single sign-on',
+      description:
+        "Members must sign in through the organization's identity provider.",
+      type: 'bool',
+      control: 'switch',
+      danger: 'critical',
+      effect: 'immediate',
+      tenant_access: 'read-write',
+      effective_value: 'false',
+      platform_value: 'false',
+      tenant_value: 'false',
+      locked_by_platform: false,
+      has_row: false,
+      source: 'default',
+    },
+  ],
+  writable: true,
+  read_only_reason: '',
+}
+
+const EMPTY_TENANT_SETTINGS: SettingsTenantAdminSettings = {
+  settings: [],
+  writable: true,
+  read_only_reason: '',
 }
 
 const SMS_TEMPLATE: SmsAdminTemplatesList200['templates'][number] = {
@@ -647,22 +680,10 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
       { bindings: [] } satisfies AuthzTenantadminBindingsOf200,
     ),
   ],
-  // The organization settings page reads the tenant layer's whole declared set;
-  // the namespace read stays disabled while the "all namespaces" entry is
-  // chosen, so only the table invariant reaches its answer.
+  // The organization security page reads the two tenant-facing policies.
   [
     /^\/api\/v1\/tenants\/[^/]+\/settings$/,
-    answer(
-      [TENANT_SETTING] satisfies SettingsTenantAdminSetting[],
-      [] satisfies SettingsTenantAdminSetting[],
-    ),
-  ],
-  [
-    /^\/api\/v1\/tenants\/[^/]+\/settings\/[^/]+$/,
-    answer(
-      [TENANT_SETTING] satisfies SettingsTenantAdminSetting[],
-      [] satisfies SettingsTenantAdminSetting[],
-    ),
+    answer(TENANT_SETTINGS, EMPTY_TENANT_SETTINGS),
   ],
   [
     /^\/api\/v1\/system\/tenants\/[^/]+\/roles\/[^/]+\/grants$/,

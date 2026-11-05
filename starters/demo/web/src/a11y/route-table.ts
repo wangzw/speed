@@ -201,9 +201,9 @@ export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
   ).permissions.title,
   '/organization/admin/settings': (
     adminUiResources['en-US'] as unknown as {
-      readonly settings: { readonly title: string }
+      readonly organization: { readonly nav: { readonly settings: string } }
     }
-  ).settings.title,
+  ).organization.nav.settings,
 }
 
 /**

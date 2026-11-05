@@ -40,10 +40,7 @@ const TENANT = 'acme'
 /** The generated operation bodies the read probe's requests answer with. */
 function readResponder(call: ObservedCall): unknown {
   if (call.path === `/api/v1/tenants/${TENANT}/settings`) {
-    return []
-  }
-  if (call.path === `/api/v1/tenants/${TENANT}/settings/app`) {
-    return []
+    return { settings: [], writable: true, read_only_reason: '' }
   }
   if (call.path === `/api/v1/tenants/${TENANT}/roles`) {
     return { roles: [] }
@@ -66,14 +63,12 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
     function ReadProbe() {
       const operations = useOrganizationAdminOperations()
       const settings = operations.useTenantSettingsList(TENANT)
-      const namespace = operations.useTenantSettingsRead(TENANT, 'app')
       const roles = operations.useTenantRoles(TENANT)
       const permissions = operations.useTenantPermissions(TENANT)
       const grants = operations.useTenantGrants(TENANT, 'tenant-admin')
       const bindings = operations.useTenantBindings(TENANT)
       const settled = [
         settings,
-        namespace,
         roles,
         permissions,
         grants,
@@ -90,7 +85,6 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
         `/api/v1/tenants/${TENANT}/roles`,
         `/api/v1/tenants/${TENANT}/roles/tenant-admin/grants`,
         `/api/v1/tenants/${TENANT}/settings`,
-        `/api/v1/tenants/${TENANT}/settings/app`,
       ].sort(),
     )
     for (const call of calls) {
@@ -353,23 +347,30 @@ describe('the organization declarations for roles and settings', () => {
 
 describe('the organization settings wrapper', () => {
   const SETTING = {
-    key: 'app.mode',
-    namespace: 'app',
-    type: 'string',
-    description: 'How the app runs',
-    domain: '',
-    sensitive: false,
-    default: 'off',
-    written: 'on',
-    has_row: true,
-    value: 'on',
-    source: 'tenant',
-  }
+    key: 'tenant.admission.require-mfa',
+    title: 'Require multi-factor authentication',
+    description: 'Members must sign in with a second factor.',
+    type: 'bool',
+    control: 'switch',
+    danger: 'critical',
+    effect: 'immediate',
+    tenant_access: 'read-write',
+    effective_value: 'false',
+    platform_value: 'false',
+    tenant_value: 'false',
+    locked_by_platform: false,
+    has_row: false,
+    source: 'default',
+  } as const
 
   it('pins the page to the current tenant and reads no platform settings', async () => {
     const calls = bindAdminRequest((call) => {
       if (call.path === `/api/v1/tenants/${TENANT}/settings`) {
-        return [SETTING]
+        return {
+          settings: [SETTING],
+          writable: true,
+          read_only_reason: '',
+        }
       }
       throw new Error(`unexpected request: ${call.method} ${call.path}`)
     })
@@ -382,7 +383,9 @@ describe('the organization settings wrapper', () => {
         <OrganizationSettingsPage />
       </OrganizationAdminProvider>,
     )
-    expect(await screen.findByText('app.mode')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Require multi-factor authentication'),
+    ).toBeInTheDocument()
     expect(calls.length).toBeGreaterThan(0)
     for (const call of calls) {
       expect(call.path.startsWith(`/api/v1/tenants/${TENANT}/`)).toBe(true)
@@ -454,7 +457,6 @@ describe('the organization operations bundle', () => {
     const members = Object.keys(organizationAdminOperations)
     for (const member of [
       'useTenantSettingsList',
-      'useTenantSettingsRead',
       'useTenantSettingsWrite',
       'useTenantSettingsRemove',
       'useTenantRoles',

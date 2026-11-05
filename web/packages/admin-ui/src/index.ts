@@ -185,7 +185,8 @@ export {
   type AdminTenantRelatedPage,
   type TenantDetailPageProps,
 } from './TenantDetailPage.js'
-export { SettingsPage, type SettingsPageProps } from './SettingsPage.js'
+export { SettingsPage } from './SettingsPage.js'
+export { OrganizationSecurityPage } from './OrganizationSecurityPage.js'
 export { AuditPage } from './AuditPage.js'
 export {
   AuditDetailPage,
@@ -247,6 +248,7 @@ export {
   type AdminTenantSetSettingInput,
   type AdminTenantSetting,
   type AdminTenantSettingSource,
+  type AdminTenantSettings,
   type AdminTenantWriteRoleInput,
   type OrganizationAdminOperations,
   type OrganizationAdminOperationsProviderProps,

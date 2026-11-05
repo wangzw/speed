@@ -6,7 +6,7 @@ shape and one operations seam. The platform surface is the platform-staff
 console; the organization surface is the tenant-scoped half, mounted inside
 the tenant shell. The organization surface ships its context provider, route
 declarations, operations bundle and the invitations/membership, SSO,
-tenant roles/permissions and tenant settings page wrappers.
+tenant roles/permissions and security and access page wrappers.
 
 User-visible text in this package calls the tenant an organization
 (「组织」 in the Chinese bundle). The tenancy mechanism keeps its own
@@ -80,7 +80,7 @@ mounted under a host-chosen prefix (`/organization/admin` in the demo)
 inside `@speed/product-shell`. It acts on the current
 tenant the host supplies and addresses every request at
 `/api/v1/tenants/{tenant}/...`: invitations and membership, SSO providers,
-tenant roles and permissions, and the tenant settings layer. It reads
+tenant roles and permissions, and security and access. It reads
 nothing under `/api/v1/system`, holds no tenant selector, and renders no
 `AppShell`; `OrganizationAdminProvider` installs only the organization contexts,
 because the tenant frame already renders the shell.
@@ -107,8 +107,10 @@ grants and bindings, the member picker that replaces the platform account
 search, the member-read identity for binding rows, and the host's
 `protectedRoles`
 rendered read-only beside the server's builtin roles. The settings wrapper
-runs the shared settings page in tenant mode: only the tenant layer, with
-the server-reported source column. The shared pages render through the
+renders `OrganizationSecurityPage`: the two declared tenant admission
+policies as switches, each saving on its own, platform-enforced policies
+read-only, and a protected tenant's page read-only with no switches. The
+shared pages render through the
 package-internal `AdminPageHeader`, which prefers the organization
 breadcrumb context and falls back to the page's own platform trail
 otherwise. The `OrganizationAdminOperations` bundle carries
@@ -263,20 +265,22 @@ feature-gated control without importing the host's session package.
 | `PermissionsPage.tsx` | `PermissionsPage`, `PermissionsPageProps` |
 | `InvitationsPage.tsx` | `InvitationsPage`, `InvitationsPageProps` |
 | `SsoPage.tsx` | `SsoPage`, `SsoPageProps` |
-| `SettingsPage.tsx` | `SettingsPage`, `SettingsPageProps` |
+| `SettingsPage.tsx` | `SettingsPage` |
+| `OrganizationSecurityPage.tsx` | `OrganizationSecurityPage`, `OrganizationSecurityPageProps` |
 | `SmsPage.tsx` | `SmsPage` |
 | `AuditPage.tsx` | `AuditPage` |
 | `AuditDetailPage.tsx` | `AuditDetailPage`, `AuditDetailPageProps` |
 | `resources.ts` | `ADMIN_UI_NAMESPACE`, `adminUiResources` |
 | `OrganizationAdminProvider.tsx` | `OrganizationAdminProvider`, `OrganizationAdminProviderProps`, `OrganizationAdminContextValue`, `useOrganizationAdminContext`, `useOrganizationAdminTenant`, `useOrganizationAdminProtectedRoles` |
 | `OrganizationAdminBreadcrumb.tsx` | `OrganizationAdminBreadcrumbProvider`, `OrganizationAdminBreadcrumbProviderProps`, `useOrganizationAdminBreadcrumbs` |
-| `organization-operations.tsx` | `OrganizationAdminOperations`, `organizationAdminOperations`, `OrganizationAdminOperationsProvider`, `OrganizationAdminOperationsProviderProps`, `useOrganizationAdminOperations`, `AdminTenantSetting`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
+| `organization-operations.tsx` | `OrganizationAdminOperations`, `organizationAdminOperations`, `OrganizationAdminOperationsProvider`, `OrganizationAdminOperationsProviderProps`, `useOrganizationAdminOperations`, `AdminTenantSetting`, `AdminTenantSettings`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
 | `organization-routes.tsx` | `organizationAdminRoutes` |
 | `organization-pages.tsx` | `OrganizationInvitationsPage`, `OrganizationSsoPage`, `OrganizationPermissionsPage`, `OrganizationSettingsPage` |
 
 The organization surface's wrappers, declarations and tenant-mode behaviour
-all ship: the settings page reads and writes only the tenant layer and
-renders the server-reported source column; the roles page reads the
+all ship: the settings wrapper reads and writes the two tenant admission
+policies as switches under `/api/v1/tenants/{tenant}/settings`; the roles
+page reads the
 governed catalog and fills its account pickers and recorded identities
 from the tenant's member read. The shared platform pages are unchanged
 when the tenant-mode options are absent.
@@ -460,10 +464,10 @@ the current tenant:
   two account pickers from the tenant's member read instead of the
   platform account search, resolves binding-row identities from that same
   member read, and renders the host's protected roles read-only;
-- the settings page is given the current tenant and `tenantMode`: it
-  reads and writes only `/api/v1/tenants/{tenant}/settings`, renders no
-  layer control, and shows the server-reported source layer
-  (`tenant`, `global`, `default`) in its own column.
+- the settings wrapper is given the current tenant: it reads
+  `/api/v1/tenants/{tenant}/settings`, renders the two declared admission
+  policies as switches, saves each switch on its own, and draws a
+  platform-enforced policy as read-only.
 
 None of the four wrappers issues an `/api/v1/system` request.
 

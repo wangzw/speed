@@ -65,7 +65,10 @@
     "settings": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
       "invalid_value": "该值超出了此设置允许的范围。",
-      "protected": "该设置由部署方保护，无法修改。"
+      "protected": "该设置由部署方保护，无法修改。",
+      "read_only": "该设置为只读，不能修改。",
+      "tenant_admission_enforced": "该策略已由平台强制启用，组织不能关闭。",
+      "masked_value": "这是用于显示的掩码值，不能写回。"
     },
     "sms": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
@@ -92,7 +95,61 @@
       "invitations": "成员与邀请",
       "sso": "SSO 提供方",
       "roles": "角色与权限",
-      "settings": "设置"
+      "settings": "安全与访问"
+    },
+    "security": {
+      "section": {
+        "title": "登录策略",
+        "description": "这些策略作用于本组织的全部成员。"
+      },
+      "mfa": {
+        "title": "要求多因素认证",
+        "description": "成员登录时必须使用第二因素。",
+        "impact": "成员将不再被要求使用第二因素。"
+      },
+      "sso": {
+        "title": "要求企业单点登录",
+        "description": "成员必须通过本组织自己的身份提供方登录。",
+        "impact": "成员将不再被要求通过组织自己的身份提供方登录。"
+      },
+      "status": {
+        "platformEnforced": "平台强制启用",
+        "enabled": "已启用",
+        "disabled": "未启用"
+      },
+      "field": {
+        "effect": "生效范围",
+        "impact": "关闭影响",
+        "line": "{{label}}：{{value}}"
+      },
+      "effect": {
+        "immediate": "保存后立即生效"
+      },
+      "impact": {
+        "generic": "关闭后，本组织的成员将不再受该策略约束。"
+      },
+      "platformLocked": "平台已强制启用，组织不能关闭。",
+      "switchAria": "切换「{{title}}」",
+      "saved": "已保存",
+      "confirm": {
+        "title": "关闭「{{title}}」",
+        "message": "{{impact}}确定关闭吗？"
+      },
+      "readOnly": {
+        "title": "此组织为只读",
+        "description": "该组织由部署方保护，安全策略不能在这里修改。"
+      },
+      "auditNote": "这些变更会写入审计记录。",
+      "loading": "正在加载安全策略",
+      "empty": {
+        "title": "没有可设置的安全策略",
+        "description": "本组织当前没有可管理的登录策略。"
+      },
+      "error": {
+        "title": "安全策略加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "retry": "重试"
     }
   },
   "common": {

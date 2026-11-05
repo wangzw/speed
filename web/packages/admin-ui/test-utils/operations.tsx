@@ -108,7 +108,7 @@ import type {
   AdminTenantRole,
   AdminTenantRoleRef,
   AdminTenantSetSettingInput,
-  AdminTenantSetting,
+  AdminTenantSettings,
   AdminTenantWriteRoleInput,
   OrganizationAdminOperations,
 } from '../src/organization-operations.js'
@@ -216,11 +216,7 @@ export interface AdminBackend {
   claimSsoDomain: (input: AdminClaimSsoDomainInput) => Promise<AdminSsoVerifyToken>
 
   // Tenant management surfaces (the organization bundle's own members).
-  listTenantSettings: (tenant: string) => Promise<readonly AdminTenantSetting[]>
-  listTenantSettingNamespace: (
-    tenant: string,
-    namespace: string,
-  ) => Promise<readonly AdminTenantSetting[]>
+  listTenantSettings: (tenant: string) => Promise<AdminTenantSettings>
   writeTenantSetting: (input: AdminTenantSetSettingInput) => Promise<void>
   removeTenantSetting: (input: AdminTenantRemoveSettingInput) => Promise<void>
   listTenantRoles: (tenant: string) => Promise<readonly AdminTenantRole[]>
@@ -339,8 +335,12 @@ export function makeAdminBackend(
     updateSsoProvider: () => Promise.resolve(providerFixture()),
     claimSsoDomain: () => Promise.resolve({ verify_token: 'token' }),
 
-    listTenantSettings: () => Promise.resolve([]),
-    listTenantSettingNamespace: () => Promise.resolve([]),
+    listTenantSettings: () =>
+      Promise.resolve({
+        settings: [],
+        writable: true,
+        read_only_reason: '',
+      }),
     writeTenantSetting: () => Promise.resolve(),
     removeTenantSetting: () => Promise.resolve(),
     listTenantRoles: () => Promise.resolve([]),
@@ -516,9 +516,6 @@ const SMS_TEMPLATES_KEY = ['console-test', 'sms-templates'] as const
  * rows. */
 function tenantSettingsKey(tenant: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-settings')
-}
-function tenantSettingNamespaceKey(tenant: string, namespace: string) {
-  return tenantQueryKey(tenant, 'console-test', 'tenant-settings', namespace)
 }
 function tenantRolesKey(tenant: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-roles')
@@ -1109,20 +1106,6 @@ export function createAdminOperations(
         queryFn: () => backend.listTenantSettings(tenant),
         enabled: tenant !== '',
       }),
-    useTenantSettingsRead: (tenant, namespace) => {
-      const list = useQuery({
-        queryKey: tenantSettingsKey(tenant),
-        queryFn: () => backend.listTenantSettings(tenant),
-        enabled: tenant !== '',
-      })
-      const one = useQuery({
-        queryKey: tenantSettingNamespaceKey(tenant, namespace ?? ''),
-        queryFn: () =>
-          backend.listTenantSettingNamespace(tenant, namespace ?? ''),
-        enabled: tenant !== '' && namespace !== undefined && namespace !== '',
-      })
-      return namespace === undefined ? list : one
-    },
     useTenantSettingsWrite: () => {
       const client = useQueryClient()
       return useMutation({
@@ -1131,9 +1114,6 @@ export function createAdminOperations(
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({
             queryKey: tenantSettingsKey(input.tenant),
-          })
-          void client.invalidateQueries({
-            queryKey: tenantSettingNamespaceKey(input.tenant, input.namespace),
           })
         },
       })
@@ -1146,9 +1126,6 @@ export function createAdminOperations(
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({
             queryKey: tenantSettingsKey(input.tenant),
-          })
-          void client.invalidateQueries({
-            queryKey: tenantSettingNamespaceKey(input.tenant, input.namespace),
           })
         },
       })

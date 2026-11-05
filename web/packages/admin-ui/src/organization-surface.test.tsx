@@ -397,7 +397,6 @@ describe('OrganizationAdminProvider', () => {
         'useTenantRevokePermission',
         'useTenantRoles',
         'useTenantSettingsList',
-        'useTenantSettingsRead',
         'useTenantSettingsRemove',
         'useTenantSettingsWrite',
         'useTenantUnbindRole',

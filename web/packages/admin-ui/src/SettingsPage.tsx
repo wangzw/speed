@@ -27,14 +27,10 @@
  * down one long column, so
  * the list stays a fixed height however many settings a deployment
  * declares. The judgement a write lands under is layered and
- * server-side (the tenant layer in that tenant's domain, the global
- * layer on the platform); this page renders the answer and nothing else.
- * In tenant mode the page reads and writes only the current tenant's
- * layer, addressed by the tenant the wrapper supplies as a path segment,
- * and renders no layer control. Its rows then also carry the layer the
- * server resolved each value from (`tenant`, `global` or `default`); the
- * page shows that reported value in a source column instead of inferring
- * it from the row's state.
+ * server-side (the global layer on the platform); this page renders the
+ * answer and nothing else. The organization surface does not mount this
+ * page: it renders `OrganizationSecurityPage`, which manages the two
+ * declared tenant policies as switches.
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A sensitive
  * item's value arrives already masked by the server; the page renders the
@@ -121,13 +117,6 @@ import type {
   AdminSetSettingInput,
   AdminSetting,
 } from './operations.js'
-import {
-  useOrganizationAdminOperations,
-  type AdminTenantRemoveSettingInput,
-  type AdminTenantSetSettingInput,
-  type AdminTenantSettingSource,
-  type OrganizationAdminOperations,
-} from './organization-operations.js'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 
 /** The sentinel the "all namespaces" navigation entry selects. */
@@ -150,29 +139,10 @@ function settingState(setting: AdminSetting): SettingState {
   return setting.has_row ? 'overridden' : 'default'
 }
 
-export interface SettingsPageProps {
-  /**
-   * A controlled tenant scope for the organization surface. When given with
-   * `tenantMode`, the page reads and writes the tenant's settings layer and
-   * does not touch the platform's global layer.
-   */
-  readonly tenant?: string
-  /**
-   * Tenant mode: the organization surface's configuration of the same page.
-   * The page reads and writes `/api/v1/tenants/{tenant}/settings` through
-   * the organization operations bundle, with the tenant as the path segment,
-   * and never addresses `/api/v1/system/settings`.
-   */
-  readonly tenantMode?: boolean
-}
+/** A row the page renders. */
+type SettingsRow = AdminSetting
 
-/** A row the page renders: the platform row, plus the tenant surface's
- * server-reported source layer. The platform read carries no `source`. */
-type SettingsRow = AdminSetting & {
-  readonly source?: AdminTenantSettingSource
-}
-
-/** The data operations the settings body runs, in either surface's shape. */
+/** The data operations the settings body runs. */
 interface SettingsOperations {
   readonly useList: () => UseQueryResult<readonly SettingsRow[], unknown>
   readonly useNamespace: (
@@ -188,11 +158,6 @@ interface SettingsOperations {
     unknown,
     AdminRemoveSettingInput
   >
-  /** Whether rows report the layer the server resolved the value from.
-   * True on the tenant surface, whose read spans the tenant layer, the
-   * global layer and the declaration; false on the platform surface,
-   * which reads one layer only. */
-  readonly showsSource: boolean
 }
 
 /** The platform surface's data operations: the global layer's reads and
@@ -205,87 +170,16 @@ function usePlatformSettingsOperations(
     useNamespace: (namespace) => operations.useSettings(namespace),
     useSetSetting: () => operations.useSetSetting(),
     useRemoveSetting: () => operations.useRemoveSetting(),
-    showsSource: false,
-  }
-}
-
-/** Binds the tenant argument into a tenant settings write's input, so the
- * body's write call keeps the platform surface's input shape. */
-function boundTenantSettingWrite(
-  mutation: UseMutationResult<void, unknown, AdminTenantSetSettingInput>,
-  tenant: string,
-): UseMutationResult<void, unknown, AdminSetSettingInput> {
-  return {
-    ...mutation,
-    mutate: (input, options) =>
-      mutation.mutate({ ...input, tenant }, options),
-    mutateAsync: (input, options) =>
-      mutation.mutateAsync({ ...input, tenant }, options),
-  }
-}
-
-/** Binds the tenant argument into a tenant settings remove's target. */
-function boundTenantSettingRemove(
-  mutation: UseMutationResult<void, unknown, AdminTenantRemoveSettingInput>,
-  tenant: string,
-): UseMutationResult<void, unknown, AdminRemoveSettingInput> {
-  return {
-    ...mutation,
-    mutate: (input, options) =>
-      mutation.mutate({ ...input, tenant }, options),
-    mutateAsync: (input, options) =>
-      mutation.mutateAsync({ ...input, tenant }, options),
-  }
-}
-
-/** The organization surface's data operations: the current tenant's layer. */
-function useTenantSettingsOperations(
-  operations: OrganizationAdminOperations,
-  tenant: string,
-): SettingsOperations {
-  return {
-    useList: () => operations.useTenantSettingsList(tenant),
-    // The "all namespaces" entry reads the whole list; a chosen namespace
-    // reads that namespace. Both hooks run every render, and the namespace
-    // read stays disabled while no namespace is chosen, so the all-entries
-    // view issues one list read rather than a malformed namespace read.
-    useNamespace: (namespace) => {
-      const list = operations.useTenantSettingsList(tenant)
-      const one = operations.useTenantSettingsRead(tenant, namespace)
-      return namespace === undefined ? list : one
-    },
-    useSetSetting: () =>
-      boundTenantSettingWrite(operations.useTenantSettingsWrite(), tenant),
-    useRemoveSetting: () =>
-      boundTenantSettingRemove(operations.useTenantSettingsRemove(), tenant),
-    showsSource: true,
   }
 }
 
 /**
- * The settings page. Without `tenantMode` it renders the platform surface's
- * global layer; with it, the organization surface's current-tenant layer.
+ * The settings page: the platform surface's global layer. The organization
+ * surface does not mount this page; it renders `OrganizationSecurityPage`.
  */
-export function SettingsPage({
-  tenant,
-  tenantMode = false,
-}: SettingsPageProps = {}) {
-  return tenantMode ? (
-    <TenantSettingsPage tenant={tenant ?? ''} />
-  ) : (
-    <PlatformSettingsPage />
-  )
-}
-
-function PlatformSettingsPage() {
+export function SettingsPage() {
   const operations = useAdminOperations()
   const data = usePlatformSettingsOperations(operations)
-  return <SettingsPageBody operations={data} />
-}
-
-function TenantSettingsPage({ tenant }: { readonly tenant: string }) {
-  const operations = useOrganizationAdminOperations()
-  const data = useTenantSettingsOperations(operations, tenant)
   return <SettingsPageBody operations={data} />
 }
 
@@ -496,28 +390,9 @@ function SettingsPageBody({
     })
   }
 
-  // The tenant surface's read spans three layers, so its rows carry the
-  // layer the server resolved each value from. The cell renders that field
-  // verbatim (through the message catalogue) and derives nothing: a value
-  // that fell back to the global layer reads `global` although the tenant
-  // layer holds no row of its own.
-  const sourceColumn: DataTableColumn<SettingsRow> = {
-    id: 'source',
-    header: t('settings.column.source'),
-    cellWrap: 'nowrap',
-    cell: (setting) => (
-      <Typography variant="body2" color="text.secondary">
-        {setting.source === undefined
-          ? ''
-          : t(`settings.source.${setting.source}`)}
-      </Typography>
-    ),
-  }
-
   // The table's columns: the item's key (with its sensitive marker), its
-  // declared type, its editable value, the row's state and -- on the
-  // tenant surface, whose rows report it -- the layer the value came from,
-  // then the row's remove control.
+  // declared type, its editable value, the row's state, then the row's
+  // remove control.
   const columns: DataTableColumn<SettingsRow>[] = [
     {
       id: 'key',
@@ -634,7 +509,6 @@ function SettingsPageBody({
         </Typography>
       ),
     },
-    ...(operations.showsSource ? [sourceColumn] : []),
     {
       id: 'actions',
       header: t('settings.column.actions'),

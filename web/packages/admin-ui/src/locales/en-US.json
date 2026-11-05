@@ -65,7 +65,10 @@
     "settings": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
       "invalid_value": "That value is outside the range this setting allows.",
-      "protected": "This setting is protected by the deployment and cannot be changed."
+      "protected": "This setting is protected by the deployment and cannot be changed.",
+      "read_only": "This setting is read-only and cannot be changed.",
+      "tenant_admission_enforced": "The platform enforces this policy, so the organization cannot turn it off.",
+      "masked_value": "This is a masked value shown for display and cannot be written back."
     },
     "sms": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
@@ -92,7 +95,61 @@
       "invitations": "Members & invitations",
       "sso": "SSO providers",
       "roles": "Roles & permissions",
-      "settings": "Settings"
+      "settings": "Security & access"
+    },
+    "security": {
+      "section": {
+        "title": "Sign-in policies",
+        "description": "These policies apply to every member of this organization."
+      },
+      "mfa": {
+        "title": "Require multi-factor authentication",
+        "description": "Members must sign in with a second factor.",
+        "impact": "Members will no longer be required to use a second factor."
+      },
+      "sso": {
+        "title": "Require enterprise single sign-on",
+        "description": "Members must sign in through one of this organization's own identity providers.",
+        "impact": "Members will no longer be required to sign in through the organization's own identity provider."
+      },
+      "status": {
+        "platformEnforced": "Enforced by the platform",
+        "enabled": "Enabled",
+        "disabled": "Not enabled"
+      },
+      "field": {
+        "effect": "Applies to",
+        "impact": "If turned off",
+        "line": "{{label}}: {{value}}"
+      },
+      "effect": {
+        "immediate": "All members as soon as it is saved"
+      },
+      "impact": {
+        "generic": "Members of this organization will no longer be bound by this policy."
+      },
+      "platformLocked": "The platform enforces this policy, so the organization cannot turn it off.",
+      "switchAria": "Toggle {{title}}",
+      "saved": "Saved",
+      "confirm": {
+        "title": "Turn off {{title}}",
+        "message": "{{impact}} Turn it off?"
+      },
+      "readOnly": {
+        "title": "This organization is read-only",
+        "description": "The deployment protects this organization, so its security policies cannot be changed here."
+      },
+      "auditNote": "These changes are written to the audit record.",
+      "loading": "Loading security policies",
+      "empty": {
+        "title": "No security policies to configure",
+        "description": "This organization has no sign-in policies to manage."
+      },
+      "error": {
+        "title": "Security policies could not be loaded",
+        "description": "This content didn't load. Try again shortly."
+      },
+      "retry": "Try again"
     }
   },
   "common": {

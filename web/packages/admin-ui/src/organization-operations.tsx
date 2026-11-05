@@ -80,8 +80,6 @@ import {
   getAuthzTenantadminPermissionsListQueryOptions,
   getAuthzTenantadminRolesListQueryKey,
   getAuthzTenantadminRolesListQueryOptions,
-  getSettingsTenantadminSettingsListNamespaceQueryKey,
-  getSettingsTenantadminSettingsListNamespaceQueryOptions,
   getSettingsTenantadminSettingsListQueryKey,
   getSettingsTenantadminSettingsListQueryOptions,
   settingsTenantadminSettingsRemove,
@@ -94,6 +92,7 @@ import type {
   AuthzTenantAdminRoleView,
   SettingsTenantAdminSetting,
   SettingsTenantAdminSettingSource,
+  SettingsTenantAdminSettings,
 } from '@speed/api-sdk'
 import { tenantQueryKey } from '@speed/auth-core'
 import type {
@@ -110,9 +109,14 @@ import type {
   AdminWriteSsoProviderInput,
 } from './operations.js'
 
+/** The tenant settings surface's read answer: the declared items it
+ * exposes and whether this tenant's settings may be written at all. */
+export type AdminTenantSettings = SettingsTenantAdminSettings
+
 /** One declared setting as the tenant layer reports it -- the generated
- * row of GET /api/v1/tenants/{tenant}/settings, which adds the layer the
- * value came from (`source`) to the platform row's fields. */
+ * row of GET /api/v1/tenants/{tenant}/settings, carrying the platform
+ * value, the tenant value, their OR and the layer the effective value
+ * points at. */
 export type AdminTenantSetting = SettingsTenantAdminSetting
 
 /** The layer the tenant read reports a value came from: the tenant layer,
@@ -204,17 +208,12 @@ export interface OrganizationAdminOperations
   > {
   // --- Tenant settings (/api/v1/tenants/{tenant}/settings) --------------
 
-  /** GET .../tenants/{tenant}/settings -- every declared item, resolved on
-   * the tenant layer and carrying the layer each value came from. */
+  /** GET .../tenants/{tenant}/settings -- every item the declarations
+   * expose to a tenant, the platform and tenant values beside the
+   * effective one, and whether the host would accept a write at all. */
   readonly useTenantSettingsList: (
     tenant: string,
-  ) => UseQueryResult<readonly AdminTenantSetting[], unknown>
-  /** GET .../tenants/{tenant}/settings/{namespace} -- one namespace's
-   * declared items (disabled while no namespace is chosen). */
-  readonly useTenantSettingsRead: (
-    tenant: string,
-    namespace: string | undefined,
-  ) => UseQueryResult<readonly AdminTenantSetting[], unknown>
+  ) => UseQueryResult<AdminTenantSettings, unknown>
   /** PUT .../settings/{namespace}/{key} -- write one item on the tenant layer. */
   readonly useTenantSettingsWrite: () => UseMutationResult<
     void,
@@ -542,18 +541,6 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     })
   },
 
-  useTenantSettingsRead: (tenant, namespace) => {
-    const options = getSettingsTenantadminSettingsListNamespaceQueryOptions(
-      tenant,
-      namespace ?? '',
-    )
-    return useQuery({
-      ...options,
-      queryKey: tenantQueryKey(tenant, ...options.queryKey),
-      enabled: tenant !== '' && namespace !== undefined && namespace !== '',
-    })
-  },
-
   useTenantSettingsWrite: () => {
     const queryClient = useQueryClient()
     return useMutation({
@@ -565,7 +552,7 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
           { value: input.value },
         ),
       onSuccess: (_answer, input) => {
-        invalidateTenantSettings(queryClient, input.tenant, input.namespace)
+        invalidateTenantSettings(queryClient, input.tenant)
       },
     })
   },
@@ -580,7 +567,7 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
           input.key,
         ),
       onSuccess: (_answer, input) => {
-        invalidateTenantSettings(queryClient, input.tenant, input.namespace)
+        invalidateTenantSettings(queryClient, input.tenant)
       },
     })
   },
@@ -820,26 +807,18 @@ function invalidateTenantSsoProvider(
 }
 
 /**
- * Invalidates both settings reads a tenant write leaves stale: the
- * all-items list and the written item's own namespace list. The generated
- * bare keys are wrapped in the tenant prefix the reads use, so the
- * invalidation cannot drift from them.
+ * Invalidates the tenant settings read a write leaves stale. The generated
+ * bare key is wrapped in the tenant prefix the read uses, so the
+ * invalidation cannot drift from it.
  */
 function invalidateTenantSettings(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
-  namespace: string,
 ): void {
   void queryClient.invalidateQueries({
     queryKey: tenantQueryKey(
       tenant,
       ...getSettingsTenantadminSettingsListQueryKey(tenant),
-    ),
-  })
-  void queryClient.invalidateQueries({
-    queryKey: tenantQueryKey(
-      tenant,
-      ...getSettingsTenantadminSettingsListNamespaceQueryKey(tenant, namespace),
     ),
   })
 }

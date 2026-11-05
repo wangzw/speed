@@ -14,7 +14,7 @@
  *
  * The wrappers exist for the organization pages whose tenant-scoped surface
  * the package ships: invitations and membership, SSO providers, tenant
- * roles and permissions, and the tenant settings layer.
+ * roles and permissions, and security and access.
  */
 
 import type { ReactElement } from 'react'
@@ -23,8 +23,8 @@ import {
   useOrganizationAdminTenant,
 } from './OrganizationAdminProvider.js'
 import { OrganizationMembersPage } from './OrganizationMembersPage.js'
+import { OrganizationSecurityPage } from './OrganizationSecurityPage.js'
 import { PermissionsPage } from './PermissionsPage.js'
-import { SettingsPage } from './SettingsPage.js'
 import { SsoPage } from './SsoPage.js'
 
 /** Members and invitations, scoped to the host's current tenant. */
@@ -52,8 +52,9 @@ export function OrganizationPermissionsPage(): ReactElement {
   )
 }
 
-/** The tenant settings layer, scoped to the host's current tenant. */
+/** The organization's security and access page, scoped to the host's
+ * current tenant. */
 export function OrganizationSettingsPage(): ReactElement {
   const tenant = useOrganizationAdminTenant()
-  return <SettingsPage tenant={tenant} tenantMode />
+  return <OrganizationSecurityPage tenant={tenant} />
 }
