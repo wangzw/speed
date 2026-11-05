@@ -588,7 +588,11 @@ export function OrganizationMembersPage({
     {
       id: 'displayName',
       header: t('members.column.displayName'),
-      cellWrap: 'wrap',
+      // The display name is the row's identity: a short one must never be
+      // split mid-token by a squeezed column. It stays on one line and
+      // truncates inside the cap; the complete value is reachable through
+      // the title and the copy control `cellFullValue` adds.
+      cellWrap: 'nowrap',
       cellFullValue: (member) =>
         member.display_name === '' ? undefined : member.display_name,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
@@ -716,9 +720,11 @@ export function OrganizationMembersPage({
       id: 'invitedBy',
       header: t('invitations.column.invitedBy'),
       priority: 'high',
-      // The resolved name wraps inside its cap at the high floor; the
-      // recorded identifier stays reachable through the copy control.
-      cellWrap: 'wrap',
+      // The resolved inviter is a row identity too: a short name stays on
+      // one line and truncates inside its cap at the high floor. The
+      // complete recorded identifier stays reachable through the title and
+      // the copy control `cellFullValue` adds.
+      cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.invited_by,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (invitation) => (
