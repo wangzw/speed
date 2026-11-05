@@ -886,10 +886,16 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 }
 
 // tenantCtx registers a tenant in the roster and returns a context that belongs
-// to it.
+// to it. The identifier stays the caller's — rows are read back by it — while
+// the alias, which the roster holds to a three-character slug, is derived from
+// it so a short identifier such as "t1" stays usable.
 func (r *rig) tenantCtx(id string) context.Context {
 	r.t.Helper()
-	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive}); err != nil {
+	alias := id
+	if !tenant.IsAlias(alias) {
+		alias = "tenant-" + id
+	}
+	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive}); err != nil {
 		r.t.Fatalf("registering the tenant %q: %v", id, err)
 	}
 	ctx, err := r.catalog.Enter(r.t.Context(), tenant.ID(id))
