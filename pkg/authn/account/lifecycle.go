@@ -67,6 +67,11 @@ func (p *product) SetStatus(ctx context.Context, id authn.AccountID, s authn.Acc
 	if err := reasonOK(reason); err != nil {
 		return err
 	}
+	if s == authn.StatusDisabled {
+		if err := p.refuseSuspendingTheOwner(ctx, id); err != nil {
+			return err
+		}
+	}
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		row, err := p.lock(tx, id)
@@ -138,6 +143,13 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 		return err
 	}
 	defer release()
+	// The owner check precedes the last-administrator floor: an owner is
+	// usually the organization's only administrator too, and the answer that
+	// asks for the ownership to be handed on is the one that names the actual
+	// obstacle. A non-owner sole administrator still meets the floor below.
+	if err = p.refuseDeletingTheOwner(ctx, id); err != nil {
+		return err
+	}
 	if err = p.refuseDeletingTheLastTenantAdmin(ctx, id); err != nil {
 		return err
 	}
@@ -249,6 +261,55 @@ func (p *product) refuseDeletingTheLastTenantAdmin(ctx context.Context, id authn
 	}
 	if sole {
 		return &authn.AccountLastTenantAdminError{Tenant: tenantID}
+	}
+	return nil
+}
+
+// refuseDeletingTheOwner refuses an account deletion when the account owns an
+// active business organization. The organization has to be handed on or deleted
+// first; a personal organization does not count, because it is ended with the
+// account.
+func (p *product) refuseDeletingTheOwner(ctx context.Context, id authn.AccountID) error {
+	return p.refuseAccountOwningAnOrganization(ctx, id, "deleting")
+}
+
+// refuseSuspendingTheOwner refuses a suspension of an account that owns an
+// active business organization. A suspended owner would leave the organization
+// with nobody who can hand it on, exactly as a deletion would.
+func (p *product) refuseSuspendingTheOwner(ctx context.Context, id authn.AccountID) error {
+	return p.refuseAccountOwningAnOrganization(ctx, id, "suspending")
+}
+
+// refuseAccountOwningAnOrganization asks the optional owner counter. The
+// refusal carries the tenant's identifier so a surface can name the
+// organization the operator has to hand on or delete. A tombstone is not
+// checked: the live account the floor protects is already gone. A counter that
+// cannot answer is ErrUnavailable and the write does not run: an unknown owner
+// must not be read as permission. An assembly that supplies no counter skips
+// the check.
+func (p *product) refuseAccountOwningAnOrganization(ctx context.Context, id authn.AccountID, op string) error {
+	counter := p.tenantOwnerCounter
+	if counter == nil {
+		return nil
+	}
+	var row accountRow
+	switch err := p.conn(ctx).Where("id = ?", id.String()).Take(&row).Error; {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil
+	case err != nil:
+		return failed("reading an account before "+op+" it", err)
+	}
+	if row.Status == statusDeleted {
+		return nil
+	}
+	tenantID, owns, err := counter.OwnsActiveBusinessTenant(ctx, id.String())
+	if err != nil {
+		p.logger.Error(ModuleName+": the organization-owner check could not be read, so the account was not changed",
+			slog.String("account", id.String()), slog.String("cause", err.Error()))
+		return fmt.Errorf("%w: reading the organization owner: %w", authn.ErrUnavailable, err)
+	}
+	if owns {
+		return &authn.AccountOwnsOrganizationError{Tenant: tenantID}
 	}
 	return nil
 }

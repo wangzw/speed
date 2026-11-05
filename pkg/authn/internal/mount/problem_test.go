@@ -83,6 +83,7 @@ var codeTable = []struct {
 	{"factor-not-found", 404},
 	{"conflict", 409},
 	{"account-last-tenant-admin", 409},
+	{"account-organization-owner", 409},
 	{"login-identifier-required", 409},
 	{"last-login-method", 409},
 	{"username-immutable", 409},
@@ -128,7 +129,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
 		CodeContactRequired, CodePhoneRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,
 		CodePasswordResetUnavailable, CodeFactorNotFound, CodeConflict, CodeAccountLastTenantAdmin,
-		CodeLoginIdentifierRequired,
+		CodeAccountOrganizationOwner, CodeLoginIdentifierRequired,
 		CodeLastLoginMethod, CodeUsernameImmutable, CodeUsernameTaken, CodeEmailTaken,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}

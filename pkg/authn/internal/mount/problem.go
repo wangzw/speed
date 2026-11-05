@@ -44,6 +44,7 @@ const (
 	CodeFactorNotFound                 = "factor-not-found"                 // 404
 	CodeConflict                       = "conflict"                         // 409
 	CodeAccountLastTenantAdmin         = "account-last-tenant-admin"        // 409
+	CodeAccountOrganizationOwner       = "account-organization-owner"       // 409
 	CodeLoginIdentifierRequired        = "login-identifier-required"        // 409
 	CodeLastLoginMethod                = "last-login-method"                // 409
 	CodeUsernameImmutable              = "username-immutable"               // 409
@@ -77,6 +78,7 @@ var statusOf = map[string]int{
 	CodeFactorNotFound:                 http.StatusNotFound,
 	CodeConflict:                       http.StatusConflict,
 	CodeAccountLastTenantAdmin:         http.StatusConflict,
+	CodeAccountOrganizationOwner:       http.StatusConflict,
 	CodeLoginIdentifierRequired:        http.StatusConflict,
 	CodeLastLoginMethod:                http.StatusConflict,
 	CodeUsernameImmutable:              http.StatusConflict,

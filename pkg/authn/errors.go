@@ -253,6 +253,14 @@ var (
 	// one is the account deletion's.
 	ErrAccountLastTenantAdmin = errors.New("authn: the account is the last tenant administrator of an organization")
 
+	// ErrAccountOwnsOrganization reports an account deletion or suspension
+	// refused because the account owns an active business organization.
+	// Outwardly it is a 409 account-organization-owner, a code of its own so a
+	// surface can tell this refusal from the other 409s and name the
+	// organization the operator has to hand on or delete first. A personal
+	// organization does not count: it follows the account and is ended with it.
+	ErrAccountOwnsOrganization = errors.New("authn: the account owns an organization")
+
 	// ErrCannotSuspendSelf reports a membership write that would suspend the
 	// caller's own membership in the tenant. It keeps a tenant with at least one
 	// active administrator: a tenant-administrator may not stop themselves from
@@ -507,3 +515,22 @@ func (e *AccountLastTenantAdminError) Error() string { return ErrAccountLastTena
 
 // Unwrap returns ErrAccountLastTenantAdmin, so errors.Is holds for the refusal.
 func (e *AccountLastTenantAdminError) Unwrap() error { return ErrAccountLastTenantAdmin }
+
+// AccountOwnsOrganizationError is ErrAccountOwnsOrganization with the
+// organization the account owns. It changes no answer: errors.Is on
+// ErrAccountOwnsOrganization still holds for it. The identifier is what lets a
+// surface name the organization an operator has to hand on or delete before the
+// account can be deleted or suspended. Error returns the sentinel's text and
+// carries no identifier, because errors reach logs.
+type AccountOwnsOrganizationError struct {
+	// Tenant is the identifier of the active business tenant the account owns.
+	Tenant string
+}
+
+// Error returns the sentinel's text, so an error that reaches a log names no
+// tenant.
+func (e *AccountOwnsOrganizationError) Error() string { return ErrAccountOwnsOrganization.Error() }
+
+// Unwrap returns ErrAccountOwnsOrganization, so errors.Is holds for the
+// refusal.
+func (e *AccountOwnsOrganizationError) Unwrap() error { return ErrAccountOwnsOrganization }

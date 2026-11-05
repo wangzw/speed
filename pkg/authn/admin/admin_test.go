@@ -387,15 +387,32 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 		t.Error("Create was called though the mandatory audit failed")
 	}
 
-	// A delete: the row is written before Delete.
+	// A delete: the row follows the commit, so a failing audit does not stop
+	// the deletion, and the delete's failure writes a compensation row.
 	r = newRig(t)
 	r.audit.fails(audit.ErrWriteFailed)
 	rec = r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID), nil, fresh()...)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("delete with a failing audit: status = %d, want 503", rec.Code)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("delete with a failing audit: status = %d, want 204", rec.Code)
 	}
-	if r.accountAdm.count("delete") != 0 {
-		t.Error("Delete was called though the mandatory audit failed")
+	if r.accountAdm.count("delete") != 1 {
+		t.Error("Delete was not called: the deletion audit follows the commit")
+	}
+
+	r = newRig(t)
+	r.accountAdm.err = errors.New("the deletion transaction rolled back")
+	rec = r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID), nil, fresh()...)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("a failed delete: status = %d, want 503", rec.Code)
+	}
+	var compensation bool
+	for _, entry := range r.audit.entries() {
+		if entry.Action == actionAccountDelete && entry.Outcome == outcomeFailed {
+			compensation = true
+		}
+	}
+	if !compensation {
+		t.Errorf("a failed delete wrote no failed compensation row: %+v", r.audit.entries())
 	}
 }
 

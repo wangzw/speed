@@ -268,6 +268,14 @@ func (m *product) answer(op string, err error) error {
 			Detail: lastAdmin.Tenant,
 		}
 	}
+	var owner *authn.AccountOwnsOrganizationError
+	if errors.As(err, &owner) {
+		return speedhttp.Fault{
+			Status: http.StatusConflict,
+			Type:   typePrefix + mount.CodeAccountOrganizationOwner,
+			Detail: owner.Tenant,
+		}
+	}
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrSessionNotFound),
 		errors.Is(err, authn.ErrProviderNotFound), errors.Is(err, authn.ErrNotImpersonating):

@@ -272,6 +272,12 @@ type product struct {
 	// with nobody who may govern it. An assembly without the seam deletes as it
 	// did before the seam existed.
 	tenantAdminCounter authz.TenantAdminCounter
+	// tenantOwnerCounter is the optional host seam Delete and SetStatus ask
+	// before they erase or suspend an account: an account that owns an active
+	// business organization is refused, because the organization would be left
+	// with nobody who can hand it on. An assembly without the seam deletes and
+	// suspends as it did before the seam existed.
+	tenantOwnerCounter authz.TenantOwnerCounter
 	meters             meters
 	logger             *slog.Logger
 
@@ -326,6 +332,9 @@ func (p *product) wire(reg *core.Registry) error {
 	p.membershipHooks = core.ResolveAll[authn.MembershipLifecycle](reg)
 	p.membershipGuards = core.ResolveAll[authn.MembershipGuard](reg)
 	if p.tenantAdminCounter, err = optional[authz.TenantAdminCounter](reg, "the tenant-admin counter"); err != nil {
+		return err
+	}
+	if p.tenantOwnerCounter, err = optional[authz.TenantOwnerCounter](reg, "the tenant-owner counter"); err != nil {
 		return err
 	}
 	// The provisioning seam is a required dependency, so its absence has

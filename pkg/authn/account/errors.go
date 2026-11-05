@@ -28,6 +28,8 @@ var domainErrors = []error{
 	authn.ErrBindingConflict,
 	authn.ErrLastLoginMethod,
 	authn.ErrLastTenantAdmin,
+	authn.ErrAccountLastTenantAdmin,
+	authn.ErrAccountOwnsOrganization,
 	authn.ErrAccountUnavailable,
 	authn.ErrCleanupIncomplete,
 	authn.ErrThrottled,

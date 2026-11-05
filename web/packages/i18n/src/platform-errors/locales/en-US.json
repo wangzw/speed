@@ -3,6 +3,7 @@
     "admin.impersonation_reason_required": "A reason is required to start an impersonation session.",
     "audit.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
     "authn.account_last_tenant_admin": "This account is the only administrator of an organization and cannot be deleted. Transfer the organization's administrator role to another member first, then delete this account.",
+    "authn.account_organization_owner": "This account owns an organization and cannot be deleted or suspended. Transfer the organization to another member or delete the organization first.",
     "authn.account_unavailable": "This account is unavailable. Contact an administrator for help.",
     "authn.bad_request": "Some of the information you entered isn't valid. Check it and try again.",
     "authn.cannot_suspend_self": "You cannot suspend your own membership. Ask another administrator to do it.",

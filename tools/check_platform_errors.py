@@ -206,6 +206,11 @@ KEPT = {
         "referenced by web/packages/product-shell/src/bootstrap.tsx and "
         "starters/demo/web/src/impersonation.test.tsx; no writer in this tree"
     ),
+    "tenant.alias_immutable": (
+        "the alias-change route and its problem type were removed in T4; the "
+        "frontend rename control, its copy in web/packages/admin-ui/src/"
+        "internal/error-text.ts and the e2e spec that pins it are removed in T6"
+    ),
 }
 
 # Duplicate keys a language file may carry, by dotted path, with the reason

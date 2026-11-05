@@ -3,6 +3,7 @@
     "admin.impersonation_reason_required": "发起模拟登录必须填写原因。",
     "audit.bad_request": "提交的内容有误，请检查表单后重试。",
     "authn.account_last_tenant_admin": "该账户是某个组织的唯一管理员，无法删除。请先将该组织的管理员转交给其他成员，再删除此账户。",
+    "authn.account_organization_owner": "该账户是某个组织的所有者，无法删除或停用。请先将该组织转让给其他成员，或删除该组织，再操作此账户。",
     "authn.account_unavailable": "该账户当前不可用，请联系管理员。",
     "authn.bad_request": "提交的信息有误，请检查后重试。",
     "authn.cannot_suspend_self": "不能停用自己的成员身份。请让另一位管理员操作。",

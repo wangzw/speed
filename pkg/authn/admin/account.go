@@ -394,15 +394,16 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	if err := m.require(id, authn.FreshLocalMulti(m.settings.recentWindow())); err != nil {
 		return nil, err
 	}
-	actionID := newActionID()
-	if err := m.auditRequired(ctx, mandatory(actionAccountDelete, string(accountID),
-		map[string]string{detailActionID: actionID})); err != nil {
-		return nil, err
-	}
+	// The deletion's audit row follows the commit: the tombstone and the account's
+	// erased rows are what the row records, and a row written before the
+	// transaction would survive a rollback it did not describe. A failed
+	// transaction still writes a compensation row, best effort.
 	if err := m.accountAdm.Delete(ctx, accountID, authn.ReasonAdmin); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionAccountDelete, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionAccountDelete, string(accountID), newActionID()))
 		return m.replyFailure("deleting an account", err)
 	}
+	m.auditBestEffort(ctx, mandatory(actionAccountDelete, string(accountID),
+		map[string]string{detailActionID: newActionID()}))
 	return speedhttp.EmptyReply(204), nil
 }
 

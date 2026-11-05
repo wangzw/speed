@@ -974,7 +974,7 @@
                 }
               }
             },
-            "description": "The account is the only tenant administrator of an active business tenant; the detail names that tenant, and the role has to be handed to another administrator first"
+            "description": "The account owns an active business organization; the detail names that organization, and it has to be transferred or deleted first"
           },
           "503": {
             "content": {
@@ -2324,6 +2324,16 @@
           },
           "404": {
             "description": "No such account"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The account owns an active business organization and cannot be suspended; the detail names that organization, and it has to be transferred or deleted first"
           },
           "413": {
             "content": {
