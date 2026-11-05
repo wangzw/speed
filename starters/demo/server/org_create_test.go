@@ -296,6 +296,17 @@ func (r *orgCreateRig) create(t *testing.T, ctx context.Context, displayName str
 	})
 }
 
+// attempts reads the number of creations counted in the account's current
+// hourly window.
+func (r *orgCreateRig) attempts(t *testing.T) int {
+	t.Helper()
+	count, err := r.product.hourlyCount(context.Background(), orgCreateUnitAccount)
+	if err != nil {
+		t.Fatalf("reading the hourly count: %v", err)
+	}
+	return count
+}
+
 func orgCreateFault(t *testing.T, err error) speedhttpFault {
 	t.Helper()
 	var fault speedhttpFault
@@ -520,6 +531,86 @@ func TestOrgCreateLimitsTheHourlyCount(t *testing.T) {
 	rig.product.now = func() time.Time { return orgCreateTestNow.Add(time.Hour) }
 	if _, err := rig.create(t, rig.ctx(t), "Acme Next Hour"); err != nil {
 		t.Errorf("the next hour's creation failed: %v", err)
+	}
+}
+
+// TestOrgCreateDoesNotCountRefusalsBeforeTheCount holds the first half of the
+// counting rule: a request refused at a pre-check consumes no place. The shape
+// refusal and the organization cap stand for every refusal in steps 1-8, all of
+// which return before recordAttempt.
+func TestOrgCreateDoesNotCountRefusalsBeforeTheCount(t *testing.T) {
+	rig := newOrgCreateRig()
+	_, err := rig.product.handleCreate(rig.ctx(t), createOrganizationInput{DisplayName: ""})
+	if fault := orgCreateFault(t, err); fault.Status != http.StatusBadRequest {
+		t.Fatalf("the shape refusal's status = %d, want 400", fault.Status)
+	}
+	if got := rig.attempts(t); got != 0 {
+		t.Fatalf("a shape refusal counted %d attempt(s), want none", got)
+	}
+
+	rig.settings.values[orgCreateMaxOrganizationsPath] = 1
+	rig.roster.rows["biz"] = tenant.Tenant{ID: "biz", Alias: "biz", Status: tenant.StatusActive}
+	rig.memberships.rows[orgCreateUnitAccount] = []authn.Membership{
+		{Account: orgCreateUnitAccount, Tenant: "biz", Active: true, Source: "admin"},
+	}
+	_, err = rig.create(t, rig.ctx(t), "Acme")
+	if fault := orgCreateFault(t, err); fault.Status != http.StatusConflict {
+		t.Fatalf("the cap refusal's status = %d, want 409", fault.Status)
+	}
+	if got := rig.attempts(t); got != 0 {
+		t.Errorf("a cap refusal counted %d attempt(s), want none", got)
+	}
+}
+
+// TestOrgCreateCountsAProvisionerFailure holds the second half of the counting
+// rule: once the attempt is counted, a provisioner failure consumes it. With a
+// budget of three, one failed provision leaves room for two creations.
+func TestOrgCreateCountsAProvisionerFailure(t *testing.T) {
+	rig := newOrgCreateRig()
+	rig.provisioner.err = errors.New("the roster is unavailable")
+	if _, err := rig.create(t, rig.ctx(t), "Acme"); err == nil {
+		t.Fatal("the failed provision returned no error")
+	}
+	if got := rig.attempts(t); got != 1 {
+		t.Fatalf("a failed provision counted %d attempt(s), want one", got)
+	}
+
+	rig.provisioner.err = nil
+	for i := range 2 {
+		if _, err := rig.create(t, rig.ctx(t), fmt.Sprintf("Acme %d", i)); err != nil {
+			t.Fatalf("creation %d after the failed provision failed: %v", i, err)
+		}
+	}
+	_, err := rig.create(t, rig.ctx(t), "Acme Fourth")
+	if fault := orgCreateFault(t, err); fault.Status != http.StatusTooManyRequests {
+		t.Errorf("the fourth request's status = %d, want 429", fault.Status)
+	}
+}
+
+// TestOrgCreateCountsAnAuditFailure holds the order the counting rule depends
+// on: the attempt is counted before the mandatory audit, so an audit failure
+// consumes it. With a budget of three, one failed audit leaves room for two
+// creations.
+func TestOrgCreateCountsAnAuditFailure(t *testing.T) {
+	rig := newOrgCreateRig()
+	rig.audit.err = errors.New("the audit store is down")
+	_, err := rig.create(t, rig.ctx(t), "Acme")
+	if fault := orgCreateFault(t, err); fault.Status != http.StatusServiceUnavailable {
+		t.Fatalf("the audit refusal's status = %d, want 503", fault.Status)
+	}
+	if got := rig.attempts(t); got != 1 {
+		t.Fatalf("a failed audit counted %d attempt(s), want one", got)
+	}
+
+	rig.audit.err = nil
+	for i := range 2 {
+		if _, err := rig.create(t, rig.ctx(t), fmt.Sprintf("Acme %d", i)); err != nil {
+			t.Fatalf("creation %d after the failed audit failed: %v", i, err)
+		}
+	}
+	_, err = rig.create(t, rig.ctx(t), "Acme Fourth")
+	if fault := orgCreateFault(t, err); fault.Status != http.StatusTooManyRequests {
+		t.Errorf("the fourth request's status = %d, want 429", fault.Status)
 	}
 }
 

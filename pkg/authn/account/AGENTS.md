@@ -75,12 +75,22 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   the tombstone.** `Delete` reads the row first and skips the check for a
   tombstone, so repeating a delete still finishes interrupted cleanup. A live
   account the counter names as a business tenant's only tenant administrator is
-  refused with `authn.ErrLastTenantAdmin` and nothing is erased; a counter that
-  cannot answer is `ErrUnavailable`, never a pass. An assembly that supplies no
-  counter keeps the deletion behaviour it had before the seam existed.
+  refused with `authn.ErrAccountLastTenantAdmin` — a
+  `*authn.AccountLastTenantAdminError` whose `Tenant` names the organization —
+  and nothing is erased; that sentinel is distinct from the membership
+  removal's `ErrLastTenantAdmin`, so a surface can answer the deletion's own
+  409. A counter that cannot answer is `ErrUnavailable`, never a pass. The
+  deletion holds the counter's account-administration lock from before the
+  check until its cleanup has run, so two deletions of one tenant's
+  administrators, or a deletion and a binding or membership removal, cannot
+  each read the other as present and then together leave the tenant with none;
+  a lock that cannot be taken refuses the deletion. An assembly that supplies
+  no counter keeps the deletion behaviour it had before the seam existed.
   `TestDeletingTheLastTenantAdministratorIsRefused`,
   `TestDeletingAnAccountWithASecondTenantAdministratorProceeds`,
   `TestAnUnreadableCounterRefusesTheDeletion`,
+  `TestTheDeletionHoldsTheTenantLockAcrossTheCheckAndTheCleanup`,
+  `TestALockThatCannotBeTakenRefusesTheDeletion`,
   `TestNoCounterKeepsTheExistingDeletionBehaviour`.
 - **Every time written to the database or bound to a query goes through
   `internal/clock` and is converted to UTC.** The SQLite driver compares times

@@ -203,6 +203,16 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   `TestASecondTenantAdministratorAllowsTheDeletion`,
   `TestAPersonalTenantIsNotCounted`, `TestADisabledTenantIsNotCounted`,
   `TestTheCounterFailsClosedWhenTheRosterCannotAnswer`.
+- **The counter also locks the account's tenants, for the deletion's check and
+  cleanup.** `LockAccountAdministration` takes the host's `authz.TenantLock` for
+  every tenant the account administers, in identifier order, and answers one
+  idempotent release; a lock that cannot be taken releases the ones already
+  held. It locks the tenants the bindings name, not only the serviceable ones:
+  the lock excludes every other removal that judges those floors, and a status
+  change must not open a hole in that exclusion. This is the same lock
+  `Manager.DeleteBinding` and `MembershipGuard.Lock` take, so a deletion, a
+  binding removal and a membership removal cannot interleave across the
+  last-administrator check.
 - **The membership lifecycle cascades the platform domain and the guard keeps
   one tenant administrator.** `MembershipRemoved` withdraws an account's
   platform-domain bindings when its platform-tenant membership is removed, on the

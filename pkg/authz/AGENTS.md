@@ -54,13 +54,19 @@ which takes no lock.
 
 `TenantAdminCounter` is the root package's other seam over the floor, and the
 one the account-deletion path asks: `SoleTenantAdminTenant` names the active
-business tenant whose only tenant-administrator binding an account holds. The
-policy subpackage delivers it beside `Manager`; it reads bindings across
-tenants, asks the roster which tenants are in service, and asks the host's
-`WriteGuard` which domains are not business tenants rather than inferring a
-kind from an identifier. The seam is optional where the account module takes it
-up: an assembly without it deletes accounts as before, and one whose counter
-cannot answer refuses the deletion instead of passing it.
+business tenant whose only tenant-administrator binding an account holds, and
+`LockAccountAdministration` takes the `TenantLock` of every tenant the account
+administers so the deletion's check and cleanup cannot interleave with another
+removal that judges one of those tenants' floors. The policy subpackage
+delivers both beside `Manager`; it reads bindings across tenants, asks the
+roster which tenants are in service, and asks the host's `WriteGuard` which
+domains are not business tenants rather than inferring a kind from an
+identifier. The seam is optional where the account module takes it up: an
+assembly without it deletes accounts as before, and one whose counter or lock
+cannot answer refuses the deletion instead of passing it. A host that supplies
+its own counter implements the two methods together; the account module asks
+the one interface, so a counter without the lock is not a valid
+implementation.
 
 ## Modules and namespaces
 

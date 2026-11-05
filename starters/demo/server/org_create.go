@@ -518,9 +518,10 @@ func (p *orgCreateProduct) wire(reg *core.Registry) error {
 //  10. the mandatory audit row lands;
 //  11. the tenant is provisioned.
 //
-// A refusal in steps 1-8 and 10 writes no count. The count is taken before the
-// audit so an audit failure does not consume an attempt; a provisioner failure
-// does consume it, as the product states.
+// A refusal in steps 1-8 writes no count. Step 9 consumes one place before the
+// mandatory audit and the provisioner, so a failure in either step consumes it:
+// the count limits attempts, not successes. A request the identifier pre-check
+// refuses is also a refusal before step 9 and writes no count.
 func (p *orgCreateProduct) handleCreate(ctx context.Context, in createOrganizationInput) (OrganizationCreatedReply, error) {
 	identity, ok := authn.FromContext(ctx)
 	if !ok {
