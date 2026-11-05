@@ -1,5 +1,9 @@
 # 令牌与服务账户
 
+`authn.token` 是认证[功能目录](../../../glossary.md)里交付令牌的模块：它签发短寿命的访问令牌、签发与轮换刷新令牌、认领 `bearer` 凭据、受理令牌端点并发布签名密钥集。它独占读写 `authn_refresh_tokens`，并在撤销时以会话为单位终结整组令牌。它不持有登录会话与账户，不提供授权码授权、自省或长期个人访问令牌，也不做授权判定。职责清单之前的一句话心智模型：令牌本身不携带权限，每次校验都回到账户快照与会话行确认主体仍然有效。
+
+第一遍的次序是「职责」「术语表」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，依次是「校验次序」「签发」「刷新令牌的轮换」，「签名密钥、轮换与 JWKS」一节供运维切换密钥时查。「错误与失败语义」与「并发与事务边界」属查阅用；「扩展点」供宿主追加声明时查。「实现状态」供核对上文承诺。竞态与边界情形是最后的自检项。
+
 ## 职责
 
 `pkg/authn/token` 是 authn 功能目录里交付令牌的子包，登记一个模块 `authn.token`。本文档承载它的接口、校验次序、签名密钥与刷新令牌的全部细节；authn 的整体划分见 [design-authn](design-authn.md)，决策依据见 [ADR-authn-token](../../../adr/adr-authn-token.md)。
@@ -8,7 +12,7 @@
 - 签发、轮换与撤销刷新令牌：不透明的随机串，库里只存哈希，每次使用即轮换，重用即撤销整个令牌组。
 - 作为校验后端认领 `Authorization` 的 `bearer`（[REF-rfc6750](../../../references.md)）方案：把访问令牌校验成 `Principal`，交给网关盖章（[design-authn-gate](design-authn-gate.md)）。
 - 受理令牌端点：`client_credentials`（[REF-rfc6749](../../../references.md)）与 `refresh_token` 两个 grant（封闭集），以及 RFC 7009（[REF-rfc7009](../../../references.md)）的撤销。
-- 发布 JWKS（[REF-rfc7517](../../../references.md)），持有启动时装入的签名与验证密钥集。
+- 发布 JWKS（[REF-rfc7517](../../../references.md)）：从启动时装入的签名与验证密钥集算出 JWK 形态并对外提供。
 - 独占读写 `authn_refresh_tokens`：写入签发的刷新令牌与每次轮换的结果，并由周期清扫协程删除所属会话已不存在、已撤销、已过绝对期限或 `idle_expires_at` 已过的行，使这张表不无界增长。
 - 定义宿主向访问令牌追加声明的接口 `ClaimsContributor`，并在签发时调用它。
 
@@ -163,7 +167,7 @@ db 不可用时答 `temporarily_unavailable`，**不答 `invalid_grant`**：客�
 | `imp_tenant` | 冒充记录的租户标识，仅冒充 | 只供外部校验方读到冒充的范围；本进程校验时范围取自冒充记录，不取这个声明 |
 | `client_id` | RFC 9068 必备：服务账户令牌取账户标识，会话换来的令牌取 `authn.token.client-id`，缺省 `speed` | 非空 |
 
-`amr`、`acr`、`auth_time` 只为让外部资源服务器不必再查会话。本进程校验时身份的这几项取自会话行（`check-session` 关闭时取自令牌，见[校验次序](#校验次序)），所以加强认证之前签发、仍在有效期内的访问令牌继续有效，它的 `acr` 偏低是保守的一侧。冒充令牌的 `amr`、`acr` 与 `auth_time` 取自发起的会话，与发起者本人的令牌同源：冒充期间身份的认证事实取自发起者。签发的 `amr` 与 `acr` 取自 `Method` 与 `Assurance` 的闭集（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）；校验不对这三个声明的取值设拒绝条件。
+`amr`、`acr`、`auth_time` 只为让外部资源服务器不必再查会话。本进程校验时身份的这几项取自会话行（`check-session` 关闭时取自令牌，见[校验次序](#校验次序)），所以加强认证之前签发、仍在有效期内的访问令牌继续有效，它的 `acr` 偏低是保守的一侧。冒充令牌的 `amr`、`acr` 与 `auth_time` 取自发起的会话，与发起者本人的令牌同源：冒充期间身份的认证事实取自发起者。签发的 `amr` 与 `acr` 取自 `Method` 与 `Assurance` 的闭集（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）；校验不对 `amr`、`acr` 与 `auth_time` 的取值设拒绝条件。
 
 ### 外部资源服务器的义务
 
@@ -280,12 +284,12 @@ flowchart TD
 stateDiagram-v2
     state "未用 (used_at 为空)" as Fresh
     state "已用 (used_at 与 replaced_by 非空)" as Used
-    state "判定重用 (会话已撤销)" as Reuse
     [*] --> Fresh : 登录交付或轮换插入
     Fresh --> Used : 原子消费
     Used --> Fresh : 宽限内再次出示，插入新的子行
-    Used --> Reuse : 宽限外再次出示
+    Used --> Used : 宽限外再次出示：判定重用，撤销会话组，不改写该行
     Fresh --> [*] : 空闲到期后清扫
+    Used --> [*] : 到期或所属会话失效后清扫
 ```
 
 状态只描述一行的 `used_at` 与 `replaced_by`。「判定重用」不是行的状态，而是触发会话撤销的结论：该分支调用 `Sessions.Revoke`，不改写刷新令牌表。宽限内再次出示得到的子行是新的未用行，`parent_id` 指向同一条已用行，与首个子行并存。
@@ -357,7 +361,32 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 
 声明集见[声明集](#声明集)。声明以 `jwt` 子包的声明结构承载，保留名集合与 `ClaimsContributor` 追加的映射在签发时合并，保留名冲突在合并之前拒绝。
 
+### 状态一览
+
+刷新令牌行的状态只由 `used_at` 与 `replaced_by` 推出，行被清扫删除之后不再存在；「判定重用」不是行的一种状态，而是触发会话撤销的结论，不改写这张表。下表说明每个取值在运行中的含义。
+
+| 状态 | 一句话含义 | 当前动作（本模块） | 直觉画面 |
+|---|---|---|---|
+| 未用 | `used_at` 为空，可以换一次令牌 | 在轮换时原子消费它，失败者按宽限或重用处理 | 一张未剪口的车票 |
+| 已用 | `used_at` 与 `replaced_by` 非空，已被消费 | 在宽限内为它再插入子行，宽限外撤销整个会话组 | 票已剪口，检票口只认宽限这一次 |
+
+行被清扫删除后不再存在，也不再有可读出的状态；删除是退出这张表的结果，不是表里的一行。出示一条已删除的令牌按 `invalid_grant` 拒绝。
+
 ## 核心算法与流程
+
+### 走查
+
+一次刷新令牌的轮换，以及旧令牌在宽限外再次出示。初始状态是客户端持有登录时交付的刷新令牌，`authn_refresh_tokens` 里有一行未用的行。
+
+| 步骤 | 事件 | 持久状态 |
+|---|---|---|
+| 1 | 客户端 `POST B/token` 带刷新令牌 | 按 `token_hash` 取到该行；`Sessions.StatusFresh(sid)` 强制新读，会话有效。 |
+| 2 | 原子消费 | `UPDATE … SET used_at, replaced_by WHERE used_at IS NULL` 影响一行；插入子行，`parent_id` 指向旧行，`idle_expires_at = now + refresh-idle-ttl`；返回新访问令牌与新刷新令牌。旧行此后是「已用」。 |
+| 3 | 旧令牌在宽限内再次出示 | `used_at` 已非空，影响行数为零；宽限大于零且 `now - used_at` 不超过它，视为重试，再插入一条新的子行，与首个子行并存。 |
+| 4 | 旧令牌在宽限外再次出示 | 宽限已过，按重用处理：`Sessions.Revoke(sid, "refresh-reuse")` 使整组失效；发 `authn.token.reuse-detected` 并写审计；应答 `invalid_grant`，刷新令牌表不改写。 |
+| 5 | 会话撤销之后刷新子令牌 | `StatusFresh(sid)` 判会话无效，应答 `invalid_grant`；刷新令牌行仍在，直到清扫删除它。 |
+
+宽限外再次出示按重用处理时固定了一条边界：重用判定不改写刷新令牌表，撤销落在会话行上，刷新令牌的失效是「所属会话已撤销」的结果。
 
 ### 校验次序
 

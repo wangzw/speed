@@ -1,5 +1,7 @@
 # notification.inbox
 
+本[模块](../../../glossary.md)是站内信的收件箱存储与读取接口：它是投递流水线写站内信行的唯一下游，HTTP 接口只读行与标记已读。它拥有 `in_app_messages` 表、写行的去重与 `notification.inbox.created` 事件，不拥有消息文本的渲染、渠道选择与实时推送。读职责清单前应持有的一句话心智模型是：收件箱是「收件人看得见什么」的那本账，写入只有投递流水线一个来源。
+
 ## 职责
 
 本模块交付**站内信收件箱**：一个账户在应用内的消息行，以及它的列出、未读计数与标记已读。一条站内信由[投递流水线](design-notification-delivery.md)写进来——本模块的写入口是它唯一的下游写入口——HTTP 接口把行读出来、把行标为已读，**不新建站内信行**。
@@ -172,6 +174,17 @@ classDiagram
 **消息视图 `Message`** 是投出去的行，只含调用方需要读的字段，不含 `tenant_id`、`recipient_user_id`、`dedupe_key`、`expires_at`、`updated_at` 这些记账列。
 
 ## 核心算法与流程
+
+### 走查
+
+初始状态：收件箱表里没有收件人 `u1` 的任何行。
+
+1. 投递流水线调 `Write(ctx, "u1", m, "K")`。收件箱在自己的短事务里插入一行，`dedupe_key` 为 `K`，`read_at` 为空；提交之后发布 `notification.inbox.created`。持久状态：表里一行，事件的载荷带这一行的 `message_id`、`tenant_id`、`recipient_user_id` 与 `type_key`。
+2. 同一个 `K` 再次调用 `Write`。插入撞上 `dedupe_key` 的唯一索引，`Write` 读回既有行并返回它的视图，不新建行、不发事件。持久状态不变。
+3. `POST /messages/:messageId/read` 命中这一行：`read_at` 从空写成一个时刻，答 204。再发一次：语句匹配 0 行，再取一次本收件人范围内的 id，存在即返回成功、不写库，首读时间戳不变。
+4. `POST /messages/read-all` 只匹配 `read_at IS NULL` 的行；这一次匹配 0 行，答 `{read_count: 0}` 且成功。持久状态不变。
+5. 行的 `expires_at` 到期之后，它不再出现在 `GET /messages` 的列表里、也不再计入未读数，但它的 `read_at` 仍可被标记。
+6. 装配里没有事件总线，或事件发布失败时，那次写入的行照样在表里；推送拿不到提示，收件人回读那一行。
 
 ### 路由的判定顺序
 

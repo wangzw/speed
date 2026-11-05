@@ -1,5 +1,9 @@
 # notification.preferences
 
+本[模块](../../../glossary.md)是通知类型的分类法消费点与渠道偏好矩阵：它收齐业务模块声明的类型，回答某个收件人对某个类型走哪些渠道，并挂出分类法与偏好的读取、改写路由。它拥有分类法、`notification_preferences` 表与有效集的计算，不拥有通知类型的声明、渠道的可用性判定与消息的发送。读职责清单前应持有的一句话心智模型是：分类法是只读的词汇表，偏好是在这张词汇表上按（收件人，类型）落的一格格渠道集合。
+
+第一遍的次序是职责与非职责、术语表、外部接口契约、依赖与 UML 图、核心数据结构与核心算法与流程：职责与非职责给出边界，术语表固定分类法与有效集，外部接口契约按类型分类法这个资源消费点、路由与 PUT 的判定顺序逐节展开，依赖与 UML 图给出接口与矩阵表的关系；核心数据结构之后是核心算法与流程，走查用一次 PUT 把有效集与是否写行串起来。错误与失败语义、并发与事务边界属查阅用，并发与边界情形是最后的自检项；扩展点与实现状态在主体之后回看。
+
 ## 职责
 
 本模块交付**按通知类型的渠道偏好矩阵**，并作为**通知类型分类法的消费点**。它把各业务模块声明的通知类型（`notification.TypeSpec`）收成一份只读分类法，据以校验一次偏好写入点名的类型是否在册；它持有每个收件人对每个类型的渠道集合，回答「这个收件人、这个类型，走哪些渠道」。它在入口模块的登记接口上挂 `/types`、`/preferences` 与 `PUT /preferences/:typeKey/:channel`。
@@ -228,6 +232,16 @@ classDiagram
 唯一索引 `(tenant_id, recipient_user_id, type_key)`：一个收件人对一个类型至多一行。渠道集合以文本列持有，因为集合的次序是值的一部分、且没有任何一处按它的分部查询；读出时解码成 `[]notification.Channel`。
 
 ## 核心算法与流程
+
+### 走查
+
+初始状态：类型 `billing.invoice_paid` 已声明，`DefaultChannels` 为 `in_app` 与 `email`，`Unsubscribable` 为真；租户 `acme` 的收件人 `u1` 在 `notification_preferences` 表里没有该类型的行。
+
+1. `PUT /preferences/billing.invoice_paid/email`，正文 `{"enabled": false}`。正文、渠道与类型校验通过，类型可退订；当前有效集按缺行取 `in_app` 与 `email`，目标集合为 `in_app`，当前有效集与目标集合不等，`Set` 插入一行 `channels` 为 `["in_app"]`。持久状态：租户行 `(acme, u1, billing.invoice_paid)` 存在。
+2. 同一请求再发一次。当前有效集取行里的 `in_app`，目标集合仍是 `in_app`，当前有效集与目标集合相等，handler 答 200 且不写行。持久状态不变。
+3. `PUT /preferences/billing.invoice_paid/email`，正文 `{"enabled": true}`。当前有效集为 `in_app`，目标集合为 `in_app` 与 `email`，当前有效集与目标集合不等，`Set` 更新该行的 `channels`。持久状态：该行持有两个渠道。
+4. 若把同一请求指向一个 `Unsubscribable` 为假的类型，类型校验之后即以 `ErrNotUnsubscribable` 拒绝，答 409，表里不落行。
+5. 若一个本就没有存储行的类型被 PUT 成它的 `DefaultChannels`，目标集合与当前有效集相等，答 200 且不写行——缺行与持有同样集合的行语义相同。
 
 ### 分类法的收集
 

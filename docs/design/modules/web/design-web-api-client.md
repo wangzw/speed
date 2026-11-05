@@ -1,10 +1,12 @@
 # api-client
 
+api-client 是前端唯一的传输运行时，位于依赖图的底部，向上被 api-sdk、auth-core 与能力 UI 包取用。它拥有基地址、凭据、[租户](../../../glossary.md)头、语言、超时、重试、静默刷新与错误归一，并向调用方交出请求函数与事件流开启器。它不生成类型与端点、不认识租户语义、不持会话状态，也不交付 React 钩子。进入职责清单前的心智模型只有一句：契约给结构，本包给传输，前端的 HTTP 只从这一处发出。
+
 ## 职责
 
-前端唯一的**手写 HTTP 运行时**，包 `web/packages/api-client`。`createClient` 把若干可注入的扩展点——`fetch`、可选的仅内存的访问令牌存储、凭据模式、401 刷新钩子、重试策略、每次交换的超时、结构化上报端、语言提供者、租户提供者——接成一个请求函数 `RequestFn`；前端的每一次 HTTP 调用都经它发出，每一次失败都以 `ApiError` 拒绝。
+本包交付前端唯一的**手写 HTTP 运行时**（包 `web/packages/api-client`）：`createClient` 把若干可注入的扩展点——`fetch`、可选的仅内存的访问令牌存储、凭据模式、401 刷新钩子、重试策略、每次交换的超时、结构化上报端、语言提供者、租户提供者——接成一个请求函数 `RequestFn`；前端的每一次 HTTP 调用都经它发出，每一次失败都以 `ApiError` 拒绝。
 
-- **它为什么存在。** 契约的生成接口（[api-sdk](design-web-api-sdk.md)、orval 的产物，[REF-orval](../../../references.md)）产出的是**结构**——类型、每端点的函数与 Query hook——它不产出**传输**。生成接口把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 扩展点），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那个扩展点。传输（基地址、令牌、刷新、重试、超时、上报、语言、租户）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`（[REF-axios](../../../references.md)），这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
+- **为生成的接口提供唯一的传输。** 契约的生成接口（[api-sdk](design-web-api-sdk.md)、orval 的产物，[REF-orval](../../../references.md)）产出的是**结构**——类型、每端点的函数与 Query hook——它不产出**传输**。生成接口把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 扩展点），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那个扩展点。传输（基地址、令牌、刷新、重试、超时、上报、语言、租户）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`（[REF-axios](../../../references.md)），这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
 - **每次尝试接凭据。** 配了访问令牌存储时，请求函数在每次发送时从存储读一次当前令牌，接成 `Authorization: Bearer <token>`（[REF-rfc6750](../../../references.md)）；一次请求可声明 `omitAccessToken`，声明后完全不读存储、不接任何存储令牌。cookie 会话不需要这一路：凭据是服务端的 httpOnly 会话 cookie，由浏览器按 `credentials` 模式（同源缺省即带上）附上，故 cookie 宿主完全不配存储。令牌只在内存：本包没有任何存储 API，令牌不落 `localStorage`/`sessionStorage`/IndexedDB/cookie。
 - **租户按尝试发送，且不在令牌里。** 宿主交来一个租户提供者，本包每次尝试读一次，接成租户头；租户是请求期的路由事实，不在访问令牌的声明里，后端解析层正是从请求一侧（按配置取头、子域或路径）读它。租户头名缺省 `X-Tenant`，`tenantHeader` 可改名（部署的网关从别的头读租户时用）。未配提供者，或提供者返回空值时该头缺席；调用方自带的同名头不覆盖。
 - **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了凭据**（bearer 令牌，或凭据模式声明了 cookie 时会带的同源 cookie）的 401 触发一次刷新（并发的 401 共享同一次进行中的刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
@@ -12,8 +14,8 @@
 - **每次交换一条超时，调用方取消原样透传。** `timeoutMs` 界定一次 HTTP 交换（一次发送加其正文读取）；调用方传入的 `AbortSignal` 中止时以原生 `AbortError` 拒绝，不包裹、不重试。
 - **`ApiError` 归一。** 后端以 RFC 9457（[REF-rfc9457](../../../references.md)）问题对象作答（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。429 或 503 应答带 `Retry-After`（秒数或 HTTP 日期）时，解析出的等待毫秒数作为 `retryAfterMs` 落在 `ApiError` 上，解析失败或缺头时为 `undefined`。
 - **语言按尝试发送。** 宿主交来一个语言提供者，本包每次尝试读一次，接成 `accept-language`，是传输通道而非响应本地化开关。
-- **结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
-- **服务端事件流。** `createClient` 除请求函数外交出 `openEventStream`：经同一组扩展点（fetch、令牌存储、租户与语言提供者及租户头名、凭据模式、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
+- **做结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
+- **交付服务端事件流的开启器。** `createClient` 除请求函数外交出 `openEventStream`：经同一组扩展点（fetch、令牌存储、租户与语言提供者及租户头名、凭据模式、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
 
 ### 非职责
 

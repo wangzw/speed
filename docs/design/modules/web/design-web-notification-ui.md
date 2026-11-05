@@ -1,8 +1,10 @@
 # notification-ui
 
+notification-ui 是站内通知在浏览器里的界面，位于能力 UI 包这一层，覆盖后端通知能力的收件箱、偏好与推送。它拥有未读铃铛、收件箱、偏好矩阵、通知界面、实时订阅与声明式入口。它不做 HTTP、不定义契约、不做路由与权限判定，也不读会话。进入职责清单前的心智模型只有一句：提醒经生成钩子读写，实时连接只经宿主交来的开启器，[特性](../../../glossary.md)在场由宿主经 provider 给出。
+
 ## 职责
 
-本包是站内通知在浏览器里的界面，包 `web/packages/notification-ui`。一个能力 UI 包对一个后端能力目录（[web](design-web.md) 的划分轴），本包对后端通知能力的收件箱、偏好与推送三个方面。它交付：
+本包交付站内通知在浏览器里的界面（包 `web/packages/notification-ui`）：一个能力 UI 包对应一个后端能力目录（[web](design-web.md) 的划分轴），覆盖后端通知能力的收件箱、偏好与推送。它交付：
 
 - **未读铃铛**：`NotificationBell` 读调用方的未读数（`GET /api/v1/notifications/messages/unread-count`），渲染为图标按钮。**未读为零时不渲染徽标**——没有未读就没有数字，也不留一个可见的 `0`；未读数尚未读出或读取失败时同样不渲染徽标，此刻它不知道有没有未读，摆一个 `0` 是把未知说成没有；计数非零时徽标字形对无障碍树隐藏，计数落在按钮的可及名上（前端规范的图标按钮规则），读屏只播报一次。它受控：`onClick` 是宿主的导航，铃铛本身不含路由。
 - **收件箱界面**：`NotificationInbox` 读一页消息（`GET /api/v1/notifications/messages`），逐行渲染标题、正文、时间与未读/已读标记，未读行提供「标记为已读」（`POST /api/v1/notifications/messages/:id/read`），页头提供「全部标记为已读」（`POST /api/v1/notifications/messages/read-all`）。可选入参让宿主按分组过滤、按页大小翻页、在每行附上详情、把带链接的行交给宿主打开，并以嵌入形态去掉页头、改在指定层级渲染标题。

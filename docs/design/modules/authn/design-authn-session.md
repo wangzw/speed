@@ -1,5 +1,9 @@
 # authn.session
 
+`authn.session` 是认证[功能目录](../../../glossary.md)里登录会话的唯一持有者：浏览器 cookie 会话、非浏览器客户端令牌所挂靠的会话与服务账户密钥对应的会话，都住在一张 `authn_sessions` 表里，共用一套撤销入口。它决定会话 cookie 的写法与读法，按会话种类判定有效性，并在账户停用、删除或服务密钥撤销之后清理自己的行与缓存。它不认证任何人、不签发或校验令牌、不持有冒充记录，也不执行授权。职责清单之前的一句话心智模型：本模块只回答「这个凭据对应哪个会话、这个会话现在是否有效」，其余判断由建立身份之后的各层做。
+
+第一遍的次序是「职责」「非职责」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，依次是「期限的计算」「行的生命周期」「scs 的适配与必须绕开的部分」「cookie」「轮换、撤销、列出与踢下线」。「错误与失败语义」与「并发与事务边界」属查阅用；「扩展点」供宿主预置自己的会话实现时查。「实现状态」供核对上文承诺。竞态与边界情形是最后的自检项。
+
 ## 职责
 
 `authn.session` 是登录会话的唯一持有者。浏览器的 cookie 会话、非浏览器客户端的访问令牌与刷新令牌所挂靠的会话、服务账户每个密钥对应的会话，共用一张表 `authn_sessions` 与一套撤销入口。包为 `pkg/authn/session`，模块名为 `authn.session`。本文的「会话」一律指登录会话。取舍见 [ADR-authn-session](../../../adr/adr-authn-session.md)，状态放置的判据见 [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)。
@@ -7,8 +11,8 @@
 本模块负责下列事项（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
 - 交付 `Sessions`：会话的创建、读取、列出、撤销、轮换、提权、冒充挂接、按服务密钥取或建与撤销。权威存放在 db 的 `authn_sessions`，不在 kv。
-- 作为登录会话 cookie 的写出、清除与读取的唯一一处：cookie 的名字、前缀、`SameSite`（[REF-rfc6265bis](../../../references.md)）、`Domain`、`Secure` 只在本模块决定，别的模块只经 `Sessions.SetCookie` 与 `Sessions.ClearCookie` 写 cookie。
-- 作为校验后端认领会话 cookie，把 cookie 认成一份 `Principal`：先查进程内缓存，再读库，再核对账户状态与冒充记录（冒充记录的有效性同样经进程内缓存），最后交给网关盖章。
+- 写出、清除与读取登录会话 cookie，这是全目录的唯一一处：cookie 的名字、前缀、`SameSite`（[REF-rfc6265bis](../../../references.md)）、`Domain`、`Secure` 只在本模块决定，别的模块只经 `Sessions.SetCookie` 与 `Sessions.ClearCookie` 写 cookie。
+- 认领会话 cookie 并把它校验成一份 `Principal`：先查进程内缓存，再读库，再核对账户状态与冒充记录（冒充记录的有效性同样经进程内缓存），最后交给网关盖章。
 - 按种类判定会话是否有效：`browser`、`token`、`service` 各有自己的期限语义。
 - 维护唯一的撤销入口：撤销一个会话即撤销挂在它上面的访问令牌、刷新令牌与冒充记录，撤销以会话行的 `revoked_at` 为准，不比较时间。
 - 实现 `AccountLifecycle`：账户停用、删除与服务密钥撤销之后清理本模块的行与缓存；账户启用时它没有要恢复的东西，返回 nil。
@@ -397,7 +401,31 @@ CREATE INDEX authn_sessions_expires ON authn_sessions (expires_at);
 - `idle_expires_at` 只对 `browser` 种有意义；`token` 种的空闲约束由刷新令牌行承担，`service` 种没有空闲期限。
 - `revoked_at` 是撤销的唯一依据，不与任何时间比较。
 
+### 状态一览
+
+会话的种类（`browser`、`token`、`service`）决定期限条件，不是状态；下表只列一行会话的去向。过期是读时判定，不写库；已撤销由 `revoked_at` 表示。
+
+| 状态 | 一句话含义 | 当前动作（本模块） | 直觉画面 |
+|---|---|---|---|
+| 有效 | 期限未到且未撤销，可用于建立身份 | 在校验时放行，并按 `touch-interval` 续期空闲期限 | 门禁卡在有效期内，刷卡即过 |
+| 已过期 | 期限已过，读时判定，不写库 | 拒绝建立身份；`service` 种的过期随密钥 | 卡面日期已过，闸机不再认 |
+| 已撤销 | `revoked_at` 已写，凭据立即失效 | 在校验时拒绝，并按事件清除缓存 | 卡被注销，卡本身还在手里 |
+| 已清除 | 行已被清扫或账户删除移除 | 不再读到该行，标识不再对应任何会话 | 卡片从系统里删除，只剩记录 |
+
 ## 核心算法与流程
+
+### 走查
+
+一条 `browser` 种会话从建立到被清扫的持久状态。初始状态是 `authn_sessions` 里没有这一行。
+
+| 步骤 | 事件 | 持久状态 |
+|---|---|---|
+| 1 | 登录完成，`Sessions.Create` | 新增一行：`kind = browser`、`token_hash` 存 cookie 令牌的 SHA-256（base64url）、`idle_expires_at = now + idle-timeout`、`expires_at = now + absolute-timeout`、`revoked_at` 为空；`data` 里写入 `sid`、方式集、等级与期限。 |
+| 2 | 后续请求带 cookie | `last_seen_at` 前移，`idle_expires_at` 按 `touch-interval` 节流重算；`WHERE revoked_at IS NULL` 使续期写不会把已撤销的行写回。 |
+| 3 | 用户登出，`Sessions.Revoke` | `revoked_at` 与 `revoke_reason` 写入；本副本缓存清除，发布 `authn.session.revoked`；`token_hash` 仍在，但校验按 `revoked_at IS NULL` 拒绝。 |
+| 4 | 到期并过 `retention` | 清扫协程批量删除行：`browser` 与 `token` 种按 `expires_at` 判到期，`service` 种只在已撤销且过了 `retention` 之后删除。 |
+
+撤销这一步固定了一条边界：撤销只写 `revoked_at`，不与任何时间比较；行在保留期内还在，但不能再换出身份。
 
 ### 期限的计算
 
@@ -538,7 +566,7 @@ stateDiagram-v2
 - **检查。** 调用标准库 `http.CrossOriginProtection.Check`：它以 `Sec-Fetch-Site` 判跨源，只放行 `same-origin` 与 `none`；缺失时比较 `Origin` 与 `Host`；`Sec-Fetch-Site` 与 `Origin` 都没有的请求按「非浏览器或同源」放行。`same-site`（兄弟子域）按跨源处理，除非把那个来源加进可信来源。
 - **可信来源。** `public-url` 的来源加 `authn.gate.trusted-origins`（仅主配置源；每项先规范成浏览器发送的形式再匹配，规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）。SAML 的断言消费端点等外部方回跳经 `Mounter.Callback` 登记旁路（`AddInsecureBypassPattern`，模式语法同 `ServeMux`，gin 的 `:provider` 写成 `{provider}`）。
 - **不通过。** 401，由网关自产，计入 `denied` 桶、记在网关名下；不写 403；不清除 cookie。
-- **覆盖面。** authn 自己的 POST 路由（登录与步进等）经 `Mounter` 登记时先过同一检查，防登录 CSRF；可选认证的路由上 cookie 凭据同样要过，`Optional` 只放过「没带凭据」。
+- **覆盖面。** authn 自己的 POST 路由（登录与加强认证等）经 `Mounter` 登记时先过同一检查，防登录 CSRF；可选认证的路由上 cookie 凭据同样要过，`Optional` 只放过「没带凭据」。
 - **不做令牌式 CSRF。** 这一检查与 `SameSite=Lax` 互为兜底。跨源的单页应用用承载令牌，不用 cookie：承载令牌没有环境凭据，也就没有 CSRF 攻击面。
 
 ### 外部行为假设与守住它们的测试

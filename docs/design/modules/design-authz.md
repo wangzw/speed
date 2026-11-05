@@ -1,5 +1,9 @@
 # authz
 
+本模块是请求进入业务之前的一道授权判定：它位于认证与租户解析之后，读网关写进上下文的身份与已解析的[租户](../../glossary.md)，回答这个身份在这个域里对某个资源做某个动作有没有一条匹配的策略行。它拥有策略数据的读写与判定、进程内快照，以及平台管理面、租户管理面与调用方自身权限读取的 HTTP 面。它不认定身份、不管理成员关系、不解析租户；除两个管理面的强制档审计外，它也不写审计行。这些分别归认证、租户与审计。读职责清单之前应持有的一句话心智模型是：授权只把（域，资源，动作）与策略数据比对，身份和租户都是读进来的输入，不是它产生的结论。
+
+第一遍的次序是职责、术语表、外部接口契约、依赖、UML 图、核心数据结构与核心算法与流程：职责与术语表划定边界与词汇，外部接口契约与依赖给出可调用面与装配约束，UML 图给出一条受守路由与一次租户管理面写的判定次序，核心数据结构与核心算法与流程说明策略怎样装载、判定与失效，核心算法与流程的走查先跟一次授予写入落到持久状态的过程。错误与失败语义、并发与事务边界与扩展点属查阅用；实现状态放在最后，用代码锚点核对声称已实现的部分。竞态与边界情形——快照换指针、撤销的生效延迟、按租户的判底锁——是最后的自检项，与并发与事务边界一并核对。
+
 ## 职责
 
 `pkg/authz` 交付**授权**：在已认定的身份与已解析的租户之上，判定这个身份能否对某个资源做某个动作。模型是经典 RBAC——角色到权限，权限按（资源，动作）声明，**一个租户是一个策略域**（[ADR-authz-model](../../adr/adr-authz-model.md)）。引擎桥接 `github.com/casbin/casbin/v3`（[REF-casbin](../../references.md)），策略持久化经 `pkg/db` 由本模块自写的一个薄 adapter 落到自己的表（[ADR-authz-engine](../../adr/adr-authz-engine.md)、[ADR-authz-store](../../adr/adr-authz-store.md)）。
@@ -14,7 +18,7 @@
 - **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/api/v1/system/*` 下的平台管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把平台管理面的依赖与业务判定的依赖分开。
 - **`pkg/authz/tenantadmin`（模块 `authz.tenantadmin`）** 挂在 `/api/v1/tenants/{tenant}/*` 下的租户管理面路由，不交付功能；它取用 `policy` 的 `Manager` 与 `Catalog`，把租户域的角色、授权与绑定暴露给该租户的租户管理员，并执行防提权规则。它不取用 `Seeder`，也不取用宿主的 `Reconciler`。
 - **`pkg/authz/self`（模块 `authz.self`）** 挂 `/api/v1/authz/me/permissions`，把主体持有的权限读给调用方自身，不交付功能；它取用 `policy` 的 `SubjectPermissions`，因此不需要管理面或强制点。
-- **`pkg/authz/internal/persist`、`pkg/authz/internal/policy` 与 `pkg/authz/authztest`** 不登记模块：两个 `internal` 包是库包，`authztest` 是测试构造夹具。
+- **内部实现与测试夹具不构成登记单元。** `pkg/authz/internal/persist` 与 `pkg/authz/internal/policy` 承载不对外暴露的库实现，`pkg/authz/authztest` 提供测试构造夹具；它们都不登记模块，宿主无法在命令树上点名它们。
 
 本模块承接设计中划归授权的各权限点（[ADR-authn-decision-seam](../../adr/adr-authn-decision-seam.md)）：审计的检索与导出、设置的写入接口、租户角色与租户设置的写入接口、口令表主体（`static.*`）的角色以及谁有权冒充谁。它们各自的结构见[承接的权限点](#承接的权限点)。
 
@@ -892,6 +896,19 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 `authz.policy` 在 `Start` 把全部策略装载成一份进程内**不可变快照**（原子指针持有），请求期只读它、不查库。`Enforcer` 的实现是「读快照、跑 matcher」，对同一份快照的并发读不加锁。快照的更替见[快照与失效](#快照与失效)。
 
 ## 核心算法与流程
+
+### 走查
+
+租户管理员给一个域内角色授予一条权限。初始的持久状态是：`authz_roles` 里有这个角色的一行，`authz_grants` 里没有这条（资源，动作）行；调用方在 `authz_bindings` 里持有自己的角色绑定，该角色在 `authz_grants` 里持有 `authz.tenant.role.manage`。
+
+1. 调用方发出 `PUT /api/v1/tenants/{tenant}/roles/{role}/grants/{permission}`。路径租户核对与请求解析出的租户一致，请求进入 `authz.tenantadmin` 的 handler；此时持久状态不变。
+2. handler 读调用方身份，读发起者的注册验证状态；身份与注册验证状态都通过后，经 `RequirePermissionIn` 在路径点名的租户域判定 `authz.tenant.role.manage`。判定读进程内快照，不产生持久变化。
+3. handler 校验路径参数并做格式检查：权限属于 `Catalog.TenantGoverned()`，且 `Catalog.ObjectAction` 给出它的（资源，动作）对。随后经 `SubjectPermissions.Held` 读出调用方持有的权限，确认它包含这条权限；可选的 `WriteGuard` 放行。仍无持久变化。
+4. handler 在动作之前写一行强制档审计。持久状态新增一行审计记录；审计写不进则请求以 503 结束，`authz_grants` 不变。
+5. `Manager.PutGrant` 在一个事务里核对角色存在，然后插入 `authz_grants` 的一行：`tenant_id`、`role`、`resource`、`action` 与 `created_at`。提交之后持久状态是新增的那一行。
+6. 本副本换掉策略快照指针，并发布 `authz.policy.changed`。本副本的下一次判定读到含这一行的快照；别的副本在事件到达或 `refresh-interval` 到期后重载。持久状态不再变化。
+
+走查停在这里：授予行已落库，判定的生效范围由快照换指针与事件传播界定。
 
 ### 请求期判定
 

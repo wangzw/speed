@@ -1,5 +1,7 @@
 # jobs.scheduler
 
+本[模块](../../../glossary.md)是作业能力的周期触发端：它按业务模块声明的 `jobs.Schedule`，在每个窗口起点经队列为每个在册租户入队一条作业。它拥有窗口与幂等键的计算、声明集的收集与按租户展开，不拥有作业的执行、租约与退避。读职责清单前应持有的一句话心智模型是：本模块只负责让同一个窗口在每个租户下恰好排入一个作业，重复入队由队列的唯一约束收敛。
+
 ## 职责
 
 本模块交付**周期触发的驱动**：按各业务模块放进自己 `Resources` 的周期声明 `jobs.Schedule`，在每一个窗口起点向作业队列入队一条作业，使一次跨副本的运行中每个窗口恰好排入一个作业，无论有多少副本在跑。它只 tick 与入队，不执行作业——认领、执行、租约、退避与死信归 `jobs.db`（[design-jobs-db](design-jobs-db.md)）。
@@ -118,6 +120,16 @@ sequenceDiagram
 `Schedule.Key` 是全局唯一的字符串，形如 `<模块>.<用途>`，既用来点名一条声明，也用作窗口幂等键的输入。`Schedule.Interval` 是周期，`>0`；它同时是窗口的长度。每条声明都按名册逐租户展开：`tenant.Catalog.List` 给出在册租户，`tenant.Catalog.Enter` 逐个进入，各入队一条。
 
 ## 核心算法与流程
+
+### 走查
+
+初始状态：周期声明 `Key` 为 `billing.reconcile`、`Type` 为 `billing.reconcile`、`Interval` 为一小时；租户名册里有 `acme` 与 `globex`；作业表里没有这个窗口的行。
+
+1. 一次 tick 先经 `tenant.Catalog.List` 读一次在册租户，得到 `acme` 与 `globex`；按窗口起点算出本轮的（声明，窗口）对，幂等键为 `hex(sha256("billing.reconcile" + 窗口起点的十进制 UnixNano))`。
+2. 对 `acme`：`tenant.Catalog.Enter` 进入它，在该上下文上 `Enqueue`。作业表里多一行 `(acme, K)`，状态为 `pending`。对 `globex` 重复同一步：作业表里再多一行 `(globex, K)`。两行的 `idempotency_key` 相同，但唯一约束是 `(tenant_id, idempotency_key)`，租户是其中一维，所以两行并存。
+3. 另一个副本在同一个窗口里跑它自己的 tick。它算出同一个 `K`，两次 `Enqueue` 各自命中既有的那一行，返回同一条作业的标识，作业表没有新增行。
+4. 下一次 tick 覆盖下一个窗口，算出一个新的 `K`，为两个租户各入队一条新作业。进程在两次 tick 之间停过、跨过了整个窗口时，本模块不补那个窗口的入队。
+5. 一次 `Enqueue` 失败只记一条警告、继续其余的对；下一次 tick 按同一个窗口起点重算同一个 `K`，重复入队由队列收敛。
 
 ### 本模块的阶段行为
 

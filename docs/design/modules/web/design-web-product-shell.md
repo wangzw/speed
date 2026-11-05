@@ -1,8 +1,12 @@
 # product-shell
 
+product-shell 是[租户](../../../glossary.md)侧的装配壳，位于 layout-kit、auth-ui 与 auth-core 之上，被应用的 `main` 模块调用。它拥有视图机与一次装配整页入口的调用，负责把 i18n、会话、客户端、查询客户端与主题接到一起。它不做会话操作、不导航、不发请求、不做权限门，也不持租户切换器。进入职责清单前的心智模型只有一句：壳只按快照分支并把宿主内容摆进框架，装配入口只把零件接起来。
+
+第一遍为「职责」「外部接口契约」，「依赖」「UML 图」「核心数据结构」是随读随查的参考；随后是「核心算法与流程」的「走查」「视图机的分支判定」与「入口装配的接线次序」，「错误与失败语义」与「扩展点」作查表用。竞态与边界情形（启动恢复未落定时不挂载视图、会话结束策略、同名命名空间的双重注册）是最后的自检项。
+
 ## 职责
 
-租户侧装配壳，包 `web/packages/product-shell`。把共享外壳（[layout-kit](design-web-layout-kit.md) 的 `AppShell`）、登录界面族（`@speed/auth-ui`）与无头的会话 hook（[auth-core](design-web-auth-core.md)）组合成一个面向租户的业务应用前端门面，并交付一次装配整页入口的调用。
+本包交付租户侧装配壳（包 `web/packages/product-shell`）：把共享外壳（[layout-kit](design-web-layout-kit.md) 的 `AppShell`）、登录界面族（`@speed/auth-ui`）与无头的会话 hook（[auth-core](design-web-auth-core.md)）组合成一个面向租户的业务应用前端门面，并交付一次装配整页入口的调用。
 
 本包交付两处：
 
@@ -198,7 +202,7 @@ export const productShellResources: Readonly<Record<string, ResourceBundle>>
 | `@speed/auth-ui` | 缺省的会话结束屏 `SessionEndedScreen` |
 | `@speed/auth-core` | 视图机读取的会话 hook；`./bootstrap` 创建并接上的会话 |
 | `@speed/i18n` | 读本包自身命名空间的翻译 hook |
-| `@speed/api-client` | 仅 `./bootstrap`：凭据存储与 HTTP 客户端（含 401 刷新环节） |
+| `@speed/api-client` | 仅 `./bootstrap`：HTTP 客户端（含 401 刷新环节） |
 | `@speed/api-sdk` | 仅 `./bootstrap`：绑定每个生成调用经过的运行时接口（`./runtime`） |
 | `@speed/ui-kit` | 仅 `./bootstrap`：主题 provider；主入口只经 layout-kit 间接用到它 |
 
@@ -231,7 +235,28 @@ stateDiagram-v2
 | 会话结束上下文 | `SpeedSessionEndContext` | `session`、`queryClient`、`evictAllQueries` 三项 |
 | 装配产物 | `SpeedAppBootstrap` | `root`、`i18n`、`queryClient`、`session` 四项 |
 
+### 状态一览
+
+| 状态 | 一句话含义 | 当前动作（视图机） | 直觉画面 |
+|---|---|---|---|
+| `signIn` | 从未到达过应用，或尚未接上会话 | 渲染登录槽，槽缺席时渲染空，不渲染框架 | 门口，还没进去 |
+| `frame` | 快照为已认证 | 用 `AppShell` 包住业务子节点，把 `children` 放进 `main` 地标 | 人在屋里，框架围着他 |
+| `ended` | 到达过应用之后快照转匿名 | 渲染 `sessionEnded` 槽或缺省的 `SessionEndedScreen`，并把「再次登录」接成返回登录分支 | 人出来了，门还留着一条回头的路 |
+
+`reachedApp` 是组件局部记忆，是 `signIn` 与 `ended` 之间唯一的分界；分支翻转时焦点移入新分支的容器。
+
 ## 核心算法与流程
+
+### 走查
+
+以一次应用启动为例。初始状态：页面容器为空，i18n 实例不存在，`api-sdk` 的运行时接口未绑定请求函数，会话快照为匿名，查询缓存为空。
+
+1. `bootstrapSpeedApp` 建 i18n 实例：注册装配自带的族命名空间与平台错误兜底，再注册定义里的应用命名空间。此时实例的命名空间已固定，重复注册会在装配期抛错。
+2. 建会话（不传令牌存储，凭据只在浏览器 cookie 里），经 `attachSession` 接上；装配调用一次 `restore()`，在它落定之前不挂载视图。
+3. `createClient` 以会话的静默刷新为 401 分支建客户端，并经 `bindRequestFn` 绑进 `api-sdk`；此后未绑定的生成调用不再可能。
+4. 建无重试的 `QueryClient` 并装上会话结束策略；此时缓存为空，策略尚未被触发。
+5. `SpeedAppProviders` 立即挂到容器上；`restore()` 落定后，定义的 `providers` 与 `view` 才渲染。若视图根是 `ProductShell`，它的 `reachedApp` 随快照转已认证置真。
+6. 装配返回 `SpeedAppBootstrap {root, i18n, queryClient, session}`。
 
 ### 视图机的分支判定
 
@@ -253,7 +278,7 @@ stateDiagram-v2
 `bootstrapSpeedApp` 按下列次序装配，不偏离：
 
 1. **i18n** —— 一份默认双语的实例（`?lang=` 参数、已存选择、navigator 语言、`en-US` 兜底），由 `createSpeedI18n` 构造：注册本包组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell），并以平台错误文案包（`@speed/i18n/platform-errors`）为实例的兜底命名空间。每个命名空间的基准语言包（出厂包、`namespaces` 中的替换包或应用自己的包）先与该命名空间的 `resourceOverrides` 经 `overlayResources` 合并，再把语言集裁到实例的受支持集，然后注册——每个命名空间恰好一次；受支持集里有而合并结果缺的语言由注册抛错。`namespaces` 中列出四个族命名空间之一即替换其出厂包，不触发双重注册。注册先于渲染。
-2. **会话** —— 一个内存访问令牌存储（凭据不落存储）喂给 auth-core 的会话状态机，跑在生成的 authn 操作上，经 `attachSession` 接上。一次刷新按约定转回匿名启动。装配在启动时调用一次 `restore()`；**定义的视图（第 5 条）要等这一次恢复落定后才挂载**：cookie 是服务端 httpOnly 的凭据，脚本读不到，页面加载后的快照在恢复应答之前是「未知」而不是「匿名」，先按匿名快照渲染会让已登录用户的重载闪一下登录页再翻回应用。恢复拒绝（传输或服务端失败，快照保持匿名）也算落定，页面落到它本该有的登录页，而不是停在空白上。
+2. **会话** —— auth-core 的会话状态机以服务端 cookie 为凭据、不持本地令牌存储，跑在生成的 authn 操作上，经 `attachSession` 接上。一次刷新按约定转回匿名启动。装配在启动时调用一次 `restore()`；**定义的视图要等这一次恢复落定后才挂载**：cookie 是服务端 httpOnly 的凭据，脚本读不到，页面加载后的快照在恢复应答之前是「未知」而不是「匿名」，先按匿名快照渲染会让已登录用户的重载闪一下登录页再翻回应用。恢复拒绝（传输或服务端失败，快照保持匿名）也算落定，页面落到它本该有的登录页，而不是停在空白上。
 3. **客户端** —— `createClient` 建立在环境的 `fetch` 上，合并定义的 `client`（缺省 `credentials: 'same-origin'`；`fetch`、`timeoutMs`、`retryPolicy`、`reporter`、`tenantHeader` 由该表给出），以会话的静默刷新作 401 刷新环节，以 i18n 实例作语言源（每次尝试读一次，故语言切换后重试的请求带上用户当前所看的语言），以定义的 `tenantProvider` 作租户源（每次尝试读一次，接成租户头，故切租户后重试的请求带上用户当前所处的租户）；再经 `bindRequestFn` 绑进 api-sdk 的运行时接口，此后一切 API 流量都是生成代码的流量。`createClient` 的产物是 `SpeedClient`：请求函数加事件流开启器 `openEventStream`，后者随 `SpeedAppServices.api` 交给宿主，供需要服务端推送的页面打开一条长连接（同一组接入点，不另接一套传输）。
 4. **QueryClient 与会话结束策略** —— 无重试的 `createQueryClient`，加 `watchSessionEnd` 的出厂缺省：会话一结束即逐出离任主体读过的全部缓存。
 5. **provider 栈** —— `SpeedAppProviders` 把 StrictMode 包在 `I18nextProvider` 包 `AppThemeProvider`（收定义的 `theme`）包 `QueryClientProvider` 上；再加定义的 `providers`（最外层在前）包定义的 `view`。整棵宿主树（providers 与 view）都排在启动恢复的落定之后，恢复未落定时渲染空；宿主的 provider 因此不会在身份未定的窗口里挂载。
@@ -267,7 +292,7 @@ stateDiagram-v2
 
 ### 无重试的查询策略
 
-`createQueryClient` 让查询与变更都不重试：瞬时重试属传输层（`api-client` 的冻结重试策略只重试可挽回的瞬时类，且在单次请求内），带码的应答是重试无法挽回的确定答复，而变更在应答丢失后绝不能重发（创建可能已在服务端提交）。查询缺省显式写出 `staleTime: 0`，并显式写出 `refetchOnMount`、`refetchOnWindowFocus` 与 `refetchOnReconnect` 为 `true`，不依赖库的默认值：每一项 `staleTime` 为 0，且这三类自动重读的触发都未被关掉，故重挂载、标签页重新可见与重新联网都会在当前令牌下重读。依赖本包的视图级测试台复用这份 `createQueryClient`，不另建带不同缺省的 `QueryClient`；本包之下的共享测试支持包不 import 本包，自行写出同一组缺省值，使测试里的重读时机与生产一致。
+`createQueryClient` 让查询与变更都不重试：瞬时重试属传输层（`api-client` 的冻结重试策略只重试可挽回的瞬时类，且在单次请求内），带码的应答是重试无法挽回的确定答复，而变更在应答丢失后绝不能重发（创建可能已在服务端提交）。查询缺省显式写出 `staleTime: 0`，并显式写出 `refetchOnMount`、`refetchOnWindowFocus` 与 `refetchOnReconnect` 为 `true`，不依赖库的默认值：每一项 `staleTime` 为 0，且 `refetchOnMount`、`refetchOnWindowFocus` 与 `refetchOnReconnect` 都未被关掉，故重挂载、标签页重新可见与重新联网都会在当前令牌下重读。依赖本包的视图级测试台复用这份 `createQueryClient`，不另建带不同缺省的 `QueryClient`；本包之下的共享测试支持包不 import 本包，自行写出同一组缺省值，使测试里的重读时机与生产一致。
 
 ## 错误与失败语义
 

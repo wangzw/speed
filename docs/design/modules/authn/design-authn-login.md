@@ -1,12 +1,16 @@
 # authn 登录
 
+`authn.login` 是认证[功能目录](../../../glossary.md)的登录引擎：它持有一次登录的流程记录与状态机，驱动各登录方式的方法、账户解析、第二因素判定、会话建立与令牌发放，并挂出登录、回跳、发现与账户自助的路由。它规定每种方式在流程里的行为与失败形式，也规定认证前的失败退避与枚举防护怎样在这一路径上落地。它不存账户、不建会话、不签令牌、不实现因素，也不登记企业 IdP。职责清单之前的一句话心智模型：本模块是一台把「方法证明了什么」变成「账户是谁、要不要第二因素、发什么会话或令牌」的状态机，规则来自别的模块，执行次序在这里。
+
+第一遍的次序是「职责」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，依次是开始流程、答复与迁移、账户解析与策略判定、终态动作。「错误与失败语义」与「并发与事务边界」属查阅用，处理具体失败方向与竞态时供回查；「扩展点」供新接一种登录方式时查。「实现状态」供核对上文承诺。竞态与边界情形是最后的自检项。
+
 ## 职责
 
-- 持有登录流程。一次登录是 kv 里的一条流程记录，由引擎驱动的多步状态机推进，每次迁移是对流程记录的比较并交换。引擎、流程记录、绑定、迁移表与终态动作只在 `authn/login` 一处实现（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
+- 驱动登录流程：一次登录是 kv 里的一条流程记录，由引擎驱动的多步状态机推进，每次迁移是对流程记录的比较并交换；引擎、流程记录、绑定、迁移表与终态动作只在 `authn/login` 一处实现（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
 - 定义 `LoginMethod` 接口与方法的准入条件。接口在根包 `pkg/authn` 导出；方法只回答「这个人证明了什么」，以 `Proof` 交出事实，不做账户解析、开户、首登开户的用户名收集、关联、第二因素判定、建会话或发令牌。
 - 在第一因素通过之后做与方式无关的全部动作：把证明解析成账户（含开户与显式关联）、向 `MFA` 询问是否还要第二因素或登记因素、建登录会话或发令牌。首登开户在建号之前先取得用户名：账户解析判定要开户时，流程停在待建号，由引擎向客户端索取一个合法用户名，用户名通过之后才建账户（[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。账户解析的规则归 [authn-account](design-authn-account.md)，因素、策略与保障等级的合成归 [authn-mfa](design-authn-mfa.md)，本文只写引擎怎样调用它们、怎样处理它们的结果。
 - 规定口令登录只接受用户名或账户选作登录方式的已验证邮箱，短信登录只接受账户选作登录方式的已验证手机号；提供方声明的地址不作口令登录名，提供方登录与口令登录不混用（REQ-signin-006、REQ-signin-011、REQ-signin-038）。
-- 让目的 `login`、`link`、`step-up`、`enroll` 共用同一台状态机，终态动作按目的区分。目的取值是封闭集。
+- 以同一台状态机承载 `login`、`link`、`step-up`、`enroll` 这些目的，终态动作按目的区分。目的取值是封闭集。
 - 在 `authn.gate.mount.endpoints.default` 指定的端、普通接口的基路径之下挂登录路由、回跳路由、方式列表与账户自助路由：未认证的登录流程与回调挂普通接口的基路径。登录、注册与账户自助是全局账户的请求，不带租户名，因而不得落到任何被租户解析或准入层所守的端上。路由与访问级别经 `mount.Mounter` 用同一个调用声明（[authn-gate](design-authn-gate.md)）。账户自助里随装配成立的功能声明为[条件特性](../../../glossary.md)，在决定它们是否成立的同一处判定里经 `feature.Board` 的 `Post` 报告：手机号自助在挂其路由的分支里，邮箱分支在与该分支答 503 同源的判定处（见「声明的特性」）。
 - 挂匿名注册路由 `POST B/register`，经账户模块的 `Signups.Register` 一次建号：注册收集用户名、口令与邮箱，不建立会话、不发送邮件；同一事务插入的邮箱预留以唯一索引仲裁地址占用，预留不是标识，既不作登录方式，也不作联系方式或默认联系地址（REQ-signup-007；[ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-contact-claim](../../../adr/adr-authn-contact-claim.md)）。开户后客户端走既有的 `POST B/flows` 口令方法登录，邮箱在登录后经账户自助回路验证。
 - 规定认证前的失败退避与枚举防护在登录路径上的形式：在何处计数、何时拒绝校验、应答怎样保持一致且耗时相当。退避状态的存取接口 `Throttle` 与 `authn_throttles` 表归 [authn-account](design-authn-account.md)（[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)）。
@@ -225,7 +229,7 @@ type Proof struct {
 
 完成时，`delivery=session` 设 cookie，体为 `{"state":"authenticated","session":{"id","expires_at"}}`；`delivery=token` 体为 `{"state":"authenticated","token_type":"Bearer","access_token","expires_in","refresh_token"}`。
 
-待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信首登的这一步是 `username`、可选的 `display_name` 与 `password` 三个字段；企业即时开通的这一步只有 `username` 一个字段；社交首登的这一步是一个完整的开户页，含 `username` 与 `password` 两个字段，并把三件事随应答带出（都在 `next` 上，各自缺省即不出现，提交时都不回传）：`provided_method` 是发起这次登录的方法名（与发现文档的 `methods[].name` 同一词汇，例如 `wechat.mp`）；`provided_display_name` 是提供方给出的账号名；`provided_email` 是提供方声明为已验证的地址，客户端只读展示、不提供编辑。提供方没有给出其中一项时该成员缺席；其余开户路径的应答不带这三者。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "display_name":"...", "password":"..."}}` 提交，`display_name` 只在短信首登的这一步接受且可缺省；`password` 在短信首登与社交首登的这一步都接受，企业即时开通不接受。用户名格式不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
+待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信首登的这一步是 `username`、可选的 `display_name` 与 `password`；企业即时开通的这一步只有 `username`；社交首登的这一步是一个完整的开户页，含 `username` 与 `password`，并把 `provided_method`、`provided_display_name` 与 `provided_email` 随应答带出（都在 `next` 上，各自缺省即不出现，提交时都不回传）：`provided_method` 是发起这次登录的方法名（与发现文档的 `methods[].name` 同一词汇，例如 `wechat.mp`）；`provided_display_name` 是提供方给出的账号名；`provided_email` 是提供方声明为已验证的地址，客户端只读展示、不提供编辑。提供方没有给出其中一项时该成员缺席；其余开户路径的应答不带 `provided_method`、`provided_display_name` 与 `provided_email`。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "display_name":"...", "password":"..."}}` 提交，`display_name` 只在短信首登的这一步接受且可缺省；`password` 在短信首登与社交首登的这一步都接受，企业即时开通不接受。用户名格式不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
 
 ### 匿名注册
 
@@ -545,7 +549,36 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 回跳请求是用户代理的导航，带不了自定义请求头，所以回跳类方法只能在 `binding=cookie` 的流程里走完；`binding=header` 的流程里它们的回跳因绑定缺失以 `flow-invalid` 失败。回跳与每次答复都要求绑定匹配，这是对登录 CSRF 与流程固定的主要防线：`state` 与 SAML 的 `InResponseTo` 各自只证明请求与某个流程对得上，不证明流程与发起它的浏览器对得上。待建号的外部身份同样只由流程记录承载，读取要过绑定比对；授权码与断言一次性，因此另一个浏览器不能接手一条停在待建号的流程。
 
+### 状态一览
+
+流程记录的 `state` 是封闭集：`first`、`processing`、`signup`、`second`、`enroll`、`ready` 与终态墓碑 `done`、`failed`。下表的「当前动作」列是推进状态的一方，固定为登录引擎；方法只交出回答，不改写记录。
+
+| 状态 | 一句话含义 | 当前动作（登录引擎） | 直觉画面 |
+|---|---|---|---|
+| `first` | 等第一因素的答复或回跳 | 按方法交回的 `Step` 推进，回跳时把记录置为处理中 | 门口排队，第一道验证还没过 |
+| `processing` | 回跳类的授权码或断言正在被处理 | 在调用方法之前占住记录，并发回跳在此败下 | 一次性票据正在验，第二张举不进来 |
+| `signup` | 账户解析判定要开户，等用户名与口令 | 收集用户名，方法不参与这一步 | 门开了但屋里还没建好，先登记姓名 |
+| `second` | 第一因素已过，等第二因素 | 把可用因素清单交给客户端，`MFA` 校验 | 第一道门已过，第二道门正在点名 |
+| `enroll` | 策略要求登记因素 | 驱动 `MFA.Enroll`，本次登录不计入保障等级 | 门上要求装锁，装完才放行 |
+| `ready` | 认证已完成，等客户端取结果 | 等待 `step=complete`，终态动作尚未执行 | 门已开，通行证还没递出 |
+| `done` | 终态墓碑，终态动作已执行 | 拒绝后续答复，记录与流程同寿 | 票根撕下，通道关闭 |
+| `failed` | 终态墓碑，流程已作废 | 拒绝后续答复，用户重新开始 | 票已作废，回到队尾重排 |
+
 ## 核心算法与流程
+
+### 走查
+
+一次 `delivery=session`、`binding=cookie` 的 Google 登录，账户已存在且没有第二因素要求。初始状态是浏览器里没有流程 cookie，kv 里没有这条流程记录。
+
+| 步骤 | 事件 | 持久状态 |
+|---|---|---|
+| 1 | `POST B/flows` 选定 `google` | kv 写入一条 `state = first` 的流程记录，`method_state` 存 `state` 摘要与 PKCE 校验串；应答设 `__Host-authn-flow` cookie，库里只有流程令牌的 SHA-256。 |
+| 2 | 浏览器在 Google 处授权后回跳 `GET B/callback/google` | 引擎先比较并交换 `first` → `processing`，`seq` 与方法状态不变；这次交换使并发的第二次回跳得到 `flow-invalid`。 |
+| 3 | 方法交出 `StepProven`，引擎完成账户解析与策略判定 | 记录写入解析出的 `account` 与 `proof`；`MFA.Require` 返回 `MFANone`，记录比较并交换为 `ready`。 |
+| 4 | 客户端以 `step=complete` 取走结果 | 记录先交换为墓碑 `done`（交换的败者不能执行终态动作）；`Sessions.Create` 写一行 `browser` 种会话，`authn_sessions` 的 `idle_expires_at` 与 `expires_at` 按设置算出；应答在 `303` 里写出会话 cookie；`authn_accounts.last_login_at` 前移。 |
+| 5 | 客户端再次 `GET B/flows/current` | 记录是 `done` 墓碑，流程已消耗，不再对应一条可答的流程。 |
+
+取走结果时的次序固定了一条边界：会话 cookie 在最后一个可能失败的步骤之后写出，`done` 的交换保证同一授权码不会被执行两次。
 
 每步迁移的代价是对 kv 的一次读与一次 `CompareAndSwap`，与方法的复杂度无关；没有性能敏感的算法，不作复杂度分析。
 
@@ -732,7 +765,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 ```
 
-- **落地页。** 目的为 `login` 的落到设置 `authn.login.callback-error-return-to`，缺省 `/`；目的为 `link`、`step-up`、`enroll` 的落到该流程记录里的 `return_to`，即发起它的那个页面。两个来源都按 `return_to` 的同一规则校验。**发起页负责读片段**：本仓库的界面发起重定向类流程时一律带 `return_to` 指向发起的那一面（提权对话框、登记向导与绑定添加区都是如此），该页把问题码交给自己的错误呈现；落地页不读片段时，宿主的外壳在落地时读一次片段并以一次性提示呈现，不让拒绝静默消失（[starters](../design-starters.md)）。
+- **落地页。** 目的为 `login` 的落到设置 `authn.login.callback-error-return-to`，缺省 `/`；目的为 `link`、`step-up`、`enroll` 的落到该流程记录里的 `return_to`，即发起它的那个页面。目的为 `login` 的落地与流程记录的 `return_to` 都按同一规则校验。**发起页负责读片段**：本仓库的界面发起重定向类流程时一律带 `return_to` 指向发起的那一面（加强认证对话框、登记向导与绑定添加区都是如此），该页把问题码交给自己的错误呈现；落地页不读片段时，宿主的外壳在落地时读一次片段并以一次性提示呈现，不让拒绝静默消失（[starters](../design-starters.md)）。
 - **码。** 取问题类型 `urn:speed:authn:<码>` 中 `<码>` 一段，是已有的封闭词汇（`login-failed`、`link-required`、`account-unavailable`、`conflict`、`throttled`、`unavailable` 等）；不带码的 500 落成 `unavailable`。
 - **地址（仅 `link-required`）。** `link-required` 的落地在片段里多带 `authn_email`，值是冲突地址的掩码：本地部分的首个字符、`***`，再按原样接 `@` 与域名（`ann@home.org` 落成 `a***@home.org`）。只有这一种拒绝带它；其他码的落地不带这个键，`link-required` 没有可命名的地址时也不带。地址在服务端掩码，片段会写进浏览器历史并显示在页面上，只保留足以让调用方认出自己哪个地址冲突的位数。错误文本不带地址，因为错误会进日志。
 - **片段而非查询串。** 片段不随请求发往服务器，码与掩码地址都不进访问日志，也不进页面能发出的 `Referer`。

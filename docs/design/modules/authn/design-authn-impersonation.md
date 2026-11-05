@@ -1,13 +1,17 @@
 # authn.impersonation
 
+本模块是冒充记录的唯一持有者：它把一次冒充写成一条限定一个[租户](../../../glossary.md)、有期限、带理由、可审计的记录，并回答每条记录此刻是否仍然有效。会话、令牌与审计由别的模块承载，本模块只调用它们。它不判定「谁有权冒充谁」，那个判定经 `Decider` 取得，缺席即全拒。读职责清单前应持有的一句话心智模型：冒充是一条记录，不是一枚新凭据。
+
+第一遍按顺序读的节是职责与非职责、术语表、外部接口契约、依赖、UML 图、核心数据结构、核心算法与流程；术语表在遇到记录、发起者、目标时回看，UML 图的记录生命周期给出状态集合，核心数据结构的状态一览说明每个状态在做什么，核心算法与流程的走查与开始的顺序给出一次冒充的落库过程。错误与失败语义与并发与事务边界是最后自检的节；扩展点与实现状态在主体之后回看。
+
 ## 职责
 
 `authn.impersonation` 是冒充记录的唯一持有者。冒充是一条有期限、有理由、限定一个租户、全程留痕的记录，存放在表 `authn_impersonations`；它不是一枚新的凭据，也不是身份上的开关。包为 `pkg/authn/impersonation`，模块名为 `authn.impersonation`。取舍见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)，身份的结构见 [ADR-authn-identity](../../../adr/adr-authn-identity.md)，判定接口与管理面的分工见 [ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)。
 
 本模块负责下列事项（封闭集合，不在其内的事项归「非职责」一节所点名的模块）：
 
-- 交付 `Impersonation`：冒充的开始、结束、撤销、有效性判定与按键集分页的查询。
-- 独占 `authn_impersonations`：表的迁移、全部写入与全部读取只在本模块内发生。
+- 交付 `Impersonation`：受理冒充的开始、结束与撤销，判定一条记录此刻是否有效，并提供按键集分页的查询。
+- 独占 `authn_impersonations`：迁移、全部写入与全部读取只在本模块内发生，别的模块经 `Impersonation` 接口取用。
 - `Start` 内强制一组不依赖 `Decider` 的结构性限制，再询问 `Decider`，再写强制档审计，再写记录；载体挂接、补偿与 `started` 事件由登记 `B/impersonation` 的处理器在 `Start` 返回之后完成。
 - 回答一条记录此刻是否仍然有效，并把读时发现的失效惰性落库。
 - 在装配期守住冒充的租户范围：`ScopeGuard` 是必需依赖，没有准入层的装配启动失败。
@@ -262,6 +266,16 @@ stateDiagram-v2
 
 ## 核心数据结构
 
+### 状态一览
+
+记录的封闭状态集是「有效」「已失效」「已结束」，转换见 UML 图的记录生命周期。下表说明每个值在运行时意味着什么。
+
+| 状态 | 一句话含义 | 当前动作（记录） | 直觉画面 |
+|---|---|---|---|
+| 有效 | 未结束且 `Active` 为真，冒充正在生效 | 把生效的租户范围交给请求链，会话与令牌载体照常认证 | 一张仍亮着的通行证 |
+| 已失效 | 仍未结束但 `Active` 为假，失效原因尚未落库 | 等待下一次求值路径（`Active`、`List`、`Revoke` 或同一会话的 `Start`）把它写成已结束 | 通行证已经过期，闸机还没记下 |
+| 已结束 | `ended_at` 非空，终态 | 不再参与认证判定，只作为审计与查询的历史 | 归档的注销单 |
+
 ### 表 authn_impersonations
 
 ```sql
@@ -299,6 +313,18 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 记录永不由本模块清除。时间一律取自认证功能目录的统一时钟，写入 UTC。表没有外键：其他模块的表可能因模块未纳入而不存在，`pkg/db` 也没有跨模块传递事务句柄的通道（[ADR-authn-accounts](../../../adr/adr-authn-accounts.md)）。部分唯一索引在各个受支持的方言下的写法由迁移集按方言提供。
 
 ## 核心算法与流程
+
+### 走查
+
+初始状态：发起者是一个启用的用户账户，有活的登录会话，名下没有未结束的冒充记录；目标账户启用，是租户 T 的有效成员，且不是发起者自己。
+
+1. `Start` 校验结构性限制并询问 `Decider`。这一步不写任何行：记录表没有新行，审计也没有新行。
+2. 强制档审计在事务之外写下 `authn.impersonation.start`，结果 `granted`，带预先生成的 `grant_id`。持久状态是一条审计行，记录表仍是空的。
+3. 记录事务先把本会话上已失效而 `ended_at IS NULL` 的记录落库（此例没有），再插入新行。持久状态是 `authn_impersonations` 的一行：`session_id` 为发起者的会话，`tenant_id` 为 T，`ended_at` 为空，`end_reason` 为空。
+4. cookie 凭据下，处理器调用 `Sessions.SetImpersonation` 与 `Sessions.SetCookie`。持久状态是发起者会话行的 `impersonation_id` 指向刚插入的记录，客户端持有换出的会话令牌。
+5. 处理器发布 `authn.impersonation.started`。持久状态不变；之后的请求按这条记录判定为冒充身份。
+
+Bearer 凭据下，载体挂接改为签发一枚冒充访问令牌，不改会话行，持久状态是记录行与令牌本身。
 
 ### 结构性限制
 

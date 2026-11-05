@@ -1,5 +1,9 @@
 # authn-failure
 
+本文件不是模块：它承载 authn 整个[功能目录](../../../glossary.md)与 `tenant.admission` 的失败语义，把启动期与运行期的哨兵、依赖不可用时每条路径的方向、放宽清单、时间容差与部署前提收在一处。各模块文档的失败表是这里对应行的细化，不与之相悖。它不承载配置键、各模块的流程与状态机，也不承载事件、审计与指标的取值。读职责清单前应持有的一句话心智模型：依赖答不出来时默认拒绝，凡是放宽都在封闭清单里并带上界。
+
+第一遍按顺序读的节是职责与非职责、术语表、外部接口契约、依赖、UML 图、核心数据结构、核心算法与流程；术语表在遇到放宽、没答时回看，外部接口契约的哨兵结构、对调用方的承诺与失败应答是接口，UML 图给出方向判定与错误归类的次序，核心算法与流程的放宽判据与方向判定次序是需要内化的规则。错误与失败语义的哨兵表与方向表是最后核对的节，实现状态在主体之后回看。
+
 ## 职责
 
 本文承载 `pkg/authn` 整个功能目录的失败语义：哪些失败有名字、请求期依赖不可用时每条路径往哪个方向走、哪些放宽被写明并带着上界、时间如何使用，以及认证检不出而只能写成前提的部署条件。本文不对应一个包，也不注册模块；它描述的是贯穿各 `authn.*` 模块与 `tenant.admission` 的一个方面。取舍与否决的写法见 [ADR-authn-failure](../../../adr/adr-authn-failure.md)，状态放置的判据见 [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)。
@@ -191,7 +195,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 用到时间的地方 | 容差与要求 |
 |---|---|
 | 访问令牌 `exp`、`nbf`、`iat` | `ValidateWithLeeway`，容差由 `authn.token.leeway` 设定（缺省与取值域见 [design-authn-config](design-authn-config.md)）：一个副本签发、另一个副本校验时，偏差超过容差则出现零星的 401 |
-| OIDC（[REF-openid-connect-core](../../../references.md)）的 ID 令牌 | go-oidc（[REF-go-oidc](../../../references.md)）的 `exp` 与 5 分钟的 `nbf` 宽限；`auth_time` 只在步进里比较 |
+| OIDC（[REF-openid-connect-core](../../../references.md)）的 ID 令牌 | go-oidc（[REF-go-oidc](../../../references.md)）的 `exp` 与 5 分钟的 `nbf` 宽限；`auth_time` 只在加强认证里比较 |
 | SAML 的 `Conditions` 与 `SubjectConfirmationData` | 全部由库按严格的当前时间判，没有容差设置；authn 另校验 `IssueInstant` 不早于当前减 `assertion-max-age`；SP 时钟与 IdP 的偏差超出库的严格时间判定与 `IssueInstant` 校验所容许的范围时，会零星拒掉合法断言，要求部署时间同步 |
 | TOTP | 固定前后各一步（30 秒），不做漂移校正 |
 | 会话与刷新令牌的期限、短信验证码、WebAuthn 仪式、流程记录 | 以写入副本的时钟记 `expires_at`，读取副本比较；期限在副本之间偏移同样的偏差。流程记录的 TTL 有取值域下限，偏差要远小于该下限；kv 的 Memcached 与 NATS 实现把写入副本的时钟写在值前面 |

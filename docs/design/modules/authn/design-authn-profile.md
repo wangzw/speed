@@ -1,12 +1,14 @@
 # authn-profile
 
+本[模块](../../../glossary.md)把账户读改本人档案做成挂在基路径下的路由：`GET B/me` 读，`PATCH B/me` 写，身份取自请求上下文，路径里不出现账户标识。它把显示名、属性、语言、时区与颜色模式经账户模块既有的写入接口写入，不另持状态。它不经 `Decider`，也不挂改口令、换手机、删标识一类改动认证事实的自助路由。读职责清单前应持有的一句话心智模型：档案自助只认身份，不认路径里的账户。
+
 ## 职责
 
 本模块交付认证能力的**用户档案自助接口**：把「账户读改自己的档案」做成挂在基路径下的路由，身份取自请求上下文，路径里不出现账户标识。
 
 - **路由。** `GET B/me` 读本人的档案，`PATCH B/me` 改本人的档案；`B` 是普通接口的基路径（`authn.gate.mount.bases.default`，缺省 `/api/v1/auth`，见 [authn-config](design-authn-config.md)）。
 - **身份取自上下文。** 路由经 `authn.FromContext` 取发起者的身份，账户由身份给出，不由路径或正文里的标识给出。授权依据是「发起者就是这个账户」这条无须策略的事实，自助范围的判据见 [authn-admin](design-authn-admin.md)。
-- **自写字段集。** 可自写的字段是一个封闭集：显示名、属性、语言、时区、颜色模式；其余字段不可自写。
+- **限定自写字段集。** 可自写的字段是封闭集：显示名、属性、语言、时区、颜色模式；其余字段不可自写。
 - **复用既有写入接口。** 写经根包接口 `authn.AccountAdmin` 的 `SetDisplayName` 与 `SetAttributes` 落到账户模块；语言、时区与颜色模式是账户属性集里的具名用法。语言与时区的键由 `i18n.LocaleAttributeKey`、`i18n.TimeZoneAttributeKey` 命名，由 [i18n](../design-i18n.md) 的账户桥接读回；颜色模式的键由本模块的 `ColorModeAttributeKey` 命名（`presentation.color-mode`），没有别的 Go 模块读它。三者的存储都归账户属性集的通用接口（[ADR-i18n-preferences-storage](../../../adr/adr-i18n-preferences-storage.md)）。本模块不另造写入接口、不另持状态、不新增存储。
 - **注册验证状态与联系方式、登录方式的只读接口。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`；`identifiers` 的每一条邮箱与手机带 `proven`（由 `Verification.Proves` 派生）、`contact`（联系方式）、`sign_in`（是否作登录方式）与 `default_contact`（是否为默认联系地址）。邮箱与手机标识从登记起恒为联系方式，登录方式由持有人选择（REQ-account-061）；验证只证明所有权，不决定登录方式上的选择（REQ-account-062）。联系方式、登录方式与默认联系地址的取舍见 [ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)。本模块不写注册验证状态，也不写登录方式与默认联系地址上的选择；验证状态由账户持有的邮箱标识与未证明预留派生，判定不区分账户是自助注册、管理员预置还是导入写出的（[authn-account](design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
 - **不交付功能接口。** 本模块只挂路由，仿 `authn.admin`。

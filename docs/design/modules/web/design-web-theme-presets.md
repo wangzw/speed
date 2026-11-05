@@ -1,8 +1,10 @@
 # theme-presets
 
+theme-presets 是[主题预设](../../../glossary.md)的数据货架，位于依赖图的底部，只依赖 tokens 的类型，由 ui-kit 的主题 provider 取用。它交付随包的成品风格，每个预设是相对默认 token 树的一份差异。它不定义合并机制、不认识 React、MUI 与 i18n，也不拥有活动预设。进入职责清单前的心智模型只有一句：预设只是可写给 `deepMerge` 的一层数据，显示名与切换都归宿主与主题 provider。
+
 ## 职责
 
-主题预设的货架，包 `web/packages/theme-presets`。它是一个纯数据包：每个预设是一份 `ThemePreset`，内容是相对默认 token 树的一份差异，由装配层与其它层一并交给主题 provider。
+本包交付主题预设的货架（包 `web/packages/theme-presets`）：它是一个纯数据包，每个预设是一份 `ThemePreset`，内容是相对默认 token 树的一份差异，由装配层与其它层一并交给主题 provider。
 
 - **交付随包的成品风格。** 基线 `default`，以及 `classic`（传统管理后台）、`modern`（时尚产品页）、`compact`（信息密集型）、`glass`（液态玻璃）、`ascii`（ASCII 终端）。
 - **只写设计取值。** 预设改 token 的段——配色、排版、间距、圆角、阴影、表面——不写 MUI（[REF-mui](../../../references.md)）的组件覆盖。效果映射是主题适配器的事（[ui-kit](design-web-ui-kit.md)）。
@@ -62,7 +64,7 @@ export const themePresets: readonly ThemePreset[]
 |---|---|---|
 | `@speed/tokens` | 仅类型 | `TokensOverride` 的类型；本包只 `import type`，没有运行时依赖 |
 
-**方向是自下而上。** 本包与 `@speed/tokens` 同属前端依赖图的地板，之上由 [ui-kit](design-web-ui-kit.md) 的主题 provider 取用，再之上是装配壳与宿主。[`@speed/tokens`](design-web-tokens.md) 仍是唯一的合并机制与默认树；本包只是它的数据消费者。
+**方向是自下而上。** 本包只取 `@speed/tokens` 的类型，位于它之上；本包之上由 [ui-kit](design-web-ui-kit.md) 的主题 provider 取用，再之上是装配壳与宿主。[`@speed/tokens`](design-web-tokens.md) 仍是唯一的合并机制与默认树；本包只是它的数据消费者。
 
 ## UML 图
 

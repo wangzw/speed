@@ -12,7 +12,7 @@
 
 - `@speed/auth-core` 持有会话快照。登录与恢复的提交都过一个世代守卫，登出抬升世代、丢弃在途结果；平台权限集 `permissionSets` 已有一套存活规则，已认证状态下的 `restore` 保留它。
 - `@speed/api-client` 在任何请求被答 401 时走静默恢复，恢复钩子是 `restore`；匿名状态下请求一个必答 401 的读取接口会形成循环。
-- 前端各包的界：壳 `@speed/product-shell` 不发请求、不做权限门；`@speed/route-kit` 不 import 任何同族前端包；notification-ui 不读会话，实时订阅是否打开由宿主经 `NotificationStreamProvider` 的 `enabled` 给出；admin-ui 对 auth-core 的依赖只有步进认证一处；account-ui 只在要驱动会话操作时以属性接收会话。登录组件只经 `session` 属性驱动会话操作、不消费 auth-core 的钩子，这是 [ADR-web-auth-channel-discovery](adr-web-auth-channel-discovery.md) 所沿用的约束。
+- 前端各包的界：壳 `@speed/product-shell` 不发请求、不做权限门；`@speed/route-kit` 不 import 任何同族前端包；notification-ui 不读会话，实时订阅是否打开由宿主经 `NotificationStreamProvider` 的 `enabled` 给出；admin-ui 对 auth-core 的依赖只有加强认证一处；account-ui 只在要驱动会话操作时以属性接收会话。登录组件只经 `session` 属性驱动会话操作、不消费 auth-core 的钩子，这是 [ADR-web-auth-channel-discovery](adr-web-auth-channel-discovery.md) 所沿用的约束。
 
 ## 考虑过的选项
 
@@ -42,7 +42,7 @@
 
 ### 能力 UI 包内的控件直接调 `useFeature`
 
-**否决**：与既有的包界相抵——notification-ui 不读会话，admin-ui 对 auth-core 的依赖只有步进认证一处，account-ui 的会话只以属性传入。特性态只在已认证会话里存在，是会话派生的读数。ADR-web-auth-channel-discovery 让登录组件只经属性驱动会话、不消费 auth-core 的钩子；能力包直接读特性钩子，会在同族包里形成相反的形态。
+**否决**：与既有的包界相抵——notification-ui 不读会话，admin-ui 对 auth-core 的依赖只有加强认证一处，account-ui 的会话只以属性传入。特性态只在已认证会话里存在，是会话派生的读数。ADR-web-auth-channel-discovery 让登录组件只经属性驱动会话、不消费 auth-core 的钩子；能力包直接读特性钩子，会在同族包里形成相反的形态。
 
 ### auth-core 随会话提交取回并持有特性态，宿主读它，能力 UI 包经属性或上下文组件接收
 
@@ -54,11 +54,11 @@
 
 - 快照带 `features` 字段，取值是封闭集合：`none`（匿名，从不取回）、`pending`（只在显式重试在途时出现）、`failed`、`ready`（带名字集合）。
 - 登录提交与从匿名状态开始的 `restore`：`/api/v1/auth/me` 与 `/api/v1/features` 并行读取，过同一个世代检查，一起提交。特性读取失败不让登录失败，快照为 `failed`。
-- 令牌刷新、已认证状态下的静默 `restore`、步进认证、绑定、因素登记、冒充开始与结束：特性态保留、不重取，与 `permissionSets` 同一套存活规则。
+- 令牌刷新、已认证状态下的静默 `restore`、加强认证、绑定、因素登记、冒充开始与结束：特性态保留、不重取，与 `permissionSets` 同一套存活规则。
 - 登出时清为 `none`，抬升世代；服务端告知会话已结束时清为 `none`。登录提交之外的特性写入，写入前核对当前仍是开始读取时的那个已认证主体。
 - 失败态的重试是显式动作 `retryFeatures()`，并发调用合并为一次。
 - 匿名状态下从不请求 `/api/v1/features`；特性态只放内存。
-- 读特性态的钩子只由宿主使用。能力 UI 包经属性或上下文组件接收特性在场信息，形态同 `NotificationStreamProvider` 的 `enabled`；各包「不读会话」「对 auth-core 只依赖步进认证」「会话只以属性传入」的界不变。
+- 读特性态的钩子只由宿主使用。能力 UI 包经属性或上下文组件接收特性在场信息，形态同 `NotificationStreamProvider` 的 `enabled`；各包「不读会话」「对 auth-core 只依赖加强认证」「会话只以属性传入」的界不变。
 
 ## 后果
 

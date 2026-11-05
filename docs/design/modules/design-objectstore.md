@@ -1,5 +1,9 @@
 # objectstore
 
+本[模块](../../glossary.md)是业务后端的对象存取能力：它把一份字节连同元数据存下来，此后按标识读回、列举与删除，并可为业务前端铸一条直连地址。它拥有字节接口、元数据与生命周期状态机、内容路由与直连地址的铸造，不拥有终端用户授权、内容净化、缩略图派生与审计行的写入。读职责清单前应持有的一句话心智模型是：字节与元数据分开存放，元数据模块只经稳定的字节接口寻址字节，调用方拿到的永远是对象标识而不是内部键。
+
+第一遍的次序是职责、外部接口契约、依赖、UML 图、核心数据结构与核心算法与流程：职责与外部接口契约给出能力、状态与路由，依赖与 UML 图给出后端接口与实现的关系，核心数据结构给出 `objects` 表、`object_grants` 表与对象状态，核心算法与流程给出直传生命周期、地址铸造、内容路由与过期清扫，其开头的走查先跟一次直传从声明到删除的持久状态。错误与失败语义、并发与事务边界与扩展点属查阅用；实现状态放在最后，用代码锚点核对声称已实现的部分。竞态与边界情形——上传与状态推进不在同一事务、清扫与并发删除、令牌过期与墓碑——是最后的自检项，与并发与事务边界一并核对。
+
 ## 职责
 
 本能力交付**对象的字节存取、元数据生命周期与直连地址**：一份字节连同它的元数据存下来，此后按标识读回、列举与删除，并可为业务前端铸出一条读写该字节的地址。字节的物理存放归一个**字节接口** `Store`，元数据、生命周期状态机与内容路由归一个**排他的模块** `objectstore.metadata`，它持有 `objects` 表与 `object_grants` 表，排他交付生命周期的接口 `Objects`。
@@ -464,7 +468,32 @@ stateDiagram-v2
 
 **声明里的值与上传后记下的值并存。** `declared_size`、`declared_type`、`declared_checksum` 是调用方在声明时给的；`size`、`mime`、`checksum_sha256` 是上传时模块自己读出的。两者分列存放，本模块因此能在完成时看出后端持有的字节数与声明不符，又不把声明值改写成观测值。`Object` 交出的是观测值一侧。
 
+### 状态一览
+
+`State` 的取值集是封闭的；下表说明每个取值在运行中的含义。
+
+| 状态 | 一句话含义 | 当前动作（对象） | 直觉画面 |
+|---|---|---|---|
+| 待上传（pending） | 已声明、上传窗口未关 | 等待字节到达，业务后端的 `Upload` 或前端对写地址的直传正在写入 | 一个已预留的空箱，封口时间写着上传窗口的截止 |
+| 已上传（uploaded） | 字节已到、待完成 | 等待 `Complete` 核对字节，或在一次重传里被覆盖 | 箱子里已有东西，还没盖章确认 |
+| 已完成（completed） | 字节核对通过、可用于读取 | 被读取，或在 `expires_at` 到期后被清扫 | 已封箱贴上标签的档案盒 |
+| 已删除（deleted） | 墓碑，字节已从后端删去 | 不再参与任何读写，删除与清扫都返回无事可做 | 空架位上留下的注销标记 |
+
 ## 核心算法与流程
+
+### 走查
+
+一次进程内直传从声明走到删除，装配的字节后端是 `fs`。初始的持久状态是：`objects` 表与 `object_grants` 表都没有这个对象。
+
+1. 业务后端调 `Create(Declaration{Size: 1024, ContentType: "image/png"})`。`objects` 新增一行：随机对象标识与内部键，`state` 为 `pending`，`declared_size` 为 1024，`declared_type` 为 `image/png`，`upload_expires_at` 为当前时刻加上传窗口。
+2. 业务后端调 `URL(id, URLRequest{Access: URLAccessWrite})`。装配的后端不交付 `DirectURL`，本进程铸一个令牌，`object_grants` 新增一行：`token_hash`、`object_id`、`use` 为 `write`、`expires_at`；`objects` 行不变。
+3. 业务后端调 `Upload(id, r, 1024)`。字节经 `Store.Put` 存入后端；`objects` 行的 `state` 转 `uploaded`，`size` 写 1024，`checksum_sha256` 写流式计算的结果，`mime` 取 `declared_type`。
+4. 业务后端调 `Complete(id)`。`Store.Stat` 报出的字节数与 `declared_size` 一致，条件 UPDATE 把 `state` 转 `completed`，写入观测尺寸、`mime` 与按 `object-ttl` 算出的 `expires_at`。
+5. 业务后端判定某个终端用户可读，调 `URL(id, URLRequest{Access: URLAccessRead})`。`object_grants` 再新增一行，`use` 为 `read`。
+6. 前端按地址 `GET /content?t=<token>`。内容路由按 `token_hash` 查到授权行，进入租户后加载对象行，经 `Store.Open` 返回字节；`objects` 与 `object_grants` 都不变。
+7. 业务后端调 `Delete(id)`。`Store.Delete` 删掉字节，条件 UPDATE 把 `state` 置 `deleted`；对象行留作墓碑，授权行保留到清扫。
+
+若走前端直传路径，把进程内那次 `Upload` 换成浏览器对写地址发一次 `PUT /content?t=<token>`，落库的字段相同。
 
 ### 对象生命周期（直传）
 

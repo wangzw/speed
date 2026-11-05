@@ -1,8 +1,10 @@
 # i18n
 
+i18n 是前端包树的国际化层，位于依赖图的地板，被 ui-kit 与各个界面包取用。它拥有实例创建、语言协商与切换、命名空间注册与校验、缺键纪律、错误码到文本的解析，以及显示时区与时间格式化的纯函数。它不渲染服务端文案、不持具体包的文案，也不持业务状态与显示时区。进入职责清单前的心智模型只有一句：每个[宿主](../../../glossary.md)一个实例，命名空间在启动处注册一次，缺键绝不回退到另一种语言。
+
 ## 职责
 
-本包是 web 包树的国际化层，包裹 react-i18next（[REF-react-i18next](../../../references.md)）与 i18next（[REF-i18next](../../../references.md)）并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回退到另一种语言**。
+本包为 web 包树提供国际化层，包裹 react-i18next（[REF-react-i18next](../../../references.md)）与 i18next（[REF-i18next](../../../references.md)）并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回退到另一种语言**。
 
 它把一个宿主需要的整套 i18n 接口收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI（[REF-mui](../../../references.md)）本地化辅助函数在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
 

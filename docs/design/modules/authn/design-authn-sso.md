@@ -1,18 +1,22 @@
 # authn-sso
 
+`authn.sso` 及其子包持有租户自有身份提供方的登记、邮箱域的所有权证明与发现，以及 SAML 断言与企业 OIDC 身份令牌的校验和这些校验使用的受限出站客户端。它把一次回跳证明了什么交给登录引擎，自己不决定账户、不建会话、不合成保障等级。它不运行登录流程，不执行租户级强制 SSO，也不写管理面路由。职责清单之前的一句话心智模型：本模块回答「这个提供方属于哪个租户、这次[外部身份](../../../glossary.md)断言是否可信」，账户与会话的后果生在别处。
+
+第一遍的次序是「职责」「非职责」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，依次是提供方行的写入、域所有权与发现，SAML 断言消费与受限出站客户端供接入一个提供方时细查。「错误与失败语义」与「并发与事务边界」属查阅用；「扩展点」供新增协议或钩子时查。「实现状态」供核对上文承诺。竞态与边界情形是最后的自检项。
+
 ## 职责
 
 企业单点登录由下列登记单元承担：`authn.sso`（包 `pkg/authn/sso`）、`authn.sso.saml`（包 `pkg/authn/sso/saml`）与 `authn.sso.oidc`（包 `pkg/authn/sso/oidc`）。它们持有租户自有身份提供方（IdP）的登记、邮箱域的所有权证明与发现、SAML（[REF-saml2](../../../references.md)）断言与企业 OIDC（[REF-openid-connect-core](../../../references.md)）的 ID 令牌的校验，以及这些校验用到的受限出站客户端。取舍见 [ADR-authn-sso](../../../adr/adr-authn-sso.md)，包与模块的划分见 [ADR-authn-packaging](../../../adr/adr-authn-packaging.md)。
 
 本功能包括下列部分（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
-- **提供方登记。** `SSOProviders` 由 `authn.sso` 排他交付，读写 `authn_idps`。提供方是表里的数据，不是模块，不进设置也不进配置：运行期才出现、数量不定、带秘密的配置是数据（[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。`client_secret` 在加密列里，读取接口不交出它。
-- **域所有权与发现。** 租户为提供方声明邮箱域，经 DNS TXT 证明所有权；已验证的域全局唯一；`POST B/sso/discover` 按已验证的域返回入口列表。数据在 `authn_idp_domains`。
-- **SAML 登录方式。** `authn.sso.saml` 交付 `LoginMethod`（名 `saml`）：发起、SP 元数据、断言消费与逐项补充校验。断言标识的去重由 `authn.sso` 承担：`authn.sso` 经 `RememberAssertion` 把 `authn.sso.saml` 在断言消费时交来的断言标识写入 `authn_saml_assertions`，撞唯一约束即返回 `ErrAssertionReplay` 拒绝重放；清扫删除 `not_on_or_after` 已过的行。
-- **企业 OIDC 登录方式。** `authn.sso.oidc` 交付 `LoginMethod`（名 `oidc`），与社交登录的 Google 走同一条校验代码路径，差别只在配置来源。
-- **元数据刷新。** `authn.sso.saml` 交付 `SSOMetadataRefresher`，由管理员或宿主触发，不在后台自动运行。
-- **受限出站客户端。** `pkg/authn/internal/egress` 提供发现文档（[REF-openid-connect-discovery](../../../references.md)）、JWKS（[REF-rfc7517](../../../references.md)）、元数据与 userinfo 一类出站请求共用的 `http.Client`，因为这些 URL 来自租户管理员的输入。
-- **清扫。** `authn.sso` 在 `Start` 起有界协程，清扫已过期的断言标识与久未验证的域声明。
+- **登记提供方。** `SSOProviders` 由 `authn.sso` 排他交付，读写 `authn_idps`；提供方是表里的数据，不是模块，不进设置也不进配置：运行期才出现、数量不定、带秘密的配置是数据（[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。`client_secret` 在加密列里，读取接口不交出它。
+- **证明域所有权并回答发现。** 受理租户为提供方声明邮箱域，经 DNS TXT 证明所有权；已验证的域全局唯一；`POST B/sso/discover` 按已验证的域返回入口列表。数据在 `authn_idp_domains`。
+- **提供 SAML 登录方式。** `authn.sso.saml` 交付 `LoginMethod`（名 `saml`）：发起、SP 元数据、断言消费与逐项补充校验。断言标识的去重由 `authn.sso` 承担：`authn.sso` 经 `RememberAssertion` 把 `authn.sso.saml` 在断言消费时交来的断言标识写入 `authn_saml_assertions`，撞唯一约束即返回 `ErrAssertionReplay` 拒绝重放；清扫删除 `not_on_or_after` 已过的行。
+- **提供企业 OIDC 登录方式。** `authn.sso.oidc` 交付 `LoginMethod`（名 `oidc`），与社交登录的 Google 走同一条校验代码路径，差别只在配置来源。
+- **刷新元数据。** `authn.sso.saml` 交付 `SSOMetadataRefresher`，由管理员或宿主触发，不在后台自动运行。
+- **提供受限出站客户端。** `pkg/authn/internal/egress` 提供发现文档（[REF-openid-connect-discovery](../../../references.md)）、JWKS（[REF-rfc7517](../../../references.md)）、元数据与 userinfo 一类出站请求共用的 `http.Client`，因为这些 URL 来自租户管理员的输入。
+- **清扫过期数据。** `authn.sso` 在 `Start` 起有界协程，清扫已过期的断言标识与久未验证的域声明。
 
 ### 非职责
 
@@ -366,7 +370,29 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 `oidc.NewProvider` 每次都发一次发现请求且库不缓存，所以缓存是必须的。构造失败只让这一个提供方答 503，不影响其他提供方，也不终止启动。缓存是进程内的、每个副本各一份，租户很多时内存随之增长。
 
+### 状态一览
+
+一条域声明的状态由 `verified_at` 推出，取值是封闭集；提供方行的 `status` 另有一条停用与启用的轴，不是域声明的子状态。下表说明域声明每个取值的运行含义。
+
+| 状态 | 一句话含义 | 当前动作（本模块） | 直觉画面 |
+|---|---|---|---|
+| 未验证 | `verified_at` 为空，只是一个占位声明 | 不把它列入发现结果，允许同一域有多条并存的声明 | 门上贴了一张没盖章的认领条 |
+| 已验证 | `verified_at` 非空，域归这个提供方 | 按它回答发现，并用全局唯一索引保证一个域只有一个主人 | 认领条盖了章，别人再贴也不算 |
+
 ## 核心算法与流程
+
+### 走查
+
+一条邮箱域声明从写下到复验撤回的持久状态。初始状态是 `authn_idp_domains` 里没有这个域。
+
+| 步骤 | 事件 | 持久状态 |
+|---|---|---|
+| 1 | `ClaimDomain` | 新增一行 `(domain, idp_id)`，`verify_token` 为随机值，`verified_at` 为空，`created_at` 写入；同一域的其他未验证声明可以并存。 |
+| 2 | 租户管理员把 `speed-authn=<token>` 写进 `_speed-authn.<域>` 的 TXT 记录后调 `VerifyDomain` | 解析命中即把该行 `verified_at` 置为当前时刻；已验证的域受全局唯一索引约束，另一个提供方并发验证同一个域会得到 `ErrDomainClaimed`。 |
+| 3 | 域名易主，`ReverifyDomains` 查不到 TXT | 只把 `verified_at` 置空，行保留，`created_at` 不变。 |
+| 4 | 清扫协程 | 该行 `verified_at` 为空且 `created_at` 早于 7 天，被删除，域释放给别的提供方。 |
+
+复验撤回验证时固定了一条边界：撤回不改 `created_at`，所以撤回后的声明在下一轮清扫即被回收，不会长期占着未验证声明。
 
 ### 提供方行的写入
 
@@ -451,7 +477,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 - 回调地址 `public-url + B/callback/<提供方标识>`；每个提供方的路径不同，把 A 的回跳投给 B 因路径不同而不可能。
 - `iss` 必须逐字等于 `config.issuer`；`aud` 含 `client_id`；多受众时 `azp` 等于 `client_id`；`nonce`、`state`、PKCE 都发都校验；`sub` 非空。
 - 不调 userinfo，只取 ID 令牌里的声明；邮箱的 `EmailVerified` 取 `email_verified` 为布尔真。
-- `trust_idp_mfa` 为真时，断言的 `acr` 落在 `mfa_acr_values` 才置 `Proof.IDPAsserted`，`amr` 不参与比对；`auth_time` 只在步进里核对新鲜度。
+- `trust_idp_mfa` 为真时，断言的 `acr` 落在 `mfa_acr_values` 才置 `Proof.IDPAsserted`，`amr` 不参与比对；`auth_time` 只在加强认证里核对新鲜度。
 - `Proof` 的 `External.Provider` 为 `oidc:<提供方标识>`，`Methods` 为 `MethodOIDC`。
 - 所有出站调用经 `oidc.ClientContext(ctx, client)` 注入受限客户端，`oidc.NewProvider` 的 `ctx` 也要带它：go-oidc 未注入时用无超时的 `http.DefaultClient`，未经注入的出站调用本身是缺陷。
 - 指标 `authn.sso.assertions` 的 `outcome` 按自做判定归类：`iss` 不符记 `issuer`；验签、`aud`、`exp` 的拒绝因库把这些错误压成同一个字符串，改按 ID 令牌自身未验证的声明归类（只决定指标标签，不决定放行）；`nonce`、`state`、`sub`、`code` 的问题记 `other`；多受众而 `azp` 不符记 `audience`。用户在提供方处取消（回跳带 `error`）既不是断言也不是不可用，不记 `outcome`。

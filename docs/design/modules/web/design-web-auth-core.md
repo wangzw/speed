@@ -1,13 +1,17 @@
 # auth-core
 
+auth-core 是无头的浏览器会话层，位于 api-sdk 与 api-client 之上、能力 UI 包与装配壳之下。它拥有会话状态机、流程推进、特性态、权限表的存活规则、加强认证与人机证明，以及[租户](../../../glossary.md)作用域的查询键约定。它不渲染界面、不写存储、不求值权限，也不导航。进入职责清单前的心智模型只有一句：会话是服务端 cookie 或宿主令牌的本地镜像，界面只读它的快照并调用它的操作。
+
+第一遍为「职责」「外部接口契约」的「会话」「特性态」与「hook」，随后是「核心算法与流程」的「走查」「一次会话建立操作的提交」「世代守卫」与「单飞刷新」，给出快照如何被提交与丢弃；「外部接口契约」的其余小节按用途查阅，「错误与失败语义」与「并发与事务边界」作查表用。竞态情形（世代守卫、单飞刷新、身份过渡窗口、特性重试的提交检查）是读完接口契约之后的最后自检项。
+
 ## 职责
 
-浏览器会话生命周期，包 `web/packages/auth-core`。把 `@speed/api-sdk` 生成的 authn 操作接成一个可观察的会话状态机，并交付读取它的 React hook。
+本包交付浏览器会话生命周期（包 `web/packages/auth-core`）：把 `@speed/api-sdk` 生成的 authn 操作接成一个可观察的会话状态机，并交付读取它的 React hook。
 
 - **会话状态机（cookie 承载）。** `createAuthSession` 把生成的 authn 操作（登录流程的开始与推进、登出、方式列表、页面重载时的会话读取，以及已登录身份上的 link、step-up、enroll 流程）接成一个会话。会话由服务端 cookie 承载：cookie 路径的登录流程以 `delivery: 'session'` 开始，完成应答为 `{state: 'authenticated', session: {id, expires_at}}`，服务端在同一次应答里 `Set-Cookie`；浏览器自行把该 cookie 附到每个同源请求上，故本包不持有任何凭据——没有访问令牌，也没有刷新令牌。`restore()` 读 `GET /api/v1/auth/session` 从该 cookie 重建快照，这是页面重载后**仍保持登录**的机制，也是 cookie 失效时结束本地会话的机制。宿主另传一个 `AccessTokenStore` 时走**显式的令牌路径**：`delivery: 'token'` 的完成把访问令牌写进该存储（`@speed/api-client` 的桥），刷新令牌只活在会话闭包内，由 `refresh()` 驱动；平台自身的装配不传存储，故不持凭据。令牌路径的登录流程由宿主自己开始——用生成的 `authnLoginStart({ delivery: 'token' })`，再把每一步的答复交给 `answerFlow`，因为本包的 `startFlow` 一律强制 cookie 交付。令牌会话不经 `restore()` 重建（该方法读 `GET /api/v1/auth/session`，其应答来自会话 cookie，令牌宿主没有这条 cookie），页面重载即丢失；`restore()` 只是 cookie 会话的静默路径。订阅者观察 `AuthSnapshot` 的翻转。
 - **登录按流程推进。** 一次登录是一条服务端流程记录，由前端经生成的 `authn.login` 操作分步推进：`POST /api/v1/auth/flows` 开始，`POST /api/v1/auth/flows/answer` 按步答复，`GET /api/v1/auth/flows/current` 供页面刷新后续接，`DELETE /api/v1/auth/flows/current` 放弃。流程绑定以 cookie 承载（开始请求的 `binding: 'cookie'`，缺省），前端从不读流程令牌——回跳类方式只在 cookie 绑定下走得完（[authn 登录](../authn/design-authn-login.md)）。流程在某一步就绪（`next.kind = complete`）时，客户端以 `step: 'complete'` 取走结果；`startFlow` 与 `useStepUp` 开始的一律是 cookie 流程（前者以 `delivery: 'session'` 开始，后者不设交付方式、服务端取其缺省的 cookie 会话），故这两者交回的完成是会话文档而非令牌对；`startAuthenticatedFlow` 把交付方式留给调用方，账户界面不设，故同样是 cookie 会话。浏览器部署里前端与 API 必须**同站**：会话 cookie 是 `SameSite=Lax`（[REF-rfc6265bis](../../../references.md)）（运维可收紧为 `Strict`），服务端拒绝 `None`，跨站前端带不上这条凭据。
 - **特性态。** 会话在登录提交与从匿名状态开始的恢复时，与 `GET /api/v1/auth/me` 并行取回[特性文档](../../../glossary.md)（`GET /api/v1/features`，[feature](../design-feature.md)），作为快照的 `features` 字段与主体一起提交；读取失败是独立的状态，既不当作特性缺席，也不当作特性在场。特性态与权限表同一套存活规则（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
-- **React hook。** `attachSession` 在启动期把一个会话接上（后接者胜），`useAuthState` 交出快照，`useCurrentTenant` 交出宿主当前租户，`usePermission` 在宿主附上的按域权限表上做 fail-closed 的集合查询，`useFeature` 与 `useFeatureState` 读特性态。在接上会话之前与登出之后，读接上的会话的每个 hook 都 fail-closed：匿名快照、租户为 null、权限为 false、特性为 false、特性态为 `none`。`useStepUp` 不读接上的会话，在入参的会话上驱动一次步进认证。
+- **React hook。** `attachSession` 在启动期把一个会话接上（后接者胜），`useAuthState` 交出快照，`useCurrentTenant` 交出宿主当前租户，`usePermission` 在宿主附上的按域权限表上做 fail-closed 的集合查询，`useFeature` 与 `useFeatureState` 读特性态。在接上会话之前与登出之后，读接上的会话的每个 hook 都 fail-closed：匿名快照、租户为 null、权限为 false、特性为 false、特性态为 `none`。`useStepUp` 不读接上的会话，在入参的会话上驱动一次加强认证。
 - **租户作用域的 query key 约定。** 交付一个 key 工厂与一个逐出辅助函数，把「query 缓存按当前租户命名」这条约定收在一处（见「核心算法与流程」）。
 
 会话状态机放在本包而非视图层：它无 UI，主入口无 DOM，视图只读它的快照。`./webauthn` 子路径是包级「无 DOM」的唯一例外：它驱动浏览器的通行密钥仪式（[REF-webauthn](../../../references.md)），调用 `navigator.credentials`，但不渲染任何界面，也不被主入口引用。
@@ -202,9 +206,9 @@ export function isTenantAdmissionRefusal(error: unknown): boolean
 - **`useFeature` 是纯集合查询，fail-closed**：只在特性态为 `ready` 且集合含该名时为 true；`none`、`pending`、`failed` 与接上会话之前都为 false。参数取 `FeatureName`，拼错的名字编译失败。
 - **`useFeatureState` 交出特性态本身**，接上会话之前为 `none`。宿主需要区分读取中、读取失败与特性缺席时用它。
 - **`featurePresence` 把特性态映射为路由层的在场判定。** 它是纯函数：`ready` 映射为带 `has` 的就绪态，`failed` 映射为失败态，`pending` 与 `none` 都映射为读取中——匿名时没有特性态，按失败即关处理。它的结果与 [route-kit](design-web-route-kit.md) 的 `RoutePresence` 结构相同，本包不 import route-kit。
-- **`useStepUp` 驱动一次步进认证。** `active` 为真时在入参的会话上开一个 `purpose: 'step-up'` 的流程并停在首步；入参可带 `method`：账户没有启用因素时，步进要求的是重新证明第一因素，调用方带上会话建立时用的第一因素的方法名（短信会话带 `sms`，口令会话带 `password`），流程停在该方法的首步，完成后提权刷新认证时刻；账户有因素时不带 `method`；`StepUpState` 的 `answer` 逐步转交答复；流程落到就绪状态、下一步是 `complete` 时，这一步没有输入，hook 自动以 `{step: 'complete'}` 提交它（同一 `seq` 只自动提交一次，提交期间 `submitting` 为真）；自动提交被拒时停在 `failed` 并把该步留在 `step` 上，由调用方渲染该步自带的确认按钮手动重试；流程认定加强完成时 `onElevated` 触发一次，调用方据此重跑被拒的动作；`active` 转为假时放弃在途流程。会话以 401 拒绝开启步进时（有因素，但没有能强化本会话的），`phase` 停在 `unavailable`；其余失败（400 等）停在 `failed` 并带错误码。答复或起手被 429（或 503）拒绝并带 `Retry-After` 时，`StepUpState.retryAfterSeconds` 给出该等待的剩余整秒数并每秒递减；到点后该字段清零、停着的步骤恢复可提交，引起它的 `errorCode` 保留并渲染该码无秒数的句子，下一次答复或重开时清掉。本 hook 不登录、不导航，不读接上的会话，只用入参的会话。会发送验证消息的答复——选中短信第二因素，或短信第一因素复证提交手机号——先出示部署要求的证明：`answer` 把这条答复扣住，只在 `StepUpState.pending` 为真时读门槛并取得证明，证明到手后自行转交这条答复；`StepUpState.human` 与 `StepUpState.humanScope` 暴露门槛、当前步骤所属的面与证明，调用方只在 `pending` 为真时渲染证明块并让该步自己的动作让位，证明出示后消耗，不发消息的答复不消耗证明。
+- **`useStepUp` 驱动一次加强认证。** `active` 为真时在入参的会话上开一个 `purpose: 'step-up'` 的流程并停在首步；入参可带 `method`：账户没有启用因素时，加强认证要求的是重新证明第一因素，调用方带上会话建立时用的第一因素的方法名（短信会话带 `sms`，口令会话带 `password`），流程停在该方法的首步，完成后刷新认证时刻；账户有因素时不带 `method`；`StepUpState` 的 `answer` 逐步转交答复；流程落到就绪状态、下一步是 `complete` 时，这一步没有输入，hook 自动以 `{step: 'complete'}` 提交它（同一 `seq` 只自动提交一次，提交期间 `submitting` 为真）；自动提交被拒时停在 `failed` 并把该步留在 `step` 上，由调用方渲染该步自带的确认按钮手动重试；流程认定加强完成时 `onElevated` 触发一次，调用方据此重跑被拒的动作；`active` 转为假时放弃在途流程。会话以 401 拒绝开启加强认证时（有因素，但没有能强化本会话的），`phase` 停在 `unavailable`；其余失败（400 等）停在 `failed` 并带错误码。答复或起手被 429（或 503）拒绝并带 `Retry-After` 时，`StepUpState.retryAfterSeconds` 给出该等待的剩余整秒数并每秒递减；到点后该字段清零、停着的步骤恢复可提交，引起它的 `errorCode` 保留并渲染该码无秒数的句子，下一次答复或重开时清掉。本 hook 不登录、不导航，不读接上的会话，只用入参的会话。会发送验证消息的答复——选中短信第二因素，或短信第一因素复证提交手机号——先出示部署要求的证明：`answer` 把这条答复扣住，只在 `StepUpState.pending` 为真时读门槛并取得证明，证明到手后自行转交这条答复；`StepUpState.human` 与 `StepUpState.humanScope` 暴露门槛、当前步骤所属的面与证明，调用方只在 `pending` 为真时渲染证明块并让该步自己的动作让位，证明出示后消耗，不发消息的答复不消耗证明。
 - **特性的 hook 与 `featurePresence` 只由宿主使用。** 能力 UI 包不调用它们，特性在场信息由宿主经属性或上下文组件交给它们（[web](design-web.md) 的「特性门控」、ADR-web-feature-state）。
-- **`useStepUpGate` 记住一次被步进拒绝的动作并在挑战通过后原样重放它一次。** `arm` 记下动作（表单字段、行标识、重发写入的闭包），`succeed` 经 `onRetry` 重放一次并清空，`cancel` 什么都不重放；`intercept(error, action)` 是失败侧的同一条接线：判别为步进强度不足时记下动作、置 `open` 并答 true，其余失败答 false 且不动门控。缺省判别认平台自己的两个拒绝码——`status` 为 401 且 `code` 为 `authn.insufficient_user_authentication`（本地多因素）或 `authn.sso_required`（经租户的提供方重新登录）；只看 401 不够，一个结束了会话的 401 没有可提升的会话。门控用 `stepUpReasonOf(code)` 记下原因是 `'mfa'` 还是 `'sso'`，对话框据此开本地因素流程或只给企业单点登录的重新登录出口；`arm` 的第二个入参可显式给出原因，缺省为 `'mfa'`。会话自身已能区分两者的调用方把 `session.isStepUpShortfall` 作为第二入参传入；它的错误仍带这两个码之一，故原因照读，其余码退回本地因素。`onRetry` 与 `isShortfall` 经 ref 读取，调用方每次渲染传新闭包不会改变 `succeed` 的身份。
+- **`useStepUpGate` 记住一次被加强认证拒绝的动作并在挑战通过后原样重放它一次。** `arm` 记下动作（表单字段、行标识、重发写入的闭包），`succeed` 经 `onRetry` 重放一次并清空，`cancel` 什么都不重放；`intercept(error, action)` 是失败侧的同一条接线：判别为加强认证强度不足时记下动作、置 `open` 并答 true，其余失败答 false 且不动门控。缺省判别认平台自己的两个拒绝码——`status` 为 401 且 `code` 为 `authn.insufficient_user_authentication`（本地多因素）或 `authn.sso_required`（经租户的提供方重新登录）；只看 401 不够，一个结束了会话的 401 没有可提升的会话。门控用 `stepUpReasonOf(code)` 记下原因是 `'mfa'` 还是 `'sso'`，对话框据此开本地因素流程或只给企业单点登录的重新登录出口；`arm` 的第二个入参可显式给出原因，缺省为 `'mfa'`。会话自身已能区分 `authn.insufficient_user_authentication` 与 `authn.sso_required` 的调用方把 `session.isStepUpShortfall` 作为第二入参传入；它的错误仍是 `authn.insufficient_user_authentication` 或 `authn.sso_required`，故原因照读，其余码退回本地因素。`onRetry` 与 `isShortfall` 经 ref 读取，调用方每次渲染传新闭包不会改变 `succeed` 的身份。
 - **`isTenantAdmissionRefusal` 按结构判定准入层的裸 404。** 准入层拒绝一个调用者不可进入的租户时答裸 404（不带模块码），`@speed/api-client` 为它合成保留码 `client.http.404`；模块自己的类型化 404（`objectstore.not_found` 等）在同一状态上保留模块码。判定读码不读状态：`code` 为 `client.http.404` 即为准入拒绝；或 `status` 为 404 且 `code` 缺失或落在保留的 `client.` 命名空间里（合成之前同一应答的形态）。带模块码的 404 一律不是它。
 
 ### 人机验证证明
@@ -383,7 +387,26 @@ stateDiagram-v2
 | 人机证明 | `HumanVerification` | 按面的门槛、发现读在途、当前证明、求解状态、按面的挑战与 `adoptToken`／`retry`／`consume`／`refreshCaptcha` |
 | 租户 query 键 | `TenantQueryKey`（本项） | `tenantId` 与以租户标识为最外层段的键 |
 
+### 状态一览
+
+| 状态 | 一句话含义 | 当前动作（本包） | 直觉画面 |
+|---|---|---|---|
+| `anonymous` | 没有可用的会话凭据，快照的主体为空 | 按匿名快照回答每个 hook，不请求特性文档，权限查询与特性查询一律为假，租户为 null | 门关着，屋里没人 |
+| `authenticated` | 服务端 cookie 或宿主令牌对应的会话已被读回 | 提交主体与特性态并通知订阅者；恢复、刷新与加强认证只更新凭据，不清权限表；特性态另取 `none`、`pending`、`failed`、`ready` 之一，登录提交后为 `ready` 或 `failed`，只有显式重试才进入 `pending` | 门开着，屋里的人与会话凭据对上 |
+
+`anonymous` 与 `authenticated` 是快照 `state` 的封闭取值；特性态是快照里的另一个字段，随会话一起提交，随登出或本地清空回到 `none`。
+
 ## 核心算法与流程
+
+### 走查
+
+以一次 cookie 会话的口令登录完成为例。初始状态：快照为匿名，`state` 为 `anonymous`、`principal` 为 null、权限表为 null、特性态为 `none`；世代为初始值。
+
+1. 视图以 `answerFlow` 提交最后一步，服务端在同一次应答里 `Set-Cookie` 并返回 `{state: 'authenticated', session: {id, expires_at}}`。提交操作在入口已捕获当时的世代，快照此刻不变。
+2. 提交操作校验应答；缺 `session.id` 即以 `client.protocol` 拒绝，快照与存储都不动。
+3. 世代仍相等时，提交操作以 cookie 读 `GET /api/v1/auth/me` 与 `GET /api/v1/features`。主体与特性文档的读取落定之后过同一个世代检查；读资料失败则提交失败，读特性文档失败则特性态记为 `failed`，提交照常。
+4. 提交落地：快照转为 `state: 'authenticated'`，`principal` 为读到的账户，两个域的权限列表都清空为 null，特性态为读取结果，`impersonating` 置为 false；世代抬升，订阅者收到一次通知。
+5. 若另一次建立会话的提交先落地，本操作以 `OperationSupersededError` 拒绝，快照保持胜者的值。
 
 ### 登录流程的推进
 
@@ -498,14 +521,14 @@ stateDiagram-v2
 | 快照的 `impersonating` 字段与 `restore()` 对它的写入 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSnapshot`、`restore` |
 | 主体的本地显示名更新 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSession.setDisplayName` |
 | 身份过渡窗口（`beginIdentityTransition()`）与其期间无人登录应答的丢弃 | 已实现 | `web/packages/auth-core/src/session.ts` `beginIdentityTransition`、`restore` |
-| 步进认证的 hook | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
+| 加强认证的 hook | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | 按面的人机验证客户端（发现文档的 `human` 按面读取、旧平铺形态映射到两面、`pow` 求解与 `captcha` 挑战、证明的一次性消费） | 已实现 | `web/packages/auth-core/src/human.ts` `useHumanVerification`、`humanSurfaceGate`、`humanGateNeedsProof`、`parseCaptchaChallenge`、`requestPowProof`、`powProofFromChallenge`、`UseHumanVerificationOptions` |
 | `useStepUp` 对就绪 `complete` 步的自动提交 | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | `useStepUp` 的 `method` 入参 | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | `useStepUp` 的短信人机证明（`human` 与会发送答复的 `human_proof`） | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp`、`answerSends`；`web/packages/auth-core/src/human.ts` `useHumanVerification` |
 | `useStepUp` 的限流等待倒计时（`retryAfterSeconds`） | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp`、`waitSecondsOf` |
 | 租户上下文、租户作用域 query key 工厂与逐出辅助函数 | 已实现 | `web/packages/auth-core/src/hooks.ts` `TenantProvider`、`useCurrentTenant`；`web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |
-| 泛型步进门控 | 已实现 | `web/packages/auth-core/src/step-up-gate.ts` `useStepUpGate` |
+| 泛型加强认证门控 | 已实现 | `web/packages/auth-core/src/step-up-gate.ts` `useStepUpGate` |
 | 租户准入拒绝判定 | 已实现 | `web/packages/auth-core/src/tenant-refusal.ts` `isTenantAdmissionRefusal` |
 | 通行密钥仪式驱动（`./webauthn` 子路径） | 已实现 | `web/packages/auth-core/src/webauthn.ts` `runWebauthn`、`webauthnStepOf`、`WebauthnError` |
 | 匿名注册操作 `register` 与 `AuthnLoginRegistration` 的解析守卫 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSession.register`、`parseRegistration`；`web/packages/auth-core/src/index.ts` 的 `AuthnLoginRegisterBody`、`AuthnLoginRegistration` 导出 |

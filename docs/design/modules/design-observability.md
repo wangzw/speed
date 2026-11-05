@@ -1,5 +1,9 @@
 # observability
 
+本模块是进程的运行期信号面：把上游 SDK 的追踪与指标 provider 装进[注册表](../../glossary.md)，在请求路径上挂采集层，并给出站请求注入传播上下文。它拥有信号的产生与导出接线，不拥有日志、启动诊断、健康判定与任何信号消费侧；看板、告警与查询接口都不在它的职责内。读职责清单前应持有的一句话心智模型是：本模块只负责把信号送出去，信号的含义、属性集合与目的地分别由上游库与导出后端决定。
+
+第一遍的次序是职责、术语表、外部接口契约、依赖、UML 图、核心数据结构与核心算法与流程：职责与术语表给出信号面的边界与词汇，外部接口契约与依赖给出可交付与可取用的功能，UML 图给出功能与交付方以及一次入站请求的层序，核心数据结构与核心算法与流程说明配置、构造次序、采集层与关停刷出。错误与失败语义、并发与事务边界与扩展点属查阅用；实现状态放在最后，用代码锚点核对声称已实现的部分。竞态与边界情形——停机截断、导出器释放、上游变量被忽略——是最后的自检项，与错误与失败语义一并核对。
+
 ## 职责
 
 `pkg/observability` 承载运行期的遥测：追踪与指标两种信号。产品是上游遥测 SDK 的 provider，加上请求路径的采集与一个出站注入工具。
@@ -7,7 +11,7 @@
 - **交付上游 SDK 的 provider**，追踪与指标各是一个功能，两者由同一个装配器模块排他交付。
 - **请求路径的采集**：以上游 gin（[REF-gin](../../references.md)）采集库为基座，由它提取父跨度上下文、开始与结束服务端跨度、记请求计量；本模块只补它没有的日志关联字段与端名属性（[ADR-observability-request-layer](../../adr/adr-observability-request-layer.md)、[ADR-observability-instruments](../../adr/adr-observability-instruments.md)）。
 - **出站注入**：把当前跨度上下文按上游的传播格式写进 `net/http` 客户端的出站头部（[ADR-observability-propagation](../../adr/adr-observability-propagation.md)）。
-- **导出后端的扩展点**：一个导出目的地是一个模块，交付一个导出器功能（[ADR-observability-packaging](../../adr/adr-observability-packaging.md)）。
+- **把导出目的地开放为扩展点**：一个导出目的地登记为一个模块，交付一个导出器功能（[ADR-observability-packaging](../../adr/adr-observability-packaging.md)）。
 
 **与 [architecture](../architecture.md) 的「可观测性」一节的分界。** 那一节讲的是**装配期**的启动诊断：启用消解的结果、未启用模块及其原因，固定写 `os.Stderr`，由 `core` 与 `config` 产出。本模块承载的是**运行期**的信号，也就是[术语表](../../glossary.md)登记的「遥测」。两者没有代码、配置或时序上的交叠。
 

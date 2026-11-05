@@ -1,5 +1,9 @@
 # auth-ui
 
+auth-ui 是登录组件族，位于 ui-kit 与 auth-core 之上，由[宿主](../../../glossary.md)装配成登录页与回调路由。它把会话契约的每一片渲染成受控组件，并交付邀请受理、匿名口令重置与冒充横幅。它不拥有会话状态机、邀请状态机或口令重置状态机，也不决定登录之后去哪里。进入职责清单前的心智模型只有一句：每个驱动会话的组件只持有宿主传入的 `session`，按流程应答逐步推进，自己不触网。
+
+第一遍为「职责」「外部接口契约」的「受控组件的结构」与「会话契约的每一片都由一个组件驱动」，给出组件与会话操作的对应；「依赖」「UML 图」「核心数据结构」随读随查，「核心算法与流程」按渠道查阅，「错误与失败语义」与「并发与事务边界」作查表用。竞态与边界情形（流程已失、人机证明未到手时的扣住、仪式等待与取消）是最后的自检项。
+
 ## 职责
 
 `@speed/auth-ui` 是一个 speed 前端的登录组件族：把 `@speed/auth-core` 会话契约的每一片渲染成受控组件，并渲染邀请受理页，由宿主装配成登录页。它交付一组表单与屏幕，不交付会话状态机。
@@ -16,7 +20,7 @@
 - `SessionEndedScreen` 是宿主挂在一处已认证视图刚翻成匿名时的占位屏。它的文案不陈述成因：显式登出与会话死亡在快照上是同一个翻转，本包区分不了，所以屏上的话对两者都成立——已退出，或登录状态已失效，再次登录即可继续。
 - `AcceptInvitationScreen` 渲染邀请受理页：读取令牌指向的邀请（acceptView）并受理它（accept）。它驱动的不是会话操作，而是宿主交给它的两个邀请操作。
 - `PasswordResetScreen` 渲染匿名口令重置页：用户选择部署提供的邮箱或短信渠道，提交该渠道的标识，取得验证码后提交验证码与新口令。它驱动的不是会话操作，而是宿主交给它的重置操作；成功不建立会话，屏幕只报告完成，由宿主导航回登录页。**短信渠道的标识用与登录页相同的两部分控件**：国家/地区由选择器选定、本地号码单独输入，提交时组装为 E.164（[REF-itu-t-e164](../../../references.md)）（[ui-kit](design-web-ui-kit.md) 的 `PhoneNumberField` 与 `toE164`）；邮箱渠道是普通邮箱字段。两者都不要求用户自己敲国际区号。「返回登录」在表单阶段（选择渠道、提交标识、验证码与新口令以及「已发送」的等待态）与提交键**同一行**，紧邻提交键左侧，与登录页的「忘记口令」一致；完成态它是唯一的主操作，不可用态它是唯一的次要操作。
-- `ImpersonationBanner` 渲染冒充期间应用壳顶部栏之下的横幅：谁被冒充、租户、到期时刻与「结束冒充」，并带一个隐藏控件。`ImpersonationIndicator` 是顶部栏里的身份指示，冒充期间始终渲染，同时是横幅的显示开关。`ImpersonationEndMenuItem` 是宿主账户菜单里的「结束冒充」项。`ImpersonationNoticeProvider` 把这三个部件连到同一个隐藏状态与宿主的同一次结束尝试。`ImpersonationNoticeBanner` 与 `ImpersonationNoticeIndicator` 是读提供者的同名绑定：宿主不必手工把受控属性逐项接上。这些部件都不驱动会话，也不发请求，结束操作由宿主交给提供者。
+- `ImpersonationBanner` 渲染冒充期间应用壳顶部栏之下的横幅：谁被冒充、租户、到期时刻与「结束冒充」，并带一个隐藏控件。`ImpersonationIndicator` 是顶部栏里的身份指示，冒充期间始终渲染，同时是横幅的显示开关。`ImpersonationEndMenuItem` 是宿主账户菜单里的「结束冒充」项。`ImpersonationNoticeProvider` 把 `ImpersonationBanner`、`ImpersonationIndicator` 与 `ImpersonationEndMenuItem` 连到同一个隐藏状态与宿主的同一次结束尝试。`ImpersonationNoticeBanner` 与 `ImpersonationNoticeIndicator` 是读提供者的同名绑定：宿主不必手工把受控属性逐项接上。这些部件都不驱动会话，也不发请求，结束操作由宿主交给提供者。
 
 驱动会话的组件各持有一个 `session` 属性，会话由宿主传入；`AcceptInvitationScreen` 不驱动会话，它的两个操作经属性的 `invitations` 取用；`PasswordResetScreen` 也不驱动会话，它的重置操作经属性的 `operations` 取用，`session` 只用于取得人机证明（见「外部接口契约」）。组件不消费 auth-core 的**钩子**（`useAuthState`、`usePermission`），只经属性调用会话的**操作**——发现读取（`listMethods`、`discoverSso`）即在其列（见「非职责」）。内建文案一律取自 `auth-ui` 命名空间；品牌名（提供方自己的名字）由发现文档带，不进命名空间。
 
@@ -25,7 +29,7 @@
 - **不拥有会话状态机。** 流程的推进、会话的建立与撤销归 `@speed/auth-core`（[authn 登录](../authn/design-authn-login.md)）；本包渲染的会话契约的每一项都是 auth-core 交付的操作。要在本包见不到的操作里做点别的，那是 auth-core 契约该长的地方，不是本包里的第二次 HTTP。
 - **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不自行判定令牌是否存在或能否兑现——不存在由读取的 404 给出，不可兑现由读取应答体的 `status` 与 `expires_at` 给出；受理时不可兑现才是 409。受理页只按读取应答携带的 `status` 与 `expires_at` 决定是否提供受理动作，不据此写入任何东西。接受是公开的、令牌即凭据：成员关系落到**被邀请地址**的账户上，而非登录账号（REQ-tenancy-017）。宿主可在受理页前渲染它自己的登录页（先登录或注册再受理是宿主的组合），本包不内建这道门禁，那道门禁也不约束成员关系落到哪个账户。
 - **不拥有匿名口令重置状态机。** 重置的发送、验证码核验与口令写入由服务端完成，宿主把生成的 SDK 操作绑定成 `PasswordResetOperations` 交给 `PasswordResetScreen`；本包不发重置的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不判定某账户是否具备重置条件——宿主按发现文档的 `password_reset.methods` 取得渠道，经 `channels` 交给屏幕；合格与不合格目标的服务端应答一致。
-- **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。屏幕不主动改写 URL：宿主在需要保留当前页时把登录页挂在原 URL 上，登录完成的会话翻转由宿主重新渲染该页——一步提权要求重新登录时，当事人因而回到发起那一页（[account-ui](design-web-account-ui.md) 的步进恢复记录负责续做待办操作）。
+- **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。屏幕不主动改写 URL：宿主在需要保留当前页时把登录页挂在原 URL 上，登录完成的会话翻转由宿主重新渲染该页——加强认证要求重新登录时，当事人因而回到发起那一页（[account-ui](design-web-account-ui.md) 的加强认证恢复记录负责续做待办操作）。
 - **不拥有注册状态机，但内建注册表单。** 自助注册是 `@speed/auth-core` 的 `session.register` 操作，一次请求建号，不建立会话、不发送邮件（[authn-account](../authn/design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。本包渲染 `PasswordRegisterForm` 并驱动该操作；字段规范化、口令策略、用户名占用与邮箱预留的写入都在服务端。注册成功后的会话仍由既有口令登录流程建立，本包不自行铸造会话；建号与自动登录都经 auth-core 的会话操作，本包不在它之外发请求。`SignInScreen` 在部署开放口令注册时给出这个渠道，开户仍由服务端完成。
 - **不消费 auth-core 的钩子，不读存储。** 组件读到的会话状态只有它驱动的那些操作，其余状态经宿主的钩子观察。一个自己订阅会话的组件必须已挂在宿主的 `attachSession` 之下，故这一层留在宿主。**读取发现文档是一个例外**：`SignInScreen` 经它持有的 `session` 属性上的 `listMethods` 与 `discoverSso` 操作读取部署的登录方式与企业提供方，给了 `absent` 的 `SocialCallbackHandler` 经 `listMethods` 读取部署有没有 redirect 类与 enterprise 类方法——那是会话操作，不是 auth-core 的钩子，而组件本就在驱动这个会话；这条例外不放松「不消费钩子、不读存储」。
 - **不认识路由与权限。** 本包不匹配 URL、不判定权限、不做路由守卫；回调返给宿主，宿主经自己的路由与权限组合处置。
@@ -407,7 +411,7 @@ sequenceDiagram
 
 ### 本部署不提供回调落点时
 
-回调路由先于会话存在：宿主在任何会话门之前渲染处理器，匿名访客带着在途流程到达时照常完成登录。部署没有 redirect 类与 enterprise 类方法时，本部署上没有任何流程会回跳到这条路由，`absent` 让宿主在此给出与未登记路径相同的 404（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。是否提供回调落点是登录前的事实，取自发现文档，不经特性文档。
+回调路由先于会话存在：宿主在任何会话门之前渲染处理器，匿名访客带着在途流程到达时照常完成登录。部署没有 redirect 类与 enterprise 类方法时，本部署上没有任何流程会回跳到这条路由，`absent` 让宿主在此给出与未登记路径相同的 404（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。是否提供回调落点是登录前的事实，取自发现文档，不经[特性文档](../../../glossary.md)。
 
 宿主给了 `absent` 时：
 

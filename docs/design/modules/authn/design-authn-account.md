@@ -1,5 +1,9 @@
 # authn-account
 
+`authn.account` 是认证[功能目录](../../../glossary.md)的账户存储模块：账户、标识、联系方式预留、外部身份绑定、成员关系、口令凭据与服务密钥都存在它的表里，其他 authn 子包与授权功能目录经它交付的接口读写这些表。它执行账户的创建与状态迁移、标识规范化、口令校验与失败退避，并在事务提交之后经 `AccountLifecycle` 与 `MembershipLifecycle` 钩子推动跨模块清理。它不建立会话、不签发令牌、不做授权判定，也不挂路由。职责清单之前的一句话心智模型：本模块是认证目录里账户表的唯一写入方，其余模块要么经接口读这些事实，要么在提交之后清理自己的副本。
+
+第一遍的次序是「职责」「术语表」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，一条自助注册与邮箱证明的轨迹说明账户验证状态怎样推进。「错误与失败语义」「并发与事务边界」与「扩展点」属查阅用，改表或处理某个失败方向、竞态时供回查；竞态与边界情形是最后的自检项，与「守住性质的测试」一起核对。「实现状态」供核对上文承诺。
+
 ## 职责
 
 `authn.account` 是 authn 的账户存储模块，包 `pkg/authn/account`，登记名 `authn.account`。
@@ -8,12 +12,12 @@
 - 排他交付 `Accounts`、`AccountAdmin`、`Signups`、`SignupVerification`、`Passwords`、`Memberships`、`MembershipCleanup`、`Throttle` 这些根包能力接口，每个接口各自是一个排他功能。
 - 生成账户标识 `AccountID`（库里是 UUIDv7（[REF-rfc9562](../../../references.md)）文本），保证它不可变、不复用。
 - 规范化标识：用户名、邮箱、手机在写入与查询两侧经同一个函数规范化；用户名还过保留字校验，校验只在写入口做。用户名一经写入，在账户存续期内不可删除、不可更换，删除用户名返回 `authn.ErrUsernameImmutable`；账户整体删除不受此限。
-- 持有邮箱与手机的联系方式与登录方式：每条邮箱或手机记录恒为联系方式，另带持有人选择的登录方式标记，短信首登开户写下的手机在建号时即由系统置为登录方式，以及账户在已证明邮箱中的默认联系地址：账户有已证明邮箱时恰有一封，持有人未指定时取最早证明的那一封并可以改选，没有已证明邮箱时没有（REQ-account-061、REQ-account-063、REQ-account-064）。账户只有一条邮箱地址时，它在被证明后由系统选作登录方式，之后持有人可以取消，取消的门槛是账户仍留有别的登录方式（REQ-account-068、REQ-account-069）。社交与企业外部身份是一类独立的登录方式，列在登录方式中，不在联系方式中（REQ-account-067）。
+- 维护邮箱与手机的联系方式与登录方式：每条邮箱或手机记录恒为联系方式，另带持有人选择的登录方式标记，短信首登开户写下的手机在建号时即由系统置为登录方式，以及账户在已证明邮箱中的默认联系地址：账户有已证明邮箱时恰有一封，持有人未指定时取最早证明的那一封并可以改选，没有已证明邮箱时没有（REQ-account-061、REQ-account-063、REQ-account-064）。账户只有一条邮箱地址时，它在被证明后由系统选作登录方式，之后持有人可以取消，取消的门槛是账户仍留有别的登录方式（REQ-account-068、REQ-account-069）。社交与企业外部身份是一类独立的登录方式，列在登录方式中，不在联系方式中（REQ-account-067）。
 - 校验口令类凭据：按标识查找并校验出示的口令，PHC（[REF-phc-string-format](../../../references.md)）解码与参数界限在校验内核对，未知标识、停用账户与无口令账户做等成本诱饵派生后统一返回 `ErrInvalidCredentials`，校验成功而库中条目弱于当前设置时就地再哈希；服务密钥按摘要比对。
 - 执行账户的创建与状态迁移：创建、停用、启用、删除在本模块的事务里写自己的表，提交之后同步调用全部 `AccountLifecycle`。
 - 执行成员关系的显式删除：删除之前询问全部可选的 `MembershipGuard`，提交之后同步调用全部 `MembershipLifecycle`。
 - 维护失败退避：按 `ThrottleScope` 与键在 `authn_throttles` 里记录失败次数与解锁时刻，前 `throttle-free-attempts` 次失败不退避，之后每多一次失败退避 `min(throttle-max-delay, 2^(n-free) 秒)`，标识级与注册的 `signup-username` 退避经 `RetryAfter` 报告剩余等待，账户级退避静默计数，成功清零；`Start` 起的清扫协程删除 `last_failure_at` 早于 `now - throttle-decay` 且 `locked_until` 为空或已过的退避行，以及 `expires_at` 或 `revoked_at` 早于 `now - secret-retention` 的 `authn_service_secrets` 行。
-- 承载外部身份绑定、首登开户、自助注册开户与账户解析的规则。规则约束的是本模块的数据（绑定、标识、联系方式记录、成员关系）与账户的会话和口令；首登开户的执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)），自助注册开户经本模块的 `Signups.Register`。
+- 执行外部身份绑定、首登开户、自助注册开户与账户解析的规则：规则约束的是本模块的数据（绑定、标识、联系方式记录、成员关系）与账户的会话和口令；首登开户的执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)），自助注册开户经本模块的 `Signups.Register`。
 
 选型与取舍见 [ADR-authn-accounts](../../../adr/adr-authn-accounts.md)、[ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)、[ADR-authn-external-binding](../../../adr/adr-authn-external-binding.md)、[ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)、[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-contact-claim](../../../adr/adr-authn-contact-claim.md)、[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)；模块在 authn 里的位置与依赖图见 [design-authn](design-authn.md)。
 
@@ -31,18 +35,16 @@
 
 ## 术语表
 
+联系方式、登录方式、默认联系地址与保留用户名已登记在[项目术语表](../../../glossary.md)，本文按那里的定义使用，不另行定义。
+
 | 术语 | 英文 | 适用范围 | 定义 |
 |---|---|---|---|
 | 标识 | identifier | 本文 | `Identifier`：账户对一条用户名、邮箱或手机的所有权记录，带验证时刻与验证渠道，以及「联系方式」与「登录方式」两个标记；邮箱与手机标识恒为联系方式，用户名标识恒为登录方式。与账户标识不是一回事。 |
-| 联系方式 | contact | 本文 | 账户的一条邮箱或手机记录上的标记，表示该值是账户的联系信息；邮箱与手机从登记起恒为该值，无论所有权是否已证明，也无论它是否作登录方式（REQ-account-061）。 |
-| 登录方式 | login method | 本文 | 账户的一条邮箱或手机记录上的标记，表示该值可用于登录；用户名恒是登录方式，外部身份与通行密钥也是登录方式，但不在这条标记里（REQ-account-064、REQ-account-067）。 |
-| 默认联系地址 | default contact address | 本文 | 账户在已证明邮箱中的、用于接收通知的那一封：账户有已证明邮箱时恰有一封，没有时没有；持有人未指定时取最早证明的那一封，并可以改选（REQ-account-063）。 |
 | 登录名 | login name | 本文 | 口令登录接受的标识：用户名，或被选作登录方式的邮箱；手机号不作口令登录名（REQ-signin-006）。 |
 | 真实证明 | proof | 本文 | 验证渠道 `sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>`：短信验证码证明了手机，发到地址的验证码被兑现，证明了这个地址，送达被邀请地址的链接被兑现，提供方声明了已验证邮箱。 |
 | 未证明渠道 | unproved channel | 本文 | 验证渠道 `admin`、`import-unverified` 与 `self`：只记录事实，不是邮箱所有权的证明。 |
 | 未验证账户 | unverified account | 本文 | 持有邮箱而没有一条真实证明邮箱的用户账户，即 `SignupStateOf` 读 `SignupPending` 的账户。没有邮箱的账户不是未验证账户，本规则不拦截它。 |
 | 墓碑 | tombstone | 本文 | 账户被删除后保留的一行：只含 `id`、`kind`、`status`、`created_at`、`deleted_at`，个人数据已抹除。 |
-| 保留用户名 | reserved username | 本文 | 取值落在内置清单与设置 `authn.account.reserved-usernames` 的并集里的用户名。命中保留用户名的拒绝是取值禁用，被占用的拒绝是唯一约束冲突。 |
 
 ## 外部接口契约
 
@@ -731,7 +733,30 @@ CREATE INDEX authn_throttles_decay ON authn_throttles (last_failure_at);   -- �
 
 属性集 `authn_accounts.attributes` 的键与值受[扩展点](#扩展点)里的限制约束；显示名至多 100 个字符，不当作任何判定依据。
 
+### 状态一览
+
+`AccountStatus` 的取值是封闭集，转移只在启用、停用与删除之间发生；`SignupState` 是与它正交的另一条轴，描述账户的邮箱验证状态，不是它的子状态。下表说明 `AccountStatus` 每个取值的运行含义。
+
+| 状态 | 一句话含义 | 当前动作（本模块） | 直觉画面 |
+|---|---|---|---|
+| 停用 | 零值，被显式启用之前不能认证 | 让校验后端按账户状态拒绝，`valid_after` 已前移到停用时刻 | 门锁上了，钥匙还在但插不进锁孔 |
+| 启用 | 账户可以认证，会话与令牌在期限内有效 | 按账户状态与 `valid_after` 放行校验 | 门开着，出入按当次凭据放行 |
+| 已删除 | 终态，个人数据已抹除，只留墓碑行 | 拒绝一切读写，标识保留且不复用 | 门牌还挂着，屋里已经腾空 |
+
 ## 核心算法与流程
+
+### 走查
+
+一个自助注册的账户在证明邮箱、再删掉这条邮箱时的持久状态。起点是没有这个账户。
+
+| 步骤 | 事件 | 持久状态 |
+|---|---|---|
+| 1 | `Signups.Register` | `authn_accounts` 新增一行：`status = 1`、`signup_state = 1`、`signup_verified_at` 为空；`authn_identifiers` 新增一条 `kind = username`、`via = self`、`sign_in = TRUE`、`contact = FALSE` 的行；`authn_password_credentials` 新增一行；`authn_pending_contacts` 新增一条该邮箱的未证明预留（`verified_at` 为空）。 |
+| 2 | 登录后经 `POST B/identifiers/verify` 兑现邮箱验证码，路由以 `email-code` 调 `AccountAdmin.AddIdentifier` | 同一邮箱在 `authn_identifiers` 新增一条 `kind = email`、`verified_at` 非空、`contact = TRUE` 的行；`authn_pending_contacts` 的同值预留置为已持有；`signup_state` 由 `1` 变 `2`，`signup_verified_at` 写入首次证明时刻；账户此时只有这一条已证明邮箱，同一事务把它置为默认联系地址（`default_contact = TRUE`）与登录方式（`sign_in = TRUE`）。 |
+| 3 | 持有人删除这条邮箱，`AccountAdmin.RemoveIdentifier` | 邮箱标识行删除，同值预留在同一事务删除；`signup_state` 由 `2` 回到 `1`，`signup_verified_at` 保留；账户没有已证明邮箱，默认联系地址的选择清空；用户名标识与口令凭据不变，账户仍可登录。 |
+| 4 | 清扫协程扫描未验证账户 | 该账户 `signup_state = 1`，但 `signup_verified_at` 非空，不满足删除条件，保留。 |
+
+清扫协程扫描未验证账户这一步固定了一条边界：`2` → `1` 之后账户不会被当成从未证明过邮箱的自助注册账户清理。
 
 ### 标识的规范化
 

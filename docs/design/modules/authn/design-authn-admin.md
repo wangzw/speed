@@ -1,13 +1,17 @@
 # authn-admin
 
+本模块是认证向[授权](../../../glossary.md)承诺的那一侧：它在根包里定义 `Decider`、`Decision`、`Action` 与 `ScopeGuard`，并挂 `B/*` 与 `Bt/:tenant/*` 下的管理路由。每个管理请求按固定次序过注册验证状态门控、判定接口、发起者强度核验、强制审计与写入。它不实现 `Decider`，也不持有账户、会话、因素、IdP 或冒充记录的数据。读职责清单前应持有的一句话心智模型：authn 只承诺「谁」与「是不是成员」，管理面只转述判定接口的答案。
+
+第一遍按顺序读的节是职责与非职责、外部接口契约、依赖、UML 图、核心数据结构、核心算法与流程；外部接口契约的对授权承诺、账户标识要求与 `Decider` 类型是接口所在，核心数据结构的 `Decision` 字段说明每个判定输入的来源，核心算法与流程的处理器判定顺序与 `Decision` 填法给出一次管理请求的路径。错误与失败语义与并发与事务边界是最后自检的节；扩展点与实现状态在主体之后回看。
+
 ## 职责
 
-- **对授权的承诺。** `pkg/authn` 不 import 授权功能目录（[authz](../design-authz.md)）；authn 交给授权的全部东西是根包里的接口、值类型与事件，`authz.guard` 与 `authz.policy` import 根包并交付其中的接口，方向与 `tenant/resolve` import `pkg/authn` 一致（[ADR-authn-scope](../../../adr/adr-authn-scope.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
+- **向授权交付接口面。** `pkg/authn` 不 import 授权功能目录（[authz](../design-authz.md)）；authn 交给授权的是根包里的接口、值类型与事件，`authz.guard` 与 `authz.policy` import 根包并交付其中的接口，方向与 `tenant/resolve` import `pkg/authn` 一致（[ADR-authn-scope](../../../adr/adr-authn-scope.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
 - **判定接口。** 定义根包接口 `Decider`、值类型 `Decision`、动作常量 `Action`，以及冒充范围守卫 `ScopeGuard`。管理面动作、冒充的开始与读写、非成员进入租户，都经 `Decider` 判定（[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)）。
 - **管理面模块 `authn.admin`。** 挂 `B/*` 与 `Bt/:tenant/*` 下的全部管理路由（冒充记录在 `B/tenants/:tenant/impersonations`）；每条路由的处理顺序固定为注册验证状态的门控、`Decider`、发起者强度核验、强制审计、写、事件。门控只拦发起者为未验证账户的人类写，见「注册验证状态的门控」。按路由组声明[特性](../../../glossary.md)：恒挂的组是静态特性，随能力挂出的组是条件特性，在挂该组的同一处判定里经 `feature.Board` 的 `Post` 报告。
 - **`Decision` 的填法。** 路径里不带租户的租户级动作，`authn.admin` 在调用 `Decider` 之前自己解析对象的归属并填入 `Decision`。
-- **自助范围的判据。** 账户对自己的会话、因素、口令、标识与外部关联的读写不经过 `Decider`；判据在本文给出，自助路由由 `authn.login`、`authn.session`、`authn.mfa` 各自挂。
-- **403 的收窄。** 本文给出 authn 哪些位置可以写 403，以及网关与租户准入层写什么；判据与被否决的写法在 [ADR-authn-scope](../../../adr/adr-authn-scope.md)。
+- **划定自助范围的判据。** 账户对自己的会话、因素、口令、标识与外部关联的读写不经过 `Decider`；判据由本文给出，自助路由由 `authn.login`、`authn.session`、`authn.mfa` 各自挂。
+- **收窄 403 的位置。** 列出 authn 可以写 403 的位置，以及网关与租户准入层写什么；判据与被否决的写法在 [ADR-authn-scope](../../../adr/adr-authn-scope.md)。
 
 ### 非职责
 

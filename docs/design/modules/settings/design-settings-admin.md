@@ -1,5 +1,7 @@
 # settings.admin
 
+本[模块](../../../glossary.md)是全局层与平台侧租户层设置的 HTTP 管理面，挂在 `/api/v1/system/settings` 下，把 `settings.Store` 的读写做成按查询串选层的受保护路由。它拥有这组路由的层选、权限域、审计与敏感遮蔽，不拥有设置数据、声明类型与取值域判据。读职责清单前应持有的一句话心智模型是：这里只决定「谁能问哪一层」与「答案长什么样」，值能否写下由设置模块决定。
+
 ## 职责
 
 `settings.admin` 是运行期设置的管理面，挂在固定基路径 `/api/v1/system/settings` 下，不交付任何功能接口，只把设置的读写做成路由。每条路由的动作是经 `settings.Store` 调设置模块——列出声明项、读一层的值、写一层的一行、删一层的一行——模块自己不持数据、不持规则：声明项、类型、取值域与三级回退归设置模块，本模块只决定谁可以问、答案长什么样。
@@ -180,6 +182,16 @@ sequenceDiagram
 **遮蔽串与查询串的取值是封闭集。** `layer` 取 `global` 与 `tenant`；敏感项在 `written` 与 `value` 处换成固定遮蔽串，`default` 对敏感项置空，`has_row` 的布尔值不因敏感与否而变。这些取值是宿主与前端据以读应答的契约。
 
 ## 核心算法与流程
+
+### 走查
+
+初始状态：设置项 `ratelimit.limit` 已声明，租户 `acme` 的租户层没有这个键的行；调用方是已通过注册验证、在租户 `acme` 持有 `settings.tenant.write` 的账户。
+
+1. 调用方发 `PUT /api/v1/system/settings/ratelimit/limit?layer=tenant&tenant=acme`，正文 `{"value": 200}`。handler 读身份、读注册验证状态，按 `layer` 定出 `ForTenant("acme")` 与租户域，向 guard 要 `settings.tenant.write`，均通过。
+2. 格式检查通过之后、动作之前，handler 写一行强制档审计，动作标识为 `settings.set`。持久状态：审计表多一行，设置表未变。
+3. handler 调 `settings.Store.Set`。设置模块编码值、判定取值域，在该租户层插入一行，版本为 1。持久状态：设置表一行 `(acme, ratelimit.limit, 200, version 1)`，审计行已在。
+4. 审计写不进时，handler 答 503，`Store.Set` 不被调用，设置表没有这一行。
+5. 值落在取值域之外时，设置模块报 `ErrInvalidValue`，handler 答 422；审计行已经在表里，设置表没有这一行。
 
 ### 一次管理请求
 

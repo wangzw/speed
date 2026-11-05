@@ -1,15 +1,19 @@
 # authn 多因素
 
+`authn.mfa` 是认证[功能目录](../../../glossary.md)的多因素模块：它持有账户的因素登记簿，在第一因素通过之后判定要不要第二因素、给出可用清单，并把因素登记、发码、校验、删除与重置编排到各因素子包之上。保障等级只在这里合成，账户安全类动作的因素年龄门槛也只在这里回答。它不实现第一因素、不驱动登录流程、不执行租户级强制，也不持有登录会话。职责清单之前的一句话心智模型：本模块是因素的登记簿与策略判定处，因素子包只做密码学与自己的状态，会话和流程由别的模块持有。
+
+第一遍的次序是「职责」「非职责」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，依次是「策略判定」「保障等级的合成」「统一收口：`Challenge`、`Verify`、`Enroll`」「因素登记」，各因素的细节供需要时查。「错误与失败语义」与「并发与事务边界」属查阅用；「扩展点」供新接一种因素时查。「实现状态」供核对上文承诺。竞态与边界情形是最后的自检项。
+
 ## 职责
 
-- **因素登记簿。** 记录账户的每个因素：每个因素在 `authn_factors` 里占一行，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据，[REF-rfc6238](../../../references.md)、[REF-webauthn](../../../references.md)）才放各因素子包自己的表。
-- **第二因素的策略判定。** 第一因素通过之后，按账户级与全局级策略回答账户是否还要第二因素，并给出可用的因素清单。租户级策略在请求期执行，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
-- **因素的登记、发码与校验的编排。** `MFA` 驱动各因素实现；失败退避、审计记录与事件发布在 `MFA` 里统一做一遍，因素实现不做（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。
-- **保障等级的唯一合成处。** `MFA.Assurance` 是整个认证功能目录里计算保障等级的唯一位置；网关的校验后端、请求期的租户准入、`guard.Require` 与冒充发起读到的都是登录会话行里已记录的值。
-- **最高权限动作的因素门槛。** 回答 `MFA.Seasoned`；约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
-- **因素的删除与重置，以及随账户删除的清理。** `MFA.Remove` 先让因素实现清掉种类专属数据，再删掉因素行；`MFA.Reset` 置 `mfa_required`、停用账户的全部因素、经 `Sessions.RevokeAccount` 撤销账户的全部会话（`Sessions` 缺席时跳过），并在提交后发布 `authn.factor.changed`（`reset`）；账户删除钩子随账户删除清掉该账户的全部因素与 `authn_webauthn_users` 里的行。
-- **因素种类的实现。** TOTP、短信、WebAuthn 各是一个子包与一个模块，只做密码学与自己的状态。
-- **因素自助接口的路由。** 挂出 `GET B/factors`、`DELETE B/factors/:id`、`PATCH B/factors/:id`，供账户持有人列出、删除与改名自己的因素；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。这个接口以静态[特性](../../../glossary.md) `authn.mfa` 声明（见「声明的特性」）。
+- **登记因素。** 为账户的每个因素写一行 `authn_factors`，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据，[REF-rfc6238](../../../references.md)、[REF-webauthn](../../../references.md)）才放各因素子包自己的表。
+- **判定第二因素。** 在第一因素通过之后按账户级与全局级策略回答是否还要第二因素，并给出可用的因素清单；租户级策略在请求期执行，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
+- **编排因素的登记、发码与校验。** `MFA` 驱动各因素实现，并在自己这一处统一做失败退避、审计记录与事件发布，因素实现不做（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。
+- **合成保障等级。** 由 `MFA.Assurance` 计算整个认证功能目录唯一的保障等级，网关的校验后端、请求期的租户准入、`guard.Require` 与冒充发起读到的都是登录会话行里已记录的值。
+- **给出最高权限动作的因素要求。** 由 `MFA.Seasoned` 判定因素年龄，并约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
+- **删除、重置与清理因素。** `MFA.Remove` 先让因素实现清掉种类专属数据，再删掉因素行；`MFA.Reset` 置 `mfa_required`、停用账户的全部因素、经 `Sessions.RevokeAccount` 撤销账户的全部会话（`Sessions` 缺席时跳过），并在提交后发布 `authn.factor.changed`（`reset`）；账户删除钩子随账户删除清掉该账户的全部因素与 `authn_webauthn_users` 里的行。
+- **实现因素种类。** TOTP、短信与 WebAuthn 各由子包实现为一个模块，只做密码学与自己的状态。
+- **挂出因素自助路由。** 挂出 `GET B/factors`、`DELETE B/factors/:id`、`PATCH B/factors/:id`，供账户持有人列出、删除与改名自己的因素；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。这个接口以静态[特性](../../../glossary.md) `authn.mfa` 声明（见「声明的特性」）。
 
 认证功能目录的术语（因素、保障等级、认证方式、登录会话等）登记在 [authn](design-authn.md) 的模块局部术语表，本文沿用。
 
@@ -397,7 +401,30 @@ CREATE TABLE authn_webauthn_credentials (
 
 `assurance`、`idp_assured`、认证方式集与认证时刻记在登录会话行，归 `authn.session`（[authn-session](design-authn-session.md)）；本模块只产生值，不写那张表。
 
+### 状态一览
+
+因素行的 `status` 是封闭集，对应 `FactorPending`、`FactorActive`、`FactorDisabled`。下表说明每个取值的运行含义；账户删除可在任一状态清掉因素行，那是删除出口，不改变状态本身的含义。
+
+| 状态 | 一句话含义 | 当前动作（本模块） | 直觉画面 |
+|---|---|---|---|
+| 待确认 | 登记尚未完成，零值 | 不把它列入可用清单，也不让 `Seasoned` 认它，因素实现只持有它的种类数据 | 新配的钥匙还没试开过 |
+| 启用 | 登记已完成，可用于第二因素 | 在可用清单里列出它，`Seasoned` 按 `activated_at` 计它的年龄 | 钥匙已配好挂在门上 |
+| 停用 | 管理员重置或克隆告警后停用 | 把它排除在可用清单与 `Seasoned` 之外，行与种类数据保留 | 钥匙被收进抽屉，锁芯仍认得它 |
+
 ## 核心算法与流程
+
+### 走查
+
+一次验证器应用（TOTP）因素的登记与随后的一次校验。初始状态是账户没有任何因素。
+
+| 步骤 | 事件 | 持久状态 |
+|---|---|---|
+| 1 | `MFA.Enroll` 第一步 | `authn_factors` 新增一行 `status = 0`（待确认），`activated_at` 为空；`authn_totp_secrets` 新增一行加密的种子，`last_counter` 为 0；`otpauth://` 地址只在这次应答里出现一次。 |
+| 2 | 客户端提交一个有效码，因素实现交出 `StepEnrolled` | 同一事务里该因素行变为 `status = 1`（启用），写入 `activated_at`；写审计并发 `authn.factor.changed`（`enrolled`）。 |
+| 3 | 下一次登录，`MFA.Verify` 校验该因素 | 先过 `Throttle.Check(ScopeFactor, 因素标识)`；码命中后 `last_counter` 经条件更新前移，影响行数为一才算通过。 |
+| 4 | 同一码再次提交 | 条件更新 `last_counter < ?` 影响行数为零，返回 `ErrReplay`，对外并入 `login-failed`；`authn_factors` 不变。 |
+
+登记完成之前固定了一条边界：待确认的行不用于验证，也不进可用清单与 `Seasoned`。
 
 ### 策略判定
 
@@ -477,8 +504,8 @@ CREATE TABLE authn_webauthn_credentials (
 
 - 入口是 `POST B/flows/authenticated {purpose:"step-up"}`，复用登录引擎：账户有早于会话认证时刻的因素时直接进入第二因素待答；账户没有因素，或因素都在本次会话期间登记时，要求重新证明第一因素，其中因素都在本次会话期间登记时以 `password` 作第一因素，口令证明后这些因素进入第二因素待答。
 - 完成时不建新会话，由 `Sessions.Elevate` 更新当前会话的 `assurance`、`auth_time`、方式集并轮换会话令牌，防会话固定。令牌发放的客户端在 `complete` 的应答里拿到新访问令牌，`acr` 与 `auth_time` 已更新。
-- 加强认证可直接使用启用时刻早于当前会话 `AuthTime` 的因素；本次会话期间登记的因素须在再次证明口令之后使用，账户没有口令时该步进答 401 `insufficient_user_authentication`。
-- 联邦登录的会话步进重走同一个 IdP：OIDC（[REF-openid-connect-core](../../../references.md)）加 `prompt=login`，回来后核对 `auth_time` 不早于流程开始；SAML（[REF-saml2](../../../references.md)）请求带 `ForceAuthn`。SAML 库不支持 `ForceAuthn` 时，联邦会话的步进改为要求账户已登记因素并走因素流程。
+- 加强认证可直接使用启用时刻早于当前会话 `AuthTime` 的因素；本次会话期间登记的因素须在再次证明口令之后使用，账户没有口令时该次加强认证答 401 `insufficient_user_authentication`。
+- 联邦登录的会话加强认证重走同一个 IdP：OIDC（[REF-openid-connect-core](../../../references.md)）加 `prompt=login`，回来后核对 `auth_time` 不早于流程开始；SAML（[REF-saml2](../../../references.md)）请求带 `ForceAuthn`。SAML 库不支持 `ForceAuthn` 时，联邦会话的加强认证改为要求账户已登记因素并走因素流程。
 
 ### TOTP
 

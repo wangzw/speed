@@ -1,14 +1,16 @@
 # api-sdk
 
+api-sdk 是前端与后端契约之间的生成产物，位于 api-client 之上，被 auth-core 与能力 UI 包读取。它拥有生成的端点函数与查询钩子、特性名类型，以及把生成调用转给传输的唯一手写扩展点。它不做 HTTP、不认识[租户](../../../glossary.md)、不含用户可见文本，也不接受手工编辑。进入职责清单前的心智模型只有一句：除 `src/runtime.ts` 外，包里的每一行都由契约生成，传输由 api-client 承担。
+
 ## 职责
 
-前端对 speed 平台的**生成式、契约优先的类型化接口**，包 `web/packages/api-sdk`。操作函数、TanStack Query（[REF-tanstack-query](../../../references.md)）钩子与响应模型由 orval（[REF-orval](../../../references.md)）从合并的平台 OpenAPI（[REF-openapi](../../../references.md)）文档生成；特性名类型由特性名生成器从 `contracts/features.json` 生成；每一次生成的调用都经 [`api-client`](design-web-api-client.md) 的请求函数发出。
+本包交付前端对 speed 平台的**生成式、契约优先的类型化接口**（包 `web/packages/api-sdk`）：操作函数、TanStack Query（[REF-tanstack-query](../../../references.md)）钩子与响应模型由 orval（[REF-orval](../../../references.md)）从合并的平台 OpenAPI（[REF-openapi](../../../references.md)）文档生成；特性名类型由特性名生成器从 `contracts/features.json` 生成；每一次生成的调用都经 [`api-client`](design-web-api-client.md) 的请求函数发出。
 
-- **整份由契约生成。** `src/` 除一个文件外全是生成产物：orval 从 `contracts/api.json` 生成 `src/index.ts`，特性名生成器 `web/scripts/feature-names.mjs` 从 `contracts/features.json` 生成 `src/features.ts`。`src/index.ts` 带 `web/orval.config.ts` 注入的 DO-NOT-EDIT 头，头里锚定着生成器的版本，故生成器与已提交产物之间的漂移表现为头本身的一处 diff；`src/features.ts` 带相同的 DO-NOT-EDIT 头。
-- **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的手写源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
-- **生成接口与传输无关。** 生成的调用把一个 axios（[REF-axios](../../../references.md)）格式的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数结构并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
-- **生成接口与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端点解析，生成接口既不传也不收租户（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。
-- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成接口。合并文档的成员带所有者：平台模块的片段为平台所有，示范宿主自己的模块的片段为应用所有；应用所有的操作带应用所有的标记（标记的形态须能被 orval 的过滤读取），本包的生成过滤掉它们，应用级生成（[starters](../design-starters.md) 的第二级契约）取全部，本包的生成接口因此始终只含平台操作。测试从两个方向约束本包的生成接口：生成接口不含任何带应用标记的操作，合并文档里的每个平台操作都在生成接口。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
+- **从契约生成整份接口。** `src/` 除一个文件外全是生成产物：orval 从 `contracts/api.json` 生成 `src/index.ts`，特性名生成器 `web/scripts/feature-names.mjs` 从 `contracts/features.json` 生成 `src/features.ts`。`src/index.ts` 带 `web/orval.config.ts` 注入的 DO-NOT-EDIT 头，头里锚定着生成器的版本，故生成器与已提交产物之间的漂移表现为头本身的一处 diff；`src/features.ts` 带相同的 DO-NOT-EDIT 头。
+- **交付唯一的手写源码接手点。** `src/runtime.ts` 是本包唯一的手写源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
+- **生成与传输无关的接口。** 生成的调用把一个 axios（[REF-axios](../../../references.md)）格式的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数结构并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
+- **生成与租户无关的接口。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端点解析，生成接口既不传也不收租户（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。
+- **从模块片段汇入契约。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成接口。合并文档的成员带所有者：平台模块的片段为平台所有，示范宿主自己的模块的片段为应用所有；应用所有的操作带应用所有的标记（标记的形态须能被 orval 的过滤读取），本包的生成过滤掉它们，应用级生成（[starters](../design-starters.md) 的第二级契约）取全部，本包的生成接口因此始终只含平台操作。测试约束本包的生成接口：生成接口不含任何带应用标记的操作，合并文档里的每个平台操作都在生成接口。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
 - **特性名从模块声明流入。** 后端模块以资源 `feature.Spec` 声明它服务的[特性](../../../glossary.md)（[feature](../design-feature.md)）；示范宿主的 `gen` 命令以 `--features` 写出 `contracts/features.json`：可用集里的全部特性声明，每项带名字、声明模块与是否条件特性，按名字排序。它与 `contracts/api.json` 同源，出自同一个二进制的 import 闭包，是同一份契约的另一半（[starters](../design-starters.md)、[ADR-feature-vocabulary](../../../adr/adr-feature-vocabulary.md)）。
 
 ### 非职责
