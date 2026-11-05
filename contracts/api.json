@@ -2685,7 +2685,7 @@
     },
     "/api/v1/auth/me/tenants": {
       "get": {
-        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias and kind. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
+        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias, display name and kind. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
         "operationId": "tenant.self.tenants.list",
         "responses": {
           "200": {
@@ -2700,6 +2700,10 @@
                         "properties": {
                           "alias": {
                             "description": "The tenant's alias, the name the request surface addresses it by.",
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "description": "The organization's display name, empty when its profile names none. A surface falls back to the alias then.",
                             "type": "string"
                           },
                           "id": {
@@ -2718,6 +2722,7 @@
                         "required": [
                           "id",
                           "alias",
+                          "displayName",
                           "kind"
                         ],
                         "type": "object"
@@ -5076,6 +5081,126 @@
         "x-endpoint": "api"
       }
     },
+    "/api/v1/orgs": {
+      "post": {
+        "description": "Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The identifier and alias are generated together as one org-\u003cuuid\u003e string. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.",
+        "operationId": "org.create.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationCreateRequest"
+              }
+            }
+          },
+          "description": "The display name and description of the organization; the identifier and alias are generated.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationCreatedReply"
+                }
+              }
+            },
+            "description": "The organization as created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The display name is missing or the profile is outside its bounds"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is impersonating, is a service account or a static subject, or has not proved an email address (contact-required)"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller cannot create an organization now: a creation is already in progress (creation-in-progress), the account holds the maximum number of active business organizations (organization-limit), or the generated identifier is unavailable (identifier-unavailable). The type field names which"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The account has reached the hourly creation limit; Retry-After names the seconds until the next window",
+            "headers": {
+              "Retry-After": {
+                "description": "The number of seconds until the hourly window opens again",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer; no part of the organization is created"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Create a business organization",
+        "tags": [
+          "speed.application"
+        ],
+        "x-endpoint": "account"
+      }
+    },
     "/api/v1/orgs/personal": {
       "post": {
         "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
@@ -5840,6 +5965,16 @@
           },
           "404": {
             "description": "No such account"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The account is the only tenant administrator of an active business tenant; the detail names that tenant, and the role has to be handed to another administrator first"
           },
           "503": {
             "content": {
@@ -8620,7 +8755,7 @@
         "x-endpoint": "admin"
       },
       "post": {
-        "description": "Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.",
+        "description": "Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier, the alias and optionally the profile's four descriptive fields; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.",
         "operationId": "tenant.admin.tenants.create",
         "requestBody": {
           "content": {
@@ -8630,7 +8765,7 @@
               }
             }
           },
-          "description": "The registration: the identifier to insert and the alias the request surface will address the tenant by. The state is not part of it, because a registered tenant starts active.",
+          "description": "The registration: the identifier to insert, the alias the request surface will address the tenant by, and the optional profile fields. The state is not part of it, because a registered tenant starts active.",
           "required": true
         },
         "responses": {
@@ -9502,6 +9637,132 @@
         "summary": "Revoke an impersonation record",
         "tags": [
           "authn.admin"
+        ],
+        "x-endpoint": "admin"
+      }
+    },
+    "/api/v1/system/tenants/{tenant}/profile": {
+      "patch": {
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.",
+        "operationId": "tenant.admin.tenants.profile",
+        "parameters": [
+          {
+            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantAdminTenantProfileWrite"
+              }
+            }
+          },
+          "description": "The four descriptive fields, all of them present. An empty value clears the stored one.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The tenant the identifier named.",
+                  "properties": {
+                    "tenant": {
+                      "$ref": "#/components/schemas/TenantAdminTenant",
+                      "description": "The tenant, with its identifier, alias and state."
+                    }
+                  },
+                  "required": [
+                    "tenant"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The tenant with the profile as written"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The identifier is outside the identifier domain, the request body is not one JSON object, a member is absent, or the profile is outside the stated bounds"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
+          },
+          "404": {
+            "description": "No tenant carries the identifier"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The tenant is a tombstone; a deleted tenant's profile is terminal"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Write one tenant's organization profile",
+        "tags": [
+          "tenant.admin"
         ],
         "x-endpoint": "admin"
       }
@@ -11578,6 +11839,215 @@
         "summary": "List every permission a tenant administrator may hold and grant",
         "tags": [
           "authz.tenantadmin"
+        ],
+        "x-endpoint": "api"
+      }
+    },
+    "/api/v1/tenants/{tenant}/profile": {
+      "get": {
+        "description": "Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, website and state, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier the roster does not hold is a 404. Reads write no audit row.",
+        "operationId": "tenant.profile.get",
+        "parameters": [
+          {
+            "description": "The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The organization profile of one tenant.",
+                  "properties": {
+                    "profile": {
+                      "$ref": "#/components/schemas/TenantProfileView",
+                      "description": "The tenant's organization profile, with the identifier, alias and state it is read beside."
+                    }
+                  },
+                  "required": [
+                    "profile"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The tenant's organization profile"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no tenant.profile.read in the tenant's policy domain"
+          },
+          "404": {
+            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read a tenant's organization profile",
+        "tags": [
+          "tenant.profile"
+        ],
+        "x-endpoint": "api"
+      },
+      "patch": {
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a rename, a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.",
+        "operationId": "tenant.profile.update",
+        "parameters": [
+          {
+            "description": "The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantProfileWrite"
+              }
+            }
+          },
+          "description": "The four descriptive fields, all of them present. An empty value clears the stored one.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The organization profile of one tenant.",
+                  "properties": {
+                    "profile": {
+                      "$ref": "#/components/schemas/TenantProfileView",
+                      "description": "The tenant's organization profile, with the identifier, alias and state it is read beside."
+                    }
+                  },
+                  "required": [
+                    "profile"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The profile as written"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The profile is outside the stated bounds, or the request body is not one JSON object"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no tenant.profile.write in the tenant's policy domain, or the caller has not proved an email address (contact-required)"
+          },
+          "404": {
+            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The tenant is a tombstone; a deleted tenant's profile is terminal"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Write a tenant's organization profile",
+        "tags": [
+          "tenant.profile"
         ],
         "x-endpoint": "api"
       }
@@ -16706,6 +17176,72 @@
         ],
         "type": "object"
       },
+      "OrganizationCreateRequest": {
+        "additionalProperties": false,
+        "description": "The display name and description of the organization to create. The identifier and alias are generated.",
+        "properties": {
+          "description": {
+            "description": "The organization's description; at most 500 runes after trimming.",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The organization's display name; 1 to 100 runes after trimming, and the surface requires it non-empty.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "type": "object"
+      },
+      "OrganizationCreatedReply": {
+        "description": "The organization this call created, with the generated identifier and alias.",
+        "properties": {
+          "tenant": {
+            "$ref": "#/components/schemas/OrganizationCreatedTenant"
+          }
+        },
+        "required": [
+          "tenant"
+        ],
+        "type": "object"
+      },
+      "OrganizationCreatedTenant": {
+        "description": "The created organization: the generated identifier and alias (the same string), the profile the caller gave, and the active state.",
+        "properties": {
+          "alias": {
+            "description": "The request-surface name, equal to the identifier for a self-service organization.",
+            "type": "string"
+          },
+          "description": {
+            "description": "The organization's description, trimmed.",
+            "type": "string"
+          },
+          "displayName": {
+            "description": "The organization's display name, trimmed.",
+            "type": "string"
+          },
+          "id": {
+            "description": "The generated organization identifier: the fixed prefix \"org-\" followed by a random UUID. The scoped tables hold it.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The organization's state; a self-service organization starts active.",
+            "enum": [
+              "active"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "alias",
+          "displayName",
+          "description",
+          "status"
+        ],
+        "type": "object"
+      },
       "OrganizationPersonalReply": {
         "description": "The answer to a successful ensure: the caller's personal tenant and whether this call registered it.",
         "properties": {
@@ -17240,10 +17776,23 @@
         "type": "object"
       },
       "TenantAdminTenant": {
-        "description": "One tenant as the management routes render it: the identifier, the alias and the state, plus who disabled it while it is disabled.",
+        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time when known, and who disabled it while it is disabled.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
+            "type": "string"
+          },
+          "contactEmail": {
+            "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "description": "The organization's description. Empty when its profile names none.",
             "type": "string"
           },
           "disabledBy": {
@@ -17252,6 +17801,10 @@
               "operator",
               "account"
             ],
+            "type": "string"
+          },
+          "displayName": {
+            "description": "The organization's display name. Empty when its profile names none; a surface falls back to the alias then.",
             "type": "string"
           },
           "id": {
@@ -17266,31 +17819,164 @@
               "deleted"
             ],
             "type": "string"
+          },
+          "website": {
+            "description": "The organization's absolute http or https address. Empty when its profile names none.",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "alias",
+          "displayName",
+          "description",
+          "contactEmail",
+          "website",
           "status"
+        ],
+        "type": "object"
+      },
+      "TenantAdminTenantProfileWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "contact_email": {
+            "description": "The organization's contact address, one bare email address of at most 254 bytes. Empty clears it.",
+            "type": "string"
+          },
+          "description": {
+            "description": "A longer account of the organization, at most 500 runes. Empty clears it.",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias.",
+            "type": "string"
+          },
+          "website": {
+            "description": "The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "description",
+          "contact_email",
+          "website"
         ],
         "type": "object"
       },
       "TenantAdminTenantRegistration": {
         "additionalProperties": false,
-        "description": "The identifier and alias of a tenant to register. The state is not part of it, because a registered tenant starts active.",
+        "description": "The identifier, alias and optional profile of a tenant to register. The state is not part of it, because a registered tenant starts active.",
         "properties": {
           "alias": {
             "description": "The alias to give the tenant; the roster refuses one another tenant already holds.",
             "type": "string"
           },
+          "contact_email": {
+            "description": "The organization's contact address, one bare email address of at most 254 bytes.",
+            "type": "string"
+          },
+          "description": {
+            "description": "A longer account of the organization, at most 500 runes.",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The organization's display name, at most 100 runes. Empty when the registration names none.",
+            "type": "string"
+          },
           "id": {
             "description": "The identifier to register; the roster refuses one it already holds.",
+            "type": "string"
+          },
+          "website": {
+            "description": "The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo.",
             "type": "string"
           }
         },
         "required": [
           "id",
           "alias"
+        ],
+        "type": "object"
+      },
+      "TenantProfileView": {
+        "description": "One tenant's organization profile: the read-only identity and state beside the four descriptive fields.",
+        "properties": {
+          "alias": {
+            "description": "The alias the request surface addresses the tenant by.",
+            "type": "string"
+          },
+          "contactEmail": {
+            "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the tenant was registered, as an RFC 3339 instant in UTC. Omitted for a row that predates the column, which no time is invented for.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "description": "The organization's description. Empty when its profile names none.",
+            "type": "string"
+          },
+          "displayName": {
+            "description": "The organization's display name. Empty when its profile names none; a surface falls back to the alias then.",
+            "type": "string"
+          },
+          "id": {
+            "description": "The tenant's immutable identifier.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again.",
+            "enum": [
+              "active",
+              "disabled",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "website": {
+            "description": "The organization's absolute http or https address. Empty when its profile names none.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "alias",
+          "displayName",
+          "description",
+          "contactEmail",
+          "website",
+          "status"
+        ],
+        "type": "object"
+      },
+      "TenantProfileWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "contact_email": {
+            "description": "The organization's contact address, one bare email address of at most 254 bytes. Empty clears it.",
+            "type": "string"
+          },
+          "description": {
+            "description": "A longer account of the organization, at most 500 runes. Empty clears it.",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias.",
+            "type": "string"
+          },
+          "website": {
+            "description": "The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "description",
+          "contact_email",
+          "website"
         ],
         "type": "object"
       }
@@ -17386,6 +18072,9 @@
       "name": "tenant.admin"
     },
     {
+      "name": "tenant.profile"
+    },
+    {
       "name": "tenant.self"
     }
   ],
@@ -17479,6 +18168,10 @@
       "endpoint": "ops"
     },
     {
+      "module": "org.create",
+      "endpoint": "account"
+    },
+    {
       "module": "org.personal",
       "endpoint": "account"
     },
@@ -17497,6 +18190,10 @@
     {
       "module": "tenant.admin",
       "endpoint": "admin"
+    },
+    {
+      "module": "tenant.profile",
+      "endpoint": "api"
     },
     {
       "module": "tenant.self",

@@ -10,6 +10,7 @@
 
 declare module '@speed/api-sdk/features' {
   interface FeatureNameRegistry {
+    'org.create': true
     'org.personal': true
   }
 }

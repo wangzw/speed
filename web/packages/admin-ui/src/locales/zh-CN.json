@@ -7,6 +7,7 @@
   },
   "errors": {
     "authn": {
+      "account_last_tenant_admin": "该账户是某个组织的唯一管理员，无法删除。请先将该组织的管理员转交给其他成员，再删除此账户。",
       "session_not_found": "会话不存在，请重新登录。",
       "session_revoked": "会话已被撤销，请重新登录。",
       "token_expired": "登录已过期，请重新登录。",
@@ -49,6 +50,12 @@
     },
     "ratelimit": {
       "throttled": "尝试次数过多，请稍后再试。"
+    },
+    "org": {
+      "creation_in_progress": "已有一次组织创建正在进行，请等待它完成后再试。",
+      "identifier_unavailable": "组织地址或标识已被其他组织占用。个人组织的地址由账户生成，业务组织的标识则自动生成，两者都无法手动更换；如果持续出现，请联系管理员。",
+      "organization_limit": "你的账户可创建的活跃业务组织数量已达上限，无法再创建新的组织。",
+      "rate_limited": "创建组织过于频繁，请稍后再试。"
     },
     "tenant": {
       "bad_request": "提交的内容有误，请检查表单后重试。",

@@ -72,6 +72,17 @@ export const ERROR_TEXT_CODES = [
   // with.
   'tenant.bad_request',
   'tenant.conflict',
+  // org create (the demo host's self-service surface) and the personal
+  // organization ensure: the 409s a creation is refused with -- another
+  // creation in flight, the account's active-organization cap, and an
+  // identifier or alias collision -- and the 429 the hourly creation
+  // limit answers with. The identifier code is one code for both the
+  // personal address conflict and the generated business identifier
+  // conflict.
+  'org.creation_in_progress',
+  'org.identifier_unavailable',
+  'org.organization_limit',
+  'org.rate_limited',
   // authz admin: a 400 shape refusal, the 409 a role or binding collision
   // is answered with, the 403 the authorization guard refuses a write the
   // caller is not permitted to make with, and the 403 the host's write
@@ -101,6 +112,10 @@ export const ERROR_TEXT_CODES = [
   'authn.contact_required',
   'authn.forbidden',
   'authn.impersonation_restricted',
+  // The 409 an account deletion is refused with when the account is the
+  // last administrator of an active business organization. The copy tells
+  // the operator to transfer the role before deleting the account.
+  'authn.account_last_tenant_admin',
   // The tenant admission layer's SSO step-up refusal: a local factor cannot
   // clear it, and the dialog shows the enterprise sign-in exit.
   'authn.sso_required',

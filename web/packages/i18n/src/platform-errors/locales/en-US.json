@@ -2,6 +2,7 @@
   "errors": {
     "admin.impersonation_reason_required": "A reason is required to start an impersonation session.",
     "audit.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
+    "authn.account_last_tenant_admin": "This account is the only administrator of an organization and cannot be deleted. Transfer the organization's administrator role to another member first, then delete this account.",
     "authn.account_unavailable": "This account is unavailable. Contact an administrator for help.",
     "authn.bad_request": "Some of the information you entered isn't valid. Check it and try again.",
     "authn.conflict": "Your account may have changed. Refresh the page and try again.",
@@ -66,7 +67,10 @@
     "tenant.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
     "tenant.conflict": "That identifier or alias is already taken by another organization.",
     "tenant.protected": "This organization is protected and cannot be changed.",
-    "org.identifier_unavailable": "Your personal organization's address is unavailable. Contact an administrator.",
+    "org.creation_in_progress": "Another organization creation is already in progress. Wait for it to finish and try again.",
+    "org.identifier_unavailable": "Another organization already uses this address or identifier. A personal organization's address is derived from the account, and a business organization's identifier is generated automatically; neither can be changed by hand. Contact an administrator if this keeps happening.",
+    "org.organization_limit": "Your account has reached the maximum number of active business organizations and cannot create another.",
+    "org.rate_limited": "You are creating organizations too quickly. Try again later.",
     "org.tenant_unavailable": "Your personal organization has been disabled. Contact an administrator."
   }
 }

@@ -192,6 +192,11 @@ describe('admin-ui error text', () => {
     ).errors.unknown
     for (const code of [
       'tenant.bad_request',
+      'tenant.conflict',
+      'org.creation_in_progress',
+      'org.identifier_unavailable',
+      'org.organization_limit',
+      'org.rate_limited',
       'authz.bad_request',
       'authz.conflict',
       'authz.forbidden',
@@ -204,6 +209,7 @@ describe('admin-ui error text', () => {
       'authn.username_immutable',
       'authn.forbidden',
       'authn.impersonation_restricted',
+      'authn.account_last_tenant_admin',
       'authn.factor_not_seasoned',
       'authn.human_verification_required',
       'audit.bad_request',
