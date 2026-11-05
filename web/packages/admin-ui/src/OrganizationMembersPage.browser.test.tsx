@@ -354,6 +354,47 @@ function atContainerWidth(
   }
 }
 
+/** The shared `sm` tier floor the per-tier geometry cases measure at. */
+const SM_FLOOR = 600
+
+/**
+ * The headroom the table's required width must leave inside the tier floor,
+ * on top of the strict containment check. A table that exactly fills the
+ * floor passes containment but leaves a font metric one glyph away from the
+ * scroll fallback; the layout design sets this margin so a reachable state
+ * is not merely at the edge.
+ */
+const TIER_HEADROOM = 8
+
+/**
+ * The width the table's columns actually require at `floor`, measured by
+ * laying the table out at its min-content width inside a containment box
+ * pinned to the floor. The container's own `scrollWidth` cannot answer
+ * this: while the columns fit, the table stretches to fill the box, so
+ * `scrollWidth` reports the box width rather than the required width.
+ */
+function requiredWidthAtFloor(
+  containment: HTMLElement,
+  container: HTMLElement,
+  floor: number,
+): number {
+  const table = container.querySelector('table')
+  if (table === null) {
+    throw new Error('the table has no <table> element')
+  }
+  const originalContainment = containment.style.width
+  const originalTable = table.style.width
+  try {
+    containment.style.width = `${floor}px`
+    table.style.width = 'min-content'
+    void table.offsetWidth
+    return table.getBoundingClientRect().width
+  } finally {
+    table.style.width = originalTable
+    containment.style.width = originalContainment
+  }
+}
+
 /** The management control's accessible name for a member. */
 function manageName(member: AdminMember): string {
   return enUS.members.manageAria.replace('{{name}}', member.display_name)
@@ -510,7 +551,69 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
 
     await screen.findAllByText(LONG_DISPLAY_NAME)
     await expectNoHorizontalOverflow()
+
+    // Containment alone reports the stretched box; the width the columns
+    // actually require is what has to leave the margin. With the identity
+    // cap at 96px the suspended row requires 585.8px, 14.2px inside the
+    // floor.
+    const members = tableFor(enUS.members.column.displayName)
+    expect(
+      requiredWidthAtFloor(members.containment, members.container, SM_FLOOR),
+      'the suspended member row leaves less than the tier headroom inside the 600px floor',
+    ).toBeLessThanOrEqual(SM_FLOOR - TIER_HEADROOM)
   })
+
+  // Issuing or resending an invitation adds a third action to that row --
+  // the copy-link control -- and the actions column widens from the two
+  // buttons' 88px to the copy control's 105px. The widest reachable
+  // invitation is therefore an accepted row that also carries the copy
+  // link: "Accepted" is the longest status label, and the extra control
+  // widens the actions column on top of it. Revoked is the other stored
+  // status a row can carry while it still holds the copy link. Both are
+  // measured at the 600px floor; with both identity caps at 120px the
+  // accepted row requires 587.7px, 12.3px inside the floor.
+  for (const status of ['accepted', 'revoked'] as const) {
+    it(`keeps the invitation table inside the 600px tier floor when the copy-link action is present (${status})`, async () => {
+      await page.viewport(600, 900)
+      const invitation: AdminInvitation = {
+        ...LONG_INVITATION,
+        invited_by: LONG_ACCOUNT,
+        status,
+      }
+      renderPage({}, undefined, backend([LONG_MEMBER], [invitation]))
+
+      await screen.findAllByText(LONG_DISPLAY_NAME)
+      await screen.findAllByText(LONG_EMAIL)
+
+      // The copy link belongs to the row just issued or resent. Issuing
+      // through the form places it on the scripted row, which the list read
+      // after the issue keeps on screen.
+      const user = userEvent.setup()
+      await user.type(
+        screen.getByRole('textbox', {
+          name: enUS.invitations.issue.emailLabel,
+        }),
+        'someone@example.com',
+      )
+      await user.click(
+        screen.getByRole('button', { name: enUS.invitations.issue.submit }),
+      )
+      await screen.findByRole('button', { name: enUS.invitations.copyLink })
+
+      // The strict per-tier check, then the margin the stretch hides.
+      await expectNoHorizontalOverflow()
+
+      const invitations = tableFor(enUS.invitations.column.email)
+      expect(
+        requiredWidthAtFloor(
+          invitations.containment,
+          invitations.container,
+          SM_FLOOR,
+        ),
+        'the copy-link row leaves less than the tier headroom inside the 600px floor',
+      ).toBeLessThanOrEqual(SM_FLOOR - TIER_HEADROOM)
+    })
+  }
 })
 
 describe('OrganizationMembersPage single-token identity values in Chromium', () => {
