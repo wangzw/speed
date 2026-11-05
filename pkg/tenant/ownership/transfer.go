@@ -36,17 +36,21 @@ func (p *product) TransferOwner(ctx context.Context, id tenant.ID, target string
 	}
 	defer release()
 
-	member, found, err := p.memberships.Membership(ctx, string(id), authn.AccountID(target))
-	if err != nil {
-		return fmt.Errorf("%s: reading the target's membership: %w", ModuleName, err)
-	}
-	if !found || !member.Active {
-		return fmt.Errorf("%w: account %q is not an active member of tenant %q",
-			tenant.ErrOwnerNotMember, target, id)
-	}
-
 	var after []func(context.Context) error
 	err = p.begin(ctx, func(tx *gorm.DB) error {
+		// The target's membership is read under the account's row lock inside
+		// the transaction, so a suspension that commits before the transfer's
+		// commit either is seen here or waits for it: the owner this writes is
+		// an active member at the moment the row is set.
+		member, found, readErr := p.membershipWriter.MembershipTx(ctx, tx, string(id), authn.AccountID(target))
+		if readErr != nil {
+			return fmt.Errorf("%s: reading the target's membership: %w", ModuleName, readErr)
+		}
+		if !found || !member.Active {
+			return fmt.Errorf("%w: account %q is not an active member of tenant %q",
+				tenant.ErrOwnerNotMember, target, id)
+		}
+
 		held, found, readErr := p.txRoster.GetTx(ctx, tx, id)
 		if readErr != nil {
 			return readErr

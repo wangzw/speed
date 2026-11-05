@@ -51,7 +51,10 @@ func reasonOK(reason string) error {
 
 // SetStatus moves an account between disabled and enabled.
 //
-// The account's own tables change in one transaction: the status, the instant
+// A disable asks the owner counter and runs under the tenant locks the account
+// administers, as a deletion does, so a transfer that makes the account an
+// owner cannot slip between the check and the commit. The account's own tables
+// change in one transaction: the status, the instant
 // before which no session is valid, and the event. Moving to disabled moves that
 // instant to the next second after the change and never back, and moving to
 // enabled leaves it, so a session of before is not revived. Once the transaction
@@ -68,6 +71,14 @@ func (p *product) SetStatus(ctx context.Context, id authn.AccountID, s authn.Acc
 		return err
 	}
 	if s == authn.StatusDisabled {
+		// The owner check and the write that acts on it run under the same
+		// tenant locks the deletion takes, so a transfer cannot make the
+		// account an owner between the check and the commit.
+		release, err := p.lockAccountAdministration(ctx, id)
+		if err != nil {
+			return err
+		}
+		defer release()
 		if err := p.refuseSuspendingTheOwner(ctx, id); err != nil {
 			return err
 		}
@@ -196,9 +207,9 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 
 // lockAccountAdministration takes the counter's tenant locks for every tenant
 // in which the account administers, and answers the release. An assembly with
-// no counter locks nothing: its deletion path has no floor to serialise. A lock
-// that cannot be taken is ErrUnavailable and the deletion does not run, because
-// an unknown floor must not be read as permission.
+// no counter locks nothing: its deletion and disable paths have no floor to
+// serialise. A lock that cannot be taken is ErrUnavailable and the write does
+// not run, because an unknown floor must not be read as permission.
 func (p *product) lockAccountAdministration(ctx context.Context, id authn.AccountID) (func(), error) {
 	counter := p.tenantAdminCounter
 	if counter == nil {
@@ -206,7 +217,7 @@ func (p *product) lockAccountAdministration(ctx context.Context, id authn.Accoun
 	}
 	release, err := counter.LockAccountAdministration(ctx, id.String())
 	if err != nil {
-		p.logger.Error(ModuleName+": the last-administrator locks could not be taken, so the account was not deleted",
+		p.logger.Error(ModuleName+": the last-administrator locks could not be taken, so the account was not changed",
 			slog.String("account", id.String()), slog.String("cause", err.Error()))
 		return nil, fmt.Errorf("%w: taking the last tenant-administrator locks: %w", authn.ErrUnavailable, err)
 	}

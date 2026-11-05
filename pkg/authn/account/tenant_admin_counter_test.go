@@ -61,6 +61,62 @@ func (f *fakeTenantAdminCounter) observeCleanup() {
 
 var _ authz.TenantAdminCounter = (*fakeTenantAdminCounter)(nil)
 
+func (f *fakeTenantAdminCounter) locksHeld() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.locked > 0
+}
+
+// fakeTenantOwnerCounter scripts the owner seam's answer and records whether
+// the tenant locks the deletion path takes were already held when it was asked.
+type fakeTenantOwnerCounter struct {
+	mu     sync.Mutex
+	admin  *fakeTenantAdminCounter
+	tenant string
+	owns   bool
+	err    error
+
+	checkedUnderLock bool
+}
+
+func (f *fakeTenantOwnerCounter) OwnsActiveBusinessTenant(_ context.Context, _ string) (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.checkedUnderLock = f.admin.locksHeld()
+	return f.tenant, f.owns, f.err
+}
+
+var _ authz.TenantOwnerCounter = (*fakeTenantOwnerCounter)(nil)
+
+// TestSuspendingTheOwnerIsAskedUnderTheTenantLocks holds the ordering the
+// disable path shares with the deletion: the owner check runs after the
+// administrator's tenant locks are taken and before the write, so a concurrent
+// transfer cannot make the account an owner between the check and the commit.
+func TestSuspendingTheOwnerIsAskedUnderTheTenantLocks(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		id := h.user("owner", "correct horse battery")
+		admin := &fakeTenantAdminCounter{}
+		owner := &fakeTenantOwnerCounter{admin: admin, tenant: "acme", owns: true}
+		h.p.tenantAdminCounter = admin
+		h.p.tenantOwnerCounter = owner
+
+		err := h.p.SetStatus(t.Context(), id, authn.StatusDisabled, authn.ReasonAdmin)
+		if !errors.Is(err, authn.ErrAccountOwnsOrganization) {
+			t.Fatalf("SetStatus = %v, want ErrAccountOwnsOrganization", err)
+		}
+		var refusal *authn.AccountOwnsOrganizationError
+		if !errors.As(err, &refusal) || refusal.Tenant != "acme" {
+			t.Fatalf("the refusal is %v, want the organization-owner refusal naming acme", err)
+		}
+		if !owner.checkedUnderLock {
+			t.Error("the owner check ran before the tenant locks were taken")
+		}
+		if got := h.accountStatus(t, id); got != statusActive {
+			t.Errorf("the refused suspension left status %d, want active", got)
+		}
+	})
+}
+
 // lockObservingHook is a lifecycle hook that records whether the deletion's
 // tenant lock was still held when the cleanup ran.
 type lockObservingHook struct{ counter *fakeTenantAdminCounter }

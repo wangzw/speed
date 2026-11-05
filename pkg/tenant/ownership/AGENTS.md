@@ -21,7 +21,10 @@ and the membership store.
 - **The transfer writes the new owner first.** It refuses a target that is not
   an active member (`tenant.ErrOwnerNotMember`), grants `tenant-admin`, writes
   the roster owner, then clears the previous owner's bindings and removes its
-  membership. A transfer to the current owner is a no-op.
+  membership. A transfer to the current owner is a no-op. The target's
+  membership is read inside the transaction under the account's row lock
+  (`provisioning.MembershipWriter.MembershipTx`), so a concurrent suspension
+  either is seen by the check or waits for the transfer to commit.
 - **The deletion writes the tombstone and cleans the core relations.** It
   writes the roster tombstone, deletes the tenant's grants, bindings and roles,
   and deletes its memberships, all in that one transaction. It never writes

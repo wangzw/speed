@@ -85,21 +85,32 @@ type AccountProvisioning interface {
 	ProvisionAccountDeletion(ctx context.Context, tx *gorm.DB, facts AccountFacts) error
 }
 
-// MembershipWriter is the account module's transaction-aware membership write.
-// The account module delivers it exclusively.
+// MembershipWriter is the account module's transaction-aware membership
+// surface: the writes that join the caller's transaction, and the read that
+// holds the account's row in it. The account module delivers it exclusively.
 //
-// The two methods write in the transaction they are handed, unlike the
+// The two write methods write in the transaction they are handed, unlike the
 // Memberships surface, whose Put and Remove open a transaction of their own.
 // Each returns a closure for the work that belongs after the caller's commit —
 // publishing the membership events, staged in the transaction — and nil when
 // the call changed nothing. The caller runs the closure once its transaction has
 // committed.
 //
-// Neither method asks a MembershipGuard or calls a MembershipLifecycle hook: a
-// guard protects an explicit removal from a tenant that stays in service, and a
-// hook cleans up after a removal that has committed. A call inside a transaction
-// is neither, and the caller owns the decision to ask one.
+// MembershipTx reads one membership under the account's row lock, so a caller
+// that has to act on the answer (a transfer checking the new owner is an active
+// member) cannot have a concurrent suspension change it before the caller's
+// commit: the suspension's own write takes that row first.
+//
+// Neither write method asks a MembershipGuard or calls a MembershipLifecycle
+// hook: a guard protects an explicit removal from a tenant that stays in
+// service, and a hook cleans up after a removal that has committed. A call
+// inside a transaction is neither, and the caller owns the decision to ask one.
 type MembershipWriter interface {
+	// MembershipTx reads one membership in the transaction it is handed,
+	// taking the account's row first. The second result is false when the
+	// account holds no membership in the tenant, and also when the account
+	// does not exist.
+	MembershipTx(ctx context.Context, tx *gorm.DB, tenant string, account authn.AccountID) (authn.Membership, bool, error)
 	// PutMembershipTx writes a membership, and writing the same one again is no
 	// change. It is Put's rules without the transaction Put opens.
 	PutMembershipTx(ctx context.Context, tx *gorm.DB, m authn.Membership) (after func(context.Context) error, err error)

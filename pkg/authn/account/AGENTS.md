@@ -47,11 +47,14 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   owes after the commit — a roster or policy snapshot reread, an event — is
   queued on the `provisioning.AfterCommit` collector the module puts on the
   context, and the module runs it once the transaction has committed.
-- **`provisioning.MembershipWriter` is the transaction-aware membership write.**
-  `PutMembershipTx` and `RemoveMembershipTx` take the caller's `*gorm.DB` and
-  return the publication for after its commit; they are what a provisioning
-  implementation calls to write the creator's membership in the account's
-  transaction. The `Memberships` surface opens a transaction of its own and is
+- **`provisioning.MembershipWriter` is the transaction-aware membership
+  surface.** `PutMembershipTx` and `RemoveMembershipTx` take the caller's
+  `*gorm.DB` and return the publication for after its commit; they are what a
+  provisioning implementation calls to write the creator's membership in the
+  account's transaction. `MembershipTx` reads one membership in that
+  transaction after taking the account's row — the lock a membership write
+  takes — so a caller acting on the answer is not overtaken by a concurrent
+  suspension. The `Memberships` surface opens a transaction of its own and is
   the wrong path inside one. The tx methods ask no `MembershipGuard` and call no
   `MembershipLifecycle` hook, as `RemoveMembershipForDeletion` does not.
 - **A table's name is one constant in three places.** A migration file, the

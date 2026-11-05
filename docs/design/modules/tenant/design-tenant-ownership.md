@@ -42,12 +42,11 @@ type OrganizationWriter interface {
 | `pkg/tenant` 根包 | `OrganizationWriter`、`Tenant`、`ID` 与四个哨兵 |
 | `pkg/tenant/catalog` | `TxCatalog` 的 `GetTx`、`SetOwnerTx`、`DeleteTx` |
 | `pkg/authz/policy` | `TxManager` 的 `PutBindingTx`、`ClearAccountBindingsTx`、`DeleteTenantPolicyTx` |
-| `pkg/authn` 根包 | `Memberships.Membership`，判断目标是否活跃成员 |
-| `pkg/authn/provisioning` | `MembershipWriter` 的 `RemoveMembershipTx`、`RemoveTenantMembershipsTx` |
+| `pkg/authn/provisioning` | `MembershipWriter` 的 `MembershipTx`、`RemoveMembershipTx`、`RemoveTenantMembershipsTx` |
 | `pkg/authz` 根包 | 可选的 `TenantLock`、`Role` 与 `TenantAdminRole` |
 | `pkg/core`、`pkg/log` | 模块描述符、功能取用与可选日志 |
 
-数据库、名册的事务写面、策略的事务写面、成员关系与成员关系的写面都是必需依赖，缺席即启动失败。租户锁可选：装配提供一个时，本模块与策略的绑定删除、成员关系守卫取同一个对象；不提供时它用自己的进程内实现，只串行本模块的转移与删除。
+数据库、名册的事务写面、策略的事务写面与成员关系的事务写面都是必需依赖，缺席即启动失败。租户锁可选：装配提供一个时，本模块与策略的绑定删除、成员关系守卫取同一个对象；不提供时它用自己的进程内实现，只串行本模块的转移与删除。
 
 ## UML 图
 
@@ -105,8 +104,8 @@ sequenceDiagram
 
 初始状态：名册里 `acme` 在册，所有者是 `alice`；`alice` 是 `acme` 的成员并持有 tenant-admin；`bob` 是 `acme` 的活跃成员但没有绑定。
 
-1. 平台员工调用 `TransferOwner(ctx, "acme", "bob")`。本模块取 `acme` 的租户锁，读到 `bob` 的活跃成员关系。
-2. 事务开始；`GetTx` 读到 `acme` 在册、所有者是 `alice`。
+1. 平台员工调用 `TransferOwner(ctx, "acme", "bob")`。本模块取 `acme` 的租户锁；事务开始后先经 `MembershipTx` 取 `bob` 的账户行锁并读到它的活跃成员关系——成员关系的写路径同样先取那一行，一次并发停用因而不会落在校验与提交之间。
+2. 事务继续，`GetTx` 读到 `acme` 在册、所有者是 `alice`。
 3. 事务第一次写是 `PutBindingTx`，把 tenant-admin 绑给 `bob`；随后 `SetOwnerTx` 把所有者列写成 `bob`。
 4. 事务继续：`ClearAccountBindingsTx` 删除 `alice` 在 `acme` 的全部绑定，`RemoveMembershipTx` 删除 `alice` 在 `acme` 的成员关系。
 5. 提交。持久状态：`acme` 的所有者是 `bob`；`bob` 持有 tenant-admin；`alice` 在 `acme` 没有绑定，也不是成员；`acme` 的名册快照与策略快照在提交后重读。

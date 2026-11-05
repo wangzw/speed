@@ -204,6 +204,7 @@ var (
 	_ authz.Seeder              = (*product)(nil)
 	_ authz.Reconciler          = (*product)(nil)
 	_ authz.TenantAdminCounter  = (*product)(nil)
+	_ authz.TenantOwnerCounter  = (*product)(nil)
 	_ authn.AccountLifecycle    = (*product)(nil)
 	_ authn.MembershipLifecycle = (*product)(nil)
 	_ authn.MembershipGuard     = (*product)(nil)

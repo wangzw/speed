@@ -353,6 +353,40 @@ func TestDeleteOrganizationRollsBackAFailedStep(t *testing.T) {
 	})
 }
 
+// A failure after the binding and the owner were written rolls the transfer
+// back: the owner stays, the target gains no binding, and the previous owner
+// keeps its binding and membership.
+func TestTransferOwnerRollsBackAFailedStep(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		owner := a.user(t, "alice")
+		target := a.user(t, "bob")
+		a.organization(t, "acme", "acme-org", owner)
+		a.join(t, "acme", target)
+		if err := a.handle.Exec(`CREATE TRIGGER refuse_membership_delete
+			BEFORE DELETE ON authn_memberships
+			BEGIN SELECT RAISE(ABORT, 'induced failure'); END`).Error; err != nil {
+			t.Fatalf("creating the trigger that refuses the last step: %v", err)
+		}
+
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String()); err == nil {
+			t.Fatal("the transfer succeeded though its last step failed")
+		}
+		if got := a.held(t, "acme").OwnerAccount; got != owner.ID.String() {
+			t.Errorf("the rollback left owner %q, want %q", got, owner.ID)
+		}
+		if got := a.bindingsOf(t, "acme", target); len(got) != 0 {
+			t.Errorf("the target holds bindings %+v, want none", got)
+		}
+		if got := a.bindingsOf(t, "acme", owner); len(got) != 1 {
+			t.Errorf("the previous owner holds bindings %+v, want the one binding", got)
+		}
+		m, found, err := a.memberships.Membership(t.Context(), "acme", owner.ID)
+		if err != nil || !found || !m.Active {
+			t.Errorf("the previous owner's membership is %+v (%v), want the active one", m, err)
+		}
+	})
+}
+
 // A transfer and an owner-initiated deletion of the same organization race
 // under the tenant lock, and exactly one of them takes effect.
 func TestATransferAndADeletionOfOneOrganizationLeaveOneWinner(t *testing.T) {

@@ -64,6 +64,33 @@ func (p *product) Membership(ctx context.Context, tenant string, id authn.Accoun
 	return toMembership(rows[0]), true, nil
 }
 
+// MembershipTx reads one membership in the transaction it is handed, taking the
+// account's row first. That row is what Put also takes before it writes a
+// membership, so a read under it and a concurrent suspension run one after the
+// other: the caller either sees the suspension's committed result or has its own
+// commit land before the suspension writes. A missing account reads as no
+// membership, as one the account does not hold does.
+func (p *product) MembershipTx(ctx context.Context, tx *gorm.DB, tenant string, id authn.AccountID) (authn.Membership, bool, error) {
+	if id.IsStatic() || tenant == "" {
+		return authn.Membership{}, false, nil
+	}
+	if _, err := p.lock(tx, id); err != nil {
+		if errors.Is(err, authn.ErrAccountNotFound) {
+			return authn.Membership{}, false, nil
+		}
+		return authn.Membership{}, false, failed("reading a membership", err)
+	}
+	var rows []membershipRow
+	err := tx.Where("tenant_id = ? AND account_id = ?", tenant, id.String()).Limit(1).Find(&rows).Error
+	if err != nil {
+		return authn.Membership{}, false, failed("reading a membership", err)
+	}
+	if len(rows) == 0 {
+		return authn.Membership{}, false, nil
+	}
+	return toMembership(rows[0]), true, nil
+}
+
 // Tenants lists every membership of an account, across tenants, by tenant.
 func (p *product) Tenants(ctx context.Context, id authn.AccountID) ([]authn.Membership, error) {
 	if id.IsStatic() {
