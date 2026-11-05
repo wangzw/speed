@@ -211,7 +211,7 @@ func TestTheKindComesFromTheResolver(t *testing.T) {
 	}}
 	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
 		"acme":              activeTenant("acme", "Acme"),
-		"personal-acct-bob": activeTenant("personal-acct-bob", "personal-acct-bob"),
+		"personal-acct-bob": activeTenant("personal-acct-bob", "bob"),
 	}}
 	kind := &stubKindResolver{kinds: map[tenant.ID]tenant.Kind{
 		"acme":              tenant.KindBusiness,
