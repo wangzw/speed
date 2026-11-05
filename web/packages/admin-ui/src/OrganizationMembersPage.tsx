@@ -101,6 +101,22 @@ const JIT_SOURCE_PREFIX = 'jit:'
 /** The invitation just issued or resent, held with the tenant it belongs to. */
 type IssuedInvitation = AdminIssuedInvitation & { readonly tenant: string }
 
+/**
+ * One list's cursor stack tagged with the tenant it was collected for. A
+ * frame for another tenant derives as the first page synchronously, so the
+ * first read after a switch carries no cursor from the tenant left behind
+ * even before the post-commit reset lands.
+ */
+interface CursorFrame {
+  readonly tenant: string
+  readonly cursors: readonly string[]
+  readonly page: number
+}
+
+function firstCursorPage(tenant: string): CursorFrame {
+  return { tenant, cursors: [''], page: 0 }
+}
+
 export interface OrganizationMembersPageProps {
   /** The current tenant every read and write names. */
   readonly tenant: string
@@ -149,9 +165,15 @@ export function OrganizationMembersPage({
 
   const [memberSearch, setMemberSearch] = useState('')
   const debouncedMemberSearch = useDebouncedValue(memberSearch)
-  const [memberCursors, setMemberCursors] = useState<readonly string[]>([''])
-  const [memberPage, setMemberPage] = useState(0)
-  const memberCursor = memberCursors[memberPage] ?? ''
+  const [memberCursorState, setMemberCursorState] = useState<CursorFrame>(() =>
+    firstCursorPage(tenant),
+  )
+  const memberCursorFrame =
+    memberCursorState.tenant === tenant
+      ? memberCursorState
+      : firstCursorPage(tenant)
+  const memberPage = memberCursorFrame.page
+  const memberCursor = memberCursorFrame.cursors[memberPage] ?? ''
 
   const memberParams = useMemo(
     () => ({
@@ -167,12 +189,13 @@ export function OrganizationMembersPage({
   const memberRows = members.data?.members
   const memberNextCursor = members.data?.next_cursor ?? ''
 
-  // The tenant is the list's context: a switch starts the cursor stack over.
-  // The search resets it in the input handler itself, so the debounced
-  // value's first read never carries a cursor read under the old search.
+  // The tenant is the list's context: a switch already derives the first
+  // page, and the post-commit reset drops the previous tenant's stack so a
+  // later switch back does not resume a page left long ago. The search
+  // resets the stack in the input handler itself, so the debounced value's
+  // first read never carries a cursor read under the old search.
   useEffect(() => {
-    setMemberPage(0)
-    setMemberCursors([''])
+    setMemberCursorState(firstCursorPage(tenant))
   }, [tenant])
 
   // The inviter identity on the organization surface resolves from the same
@@ -202,6 +225,17 @@ export function OrganizationMembersPage({
 
   const [panelMember, setPanelMember] = useState<AdminMember | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
+  // The panel acts on the member as the list read now carries it, not on the
+  // snapshot taken when the row was clicked: a suspend or resume writes the
+  // membership and invalidates the list, and the open panel then follows
+  // that read instead of showing the state it opened with. A member no
+  // current row carries (a search narrowed the list away) keeps the
+  // snapshot, which is the last state read for it.
+  const livePanelMember =
+    panelMember === null
+      ? null
+      : (memberRows?.find((row) => row.account === panelMember.account) ??
+        panelMember)
   // A removal's message is written into the list's scope only after the
   // panel has exited: while the modal is open the page behind it is
   // aria-hidden, so a notice written then would never be announced.
@@ -237,18 +271,25 @@ export function OrganizationMembersPage({
       return
     }
     const next = memberNextCursor
-    setMemberCursors((previous) => {
-      const grown = [...previous]
-      grown[memberPage + 1] = next
-      return grown
+    setMemberCursorState((previous) => {
+      const current =
+        previous.tenant === tenant ? previous : firstCursorPage(tenant)
+      const grown = [...current.cursors]
+      grown[current.page + 1] = next
+      return { tenant, cursors: grown, page: current.page + 1 }
     })
-    setMemberPage(memberPage + 1)
   }
   const previousMemberPage = () => {
     if (memberPage === 0 || membersFeedback.pending) {
       return
     }
-    setMemberPage(memberPage - 1)
+    setMemberCursorState((previous) => {
+      const current =
+        previous.tenant === tenant ? previous : firstCursorPage(tenant)
+      return current.page === 0
+        ? current
+        : { ...current, page: current.page - 1 }
+    })
   }
 
   // --- Invitations ------------------------------------------------------
@@ -257,11 +298,15 @@ export function OrganizationMembersPage({
   const [expiryDays, setExpiryDays] = useState<number>(DEFAULT_EXPIRY_DAYS)
   const [statusFilter, setStatusFilter] =
     useState<InvitationStatusFilter>('all')
-  const [invitationCursors, setInvitationCursors] = useState<readonly string[]>(
-    [''],
-  )
-  const [invitationPage, setInvitationPage] = useState(0)
-  const invitationCursor = invitationCursors[invitationPage] ?? ''
+  const [invitationCursorState, setInvitationCursorState] =
+    useState<CursorFrame>(() => firstCursorPage(tenant))
+  const invitationCursorFrame =
+    invitationCursorState.tenant === tenant
+      ? invitationCursorState
+      : firstCursorPage(tenant)
+  const invitationPage = invitationCursorFrame.page
+  const invitationCursor =
+    invitationCursorFrame.cursors[invitationPage] ?? ''
 
   const invitationParams = useMemo(
     () => ({
@@ -276,10 +321,10 @@ export function OrganizationMembersPage({
   const invitationNextCursor = invitations.data?.next_cursor ?? ''
 
   // The filter resets the cursor in its own change handler for the same
-  // reason as the member search; the tenant switch resets it here.
+  // reason as the member search; the tenant switch derives the first page
+  // synchronously and resets the previous stack after the commit.
   useEffect(() => {
-    setInvitationPage(0)
-    setInvitationCursors([''])
+    setInvitationCursorState(firstCursorPage(tenant))
   }, [tenant])
 
   const [issued, setIssued] = useState<IssuedInvitation | null>(null)
@@ -397,18 +442,25 @@ export function OrganizationMembersPage({
       return
     }
     const next = invitationNextCursor
-    setInvitationCursors((previous) => {
-      const grown = [...previous]
-      grown[invitationPage + 1] = next
-      return grown
+    setInvitationCursorState((previous) => {
+      const current =
+        previous.tenant === tenant ? previous : firstCursorPage(tenant)
+      const grown = [...current.cursors]
+      grown[current.page + 1] = next
+      return { tenant, cursors: grown, page: current.page + 1 }
     })
-    setInvitationPage(invitationPage + 1)
   }
   const previousInvitationPage = () => {
     if (invitationPage === 0 || invitationFeedback.pending) {
       return
     }
-    setInvitationPage(invitationPage - 1)
+    setInvitationCursorState((previous) => {
+      const current =
+        previous.tenant === tenant ? previous : firstCursorPage(tenant)
+      return current.page === 0
+        ? current
+        : { ...current, page: current.page - 1 }
+    })
   }
 
   // A source the surface names renders its own label; a `jit:<id>` value
@@ -703,8 +755,7 @@ export function OrganizationMembersPage({
             value={memberSearch}
             onChange={(event) => {
               setMemberSearch(event.target.value)
-              setMemberPage(0)
-              setMemberCursors([''])
+              setMemberCursorState(firstCursorPage(tenant))
             }}
             label={t('members.search.label')}
             placeholder={t('members.search.placeholder')}
@@ -717,8 +768,7 @@ export function OrganizationMembersPage({
               variant="outlined"
               onClick={() => {
                 setMemberSearch('')
-                setMemberPage(0)
-                setMemberCursors([''])
+                setMemberCursorState(firstCursorPage(tenant))
               }}
             >
               {t('members.search.clear')}
@@ -911,8 +961,7 @@ export function OrganizationMembersPage({
             value={statusFilter}
             onChange={(event) => {
               setStatusFilter(event.target.value as InvitationStatusFilter)
-              setInvitationPage(0)
-              setInvitationCursors([''])
+              setInvitationCursorState(firstCursorPage(tenant))
             }}
             label={t('invitations.filter.label')}
             sx={{ minWidth: 160 }}
@@ -982,11 +1031,11 @@ export function OrganizationMembersPage({
         </Box>
       </SectionCard>
 
-      {panelMember !== null && (
+      {livePanelMember !== null && (
         <MemberPanel
           open={panelOpen}
           tenant={tenant}
-          member={panelMember}
+          member={livePanelMember}
           onClose={requestPanelClose}
           onExited={panelExited}
           onRemoved={memberRemoved}

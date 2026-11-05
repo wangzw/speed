@@ -15,6 +15,7 @@
  * hooks.
  */
 
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -48,6 +49,7 @@ import {
   AUTHENTICATED_SNAPSHOT,
   createStepUpSession,
 } from '../test-utils/session.js'
+import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = 'acme'
@@ -111,6 +113,43 @@ const SUPER_GRANT: AdminTenantGrant = {
   action: 'delete',
   created_at: '2026-01-01T00:00:00Z',
 }
+
+/**
+ * The six permissions pkg/authz/policy marks TenantGoverned, each one
+ * translated to the (resource, action) pair the engine matches on. These are
+ * the codes a tenant administrator holds and the pairs a role's grants carry,
+ * so the panel's escalation check has to map one back to the other.
+ */
+const GOVERNED_PERMISSIONS: readonly AdminTenantPermission[] = [
+  { permission: 'authz.tenant.role.read', description: '' },
+  { permission: 'authz.tenant.role.manage', description: '' },
+  { permission: 'authn.membership.manage', description: '' },
+  { permission: 'authn.idp.manage', description: '' },
+  { permission: 'settings.tenant.read', description: '' },
+  { permission: 'settings.tenant.write', description: '' },
+]
+
+const ROLE_GOVERNED: AdminTenantRole = {
+  tenant: TENANT,
+  role: 'tenant-admin',
+  builtin: false,
+  description_key: '',
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+const GOVERNED_GRANTS: readonly AdminTenantGrant[] = [
+  { resource: 'tenant_role', action: 'read' },
+  { resource: 'tenant_role', action: 'manage' },
+  { resource: 'membership', action: 'manage' },
+  { resource: 'idp', action: 'manage' },
+  { resource: 'tenant_settings', action: 'read' },
+  { resource: 'tenant_settings', action: 'write' },
+].map((grant) => ({
+  tenant: TENANT,
+  role: ROLE_GOVERNED.role,
+  created_at: '2026-01-01T00:00:00Z',
+  ...grant,
+}))
 
 const PENDING_INVITATION: AdminInvitation = {
   id: 'inv-pending',
@@ -424,6 +463,13 @@ describe('the page structure', () => {
       ).toBeInTheDocument()
     },
   )
+
+  it('has no axe violations', async () => {
+    const { backend } = scripted()
+    renderPage(backend)
+    await screen.findByText(ADA.display_name)
+    await expectNoAxeViolations()
+  })
 })
 
 describe('the member search and paging', () => {
@@ -481,6 +527,58 @@ describe('the member search and paging', () => {
     expect(
       screen.getByText(zhCN.common.pager.page.replace('{{page}}', '2')),
     ).toBeInTheDocument()
+  })
+
+  it('starts the new tenant at the first page without carrying the old cursor', async () => {
+    const user = userEvent.setup()
+    const calls: Array<{ tenant: string; params: unknown }> = []
+    const { backend } = scripted({
+      listMembers: (tenant, params) => {
+        calls.push({ tenant, params })
+        if (tenant !== TENANT) {
+          return Promise.resolve({ members: [ADA], next_cursor: '' })
+        }
+        return Promise.resolve(
+          params?.after === 'acc-1'
+            ? { members: [BOB], next_cursor: '' }
+            : { members: [ADA], next_cursor: 'acc-1' },
+        )
+      },
+    })
+    function SwitchTenant() {
+      const [tenant, setTenant] = useState(TENANT)
+      return (
+        <OrganizationAdminProvider
+          tenant={tenant}
+          operations={createAdminOperations(backend)}
+          hasFeature={() => true}
+        >
+          <button type="button" onClick={() => setTenant('globex')}>
+            switch
+          </button>
+          <OrganizationMembersPage tenant={tenant} />
+        </OrganizationAdminProvider>
+      )
+    }
+    renderWithProviders(<SwitchTenant />)
+
+    await screen.findByText(ADA.display_name)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.common.pager.next }),
+    )
+    expect(await screen.findByText(BOB.display_name)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'switch' }))
+    await waitFor(() =>
+      expect(calls.some((call) => call.tenant === 'globex')).toBe(true),
+    )
+    // The first read the new tenant issues carries no cursor from the page
+    // the operator was on under the tenant they left.
+    expect(
+      calls
+        .filter((call) => call.tenant === 'globex')
+        .every((call) => (call.params as { after?: string }).after === undefined),
+    ).toBe(true)
   })
 })
 
@@ -591,6 +689,61 @@ describe('the member management panel', () => {
         active: true,
       }),
     )
+  })
+
+  it('updates the open panel after the member is suspended', async () => {
+    const user = userEvent.setup()
+    let adaActive = true
+    const { backend, recorder } = scripted({
+      listMembers: () =>
+        Promise.resolve({
+          members: [{ ...ADA, active: adaActive }, BOB],
+          next_cursor: '',
+        }),
+      writeMember: (input) => {
+        recorder.writes.push(input)
+        if (input.account === ADA.account) {
+          adaActive = input.active ?? adaActive
+        }
+        return Promise.resolve()
+      },
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, ADA.display_name)
+
+    await user.click(
+      within(panel).getByRole('button', {
+        name: zhCN.members.panel.suspend,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+    await waitFor(() =>
+      expect(recorder.writes).toContainEqual({
+        tenant: TENANT,
+        account: ADA.account,
+        active: false,
+      }),
+    )
+
+    // The panel stays open, and the list read it derives from now carries
+    // the suspended state: the same panel offers resume, shows the
+    // suspended chip and refuses binding without a reopen.
+    expect(
+      await within(panel).findByRole('button', {
+        name: zhCN.members.panel.resume,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      within(panel).getByText(zhCN.members.status.suspended),
+    ).toBeInTheDocument()
+    expect(
+      within(panel).getByText(zhCN.members.panel.suspendedBindNote),
+    ).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
+    ).toBeDisabled()
   })
 
   it('disables suspending yourself and says why', async () => {
@@ -794,6 +947,43 @@ describe('the bind escalation check', () => {
       within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
     ).toBeDisabled()
     expect(recorder.binds).toEqual([])
+  })
+
+  it('allows binding tenant-admin when the caller holds every governed grant', async () => {
+    attachTenantPermissions(
+      GOVERNED_PERMISSIONS.map((entry) => entry.permission),
+    )
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      listTenantRoles: () => Promise.resolve([ROLE_GOVERNED]),
+      listTenantPermissions: () => Promise.resolve(GOVERNED_PERMISSIONS),
+      listTenantGrants: () => Promise.resolve(GOVERNED_GRANTS),
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, ADA.display_name)
+    const select = within(panel).getByRole('combobox', {
+      name: zhCN.members.panel.roleLabel,
+    })
+    await waitFor(() => expect(select).toBeEnabled())
+    await user.click(select)
+    await user.click(
+      screen.getByRole('option', { name: ROLE_GOVERNED.role }),
+    )
+    await waitFor(() =>
+      expect(
+        within(panel).queryByText(zhCN.members.panel.escalationChecking),
+      ).toBeNull(),
+    )
+
+    // Every grant maps back to a governed code the caller holds, so the
+    // server's own tenant-admin path -- allowed, subject to the subset --
+    // stays reachable instead of being refused by the client.
+    expect(
+      within(panel).queryByText(zhCN.members.panel.escalationBlocked),
+    ).toBeNull()
+    expect(
+      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
+    ).toBeEnabled()
   })
 
   it('does not default to allowing when the grant read fails', async () => {

@@ -2116,6 +2116,74 @@ describe('PermissionsPage tenant mode', () => {
     ).toBeInTheDocument()
   })
 
+  it('pages the member picker by a real next cursor without skipping the probe row', async () => {
+    const user = userEvent.setup()
+    const firstPage = Array.from({ length: 101 }, (_value, index) =>
+      member({
+        account: `acc-${String(index + 1).padStart(3, '0')}`,
+        display_name: `Member ${index + 1}`,
+      }),
+    )
+    const probeMember = member({
+      account: 'acc-101',
+      display_name: 'Member 101',
+    })
+    // The picker displays the first hundred rows; the hundredth is the
+    // cursor the next read must continue from.
+    const lastDisplayed = 'acc-100'
+    const probeRow = probeMember.account
+    const secondPageMember = member({
+      account: 'acc-extra',
+      display_name: 'Second Page Member',
+    })
+    const afterValues: (string | undefined)[] = []
+    const operations = tenantModeOperations({
+      listMembers: (_tenant, params) => {
+        afterValues.push(params?.after)
+        if (params?.after === undefined) {
+          // The server answers the page envelope: it read one row beyond the
+          // page for the probe and names that probe row as the next cursor.
+          return Promise.resolve({
+            members: firstPage,
+            next_cursor: probeRow,
+          })
+        }
+        return Promise.resolve(
+          params.after === lastDisplayed
+            ? { members: [probeMember, secondPageMember], next_cursor: '' }
+            : { members: [secondPageMember], next_cursor: '' },
+        )
+      },
+    })
+    renderTenantPermissions(operations)
+    await screen.findByText('tenant-operator')
+
+    const bindings = section(zhCN.permissions.bindings.title)
+    await user.click(
+      within(bindings).getByRole('button', {
+        name: zhCN.permissions.bindings.membersNext,
+      }),
+    )
+    // The picker shows the first hundred rows, so the next read must continue
+    // from the hundredth: the probe row the server named is the first row the
+    // next page has to show, not a row to skip.
+    await waitFor(() => expect(afterValues).toContain(lastDisplayed))
+    expect(afterValues).not.toContain(probeRow)
+
+    const picker = within(bindings).getByRole('combobox', {
+      name: zhCN.permissions.bindings.accountLabel,
+    })
+    await user.click(picker)
+    expect(
+      await screen.findByRole('option', { name: 'Member 101 (acc-101)' }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('option', {
+        name: 'Second Page Member (acc-extra)',
+      }),
+    ).toBeInTheDocument()
+  })
+
   it('clears the role and account selections when the controlled tenant changes', async () => {
     const user = userEvent.setup()
     const operations = tenantModeOperations()

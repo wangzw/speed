@@ -156,10 +156,13 @@ import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 const TENANT_HINT_ID = 'permissions-tenant-hint'
 
 /**
- * The member picker's page size. The membership read's cursor is the
- * account identifier of the previous page's last row, and the read answers
- * no next cursor, so the picker asks for one row beyond its size: an answer
- * longer than the page size is the evidence another page follows.
+ * The member picker's page size and read. The membership read answers the
+ * page envelope: `next_cursor` names the last row it returned, and a read
+ * that follows it starts after that row. The picker asks for one row beyond
+ * its size, so a read whose cursor is missing still has the probe row as
+ * evidence that another page follows. When the probe row is present it is
+ * the first row the next page has to show, so the cursor stays on the last
+ * row the picker displays rather than on the probe row.
  */
 const MEMBER_PAGE_SIZE = 100
 const MEMBER_READ_LIMIT = MEMBER_PAGE_SIZE + 1
@@ -469,13 +472,16 @@ function firstMemberPage(tenant: string): MemberCursorFrame {
  *
  * The picker owns its read, so its search and its paging are its own. The
  * operator's text narrows the read through the member route's `query`
- * (server-side); one page is kept at a time with the cursor stack the route
- * documents -- it answers no next cursor, so the picker reads one row beyond
- * the page size and takes that extra row as the next cursor's evidence.
- * Suspended memberships are left out of the options: a binding requires an
- * active member, so offering one would only invite a refused write. The
- * read's progress and its failure are the picker's own, so a pending or
- * refused member read never looks like an empty roster.
+ * (server-side); one page is kept at a time with the tenant-keyed cursor
+ * stack the route documents. The read answers the page envelope, and the
+ * picker also reads one row beyond the page size: the probe row is the
+ * evidence another page follows, and because the probe row is the first row
+ * the next page must show, the cursor is taken from the last row the picker
+ * displays, not from the probe. Suspended memberships are left out of the
+ * options: a binding requires an active member, so offering one would only
+ * invite a refused write. The read's progress and its failure are the
+ * picker's own, so a pending or refused member read never looks like an
+ * empty roster.
  */
 function TenantMemberPicker({
   tenant,
@@ -540,11 +546,15 @@ function TenantMemberPicker({
   }, [tenant])
 
   const rows = members.data?.members
-  // The server's cursor is authoritative; the probe row is the fallback for
-  // a read that answered rows without one.
-  const hasNext =
-    (members.data?.next_cursor ?? '') !== '' ||
-    (rows?.length ?? 0) > MEMBER_PAGE_SIZE
+  // The server's cursor names the last row it returned; when the picker
+  // asked for a probe row beyond the page it displays, that probe is the
+  // first row of the next page. Continuing from the server's cursor would
+  // skip it, so the cursor stays on the last displayed row in that case. A
+  // read that answers no cursor keeps the probe row as the evidence that
+  // another page follows.
+  const serverCursor = members.data?.next_cursor ?? ''
+  const hasProbeRow = (rows?.length ?? 0) > MEMBER_PAGE_SIZE
+  const hasNext = serverCursor !== '' || hasProbeRow
   const pageRows = useMemo(
     () => (rows === undefined ? undefined : rows.slice(0, MEMBER_PAGE_SIZE)),
     [rows],
@@ -553,10 +563,9 @@ function TenantMemberPicker({
     () => (pageRows ?? []).filter((member) => member.active).map(memberAsAccount),
     [pageRows],
   )
-  const nextCursor =
-    (members.data?.next_cursor ?? '') !== ''
-      ? (members.data?.next_cursor ?? '')
-      : (pageRows?.at(-1)?.account ?? '')
+  const nextCursor = hasProbeRow
+    ? (pageRows?.at(-1)?.account ?? '')
+    : serverCursor
   const loading = members.isPending && rows === undefined
   const failed = members.isError
   const nextPage = () => {
