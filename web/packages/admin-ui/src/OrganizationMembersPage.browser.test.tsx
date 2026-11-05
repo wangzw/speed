@@ -21,7 +21,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useTheme } from '@mui/material/styles'
 import { selectClasses } from '@mui/material/Select'
@@ -105,12 +105,17 @@ const ADA_BINDING: AdminTenantBinding = {
   granted_at: '2026-10-15T12:00:00Z',
 }
 
-/** The scripted backend: both lists populated, the panel's reads settled. */
-function backend(): AdminBackend {
+/** The scripted backend: both lists populated, the panel's reads settled.
+ * The list values are parameters so a case can put over-long values in the
+ * same two tables. */
+function backend(
+  members: readonly AdminMember[] = MEMBERS,
+  invitations: readonly AdminInvitation[] = INVITATIONS,
+): AdminBackend {
   return makeAdminBackend({
-    listMembers: () => Promise.resolve({ members: MEMBERS, next_cursor: '' }),
+    listMembers: () => Promise.resolve({ members, next_cursor: '' }),
     listInvitations: () =>
-      Promise.resolve({ invitations: INVITATIONS, next_cursor: '' }),
+      Promise.resolve({ invitations, next_cursor: '' }),
     listTenantRoles: () => Promise.resolve([SUPPORT_ROLE]),
     listTenantAccountBindings: () => Promise.resolve([ADA_BINDING]),
   })
@@ -124,13 +129,14 @@ function renderPage(
     readonly defaultMode?: 'light' | 'dark' | 'system'
   } = {},
   probe?: ReactNode,
+  scripted: AdminBackend = backend(),
 ) {
   return renderWithProviders(
     <>
       {probe}
       <OrganizationAdminProvider
         tenant={TENANT}
-        operations={createAdminOperations(backend())}
+        operations={createAdminOperations(scripted)}
         hasFeature={() => true}
       >
         <OrganizationMembersPage tenant={TENANT} />
@@ -194,6 +200,17 @@ function headerWidth(container: HTMLElement, header: string): number {
     throw new Error(`the table has no "${header}" column header`)
   }
   return cell.getBoundingClientRect().width
+}
+
+/** The first body cell inside `container` whose text contains `value`. */
+function bodyCellWith(container: HTMLElement, value: string): HTMLElement {
+  const cell = Array.from(container.querySelectorAll('tbody td')).find(
+    (candidate) => candidate.textContent?.includes(value),
+  )
+  if (cell === undefined) {
+    throw new Error(`no body cell carries "${value}"`)
+  }
+  return cell
 }
 
 /** Runs `check` with the table's containment box pinned to `width`, then
@@ -267,6 +284,53 @@ describe('OrganizationMembersPage horizontal overflow in Chromium', () => {
       await expectNoHorizontalOverflow()
     })
   }
+})
+
+describe('OrganizationMembersPage over-long cell values in Chromium', () => {
+  const LONG_DISPLAY_NAME = 'Alexandria Cassandra Montgomery-Worthington'
+  const LONG_ACCOUNT =
+    'account-identifier-with-a-long-unbroken-value-0000000001'
+  const LONG_EMAIL =
+    'first.last.with.a.very.long.mailbox.name@example-organization-with-a-long-domain.test'
+
+  const LONG_MEMBER: AdminMember = {
+    ...ADA,
+    account: LONG_ACCOUNT,
+    display_name: LONG_DISPLAY_NAME,
+  }
+  const LONG_INVITATION: AdminInvitation = {
+    ...INVITATIONS[0],
+    email: LONG_EMAIL,
+  }
+
+  it('caps over-long member and invitation values at the 900px tier and keeps each full value reachable', async () => {
+    await page.viewport(900, 900)
+    renderPage({}, undefined, backend([LONG_MEMBER], [LONG_INVITATION]))
+
+    await screen.findAllByText(LONG_DISPLAY_NAME)
+    await screen.findAllByText(LONG_EMAIL)
+    const members = tableFor(enUS.members.column.displayName)
+    const invitations = tableFor(enUS.invitations.column.email)
+
+    // The values are longer than their columns' content caps. The 900px
+    // tier is the tight one -- it is where the medium columns join the
+    // two always-visible ones -- so both tables must stay inside their
+    // tier floor there instead of falling back to horizontal scroll.
+    await expectNoHorizontalOverflow()
+
+    for (const [container, value] of [
+      [members.container, LONG_DISPLAY_NAME],
+      [members.container, LONG_ACCOUNT],
+      [invitations.container, LONG_EMAIL],
+    ] as const) {
+      const cell = bodyCellWith(container, value)
+      const copy = within(cell).queryByRole('button')
+      expect(
+        cell.getAttribute('title') === value || copy !== null,
+        `the over-long value "${value}" has no full-value channel`,
+      ).toBe(true)
+    }
+  })
 })
 
 describe('OrganizationMembersPage column priorities in Chromium', () => {

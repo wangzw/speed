@@ -115,10 +115,13 @@
  * `contentMaxWidth` is the third per-column opt-in and the one that
  * makes a cap agree with the copy control: it bounds the cell content as
  * a whole -- the rendered text plus that control -- rather than the text
- * alone. The text truncates inside the cap; the control keeps its own
- * width and is never clipped, so the cell cannot end up wider than the
- * declared value by the control's width. The value is a plain number
- * (applies at every width) or a `{ belowMd, fromMd }` named pair the
+ * alone. A 'nowrap' column's text truncates inside the cap; a 'wrap'
+ * column's text wraps inside it (an unbroken value breaks anywhere), so
+ * the column's minimum width is its longest word rather than the cap and
+ * a tier can shrink the column instead of scrolling. The control keeps
+ * its own width and is never clipped, so the cell cannot end up wider
+ * than the declared value by the control's width. The value is a plain
+ * number (applies at every width) or a `{ belowMd, fromMd }` named pair the
  * component converts into a container query against the table's own
  * width (see DataTableColumnContentMaxWidth), so callers never write
  * container-query syntax. Omitting it changes nothing: a column without
@@ -521,6 +524,36 @@ function columnCellWrapSx(
 ): { whiteSpace: 'nowrap' } | undefined {
   if (cellWrap !== 'nowrap') return undefined
   return { whiteSpace: 'nowrap' }
+}
+
+/**
+ * The text box inside a capped cell, per the column's line policy. A
+ * 'nowrap' column truncates its text with an ellipsis: the box is one
+ * line at the cap, so the column's minimum width is the cap itself. A
+ * 'wrap' column wraps inside the same cap instead, and an unbroken value
+ * breaks anywhere: the column's minimum width then comes from its longest
+ * word (or a single character), so the table can shrink the column below
+ * the cap to keep the visible columns inside their tier instead of
+ * falling back to horizontal scroll. The cap still bounds the rendered
+ * text, and the complete value is unchanged from `cellFullValue`.
+ */
+function cappedCellTextSx(
+  cellWrap: DataTableColumnCellWrap | undefined,
+): SxProps<Theme> {
+  if (cellWrap === 'wrap') {
+    return {
+      minWidth: 0,
+      overflow: 'hidden',
+      overflowWrap: 'anywhere',
+      whiteSpace: 'normal',
+    }
+  }
+  return {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  }
 }
 
 /**
@@ -961,9 +994,7 @@ export function DataTable<T>({
                             <Box
                               sx={{
                                 maxWidth: contentMaxWidthSx(cap),
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
+                                ...cappedCellTextSx(column.cellWrap),
                               }}
                             >
                               {column.cell(row, index)}
@@ -991,15 +1022,9 @@ export function DataTable<T>({
                             {capped ? (
                               // The cap bounds the whole cell, so the text
                               // yields width to the copy control: it shrinks
-                              // and truncates while the control stays whole.
-                              <Box
-                                sx={{
-                                  minWidth: 0,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
+                              // and truncates or wraps by the column's policy
+                              // while the control stays whole.
+                              <Box sx={cappedCellTextSx(column.cellWrap)}>
                                 {column.cell(row, index)}
                               </Box>
                             ) : (

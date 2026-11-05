@@ -1237,6 +1237,44 @@ describe('DataTable', () => {
       expect(button).toHaveStyle({ flexShrink: '0' })
     })
 
+    it('wraps a capped wrap column so its longest word, not the cap, sets its minimum width', () => {
+      const columns: readonly DataTableColumn<Member>[] = [
+        {
+          id: 'name',
+          header: 'Name',
+          cellWrap: 'wrap',
+          cellFullValue: (row) => `member-${row.id}`,
+          contentMaxWidth: { belowMd: 120, fromMd: 180 },
+          cell: (row) => row.name,
+        },
+      ]
+      const utils = renderTable({ columns })
+      const cell = utils.getByText('Ada').closest('td') as HTMLElement
+      const wrapper = cell.firstElementChild as HTMLElement
+      const button = within(wrapper).getByRole('button', {
+        name: renderTemplate(zhCN.dataTable.copyValue, { value: 'member-1' }),
+      })
+      const textBox = button.previousElementSibling as HTMLElement
+      // The cap still bounds the text, but the box wraps instead of
+      // truncating: a long value then contributes its longest word (or a
+      // single character, for an unbroken one) to the column's minimum
+      // width, so the table can shrink it to its tier instead of
+      // scrolling.
+      expect(textBox).toHaveStyle({
+        minWidth: '0px',
+        overflow: 'hidden',
+        overflowWrap: 'anywhere',
+        whiteSpace: 'normal',
+      })
+      expect(textBox).not.toHaveStyle({ textOverflow: 'ellipsis' })
+      expect(containerMaxWidthOf(wrapper)).toEqual(
+        new Map([
+          [0, 120],
+          [900, 180],
+        ]),
+      )
+    })
+
     it('leaves a column without the field byte-for-byte free of the cap', () => {
       const utils = renderTable({ columns: CAPPED_COLUMNS })
       const plainCell = utils

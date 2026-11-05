@@ -567,7 +567,7 @@ export function OrganizationMembersPage({
     {
       id: 'displayName',
       header: t('members.column.displayName'),
-      cellWrap: 'nowrap',
+      cellWrap: 'wrap',
       cellFullValue: (member) =>
         member.display_name === '' ? undefined : member.display_name,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
@@ -591,6 +591,7 @@ export function OrganizationMembersPage({
       cellWrap: 'wrap',
       cellFullValue: (member) =>
         member.roles.length === 0 ? undefined : member.roles.join(', '),
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (member) =>
         member.roles.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
