@@ -2971,6 +2971,8 @@ test.describe('a protected business tenant is read-only', () => {
 const OWNED_ALIAS = 'acme-lab'
 const OWNED_NAME = 'Acme Lab'
 const RENAMED_ORG = 'Acme Lab Renamed'
+const RENAMED_DESCRIPTION =
+  'The renamed lab organization the profile save writes back.'
 const OWNED_DESCRIPTION = 'The lab organization the ownership branches create.'
 const OWNED_CONTACT_EMAIL = 'lab@demo.test'
 const OWNED_WEBSITE = 'https://lab.demo.test'
@@ -3100,10 +3102,18 @@ async function issueInvitation(
   return link
 }
 
-/** Open an invitation link in a second context, sign the invitee in, accept. */
+/**
+ * Open an invitation link in a second context, sign the invited account in and
+ * accept. The invitation fixture's invitee is the default; a caller passes an
+ * account when a membership is restored to another account.
+ */
 async function acceptInvitationAsInvitee(
   invitee: Page,
   link: string,
+  account: {
+    readonly username: string
+    readonly password: string
+  } = reviewInvitee,
 ): Promise<void> {
   await invitee.goto(link)
   await expect(
@@ -3118,13 +3128,13 @@ async function acceptInvitationAsInvitee(
       name: copy('authUi', 'passwordSignIn.identifierLabel'),
       exact: true,
     })
-    .fill(reviewInvitee.username)
+    .fill(account.username)
   await invitee
     .getByRole('textbox', {
       name: copy('authUi', 'passwordSignIn.passwordLabel'),
       exact: true,
     })
-    .fill(reviewInvitee.password)
+    .fill(account.password)
   await invitee
     .getByRole('button', {
       name: copy('authUi', 'passwordSignIn.submit'),
@@ -3289,7 +3299,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       .getByLabel(copy('adminUi', 'tenantProfile.field.description'), {
         exact: true,
       })
-      .fill(OWNED_DESCRIPTION)
+      .fill(RENAMED_DESCRIPTION)
     await page
       .getByLabel(copy('adminUi', 'tenantProfile.field.contactEmail'), {
         exact: true,
@@ -3320,6 +3330,39 @@ test.describe('the organization profile page belongs to its owner', () => {
       timeout: 15_000,
     })
     await closeAccountMenu(page)
+
+    // A full document load re-settles the current tenant from the caller's
+    // memberships, so the reloaded page addresses the seeded acme first. The
+    // read-back therefore returns to the organization the save wrote.
+    await page.reload()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'organization.nav.profile'),
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 30_000 })
+    await switchOrganization(page, 'acme', RENAMED_ORG)
+    await openOrganizationPage(page, 'profile')
+
+    // Every one of the four saved values comes back from the server. Each was
+    // written to a value distinct from the organization's creation state, so a
+    // payload that dropped any of them leaves that field reading the old value
+    // and fails here.
+    await expect(
+      definitionValue(page, copy('adminUi', 'tenantProfile.field.alias')),
+    ).toHaveText(OWNED_ALIAS)
+    const savedFields = [
+      ['tenantProfile.field.displayName', RENAMED_ORG],
+      ['tenantProfile.field.description', RENAMED_DESCRIPTION],
+      ['tenantProfile.field.contactEmail', OWNED_CONTACT_EMAIL],
+      ['tenantProfile.field.website', OWNED_WEBSITE],
+    ] as const
+    for (const [labelKey, value] of savedFields) {
+      await expect(
+        page.getByLabel(copy('adminUi', labelKey), { exact: true }),
+      ).toHaveValue(value)
+    }
   })
 
   test('tenant-admin: a non-owner administrator reads the profile but sees no ownership controls', async ({
@@ -3548,6 +3591,172 @@ test.describe('the organization profile page belongs to its owner', () => {
     }
   })
 
+  test('tenant-admin: an owner handed the organization on is refused the write its stale page still offers', async ({
+    demo,
+    browser,
+  }) => {
+    test.setTimeout(300_000)
+
+    const { page, server, accounts } = demo
+    let inviteeContext: BrowserContext | undefined
+    let otherContext: BrowserContext | undefined
+    let rejoinContext: BrowserContext | undefined
+
+    try {
+      await accounts.signIn({
+        identifier: reviewTenantAdmin.username,
+        password: reviewTenantAdmin.password,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+
+      await createOrganization(page, {
+        alias: OWNED_ALIAS,
+        displayName: OWNED_NAME,
+      })
+
+      // The transfer's target is an active member, reached through a real
+      // invitation accepted in a second context.
+      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      inviteeContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      const invitee = await inviteeContext.newPage()
+      await acceptInvitationAsInvitee(invitee, link)
+
+      // The owner's page opens the deletion and clears the alias guard before
+      // anything changes, so the confirmation is armed and the write needs one
+      // more click. The page keeps the profile it read -- this account is the
+      // owner in it -- so the control stays on screen while the state
+      // underneath moves.
+      await openOrganizationPage(page, 'profile')
+      await deleteOrganizationButton(page).click()
+      const dialog = page.getByRole('dialog', {
+        name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
+          name: OWNED_NAME,
+        }),
+        exact: true,
+      })
+      await expect(dialog).toBeVisible()
+      await dialog
+        .getByLabel(
+          copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'),
+          { exact: true },
+        )
+        .fill(OWNED_ALIAS)
+      await dialog
+        .getByRole('button', {
+          name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
+          exact: true,
+        })
+        .click()
+      const again = dialog.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(again).toBeEnabled({ timeout: 5_000 })
+
+      // A second session of the same account hands the organization to the
+      // colleague. The one write grants the target the tenant-admin role and
+      // removes the previous owner's membership.
+      otherContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      const other = await otherContext.newPage()
+      const otherAccounts = createAccounts({ page: other, server })
+      await otherAccounts.signIn({
+        identifier: reviewTenantAdmin.username,
+        password: reviewTenantAdmin.password,
+      })
+      await expect(homeHeading(other)).toBeVisible()
+      await switchOrganization(other, 'acme', OWNED_NAME)
+      await openOrganizationPage(other, 'profile')
+      await transferOwnerButton(other).click()
+      const transferDialog = other.getByRole('dialog', {
+        name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
+          name: OWNED_NAME,
+        }),
+        exact: true,
+      })
+      await expect(transferDialog).toBeVisible()
+      await transferDialog
+        .getByRole('combobox', {
+          name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
+          exact: true,
+        })
+        .click()
+      await other
+        .getByRole('option', {
+          name: new RegExp(
+            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+          ),
+        })
+        .click()
+      await transferDialog
+        .getByRole('button', {
+          name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
+          exact: true,
+        })
+        .click()
+      const transferAgain = transferDialog.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(transferAgain).toBeEnabled({ timeout: 5_000 })
+      await transferAgain.click()
+      await expect(homeHeading(other)).toBeVisible({ timeout: 15_000 })
+
+      // The target owns the organization now and can invite the account the
+      // transfer removed. A fresh sign-in re-reads the tenant-admin role the
+      // transfer granted it, which is what opens the organization page.
+      const inviteeAccounts = createAccounts({ page: invitee, server })
+      await inviteeAccounts.signOut()
+      await inviteeAccounts.signIn({
+        identifier: reviewInvitee.username,
+        password: reviewInvitee.password,
+      })
+      await expect(homeHeading(invitee)).toBeVisible()
+      const rejoinLink = await issueInvitation(
+        invitee,
+        server,
+        reviewTenantAdmin.identifier,
+      )
+
+      // The removed account accepts the invitation in a session of its own.
+      // It is a member again -- which is what lets the write reach the owner
+      // decision at all -- but the organization's owner is the colleague, so
+      // the owner decision refuses it.
+      rejoinContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      const rejoin = await rejoinContext.newPage()
+      await acceptInvitationAsInvitee(rejoin, rejoinLink, reviewTenantAdmin)
+      await expect(homeHeading(rejoin)).toBeVisible({ timeout: 15_000 })
+
+      // The stale page's confirmation is still armed. The write it sends is
+      // admitted -- the caller is a member again -- and refused by the
+      // ownership decision, which the card states as the forbidden answer.
+      await expect(dialog).toBeVisible()
+      await expect(again).toBeEnabled()
+      await again.click()
+      await expect(
+        ownershipSection(page).getByText(
+          copy('adminUi', 'tenantProfile.ownership.error.forbidden'),
+          { exact: true },
+        ),
+      ).toBeVisible()
+    } finally {
+      await inviteeContext?.close().catch(() => undefined)
+      await otherContext?.close().catch(() => undefined)
+      await rejoinContext?.close().catch(() => undefined)
+    }
+  })
+
   test('tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken', async ({
     demo,
   }) => {
@@ -3578,17 +3787,23 @@ test.describe('the organization profile page belongs to its owner', () => {
       exact: true,
     })
     await expect(dialog).toBeVisible()
-    await dialog
-      .getByLabel(copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'), {
-        exact: true,
-      })
-      .fill(OWNED_ALIAS)
-    await dialog
-      .getByRole('button', {
-        name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
-        exact: true,
-      })
-      .click()
+    const aliasField = dialog.getByLabel(
+      copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'),
+      { exact: true },
+    )
+    const confirm = dialog.getByRole('button', {
+      name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
+      exact: true,
+    })
+    // The typed alias is the guard, not decoration: the confirmation is inert
+    // while the field is empty or names anything but this organization's own
+    // alias, and only the matching value enables it.
+    await expect(confirm).toBeDisabled()
+    await aliasField.fill(`${OWNED_ALIAS}-not-the-alias`)
+    await expect(confirm).toBeDisabled()
+    await aliasField.fill(OWNED_ALIAS)
+    await expect(confirm).toBeEnabled()
+    await confirm.click()
     const again = dialog.getByRole('button', {
       name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
       exact: true,
