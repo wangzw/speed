@@ -33,9 +33,9 @@
 两条路由都由 `speedhttp.TenantAdminRouteGuard` 包裹，该守卫由 `pkg/tenant/resolve` 交付：路径里的租户段被核对为请求解析到的租户，平台域被拒绝，核对不过答 404。挂载时缺少这个守卫的装配在启动期被拒绝。
 ### 视图
 
-`TenantProfileView` 逐字段从 `tenant.Tenant` 构造，字段是 `id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`status` 与 `createdAt`。四个描述字段为空串时照常出现；`createdAt` 每一行都有，不是可空字段；`status` 取 `active`、`disabled` 或 `deleted`。
+`TenantProfileView` 逐字段从 `tenant.Tenant` 构造，字段是 `alias`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`status` 与 `createdAt`；内部标识不出现。四个描述字段为空串时照常出现；`createdAt` 每一行都有，不是可空字段；`status` 取 `active`、`disabled` 或 `deleted`。
 
-`ownerAccount` 是名册行的所有者列，原样给出账户标识。业务组织携带一个；个人组织的所有者是账户本身；平台自身的租户没有所有者，该字段是空串但仍出现。**所有者不在成员可读的视图里**：成员列表 `AuthnAdminMember` 携带成员关系自身的事实与角色，本人租户视图携带成员自己的 `id`、`alias` 与 `kind`，两者都没有所有者字段。本视图的读路由需要 `tenant.profile.read`，没有该权限的普通成员在守卫处被拒，走不到视图构造。读与写两条路由答的是同一份 `TenantProfileView`：写路由要求 `tenant.profile.write`，持有该权限即属管理身份，写应答同样带 `ownerAccount`。普通成员两项权限都不持有，两条路由都在守卫处拒绝，看不到所有者。
+`ownerAccount` 是名册行的所有者列，原样给出账户标识。业务组织携带一个；个人组织的所有者是账户本身；平台自身的租户没有所有者，该字段是空串但仍出现。**所有者不在成员可读的视图里**：成员列表 `AuthnAdminMember` 携带成员关系自身的事实与角色，本人租户视图携带成员自己的 `alias` 与 `kind`，两者都没有所有者字段。本视图的读路由需要 `tenant.profile.read`，没有该权限的普通成员在守卫处被拒，走不到视图构造。读与写两条路由答的是同一份 `TenantProfileView`：写路由要求 `tenant.profile.write`，持有该权限即属管理身份，写应答同样带 `ownerAccount`。普通成员两项权限都不持有，两条路由都在守卫处拒绝，看不到所有者。
 
 ### 问题应答
 
@@ -99,7 +99,7 @@ sequenceDiagram
 
 | 结构 | 字段 | 说明 |
 |---|---|---|
-| `TenantProfileView` | `id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`status`、`createdAt` | 逐字段从 `tenant.Tenant` 构造；`ownerAccount` 取自行上的所有者列，没有所有者时是空串 |
+| `TenantProfileView` | `alias`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`status`、`createdAt` | 逐字段从 `tenant.Tenant` 构造，内部标识不出现；`ownerAccount` 取自行上的所有者列，没有所有者时是空串 |
 | `profileBody` | `profile` | 读与写共用的应答容器 |
 | `profileWriteInput` | `display_name`、`description`、`contact_email`、`website` | 写正文的四个成员，全部必填 |
 

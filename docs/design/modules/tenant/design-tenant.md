@@ -178,7 +178,7 @@ const (
 )
 
 // KindResolver 回答一个租户的种类。宿主实现它；本模块只把答案放进本人租户
-// 读取的应答。答案是只读事实，不参与准入或授权判定。
+// 读取与平台租户视图的应答。答案是只读事实，不参与准入或授权判定。
 type KindResolver interface {
     KindOf(ctx context.Context, id ID) (Kind, error)
 }
@@ -449,7 +449,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **这条路由不解析租户。** 它回答的是调用方本人，不是某个租户；它挂在账户端上，请求上没有租户名。路由在声明接口上登记为开放，让授权中间件放行到 handler；认证准入是网关的：端上的请求没有凭据时在 handler 之前即被拒。handler 自己在没有身份时写出与其他已认证接口相同的 401：只有状态、没有 `Problem.Type`，挑战为 `Bearer`（[REF-rfc6750](../../../references.md)）与 `Cookie`，realm 取该端的端名（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
-**应答。** 200 加 `tenants` 数组，每项是 `id`、`alias` 与 `kind`，按标识升序，空结果写 `[]` 而不是 `null`。`kind` 的取值是 `business` 或 `personal`，是平台定义的闭集；它由宿主经 `KindResolver` 给出，名册不记录它。**这个闭集在 OpenAPI 片段里以 enum 写出，生成的 SDK 把 `kind` 生成为 `'business' | 'personal'` 的联合类型**；前端按值分支，不按标识前缀猜种类。应答不带状态、不带展示名；名册没有展示名，别名是请求侧出现的那个名字，从不翻译。
+**应答。** 200 加 `tenants` 数组，每项是 `alias` 与 `kind`，按别名升序，内部标识不出现，空结果写 `[]` 而不是 `null`。`kind` 的取值是 `business` 或 `personal`，是平台定义的闭集；它由宿主经 `KindResolver` 给出，名册不记录它。**这个闭集在 OpenAPI 片段里以 enum 写出，生成的 SDK 把 `kind` 生成为 `'business' | 'personal'` 的联合类型**；前端按值分支，不按标识前缀猜种类。应答不带状态、不带展示名；名册没有展示名，别名是请求侧出现的那个名字，从不翻译。
 
 **一条成员关系进入应答，当且仅当它是有效的。** 成员关系自身的 `Active` 为真，且名册快照里那个租户的状态是 `StatusActive`。两次读都不要求上下文里有租户：`Memberships.Tenants` 按账户列跨租户读，名册快照不经过隔离插件。
 
@@ -462,7 +462,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **种类由 `tenant.personal` 给出，个人租户的文案仍归宿主。** 个人租户由公共模块建立，名册不记录它，本模块也不认识它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)、[design-tenant-personal](design-tenant-personal.md)）。`tenant.personal` 交付 `KindResolver`，按它自己的派生回答每个租户的种类；本模块把答案原样放进应答，不校验它与名册、成员关系或权限集是否一致。**解析器缺席时每一项都是 `business`**：这适用于没有个人租户模块的装配，那里确实没有个人租户。**装配点名 `tenant.personal` 时解析器随之在场**：解析器是该模块交付的三项能力之一，不会出现「有个人租户却没有解析器」的启动。请求期解析器的读取失败是 503，不把该行视为 `business`：种类是一个事实，故障不是。
 
-**`tenant.personal` 把个人租户的派生收敛到一处。** 个人租户的标识由该模块从一个账户标识确定性派生；`KindResolver` 的比较、按标识前缀拒绝写与拒绝删除的写保护、种子跳过个人租户的路径都调用 `TenantID` 与 `IsPersonalTenantID`，不各自裸用前缀判断。平台只收到租户标识与 `kind`，不定义派生规则，也没有第二、第三个前缀来源。
+**`tenant.personal` 把个人租户的派生收敛到一处。** 个人租户的标识由该模块从一个账户标识确定性派生；`KindResolver` 的比较、按标识前缀拒绝写与拒绝删除的写保护、种子跳过个人租户的路径都调用 `TenantID` 与 `IsPersonalTenantID`，不各自裸用前缀判断。平台只收到别名与 `kind`，不定义派生规则，也没有第二、第三个前缀来源。
 
 **冒充中的请求到得了这条路由，应答只有授予的那一个租户。** 路由登记为可冒充：账户端不在准入层所守的端里，不登记时网关在 handler 之前拒绝，宿主在整页重载后就没有任何来源命名当前租户（名册属平台管理面，冒充期间读不到）。handler 自己按身份的 `Scope()` 收窄应答，被冒充账户在其他租户的成员关系超出冒充授予的那一个租户，仍不交给冒充者；授予的那个租户标识与别名本来就由冒充状态读与横幅陈述，这里只是把它的别名再给宿主。没有范围的冒充身份（网关的出口检查不会放行，只有直接调用 handler 才可能）应答空列表，不回退成全量。租户切换器在冒充期间本来也不挂（[tenancy-ui](../web/design-web-tenancy-ui.md)）。
 
@@ -476,7 +476,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 `Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`DisabledBy`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口。`WriteGuard`、`WriteOp` 与它的两个取值同样属于对外接口：宿主据它决定哪些租户拒绝停用与删除。`Provisioner` 的签名同样属于对外接口：宿主据它把租户与首任管理员一次建立。`OrganizationWriter` 的签名同样属于对外接口：平台管理面与租户面都经它把所有者转移与组织删除做成一条事务，见 [design-tenant-ownership](design-tenant-ownership.md)。`Catalog` 里 `Delete`、`SetStatusByAccount`、`SetOwner` 与 `SetProfile` 的加入、`Status` 多出的取值、`Tenant` 多出的字段与 `ErrOwnerNotMember`、`ErrOwnerChanged` 同样在接口上。`Status` 与 `DisabledBy` 的字符串形式（`active`、`disabled`、`deleted` 与 `operator`、`account`）是管理面视图的取值来源，同样在接口上。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样属于对外接口：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口。
 
-**本人租户读取的路由与应答同样在对外接口上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `id`、`alias` 与 `kind`、`kind` 的闭集取值 `business` 与 `personal`、按标识升序与 `[]` 的空结果写法，以及「要求已认证、不要求权限、登记为可冒充且冒充身份的应答收窄到授予租户」；前端与生成的客户端据这些取值分支。`Kind` 与 `KindResolver` 的签名同样在接口上：`tenant.personal` 据它给出种类，改动它改变每一个承载个人租户的装配。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口上，改动它们是宿主可见的破坏性变更。
+**本人租户读取的路由与应答同样在对外接口上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `alias` 与 `kind`、`kind` 的闭集取值 `business` 与 `personal`、按别名升序与 `[]` 的空结果写法，以及「要求已认证、不要求权限、登记为可冒充且冒充身份的应答收窄到授予租户」；前端与生成的客户端据这些取值分支。`Kind` 与 `KindResolver` 的签名同样在接口上：`tenant.personal` 据它给出种类，改动它改变每一个承载个人租户的装配。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口上，改动它们是宿主可见的破坏性变更。
 
 **标识的取值域也在对外接口内**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它——空值在那次调用之前先判一档，只为挑出两种文本，取值域本身仍只有 `IsIdentifier` 一条陈述。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](../settings/design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由使用方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识写法表逐种写法驱动双方守住。
 
@@ -707,7 +707,7 @@ flowchart TD
 
 **跨租户标记**是请求上下文里的一个键，键类型不导出（[ADR-tenant-scoping](../../../adr/adr-tenant-scoping.md)）。
 
-**本人租户视图**是每次请求构造出来的，不存储：一行是 `id` 与 `alias`，取自名册快照里那一行。列表按标识升序；`Memberships.Tenants` 已按标识给出，过滤保持那个次序。
+**本人租户视图**是每次请求构造出来的，不存储：一行是别名与种类，别名取自名册快照里那一行。成员关系按标识给出，视图在过滤之后按别名重排；内部标识不参与应答。
 
 ## 核心算法与流程
 
