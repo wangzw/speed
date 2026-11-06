@@ -1365,6 +1365,10 @@
         "userConfirm": "用户确认"
       },
       "usernameClaimLabel": "用户名声明",
+      "usernameClaim": {
+        "preferredUsername": "首选用户名",
+        "email": "邮箱地址"
+      },
       "enabledLabel": "已启用",
       "trustIdpMfaLabel": "信任 IdP 的 MFA",
       "allowIdpInitiatedLabel": "允许 IdP 发起",

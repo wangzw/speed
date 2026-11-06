@@ -1365,6 +1365,10 @@
         "userConfirm": "User confirms"
       },
       "usernameClaimLabel": "Username claim",
+      "usernameClaim": {
+        "preferredUsername": "Preferred username",
+        "email": "Email address"
+      },
       "enabledLabel": "Enabled",
       "trustIdpMfaLabel": "Trust IdP MFA",
       "allowIdpInitiatedLabel": "Allow IdP-initiated",

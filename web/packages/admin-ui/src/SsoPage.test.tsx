@@ -10,7 +10,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { SsoPage } from './SsoPage.js'
+import { SsoPage, ssoProviderWriteBody } from './SsoPage.js'
+import type { SsoProviderWriteDraft } from './SsoPage.js'
 import type {
   AdminClaimSsoDomainInput,
   AdminCreateSsoProviderInput,
@@ -160,6 +161,150 @@ async function expectRefreshInert(
   expect(listSsoProviders).toHaveBeenCalledTimes(readsBefore)
 }
 
+/** A provider write draft, with every value at the form's initial state. */
+function writeDraft(
+  overrides: Partial<SsoProviderWriteDraft> = {},
+): SsoProviderWriteDraft {
+  return {
+    protocol: 'oidc',
+    name: 'New IdP',
+    provisioning: 'jit',
+    usernameStrategy: 'user-confirm',
+    usernameClaim: '',
+    enabled: 'unchanged',
+    trustIdpMfa: 'unchanged',
+    allowIdpInitiated: 'unchanged',
+    allowSha1: 'unchanged',
+    mergeExisting: 'unchanged',
+    config: '',
+    clientSecret: '',
+    ...overrides,
+  }
+}
+
+/**
+ * The body a provider write sends. An update names both username fields
+ * explicitly, because the module keeps a field the body leaves out; a create
+ * names them only under the combination that uses them.
+ */
+describe('ssoProviderWriteBody', () => {
+  it('sends a claim and its claim on a jit create', () => {
+    expect(
+      ssoProviderWriteBody(
+        writeDraft({ usernameStrategy: 'claim', usernameClaim: 'email' }),
+        false,
+      ),
+    ).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'jit',
+      username_strategy: 'claim',
+      username_claim: 'email',
+    })
+  })
+
+  it('sends only the strategy on a jit create that asks the user', () => {
+    expect(ssoProviderWriteBody(writeDraft(), false)).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'jit',
+      username_strategy: 'user-confirm',
+    })
+  })
+
+  it('sends neither username field on a preprovisioned create', () => {
+    expect(
+      ssoProviderWriteBody(
+        writeDraft({ provisioning: 'preprovisioned' }),
+        false,
+      ),
+    ).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'preprovisioned',
+    })
+  })
+
+  it('clears both username fields when an update leaves jit', () => {
+    expect(
+      ssoProviderWriteBody(
+        writeDraft({
+          provisioning: 'preprovisioned',
+          usernameStrategy: 'claim',
+          usernameClaim: 'email',
+        }),
+        true,
+      ),
+    ).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'preprovisioned',
+      username_strategy: '',
+      username_claim: '',
+    })
+  })
+
+  it('clears the stored claim when an update asks the user instead', () => {
+    expect(
+      ssoProviderWriteBody(
+        writeDraft({ usernameStrategy: 'user-confirm', usernameClaim: 'email' }),
+        true,
+      ),
+    ).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'jit',
+      username_strategy: 'user-confirm',
+      username_claim: '',
+    })
+  })
+
+  it('sends the chosen claim when an update moves to the claim strategy', () => {
+    expect(
+      ssoProviderWriteBody(
+        writeDraft({
+          usernameStrategy: 'claim',
+          usernameClaim: 'preferred_username',
+        }),
+        true,
+      ),
+    ).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'jit',
+      username_strategy: 'claim',
+      username_claim: 'preferred_username',
+    })
+  })
+
+  it('trims the claim and drops a value outside the closed set', () => {
+    expect(
+      ssoProviderWriteBody(
+        writeDraft({ usernameStrategy: 'claim', usernameClaim: ' email ' }),
+        false,
+      ),
+    ).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'jit',
+      username_strategy: 'claim',
+      username_claim: 'email',
+    })
+    expect(
+      ssoProviderWriteBody(
+        writeDraft({ usernameStrategy: 'claim', usernameClaim: 'nickname' }),
+        false,
+      ),
+    ).toEqual({
+      protocol: 'oidc',
+      name: 'New IdP',
+      provisioning: 'jit',
+      username_strategy: 'claim',
+      username_claim: '',
+    })
+  })
+})
+
 describe('SsoPage', () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, 'clipboard')
@@ -239,7 +384,7 @@ describe('SsoPage', () => {
 
     await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
     await expectRefreshInert(listSsoProviders, reads)
 
@@ -693,11 +838,95 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
     await vi.waitFor(() => {
       expect(created).toEqual([
-        { tenant: 'acme', protocol: 'oidc', name: 'New IdP', provisioning: 'manual' },
+        { tenant: 'acme', protocol: 'oidc', name: 'New IdP', provisioning: 'preprovisioned' },
+      ])
+    })
+  })
+
+  it('creates a jit provider that reads the username from a claim', async () => {
+    const user = userEvent.setup()
+    const created: AdminCreateSsoProviderInput[] = []
+    const operations = withProviders({
+      createSsoProvider: (input) => {
+        created.push(input)
+        return Promise.resolve(providerFixture())
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'jit')
+
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.sso.provider.usernameStrategyLabel }),
+    )
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.sso.provider.usernameStrategy.claim,
+      }),
+    )
+
+    // The claim is a closed set offered as a select, not free text.
+    const claimField = screen.getByRole('combobox', {
+      name: zhCN.sso.provider.usernameClaimLabel,
+    })
+    await user.click(claimField)
+    expect(
+      (await screen.findAllByRole('option')).map((option) => option.textContent),
+    ).toEqual([
+      zhCN.sso.provider.usernameClaim.preferredUsername,
+      zhCN.sso.provider.usernameClaim.email,
+    ])
+    await user.click(
+      screen.getByRole('option', { name: zhCN.sso.provider.usernameClaim.email }),
+    )
+
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
+    await vi.waitFor(() => {
+      expect(created).toEqual([
+        {
+          tenant: 'acme',
+          protocol: 'oidc',
+          name: 'New IdP',
+          provisioning: 'jit',
+          username_strategy: 'claim',
+          username_claim: 'email',
+        },
+      ])
+    })
+  })
+
+  it('creates a jit provider that asks the user to confirm the username', async () => {
+    const user = userEvent.setup()
+    const created: AdminCreateSsoProviderInput[] = []
+    const operations = withProviders({
+      createSsoProvider: (input) => {
+        created.push(input)
+        return Promise.resolve(providerFixture())
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'jit')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
+    await vi.waitFor(() => {
+      expect(created).toEqual([
+        {
+          tenant: 'acme',
+          protocol: 'oidc',
+          name: 'New IdP',
+          provisioning: 'jit',
+          username_strategy: 'user-confirm',
+        },
       ])
     })
   })
@@ -712,7 +941,7 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.type(
       screen.getByLabelText(zhCN.sso.provider.configLabel),
       '{{"issuer":"https://idp"}',
@@ -749,7 +978,7 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.type(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel), 'top-secret')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
@@ -757,7 +986,7 @@ describe('SsoPage', () => {
     // The refused create keeps every field for correction.
     expect(screen.getByLabelText(zhCN.sso.provider.protocolLabel)).toHaveValue('oidc')
     expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('New IdP')
-    expect(screen.getByLabelText(zhCN.sso.provider.provisioningLabel)).toHaveValue('manual')
+    expect(screen.getByLabelText(zhCN.sso.provider.provisioningLabel)).toHaveValue('preprovisioned')
     expect(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel)).toHaveValue('top-secret')
   })
 
@@ -767,7 +996,7 @@ describe('SsoPage', () => {
     const operations = withProviders({
       listSsoProviders: () =>
         Promise.resolve([
-          providerFixture({ name: 'Acme IdP', provisioning: 'manual' }),
+          providerFixture({ name: 'Acme IdP', provisioning: 'preprovisioned' }),
         ]),
       updateSsoProvider: (input) => {
         updates.push(input)
@@ -790,7 +1019,155 @@ describe('SsoPage', () => {
           tenant: 'acme',
           protocol: 'oidc',
           name: 'Acme IdP 2',
-          provisioning: 'manual',
+          provisioning: 'preprovisioned',
+          username_strategy: '',
+          username_claim: '',
+        },
+      ])
+    })
+  })
+
+  it('clears the stored claim when an update moves a jit provider to user-confirm', async () => {
+    const user = userEvent.setup()
+    const updates: AdminWriteSsoProviderInput[] = []
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            provisioning: 'jit',
+            username_strategy: 'claim',
+            username_claim: 'email',
+          }),
+        ]),
+      updateSsoProvider: (input) => {
+        updates.push(input)
+        return Promise.resolve(providerFixture())
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
+    await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.sso.provider.usernameStrategyLabel }),
+    )
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.sso.provider.usernameStrategy.userConfirm,
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
+    await vi.waitFor(() => {
+      expect(updates).toEqual([
+        {
+          id: 'idp-1',
+          tenant: 'acme',
+          protocol: 'oidc',
+          name: 'Acme IdP',
+          provisioning: 'jit',
+          username_strategy: 'user-confirm',
+          username_claim: '',
+        },
+      ])
+    })
+  })
+
+  it('sends the chosen claim when an update moves a jit provider to the claim strategy', async () => {
+    const user = userEvent.setup()
+    const updates: AdminWriteSsoProviderInput[] = []
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            provisioning: 'jit',
+            username_strategy: 'user-confirm',
+            username_claim: '',
+          }),
+        ]),
+      updateSsoProvider: (input) => {
+        updates.push(input)
+        return Promise.resolve(providerFixture())
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
+    await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.sso.provider.usernameStrategyLabel }),
+    )
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.sso.provider.usernameStrategy.claim,
+      }),
+    )
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.sso.provider.usernameClaimLabel }),
+    )
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.sso.provider.usernameClaim.email,
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
+    await vi.waitFor(() => {
+      expect(updates).toEqual([
+        {
+          id: 'idp-1',
+          tenant: 'acme',
+          protocol: 'oidc',
+          name: 'Acme IdP',
+          provisioning: 'jit',
+          username_strategy: 'claim',
+          username_claim: 'email',
+        },
+      ])
+    })
+  })
+
+  it('clears both username fields when an update moves a jit provider to preprovisioned', async () => {
+    const user = userEvent.setup()
+    const updates: AdminWriteSsoProviderInput[] = []
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            provisioning: 'jit',
+            username_strategy: 'claim',
+            username_claim: 'email',
+          }),
+        ]),
+      updateSsoProvider: (input) => {
+        updates.push(input)
+        return Promise.resolve(providerFixture())
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
+    await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
+    const provisioningField = screen.getByLabelText(
+      zhCN.sso.provider.provisioningLabel,
+    )
+    await user.clear(provisioningField)
+    await user.type(provisioningField, 'preprovisioned')
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
+    await vi.waitFor(() => {
+      expect(updates).toEqual([
+        {
+          id: 'idp-1',
+          tenant: 'acme',
+          protocol: 'oidc',
+          name: 'Acme IdP',
+          provisioning: 'preprovisioned',
+          username_strategy: '',
+          username_claim: '',
         },
       ])
     })
@@ -805,7 +1182,7 @@ describe('SsoPage', () => {
         Promise.resolve([
           providerFixture({
             name: 'Acme IdP',
-            provisioning: 'manual',
+            provisioning: 'preprovisioned',
             config: storedConfig,
           }),
         ]),
@@ -837,7 +1214,9 @@ describe('SsoPage', () => {
           tenant: 'acme',
           protocol: 'oidc',
           name: 'Acme IdP',
-          provisioning: 'manual',
+          provisioning: 'preprovisioned',
+          username_strategy: '',
+          username_claim: '',
           config: storedConfig,
         },
       ])
@@ -963,7 +1342,7 @@ describe('SsoPage', () => {
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
     await user.type(
       screen.getByLabelText(zhCN.sso.provider.provisioningLabel),
-      'manual',
+      'preprovisioned',
     )
     await user.click(
       screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }),
@@ -1067,7 +1446,7 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
     const alert = await screen.findByRole('alert')
@@ -1086,7 +1465,7 @@ describe('SsoPage', () => {
     const user = userEvent.setup()
     const operations = withProviders({
       listSsoProviders: () =>
-        Promise.resolve([providerFixture({ name: 'Acme IdP', provisioning: 'manual' })]),
+        Promise.resolve([providerFixture({ name: 'Acme IdP', provisioning: 'preprovisioned' })]),
       updateSsoProvider: () =>
         Promise.resolve(providerFixture({ name: 'Acme IdP 2' })),
     })
@@ -1254,7 +1633,7 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'manual')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
     await vi.waitFor(() => {

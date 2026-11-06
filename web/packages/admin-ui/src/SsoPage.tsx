@@ -78,6 +78,7 @@ import {
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
+import type { AuthnAdminProviderWrite } from '@speed/api-sdk'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
@@ -907,7 +908,88 @@ function configTextOf(config: unknown): string {
 }
 
 /** A three-state boolean field: left as it is, or set true or false. */
-type TriState = 'unchanged' | 'true' | 'false'
+export type TriState = 'unchanged' | 'true' | 'false'
+
+/**
+ * The username claims the contract accepts. The set is closed: the module
+ * refuses any other value, so the form offers these and nothing else.
+ */
+const USERNAME_CLAIMS = ['preferred_username', 'email'] as const
+
+/** Reports whether a value names one of the accepted username claims. */
+function isUsernameClaim(value: string): boolean {
+  return (USERNAME_CLAIMS as readonly string[]).includes(value)
+}
+
+/** The fields a provider write carries, as the operator left them. */
+export interface SsoProviderWriteDraft {
+  readonly protocol: string
+  readonly name: string
+  readonly provisioning: string
+  readonly usernameStrategy: string
+  readonly usernameClaim: string
+  readonly enabled: TriState
+  readonly trustIdpMfa: TriState
+  readonly allowIdpInitiated: TriState
+  readonly allowSha1: TriState
+  readonly mergeExisting: TriState
+  readonly config: string
+  readonly clientSecret: string
+}
+
+/**
+ * Builds the body of a provider write.
+ *
+ * A create names the username fields only under the combination that uses
+ * them. An update names both explicitly: the module keeps a field a body
+ * leaves out, so a provider that stops being jit, or a claim strategy that
+ * becomes user-confirm, would otherwise keep a stored value the new
+ * combination refuses. An empty string clears the field.
+ */
+export function ssoProviderWriteBody(
+  draft: SsoProviderWriteDraft,
+  updating: boolean,
+): AuthnAdminProviderWrite {
+  const provisioning = draft.provisioning.trim()
+  const jit = provisioning === 'jit'
+  const strategy = draft.usernameStrategy.trim()
+  const claim = draft.usernameClaim.trim()
+  const chosenClaim = isUsernameClaim(claim) ? claim : ''
+  const username = updating
+    ? {
+        username_strategy: jit ? strategy : '',
+        username_claim: jit && strategy === 'claim' ? chosenClaim : '',
+      }
+    : jit
+      ? {
+          username_strategy: strategy,
+          ...(strategy === 'claim' ? { username_claim: chosenClaim } : {}),
+        }
+      : {}
+  const parsedConfig =
+    draft.config.trim() === '' ? null : parseConfig(draft.config)
+  return {
+    protocol: draft.protocol,
+    name: draft.name,
+    provisioning,
+    ...username,
+    ...(draft.enabled === 'unchanged' ? {} : { enabled: draft.enabled === 'true' }),
+    ...(draft.trustIdpMfa === 'unchanged'
+      ? {}
+      : { trust_idp_mfa: draft.trustIdpMfa === 'true' }),
+    ...(draft.allowIdpInitiated === 'unchanged'
+      ? {}
+      : { allow_idp_initiated: draft.allowIdpInitiated === 'true' }),
+    ...(draft.allowSha1 === 'unchanged'
+      ? {}
+      : { allow_sha1: draft.allowSha1 === 'true' }),
+    ...(draft.mergeExisting === 'unchanged'
+      ? {}
+      : { merge_existing: draft.mergeExisting === 'true' }),
+    ...(parsedConfig === null ? {} : { config: parsedConfig }),
+    ...(draft.clientSecret === '' ? {} : { client_secret: draft.clientSecret }),
+  }
+}
 
 /**
  * SsoProviderWriteForm: the provider create and update control. The same
@@ -965,7 +1047,8 @@ function SsoProviderWriteForm({
   const claimStrategy = provisioningJit && usernameStrategy === 'claim'
   const usernameMissing =
     provisioningJit &&
-    (usernameStrategy === '' || (claimStrategy && usernameClaim.trim() === ''))
+    (usernameStrategy === '' ||
+      (claimStrategy && !isUsernameClaim(usernameClaim.trim())))
   const requiredMissing =
     protocol.trim() === '' ||
     name.trim() === '' ||
@@ -1037,11 +1120,20 @@ function SsoProviderWriteForm({
         )}
         {claimStrategy && (
           <TextField
+            select
             size="small"
             value={usernameClaim}
             onChange={(event) => setUsernameClaim(event.target.value)}
             label={t('sso.provider.usernameClaimLabel')}
-          />
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="preferred_username">
+              {t('sso.provider.usernameClaim.preferredUsername')}
+            </MenuItem>
+            <MenuItem value="email">
+              {t('sso.provider.usernameClaim.email')}
+            </MenuItem>
+          </TextField>
         )}
         {triStateSelect(enabled, setEnabled, t('sso.provider.enabledLabel'))}
         {triStateSelect(trustIdpMfa, setTrustIdpMfa, t('sso.provider.trustIdpMfaLabel'))}
@@ -1080,31 +1172,23 @@ function SsoProviderWriteForm({
           disabled={feedback.pending || configInvalid || requiredMissing}
           loading={feedback.pending}
           onClick={() => {
-            const parsed = config.trim() === '' ? null : parseConfig(config)
-            const body = {
-              protocol,
-              name,
-              provisioning,
-              ...(provisioningJit
-                ? {
-                    username_strategy: usernameStrategy,
-                    ...(claimStrategy ? { username_claim: usernameClaim } : {}),
-                  }
-                : {}),
-              ...(enabled === 'unchanged' ? {} : { enabled: enabled === 'true' }),
-              ...(trustIdpMfa === 'unchanged'
-                ? {}
-                : { trust_idp_mfa: trustIdpMfa === 'true' }),
-              ...(allowIdpInitiated === 'unchanged'
-                ? {}
-                : { allow_idp_initiated: allowIdpInitiated === 'true' }),
-              ...(allowSha1 === 'unchanged' ? {} : { allow_sha1: allowSha1 === 'true' }),
-              ...(mergeExisting === 'unchanged'
-                ? {}
-                : { merge_existing: mergeExisting === 'true' }),
-              ...(parsed === null ? {} : { config: parsed }),
-              ...(clientSecret === '' ? {} : { client_secret: clientSecret }),
-            }
+            const body = ssoProviderWriteBody(
+              {
+                protocol,
+                name,
+                provisioning,
+                usernameStrategy,
+                usernameClaim,
+                enabled,
+                trustIdpMfa,
+                allowIdpInitiated,
+                allowSha1,
+                mergeExisting,
+                config,
+                clientSecret,
+              },
+              provider !== undefined,
+            )
             if (provider === undefined) {
               const created = name
               void feedback.run(async () => {
