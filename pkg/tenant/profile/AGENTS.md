@@ -33,14 +33,24 @@ of its own.
   internal identifier never enters the row. A roster refusal closes the write
   with a linked failed row.
 - **The answer is not the platform view.** `TenantProfileView` carries the
-  alias, the four descriptive fields, the owner account, state and the creation
-  time; it carries no identifier. The creation time always exists — `created_at` is not null
-  — so the view renders it as an RFC 3339 instant in UTC with no omission branch.
-  It deliberately omits the disable source, which belongs to the platform
-  management surface. The owner account is the roster row's owner column, always
-  present and empty only for a tenant with no owner. It is exposed behind
+  alias, the four descriptive fields, the owner shown by display name and
+  username, the owner account, state and the creation time; it carries no
+  tenant identifier. The creation time always exists — `created_at` is not
+  null — so the view renders it as an RFC 3339 instant in UTC with no omission
+  branch. It deliberately omits the disable source, which belongs to the
+  platform management surface. The owner account is the roster row's owner
+  column, always present and empty only for a tenant with no owner; it stays
+  the internal ownership key and is not displayed. The owner is exposed behind
   `tenant.profile.read` and appears in no member-readable view: the member list
   (`AuthnAdminMember`) and the self tenant view carry no owner field.
+- **The owner's names come through an optional account read.**
+  `authn.Accounts` is an optional seam rather than a requirement: `Get` answers
+  the owner's display name and `IdentifiersMany` its `authn.IdentifierUsername`
+  identifier, and both routes answer with them. An assembly that delivers none
+  leaves both names empty, as do an empty owner, an account identifier that does
+  not parse, a static credential-table subject and an account the store does not
+  know; a read that fails for any other reason is a 503, never a pass. Neither
+  name falls back to the account identifier.
 - **The mount is configuration-driven.** The endpoints come from
   `tenant.profile.endpoints`, defaulting to `["api"]`; the wildcard, blank name
   and duplicate are refused at startup. The module declares the static feature
