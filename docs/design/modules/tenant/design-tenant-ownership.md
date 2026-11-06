@@ -41,7 +41,7 @@ type OrganizationWriter interface {
 | 依赖 | 用途 |
 |---|---|
 | `pkg/db` | 打开跨存储的那一条事务 |
-| `pkg/tenant` 根包 | `OrganizationWriter`、`Tenant`、`ID` 与四个哨兵 |
+| `pkg/tenant` 根包 | `OrganizationWriter`、`Tenant`、`ID` 与哨兵 `ErrOwnerNotMember`、`ErrOwnerInactive`、`ErrInvalidTenant`、`ErrTenantDeleted`、`ErrOwnerChanged` |
 | `pkg/tenant/catalog` | `TxCatalog` 的 `GetTx`、`SetOwnerTx`、`DeleteTx` |
 | `pkg/authz/policy` | `TxManager` 的 `PutBindingTx`、`ClearAccountBindingsTx`、`DeleteTenantPolicyTx` |
 | `pkg/authn` 根包 | 账户读取接口 `Accounts`（转移目标的状态） |
