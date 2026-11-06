@@ -80,8 +80,11 @@
  * helpers/i18n.ts; the invitation notice's subject is read from the backend
  * module's own catalog, because that is the string the mail carrier renders.
  * The only non-UI reads are the email verification code and the impersonation
- * step-up SMS code from the review process log, and the invitation mail line
- * the review carrier writes when a notice is delivered.
+ * step-up SMS code from the review process log, the invitation mail line the
+ * review carrier writes when a notice is delivered, and the organization
+ * profile read whose answer the profile page renders: the owner's internal
+ * account identifier never appears on the page, so the test that proves its
+ * absence learns the value from the response the page itself received.
  */
 // @journey journey-tenant-admin.md
 // @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenant-admin-068, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-060, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
@@ -2988,6 +2991,38 @@ function definitionValue(page: Page, label: string): Locator {
     .locator('xpath=following-sibling::dd[1]')
 }
 
+/** The owner fields one organization-profile read answers with. */
+interface ProfileOwner {
+  readonly ownerAccount: string
+  readonly ownerDisplayName: string
+  readonly ownerUsername: string
+}
+
+/**
+ * Wait for the product's own organization-profile read of `alias` and return
+ * the owner fields it answered. The page shows the owner's display name and
+ * username but never the internal account identifier, so this is where a test
+ * that must prove the identifier's absence learns the value to look for.
+ */
+function waitForProfileOwner(
+  page: Page,
+  alias: string,
+): Promise<ProfileOwner> {
+  return page
+    .waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        new URL(response.url()).pathname ===
+          `/api/v1/tenants/${alias}/profile`,
+      { timeout: 30_000 },
+    )
+    .then(async (response) => {
+      expect(response.ok()).toBe(true)
+      const body = (await response.json()) as { profile: ProfileOwner }
+      return body.profile
+    })
+}
+
 /** The profile page's owner-only card. */
 function ownershipSection(page: Page): Locator {
   return page.getByRole('region', {
@@ -3268,23 +3303,39 @@ test.describe('the organization profile page belongs to its owner', () => {
     })
     await expect(homeHeading(page)).toBeVisible()
 
+    // The create-then-enter sequence lands on the profile page; the read it
+    // issues is awaited so the owner's internal identifier is known. The page
+    // must never render that identifier.
+    const profileRead = waitForProfileOwner(page, OWNED_ALIAS)
     await createOrganization(page, {
       alias: OWNED_ALIAS,
       displayName: OWNED_NAME,
       description: OWNED_DESCRIPTION,
     })
+    const profileOwner = await profileRead
 
-    // The identity card names the owner, and the caller is that owner: the
-    // two controls render only for the account the profile's owner column
-    // carries.
+    // The identity card names the owner by display name and username
+    // together, and the caller is that owner: the two controls render only
+    // for the account the profile's owner column carries.
     const owner = definitionValue(
       page,
       copy('adminUi', 'tenantProfile.field.owner'),
     )
     await expect(owner).toBeVisible()
-    const ownerText = (await owner.innerText()).trim()
-    expect(ownerText, 'the profile names no owner').not.toBe('')
-    expect(ownerText).not.toBe(copy('adminUi', 'common.emptyValue'))
+    await expect(owner).toHaveText(
+      `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+    )
+    expect(profileOwner.ownerDisplayName).toBe(reviewTenantAdmin.displayName)
+    expect(profileOwner.ownerUsername).toBe(reviewTenantAdmin.username)
+    expect(
+      profileOwner.ownerAccount,
+      'the profile names no owner account',
+    ).not.toBe('')
+    // The internal account identifier appears nowhere on the page: not as
+    // text and not in an attribute. The username above is the only identity
+    // the owner row exposes beside the display name.
+    await expect(page.getByText(profileOwner.ownerAccount)).toHaveCount(0)
+    expect(await page.content()).not.toContain(profileOwner.ownerAccount)
     await expect(
       definitionValue(page, copy('adminUi', 'tenantProfile.field.alias')),
     ).toHaveText(OWNED_ALIAS)
@@ -3415,15 +3466,17 @@ test.describe('the organization profile page belongs to its owner', () => {
 
       await openOrganizationPage(invitee, 'profile')
 
-      // The page is admitted by the tenant-admin grant and names the owner,
-      // but the caller is not that account: neither control renders, and the
-      // ownership card is absent altogether.
+      // The page is admitted by the tenant-admin grant and names the owner by
+      // display name and username, but the caller is not that account:
+      // neither control renders, and the ownership card is absent altogether.
       const owner = definitionValue(
         invitee,
         copy('adminUi', 'tenantProfile.field.owner'),
       )
       await expect(owner).toBeVisible()
-      expect((await owner.innerText()).trim()).not.toBe('')
+      await expect(owner).toHaveText(
+        `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+      )
       await expect(ownershipSection(invitee)).toHaveCount(0)
       await expect(transferOwnerButton(invitee)).toHaveCount(0)
       await expect(deleteOrganizationButton(invitee)).toHaveCount(0)
@@ -3550,7 +3603,12 @@ test.describe('the organization profile page belongs to its owner', () => {
         copy('adminUi', 'tenantProfile.field.owner'),
       )
       await expect(owner).toBeVisible()
-      expect((await owner.innerText()).trim()).not.toBe('')
+      // The transfer's new owner is named by its display name and username,
+      // read fresh from the account store rather than carried over from the
+      // previous owner.
+      await expect(owner).toHaveText(
+        `${reviewInvitee.displayName} (${reviewInvitee.username})`,
+      )
       await expect(transferOwnerButton(invitee)).toBeVisible()
       await expect(deleteOrganizationButton(invitee)).toBeVisible()
 
