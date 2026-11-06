@@ -66,11 +66,12 @@ func TenantID(account authn.AccountID) tenant.ID {
 
 // IsPersonalTenantID reports whether an identifier is a personal tenant's.
 //
-// It is the one place the prefix is compared. The host's write guards and the
-// seed's skip call it, so the derivation has one statement rather than several
-// that can drift apart. A caller that has the account in hand compares
-// TenantID's answer exactly instead; a prefix test would mark another account's
-// personal tenant personal too.
+// It is the one place the prefix is compared. The host's write guards, the
+// seed's skip and the kind resolver call it, so the derivation has one
+// statement rather than several that can drift apart. A caller deciding
+// whether a tenant is its *own* space compares TenantID's answer exactly
+// instead: the prefix identifies any account's personal tenant, not only the
+// caller's.
 func IsPersonalTenantID(id string) bool {
 	return strings.HasPrefix(id, IDPrefix)
 }

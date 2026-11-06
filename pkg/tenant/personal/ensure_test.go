@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -138,20 +137,20 @@ func TestEnsureClosesALostRaceWithAFailedAuditRow(t *testing.T) {
 	}
 }
 
-// The kind resolver names only the caller's own space.
-func TestKindOfNamesOnlyTheCallersOwnSpace(t *testing.T) {
+// The kind names a personal tenant's identifier, whoever asks: the platform
+// roster lists every account's spaces, so another account's personal tenant
+// must read personal too.
+func TestKindOfNamesAPersonalTenantsIdentifier(t *testing.T) {
 	p := &product{}
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	if kind, err := p.KindOf(ctx, TenantID(unitAccount)); err != nil || kind != tenant.KindPersonal {
-		t.Errorf("KindOf(the caller's space) = (%v, %v), want personal", kind, err)
-	}
-	for _, id := range []tenant.ID{TenantID("another-account"), "business"} {
-		if kind, err := p.KindOf(ctx, id); err != nil || kind != tenant.KindBusiness {
-			t.Errorf("KindOf(%q) = (%v, %v), want business", id, kind, err)
+	for _, id := range []tenant.ID{TenantID(unitAccount), TenantID("another-account")} {
+		if kind, err := p.KindOf(context.Background(), id); err != nil || kind != tenant.KindPersonal {
+			t.Errorf("KindOf(%q) = (%v, %v), want personal", id, kind, err)
 		}
 	}
-	if kind, err := p.KindOf(context.Background(), TenantID(unitAccount)); err != nil || kind != tenant.KindBusiness {
-		t.Errorf("KindOf without an identity = (%v, %v), want business", kind, err)
+	for _, id := range []tenant.ID{"business", ""} {
+		if kind, err := p.KindOf(context.Background(), id); err != nil || kind != tenant.KindBusiness {
+			t.Errorf("KindOf(%q) = (%v, %v), want business", id, kind, err)
+		}
 	}
 }
 
