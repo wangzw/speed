@@ -67,10 +67,10 @@ export const ERROR_TEXT_CODES = [
   // writes with, one leaf per code (the api-client derives each
   // <module>.<code> from the module's RFC 9457 problem `type`).
   //
-  // tenant admin: a 400 shape refusal, the 409 a registration or
-  // rename colliding with an existing identifier or alias is answered
-  // with, and the 409 the transitional alias route answers every change
-  // with (to be removed in T6).
+  // tenant admin: a 400 shape refusal, and the 409 a registration
+  // colliding with an existing identifier or alias is answered with.
+  // tenant.alias_immutable has no writer since the alias-change route
+  // was removed in T4; it stays whitelisted until T6 removes it.
   'tenant.bad_request',
   'tenant.conflict',
   'tenant.alias_immutable',
