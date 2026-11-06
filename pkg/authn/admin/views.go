@@ -146,7 +146,7 @@ type AuthnAdminMember struct {
 	Tenant      string    `json:"tenant" required:"true" description:"The tenant's identifier."`
 	Active      bool      `json:"active" required:"true" description:"True when the membership is in force; false means suspended, which reads as not a member."`
 	SSOExempt   bool      `json:"sso_exempt" required:"true" description:"True when the member is exempt from the tenant's enforced SSO requirement."`
-	Source      string    `json:"source" required:"true" description:"How the membership came to exist: admin, invite, import or jit:<provider identifier>."`
+	Source      string    `json:"source" required:"true" description:"How the membership came to exist: admin, initial, invite, import or jit:<provider identifier>."`
 	Roles       []string  `json:"roles" required:"true" description:"The role names the account holds in the tenant, ascending and without duplicates; always an array and never null, empty when it holds none."`
 	JoinedAt    time.Time `json:"joined_at" required:"true" description:"When the account joined the tenant, as an RFC 3339 instant in UTC."`
 }

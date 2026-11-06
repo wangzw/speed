@@ -43,7 +43,7 @@
             "type": "array"
           },
           "source": {
-            "description": "How the membership came to exist: admin, invite, import or jit:<provider identifier>.",
+            "description": "How the membership came to exist: admin, initial, invite, import or jit:<provider identifier>.",
             "type": "string"
           },
           "sso_exempt": {

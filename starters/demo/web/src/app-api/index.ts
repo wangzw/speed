@@ -401,7 +401,7 @@ export interface AuthnAdminMember {
   joined_at: string;
   /** The role names the account holds in the tenant, ascending and without duplicates; always an array and never null, empty when it holds none. */
   roles: string[];
-  /** How the membership came to exist: admin, invite, import or jit:<provider identifier>. */
+  /** How the membership came to exist: admin, initial, invite, import or jit:<provider identifier>. */
   source: string;
   /** True when the member is exempt from the tenant's enforced SSO requirement. */
   sso_exempt: boolean;
