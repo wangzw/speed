@@ -71,7 +71,6 @@
     "sms.conflict": "同名模板已存在。",
     "tenant.bad_request": "提交的内容有误，请检查表单后重试。",
     "tenant.conflict": "该标识或别名已被其他组织占用。",
-    "tenant.alias_immutable": "别名创建后不可更改。",
     "tenant.protected": "该组织受保护，无法修改。",
     "org.creation_in_progress": "已有一次组织创建正在进行，请等待它完成后再试。",
     "org.identifier_unavailable": "组织地址或标识已被其他组织占用。个人组织的地址由账户生成，业务组织的标识则自动生成，两者都无法手动更换；如果持续出现，请联系管理员。",
