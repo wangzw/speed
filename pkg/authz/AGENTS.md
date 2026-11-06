@@ -62,7 +62,10 @@ the owner first so an owner who is also the only administrator gets the
 refusal that names the actual obstacle. `TenantOwnerCounter` is optional where
 the account module takes it up, and an error is unavailable, never permission.
 
-`TenantAdminCounter` is the root package's other seam over the floor, and the
+`TenantAliasResolver` is the id-to-alias seam the management views and audit
+rows take up; the roster implements it, and this package declares it because the
+authorization management module imports no tenant package. `TenantAdminCounter`
+is the root package's other seam over the floor, and the
 one the account-deletion path asks: `SoleTenantAdminTenant` names the active
 business tenant whose only tenant-administrator binding an account holds, and
 `LockAccountAdministration` takes the `TenantLock` of every tenant the account

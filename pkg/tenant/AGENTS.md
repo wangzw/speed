@@ -232,6 +232,15 @@ before writing a scoped model.
   writes around the product carries every one of them, and the callbacks would
   act on the product inside it (`catalog/supplied_test.go`,
   `resolve/supplied_test.go`).
+- **The resolution layer resolves an alias and nothing else.** `lookUp` is one
+  `Catalog.ByAlias` call: the identifier is internal, and a name that is an
+  identifier names no tenant to the request surface, so it is refused like any
+  other unknown name rather than resolved through a second lookup.
+- **The alias is what a client reads, and the identifier is what the code keys.**
+  `tenant.AliasResolver` is the id-to-alias seam: the roster implements it, a
+  view or an audit row takes it up optionally, and an absent seam names no tenant
+  rather than falling back to the identifier. The caller tenant read and the
+  platform management view carry the alias; views carry no identifier at all.
 - **The resolution layer refuses through the entry point's `Fail`, with the
   status as the only member of the `Problem`.** A request that carries no
   tenant, names none on the roster or names a disabled one gets the same 404,
@@ -247,9 +256,11 @@ before writing a scoped model.
   would let those requests reach the layers inside with no tenant.
 - **A tenant-scoped route's path tenant is held to the resolved tenant by a
   route-level guard, not an endpoint layer.** `pkg/tenant/pathguard` resolves the
-  `tenant` path segment through the roster — alias and identifier, refusing a
-  segment that names none or two — and compares identifiers, so the alias and
-  the identifier both address the same tenant. `resolve.Module` delivers it
+  `tenant` path segment through the roster by alias — the identifier is internal
+  and is not a path name — compares the identifier it comes back with, and
+  rewrites the path parameter to that identifier so every handler behind it acts
+  on the internal key. A segment that is an identifier is a segment no alias
+  answers, and the request is refused with the same bare 404. `resolve.Module` delivers it
   as the `pkg/http` `RouteGuard` capability; `pkg/authn/mount` applies it to every
   `ScopeTenants` registration and refuses one when no guard is delivered. The
   members, invitations and SSO groups manage the system tenant itself and are

@@ -140,7 +140,10 @@ Without the variable the same test is the drift gate; `make check` runs it.
   not a failure. A failed notice is logged and closed with a best-effort
   `authn.invitation.deliver` audit row, and the issue is still answered 201 with
   its token. The module does not queue or retry, and it does not import the
-  tenant module; a tenant identifier is a string here.
+  tenant module; a tenant identifier is a string here. Every view and audit row
+  still names the tenant by its alias: the optional `authn.TenantAliasResolver`
+  answers it, the roster delivers it, and an assembly with none names no tenant
+  rather than exposing the identifier.
 - **The membership source is `invite`**, written into every membership row the
   module creates, so a subscriber of `authn.membership.changed` can tell an
   invitation join from an administrator's direct add.

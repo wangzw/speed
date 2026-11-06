@@ -158,6 +158,9 @@ not choose.
   assembled from a `journal.Row` and never the row as it stands, so a field added
   to a row later does not reach a client by being there. The record view's fields
   are `id`, `tenant`, `occurred_at`, `actor`, `source`, `action`, `object`,
+  and `tenant` is the alias the optional `tenant.AliasResolver` answers for the
+  row's internal identifier; an assembly with no resolver names no tenant
+  rather than exposing the identifier;
   `outcome`, `purpose` and `detail`; the list answer is `entries` and `next`.
   These names are the module's contract with a host and a front end. An empty
   `tenant` means the row belongs to no tenant — a platform operation or a

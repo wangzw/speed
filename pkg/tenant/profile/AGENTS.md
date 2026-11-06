@@ -28,11 +28,13 @@ of its own.
   The gate reads the request's actor, not its impersonation target, and a state
   that cannot be read is a 503, never a pass.
 - **The mandatory audit row lands before `SetProfile`.** The action is
-  `tenant.profile.update`; the detail carries `action_id`, `tenant` and
-  `surface: tenant`. A roster refusal closes the write with a linked failed row.
+  `tenant.profile.update`; the detail carries `action_id`, the tenant's alias and
+  `surface: tenant`. The alias is the one the row the handler read carries; the
+  internal identifier never enters the row. A roster refusal closes the write
+  with a linked failed row.
 - **The answer is not the platform view.** `TenantProfileView` carries the
-  identifier, alias, the four descriptive fields, the owner account, state and
-  the creation time. The creation time always exists — `created_at` is not null
+  alias, the four descriptive fields, the owner account, state and the creation
+  time; it carries no identifier. The creation time always exists — `created_at` is not null
   — so the view renders it as an RFC 3339 instant in UTC with no omission branch.
   It deliberately omits the disable source, which belongs to the platform
   management surface. The owner account is the roster row's owner column, always

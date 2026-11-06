@@ -14,15 +14,18 @@ caller and not about one tenant.
 ## The answer
 
 ```json
-{ "tenants": [ { "id": "acme", "alias": "Acme", "kind": "business" }, { "id": "personal-acct-1", "alias": "alice", "kind": "personal" } ] }
+{ "tenants": [ { "alias": "Acme", "displayName": "", "kind": "business" }, { "alias": "alice", "displayName": "", "kind": "personal" } ] }
 ```
 
 A membership enters the answer when it is itself active (`Membership.Active`) and
 its roster row's status is `tenant.StatusActive`. A suspended membership, a
 disabled tenant and an identifier the roster snapshot does not carry are all left
-out. The list is ordered by identifier — `Memberships.Tenants` already lists that
-way, and the filter preserves the order rather than sorting again — and an empty
-result is `[]`, never `null`. The answer carries no status.
+out. The list is ordered by the membership read's own order — `Memberships.Tenants`
+already lists by identifier, and the filter preserves that order rather than
+sorting again — and an empty result is `[]`, never `null`. The answer carries no
+identifier and no status: a client addresses the tenant by the alias, and a
+tenant's kind tells it whether the alias names an ordinary organization or the
+account's own space.
 
 ## The kind
 

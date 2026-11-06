@@ -364,6 +364,14 @@ default is the `i18n.default-locale` configuration item. How a module delivers a
 seam and how a consumer takes it are stated in the module's own `AGENTS.md`, not
 here.
 
+**`TenantAliasResolver` is the id-to-alias seam.** A tenant's identifier is
+internal; the alias is the name every view and audit row answers. The roster
+module implements it beside the tenant capability's `AliasResolver`, and the
+management views, the invitation views and the impersonation records take it up
+optionally. An assembly with no resolver names no tenant rather than falling back
+to the identifier. It is declared here because no package of this directory
+imports `pkg/tenant`.
+
 ## Shape of a backend
 
 A backend is a module that delivers `Verifier` non-exclusively. It reports a

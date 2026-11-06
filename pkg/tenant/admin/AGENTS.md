@@ -33,8 +33,11 @@ types and the sentinels in `pkg/tenant`.
 The platform routes are mounted under `/api/v1/system` on the endpoints
 `tenant.admin.endpoints` lists; the tenant-surface routes are mounted under
 `/api/v1/tenants` on the endpoints `tenant.admin.tenant-endpoints` lists. A route
-is addressed by a natural key — a tenant identifier, the same key the roster keys
-a row by — so no opaque row identifier ever appears in a path. The surface is one
+is addressed by the tenant's alias — the name a client reads — and an endpoint
+layer this module registers resolves it through `Catalog.ByAlias` under
+`/api/v1/system/tenants/`, rewriting the path parameter to the internal
+identifier before any module's handler runs. The identifier never appears in a
+path or a view. The surface is one
 group, `tenants`, and it is always mounted, because the roster it reads and
 writes is required. This set is the module's whole route surface.
 
@@ -42,11 +45,11 @@ writes is required. This set is the module's whole route surface.
 |---|---|---|
 | Platform | `GET /api/v1/system/tenants` | `tenant.read` |
 | Platform | `POST /api/v1/system/tenants` | `tenant.manage` |
-| Platform | `GET /api/v1/system/tenants/:id` | `tenant.read` |
-| Platform | `PUT /api/v1/system/tenants/:id/owner` | `tenant.manage` |
-| Platform | `DELETE /api/v1/system/tenants/:id` | `tenant.manage` |
-| Platform | `PATCH /api/v1/system/tenants/:id/profile` | `tenant.manage` |
-| Platform | `POST /api/v1/system/tenants/:id/status` | `tenant.manage` |
+| Platform | `GET /api/v1/system/tenants/:tenant` | `tenant.read` |
+| Platform | `PUT /api/v1/system/tenants/:tenant/owner` | `tenant.manage` |
+| Platform | `DELETE /api/v1/system/tenants/:tenant` | `tenant.manage` |
+| Platform | `PATCH /api/v1/system/tenants/:tenant/profile` | `tenant.manage` |
+| Platform | `POST /api/v1/system/tenants/:tenant/status` | `tenant.manage` |
 | Tenant | `PUT /api/v1/tenants/:tenant/owner` | the organization's owner |
 | Tenant | `DELETE /api/v1/tenants/:tenant` | the organization's owner |
 
@@ -60,15 +63,15 @@ action is one roster call, one organization write or one profile write:
 
 | Route | Action |
 |---|---|
-| `GET /tenants` | `List`, every tenant, in the roster's order (by identifier) |
+| `GET /tenants` | `List`, every tenant, in the roster's order (by alias) |
 | `POST /tenants` | `Provisioner`, a tenant, its owner and its first tenant-admin |
-| `GET /tenants/:id` | `Get`, one tenant by identifier |
-| `PUT /tenants/:id/owner` | `OrganizationWriter.TransferOwner` |
-| `DELETE /tenants/:id` | `OrganizationWriter.DeleteOrganization`; `WriteGuard` first |
+| `GET /tenants/:tenant` | `Get`, one tenant by the resolved identifier |
+| `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner` |
+| `DELETE /tenants/:tenant` | `OrganizationWriter.DeleteOrganization`; `WriteGuard` first |
 | `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner`, the same call |
 | `DELETE /tenants/:tenant` | `OrganizationWriter.DeleteOrganization`, the same call |
-| `PATCH /tenants/:id/profile` | `SetProfile`, the four descriptive fields, and nothing else |
-| `POST /tenants/:id/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
+| `PATCH /tenants/:tenant/profile` | `SetProfile`, the four descriptive fields, and nothing else |
+| `POST /tenants/:tenant/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
 A read answers 200 with a view; a write that creates a record answers 201 with the
 record's view, and a write that lands without one (status) answers 204 and
@@ -100,7 +103,9 @@ key.
   the status and the disable source together, which is a seed's action, while
   `Create` only inserts. An alias is chosen at creation and never changes; the
   roster has no alias-only write, and the management surface has no rename
-  route. A registration starts the tenant `active` and makes the creator its
+  route. The request body carries no identifier: the server mints one through
+  the shared organization-id generator, and a body that carries an `id` is a
+  400. A registration starts the tenant `active` and makes the creator its
   owner and first tenant-admin.
 - **The owner transfer has one implementation and two surfaces.** The platform
   route asks `tenant.manage` in the platform domain; the tenant route asks no
@@ -203,6 +208,22 @@ key.
   `surface=platform`; a transfer's and a deletion's rows carry the surface the
   request actually used (`platform` or `tenant`), so the two routes of one action
   are distinguishable.
+- **The platform tenant prefix carries the alias boundary.** `Init` registers an
+  endpoint layer, not a route wrapper, on every endpoint the platform routes are
+  mounted on. A request under `/api/v1/system/tenants/` has its `tenant` path
+  parameter resolved through `Catalog.ByAlias` and replaced with the identifier
+  the handlers and the policy store key on; an alias no tenant carries — including
+  an identifier, which is not an alias — is the same bare 404 the resolution layer
+  writes. Disabled tenants and tombstones resolve, because the platform surface
+  manages them. It never touches `/api/v1/tenants/`, whose tenant segment the
+  path guard resolves. Because the layer is on the endpoint, it precedes every
+  module's handler under the prefix, the authorization and authentication
+  management routes included.
+- **An audit row names the tenant by its alias.** The write handlers resolve the
+  identifier they were handed back to the alias through the optional
+  `tenant.AliasResolver`; an assembly with no resolver writes no tenant name
+  rather than the identifier. The registration route names the alias it was
+  given, and the roster's list order is by alias too.
 - **The refusal mapping is closed and fail-closed.** An identifier the roster's
   table already holds — as an identifier or as an alias, since the two share one
   namespace — is a 409; an alias another tenant holds as an alias or as its
@@ -264,7 +285,8 @@ key.
 - **The answer is a view, built field by field.** Every route answers with a view
   assembled from a `tenant.Tenant` and never the record as it stands, so a field
   added to a record later does not reach a client by being there. The view carries
-  the tenant's identifier, its alias, the four profile fields, its state spelled
+  the tenant's alias, its kind (`business` or `personal`, from the optional
+  `tenant.KindResolver`, absent meaning `business`), the four profile fields, its state spelled
   the way `tenant.Status` spells it — `active` or `disabled` — the creation time
   and the owner account read from the roster row. The creation time is always
   present: `created_at` is not null, so the view renders it as an RFC 3339

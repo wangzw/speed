@@ -79,7 +79,14 @@ The API is the package's godoc.
   The row carries no owner field: the organization's owner is exposed only on the
   platform tenant detail (`TenantAdminTenant`) and the tenant profile view
   (`TenantProfileView`, behind `tenant.profile.read`), never on a view an
-  ordinary member can read.
+  ordinary member can read. The tenant every membership, SSO-provider and
+  impersonation view names is the alias: the optional
+  `authn.TenantAliasResolver` answers it, the roster delivers it, and an
+  assembly with none names no tenant rather than exposing the identifier. The
+  `account-last-tenant-admin` and `account-organization-owner` 409 details name
+  the alias for the same reason. Audit rows written by this module carry the
+  alias in `detail.tenant`. The owner still appears on no view an ordinary
+  member can read.
 - **A member write may not suspend its own caller.** `PUT` with `active` false
   and the path's account the effective caller is a 409
   `cannot-suspend-self` (`urn:speed:authn:cannot-suspend-self`), decided in the
