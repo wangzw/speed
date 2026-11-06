@@ -129,6 +129,14 @@ export interface StartedIdentityProvider {
   readonly issuer: string
   /** The CA certificate the product verifies the issuer's leaf against. */
   readonly rootCAPath: string
+  /**
+   * Replace the `preferred_username` claim the provider's next identity token
+   * and userinfo answer carry. A claim-strategy just-in-time provider reads it
+   * as the account's username, and a journey varying it across sign-ins is the
+   * only thing that changes between attempts: the provider still serves its one
+   * fixed user. `undefined` omits the claim, which is the provider's default.
+   */
+  setPreferredUsername(value: string | undefined): void
   stop(): Promise<void>
 }
 
@@ -511,6 +519,17 @@ async function startProvider(
 
   const codes = new Map<string, AuthorizationRequest>()
   const accessTokens = new Map<string, ProviderDefinition['user']>()
+  // The claim-strategy journeys vary this between sign-ins; the fixed user and
+  // every other claim stay the same. A provider started without a journey
+  // touching it answers no preferred_username, which is its default.
+  let preferredUsername: string | undefined
+
+  /** The standard preferred_username claim, present only once it is set. */
+  function preferredUsernameClaim(): Record<string, string> {
+    return preferredUsername === undefined
+      ? {}
+      : { preferred_username: preferredUsername }
+  }
 
   /** Mint one identity token for the fixed user. */
   function idToken(nonce: string): string {
@@ -524,6 +543,7 @@ async function startProvider(
       email: definition.user.email,
       email_verified: true,
       name: definition.user.name,
+      ...preferredUsernameClaim(),
       nonce,
     })
   }
@@ -672,6 +692,7 @@ async function startProvider(
             email: user.email,
             email_verified: true,
             name: user.name,
+            ...preferredUsernameClaim(),
           })
           return
         }
@@ -749,6 +770,9 @@ async function startProvider(
   return {
     issuer,
     rootCAPath: caPath,
+    setPreferredUsername(value: string | undefined): void {
+      preferredUsername = value
+    },
     async stop(): Promise<void> {
       if (stopped) return
       stopped = true
@@ -778,6 +802,7 @@ export async function startIdentityProvider(
     issuer: started.issuer,
     rootCAPath: started.rootCAPath,
     user: identityProviderUser,
+    setPreferredUsername: started.setPreferredUsername,
     stop: started.stop,
   }
 }
@@ -811,6 +836,7 @@ export async function startEnterpriseIdentityProvider(
     user: enterpriseIdentityProviderUser,
     clientID: enterpriseIdentityProviderClient.id,
     claims: enterpriseIdentityProviderClaims,
+    setPreferredUsername: started.setPreferredUsername,
     stop: started.stop,
   }
 }

@@ -206,6 +206,48 @@ async function approveAuthorization(
   return { code, discovery }
 }
 
+/**
+ * Run one authorization round trip and answer what it proved about the user:
+ * the identity token's claims and the userinfo document.
+ */
+async function exchangeForUser(
+  provider: EnterpriseIdentityProvider,
+  ca: string,
+): Promise<{
+  readonly idToken: Record<string, unknown>
+  readonly userinfo: Record<string, unknown>
+}> {
+  const { code, discovery } = await approveAuthorization(provider, ca)
+  const basic = Buffer.from(
+    `${enterpriseIdentityProviderClient.id}:${enterpriseIdentityProviderClient.secret}`,
+  ).toString('base64')
+  const token = await postForm(
+    new URL(discovery.token_endpoint),
+    new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectURI,
+      code_verifier: codeVerifier,
+    }),
+    { Authorization: `Basic ${basic}` },
+    ca,
+  )
+  expect(token.status).toBe(200)
+  const body = JSON.parse(token.body) as TokenResponse
+  if (body.id_token === undefined || body.access_token === undefined) {
+    throw new Error('the token response carried no identity token')
+  }
+  const userinfo = await send(new URL(discovery.userinfo_endpoint), {
+    ca,
+    headers: { Authorization: `Bearer ${body.access_token}` },
+  })
+  expect(userinfo.status).toBe(200)
+  return {
+    idToken: decodePayload(body.id_token),
+    userinfo: JSON.parse(userinfo.body) as Record<string, unknown>,
+  }
+}
+
 let dir: string
 let provider: EnterpriseIdentityProvider | undefined
 
@@ -321,6 +363,32 @@ describe('the enterprise provider', () => {
       email: started.user.email,
       email_verified: true,
       name: started.user.name,
+    })
+  })
+
+  it('answers the preferred_username a claim-strategy journey sets, and omits it by default', async () => {
+    const started = await start()
+    const ca = await caOf(started)
+
+    // The provider's default answer carries no preferred_username: a provider
+    // started without a claim-strategy journey asserts nothing about it.
+    const unset = await exchangeForUser(started, ca)
+    expect(unset.idToken).not.toHaveProperty('preferred_username')
+    expect(unset.userinfo).not.toHaveProperty('preferred_username')
+
+    // A claim-strategy journey varies the claim between sign-ins. The very
+    // next round trip carries it in both answers the product may read.
+    started.setPreferredUsername('annsmith')
+    const set = await exchangeForUser(started, ca)
+    expect(set.idToken).toMatchObject({
+      preferred_username: 'annsmith',
+      email: started.user.email,
+      sub: started.user.subject,
+    })
+    expect(set.userinfo).toMatchObject({
+      preferred_username: 'annsmith',
+      email: started.user.email,
+      sub: started.user.subject,
     })
   })
 

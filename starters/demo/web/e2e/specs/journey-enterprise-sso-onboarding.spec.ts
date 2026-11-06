@@ -2,13 +2,16 @@
  * J-enterprise-sso -- an operator connects an enterprise OIDC provider to a
  * tenant and an employee signs in with their work address.
  *
- * The file drives the journey twice, once per provisioning mode the provider
- * can declare. The first test is the pre-provisioned journey below. The second
- * has the provider open accounts itself: the first login parks at the username
- * step before any account exists, the answer opens the account with that
- * username, and the account joins the provider's tenant. Everything after the
- * sign-in surface -- the domain claim, the discovery by address, the switcher
- * -- is common to both.
+ * The file drives the journey three times, once per provisioning mode the
+ * provider can declare. The first test is the pre-provisioned journey below.
+ * The second has the provider open accounts itself and ask the person for a
+ * username before anything exists. The third also opens accounts itself but
+ * reads the username from the assertion's `preferred_username`, so the first
+ * login lands directly in the account; it drives the two refusal branches
+ * (a value the shared username form refuses, and one a business tenant already
+ * holds as its alias) before the legal attempt. Everything after the sign-in
+ * surface -- the domain claim, the discovery by address, the switcher -- is
+ * common to all three.
  *
  * The pre-provisioned journey's seven steps, all through the rendered product:
  *
@@ -64,15 +67,17 @@
  * provider, so it is the fixture's constant and the helper asserts it.
  *
  * `@covers` is narrower than the journey document where an assertion cannot
- * fail on the requirement's whole claim: the spec drives each requirement's
- * positive branch only. It enables a provider that was never disabled (so it
- * cannot prove that a disabled provider leaves discovery), verifies a domain
- * that no other provider holds (so it cannot prove the conflict refusal), and
- * signs in once with a domain that is verified (so it cannot prove the refusal
- * a foreign domain or an unverified domain produces). Those alternative paths
- * stay with their own requirements and are not claimed here. The just-in-time
- * test likewise never meets an address an existing account holds, so the
- * link-required branch of REQ-signin-022 stays with its own case.
+ * fail on the requirement's whole claim. The operator-side steps drive each
+ * requirement's positive branch only: the spec enables a provider that was
+ * never disabled (so it cannot prove that a disabled provider leaves
+ * discovery), verifies a domain that no other provider holds (so it cannot
+ * prove the conflict refusal), and signs in once with a domain that is
+ * verified (so it cannot prove the refusal a foreign domain or an unverified
+ * domain produces). Those alternative paths stay with their own requirements
+ * and are not claimed here. The just-in-time tests never meet an address an
+ * existing account holds, so the link-required branch of REQ-signin-022 stays
+ * with its own case. The claim-strategy test drives the invalid and taken-name
+ * refusal branches; its missing-claim branch still needs its own case.
  */
 // @journey journey-enterprise-sso-onboarding.md
 // @covers REQ-platform-admin-013, REQ-platform-config-017, REQ-platform-config-018, REQ-platform-config-020, REQ-platform-config-038, REQ-presentation-027, REQ-signin-001, REQ-signin-003, REQ-signin-004, REQ-signin-020, REQ-signin-021, REQ-signin-022, REQ-signin-027, REQ-signup-018, REQ-signup-047, REQ-signup-048, REQ-signup-053, REQ-tenancy-009, REQ-tenancy-022, REQ-tenancy-023, REQ-tenancy-035, REQ-tenancy-036
@@ -140,6 +145,32 @@ const EMPLOYEE_DISPLAY_NAME = 'Globex Employee'
 const EMPLOYEE_EMAIL = enterpriseIdentityProviderUser.email
 /** The login name the operator gives the employee's pre-provisioned account. */
 const EMPLOYEE_USERNAME = 'globex-employee'
+
+/**
+ * The display name a just-in-time account carries: the provider's own, because
+ * no administrator prepared one.
+ */
+const CLAIM_DISPLAY_NAME = enterpriseIdentityProviderUser.name
+
+/** The provider the operator registers for the claim-strategy onboarding. */
+const CLAIM_PROVIDER_NAME = 'Globex Workforce Claim'
+
+/**
+ * The legal `preferred_username` the provider asserts for the first login. It
+ * is already in the shared username form, so normalization leaves it alone and
+ * the personal tenant's alias must read exactly this.
+ */
+const CLAIM_USERNAME = 'annsmith'
+
+/** A claim value the shared username form refuses: a dot is not in it. */
+const INVALID_CLAIM_USERNAME = 'ann.smith'
+
+/**
+ * A claim value a business tenant already holds as its alias. The account
+ * lookup cannot see the tenant namespace, so this collision surfaces when the
+ * personal tenant is written and the whole creation rolls back.
+ */
+const COLLIDING_CLAIM_USERNAME = EXISTING_TENANT
 
 /** The product's sign-in surface heading. */
 function signInHeading(page: Page): Locator {
@@ -300,8 +331,132 @@ function employeeOption(page: Page): Locator {
   })
 }
 
+/** The sign-in surface's work-address entry. */
+function workEmailField(page: Page): Locator {
+  return page.getByRole('textbox', {
+    name: copy('authUi', 'enterprise.emailLabel'),
+    exact: true,
+  })
+}
+
+/** The username step a just-in-time first login may park at. */
+function usernameStep(page: Page): Locator {
+  return page.getByRole('textbox', {
+    name: copy('authUi', 'signInFlow.usernameLabel'),
+    exact: true,
+  })
+}
+
 /**
- * The shared precondition of both onboarding journeys: sign the operator in
+ * Walk the enterprise entry on the sign-in surface: enter the work address,
+ * continue, and choose the provider the domain discovery named. The caller
+ * approves at the provider.
+ */
+async function startEnterpriseSignIn(
+  page: Page,
+  providerName: string,
+): Promise<void> {
+  const email = workEmailField(page)
+  await expect(email).toBeVisible()
+  await email.fill(enterpriseIdentityProviderUser.email)
+  await page
+    .getByRole('button', {
+      name: copy('authUi', 'enterprise.continue'),
+      exact: true,
+    })
+    .click()
+  const provider = page.getByRole('button', {
+    name: providerName,
+    exact: true,
+  })
+  await expect(provider).toBeVisible()
+  await provider.click()
+}
+
+/**
+ * One claim-strategy first login: set the assertion's `preferred_username`,
+ * start from the sign-in surface, and approve at the provider. What follows
+ * the callback is the caller's to assert.
+ */
+async function attemptClaimSignIn(
+  demo: DemoTarget,
+  claimValue: string,
+): Promise<void> {
+  const { page, server, accounts } = demo
+  const provider = server.enterpriseIdentityProvider
+  if (provider === undefined) {
+    throw new Error(
+      'the enterprise fixture did not start the identity provider this spec drives',
+    )
+  }
+  provider.setPreferredUsername(claimValue)
+  await accounts.openSignIn()
+  await expect(signInHeading(page)).toBeVisible()
+  await startEnterpriseSignIn(page, CLAIM_PROVIDER_NAME)
+  await approveEnterpriseSignIn(page)
+}
+
+/**
+ * Assert the callback refused the first login through the surface's own
+ * vocabulary. The login-failed sentence is what a claim refusal's 401 renders;
+ * the unavailable sentence is what a 503 renders, so its absence is the
+ * surface's evidence the answer was the refusal rather than an outage. No
+ * username step and no landed session follow from the account never opening.
+ */
+async function expectClaimRefused(page: Page): Promise<void> {
+  await expect(
+    page.getByText(copy('authUi', 'errors.authn.login_failed'), {
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 15_000 })
+  await expect(
+    page.getByText(copy('authUi', 'errors.authn.unavailable'), {
+      exact: true,
+    }),
+  ).toHaveCount(0)
+  await expect(usernameStep(page)).toHaveCount(0)
+  await expect(homeHeading(page)).toHaveCount(0)
+}
+
+/** Open one admin page from the console's navigation and wait for its title. */
+async function openAdminPage(page: Page, titleKey: string): Promise<void> {
+  const title = copy('adminUi', titleKey)
+  await adminLink(page, title).click()
+  await expect(
+    page.getByRole('heading', { level: 1, name: title, exact: true }),
+  ).toBeVisible()
+}
+
+/** The rows the admin page's one table lists, once it has rendered them. */
+async function tableRows(page: Page): Promise<Locator> {
+  const table = page.getByRole('table')
+  await expect(table.locator('tbody tr').first()).toBeVisible()
+  return table.locator('tbody tr')
+}
+
+/** The Accounts page's row for a display name, or none. */
+function accountRow(page: Page, displayName: string): Locator {
+  return page
+    .getByRole('table')
+    .locator('tbody tr')
+    .filter({ hasText: displayName })
+}
+
+/** The Organizations page's row whose alias is the given value. */
+function organizationAliasRow(page: Page, alias: string): Locator {
+  return page
+    .getByRole('table')
+    .locator('tbody tr')
+    .filter({ hasText: alias })
+}
+
+/** The globex member rows, on the invitations page's member section. */
+function memberRows(page: Page): Locator {
+  return memberSection(page).getByRole('table').locator('tbody tr')
+}
+
+/**
+ * The shared precondition of the onboarding journeys: sign the operator in
  * and prove the account's own address, which the admin's human writes are
  * gated on.
  */
@@ -365,12 +520,18 @@ async function proveOperatorAddress({
  * Register one enabled OIDC provider through the admin's provider form,
  * naming the local fixture's issuer, client and claim mapping. The provider
  * belongs to the tenant the page is switched to.
+ *
+ * A just-in-time provider must state how a first login determines its
+ * username. `claim` selects "From claim" and the assertion claim the account's
+ * username is read from; omitted, the form keeps its default, which is the
+ * before-opening confirmation the file's second test drives.
  */
 async function registerOIDCProvider(
   page: Page,
   provider: EnterpriseIdentityProvider,
   name: string,
   provisioning: 'preprovisioned' | 'jit',
+  claim?: 'preferred_username' | 'email',
 ): Promise<void> {
   const form = providerSection(page)
   const protocol = form.getByLabel(
@@ -393,6 +554,38 @@ async function registerOIDCProvider(
   await protocol.fill('oidc')
   await nameField.fill(name)
   await provisioningField.fill(provisioning)
+
+  if (claim !== undefined) {
+    // The strategy field belongs to a just-in-time provider, and the claim
+    // field appears only once "From claim" is chosen.
+    await form
+      .getByRole('combobox', {
+        name: copy('adminUi', 'sso.provider.usernameStrategyLabel'),
+        exact: true,
+      })
+      .click()
+    await page
+      .getByRole('option', {
+        name: copy('adminUi', 'sso.provider.usernameStrategy.claim'),
+        exact: true,
+      })
+      .click()
+    await form
+      .getByRole('combobox', {
+        name: copy('adminUi', 'sso.provider.usernameClaimLabel'),
+        exact: true,
+      })
+      .click()
+    await page
+      .getByRole('option', {
+        name:
+          claim === 'email'
+            ? copy('adminUi', 'sso.provider.usernameClaim.email')
+            : copy('adminUi', 'sso.provider.usernameClaim.preferredUsername'),
+        exact: true,
+      })
+      .click()
+  }
 
   // The enabled flag is a three-state field whose untouched value leaves the
   // module's default; the journey's provider is enabled, so the operator
@@ -1142,5 +1335,207 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     const menu = await openAccountMenu(page)
     await expect(menu.getByText(TARGET_TENANT, { exact: true })).toBeVisible()
     await closeAccountMenu(page)
+  })
+})
+
+/**
+ * The journey's third onboarding mode: the provider states how a first login
+ * picks the username. A claim-strategy provider reads the account's username
+ * from the assertion, so the callback opens the account and no username step
+ * appears. The provider's fixed user asserts one `preferred_username` per
+ * attempt; the fixture's handle swaps it between sign-ins, which is the only
+ * thing that changes.
+ *
+ * The refusal branches come first, so the administrator's own pages can prove
+ * they wrote nothing before the legal attempt opens the account: a value the
+ * shared username form refuses, and a value a business tenant already holds as
+ * its alias. The second is the creation-time collision the account lookup
+ * cannot see; it surfaces when the personal tenant, whose alias is the
+ * username, is written and rolls the whole creation back.
+ */
+test('enterprise-sso-onboarding: a claim-strategy provider opens the account with the asserted username', async ({
+  demo,
+}) => {
+  const { page, server, accounts } = demo
+  const provider = server.enterpriseIdentityProvider
+  if (provider === undefined) {
+    throw new Error(
+      'the enterprise fixture did not start the identity provider this spec drives',
+    )
+  }
+  const stub = server.dnsStub
+  if (stub === undefined) {
+    throw new Error(
+      'the enterprise fixture did not start the DNS stub this spec publishes into',
+    )
+  }
+
+  await test.step("precondition: the operator signs in and proves the account's own address", () =>
+    proveOperatorAddress(demo))
+
+  await test.step('step 1: the operator registers a claim-strategy provider and claims the domain', async () => {
+    await page
+      .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
+      .click()
+    await expect(homeHeading(page)).toBeVisible()
+
+    await openConsole(page)
+    await adminLink(page, copy('adminUi', 'sso.title')).click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'sso.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await selectTenant(page, TARGET_TENANT)
+    await expect(
+      page.getByRole('heading', {
+        name: copy('adminUi', 'sso.empty.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // The provider's username strategy is the claim the assertion carries.
+    await registerOIDCProvider(
+      page,
+      provider,
+      CLAIM_PROVIDER_NAME,
+      'jit',
+      'preferred_username',
+    )
+    await claimAndVerifyDomain(page, stub, CLAIM_PROVIDER_NAME)
+  })
+
+  const baseline = await test.step('step 2: the operator records the rows the roster holds', async () => {
+    await openAdminPage(page, 'accounts.title')
+    const accountsCount = await (await tableRows(page)).count()
+
+    await openAdminPage(page, 'tenants.title')
+    const organizationsCount = await (await tableRows(page)).count()
+
+    await openAdminPage(page, 'invitations.title')
+    await selectTenant(page, TARGET_TENANT)
+    const members = memberRows(page)
+    await expect(members.first()).toBeVisible()
+    const membersCount = await members.count()
+
+    return { accountsCount, organizationsCount, membersCount }
+  })
+
+  await test.step('step 3: the operator leaves the console and signs out', async () => {
+    await leaveConsole(page)
+    await accounts.signOut()
+  })
+
+  await test.step('step 4: a value the username form refuses refuses the login', async () => {
+    await attemptClaimSignIn(demo, INVALID_CLAIM_USERNAME)
+    await expectClaimRefused(page)
+  })
+
+  await test.step('step 5: a value a business tenant holds as its alias refuses the login', async () => {
+    await attemptClaimSignIn(demo, COLLIDING_CLAIM_USERNAME)
+    await expectClaimRefused(page)
+  })
+
+  await test.step('step 6: the administrator pages show neither refusal wrote a row', async () => {
+    // The two refusals left the browser on the sign-in surface; the operator
+    // returns to the console the same way a person does.
+    await accounts.signIn({
+      identifier: OPERATOR.username,
+      password: OPERATOR.password,
+    })
+    await expect(homeHeading(page)).toBeVisible()
+    await openConsole(page)
+
+    await openAdminPage(page, 'accounts.title')
+    expect(await (await tableRows(page)).count()).toBe(baseline.accountsCount)
+    await expect(accountRow(page, CLAIM_DISPLAY_NAME)).toHaveCount(0)
+
+    await openAdminPage(page, 'tenants.title')
+    expect(await (await tableRows(page)).count()).toBe(
+      baseline.organizationsCount,
+    )
+    // Neither refused value added a tenant. The collision value is already the
+    // business tenant's alias, so the roster keeps exactly its own row.
+    await expect(organizationAliasRow(page, CLAIM_USERNAME)).toHaveCount(0)
+    await expect(
+      organizationAliasRow(page, INVALID_CLAIM_USERNAME),
+    ).toHaveCount(0)
+    await expect(
+      organizationAliasRow(page, COLLIDING_CLAIM_USERNAME),
+    ).toHaveCount(1)
+
+    await openAdminPage(page, 'invitations.title')
+    await selectTenant(page, TARGET_TENANT)
+    await expect(memberRows(page).first()).toBeVisible()
+    expect(await memberRows(page).count()).toBe(baseline.membersCount)
+    await expect(
+      memberRows(page).filter({ hasText: CLAIM_DISPLAY_NAME }),
+    ).toHaveCount(0)
+
+    await leaveConsole(page)
+    await accounts.signOut()
+  })
+
+  await test.step('step 7: a legal claim opens the account directly, with no username step', async () => {
+    await attemptClaimSignIn(demo, CLAIM_USERNAME)
+    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(usernameStep(page)).toHaveCount(0)
+
+    // No administrator prepared a display name, so the account carries the
+    // provider's.
+    const userMenu = page.getByTestId('account-entry-trigger')
+    await expectAccountMenuName(userMenu, CLAIM_DISPLAY_NAME)
+
+    // The account opens into the provider's organization, not its personal
+    // one: the menu's current row names the provider's tenant.
+    const menu = await openAccountMenu(page)
+    await expect(menu.getByRole('menuitem').first()).toHaveAccessibleName(
+      TARGET_TENANT,
+    )
+    // The personal organization's menu row is named by the account's display
+    // name (REQ-tenancy-050), so the alias is not the menu's to show; the
+    // roster below is where it is read.
+    await menu.getByRole('menuitem').first().click()
+    const choices = menu.getByRole('group', {
+      name: copy('demo', 'userMenu.organizations'),
+      exact: true,
+    })
+    await expect(
+      choices.getByRole('menuitem', {
+        name: CLAIM_DISPLAY_NAME,
+        exact: true,
+      }),
+    ).toBeVisible()
+    await closeAccountMenu(page)
+  })
+
+  await test.step('step 8: the account and its personal tenant carry the asserted username', async () => {
+    // The tenant area names the personal organization after the account; the
+    // alias the request surface would use is on the platform roster, so the
+    // operator returns there.
+    await accounts.signOut()
+    await accounts.signIn({
+      identifier: OPERATOR.username,
+      password: OPERATOR.password,
+    })
+    await expect(homeHeading(page)).toBeVisible()
+    await openConsole(page)
+
+    await openAdminPage(page, 'tenants.title')
+    const personal = organizationAliasRow(page, CLAIM_USERNAME)
+    await expect(personal).toHaveCount(1)
+    // The row is the account's personal tenant, not a business one: its
+    // identifier carries the personal prefix and its alias is the username.
+    await expect(personal).toContainText('personal-')
+
+    await openAdminPage(page, 'accounts.title')
+    const opened = accountRow(page, CLAIM_DISPLAY_NAME)
+    await expect(opened).toHaveCount(1)
+    // The account's first identifier is the username the claim supplied, which
+    // is also the personal tenant's alias asserted above.
+    await expect(opened.getByText(CLAIM_USERNAME, { exact: true })).toBeVisible()
   })
 })
