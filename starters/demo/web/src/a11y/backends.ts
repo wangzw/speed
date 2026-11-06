@@ -181,6 +181,8 @@ const SSO_PROVIDER: AuthnAdminProvider = {
   protocol: 'oidc',
   enabled: true,
   provisioning: 'jit',
+  username_strategy: 'user-confirm',
+  username_claim: '',
   allow_idp_initiated: false,
   allow_sha1: false,
   merge_existing: false,

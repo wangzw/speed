@@ -1359,6 +1359,12 @@
       "protocolLabel": "协议",
       "nameLabel": "名称",
       "provisioningLabel": "开通方式",
+      "usernameStrategyLabel": "用户名策略",
+      "usernameStrategy": {
+        "claim": "取自声明",
+        "userConfirm": "用户确认"
+      },
+      "usernameClaimLabel": "用户名声明",
       "enabledLabel": "已启用",
       "trustIdpMfaLabel": "信任 IdP 的 MFA",
       "allowIdpInitiatedLabel": "允许 IdP 发起",

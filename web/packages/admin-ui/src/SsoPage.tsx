@@ -941,6 +941,15 @@ function SsoProviderWriteForm({
   const [protocol, setProtocol] = useState(provider?.protocol ?? '')
   const [name, setName] = useState(provider?.name ?? '')
   const [provisioning, setProvisioning] = useState(provider?.provisioning ?? '')
+  // A jit provider must name how it picks the username; user-confirm is the
+  // default so the existing confirmation flow keeps working, and a stored
+  // strategy wins on an update.
+  const [usernameStrategy, setUsernameStrategy] = useState(
+    provider?.username_strategy !== undefined && provider.username_strategy !== ''
+      ? provider.username_strategy
+      : 'user-confirm',
+  )
+  const [usernameClaim, setUsernameClaim] = useState(provider?.username_claim ?? '')
   const [enabled, setEnabled] = useState<TriState>('unchanged')
   const [trustIdpMfa, setTrustIdpMfa] = useState<TriState>('unchanged')
   const [allowIdpInitiated, setAllowIdpInitiated] = useState<TriState>('unchanged')
@@ -950,8 +959,18 @@ function SsoProviderWriteForm({
   const [clientSecret, setClientSecret] = useState('')
 
   const configInvalid = config.trim() !== '' && parseConfig(config) === null
+  // The username fields belong to jit only: a preprovisioned provider carries
+  // neither, and a claim strategy needs the claim it reads.
+  const provisioningJit = provisioning.trim() === 'jit'
+  const claimStrategy = provisioningJit && usernameStrategy === 'claim'
+  const usernameMissing =
+    provisioningJit &&
+    (usernameStrategy === '' || (claimStrategy && usernameClaim.trim() === ''))
   const requiredMissing =
-    protocol.trim() === '' || name.trim() === '' || provisioning.trim() === ''
+    protocol.trim() === '' ||
+    name.trim() === '' ||
+    provisioning.trim() === '' ||
+    usernameMissing
 
   const triStateSelect = (
     value: TriState,
@@ -1001,6 +1020,29 @@ function SsoProviderWriteForm({
           onChange={(event) => setProvisioning(event.target.value)}
           label={t('sso.provider.provisioningLabel')}
         />
+        {provisioningJit && (
+          <TextField
+            select
+            size="small"
+            value={usernameStrategy}
+            onChange={(event) => setUsernameStrategy(event.target.value)}
+            label={t('sso.provider.usernameStrategyLabel')}
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="user-confirm">
+              {t('sso.provider.usernameStrategy.userConfirm')}
+            </MenuItem>
+            <MenuItem value="claim">{t('sso.provider.usernameStrategy.claim')}</MenuItem>
+          </TextField>
+        )}
+        {claimStrategy && (
+          <TextField
+            size="small"
+            value={usernameClaim}
+            onChange={(event) => setUsernameClaim(event.target.value)}
+            label={t('sso.provider.usernameClaimLabel')}
+          />
+        )}
         {triStateSelect(enabled, setEnabled, t('sso.provider.enabledLabel'))}
         {triStateSelect(trustIdpMfa, setTrustIdpMfa, t('sso.provider.trustIdpMfaLabel'))}
         {triStateSelect(
@@ -1043,6 +1085,12 @@ function SsoProviderWriteForm({
               protocol,
               name,
               provisioning,
+              ...(provisioningJit
+                ? {
+                    username_strategy: usernameStrategy,
+                    ...(claimStrategy ? { username_claim: usernameClaim } : {}),
+                  }
+                : {}),
               ...(enabled === 'unchanged' ? {} : { enabled: enabled === 'true' }),
               ...(trustIdpMfa === 'unchanged'
                 ? {}
@@ -1068,6 +1116,8 @@ function SsoProviderWriteForm({
                 setProtocol('')
                 setName('')
                 setProvisioning('')
+                setUsernameStrategy('user-confirm')
+                setUsernameClaim('')
                 setEnabled('unchanged')
                 setTrustIdpMfa('unchanged')
                 setAllowIdpInitiated('unchanged')

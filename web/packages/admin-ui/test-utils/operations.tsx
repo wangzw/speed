@@ -436,6 +436,8 @@ export function providerFixture(
     name: 'Acme IdP',
     enabled: true,
     provisioning: '',
+    username_strategy: '',
+    username_claim: '',
     trust_idp_mfa: false,
     allow_idp_initiated: false,
     allow_sha1: false,

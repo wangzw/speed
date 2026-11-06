@@ -1359,6 +1359,12 @@
       "protocolLabel": "Protocol",
       "nameLabel": "Name",
       "provisioningLabel": "Provisioning",
+      "usernameStrategyLabel": "Username strategy",
+      "usernameStrategy": {
+        "claim": "From claim",
+        "userConfirm": "User confirms"
+      },
+      "usernameClaimLabel": "Username claim",
       "enabledLabel": "Enabled",
       "trustIdpMfaLabel": "Trust IdP MFA",
       "allowIdpInitiatedLabel": "Allow IdP-initiated",
