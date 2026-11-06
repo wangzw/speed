@@ -208,9 +208,12 @@ KEPT = {
     ),
     "tenant.alias_immutable": (
         "the alias-change route and its problem type were removed in T4, as were "
-        "the frontend rename control and its e2e step; only the error-text "
-        "whitelist entry in web/packages/admin-ui/src/internal/error-text.ts "
-        "remains to be removed in T6"
+        "the frontend rename control and its e2e step; the error-text whitelist "
+        "entry in web/packages/admin-ui/src/internal/error-text.ts, the assertion "
+        "on it in web/packages/admin-ui/src/internal/error-text.test.ts and the "
+        "errors.tenant.alias_immutable locale entries in "
+        "web/packages/i18n/src/platform-errors/locales/ and "
+        "web/packages/admin-ui/src/locales/ remain to be removed in T6"
     ),
 }
 
