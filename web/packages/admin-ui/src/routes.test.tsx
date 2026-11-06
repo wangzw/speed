@@ -123,7 +123,7 @@ describe('admin page declarations', () => {
       </AdminFeatureProvider>,
       { operations },
     )
-    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findAllByText('Acme')).not.toHaveLength(0)
     expect(
       screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
     ).toHaveAttribute('href', '/admin/permissions?tenant=acme')
@@ -153,7 +153,7 @@ describe('admin page declarations', () => {
       </AdminFeatureProvider>,
       { operations },
     )
-    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findAllByText('Acme')).not.toHaveLength(0)
     expect(
       screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
     ).toHaveAttribute('href', '/admin/permissions?tenant=acme')
@@ -179,7 +179,7 @@ describe('admin page declarations', () => {
       </AdminFeatureProvider>,
       { operations },
     )
-    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findAllByText('Acme')).not.toHaveLength(0)
     expect(
       screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
     ).toHaveAttribute('href', '/permissions?tenant=acme')

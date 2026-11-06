@@ -97,6 +97,10 @@ import type { SelfTenantKind } from './tenant-self.js'
 export interface DemoTenant extends TenantOption {
   /** The name the request surface carries (the roster alias). */
   readonly alias: string
+  /** The organization's display name as its profile reports it, empty when
+   * the profile names none. Business rows render it in preference to the
+   * alias; a personal row keeps the account's own name. */
+  readonly displayName?: string
   /** The tenant's kind from the caller tenant read. Absent on a row the host
    * adds from its own cache (the current tenant a platform staff member
    * entered, which that read did not list); such a row renders its alias. */
@@ -198,38 +202,53 @@ export function tenantAlias(
  */
 interface RecordedTenant {
   readonly alias: string
+  readonly displayName?: string
   readonly kind?: SelfTenantKind
 }
 
 let recordedTenants: ReadonlyMap<string, RecordedTenant> = new Map()
 
-/** Records the roster's current aliases, keyed by tenant id. The roster read
- * carries no kind: a kind an operation's answer already recorded for one of
- * these ids is kept, and a fresh id gets none. */
-export function setTenantAliases(aliases: ReadonlyMap<string, string>): void {
+/** Records the roster's current aliases and, when the caller read them, the
+ * display names too, keyed by tenant id. The roster read carries no kind: a
+ * kind an operation's answer already recorded for one of these ids is kept,
+ * and a fresh id gets none. An alias recorded without a display name keeps
+ * the one already known, so the two readers cannot drop each other's facts. */
+export function setTenantAliases(
+  aliases: ReadonlyMap<string, string>,
+  displayNames?: ReadonlyMap<string, string>,
+): void {
   recordedTenants = new Map(
     [...aliases].map(([id, alias]) => [
       id,
-      { alias, kind: recordedTenants.get(id)?.kind },
+      {
+        alias,
+        displayName:
+          displayNames?.get(id) ??
+          recordedTenants.get(id)?.displayName ??
+          '',
+        kind: recordedTenants.get(id)?.kind,
+      },
     ]),
   )
 }
 
 /**
  * Records one tenant's current alias, leaving the rest as they were, and its
- * kind when the answer carries one. An operation's answer that lands the
- * viewer in a tenant records it here before the caller tenant list re-reads,
- * so the request surface can name the tenant it is about to act in and the
- * switcher can label the row.
+ * kind and display name when the answer carries them. An operation's answer
+ * that lands the viewer in a tenant records it here before the caller tenant
+ * list re-reads, so the request surface can name the tenant it is about to
+ * act in and the switcher can label the row.
  */
 export function setTenantAlias(
   tenantId: string,
   alias: string,
   kind?: SelfTenantKind,
+  displayName?: string,
 ): void {
   const next = new Map(recordedTenants)
   next.set(tenantId, {
     alias,
+    displayName: displayName ?? next.get(tenantId)?.displayName ?? '',
     kind: kind ?? next.get(tenantId)?.kind,
   })
   recordedTenants = next
@@ -244,6 +263,16 @@ export function setTenantAlias(
  */
 export function getRecordedTenantAlias(tenantId: string): string | null {
   return recordedTenants.get(tenantId)?.alias ?? null
+}
+
+/** One tenant's display name as the host recorded it, or null when none did.
+ * A recorded empty value is the profile's own empty value, not an answer a
+ * surface should render: the caller falls back to the alias. */
+export function getRecordedTenantDisplayName(tenantId: string): string | null {
+  const displayName = recordedTenants.get(tenantId)?.displayName
+  return displayName === undefined || displayName.trim() === ''
+    ? null
+    : displayName
 }
 
 /** One tenant's kind as an operation's answer recorded it, or null when none
@@ -365,18 +394,22 @@ export interface AccountMenuOrganizations {
 }
 
 /**
- * The name an organization row renders. A tenant record carries no display
- * name, so a row renders its alias -- the request-surface name, never
- * translated -- except a row whose kind is `personal`, which renders
- * `personalLabel`. The kind comes from the caller tenant read, so another
- * account's personal tenant (which the list can hold) renders its alias too:
- * only the host's own answer marks a row personal.
+ * The name an organization row renders. A business organization renders its
+ * display name when its profile names one, otherwise its alias -- the
+ * request-surface name, never translated. A row whose kind is `personal`
+ * renders `personalLabel` instead. The kind comes from the caller tenant
+ * read, so another account's personal tenant (which the list can hold)
+ * renders its own name too: only the host's own answer marks a row personal.
  */
 export function tenantDisplayName(
   tenant: DemoTenant,
   personalLabel: string,
 ): string {
-  return tenant.kind === 'personal' ? personalLabel : tenant.alias
+  if (tenant.kind === 'personal') {
+    return personalLabel
+  }
+  const displayName = tenant.displayName?.trim() ?? ''
+  return displayName === '' ? tenant.alias : displayName
 }
 
 /**

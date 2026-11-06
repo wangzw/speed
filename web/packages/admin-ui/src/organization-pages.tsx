@@ -20,6 +20,7 @@
 
 import type { ReactElement } from 'react'
 import {
+  useOrganizationAdminOnTenantUpdated,
   useOrganizationAdminProtectedRoles,
   useOrganizationAdminTenant,
 } from './OrganizationAdminProvider.js'
@@ -27,11 +28,23 @@ import { OrganizationMembersPage } from './OrganizationMembersPage.js'
 import { OrganizationRolesPage } from './OrganizationRolesPage.js'
 import { OrganizationSecurityPage } from './OrganizationSecurityPage.js'
 import { SsoPage } from './SsoPage.js'
+import { TenantProfilePage } from './TenantProfilePage.js'
 
 /** Members and invitations, scoped to the host's current tenant. */
 export function OrganizationInvitationsPage(): ReactElement {
   const tenant = useOrganizationAdminTenant()
   return <OrganizationMembersPage tenant={tenant} />
+}
+
+/** The organization's profile, scoped to the host's current tenant. A
+ * landed save reaches the host's `onTenantUpdated`, which reloads the
+ * caller tenant list the menu and the breadcrumb show. */
+export function OrganizationProfilePage(): ReactElement {
+  const tenant = useOrganizationAdminTenant()
+  const onTenantUpdated = useOrganizationAdminOnTenantUpdated()
+  return (
+    <TenantProfilePage tenant={tenant} onTenantUpdated={onTenantUpdated} />
+  )
 }
 
 /** SSO providers, scoped to the host's current tenant. */

@@ -60,6 +60,7 @@ const ORGANIZATION_FEATURES = readyFeatures(
   'authn.admin.sso',
   'authz.tenantadmin',
   'settings.tenantadmin',
+  'tenant.profile',
 )
 
 interface TenantRow {
@@ -181,6 +182,22 @@ function scriptReads(options: {
         settings: [],
         writable: true,
         read_only_reason: '',
+      } as T)
+    }
+    // The organization profile page's read.
+    if (path.endsWith('/profile')) {
+      return Promise.resolve({
+        profile: {
+          id: 'acme',
+          alias: 'acme',
+          displayName: '',
+          description: '',
+          contactEmail: '',
+          website: '',
+          ownerAccount: '',
+          status: 'active',
+          createdAt: '2026-01-01T00:00:00Z',
+        },
       } as T)
     }
     return Promise.reject(new Error(`unexpected request: ${path}`))
@@ -345,14 +362,16 @@ const ORGANIZATION_ENTRY_LABELS = [
   tAdmin('organization.nav.sso'),
   tAdmin('organization.nav.roles'),
   tAdmin('organization.nav.settings'),
+  tAdmin('organization.nav.profile'),
 ] as const
 
-/** Every organization permission, so all four declarations are openable. */
+/** Every organization permission, so all five declarations are openable. */
 const ALL_ORGANIZATION_PERMISSIONS = [
   'authn.membership.manage',
   'authn.idp.manage',
   'authz.tenant.role.read',
   'settings.tenant.read',
+  'tenant.profile.read',
 ] as const
 
 beforeEach(() => {
@@ -533,6 +552,7 @@ describe('the organization admin entry', () => {
       [tAdmin('organization.nav.sso'), '/organization/admin/sso'],
       [tAdmin('organization.nav.roles'), '/organization/admin/roles'],
       [tAdmin('organization.nav.settings'), '/organization/admin/settings'],
+      [tAdmin('organization.nav.profile'), '/organization/admin/profile'],
     ] as const
     for (const [label, path] of destinations) {
       await user.click(screen.getByTestId('user-menu-trigger'))
@@ -562,6 +582,7 @@ describe('the organization admin entry', () => {
       [tAdmin('organization.nav.sso'), '/organization/admin/sso'],
       [tAdmin('organization.nav.roles'), '/organization/admin/roles'],
       [tAdmin('organization.nav.settings'), '/organization/admin/settings'],
+      [tAdmin('organization.nav.profile'), '/organization/admin/profile'],
     ] as const
     await user.click(screen.getByTestId('user-menu-trigger'))
     const menu = await screen.findByRole('menu')

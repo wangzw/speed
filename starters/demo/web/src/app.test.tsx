@@ -444,6 +444,13 @@ describe('the admin area', () => {
     // shell spends no roster read to settle the tenant.
     expect(tenantAtRead).toEqual([TENANT_ID])
     expect(requested).toContain('/api/v1/auth/me/tenants')
+    // The personal organization is created by the account's own transaction
+    // on the server; the frontend has no ensure call to make. A path here
+    // would be a reintroduced request against a route that no longer exists.
+    expect(
+      requested.some((path) => path.includes('/orgs/personal')),
+      'the app must not call the retired personal-organization ensure route',
+    ).toBe(false)
   })
 
   it('settles the caller list when the deployment serves no roster', async () => {

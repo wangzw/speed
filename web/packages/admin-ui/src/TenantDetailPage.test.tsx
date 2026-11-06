@@ -9,9 +9,10 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import { act, screen } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { FeatureName } from '@speed/api-sdk/features'
+import { formatInstant } from '@speed/i18n'
 import { TenantDetailPage } from './TenantDetailPage.js'
 import type { AdminTenant } from './operations.js'
 import type { AdminRoute } from './route.js'
@@ -98,7 +99,7 @@ describe('TenantDetailPage', () => {
       />,
       { operations },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
 
     // Every link lands on the path its sibling declaration publishes, with
     // the tenant in the query parameter those pages read their selection
@@ -124,7 +125,7 @@ describe('TenantDetailPage', () => {
       { operations },
       { routes: null },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     expect(
       screen.queryByRole('heading', {
         level: 2,
@@ -144,7 +145,7 @@ describe('TenantDetailPage', () => {
     renderDetail(<TenantDetailPage id="acme" />, { operations }, {
       routes: relativeRoutes,
     })
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     expect(
       screen.queryByRole('link', { name: zhCN.tenantDetail.related.permissions }),
     ).toBeNull()
@@ -157,7 +158,7 @@ describe('TenantDetailPage', () => {
       { operations },
       { routes: RELATED_ROUTES.filter((route) => route.id !== 'sso') },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
 
     expect(
       screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
@@ -174,7 +175,7 @@ describe('TenantDetailPage', () => {
       { operations },
       { hasFeature: (name) => name !== 'authn.admin.sso' },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
 
     expect(
       screen.queryByRole('link', { name: zhCN.tenantDetail.related.sso }),
@@ -194,7 +195,7 @@ describe('TenantDetailPage', () => {
       />,
       { operations },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
 
     expect(
       screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
@@ -211,7 +212,7 @@ describe('TenantDetailPage', () => {
       />,
       { operations },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
 
     // The override's own query survives and the tenant is still a key, so
     // the target page seeds its selection from it.
@@ -232,7 +233,7 @@ describe('TenantDetailPage', () => {
       />,
       { operations },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
 
     // Both slots receive the loaded tenant, and the host section follows
     // the page's own sections in the main column.
@@ -271,7 +272,7 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
 
-    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findAllByText('Acme')).not.toHaveLength(0)
     expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
     expect(getTenant).toHaveBeenCalledWith({ id: 'acme' })
   })
@@ -436,7 +437,7 @@ describe('TenantDetailPage', () => {
       <TenantDetailPage id="acme" parentHref="/admin/tenants" />,
       { operations },
     )
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     expect(
       screen.getByRole('link', { name: zhCN.tenantDetail.back }),
     ).toHaveAttribute(
@@ -476,7 +477,7 @@ describe('TenantDetailPage', () => {
       await screen.findByText(zhCN.detail.notFound.title),
     ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: zhCN.tenantDetail.retry }))
-    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(await screen.findAllByText('Acme')).not.toHaveLength(0)
     expect(getTenant).toHaveBeenCalledTimes(2)
   })
 
@@ -493,7 +494,7 @@ describe('TenantDetailPage', () => {
     })
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
 
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
     // The 404 makes the older content meaningless: it is replaced, not
@@ -501,7 +502,7 @@ describe('TenantDetailPage', () => {
     expect(
       await screen.findByText(zhCN.detail.notFound.title),
     ).toBeInTheDocument()
-    expect(screen.queryByText('Acme')).toBeNull()
+    expect(screen.queryAllByText('Acme')).toHaveLength(0)
   })
 
   it('renders the retryable error placeholder when the read fails otherwise', async () => {
@@ -533,7 +534,7 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     expect(
       screen.getByText(zhCN.tenantDetail.field.disabledBy),
     ).toBeInTheDocument()
@@ -555,7 +556,7 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
     expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
   })
@@ -570,7 +571,7 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
   })
 
@@ -581,10 +582,129 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     expect(screen.queryByText(zhCN.tenantDetail.field.disabledBy)).toBeNull()
     expect(screen.queryByText(zhCN.tenants.disabledBy.operator)).toBeNull()
     expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
+  })
+
+  it('shows the profile fields and creation time in the summary', async () => {
+    const createdAt = '2026-10-15T12:00:00Z'
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getTenant: () =>
+          Promise.resolve(
+            tenantFixture({
+              id: 'acme',
+              alias: 'acme-inc',
+              displayName: 'Acme Incorporated',
+              description: 'A canned organization.',
+              contactEmail: 'ops@acme.example',
+              website: 'https://acme.example',
+              createdAt,
+            }),
+          ),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findAllByText('acme-inc')
+
+    // The summary states each profile fact once per field; the editable
+    // values also sit in the form, so the assertion is scoped to the summary
+    // card rather than the whole page.
+    const summary = screen.getByRole('region', {
+      name: zhCN.tenantDetail.summary,
+    })
+    expect(within(summary).getByText('Acme Incorporated')).toBeInTheDocument()
+    expect(within(summary).getByText('A canned organization.')).toBeInTheDocument()
+    expect(within(summary).getByText('ops@acme.example')).toBeInTheDocument()
+    expect(
+      within(summary).getByText('https://acme.example'),
+    ).toBeInTheDocument()
+    expect(
+      within(summary).getByText(
+        formatInstant(createdAt, 'zh-CN', { timeZone: 'UTC' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('writes the profile through the profile card and reports it there', async () => {
+    const user = userEvent.setup()
+    const updates: unknown[] = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getTenant: () =>
+          Promise.resolve(
+            tenantFixture({
+              id: 'acme',
+              alias: 'acme-inc',
+              displayName: 'Acme',
+              description: 'Old description',
+            }),
+          ),
+        setTenantProfile: (input) => {
+          updates.push(input)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findAllByText('acme-inc')
+
+    await user.clear(
+      screen.getByLabelText(zhCN.tenantProfile.field.displayName),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.tenantProfile.field.displayName),
+      'New name',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.tenantProfile.form.save }),
+    )
+
+    await vi.waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toEqual({
+      id: 'acme',
+      fields: {
+        displayName: 'New name',
+        description: 'Old description',
+        contactEmail: '',
+        website: '',
+      },
+    })
+    expect(
+      await screen.findByText(
+        zhCN.tenantProfile.form.savedNamed.replace('{{name}}', 'New name'),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the profile draft when the profile save is refused', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getTenant: () =>
+          Promise.resolve(tenantFixture({ id: 'acme', alias: 'acme-inc' })),
+        setTenantProfile: () => Promise.reject({ code: 'tenant.conflict' }),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findAllByText('acme-inc')
+
+    const displayName = screen.getByLabelText(
+      zhCN.tenantProfile.field.displayName,
+    )
+    await user.type(displayName, 'Unsaved')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.tenantProfile.form.save }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.tenant.conflict,
+    )
+    // The refused save leaves the draft as typed: the profile scope's
+    // failure does not reset the form.
+    expect(displayName).toHaveValue('Unsaved')
   })
 
   it('renders a tombstone read-only with no actions', async () => {
@@ -597,21 +717,25 @@ describe('TenantDetailPage', () => {
       }),
     )
     renderWithProviders(<TenantDetailPage id="gone" />, { operations })
-    await screen.findByText('Gone Co')
+    await screen.findAllByText('Gone Co')
     expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
     // A source describes a disabled tenant, and a tombstone is not one.
     expect(screen.queryByText(zhCN.tenantDetail.field.disabledBy)).toBeNull()
     expect(screen.queryByText(zhCN.tenants.disabledBy.operator)).toBeNull()
     expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
     // Deletion is terminal: the page renders the tenant and no write
-    // control at all.
+    // control at all -- neither the status control nor the profile form.
     expect(screen.queryByText(zhCN.tenantDetail.actions.title)).toBeNull()
+    expect(screen.queryByText(zhCN.tenantProfile.form.title)).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: zhCN.tenantProfile.form.save }),
+    ).toBeNull()
   })
 
   it('has no axe violations', async () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findByText('Acme')
+    await screen.findAllByText('Acme')
     await expectNoAxeViolations()
   })
 })

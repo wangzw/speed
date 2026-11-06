@@ -31,6 +31,9 @@ export interface SelfTenant {
   readonly id: string
   /** The name the request surface addresses the tenant by. */
   readonly alias: string
+  /** The organization's display name as its profile reports it, empty when
+   * the profile names none. A surface falls back to the alias then. */
+  readonly displayName: string
   /** The tenant's kind, as the host's resolver answered it through the read.
    * The set is closed: `business` or `personal`. The switcher labels and the
    * default settlement branch on this value, never on the identifier. */
@@ -129,9 +132,13 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
     const answer = await tenantSelfTenantsList()
     if (applies()) {
       publish({
-        tenants: answer.tenants.map(({ id, alias, kind }) => ({
+        tenants: answer.tenants.map(({ id, alias, displayName, kind }) => ({
           id,
           alias,
+          // The generated answer carries the field, but a suite's scripted
+          // rows predating it may not: an absent name is the same fact as an
+          // empty one, and no surface may throw on it.
+          displayName: typeof displayName === 'string' ? displayName : '',
           kind,
         })),
         settled: true,
@@ -149,4 +156,15 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
 /** One listed tenant's alias, or null when the list does not hold it. */
 export function selfTenantAlias(tenantId: string): string | null {
   return state.tenants.find((tenant) => tenant.id === tenantId)?.alias ?? null
+}
+
+/** One listed tenant's name as a surface shows it: the organization's
+ * display name, or its alias when the profile names none. Null when the
+ * list does not hold the tenant. */
+export function selfTenantDisplayName(tenantId: string): string | null {
+  const tenant = state.tenants.find((row) => row.id === tenantId)
+  if (tenant === undefined) {
+    return null
+  }
+  return tenant.displayName.trim() === '' ? tenant.alias : tenant.displayName
 }

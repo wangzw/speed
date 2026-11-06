@@ -105,6 +105,7 @@ export const EXPECTED_ROUTE_PATHS = [
   '/organization/admin/sso',
   '/organization/admin/roles',
   '/organization/admin/settings',
+  '/organization/admin/profile',
 ] as const
 
 /**
@@ -112,7 +113,7 @@ export const EXPECTED_ROUTE_PATHS = [
  * `?role=<name>` on entry, so scanning this address reaches the filtered
  * state -- the selected role and its clear control -- that the bare
  * declaration path never renders. The address is not a
- * route declaration: the organization declaration set stays at four pages,
+ * route declaration: the organization declaration set stays at five pages,
  * and this path is listed beside the derived table rather than added to it.
  * The role names a role the scripted backend answers in data mode.
  */
@@ -162,6 +163,7 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
   '/organization/admin/sso': demoEnUS.organization.accessFailed.title,
   '/organization/admin/roles': demoEnUS.organization.accessFailed.title,
   '/organization/admin/settings': demoEnUS.organization.accessFailed.title,
+  '/organization/admin/profile': demoEnUS.organization.accessFailed.title,
 }
 
 /**
@@ -205,6 +207,11 @@ export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
       readonly organization: { readonly nav: { readonly settings: string } }
     }
   ).organization.nav.settings,
+  '/organization/admin/profile': (
+    adminUiResources['en-US'] as unknown as {
+      readonly organization: { readonly nav: { readonly profile: string } }
+    }
+  ).organization.nav.profile,
 }
 
 /**

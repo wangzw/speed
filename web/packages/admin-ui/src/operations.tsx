@@ -133,6 +133,7 @@ import {
   smsAdminTemplatesRemove,
   smsAdminTemplatesSetEnabled,
   tenantAdminTenantsCreate,
+  tenantAdminTenantsProfile,
   tenantAdminTenantsSetStatus,
 } from '@speed/api-sdk'
 import type {
@@ -181,6 +182,8 @@ import type {
   TenantAdminTenantsSetStatusBodyStatus,
 } from '@speed/api-sdk'
 import { useAdminUiTranslation } from './internal/translation.js'
+import { profileWriteOf } from './TenantProfileFields.js'
+import type { TenantProfileFields } from './TenantProfileFields.js'
 
 /** The settings layer the console operates on: the global (platform)
  * layer, whose rows only platform staff may read and write. */
@@ -241,6 +244,14 @@ export interface AdminCreateTenantInput {
 export interface AdminSetTenantStatusInput {
   readonly id: string
   readonly status: AdminSetTenantStatusValue
+}
+
+/** PATCH /api/v1/system/tenants/:id/profile body: the four descriptive
+ * fields to write, with the tenant they belong to. The identifier, alias,
+ * state and creation time are not writable. */
+export interface AdminSetTenantProfileInput {
+  readonly id: string
+  readonly fields: TenantProfileFields
 }
 
 /** A tenant target for a read that stays disabled while no id is chosen. */
@@ -628,6 +639,13 @@ export interface AdminOperations {
     unknown,
     AdminSetTenantStatusInput
   >
+  /** PATCH /api/v1/system/tenants/:id/profile -- write a tenant's four
+   * descriptive fields. */
+  readonly useSetTenantProfile: () => UseMutationResult<
+    void,
+    unknown,
+    AdminSetTenantProfileInput
+  >
   /** GET /api/v1/system/settings[/:namespace] -- the declared items' views. */
   readonly useSettings: (
     namespace: string | undefined,
@@ -1002,6 +1020,26 @@ export const adminOperations: AdminOperations = {
       mutationFn: (input: AdminSetTenantStatusInput) =>
         tenantAdminTenantsSetStatus(input.id, { status: input.status }),
       onSuccess: (_answer, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsListQueryKey(),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
+        })
+      },
+    })
+  },
+
+  useSetTenantProfile: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: AdminSetTenantProfileInput) =>
+        tenantAdminTenantsProfile(input.id, profileWriteOf(input.fields)).then(
+          () => undefined,
+        ),
+      onSuccess: (_answer, input) => {
+        // The roster row carries the four fields, so both the list and the
+        // detail read are stale after a profile write.
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
         })

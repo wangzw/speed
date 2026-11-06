@@ -33,6 +33,7 @@ import {
   COLOR_MODE_STORAGE_KEY,
   getCurrentTenantAlias,
   getCurrentTenantId,
+  getRecordedTenantDisplayName,
   getRecordedTenantKind,
   initialColorModePreference,
   persistColorModePreference,
@@ -41,6 +42,7 @@ import {
   setTenantAlias,
   setTenantAliases,
   tenantAlias,
+  tenantDisplayName,
   UserMenu,
   useTenantSelection,
 } from './chrome.js'
@@ -126,6 +128,52 @@ describe('the tenant alias layer', () => {
     setTenantAliases(new Map([['acme', 'renamed']]))
     expect(getRecordedTenantKind('acme')).toBe('business')
     expect(getRecordedTenantKind('unknown')).toBeNull()
+  })
+
+  it('records the roster display name and renders it over the alias', () => {
+    setTenantAliases(
+      new Map([['acme', 'acme-inc']]),
+      new Map([['acme', 'Acme Incorporated']]),
+    )
+    expect(getRecordedTenantDisplayName('acme')).toBe('Acme Incorporated')
+    // A later alias-only read keeps the recorded display name rather than
+    // dropping it.
+    setTenantAliases(new Map([['acme', 'acme-inc']]))
+    expect(getRecordedTenantDisplayName('acme')).toBe('Acme Incorporated')
+    expect(getRecordedTenantDisplayName('unknown')).toBeNull()
+
+    // A business row renders its display name, falling back to the alias
+    // when the profile names none.
+    expect(
+      tenantDisplayName(
+        {
+          id: 'acme',
+          alias: 'acme-inc',
+          name: 'Acme Incorporated',
+          displayName: 'Acme Incorporated',
+        },
+        'Organization',
+      ),
+    ).toBe('Acme Incorporated')
+    expect(
+      tenantDisplayName(
+        { id: 'acme', alias: 'acme-inc', name: 'acme-inc' },
+        'Organization',
+      ),
+    ).toBe('acme-inc')
+    // A personal row keeps the account's own name, never the profile's.
+    expect(
+      tenantDisplayName(
+        {
+          id: 'personal-1',
+          alias: 'my-space',
+          name: 'my-space',
+          kind: 'personal',
+          displayName: 'The account space',
+        },
+        'Ada Lovelace',
+      ),
+    ).toBe('Ada Lovelace')
   })
 })
 
@@ -647,6 +695,7 @@ describe('the header account menu in the temporary drawer', () => {
           'authn.admin.sso',
           'authz.tenantadmin',
           'settings.tenantadmin',
+          'tenant.profile',
         ),
       }),
     )

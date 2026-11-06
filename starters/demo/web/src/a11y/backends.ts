@@ -86,6 +86,7 @@ import type {
   TenantAdminTenant,
   TenantAdminTenantsGet200,
   TenantAdminTenantsList200,
+  TenantProfileView,
   TenantSelfTenantsList200,
 } from '@speed/api-sdk'
 
@@ -125,6 +126,21 @@ const TENANT: TenantAdminTenant = {
   website: 'https://acme.example',
   ownerAccount: 'account-1',
   createdAt: INSTANT,
+}
+
+/** The scan tenant's organization profile, the same values its roster row
+ * carries. The profile route is a single object, so both modes answer it:
+ * the page has no empty state to reach. */
+const TENANT_PROFILE: TenantProfileView = {
+  id: TENANT.id,
+  alias: TENANT.alias,
+  status: TENANT.status,
+  contactEmail: TENANT.contactEmail,
+  description: TENANT.description,
+  displayName: TENANT.displayName,
+  website: TENANT.website,
+  ownerAccount: TENANT.ownerAccount,
+  createdAt: TENANT.createdAt,
 }
 
 const ACCOUNT: AuthnAdminAccount = {
@@ -473,6 +489,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
         'authn.idp.manage',
         'authz.tenant.role.read',
         'settings.tenant.read',
+        'tenant.profile.read',
       ],
     } satisfies AuthzSelfPermissions200,
     // The caller's own permission sets are not page data: the same grant is
@@ -485,6 +502,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
         'authn.idp.manage',
         'authz.tenant.role.read',
         'settings.tenant.read',
+        'tenant.profile.read',
       ],
     } satisfies AuthzSelfPermissions200,
   ),
@@ -513,6 +531,10 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
   '/api/v1/tenants/acme/impersonations': answer(
     { impersonations: [IMPERSONATION_RECORD], next_cursor: '' } satisfies AuthnAdminImpersonationList,
     { impersonations: [], next_cursor: '' } satisfies AuthnAdminImpersonationList,
+  ),
+  '/api/v1/tenants/acme/profile': answer(
+    { profile: TENANT_PROFILE },
+    { profile: TENANT_PROFILE },
   ),
   '/api/v1/auth/impersonation': answer(IMPERSONATION_GRANT, NOT_FOUND),
   '/api/v1/system/sms/templates': answer(

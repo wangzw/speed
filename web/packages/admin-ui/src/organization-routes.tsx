@@ -27,12 +27,14 @@ import { AdminNavLabel } from './internal/nav-label.js'
 import {
   InvitationsIcon,
   PermissionsIcon,
+  ProfileIcon,
   SettingsIcon,
   SsoIcon,
 } from './internal/icons.js'
 import {
   OrganizationInvitationsPage,
   OrganizationPermissionsPage,
+  OrganizationProfilePage,
   OrganizationSettingsPage,
   OrganizationSsoPage,
 } from './organization-pages.js'
@@ -74,5 +76,17 @@ export const organizationAdminRoutes: AdminRouteTable = [
     icon: <SettingsIcon />,
     permission: 'settings.tenant.read',
     requires: ['settings.tenantadmin'],
+  },
+  {
+    id: 'organization-profile',
+    path: '/profile',
+    view: () => <OrganizationProfilePage />,
+    label: <AdminNavLabel labelKey="organization.nav.profile" />,
+    icon: <ProfileIcon />,
+    // The profile module's own read code and feature: the page's data is
+    // the organization profile, and a deployment without `tenant.profile`
+    // serves no route, page or navigation entry.
+    permission: 'tenant.profile.read',
+    requires: ['tenant.profile'],
   },
 ] satisfies readonly AdminRoute[]

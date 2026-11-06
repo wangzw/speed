@@ -366,19 +366,21 @@ describe('the inherited invitation, member and SSO reads key by tenant', () => {
   })
 })
 
-describe('the organization declarations for roles and settings', () => {
+describe('the organization declarations for roles, settings and profile', () => {
   it('carries the tenant-domain permission and feature codes', () => {
     expect(organizationAdminRoutes.map((route) => route.id)).toEqual([
       'organization-invitations',
       'organization-sso',
       'organization-roles',
       'organization-settings',
+      'organization-profile',
     ])
     expect(organizationAdminRoutes.map((route) => route.path)).toEqual([
       '/invitations',
       '/sso',
       '/roles',
       '/settings',
+      '/profile',
     ])
     const roles = organizationAdminRoutes.find(
       (route) => route.id === 'organization-roles',
@@ -392,6 +394,13 @@ describe('the organization declarations for roles and settings', () => {
     )
     expect(settings?.permission).toBe('settings.tenant.read')
     expect(settings?.requires).toEqual(['settings.tenantadmin'])
+    // The profile page is the tenant profile module's own read: its
+    // permission and feature both name tenant.profile.
+    const profile = organizationAdminRoutes.find(
+      (route) => route.id === 'organization-profile',
+    )
+    expect(profile?.permission).toBe('tenant.profile.read')
+    expect(profile?.requires).toEqual(['tenant.profile'])
     // The organization declarations never name the platform roster feature.
     for (const route of organizationAdminRoutes) {
       expect(route.requires).not.toContain('tenant.admin')

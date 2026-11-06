@@ -61,8 +61,7 @@
     },
     "tenant": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-      "conflict": "That identifier or alias is already taken by another organization.",
-      "alias_immutable": "The alias cannot be changed after creation."
+      "conflict": "That identifier or alias is already taken by another organization."
     },
     "settings": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
@@ -97,7 +96,8 @@
       "invitations": "Members & invitations",
       "sso": "SSO providers",
       "roles": "Roles & permissions",
-      "settings": "Security & access"
+      "settings": "Security & access",
+      "profile": "Organization profile"
     },
     "security": {
       "section": {
@@ -370,6 +370,42 @@
       "invitations": "Invitations and members",
       "sso": "SSO providers",
       "impersonations": "Impersonation records"
+    }
+  },
+  "tenantProfile": {
+    "loading": "Loading the organization profile",
+    "retry": "Try again",
+    "error": {
+      "title": "The organization profile could not be loaded",
+      "description": "This content didn't load. Try again shortly."
+    },
+    "identity": {
+      "title": "Identity",
+      "description": "These details identify the organization and cannot be changed here.",
+      "aliasHint": "The alias is fixed after the organization is created. It is the name links use to address the organization."
+    },
+    "field": {
+      "id": "Identifier",
+      "alias": "Alias",
+      "status": "Status",
+      "createdAt": "Created",
+      "displayName": "Display name",
+      "description": "Description",
+      "contactEmail": "Contact email",
+      "website": "Website"
+    },
+    "form": {
+      "title": "Profile",
+      "description": "How this organization is named and described to the people who administer it.",
+      "displayNameHint": "Leave empty to show the alias instead.",
+      "save": "Save profile",
+      "savedNamed": "Profile of organization \"{{name}}\" saved",
+      "invalid": {
+        "displayName": "Keep the display name to 100 characters or fewer.",
+        "description": "Keep the description to 500 characters or fewer.",
+        "contactEmail": "Enter a single email address.",
+        "website": "Enter an absolute http or https address."
+      }
     }
   },
   "auditDetail": {

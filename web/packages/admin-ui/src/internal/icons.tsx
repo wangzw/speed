@@ -251,3 +251,27 @@ export function AuditIcon({ size = 24 }: IconProps) {
     </svg>
   )
 }
+
+/** The organization profile: an identity card with its owner and its
+ * descriptive lines, the page that reads and edits them. */
+export function ProfileIcon({ size = 24 }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <circle cx="9" cy="10" r="2.2" />
+      <path d="M5.8 16.2c.5-1.9 1.8-2.9 3.2-2.9s2.7 1 3.2 2.9" />
+      <path d="M14.5 9h3.5M14.5 12h3.5M14.5 15h2.5" />
+    </svg>
+  )
+}

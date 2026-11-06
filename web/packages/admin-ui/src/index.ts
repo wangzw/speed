@@ -101,6 +101,7 @@ export {
   type AdminAuditRecordsOptions,
   type AdminCreateTenantInput,
   type AdminSetTenantStatusInput,
+  type AdminSetTenantProfileInput,
   type AdminSetSettingInput,
   type AdminRemoveSettingInput,
   type AdminPermission,
@@ -183,6 +184,26 @@ export {
   type AdminTenantRelatedPage,
   type TenantDetailPageProps,
 } from './TenantDetailPage.js'
+export {
+  TenantProfilePage,
+  type TenantProfilePageProps,
+} from './TenantProfilePage.js'
+export {
+  TenantProfileForm,
+  type TenantProfileFormProps,
+} from './TenantProfileForm.js'
+export {
+  displayNameOf,
+  hasTenantProfileFieldErrors,
+  profileFieldsOf,
+  profileWriteOf,
+  validateTenantProfileFields,
+  TENANT_PROFILE_LIMITS,
+  type TenantProfileFieldError,
+  type TenantProfileFieldErrors,
+  type TenantProfileFields,
+  type TenantProfileWriteBody,
+} from './TenantProfileFields.js'
 export { SettingsPage } from './SettingsPage.js'
 export { OrganizationSecurityPage } from './OrganizationSecurityPage.js'
 export { AuditPage } from './AuditPage.js'
@@ -215,12 +236,14 @@ export { organizationAdminRoutes } from './organization-routes.js'
 export {
   OrganizationInvitationsPage,
   OrganizationPermissionsPage,
+  OrganizationProfilePage,
   OrganizationSettingsPage,
   OrganizationSsoPage,
 } from './organization-pages.js'
 export {
   OrganizationAdminProvider,
   useOrganizationAdminContext,
+  useOrganizationAdminOnTenantUpdated,
   useOrganizationAdminProtectedRoles,
   useOrganizationAdminTenant,
   type OrganizationAdminContextValue,
@@ -240,6 +263,8 @@ export {
   type AdminTenantGrant,
   type AdminTenantGrantRef,
   type AdminTenantPermission,
+  type AdminTenantProfile,
+  type AdminTenantProfileWriteInput,
   type AdminTenantRemoveSettingInput,
   type AdminTenantRole,
   type AdminTenantRoleRef,

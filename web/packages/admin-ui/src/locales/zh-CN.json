@@ -61,8 +61,7 @@
     },
     "tenant": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
-      "conflict": "该标识或别名已被其他组织占用。",
-      "alias_immutable": "别名创建后不可更改。"
+      "conflict": "该标识或别名已被其他组织占用。"
     },
     "settings": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
@@ -97,7 +96,8 @@
       "invitations": "成员与邀请",
       "sso": "SSO 提供方",
       "roles": "角色与权限",
-      "settings": "安全与访问"
+      "settings": "安全与访问",
+      "profile": "组织资料"
     },
     "security": {
       "section": {
@@ -370,6 +370,42 @@
       "invitations": "成员与邀请",
       "sso": "SSO 提供方",
       "impersonations": "冒充记录"
+    }
+  },
+  "tenantProfile": {
+    "loading": "正在加载组织资料",
+    "retry": "重试",
+    "error": {
+      "title": "组织资料加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "identity": {
+      "title": "身份",
+      "description": "这些信息标识这个组织，不能在此修改。",
+      "aliasHint": "别名在组织创建后固定，是链接里用来指代组织的名称。"
+    },
+    "field": {
+      "id": "标识",
+      "alias": "别名",
+      "status": "状态",
+      "createdAt": "创建时间",
+      "displayName": "显示名",
+      "description": "描述",
+      "contactEmail": "联系邮箱",
+      "website": "网站"
+    },
+    "form": {
+      "title": "资料",
+      "description": "这个组织的对外名称与简介，面向管理它的人显示。",
+      "displayNameHint": "留空时将显示别名。",
+      "save": "保存资料",
+      "savedNamed": "组织「{{name}}」的资料已保存",
+      "invalid": {
+        "displayName": "显示名请控制在 100 个字符以内。",
+        "description": "描述请控制在 500 个字符以内。",
+        "contactEmail": "请输入一个有效的邮箱地址。",
+        "website": "请输入以 http 或 https 开头的完整网址。"
+      }
     }
   },
   "auditDetail": {

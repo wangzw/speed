@@ -43,6 +43,12 @@ export interface OrganizationAdminContextValue {
    * role page must render as read-only. Empty when the host names none.
    */
   readonly protectedRoles: readonly string[]
+  /**
+   * The host's action after a profile save lands: reload the caller tenant
+   * list the account menu and the breadcrumb read. Absent, the profile page
+   * only re-reads its own read.
+   */
+  readonly onTenantUpdated?: () => void | Promise<unknown>
 }
 
 const OrganizationAdminContext = createContext<OrganizationAdminContextValue | null>(
@@ -75,6 +81,13 @@ export function useOrganizationAdminProtectedRoles(): readonly string[] {
   return useOrganizationAdminContext().protectedRoles
 }
 
+/** The host's action after a profile save lands, when the host supplied one. */
+export function useOrganizationAdminOnTenantUpdated():
+  | (() => void | Promise<unknown>)
+  | undefined {
+  return useOrganizationAdminContext().onTenantUpdated
+}
+
 export interface OrganizationAdminProviderProps {
   /** The current tenant the host resolved. Required: the package never
    * derives it from the session or the URL and never switches it. */
@@ -105,6 +118,10 @@ export interface OrganizationAdminProviderProps {
   /** Role names the tenant role page renders as read-only. Absent, no row
    * is treated as protected. */
   readonly protectedRoles?: readonly string[]
+  /** The host's action after a profile save lands: reload the caller tenant
+   * list the account menu and the breadcrumb read. Absent, the profile page
+   * only re-reads its own read. */
+  readonly onTenantUpdated?: () => void | Promise<unknown>
   readonly children: ReactNode
 }
 
@@ -122,6 +139,7 @@ export function OrganizationAdminProvider({
   breadcrumbs,
   invitationLink,
   protectedRoles,
+  onTenantUpdated,
   children,
 }: OrganizationAdminProviderProps) {
   // The operations context is declared in the console bundle's type, but
@@ -135,7 +153,7 @@ export function OrganizationAdminProvider({
   const scopedOperations = operations as unknown as AdminOperations
   const content = (
     <OrganizationAdminContext.Provider
-      value={{ tenant, protectedRoles: protectedRoles ?? [] }}
+      value={{ tenant, protectedRoles: protectedRoles ?? [], onTenantUpdated }}
     >
       <AdminOperationsProvider operations={scopedOperations}>
         <OrganizationAdminOperationsProvider operations={operations}>

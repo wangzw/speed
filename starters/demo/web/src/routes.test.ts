@@ -184,6 +184,7 @@ describe('the route table', () => {
       `${ORGANIZATION_ADMIN_PREFIX}/sso`,
       `${ORGANIZATION_ADMIN_PREFIX}/roles`,
       `${ORGANIZATION_ADMIN_PREFIX}/settings`,
+      `${ORGANIZATION_ADMIN_PREFIX}/profile`,
     ])
     for (const route of organizationAdminShellRoutes) {
       // The two management surfaces have disjoint path spaces: the admin
@@ -192,14 +193,16 @@ describe('the route table', () => {
     }
   })
 
-  it('keeps the four organization declarations with their tenant-domain codes', () => {
-    // The organization surface stays at four pages; the roles page is its
-    // own tenant-domain declaration, not the platform permissions page.
+  it('keeps the five organization declarations with their tenant-domain codes', () => {
+    // The organization surface stays at five pages; the roles page is its
+    // own tenant-domain declaration, not the platform permissions page, and
+    // the profile page is the tenant profile module's own read.
     expect(organizationAdminShellRoutes.map((route) => route.id)).toEqual([
       'organization-invitations',
       'organization-sso',
       'organization-roles',
       'organization-settings',
+      'organization-profile',
     ])
     expect(
       organizationAdminShellRoutes.map((route) => route.permission),
@@ -208,12 +211,14 @@ describe('the route table', () => {
       'authn.idp.manage',
       'authz.tenant.role.read',
       'settings.tenant.read',
+      'tenant.profile.read',
     ])
     expect(organizationAdminShellRoutes.map((route) => route.requires)).toEqual([
       ['authn.admin', 'authn.invitations'],
       ['authn.admin', 'authn.admin.sso'],
       ['authz.tenantadmin', 'authn.admin'],
       ['settings.tenantadmin'],
+      ['tenant.profile'],
     ])
   })
 })

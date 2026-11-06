@@ -2,12 +2,17 @@
  * TenantDetailPage: one tenant's administration detail.
  *
  * The roster's row-level enable/disable control lives on the roster page; this
- * page is the tenant in full -- its identifier, alias and status read from GET
- * /api/v1/system/tenants/:id, with the same enable/disable write gathered into
- * the main column. It is a detail page: a main column carrying the subject and
- * its control, beside a fixed-width side column carrying the tenant's metadata
- * and a way back to the roster. An alias is immutable after creation, so the
- * alias cell is read-only and carries its explanation.
+ * page is the tenant in full -- its identifier, alias, organization profile
+ * and status read from GET /api/v1/system/tenants/:id, with the same
+ * enable/disable write gathered into the main column. It is a detail page: a
+ * main column carrying the subject and its controls, beside a fixed-width
+ * side column carrying the tenant's metadata and a way back to the roster.
+ * An alias is immutable after creation, so it is read-only and there is no
+ * rename control. The summary shows the profile's four descriptive fields
+ * and the creation time; a profile card below the status control writes
+ * those four fields through the same shared form the organization surface
+ * uses. The status and profile are two control groups with two feedback
+ * scopes, each region directly under its own control.
  *
  * The read is an operation on the console operations bundle, so the page
  * builds no client and writes no query key. The status renders from the
@@ -39,11 +44,13 @@
  * column, both of which receive the loaded tenant.
  */
 
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
+import { formatInstant } from '@speed/i18n'
 import {
   ListSkeleton,
   SectionCard,
@@ -71,6 +78,12 @@ import {
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
+import { TenantProfileForm } from './TenantProfileForm.js'
+import {
+  displayNameOf,
+  profileFieldsOf,
+} from './TenantProfileFields.js'
+import type { TenantProfileFields } from './TenantProfileFields.js'
 
 /** The roster's closed status set; a value outside it renders the generic label. */
 const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
@@ -174,23 +187,28 @@ export function TenantDetailPage({
   sections,
   aside,
 }: TenantDetailPageProps) {
-  const { t } = useAdminUiTranslation()
+  const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const tenant = operations.useTenant({ id })
   const setStatus = operations.useSetTenantStatus()
-  // The actions section is one control group; its enable/disable reports
-  // through one scope and one region under the control. Each landed write
-  // confirms and names this tenant; a refusal resolves through the console
-  // whitelist.
-  const feedback = useWriteFeedback()
-  const regionRef = useFailureScroll(feedback.outcome)
+  // The status control reports through its own scope and region. The profile
+  // card is a second control group with its own scope, held inside
+  // TenantProfileCard so the two regions never sit in one component.
+  const statusFeedback = useWriteFeedback()
+  const statusRegionRef = useFailureScroll(statusFeedback.outcome)
+  // A refresh remounts the profile card through this key: its draft and its
+  // own feedback are withdrawn together with the re-read.
+  const [profileEpoch, setProfileEpoch] = useState(0)
 
   // The refresh action re-reads the tenant -- the page's one body read --
-  // and resets the actions scope first: a result written before the re-read
+  // and resets the status scope first: a result written before the re-read
   // would describe the page as it stood then.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenant-detail', tenant)],
-    feedback.reset,
+    () => {
+      statusFeedback.reset()
+      setProfileEpoch((epoch) => epoch + 1)
+    },
   )
 
   // The tenant-addressed pages all read the tenant from the same query
@@ -246,6 +264,10 @@ export function TenantDetailPage({
             <DefinitionRow label={t('tenantDetail.field.id')} value={settled.id} />
             <DefinitionRow label={t('tenantDetail.field.alias')} value={settled.alias} />
             <DefinitionRow
+              label={t('tenantProfile.field.displayName')}
+              value={displayNameOf(settled.displayName, settled.alias)}
+            />
+            <DefinitionRow
               label={t('tenantDetail.field.status')}
               value={statusLabel(settled.status, t)}
             />
@@ -255,6 +277,24 @@ export function TenantDetailPage({
                 value={disabledByLabel(settled.disabledBy, t)}
               />
             )}
+            <DefinitionRow
+              label={t('tenantProfile.field.description')}
+              value={settled.description || t('common.emptyValue')}
+            />
+            <DefinitionRow
+              label={t('tenantProfile.field.contactEmail')}
+              value={settled.contactEmail || t('common.emptyValue')}
+            />
+            <DefinitionRow
+              label={t('tenantProfile.field.website')}
+              value={settled.website || t('common.emptyValue')}
+            />
+            <DefinitionRow
+              label={t('tenantProfile.field.createdAt')}
+              value={formatInstant(settled.createdAt, i18n.language, {
+                timeZone: 'UTC',
+              })}
+            />
           </Box>
         </SectionCard>
 
@@ -272,10 +312,10 @@ export function TenantDetailPage({
             <Button
               type="button"
               variant="outlined"
-              disabled={feedback.pending}
-              loading={feedback.pending}
+              disabled={statusFeedback.pending}
+              loading={statusFeedback.pending}
               onClick={() => {
-                void feedback.run(async () => {
+                void statusFeedback.run(async () => {
                   await setStatus.mutateAsync({
                     id: settled.id,
                     status: disabled ? 'active' : 'disabled',
@@ -296,10 +336,17 @@ export function TenantDetailPage({
           </Box>
           {/* The actions section's one region, directly under the control
               whose write reports through it. */}
-          <Box ref={regionRef}>
-            <WriteFeedbackRegion outcome={feedback.outcome} />
+          <Box ref={statusRegionRef}>
+            <WriteFeedbackRegion outcome={statusFeedback.outcome} />
           </Box>
         </SectionCard>
+        )}
+
+        {!deleted && (
+          <TenantProfileCard
+            key={`${settled.id}:${profileEpoch}`}
+            tenant={settled}
+          />
         )}
 
         {related.length > 0 && (
@@ -341,7 +388,7 @@ export function TenantDetailPage({
         actions={
           <RefreshButton
             busy={pageRefresh.busy}
-            writePending={feedback.pending}
+            writePending={statusFeedback.pending}
             label={t('common.refresh')}
             onClick={pageRefresh.refresh}
           />
@@ -401,5 +448,63 @@ export function TenantDetailPage({
         }
       />
     </Box>
+  )
+}
+
+/**
+ * The platform detail's profile card: the four descriptive fields, with its
+ * own write scope and its region directly under the form. The card is a
+ * component of its own so this control group's result never shares a region
+ * with the status control above it.
+ *
+ * The draft starts from the settled tenant. A save invalidation re-reads the
+ * tenant; when the answer's values changed the draft adopts them, while a
+ * background refetch carrying the same values leaves an edit in progress
+ * alone. The host remounts the card on a page refresh, so a refresh withdraws
+ * both the draft and its result.
+ */
+function TenantProfileCard({ tenant }: { readonly tenant: AdminTenant }) {
+  const { t } = useAdminUiTranslation()
+  const operations = useAdminOperations()
+  const setProfile = operations.useSetTenantProfile()
+  const feedback = useWriteFeedback()
+  const regionRef = useFailureScroll(feedback.outcome)
+  const [draft, setDraft] = useState<TenantProfileFields>(() =>
+    profileFieldsOf(tenant),
+  )
+  const appliedSignature = useRef(JSON.stringify(profileFieldsOf(tenant)))
+  useEffect(() => {
+    const signature = JSON.stringify(profileFieldsOf(tenant))
+    if (appliedSignature.current === signature) {
+      return
+    }
+    appliedSignature.current = signature
+    setDraft(profileFieldsOf(tenant))
+  }, [tenant])
+
+  return (
+    <SectionCard
+      title={t('tenantProfile.form.title')}
+      description={t('tenantProfile.form.description')}
+      sx={{ mb: 3 }}
+    >
+      <TenantProfileForm
+        value={draft}
+        onChange={setDraft}
+        onSubmit={(next) => {
+          void feedback.run(async () => {
+            await setProfile.mutateAsync({ id: tenant.id, fields: next })
+            return t('tenantProfile.form.savedNamed', {
+              name: displayNameOf(next.displayName, tenant.alias),
+            })
+          })
+        }}
+        saving={feedback.pending}
+        alias={tenant.alias}
+      />
+      <Box ref={regionRef} sx={{ mt: 2 }}>
+        <WriteFeedbackRegion outcome={feedback.outcome} />
+      </Box>
+    </SectionCard>
   )
 }

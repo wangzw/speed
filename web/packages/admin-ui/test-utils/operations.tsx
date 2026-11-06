@@ -86,6 +86,7 @@ import type {
   AdminRoleRef,
   AdminSetSettingInput,
   AdminSetSmsTemplateEnabledInput,
+  AdminSetTenantProfileInput,
   AdminSetTenantStatusInput,
   AdminSetting,
   AdminSmsTemplatePage,
@@ -103,6 +104,8 @@ import type {
   AdminTenantGrant,
   AdminTenantGrantRef,
   AdminTenantPermission,
+  AdminTenantProfile,
+  AdminTenantProfileWriteInput,
   AdminTenantRemoveSettingInput,
   AdminTenantRole,
   AdminTenantRoleBindingPage,
@@ -122,6 +125,7 @@ export interface AdminBackend {
   getTenant: (query: AdminTenantQuery) => Promise<AdminTenant>
   createTenant: (input: AdminCreateTenantInput) => Promise<AdminTenant>
   setTenantStatus: (input: AdminSetTenantStatusInput) => Promise<void>
+  setTenantProfile: (input: AdminSetTenantProfileInput) => Promise<void>
   listSettings: (
     namespace: string | undefined,
   ) => Promise<readonly AdminSetting[]>
@@ -216,6 +220,8 @@ export interface AdminBackend {
   claimSsoDomain: (input: AdminClaimSsoDomainInput) => Promise<AdminSsoVerifyToken>
 
   // Tenant management surfaces (the organization bundle's own members).
+  getTenantProfile: (tenant: string) => Promise<AdminTenantProfile>
+  updateTenantProfile: (input: AdminTenantProfileWriteInput) => Promise<void>
   listTenantSettings: (tenant: string) => Promise<AdminTenantSettings>
   writeTenantSetting: (input: AdminTenantSetSettingInput) => Promise<void>
   removeTenantSetting: (input: AdminTenantRemoveSettingInput) => Promise<void>
@@ -273,6 +279,7 @@ export function makeAdminBackend(
         tenantFixture({ id: input.id, alias: input.alias, status: 'active' }),
       ),
     setTenantStatus: () => Promise.resolve(),
+    setTenantProfile: () => Promise.resolve(),
     listSettings: () => Promise.resolve([]),
     setSetting: () => Promise.resolve(),
     removeSetting: () => Promise.resolve(),
@@ -339,6 +346,8 @@ export function makeAdminBackend(
     updateSsoProvider: () => Promise.resolve(providerFixture()),
     claimSsoDomain: () => Promise.resolve({ verify_token: 'token' }),
 
+    getTenantProfile: () => Promise.resolve(profileFixture()),
+    updateTenantProfile: () => Promise.resolve(),
     listTenantSettings: () =>
       Promise.resolve({
         settings: [],
@@ -402,6 +411,24 @@ export function tenantFixture(
     description: '',
     displayName: '',
     website: '',
+    ...overrides,
+  }
+}
+
+/** A minimal tenant organization profile for the default profile read. */
+export function profileFixture(
+  overrides: Partial<AdminTenantProfile> = {},
+): AdminTenantProfile {
+  return {
+    id: 'acme',
+    alias: 'Acme',
+    displayName: '',
+    description: '',
+    contactEmail: '',
+    website: '',
+    ownerAccount: 'acc-1',
+    status: 'active',
+    createdAt: '2026-10-15T12:00:00Z',
     ...overrides,
   }
 }
@@ -527,6 +554,9 @@ const SMS_TEMPLATES_KEY = ['console-test', 'sms-templates'] as const
 function tenantSettingsKey(tenant: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-settings')
 }
+function tenantProfileKey(tenant: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-profile')
+}
 function tenantRolesKey(tenant: string) {
   return tenantQueryKey(tenant, 'console-test', 'tenant-roles')
 }
@@ -583,6 +613,17 @@ export function createAdminOperations(
       return useMutation({
         mutationFn: (input: AdminSetTenantStatusInput) =>
           backend.setTenantStatus(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: TENANTS_KEY })
+          void client.invalidateQueries({ queryKey: tenantKey(input.id) })
+        },
+      })
+    },
+    useSetTenantProfile: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminSetTenantProfileInput) =>
+          backend.setTenantProfile(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
           void client.invalidateQueries({ queryKey: tenantKey(input.id) })
@@ -1100,13 +1141,31 @@ export function createAdminOperations(
       })
     },
 
+    useTenantProfile: (tenant) =>
+      useQuery({
+        queryKey: tenantProfileKey(tenant),
+        queryFn: () => backend.getTenantProfile(tenant),
+        enabled: tenant !== '',
+      }),
+    useTenantProfileWrite: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantProfileWriteInput) =>
+          backend.updateTenantProfile(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantProfileKey(input.tenant),
+          })
+        },
+      })
+    },
+
     useTenantSettingsList: (tenant) =>
       useQuery({
         queryKey: tenantSettingsKey(tenant),
         queryFn: () => backend.listTenantSettings(tenant),
         enabled: tenant !== '',
-      }),
-    useTenantSettingsWrite: () => {
+      }),    useTenantSettingsWrite: () => {
       const client = useQueryClient()
       return useMutation({
         mutationFn: (input: AdminTenantSetSettingInput) =>

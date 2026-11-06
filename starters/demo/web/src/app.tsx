@@ -91,6 +91,7 @@ import {
   AppBrand,
   getCurrentTenantId,
   getRecordedTenantAlias,
+  getRecordedTenantDisplayName,
   getRecordedTenantKind,
   persistColorModePreference,
   setCurrentTenantId,
@@ -426,16 +427,26 @@ function AppFrame({
       presence.state === 'ready' ? presence.has : (): boolean => false
     const matchedLabel = match?.declaration.label
     // The organization's display name, the crumb's first step. The admission
-    // having settled `allowed` guarantees the tenant is known; the recorded
-    // alias covers a list that has not answered yet, and the id is the last
-    // resort so the crumb never goes blank.
+    // having settled `allowed` guarantees the tenant is known; a row the
+    // caller tenant list holds names it by display name, falling back to the
+    // alias, and the recorded cache covers a list that has not answered yet.
+    // The id is the last resort so the crumb never goes blank.
+    const organizationRow =
+      organizationAdmission.status === 'allowed'
+        ? selfTenants.tenants.find(
+            (tenant) => tenant.id === organizationAdmission.tenantId,
+          )
+        : undefined
     const organizationName =
       organizationAdmission.status === 'allowed'
-        ? (selfTenants.tenants.find(
-            (tenant) => tenant.id === organizationAdmission.tenantId,
-          )?.alias ??
+        ? (organizationRow === undefined
+            ? null
+            : (organizationRow.displayName.trim() === ''
+                ? organizationRow.alias
+                : organizationRow.displayName)) ??
+          getRecordedTenantDisplayName(organizationAdmission.tenantId) ??
           getRecordedTenantAlias(organizationAdmission.tenantId) ??
-          organizationAdmission.tenantId)
+          organizationAdmission.tenantId
         : ''
     // The first step names the organization and is not a destination: the
     // organization surface has no root page of its own, so a link here could
@@ -469,6 +480,7 @@ function AppFrame({
             breadcrumbs={breadcrumbs}
             invitationLink={invitationPath}
             protectedRoles={organizationAdminProtectedRoles}
+            onTenantUpdated={loadSelfTenants}
           >
             <OrganizationRouteGuard target={organizationAdmission.target}>
               <RouteView />
@@ -769,6 +781,9 @@ function TenantFrame({
         }
         setTenantAliases(
           new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
+          new Map(
+            answer.tenants.map((tenant) => [tenant.id, tenant.displayName]),
+          ),
         )
         setRosterFailed(false)
       })
@@ -902,11 +917,16 @@ function TenantFrame({
   const menuTenants: DemoTenant[] = selfState.tenants.map((tenant) => ({
     id: tenant.id,
     alias: tenant.alias,
-    name: tenant.alias,
+    // `name` is the row's display label: the profile's display name when it
+    // names one, the alias otherwise. The menu's own helper applies the same
+    // fallback (and keeps a personal row on the account's name).
+    name: tenant.displayName.trim() === '' ? tenant.alias : tenant.displayName,
+    displayName: tenant.displayName,
     kind: tenant.kind,
   }))
   if (tenantId !== null && !menuTenants.some((row) => row.id === tenantId)) {
     const alias = getRecordedTenantAlias(tenantId)
+    const recordedDisplayName = getRecordedTenantDisplayName(tenantId)
     if (alias !== null) {
       // The kind an operation's answer recorded lets the switcher label a row
       // the caller tenant read does not list yet; a row with none renders its
@@ -914,7 +934,8 @@ function TenantFrame({
       menuTenants.push({
         id: tenantId,
         alias,
-        name: alias,
+        name: recordedDisplayName ?? alias,
+        displayName: recordedDisplayName ?? undefined,
         kind: getRecordedTenantKind(tenantId) ?? undefined,
       })
     }

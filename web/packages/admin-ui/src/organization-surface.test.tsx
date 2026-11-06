@@ -97,24 +97,28 @@ describe('organizationAdminRoutes', () => {
       'organization-sso',
       'organization-roles',
       'organization-settings',
+      'organization-profile',
     ])
     expect(organizationAdminRoutes.map((route) => route.path)).toEqual([
       '/invitations',
       '/sso',
       '/roles',
       '/settings',
+      '/profile',
     ])
     expect(organizationAdminRoutes.map((route) => route.permission)).toEqual([
       'authn.membership.manage',
       'authn.idp.manage',
       'authz.tenant.role.read',
       'settings.tenant.read',
+      'tenant.profile.read',
     ])
     expect(organizationAdminRoutes.map((route) => route.requires)).toEqual([
       ['authn.admin', 'authn.invitations'],
       ['authn.admin', 'authn.admin.sso'],
       ['authz.tenantadmin', 'authn.admin'],
       ['settings.tenantadmin'],
+      ['tenant.profile'],
     ])
     // The organization declarations never name the platform roster feature: the
     // surface reads no roster and holds no tenant selector.
@@ -422,6 +426,8 @@ describe('OrganizationAdminProvider', () => {
         'useTenantGrantPermission',
         'useTenantGrants',
         'useTenantPermissions',
+        'useTenantProfile',
+        'useTenantProfileWrite',
         'useTenantRemoveRole',
         'useTenantRevokePermission',
         'useTenantRoleBindings',

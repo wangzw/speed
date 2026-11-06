@@ -41,6 +41,7 @@ import {
   clearSelfTenants,
   getSelfTenantState,
   loadSelfTenants,
+  selfTenantDisplayName,
 } from './tenant-self.js'
 import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
 import {
@@ -77,8 +78,8 @@ describe('the caller tenant list store', () => {
   it('replaces the list and marks it settled on a successful read', async () => {
     bindSelf(() => ({
       tenants: [
-        { id: 'acme', alias: 'acme-inc', kind: 'business' },
-        { id: 'personal-account-1', alias: 'my-space', kind: 'personal' },
+        { id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' },
+        { id: 'personal-account-1', alias: 'my-space', displayName: '', kind: 'personal' },
       ],
     }))
 
@@ -88,17 +89,43 @@ describe('the caller tenant list store', () => {
     // default settlement branch on it.
     expect(getSelfTenantState()).toEqual({
       tenants: [
-        { id: 'acme', alias: 'acme-inc', kind: 'business' },
-        { id: 'personal-account-1', alias: 'my-space', kind: 'personal' },
+        { id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' },
+        { id: 'personal-account-1', alias: 'my-space', displayName: '', kind: 'personal' },
       ],
       settled: true,
       failed: false,
     })
   })
 
+  it('carries the display name and falls back to the alias when it is empty', async () => {
+    bindSelf(() => ({
+      tenants: [
+        {
+          id: 'acme',
+          alias: 'acme-inc',
+          displayName: 'Acme Incorporated',
+          kind: 'business',
+        },
+        {
+          id: 'personal-account-1',
+          alias: 'my-space',
+          displayName: '',
+          kind: 'personal',
+        },
+      ],
+    }))
+    await loadSelfTenants()
+
+    // A profile that names a display name carries it; an empty one is the
+    // same fact as no name, so the accessor falls back to the alias.
+    expect(selfTenantDisplayName('acme')).toBe('Acme Incorporated')
+    expect(selfTenantDisplayName('personal-account-1')).toBe('my-space')
+    expect(selfTenantDisplayName('unknown')).toBeNull()
+  })
+
   it('keeps the settled rows and marks the list unsettled when a read fails', async () => {
     bindSelf(() => ({
-      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
     }))
     await loadSelfTenants()
 
@@ -111,7 +138,7 @@ describe('the caller tenant list store', () => {
     // the unsettled flag keeps a failed read from settling a current tenant or
     // standing in for "no memberships".
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
       settled: false,
       failed: true,
     })
@@ -156,7 +183,7 @@ describe('the caller tenant list store', () => {
       return calls === 1
         ? older
         : {
-            tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+            tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
           }
     })
 
@@ -164,7 +191,7 @@ describe('the caller tenant list store', () => {
     const newerRead = loadSelfTenants()
     await newerRead
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
       settled: true,
       failed: false,
     })
@@ -175,7 +202,7 @@ describe('the caller tenant list store', () => {
     rejectOlder(new Error('the older read failed'))
     await olderRead
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
       settled: true,
       failed: false,
     })

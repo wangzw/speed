@@ -84,8 +84,11 @@ import {
   getAuthzTenantadminRolesListQueryOptions,
   getSettingsTenantadminSettingsListQueryKey,
   getSettingsTenantadminSettingsListQueryOptions,
+  getTenantProfileGetQueryKey,
+  getTenantProfileGetQueryOptions,
   settingsTenantadminSettingsRemove,
   settingsTenantadminSettingsSet,
+  tenantProfileUpdate,
 } from '@speed/api-sdk'
 import type {
   AuthzTenantAdminBindingView,
@@ -98,6 +101,7 @@ import type {
   SettingsTenantAdminSetting,
   SettingsTenantAdminSettingSource,
   SettingsTenantAdminSettings,
+  TenantProfileView,
 } from '@speed/api-sdk'
 import { tenantQueryKey } from '@speed/auth-core'
 import type {
@@ -113,6 +117,8 @@ import type {
   AdminWriteMemberInput,
   AdminWriteSsoProviderInput,
 } from './operations.js'
+import { profileWriteOf } from './TenantProfileFields.js'
+import type { TenantProfileFields } from './TenantProfileFields.js'
 
 /** The tenant settings surface's read answer: the declared items it
  * exposes and whether this tenant's settings may be written at all. */
@@ -128,6 +134,18 @@ export type AdminTenantSetting = SettingsTenantAdminSetting
  * the global layer, or the declared default. The server decides it; the
  * page renders the reported value and never infers it. */
 export type AdminTenantSettingSource = SettingsTenantAdminSettingSource
+
+/** One tenant's organization profile (GET
+ * /api/v1/tenants/{tenant}/profile): the read-only identity, the four
+ * descriptive fields and the owner account. */
+export type AdminTenantProfile = TenantProfileView
+
+/** The profile write's target and draft. The route carries the tenant and
+ * the body carries all four fields. */
+export interface AdminTenantProfileWriteInput {
+  readonly tenant: string
+  readonly fields: TenantProfileFields
+}
 
 /** One tenant role (GET .../tenants/{tenant}/roles), structurally the
  * console's role row. */
@@ -229,6 +247,20 @@ export interface OrganizationAdminOperations
     | 'useUpdateSsoProvider'
     | 'useClaimSsoDomain'
   > {
+  // --- Tenant profile (/api/v1/tenants/{tenant}/profile) ----------------
+
+  /** GET .../tenants/{tenant}/profile -- the organization's profile. */
+  readonly useTenantProfile: (
+    tenant: string,
+  ) => UseQueryResult<AdminTenantProfile, unknown>
+  /** PATCH .../tenants/{tenant}/profile -- write the four descriptive
+   * fields; the identity is not writable. */
+  readonly useTenantProfileWrite: () => UseMutationResult<
+    void,
+    unknown,
+    AdminTenantProfileWriteInput
+  >
+
   // --- Tenant settings (/api/v1/tenants/{tenant}/settings) --------------
 
   /** GET .../tenants/{tenant}/settings -- every item the declarations
@@ -561,6 +593,31 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
     })
   },
 
+  // --- Tenant profile (/api/v1/tenants/{tenant}/profile) ----------------
+
+  useTenantProfile: (tenant) => {
+    const options = getTenantProfileGetQueryOptions(tenant)
+    return useQuery({
+      ...options,
+      queryKey: tenantQueryKey(tenant, ...options.queryKey),
+      select: (envelope) => envelope.profile,
+      enabled: tenant !== '',
+    })
+  },
+
+  useTenantProfileWrite: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: AdminTenantProfileWriteInput) =>
+        tenantProfileUpdate(input.tenant, profileWriteOf(input.fields)).then(
+          () => undefined,
+        ),
+      onSuccess: (_answer, input) => {
+        invalidateTenantProfile(queryClient, input.tenant)
+      },
+    })
+  },
+
   // --- Tenant settings (/api/v1/tenants/{tenant}/settings) --------------
 
   useTenantSettingsList: (tenant) => {
@@ -867,6 +924,18 @@ function invalidateTenantSsoProvider(
  * bare key is wrapped in the tenant prefix the read uses, so the
  * invalidation cannot drift from it.
  */
+function invalidateTenantProfile(
+  queryClient: ReturnType<typeof useQueryClient>,
+  tenant: string,
+): void {
+  void queryClient.invalidateQueries({
+    queryKey: tenantQueryKey(
+      tenant,
+      ...getTenantProfileGetQueryKey(tenant),
+    ),
+  })
+}
+
 function invalidateTenantSettings(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,

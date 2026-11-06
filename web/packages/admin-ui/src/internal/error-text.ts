@@ -69,11 +69,8 @@ export const ERROR_TEXT_CODES = [
   //
   // tenant admin: a 400 shape refusal, and the 409 a registration
   // colliding with an existing identifier or alias is answered with.
-  // tenant.alias_immutable has no writer since the alias-change route
-  // was removed in T4; it stays whitelisted until T6 removes it.
   'tenant.bad_request',
   'tenant.conflict',
-  'tenant.alias_immutable',
   // org create (the demo host's self-service surface): the 409s a
   // creation is refused with -- another creation in flight, the
   // account's active-organization cap, and a generated identifier or
