@@ -111,8 +111,14 @@ export const DESCRIPTION_MAX_RUNES = 500
 /** The maximum website length, in bytes, the server enforces. */
 export const WEBSITE_MAX_BYTES = 2048
 
-/** Blanks and control characters -- the code points the identifier rule refuses. */
-const REJECTED_IDENTIFIER = /[\s\u0000-\u001f\u007f]/
+/**
+ * The code points the identifier rule refuses: Unicode white space and
+ * control characters (`Cc`), the set the server's `unicode.IsSpace` and
+ * `unicode.IsControl` cover. The Unicode property escapes are required here:
+ * JavaScript's `\s` omits the C1 controls (U+0080--U+009F) and includes
+ * U+FEFF, which the server admits.
+ */
+const REJECTED_IDENTIFIER = /\p{White_Space}|\p{Cc}/u
 
 /** Whether a value is a slug the alias domain admits. */
 export function isAliasShape(value: string): boolean {

@@ -79,6 +79,17 @@ describe('the identifier rule', () => {
       expect(isRejectedIdentifier(value), JSON.stringify(value)).toBe(true)
     }
   })
+
+  it('matches the server on the C1 controls and U+FEFF', () => {
+    // The C1 controls are `Cc` but are absent from JavaScript's `\s`;
+    // U+FEFF is present in `\s` but is neither `Cc` nor Unicode white
+    // space. The server's unicode.IsSpace || unicode.IsControl refuses the
+    // former and admits the latter, so the client mirror must too.
+    for (const value of ['Ac\u0080me', 'Ac\u009fme']) {
+      expect(isRejectedIdentifier(value), JSON.stringify(value)).toBe(true)
+    }
+    expect(isRejectedIdentifier(`Ac${String.fromCharCode(0xfeff)}me`)).toBe(false)
+  })
 })
 
 describe('validateOrganizationCreateValues', () => {
