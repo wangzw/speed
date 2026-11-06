@@ -22,6 +22,8 @@ import (
 	"embed"
 	"io/fs"
 
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -91,6 +93,9 @@ func Module() core.Module {
 		Provides: []core.Provision{
 			{Token: (*tenant.Catalog)(nil), Exclusive: true},
 			{Token: (*TxCatalog)(nil), Exclusive: true},
+			{Token: (*tenant.AliasResolver)(nil), Exclusive: true},
+			{Token: (*authn.TenantAliasResolver)(nil), Exclusive: true},
+			{Token: (*authz.TenantAliasResolver)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newFilter()}},
 

@@ -78,7 +78,8 @@ func (p *product) routes() []route {
 		},
 		{
 			http.MethodPost, pathTenants, PermissionTenantManage,
-			prescreenJSON[createBody](p, createOperation.Handle(p.handleTenantCreate)),
+			prescreenJSONFields[createBody](p, nil, registrationForbiddenFields,
+				createOperation.Handle(p.handleTenantCreate)),
 		},
 		{
 			http.MethodGet, pathTenant, PermissionTenantRead,
@@ -94,7 +95,7 @@ func (p *product) routes() []route {
 		},
 		{
 			http.MethodPatch, pathTenantProfile, PermissionTenantManage,
-			prescreenJSONFields[setProfileInput](p, profileWriteFields,
+			prescreenJSONFields[setProfileInput](p, profileWriteFields, nil,
 				setProfileOperation.Handle(p.handleTenantSetProfile)),
 		},
 		{
@@ -165,6 +166,11 @@ func (p *product) mount(router speedhttp.Router) error {
 		return err
 	}
 	for _, tgt := range platformTargets {
+		// The tenant every module's platform management route names is an
+		// alias on the request surface and an identifier behind it. The layer
+		// is on the endpoint so that it precedes every module's handler under
+		// the prefix, not only this module's routes.
+		tgt.endpoint.Use(p.tenantAliasLayer())
 		for _, r := range p.routes() {
 			tgt.endpoint.Route(r.method, r.path, withRealm(tgt.name, r.handler))
 		}

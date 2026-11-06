@@ -11,16 +11,18 @@ import (
 // added to a record later does not reach a client by being there.
 
 // TenantAdminTenant is one tenant as the management routes show it. It carries
-// the tenant's identifier, the alias the request surface addresses it by, the
-// account that owns the organization, and its state, spelled the way
-// tenant.Status spells it: active, disabled or deleted. A disabled tenant also
-// carries who disabled it, spelled the way tenant.DisabledBy spells the source:
-// operator or account.
+// the alias the request surface addresses it by, the kind, the account that
+// owns the organization, and its state, spelled the way tenant.Status spells
+// it: active, disabled or deleted. A disabled tenant also carries who disabled
+// it, spelled the way tenant.DisabledBy spells the source: operator or account.
+//
+// It carries no identifier: the identifier is internal, and a client addresses
+// the tenant by the alias alone.
 type TenantAdminTenant struct {
-	_ struct{} `description:"One tenant as the management routes render it: the identifier, the alias, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled."`
+	_ struct{} `description:"One tenant as the management routes render it: the alias, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled."`
 
-	ID           string `json:"id" required:"true" description:"The tenant's identifier, the natural key the roster keys the row by."`
-	Alias        string `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
+	Alias        string `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by, and the name every view and path uses."`
+	Kind         string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias."`
 	DisplayName  string `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the alias then."`
 	Description  string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
 	ContactEmail string `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
@@ -50,10 +52,10 @@ type tenantView = TenantAdminTenant
 // everywhere else, so the source it carries belongs with it. Rendering it only
 // for the literal StatusDisabled would leave such a row showing a disabled state
 // and no reason, which is the contradiction the view exists to avoid.
-func tenantViewOf(t tenant.Tenant) TenantAdminTenant {
+func tenantViewOf(t tenant.Tenant, kind tenant.Kind) TenantAdminTenant {
 	view := TenantAdminTenant{
-		ID:           string(t.ID),
 		Alias:        t.Alias,
+		Kind:         string(kind),
 		DisplayName:  t.Profile.DisplayName,
 		Description:  t.Profile.Description,
 		ContactEmail: t.Profile.ContactEmail,

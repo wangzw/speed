@@ -455,26 +455,12 @@ func (r *resolver) admit(c *gin.Context) (admitted bool) {
 
 // lookUp resolves the name the selected extractor read to the tenant it names.
 //
-// The name is looked up as an alias first, which is what a host announces for
-// the tenant it is acting in, then as an identifier: a tenant-addressed request
-// carries the tenant's identifier in its path, and the transport announces that
-// same identifier so the two agree even after the tenant is renamed. A name
-// outside the identifier's domain is not tried as one, because no row could
-// carry it.
-//
-// An alias wins over an identifier when both resolve. A tenant-addressed route
-// still holds the path segment to the resolved tenant (the path-tenant guard),
-// so a name that also happens to be another tenant's alias cannot address a
-// tenant other than the one in the path: the guard refuses the pair.
+// The name is an alias and only an alias. The identifier is internal and is
+// never a name a request surface may carry: a request that sends one is a
+// request for a tenant no name reaches, and it is refused like any other
+// unknown name rather than resolved through a second lookup.
 func (r *resolver) lookUp(ctx context.Context, name string) (tenant.Tenant, bool, error) {
-	found, present, err := r.roster.ByAlias(ctx, name)
-	if err != nil || present {
-		return found, present, err
-	}
-	if !tenant.IsIdentifier(name) {
-		return tenant.Tenant{}, false, nil
-	}
-	return r.roster.Get(ctx, tenant.ID(name))
+	return r.roster.ByAlias(ctx, name)
 }
 
 // refuse answers the one status this layer refuses with, and records why.

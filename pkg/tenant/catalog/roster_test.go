@@ -342,36 +342,36 @@ func TestAnUnreadRosterRefusesTheReads(t *testing.T) {
 	}
 }
 
-// identifiersOf joins a listing's identifiers in the order the listing returned
-// them, so that a case can state the order it wants as one value.
-func identifiersOf(list []tenant.Tenant) string {
-	ids := make([]string, len(list))
+// aliasesOf joins a listing's aliases in the order the listing returned them,
+// so that a case can state the order it wants as one value.
+func aliasesOf(list []tenant.Tenant) string {
+	aliases := make([]string, len(list))
 	for i, entry := range list {
-		ids[i] = string(entry.ID)
+		aliases[i] = entry.Alias
 	}
-	return strings.Join(ids, ",")
+	return strings.Join(aliases, ",")
 }
 
-// TestListIsOrderedByIdentifierAndIsACopy holds the two things List promises
+// TestListIsOrderedByAliasAndIsACopy holds the two things List promises
 // about what it hands out.
 //
-// The order is the module's, not the table's: the snapshot is sorted by
-// identifier as it is built, so a listing does not depend on the order the rows
-// happen to come back in. The rows here are written in an order of their own so
+// The order is the module's, not the table's: the snapshot is sorted by alias
+// as it is built, so a listing does not depend on the order the rows happen to
+// come back in, and it orders by the only name a client reads. The rows here are written in an order of their own so
 // that a listing which merely echoed the table's order would be told apart from
-// one ordered by identifier. What is read is the identifier order that comes
-// out, which is this promise's own expression: it is what a caller that wants a
-// stable enumeration relies on, and comparing the tenants as a bag of values
-// would hold nothing about it.
+// one ordered by alias. What is read is the alias order that comes out, which is
+// this promise's own expression: it is what a caller that wants a stable
+// enumeration relies on, and comparing the tenants as a bag of values would
+// hold nothing about it.
 //
 // The slice is a copy: a caller sorting or trimming what it was handed must not
 // disturb what the next caller sees. Mutating the returned slice and listing
 // again is what holds that half.
-func TestListIsOrderedByIdentifierAndIsACopy(t *testing.T) {
+func TestListIsOrderedByAliasAndIsACopy(t *testing.T) {
 	r := rosterOver(t,
-		insert("carol", "carol"),
-		insert("alice", "alice"),
-		insert("bob", "bob"),
+		insert("t_carol", "carol"),
+		insert("t_alice", "alice"),
+		insert("t_bob", "bob"),
 	)
 	ctx := context.Background()
 	if err := r.read(ctx); err != nil {
@@ -382,8 +382,8 @@ func TestListIsOrderedByIdentifierAndIsACopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listing the roster: %v", err)
 	}
-	if held := identifiersOf(got); held != "alice,bob,carol" {
-		t.Errorf("List returned the identifiers %q, want them ordered by identifier %q",
+	if held := aliasesOf(got); held != "alice,bob,carol" {
+		t.Errorf("List returned the aliases %q, want them ordered by alias %q",
 			held, "alice,bob,carol")
 	}
 
@@ -395,9 +395,34 @@ func TestListIsOrderedByIdentifierAndIsACopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listing the roster a second time: %v", err)
 	}
-	if held := identifiersOf(again); held != "alice,bob,carol" {
+	if held := aliasesOf(again); held != "alice,bob,carol" {
 		t.Errorf("a caller's change to the slice it was handed changed the next list: %q, want %q",
 			held, "alice,bob,carol")
+	}
+}
+
+// TestAliasOfAnswersTheAliasByIdentifier holds the id-to-alias seam: the roster
+// answers the alias a view or an audit row names, and an identifier no row
+// carries answers empty rather than failing.
+func TestAliasOfAnswersTheAliasByIdentifier(t *testing.T) {
+	r := rosterOver(t, insert("t_alice", "alice"))
+	ctx := context.Background()
+	if err := r.read(ctx); err != nil {
+		t.Fatalf("reading a conforming roster: %v", err)
+	}
+	alias, err := r.AliasOf(ctx, "t_alice")
+	if err != nil {
+		t.Fatalf("reading the alias: %v", err)
+	}
+	if alias != "alice" {
+		t.Errorf("alias = %q, want alice", alias)
+	}
+	missing, err := r.AliasOf(ctx, "t_ghost")
+	if err != nil {
+		t.Fatalf("reading an unknown identifier's alias: %v", err)
+	}
+	if missing != "" {
+		t.Errorf("an unknown identifier answered %q, want the empty alias", missing)
 	}
 }
 

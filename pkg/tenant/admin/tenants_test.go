@@ -32,7 +32,7 @@ func TestTheListAnswersEveryTenantInRosterOrder(t *testing.T) {
 	}
 	decode(t, w, &got)
 	if len(got.Tenants) != 2 ||
-		got.Tenants[0].ID != "t_acme" || got.Tenants[1].ID != "t_globex" {
+		got.Tenants[0].Alias != "acme" || got.Tenants[1].Alias != "globex" {
 		t.Fatalf("tenants = %+v, want acme then globex, in the roster's order", got.Tenants)
 	}
 	if got.Tenants[0].Status != "active" || got.Tenants[1].Status != "disabled" {
@@ -53,8 +53,8 @@ func TestTheGetAnswersOneTenant(t *testing.T) {
 		Tenant tenantView `json:"tenant"`
 	}
 	decode(t, w, &got)
-	if got.Tenant.ID != "t_acme" || got.Tenant.Alias != "acme" || got.Tenant.Status != "active" {
-		t.Errorf("tenant = %+v, want acme active", got.Tenant)
+	if got.Tenant.Alias != "acme" || got.Tenant.Status != "active" || got.Tenant.Kind != "business" {
+		t.Errorf("tenant = %+v, want acme active and business", got.Tenant)
 	}
 	calls := r.catalog.recorded()
 	if len(calls) != 1 || calls[0].op != "Get" || calls[0].id != "t_acme" {
@@ -94,7 +94,7 @@ func TestTheAliasChangeRouteIsGone(t *testing.T) {
 
 func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	r := newRig(t)
-	w := r.do(http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"})
+	w := r.do(http.MethodPost, pathTenants, createBody{Alias: "acme"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (body %s)", w.Code, w.Body.String())
 	}
@@ -102,7 +102,7 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 		Tenant tenantView `json:"tenant"`
 	}
 	decode(t, w, &got)
-	if got.Tenant.ID != "t_acme" || got.Tenant.Alias != "acme" || got.Tenant.Status != "active" {
+	if got.Tenant.Alias != "acme" || got.Tenant.Status != "active" {
 		t.Errorf("tenant = %+v, want the registration, active", got.Tenant)
 	}
 	// The answer carries the creation instant the roster recorded, not the zero
@@ -115,11 +115,15 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 		t.Fatalf("the provisioner was asked %+v, want one registration", calls)
 	}
 	want := tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		Alias: "acme", Status: tenant.StatusActive,
 		OwnerAccount: authntest.DefaultAccount.String(),
 	}
-	if calls[0].tenant != want {
-		t.Errorf("the row passed on = %+v, want %+v", calls[0].tenant, want)
+	if calls[0].tenant.Alias != want.Alias || calls[0].tenant.Status != want.Status ||
+		calls[0].tenant.OwnerAccount != want.OwnerAccount {
+		t.Errorf("the row passed on = %+v, want alias, state and owner from %+v", calls[0].tenant, want)
+	}
+	if !strings.HasPrefix(string(calls[0].tenant.ID), "org-") {
+		t.Errorf("the generated identifier is %q, want the org- prefix", calls[0].tenant.ID)
 	}
 }
 
@@ -148,7 +152,7 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 	}{
 		"list":     {http.MethodGet, pathTenants, nil, PermissionTenantRead},
 		"get":      {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
-		"create":   {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}, PermissionTenantManage},
+		"create":   {http.MethodPost, pathTenants, createBody{Alias: "abc"}, PermissionTenantManage},
 		"transfer": {http.MethodPut, pathTenants + "/t/owner", map[string]any{"account": "acc-2"}, PermissionTenantManage},
 		"delete":   {http.MethodDelete, pathTenants + "/t", nil, PermissionTenantManage},
 		"status":   {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
@@ -190,7 +194,7 @@ func TestARequestWithNoIdentityIsA401(t *testing.T) {
 	}{
 		"list":   {http.MethodGet, pathTenants, nil},
 		"get":    {http.MethodGet, pathTenants + "/t", nil},
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}},
+		"create": {http.MethodPost, pathTenants, createBody{Alias: "abc"}},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -221,7 +225,7 @@ func TestAGuardRefusalReachesNoRoster(t *testing.T) {
 	t.Run("denial", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.allow = false
-		w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"})
+		w := r.do(http.MethodPost, pathTenants, createBody{Alias: "abc"})
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", w.Code)
 		}
@@ -232,7 +236,7 @@ func TestAGuardRefusalReachesNoRoster(t *testing.T) {
 	t.Run("outage", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.err = errors.New("engine down")
-		w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"})
+		w := r.do(http.MethodPost, pathTenants, createBody{Alias: "abc"})
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("status = %d, want 503", w.Code)
 		}
@@ -251,7 +255,7 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 		target string
 		body   any
 	}{
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}},
+		"create": {http.MethodPost, pathTenants, createBody{Alias: "abc"}},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "disabled"}},
 	}
 	for name, tc := range writes {
@@ -283,7 +287,7 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	r := newRig(t)
 	r.provisioner.fail(tenant.ErrTenantExists)
-	w := r.do(http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"})
+	w := r.do(http.MethodPost, pathTenants, createBody{Alias: "acme"})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
 	}
@@ -301,8 +305,8 @@ func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	if rows[0].Action != actionTenantCreate || rows[1].Action != actionTenantCreate {
 		t.Errorf("actions = %q, %q; want %q", rows[0].Action, rows[1].Action, actionTenantCreate)
 	}
-	if rows[0].Object != "t_acme" {
-		t.Errorf("object = %q, want the tenant identifier t_acme", rows[0].Object)
+	if rows[0].Object != "acme" {
+		t.Errorf("object = %q, want the tenant alias acme", rows[0].Object)
 	}
 }
 
@@ -315,7 +319,7 @@ func TestEachWriteCarriesItsOwnAuditAction(t *testing.T) {
 		body   any
 		want   string
 	}{
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}, actionTenantCreate},
+		"create": {http.MethodPost, pathTenants, createBody{Alias: "abc"}, actionTenantCreate},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "disabled"}, actionTenantStatus},
 	}
 	for name, tc := range cases {
@@ -361,7 +365,7 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				r := newRig(t)
 				r.provisioner.fail(tc.err)
-				w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"})
+				w := r.do(http.MethodPost, pathTenants, createBody{Alias: "abc"})
 				if w.Code != tc.status {
 					t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.status, w.Body.String())
 				}
@@ -422,11 +426,10 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 		target string
 		body   any
 	}{
-		"create with a blank identifier":    {http.MethodPost, pathTenants, createBody{ID: "t acme", Alias: "acme"}},
-		"create with an empty identifier":   {http.MethodPost, pathTenants, createBody{Alias: "acme"}},
-		"create with a blank alias":         {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "a b"}},
-		"create with a short alias":         {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "ab"}},
-		"create with an underscored alias":  {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "a_b"}},
+		"create carrying an identifier":     {http.MethodPost, pathTenants, map[string]any{"alias": "acme", "id": "t_acme"}},
+		"create with a blank alias":         {http.MethodPost, pathTenants, createBody{Alias: "a b"}},
+		"create with a short alias":         {http.MethodPost, pathTenants, createBody{Alias: "ab"}},
+		"create with an underscored alias":  {http.MethodPost, pathTenants, createBody{Alias: "a_b"}},
 		"create with a body it cannot read": {http.MethodPost, pathTenants, "not-an-object"},
 		"delete with a blank identifier":    {http.MethodDelete, pathTenants + "/t%20acme", nil},
 		"transfer with an invalid account":  {http.MethodPut, pathTenants + "/t_acme/owner", map[string]any{"account": "not an account"}},
@@ -474,10 +477,11 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 }
 
 // The view carries the fields the design names, per state, spelled the way
-// tenant.Status and tenant.DisabledBy spell them: the identifier, the alias, the
-// owner account and the state's name on every row, and disabledBy only on a
-// disabled one. A field added to a record later does not reach a client by being
-// there, and a source never appears on a row whose state is not disabled.
+// tenant.Status and tenant.DisabledBy spell them: the alias, the kind, the owner
+// account and the state's name on every row, and disabledBy only on a disabled
+// one. It carries no identifier. A field added to a record later does not reach a
+// client by being there, and a source never appears on a row whose state is not
+// disabled.
 func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 	createdAt := time.Date(2026, 7, 8, 9, 10, 11, 0, time.UTC)
 	cases := map[string]struct {
@@ -493,7 +497,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "active",
 			wantKeys: []string{
-				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"alias", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt",
 			},
 		},
@@ -504,7 +508,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"alias", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
@@ -516,7 +520,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"alias", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "account",
@@ -524,12 +528,12 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 		"deleted": {
 			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted, OwnerAccount: "acct-owner"},
 			wantStatus: "deleted",
-			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
+			wantKeys:   []string{"alias", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
 		},
 		"a tenant with no owner": {
 			row:        tenant.Tenant{ID: "t_system", Alias: "system", Status: tenant.StatusActive},
 			wantStatus: "active",
-			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
+			wantKeys:   []string{"alias", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
 		},
 		"a status this build does not know": {
 			row: tenant.Tenant{
@@ -538,7 +542,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"id", "alias", "displayName", "description", "contactEmail", "website",
+				"alias", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
@@ -570,6 +574,9 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			}
 			if status, _ := got["status"].(string); status != tc.wantStatus {
 				t.Errorf("status = %q, want %q", status, tc.wantStatus)
+			}
+			if kind, _ := got["kind"].(string); kind != "business" {
+				t.Errorf("kind = %q, want business with no kind resolver assembled", kind)
 			}
 			if tc.disabledBy == "" {
 				if _, ok := got["disabledBy"]; ok {

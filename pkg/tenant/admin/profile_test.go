@@ -40,7 +40,6 @@ func fullProfile() profileWriteBody {
 func TestTheCreateCarriesTheProfile(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{
-		ID:           "t_acme",
 		Alias:        "acme",
 		DisplayName:  "  Acme  ",
 		Description:  "  The Acme corporation  ",
@@ -80,7 +79,7 @@ func TestTheCreateCarriesTheProfile(t *testing.T) {
 func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{
-		ID: "t_acme", Alias: "acme", Website: "javascript:alert(1)",
+		Alias: "acme", Website: "javascript:alert(1)",
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body.String())
@@ -144,6 +143,7 @@ func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 // to the failed row a refusal writes.
 func TestTheProfileUpdateWritesTheMandatoryAuditFirst(t *testing.T) {
 	r := newRig(t)
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
 	r.catalog.found = true
 	rowsAtSetProfile := -1
 	r.catalog.during = func() { rowsAtSetProfile = len(r.audit.entries()) }
@@ -159,12 +159,12 @@ func TestTheProfileUpdateWritesTheMandatoryAuditFirst(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("audit rows = %+v, want one", rows)
 	}
-	if rows[0].Action != actionTenantProfileUpdate || rows[0].Object != "t_acme" ||
+	if rows[0].Action != actionTenantProfileUpdate || rows[0].Object != "acme" ||
 		rows[0].Outcome != outcomeSuccess {
-		t.Errorf("the audit row = %+v, want a successful %q of t_acme", rows[0], actionTenantProfileUpdate)
+		t.Errorf("the audit row = %+v, want a successful %q of acme", rows[0], actionTenantProfileUpdate)
 	}
-	if rows[0].Detail[detailSurface] != surfacePlatform || rows[0].Detail[detailTenant] != "t_acme" {
-		t.Errorf("the audit detail = %v, want surface=platform and tenant=t_acme", rows[0].Detail)
+	if rows[0].Detail[detailSurface] != surfacePlatform || rows[0].Detail[detailTenant] != "acme" {
+		t.Errorf("the audit detail = %v, want surface=platform and tenant=acme", rows[0].Detail)
 	}
 	if rows[0].Detail[detailActionID] == "" {
 		t.Error("the audit row carries no action identifier")

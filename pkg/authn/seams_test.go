@@ -78,6 +78,9 @@ var seamSignatures = map[string][]string{
 	"MemberRoleReader": {
 		"MemberRoles(ctx context.Context, tenant string) (map[AccountID][]string, error)",
 	},
+	"TenantAliasResolver": {
+		"TenantAliasOf(ctx context.Context, id string) (string, error)",
+	},
 	"Memberships": {
 		"IsMember(ctx context.Context, id AccountID, tenant string) (bool, error)",
 		"Membership(ctx context.Context, tenant string, id AccountID) (Membership, bool, error)",

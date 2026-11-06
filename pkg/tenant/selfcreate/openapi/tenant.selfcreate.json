@@ -37,7 +37,7 @@
         "type": "object"
       },
       "OrganizationCreatedTenant": {
-        "description": "The created organization: the generated identifier, the caller's alias and profile, and the active state.",
+        "description": "The created organization: the caller's alias and profile, and the active state. The generated identifier is internal and never appears.",
         "properties": {
           "alias": {
             "description": "The request-surface name the caller chose; unique across the roster and immutable after creation.",
@@ -51,10 +51,6 @@
             "description": "The organization's display name, trimmed.",
             "type": "string"
           },
-          "id": {
-            "description": "The generated organization identifier: the fixed prefix \"org-\" followed by a random UUID. The scoped tables hold it.",
-            "type": "string"
-          },
           "status": {
             "description": "The organization's state; a self-service organization starts active.",
             "enum": [
@@ -64,7 +60,6 @@
           }
         },
         "required": [
-          "id",
           "alias",
           "displayName",
           "description",
@@ -112,7 +107,7 @@
   "paths": {
     "/orgs": {
       "post": {
-        "description": "Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated as org-<uuid>. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.",
+        "description": "Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated and stays internal. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.",
         "operationId": "org.create.create",
         "requestBody": {
           "content": {

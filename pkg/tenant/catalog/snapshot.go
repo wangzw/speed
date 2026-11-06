@@ -72,7 +72,10 @@ func buildSnapshot(rows []row) *snapshot {
 		s.byAlias[t.Alias] = t
 		s.ordered = append(s.ordered, t)
 	}
-	sort.Slice(s.ordered, func(i, j int) bool { return s.ordered[i].ID < s.ordered[j].ID })
+	// The roster is ordered by the name a client reads: the alias. The
+	// identifier is internal and no view carries it, so sorting by it would
+	// give a client an order it cannot reproduce.
+	sort.Slice(s.ordered, func(i, j int) bool { return s.ordered[i].Alias < s.ordered[j].Alias })
 	return s
 }
 

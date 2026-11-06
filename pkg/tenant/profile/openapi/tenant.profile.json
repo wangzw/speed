@@ -32,7 +32,7 @@
         "type": "object"
       },
       "TenantProfileView": {
-        "description": "One tenant's organization profile: the read-only identity, the owning account, the state and the four descriptive fields, behind tenant.profile.read.",
+        "description": "One tenant's organization profile: the read-only alias, the owning account, the state and the four descriptive fields, behind tenant.profile.read.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
@@ -55,10 +55,6 @@
             "description": "The organization's display name. Empty when its profile names none; a surface falls back to the alias then.",
             "type": "string"
           },
-          "id": {
-            "description": "The tenant's immutable identifier.",
-            "type": "string"
-          },
           "ownerAccount": {
             "description": "The account that owns the organization, from the roster row's owner column. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner.",
             "type": "string"
@@ -78,7 +74,6 @@
           }
         },
         "required": [
-          "id",
           "alias",
           "displayName",
           "description",

@@ -58,7 +58,7 @@
         "operationId": "tenant.admin.owner.delete",
         "parameters": [
           {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,

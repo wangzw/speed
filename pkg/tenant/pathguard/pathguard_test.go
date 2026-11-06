@@ -71,15 +71,13 @@ type errUnusedError struct{}
 
 func (errUnusedError) Error() string { return "the guard called a roster method it does not use" }
 
-// standardRoster names one tenant by its identifier and one by its alias, and
-// carries a segment that is one tenant's alias and another tenant's identifier:
-// "dup" resolves two ways and is therefore no tenant's address.
+// standardRoster names every tenant so that its alias differs from its
+// identifier: the request surface carries the alias, and a segment holding the
+// identifier is not a name any tenant is addressed by.
 func standardRoster() *roster {
 	return newRoster(
 		tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
 		tenant.Tenant{ID: "t_beta", Alias: "beta", Status: tenant.StatusActive},
-		tenant.Tenant{ID: "t_dup_alias", Alias: "dup", Status: tenant.StatusActive},
-		tenant.Tenant{ID: "dup", Alias: "dup-id", Status: tenant.StatusActive},
 		tenant.Tenant{ID: "system", Alias: "platform", Status: tenant.StatusActive},
 	)
 }
@@ -136,12 +134,11 @@ func TestTheSharedGuardComparesTenantIdentifiers(t *testing.T) {
 		path     string
 		status   int
 	}{
-		{"the path carries the tenant identifier", "t_acme", "/tenants/t_acme/members", nethttp.StatusOK},
 		{"the path carries the current alias", "t_acme", "/tenants/acme/members", nethttp.StatusOK},
 		{"the path alias belongs to another tenant", "t_acme", "/tenants/beta/members", nethttp.StatusNotFound},
+		{"the path carries the tenant identifier", "t_acme", "/tenants/t_acme/members", nethttp.StatusNotFound},
 		{"the path names another tenant by identifier", "t_acme", "/tenants/t_beta/members", nethttp.StatusNotFound},
 		{"the segment names no tenant", "t_acme", "/tenants/ghost/members", nethttp.StatusNotFound},
-		{"the segment names no unique tenant", "t_dup_alias", "/tenants/dup/members", nethttp.StatusNotFound},
 		{"a route outside the tenant scope passes through", "t_acme", "/members", nethttp.StatusOK},
 	}
 	for _, tc := range cases {
@@ -173,11 +170,15 @@ func TestTheSharedGuardDoesNotClaimTheTenantAdminCapability(t *testing.T) {
 // groups manage the system tenant itself, so a request resolved to the platform
 // domain and addressed by it is legitimate there.
 func TestTheSharedGuardAdmitsTheSystemTenant(t *testing.T) {
-	for _, path := range []string{"/tenants/system/members", "/tenants/platform/members"} {
+	// The route is addressed by the alias; the identifier is not a path name.
+	for path, want := range map[string]int{
+		"/tenants/system/members":   nethttp.StatusNotFound,
+		"/tenants/platform/members": nethttp.StatusOK,
+	} {
 		t.Run(path, func(t *testing.T) {
 			got := send(sharedEngine("system", standardRoster()), path)
-			if got.Code != nethttp.StatusOK {
-				t.Fatalf("%s answered %d, want %d (body %q)", path, got.Code, nethttp.StatusOK, got.Body.String())
+			if got.Code != want {
+				t.Fatalf("%s answered %d, want %d (body %q)", path, got.Code, want, got.Body.String())
 			}
 		})
 	}
@@ -209,7 +210,7 @@ func TestTheTenantAdminGuardKeepsTheIdentityRule(t *testing.T) {
 		path     string
 		status   int
 	}{
-		{"a managed tenant by identifier", "t_acme", "/tenants/t_acme/members", nethttp.StatusOK},
+		{"a managed tenant by identifier", "t_acme", "/tenants/t_acme/members", nethttp.StatusNotFound},
 		{"a managed tenant by alias", "t_acme", "/tenants/acme/members", nethttp.StatusOK},
 		{"another tenant named in the path", "t_acme", "/tenants/beta/members", nethttp.StatusNotFound},
 		{"the platform domain named against another tenant", "t_acme", "/tenants/system/members", nethttp.StatusNotFound},
@@ -244,6 +245,30 @@ func TestAnUnresolvedRequestIsRefusedOnATenantAddressedRoute(t *testing.T) {
 			}
 			requireBare404(t, got)
 		})
+	}
+}
+
+// TestTheSharedGuardHandsOnTheInternalIdentifier holds the other half of the
+// alias boundary: a handler behind the guard binds the tenant's identifier, not
+// the alias the request carried.
+func TestTheSharedGuardHandsOnTheInternalIdentifier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	e := gin.New()
+	e.Use(func(c *gin.Context) {
+		c.Request = c.Request.WithContext(tenantctx.WithID(c.Request.Context(), "t_acme"))
+		c.Next()
+	})
+	var bound string
+	e.GET("/tenants/:tenant/members", pathguard.New(standardRoster()).Guard(func(c *gin.Context) {
+		bound = c.Param("tenant")
+		c.Status(nethttp.StatusOK)
+	}))
+	got := send(e, "/tenants/acme/members")
+	if got.Code != nethttp.StatusOK {
+		t.Fatalf("answered %d, want 200", got.Code)
+	}
+	if bound != "t_acme" {
+		t.Fatalf("the handler bound %q, want the internal identifier t_acme", bound)
 	}
 }
 

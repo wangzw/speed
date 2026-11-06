@@ -144,11 +144,11 @@ func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 	if len(body.Tenants) != 2 {
 		t.Fatalf("tenants = %v, want both active memberships", body.Tenants)
 	}
-	if body.Tenants[0].ID != "acme" || body.Tenants[0].Alias != "Acme" {
-		t.Errorf("the first tenant is %+v, want acme/Acme", body.Tenants[0])
+	if body.Tenants[0].Alias != "Acme" {
+		t.Errorf("the first tenant is %+v, want Acme", body.Tenants[0])
 	}
-	if body.Tenants[1].ID != "globex" || body.Tenants[1].Alias != "Globex" {
-		t.Errorf("the second tenant is %+v, want globex/Globex", body.Tenants[1])
+	if body.Tenants[1].Alias != "Globex" {
+		t.Errorf("the second tenant is %+v, want Globex", body.Tenants[1])
 	}
 }
 
@@ -295,7 +295,7 @@ func TestTheReadKeepsTheMembershipsOrder(t *testing.T) {
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 2 || body.Tenants[0].ID != "zeta" || body.Tenants[1].ID != "alpha" {
+	if len(body.Tenants) != 2 || body.Tenants[0].Alias != "Zeta" || body.Tenants[1].Alias != "Alpha" {
 		t.Errorf("tenants = %v, want the membership read's order zeta then alpha", body.Tenants)
 	}
 }
@@ -318,7 +318,7 @@ func TestASuspendedMembershipIsLeftOut(t *testing.T) {
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 1 || body.Tenants[0].ID != "acme" {
+	if len(body.Tenants) != 1 || body.Tenants[0].Alias != "Acme" {
 		t.Errorf("tenants = %v, want only acme", body.Tenants)
 	}
 	for _, id := range catalog.asked {
@@ -345,7 +345,7 @@ func TestATenantThatIsNotServedIsLeftOut(t *testing.T) {
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 1 || body.Tenants[0].ID != "acme" {
+	if len(body.Tenants) != 1 || body.Tenants[0].Alias != "Acme" {
 		t.Errorf("tenants = %v, want only the served tenant acme", body.Tenants)
 	}
 }
@@ -367,7 +367,7 @@ func TestAMembershipWithoutARosterRowIsLeftOut(t *testing.T) {
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 1 || body.Tenants[0].ID != "acme" {
+	if len(body.Tenants) != 1 || body.Tenants[0].Alias != "Acme" {
 		t.Errorf("tenants = %v, want only the roster's tenant acme", body.Tenants)
 	}
 }
@@ -490,7 +490,7 @@ func TestAnImpersonatingCallerReadsOnlyTheGrantTenant(t *testing.T) {
 	if len(body.Tenants) != 1 {
 		t.Fatalf("tenants = %+v, want only the grant tenant", body.Tenants)
 	}
-	if body.Tenants[0].ID != "acme" || body.Tenants[0].Alias != "Acme" {
+	if body.Tenants[0].Alias != "Acme" {
 		t.Errorf("the tenant is %+v, want acme/Acme", body.Tenants[0])
 	}
 }

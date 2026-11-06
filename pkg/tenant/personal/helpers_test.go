@@ -314,7 +314,21 @@ type fakeTxCatalog struct {
 	deleted   []tenant.ID
 	createErr error
 	deleteErr error
+	getErr    error
 	after     []string
+}
+
+// GetTx answers the personal row the deletion's audit row names. The fake holds
+// no table, so it answers the row the account's username derives unless a case
+// says the read fails.
+func (c *fakeTxCatalog) GetTx(_ context.Context, tx *gorm.DB, id tenant.ID) (tenant.Tenant, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tx = tx
+	if c.getErr != nil {
+		return tenant.Tenant{}, false, c.getErr
+	}
+	return tenant.Tenant{ID: id, Alias: "alice", Status: tenant.StatusActive}, true, nil
 }
 
 func (c *fakeTxCatalog) CreateTx(_ context.Context, tx *gorm.DB, t tenant.Tenant) (func(context.Context) error, error) {

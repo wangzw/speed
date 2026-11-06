@@ -351,14 +351,13 @@ func TestTheTombstoneKeepsTheAlias(t *testing.T) {
 // leaves its creation audit row behind.
 func TestCreatingAnAccountWritesTheCreationAuditRow(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
-		created, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "erin", Via: "admin"})
+		_, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "erin", Via: "admin"})
 		if err != nil {
 			t.Fatalf("creating an account: %v", err)
 		}
 		rows := entriesOfAction(a.audit.rows(), "org.personal.tenant.create")
-		wantID := string(personal.TenantID(created.ID))
-		if len(rows) != 1 || rows[0].Object != wantID || rows[0].Outcome != "success" {
-			t.Errorf("the creation wrote the audit rows %+v, want one successful row on %q", rows, wantID)
+		if len(rows) != 1 || rows[0].Object != "erin" || rows[0].Outcome != "success" {
+			t.Errorf("the creation wrote the audit rows %+v, want one successful row on the alias %q", rows, "erin")
 		}
 	})
 }

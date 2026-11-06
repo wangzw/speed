@@ -198,12 +198,12 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 	actionID := uuid.NewString()
 	if err := p.auditRequired(ctx, audit.Entry{
 		Action:  auditAction,
-		Object:  string(record.ID),
+		Object:  record.Alias,
 		Outcome: outcomeSuccess,
 		Detail: map[string]string{
 			detailActionID: actionID,
 			detailAccount:  account.String(),
-			detailTenant:   string(record.ID),
+			detailTenant:   record.Alias,
 		},
 	}); err != nil {
 		return OrganizationCreatedReply{}, err
@@ -224,7 +224,7 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 		}
 		p.auditBestEffort(ctx, audit.Entry{
 			Action:  auditAction,
-			Object:  string(record.ID),
+			Object:  record.Alias,
 			Outcome: outcomeFailed,
 			Detail:  map[string]string{detailActionID: actionID},
 		})
@@ -235,7 +235,6 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 
 	return OrganizationCreatedReply{
 		Tenant: OrganizationCreatedTenant{
-			ID:          string(record.ID),
 			Alias:       record.Alias,
 			DisplayName: record.Profile.DisplayName,
 			Description: record.Profile.Description,
@@ -431,10 +430,11 @@ func (p *product) auditBestEffort(ctx context.Context, entry audit.Entry) {
 	}
 }
 
-// newIdentifier mints one candidate identifier: the fixed prefix and a random
-// UUID.
+// newIdentifier mints one candidate identifier. The generator is the tenant
+// package's, shared with the platform registration, so both creation paths draw
+// from one source.
 func newIdentifier() string {
-	return idPrefix + uuid.NewString()
+	return tenant.NewOrganizationID()
 }
 
 // lockKeyOf names the per-account creation lock.

@@ -42,7 +42,7 @@ type (
 	// tenantListBody is the 200 answer of the listing.
 	tenantListBody = struct {
 		_       struct{}            `description:"The whole roster in one answer, because the listing is not paged."`
-		Tenants []TenantAdminTenant `json:"tenants" required:"true" description:"Every tenant the roster holds, ordered by identifier."`
+		Tenants []TenantAdminTenant `json:"tenants" required:"true" description:"Every tenant the roster holds, ordered by alias."`
 	}
 
 	// tenantCreatedBody is the 201 answer of a registration.
@@ -58,13 +58,14 @@ type (
 	}
 )
 
-// createBody is the request of a registration: the tenant's identifier and the
-// alias the request surface will address it by. The status is not here: a
-// registration starts the tenant active. The type name is unexported, and the
-// declaration publishes the body under the name the hand-written fragment used.
+// createBody is the request of a registration: the alias the request surface
+// will address the tenant by and its optional profile. The identifier is
+// generated, so it is not part of the body and a body that carries one is
+// refused. The status is not here either: a registration starts the tenant
+// active. The type name is unexported, and the declaration publishes the body
+// under the name the hand-written fragment used.
 type createBody struct {
-	_     struct{} `description:"The identifier, alias and optional profile of a tenant to register. The state is not part of it, because a registered tenant starts active."`
-	ID    string   `json:"id" required:"true" description:"The identifier to register; the roster refuses one it already holds."`
+	_     struct{} `description:"The alias and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body."`
 	Alias string   `json:"alias" required:"true" description:"The alias to give the tenant; the roster refuses one another tenant already holds."`
 
 	// The profile fields are optional here: the platform form requires a
@@ -75,16 +76,15 @@ type createBody struct {
 	Website      string `json:"website" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo."`
 }
 
-// getTenantInput is the request of a single-tenant read: the identifier in the
-// path.
+// getTenantInput is the request of a single-tenant read: the alias in the path.
 type getTenantInput struct {
-	ID string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	ID string `path:"tenant" description:"The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404."`
 }
 
 // transferOwnerInput is the request of an owner transfer: the tenant in the
 // path and the account that becomes its owner in the body.
 type transferOwnerInput struct {
-	ID      string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	ID      string `path:"tenant" description:"The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404."`
 	Account string `json:"account" required:"true" description:"The account identifier of the active member that becomes the organization's owner."`
 }
 
@@ -92,7 +92,7 @@ type transferOwnerInput struct {
 // path and the four descriptive fields in the body, each of which must be
 // present. A field the body carries empty clears the stored value.
 type setProfileInput struct {
-	ID string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	ID string `path:"tenant" description:"The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404."`
 
 	DisplayName  string `json:"display_name" required:"true" description:"The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias."`
 	Description  string `json:"description" required:"true" description:"A longer account of the organization, at most 500 runes. Empty clears it."`
@@ -107,10 +107,15 @@ type setProfileInput struct {
 // uses.
 var profileWriteFields = []string{"display_name", "description", "contact_email", "website"}
 
+// registrationForbiddenFields are the body members a registration may not
+// carry. The identifier is generated on the server; a client that sends one is
+// refused rather than allowed to choose an internal key.
+var registrationForbiddenFields = []string{"id"}
+
 // setStatusInput is the request of a status change: the identifier in the path
 // and the target state in the body.
 type setStatusInput struct {
-	ID     string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	ID     string `path:"tenant" description:"The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404."`
 	Status string `json:"status" required:"true" enum:"active,disabled" description:"active serves the tenant; disabled stops serving it."`
 }
 
@@ -121,7 +126,7 @@ var listOperation = speedhttp.NewOperation[struct{}, tenantListBody](
 	http.MethodGet,
 	pathTenantsFragment,
 	"List every tenant the roster holds",
-	"Reads every tenant in the roster, ordered by identifier. The roster is the set of tenants this deployment "+
+	"Reads every tenant in the roster, ordered by alias. The roster is the set of tenants this deployment "+
 		"serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain "+
 		"read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is "+
 		"involved. Reads write no audit row.",
@@ -147,16 +152,17 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 	pathTenantsFragment,
 	"Register an active tenant",
 	"Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the "+
-		"acting account. The body gives the identifier, the alias and optionally the profile's four descriptive "+
-		"fields; the new tenant starts active. Registration "+
+		"acting account. The body gives the alias and optionally the profile's four descriptive fields; the "+
+		"identifier is generated by the server and never appears in a request or a view, and the new tenant starts "+
+		"active. A body that carries an identifier is refused as a bad request. Registration "+
 		"never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A "+
 		"mandatory audit row must land before the provisioner is called; if it cannot, the registration does not "+
 		"run and the request is answered 503.",
 	&speedhttp.RequestBody{
 		MediaType: "application/json",
-		Description: "The registration: the identifier to insert, the alias the request surface will address " +
-			"the tenant by, and the optional profile fields. The state is not part of it, because a registered " +
-			"tenant starts active.",
+		Description: "The registration: the alias the request surface will address " +
+			"the tenant by, and the optional profile fields. The identifier is generated, and the state is not " +
+			"part of it, because a registered tenant starts active.",
 		Required: true,
 		Name:     "TenantAdminTenantRegistration",
 	},
@@ -167,12 +173,12 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier is outside the identifier domain, or the alias is outside the slug domain"),
+			"The body carries an identifier, or the alias is outside the slug domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The identifier or the alias is already taken"),
+			"The alias is already taken"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )
@@ -185,8 +191,8 @@ var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 	http.MethodGet,
 	pathTenantFragment,
 	"Read one tenant the roster holds",
-	"Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row "+
-		"identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.",
+	"Reads one tenant by its alias, the name the request surface addresses it by. An alias the roster does "+
+		"not hold is a 404. Reads write no audit row.",
 	nil,
 	[]speedhttp.Response{
 		{
@@ -260,8 +266,8 @@ var deleteOperation = speedhttp.NewReplyOperation[getTenantInput](
 	http.MethodDelete,
 	pathTenantFragment,
 	"Delete one tenant",
-	"Deletes one tenant platform staff names. The write is a tombstone: the identifier and the "+
-		"alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are "+
+	"Deletes one tenant platform staff names. The write is a tombstone: the alias and the internal "+
+		"identifier stay and are never reusable, and the organization's memberships, bindings, roles and grants are "+
 		"removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not "+
 		"part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written "+
 		"and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner "+

@@ -86,7 +86,6 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 			}
 		}
 		out = append(out, tenantSelfTenant{
-			ID:          string(found.ID),
 			Alias:       found.Alias,
 			DisplayName: found.Profile.DisplayName,
 			Kind:        string(kind),

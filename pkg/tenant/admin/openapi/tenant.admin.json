@@ -32,10 +32,10 @@
         "type": "object"
       },
       "TenantAdminTenant": {
-        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.",
+        "description": "One tenant as the management routes render it: the alias, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.",
         "properties": {
           "alias": {
-            "description": "The alias the request surface addresses the tenant by.",
+            "description": "The alias the request surface addresses the tenant by, and the name every view and path uses.",
             "type": "string"
           },
           "contactEmail": {
@@ -63,8 +63,12 @@
             "description": "The organization's display name. Empty when its profile names none; a surface falls back to the alias then.",
             "type": "string"
           },
-          "id": {
-            "description": "The tenant's identifier, the natural key the roster keys the row by.",
+          "kind": {
+            "description": "The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias.",
+            "enum": [
+              "business",
+              "personal"
+            ],
             "type": "string"
           },
           "ownerAccount": {
@@ -86,8 +90,8 @@
           }
         },
         "required": [
-          "id",
           "alias",
+          "kind",
           "displayName",
           "description",
           "contactEmail",
@@ -141,7 +145,7 @@
       },
       "TenantAdminTenantRegistration": {
         "additionalProperties": false,
-        "description": "The identifier, alias and optional profile of a tenant to register. The state is not part of it, because a registered tenant starts active.",
+        "description": "The alias and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body.",
         "properties": {
           "alias": {
             "description": "The alias to give the tenant; the roster refuses one another tenant already holds.",
@@ -159,17 +163,12 @@
             "description": "The organization's display name, at most 100 runes. Empty when the registration names none.",
             "type": "string"
           },
-          "id": {
-            "description": "The identifier to register; the roster refuses one it already holds.",
-            "type": "string"
-          },
           "website": {
             "description": "The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo.",
             "type": "string"
           }
         },
         "required": [
-          "id",
           "alias"
         ],
         "type": "object"
@@ -184,7 +183,7 @@
   "paths": {
     "/tenants": {
       "get": {
-        "description": "Reads every tenant in the roster, ordered by identifier. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.",
+        "description": "Reads every tenant in the roster, ordered by alias. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.",
         "operationId": "tenant.admin.tenants.list",
         "responses": {
           "200": {
@@ -194,7 +193,7 @@
                   "description": "The whole roster in one answer, because the listing is not paged.",
                   "properties": {
                     "tenants": {
-                      "description": "Every tenant the roster holds, ordered by identifier.",
+                      "description": "Every tenant the roster holds, ordered by alias.",
                       "items": {
                         "$ref": "#/components/schemas/TenantAdminTenant"
                       },
@@ -252,7 +251,7 @@
         "summary": "List every tenant the roster holds"
       },
       "post": {
-        "description": "Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier, the alias and optionally the profile's four descriptive fields; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.",
+        "description": "Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the alias and optionally the profile's four descriptive fields; the identifier is generated by the server and never appears in a request or a view, and the new tenant starts active. A body that carries an identifier is refused as a bad request. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.",
         "operationId": "tenant.admin.tenants.create",
         "requestBody": {
           "content": {
@@ -262,7 +261,7 @@
               }
             }
           },
-          "description": "The registration: the identifier to insert, the alias the request surface will address the tenant by, and the optional profile fields. The state is not part of it, because a registered tenant starts active.",
+          "description": "The registration: the alias the request surface will address the tenant by, and the optional profile fields. The identifier is generated, and the state is not part of it, because a registered tenant starts active.",
           "required": true
         },
         "responses": {
@@ -294,7 +293,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain, or the alias is outside the slug domain"
+            "description": "The body carries an identifier, or the alias is outside the slug domain"
           },
           "401": {
             "content": {
@@ -324,7 +323,7 @@
                 }
               }
             },
-            "description": "The identifier or the alias is already taken"
+            "description": "The alias is already taken"
           },
           "413": {
             "content": {
@@ -360,11 +359,11 @@
     },
     "/tenants/{tenant}": {
       "delete": {
-        "description": "Deletes one tenant platform staff names. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.",
+        "description": "Deletes one tenant platform staff names. The write is a tombstone: the alias and the internal identifier stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.",
         "operationId": "tenant.admin.tenants.delete",
         "parameters": [
           {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -442,11 +441,11 @@
         "summary": "Delete one tenant"
       },
       "get": {
-        "description": "Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.",
+        "description": "Reads one tenant by its alias, the name the request surface addresses it by. An alias the roster does not hold is a 404. Reads write no audit row.",
         "operationId": "tenant.admin.tenants.get",
         "parameters": [
           {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -527,7 +526,7 @@
         "operationId": "tenant.admin.tenants.transferOwner",
         "parameters": [
           {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -632,7 +631,7 @@
         "operationId": "tenant.admin.tenants.profile",
         "parameters": [
           {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -754,7 +753,7 @@
         "operationId": "tenant.admin.tenants.setStatus",
         "parameters": [
           {
-            "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
+            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,

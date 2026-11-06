@@ -199,8 +199,6 @@ func TestProvisionAccountWritesTheCreationAuditAfterTheCommit(t *testing.T) {
 	facts := provisioning.AccountFacts{
 		ID: "acc-1", Kind: string(authn.KindUser), Status: "active", Username: "alice",
 	}
-	wantID := TenantID(authn.AccountID(facts.ID))
-
 	ctx, after := provisioning.WithAfterCommit(context.Background())
 	if err := p.ProvisionAccount(ctx, &gorm.DB{}, facts); err != nil {
 		t.Fatalf("provisioning: %v", err)
@@ -212,8 +210,8 @@ func TestProvisionAccountWritesTheCreationAuditAfterTheCommit(t *testing.T) {
 		t.Fatalf("running the after-commit work: %v", err)
 	}
 	rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalCreateAction)
-	if len(rows) != 1 || rows[0].Object != string(wantID) {
-		t.Errorf("the creation wrote the audit rows %+v, want one row on %q", rows, wantID)
+	if len(rows) != 1 || rows[0].Object != facts.Username {
+		t.Errorf("the creation wrote the audit rows %+v, want one row on the alias %q", rows, facts.Username)
 	}
 
 	roster.createErr = tenant.ErrTenantExists
@@ -262,8 +260,8 @@ func TestProvisionAccountDeletionWritesThroughTheAccountTransaction(t *testing.T
 			len(manager.after), len(roster.after))
 	}
 	rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalDeleteAction)
-	if len(rows) != 1 || rows[0].Object != string(wantID) {
-		t.Errorf("the deletion wrote the audit rows %+v, want one row on %q", rows, wantID)
+	if len(rows) != 1 || rows[0].Object != "alice" {
+		t.Errorf("the deletion wrote the audit rows %+v, want one row on the alias %q", rows, "alice")
 	}
 }
 

@@ -28,9 +28,9 @@ const (
 )
 
 // The detail keys this module writes, a closed set: the action identifier that
-// links a write's rows, and the tenant the write is on. A tenant is named by its
-// identifier — the value the roster keys a row by and the logs and diagnostics
-// name — never by its alias, which may be the very thing being changed.
+// links a write's rows, and the tenant the write is on. A tenant is named in an
+// audit row by its alias, the name a reader of the trail can act on; the
+// internal identifier stays out of the row.
 const (
 	detailActionID = "action_id"
 	detailTenant   = "tenant"

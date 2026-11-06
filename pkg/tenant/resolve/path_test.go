@@ -46,11 +46,11 @@ func TestATenantAddressedRouteHoldsThePathTenantToTheResolvedOne(t *testing.T) {
 		resolved string
 		status   int
 	}{
-		{"the path carries the tenant identifier", "/tenants/t_acme/probe", "acme", nethttp.StatusOK},
+		{"the path carries the tenant identifier", "/tenants/t_acme/probe", "acme", nethttp.StatusNotFound},
 		{"the path carries the current alias", "/tenants/acme/probe", "acme", nethttp.StatusOK},
 		{"the path names another tenant", "/tenants/paused/probe", "acme", nethttp.StatusNotFound},
 		{"the segment names no tenant", "/tenants/ghost/probe", "acme", nethttp.StatusNotFound},
-		{"the shared guard admits the system tenant by identifier", "/tenants/system/probe", "platform", nethttp.StatusOK},
+		{"the shared guard admits the system tenant by identifier", "/tenants/system/probe", "platform", nethttp.StatusNotFound},
 		{"the shared guard admits the system tenant by alias", "/tenants/platform/probe", "platform", nethttp.StatusOK},
 		{"the tenant admin guard admits a managed tenant", "/tenants/acme/manage", "acme", nethttp.StatusOK},
 		{"the tenant admin guard refuses the system tenant by identifier", "/tenants/system/manage", "platform", nethttp.StatusNotFound},

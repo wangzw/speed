@@ -486,6 +486,26 @@ func (r *roster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, 
 	return t, ok, nil
 }
 
+// AliasOf implements tenant.AliasResolver. The answer comes from the snapshot,
+// like every other read; an identifier no row carries answers empty.
+func (r *roster) AliasOf(_ context.Context, id tenant.ID) (string, error) {
+	s, err := r.current()
+	if err != nil {
+		return "", err
+	}
+	if t, ok := s.byID[id]; ok {
+		return t.Alias, nil
+	}
+	return "", nil
+}
+
+// TenantAliasOf implements authn.TenantAliasResolver. It is AliasOf for the
+// authentication directory, which does not import this capability's interface
+// package.
+func (r *roster) TenantAliasOf(ctx context.Context, id string) (string, error) {
+	return r.AliasOf(ctx, tenant.ID(id))
+}
+
 // List implements tenant.Catalog. The slice is a copy, so a caller sorting or
 // trimming it cannot disturb what the next caller sees.
 func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {

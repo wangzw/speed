@@ -4,14 +4,14 @@
 // A tenant-scoped route is addressed under a tenant segment, /api/v1/tenants/
 // {tenant}/...; the request surface names a tenant by its alias, while the
 // resolving layer replaces that name with the tenant's identifier before
-// anything downstream reads it. The two are the same tenant only when the
-// segment and the resolved identifier agree, and the segment may carry either
-// the identifier or the tenant's current alias, because a roster alias may be
-// renamed while the identifier stays.
+// anything downstream reads it. The segment is an alias and only an alias: the
+// identifier is internal and is not a name a path may carry.
 //
-// The layer therefore resolves the segment through the roster and compares
-// identifiers, never strings. A segment that resolves to no tenant, to more
-// than one, or to a tenant other than the one the request resolved to is
+// The layer therefore resolves the segment through the roster by alias,
+// compares the identifier it comes back with the resolved one, and rewrites the
+// path parameter to that identifier so every handler behind it acts on the
+// internal key rather than on the name as written. A segment that resolves to no
+// tenant, or to a tenant other than the one the request resolved to, is
 // answered with the same bare 404 the resolving layer writes for a tenant it
 // does not serve, so the answer tells a caller nothing about whether the named
 // tenant exists.
@@ -48,7 +48,6 @@
 package pathguard
 
 import (
-	"context"
 	nethttp "net/http"
 
 	"github.com/gin-gonic/gin"
@@ -120,25 +119,28 @@ func (g *guard) wrap(next gin.HandlerFunc, refusePlatformDomain bool) gin.Handle
 			g.refuse(c, "the request carries no resolved tenant", segment)
 			return
 		}
-		named, unique, err := g.resolveSegment(ctx, segment)
+		named, found, err := g.roster.ByAlias(ctx, segment)
 		if err != nil {
 			log.FromContext(ctx).Error("tenant: the path tenant could not be resolved",
 				"path", c.Request.URL.Path, "segment", segment, "error", err)
 			speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusInternalServerError})
 			return
 		}
-		if !unique {
-			g.refuse(c, "the segment names no unique tenant", segment)
+		if !found {
+			g.refuse(c, "the segment names no tenant", segment)
 			return
 		}
-		if named != resolved {
+		if named.ID != resolved {
 			g.refuse(c, "the segment names another tenant", segment)
 			return
 		}
-		if refusePlatformDomain && (named == platformDomain || resolved == platformDomain) {
+		if refusePlatformDomain && (named.ID == platformDomain || resolved == platformDomain) {
 			g.refuse(c, "the tenant is the platform domain", segment)
 			return
 		}
+		// Hand the internal identifier on: everything behind this layer keys its
+		// rows by it, and the alias is the external name alone.
+		replaceParam(c, "tenant", string(named.ID))
 		next(c)
 	}
 }
@@ -156,45 +158,17 @@ func (g *guard) refuse(c *gin.Context, why, segment string) {
 	speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusNotFound})
 }
 
-// resolveSegment turns a path segment into the identifier of the one tenant it
-// names. ByAlias and Get are two lookups over one roster: an alias may equal
-// another tenant's identifier, so a segment that both resolve to different
-// identifiers is a segment that names no unique tenant, and unique reports false
-// for it.
-//
-// A segment outside the identifier's domain is still tried as an alias, because
-// an alias's domain is the roster's to judge rather than this layer's, and it is
-// not tried as an identifier, because no row carries it and the lookup would only
-// restate that.
-func (g *guard) resolveSegment(ctx context.Context, segment string) (id tenant.ID, unique bool, err error) {
-	byAlias, foundAlias, err := g.roster.ByAlias(ctx, segment)
-	if err != nil {
-		return "", false, err
+// replaceParam writes value into the path parameter name, when the route
+// carries one. The router's parameters are what the entry point binds a
+// handler's declared path input from, so replacing the value here is what makes
+// the handler read the internal identifier.
+func replaceParam(c *gin.Context, name, value string) {
+	for i := range c.Params {
+		if c.Params[i].Key == name {
+			c.Params[i].Value = value
+			return
+		}
 	}
-	byID, foundID, err := g.lookupID(ctx, segment)
-	if err != nil {
-		return "", false, err
-	}
-	switch {
-	case foundAlias && foundID && byAlias.ID != byID.ID:
-		return "", false, nil
-	case foundAlias:
-		return byAlias.ID, true, nil
-	case foundID:
-		return byID.ID, true, nil
-	default:
-		return "", false, nil
-	}
-}
-
-// lookupID resolves a segment as a tenant identifier. A segment outside the
-// identifier's domain resolves nothing rather than reaching the roster with a
-// value no row could carry.
-func (g *guard) lookupID(ctx context.Context, segment string) (tenant.Tenant, bool, error) {
-	if !tenant.IsIdentifier(segment) {
-		return tenant.Tenant{}, false, nil
-	}
-	return g.roster.Get(ctx, tenant.ID(segment))
 }
 
 // platformDomain is the tenant identifier the platform domain is carried by.

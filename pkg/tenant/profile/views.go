@@ -11,10 +11,12 @@ import (
 // added to the record later does not reach a client by being there.
 
 // TenantProfileView is one tenant's organization profile as the tenant profile
-// routes show it. It carries the read-only identity, the owning account and the
-// state beside the four descriptive fields. It is deliberately not the platform
-// management surface's view: that one renders the disable source, which belongs
-// to the platform surface and not to a tenant administrator's own profile page.
+// routes show it. It carries the read-only alias, the owning account and the
+// state beside the four descriptive fields. It carries no identifier: the
+// identifier is internal, and the request surface addresses the tenant by the
+// alias. It is deliberately not the platform management surface's view: that
+// one renders the disable source, which belongs to the platform surface and not
+// to a tenant administrator's own profile page.
 //
 // The owner is exposed here, behind tenant.profile.read, and nowhere an ordinary
 // member can read: the member list carries the membership and its roles, never
@@ -22,9 +24,8 @@ import (
 // tenant's own policy domain, so a member without it is refused before the view
 // is built.
 type TenantProfileView struct {
-	_ struct{} `description:"One tenant's organization profile: the read-only identity, the owning account, the state and the four descriptive fields, behind tenant.profile.read."`
+	_ struct{} `description:"One tenant's organization profile: the read-only alias, the owning account, the state and the four descriptive fields, behind tenant.profile.read."`
 
-	ID           string    `json:"id" required:"true" description:"The tenant's immutable identifier."`
 	Alias        string    `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
 	DisplayName  string    `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the alias then."`
 	Description  string    `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
@@ -38,7 +39,6 @@ type TenantProfileView struct {
 // profileViewOf builds the view field by field from a root-package value.
 func profileViewOf(t tenant.Tenant) TenantProfileView {
 	return TenantProfileView{
-		ID:           string(t.ID),
 		Alias:        t.Alias,
 		DisplayName:  t.Profile.DisplayName,
 		Description:  t.Profile.Description,

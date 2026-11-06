@@ -137,7 +137,7 @@ func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error 
 	if err := p.clearPolicy(ctx, tenantID, string(id)); err != nil {
 		return err
 	}
-	if err := p.auditRequired(ctx, personalAudit(personalDeleteAction, id, personalID, newPersonalActionID())); err != nil {
+	if err := p.auditRequired(ctx, personalAudit(personalDeleteAction, id, held.Alias, newPersonalActionID())); err != nil {
 		return err
 	}
 	if err := p.roster.Delete(ctx, personalID); err != nil {

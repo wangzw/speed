@@ -381,7 +381,7 @@ func newRig() *rig {
 		audit:         rig.audit,
 		logger:        log.Default(),
 		now:           func() time.Time { return testNow },
-		newIdentifier: func() string { return idPrefix + uuid.NewString() },
+		newIdentifier: func() string { return "org-" + uuid.NewString() },
 	}
 	return rig
 }
@@ -922,11 +922,11 @@ func TestCreateWritesTheMandatoryAuditRow(t *testing.T) {
 	if row.Action != auditAction || row.Outcome != outcomeSuccess {
 		t.Errorf("audit row = %+v, want action %q and outcome success", row, auditAction)
 	}
-	if row.Object != reply.Tenant.ID {
-		t.Errorf("audit object = %q, want the new tenant %q", row.Object, reply.Tenant.ID)
+	if row.Object != reply.Tenant.Alias {
+		t.Errorf("audit object = %q, want the new tenant's alias %q", row.Object, reply.Tenant.Alias)
 	}
-	if row.Detail[detailAccount] != string(unitAccount) || row.Detail[detailTenant] != reply.Tenant.ID {
-		t.Errorf("audit detail = %+v, want the account and the tenant", row.Detail)
+	if row.Detail[detailAccount] != string(unitAccount) || row.Detail[detailTenant] != reply.Tenant.Alias {
+		t.Errorf("audit detail = %+v, want the account and the tenant's alias", row.Detail)
 	}
 	if row.Detail[detailActionID] == "" {
 		t.Error("the audit detail carries no action_id")
@@ -982,13 +982,18 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 	if reply.Tenant.Alias != "acme-inc" {
 		t.Errorf("alias = %q, want the trimmed alias", reply.Tenant.Alias)
 	}
-	if !strings.HasPrefix(reply.Tenant.ID, idPrefix) {
-		t.Errorf("id = %q, want the %q prefix", reply.Tenant.ID, idPrefix)
+	provisioned := rig.provisioner.recorded()
+	if len(provisioned) != 1 {
+		t.Fatalf("the provisioner was asked %d time(s), want once", len(provisioned))
 	}
-	if _, err := uuid.Parse(strings.TrimPrefix(reply.Tenant.ID, idPrefix)); err != nil {
+	generated := string(provisioned[0].tenant.ID)
+	if !strings.HasPrefix(generated, "org-") {
+		t.Errorf("id = %q, want the %q prefix", generated, "org-")
+	}
+	if _, err := uuid.Parse(strings.TrimPrefix(generated, "org-")); err != nil {
 		t.Errorf("the identifier's tail is not a UUID: %v", err)
 	}
-	if reply.Tenant.ID == reply.Tenant.Alias {
+	if generated == reply.Tenant.Alias {
 		t.Error("the generated identifier equals the caller's alias")
 	}
 	if reply.Tenant.DisplayName != "Acme" {
@@ -1002,9 +1007,8 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 		t.Fatalf("the provisioner was asked %d time(s), want once", len(calls))
 	}
 	got := calls[0].tenant
-	if string(got.ID) != reply.Tenant.ID || got.Alias != reply.Tenant.Alias {
-		t.Errorf("the provisioned tenant is %q/%q, want the answered %q/%q",
-			got.ID, got.Alias, reply.Tenant.ID, reply.Tenant.Alias)
+	if got.Alias != reply.Tenant.Alias {
+		t.Errorf("the provisioned tenant is %q, want the answered alias %q", got.Alias, reply.Tenant.Alias)
 	}
 	if got.Profile.DisplayName != "Acme" || got.Status != tenant.StatusActive {
 		t.Errorf("the provisioned tenant carries %+v, want the profile and the active state", got)
@@ -1036,8 +1040,12 @@ func TestCreateRetriesAConflictingIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the creation after three retries failed: %v", err)
 	}
-	if reply.Tenant.ID != "org-free" {
-		t.Errorf("the answer names %q, want the free identifier", reply.Tenant.ID)
+	provisioned := rig.provisioner.recorded()
+	if len(provisioned) != 1 || string(provisioned[0].tenant.ID) != "org-free" {
+		t.Errorf("the provisioned tenant = %+v, want the free identifier", provisioned)
+	}
+	if reply.Tenant.Alias != "acme-inc" {
+		t.Errorf("the answer names %q, want the caller's alias", reply.Tenant.Alias)
 	}
 
 	rig = newRig()
@@ -1079,8 +1087,10 @@ func TestCreateNeverTakesTheAliasAsItsIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the creation failed: %v", err)
 	}
-	if reply.Tenant.ID != "org-free" || reply.Tenant.Alias != "acme-inc" {
-		t.Errorf("the answer is %q/%q, want org-free/acme-inc", reply.Tenant.ID, reply.Tenant.Alias)
+	provisioned := rig.provisioner.recorded()
+	if len(provisioned) != 1 || string(provisioned[0].tenant.ID) != "org-free" ||
+		reply.Tenant.Alias != "acme-inc" {
+		t.Errorf("the provisioned tenant is %+v, want org-free/acme-inc", provisioned)
 	}
 }
 

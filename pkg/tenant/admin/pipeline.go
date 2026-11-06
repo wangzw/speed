@@ -232,15 +232,18 @@ func (p *product) requireVerifiedAccount(c *gin.Context, id authn.Identity) bool
 // Unknown members are not probed: the declared binding refuses them itself, with
 // the entry point's untyped 400.
 func prescreenJSON[T any](p *product, next gin.HandlerFunc) gin.HandlerFunc {
-	return prescreenJSONFields[T](p, nil, next)
+	return prescreenJSONFields[T](p, nil, nil, next)
 }
 
 // prescreenJSONFields is prescreenJSON for a body whose members must all be
-// present. The entry point binds an absent member to its zero value, so a write
-// that clears every field and a body that carried none of them would reach the
-// handler alike; the profile write requires them, and this is where the
-// difference is kept.
-func prescreenJSONFields[T any](p *product, required []string, next gin.HandlerFunc) gin.HandlerFunc {
+// present and whose members must not carry a forbidden name. The entry point
+// binds an absent member to its zero value, so a write that clears every field
+// and a body that carried none of them would reach the handler alike; the
+// profile write requires them, and this is where the difference is kept. A
+// forbidden member is one the contract does not declare — the registration's
+// identifier, most of all — and it is refused here rather than left to the
+// binder, so the refusal keeps this module's problem type.
+func prescreenJSONFields[T any](p *product, required, forbidden []string, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
 		if err != nil || strings.ToLower(mediaType) != "application/json" {
@@ -268,6 +271,12 @@ func prescreenJSONFields[T any](p *product, required []string, next gin.HandlerF
 		}
 		for _, key := range required {
 			if _, present := object[key]; !present {
+				p.refuse(c)
+				return
+			}
+		}
+		for _, key := range forbidden {
+			if _, present := object[key]; present {
 				p.refuse(c)
 				return
 			}

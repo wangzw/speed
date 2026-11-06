@@ -115,9 +115,9 @@ type Catalog interface {
 	// Get returns the tenant with this identifier. The second result is
 	// false when the roster has no such row.
 	Get(ctx context.Context, id ID) (Tenant, bool, error)
-	// ByAlias returns the tenant this name belongs to, which is the first
-	// lookup the resolving layer makes on every request; a name that is no
-	// alias is then looked up as an identifier.
+	// ByAlias returns the tenant this alias belongs to. It is the only lookup
+	// the resolving layer makes on every request: the identifier is internal
+	// and is never a name a request surface carries.
 	ByAlias(ctx context.Context, alias string) (Tenant, bool, error)
 	// Put registers a tenant, or rewrites the row its identifier already
 	// has. The status and the disable source are taken from the value as
@@ -201,9 +201,9 @@ type Catalog interface {
 	// refused with ErrInvalidTenant, and a tombstone with ErrTenantDeleted: a
 	// deleted tenant's profile is as terminal as the rest of its row.
 	SetProfile(ctx context.Context, id ID, profile Profile) error
-	// List returns every tenant the roster holds, ordered by identifier, as a
-	// copy: a caller sorting or trimming what it was handed does not disturb
-	// what the next caller sees.
+	// List returns every tenant the roster holds, ordered by alias, as a copy:
+	// a caller sorting or trimming what it was handed does not disturb what
+	// the next caller sees.
 	List(ctx context.Context) ([]Tenant, error)
 	// Enter returns a context that belongs to this tenant, as a resolved
 	// request's does: FromContext answers it, scoped statements issued under

@@ -80,7 +80,7 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 		// records that creation rather than gating it. A replay that finds the
 		// row already there records nothing.
 		provisioning.AfterCommitOf(ctx).Add(func(ctx context.Context) error {
-			return p.audit.Record(ctx, personalAudit(personalCreateAction, account, personalID, newPersonalActionID()))
+			return p.audit.Record(ctx, personalAudit(personalCreateAction, account, alias, newPersonalActionID()))
 		})
 	case errors.Is(err, tenant.ErrTenantExists):
 		// The row is already there; the remaining steps are the replay.
@@ -173,6 +173,16 @@ func (p *product) ProvisionAccountDeletion(ctx context.Context, tx *gorm.DB, fac
 	// DeleteTx reports the missing identifier as ErrInvalidTenant. The
 	// identifier is derived from an account identifier, so it is inside the
 	// roster's domain; the only cause here is the absent row, which is no work.
+	// The row is read first for the alias the audit row names; an absent row
+	// leaves the alias empty and no audit row is written.
+	held, found, readErr := p.txRoster.GetTx(ctx, tx, personalID)
+	if readErr != nil {
+		return fmt.Errorf("reading the personal tenant for its alias: %w", readErr)
+	}
+	alias := ""
+	if found {
+		alias = held.Alias
+	}
 	after, err := p.txRoster.DeleteTx(ctx, tx, personalID)
 	switch {
 	case err == nil:
@@ -181,7 +191,7 @@ func (p *product) ProvisionAccountDeletion(ctx context.Context, tx *gorm.DB, fac
 		// longer be what stops it. It is written after the commit, at least
 		// once, like the deletion hook's own row would have been.
 		provisioning.AfterCommitOf(ctx).Add(func(ctx context.Context) error {
-			return p.audit.Record(ctx, personalAudit(personalDeleteAction, account, personalID, newPersonalActionID()))
+			return p.audit.Record(ctx, personalAudit(personalDeleteAction, account, alias, newPersonalActionID()))
 		})
 	case errors.Is(err, tenant.ErrInvalidTenant):
 		// No row: nothing to tombstone.

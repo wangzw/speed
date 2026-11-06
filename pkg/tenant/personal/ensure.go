@@ -74,6 +74,7 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	}
 
 	var record tenant.Tenant
+	alias := ""
 	created := false
 	actionID := ""
 	createBegan := false
@@ -81,35 +82,38 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	if own {
 		record, err = p.registeredTenant(ctx, personalID)
 	} else {
+		// The alias is the account's username, and the audit row names the
+		// tenant by it: it is read before the mandatory row so the row carries
+		// the name the surface uses.
+		alias, err = p.usernameOf(ctx, account)
+		if err != nil {
+			return personalResult{}, err
+		}
 		// The mandatory row lands before the create: an audit module that cannot
 		// take it stops the registration, so no tenant is ever created without the
 		// record of it.
 		actionID = newPersonalActionID()
 		createBegan = true
-		if auditErr := p.auditRequired(ctx, personalAudit(personalCreateAction, account, personalID, actionID)); auditErr != nil {
+		if auditErr := p.auditRequired(ctx, personalAudit(personalCreateAction, account, alias, actionID)); auditErr != nil {
 			return personalResult{}, auditErr
-		}
-		alias, aliasErr := p.usernameOf(ctx, account)
-		if aliasErr != nil {
-			if createBegan {
-				p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, personalID, actionID))
-			}
-			return personalResult{}, aliasErr
 		}
 		record, created, createRefused, err = p.createTenant(ctx, personalID, alias)
 	}
 	if err != nil {
 		if createBegan {
-			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, personalID, actionID))
+			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, alias, actionID))
 		}
 		return personalResult{}, err
+	}
+	if record.Alias != "" {
+		alias = record.Alias
 	}
 	// fail closes whatever is left of a create attempt with the failed row that
 	// links to its permitted one. A read-back attempt has no permitted row to
 	// close.
 	fail := func(err error) (personalResult, error) {
 		if createBegan {
-			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, personalID, actionID))
+			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, alias, actionID))
 		}
 		return personalResult{}, err
 	}
@@ -188,7 +192,7 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	if createRefused {
 		// Another call won the race the deterministic identifier creates: this
 		// attempt's create was refused, and the row it read back is the answer.
-		p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, personalID, actionID))
+		p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, alias, actionID))
 	}
 	return personalResult{Tenant: record, Created: created}, nil
 }
@@ -289,26 +293,27 @@ func (p *product) convergeTenantAdminGrants(ctx context.Context, tenantID string
 }
 
 // personalAudit builds the mandatory row of a tenant-side write: the tenant's
-// identifier is the object, and the detail names the action's two ends and the
-// identifier that links the rows of one attempt.
-func personalAudit(action string, account authn.AccountID, id tenant.ID, actionID string) audit.Entry {
+// alias is the object, and the detail names the action's two ends and the
+// identifier that links the rows of one attempt. The internal identifier stays
+// out of the row.
+func personalAudit(action string, account authn.AccountID, alias, actionID string) audit.Entry {
 	return audit.Entry{
 		Action:  action,
-		Object:  string(id),
+		Object:  alias,
 		Outcome: personalOutcomeSuccess,
 		Detail: map[string]string{
 			personalDetailActionID: actionID,
 			personalDetailAccount:  account.String(),
-			personalDetailTenant:   string(id),
+			personalDetailTenant:   alias,
 		},
 	}
 }
 
 // personalFailedAudit builds the row that closes a failed attempt.
-func personalFailedAudit(action string, id tenant.ID, actionID string) audit.Entry {
+func personalFailedAudit(action, alias, actionID string) audit.Entry {
 	return audit.Entry{
 		Action:  action,
-		Object:  string(id),
+		Object:  alias,
 		Outcome: personalOutcomeFailed,
 		Detail:  map[string]string{personalDetailActionID: actionID},
 	}

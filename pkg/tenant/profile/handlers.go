@@ -61,15 +61,15 @@ func (p *product) handleSet(ctx context.Context, in profileWriteInput, _ *speedh
 	}
 
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantProfileUpdate, string(id), map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantProfileUpdate, got.Alias, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   string(id),
+		detailTenant:   got.Alias,
 		detailSurface:  surfaceTenant,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.catalog.SetProfile(ctx, id, profile); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantProfileUpdate, string(id), actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantProfileUpdate, got.Alias, actionID))
 		return p.replyFailure("writing a tenant's profile", err)
 	}
 

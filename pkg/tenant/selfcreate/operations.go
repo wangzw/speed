@@ -11,11 +11,6 @@ import (
 // the module's spec declares.
 const pathFragment = "/orgs"
 
-// idPrefix is the fixed prefix of every generated organization identifier. The
-// rest is a random UUID, so the string carries no display name or other personal
-// data and cannot be predicted from one.
-const idPrefix = "org-"
-
 // The problem types the module writes, in the org namespace the personal
 // tenant's refusals also use. A code the frontend renders by code has to keep
 // the urn:speed:<module>:<dashed-code> shape, because @speed/api-client
@@ -78,11 +73,11 @@ type OrganizationCreatedReply struct {
 }
 
 // OrganizationCreatedTenant is the created organization as the answer renders
-// it. The identifier is generated; the alias is the one the caller chose.
+// it. The identifier is generated and stays internal; the alias is the one the
+// caller chose.
 type OrganizationCreatedTenant struct {
-	_ struct{} `description:"The created organization: the generated identifier, the caller's alias and profile, and the active state."`
+	_ struct{} `description:"The created organization: the caller's alias and profile, and the active state. The generated identifier is internal and never appears."`
 
-	ID          string `json:"id" required:"true" description:"The generated organization identifier: the fixed prefix \"org-\" followed by a random UUID. The scoped tables hold it."`
 	Alias       string `json:"alias" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
 	DisplayName string `json:"displayName" required:"true" description:"The organization's display name, trimmed."`
 	Description string `json:"description" required:"true" description:"The organization's description, trimmed."`
@@ -112,7 +107,7 @@ var createOperation = speedhttp.NewOperation[createInput, OrganizationCreatedRep
 	"Create a business organization",
 	"Creates one active business organization for the calling account through the provisioning seam: the "+
 		"caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed "+
-		"permission set. The caller chooses the alias; the identifier is generated as org-<uuid>. A pending "+
+		"permission set. The caller chooses the alias; the identifier is generated and stays internal. A pending "+
 		"email address is refused (contact-required); an impersonating caller, a service account and a static "+
 		"subject are refused. The alias is held to the roster's slug form, the reserved-name set and one "+
 		"namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization "+

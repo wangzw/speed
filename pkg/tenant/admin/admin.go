@@ -191,6 +191,8 @@ func Module() core.Module {
 			{Token: (*tenant.Provisioner)(nil)},
 			{Token: (*tenant.OrganizationWriter)(nil)},
 			{Token: (*speedhttp.TenantAdminRouteGuard)(nil)},
+			{Token: (*tenant.KindResolver)(nil), Optional: true},
+			{Token: (*tenant.AliasResolver)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -267,6 +269,14 @@ type product struct {
 	// organization-lifecycle routes are wrapped with: the path-tenant identity
 	// rule plus the refusal of the platform domain.
 	routeGuard speedhttp.TenantAdminRouteGuard
+	// kind answers one tenant's kind, nil when the assembly supplies no
+	// resolver. A nil resolver reads every tenant as tenant.KindBusiness, the
+	// same rule the caller's tenant read applies.
+	kind tenant.KindResolver
+	// aliases answers the alias an identifier is addressed by, nil when the
+	// assembly supplies no resolver. A nil resolver names no tenant in an audit
+	// row rather than falling back to the internal identifier.
+	aliases tenant.AliasResolver
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -320,6 +330,14 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, err
 	}
+	kind, _, err := optional[tenant.KindResolver](reg, "the tenant kind resolver")
+	if err != nil {
+		return nil, err
+	}
+	aliases, _, err := optional[tenant.AliasResolver](reg, "the tenant alias resolver")
+	if err != nil {
+		return nil, err
+	}
 	return &product{
 		catalog:      catalog,
 		guard:        guardAPI,
@@ -329,6 +347,8 @@ func newProduct(reg *core.Registry) (*product, error) {
 		provisioner:  provisioner,
 		organization: organization,
 		routeGuard:   routeGuard,
+		kind:         kind,
+		aliases:      aliases,
 		logger:       log.Default(),
 		cfg:          cfg,
 	}, nil
