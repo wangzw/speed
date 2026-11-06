@@ -637,7 +637,7 @@ type Membership struct {
 	Account   AccountID
 	Tenant    string // tenant.ID 的字符串形式
 	Active    bool   // 零值（暂停）视为非成员
-	Source    string // admin、jit:<提供方标识>、invite、import
+	Source    string // admin、initial、invite、import、jit:<提供方标识>
 	SSOExempt bool   // 租户强制 SSO 时的应急放行
 	CreatedAt time.Time
 }

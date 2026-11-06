@@ -295,7 +295,7 @@ type Membership struct {
 	Account   AccountID
 	Tenant    string
 	Active    bool   // the zero value, suspended, reads as not a member
-	Source    string // admin, jit:<provider>, invite or import
+	Source    string // admin, initial, invite, import or jit:<provider>
 	SSOExempt bool   // an emergency pass while the tenant enforces SSO
 	CreatedAt time.Time
 }
