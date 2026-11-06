@@ -578,12 +578,13 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // Summary fields, in the page's own order: identifier, alias, status.
-      // An alias is immutable after creation: the cell is read-only and the
-      // page offers no rename control.
+      // Summary fields, in the page's own order: identifier, alias, display
+      // name, status. An alias is immutable after creation: the cell is
+      // read-only and the page offers no rename control.
       await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
       await expect(summaryValue(page, 1)).toHaveText(TENANT_ALIAS)
-      await expect(summaryValue(page, 2)).toHaveText(
+      await expect(summaryValue(page, 2)).toHaveText(TENANT_DISPLAY_NAME)
+      await expect(summaryValue(page, 3)).toHaveText(
         copy('adminUi', 'tenants.status.active'),
       )
       await expect(
