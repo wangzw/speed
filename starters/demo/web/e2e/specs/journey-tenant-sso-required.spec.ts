@@ -88,7 +88,6 @@ import {
   backToApp,
   closeAccountMenu,
   openAccountMenu,
-  organizationRow,
 } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
@@ -181,24 +180,60 @@ async function selectTenant(page: Page, tenant: string): Promise<void> {
 const PLATFORM_TENANT = 'system'
 
 /**
+ * The account menu's organization row: the entry whose label is the current
+ * organization and whose `aria-expanded` state opens the roster of the
+ * others. It is the menu's only entry carrying that state, so the row is
+ * found without matching a tenant's text anywhere in the menu.
+ */
+function currentOrganizationRow(page: Page): Locator {
+  return page
+    .getByRole('menu')
+    .locator('[role="menuitem"][aria-expanded]')
+    .first()
+}
+
+/**
  * Move the tenant area to one organization through the account menu. The
  * menu's first entry names the current organization and expands the others;
  * choosing one closes the menu, switches, and announces the confirmation.
+ *
+ * "Already current" is decided from the organization row, never from a text
+ * scan of the menu: the expansion lists the organizations that are NOT
+ * current, so a menu-wide text match would take a merely listed tenant for the
+ * current one and close the menu without switching.
  */
 async function switchToTenant(page: Page, tenant: string): Promise<void> {
   const menu = await openAccountMenu(page)
-  if (
-    (await organizationRow(page, tenant).count()) > 0 ||
-    (await menu.getByText(tenant, { exact: true }).count()) > 0
-  ) {
-    // The organization is already current: its row is the expansion control,
-    // or context when it is the only one, and never a pick.
+  const currentRow = currentOrganizationRow(page)
+  if ((await currentRow.count()) === 0) {
+    // A lone organization has no expansion control: its row is context, not a
+    // pick. That row is the menu's first entry, and its label decides whether
+    // the account is already there.
+    await expect(
+      menu.locator('li, div').first().getByText(tenant, { exact: true }),
+    ).toHaveCount(1)
     await closeAccountMenu(page)
     return
   }
-  await menu.getByRole('menuitem').first().click()
-  const row = organizationRow(page, tenant)
-  await expect(row).toBeVisible()
+  await expect(currentRow).toBeVisible()
+  if ((await currentRow.getAttribute('aria-expanded')) !== 'true') {
+    await currentRow.click()
+  }
+  const others = menu.getByRole('group', {
+    name: copy('demo', 'userMenu.organizations'),
+    exact: true,
+  })
+  await expect(others).toBeVisible()
+  const row = others.getByRole('menuitem', { name: tenant, exact: true })
+  if ((await row.count()) === 0) {
+    // The expansion lists only the other organizations, so a target that is
+    // absent from it is the current one. The row's accessible name proves
+    // that rather than assuming it: a target the account cannot enter fails
+    // here instead of passing as "already current".
+    await expect(currentRow).toHaveAccessibleName(tenant)
+    await closeAccountMenu(page)
+    return
+  }
   await row.click()
   await expectClippedAnnouncement(
     page,
@@ -562,6 +597,11 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
     await expect(homeHeading(page)).toBeVisible()
+    // The journey states its starting organization here rather than inheriting
+    // whatever a fresh seed's first membership settles, or what a previous test
+    // left current: every later way into the admin starts from the platform's
+    // own organization.
+    await switchToTenant(page, PLATFORM_TENANT)
     // The way in is the account menu's entry, offered while the platform's
     // own organization is current.
     await openConsole(page)
