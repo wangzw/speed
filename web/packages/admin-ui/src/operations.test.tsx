@@ -108,21 +108,43 @@ describe('adminOperations', () => {
     expect(reads()).toBe(2)
   })
 
-  it('writes a new tenant to the generated registration endpoint', async () => {
+  it('writes a new tenant and its profile to the generated registration endpoint', async () => {
     const user = userEvent.setup()
-    const calls = bindAdminRequest((call) => {
-      if (call.path === '/api/v1/system/tenants') {
-        return { tenant: { id: 'acme', alias: 'Acme', status: 'active' } }
-      }
-      throw new Error(`unexpected request: ${call.path}`)
-    })
+    const calls = bindAdminRequest(
+      (call) => {
+        if (call.path === '/api/v1/system/tenants') {
+          return {
+            tenant: {
+              id: 'acme',
+              alias: 'acme',
+              status: 'active',
+              displayName: 'Acme Ltd',
+              description: '',
+              contactEmail: '',
+              website: '',
+              ownerAccount: '',
+              createdAt: '2026-10-15T12:00:00Z',
+            },
+          }
+        }
+        throw new Error(`unexpected request: ${call.path}`)
+      },
+      { recordBody: true },
+    )
     function Create() {
       const create = adminOperations.useCreateTenant()
       return (
         <button
           type="button"
           onClick={() => {
-            create.mutate({ id: 'acme', alias: 'Acme' })
+            create.mutate({
+              id: 'acme',
+              alias: 'acme',
+              displayName: 'Acme Ltd',
+              description: '',
+              contactEmail: '',
+              website: '',
+            })
           }}
         >
           register
@@ -135,6 +157,10 @@ describe('adminOperations', () => {
       expect(calls).toContainEqual({
         method: 'POST',
         path: '/api/v1/system/tenants',
+        // The blank optional fields are omitted, not sent as empty
+        // strings: the endpoint reads an absent field as "none" and
+        // rejects an empty contact address.
+        body: { id: 'acme', alias: 'acme', display_name: 'Acme Ltd' },
       })
     })
   })

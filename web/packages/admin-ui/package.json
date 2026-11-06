@@ -16,13 +16,14 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "build": "pnpm --filter @speed/i18n --filter @speed/ui-kit --filter @speed/layout-kit --filter @speed/api-sdk --filter @speed/auth-core build && tsc -p tsconfig.build.json"
+    "build": "pnpm --filter @speed/i18n --filter @speed/ui-kit --filter @speed/layout-kit --filter @speed/api-sdk --filter @speed/auth-core --filter @speed/org-create-ui build && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@speed/api-sdk": "workspace:*",
     "@speed/auth-core": "workspace:*",
     "@speed/i18n": "workspace:*",
     "@speed/layout-kit": "workspace:*",
+    "@speed/org-create-ui": "workspace:*",
     "@speed/ui-kit": "workspace:*"
   },
   "peerDependencies": {

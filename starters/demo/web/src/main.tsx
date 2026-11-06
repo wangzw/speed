@@ -31,6 +31,10 @@
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
 import {
+  ORG_CREATE_UI_NAMESPACE,
+  orgCreateUiResources,
+} from '@speed/org-create-ui'
+import {
   NOTIFICATION_UI_NAMESPACE,
   notificationUiResources,
 } from '@speed/notification-ui'
@@ -89,6 +93,7 @@ export async function bootstrapDemoApp(
   const bootstrap = bootstrapSpeedApp(container, {
     namespaces: [
       { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
+      { namespace: ORG_CREATE_UI_NAMESPACE, resources: orgCreateUiResources },
       { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
       { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
       {

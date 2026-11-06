@@ -391,6 +391,12 @@ export interface AccountMenuOrganizations {
    * tenants outside the caller's own memberships, and a failed one explains
    * what could not be named and offers the retry. */
   readonly notice?: ReactNode
+  /**
+   * The self-service organization-creation destination, or undefined when
+   * the org.create feature is absent or the session is impersonating. The
+   * organization row's expansion renders it as its last entry.
+   */
+  readonly createHref?: string
 }
 
 /**
@@ -1168,6 +1174,52 @@ function AccountMenuItems({
 }
 
 /**
+ * The organization row's expansion footer entry: the self-service creation
+ * destination. It is a real link carrying route-kit's href and click
+ * handler, so a modified or new-tab click keeps the browser's behavior;
+ * the surface closes itself on activation like every other entry.
+ */
+function CreateOrganizationMenuItem({
+  href,
+  onDismiss,
+  itemSx,
+}: {
+  readonly href: string
+  readonly onDismiss: () => void
+  readonly itemSx?: typeof accountMenuItemSx
+}): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const link = useRouteLinkProps(href)
+  return (
+    <MenuItem
+      component="a"
+      href={link.href}
+      onClick={(event) => {
+        link.onClick(event)
+        onDismiss()
+      }}
+      sx={itemSx}
+    >
+      <Box component="span" sx={accountMenuItemIconSx} aria-hidden="true">
+        <Box
+          component="svg"
+          viewBox="0 0 24 24"
+          width={24}
+          height={24}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </Box>
+      </Box>
+      {t('organization.create')}
+    </MenuItem>
+  )
+}
+
+/**
  * The account menu's organization switcher: one row naming the organization
  * the account is acting in, with an expansion that lists every organization
  * the account may enter. The account menu stays short however many
@@ -1283,6 +1335,16 @@ export function OrganizationMenuEntry({
               </Box>
             )}
           />
+          {organizations.createHref === undefined ? null : (
+            <CreateOrganizationMenuItem
+              href={organizations.createHref}
+              onDismiss={() => {
+                setExpanded(false)
+                onClose()
+              }}
+              itemSx={itemSx}
+            />
+          )}
         </Box>
       </Collapse>
       {/* The roster read's failure notice sits under the row rather than

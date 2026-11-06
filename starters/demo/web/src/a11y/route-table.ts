@@ -13,6 +13,7 @@
 import { act } from '@testing-library/react'
 import { accountUiResources } from '@speed/account-ui'
 import { adminUiResources } from '@speed/admin-ui'
+import { orgCreateUiResources } from '@speed/org-create-ui'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { routes } from '../routes.js'
 import {
@@ -85,11 +86,13 @@ export const EXPECTED_ROUTE_PATHS = [
   '/account/preferences',
   '/account/callback',
   '/notifications',
+  '/organizations/new',
   '/sign-in/callback',
   '/invitations/sample',
   '/password-reset',
   '/admin',
   '/admin/tenants',
+  '/admin/tenants/new',
   '/admin/tenants/sample',
   '/admin/accounts',
   '/admin/sessions',
@@ -175,6 +178,19 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
  * organization route itself rendered.
  */
 export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
+  // The platform registration page titles itself with the roster's
+  // `tenants.create.title` key.
+  '/admin/tenants/new': (
+    adminUiResources['en-US'] as unknown as {
+      readonly tenants: { readonly create: { readonly title: string } }
+    }
+  ).tenants.create.title,
+  // The self-service page titles itself from the org-create-ui namespace.
+  '/organizations/new': (
+    orgCreateUiResources['en-US'] as unknown as {
+      readonly page: { readonly title: string }
+    }
+  ).page.title,
   // The members-and-invitations page titles itself from `invitations.title`
   // and its organization menu entry from `organization.nav.invitations`;
   // both bundles carry the one `Members & invitations` wording, so the

@@ -28,7 +28,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CardActionArea from '@mui/material/CardActionArea'
 import Typography from '@mui/material/Typography'
-import { featurePresence, useFeature, useFeatureState } from '@speed/auth-core'
+import { featurePresence, useAuthState, useFeature, useFeatureState } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import {
   presentDeclarations,
@@ -42,7 +42,7 @@ import {
 } from '../admin-routes.js'
 import { useCurrentTenantId } from '../chrome.js'
 import { useOrganizationAdminAdmission } from '../organization-admin.js'
-import { ACCOUNT_PATH, NOTIFICATIONS_PATH } from '../paths.js'
+import { ACCOUNT_PATH, NOTIFICATIONS_PATH, ORGANIZATIONS_NEW_PATH } from '../paths.js'
 import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { ReviewNoticeControl } from '../review-notice-control.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -73,9 +73,14 @@ type StartCard =
       readonly key: 'organizationAdmin'
       readonly gate: 'organizationAdmin'
     }
+  | {
+      readonly key: 'createOrganization'
+      readonly gate: 'createOrganization'
+    }
 
 const START_CARDS: readonly StartCard[] = [
   { key: 'account', path: ACCOUNT_PATH, gate: 'direct' },
+  { key: 'createOrganization', gate: 'createOrganization' },
   { key: 'organizationAdmin', gate: 'organizationAdmin' },
   { key: 'admin', gate: 'admin' },
   { key: 'notifications', path: NOTIFICATIONS_PATH, gate: 'route' },
@@ -165,6 +170,9 @@ function StartCardTile({
   if (card.gate === 'organizationAdmin') {
     return <OrganizationAdminStartCard />
   }
+  if (card.gate === 'createOrganization') {
+    return <CreateOrganizationStartCard />
+  }
   if (card.gate === 'route') {
     return <RouteStartCard card={card} />
   }
@@ -229,6 +237,30 @@ function OrganizationAdminStartCard(): ReactElement | null {
   }
   return (
     <StartCardView card={{ key: 'organizationAdmin', path: admission.target }} />
+  )
+}
+
+/**
+ * The self-service creation card: offered while the org.create declaration
+ * is in force and the session is not impersonating. The route layer's own
+ * presence answer already folds in the feature gate, so the card follows
+ * the declaration exactly; the impersonation check keeps the entry out of
+ * a session the server would refuse the write for.
+ */
+function CreateOrganizationStartCard(): ReactElement | null {
+  const offered = useHasRoute(ORGANIZATIONS_NEW_PATH)
+  const snapshot = useAuthState()
+  if (
+    !offered ||
+    snapshot.state !== 'authenticated' ||
+    snapshot.impersonating
+  ) {
+    return null
+  }
+  return (
+    <StartCardView
+      card={{ key: 'createOrganization', path: ORGANIZATIONS_NEW_PATH }}
+    />
   )
 }
 

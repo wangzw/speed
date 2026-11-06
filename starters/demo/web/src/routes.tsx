@@ -41,6 +41,7 @@ import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
+import { OrganizationCreateRoute } from './pages/organization-create-page.js'
 import { TENANT_HOME_PATH } from './pages/not-found-page.js'
 import { PasswordResetPage } from './pages/password-reset-page.js'
 import {
@@ -50,6 +51,7 @@ import {
   ACCOUNT_SECTIONS,
   AUTH_CALLBACK_PATH,
   INVITATION_PREFIX,
+  ORGANIZATIONS_NEW_PATH,
   PASSWORD_RESET_PATH,
 } from './paths.js'
 
@@ -159,6 +161,16 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
   {
     path: ACCOUNT_SECTION_PATHS.preferences,
     view: () => <AccountSettingsPage section="preferences" />,
+  },
+  // The self-service organization creation: a tenant-area destination
+  // reached from the account menu's organization row and the home card.
+  // It is unlabelled (it adds no navigation entry) and gated on the
+  // org.create feature, so a deployment that does not serve it renders the
+  // same 404 an unregistered path does.
+  {
+    path: ORGANIZATIONS_NEW_PATH,
+    view: () => <OrganizationCreateRoute />,
+    requires: ['org.create'],
   },
   // The notification surface: the same declarative seam as the admin's
   // pages -- notification-ui exports a structurally route-kit declaration,

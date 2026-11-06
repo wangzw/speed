@@ -276,7 +276,15 @@ export function makeAdminBackend(
     getTenant: () => Promise.resolve(tenantFixture()),
     createTenant: (input) =>
       Promise.resolve(
-        tenantFixture({ id: input.id, alias: input.alias, status: 'active' }),
+        tenantFixture({
+          id: input.id,
+          alias: input.alias,
+          displayName: input.displayName,
+          description: input.description,
+          contactEmail: input.contactEmail,
+          website: input.website,
+          status: 'active',
+        }),
       ),
     setTenantStatus: () => Promise.resolve(),
     setTenantProfile: () => Promise.resolve(),

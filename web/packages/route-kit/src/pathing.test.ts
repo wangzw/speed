@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  isMoreSpecific,
   isParamSegment,
   isUnder,
   literalPath,
@@ -92,6 +93,23 @@ describe('patternsConflict', () => {
     expect(patternsConflict('/cases/new', '/cases/old')).toBe(false)
     expect(patternsConflict('/cases/:id', '/cases/:id/edit')).toBe(false)
     expect(patternsConflict('/cases', '/reports')).toBe(false)
+  })
+})
+
+describe('isMoreSpecific', () => {
+  it('narrows a param position to a literal', () => {
+    expect(isMoreSpecific('/cases/new', '/cases/:id')).toBe(true)
+    expect(isMoreSpecific('/cases/new/edit', '/cases/:id/edit')).toBe(true)
+    expect(isMoreSpecific('/cases/:id', '/cases/new')).toBe(false)
+  })
+
+  it('is false for equal shapes and for one-sided narrowing', () => {
+    expect(isMoreSpecific('/cases/:id', '/cases/:caseId')).toBe(false)
+    expect(isMoreSpecific('/cases/new', '/cases/old')).toBe(false)
+    expect(isMoreSpecific('/cases', '/cases/:id')).toBe(false)
+    // Neither pattern narrows the other: one is literal where the other
+    // takes a value, in opposite positions.
+    expect(isMoreSpecific('/a/:x', '/:y/b')).toBe(false)
   })
 })
 

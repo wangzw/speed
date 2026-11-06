@@ -289,12 +289,12 @@ flowchart TD
 
 ### 装配期的校验
 
-`RouteProvider` 在子节点渲染之前对**全表**校验：路径合法，每条声明有视图，没有重复或歧义的 pattern，`fallback` 在场；表里只要有一条声明带 `requires`，`presence`、`pending`、`failed` 都须在场。特性在场与否不影响合法性：一张表在任何谓词下都按同一组规则校验。
+`RouteProvider` 在子节点渲染之前对**全表**校验：路径合法，每条声明有视图，没有重复或无法由顺序消解的歧义 pattern，`fallback` 在场；表里只要有一条声明带 `requires`，`presence`、`pending`、`failed` 都须在场。同深度的字面 pattern 与 `:name` pattern 可重叠：字面 pattern 更具体，排在前面即由声明顺序解析——字面 URL 命中它，其余 URL 命中 `:name` pattern；更宽泛的 pattern 排在前面会遮挡字面 pattern，装配期报歧义。两个只在参数名上不同的 pattern 同样报歧义。特性在场与否不影响合法性：一张表在任何谓词下都按同一组规则校验。
 
 ### 一次渲染的匹配
 
 1. `RouteProvider` 从当前 URL 取路径（不含查询串）与历史状态。
-2. 按 `table` 里各声明的 `path` 在**全表**上逐条匹配：字面段按字面相等，`:name` 段收下该段的值。表不允许歧义，一条路径至多命中一条声明。
+2. 按 `table` 里各声明的 `path` 在**全表**上逐条匹配：字面段按字面相等，`:name` 段收下该段的值。先声明者先命中；表通过顺序消解字面与 `:name` 的重叠，因此一条路径至多命中一条声明。
 3. 无命中即渲染 `fallback(context)`；`context.path` 是未命中的路径。
 4. 命中一条不带 `requires` 的声明，即以其 `view(context)` 渲染，`context.params` 是收下的路径参数。
 5. 命中一条带 `requires` 的声明，按在场谓词分派：就绪且全部在场，渲染其视图；就绪且有特性缺席，渲染 `fallback(context)`，与未命中同一分支，该声明的视图不被调用；读取中渲染 `pending(context)`；读取失败渲染 `failed(context)`。

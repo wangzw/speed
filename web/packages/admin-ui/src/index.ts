@@ -180,6 +180,10 @@ export {
   type TenantRosterPageProps,
 } from './TenantRosterPage.js'
 export {
+  TenantCreatePage,
+  type TenantCreatePageProps,
+} from './TenantCreatePage.js'
+export {
   TenantDetailPage,
   type AdminTenantRelatedPage,
   type TenantDetailPageProps,

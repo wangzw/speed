@@ -11,7 +11,12 @@
  *
  * Everything is driven through the rendered product with mouse and keyboard:
  * headings, labels, buttons, focus, visible text and the standing
- * pending-verification notice. The single non-UI read is the verification code
+ * pending-verification notice. After the address is proved, the account
+ * creates a business organization from the home card and lands on the
+ * organization profile page, which also exercises the self-service creation
+ * entry and the switch to the new organization; the organization profile
+ * form itself is a separate change, so this step asserts the creation, the
+ * switch and the landing address. The single non-UI read is the verification code
  * from the review process log (fixtures/log.ts): the review mail carrier reaches
  * no relay, so the process log is where a person running the review reads it.
  *
@@ -40,6 +45,10 @@ import {
   openAccountMenu,
 } from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
+
+/** The display name of the business organization the verified account
+ * creates; the account menu row renders it after the switch. */
+const ORGANIZATION_DISPLAY_NAME = 'E2E Team'
 
 /** The account page's email verification section. */
 function verificationSection(page: Page) {
@@ -261,6 +270,57 @@ test('first-registration: a new visitor reaches a personal organization, and occ
     await openAccountMenu(page)
     await expect(
       page.getByRole('menu').getByText(account.username, { exact: true }),
+    ).toBeVisible()
+    await closeAccountMenu(page)
+  })
+
+  await test.step('a verified account creates a business organization and lands in it', async () => {
+    // The account now holds only its personal organization, so the account
+    // menu's organization row is context rather than an expansion; the home
+    // card is the entry. The creation writes through org.create (the review
+    // server serves it), switches the current organization, re-reads the
+    // caller's tenants and lands on the organization profile page. That page
+    // itself is a separate change; this step proves the creation, the
+    // switch and the landing address, not the profile form.
+    const organization = accounts.unique('team')
+    await page
+      .getByRole('heading', {
+        level: 2,
+        name: copy('demo', 'home.cards.createOrganization.title'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('orgCreateUi', 'page.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await page
+      .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
+      .fill(organization.username)
+    await page
+      .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })
+      .fill(ORGANIZATION_DISPLAY_NAME)
+    await page
+      .getByLabel(copy('orgCreateUi', 'fields.description'), { exact: true })
+      .fill('An organization created from the self-service page.')
+    await page
+      .getByRole('button', {
+        name: copy('orgCreateUi', 'submit'),
+        exact: true,
+      })
+      .click()
+
+    await expect(page).toHaveURL(/\/organization\/admin\/profile$/)
+    // The account menu now names the new organization as the current one.
+    await openAccountMenu(page)
+    await expect(
+      page.getByRole('menu').getByText(ORGANIZATION_DISPLAY_NAME, {
+        exact: true,
+      }),
     ).toBeVisible()
     await closeAccountMenu(page)
   })

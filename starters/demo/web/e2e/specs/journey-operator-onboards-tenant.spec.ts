@@ -22,14 +22,16 @@
  * invitation page needs.
  *
  * The seeded roster already carries acme; the second tenant is registered
- * through the create form. Both collision branches the document names are
- * driven before the successful registration -- an identifier acme holds, and an
- * alias acme holds -- and each is asserted to leave the roster unchanged. The
- * new tenant is registered with an alias that differs from its identifier, so
- * the accept summary (which names the tenant by identifier) and the account
- * menu's organization row (which names it by alias) cannot be confused. An
- * alias is immutable after creation, so the detail page shows it read-only and
- * offers no rename control.
+ * through the standalone registration page, opened from the roster's header
+ * link, and a successful registration lands on the new tenant's detail page.
+ * Both collision branches the document names are driven before the successful
+ * registration -- an identifier acme holds, and an alias acme holds -- and the
+ * roster is then asserted to have gained only the one row. The new tenant is
+ * registered with an alias that differs from its identifier, so the accept
+ * summary (which names the tenant by identifier) and the account menu's
+ * organization row (which names it by alias) cannot be confused. An alias is
+ * immutable after creation, so the detail page shows it read-only and offers
+ * no rename control.
  *
  * THE DOCUMENT'S STEP-10 RE-OPENED LINK IS NOT RENDERED BY THE PRODUCT, so this
  * spec leaves it undriven and reports the gap. The accept-view read returns an
@@ -109,6 +111,9 @@ const TENANT_ID = 'globex'
 
 /** The alias the tenant is registered with; it differs from the identifier. */
 const TENANT_ALIAS = 'globex-labs'
+
+/** The display name the registration form requires. */
+const TENANT_DISPLAY_NAME = 'Globex Labs'
 
 /**
  * The role the operator creates in the new tenant and binds itself to. The
@@ -455,14 +460,37 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
     })
 
-    await test.step('step 3: the operator registers a new tenant, and the roster grows by one active row', async () => {
+    await test.step('step 3: the operator registers a new tenant from its own page, and the roster grows by one active row', async () => {
+      // The roster no longer carries an inline form. Its header links to the
+      // standalone registration page.
+      const rows = rosterTable(page).locator('tbody tr')
+      const before = await rows.count()
+
+      await page
+        .getByRole('link', {
+          name: copy('adminUi', 'tenants.register'),
+          exact: true,
+        })
+        .click()
+      await expect(
+        page.getByRole('heading', {
+          level: 1,
+          name: copy('adminUi', 'tenants.create.title'),
+          exact: true,
+        }),
+      ).toBeVisible()
+
       const form = createSection(page)
       const idField = form.getByLabel(
-        copy('adminUi', 'tenants.create.idLabel'),
+        copy('orgCreateUi', 'fields.id'),
         { exact: true },
       )
       const aliasField = form.getByLabel(
-        copy('adminUi', 'tenants.create.aliasLabel'),
+        copy('orgCreateUi', 'fields.alias'),
+        { exact: true },
+      )
+      const displayNameField = form.getByLabel(
+        copy('orgCreateUi', 'fields.displayName'),
         { exact: true },
       )
       const submit = form.getByRole('button', {
@@ -470,40 +498,55 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         exact: true,
       })
       const conflict = copy('adminUi', 'errors.tenant.conflict')
-      const rows = rosterTable(page).locator('tbody tr')
-      // The roster read has settled by this step; its current length is the
-      // baseline both collision branches must leave untouched.
-      const before = await rows.count()
 
       // REQ-tenancy-001's first collision branch: an identifier another tenant
-      // holds is refused, and the roster gains no row.
+      // holds is refused, and the page stays on the registration form.
       await idField.fill(SEEDED_TENANT)
       await aliasField.fill('acme-alias-clash')
+      await displayNameField.fill('Acme Alias Clash')
       await submit.click()
       await expect(page.getByText(conflict, { exact: true })).toBeVisible()
-      await expect(rows).toHaveCount(before)
 
       // Its second branch: an alias another tenant holds is refused the same
       // way, with a fresh identifier.
       await idField.fill(`${TENANT_ID}-spare`)
       await aliasField.fill(SEEDED_TENANT)
+      await displayNameField.fill('Acme Spare')
       await submit.click()
       await expect(page.getByText(conflict, { exact: true })).toBeVisible()
-      await expect(rows).toHaveCount(before)
 
-      // The successful registration: the row appears, active, with the values
-      // typed. The alias differs from the identifier, so the later accept
+      // The successful registration navigates to the new tenant's detail
+      // page. The alias differs from the identifier, so the later accept
       // summary and account-menu assertions can tell the two names apart.
       await idField.fill(TENANT_ID)
       await aliasField.fill(TENANT_ALIAS)
+      await displayNameField.fill(TENANT_DISPLAY_NAME)
       await submit.click()
       await expect(
-        page.getByText(
-          copy('adminUi', 'tenants.created', { id: TENANT_ID }),
-          { exact: true },
-        ),
+        page.getByRole('heading', {
+          level: 1,
+          name: copy('adminUi', 'tenantDetail.title', { id: TENANT_ID }),
+          exact: true,
+        }),
       ).toBeVisible()
 
+      // Back on the roster the two refused attempts left no row: only the
+      // successful registration grew the table, and its row is active with
+      // the values typed.
+      await page
+        .getByRole('link', {
+          name: copy('adminUi', 'tenants.title'),
+          exact: true,
+        })
+        .first()
+        .click()
+      await expect(
+        page.getByRole('heading', {
+          level: 1,
+          name: copy('adminUi', 'tenants.title'),
+          exact: true,
+        }),
+      ).toBeVisible()
       await expect(rows).toHaveCount(before + 1)
       const created = rosterRow(page, TENANT_ID)
       await expect(created).toHaveCount(1)
@@ -1001,13 +1044,14 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       // REQ-tenancy-021: the current organization is the invited one. The
-      // account menu's organization row names it by alias -- the value chosen
-      // at registration, not the identifier the accept summary showed.
+      // account menu's organization row names it by its display name (the
+      // alias is the fallback when no display name is set), not by the
+      // identifier the accept summary showed.
       await openAccountMenu(invitee)
-      await expect(organizationRow(invitee, TENANT_ALIAS)).toBeVisible({
+      await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeVisible({
         timeout: 15_000,
       })
-      await expect(organizationRow(invitee, TENANT_ALIAS)).toBeEnabled()
+      await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeEnabled()
       await closeAccountMenu(invitee)
     })
 
@@ -1023,7 +1067,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // expansion does not hold a second row for it, and the account's other
       // organization is the one choice it renders.
       const menu = await openAccountMenu(invitee)
-      const row = organizationRow(invitee, TENANT_ALIAS)
+      const row = organizationRow(invitee, TENANT_DISPLAY_NAME)
       await expect(row).toBeVisible()
       await row.click()
       const others = menu.getByRole('group', {
@@ -1032,7 +1076,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       })
       await expect(others).toBeVisible()
       await expect(
-        others.getByRole('menuitem', { name: TENANT_ALIAS, exact: true }),
+        others.getByRole('menuitem', {
+          name: TENANT_DISPLAY_NAME,
+          exact: true,
+        }),
       ).toHaveCount(0)
       await expect(
         others.getByRole('menuitem', {

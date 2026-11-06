@@ -31,6 +31,7 @@ import {
 import {
   ACCOUNT_SECTION_PATHS,
   INVITATION_PREFIX,
+  ORGANIZATIONS_NEW_PATH,
   PASSWORD_RESET_PATH,
   ORGANIZATION_ADMIN_PREFIX,
 } from './paths.js'
@@ -47,6 +48,7 @@ describe('the route table', () => {
       ACCOUNT_SECTION_PATHS.security,
       ACCOUNT_SECTION_PATHS.sessions,
       ACCOUNT_SECTION_PATHS.preferences,
+      ORGANIZATIONS_NEW_PATH,
       NOTIFICATIONS_PATH,
       ACCOUNT_CALLBACK_PATH,
     ])
@@ -87,6 +89,7 @@ describe('the route table', () => {
     expect(adminShellRoutes.map((route) => route.path)).toEqual([
       ADMIN_PREFIX,
       `${ADMIN_PREFIX}/tenants`,
+      `${ADMIN_PREFIX}/tenants/new`,
       `${ADMIN_PREFIX}/tenants/:id`,
       `${ADMIN_PREFIX}/accounts`,
       `${ADMIN_PREFIX}/sessions`,
@@ -165,6 +168,10 @@ describe('the route table', () => {
       businessRoutes.find((route) => route.path === NOTIFICATIONS_PATH)
         ?.requires,
     ).toContain('notification.inbox')
+    expect(
+      businessRoutes.find((route) => route.path === ORGANIZATIONS_NEW_PATH)
+        ?.requires,
+    ).toContain('org.create')
   })
 
   it('combines the business slot, the callback, invitation and reset routes and the admin pages', () => {

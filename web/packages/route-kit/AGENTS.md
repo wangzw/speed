@@ -100,11 +100,14 @@ not exported.
   exist, which is selected, how they are collected — never a parallel
   matching engine or history stack.
 - **The consistency check runs at assembly.** `RouteProvider` calls
-  `assertRouteTable` before rendering children, so a duplicate/ambiguous
-  pattern, a malformed declaration, a missing fallback, or a gated table
-  missing `presence`/`pending`/`failed` throws where the product is composed,
-  not later as a page that silently never renders. Keep the check in the
-  render body (not behind a memo that React may skip).
+  `assertRouteTable` before rendering children, so a duplicate pattern, an
+  ambiguity the declaration order cannot resolve, a malformed declaration, a
+  missing fallback, or a gated table missing `presence`/`pending`/`failed`
+  throws where the product is composed, not later as a page that silently
+  never renders. A literal pattern declared before the param pattern it
+  narrows (`/tenants/new` before `/tenants/:id`) is accepted: matching is
+  first-declaration-wins, so the order resolves the overlap. Keep the check in
+  the render body (not behind a memo that React may skip).
 - **Framework peers stay peers.** `react`, `react-dom` and `react-router-dom`
   are peer (required) dependencies — one copy in the host tree is what makes
   router context identity work; this package never depends on them directly.

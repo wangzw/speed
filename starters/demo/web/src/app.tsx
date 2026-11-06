@@ -147,6 +147,7 @@ import {
   ACCOUNT_PATH,
   invitationPath,
   isOrganizationAdminPath,
+  ORGANIZATIONS_NEW_PATH,
   PASSWORD_RESET_PATH,
 } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
@@ -612,6 +613,10 @@ function TenantFrame({
     [emailChannelServed, smsChannelServed],
   )
   const rosterServed = useFeature('tenant.admin')
+  // The self-service organization creation's feature: absent means the
+  // route is a 404 and neither entry is offered (fail closed while the
+  // document is unsettled).
+  const orgCreateServed = useFeature('org.create')
   const snapshot = useAuthState()
   const authenticated = snapshot.state === 'authenticated'
   // Whose identity this session acts as right now. A start or end swaps it,
@@ -970,6 +975,12 @@ function TenantFrame({
           tenants: menuTenants,
           tenantId,
           onSelect: setTenantId,
+          // The self-service entry is offered only while the feature is
+          // served and the session is not impersonating; the whole section
+          // is withheld during an impersonation anyway, which keeps the
+          // condition explicit for the row that renders it.
+          createHref:
+            orgCreateServed && !impersonating ? ORGANIZATIONS_NEW_PATH : undefined,
           notice: rosterFailed ? (
             <TenantRosterFailure
               onRetry={() => setRosterAttempt((current) => current + 1)}
@@ -1607,13 +1618,15 @@ function AdminRouteGuard({
   readonly children: ReactNode
 }): ReactElement {
   const snapshot = useAuthState()
-  const items = useNavItems()
-  const selected = items.find((item) => item.selected && isAdminPath(item.id))
-  const permission = adminShellRoutes.find(
-    (route) => route.path === selected?.id,
-  )?.permission
+  // The exact declaration the URL matched, labelled or not: a page reached
+  // from a row or a header link (a detail page, the registration page) is
+  // held to its own permission code too, and nav collection alone would
+  // leave it unguarded.
+  const matched = useMatch()
   return (
-    <RouteGuard status={adminGuardStatus(snapshot, permission)}>
+    <RouteGuard
+      status={adminGuardStatus(snapshot, matched?.declaration.permission)}
+    >
       {children}
     </RouteGuard>
   )

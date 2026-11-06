@@ -48,6 +48,7 @@ import {
 } from './internal/icons.js'
 import { DashboardPage } from './DashboardPage.js'
 import { TenantRosterPage } from './TenantRosterPage.js'
+import { TenantCreatePage } from './TenantCreatePage.js'
 import { TenantDetailPage } from './TenantDetailPage.js'
 import { SettingsPage } from './SettingsPage.js'
 import { AuditPage } from './AuditPage.js'
@@ -92,13 +93,11 @@ function adminRootOf(path: string): string {
 }
 
 /**
- * The tenant pages: the roster and one tenant's detail. The detail
- * declaration is unlabelled (it is reached from a row, not the
- * navigation), and its view carries the roster's path (the matched path
- * with the tenant segment removed) so the detail page can link back, plus
- * the console's root path (the matched path with its last two segments
- * removed), which resolves a published sibling declaration whose path is
- * console-relative.
+ * The tenant pages: the roster, the standalone registration form and one
+ * tenant's detail. The registration declaration is declared before the
+ * detail pattern because '/tenants/new' would otherwise be read as a tenant
+ * identifier; like the detail it is unlabelled (it is reached from the
+ * roster's page header, not the navigation).
  */
 export const tenantAdminRoutes: AdminRouteTable = [
   {
@@ -110,6 +109,15 @@ export const tenantAdminRoutes: AdminRouteTable = [
     permission: 'tenant.read',
     requires: ['tenant.admin'],
     group: 'tenants',
+  },
+  {
+    id: 'tenant-create',
+    path: '/tenants/new',
+    view: (context) => (
+      <TenantCreatePage basePath={context.path.replace(/\/new$/, '')} />
+    ),
+    permission: 'tenant.read',
+    requires: ['tenant.admin'],
   },
   {
     id: 'tenant-detail',

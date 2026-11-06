@@ -26,6 +26,10 @@ import { attachSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
+import {
+  ORG_CREATE_UI_NAMESPACE,
+  orgCreateUiResources,
+} from '@speed/org-create-ui'
 import type { I18nInstance } from '@speed/i18n'
 import {
   NOTIFICATION_UI_NAMESPACE,
@@ -105,6 +109,7 @@ export function createHarnessClient(): SpeedClient {
  * four (src/main.tsx names the same list). */
 const APP_NAMESPACES = [
   { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
+  { namespace: ORG_CREATE_UI_NAMESPACE, resources: orgCreateUiResources },
   { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
   { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
   { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },

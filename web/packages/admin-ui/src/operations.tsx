@@ -233,10 +233,17 @@ export type AdminMemberPage = AuthnAdminMemberList
 /** One page of SMS templates: the rows and the next-page cursor. */
 export type AdminSmsTemplatePage = SmsAdminTemplatesList200
 
-/** POST /api/v1/system/tenants body: a tenant not registered yet. */
+/** POST /api/v1/system/tenants body: a tenant not registered yet, with the
+ * organization profile the registration form carries. The four descriptive
+ * fields are omitted from the request when empty, because the endpoint
+ * treats an absent field as "none" and rejects an empty address. */
 export interface AdminCreateTenantInput {
   readonly id: string
   readonly alias: string
+  readonly displayName: string
+  readonly description: string
+  readonly contactEmail: string
+  readonly website: string
 }
 
 /** POST /api/v1/system/tenants/:id/status body: a new state, one of the
@@ -1003,9 +1010,20 @@ export const adminOperations: AdminOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: AdminCreateTenantInput) =>
-        tenantAdminTenantsCreate({ id: input.id, alias: input.alias }).then(
-          (answer) => answer.tenant,
-        ),
+        tenantAdminTenantsCreate({
+          id: input.id,
+          alias: input.alias,
+          ...(input.displayName === ''
+            ? {}
+            : { display_name: input.displayName }),
+          ...(input.description === ''
+            ? {}
+            : { description: input.description }),
+          ...(input.contactEmail === ''
+            ? {}
+            : { contact_email: input.contactEmail }),
+          ...(input.website === '' ? {} : { website: input.website }),
+        }).then((answer) => answer.tenant),
       onSuccess: () => {
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),

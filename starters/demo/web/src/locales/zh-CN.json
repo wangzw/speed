@@ -41,6 +41,10 @@
         "title": "账户设置",
         "description": "个人资料、密码、登录标识、偏好、活跃会话与两步验证。"
       },
+      "createOrganization": {
+        "title": "创建组织",
+        "description": "为你的团队创建一个新的业务组织，你将成为它的首位管理员。"
+      },
       "admin": {
         "title": "管理后台",
         "description": "平台管理：组织、账户、设置与审计等。"
@@ -195,6 +199,7 @@
   },
   "organization": {
     "personal": "组织",
+    "create": "创建组织",
     "accessFailed": {
       "title": "无法核实组织访问权限",
       "description": "打开这个组织所需的信息没能加载，请重试。",

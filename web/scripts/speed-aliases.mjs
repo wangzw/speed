@@ -69,6 +69,10 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
   { specifier: '@speed/account-ui', entry: 'packages/account-ui/src/index.ts' },
   { specifier: '@speed/admin-ui', entry: 'packages/admin-ui/src/index.ts' },
   {
+    specifier: '@speed/org-create-ui',
+    entry: 'packages/org-create-ui/src/index.ts',
+  },
+  {
     specifier: '@speed/notification-ui',
     entry: 'packages/notification-ui/src/index.ts',
   },

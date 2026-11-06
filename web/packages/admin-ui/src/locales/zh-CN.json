@@ -248,6 +248,7 @@
       "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
+    "register": "登记组织",
     "column": {
       "id": "标识",
       "alias": "别名",
@@ -266,8 +267,6 @@
     },
     "create": {
       "title": "登记组织",
-      "idLabel": "标识",
-      "aliasLabel": "别名",
       "submit": "登记"
     },
     "rename": {
@@ -283,8 +282,7 @@
     "created": "组织「{{id}}」已登记",
     "renamed": "组织「{{id}}」的别名已更新",
     "enabledToast": "组织「{{id}}」已启用",
-    "disabledToast": "组织「{{id}}」已停用",
-    "identifierHelper": "不能包含空格"
+    "disabledToast": "组织「{{id}}」已停用"
   },
   "forbidden": {
     "title": "权限不足",

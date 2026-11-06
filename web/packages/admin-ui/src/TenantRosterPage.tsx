@@ -3,12 +3,13 @@
  *
  * The platform side of the tenant story: it lists the whole roster (the
  * tenants the process serves) as a table (identifier, alias, status and
- * the row's write control), registers a tenant not registered yet and
- * enables or disables a tenant. An alias is immutable after creation, so the
- * alias cell is read-only and the page offers no rename control. Switching
- * the current session's tenant is the tenant-side action and lives in
- * @speed/tenancy-ui; managing the roster is this page, and the two share
- * neither a control nor a query key.
+ * the row's write control) and enables or disables a tenant. Registration
+ * is a page of its own (/tenants/new, TenantCreatePage), reached from the
+ * page header's "register organization" link; an alias is immutable after
+ * creation, so the alias cell is read-only and the page offers no rename
+ * control. Switching the current session's tenant is the tenant-side
+ * action and lives in @speed/tenancy-ui; managing the roster is this page,
+ * and the two share neither a control nor a query key.
  *
  * Every read and write is an operation on the console operations bundle
  * -- the host binds the generated /api/v1/system/tenants operations to it -- so
@@ -20,29 +21,17 @@
  * so the row carries no write control at all. A failed list render settles
  * into the retryable error placeholder.
  *
- * The identifier and alias inputs carry a helper that names the rule the
- * backend holds them to (no blanks or control characters) and mark
- * themselves as invalid while a typed value breaks it; a rejected value
- * also holds its submit disabled, so an inadmissible name never leaves
- * the browser and the generic bad-request text is never what the operator
- * meets. The server still judges every write. A write that lands clears
- * the input that carried it -- the create form's identifier and alias
- * together -- so the next edit starts empty, and it names the tenant it
- * changed in its scope's success message; a refused write keeps the input
- * so it can be corrected.
- *
- * The create form is one feedback scope. Each row's enable/disable control
- * is a scope of its own, with the region and the inline marker inside that
- * row, so one row's refusal never reads as another row's. A refusal resolves
- * through the admin-ui namespace's whitelist (a roster collision reads the
- * conflict text), never a raw key, and brings its region into view.
+ * Each row's enable/disable control is a scope of its own, with the region
+ * and the inline marker inside that row, so one row's refusal never reads
+ * as another row's. A refusal resolves through the admin-ui namespace's
+ * whitelist (a roster collision reads the conflict text), never a raw key,
+ * and brings its region into view.
  *
  * The page opens with ui-kit's PageHeader: the page title as the level-one
- * heading, a breadcrumb trail from the console to this page, and a
- * refresh action that re-reads the roster. The refresh action is disabled
- * while a write in any of the page's scopes -- the create form or any
- * row's status slot -- is in flight. It first resets the create form's scope
- * and bumps a refresh generation the rows watch, so every row clears its own
+ * heading, a breadcrumb trail from the console to this page, and the
+ * register link plus a refresh action that re-reads the roster. The refresh
+ * action is disabled while any row's status slot has a write in flight. It
+ * bumps a refresh generation the rows watch, so every row clears its own
  * scope and inline marker without being remounted. The async section's
  * placeholders render at the next level down, so the heading order never
  * skips.
@@ -52,7 +41,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   DataTable,
@@ -66,7 +54,6 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { AdminLink } from './internal/navigation.js'
-import { isRejectedIdentifier } from './internal/identifier.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './internal/translation.js'
 import {
@@ -255,15 +242,9 @@ export function TenantRosterPage({
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const tenants = operations.useTenants()
-  const createTenant = operations.useCreateTenant()
-  const [newId, setNewId] = useState('')
-  const [newAlias, setNewAlias] = useState('')
-  // The create form is one scope; its region sits directly under it.
-  const createFeedback = useWriteFeedback()
-  const createRegionRef = useFailureScroll(createFeedback.outcome)
   // The ids whose row scope has a write in flight. Each row reports its
   // own slot up (see TenantRowActions), so the refresh action can disable
-  // for the union of the page's scopes and every row's.
+  // for the union of every row's scope.
   const [pendingRowWrites, setPendingRowWrites] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   )
@@ -282,33 +263,15 @@ export function TenantRosterPage({
     })
   }, [])
 
-  // The refresh action resets the create form's scope and bumps the refresh
-  // generation the rows watch; both happen before the roster is re-read.
-  // Every row scope is reset by its own row, not remounted.
+  // The refresh action resets every row scope (each row watches the bumped
+  // generation) and re-reads the roster.
   const [refreshGeneration, setRefreshGeneration] = useState(0)
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenants', tenants)],
     () => {
-      createFeedback.reset()
       setRefreshGeneration((generation) => generation + 1)
     },
   )
-
-  const idRejected = newId !== '' && isRejectedIdentifier(newId)
-  const aliasRejected = newAlias !== '' && isRejectedIdentifier(newAlias)
-
-  const create = () => {
-    const id = newId
-    const alias = newAlias
-    void createFeedback.run(async () => {
-      await createTenant.mutateAsync({ id, alias })
-      // A landed registration clears both inputs so the form is ready for
-      // the next one; a refused one keeps them.
-      setNewId('')
-      setNewAlias('')
-      return t('tenants.created', { id })
-    })
-  }
 
   // The columns the table renders: a row's read-only fields and its write
   // controls. Status carries a priority, so a narrow viewport sheds it
@@ -411,59 +374,32 @@ export function TenantRosterPage({
           { label: t('tenants.title') },
         ]}
         actions={
-          <RefreshButton
-            busy={pageRefresh.busy}
-            // A re-read mid-write would race the write: the control is
-            // disabled while any scope on the page -- the create form's or
-            // any row's status slot -- has a write in flight.
-            writePending={createFeedback.pending || pendingRowWrites.size > 0}
-            label={t('common.refresh')}
-            onClick={pageRefresh.refresh}
-          />
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              columnGap: 2,
+              rowGap: 1,
+            }}
+          >
+            {basePath === undefined ? null : (
+              <AdminLink href={`${basePath}/new`}>
+                {t('tenants.register')}
+              </AdminLink>
+            )}
+            <RefreshButton
+              busy={pageRefresh.busy}
+              // A re-read mid-write would race the write: the control is
+              // disabled while any row's status slot has a write in flight.
+              writePending={pendingRowWrites.size > 0}
+              label={t('common.refresh')}
+              onClick={pageRefresh.refresh}
+            />
+          </Box>
         }
         sx={{ mb: 2 }}
       />
-
-      <SectionCard title={t('tenants.create.title')} sx={{ mb: 3 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-start',
-            columnGap: 2,
-            rowGap: 1,
-          }}
-        >
-          <TextField
-            size="small"
-            value={newId}
-            onChange={(event) => setNewId(event.target.value)}
-            label={t('tenants.create.idLabel')}
-            error={idRejected}
-            helperText={t('tenants.identifierHelper')}
-          />
-          <TextField
-            size="small"
-            value={newAlias}
-            onChange={(event) => setNewAlias(event.target.value)}
-            label={t('tenants.create.aliasLabel')}
-            error={aliasRejected}
-            helperText={t('tenants.identifierHelper')}
-          />
-          <Button
-            type="button"
-            variant="contained"
-            disabled={createFeedback.pending || idRejected || aliasRejected}
-            loading={createFeedback.pending}
-            onClick={create}
-          >
-            {t('tenants.create.submit')}
-          </Button>
-        </Box>
-        <Box ref={createRegionRef}>
-          <WriteFeedbackRegion outcome={createFeedback.outcome} />
-        </Box>
-      </SectionCard>
 
       <SectionCard flushContent>
         <AdminAsyncSection

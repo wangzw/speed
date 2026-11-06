@@ -1,0 +1,72 @@
+{
+  "page": {
+    "title": "创建组织",
+    "intro": "为你的团队创建一个业务组织。你将成为它的首位管理员。"
+  },
+  "fields": {
+    "id": "标识",
+    "alias": "别名",
+    "displayName": "显示名",
+    "description": "描述",
+    "contactEmail": "联系邮箱",
+    "website": "网站"
+  },
+  "helpers": {
+    "id": "内部标识，创建后不可更改。",
+    "alias": "3–63 个小写字母、数字或连字符，以字母或数字开头；创建后不可更改。",
+    "description": "可选，最多 500 个字符。",
+    "contactEmail": "可选，组织的联系邮箱。",
+    "website": "可选，一个以 http 或 https 开头的完整地址。"
+  },
+  "validation": {
+    "required": "此项为必填。",
+    "aliasShape": "请使用 3–63 个小写字母、数字或连字符，并以字母或数字开头。",
+    "aliasReserved": "该别名已被系统保留，请换一个。",
+    "descriptionTooLong": "描述请控制在 500 个字符以内。",
+    "emailShape": "请填写一个邮箱地址，例如 team@example.com。",
+    "websiteShape": "请填写一个以 http 或 https 开头的完整地址，例如 https://example.com。"
+  },
+  "submit": "创建组织",
+  "submitting": "正在创建组织……",
+  "switching": {
+    "title": "正在进入新组织……",
+    "failedTitle": "组织已创建，但暂时无法进入。",
+    "failedDescription": "组织已经存在。请重试进入，不需要再次创建。",
+    "retry": "重试进入"
+  },
+  "errors": {
+    "unknown": "出了点问题，请稍后再试。",
+    "badRequest": "提交的内容有误，请检查表单后重试。",
+    "forbidden": "你没有创建组织的权限。",
+    "conflict": "该变更与已有组织冲突。",
+    "sessionEnded": "会话已结束，请重新登录。",
+    "rateLimited": "创建组织过于频繁，请稍后再试。",
+    "client": {
+      "network": "网络不可用，请检查连接后重试。",
+      "timeout": "这次操作耗时过长，请稍后再试。",
+      "protocol": "服务出了点问题，请稍后再试。",
+      "http": "服务器返回了错误（{{status}}），请稍后再试。"
+    },
+    "authn": {
+      "session_not_found": "会话已不存在，请重新登录。",
+      "session_revoked": "会话已被撤销，请重新登录。",
+      "token_expired": "登录已过期，请重新登录。",
+      "refresh_token_invalid": "登录已失效，请重新登录。",
+      "refresh_token_reused": "检测到异常活动，请重新登录。",
+      "contact_required": "请先验证邮箱地址，再创建组织。",
+      "forbidden": "当前账户暂时不能创建组织。请以本人身份登录，并确认没有在冒充其他账户。",
+      "bad_request": "提交的内容有误，请检查表单后重试。"
+    },
+    "tenant": {
+      "bad_request": "提交的内容有误，请检查表单后重试。"
+    },
+    "org": {
+      "organization_limit": "你的账户可创建的活跃业务组织数量已达上限，无法再创建新的组织。",
+      "rate_limited": "创建组织过于频繁，请稍后再试。",
+      "rate_limited_wait": "创建组织过于频繁，请 {{seconds}} 秒后再试。",
+      "rate_limited_wait_long": "创建组织过于频繁，请约 {{minutes}} 分钟后再试。",
+      "creation_in_progress": "已有一次组织创建正在进行，请等待它完成后再试。",
+      "identifier_unavailable": "该别名已被其他组织占用，请换一个。"
+    }
+  }
+}

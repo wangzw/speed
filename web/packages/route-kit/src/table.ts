@@ -14,7 +14,7 @@
  * concern.
  */
 
-import { patternsConflict } from './pathing.js'
+import { isMoreSpecific, patternsConflict } from './pathing.js'
 import { isGated } from './presence.js'
 import type { RouteContext, RoutePresence, RouteTable } from './types.js'
 
@@ -64,13 +64,21 @@ export function assertRouteTable(
 
   table.forEach((declaration, index) => {
     table.slice(index + 1).forEach((other) => {
-      if (patternsConflict(declaration.path, other.path)) {
-        const kind =
-          declaration.path === other.path ? 'Duplicate' : 'Ambiguous'
-        throw new Error(
-          `${kind} route paths "${declaration.path}" and "${other.path}" can match the same URL.`,
-        )
+      if (!patternsConflict(declaration.path, other.path)) {
+        return
       }
+      // A literal pattern declared before the param pattern it narrows is
+      // resolved by order: first-declaration-wins sends the literal URL to
+      // the literal page and every other URL to the param page. Declared
+      // the other way round, the general pattern shadows the literal one,
+      // and a pair that is not narrowed at all is a structural ambiguity.
+      if (isMoreSpecific(declaration.path, other.path)) {
+        return
+      }
+      const kind = declaration.path === other.path ? 'Duplicate' : 'Ambiguous'
+      throw new Error(
+        `${kind} route paths "${declaration.path}" and "${other.path}" can match the same URL.`,
+      )
     })
   })
 

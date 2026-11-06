@@ -257,6 +257,7 @@ describe('admin page declarations', () => {
     expect(adminRoutes.map((route) => route.path)).toEqual([
       '/',
       '/tenants',
+      '/tenants/new',
       '/tenants/:id',
       '/accounts',
       '/sessions',
@@ -269,10 +270,18 @@ describe('admin page declarations', () => {
       '/audit',
       '/audit/:id',
     ])
-    // The detail routes are reachable but not listed in the navigation.
-    for (const path of ['/tenants/:id', '/audit/:id']) {
+    // The registration page and the detail routes are reachable but not
+    // listed in the navigation.
+    for (const path of ['/tenants/new', '/tenants/:id', '/audit/:id']) {
       expect(adminRoutes.find((route) => route.path === path)?.label).toBeUndefined()
     }
+    // '/tenants/new' must be declared before '/tenants/:id', or the detail
+    // pattern would read the literal 'new' as a tenant identifier.
+    expect(
+      adminRoutes.findIndex((route) => route.path === '/tenants/new'),
+    ).toBeLessThan(
+      adminRoutes.findIndex((route) => route.path === '/tenants/:id'),
+    )
   })
 
   it('renders the translated navigation labels through the shell', () => {

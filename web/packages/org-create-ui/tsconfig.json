@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "test-utils"],
+  "compilerOptions": {
+    // org-create-ui is a DOM-rendering package: JSX compiles through the
+    // automatic runtime (react-jsx). It renders the shared creation form
+    // and the self-service creation page over @speed/ui-kit's form and
+    // feedback primitives and @speed/i18n's error-text convention. The
+    // workspace siblings resolve to their live sources here; the emitted
+    // dist/ keeps the bare specifiers consumers resolve against the real
+    // published packages. Keep this map in lockstep with what src/ and
+    // test-utils/ import (web/scripts/speed-aliases.mjs).
+    "jsx": "react-jsx",
+    "paths": {
+      "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
+      "@speed/i18n/platform-errors": ["../i18n/src/platform-errors.ts"],
+      "@speed/i18n": ["../i18n/src/index.ts"],
+      "@speed/theme-presets": ["../theme-presets/src/index.ts"],
+      "@speed/tokens": ["../tokens/src/index.ts"],
+      "@speed/ui-kit": ["../ui-kit/src/index.ts"],
+      "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
+      "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
+      "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
+    }
+  }
+}

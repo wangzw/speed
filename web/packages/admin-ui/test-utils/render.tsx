@@ -41,6 +41,10 @@ import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
 import {
+  ORG_CREATE_UI_NAMESPACE,
+  orgCreateUiResources,
+} from '@speed/org-create-ui'
+import {
   AppThemeProvider,
   UI_KIT_NAMESPACE,
   uiKitResources,
@@ -98,6 +102,7 @@ export function createAdminUiI18n(language: string = 'zh-CN'): I18nInstance {
   registerNamespace(instance, ADMIN_UI_NAMESPACE, adminUiResources)
   registerNamespace(instance, UI_KIT_NAMESPACE, uiKitResources)
   registerNamespace(instance, LAYOUT_KIT_NAMESPACE, layoutKitResources)
+  registerNamespace(instance, ORG_CREATE_UI_NAMESPACE, orgCreateUiResources)
   return instance
 }
 

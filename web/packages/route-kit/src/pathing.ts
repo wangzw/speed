@@ -79,6 +79,12 @@ export function matchesPattern(pattern: string, pathname: string): boolean {
  * `:name` on at least one side at that position. This catches both a
  * literal duplicate (`/cases` twice) and a structural ambiguity
  * (`/cases/:id` vs `/cases/:caseId`, or `/cases/new` vs `/cases/:id`).
+ *
+ * Overlap alone is not a table error: a registration surface may declare a
+ * literal pattern before a param pattern at the same depth, and
+ * first-declaration-wins then routes the literal URL to the literal page
+ * and every other URL to the param page. {@link isMoreSpecific} is the order
+ * test the table's consistency check applies to that pair.
  */
 export function patternsConflict(a: string, b: string): boolean {
   const left = splitPath(a)
@@ -89,6 +95,38 @@ export function patternsConflict(a: string, b: string): boolean {
     if (other === undefined) return false
     return isParamSegment(segment) || isParamSegment(other) || segment === other
   })
+}
+
+/**
+ * Whether pattern `a` is strictly more specific than pattern `b`: the same
+ * segment count, equal literals wherever both are literals, `a` accepts no
+ * value where `b` accepts one at some position, and nothing in the other
+ * direction. A table that declares `a` first resolves the overlap by order:
+ * the literal URL reaches `a`, and `b` keeps every URL `a` does not match.
+ * A table that declares the more general `b` first shadows `a`; that pair
+ * stays an ambiguity error.
+ */
+export function isMoreSpecific(a: string, b: string): boolean {
+  const left = splitPath(a)
+  const right = splitPath(b)
+  if (left.length !== right.length) return false
+  let narrowed = false
+  for (let index = 0; index < left.length; index += 1) {
+    const segment = left[index]
+    const other = right[index]
+    if (segment === undefined || other === undefined) return false
+    if (isParamSegment(segment)) {
+      // `a` accepts any value here, so it cannot be narrower than `b`.
+      if (!isParamSegment(other)) return false
+      continue
+    }
+    if (isParamSegment(other)) {
+      narrowed = true
+      continue
+    }
+    if (segment !== other) return false
+  }
+  return narrowed
 }
 
 /**

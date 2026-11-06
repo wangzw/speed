@@ -24,6 +24,22 @@ export const ADMIN_PREFIX = '/admin'
  */
 export const ORGANIZATION_ADMIN_PREFIX = '/organization/admin'
 
+/**
+ * The organization profile page: the organization management surface's
+ * fifth page, where an administrator edits the organization's own profile.
+ * It is the landing after a self-service creation, so the new
+ * organization's details can be completed before anything else.
+ */
+export const ORGANIZATION_ADMIN_PROFILE_PATH = `${ORGANIZATION_ADMIN_PREFIX}/profile`
+
+/**
+ * The self-service organization-creation page. It sits outside the
+ * organization management prefix: the caller may create an organization
+ * before belonging to one, so the page is a tenant-area destination, not a
+ * page of the organization surface.
+ */
+export const ORGANIZATIONS_NEW_PATH = '/organizations/new'
+
 /** Whether a declared path belongs to the organization admin area. */
 export function isOrganizationAdminPath(pathname: string): boolean {
   return (

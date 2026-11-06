@@ -23,7 +23,7 @@ web 是平台交付的前端包族与装配入口，位于浏览器一侧，向�
 
 **按层。** `tokens` 与 `theme-presets` 处于底层，`i18n` 同层独立，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开接口——`theme-presets` 只以类型依赖取 `tokens`，`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
 
-**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户接口、`admin-ui` 对平台与组织两个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个接口。判据是每个能力 UI 包都是某个后端能力在浏览器里的界面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
+**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户接口、`admin-ui` 对平台与组织两个管理面、`org-create-ui` 对 tenant 的自助创建接口、`notification-ui` 对通知的收件箱、偏好与推送三个接口。判据是每个能力 UI 包都是某个后端能力在浏览器里的界面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
 **按契约边界。** `api-sdk` 是唯一与后端耦合的包，且是从后端契约生成的产物：orval（[REF-orval](../../../references.md)）从 `contracts/api.json` 生成操作接口，特性名生成器从 `contracts/features.json` 生成特性名类型（[api-sdk](design-web-api-sdk.md)）；`api-client` 是契约无关的手写传输运行时。判据是包与后端契约的耦合程度。证据是 `web/packages/api-sdk/src/runtime.ts` 的包文档（生成的代码保持与 fetch、axios、tenant 无关，[REF-axios](../../../references.md)）与 `web/orval.config.ts` 的 mutator 指向（生成的代码经该接口转发给宿主绑定的请求函数）。
 
@@ -106,6 +106,8 @@ interface SpeedAppDefinition {
 
 **入口由宿主派生。** 平台管理面的入口（账户菜单里进入管理后台区的条目与首页卡片）只在当前租户是系统租户、平台权限集持有声明的权限码、且收窄后的平台声明非空时出现，冒充期间不出现；两处调用同一个派生，不各判一次。组织管理面的入口（账户菜单里的组织分组与首页卡片）在会话不冒充、当前租户既不是系统租户也不是个人租户、收窄后的组织声明非空、调用方持有其中一条权限码时出现；判据见 [admin-ui](design-web-admin-ui.md) 的「入口的派生」。
 
+**自助创建组织的入口由宿主派生，不属于任何管理面。** 账户菜单的组织行展开区底部与首页卡片各给出一个到 `/organizations/new` 的入口，条件是 `org.create` 特性在场且会话不在冒充中；特性缺席时路由与两处入口都不出现。创建页与表单由公共包 `org-create-ui` 交付，宿主只装配 `org.create` 操作、创建成功后的切换租户与落点。创建后的权限读可能仍在途，落点页显示加载态与重试，不闪回租户首页。
+
 **两个管理面不互相承载。** 平台管理面的页面不渲染在租户侧壳里，组织管理面的页面不渲染平台侧壳。`AdminProvider` 仍是平台员工的接口，`OrganizationAdminProvider` 是租户侧的接口；`admin-ui` 不 import `route-kit`、`tenancy-ui` 与 `product-shell`，宿主分别把它们接上。
 
 ### 新增三件的契约
@@ -156,6 +158,7 @@ interface SpeedAppDefinition {
 | `auth-ui` | 登录组件族 | `ui-kit`、`i18n`、`auth-core`（`api-sdk` 只是开发期的类型依赖，公开接口不引用它的类型） |
 | `account-ui` | 已登录账户管理组件族 | `ui-kit`、`i18n`、`auth-core`、`api-sdk` |
 | `tenancy-ui` | 租户切换：切换控件、宿主菜单里的租户行与切换播报区域 | `ui-kit`、`i18n` |
+| `org-create-ui` | 组织创建：共享表单与客户端校验、自助创建页；不持请求、路由与当前租户 | `ui-kit`、`i18n` |
 | `product-shell` | 组装壳与装配入口 | `layout-kit`、`auth-ui`、`auth-core`、`i18n`（主出口的直接依赖；`./bootstrap` 出口另直接取 `api-client`、`api-sdk`、`ui-kit`） |
 | `route-kit` | 路由与导航独立层、声明式注册接口、按特性在场收窄注册范围 | 无 |
 | `admin-ui` | 平台侧与租户侧两个管理面：平台管理面的第二种壳，组织管理面在租户侧壳里只装上下文 | `ui-kit`、`layout-kit`、`i18n`、`auth-core`、`api-sdk` |
@@ -202,6 +205,8 @@ graph TD
     account-ui --> api-sdk
     tenancy-ui --> i18n
     tenancy-ui --> ui-kit
+    org-create-ui --> ui-kit
+    org-create-ui --> i18n
     admin-ui --> ui-kit
     admin-ui --> layout-kit
     admin-ui --> auth-core
@@ -299,9 +304,10 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 | 登录组件族 | 部分实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SignOutButton.tsx` `SignOutButton`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` `SessionEndedScreen` |
 | 账户管理组件族 | 已实现 | `web/packages/account-ui/src/index.ts` `ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`、`PreferencesSection`、`SessionsSection`、`SocialBindingsSection`、`MfaSection` |
 | 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/index.ts` `TenantSwitcher`、`TenantMenuItems`、`TenantSwitchAnnouncement`、`TenantOption`、`TenantSwitcherProps`、`TenantMenuItemsProps`、`TenantSwitchAnnouncementProps`；`web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
+| 组织创建组件族 | 已实现 | `web/packages/org-create-ui/src/index.ts` `OrganizationCreateForm`、`OrganizationCreatePage`、`validateOrganizationCreateValues`、`useOrganizationCreateErrorText`；`web/packages/org-create-ui/src/resources.ts` `ORG_CREATE_UI_NAMESPACE`、`orgCreateUiResources` |
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |
-| 平台管理面组件族 | 已实现 | `web/packages/admin-ui/src/index.ts` `AdminShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
+| 平台管理面组件族 | 已实现 | `web/packages/admin-ui/src/index.ts` `AdminShell`、`TenantRosterPage`、`TenantCreatePage`、`SettingsPage`、`AuditPage` |
 | 组织管理面组件族 | 部分实现 | `web/packages/admin-ui/src/OrganizationAdminProvider.tsx`、`OrganizationAdminBreadcrumb.tsx`、`organization-routes.tsx`、`organization-operations.tsx`、`organization-pages.tsx`；`starters/demo/web/src/organization-admin.ts` |
 | 站内通知界面组件族 | 已实现 | `web/packages/notification-ui/src/index.ts` `NotificationBell`、`useNotificationUnread`、`NOTIFICATION_BADGE_MAX`、`NotificationInbox`、`NotificationPreferences`、`NotificationCenter`、`NotificationStreamProvider`、`notificationRoutes` |
 | 声明式注册接口 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/admin-ui/src/route.ts` `AdminRoute` |

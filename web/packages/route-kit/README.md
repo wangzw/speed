@@ -345,7 +345,8 @@ breaking change, labelled with a `!` scope and a `BREAKING CHANGE` footer.
 | A gated declaration's features are absent | the same `fallback` renders, with the requested path and no params, exactly as for a miss; the declaration's `view` is never called and it has no nav entry |
 | A gated path while the predicate is pending | `pending` renders; `fallback` is not called and gated nav entries are withheld |
 | A gated path while the predicate has failed | `failed` renders; ungated pages and nav entries are unaffected |
-| A duplicate or ambiguous path pattern | assembly throws (`RouteProvider`), naming the conflicting declarations, before rendering |
+| A literal path declared before the param pattern it narrows | accepted; first-declaration-wins sends the literal URL to the literal page and other URLs to the param page |
+| A duplicate path pattern, or an ambiguity the order cannot resolve (a param before its literal, or two param patterns) | assembly throws (`RouteProvider`), naming the conflicting declarations, before rendering |
 | `fallback` missing | assembly throws (it is required) |
 | A gated table missing `presence`, `pending` or `failed` | assembly throws, naming the missing input and a gated path |
 | A deep link no declaration covers | same as no match — reaches `fallback` |

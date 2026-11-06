@@ -55,10 +55,21 @@ describe('assertRouteTable', () => {
     expect(() => assertRouteTable(table, fallback)).toThrow(/Ambiguous/)
   })
 
-  it('rejects a literal shadowed by a param pattern at the same depth', () => {
+  it('accepts a literal declared before the param pattern it narrows', () => {
+    // '/cases/new' is strictly more specific than '/cases/:id'; declared
+    // first, first-declaration-wins routes the literal URL to it and every
+    // other URL to the param page.
     const table: RouteTable = [
       { path: '/cases/new', view },
       { path: '/cases/:id', view },
+    ]
+    expect(() => assertRouteTable(table, fallback)).not.toThrow()
+  })
+
+  it('rejects a param pattern declared before the literal it would shadow', () => {
+    const table: RouteTable = [
+      { path: '/cases/:id', view },
+      { path: '/cases/new', view },
     ]
     expect(() => assertRouteTable(table, fallback)).toThrow(/Ambiguous/)
   })

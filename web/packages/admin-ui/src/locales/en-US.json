@@ -248,6 +248,7 @@
       "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
+    "register": "Register an organization",
     "column": {
       "id": "Identifier",
       "alias": "Alias",
@@ -266,8 +267,6 @@
     },
     "create": {
       "title": "Register an organization",
-      "idLabel": "Identifier",
-      "aliasLabel": "Alias",
       "submit": "Register"
     },
     "rename": {
@@ -283,8 +282,7 @@
     "created": "Organization \"{{id}}\" registered",
     "renamed": "Alias of organization \"{{id}}\" updated",
     "enabledToast": "Organization \"{{id}}\" enabled",
-    "disabledToast": "Organization \"{{id}}\" disabled",
-    "identifierHelper": "No spaces"
+    "disabledToast": "Organization \"{{id}}\" disabled"
   },
   "forbidden": {
     "title": "Not permitted",

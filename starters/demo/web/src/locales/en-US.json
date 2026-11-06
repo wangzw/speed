@@ -41,6 +41,10 @@
         "title": "Account settings",
         "description": "Your profile, password, sign-in identifiers, preferences, active sessions and two-step verification."
       },
+      "createOrganization": {
+        "title": "Create an organization",
+        "description": "Create a new business organization for your team. You become its first administrator."
+      },
       "admin": {
         "title": "Admin",
         "description": "Platform administration: organizations, accounts, settings and the audit trail."
@@ -195,6 +199,7 @@
   },
   "organization": {
     "personal": "Organization",
+    "create": "Create an organization",
     "accessFailed": {
       "title": "Could not check organization access",
       "description": "We could not load what we need to open this organization. Please try again.",

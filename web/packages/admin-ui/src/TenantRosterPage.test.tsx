@@ -144,50 +144,30 @@ describe('TenantRosterPage', () => {
     }
   })
 
-  it('registers a tenant and reflects the invalidated list', async () => {
-    const user = userEvent.setup()
-    const store: AdminTenant[] = []
+  it('links to the standalone registration page and renders no inline form', async () => {
     const operations = createAdminOperations(
-      makeAdminBackend({
-        listTenants: () => Promise.resolve([...store]),
-        createTenant: (input) => {
-          const tenant: AdminTenant = tenantFixture({
-            id: input.id,
-            alias: input.alias,
-            status: 'active',
-          })
-          store.push(tenant)
-          return Promise.resolve(tenant)
-        },
-      }),
+      makeAdminBackend({ listTenants: () => Promise.resolve([]) }),
     )
-    renderWithProviders(<TenantRosterPage />, { operations })
+    renderWithProviders(<TenantRosterPage basePath="/admin/tenants" />, {
+      operations,
+    })
     await screen.findByText(zhCN.tenants.empty.title)
-
-    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
-    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
-
-    expect(await screen.findByText('Acme-Inc')).toBeInTheDocument()
-  })
-
-  it('renders the conflict text when a registration is refused', async () => {
-    const user = userEvent.setup()
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        createTenant: () => Promise.reject({ code: 'tenant.conflict' }),
-      }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText(zhCN.tenants.empty.title)
-
-    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
-    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme')
-    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
 
     expect(
-      await screen.findByText(zhCN.errors.tenant.conflict),
-    ).toBeInTheDocument()
+      screen.getByRole('link', { name: zhCN.tenants.register }),
+    ).toHaveAttribute('href', '/admin/tenants/new')
+    // The registration form is its own page now: the roster carries no
+    // text input at all (no inline identifier or alias field).
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+  })
+
+  it('offers no registration link when the host gives no roster path', async () => {
+    const operations = createAdminOperations(makeAdminBackend())
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText(zhCN.tenants.empty.title)
+    expect(
+      screen.queryByRole('link', { name: zhCN.tenants.register }),
+    ).not.toBeInTheDocument()
   })
 
   it('disables a tenant through the row control', async () => {
@@ -330,26 +310,30 @@ describe('TenantRosterPage', () => {
     })
   })
 
-  it('disables the refresh while a registration is in flight', async () => {
+  it('disables the refresh while a row write is in flight', async () => {
     const user = userEvent.setup()
-    const pending = deferred<AdminTenant>()
+    const pending = deferred<void>()
     const reads: string[] = []
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () => {
           reads.push('read')
-          return Promise.resolve([])
+          return Promise.resolve([
+            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+          ])
         },
-        createTenant: () => pending.promise,
+        setTenantStatus: () => pending.promise,
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText(zhCN.tenants.empty.title)
+    await screen.findByText('Acme')
     expect(reads).toHaveLength(1)
 
-    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
-    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme')
-    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+      }),
+    )
 
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await vi.waitFor(() => {
@@ -363,7 +347,7 @@ describe('TenantRosterPage', () => {
     expect(reads).toHaveLength(1)
 
     await act(async () => {
-      pending.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }))
+      pending.resolve()
     })
     await vi.waitFor(() => {
       expect(refresh).not.toBeDisabled()
@@ -462,110 +446,6 @@ describe('TenantRosterPage', () => {
         [900, 200],
       ]),
     )
-  })
-
-  it('clears the create inputs once a registration lands', async () => {
-    const user = userEvent.setup()
-    const operations = createAdminOperations(makeAdminBackend())
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText(zhCN.tenants.empty.title)
-
-    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
-    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme-Inc')
-    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
-
-    await waitFor(() => {
-      expect(screen.getByLabelText(zhCN.tenants.create.idLabel)).toHaveValue('')
-      expect(screen.getByLabelText(zhCN.tenants.create.aliasLabel)).toHaveValue('')
-    })
-  })
-
-  it('keeps the create inputs when a registration is refused', async () => {
-    const user = userEvent.setup()
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        createTenant: () => Promise.reject({ code: 'tenant.conflict' }),
-      }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText(zhCN.tenants.empty.title)
-
-    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'acme')
-    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Acme')
-    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
-
-    await screen.findByText(zhCN.errors.tenant.conflict)
-    expect(screen.getByLabelText(zhCN.tenants.create.idLabel)).toHaveValue('acme')
-    expect(screen.getByLabelText(zhCN.tenants.create.aliasLabel)).toHaveValue('Acme')
-  })
-
-  it('marks an identifier input invalid while it carries a blank', async () => {
-    const user = userEvent.setup()
-    const operations = createAdminOperations(makeAdminBackend())
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText(zhCN.tenants.empty.title)
-
-    const input = screen.getByLabelText(zhCN.tenants.create.idLabel)
-    await user.type(input, 'Acme Corp')
-    expect(input).toHaveAttribute('aria-invalid', 'true')
-
-    await user.clear(input)
-    await user.type(input, 'acme')
-    expect(input).toHaveAttribute('aria-invalid', 'false')
-  })
-
-  it('withholds a registration whose identifier or alias carries a blank', async () => {
-    const user = userEvent.setup()
-    const created: string[] = []
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        createTenant: (input) => {
-          created.push(`${input.id}:${input.alias}`)
-          return Promise.resolve(
-            tenantFixture({
-              id: input.id,
-              alias: input.alias,
-              status: 'active',
-            }),
-          )
-        },
-      }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText(zhCN.tenants.empty.title)
-
-    const id = screen.getByLabelText(zhCN.tenants.create.idLabel)
-    const alias = screen.getByLabelText(zhCN.tenants.create.aliasLabel)
-    const submit = screen.getByRole('button', { name: zhCN.tenants.create.submit })
-
-    // A blank in either field is the identifier domain's refusal. The
-    // client rule is the gate: the input says why, the submit is inert,
-    // and no request is made — the server's generic bad-request text is
-    // never what the operator meets.
-    await user.type(id, 'acme 1')
-    await user.type(alias, 'Acme')
-    expect(id).toHaveAttribute('aria-invalid', 'true')
-    expect(submit).toBeDisabled()
-    fireEvent.click(submit)
-    // The write is dispatched asynchronously, so a request made from the
-    // click has not landed yet in this tick. Flush the queue before
-    // claiming none was made; the disabled mirror alone is not proof.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    expect(created).toEqual([])
-
-    await user.clear(id)
-    await user.type(id, 'acme')
-    await user.clear(alias)
-    await user.type(alias, 'Acme Inc')
-    expect(alias).toHaveAttribute('aria-invalid', 'true')
-    expect(submit).toBeDisabled()
-    fireEvent.click(submit)
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    expect(created).toEqual([])
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
@@ -694,7 +574,7 @@ describe('TenantRosterPage', () => {
     })
   })
 
-  it('names the tenant on each landed write', async () => {
+  it('names the tenant on each landed row write', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -705,21 +585,11 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    // The registration names the tenant it created.
-    await user.type(screen.getByLabelText(zhCN.tenants.create.idLabel), 'globex')
-    await user.type(screen.getByLabelText(zhCN.tenants.create.aliasLabel), 'Globex')
-    await user.click(screen.getByRole('button', { name: zhCN.tenants.create.submit }))
-    expect(
-      await screen.findByText(text(zhCN.tenants.created, { id: 'globex' })),
-    ).toBeInTheDocument()
-
     // The row's status change names its tenant and the new state.
     await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
     expect(
       await screen.findByText(text(zhCN.tenants.disabledToast, { id: 'acme' })),
     ).toBeInTheDocument()
-    // The registration's confirmation lives in the other scope.
-    expect(screen.getByText(text(zhCN.tenants.created, { id: 'globex' }))).toBeInTheDocument()
   })
 
   it('resets the row scope and inline marker on refresh', async () => {
