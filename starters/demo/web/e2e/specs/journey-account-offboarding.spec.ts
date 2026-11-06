@@ -74,7 +74,7 @@ import {
 } from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
 import { copy } from '../helpers/i18n'
-import { expectClippedAnnouncement } from '../helpers/tenant-switch'
+import { switchToTenant } from '../helpers/switch-tenant'
 import { totpCode } from '../helpers/totp'
 
 // The operator needs its two seeded factors and a proved address; the admin
@@ -274,35 +274,6 @@ function sessionsSection(page: Page): Locator {
     name: copy('demo', 'account.blocks.devices'),
     exact: true,
   })
-}
-
-/**
- * Move the tenant area to one organization through the account menu. The
- * menu's first entry names the current organization and expands the others;
- * choosing one closes the menu, switches, and announces the confirmation. The
- * member's account also owns a personal organization, named after the account
- * itself, so the current row's name is not known up front.
- */
-async function switchToTenant(page: Page, tenant: string): Promise<void> {
-  const menu = await openAccountMenu(page)
-  if (
-    (await organizationRow(page, tenant).count()) > 0 ||
-    (await menu.getByText(tenant, { exact: true }).count()) > 0
-  ) {
-    // The organization is already current: its row is the expansion control,
-    // or context when it is the only one, and never a pick.
-    await closeAccountMenu(page)
-    return
-  }
-  await menu.getByRole('menuitem').first().click()
-  const row = organizationRow(page, tenant)
-  await expect(row).toBeVisible()
-  await row.click()
-  await expectClippedAnnouncement(
-    page,
-    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
-  )
-  await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
 /** The password sign-in surface's fields and submit control. */

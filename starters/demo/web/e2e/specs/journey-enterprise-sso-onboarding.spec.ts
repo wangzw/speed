@@ -109,6 +109,7 @@ import {
 } from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
+import { switchToTenant } from '../helpers/switch-tenant'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
 /** The seeded platform administrator the review assembly writes. */
@@ -269,33 +270,6 @@ function memberSection(page: Page): Locator {
  * only while this is the current organization; platform administration is not
  * a tenant member's surface. */
 const PLATFORM_TENANT = 'system'
-
-/**
- * Move the tenant area to one organization through the account menu. The
- * menu's first entry names the current organization and expands the others;
- * choosing one closes the menu, switches, and announces the confirmation.
- */
-async function switchToTenant(page: Page, tenant: string): Promise<void> {
-  const menu = await openAccountMenu(page)
-  if (
-    (await organizationRow(page, tenant).count()) > 0 ||
-    (await menu.getByText(tenant, { exact: true }).count()) > 0
-  ) {
-    // The organization is already current: its row is the expansion control,
-    // or context when it is the only one, and never a pick.
-    await closeAccountMenu(page)
-    return
-  }
-  await menu.getByRole('menuitem').first().click()
-  const row = organizationRow(page, tenant)
-  await expect(row).toBeVisible()
-  await row.click()
-  await expectClippedAnnouncement(
-    page,
-    copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
-  )
-  await expect(page.getByRole('menu')).toHaveCount(0)
-}
 
 /**
  * Open the admin from the tenant area. The way in is the account menu's admin
