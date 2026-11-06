@@ -97,8 +97,8 @@ func TestDeleteOrganizationRollsBackAFailureAtEachCleanupStep(t *testing.T) {
 				if err := a.writer.DeleteOrganization(t.Context(), "acme", ""); err == nil {
 					t.Fatal("the deletion succeeded though a cleanup step failed")
 				}
-				if got := a.held(t, "acme"); got.Status != tenant.StatusActive || got.DeletedAt != nil {
-					t.Errorf("the rollback left %+v, want the active tenant", got)
+				if status, deletedAt := a.rosterRow(t, "acme"); status != tenant.StatusActive || deletedAt != nil {
+					t.Errorf("the rollback left status %q and deleted_at %v, want the active row", status, deletedAt)
 				}
 				for table, want := range map[string]int64{
 					"authn_memberships": 1,

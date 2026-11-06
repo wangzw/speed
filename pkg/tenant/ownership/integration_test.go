@@ -235,6 +235,24 @@ func (a *assembly) count(t *testing.T, table, where string, args ...any) int64 {
 	return n
 }
 
+// rosterRow reads the roster's storage row past the in-memory snapshot the
+// catalog serves. The snapshot is replaced only after a commit, so a failed
+// transaction leaves it reporting the state from before the write — the same
+// as a rollback, and the same as a tombstone that was never rolled back. Only
+// the table itself tells the two apart, so the rollback assertions read it.
+func (a *assembly) rosterRow(t *testing.T, id string) (tenant.Status, *time.Time) {
+	t.Helper()
+	var got struct {
+		Status    int
+		DeletedAt *time.Time
+	}
+	if err := a.handle.Table("tenants").Select("status", "deleted_at").
+		Where("id = ?", id).Take(&got).Error; err != nil {
+		t.Fatalf("reading tenant %q from the table: %v", id, err)
+	}
+	return tenant.Status(got.Status), got.DeletedAt
+}
+
 // A transfer gives the target tenant-admin, writes the owner, and removes the
 // previous owner's binding and membership, all in one transaction.
 func TestTransferOwnerHandsTheOrganizationOn(t *testing.T) {
@@ -447,8 +465,8 @@ func TestDeleteOrganizationRollsBackAFailedStep(t *testing.T) {
 		if err := a.writer.DeleteOrganization(t.Context(), "acme", ""); err == nil {
 			t.Fatal("the deletion succeeded though its last step failed")
 		}
-		if got := a.held(t, "acme"); got.Status != tenant.StatusActive || got.DeletedAt != nil {
-			t.Errorf("the rollback left %+v, want the active tenant", got)
+		if status, deletedAt := a.rosterRow(t, "acme"); status != tenant.StatusActive || deletedAt != nil {
+			t.Errorf("the rollback left status %q and deleted_at %v, want the active row", status, deletedAt)
 		}
 		if n := a.count(t, "authz_bindings", "tenant_id = ?", "acme"); n != 1 {
 			t.Errorf("the rollback left %d binding(s), want the one binding", n)
