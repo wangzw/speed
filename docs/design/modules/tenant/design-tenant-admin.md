@@ -187,7 +187,7 @@ sequenceDiagram
 | 概念 | 结构 | 说明 |
 |---|---|---|
 | 租户视图 | `{alias, displayName, description, contactEmail, website, ownerAccount, status, createdAt, kind, disabledBy?}` | 从 `tenant.Tenant` 逐字段构造，内部标识不出现；`ownerAccount` 是名册行的所有者列，没有所有者时为空串；`status` 是 `active`、`disabled` 或 `deleted`；`kind` 是 `business` 或 `personal`；`disabledBy` 是 `operator` 或 `account`，只在状态为 `disabled` 时出现 |
-| 登记正文 | `{id, alias, display_name?, description?, contact_email?, website?}` | `POST /tenants` 的正文；新租户起于 `active`，创建者是所有者 |
+| 登记正文 | `{alias, display_name, description?, contact_email?, website?}` | `POST /tenants` 的正文；标识由服务端生成，正文不收它；新租户起于 `active`，创建者是所有者 |
 | 资料正文 | `{display_name, description, contact_email, website}` | `PATCH /tenants/:tenant/profile` 的正文；四个字段全部必填，空串清空 |
 | 转移正文 | `{account}` | `PUT /tenants/:tenant/owner` 的正文；目标必须是活跃成员 |
 | 状态正文 | `{status}` | `POST /tenants/:tenant/status` 的正文；取值闭集 `active`、`disabled` |
@@ -200,7 +200,7 @@ sequenceDiagram
 
 初始状态：名册里没有标识 `acme`，授权表里也没有这个租户的角色与授予；调用方是已通过注册验证、在平台域持有 `tenant.manage` 的账户。
 
-1. 调用方发 `POST /api/v1/system/tenants`，正文为 `{id: "acme", alias: "acme"}`。handler 依次读身份、读注册验证状态、向 guard 要权限，均通过。
+1. 调用方发 `POST /api/v1/system/tenants`，正文为 `{alias: "acme", display_name: "Acme"}`。handler 依次读身份、读注册验证状态、向 guard 要权限，均通过。
 2. 格式检查通过之后、动作之前，handler 写一行强制档审计，动作标识为 `tenant.create`。持久状态：审计表多一行，名册与授权表未变。
 3. handler 调 `Provisioner.Provision`，交出的记录带创建者的账户标识作为所有者。它按角色 → 授予 → 名册行 → 内置标记 → 创建者的成员关系与绑定的次序写：角色与授予先落，随后名册表里出现 `acme` 这一行（状态为在册、所有者是创建者），随后该角色被置上内置标记，最后创建者的成员关系与绑定落行。名册行之前失败时，它清掉自己写过的策略行，路由答 503，名册里不留租户；名册行之后失败时，租户留在册，路由答 503。
 4. 全部成功时 handler 答 201 与租户视图。持久状态：名册里一行在册的 `acme`，它的首任管理员角色已冻结，创建者的成员关系与绑定已在。
@@ -230,7 +230,7 @@ sequenceDiagram
 
 1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
 2. 向 guard 要平台域的 `tenant.manage`。
-3. 格式检查：路径的 `id` 落在取值域内，正文的 `account` 是一个账户标识，否则 400。
+3. 路径的别名已由边界层解析（未知别名已答 404）；格式检查：正文的 `account` 是一个账户标识，否则 400。
 4. `Catalog.Get(id)`；名册不持有该标识 → 404；墓碑 → 409。
 5. 落强制档审计（动作 `tenant.owner.transfer`，detail 带 `surface: platform`）。
 6. `OrganizationWriter.TransferOwner(id, account, "")`。它取租户锁，校验目标是活跃账户与活跃成员，在一条事务里授予 tenant-admin、写所有者、撤销原所有者的绑定与成员关系。
@@ -252,7 +252,7 @@ sequenceDiagram
 
 1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
 2. 向 guard 要平台域的 `tenant.manage`。
-3. 格式检查：路径的 `id` 落在取值域内，否则 400。
+3. 路径的别名已由边界层解析（未知别名已答 404）。
 4. `Catalog.Get(id)`；名册不持有该标识 → 404；墓碑 → 409。
 5. 问 `tenant.WriteGuard` 的 `WriteDelete`；拒绝答 403 `urn:speed:tenant:protected`，读取失败答 503。
 6. 落强制档审计（动作 `tenant.delete`，detail 带 `surface: platform`）。
@@ -272,7 +272,7 @@ sequenceDiagram
 ### 资料更新
 
 1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
-2. 格式检查：路径的 `id` 落在取值域内，正文四个字段都存在并落在根包资料的取值域内，否则 400。
+2. 路径的别名已由边界层解析（未知别名已答 404）；格式检查：正文四个字段都存在并落在根包资料的取值域内，否则 400。
 3. `Catalog.Get(id)`；名册不持有该标识 → 404；墓碑 → 409。
 4. 落强制档审计（动作 `tenant.profile.update`，detail 带 `surface: platform`）。
 5. `Catalog.SetProfile(id, profile)`；失败按名册的哨兵映射，其余 → 503。落地 → 200 加视图。
@@ -280,7 +280,7 @@ sequenceDiagram
 ### 改状态
 
 1. 读发起者的注册验证状态：视为未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
-2. 格式检查：路径的 `id` 落在取值域内，正文的 `status` 是 `active` 或 `disabled`，否则 400。
+2. 路径的别名已由边界层解析（未知别名已答 404）；格式检查：正文的 `status` 是 `active` 或 `disabled`，否则 400。
 3. 停用时问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行；读失败答 503。
 4. 落强制档审计（动作 `tenant.status`）。
 5. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；`ErrTenantDeleted`（该租户是墓碑）→ 409；其余 → 503。落地 → 204。
