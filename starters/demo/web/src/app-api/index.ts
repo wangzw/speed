@@ -1849,7 +1849,7 @@ export const OrganizationCreatedTenantStatus = {
 } as const;
 
 /**
- * The created organization: the generated identifier, the caller's alias and profile, and the active state.
+ * The created organization: the caller's alias and profile, and the active state. The generated identifier is internal and never appears.
  */
 export interface OrganizationCreatedTenant {
   /** The request-surface name the caller chose; unique across the roster and immutable after creation. */
@@ -1858,8 +1858,6 @@ export interface OrganizationCreatedTenant {
   description: string;
   /** The organization's display name, trimmed. */
   displayName: string;
-  /** The generated organization identifier: the fixed prefix "org-" followed by a random UUID. The scoped tables hold it. */
-  id: string;
   /** The organization's state; a self-service organization starts active. */
   status: OrganizationCreatedTenantStatus;
 }
@@ -2182,6 +2180,17 @@ export const TenantAdminTenantDisabledBy = {
 } as const;
 
 /**
+ * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias.
+ */
+export type TenantAdminTenantKind = typeof TenantAdminTenantKind[keyof typeof TenantAdminTenantKind];
+
+
+export const TenantAdminTenantKind = {
+  business: 'business',
+  personal: 'personal',
+} as const;
+
+/**
  * The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again.
  */
 export type TenantAdminTenantStatus = typeof TenantAdminTenantStatus[keyof typeof TenantAdminTenantStatus];
@@ -2194,10 +2203,10 @@ export const TenantAdminTenantStatus = {
 } as const;
 
 /**
- * One tenant as the management routes render it: the identifier, the alias, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.
+ * One tenant as the management routes render it: the alias, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.
  */
 export interface TenantAdminTenant {
-  /** The alias the request surface addresses the tenant by. */
+  /** The alias the request surface addresses the tenant by, and the name every view and path uses. */
   alias: string;
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
   contactEmail: string;
@@ -2209,8 +2218,8 @@ export interface TenantAdminTenant {
   disabledBy?: TenantAdminTenantDisabledBy;
   /** The organization's display name. Empty when its profile names none; a surface falls back to the alias then. */
   displayName: string;
-  /** The tenant's identifier, the natural key the roster keys the row by. */
-  id: string;
+  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias. */
+  kind: TenantAdminTenantKind;
   /** The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it. */
   ownerAccount: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
@@ -2236,7 +2245,7 @@ export interface TenantAdminTenantProfileWrite {
 }
 
 /**
- * The identifier, alias and optional profile of a tenant to register. The state is not part of it, because a registered tenant starts active.
+ * The alias and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body.
  */
 export interface TenantAdminTenantRegistration {
   /** The alias to give the tenant; the roster refuses one another tenant already holds. */
@@ -2247,8 +2256,6 @@ export interface TenantAdminTenantRegistration {
   description?: string;
   /** The organization's display name, at most 100 runes. Empty when the registration names none. */
   display_name?: string;
-  /** The identifier to register; the roster refuses one it already holds. */
-  id: string;
   /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. */
   website?: string;
 }
@@ -2271,7 +2278,7 @@ export const TenantProfileViewStatus = {
 } as const;
 
 /**
- * One tenant's organization profile: the read-only identity, the owning account, the state and the four descriptive fields, behind tenant.profile.read.
+ * One tenant's organization profile: the read-only alias, the owning account, the state and the four descriptive fields, behind tenant.profile.read.
  */
 export interface TenantProfileView {
   /** The alias the request surface addresses the tenant by. */
@@ -2284,8 +2291,6 @@ export interface TenantProfileView {
   description: string;
   /** The organization's display name. Empty when its profile names none; a surface falls back to the alias then. */
   displayName: string;
-  /** The tenant's immutable identifier. */
-  id: string;
   /** The account that owns the organization, from the roster row's owner column. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner. */
   ownerAccount: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
@@ -2509,7 +2514,7 @@ export type AuthnProfilePatchBody = {
 };
 
 /**
- * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier.
+ * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the alias.
  */
 export type TenantSelfTenantsList200TenantsItemKind = typeof TenantSelfTenantsList200TenantsItemKind[keyof typeof TenantSelfTenantsList200TenantsItemKind];
 
@@ -2524,9 +2529,7 @@ export type TenantSelfTenantsList200TenantsItem = {
   alias: string;
   /** The organization's display name, empty when its profile names none. A surface falls back to the alias then. */
   displayName: string;
-  /** The tenant's immutable identifier. */
-  id: string;
-  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier. */
+  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the alias. */
   kind: TenantSelfTenantsList200TenantsItemKind;
 };
 
@@ -2965,7 +2968,7 @@ export type SmsAdminTemplatesSetEnabledBody = {
  * The whole roster in one answer, because the listing is not paged.
  */
 export type TenantAdminTenantsList200 = {
-  /** Every tenant the roster holds, ordered by identifier. */
+  /** Every tenant the roster holds, ordered by alias. */
   tenants: TenantAdminTenant[];
 };
 
@@ -5070,7 +5073,7 @@ export const useAuthnProfilePatch = <TError = Problem,
     }
 
 /**
- * Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias, display name and kind. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
+ * Answers the tenants the calling account holds an active membership in, with each tenant's alias, display name and kind. No identifier is exposed: the alias is the name a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
  * @summary List the tenants the caller holds an active membership in
  */
 export const tenantSelfTenantsList = (
@@ -7342,7 +7345,7 @@ export function useNotificationPreferencesListTypes<TData = Awaited<ReturnType<t
 
 
 /**
- * Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated as org-<uuid>. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.
+ * Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated and stays internal. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.
  * @summary Create a business organization
  */
 export const orgCreateCreate = (
@@ -9878,7 +9881,7 @@ export const useSmsAdminTemplatesSetEnabled = <TError = Problem | void,
     }
 
 /**
- * Reads every tenant in the roster, ordered by identifier. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.
+ * Reads every tenant in the roster, ordered by alias. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.
  * @summary List every tenant the roster holds
  */
 export const tenantAdminTenantsList = (
@@ -9972,7 +9975,7 @@ export function useTenantAdminTenantsList<TData = Awaited<ReturnType<typeof tena
 
 
 /**
- * Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier, the alias and optionally the profile's four descriptive fields; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.
+ * Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the alias and optionally the profile's four descriptive fields; the identifier is generated by the server and never appears in a request or a view, and the new tenant starts active. A body that carries an identifier is refused as a bad request. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.
  * @summary Register an active tenant
  */
 export const tenantAdminTenantsCreate = (
@@ -10037,7 +10040,7 @@ export const useTenantAdminTenantsCreate = <TError = Problem,
     }
 
 /**
- * Deletes one tenant platform staff names. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.
+ * Deletes one tenant platform staff names. The write is a tombstone: the alias and the internal identifier stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.
  * @summary Delete one tenant
  */
 export const tenantAdminTenantsDelete = (
@@ -10100,7 +10103,7 @@ export const useTenantAdminTenantsDelete = <TError = Problem | void,
     }
 
 /**
- * Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.
+ * Reads one tenant by its alias, the name the request surface addresses it by. An alias the roster does not hold is a 404. Reads write no audit row.
  * @summary Read one tenant the roster holds
  */
 export const tenantAdminTenantsGet = (

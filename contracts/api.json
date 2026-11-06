@@ -8976,7 +8976,7 @@
         "operationId": "authz.admin.bindings.list",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9071,7 +9071,7 @@
         "operationId": "authz.admin.bindings.of",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9175,7 +9175,7 @@
         "operationId": "authz.admin.bindings.delete",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9266,7 +9266,7 @@
         "operationId": "authz.admin.bindings.put",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9375,7 +9375,7 @@
             }
           },
           {
-            "description": "The tenant whose records the page holds, as the tenant identifier; it scopes the read and fills the decision's tenant.",
+            "description": "The tenant whose records the page holds, as the tenant alias; it scopes the read and fills the decision's tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9465,7 +9465,7 @@
         "operationId": "authn.admin.impersonations.revoke",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9785,7 +9785,7 @@
         "operationId": "authz.admin.roles.list",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9880,7 +9880,7 @@
         "operationId": "authz.admin.roles.delete",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -9972,7 +9972,7 @@
         "operationId": "authz.admin.roles.put",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -10087,7 +10087,7 @@
         "operationId": "authz.admin.grants.list",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -10191,7 +10191,7 @@
         "operationId": "authz.admin.grants.delete",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -10292,7 +10292,7 @@
         "operationId": "authz.admin.grants.put",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on, by identifier. It names the rows, not the domain the access decision is made in: the management face decides in the platform domain.",
+            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -10606,7 +10606,7 @@
         "operationId": "authz.tenantadmin.bindings.list",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -10711,7 +10711,7 @@
         "operationId": "authz.tenantadmin.bindings.of",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -10825,7 +10825,7 @@
         "operationId": "authz.tenantadmin.bindings.delete",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -10936,7 +10936,7 @@
         "operationId": "authz.tenantadmin.bindings.put",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11069,7 +11069,7 @@
             }
           },
           {
-            "description": "The string form of the tenant identifier the invitation belongs to; the authn.membership.manage decision is made in this tenant.",
+            "description": "The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11157,7 +11157,7 @@
         "operationId": "authn.invite.issue",
         "parameters": [
           {
-            "description": "The string form of the tenant identifier the invitation belongs to; the authn.membership.manage decision is made in this tenant.",
+            "description": "The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11294,7 +11294,7 @@
         "operationId": "authn.invite.revoke",
         "parameters": [
           {
-            "description": "The string form of the tenant identifier the invitation belongs to; the authn.membership.manage decision is made in this tenant.",
+            "description": "The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11431,7 +11431,7 @@
             }
           },
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11521,7 +11521,7 @@
         "operationId": "authn.admin.members.remove",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11624,7 +11624,7 @@
         "operationId": "authn.admin.members.put",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11760,7 +11760,7 @@
         "operationId": "authn.admin.members.ssoExempt",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11886,7 +11886,7 @@
         "operationId": "tenant.admin.owner.transfer",
         "parameters": [
           {
-            "description": "The organization's identifier as the request surface addresses it. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -11995,7 +11995,7 @@
         "operationId": "authz.tenantadmin.permissions.list",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12090,7 +12090,7 @@
         "operationId": "tenant.profile.get",
         "parameters": [
           {
-            "description": "The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "description": "The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12173,7 +12173,7 @@
         "operationId": "tenant.profile.update",
         "parameters": [
           {
-            "description": "The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "description": "The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12299,7 +12299,7 @@
         "operationId": "authz.tenantadmin.roles.list",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12404,7 +12404,7 @@
         "operationId": "authz.tenantadmin.roles.delete",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12506,7 +12506,7 @@
         "operationId": "authz.tenantadmin.roles.put",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12648,7 +12648,7 @@
             }
           },
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12767,7 +12767,7 @@
         "operationId": "authz.tenantadmin.grants.list",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12881,7 +12881,7 @@
         "operationId": "authz.tenantadmin.grants.delete",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -12992,7 +12992,7 @@
         "operationId": "authz.tenantadmin.grants.put",
         "parameters": [
           {
-            "description": "The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs.",
+            "description": "The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13105,7 +13105,7 @@
         "operationId": "settings.tenantadmin.settings.list",
         "parameters": [
           {
-            "description": "The tenant whose settings layer the read addresses, named in the path. The layer and the policy domain are both fixed to it; a \"layer\" or \"tenant\" query parameter is refused with 400.",
+            "description": "The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the layer and the policy domain are both fixed to that tenant, and a \"layer\" or \"tenant\" query parameter is refused with 400.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13187,7 +13187,7 @@
         "operationId": "settings.tenantadmin.settings.remove",
         "parameters": [
           {
-            "description": "The tenant whose settings layer the row is dropped from, named in the path. A \"layer\" or \"tenant\" query parameter is refused with 400.",
+            "description": "The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the row is dropped from that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13281,7 +13281,7 @@
         "operationId": "settings.tenantadmin.settings.set",
         "parameters": [
           {
-            "description": "The tenant whose settings layer the write lands on, named in the path. A \"layer\" or \"tenant\" query parameter is refused with 400.",
+            "description": "The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the write lands on that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13437,7 +13437,7 @@
         "operationId": "authn.admin.sso.providers.list",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13515,7 +13515,7 @@
         "operationId": "authn.admin.sso.providers.create",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13636,7 +13636,7 @@
         "operationId": "authn.admin.sso.providers.delete",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13719,7 +13719,7 @@
         "operationId": "authn.admin.sso.providers.get",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13809,7 +13809,7 @@
         "operationId": "authn.admin.sso.providers.update",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -13942,7 +13942,7 @@
         "operationId": "authn.admin.sso.providers.claimDomain",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -14085,7 +14085,7 @@
         "operationId": "authn.admin.sso.providers.removeDomain",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -14179,7 +14179,7 @@
         "operationId": "authn.admin.sso.providers.verifyDomain",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -14283,7 +14283,7 @@
         "operationId": "authn.admin.sso.providers.refreshMetadata",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -14385,7 +14385,7 @@
         "operationId": "authn.admin.sso.providers.reverifyDomains",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,

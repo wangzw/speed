@@ -36,19 +36,19 @@ const (
 // layer the tenant capability mounts holds it to the tenant the request
 // resolved to before this module's handler runs.
 type tenantInput struct {
-	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Tenant string `path:"tenant" description:"The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 }
 
 // roleInput is the request of a route that acts on one role of a tenant.
 type roleInput struct {
-	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Tenant string `path:"tenant" description:"The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 }
 
 // grantInput is the request of a route that acts on one grant: a role and the
 // permission it holds.
 type grantInput struct {
-	Tenant     string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Tenant     string `path:"tenant" description:"The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 	Role       string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 	Permission string `path:"permission" description:"The permission name as the catalog declares it, for example authz.tenant.role.read. A grant write accepts only a governed permission; the name is translated to its (resource, action) pair before the write."`
 }
@@ -56,14 +56,14 @@ type grantInput struct {
 // tenantAccountInput is the request of the read that lists one account's
 // bindings within a tenant.
 type tenantAccountInput struct {
-	Tenant  string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Tenant  string `path:"tenant" description:"The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 	Account string `path:"account" description:"The account identifier the binding is addressed by."`
 }
 
 // bindingInput is the request of a route that acts on one binding: an account
 // holding a role within a tenant.
 type bindingInput struct {
-	Tenant  string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Tenant  string `path:"tenant" description:"The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 	Account string `path:"account" description:"The account identifier the binding is addressed by."`
 	Role    string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 }
@@ -71,7 +71,7 @@ type bindingInput struct {
 // roleBindingListInput is the request of the role usage read: the role named in
 // the path and the page cursor.
 type roleBindingListInput struct {
-	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Tenant string `path:"tenant" description:"The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last row on that page, and the page is read by it rather than by an offset."`
 	Limit  int    `query:"limit" minimum:"0" description:"The page's maximum size. Absent is 50; a value above 200 is capped at 200; a negative value is a 400."`
@@ -90,7 +90,7 @@ type roleBindingListInput struct {
 type roleWriteInput struct {
 	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description. The builtin mark and the role name are not part of the body; a member sent under those names reaches nothing."`
 
-	Tenant string `path:"tenant" description:"The tenant whose policy data the route acts on. It is the route's policy domain, named in the path; the path-tenant layer holds it to the tenant the request resolved to before the handler runs."`
+	Tenant string `path:"tenant" description:"The tenant's alias, and the route's policy domain named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 
 	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400."`

@@ -22,14 +22,14 @@ const pathProfileFragment = "/:tenant/profile"
 
 // profileInput is the request of the read: the tenant named in the path.
 type profileInput struct {
-	Tenant string `path:"tenant" description:"The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused."`
+	Tenant string `path:"tenant" description:"The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404."`
 }
 
 // profileWriteInput is the request of the write: the tenant named in the path
 // and the four descriptive fields in the body, each of which must be present. A
 // field the body carries empty clears the stored value.
 type profileWriteInput struct {
-	Tenant string `path:"tenant" description:"The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused."`
+	Tenant string `path:"tenant" description:"The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404."`
 
 	DisplayName  string `json:"display_name" required:"true" description:"The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias."`
 	Description  string `json:"description" required:"true" description:"A longer account of the organization, at most 500 runes. Empty clears it."`

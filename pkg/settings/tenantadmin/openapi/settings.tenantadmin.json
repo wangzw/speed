@@ -161,7 +161,7 @@
         "operationId": "settings.tenantadmin.settings.list",
         "parameters": [
           {
-            "description": "The tenant whose settings layer the read addresses, named in the path. The layer and the policy domain are both fixed to it; a \"layer\" or \"tenant\" query parameter is refused with 400.",
+            "description": "The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the layer and the policy domain are both fixed to that tenant, and a \"layer\" or \"tenant\" query parameter is refused with 400.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -239,7 +239,7 @@
         "operationId": "settings.tenantadmin.settings.remove",
         "parameters": [
           {
-            "description": "The tenant whose settings layer the row is dropped from, named in the path. A \"layer\" or \"tenant\" query parameter is refused with 400.",
+            "description": "The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the row is dropped from that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -329,7 +329,7 @@
         "operationId": "settings.tenantadmin.settings.set",
         "parameters": [
           {
-            "description": "The tenant whose settings layer the write lands on, named in the path. A \"layer\" or \"tenant\" query parameter is refused with 400.",
+            "description": "The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the write lands on that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400.",
             "in": "path",
             "name": "tenant",
             "required": true,

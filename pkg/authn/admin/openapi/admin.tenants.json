@@ -413,7 +413,7 @@
             }
           },
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -499,7 +499,7 @@
         "operationId": "authn.admin.members.remove",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -598,7 +598,7 @@
         "operationId": "authn.admin.members.put",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -730,7 +730,7 @@
         "operationId": "authn.admin.members.ssoExempt",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -852,7 +852,7 @@
         "operationId": "authn.admin.sso.providers.list",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -926,7 +926,7 @@
         "operationId": "authn.admin.sso.providers.create",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1043,7 +1043,7 @@
         "operationId": "authn.admin.sso.providers.delete",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1122,7 +1122,7 @@
         "operationId": "authn.admin.sso.providers.get",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1208,7 +1208,7 @@
         "operationId": "authn.admin.sso.providers.update",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1337,7 +1337,7 @@
         "operationId": "authn.admin.sso.providers.claimDomain",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1476,7 +1476,7 @@
         "operationId": "authn.admin.sso.providers.removeDomain",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1566,7 +1566,7 @@
         "operationId": "authn.admin.sso.providers.verifyDomain",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1666,7 +1666,7 @@
         "operationId": "authn.admin.sso.providers.refreshMetadata",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1764,7 +1764,7 @@
         "operationId": "authn.admin.sso.providers.reverifyDomains",
         "parameters": [
           {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,

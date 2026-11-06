@@ -382,7 +382,7 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 // path segment is held to the resolved tenant by the tenant administration
 // guard before the handler runs.
 type ownerTransferInput struct {
-	Tenant  string `path:"tenant" description:"The organization's identifier as the request surface addresses it. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused."`
+	Tenant  string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404."`
 	Account string `json:"account" required:"true" description:"The account identifier of the active member that becomes the organization's owner."`
 }
 

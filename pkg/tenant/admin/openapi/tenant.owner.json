@@ -142,7 +142,7 @@
         "operationId": "tenant.admin.owner.transfer",
         "parameters": [
           {
-            "description": "The organization's identifier as the request surface addresses it. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,

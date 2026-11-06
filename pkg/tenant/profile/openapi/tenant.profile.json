@@ -127,7 +127,7 @@
         "operationId": "tenant.profile.get",
         "parameters": [
           {
-            "description": "The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "description": "The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -206,7 +206,7 @@
         "operationId": "tenant.profile.update",
         "parameters": [
           {
-            "description": "The tenant whose organization profile the route acts on. The path-tenant layer holds it to the tenant the request resolved to before the handler runs, and the platform domain is refused.",
+            "description": "The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
