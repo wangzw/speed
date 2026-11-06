@@ -499,7 +499,7 @@
 
 每个业务组织必须有一个 owner；owner 默认为该组织的创建者，必须持有 tenant-admin。owner 对普通成员不可见，tenant-admin 可见。
 
-- **验收**：创建业务组织后，owner 为创建者且持有 tenant-admin；普通成员看不到 owner，tenant-admin 能看到 owner。
+- **验收**：创建业务组织后，owner 为创建者且持有 tenant-admin；普通成员看不到 owner，tenant-admin 能看到 owner。owner 以显示名与用户名指认，显示名重名时用户名足以区分；界面不显示账户标识或租户内部标识。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner reads the profile and saves its four descriptive fields`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`
 

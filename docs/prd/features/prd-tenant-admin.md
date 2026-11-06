@@ -590,6 +590,6 @@
 
 组织管理面必须提供组织资料页：组织管理员可以查看并编辑当前组织的显示名、描述、联系邮箱与网站；别名、状态与创建时间只读，内部标识不出现。页面可见性由查看组织资料的权限判定，写入由修改组织资料的权限判定，未证明邮箱的写入被拒绝。
 
-- **验收**：拥有查看权限的管理员打开资料页，看到别名、状态与创建时间三项只读身份与四项可编辑资料，页面没有内部标识；保存后页面与组织菜单显示新显示名；只读项没有编辑控件；没有查看权限的管理员不见该页；没有修改权限的管理员看不到可提交的编辑控件或提交被拒绝；未证明邮箱的管理员保存被拒绝并提示先证明邮箱。
+- **验收**：拥有查看权限的管理员打开资料页，看到别名、所有者、状态与创建时间四项只读身份与四项可编辑资料，页面没有内部标识；所有者以显示名与用户名指认，显示名重名时用户名足以区分，界面不显示账户标识；保存后页面与组织菜单显示新显示名；只读项没有编辑控件；没有查看权限的管理员不见该页；没有修改权限的管理员看不到可提交的编辑控件或提交被拒绝；未证明邮箱的管理员保存被拒绝并提示先证明邮箱。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner reads the profile and saves its four descriptive fields`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`；未证明邮箱的写入拒绝由 `tenant-admin: the unproved administrator is refused, proves the address and retries` 在同规模组织写上验证
