@@ -9,8 +9,9 @@
  * `authn.membership.manage`, and the platform account selector otherwise.
  * The account path never pretends the chosen account is a member: the
  * endpoint still refuses a non-member with 409, and the dialog states that
- * refusal inline. Deletion asks through the shared two-step danger
- * confirmation and renders the tombstone refusal as the delete's own copy.
+ * refusal inline. Deletion asks for the organization's alias and the
+ * shared two-step danger confirmation, and renders the tombstone refusal as
+ * the delete's own copy.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -108,6 +109,25 @@ async function confirmTwice(
   await user.click(
     within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
   )
+}
+
+/**
+ * The delete's confirmation: type the organization's alias, then run the
+ * shared two-step guard. The confirming button is inert until the alias
+ * matches exactly.
+ */
+async function confirmDelete(
+  user: ReturnType<typeof userEvent.setup>,
+  alias: string,
+): Promise<void> {
+  const dialog = await screen.findByRole('dialog')
+  await user.type(
+    within(dialog).getByLabelText(
+      zhCN.tenantLifecycle.deleteConfirm.aliasLabel,
+    ),
+    alias,
+  )
+  await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
 }
 
 afterEach(() => {
@@ -467,7 +487,7 @@ describe('platform tenant deletion', () => {
     ).toBeInTheDocument()
     await expectNoAxeViolations()
 
-    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+    await confirmDelete(user, 'acme')
 
     await waitFor(() => expect(deletes).toEqual(['acme']))
     expect(
@@ -477,6 +497,44 @@ describe('platform tenant deletion', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Acme')).toBeNull())
     await waitFor(() => expect(reads).toBeGreaterThan(1))
+  })
+
+  it('keeps the delete confirmation disabled until the exact alias is typed', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () =>
+          Promise.resolve([
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
+          ]),
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    const field = within(dialog).getByLabelText(
+      zhCN.tenantLifecycle.deleteConfirm.aliasLabel,
+    )
+    const confirm = within(dialog).getByRole('button', {
+      name: zhCN.tenantLifecycle.deleteConfirm.confirmLabel,
+    })
+
+    // The empty field and a near miss both keep the guard closed; only the
+    // exact alias opens it.
+    expect(field).toHaveValue('')
+    expect(confirm).toBeDisabled()
+    await user.type(field, 'acm')
+    expect(confirm).toBeDisabled()
+    await user.clear(field)
+    await user.type(field, 'acme')
+    expect(confirm).toBeEnabled()
   })
 
   it('renders the tombstone refusal as the delete copy, not the registration conflict', async () => {
@@ -500,7 +558,7 @@ describe('platform tenant deletion', () => {
         name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
-    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+    await confirmDelete(user, 'acme')
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(
@@ -533,7 +591,7 @@ describe('platform tenant deletion', () => {
         name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
-    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+    await confirmDelete(user, 'acme')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.tenantLifecycle.deleteConfirm.failedNotFound,
@@ -562,7 +620,7 @@ describe('platform tenant deletion', () => {
         name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
-    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+    await confirmDelete(user, 'acme')
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.tenant.protected)
@@ -719,7 +777,7 @@ describe('tenant detail lifecycle', () => {
         name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
-    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+    await confirmDelete(user, 'acme')
 
     const confirmation = text(zhCN.tenantLifecycle.deleteConfirm.success, {
       alias: 'acme',

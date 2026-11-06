@@ -38,10 +38,11 @@
  * display name (falling back to the alias). A control's accessible name and
  * every request use the alias, the tenant's name on the request surface.
  *
- * **Delete is terminal.** It asks through the same shared confirmation
- * with the two-step guard, and its copy states the impact: memberships,
- * bindings, roles and grants are removed, and the alias can never be
- * reused.
+ * **Delete is terminal.** It asks through the shared danger confirmation
+ * with the two-step guard and a typed-alias guard: the confirming button
+ * stays disabled until the operator types the organization's alias, and its
+ * copy states the impact: memberships, bindings, roles and grants are
+ * removed, and the alias can never be reused.
  *
  * **Failure text is the dialog's own.** Both the transfer endpoint and the
  * delete endpoint answer 409 for several distinct refusals under the same
@@ -69,7 +70,6 @@ import Typography from '@mui/material/Typography'
 import { usePermission } from '@speed/auth-core'
 import { ConfirmDialog, errorCodeOf, httpStatusOf } from '@speed/ui-kit'
 import { AccountSelector } from './account-selector.js'
-import { PendingConfirmDialog, usePendingConfirm } from './confirm.js'
 import { useAdminUiErrorText } from './error-text.js'
 import { useAdminUiTranslation } from './translation.js'
 import { WriteFeedbackRegion } from './write-feedback.js'
@@ -481,8 +481,59 @@ function TransferOwnerDialog({
 }
 
 /**
- * The lifecycle control group: two entries, a shared confirmation for the
- * delete and the transfer dialog, each with its own result area.
+ * The delete dialog: type the organization's alias, then confirm twice.
+ * Deletion is terminal and has no restore route, so the exact alias and the
+ * double confirmation are both required. The typed value is local to the
+ * dialog, which the page mounts only while it is open, so every opening
+ * starts from an empty field. The visible title names the organization by
+ * its display name; the hint and the request name the alias.
+ */
+function DeleteTenantDialog({
+  alias,
+  name,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  readonly alias: string
+  readonly name: string
+  readonly busy: boolean
+  readonly onCancel: () => void
+  readonly onConfirm: () => void
+}) {
+  const { t } = useAdminUiTranslation()
+  const [typed, setTyped] = useState('')
+  return (
+    <ConfirmDialog
+      open
+      variant="danger"
+      doubleConfirm
+      title={t('tenantLifecycle.deleteConfirm.title', { name })}
+      message={t('tenantLifecycle.deleteConfirm.message')}
+      confirmLabel={t('tenantLifecycle.deleteConfirm.confirmLabel')}
+      cancelLabel={t('common.cancel')}
+      confirmLoading={busy}
+      confirmDisabled={typed !== alias}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      <TextField
+        size="small"
+        fullWidth
+        label={t('tenantLifecycle.deleteConfirm.aliasLabel')}
+        value={typed}
+        onChange={(event) => setTyped(event.target.value)}
+        helperText={t('tenantLifecycle.deleteConfirm.aliasHint', { alias })}
+        autoComplete="off"
+        sx={{ mt: 2 }}
+      />
+    </ConfirmDialog>
+  )
+}
+
+/**
+ * The lifecycle control group: two entries, the transfer dialog and the
+ * typed delete confirmation, each with its own result area.
  *
  * The entries render only for a caller whose platform permission set holds
  * `tenant.manage`, on a live (non-tombstone) organization that is not a
@@ -499,8 +550,8 @@ export function TenantLifecycleActions({
   const canReadMembers = usePermission('tenant', MEMBERSHIP_MANAGE)
   const remove = operations.useDeleteTenant()
   const resolveError = useAdminUiErrorText()
-  const confirm = usePendingConfirm()
   const [transferOpen, setTransferOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [outcome, setOutcome] = useState<LifecycleOutcome | null>(null)
 
   const deleted = tenant.status === 'deleted'
@@ -526,30 +577,26 @@ export function TenantLifecycleActions({
 
   const requestDelete = () => {
     setOutcome(null)
-    confirm.ask({
-      title: t('tenantLifecycle.deleteConfirm.title', { name }),
-      message: t('tenantLifecycle.deleteConfirm.message'),
-      confirmLabel: t('tenantLifecycle.deleteConfirm.confirmLabel'),
-      doubleConfirm: true,
-      run: () => {
-        setOutcome(null)
-        void (async () => {
-          try {
-            await remove.mutateAsync({ alias: tenant.alias })
-            settleSuccess(
-              t('tenantLifecycle.deleteConfirm.success', {
-                alias: tenant.alias,
-              }),
-            )
-          } catch (error) {
-            setOutcome({
-              kind: 'failure',
-              message: deleteFailureText(error, t, resolveError),
-            })
-          }
-        })()
-      },
-    })
+    setDeleteOpen(true)
+  }
+
+  const runDelete = () => {
+    setOutcome(null)
+    void (async () => {
+      try {
+        await remove.mutateAsync({ alias: tenant.alias })
+        settleSuccess(
+          t('tenantLifecycle.deleteConfirm.success', {
+            alias: tenant.alias,
+          }),
+        )
+      } catch (error) {
+        setOutcome({
+          kind: 'failure',
+          message: deleteFailureText(error, t, resolveError),
+        })
+      }
+    })()
   }
 
   const success =
@@ -614,10 +661,18 @@ export function TenantLifecycleActions({
           settleSuccess(message)
         }}
       />
-      <PendingConfirmDialog
-        state={confirm}
-        cancelLabel={t('common.cancel')}
-      />
+      {deleteOpen && (
+        <DeleteTenantDialog
+          alias={tenant.alias}
+          name={name}
+          busy={remove.isPending}
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={() => {
+            setDeleteOpen(false)
+            runDelete()
+          }}
+        />
+      )}
     </Box>
   )
 }

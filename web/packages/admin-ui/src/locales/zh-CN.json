@@ -368,6 +368,8 @@
     "deleteConfirm": {
       "title": "确定删除组织「{{name}}」？",
       "message": "这会永久删除该组织：它的成员、角色、角色分配与权限都会被清除，别名也永不能再次使用。此操作无法撤销。",
+      "aliasLabel": "输入组织别名以确认",
+      "aliasHint": "请输入 {{alias}}。",
       "confirmLabel": "删除组织",
       "failedConflict": "这个组织已被删除。删除是终态。",
       "failedNotFound": "这个组织已不存在。",

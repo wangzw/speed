@@ -368,6 +368,8 @@
     "deleteConfirm": {
       "title": "Delete organization \"{{name}}\"?",
       "message": "This permanently deletes the organization. Its members, roles, role assignments and permissions are removed, and its alias can never be reused. This cannot be undone.",
+      "aliasLabel": "Type the organization alias to confirm",
+      "aliasHint": "Type {{alias}}.",
       "confirmLabel": "Delete organization",
       "failedConflict": "This organization was already deleted. Deletion is final.",
       "failedNotFound": "This organization no longer exists.",
