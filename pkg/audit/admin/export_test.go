@@ -179,6 +179,48 @@ func TestTheExportStreamsEveryPageAsNDJSON(t *testing.T) {
 	}
 }
 
+// aliasedName answers one identifier with an alias that differs from it, so a
+// case can tell which of the two a surface carries.
+type aliasedName struct {
+	id    string
+	alias string
+}
+
+func (a aliasedName) AliasOf(_ context.Context, id tenant.ID) (string, error) {
+	if string(id) == a.id {
+		return a.alias, nil
+	}
+	return "", nil
+}
+
+// TestTheExportNamesTheTenantByAliasNeverTheIdentifier holds the tenant column
+// of an export file to the rule the list route follows: the row stores the
+// internal identifier, and the file a recipient downloads names the alias. The
+// fixture's values differ, so a file carrying either one is distinguishable.
+func TestTheExportNamesTheTenantByAliasNeverTheIdentifier(t *testing.T) {
+	const (
+		internalID = "ACME-INTERNAL"
+		alias      = "acme-public"
+	)
+	r := newRig(t)
+	r.p.aliases = aliasedName{id: internalID, alias: alias}
+	r.reader.script(stubPage{rows: []journal.Row{
+		{ID: 1, Tenant: internalID, Action: "a.update", Outcome: "ok"},
+	}})
+
+	w := r.do(exportRoute)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, internalID) {
+		t.Errorf("the export carries the internal identifier: %s", body)
+	}
+	if !strings.Contains(body, alias) {
+		t.Errorf("the export does not carry the tenant alias: %s", body)
+	}
+}
+
 // The export names the download and forbids caching it: the name is the record
 // set with the export's UTC instant written compactly, and the cache directive
 // is no-store because exported audit data is not kept by a cache.

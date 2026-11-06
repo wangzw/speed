@@ -37,7 +37,8 @@ The dependencies the descriptor requires, non-optionally, are:
 
 The optional dependencies are `(*settings.Store)(nil)`,
 `(*observability.MeterProvider)(nil)`, `(*log.Logger)(nil)`,
-`(*mail.Sender)(nil)`, `(*sms.Registry)(nil)` and `(*sms.Sender)(nil)`. No
+`(*mail.Sender)(nil)`, `(*sms.Registry)(nil)`, `(*sms.Sender)(nil)` and
+`(*authn.TenantAliasResolver)(nil)`. No
 absence fails the startup: a channel is available exactly when the seams it
 sends through are present — email on the mail sender, sms only when **both** its
 seams are there — and a missing seam records a `skipped` row rather than a
@@ -267,6 +268,16 @@ module. This module owns only its own text: the reasons it writes into the ledge
 for the channels it judged itself, under `locales/`, one file per locale with the
 same key set. The parameter whitelist has already been enforced by the time text
 is rendered, so only the visible parameters enter the rendering context.
+
+**A parameter named `tenant` is resolved to the tenant's alias, never left as
+the internal identifier.** The submitting module knows the identifier; every
+text a recipient can read — the in-app title, body and payload parameters, the
+email subject and both bodies, and the sms template variables — names the alias
+instead. The handler resolves the one parameter before any channel renders or
+copies it, through the optional `authn.TenantAliasResolver`; the idempotency key
+is still derived from the dispatch as submitted. An assembly with no resolver,
+or one that fails, resolves the parameter to the empty name rather than falling
+back to the identifier, which is internal.
 
 A part the engine falls back to the key for is written out like any other: the
 key is text, and a missing catalog entry is not this module's to refuse. The two

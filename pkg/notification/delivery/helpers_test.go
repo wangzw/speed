@@ -267,6 +267,18 @@ func (l *stubLocalizer) asked(key string) bool {
 	return false
 }
 
+// argsFor answers the rendering arguments of the last call for key.
+func (l *stubLocalizer) argsFor(key string) (i18n.Args, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i := len(l.calls) - 1; i >= 0; i-- {
+		if string(l.calls[i].key) == key {
+			return l.calls[i].args, true
+		}
+	}
+	return nil, false
+}
+
 // stubMailSender is a stand-in mail seam. It records every message it was
 // handed, so a case can hold what reached the carrier: which fields the module
 // filled, which it deliberately left empty, and how many sends one delivery made.
@@ -905,6 +917,21 @@ func (r *rig) tenantCtx(id string) context.Context {
 	return ctx
 }
 
+// tenantCtxAs registers a tenant whose identifier and alias differ and returns
+// a context that belongs to it. A case uses it to tell the alias from the
+// identifier on every text a recipient can read.
+func (r *rig) tenantCtxAs(id, alias string) context.Context {
+	r.t.Helper()
+	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive}); err != nil {
+		r.t.Fatalf("registering the tenant %q as %q: %v", id, alias, err)
+	}
+	ctx, err := r.catalog.Enter(r.t.Context(), tenant.ID(id))
+	if err != nil {
+		r.t.Fatalf("entering the tenant %q: %v", id, err)
+	}
+	return ctx
+}
+
 // capturingLogger attaches a logger to ctx and returns the buffer that collects
 // what the module writes through it, so a case can read the external-send lines.
 func (r *rig) capturingLogger(ctx context.Context) (*logBuffer, context.Context) {
@@ -1087,6 +1114,7 @@ func (stubBudgetStore) PruneBefore(context.Context, time.Time) (int64, error)  {
 type stubRegistry struct {
 	mu         sync.Mutex
 	resolveErr error
+	resolved   []sms.Message
 }
 
 func (s *stubRegistry) Declared() []sms.Template { return nil }
@@ -1097,7 +1125,23 @@ func (s *stubRegistry) Resolve(m sms.Message) (sms.Resolved, error) {
 	if s.resolveErr != nil {
 		return sms.Resolved{}, s.resolveErr
 	}
+	held := m
+	held.Params = make(map[string]string, len(m.Params))
+	for name, value := range m.Params {
+		held.Params[name] = value
+	}
+	s.resolved = append(s.resolved, held)
 	return sms.Resolved{To: m.To, Template: m.Template, Locale: m.Locale, Code: "code", Params: m.Params, DedupeID: m.DedupeID}, nil
+}
+
+// lastResolve answers the last message the registry was asked to resolve.
+func (s *stubRegistry) lastResolve() (sms.Message, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.resolved) == 0 {
+		return sms.Message{}, false
+	}
+	return s.resolved[len(s.resolved)-1], true
 }
 
 func (s *stubRegistry) List(context.Context) ([]sms.Record, error) { return nil, nil }

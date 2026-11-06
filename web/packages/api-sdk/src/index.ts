@@ -2852,7 +2852,7 @@ export type SettingsAdminSettingsListParams = {
  */
 layer: SettingsAdminSettingsListLayer;
 /**
- * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
+ * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -2871,7 +2871,7 @@ export type SettingsAdminSettingsListNamespaceParams = {
  */
 layer: SettingsAdminSettingsListNamespaceLayer;
 /**
- * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
+ * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -2890,7 +2890,7 @@ export type SettingsAdminSettingsRemoveParams = {
  */
 layer: SettingsAdminSettingsRemoveLayer;
 /**
- * The tenant whose layer the row is dropped from. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
+ * The tenant whose layer the row is dropped from. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -2909,7 +2909,7 @@ export type SettingsAdminSettingsSetParams = {
  */
 layer: SettingsAdminSettingsSetLayer;
 /**
- * The tenant whose layer the write lands on. Required when "layer" is "tenant" and refused when it is "global"; an empty identifier or one containing blanks or control characters is a 400.
+ * The tenant whose layer the write lands on. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -10310,7 +10310,7 @@ export const useAuthzAdminGrantsPut = <TError = Problem,
     }
 
 /**
- * Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
+ * Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An alias the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
  * @summary Change one tenant's state
  */
 export const tenantAdminTenantsSetStatus = (

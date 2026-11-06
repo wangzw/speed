@@ -79,7 +79,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain"
+            "description": "The alias is outside the alias domain"
           },
           "401": {
             "content": {
@@ -102,7 +102,7 @@
             "description": "The caller is not the organization's owner, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
           },
           "404": {
-            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+            "description": "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain"
           },
           "409": {
             "content": {
@@ -174,7 +174,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"
+            "description": "The alias is outside the alias domain, the request body is not one JSON object, or the account member is absent"
           },
           "401": {
             "content": {
@@ -197,7 +197,7 @@
             "description": "The caller is not the organization's owner, or the caller has not proved an email address (contact-required)"
           },
           "404": {
-            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+            "description": "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain"
           },
           "409": {
             "content": {

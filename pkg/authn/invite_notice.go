@@ -32,8 +32,9 @@ type InviteNotifier interface {
 // of what the notice says, and it carries the acceptance token because the link
 // the recipient follows is built from it.
 type InviteNotice struct {
-	// Tenant is the string form of the tenant identifier the invitation grants
-	// a membership in.
+	// Tenant is the alias of the tenant the invitation grants a membership in:
+	// the external name a recipient can read. It is never the tenant's internal
+	// identifier; an issuer that cannot resolve an alias leaves it empty.
 	Tenant string
 	// Email is the invited address in the normalized form the invitation stores:
 	// trimmed and lower-cased. It is the recipient.

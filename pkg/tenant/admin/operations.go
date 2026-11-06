@@ -134,7 +134,7 @@ var listOperation = speedhttp.NewOperation[struct{}, tenantListBody](
 	[]speedhttp.Response{
 		{
 			Status:      http.StatusOK,
-			Description: "Every tenant, in the roster's order by identifier",
+			Description: "Every tenant, in the roster's order by alias",
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
@@ -208,7 +208,7 @@ var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 			"The caller holds no tenant.read in the platform domain"),
 		{
 			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier",
+			Description: "No tenant carries the alias",
 		},
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
@@ -239,13 +239,13 @@ var transferOwnerOperation = speedhttp.NewReplyOperation[transferOwnerInput](
 			Description: "The ownership was transferred",
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"),
+			"The alias is outside the alias domain, the request body is not one JSON object, or the account member is absent"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
 		{
 			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier",
+			Description: "No tenant carries the alias",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The target is not an active member of the organization, the target's account is not active, or the tenant is a tombstone"),
@@ -279,14 +279,14 @@ var deleteOperation = speedhttp.NewReplyOperation[getTenantInput](
 			Description: "The tenant was deleted",
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier is outside the identifier domain"),
+			"The alias is outside the alias domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no tenant.manage in the platform domain, the caller has not proved an "+
 				"email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"),
 		{
 			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier",
+			Description: "No tenant carries the alias",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The tenant is a tombstone"),
@@ -321,14 +321,14 @@ var setProfileOperation = speedhttp.NewReplyOperation[setProfileInput](
 			Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(tenantReadBody{})},
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier is outside the identifier domain, the request body is not one JSON object, a "+
+			"The alias is outside the alias domain, the request body is not one JSON object, a "+
 				"member is absent, or the profile is outside the stated bounds"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
 		{
 			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier",
+			Description: "No tenant carries the alias",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict, "The tenant is a tombstone; a deleted tenant's profile is terminal"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
@@ -348,7 +348,7 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 		"account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, "+
 		"before the audit the route asks the host's write guard whether the tenant refuses the write: a "+
 		"protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An "+
-		"identifier the roster does not hold "+
+		"alias the roster does not hold "+
 		"is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no "+
 		"status change revives it. A mandatory audit row lands before the write; if it cannot, the state is "+
 		"unchanged and the request is answered 503.",
@@ -363,14 +363,14 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 			Description: "The state was changed",
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier is outside the identifier domain or the status is outside the closed set active/disabled"),
+			"The alias is outside the alias domain or the status is outside the closed set active/disabled"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no tenant.manage in the platform domain, the caller has not proved an email "+
 				"address (contact-required), or the tenant is protected against disabling (urn:speed:tenant:protected)"),
 		{
 			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier",
+			Description: "No tenant carries the alias",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict, "The tenant is a tombstone; deletion is terminal"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
@@ -413,13 +413,13 @@ var tenantTransferOwnerOperation = speedhttp.NewReplyOperation[ownerTransferInpu
 			Description: "The ownership was transferred",
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"),
+			"The alias is outside the alias domain, the request body is not one JSON object, or the account member is absent"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller is not the organization's owner, or the caller has not proved an email address (contact-required)"),
 		{
 			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain",
+			Description: "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The target is not an active member, the target's account is not active, the tenant is a "+
@@ -450,14 +450,14 @@ var tenantDeleteOperation = speedhttp.NewReplyOperation[getTenantInput](
 			Description: "The organization was deleted",
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier is outside the identifier domain"),
+			"The alias is outside the alias domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller is not the organization's owner, the caller has not proved an email address "+
 				"(contact-required), or the tenant is protected (urn:speed:tenant:protected)"),
 		{
 			Status:      http.StatusNotFound,
-			Description: "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain",
+			Description: "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The tenant is a tombstone, or the caller stopped owning the organization before the write committed"),

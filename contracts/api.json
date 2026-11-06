@@ -7530,7 +7530,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -7560,7 +7560,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"
+            "description": "The layer selection is unreadable, or the tenant alias is outside its value domain"
           },
           "401": {
             "content": {
@@ -7627,7 +7627,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -7666,7 +7666,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"
+            "description": "The layer selection is unreadable, or the tenant alias is outside its value domain"
           },
           "401": {
             "content": {
@@ -7736,7 +7736,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the row is dropped from. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the row is dropped from. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -7774,7 +7774,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"
+            "description": "The layer selection is unreadable, or the tenant alias is outside its value domain"
           },
           "401": {
             "content": {
@@ -7842,7 +7842,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the write lands on. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the write lands on. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -7900,7 +7900,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object"
+            "description": "The layer selection is unreadable, the tenant alias is outside its value domain, or the body is not one object"
           },
           "401": {
             "content": {
@@ -8641,7 +8641,7 @@
                 }
               }
             },
-            "description": "Every tenant, in the roster's order by identifier"
+            "description": "Every tenant, in the roster's order by alias"
           },
           "401": {
             "content": {
@@ -8826,7 +8826,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain"
+            "description": "The alias is outside the alias domain"
           },
           "401": {
             "content": {
@@ -8849,7 +8849,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
           },
           "404": {
-            "description": "No tenant carries the identifier"
+            "description": "No tenant carries the alias"
           },
           "409": {
             "content": {
@@ -8942,7 +8942,7 @@
             "description": "The caller holds no tenant.read in the platform domain"
           },
           "404": {
-            "description": "No tenant carries the identifier"
+            "description": "No tenant carries the alias"
           },
           "503": {
             "content": {
@@ -9582,7 +9582,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"
+            "description": "The alias is outside the alias domain, the request body is not one JSON object, or the account member is absent"
           },
           "401": {
             "content": {
@@ -9605,7 +9605,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
-            "description": "No tenant carries the identifier"
+            "description": "No tenant carries the alias"
           },
           "409": {
             "content": {
@@ -9708,7 +9708,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain, the request body is not one JSON object, a member is absent, or the profile is outside the stated bounds"
+            "description": "The alias is outside the alias domain, the request body is not one JSON object, a member is absent, or the profile is outside the stated bounds"
           },
           "401": {
             "content": {
@@ -9731,7 +9731,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
-            "description": "No tenant carries the identifier"
+            "description": "No tenant carries the alias"
           },
           "409": {
             "content": {
@@ -10391,7 +10391,7 @@
     },
     "/api/v1/system/tenants/{tenant}/status": {
       "post": {
-        "description": "Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
+        "description": "Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An alias the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
         "operationId": "tenant.admin.tenants.setStatus",
         "parameters": [
           {
@@ -10441,7 +10441,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain or the status is outside the closed set active/disabled"
+            "description": "The alias is outside the alias domain or the status is outside the closed set active/disabled"
           },
           "401": {
             "content": {
@@ -10464,7 +10464,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the tenant is protected against disabling (urn:speed:tenant:protected)"
           },
           "404": {
-            "description": "No tenant carries the identifier"
+            "description": "No tenant carries the alias"
           },
           "409": {
             "content": {
@@ -10539,7 +10539,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain"
+            "description": "The alias is outside the alias domain"
           },
           "401": {
             "content": {
@@ -10562,7 +10562,7 @@
             "description": "The caller is not the organization's owner, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
           },
           "404": {
-            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+            "description": "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain"
           },
           "409": {
             "content": {
@@ -11918,7 +11918,7 @@
                 }
               }
             },
-            "description": "The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"
+            "description": "The alias is outside the alias domain, the request body is not one JSON object, or the account member is absent"
           },
           "401": {
             "content": {
@@ -11941,7 +11941,7 @@
             "description": "The caller is not the organization's owner, or the caller has not proved an email address (contact-required)"
           },
           "404": {
-            "description": "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain"
+            "description": "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain"
           },
           "409": {
             "content": {

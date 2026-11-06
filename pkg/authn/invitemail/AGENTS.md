@@ -5,9 +5,11 @@ The optional email channel of the invitation capability, registered as
 top-level `pkg/mail` capability: it renders one invitation notice — the tenant
 the invitation grants, the acceptance link and the invitation's deadline — into
 the `authn.invitemail` messages, and hands the finished message to a mail
-carrier. It delivers `authn.InviteNotifier` exclusively, so a command tree names
-this module or supplies its own notifier; two providers in one run fail in
-resolution.
+carrier. The tenant the notice names is the tenant's alias, which the invitation
+module resolves before it calls the seam; this package renders `InviteNotice.Tenant`
+as given and never derives a name of its own. It delivers
+`authn.InviteNotifier` exclusively, so a command tree names this module or
+supplies its own notifier; two providers in one run fail in resolution.
 
 The API is the package's godoc. Read `Notify`'s comment and the `InviteNotice`
 and `InviteDelivery` comments in `pkg/authn/invite_notice.go` before changing
@@ -58,6 +60,12 @@ what the seam does.
   `mail.ErrRejected` and `mail.ErrUncertain` reach the caller unchanged, so the
   invitation module decides how to record the outcome. This package adds no
   classification of its own.
+- **`InviteNotice.Tenant` is the alias, never the internal identifier.** The
+  subject and both bodies interpolate `{{tenant}}` from that field, so the
+  recipient reads the same name a request surface addresses the tenant by. The
+  internal identifier is not a name this package knows or can produce: a notice
+  that arrives with one is a defect at the caller, and the seam's contract says
+  the field carries the alias.
 - **The messages are checked at startup, not at the first request.** `New`
   renders every message in every locale the embedded catalog carries and fails
   with the missing key and locale when one is absent, so a catalog edited badly

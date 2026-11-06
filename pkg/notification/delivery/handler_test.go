@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
@@ -711,5 +713,124 @@ func TestTheExternalSendLogsToTheModuleLogger(t *testing.T) {
 				t.Errorf("the send line went to the context logger, not the module's: %v", got)
 			}
 		})
+	}
+}
+
+// TestTheTenantParameterIsTheAliasOnEveryChannel holds the outbound-text rule:
+// a dispatch that names the tenant by its internal identifier reaches every
+// text a recipient can read — the in-app title, body and payload, the email
+// subject and body, and the sms template variables — as the alias instead. The
+// fixture's identifier and alias differ, so either one is distinguishable.
+func TestTheTenantParameterIsTheAliasOnEveryChannel(t *testing.T) {
+	const (
+		internalID = "ACME-INTERNAL"
+		alias      = "acme-public"
+	)
+	r := newRig(t, func(h *host) {
+		h.mail = true
+		h.sms = true
+		h.specs = map[string]notification.TypeSpec{"test.declarer": {
+			Key:                    typeName,
+			Group:                  "billing",
+			DefaultChannels:        []notification.Channel{notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS},
+			Unsubscribable:         true,
+			RecipientVisibleParams: []string{"to", "tenant"},
+		}}
+	})
+	ctx := r.tenantCtxAs(internalID, alias)
+	r.setChannels(notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS)
+	r.local.set(typeName+".in_app.title", "notice")
+	r.local.set(typeName+".in_app.body", "body")
+	r.local.set(typeName+".email.subject", "subject")
+	r.local.set(typeName+".email.body_text", "text")
+	r.local.set(typeName+".sms.template", "sms-template")
+	r.accounts.bind("u1", authn.IdentifierEmail, "u1@example.test")
+
+	params := map[string]any{"to": "u1@example.test", "tenant": internalID}
+	if _, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil); err != nil {
+		t.Fatalf("the delivery failed: %v", err)
+	}
+
+	// The in-app payload carries the alias, not the identifier.
+	msg := r.inbox.last()
+	if got := msg.Params["tenant"]; got != alias {
+		t.Errorf("the in-app payload names the tenant %v, want the alias %q", got, alias)
+	}
+	for _, key := range []string{
+		typeName + ".in_app.title",
+		typeName + ".in_app.body",
+		typeName + ".email.subject",
+		typeName + ".email.body_text",
+	} {
+		args, ok := r.local.argsFor(key)
+		if !ok {
+			t.Fatalf("%q was not rendered", key)
+		}
+		if got := i18n.StringOf(args["tenant"]); got != alias {
+			t.Errorf("%s rendered the tenant as %q, want the alias %q", key, got, alias)
+		}
+	}
+	// The sms template variables carry the alias too.
+	resolved, ok := r.smsRegistry.lastResolve()
+	if !ok {
+		t.Fatal("the sms channel resolved no message")
+	}
+	if got := resolved.Params["tenant"]; got != alias {
+		t.Errorf("the sms template variable tenant = %q, want the alias %q", got, alias)
+	}
+
+	// The internal identifier must appear in no text a recipient reads.
+	sent := r.mailSender.messages()
+	if len(sent) != 1 {
+		t.Fatalf("the carrier accepted %d messages, want 1", len(sent))
+	}
+	for name, text := range map[string]string{
+		"in-app title":  msg.Title,
+		"in-app body":   msg.Body,
+		"email subject": sent[0].Subject,
+		"email text":    sent[0].Text,
+	} {
+		if strings.Contains(text, internalID) {
+			t.Errorf("the %s carries the internal identifier: %q", name, text)
+		}
+	}
+	for name, value := range resolved.Params {
+		if strings.Contains(value, internalID) {
+			t.Errorf("the sms variable %q carries the internal identifier: %q", name, value)
+		}
+	}
+}
+
+// TestTheTenantParameterWithoutAnAliasResolverNamesNobody holds the absent
+// seam: a dispatch that names the tenant renders no tenant rather than falling
+// back to the identifier, which is internal.
+func TestTheTenantParameterWithoutAnAliasResolverNamesNobody(t *testing.T) {
+	r := newRig(t, func(h *host) {
+		h.specs = map[string]notification.TypeSpec{"test.declarer": {
+			Key:                    typeName,
+			Group:                  "billing",
+			DefaultChannels:        []notification.Channel{notification.ChannelInApp},
+			Unsubscribable:         true,
+			RecipientVisibleParams: []string{"invoice_id", "amount", "tenant"},
+		}}
+	})
+	ctx := r.tenantCtx("t1")
+	// The rig delivers the roster's resolver; take it away to hold the absent
+	// seam.
+	r.p.tenantAliases = nil
+	r.setChannels(notification.ChannelInApp)
+	r.local.set(typeName+".in_app.title", "notice")
+	r.local.set(typeName+".in_app.body", "body")
+
+	params := map[string]any{"tenant": "t1", "invoice_id": "inv-1", "amount": 100}
+	if _, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil); err != nil {
+		t.Fatalf("the delivery failed: %v", err)
+	}
+	args, ok := r.local.argsFor(typeName + ".in_app.title")
+	if !ok {
+		t.Fatal("the title was not rendered")
+	}
+	if got := i18n.StringOf(args["tenant"]); got != "" {
+		t.Errorf("the title rendered the tenant as %q, want empty with no resolver", got)
 	}
 }

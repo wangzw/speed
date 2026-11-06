@@ -301,7 +301,7 @@ set holds `tenant.manage`. Neither action can complete for any other
 caller, deletion is irreversible, and no other control on the page can
 succeed for them; the entries are a visibility affordance, and the server
 still judges both writes. The pair also never renders on a personal
-organization (an identifier beginning with `personal-`) or on a tombstone.
+organization (one whose `kind` is `'personal'`) or on a tombstone.
 The transfer dialog chooses its target path the same way: the
 organization's member selector when the tenant permission set holds
 `authn.membership.manage`, the platform account selector otherwise. That

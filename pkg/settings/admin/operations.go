@@ -64,14 +64,14 @@ type SettingsAdminSetting struct {
 // step in front of it has already validated them, so they are not judged again.
 type listInput struct {
 	Layer  string `query:"layer" required:"true" enum:"global,tenant" description:"The layer the listing reads: \"global\" for the platform layer, or \"tenant\" for the layer of the tenant named by \"tenant\". There is no default; an absent value or one outside this set is a 400."`
-	Tenant string `query:"tenant" description:"The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400."`
+	Tenant string `query:"tenant" description:"The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400."`
 }
 
 // namespaceInput is the input of the per-namespace read: the layer selection and
 // the namespace path segment.
 type namespaceInput struct {
 	Layer     string `query:"layer" required:"true" enum:"global,tenant" description:"The layer the listing reads: \"global\" for the platform layer, or \"tenant\" for the layer of the tenant named by \"tenant\". There is no default; an absent value or one outside this set is a 400."`
-	Tenant    string `query:"tenant" description:"The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400."`
+	Tenant    string `query:"tenant" description:"The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400."`
 	Namespace string `path:"namespace" description:"The namespace whose declared items the listing returns: the declaring module, which is the key's leading segment (for example \"deals\" or \"authn.session\"). A namespace no declared item belongs to is a 404."`
 }
 
@@ -81,7 +81,7 @@ type namespaceInput struct {
 // carry.
 type setInput struct {
 	Layer     string `query:"layer" required:"true" enum:"global,tenant" description:"The layer the write lands on: \"global\" for the platform layer, or \"tenant\" for the layer of the tenant named by \"tenant\". There is no default; an absent value or one outside this set is a 400."`
-	Tenant    string `query:"tenant" description:"The tenant whose layer the write lands on. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400."`
+	Tenant    string `query:"tenant" description:"The tenant whose layer the write lands on. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400."`
 	Namespace string `path:"namespace" description:"The namespace of the item to write: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared."`
 	Key       string `path:"key" description:"The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared."`
 	Value     any    `json:"value" required:"true" description:"The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. The mask string a sensitive item is shown as is refused with 422 masked-value before the audit and the store."`
@@ -91,7 +91,7 @@ type setInput struct {
 // path segments of the full key.
 type removeInput struct {
 	Layer     string `query:"layer" required:"true" enum:"global,tenant" description:"The layer whose row is dropped: \"global\" for the platform layer, or \"tenant\" for the layer of the tenant named by \"tenant\". There is no default; an absent value or one outside this set is a 400."`
-	Tenant    string `query:"tenant" description:"The tenant whose layer the row is dropped from. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400."`
+	Tenant    string `query:"tenant" description:"The tenant whose layer the row is dropped from. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400."`
 	Namespace string `path:"namespace" description:"The namespace of the item whose row is dropped: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared."`
 	Key       string `path:"key" description:"The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared."`
 }
@@ -122,7 +122,7 @@ var listOperation = speedhttp.NewOperation[listInput, []SettingsAdminSetting](
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The layer selection is unreadable, or the tenant identifier is outside its value domain"),
+			"The layer selection is unreadable, or the tenant alias is outside its value domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no settings.tenant.read on a tenant layer, or no settings.read on the global layer, in that layer's domain"),
@@ -151,7 +151,7 @@ var namespaceOperation = speedhttp.NewReplyOperation[namespaceInput](
 			Body:        &speedhttp.Body{MediaType: "application/json", Structure: settingListType},
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The layer selection is unreadable, or the tenant identifier is outside its value domain"),
+			"The layer selection is unreadable, or the tenant alias is outside its value domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no settings.tenant.read on a tenant layer, or no settings.read on the global layer, in that layer's domain"),
@@ -186,7 +186,7 @@ var setOperation = speedhttp.NewReplyOperation[setInput](
 	[]speedhttp.Response{
 		{Status: http.StatusNoContent, Description: "The row was written"},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object"),
+			"The layer selection is unreadable, the tenant alias is outside its value domain, or the body is not one object"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no settings.tenant.write on a tenant layer, or no settings.write on the global layer, in that layer's domain, or the caller has not proved an email address (contact-required)"),
@@ -219,7 +219,7 @@ var removeOperation = speedhttp.NewReplyOperation[removeInput](
 	[]speedhttp.Response{
 		{Status: http.StatusNoContent, Description: "The row was dropped"},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The layer selection is unreadable, or the tenant identifier is outside its value domain"),
+			"The layer selection is unreadable, or the tenant alias is outside its value domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no settings.tenant.write on a tenant layer, or no settings.write on the global layer, in that layer's domain, or the caller has not proved an email address (contact-required)"),

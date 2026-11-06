@@ -116,7 +116,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -146,7 +146,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"
+            "description": "The layer selection is unreadable, or the tenant alias is outside its value domain"
           },
           "401": {
             "content": {
@@ -209,7 +209,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the listing reads. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -248,7 +248,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"
+            "description": "The layer selection is unreadable, or the tenant alias is outside its value domain"
           },
           "401": {
             "content": {
@@ -314,7 +314,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the row is dropped from. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the row is dropped from. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -352,7 +352,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"
+            "description": "The layer selection is unreadable, or the tenant alias is outside its value domain"
           },
           "401": {
             "content": {
@@ -416,7 +416,7 @@
             }
           },
           {
-            "description": "The tenant whose layer the write lands on. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty identifier or one containing blanks or control characters is a 400.",
+            "description": "The tenant whose layer the write lands on. Required when \"layer\" is \"tenant\" and refused when it is \"global\"; an empty alias or one containing blanks or control characters is a 400.",
             "in": "query",
             "name": "tenant",
             "schema": {
@@ -474,7 +474,7 @@
                 }
               }
             },
-            "description": "The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object"
+            "description": "The layer selection is unreadable, the tenant alias is outside its value domain, or the body is not one object"
           },
           "401": {
             "content": {

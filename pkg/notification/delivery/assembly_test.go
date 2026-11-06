@@ -53,10 +53,11 @@ func TestTheModuleDeliversTheDispatcherExclusively(t *testing.T) {
 // seam, the inbox seam, the localizer, the account store the destination rule
 // reads, the key-value counters the email budget is counted on and the shared
 // sms ledger are required; the settings store, the metric
-// capability, the logging capability, the mail sender and the two sms seams are
-// optional, one per channel that sends outside this process. It declares nothing
-// else — not an entry point, which this module mounts no route on, and not an
-// event bus, which it publishes nothing on.
+// capability, the logging capability, the mail sender, the two sms seams and
+// the tenant alias resolver are optional, the last because an assembly with no
+// roster names no tenant rather than exposing the identifier. It declares
+// nothing else — not an entry point, which this module mounts no route on, and
+// not an event bus, which it publishes nothing on.
 func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	m := Module()
 	required := []core.Token{
@@ -88,6 +89,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 		(*mail.Sender)(nil),
 		(*sms.Registry)(nil),
 		(*sms.Sender)(nil),
+		(*authn.TenantAliasResolver)(nil),
 	}
 	for _, token := range optional {
 		found, isOptional := requirementOf(m, token)

@@ -187,6 +187,14 @@ type Dispatch struct {
 	// unsupported tag falls back to the default language when rendered.
 	Locale string
 	// Params carries the parameters used for rendering and delivery.
+	//
+	// A parameter named tenant identifies the tenant the message is about by its
+	// internal identifier. The delivery pipeline resolves it to the tenant's
+	// alias before any channel renders or exposes it, so every text a recipient
+	// can read — an in-app title or body, an email subject or body, an sms
+	// template variable and the in-app payload's parameters — names the alias.
+	// An assembly with no alias resolver renders the empty name, never the
+	// identifier.
 	Params map[string]any
 	// OccurrenceID is the identity of one logical event. A resend of the same
 	// logical event must carry the same value; it tells the dedupe key "two sends

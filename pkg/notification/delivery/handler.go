@@ -68,13 +68,17 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 	if err != nil {
 		return jobs.Result{}, fmt.Errorf("%s: resolving the effective channels of %q: %w", ModuleName, d.TypeKey, err)
 	}
+	// The text a channel renders is the outbound copy: a tenant-naming
+	// parameter is the alias there, while the idempotency key is derived from
+	// the dispatch as submitted.
+	out := p.outbound(ctx, d)
 	// A charged sms attempt is refunded by the sms channel itself when the
 	// message certainly did not leave the process. A recipient whose effective
 	// channels no longer name sms keeps the charge: the charge was made against
 	// the matrix the submission read, and the row then counts conservatively.
 	var failures []error
 	for _, ch := range channels {
-		if err := p.deliver(ctx, id, d, spec, ch, attempt); err != nil {
+		if err := p.deliver(ctx, id, d, out, spec, ch, attempt); err != nil {
 			failures = append(failures, err)
 		}
 	}
@@ -84,14 +88,15 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 	return jobs.Result{}, nil
 }
 
-// deliver settles one channel. It derives the channel's idempotency key, reads
-// the ledger and skips a channel that is already settled — one that sent, or one
-// whose seam was absent — then sends and records the result. A channel that
-// failed before is attempted again, which is what a retry of the job is for. The
-// charged sms attempt rides along so the sms channel can refund it when the
-// message certainly did not leave the process.
-func (p *pipeline) deliver(ctx context.Context, id tenant.ID, d notification.Dispatch, spec notification.TypeSpec, ch notification.Channel, attempt budget.ID) error {
-	key, err := channelKey(id, d, ch)
+// deliver settles one channel. It derives the channel's idempotency key from
+// the dispatch as submitted, reads the ledger and skips a channel that is
+// already settled — one that sent, or one whose seam was absent — then sends
+// the outbound copy and records the result. A channel that failed before is
+// attempted again, which is what a retry of the job is for. The charged sms
+// attempt rides along so the sms channel can refund it when the message
+// certainly did not leave the process.
+func (p *pipeline) deliver(ctx context.Context, id tenant.ID, keyed, out notification.Dispatch, spec notification.TypeSpec, ch notification.Channel, attempt budget.ID) error {
+	key, err := channelKey(id, keyed, ch)
 	if err != nil {
 		return fmt.Errorf("%s: deriving the idempotency key of the %s channel: %w", ModuleName, ch, err)
 	}
@@ -106,7 +111,7 @@ func (p *pipeline) deliver(ctx context.Context, id tenant.ID, d notification.Dis
 		return nil
 	}
 	started := time.Now()
-	row, sendErr := p.send(ctx, d, spec, ch, key, attempt)
+	row, sendErr := p.send(ctx, out, spec, ch, key, attempt)
 	row.DurationMS = time.Since(started).Milliseconds()
 	row.UpdatedAt = nowMS()
 	if err := p.ledger.record(ctx, row); err != nil {
