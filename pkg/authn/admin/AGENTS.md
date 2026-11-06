@@ -76,6 +76,10 @@ The API is the package's godoc.
   costs it its roles, not its rows. The page is read one row longer than it shows
   below the store's ceiling; at the ceiling the full page is asked again for a
   single row past its last account, because the read cannot exceed its own bound.
+  The row carries no owner field: the organization's owner is exposed only on the
+  platform tenant detail (`TenantAdminTenant`) and the tenant profile view
+  (`TenantProfileView`, behind `tenant.profile.read`), never on a view an
+  ordinary member can read.
 - **A member write may not suspend its own caller.** `PUT` with `active` false
   and the path's account the effective caller is a 409
   `cannot-suspend-self` (`urn:speed:authn:cannot-suspend-self`), decided in the

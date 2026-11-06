@@ -47,7 +47,7 @@ var profileWriteFields = []string{"display_name", "description", "contact_email"
 type profileBody = struct {
 	_ struct{} `description:"The organization profile of one tenant."`
 
-	Profile TenantProfileView `json:"profile" required:"true" description:"The tenant's organization profile, with the identifier, alias and state it is read beside."`
+	Profile TenantProfileView `json:"profile" required:"true" description:"The tenant's organization profile, with the identifier, alias, owner account and state it is read beside."`
 }
 
 // getOperation declares GET /:tenant/profile: the organization profile of one
@@ -59,7 +59,7 @@ var getOperation = speedhttp.NewReplyOperation[profileInput](
 	pathProfileFragment,
 	"Read a tenant's organization profile",
 	"Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, "+
-		"website and state, plus the time it was registered when that is known. It carries no disable source; "+
+		"website, state and owner account, plus the time it was registered when that is known. It carries no disable source; "+
 		"the platform management surface is where a disabled tenant's source is read. The caller needs "+
 		"tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier "+
 		"the roster does not hold is a 404. Reads write no audit row.",

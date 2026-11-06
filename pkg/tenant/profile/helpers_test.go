@@ -562,9 +562,10 @@ var sampleCreatedAt = time.Date(2026, time.November, 5, 9, 30, 0, 0, time.UTC)
 // sampleTenant is a tenant with every profile field set.
 func sampleTenant() tenant.Tenant {
 	return tenant.Tenant{
-		ID:     "acme",
-		Alias:  "acme",
-		Status: tenant.StatusActive,
+		ID:           "acme",
+		Alias:        "acme",
+		Status:       tenant.StatusActive,
+		OwnerAccount: "acct-owner",
 		Profile: tenant.Profile{
 			DisplayName:  "Acme Corporation",
 			Description:  "A maker of things.",

@@ -2186,7 +2186,7 @@ export const TenantAdminTenantStatus = {
 } as const;
 
 /**
- * One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time and who disabled it while it is disabled.
+ * One tenant as the management routes render it: the identifier, the alias, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.
  */
 export interface TenantAdminTenant {
   /** The alias the request surface addresses the tenant by. */
@@ -2203,6 +2203,8 @@ export interface TenantAdminTenant {
   displayName: string;
   /** The tenant's identifier, the natural key the roster keys the row by. */
   id: string;
+  /** The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it. */
+  ownerAccount: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
   status: TenantAdminTenantStatus;
   /** The organization's absolute http or https address. Empty when its profile names none. */
@@ -2261,7 +2263,7 @@ export const TenantProfileViewStatus = {
 } as const;
 
 /**
- * One tenant's organization profile: the read-only identity and state beside the four descriptive fields.
+ * One tenant's organization profile: the read-only identity, the owning account, the state and the four descriptive fields, behind tenant.profile.read.
  */
 export interface TenantProfileView {
   /** The alias the request surface addresses the tenant by. */
@@ -2276,6 +2278,8 @@ export interface TenantProfileView {
   displayName: string;
   /** The tenant's immutable identifier. */
   id: string;
+  /** The account that owns the organization, from the roster row's owner column. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner. */
+  ownerAccount: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
   status: TenantProfileViewStatus;
   /** The organization's absolute http or https address. Empty when its profile names none. */
@@ -2969,7 +2973,7 @@ export type TenantAdminTenantsCreate201 = {
  * The tenant the identifier named.
  */
 export type TenantAdminTenantsGet200 = {
-  /** The tenant, with its identifier, alias and state. */
+  /** The tenant, with its identifier, alias, owner account and state. */
   tenant: TenantAdminTenant;
 };
 
@@ -3004,7 +3008,7 @@ after?: string;
  * The tenant the identifier named.
  */
 export type TenantAdminTenantsProfile200 = {
-  /** The tenant, with its identifier, alias and state. */
+  /** The tenant, with its identifier, alias, owner account and state. */
   tenant: TenantAdminTenant;
 };
 
@@ -3122,7 +3126,7 @@ export type AuthzTenantadminPermissionsList200 = {
  * The organization profile of one tenant.
  */
 export type TenantProfileGet200 = {
-  /** The tenant's organization profile, with the identifier, alias and state it is read beside. */
+  /** The tenant's organization profile, with the identifier, alias, owner account and state it is read beside. */
   profile: TenantProfileView;
 };
 
@@ -3130,7 +3134,7 @@ export type TenantProfileGet200 = {
  * The organization profile of one tenant.
  */
 export type TenantProfileUpdate200 = {
-  /** The tenant's organization profile, with the identifier, alias and state it is read beside. */
+  /** The tenant's organization profile, with the identifier, alias, owner account and state it is read beside. */
   profile: TenantProfileView;
 };
 
@@ -12407,7 +12411,7 @@ export function useAuthzTenantadminPermissionsList<TData = Awaited<ReturnType<ty
 
 
 /**
- * Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, website and state, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier the roster does not hold is a 404. Reads write no audit row.
+ * Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier the roster does not hold is a 404. Reads write no audit row.
  * @summary Read a tenant's organization profile
  */
 export const tenantProfileGet = (

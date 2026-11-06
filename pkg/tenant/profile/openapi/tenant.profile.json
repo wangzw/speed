@@ -32,7 +32,7 @@
         "type": "object"
       },
       "TenantProfileView": {
-        "description": "One tenant's organization profile: the read-only identity and state beside the four descriptive fields.",
+        "description": "One tenant's organization profile: the read-only identity, the owning account, the state and the four descriptive fields, behind tenant.profile.read.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
@@ -59,6 +59,10 @@
             "description": "The tenant's immutable identifier.",
             "type": "string"
           },
+          "ownerAccount": {
+            "description": "The account that owns the organization, from the roster row's owner column. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner.",
+            "type": "string"
+          },
           "status": {
             "description": "The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again.",
             "enum": [
@@ -80,6 +84,7 @@
           "description",
           "contactEmail",
           "website",
+          "ownerAccount",
           "status",
           "createdAt"
         ],
@@ -123,7 +128,7 @@
   "paths": {
     "/{tenant}/profile": {
       "get": {
-        "description": "Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, website and state, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier the roster does not hold is a 404. Reads write no audit row.",
+        "description": "Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier the roster does not hold is a 404. Reads write no audit row.",
         "operationId": "tenant.profile.get",
         "parameters": [
           {
@@ -145,7 +150,7 @@
                   "properties": {
                     "profile": {
                       "$ref": "#/components/schemas/TenantProfileView",
-                      "description": "The tenant's organization profile, with the identifier, alias and state it is read beside."
+                      "description": "The tenant's organization profile, with the identifier, alias, owner account and state it is read beside."
                     }
                   },
                   "required": [
@@ -235,7 +240,7 @@
                   "properties": {
                     "profile": {
                       "$ref": "#/components/schemas/TenantProfileView",
-                      "description": "The tenant's organization profile, with the identifier, alias and state it is read beside."
+                      "description": "The tenant's organization profile, with the identifier, alias, owner account and state it is read beside."
                     }
                   },
                   "required": [

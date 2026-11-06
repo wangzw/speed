@@ -179,6 +179,27 @@ func TestTheMemberViewCarriesRolesAndJoinedAt(t *testing.T) {
 	}
 }
 
+// TestTheMemberViewCarriesNoOwnerField holds the boundary on the owner
+// exposure: the platform tenant detail and the tenant profile view name the
+// organization's owner, and the member list does not. A member row is read by
+// anyone holding membership.manage and carries the membership's own facts, so
+// no spelling of the owner reaches it.
+func TestTheMemberViewCarriesNoOwnerField(t *testing.T) {
+	r := newRig(t)
+	r.members.put(authn.Membership{Account: userID, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin})
+
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("listing members: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	member := readMemberPage(t, rec.Body.Bytes()).memberByAccount(t, string(userID))
+	for _, key := range []string{"owner", "ownerAccount", "owner_account", "OwnerAccount"} {
+		if _, present := member[key]; present {
+			t.Errorf("the member view carries %q, want no owner field", key)
+		}
+	}
+}
+
 // TestTheMemberListAnswersANextCursor holds the page envelope: a full page names
 // the cursor of the next one, and the last page names none.
 func TestTheMemberListAnswersANextCursor(t *testing.T) {

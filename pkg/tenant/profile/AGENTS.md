@@ -31,11 +31,14 @@ of its own.
   `tenant.profile.update`; the detail carries `action_id`, `tenant` and
   `surface: tenant`. A roster refusal closes the write with a linked failed row.
 - **The answer is not the platform view.** `TenantProfileView` carries the
-  identifier, alias, the four descriptive fields, state and the creation time.
-  The creation time always exists — `created_at` is not null — so the view
-  renders it as an RFC 3339 instant in UTC with no omission branch. It
-  deliberately omits the disable source, which belongs to the platform
-  management surface.
+  identifier, alias, the four descriptive fields, the owner account, state and
+  the creation time. The creation time always exists — `created_at` is not null
+  — so the view renders it as an RFC 3339 instant in UTC with no omission branch.
+  It deliberately omits the disable source, which belongs to the platform
+  management surface. The owner account is the roster row's owner column, always
+  present and empty only for a tenant with no owner. It is exposed behind
+  `tenant.profile.read` and appears in no member-readable view: the member list
+  (`AuthnAdminMember`) and the self tenant view carry no owner field.
 - **The mount is configuration-driven.** The endpoints come from
   `tenant.profile.endpoints`, defaulting to `["api"]`; the wildcard, blank name
   and duplicate are refused at startup. The module declares the static feature

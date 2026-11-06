@@ -32,7 +32,7 @@
         "type": "object"
       },
       "TenantAdminTenant": {
-        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time and who disabled it while it is disabled.",
+        "description": "One tenant as the management routes render it: the identifier, the alias, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
@@ -67,6 +67,10 @@
             "description": "The tenant's identifier, the natural key the roster keys the row by.",
             "type": "string"
           },
+          "ownerAccount": {
+            "description": "The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it.",
+            "type": "string"
+          },
           "status": {
             "description": "The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again.",
             "enum": [
@@ -88,6 +92,7 @@
           "description",
           "contactEmail",
           "website",
+          "ownerAccount",
           "status",
           "createdAt"
         ],
@@ -459,7 +464,7 @@
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its identifier, alias and state."
+                      "description": "The tenant, with its identifier, alias, owner account and state."
                     }
                   },
                   "required": [
@@ -656,7 +661,7 @@
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its identifier, alias and state."
+                      "description": "The tenant, with its identifier, alias, owner account and state."
                     }
                   },
                   "required": [

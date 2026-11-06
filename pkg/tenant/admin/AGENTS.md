@@ -265,9 +265,14 @@ key.
   assembled from a `tenant.Tenant` and never the record as it stands, so a field
   added to a record later does not reach a client by being there. The view carries
   the tenant's identifier, its alias, the four profile fields, its state spelled
-  the way `tenant.Status` spells it — `active` or `disabled` — and the creation
-  time. The creation time is always present: `created_at` is not null, so the
-  view renders it as an RFC 3339 instant in UTC and carries no omission branch.
+  the way `tenant.Status` spells it — `active` or `disabled` — the creation time
+  and the owner account read from the roster row. The creation time is always
+  present: `created_at` is not null, so the view renders it as an RFC 3339
+  instant in UTC and carries no omission branch. The owner account is always
+  present too, empty for a tenant with no owner, such as the platform's own
+  tenant. This view is the only platform-domain place the owner is exposed
+  alongside `TenantProfileView`; the member list and the self tenant view carry
+  no owner field.
 
 ## Configuration
 

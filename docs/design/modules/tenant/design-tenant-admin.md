@@ -89,7 +89,9 @@
 
 ### 视图
 
-**读的应答是 200 加一份视图，登记写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `tenant.Tenant` 构造，从不把值原样交给客户端，记录日后新增一个字段，不会因为它存在就出现在应答里。租户视图的字段：`id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`status`（`active`、`disabled` 或 `deleted`，由 `tenant.Status` 的字符串形式给出）、`createdAt`，以及 `disabledBy`（`operator` 或 `account`，由 `tenant.DisabledBy` 的字符串形式给出，只在状态是 `disabled` 时出现）。四个资料字段为空串时照常出现，视图不隐藏它们；创建时间每一行都有，不是可空字段。
+**读的应答是 200 加一份视图，登记写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `tenant.Tenant` 构造，从不把值原样交给客户端，记录日后新增一个字段，不会因为它存在就出现在应答里。租户视图的字段：`id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`status`（`active`、`disabled` 或 `deleted`，由 `tenant.Status` 的字符串形式给出）、`createdAt`，以及 `disabledBy`（`operator` 或 `account`，由 `tenant.DisabledBy` 的字符串形式给出，只在状态是 `disabled` 时出现）。四个资料字段为空串时照常出现，视图不隐藏它们；创建时间每一行都有，不是可空字段。`ownerAccount` 是名册行的所有者列，原样给出账户标识；平台自身的租户没有所有者，该字段是空串但仍出现。
+
+**所有者只在这一个平台视图和租户资料视图上出现，成员可读的视图都不带它。** 成员列表携带成员关系自身的事实与角色，本人租户视图携带成员自己的 `id`、`alias` 与 `kind`，两者都没有所有者字段。租户资料视图经 `tenant.profile.read` 读取，见 [tenant-profile](design-tenant-profile.md)；成员列表与本人租户视图的边界分别在 [authn.admin](../authn/design-authn-admin.md) 与 [tenant](design-tenant.md) 的本人租户读取。
 
 已删除的租户在读取里照常返回 200，视图的 `status` 是 `deleted`，资料字段与创建时间原样返回；资料、状态、转移与删除写对它是 409。
 
@@ -108,7 +110,7 @@
 ### 对外接口
 
 - 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints` 与 `tenant.admin.tenant-endpoints`、平台面与租户面路由的路径与判定（平台读询 `tenant.read`、写询 `tenant.manage`；租户面按所有者身份判定），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`、`protected`），是本模块对宿主的接口。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口。改动它们是宿主可见的破坏性变更。
-- 租户视图的字段名（`id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`status`、`createdAt`、`disabledBy`）与容器形态是应答结构：宿主与前端据此读应答。`status` 的取值集合与 `disabledBy` 的取值集合同样是应答结构。
+- 租户视图的字段名（`id`、`alias`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`status`、`createdAt`、`disabledBy`）与容器形态是应答结构：宿主与前端据此读应答。`status` 的取值集合与 `disabledBy` 的取值集合同样是应答结构。
 - 特性名 `tenant.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或名册的代码。
 
@@ -182,7 +184,7 @@ sequenceDiagram
 
 | 概念 | 结构 | 说明 |
 |---|---|---|
-| 租户视图 | `{id, alias, displayName, description, contactEmail, website, status, createdAt, disabledBy?}` | 从 `tenant.Tenant` 逐字段构造；`status` 是 `active`、`disabled` 或 `deleted`；`disabledBy` 是 `operator` 或 `account`，只在状态为 `disabled` 时出现 |
+| 租户视图 | `{id, alias, displayName, description, contactEmail, website, ownerAccount, status, createdAt, disabledBy?}` | 从 `tenant.Tenant` 逐字段构造；`ownerAccount` 是名册行的所有者列，没有所有者时为空串；`status` 是 `active`、`disabled` 或 `deleted`；`disabledBy` 是 `operator` 或 `account`，只在状态为 `disabled` 时出现 |
 | 登记正文 | `{id, alias, display_name?, description?, contact_email?, website?}` | `POST /tenants` 的正文；新租户起于 `active`，创建者是所有者 |
 | 资料正文 | `{display_name, description, contact_email, website}` | `PATCH /tenants/:tenant/profile` 的正文；四个字段全部必填，空串清空 |
 | 转移正文 | `{account}` | `PUT /tenants/:tenant/owner` 的正文；目标必须是活跃成员 |

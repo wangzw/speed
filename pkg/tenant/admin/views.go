@@ -11,12 +11,13 @@ import (
 // added to a record later does not reach a client by being there.
 
 // TenantAdminTenant is one tenant as the management routes show it. It carries
-// the tenant's identifier, the alias the request surface addresses it by, and
-// its state, spelled the way tenant.Status spells it: active, disabled or
-// deleted. A disabled tenant also carries who disabled it, spelled the way
-// tenant.DisabledBy spells the source: operator or account.
+// the tenant's identifier, the alias the request surface addresses it by, the
+// account that owns the organization, and its state, spelled the way
+// tenant.Status spells it: active, disabled or deleted. A disabled tenant also
+// carries who disabled it, spelled the way tenant.DisabledBy spells the source:
+// operator or account.
 type TenantAdminTenant struct {
-	_ struct{} `description:"One tenant as the management routes render it: the identifier, the alias, the organization profile, the state, the creation time and who disabled it while it is disabled."`
+	_ struct{} `description:"One tenant as the management routes render it: the identifier, the alias, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled."`
 
 	ID           string `json:"id" required:"true" description:"The tenant's identifier, the natural key the roster keys the row by."`
 	Alias        string `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
@@ -24,6 +25,7 @@ type TenantAdminTenant struct {
 	Description  string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
 	ContactEmail string `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
 	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
+	OwnerAccount string `json:"ownerAccount" required:"true" description:"The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it."`
 	Status       string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
 	// CreatedAt is when the roster recorded the registration. Every row carries
 	// one, so the field is always present and a surface needs no fallback.
@@ -40,7 +42,10 @@ type TenantAdminTenant struct {
 type tenantView = TenantAdminTenant
 
 // tenantViewOf builds the view field by field from a root-package value. The
-// disable source is rendered whenever the view spells the state as disabled,
+// owner is the roster row's own owner column, rendered as the account
+// identifier it stores; a tenant with no owner renders it empty, so the field is
+// always present. The disable source is rendered whenever the view spells the
+// state as disabled,
 // which includes a value this build does not know: that value reads as disabled
 // everywhere else, so the source it carries belongs with it. Rendering it only
 // for the literal StatusDisabled would leave such a row showing a disabled state
@@ -53,6 +58,7 @@ func tenantViewOf(t tenant.Tenant) TenantAdminTenant {
 		Description:  t.Profile.Description,
 		ContactEmail: t.Profile.ContactEmail,
 		Website:      t.Profile.Website,
+		OwnerAccount: t.OwnerAccount,
 		Status:       t.Status.String(),
 		CreatedAt:    t.CreatedAt.UTC(),
 	}

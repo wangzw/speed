@@ -123,6 +123,48 @@ func TestTheReadNeedsTheReadPermission(t *testing.T) {
 	}
 }
 
+// TestTheProfileViewCarriesTheOwner holds the owner exposure the requirement
+// owner ruled: the profile view names the account that owns the organization,
+// read from the roster row's owner column.
+func TestTheProfileViewCarriesTheOwner(t *testing.T) {
+	r := newRig(t)
+	r.catalog.held = sampleTenant()
+
+	w := r.do(http.MethodGet, profileTarget, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %q", w.Code, w.Body.String())
+	}
+	var body struct {
+		Profile map[string]any `json:"profile"`
+	}
+	decode(t, w, &body)
+	if owner, _ := body.Profile["ownerAccount"].(string); owner != "acct-owner" {
+		t.Errorf("ownerAccount = %q, want acct-owner", owner)
+	}
+}
+
+// TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner holds the boundary on
+// the owner exposure: a caller without tenant.profile.read is refused with a 403
+// before the roster is read, so the answer names no owner.
+func TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner(t *testing.T) {
+	r := newRig(t)
+	r.catalog.held = sampleTenant()
+	r.guard.allow = false
+
+	w := r.do(http.MethodGet, profileTarget, nil)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %q", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	decode(t, w, &body)
+	if _, present := body["ownerAccount"]; present {
+		t.Errorf("the 403 carries ownerAccount, want no owner: body %q", w.Body.String())
+	}
+	if calls := r.catalog.recorded(); len(calls) != 0 {
+		t.Errorf("the roster was reached %v on a denied read, want nothing", calls)
+	}
+}
+
 // TestTheWriteStoresTheProfileAndAuditsIt holds the write's action, the view it
 // answers, and the order of its two steps: the mandatory audit row lands before
 // the roster write.

@@ -474,10 +474,10 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 }
 
 // The view carries the fields the design names, per state, spelled the way
-// tenant.Status and tenant.DisabledBy spell them: the identifier, the alias and
-// the state's name on every row, and disabledBy only on a disabled one. A field
-// added to a record later does not reach a client by being there, and a source
-// never appears on a row whose state is not disabled.
+// tenant.Status and tenant.DisabledBy spell them: the identifier, the alias, the
+// owner account and the state's name on every row, and disabledBy only on a
+// disabled one. A field added to a record later does not reach a client by being
+// there, and a source never appears on a row whose state is not disabled.
 func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 	createdAt := time.Date(2026, 7, 8, 9, 10, 11, 0, time.UTC)
 	cases := map[string]struct {
@@ -489,52 +489,57 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 		"active": {
 			row: tenant.Tenant{
 				ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
-				CreatedAt: createdAt,
+				OwnerAccount: "acct-owner", CreatedAt: createdAt,
 			},
 			wantStatus: "active",
 			wantKeys: []string{
 				"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "createdAt",
+				"ownerAccount", "status", "createdAt",
 			},
 		},
 		"disabled by an operator": {
 			row: tenant.Tenant{
 				ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
-				DisabledBy: tenant.DisabledByOperator,
+				OwnerAccount: "acct-owner", DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "createdAt", "disabledBy",
+				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
 		},
 		"disabled by an account": {
 			row: tenant.Tenant{
 				ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
-				DisabledBy: tenant.DisabledByAccount,
+				OwnerAccount: "acct-owner", DisabledBy: tenant.DisabledByAccount,
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "createdAt", "disabledBy",
+				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "account",
 		},
 		"deleted": {
-			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted},
+			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted, OwnerAccount: "acct-owner"},
 			wantStatus: "deleted",
-			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "status", "createdAt"},
+			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
+		},
+		"a tenant with no owner": {
+			row:        tenant.Tenant{ID: "t_system", Alias: "system", Status: tenant.StatusActive},
+			wantStatus: "active",
+			wantKeys:   []string{"id", "alias", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
 		},
 		"a status this build does not know": {
 			row: tenant.Tenant{
 				ID: "t_acme", Alias: "acme", Status: tenant.Status(7),
-				DisabledBy: tenant.DisabledByOperator,
+				OwnerAccount: "acct-owner", DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"id", "alias", "displayName", "description", "contactEmail", "website",
-				"status", "createdAt", "disabledBy",
+				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
 		},
@@ -560,6 +565,9 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 					t.Errorf("the view is missing %q", want)
 				}
 			}
+			if owner, _ := got["ownerAccount"].(string); owner != tc.row.OwnerAccount {
+				t.Errorf("ownerAccount = %q, want %q", owner, tc.row.OwnerAccount)
+			}
 			if status, _ := got["status"].(string); status != tc.wantStatus {
 				t.Errorf("status = %q, want %q", status, tc.wantStatus)
 			}
@@ -571,5 +579,28 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				t.Errorf("disabledBy = %q, want %q", source, tc.disabledBy)
 			}
 		})
+	}
+}
+
+// TestThePlatformDetailCarriesTheOwner holds the one place the platform surface
+// names the organization's owner: the single-tenant detail. The value is the
+// roster row's owner column, not a value this module derives.
+func TestThePlatformDetailCarriesTheOwner(t *testing.T) {
+	r := newRig(t)
+	r.catalog.held = tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-owner",
+	}
+	r.catalog.found = true
+
+	w := r.do(http.MethodGet, pathTenants+"/t_acme", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+	var got struct {
+		Tenant map[string]any `json:"tenant"`
+	}
+	decode(t, w, &got)
+	if owner, _ := got.Tenant["ownerAccount"].(string); owner != "acct-owner" {
+		t.Errorf("ownerAccount = %q, want acct-owner", owner)
 	}
 }

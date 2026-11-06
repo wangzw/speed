@@ -54,7 +54,7 @@ type (
 	// tenantReadBody is the 200 answer of a single-tenant read.
 	tenantReadBody = struct {
 		_      struct{}          `description:"The tenant the identifier named."`
-		Tenant TenantAdminTenant `json:"tenant" required:"true" description:"The tenant, with its identifier, alias and state."`
+		Tenant TenantAdminTenant `json:"tenant" required:"true" description:"The tenant, with its identifier, alias, owner account and state."`
 	}
 )
 
