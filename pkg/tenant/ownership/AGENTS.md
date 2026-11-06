@@ -29,18 +29,22 @@ and the membership store.
   no-op. The target's membership is read inside the transaction under the
   account's row lock (`provisioning.MembershipWriter.MembershipTx`), so a
   concurrent suspension either is seen by the check or waits for the transfer to
-  commit.
+  commit. A non-empty `expectedOwner` that no longer matches the roster row is
+  `tenant.ErrOwnerChanged`, checked in the transaction before the membership
+  read.
 - **The deletion writes the tombstone and cleans the core relations.** It
   writes the roster tombstone, deletes the tenant's grants, bindings and roles,
   and deletes its memberships, all in that one transaction. It never writes
   another module's scoped table; those modules clean their data under the
   tombstone. The identifier and the alias stay on the tombstone and are never
   reusable.
-- **`expectedOwner` is the optimistic check that makes a race one-sided.** The
-  management surface passes the owner it observed for an owner-initiated
-  deletion and the empty string for platform staff. A transfer that wins first
-  leaves the deletion refused with `tenant.ErrOwnerChanged`; a deletion that
-  wins first leaves the transfer refused with `tenant.ErrTenantDeleted`.
+- **`expectedOwner` is the optimistic check that makes a race one-sided.** Both
+  writes take it: the management surface passes the owner it observed for an
+  owner-initiated transfer or deletion, and the empty string for platform staff.
+  A transfer that wins first leaves the deletion refused with
+  `tenant.ErrOwnerChanged`, and an earlier transfer leaves a transfer from the
+  stale read refused the same way; a deletion that wins first leaves the
+  transfer refused with `tenant.ErrTenantDeleted`.
 - **After-commit work is best effort.** The transaction-aware writes return the
   roster and policy snapshot rereads. The closures run once the commit has
   happened; a failure is a warning, never a failed write. The underlying write
@@ -62,11 +66,12 @@ go -C pkg vet ./tenant/ownership/...
 
 `integration_test.go` drives the real account, roster, policy and personal
 modules over one SQLite database: the transfer hands the organization on, a
-non-member and an inactive account are refused, a missing tenant and a tombstone
-are reported before the membership, a deletion cleans the core relations
-including a seeded grant and leaves the identifier and alias unusable, a failed
-step rolls the whole deletion back, a transfer against the old owner's deletion
-leaves exactly one winner, an account owning an active organization cannot be
-deleted or suspended, the account-administration lock covers a member-only
-account so a transfer to it blocks, and the previous owner can be deleted once
-the ownership has moved.
+non-member, an inactive account and a deleted account are refused, a transfer
+from an owner the row no longer carries is refused with `ErrOwnerChanged`, a
+missing tenant and a tombstone are reported before the membership, a deletion
+cleans the core relations including a seeded grant and leaves the identifier and
+alias unusable, a failed step rolls the whole deletion back, a transfer against
+the old owner's deletion leaves exactly one winner, an account owning an active
+organization cannot be deleted or suspended, the account-administration lock
+covers a member-only account so a transfer to it blocks, and the previous owner
+can be deleted once the ownership has moved.

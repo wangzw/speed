@@ -24,11 +24,16 @@ import (
 // this call and leaves a tombstone this call refuses, or runs after it and sees
 // the new owner.
 //
+// expectedOwner is the owner the caller observed, or empty for platform staff.
+// A non-empty value that no longer matches the row is ErrOwnerChanged: the
+// tenant surface passes the caller, so an ownership handed on after that
+// surface read the roster cannot be handed on again from the stale read.
+//
 // The roster is read before the membership, so an identifier no row carries is
 // ErrInvalidTenant and a tombstone is ErrTenantDeleted, not the
 // ErrOwnerNotMember a membership read against a tenant that does not exist
 // would otherwise give.
-func (p *product) TransferOwner(ctx context.Context, id tenant.ID, target string) error {
+func (p *product) TransferOwner(ctx context.Context, id tenant.ID, target, expectedOwner string) error {
 	if err := checkTenant(id); err != nil {
 		return err
 	}
@@ -68,6 +73,9 @@ func (p *product) TransferOwner(ctx context.Context, id tenant.ID, target string
 		}
 		if held.Status == tenant.StatusDeleted {
 			return fmt.Errorf("%w: identifier %q", tenant.ErrTenantDeleted, id)
+		}
+		if expectedOwner != "" && held.OwnerAccount != expectedOwner {
+			return fmt.Errorf("%w: identifier %q", tenant.ErrOwnerChanged, id)
 		}
 
 		// The target's membership is read under the account's row lock inside
@@ -123,7 +131,8 @@ func (p *product) TransferOwner(ctx context.Context, id tenant.ID, target string
 	})
 	if err != nil {
 		if errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDeleted) ||
-			errors.Is(err, tenant.ErrOwnerNotMember) || errors.Is(err, tenant.ErrOwnerInactive) {
+			errors.Is(err, tenant.ErrOwnerNotMember) || errors.Is(err, tenant.ErrOwnerInactive) ||
+			errors.Is(err, tenant.ErrOwnerChanged) {
 			return err
 		}
 		return fmt.Errorf("%s: transferring the owner of tenant %q: %w", ModuleName, id, err)

@@ -15,10 +15,11 @@ var ErrOwnerNotMember = errors.New("tenant: the new owner is not an active membe
 // organization, so the transfer refuses before it writes anything.
 var ErrOwnerInactive = errors.New("tenant: the new owner's account is not active")
 
-// ErrOwnerChanged reports an organization deletion begun by an owner that no
-// longer owned the organization when the deletion reached its transaction. It
-// is how a transfer and an owner-initiated deletion that race end with exactly
-// one of them taking effect.
+// ErrOwnerChanged reports an organization write begun by an owner that no
+// longer owned the organization when the write reached its transaction. It is
+// how a transfer and an owner-initiated deletion that race end with exactly one
+// of them taking effect, and how a transfer called from an owner read that has
+// gone stale is refused instead of carried out.
 var ErrOwnerChanged = errors.New("tenant: the caller is no longer the owner of the organization")
 
 // OrganizationWriter performs the organization writes that span the roster, the
@@ -37,9 +38,13 @@ type OrganizationWriter interface {
 	// target does not hold it. The target's account must also be active: a
 	// suspended, disabled or deleted account is refused with ErrOwnerInactive.
 	// The previous owner loses every binding in the tenant and is removed from
-	// it, in the same transaction. A refusal names ErrOwnerNotMember,
-	// ErrOwnerInactive, ErrInvalidTenant or ErrTenantDeleted.
-	TransferOwner(ctx context.Context, id ID, target string) error
+	// it, in the same transaction. expectedOwner is the owner the caller observed,
+	// or empty when the caller is platform staff; a non-empty value that no longer
+	// matches the row is refused with ErrOwnerChanged, so an owner whose read of
+	// the roster went stale cannot hand the organization on. A refusal names
+	// ErrOwnerNotMember, ErrOwnerInactive, ErrOwnerChanged, ErrInvalidTenant or
+	// ErrTenantDeleted.
+	TransferOwner(ctx context.Context, id ID, target, expectedOwner string) error
 
 	// DeleteOrganization writes the tenant's tombstone and cleans the core
 	// relations in the same transaction: its memberships, bindings, roles and

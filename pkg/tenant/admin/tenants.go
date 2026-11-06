@@ -126,8 +126,9 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 // the transfer; a refusal closes it with a linked failed row. The transfer
 // itself is the host seam's: it grants the target tenant-admin if needed, writes
 // the owner, and removes the previous owner's bindings and membership in one
-// transaction. A target that is not an active member, and a transfer that lost
-// the row to a deletion, are 409.
+// transaction. A target that is not an active member, a target whose account is
+// not active, and a transfer that lost the row to a deletion, are 409. This is
+// platform staff's route, so the transfer carries no ownership expectation.
 func (p *product) handleTenantTransferOwner(ctx context.Context, in transferOwnerInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	if !tenant.IsIdentifier(in.ID) {
 		return nil, badRequest()
@@ -154,7 +155,7 @@ func (p *product) handleTenantTransferOwner(ctx context.Context, in transferOwne
 	})); err != nil {
 		return nil, err
 	}
-	if err := p.organization.TransferOwner(ctx, tenant.ID(in.ID), in.Account); err != nil {
+	if err := p.organization.TransferOwner(ctx, tenant.ID(in.ID), in.Account, ""); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, in.ID, actionID))
 		return nil, p.failureOf("transferring a tenant's owner", err)
 	}
@@ -222,6 +223,13 @@ func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *
 // mandatory audit row and calls the same organization writer the platform
 // surface calls.
 //
+// The expected owner is the caller, not the owner this handler's read returns: a
+// transfer can commit between the guard's read and this one, and the second read
+// would otherwise name the new owner as its own expectation. A transfer that
+// wins the race therefore leaves the old owner's transfer a 409
+// (tenant.ErrOwnerChanged) rather than handing on an organization the caller no
+// longer governs.
+//
 // The tenant is the identifier the request resolved to, never the path segment
 // as written, so an alias addresses the same tenant.
 func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransferInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
@@ -242,6 +250,10 @@ func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransfe
 	if got.Status == tenant.StatusDeleted {
 		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	}
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
+	}
 
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, string(tenantID), map[string]string{
@@ -251,7 +263,7 @@ func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransfe
 	})); err != nil {
 		return nil, err
 	}
-	if err := p.organization.TransferOwner(ctx, tenantID, in.Account); err != nil {
+	if err := p.organization.TransferOwner(ctx, tenantID, in.Account, id.Actor().String()); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, string(tenantID), actionID))
 		return nil, p.failureOf("transferring a tenant's owner", err)
 	}

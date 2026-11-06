@@ -61,7 +61,7 @@
 
 **别名创建后不可改。** `Catalog` 不提供改名写，本模块也不提供改名路由；`Put` 的别名必须与既有别名一致。要换一个对外名字，只能新建一个组织并删除旧的。
 
-**所有者转移有两个面，判定分开。** 平台面 `PUT /api/v1/system/tenants/:tenant/owner` 要求平台域的 `tenant.manage`，由平台员工发起；租户面 `PUT /api/v1/tenants/:tenant/owner` 不要求任何权限，只要求调用方是该行的所有者。两个面调用同一个 `OrganizationWriter.TransferOwner` 与同一把租户锁，写的内容与事务边界完全相同。正文给出目标账户。目标必须是该组织的活跃成员，且目标的账户必须活跃；未持有 tenant-admin 时由 `OrganizationWriter` 授予；原所有者失去在组织里的全部绑定与成员关系。转移与这些写在同一条事务里。目标不是活跃成员、目标的账户不活跃或墓碑是 409，名册没有该标识是 404。审计动作 `tenant.owner.transfer`，detail 的 `surface` 记下实际经过的面（`platform` 或 `tenant`）。
+**所有者转移有两个面，判定分开。** 平台面 `PUT /api/v1/system/tenants/:tenant/owner` 要求平台域的 `tenant.manage`，由平台员工发起；租户面 `PUT /api/v1/tenants/:tenant/owner` 不要求任何权限，只要求调用方是该行的所有者。两个面调用同一个 `OrganizationWriter.TransferOwner` 与同一把租户锁，写的内容与事务边界完全相同。正文给出目标账户。租户面把调用方自己作为预期所有者传入：守卫读到的所有者已因一次更早的转移而改变时，本次转移以 `ErrOwnerChanged` 答 409，不把组织交给别人；平台面不传预期所有者。目标必须是该组织的活跃成员，且目标的账户必须活跃；未持有 tenant-admin 时由 `OrganizationWriter` 授予；原所有者失去在组织里的全部绑定与成员关系。转移与这些写在同一条事务里。目标不是活跃成员、目标的账户不活跃或墓碑是 409，名册没有该标识是 404。审计动作 `tenant.owner.transfer`，detail 的 `surface` 记下实际经过的面（`platform` 或 `tenant`）。
 
 **组织删除有两个面，判定分开，不新增权限码。** 平台面 `DELETE /api/v1/system/tenants/:tenant` 要求平台域的 `tenant.manage`，由平台员工发起；租户面 `DELETE /api/v1/tenants/:tenant` 不要求任何权限，只要求调用方是该行的所有者。两个面调用同一个 `OrganizationWriter.DeleteOrganization` 与同一把租户锁。所有者不能经平台面通过，除非它同时持有平台域的 `tenant.manage`；平台员工不是所有者时不能经租户面通过。租户面传入的预期所有者是调用方自己，转移抢先时以 `ErrOwnerChanged` 答 409。删前问 `tenant.WriteGuard` 的 `WriteDelete`，受保护的租户答 403 `urn:speed:tenant:protected`。写入是墓碑：状态写成 `deleted`、删除时刻落列，成员关系、绑定、角色与授予在同一条事务里清除；标识与别名留在墓碑上，永不复用。已删除的租户在读取里照常返回 200，只是状态是 `deleted`；对它的资料、状态、转移与删除写一律 409。审计动作 `tenant.delete`，detail 的 `surface` 记下实际经过的面（`platform` 或 `tenant`）。
 
@@ -229,7 +229,7 @@ sequenceDiagram
 3. 格式检查：路径的 `id` 落在取值域内，正文的 `account` 是一个账户标识，否则 400。
 4. `Catalog.Get(id)`；名册不持有该标识 → 404；墓碑 → 409。
 5. 落强制档审计（动作 `tenant.owner.transfer`，detail 带 `surface: platform`）。
-6. `OrganizationWriter.TransferOwner(id, account)`。它取租户锁，校验目标是活跃账户与活跃成员，在一条事务里授予 tenant-admin、写所有者、撤销原所有者的绑定与成员关系。
+6. `OrganizationWriter.TransferOwner(id, account, "")`。它取租户锁，校验目标是活跃账户与活跃成员，在一条事务里授予 tenant-admin、写所有者、撤销原所有者的绑定与成员关系。
 7. `ErrOwnerNotMember`、`ErrOwnerInactive`、`ErrTenantDeleted` → 409；其余 → 503。落地 → 204。
 
 租户面：
@@ -240,7 +240,7 @@ sequenceDiagram
 4. 格式检查：正文的 `account` 是一个账户标识，否则 400。
 5. `Catalog.Get(解析出的租户)`；墓碑 → 409。
 6. 落强制档审计（动作 `tenant.owner.transfer`，detail 带 `surface: tenant`）。
-7. `OrganizationWriter.TransferOwner`，与平台面同一个调用；拒绝映射相同。
+7. `OrganizationWriter.TransferOwner(id, account, 调用方)`，与平台面同一个调用，预期所有者是调用方自己；拒绝映射相同，守卫读到的所有者已变时以 `ErrOwnerChanged` 答 409。
 
 ### 组织删除
 

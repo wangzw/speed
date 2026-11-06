@@ -498,8 +498,8 @@ type stubOrganization struct {
 	during func()
 }
 
-func (o *stubOrganization) TransferOwner(_ context.Context, id tenant.ID, target string) error {
-	return o.record(organizationCall{op: "TransferOwner", id: id, owner: target})
+func (o *stubOrganization) TransferOwner(_ context.Context, id tenant.ID, target, expectedOwner string) error {
+	return o.record(organizationCall{op: "TransferOwner", id: id, owner: target, expectedOwner: expectedOwner})
 }
 
 func (o *stubOrganization) DeleteOrganization(_ context.Context, id tenant.ID, expectedOwner string) error {

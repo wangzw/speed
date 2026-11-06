@@ -244,7 +244,7 @@ func TestTransferOwnerHandsTheOrganizationOn(t *testing.T) {
 		a.organization(t, "acme", "acme-org", owner)
 		a.join(t, "acme", target)
 
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String()); err != nil {
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
 			t.Fatalf("transferring the owner: %v", err)
 		}
 		if got := a.held(t, "acme").OwnerAccount; got != target.ID.String() {
@@ -270,7 +270,7 @@ func TestTransferOwnerRefusesANonMember(t *testing.T) {
 		target := a.user(t, "bob")
 		a.organization(t, "acme", "acme-org", owner)
 
-		err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String())
+		err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), "")
 		if !errors.Is(err, tenant.ErrOwnerNotMember) {
 			t.Fatalf("the transfer gave %v, want ErrOwnerNotMember", err)
 		}
@@ -292,13 +292,13 @@ func TestTransferOwnerReadsTheRosterBeforeTheMembership(t *testing.T) {
 		target := a.user(t, "bob")
 		a.organization(t, "acme", "acme-org", owner)
 
-		if err := a.writer.TransferOwner(t.Context(), "ghost", target.ID.String()); !errors.Is(err, tenant.ErrInvalidTenant) {
+		if err := a.writer.TransferOwner(t.Context(), "ghost", target.ID.String(), ""); !errors.Is(err, tenant.ErrInvalidTenant) {
 			t.Errorf("transferring a tenant no row carries gave %v, want ErrInvalidTenant", err)
 		}
 		if err := a.writer.DeleteOrganization(t.Context(), "acme", ""); err != nil {
 			t.Fatalf("deleting the organization: %v", err)
 		}
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String()); !errors.Is(err, tenant.ErrTenantDeleted) {
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); !errors.Is(err, tenant.ErrTenantDeleted) {
 			t.Errorf("transferring a tombstone gave %v, want ErrTenantDeleted", err)
 		}
 	})
@@ -312,7 +312,7 @@ func TestDeleteOrganizationRefusesAnOwnerThatChanged(t *testing.T) {
 		target := a.user(t, "bob")
 		a.organization(t, "acme", "acme-org", owner)
 		a.join(t, "acme", target)
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String()); err != nil {
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
 			t.Fatalf("transferring the owner: %v", err)
 		}
 
@@ -322,6 +322,61 @@ func TestDeleteOrganizationRefusesAnOwnerThatChanged(t *testing.T) {
 		}
 		if got := a.held(t, "acme"); got.Status != tenant.StatusActive {
 			t.Errorf("the tenant is %q, want active", got.Status)
+		}
+	})
+}
+
+// A transfer carries the owner the caller observed: when an earlier transfer
+// already handed the organization on, the old owner's call from the stale read
+// is refused and the current owner stays.
+func TestTransferOwnerRefusesAnOwnerThatChanged(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		owner := a.user(t, "alice")
+		target := a.user(t, "bob")
+		third := a.user(t, "carol")
+		a.organization(t, "acme", "acme-org", owner)
+		a.join(t, "acme", target)
+		a.join(t, "acme", third)
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), owner.ID.String()); err != nil {
+			t.Fatalf("transferring the owner: %v", err)
+		}
+
+		// The tenant surface read the roster before the first transfer committed,
+		// so the old owner's next call still believes it owns the organization.
+		err := a.writer.TransferOwner(t.Context(), "acme", third.ID.String(), owner.ID.String())
+		if !errors.Is(err, tenant.ErrOwnerChanged) {
+			t.Fatalf("the stale transfer gave %v, want ErrOwnerChanged", err)
+		}
+		if got := a.held(t, "acme").OwnerAccount; got != target.ID.String() {
+			t.Errorf("the owner changed to %q, want %q", got, target.ID)
+		}
+		if bindings := a.bindingsOf(t, "acme", third); len(bindings) != 0 {
+			t.Errorf("the stale transfer bound the target: %+v", bindings)
+		}
+	})
+}
+
+// A target whose account is deleted is refused: the account read reports no row,
+// which the transfer maps to ErrOwnerInactive before it opens the transaction.
+func TestTransferOwnerRefusesADeletedAccount(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		owner := a.user(t, "alice")
+		target := a.user(t, "bob")
+		a.organization(t, "acme", "acme-org", owner)
+		a.join(t, "acme", target)
+		if err := a.admin.Delete(t.Context(), target.ID, authn.ReasonAdmin); err != nil {
+			t.Fatalf("deleting the target: %v", err)
+		}
+
+		err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), "")
+		if !errors.Is(err, tenant.ErrOwnerInactive) {
+			t.Fatalf("the transfer gave %v, want ErrOwnerInactive", err)
+		}
+		if got := a.held(t, "acme").OwnerAccount; got != owner.ID.String() {
+			t.Errorf("the owner changed to %q, want %q", got, owner.ID)
+		}
+		if bindings := a.bindingsOf(t, "acme", target); len(bindings) != 0 {
+			t.Errorf("the refused transfer bound the target: %+v", bindings)
 		}
 	})
 }
@@ -416,7 +471,7 @@ func TestTransferOwnerRollsBackAFailedStep(t *testing.T) {
 			t.Fatalf("creating the trigger that refuses the last step: %v", err)
 		}
 
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String()); err == nil {
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err == nil {
 			t.Fatal("the transfer succeeded though its last step failed")
 		}
 		if got := a.held(t, "acme").OwnerAccount; got != owner.ID.String() {
@@ -449,7 +504,7 @@ func TestATransferAndADeletionOfOneOrganizationLeaveOneWinner(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			errs[0] = a.writer.TransferOwner(t.Context(), "acme", target.ID.String())
+			errs[0] = a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), "")
 		}()
 		go func() {
 			defer wg.Done()
@@ -478,7 +533,7 @@ func TestThePreviousOwnerCanBeDeletedAfterTheTransfer(t *testing.T) {
 		a.organization(t, "acme", "acme-org", owner)
 		a.join(t, "acme", target)
 
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String()); err != nil {
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
 			t.Fatalf("transferring the owner: %v", err)
 		}
 		if err := a.admin.Delete(t.Context(), owner.ID, authn.ReasonAdmin); err != nil {
@@ -499,7 +554,7 @@ func TestTransferOwnerRefusesAnInactiveAccount(t *testing.T) {
 			t.Fatalf("suspending the target: %v", err)
 		}
 
-		err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String())
+		err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), "")
 		if !errors.Is(err, tenant.ErrOwnerInactive) {
 			t.Fatalf("the transfer gave %v, want ErrOwnerInactive", err)
 		}
@@ -539,7 +594,7 @@ func TestTheAccountAdministrationLockCoversAMemberOnlyAccount(t *testing.T) {
 
 		done := make(chan error, 1)
 		go func() {
-			done <- a.writer.TransferOwner(ctx, "acme", member.ID.String())
+			done <- a.writer.TransferOwner(ctx, "acme", member.ID.String(), "")
 		}()
 		select {
 		case err := <-done:

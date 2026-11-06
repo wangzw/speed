@@ -108,9 +108,12 @@ key.
   `OrganizationWriter.TransferOwner` and take the same tenant lock. The target
   must be an active member whose account is active; the transfer grants it
   `tenant-admin` when it does not hold it, writes the roster owner, and removes
-  the previous owner's bindings and membership in one transaction. The mandatory
-  audit row lands before the write with `surface=platform` or `surface=tenant`;
-  a refusal closes it with a linked failed row.
+  the previous owner's bindings and membership in one transaction. The platform
+  route passes no owner expectation; the tenant route passes the caller as the
+  expected owner, so a transfer that commits after the guard read the roster
+  answers 409 `ErrOwnerChanged`. The mandatory audit row lands before the write
+  with `surface=platform` or `surface=tenant`; a refusal closes it with a linked
+  failed row.
 - **The deletion has one implementation and two surfaces.** The platform route
   asks `tenant.manage` in the platform domain and passes no owner expectation;
   the tenant route asks no permission, admits only the row's owner, and passes

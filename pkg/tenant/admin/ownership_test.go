@@ -24,8 +24,9 @@ func TestTheOwnerTransferGoesThroughTheOrganizationWriter(t *testing.T) {
 		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
 	}
 	calls := r.organization.recorded()
-	if len(calls) != 1 || calls[0].op != "TransferOwner" || calls[0].id != "t_acme" || calls[0].owner != "acc-2" {
-		t.Fatalf("the organization writer was called %+v, want one TransferOwner of t_acme to acc-2", calls)
+	if len(calls) != 1 || calls[0].op != "TransferOwner" || calls[0].id != "t_acme" ||
+		calls[0].owner != "acc-2" || calls[0].expectedOwner != "" {
+		t.Fatalf("the organization writer was called %+v, want one TransferOwner of t_acme to acc-2 with no expectation", calls)
 	}
 	if rows := r.audit.entries(); len(rows) != 1 || rows[0].Action != actionTenantOwnerTransfer {
 		t.Errorf("audit rows = %+v, want one %q", rows, actionTenantOwnerTransfer)
@@ -50,6 +51,7 @@ func TestTheOwnerTransferAuditsBeforeTheWrite(t *testing.T) {
 func TestTheOwnerTransferRefusalIsAConflict(t *testing.T) {
 	for name, refusal := range map[string]error{
 		"not a member":           tenant.ErrOwnerNotMember,
+		"an inactive account":    tenant.ErrOwnerInactive,
 		"the tenant was deleted": tenant.ErrTenantDeleted,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -143,6 +145,27 @@ func TestTheOwnerCannotDeleteThroughThePlatformSurface(t *testing.T) {
 	}
 }
 
+// The owner cannot transfer through the platform surface either: the platform
+// route asks tenant.manage in the platform domain and has no ownership branch.
+// An owner without that permission must use the tenant surface.
+func TestTheOwnerCannotTransferThroughThePlatformSurface(t *testing.T) {
+	r := newRig(t)
+	r.guard.allow = false
+	r.catalog.held = tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		OwnerAccount: authntest.DefaultAccount.String(),
+	}
+	r.catalog.found = true
+
+	w := r.do(http.MethodPut, pathTenants+"/t_acme/owner", map[string]any{"account": "acc-2"})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (body %s)", w.Code, w.Body.String())
+	}
+	if calls := r.organization.recorded(); len(calls) != 0 {
+		t.Errorf("the writer was called %+v, want no call", calls)
+	}
+}
+
 // The owner transfers through the tenant surface; the same organization writer
 // the platform route calls performs it, and the audit row names the tenant
 // surface.
@@ -160,8 +183,9 @@ func TestTheOwnerTransfersThroughTheTenantSurface(t *testing.T) {
 		t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
 	}
 	calls := r.organization.recorded()
-	if len(calls) != 1 || calls[0].op != "TransferOwner" || calls[0].id != "t_acme" || calls[0].owner != "acc-2" {
-		t.Fatalf("the organization writer was called %+v, want one TransferOwner of t_acme to acc-2", calls)
+	if len(calls) != 1 || calls[0].op != "TransferOwner" || calls[0].id != "t_acme" ||
+		calls[0].owner != "acc-2" || calls[0].expectedOwner != authntest.DefaultAccount.String() {
+		t.Fatalf("the organization writer was called %+v, want one TransferOwner of t_acme to acc-2 expected by the caller", calls)
 	}
 	rows := r.audit.entries()
 	if len(rows) != 1 || rows[0].Detail[detailSurface] != surfaceTenant {

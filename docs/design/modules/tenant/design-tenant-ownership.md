@@ -25,8 +25,9 @@
 type OrganizationWriter interface {
     // TransferOwner 把 target 变成租户的所有者。目标必须是活跃成员，
     // 且目标的账户必须活跃；未持有 tenant-admin 时授予；原所有者失去
-    // 全部绑定并被移出组织。
-    TransferOwner(ctx context.Context, id ID, target string) error
+    // 全部绑定并被移出组织。expectedOwner 为空表示调用方是平台员工；
+    // 非空且与行上所有者不符时报 ErrOwnerChanged。
+    TransferOwner(ctx context.Context, id ID, target string, expectedOwner string) error
     // DeleteOrganization 写墓碑并清除核心关系。expectedOwner 为空表示调用方
     // 是平台员工；非空且与行上所有者不符时报 ErrOwnerChanged。
     DeleteOrganization(ctx context.Context, id ID, expectedOwner string) error
@@ -63,7 +64,7 @@ sequenceDiagram
     participant M as authn.Memberships
     participant R as tenant.catalog
     participant P as authz.policy
-    C->>O: TransferOwner(租户, 目标)
+    C->>O: TransferOwner(租户, 目标, 预期所有者)
     O->>L: Lock(租户)
     L-->>O: 持有
     O->>A: Get(目标)
@@ -76,6 +77,8 @@ sequenceDiagram
             O-->>C: ErrInvalidTenant，事务回滚
         else 墓碑
             O-->>C: ErrTenantDeleted，事务回滚
+        else 预期所有者不符
+            O-->>C: ErrOwnerChanged，事务回滚
         else 在册
             O->>M: MembershipTx(租户, 目标)
             alt 目标不是活跃成员
@@ -106,7 +109,7 @@ sequenceDiagram
 | 所有者 | `tenant.Tenant.OwnerAccount` | 组织唯一的账户标识；平台登记与自助创建时写成创建者，此后只由转移改写 |
 | 原所有者 | `GetTx` 读到的 `OwnerAccount` | 转移时被撤销绑定并移出组织；与目标相同时整条转移是空操作 |
 | 目标 | `TransferOwner` 的参数 | 必须已有活跃成员关系；未持有 tenant-admin 时被授予 |
-| 预期所有者 | `DeleteOrganization` 的 `expectedOwner` | 所有者发起的删除带上它观察到的值；转移抢先时删除以 `ErrOwnerChanged` 拒绝 |
+| 预期所有者 | 两个方法的 `expectedOwner` | 平台员工传空；所有者发起的调用带上它观察到的值。删除遇到转移抢先、转移遇到更早的转移抢先，都以 `ErrOwnerChanged` 拒绝 |
 
 ## 核心算法与流程
 
@@ -114,8 +117,8 @@ sequenceDiagram
 
 初始状态：名册里 `acme` 在册，所有者是 `alice`；`alice` 是 `acme` 的成员并持有 tenant-admin；`bob` 是 `acme` 的活跃成员但没有绑定。
 
-1. 平台员工或组织所有者调用 `TransferOwner(ctx, "acme", "bob")`。本模块取 `acme` 的租户锁；随后经账户读取面读 `bob` 的账户状态——一次停用或删除 `bob` 同样取这把锁（见 [design-authz](../design-authz.md) 的账户管理锁），所以这里读到的状态不会在提交之前改变。账户不存在、停用或删除时报 `ErrOwnerInactive`。
-2. 账户活跃时开启事务，`GetTx` 先读 `acme`：没有行报 `ErrInvalidTenant`，墓碑报 `ErrTenantDeleted`，两者都在读成员关系之前。
+1. 平台员工调用 `TransferOwner(ctx, "acme", "bob", "")`，组织所有者调用 `TransferOwner(ctx, "acme", "bob", "alice")`。本模块取 `acme` 的租户锁；随后经账户读取面读 `bob` 的账户状态——一次停用或删除 `bob` 同样取这把锁（见 [design-authz](../design-authz.md) 的账户管理锁），所以这里读到的状态不会在提交之前改变。账户不存在、停用或删除时报 `ErrOwnerInactive`。
+2. 账户活跃时开启事务，`GetTx` 先读 `acme`：没有行报 `ErrInvalidTenant`，墓碑报 `ErrTenantDeleted`，`expectedOwner` 非空且与行上所有者不同报 `ErrOwnerChanged`，三者都在读成员关系之前。
 3. 事务继续，经 `MembershipTx` 取 `bob` 的账户行锁并读到它的活跃成员关系——成员关系的写路径同样先取那一行，一次并发停用因而不会落在校验与提交之间；不是活跃成员报 `ErrOwnerNotMember`。
 4. 事务第一次写是 `PutBindingTx`，把 tenant-admin 绑给 `bob`；随后 `SetOwnerTx` 把所有者列写成 `bob`。
 5. 事务继续：`ClearAccountBindingsTx` 删除 `alice` 在 `acme` 的全部绑定，`RemoveMembershipTx` 删除 `alice` 在 `acme` 的成员关系。
@@ -138,7 +141,7 @@ sequenceDiagram
 | 目标的账户不存在、停用或删除 | `ErrOwnerInactive` |
 | 名册没有该标识 | `ErrInvalidTenant` |
 | 租户是墓碑 | `ErrTenantDeleted` |
-| 所有者发起的删除观察到所有者已变 | `ErrOwnerChanged` |
+| 所有者发起的写观察到所有者已变（更早的转移抢先） | `ErrOwnerChanged` |
 | 事务中任一步失败 | 整条事务回滚，原样交出该步的错误 |
 | 提交后的快照重读失败 | 写已落地；记 Warn，不改变成功结果 |
 
@@ -148,7 +151,7 @@ sequenceDiagram
 
 - **一条事务。** 转移与删除各自在 `db.Database.DB()` 上开一条事务；名册、策略与成员关系的每一步都接收同一个 `*gorm.DB`，没有一步另开连接。任一步失败，三个存储一起回退。
 - **一把锁。** 两个方法都在事务之前取 `authz.TenantLock` 的租户锁，在事务提交与提交后重读都结束之后释放。装配把策略的绑定删除与成员关系守卫接到同一个锁对象时，转移、删除、绑定删除与成员关系删除在同一租户上互相排除。
-- **只有一方胜出。** 一次转移与一次所有者发起的删除并发时，锁把两者排成先后：删除先到，转移读到墓碑并被拒；转移先到，删除观察到的所有者已经改变，以 `ErrOwnerChanged` 被拒。
+- **只有一方胜出。** 一次转移与一次所有者发起的删除并发时，锁把两者排成先后：删除先到，转移读到墓碑并被拒；转移先到，删除观察到的所有者已经改变，以 `ErrOwnerChanged` 被拒。两次所有者发起的转移并发时同样排成先后：后到的一次读到所有者已变，以 `ErrOwnerChanged` 被拒。
 - **锁不可重入。** 本模块不经过 `authz.Manager.DeleteBinding` 清绑定，而用不取锁的 `ClearAccountBindingsTx`，因此不会在已持有的锁上等待自己。
 - **多副本的串行以共享数据库为界。** 进程内默认只串行本进程；宿主提供数据库级锁时串行共享那个库的副本。不共享数据库的副本之间不保证串行，这是装配级的非保证。
 
@@ -157,7 +160,7 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 模块 `tenant.ownership` 与 `OrganizationWriter` 的交付 | 已实现 | `pkg/tenant/ownership/ownership.go` `Module`、`newProduct`、`wire` |
-| 所有者转移：目标成员校验、授予、写所有者、撤销原所有者 | 已实现 | `pkg/tenant/ownership/transfer.go` `(*product).TransferOwner` |
+| 所有者转移：目标成员与预期所有者校验、授予、写所有者、撤销原所有者 | 已实现 | `pkg/tenant/ownership/transfer.go` `(*product).TransferOwner` |
 | 组织删除：墓碑、核心关系清理、预期所有者校验 | 已实现 | `pkg/tenant/ownership/delete.go` `(*product).DeleteOrganization` |
 | 名册的事务内读写 | 已实现 | `pkg/tenant/catalog/tx.go` `GetTx`、`SetOwnerTx`、`DeleteTx` |
 | 策略的事务内清理 | 已实现 | `pkg/authz/policy/tx.go` `DeleteTenantPolicyTx`、`ClearAccountBindingsTx`、`PutBindingTx` |
