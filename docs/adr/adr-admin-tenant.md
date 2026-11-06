@@ -47,7 +47,7 @@
 - **枚举是平台操作。** 列出全部租户读的是名册表，它在过滤之外，所以枚举是一次平台域的读、要平台域的 `tenant.read`，不建跨租户上下文。
 - **登记不覆盖。** `POST /tenants` 写 `Create`：一个已被持有的标识以 `tenant.ErrTenantExists` 拒绝，答成 409。开一个租户只插入；此后资料、所有者、状态与删除各有自己的写路径。创建者成为组织所有者与首任租户管理员。
 - **别名创建后不可改。** 管理面没有改名路由，`Catalog` 也没有只改别名的写：别名在创建时给定，`Put` 的别名必须与既有别名一致。
-- **所有者转移与组织删除由平台管理面提供。** `PUT /tenants/:tenant/owner` 要求平台域的 `tenant.manage`；`DELETE /tenants/:tenant` 接受平台员工或组织所有者，不新增 `tenant.delete` 权限码。两者由 `tenant.OrganizationWriter` 在一条事务里写名册、策略与成员关系；删除写墓碑并清除核心关系。
+- **所有者转移与组织删除由两个面提供，判定分开、写合一。** 平台面 `PUT /system/tenants/:tenant/owner` 与 `DELETE /system/tenants/:tenant` 只接受持平台域 `tenant.manage` 的平台员工；租户面 `PUT /tenants/:tenant/owner` 与 `DELETE /tenants/:tenant` 只接受该行的当前所有者，不要求平台权限，也不新增 `tenant.delete` 权限码。两个面调用同一个 `tenant.OrganizationWriter`、取同一把租户锁，在一条事务里写名册、策略与成员关系；删除写墓碑并清除核心关系。
 - **写留痕在动作之前。** 每次写在调名册或组织写之前落一行强制档审计，写不进即 503 且动作不执行。
 
 ## 后果
