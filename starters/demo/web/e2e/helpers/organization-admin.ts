@@ -112,7 +112,12 @@ export function organizationPath(path: string): string {
 }
 
 /** The organization pages, each by its navigation label and page title. */
-export type OrganizationPageKey = 'invitations' | 'sso' | 'roles' | 'settings'
+export type OrganizationPageKey =
+  | 'invitations'
+  | 'sso'
+  | 'roles'
+  | 'settings'
+  | 'profile'
 
 /** The organization pages in the order the account menu lists them. */
 export const ORGANIZATION_PAGE_KEYS: readonly OrganizationPageKey[] = [
@@ -120,6 +125,7 @@ export const ORGANIZATION_PAGE_KEYS: readonly OrganizationPageKey[] = [
   'sso',
   'roles',
   'settings',
+  'profile',
 ]
 
 const ORGANIZATION_PAGES: Record<
@@ -133,6 +139,7 @@ const ORGANIZATION_PAGES: Record<
   sso: { nav: 'organization.nav.sso', title: 'sso.title' },
   roles: { nav: 'organization.nav.roles', title: 'organization.nav.roles' },
   settings: { nav: 'organization.nav.settings', title: 'organization.nav.settings' },
+  profile: { nav: 'organization.nav.profile', title: 'organization.nav.profile' },
 }
 
 /**
