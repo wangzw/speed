@@ -227,11 +227,12 @@ type product struct {
 	// refuses every management request, without the settings the lifetime reads
 	// as its declared default, and without a notifier the issuance answer
 	// reports the notice as not_configured.
-	store    settings.Store
-	bus      event.Bus
-	decider  authn.Decider
-	notifier authn.InviteNotifier
-	logger   *slog.Logger
+	store         settings.Store
+	bus           event.Bus
+	decider       authn.Decider
+	notifier      authn.InviteNotifier
+	tenantAliases authn.TenantAliasResolver
+	logger        *slog.Logger
 
 	// mu guards reported, which holds for each fault the one last written, so
 	// that a setting read on every issuance is reported once and not on each.
@@ -315,6 +316,9 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.notifier, err = optional[authn.InviteNotifier](reg, "the invitation notifier"); err != nil {
+		return err
+	}
+	if p.tenantAliases, err = optional[authn.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
 		return err
 	}
 	if p.bus != nil && p.store != nil {

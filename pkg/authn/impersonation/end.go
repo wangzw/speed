@@ -102,7 +102,8 @@ func (m *product) Revoke(ctx context.Context, id string, by authn.Identity, reas
 // keyed by the action. It is the two calls End and Revoke share and nothing
 // else: neither publishes nor counts, so each method does those on its own.
 func (m *product) endTrail(ctx context.Context, g authn.ImpersonationGrant, action, reason, by string) {
-	detail := map[string]string{detailGrantID: g.ID, detailTenant: g.Tenant, detailSID: string(g.SessionID)}
+	tenantAlias, _ := m.aliasOf(ctx, g.Tenant)
+	detail := map[string]string{detailGrantID: g.ID, detailTenant: tenantAlias, detailSID: string(g.SessionID)}
 	if by != "" {
 		detail[detailBy] = by
 	}

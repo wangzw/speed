@@ -193,13 +193,14 @@ type product struct {
 
 	// What Init takes up. decider and tokens are nil when absent, which the
 	// behaviour of each states.
-	decider  authn.Decider
-	tokens   authn.Tokens
-	bus      event.Bus
-	meters   *meters
-	settings *reader
-	logger   *slog.Logger
-	clock    clock.Source
+	decider       authn.Decider
+	tokens        authn.Tokens
+	bus           event.Bus
+	meters        *meters
+	settings      *reader
+	tenantAliases authn.TenantAliasResolver
+	logger        *slog.Logger
+	clock         clock.Source
 }
 
 // newProduct takes up what the descriptor requires.
@@ -286,6 +287,9 @@ func (m *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if m.bus, err = optional[event.Bus](reg, "the event bus"); err != nil {
+		return err
+	}
+	if m.tenantAliases, err = optional[authn.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
 		return err
 	}
 	if provider, err := optional[observability.MeterProvider](reg, "the metric capability"); err != nil {

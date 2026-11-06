@@ -384,6 +384,7 @@ func (s *perSessionSessions) answer(id authn.SessionID) (authn.SessionStatus, er
 // the module over one store, for a case that races two of them.
 func (r *rig) replica() *product {
 	p := build(r.h, r.accounts, r.verification, r.memberships, r.mfa, r.sessions, r.audit, r.guard, r.mounter)
+	p.tenantAliases = identityAliases{}
 	p.logger = r.logs.logger()
 	p.settings = r.p.settings
 	p.bus = r.bus
@@ -631,6 +632,7 @@ func newRig(t *testing.T, h *gorm.DB) *rig {
 
 	verification := &fakeSignupVerification{}
 	p := build(h, accounts, verification, memberships, mfa, sessions, &recordingAudit{}, guard, mounter)
+	p.tenantAliases = identityAliases{}
 	r := &rig{
 		t: t, p: p, h: h,
 		accounts: accounts, verification: verification, memberships: memberships,
@@ -921,4 +923,12 @@ func (v *fakeSignupVerification) readCount() int {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.reads
+}
+
+// identityAliases stands in for the roster's id-to-alias seam over an assembly
+// whose fixture identifiers double as their aliases.
+type identityAliases struct{}
+
+func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+	return id, nil
 }

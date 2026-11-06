@@ -263,7 +263,7 @@ func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput
 	account, err := m.accountAdm.Create(ctx, create)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountCreate, "", actionID))
-		return AuthnAdminAccountEnvelope{}, m.answer("creating an account", err)
+		return AuthnAdminAccountEnvelope{}, m.answer(ctx, "creating an account", err)
 	}
 	view, err := m.viewOf(ctx, account)
 	if err != nil {
@@ -284,7 +284,7 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -301,15 +301,15 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 		return nil, err
 	}
 	if err = m.applyPatch(ctx, accountID, in, actionID); err != nil {
-		return m.replyFailure("updating an account", err)
+		return m.replyFailure(ctx, "updating an account", err)
 	}
 	account, err := m.accounts.Get(ctx, accountID)
 	if err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	view, err := m.viewOf(ctx, account)
 	if err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
@@ -353,7 +353,7 @@ func (m *product) handleAccountGet(ctx context.Context, in accountIDInput, _ *sp
 	accountID := authn.AccountID(in.ID)
 	account, err := m.accounts.Get(ctx, accountID)
 	if err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountRead, Actor: id,
@@ -363,7 +363,7 @@ func (m *product) handleAccountGet(ctx context.Context, in accountIDInput, _ *sp
 	}
 	view, err := m.viewOf(ctx, account)
 	if err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
@@ -380,7 +380,7 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err := m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err := m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -400,7 +400,7 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	// transaction still writes a compensation row, best effort.
 	if err := m.accountAdm.Delete(ctx, accountID, authn.ReasonAdmin); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountDelete, string(accountID), newActionID()))
-		return m.replyFailure("deleting an account", err)
+		return m.replyFailure(ctx, "deleting an account", err)
 	}
 	m.auditBestEffort(ctx, mandatory(actionAccountDelete, string(accountID),
 		map[string]string{detailActionID: newActionID()}))
@@ -424,7 +424,7 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 		return nil, m.bad()
 	}
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -445,15 +445,15 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 	}
 	if err = m.accountAdm.SetStatus(ctx, accountID, status, authn.ReasonAdmin); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountDisable, string(accountID), actionID))
-		return m.replyFailure("changing an account's status", err)
+		return m.replyFailure(ctx, "changing an account's status", err)
 	}
 	account, err := m.accounts.Get(ctx, accountID)
 	if err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	view, err := m.viewOf(ctx, account)
 	if err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
@@ -478,7 +478,7 @@ func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput
 		return nil, m.bad()
 	}
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -497,7 +497,7 @@ func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput
 	err = m.accountAdm.AddIdentifier(ctx, accountID, kind, in.Value, authn.Verification{Via: authn.VerifiedViaAdmin})
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
-		return m.replyFailure("adding an identifier", err)
+		return m.replyFailure(ctx, "adding an identifier", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }
@@ -514,7 +514,7 @@ func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemov
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err := m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err := m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -532,7 +532,7 @@ func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemov
 	}
 	if err := m.accountAdm.RemoveIdentifier(ctx, accountID, in.Identifier); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
-		return m.replyFailure("removing an identifier", err)
+		return m.replyFailure(ctx, "removing an identifier", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }

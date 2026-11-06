@@ -21,14 +21,14 @@ type domainClaims interface {
 // encrypted client secret never appears; the warnings name the settings that
 // loosen a default, so an administrator sees them on the response that set them;
 // domains carries every claim with its verification state.
-func providerViewOf(p authn.SSOProvider, domains []authn.SSOProviderDomain) AuthnAdminProvider {
+func providerViewOf(p authn.SSOProvider, domains []authn.SSOProviderDomain, tenantAlias string) AuthnAdminProvider {
 	claims := make([]AuthnAdminProviderDomain, len(domains))
 	for i, d := range domains {
 		claims[i] = AuthnAdminProviderDomain{Domain: d.Domain, Verified: d.Verified}
 	}
 	return AuthnAdminProvider{
 		ID:                p.ID,
-		Tenant:            p.Tenant,
+		Tenant:            tenantAlias,
 		Protocol:          p.Protocol,
 		Name:              p.Name,
 		Enabled:           p.Enabled,
@@ -189,9 +189,13 @@ func (m *product) handleProviderList(ctx context.Context, in tenantInput) (Authn
 	if err != nil {
 		return AuthnAdminProviderList{}, m.unavailable("reading provider domains", err)
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return AuthnAdminProviderList{}, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	views := make([]AuthnAdminProvider, len(providers))
 	for i, p := range providers {
-		views[i] = providerViewOf(p, claims[p.ID])
+		views[i] = providerViewOf(p, claims[p.ID], tenantAlias)
 	}
 	return AuthnAdminProviderList{Providers: views}, nil
 }
@@ -218,17 +222,21 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: in.Tenant}); err != nil {
 		return nil, err
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err = m.auditRequired(ctx, mandatory(actionIDPPut, "",
-		map[string]string{detailActionID: actionID, detailTenant: in.Tenant})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
 		return nil, err
 	}
 	provider, err := m.ssoProviders.Put(ctx, in.writeFields().provider("", in.Tenant, authn.SSOProvider{}), in.ClientSecret)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionIDPPut, "", actionID))
-		return m.replyFailure("creating a provider", err)
+		return m.replyFailure(ctx, "creating a provider", err)
 	}
-	return speedhttp.JSONReply(201, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, nil)}), nil
+	return speedhttp.JSONReply(201, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, nil, tenantAlias)}), nil
 }
 
 // handleProviderGet answers GET /admin/sso/providers/:id. The decision's tenant
@@ -245,7 +253,11 @@ func (m *product) handleProviderGet(ctx context.Context, in providerIDInput, _ *
 	if err != nil {
 		return nil, err
 	}
-	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(p, domains)}), nil
+	tenantAlias, aliasErr := m.aliasOf(ctx, p.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
+	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(p, domains, tenantAlias)}), nil
 }
 
 // handleProviderUpdate answers PUT /admin/sso/providers/:id. The tenant is the
@@ -265,21 +277,25 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: existing.Tenant, Target: in.ID}); err != nil {
 		return nil, err
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, existing.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err = m.auditRequired(ctx, mandatory(actionIDPPut, in.ID,
-		map[string]string{detailActionID: actionID, detailTenant: existing.Tenant})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
 		return nil, err
 	}
 	provider, err := m.ssoProviders.Put(ctx, in.writeFields().provider(in.ID, existing.Tenant, existing), in.ClientSecret)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionIDPPut, in.ID, actionID))
-		return m.replyFailure("updating a provider", err)
+		return m.replyFailure(ctx, "updating a provider", err)
 	}
 	domains, err := m.readDomains(ctx, provider.ID)
 	if err != nil {
 		return nil, err
 	}
-	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, domains)}), nil
+	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, domains, tenantAlias)}), nil
 }
 
 // handleProviderDelete answers DELETE /admin/sso/providers/:id. The action is
@@ -295,14 +311,18 @@ func (m *product) handleProviderDelete(ctx context.Context, in providerIDInput, 
 	if err := m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: p.Tenant, Target: in.ID}); err != nil {
 		return nil, err
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, p.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := m.auditRequired(ctx, mandatory(actionIDPDelete, in.ID,
-		map[string]string{detailActionID: actionID, detailTenant: p.Tenant})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
 		return nil, err
 	}
 	if err := m.ssoProviders.Delete(ctx, in.ID); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionIDPDelete, in.ID, actionID))
-		return m.replyFailure("deleting a provider", err)
+		return m.replyFailure(ctx, "deleting a provider", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }
@@ -323,15 +343,19 @@ func (m *product) handleDomainClaim(ctx context.Context, in domainClaimInput, _ 
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: provider.Tenant, Target: provider.ID}); err != nil {
 		return nil, err
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, provider.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err = m.auditRequired(ctx, mandatory(actionIDPDomain, provider.ID,
-		map[string]string{detailActionID: actionID, detailChange: "claim"})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantAlias, detailChange: "claim"})); err != nil {
 		return nil, err
 	}
 	token, err := m.ssoProviders.ClaimDomain(ctx, provider.ID, in.Domain)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionIDPDomain, provider.ID, actionID))
-		return m.replyFailure("claiming a domain", err)
+		return m.replyFailure(ctx, "claiming a domain", err)
 	}
 	return speedhttp.JSONReply(200, AuthnAdminVerifyToken{VerifyToken: token}), nil
 }
@@ -372,7 +396,7 @@ func (m *product) handleReverifyDomains(ctx context.Context, in providerIDInput,
 	}
 	if err := m.ssoProviders.ReverifyDomains(ctx, provider.ID); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionIDPDomain, provider.ID, actionID))
-		return m.replyFailure("reverifying domains", err)
+		return m.replyFailure(ctx, "reverifying domains", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }
@@ -391,14 +415,18 @@ func (m *product) changeDomain(ctx context.Context, in domainAddressInput, chang
 	if err := m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: provider.Tenant, Target: provider.ID}); err != nil {
 		return nil, err
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, provider.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := m.auditRequired(ctx, mandatory(actionIDPDomain, provider.ID,
-		map[string]string{detailActionID: actionID, detailChange: change})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantAlias, detailChange: change})); err != nil {
 		return nil, err
 	}
 	if err := act(provider.ID, in.Domain); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionIDPDomain, provider.ID, actionID))
-		return m.replyFailure("writing a domain", err)
+		return m.replyFailure(ctx, "writing a domain", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }
@@ -420,7 +448,7 @@ func (m *product) providerFor(ctx context.Context, tenant, providerID string) (a
 	}
 	p, err := m.ssoProviders.Get(ctx, providerID)
 	if err != nil {
-		return authn.Identity{}, authn.SSOProvider{}, m.answer("reading a provider", err)
+		return authn.Identity{}, authn.SSOProvider{}, m.answer(ctx, "reading a provider", err)
 	}
 	if p.Tenant != tenant {
 		return authn.Identity{}, authn.SSOProvider{}, errNotFound
@@ -457,21 +485,25 @@ func (m *product) handleMetadataRefresh(ctx context.Context, in providerIDInput,
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: provider.Tenant, Target: provider.ID}); err != nil {
 		return nil, err
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, provider.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err = m.auditRequired(ctx, mandatory(actionIDPPut, provider.ID,
-		map[string]string{detailActionID: actionID, detailChange: "metadata-refresh"})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantAlias, detailChange: "metadata-refresh"})); err != nil {
 		return nil, err
 	}
 	refreshed, err := refresher.Refresh(ctx, provider.ID)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionIDPPut, provider.ID, actionID))
-		return m.replyFailure("refreshing provider metadata", err)
+		return m.replyFailure(ctx, "refreshing provider metadata", err)
 	}
 	domains, err := m.readDomains(ctx, refreshed.ID)
 	if err != nil {
 		return nil, err
 	}
-	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(refreshed, domains)}), nil
+	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(refreshed, domains, tenantAlias)}), nil
 }
 
 // refresherFor returns the refresher of a protocol, or nil when none is there.

@@ -38,7 +38,7 @@ func (m *product) handleAccountSessions(ctx context.Context, in accountIDInput, 
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionSessionRead, Actor: id,
@@ -73,7 +73,7 @@ func (m *product) handleRevokeAccountSessions(ctx context.Context, in accountIDI
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -104,7 +104,7 @@ func (m *product) handleRevokeAccountSessions(ctx context.Context, in accountIDI
 		for _, target := range targets {
 			m.auditBestEffort(ctx, failedAudit(actionSessionRevoke, string(target), actionID))
 		}
-		return m.replyFailure("revoking an account's sessions", err)
+		return m.replyFailure(ctx, "revoking an account's sessions", err)
 	}
 	return speedhttp.JSONReply(200, AuthnAdminRevoked{Revoked: len(revoked)}), nil
 }
@@ -124,7 +124,7 @@ func (m *product) handleSessionRevoke(ctx context.Context, in sessionRevokeInput
 	sessionID := authn.SessionID(in.ID)
 	info, err := m.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return m.replyFailure("reading a session", err)
+		return m.replyFailure(ctx, "reading a session", err)
 	}
 	if err := m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func (m *product) handleSessionRevoke(ctx context.Context, in sessionRevokeInput
 	}
 	if err := m.sessions.Revoke(ctx, sessionID, authn.ReasonAdmin); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionSessionRevoke, string(sessionID), actionID))
-		return m.replyFailure("revoking a session", err)
+		return m.replyFailure(ctx, "revoking a session", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }

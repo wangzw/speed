@@ -20,12 +20,12 @@ type records interface {
 
 // grantViewOf builds one impersonation record as the management routes show it.
 // The reason never appears; it is in the record and the audit row alone.
-func grantViewOf(g authn.ImpersonationGrant) AuthnAdminImpersonation {
+func grantViewOf(g authn.ImpersonationGrant, tenantAlias string) AuthnAdminImpersonation {
 	v := AuthnAdminImpersonation{
 		ID:        g.ID,
 		Actor:     string(g.Actor),
 		Target:    string(g.Target),
-		Tenant:    g.Tenant,
+		Tenant:    tenantAlias,
 		SessionID: string(g.SessionID),
 		StartedAt: g.StartedAt.UTC(),
 		EndsAt:    g.EndsAt.UTC(),
@@ -64,9 +64,13 @@ func (m *product) handleImpersonationList(ctx context.Context, in impersonationL
 	}
 	// The tenant is the path segment and is passed to the store, so the page
 	// holds only that tenant's records and the cursor counts them.
+	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return AuthnAdminImpersonationList{}, m.unavailable("reading the tenant's alias", aliasErr)
+	}
 	views := make([]AuthnAdminImpersonation, 0, len(grants))
 	for _, g := range grants {
-		views = append(views, grantViewOf(g))
+		views = append(views, grantViewOf(g, tenantAlias))
 	}
 	return AuthnAdminImpersonationList{Impersonations: views, NextCursor: next}, nil
 }
@@ -90,7 +94,7 @@ func (m *product) handleImpersonationRevoke(ctx context.Context, in impersonatio
 	}
 	grant, err := m.records.Get(ctx, in.ID)
 	if err != nil {
-		return m.replyFailure("reading an impersonation record", err)
+		return m.replyFailure(ctx, "reading an impersonation record", err)
 	}
 	// The path names the tenant the operation is filed under; a record that
 	// belongs to another tenant answers not found, the same answer a record
@@ -108,7 +112,7 @@ func (m *product) handleImpersonationRevoke(ctx context.Context, in impersonatio
 		return nil, err
 	}
 	if err := m.records.Revoke(ctx, in.ID, id, ""); err != nil {
-		return m.replyFailure("revoking an impersonation", err)
+		return m.replyFailure(ctx, "revoking an impersonation", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }

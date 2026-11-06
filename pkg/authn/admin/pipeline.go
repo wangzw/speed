@@ -256,24 +256,32 @@ func (m *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // answer maps a failure a capability returned to the refusal it belongs to. A
 // missing object is errNotFound, which a reply handler writes as a bare 404; a
 // failure the route did not cause that no sentinel names is a 503.
-func (m *product) answer(op string, err error) error {
+func (m *product) answer(ctx context.Context, op string, err error) error {
 	// The account-deletion floor has a code of its own, and the tenant in the
 	// detail: a surface can tell this refusal from every other 409 and name the
 	// organization whose only administrator the account still is.
 	var lastAdmin *authn.AccountLastTenantAdminError
 	if errors.As(err, &lastAdmin) {
+		alias, aliasErr := m.aliasOf(ctx, lastAdmin.Tenant)
+		if aliasErr != nil {
+			return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
+		}
 		return speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   typePrefix + mount.CodeAccountLastTenantAdmin,
-			Detail: lastAdmin.Tenant,
+			Detail: alias,
 		}
 	}
 	var owner *authn.AccountOwnsOrganizationError
 	if errors.As(err, &owner) {
+		alias, aliasErr := m.aliasOf(ctx, owner.Tenant)
+		if aliasErr != nil {
+			return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
+		}
 		return speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   typePrefix + mount.CodeAccountOrganizationOwner,
-			Detail: owner.Tenant,
+			Detail: alias,
 		}
 	}
 	switch {
@@ -313,8 +321,8 @@ func (m *product) answer(op string, err error) error {
 
 // replyFailure maps a capability failure to the answer of a reply operation: a
 // missing object is a bare 404, every other refusal is the fault answer returns.
-func (m *product) replyFailure(op string, err error) (speedhttp.Reply, error) {
-	mapped := m.answer(op, err)
+func (m *product) replyFailure(ctx context.Context, op string, err error) (speedhttp.Reply, error) {
+	mapped := m.answer(ctx, op, err)
 	if errors.Is(mapped, errNotFound) {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}

@@ -81,15 +81,15 @@ func mountRel(declared string) string {
 
 // postedGrant is the view of a freshly started record: what the design's start
 // answer carries, without the start instant.
-func postedGrant(g authn.ImpersonationGrant) AuthnImpersonationGrant {
-	return AuthnImpersonationGrant{ID: g.ID, Target: string(g.Target), Tenant: g.Tenant, EndsAt: g.EndsAt.UTC()}
+func postedGrant(g authn.ImpersonationGrant, tenantAlias string) AuthnImpersonationGrant {
+	return AuthnImpersonationGrant{ID: g.ID, Target: string(g.Target), Tenant: tenantAlias, EndsAt: g.EndsAt.UTC()}
 }
 
 // currentGrant is the view of a record in force, with the instant it began.
-func currentGrant(g authn.ImpersonationGrant) AuthnImpersonationGrant {
+func currentGrant(g authn.ImpersonationGrant, tenantAlias string) AuthnImpersonationGrant {
 	started := g.StartedAt.UTC()
 	return AuthnImpersonationGrant{
-		ID: g.ID, Target: string(g.Target), Tenant: g.Tenant, StartedAt: &started, EndsAt: g.EndsAt.UTC(),
+		ID: g.ID, Target: string(g.Target), Tenant: tenantAlias, StartedAt: &started, EndsAt: g.EndsAt.UTC(),
 	}
 }
 
@@ -123,6 +123,11 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 	if err != nil {
 		return nil, m.startFailure(id, err)
 	}
+	tenantAlias, aliasErr := m.aliasOf(ctx, grant.Tenant)
+	if aliasErr != nil {
+		m.compensate(ctx, grant, aliasErr)
+		return nil, authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
+	}
 
 	if cookie {
 		var issued authn.Issued
@@ -133,7 +138,7 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 		}
 		m.publishStarted(ctx, grant)
 		mount.AddResponseHeader(ctx, "Cache-Control", cacheControlSetCookie)
-		reply := speedhttp.JSONReply(http.StatusOK, AuthnImpersonationStart{Grant: postedGrant(grant)})
+		reply := speedhttp.JSONReply(http.StatusOK, AuthnImpersonationStart{Grant: postedGrant(grant, tenantAlias)})
 		if c := m.issuedCookie(issued); c != nil {
 			reply = speedhttp.WithCookies(reply, c)
 		}
@@ -148,7 +153,7 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 	m.publishStarted(ctx, grant)
 	expires := int64(token.ExpiresAt.Sub(m.clock.Now()) / time.Second)
 	return speedhttp.JSONReply(http.StatusOK, AuthnImpersonationStart{
-		Grant:       postedGrant(grant),
+		Grant:       postedGrant(grant, tenantAlias),
 		AccessToken: token.Value,
 		TokenType:   "Bearer",
 		ExpiresIn:   &expires,
@@ -179,7 +184,11 @@ func (m *product) handleStatus(ctx context.Context, _ struct{}, _ *speedhttp.Met
 	if !active {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
-	return speedhttp.JSONReply(http.StatusOK, AuthnImpersonationGrantEnvelope{Grant: currentGrant(g)}), nil
+	tenantAlias, aliasErr := m.aliasOf(ctx, g.Tenant)
+	if aliasErr != nil {
+		return nil, m.routeFailure("reading the tenant's alias", aliasErr)
+	}
+	return speedhttp.JSONReply(http.StatusOK, AuthnImpersonationGrantEnvelope{Grant: currentGrant(g, tenantAlias)}), nil
 }
 
 // handleEnd answers DELETE /impersonation: it ends the record on the caller's
@@ -242,12 +251,13 @@ func (m *product) compensate(ctx context.Context, g authn.ImpersonationGrant, ca
 		m.logger.Error(ModuleName+": compensating a failed start failed",
 			slog.String("grant", g.ID), slog.String("cause", err.Error()))
 	}
+	tenantAlias, _ := m.aliasOf(ctx, g.Tenant)
 	m.writeAudit(ctx, audit.Entry{
 		Action:  actionStart,
 		Object:  string(g.Target),
 		Outcome: outcomeFailed,
 		Purpose: g.Reason,
-		Detail:  map[string]string{detailGrantID: g.ID, detailTenant: g.Tenant, detailSID: string(g.SessionID)},
+		Detail:  map[string]string{detailGrantID: g.ID, detailTenant: tenantAlias, detailSID: string(g.SessionID)},
 	})
 }
 

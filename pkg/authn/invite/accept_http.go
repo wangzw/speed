@@ -16,7 +16,11 @@ func (p *product) handleAcceptView(ctx context.Context, in acceptViewInput, _ *s
 	if err != nil {
 		return p.acceptAnswerReply("reading an invitation", err)
 	}
-	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{Invitation: invitationViewOf(inv)}), nil
+	tenantAlias, aliasErr := p.aliasOf(ctx, inv.Tenant)
+	if aliasErr != nil {
+		return p.acceptAnswerReply("reading the tenant's alias", aliasErr)
+	}
+	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{Invitation: invitationViewOf(inv, tenantAlias)}), nil
 }
 
 // handleAccept answers POST /invitations/:token: it redeems the invitation,
@@ -41,7 +45,11 @@ func (p *product) handleAccept(ctx context.Context, in acceptInput, meta *speedh
 	if err != nil {
 		return p.acceptAnswerReply("accepting an invitation", err)
 	}
-	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(mem)), nil
+	tenantAlias, aliasErr := p.aliasOf(ctx, mem.Tenant)
+	if aliasErr != nil {
+		return p.acceptAnswerReply("reading the tenant's alias", aliasErr)
+	}
+	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(mem, tenantAlias)), nil
 }
 
 // viewToken reads the invitation a token points to. It is the read side of the

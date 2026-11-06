@@ -62,7 +62,8 @@ func (p *product) deliverInvite(ctx context.Context, issued Issued, actionID str
 		slog.String("invitation", issued.Invitation.ID),
 		slog.String("delivery", delivery.String()),
 		slog.String("cause", cause))
-	p.auditBestEffort(ctx, deliveryAudit(issued.Invitation.ID, issued.Invitation.Tenant, actionID))
+	tenantAlias, _ := p.aliasOf(ctx, issued.Invitation.Tenant)
+	p.auditBestEffort(ctx, deliveryAudit(issued.Invitation.ID, tenantAlias, actionID))
 	return authn.InviteFailed
 }
 

@@ -32,7 +32,7 @@ func (m *product) handleSecretList(ctx context.Context, in accountIDInput, _ *sp
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountRead, Actor: id,
@@ -64,7 +64,7 @@ func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, 
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, 
 	secretID, secret, err := m.accountAdm.CreateServiceSecret(ctx, accountID, in.Label, in.ExpiresAt)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionServiceKeyCreate, string(accountID), actionID))
-		return m.replyFailure("creating a service secret", err)
+		return m.replyFailure(ctx, "creating a service secret", err)
 	}
 	expires := time.Time{}
 	if in.ExpiresAt != nil {
@@ -110,7 +110,7 @@ func (m *product) handleSecretRevoke(ctx context.Context, in secretRevokeInput, 
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err := m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err := m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func (m *product) handleSecretRevoke(ctx context.Context, in secretRevokeInput, 
 	}
 	if err := m.accountAdm.RevokeServiceSecret(ctx, accountID, in.Secret); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionServiceKeyRevoke, string(accountID), actionID))
-		return m.replyFailure("revoking a service secret", err)
+		return m.replyFailure(ctx, "revoking a service secret", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }

@@ -11,10 +11,10 @@ import (
 // their names and descriptions.
 
 // invitationViewOf builds one invitation's view. It never carries the token.
-func invitationViewOf(v Invitation) AuthnInviteInvitation {
+func invitationViewOf(v Invitation, tenantAlias string) AuthnInviteInvitation {
 	return AuthnInviteInvitation{
 		ID:         v.ID,
-		Tenant:     v.Tenant,
+		Tenant:     tenantAlias,
 		Email:      v.Email,
 		Status:     v.Status.String(),
 		InvitedBy:  string(v.InvitedBy),
@@ -27,9 +27,9 @@ func invitationViewOf(v Invitation) AuthnInviteInvitation {
 // issuedViewOf builds the answer of an issue: the invitation's view, the
 // acceptance token handed out here once, and the notice's outcome. The token
 // must not be logged.
-func issuedViewOf(issued Issued, delivery authn.InviteDelivery) AuthnInviteIssued {
+func issuedViewOf(issued Issued, delivery authn.InviteDelivery, tenantAlias string) AuthnInviteIssued {
 	return AuthnInviteIssued{
-		Invitation:    invitationViewOf(issued.Invitation),
+		Invitation:    invitationViewOf(issued.Invitation, tenantAlias),
 		Token:         issued.Token,
 		EmailDelivery: delivery.String(),
 	}
@@ -37,10 +37,10 @@ func issuedViewOf(issued Issued, delivery authn.InviteDelivery) AuthnInviteIssue
 
 // acceptViewOf builds the answer of an acceptance: the membership that was
 // written.
-func acceptViewOf(mem authn.Membership) AuthnInviteAccept {
+func acceptViewOf(mem authn.Membership, tenantAlias string) AuthnInviteAccept {
 	return AuthnInviteAccept{
 		Account:   string(mem.Account),
-		Tenant:    mem.Tenant,
+		Tenant:    tenantAlias,
 		Active:    mem.Active,
 		Source:    mem.Source,
 		SSOExempt: mem.SSOExempt,

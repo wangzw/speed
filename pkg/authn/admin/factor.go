@@ -40,7 +40,7 @@ func (m *product) handleFactorList(ctx context.Context, in accountIDInput, _ *sp
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountRead, Actor: id,
@@ -71,7 +71,7 @@ func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *spe
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err := m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err := m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *spe
 	}
 	if err := m.accountAdm.SetMFARequired(ctx, accountID, in.Required); err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
-		return m.replyFailure("changing the required flag", err)
+		return m.replyFailure(ctx, "changing the required flag", err)
 	}
 	return speedhttp.EmptyReply(204), nil
 }
@@ -109,7 +109,7 @@ func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *spee
 	}
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -131,16 +131,16 @@ func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *spee
 	hasWay, err := m.accountAdm.HasLoginWayOtherThanPasskey(ctx, accountID)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
-		return m.replyFailure("reading the account's ways to log in", err)
+		return m.replyFailure(ctx, "reading the account's ways to log in", err)
 	}
 	if !hasWay {
 		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
-		return m.replyFailure("resetting factors", authn.ErrLastLoginMethod)
+		return m.replyFailure(ctx, "resetting factors", authn.ErrLastLoginMethod)
 	}
 	removed, err := m.mfa.Reset(ctx, accountID, authn.ReasonAdmin)
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
-		return m.replyFailure("resetting factors", err)
+		return m.replyFailure(ctx, "resetting factors", err)
 	}
 	return speedhttp.JSONReply(200, AuthnAdminRemoved{Removed: removed}), nil
 }
@@ -163,7 +163,7 @@ func (m *product) handlePasswordReset(ctx context.Context, in passwordResetInput
 		return nil, m.bad()
 	}
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
-		return m.replyFailure("reading an object", err)
+		return m.replyFailure(ctx, "reading an object", err)
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func (m *product) handlePasswordReset(ctx context.Context, in passwordResetInput
 	err = m.passwords.Set(ctx, accountID, in.Password, authn.SetPasswordOptions{MustChange: true})
 	if err != nil {
 		m.auditBestEffort(ctx, failedAudit(actionAccountAuthReset, string(accountID), actionID))
-		return m.replyFailure("resetting a password", err)
+		return m.replyFailure(ctx, "resetting a password", err)
 	}
 	m.revokeAfterPassword(ctx, accountID)
 	return speedhttp.EmptyReply(204), nil
