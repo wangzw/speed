@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -81,6 +82,32 @@ func TestPublishMatchesOnlyTheConnectionsOwnScope(t *testing.T) {
 	}
 	if got := len(otherTenant.ch); got != 0 {
 		t.Errorf("a connection of another tenant holds %d frames, want 0", got)
+	}
+}
+
+// The frame carries the payload without its tenant identifier: the tenant is
+// the scope the hub matched on and is internal, so it is not something the
+// browser reads. The rest of the payload is unchanged.
+func TestTheFrameCarriesNoTenantIdentifier(t *testing.T) {
+	h := &Hub{}
+	conn := h.Subscribe("t1", "u1")
+
+	h.Publish(inboxEvent("t1", "u1"))
+
+	select {
+	case f := <-conn.ch:
+		var fields map[string]any
+		if err := json.Unmarshal(f.data, &fields); err != nil {
+			t.Fatalf("the frame's data %q is not a JSON object: %v", f.data, err)
+		}
+		if _, present := fields["tenant_id"]; present {
+			t.Errorf("the frame carries tenant_id: %s", f.data)
+		}
+		if fields["message_id"] != "message-1" || fields["recipient_user_id"] != "u1" {
+			t.Errorf("the frame dropped a field a client reads: %s", f.data)
+		}
+	default:
+		t.Fatal("the connection received no frame")
 	}
 }
 

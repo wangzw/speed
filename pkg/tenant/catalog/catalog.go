@@ -95,6 +95,7 @@ func Module() core.Module {
 			{Token: (*TxCatalog)(nil), Exclusive: true},
 			{Token: (*tenant.AliasResolver)(nil), Exclusive: true},
 			{Token: (*authn.TenantAliasResolver)(nil), Exclusive: true},
+			{Token: (*authn.TenantDirectory)(nil), Exclusive: true},
 			{Token: (*authz.TenantAliasResolver)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newFilter()}},

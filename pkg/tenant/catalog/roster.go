@@ -506,6 +506,18 @@ func (r *roster) TenantAliasOf(ctx context.Context, id string) (string, error) {
 	return r.AliasOf(ctx, tenant.ID(id))
 }
 
+// TenantIDOf implements authn.TenantDirectory. It is ByAlias for the
+// authentication directory, which does not import this capability's interface
+// package: an alias no tenant carries answers false with no error, so a surface
+// can tell an unknown name from a roster that could not answer.
+func (r *roster) TenantIDOf(ctx context.Context, alias string) (string, bool, error) {
+	t, ok, err := r.ByAlias(ctx, alias)
+	if err != nil || !ok {
+		return "", false, err
+	}
+	return string(t.ID), true, nil
+}
+
 // List implements tenant.Catalog. The slice is a copy, so a caller sorting or
 // trimming it cannot disturb what the next caller sees.
 func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {

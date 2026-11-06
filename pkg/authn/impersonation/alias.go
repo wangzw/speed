@@ -20,3 +20,22 @@ func (m *product) aliasOf(ctx context.Context, id string) (string, error) {
 	}
 	return alias, nil
 }
+
+// tenantIDOf answers the identifier the alias names. The start request carries
+// the tenant as the name a client reads; the membership store and the record
+// key their rows by the identifier. An alias no tenant carries answers false,
+// which the start answers as the restricted refusal a target outside the tenant
+// gets, and an absent directory answers false too: a name that cannot be
+// resolved is never read as an identifier.
+func (m *product) tenantIDOf(ctx context.Context, alias string) (string, bool, error) {
+	if m.tenantDirectory == nil {
+		return "", false, nil
+	}
+	id, found, err := m.tenantDirectory.TenantIDOf(ctx, alias)
+	if err != nil {
+		m.logger.Error(ModuleName+": the tenant identifier could not be read",
+			slog.String("cause", err.Error()))
+		return "", false, err
+	}
+	return id, found, nil
+}

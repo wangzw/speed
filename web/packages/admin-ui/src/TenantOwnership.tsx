@@ -38,7 +38,6 @@ import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import { useAuthState } from '@speed/auth-core'
-import { RESERVED_ALIAS_PREFIX } from '@speed/org-create-ui'
 import {
   ConfirmDialog,
   httpStatusOf,
@@ -148,7 +147,9 @@ export function TenantOwnership({
     snapshot.state === 'authenticated'
       ? (snapshot.principal?.account_id ?? '')
       : ''
-  const personal = tenant.startsWith(RESERVED_ALIAS_PREFIX)
+  // The kind is the roster's answer, never a guess from the name: a personal
+  // tenant's alias is its owner's username, which says nothing about the kind.
+  const personal = profile.kind === 'personal'
 
   const resolve = (code: string): string => {
     switch (code) {

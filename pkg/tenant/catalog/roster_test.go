@@ -357,21 +357,22 @@ func aliasesOf(list []tenant.Tenant) string {
 //
 // The order is the module's, not the table's: the snapshot is sorted by alias
 // as it is built, so a listing does not depend on the order the rows happen to
-// come back in, and it orders by the only name a client reads. The rows here are written in an order of their own so
-// that a listing which merely echoed the table's order would be told apart from
-// one ordered by alias. What is read is the alias order that comes out, which is
-// this promise's own expression: it is what a caller that wants a stable
-// enumeration relies on, and comparing the tenants as a bag of values would
-// hold nothing about it.
+// come back in, and it orders by the only name a client reads. The rows here are
+// written in an order of their own, and their identifiers sort in the opposite
+// order from their aliases, so a listing that echoed the table's order and one
+// sorted by identifier would both be told apart from the alias order that comes
+// out. What is read is the alias order, which is this promise's own expression:
+// it is what a caller that wants a stable enumeration relies on, and comparing
+// the tenants as a bag of values would hold nothing about it.
 //
 // The slice is a copy: a caller sorting or trimming what it was handed must not
 // disturb what the next caller sees. Mutating the returned slice and listing
 // again is what holds that half.
 func TestListIsOrderedByAliasAndIsACopy(t *testing.T) {
 	r := rosterOver(t,
-		insert("t_carol", "carol"),
-		insert("t_alice", "alice"),
-		insert("t_bob", "bob"),
+		insert("t_3_carol", "alice"),
+		insert("t_1_alice", "carol"),
+		insert("t_2_bob", "bob"),
 	)
 	ctx := context.Background()
 	if err := r.read(ctx); err != nil {
@@ -423,6 +424,27 @@ func TestAliasOfAnswersTheAliasByIdentifier(t *testing.T) {
 	}
 	if missing != "" {
 		t.Errorf("an unknown identifier answered %q, want the empty alias", missing)
+	}
+}
+
+// TestTenantIDOfAnswersTheIdentifierByAlias holds the alias-to-id seam: the
+// roster answers the identifier a request's tenant name resolves to, and an
+// alias no row carries answers false rather than an empty identifier.
+func TestTenantIDOfAnswersTheIdentifierByAlias(t *testing.T) {
+	r := rosterOver(t, insert("t_acme", "acme"))
+	ctx := context.Background()
+	if err := r.read(ctx); err != nil {
+		t.Fatalf("reading a conforming roster: %v", err)
+	}
+	id, found, err := r.TenantIDOf(ctx, "acme")
+	if err != nil {
+		t.Fatalf("reading the identifier: %v", err)
+	}
+	if !found || id != "t_acme" {
+		t.Errorf("TenantIDOf(acme) = %q, %v, want t_acme, true", id, found)
+	}
+	if id, found, err := r.TenantIDOf(ctx, "ghost"); err != nil || found || id != "" {
+		t.Errorf("TenantIDOf(ghost) = %q, %v, %v, want no identifier, false and no error", id, found, err)
 	}
 }
 

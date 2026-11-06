@@ -210,10 +210,17 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 	if err = m.admit(id, tenantDomain); err != nil {
 		return nil, err
 	}
-	if in.BodyTenant != "" && in.BodyTenant != in.Tenant {
+	if in.Protocol == "" || in.Name == "" || in.Provisioning == "" {
 		return nil, m.bad()
 	}
-	if in.Protocol == "" || in.Name == "" || in.Provisioning == "" {
+	// The path resolves to the internal identifier before the handler runs; the
+	// body names the tenant by alias, so the two are compared through the alias
+	// the path tenant carries.
+	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
+	if in.BodyTenant != "" && in.BodyTenant != tenantAlias {
 		return nil, m.bad()
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
@@ -221,10 +228,6 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: in.Tenant}); err != nil {
 		return nil, err
-	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return nil, m.unavailable("reading the tenant's alias", aliasErr)
 	}
 	actionID := newActionID()
 	if err = m.auditRequired(ctx, mandatory(actionIDPPut, "",
@@ -268,7 +271,13 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 	if err != nil {
 		return m.lookupFailure(err)
 	}
-	if in.BodyTenant != "" && in.BodyTenant != existing.Tenant {
+	tenantAlias, aliasErr := m.aliasOf(ctx, existing.Tenant)
+	if aliasErr != nil {
+		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	}
+	// The path resolved to the provider's tenant identifier; the body names the
+	// tenant by alias, and a value naming another tenant is refused.
+	if in.BodyTenant != "" && in.BodyTenant != tenantAlias {
 		return nil, m.bad()
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
@@ -276,10 +285,6 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: existing.Tenant, Target: in.ID}); err != nil {
 		return nil, err
-	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, existing.Tenant)
-	if aliasErr != nil {
-		return nil, m.unavailable("reading the tenant's alias", aliasErr)
 	}
 	actionID := newActionID()
 	if err = m.auditRequired(ctx, mandatory(actionIDPPut, in.ID,

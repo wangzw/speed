@@ -524,6 +524,7 @@ func newRig(t *testing.T) *rig {
 		audit:         r.audit,
 		verification:  r.signup,
 		writeSettings: r.writeSeam,
+		aliases:       identityAliases{},
 		logger:        logs.logger(),
 		cfg:           resolved{endpoints: []string{"api"}},
 	}
@@ -634,4 +635,23 @@ func (v *fakeSignupVerification) lastAccount() authn.AccountID {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.lastID
+}
+
+// identityAliases stands in for the roster's id-to-alias seam over fixtures
+// whose identifiers double as their aliases.
+type identityAliases struct{}
+
+func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+	return id, nil
+}
+
+// aliasStub answers the aliases a case maps and keeps the identifier as the
+// alias of every row the map does not name.
+type aliasStub struct{ byID map[string]string }
+
+func (a aliasStub) TenantAliasOf(_ context.Context, id string) (string, error) {
+	if alias, ok := a.byID[id]; ok {
+		return alias, nil
+	}
+	return id, nil
 }

@@ -385,6 +385,7 @@ func (s *perSessionSessions) answer(id authn.SessionID) (authn.SessionStatus, er
 func (r *rig) replica() *product {
 	p := build(r.h, r.accounts, r.verification, r.memberships, r.mfa, r.sessions, r.audit, r.guard, r.mounter)
 	p.tenantAliases = identityAliases{}
+	p.tenantDirectory = identityDirectory{}
 	p.logger = r.logs.logger()
 	p.settings = r.p.settings
 	p.bus = r.bus
@@ -633,6 +634,7 @@ func newRig(t *testing.T, h *gorm.DB) *rig {
 	verification := &fakeSignupVerification{}
 	p := build(h, accounts, verification, memberships, mfa, sessions, &recordingAudit{}, guard, mounter)
 	p.tenantAliases = identityAliases{}
+	p.tenantDirectory = identityDirectory{}
 	r := &rig{
 		t: t, p: p, h: h,
 		accounts: accounts, verification: verification, memberships: memberships,
@@ -931,4 +933,16 @@ type identityAliases struct{}
 
 func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
 	return id, nil
+}
+
+// identityDirectory stands in for the roster's alias-to-identifier seam over an
+// assembly whose fixture aliases double as their identifiers. A case that needs
+// the two apart replaces it with a mapping of its own.
+type identityDirectory struct{}
+
+func (identityDirectory) TenantIDOf(_ context.Context, alias string) (string, bool, error) {
+	if alias == "" {
+		return "", false, nil
+	}
+	return alias, true, nil
 }

@@ -459,11 +459,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The tenant the identifier named.",
+                  "description": "The tenant the alias named.",
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its identifier, alias, owner account and state."
+                      "description": "The tenant, with its alias, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -656,11 +656,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The tenant the identifier named.",
+                  "description": "The tenant the alias named.",
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its identifier, alias, owner account and state."
+                      "description": "The tenant, with its alias, kind, owner account and state."
                     }
                   },
                   "required": [

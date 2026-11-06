@@ -442,6 +442,7 @@ export function profileFixture(
 ): AdminTenantProfile {
   return {
     alias: 'acme',
+    kind: 'business',
     displayName: '',
     description: '',
     contactEmail: '',

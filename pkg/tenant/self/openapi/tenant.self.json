@@ -41,7 +41,7 @@
   "paths": {
     "/auth/me/tenants": {
       "get": {
-        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's alias, display name and kind. No identifier is exposed: the alias is the name a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
+        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's alias, display name and kind. No identifier is exposed: the alias is the name a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is in the membership read's order, a stable enumeration over tenants the view exposes by alias alone, and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
         "operationId": "tenant.self.tenants.list",
         "responses": {
           "200": {
@@ -51,7 +51,7 @@
                   "description": "The tenants the calling account holds an active membership in.",
                   "properties": {
                     "tenants": {
-                      "description": "The tenants whose membership is active and whose roster row is active, ordered by identifier. Empty when the caller holds none.",
+                      "description": "The tenants whose membership is active and whose roster row is active, in the membership read's order. Empty when the caller holds none.",
                       "items": {
                         "properties": {
                           "alias": {

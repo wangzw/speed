@@ -51,7 +51,7 @@
             "type": "boolean"
           },
           "tenant": {
-            "description": "The tenant's identifier.",
+            "description": "The tenant's alias.",
             "type": "string"
           }
         },
@@ -167,7 +167,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The owning tenant's identifier; immutable after creation.",
+            "description": "The owning tenant's alias; immutable after creation.",
             "type": "string"
           },
           "trust_idp_mfa": {
@@ -301,7 +301,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "Absent on a create takes the path's tenant; a value that names another is refused",
+            "description": "The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused.",
             "type": "string"
           },
           "trust_idp_mfa": {
@@ -377,7 +377,7 @@
   "paths": {
     "/{tenant}/members": {
       "get": {
-        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
+        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's alias: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.",
         "operationId": "authn.admin.members.list",
         "parameters": [
           {

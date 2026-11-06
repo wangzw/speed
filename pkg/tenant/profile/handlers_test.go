@@ -48,7 +48,7 @@ func TestTheReadAnswersTheProfileWithoutTheDisableSource(t *testing.T) {
 	}
 	decode(t, w, &body)
 	got := body.Profile
-	want := profileViewOf(sampleTenant())
+	want := profileViewOf(sampleTenant(), tenant.KindBusiness)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("profile = %+v, want %+v", got, want)
 	}
@@ -488,5 +488,26 @@ func TestTheViewAlwaysCarriesTheCreationTime(t *testing.T) {
 	decode(t, w, &body)
 	if _, present := body.Profile["createdAt"]; !present {
 		t.Error("the view omits createdAt, want the creation time every row carries")
+	}
+}
+
+// TestTheReadCarriesTheTenantKind holds the value a client branches on: the
+// kind comes from the host's resolver, not from the alias, so a personal
+// tenant whose alias is an ordinary username still reads as personal.
+func TestTheReadCarriesTheTenantKind(t *testing.T) {
+	r := newRig(t)
+	r.catalog.held = sampleTenant()
+	r.p.kind = kindStub{personal: map[tenant.ID]bool{sampleTenant().ID: true}}
+
+	w := r.do(http.MethodGet, profileTarget, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %q", w.Code, w.Body.String())
+	}
+	var body struct {
+		Profile TenantProfileView `json:"profile"`
+	}
+	decode(t, w, &body)
+	if body.Profile.Kind != string(tenant.KindPersonal) {
+		t.Errorf("kind = %q, want personal", body.Profile.Kind)
 	}
 }

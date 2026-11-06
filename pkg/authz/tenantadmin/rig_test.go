@@ -100,9 +100,17 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 		audit:        r.audit,
 		verification: r.signup,
 		routeGuard:   r.routeGuard,
+		aliases:      identityAliases{},
 		logger:       logs.logger(),
 		cfg:          resolved{endpoints: []string{"api"}},
 	}
+	return r
+}
+
+// withAliases assembles a roster whose identifiers map to the aliases given; an
+// identifier the map does not name keeps its identifier as its alias.
+func (r *rig) withAliases(byID map[string]string) *rig {
+	r.p.aliases = aliasStub{byID: byID}
 	return r
 }
 

@@ -14,9 +14,13 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 	if err != nil {
 		return grantListBody{}, p.failureOf("listing the grants", err)
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return grantListBody{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	views := make([]AuthzTenantAdminGrantView, len(grants))
 	for i, g := range grants {
-		views[i] = p.grantViewOf(g)
+		views[i] = p.grantViewOf(g, tenantAlias)
 	}
 	return grantListBody{Grants: views}, nil
 }
@@ -55,10 +59,14 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteGrant); err != nil {
 		return struct{}{}, err
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionGrantPut, string(permission), map[string]string{
 		detailActionID:   actionID,
-		detailTenant:     in.Tenant,
+		detailTenant:     tenantAlias,
 		detailRole:       string(role),
 		detailPermission: string(permission),
 	})); err != nil {
@@ -94,10 +102,14 @@ func (p *product) handleGrantDelete(ctx context.Context, in grantInput) (struct{
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteGrant); err != nil {
 		return struct{}{}, err
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionGrantDelete, string(permission), map[string]string{
 		detailActionID:   actionID,
-		detailTenant:     in.Tenant,
+		detailTenant:     tenantAlias,
 		detailRole:       string(role),
 		detailPermission: string(permission),
 	})); err != nil {

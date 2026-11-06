@@ -47,7 +47,7 @@ var profileWriteFields = []string{"display_name", "description", "contact_email"
 type profileBody = struct {
 	_ struct{} `description:"The organization profile of one tenant."`
 
-	Profile TenantProfileView `json:"profile" required:"true" description:"The tenant's organization profile, with the identifier, alias, owner account and state it is read beside."`
+	Profile TenantProfileView `json:"profile" required:"true" description:"The tenant's organization profile, with its alias, kind, owner account and state."`
 }
 
 // getOperation declares GET /:tenant/profile: the organization profile of one
@@ -58,10 +58,10 @@ var getOperation = speedhttp.NewReplyOperation[profileInput](
 	http.MethodGet,
 	pathProfileFragment,
 	"Read a tenant's organization profile",
-	"Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, "+
+	"Reads one tenant's organization profile: its alias, kind, display name, description, contact email, "+
 		"website, state and owner account, plus the time it was registered when that is known. It carries no disable source; "+
 		"the platform management surface is where a disabled tenant's source is read. The caller needs "+
-		"tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier "+
+		"tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An alias "+
 		"the roster does not hold is a 404. Reads write no audit row.",
 	nil,
 	[]speedhttp.Response{
@@ -91,7 +91,7 @@ var setOperation = speedhttp.NewReplyOperation[profileWriteInput](
 	pathProfileFragment,
 	"Write a tenant's organization profile",
 	"Writes one tenant's organization profile and nothing else: the display name, description, contact email "+
-		"and website. The identifier, alias, state and creation time are not written, so a profile update cannot "+
+		"and website. The alias, kind, state and creation time are not written, so a profile update cannot "+
 		"undo a disable or a deletion another path committed. The body carries all four fields; an empty "+
 		"value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the "+
 		"caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a "+

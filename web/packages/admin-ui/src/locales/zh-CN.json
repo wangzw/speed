@@ -272,7 +272,7 @@
     "rename": {
       "label": "新别名",
       "submit": "改名",
-      "ariaWithId": "组织 {{alias}} 的新别名",
+      "ariaWithAlias": "组织 {{alias}} 的新别名",
       "submitAria": "为组织 {{alias}} 改名"
     },
     "enable": "启用",

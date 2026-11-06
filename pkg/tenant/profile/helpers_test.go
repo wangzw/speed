@@ -487,6 +487,7 @@ func newRig(t *testing.T) *rig {
 		audit:        r.audit,
 		verification: r.signup,
 		routeGuard:   permissiveRouteGuard{},
+		kind:         kindStub{},
 		logger:       logs.logger(),
 		cfg:          resolved{endpoints: []string{"api"}},
 	}
@@ -578,3 +579,13 @@ func sampleTenant() tenant.Tenant {
 
 // profileTarget is the mounted write path for the rig's tenant.
 const profileTarget = "/api/v1/tenants/acme/profile"
+
+// kindStub answers the kinds a case maps and business for every other tenant.
+type kindStub struct{ personal map[tenant.ID]bool }
+
+func (k kindStub) KindOf(_ context.Context, id tenant.ID) (tenant.Kind, error) {
+	if k.personal[id] {
+		return tenant.KindPersonal, nil
+	}
+	return tenant.KindBusiness, nil
+}

@@ -372,6 +372,12 @@ optionally. An assembly with no resolver names no tenant rather than falling bac
 to the identifier. It is declared here because no package of this directory
 imports `pkg/tenant`.
 
+**`TenantDirectory` is the alias-to-id seam.** A request body or query string
+names a tenant by its alias; the stores key by the identifier. The roster module
+implements it beside `TenantAliasResolver`, and the impersonation start and the
+platform settings layer take it up optionally. A surface with no directory
+cannot resolve a name and refuses it; the name is never read as an identifier.
+
 ## Shape of a backend
 
 A backend is a module that delivers `Verifier` non-exclusively. It reports a

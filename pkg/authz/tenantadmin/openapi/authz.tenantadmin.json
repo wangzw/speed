@@ -18,7 +18,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the binding belongs to.",
+            "description": "The alias of the tenant the binding belongs to.",
             "type": "string"
           }
         },
@@ -55,7 +55,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the grant belongs to.",
+            "description": "The alias of the tenant the grant belongs to.",
             "type": "string"
           }
         },
@@ -163,7 +163,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the role belongs to.",
+            "description": "The alias of the tenant the role belongs to.",
             "type": "string"
           }
         },

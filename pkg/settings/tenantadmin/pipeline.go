@@ -61,9 +61,9 @@ const (
 )
 
 // selection is what the path settled: the tenant layer the action acts on, the
-// policy domain its decision is made in, and the tenant for the audit detail.
-// The layer and the domain move together — both are the tenant in the path —
-// which is what keeps the two from drifting apart.
+// policy domain its decision is made in, and the tenant identifier the two are
+// built from. The layer and the domain move together — both are the tenant in
+// the path — which is what keeps the two from drifting apart.
 type selection struct {
 	layer  settings.Layer
 	domain authz.Domain
@@ -71,10 +71,12 @@ type selection struct {
 }
 
 // pathTenant settles the layer and the policy domain from the tenant in the
-// path. The tenant identifier is external input, and settings.ForTenant panics on
-// one outside the tenant identifier's domain — non-empty and free of blanks and
-// control characters — so it is held to that domain here before a layer is built;
-// a value outside it reports false and the handler answers the capability's
+// path. The path-tenant guard has already resolved the segment from an alias to
+// the tenant's identifier and held it to the tenant the request resolved to, so
+// the value is the internal identifier; settings.ForTenant panics on one outside
+// the tenant identifier's domain — non-empty and free of blanks and control
+// characters — so it is held to that domain here before a layer is built; a
+// value outside it reports false and the handler answers the capability's
 // bad-request problem.
 func (p *product) pathTenant(tenant string) (selection, bool) {
 	if !inTenantDomain(tenant) {

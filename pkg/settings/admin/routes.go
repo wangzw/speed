@@ -62,8 +62,9 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 //
 // The decision stays in front of the declared handler because the typed handler
 // receives no request: the realm is bound per endpoint at the mount, and the
-// guard's refusals are written through it. The handler then reads the settled
-// layer from its bound input, which the wrapper has already validated.
+// guard's refusals are written through it. The settled selection travels to the
+// handler on the request context, because the query string names the tenant by
+// alias while the handler acts on the identifier it resolved to.
 func (p *product) guardRoute(method string, globalPerm, tenantPerm authz.Permission, handler gin.HandlerFunc) gin.HandlerFunc {
 	write := method != http.MethodGet
 	return func(c *gin.Context) {
@@ -85,6 +86,7 @@ func (p *product) guardRoute(method string, globalPerm, tenantPerm authz.Permiss
 		if !p.require(c, perm, sel.domain) {
 			return
 		}
+		c.Request = c.Request.WithContext(withSelection(c.Request.Context(), sel))
 		handler(c)
 	}
 }

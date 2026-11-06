@@ -272,7 +272,7 @@
     "rename": {
       "label": "New alias",
       "submit": "Rename",
-      "ariaWithId": "New alias for organization {{alias}}",
+      "ariaWithAlias": "New alias for organization {{alias}}",
       "submitAria": "Rename organization {{alias}}"
     },
     "enable": "Enable",

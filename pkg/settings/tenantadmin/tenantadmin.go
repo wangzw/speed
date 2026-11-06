@@ -211,7 +211,12 @@ type product struct {
 	// tenant this surface administers. Nil means the assembly delivers none,
 	// which a mount of a route refuses.
 	routeGuard speedhttp.TenantAdminRouteGuard
-	logger     *slog.Logger
+	// aliases answers the alias a tenant identifier is addressed by, nil when
+	// the assembly supplies no resolver. The layer and the policy domain key by
+	// the internal identifier; the audit detail carries the alias, and with no
+	// resolver it carries no tenant rather than the identifier.
+	aliases authn.TenantAliasResolver
+	logger  *slog.Logger
 
 	cfg resolved
 }
@@ -298,6 +303,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.routeGuard = routeGuard
+	}
+	if aliases, found, err := optional[authn.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
+		return err
+	} else if found {
+		p.aliases = aliases
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

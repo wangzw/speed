@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"context"
 	"time"
 
 	"github.com/vislake/speed/pkg/tenant"
@@ -18,15 +19,20 @@ import (
 // one renders the disable source, which belongs to the platform surface and not
 // to a tenant administrator's own profile page.
 //
+// The kind is the one value a client branches on: a personal organization has
+// no ownership controls, and its alias is the owner's username, which says
+// nothing about the kind.
+//
 // The owner is exposed here, behind tenant.profile.read, and nowhere an ordinary
 // member can read: the member list carries the membership and its roles, never
 // the organization's owner. The read route asks tenant.profile.read in the
 // tenant's own policy domain, so a member without it is refused before the view
 // is built.
 type TenantProfileView struct {
-	_ struct{} `description:"One tenant's organization profile: the read-only alias, the owning account, the state and the four descriptive fields, behind tenant.profile.read."`
+	_ struct{} `description:"One tenant's organization profile: the read-only alias, the kind, the owning account, the state and the four descriptive fields, behind tenant.profile.read."`
 
 	Alias        string    `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
+	Kind         string    `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias."`
 	DisplayName  string    `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the alias then."`
 	Description  string    `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
 	ContactEmail string    `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
@@ -37,9 +43,10 @@ type TenantProfileView struct {
 }
 
 // profileViewOf builds the view field by field from a root-package value.
-func profileViewOf(t tenant.Tenant) TenantProfileView {
+func profileViewOf(t tenant.Tenant, kind tenant.Kind) TenantProfileView {
 	return TenantProfileView{
 		Alias:        t.Alias,
+		Kind:         string(kind),
 		DisplayName:  t.Profile.DisplayName,
 		Description:  t.Profile.Description,
 		ContactEmail: t.Profile.ContactEmail,
@@ -48,4 +55,13 @@ func profileViewOf(t tenant.Tenant) TenantProfileView {
 		Status:       t.Status.String(),
 		CreatedAt:    t.CreatedAt.UTC(),
 	}
+}
+
+// kindOf answers one tenant's kind. With no resolver assembled every tenant is
+// a business tenant, the same rule the caller tenant read applies.
+func (p *product) kindOf(ctx context.Context, id tenant.ID) (tenant.Kind, error) {
+	if p.kind == nil {
+		return tenant.KindBusiness, nil
+	}
+	return p.kind.KindOf(ctx, id)
 }

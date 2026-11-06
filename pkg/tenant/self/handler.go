@@ -37,9 +37,11 @@ func (p *product) requireIdentity(next gin.HandlerFunc) gin.HandlerFunc {
 //
 // The memberships are the account module's read across tenants, which is
 // ordered by identifier; this filter preserves that order and never sorts
-// again. A membership enters the answer when it is itself active and its roster
-// row is active. A read that cannot answer — either the membership table or the
-// roster snapshot — is a 503 with its cause in the log, never an empty list.
+// again. The view exposes no identifier, so the order is a stable enumeration
+// rather than one a client can name. A membership enters the answer when it is
+// itself active and its roster row is active. A read that cannot answer —
+// either the membership table or the roster snapshot — is a 503 with its cause
+// in the log, never an empty list.
 //
 // An impersonating caller is confined to the grant's tenant, so only that
 // membership enters its answer. The route is the alias source a host has after

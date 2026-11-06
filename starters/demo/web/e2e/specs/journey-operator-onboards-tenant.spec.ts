@@ -1604,7 +1604,7 @@ const LIFECYCLE_TENANT_DESCRIPTION =
 test.describe('the platform lifecycle delete', () => {
   test.use({ viewport: { width: 1920, height: 1080 } })
 
-  test('operator-onboards-tenant: the operator deletes a tenant and neither its id nor its alias can be reused', async ({
+  test('operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused', async ({
     demo,
   }) => {
     test.setTimeout(180_000)

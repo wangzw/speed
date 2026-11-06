@@ -118,6 +118,17 @@ func provide(name string, instance any, token core.Token) core.Module {
 	}
 }
 
+// httpDirectoryModule is the provider name of the harness's tenant directory.
+const httpDirectoryModule = "http-tenant-directory"
+
+// httpDirectory resolves the tenant names the harness uses: each is its own
+// identifier, because the harness has no roster.
+type httpDirectory struct{}
+
+func (httpDirectory) TenantIDOf(_ context.Context, alias string) (string, bool, error) {
+	return alias, true, nil
+}
+
 // httpReply is what a client got back.
 type httpReply struct {
 	status     int
@@ -182,6 +193,7 @@ func assembleOverHTTP(t *testing.T, use func(h *httpHarness)) {
 		provide(httpAuditModule, auditor, (*audit.Audit)(nil)),
 		provide(httpScopeModule, guard, (*authn.ScopeGuard)(nil)),
 		provide(httpDeciderModule, decider, (*authn.Decider)(nil)),
+		provide(httpDirectoryModule, httpDirectory{}, (*authn.TenantDirectory)(nil)),
 		session.Module(), Module(),
 	}
 

@@ -32,7 +32,7 @@ type AuthnInviteInvitation struct {
 	_ struct{} `description:"One invitation as the management face shows it. It never carries the acceptance token."`
 
 	ID         string    `json:"id" required:"true" description:"The invitation's opaque identifier, used to revoke it."`
-	Tenant     string    `json:"tenant" required:"true" description:"The string form of the tenant identifier the invitation grants a membership in."`
+	Tenant     string    `json:"tenant" required:"true" description:"The alias of the tenant the invitation grants a membership in."`
 	Email      string    `json:"email" required:"true" description:"The normalized address"`
 	Status     string    `json:"status" required:"true" enum:"pending,accepted,revoked" description:"The stored state. Expiry is not stored: an expired pending invitation still reads pending."`
 	InvitedBy  string    `json:"invited_by" required:"true" description:"The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity."`
@@ -73,7 +73,7 @@ type AuthnInviteAccept struct {
 	_ struct{} `description:"The membership an acceptance wrote."`
 
 	Account   string `json:"account" required:"true" description:"Identifier of the account the membership belongs to: an existing account or one created by this acceptance."`
-	Tenant    string `json:"tenant" required:"true" description:"The string form of the tenant identifier the membership was written in."`
+	Tenant    string `json:"tenant" required:"true" description:"The alias of the tenant the membership was written in."`
 	Active    bool   `json:"active" required:"true" description:"Whether the membership is active; an acceptance always writes an active one."`
 	Source    string `json:"source" required:"true" description:"The membership's source; an acceptance always writes invite."`
 	SSOExempt bool   `json:"sso_exempt" required:"true" description:"Whether the membership is exempt from SSO enforcement; an acceptance writes false."`

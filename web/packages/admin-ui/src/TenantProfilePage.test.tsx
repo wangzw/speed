@@ -558,11 +558,10 @@ describe('TenantProfilePage ownership', () => {
   })
 
   it('renders neither ownership control for a personal organization', async () => {
-    const personal = 'personal-acc-1'
     attachAccount(OWNER)
     renderPage({
-      tenant: personal,
-      profile: ownerProfile({ alias: 'my-space' }),
+      tenant: 'my-space',
+      profile: ownerProfile({ alias: 'my-space', kind: 'personal' }),
     })
     await ready()
 

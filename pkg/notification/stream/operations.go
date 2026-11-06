@@ -35,8 +35,8 @@ var subscribeOperation = speedhttp.NewReplyOperation[streamInput](
 		"(the impersonated account while impersonation is in force). The server writes a frame each "+
 		"time the inbox gains a row for that pair, and the connection ends when the client disconnects, "+
 		"the entry point drains or the process stops. Every frame is named message and its data is a "+
-		"JSON object carrying the published event payload (message_id, tenant_id, recipient_user_id, "+
-		"type_key); a client reads the inbox by message_id to obtain content. Delivery is best-effort: "+
+		"JSON object carrying the published event payload (message_id, recipient_user_id, "+
+		"type_key); the tenant the stream is scoped to is not in the frame, and a client reads the inbox by message_id to obtain content. Delivery is best-effort: "+
 		"the hub is in memory and per replica, nothing is replayed, arrival order carries no business "+
 		"meaning, and a connection with 64 frames already pending drops its own further frames rather "+
 		"than delaying the publisher. The route does not decide who may connect; host authorization "+

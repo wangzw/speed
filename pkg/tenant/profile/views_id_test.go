@@ -12,7 +12,7 @@ import (
 // client addresses the tenant by the alias, and the internal identifier never
 // reaches it.
 func TestTheProfileViewCarriesNoIdentifier(t *testing.T) {
-	encoded, err := json.Marshal(profileViewOf(tenant.Tenant{ID: "t_acme", Alias: "acme"}))
+	encoded, err := json.Marshal(profileViewOf(tenant.Tenant{ID: "t_acme", Alias: "acme"}, tenant.KindBusiness))
 	if err != nil {
 		t.Fatalf("encoding the view: %v", err)
 	}

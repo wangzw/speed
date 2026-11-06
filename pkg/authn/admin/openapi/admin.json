@@ -372,7 +372,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the impersonation is confined to.",
+            "description": "The alias of the tenant the impersonation is confined to.",
             "type": "string"
           }
         },

@@ -197,7 +197,7 @@ type tenantInput struct {
 type providerCreateInput struct {
 	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
 	Tenant            string                     `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
-	BodyTenant        string                     `json:"tenant" description:"Absent on a create takes the path's tenant; a value that names another is refused"`
+	BodyTenant        string                     `json:"tenant" description:"The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused."`
 	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml. The set is closed."`
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           *bool                      `json:"enabled" description:"Absent leaves the enabled flag as it is (false on a create)"`
@@ -217,7 +217,7 @@ type providerUpdateInput struct {
 	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
 	Tenant            string                     `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
 	ID                string                     `path:"id" description:"The provider's identifier."`
-	BodyTenant        string                     `json:"tenant" description:"Absent on a create takes the path's tenant; a value that names another is refused"`
+	BodyTenant        string                     `json:"tenant" description:"The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused."`
 	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml. The set is closed."`
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           *bool                      `json:"enabled" description:"Absent leaves the enabled flag as it is (false on a create)"`
@@ -706,7 +706,7 @@ var memberListOperation = speedhttp.NewOperation[memberListInput, AuthnAdminMemb
 	http.MethodGet,
 	pathMembers,
 	"List a tenant's members",
-	"Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
+	"Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's alias: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.",
 	nil,
 	speedhttp.Failures(commonFailures(),
 		problemResponse(http.StatusBadRequest, mount.CodeBadRequest, "The page query could not be read"),

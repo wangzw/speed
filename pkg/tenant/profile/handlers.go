@@ -27,7 +27,11 @@ func (p *product) handleGet(ctx context.Context, _ profileInput, _ *speedhttp.Me
 	if !found {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
-	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: profileViewOf(got)}), nil
+	kind, kindErr := p.kindOf(ctx, got.ID)
+	if kindErr != nil {
+		return p.replyFailure("reading a tenant's kind", kindErr)
+	}
+	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: profileViewOf(got, kind)}), nil
 }
 
 // handleSet answers PATCH /api/v1/tenants/{tenant}/profile: it writes one
@@ -76,6 +80,10 @@ func (p *product) handleSet(ctx context.Context, in profileWriteInput, _ *speedh
 	// The read-only fields are the row's as this request read them; the profile
 	// is what the write just stored. Building the answer from the two avoids a
 	// second read that could fail after a committed write.
+	kind, kindErr := p.kindOf(ctx, got.ID)
+	if kindErr != nil {
+		return p.replyFailure("reading a tenant's kind", kindErr)
+	}
 	got.Profile = profile
-	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: profileViewOf(got)}), nil
+	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: profileViewOf(got, kind)}), nil
 }

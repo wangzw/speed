@@ -12,7 +12,7 @@ import (
 )
 
 // handleTenantList answers GET /api/v1/system/tenants: every tenant the
-// roster holds, in the roster's own order — by identifier. It is a read, so the
+// roster holds, in the roster's own order — by alias. It is a read, so the
 // action is tenant.read. The roster is the set of tenants one deployment serves,
 // and it is not paged.
 //
@@ -42,9 +42,10 @@ func (p *product) handleTenantList(ctx context.Context, _ struct{}) (tenantListB
 // roster holds. It is a read, so the action is tenant.read.
 //
 // A read goes straight to the roster, with no shape check of its own: whether an
-// identifier names a tenant is the roster's to answer, and an identifier no row
-// carries is a 404. The route is addressed by the identifier, the natural key
-// the roster keys a row by, so no opaque row identifier ever appears in a path.
+// alias names a tenant is the alias layer's to answer, and a name no row
+// carries is a 404. The route is addressed by the alias, the name a client
+// reads; the layer resolves it to the internal identifier before this handler
+// runs.
 func (p *product) handleTenantGet(ctx context.Context, in getTenantInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	got, ok, err := p.catalog.Get(ctx, tenant.ID(in.ID))
 	if err != nil {

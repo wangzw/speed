@@ -199,8 +199,13 @@ type product struct {
 	meters        *meters
 	settings      *reader
 	tenantAliases authn.TenantAliasResolver
-	logger        *slog.Logger
-	clock         clock.Source
+	// tenantDirectory answers the identifier an alias names, nil when the
+	// assembly supplies no roster. The start request names its tenant by alias
+	// and the membership read keys by identifier, so a start without this seam
+	// cannot tell which tenant the request names and is refused.
+	tenantDirectory authn.TenantDirectory
+	logger          *slog.Logger
+	clock           clock.Source
 }
 
 // newProduct takes up what the descriptor requires.
@@ -290,6 +295,9 @@ func (m *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if m.tenantAliases, err = optional[authn.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
+		return err
+	}
+	if m.tenantDirectory, err = optional[authn.TenantDirectory](reg, "the tenant directory"); err != nil {
 		return err
 	}
 	if provider, err := optional[observability.MeterProvider](reg, "the metric capability"); err != nil {

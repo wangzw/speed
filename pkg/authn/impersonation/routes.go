@@ -113,9 +113,21 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 		return nil, authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 	}
 
+	// The request names the tenant by its alias; the membership read and the
+	// record key by the identifier. A name no tenant carries is the same
+	// restricted refusal a target outside the tenant gets, and a directory that
+	// cannot answer is a 503 rather than an empty membership.
+	tenant, found, resolveErr := m.tenantIDOf(ctx, in.Tenant)
+	if resolveErr != nil {
+		return nil, authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
+	}
+	if !found {
+		return nil, authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
+	}
+
 	request := authn.ImpersonationRequest{
 		Target: authn.AccountID(in.Account),
-		Tenant: in.Tenant,
+		Tenant: tenant,
 		Reason: in.Reason,
 		TTL:    time.Duration(in.TTLSeconds) * time.Second,
 	}

@@ -86,6 +86,82 @@ func TestStartOverCookieAttachesTheSessionAndWritesTheCookie(t *testing.T) {
 	})
 }
 
+// TestStartResolvesTheRequestedAliasToTheTenantsIdentifier holds the request
+// surface's rule: the body names the tenant by alias, while the membership read
+// and the record key by the identifier. A name no tenant carries is refused as
+// a target outside the tenant, and no record is written.
+func TestStartResolvesTheRequestedAliasToTheTenantsIdentifier(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		pair := aliasPair{alias: "team-alpha", id: tenantA}
+		r.p.tenantAliases = pair
+		r.p.tenantDirectory = pair
+		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
+		r.p.mountRoutes()
+
+		w := r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"team-alpha","reason":"a support call"}`))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+		}
+		var body struct {
+			Grant AuthnImpersonationGrant `json:"grant"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("the body %q is not the grant: %v", w.Body.String(), err)
+		}
+		if body.Grant.Tenant != "team-alpha" {
+			t.Errorf("the answer names the tenant %q, want the alias team-alpha", body.Grant.Tenant)
+		}
+		if len(r.tokens.issued) != 1 || r.tokens.issued[0].Scope != tenantA {
+			t.Errorf("the token was issued for %+v, want the tenant's identifier %q", r.tokens.issued, tenantA)
+		}
+		if r.recordCount() != 1 {
+			t.Errorf("the table holds %d records, want 1", r.recordCount())
+		}
+	})
+}
+
+// TestStartRefusesAnAliasNoTenantCarries holds the other half: a name the
+// directory does not know is refused as a target that is not a member, before
+// any record or audit row.
+func TestStartRefusesAnAliasNoTenantCarries(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		pair := aliasPair{alias: "team-alpha", id: tenantA}
+		r.p.tenantAliases = pair
+		r.p.tenantDirectory = pair
+		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
+		r.p.mountRoutes()
+
+		w := r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"team-ghost","reason":"a support call"}`))
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+		}
+		if r.recordCount() != 0 {
+			t.Errorf("the table holds %d records, want none", r.recordCount())
+		}
+		if len(r.tokens.issued) != 0 {
+			t.Errorf("a token was issued: %+v", r.tokens.issued)
+		}
+	})
+}
+
+// aliasPair is one alias and the identifier it names, answering both directions
+// of the tenant seam over the same pair.
+type aliasPair struct{ alias, id string }
+
+func (p aliasPair) TenantAliasOf(_ context.Context, id string) (string, error) {
+	if id == p.id {
+		return p.alias, nil
+	}
+	return "", nil
+}
+
+func (p aliasPair) TenantIDOf(_ context.Context, alias string) (string, bool, error) {
+	if alias == p.alias {
+		return p.id, true, nil
+	}
+	return "", false, nil
+}
+
 // TestStartOverBearerIssuesTheImpersonationToken holds the bearer carrier: the
 // answer carries an access token, no session is touched, and the issue carries
 // the target, the actor, the record, its tenant and session, and a lifetime no

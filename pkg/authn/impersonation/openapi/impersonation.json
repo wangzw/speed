@@ -23,7 +23,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the impersonation is confined to",
+            "description": "The alias of the tenant the impersonation is confined to",
             "type": "string"
           }
         },
@@ -237,7 +237,7 @@
                     "type": "string"
                   },
                   "tenant": {
-                    "description": "Identifier of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused.",
+                    "description": "The alias of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused, and an alias no tenant carries is refused as not a member.",
                     "type": "string"
                   },
                   "ttl_seconds": {

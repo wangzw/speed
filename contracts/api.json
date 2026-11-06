@@ -2009,7 +2009,7 @@
                     "type": "string"
                   },
                   "tenant": {
-                    "description": "Identifier of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused.",
+                    "description": "The alias of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused, and an alias no tenant carries is refused as not a member.",
                     "type": "string"
                   },
                   "ttl_seconds": {
@@ -2685,7 +2685,7 @@
     },
     "/api/v1/auth/me/tenants": {
       "get": {
-        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's alias, display name and kind. No identifier is exposed: the alias is the name a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
+        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's alias, display name and kind. No identifier is exposed: the alias is the name a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is in the membership read's order, a stable enumeration over tenants the view exposes by alias alone, and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
         "operationId": "tenant.self.tenants.list",
         "responses": {
           "200": {
@@ -2695,7 +2695,7 @@
                   "description": "The tenants the calling account holds an active membership in.",
                   "properties": {
                     "tenants": {
-                      "description": "The tenants whose membership is active and whose roster row is active, ordered by identifier. Empty when the caller holds none.",
+                      "description": "The tenants whose membership is active and whose roster row is active, in the membership read's order. Empty when the caller holds none.",
                       "items": {
                         "properties": {
                           "alias": {
@@ -4971,7 +4971,7 @@
     },
     "/api/v1/notifications/stream": {
       "get": {
-        "description": "One long-lived connection, scoped by the request's tenant and the caller's effective account (the impersonated account while impersonation is in force). The server writes a frame each time the inbox gains a row for that pair, and the connection ends when the client disconnects, the entry point drains or the process stops. Every frame is named message and its data is a JSON object carrying the published event payload (message_id, tenant_id, recipient_user_id, type_key); a client reads the inbox by message_id to obtain content. Delivery is best-effort: the hub is in memory and per replica, nothing is replayed, arrival order carries no business meaning, and a connection with 64 frames already pending drops its own further frames rather than delaying the publisher. The route does not decide who may connect; host authorization does.",
+        "description": "One long-lived connection, scoped by the request's tenant and the caller's effective account (the impersonated account while impersonation is in force). The server writes a frame each time the inbox gains a row for that pair, and the connection ends when the client disconnects, the entry point drains or the process stops. Every frame is named message and its data is a JSON object carrying the published event payload (message_id, recipient_user_id, type_key); the tenant the stream is scoped to is not in the frame, and a client reads the inbox by message_id to obtain content. Delivery is best-effort: the hub is in memory and per replica, nothing is replayed, arrival order carries no business meaning, and a connection with 64 frames already pending drops its own further frames rather than delaying the publisher. The route does not decide who may connect; host authorization does.",
         "operationId": "notification.stream.subscribe",
         "responses": {
           "200": {
@@ -8905,11 +8905,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The tenant the identifier named.",
+                  "description": "The tenant the alias named.",
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its identifier, alias, owner account and state."
+                      "description": "The tenant, with its alias, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -9684,11 +9684,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The tenant the identifier named.",
+                  "description": "The tenant the alias named.",
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its identifier, alias, owner account and state."
+                      "description": "The tenant, with its alias, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -11395,7 +11395,7 @@
     },
     "/api/v1/tenants/{tenant}/members": {
       "get": {
-        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.",
+        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's alias: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.",
         "operationId": "authn.admin.members.list",
         "parameters": [
           {
@@ -12086,7 +12086,7 @@
     },
     "/api/v1/tenants/{tenant}/profile": {
       "get": {
-        "description": "Reads one tenant's organization profile: its identifier, alias, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An identifier the roster does not hold is a 404. Reads write no audit row.",
+        "description": "Reads one tenant's organization profile: its alias, kind, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An alias the roster does not hold is a 404. Reads write no audit row.",
         "operationId": "tenant.profile.get",
         "parameters": [
           {
@@ -12108,7 +12108,7 @@
                   "properties": {
                     "profile": {
                       "$ref": "#/components/schemas/TenantProfileView",
-                      "description": "The tenant's organization profile, with the identifier, alias, owner account and state it is read beside."
+                      "description": "The tenant's organization profile, with its alias, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -12169,7 +12169,7 @@
         "x-endpoint": "api"
       },
       "patch": {
-        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.",
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The alias, kind, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.",
         "operationId": "tenant.profile.update",
         "parameters": [
           {
@@ -12202,7 +12202,7 @@
                   "properties": {
                     "profile": {
                       "$ref": "#/components/schemas/TenantProfileView",
-                      "description": "The tenant's organization profile, with the identifier, alias, owner account and state it is read beside."
+                      "description": "The tenant's organization profile, with its alias, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -15017,7 +15017,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the impersonation is confined to.",
+            "description": "The alias of the tenant the impersonation is confined to.",
             "type": "string"
           }
         },
@@ -15104,7 +15104,7 @@
             "type": "boolean"
           },
           "tenant": {
-            "description": "The tenant's identifier.",
+            "description": "The tenant's alias.",
             "type": "string"
           }
         },
@@ -15234,7 +15234,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The owning tenant's identifier; immutable after creation.",
+            "description": "The owning tenant's alias; immutable after creation.",
             "type": "string"
           },
           "trust_idp_mfa": {
@@ -15368,7 +15368,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "Absent on a create takes the path's tenant; a value that names another is refused",
+            "description": "The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused.",
             "type": "string"
           },
           "trust_idp_mfa": {
@@ -15620,7 +15620,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the impersonation is confined to",
+            "description": "The alias of the tenant the impersonation is confined to",
             "type": "string"
           }
         },
@@ -15691,7 +15691,7 @@
             "type": "boolean"
           },
           "tenant": {
-            "description": "The string form of the tenant identifier the membership was written in.",
+            "description": "The alias of the tenant the membership was written in.",
             "type": "string"
           }
         },
@@ -15744,7 +15744,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The string form of the tenant identifier the invitation grants a membership in.",
+            "description": "The alias of the tenant the invitation grants a membership in.",
             "type": "string"
           }
         },
@@ -17133,7 +17133,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the binding belongs to.",
+            "description": "The alias of the tenant the binding belongs to.",
             "type": "string"
           }
         },
@@ -17170,7 +17170,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the grant belongs to.",
+            "description": "The alias of the tenant the grant belongs to.",
             "type": "string"
           }
         },
@@ -17278,7 +17278,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant the role belongs to.",
+            "description": "The alias of the tenant the role belongs to.",
             "type": "string"
           }
         },
@@ -18360,7 +18360,7 @@
         "type": "object"
       },
       "TenantProfileView": {
-        "description": "One tenant's organization profile: the read-only alias, the owning account, the state and the four descriptive fields, behind tenant.profile.read.",
+        "description": "One tenant's organization profile: the read-only alias, the kind, the owning account, the state and the four descriptive fields, behind tenant.profile.read.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
@@ -18383,6 +18383,14 @@
             "description": "The organization's display name. Empty when its profile names none; a surface falls back to the alias then.",
             "type": "string"
           },
+          "kind": {
+            "description": "The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias.",
+            "enum": [
+              "business",
+              "personal"
+            ],
+            "type": "string"
+          },
           "ownerAccount": {
             "description": "The account that owns the organization, from the roster row's owner column. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner.",
             "type": "string"
@@ -18403,6 +18411,7 @@
         },
         "required": [
           "alias",
+          "kind",
           "displayName",
           "description",
           "contactEmail",

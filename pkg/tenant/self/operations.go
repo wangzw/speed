@@ -34,12 +34,12 @@ type tenantSelfTenant = struct {
 }
 
 // tenantsBody is the 200 answer: the tenants the caller holds an active
-// membership in. The list is always present, ordered by identifier, and empty
-// rather than absent when the caller holds none.
+// membership in. The list is always present, in the membership read's order,
+// and empty rather than absent when the caller holds none.
 type tenantsBody = struct {
 	_ struct{} `description:"The tenants the calling account holds an active membership in."`
 
-	Tenants []tenantSelfTenant `json:"tenants" required:"true" description:"The tenants whose membership is active and whose roster row is active, ordered by identifier. Empty when the caller holds none."`
+	Tenants []tenantSelfTenant `json:"tenants" required:"true" description:"The tenants whose membership is active and whose roster row is active, in the membership read's order. Empty when the caller holds none."`
 }
 
 // tenantsOperation declares GET /auth/me/tenants: the tenants the caller holds
@@ -56,7 +56,7 @@ var tenantsOperation = speedhttp.NewOperation[struct{}, tenantsBody](
 		"host's resolver supplies; an assembly without a resolver reads every tenant as business. A "+
 		"membership that is suspended is left "+
 		"out, as is a tenant whose roster state is not active and an identifier the roster does not carry. "+
-		"The list is ordered by identifier and is empty rather than absent when the caller holds none. The "+
+		"The list is in the membership read's order, a stable enumeration over tenants the view exposes by alias alone, and is empty rather than absent when the caller holds none. The "+
 		"route resolves no tenant and requires no permission: every authenticated caller reads its own "+
 		"memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
 	nil,

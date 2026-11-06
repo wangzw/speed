@@ -65,9 +65,13 @@ type selection struct {
 	domain authz.Domain
 	// name is "global" or "tenant", the layer as the query string named it.
 	name string
-	// tenant is the tenant identifier a tenant layer names, empty for the global
-	// layer.
+	// tenant is the tenant identifier a tenant layer is built on, empty for the
+	// global layer.
 	tenant string
+	// alias is the tenant's alias, the name a client reads, empty for the global
+	// layer. An assembly with no tenant roster has no alias to resolve and keeps
+	// the identifier the query named as the alias too.
+	alias string
 }
 
 // selectionOf builds the selection of a request whose layer the route's
@@ -75,16 +79,34 @@ type selection struct {
 // identifier's domain and a global layer carried no tenant. It validates
 // nothing itself, which is why it is called only from the declared handlers,
 // behind that step.
-func selectionOf(layer, tenant string) selection {
+func selectionOf(layer, tenant, alias string) selection {
 	if layer == layerTenant {
 		return selection{
 			layer:  settings.ForTenant(tenant),
 			domain: authz.Domain(tenant),
 			name:   layerTenant,
 			tenant: tenant,
+			alias:  alias,
 		}
 	}
 	return selection{layer: settings.Global(), domain: authz.PlatformDomain, name: layerGlobal}
+}
+
+// selectionKey is the request-context key the settled selection travels under,
+// from the route wrapper to the declared handler.
+type selectionKey struct{}
+
+// withSelection puts the settled selection on the request context.
+func withSelection(ctx context.Context, sel selection) context.Context {
+	return context.WithValue(ctx, selectionKey{}, sel)
+}
+
+// selectionFrom reads the settled selection the route wrapper put on the
+// request. A handler reached without the wrapper has no layer, and its zero
+// value names none.
+func selectionFrom(ctx context.Context) (selection, bool) {
+	sel, ok := ctx.Value(selectionKey{}).(selection)
+	return sel, ok
 }
 
 // caller reads the identity the gateway put on the request.
@@ -202,12 +224,15 @@ func quoteRealm(name string) string {
 // selectLayer settles the layer and the policy domain from the query string.
 //
 // The layer has no default: an absent or unreadable layer is a 400, and the
-// route returns before the guard is asked. The tenant identifier is external
-// input, and settings.ForTenant panics on one outside the tenant identifier's
-// domain — non-empty and free of blanks and control characters — so it is held
-// to that domain here before a layer is built, and a value outside it is a 400.
-// The domain follows the layer: the platform domain for the global layer, the
-// named tenant's for a tenant's.
+// route returns before the guard is asked. The tenant is named by its alias,
+// the only external name a tenant has, and the layer keys by the identifier, so
+// the alias is resolved through the roster before a layer is built; an alias no
+// tenant carries is a 400. The resolved identifier is held to the tenant
+// identifier's domain — settings.ForTenant panics on one outside it, non-empty
+// and free of blanks and control characters. An assembly with no tenant roster
+// has no aliases to resolve and reads the value as the identifier itself, which
+// is the only name such an assembly has. The domain follows the layer: the
+// platform domain for the global layer, the named tenant's for a tenant's.
 func (p *product) selectLayer(c *gin.Context) (selection, bool) {
 	query := c.Request.URL.Query()
 	switch c.Query(queryLayer) {
@@ -219,14 +244,24 @@ func (p *product) selectLayer(c *gin.Context) (selection, bool) {
 			p.bad(c)
 			return selection{}, false
 		}
-		return selectionOf(layerGlobal, ""), true
+		return selectionOf(layerGlobal, "", ""), true
 	case layerTenant:
 		values, present := query[queryTenant]
 		if !present || len(values) != 1 || !inTenantDomain(values[0]) {
 			p.bad(c)
 			return selection{}, false
 		}
-		return selectionOf(layerTenant, values[0]), true
+		alias := values[0]
+		tenant, found, err := p.tenantIDOf(c.Request.Context(), alias)
+		if err != nil {
+			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
+			return selection{}, false
+		}
+		if !found {
+			p.bad(c)
+			return selection{}, false
+		}
+		return selectionOf(layerTenant, tenant, alias), true
 	default:
 		p.bad(c)
 		return selection{}, false

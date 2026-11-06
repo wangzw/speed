@@ -133,6 +133,7 @@ const TENANT: TenantAdminTenant = {
  * the page has no empty state to reach. */
 const TENANT_PROFILE: TenantProfileView = {
   alias: TENANT.alias,
+  kind: TENANT.kind,
   status: TENANT.status,
   contactEmail: TENANT.contactEmail,
   description: TENANT.description,

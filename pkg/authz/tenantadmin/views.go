@@ -53,7 +53,7 @@ func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission, g
 type AuthzTenantAdminRoleView struct {
 	_ struct{} `description:"One role of a tenant as the role routes report it."`
 
-	Tenant  string `json:"tenant" required:"true" description:"The tenant the role belongs to."`
+	Tenant  string `json:"tenant" required:"true" description:"The alias of the tenant the role belongs to."`
 	Role    string `json:"role" required:"true" description:"The role name within the tenant. A role is never renamed: the name is the key a binding holds."`
 	Builtin bool   `json:"builtin" required:"true" description:"True for a builtin role: the tenant management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
 
@@ -72,9 +72,9 @@ type AuthzTenantAdminRoleView struct {
 // the role's two stored texts: a builtin role's key is rendered in the request's
 // language, and a role the management face created carries the free text as
 // written.
-func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permissionCount int, memberCount *int, canManage bool) AuthzTenantAdminRoleView {
+func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permissionCount int, memberCount *int, canManage bool, tenantAlias string) AuthzTenantAdminRoleView {
 	return AuthzTenantAdminRoleView{
-		Tenant:          r.Tenant,
+		Tenant:          tenantAlias,
 		Role:            string(r.Role),
 		Builtin:         r.Builtin,
 		Description:     p.roleDescription(ctx, r),
@@ -110,7 +110,7 @@ func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) strin
 type AuthzTenantAdminGrantView struct {
 	_ struct{} `description:"One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on."`
 
-	Tenant     string    `json:"tenant" required:"true" description:"The tenant the grant belongs to."`
+	Tenant     string    `json:"tenant" required:"true" description:"The alias of the tenant the grant belongs to."`
 	Role       string    `json:"role" required:"true" description:"The role holding the grant."`
 	Permission string    `json:"permission" required:"true" description:"The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries."`
 	Resource   string    `json:"resource" required:"true" description:"The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed."`
@@ -121,9 +121,9 @@ type AuthzTenantAdminGrantView struct {
 // grantViewOf builds one grant's view. The permission is read back from the
 // catalog's reverse index; a pair no declared permission translates to leaves
 // the field empty and the pair itself on the view.
-func (p *product) grantViewOf(g authz.GrantRecord) AuthzTenantAdminGrantView {
+func (p *product) grantViewOf(g authz.GrantRecord, tenantAlias string) AuthzTenantAdminGrantView {
 	view := AuthzTenantAdminGrantView{
-		Tenant:    g.Tenant,
+		Tenant:    tenantAlias,
 		Role:      string(g.Role),
 		Resource:  g.Resource,
 		Action:    g.Action,
@@ -139,26 +139,27 @@ func (p *product) grantViewOf(g authz.GrantRecord) AuthzTenantAdminGrantView {
 type AuthzTenantAdminBindingView struct {
 	_ struct{} `description:"One role binding: an account holds a role within a tenant."`
 
-	Tenant    string    `json:"tenant" required:"true" description:"The tenant the binding belongs to."`
+	Tenant    string    `json:"tenant" required:"true" description:"The alias of the tenant the binding belongs to."`
 	Account   string    `json:"account" required:"true" description:"The account the role is bound to."`
 	Role      string    `json:"role" required:"true" description:"The role bound to the account."`
 	GrantedAt time.Time `json:"granted_at" required:"true" description:"When the binding was written, as an RFC 3339 instant in UTC."`
 }
 
-func bindingViewOf(b authz.Binding) AuthzTenantAdminBindingView {
+func bindingViewOf(b authz.Binding, tenantAlias string) AuthzTenantAdminBindingView {
 	return AuthzTenantAdminBindingView{
-		Tenant:    b.Tenant,
+		Tenant:    tenantAlias,
 		Account:   b.Account,
 		Role:      string(b.Role),
 		GrantedAt: b.GrantedAt.UTC(),
 	}
 }
 
-// bindingViewsOf builds the views of a binding read.
-func bindingViewsOf(bindings []authz.Binding) []AuthzTenantAdminBindingView {
+// bindingViewsOf builds the views of a binding read. Every binding of a read
+// belongs to the tenant the request named, so the alias is resolved once.
+func bindingViewsOf(bindings []authz.Binding, tenantAlias string) []AuthzTenantAdminBindingView {
 	views := make([]AuthzTenantAdminBindingView, len(bindings))
 	for i, b := range bindings {
-		views[i] = bindingViewOf(b)
+		views[i] = bindingViewOf(b, tenantAlias)
 	}
 	return views
 }

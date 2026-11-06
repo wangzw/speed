@@ -213,8 +213,12 @@ type product struct {
 	// none. When it is there, Init declares every management route open on it so
 	// that a guarded endpoint lets the request reach the handler, which makes the
 	// decision.
-	gate   authz.Gate
-	logger *slog.Logger
+	gate authz.Gate
+	// directory answers the identifier a tenant alias names, nil when the
+	// assembly supplies no roster. With none the query's tenant is the
+	// identifier itself: an assembly without a roster has no aliases.
+	directory authn.TenantDirectory
+	logger    *slog.Logger
 
 	cfg resolved
 }
@@ -290,6 +294,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.gate = gate
+	}
+	if directory, found, err := optional[authn.TenantDirectory](reg, "the tenant directory"); err != nil {
+		return err
+	} else if found {
+		p.directory = directory
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

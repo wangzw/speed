@@ -92,16 +92,26 @@ func (h *Hub) Subscribe(tenant, recipient string) *connection {
 //
 // Matching is done before any send is attempted: an event is looked up by its
 // scope, so a connection outside that scope never takes a send at all.
+//
+// The frame carries the payload without its tenant identifier: that value is
+// internal and is the scope the hub matched on, not something a browser is
+// shown. The recipient's account identifier stays, because it is the account
+// identifier the API uses everywhere.
 func (h *Hub) Publish(evt event.Event) {
-	tenant, ok := event.PayloadString(evt.Payload, "tenant_id")
+	fields, ok := event.PayloadFields(evt.Payload)
 	if !ok {
 		return
 	}
-	recipient, ok := event.PayloadString(evt.Payload, "recipient_user_id")
+	tenant, ok := event.PayloadString(fields, "tenant_id")
 	if !ok {
 		return
 	}
-	data, err := json.Marshal(evt.Payload)
+	recipient, ok := event.PayloadString(fields, "recipient_user_id")
+	if !ok {
+		return
+	}
+	delete(fields, "tenant_id")
+	data, err := json.Marshal(fields)
 	if err != nil {
 		return
 	}

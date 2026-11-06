@@ -190,7 +190,12 @@ type product struct {
 	// it at the mount. Nil means the assembly delivers none, which a mount
 	// refuses.
 	routeGuard speedhttp.TenantAdminRouteGuard
-	logger     *slog.Logger
+	// kind answers one tenant's kind, nil when the assembly supplies no
+	// resolver. With none every tenant reads as tenant.KindBusiness, the same
+	// answer the caller tenant read gives and the same rule the platform roster
+	// applies.
+	kind   tenant.KindResolver
+	logger *slog.Logger
 
 	cfg resolved
 }
@@ -263,6 +268,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.routeGuard = routeGuard
+	}
+	if kind, found, err := optional[tenant.KindResolver](reg, "the tenant kind resolver"); err != nil {
+		return err
+	} else if found {
+		p.kind = kind
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

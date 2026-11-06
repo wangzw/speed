@@ -34,15 +34,17 @@ func replyJSON(body any) (speedhttp.Reply, error) {
 // handleList answers GET /settings: every declared setting item
 // with the value each resolves to on the selected layer. The route's
 // authorization step has already settled the layer and decided the read.
-func (p *product) handleList(ctx context.Context, in listInput) ([]SettingsAdminSetting, error) {
-	return p.list(ctx, selectionOf(in.Layer, in.Tenant), "")
+func (p *product) handleList(ctx context.Context, _ listInput) ([]SettingsAdminSetting, error) {
+	sel, _ := selectionFrom(ctx)
+	return p.list(ctx, sel, "")
 }
 
 // handleListNamespace answers GET /settings/:namespace: the
 // declared items that namespace declared, each as the all-items route shows it.
 // A namespace that no declared item belongs to is a bare 404.
 func (p *product) handleListNamespace(ctx context.Context, in namespaceInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	views, err := p.list(ctx, selectionOf(in.Layer, in.Tenant), in.Namespace)
+	sel, _ := selectionFrom(ctx)
+	views, err := p.list(ctx, sel, in.Namespace)
 	if errors.Is(err, errNoDeclaredItem) {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
@@ -131,7 +133,7 @@ func (p *product) resolve(item settings.DeclaredItem, layer settings.Layer) (str
 // made it, and the settings module records that key in the event it publishes.
 func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	caller, _ := authn.FromContext(ctx)
-	sel := selectionOf(in.Layer, in.Tenant)
+	sel, _ := selectionFrom(ctx)
 	key := fullKeyOf(in.Namespace, in.Key)
 	item, declared := p.declared(key)
 	if !declared {
@@ -176,7 +178,7 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 // administrator and not the account impersonated.
 func (p *product) handleRemove(ctx context.Context, in removeInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	caller, _ := authn.FromContext(ctx)
-	sel := selectionOf(in.Layer, in.Tenant)
+	sel, _ := selectionFrom(ctx)
 	key := fullKeyOf(in.Namespace, in.Key)
 	if _, declared := p.declared(key); !declared {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
@@ -211,13 +213,13 @@ func (p *product) declared(key string) (settings.DeclaredItem, bool) {
 }
 
 // detail builds a write's audit detail: the action identifier that links the
-// write's rows, the full key, the layer by name and the tenant it names. No value
-// enters it.
+// write's rows, the full key, the layer by name and the tenant it names by
+// alias. No value enters it.
 func detail(sel selection, key, actionID string) map[string]string {
 	return map[string]string{
 		detailActionID: actionID,
 		detailKey:      key,
 		detailLayer:    sel.name,
-		detailTenant:   sel.tenant,
+		detailTenant:   sel.alias,
 	}
 }
