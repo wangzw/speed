@@ -78,17 +78,20 @@
 // @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-022
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
-import { reviewInvitee } from '../fixtures/config'
+import { reviewInvitee, reviewOrdinaryMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import type { ReviewServer } from '../fixtures/server'
 import {
   adminEntry,
+  backToApp,
   closeAccountMenu,
   openAccountMenu,
   organizationRow,
   switchOrganization,
 } from '../helpers/account-menu'
-import { copy } from '../helpers/i18n'
+import type { Accounts } from '../helpers/accounts'
+import { copy, copyPattern } from '../helpers/i18n'
 
 // The admin tables carry low-priority columns and the admin sidebar takes
 // part of the width, so the desktop viewport has to be wide enough for the
@@ -1162,4 +1165,453 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
     // drains.
     await inviteeContext?.close().catch(() => undefined)
   }
+})
+
+/**
+ * The platform roster's organization lifecycle: an owner transfer through the
+ * member selector, one through the account selector, and the terminal delete.
+ *
+ * The platform transfer dialog chooses its target path from the caller's
+ * tenant permission set -- the member selector when `authn.membership.manage`
+ * is held in the current tenant, the platform account selector otherwise. The
+ * first is the ordinary admin session: the current tenant is the platform's
+ * own `system`, where the operator holds tenant-admin, so the dialogs attach
+ * the member read. The second is reached the way the personal-tenant history
+ * visit reaches a tenant-scoped surface: the operator enters the admin while
+ * `system` is current, leaves to the tenant area, switches to the personal
+ * tenant whose tenant-admin allowlist deliberately withholds membership
+ * management, and returns to the admin URL through history, which keeps the
+ * personal tenant current without a document load.
+ *
+ * The ownership requirements (REQ-platform-admin-051, -055 and -058) are
+ * registered in the PRD's feature documents but not in this journey document,
+ * so they stay out of `@covers`, which the honesty gate holds to the ids the
+ * journey document lists.
+ */
+
+/** The operator's password sign-in and its proved-email precondition. */
+async function signInAndVerifyOperator(
+  page: Page,
+  server: ReviewServer,
+  accounts: Accounts,
+): Promise<void> {
+  await accounts.signIn({
+    identifier: OPERATOR.username,
+    password: OPERATOR.password,
+  })
+  const banner = verificationBanner(page, OPERATOR.identifier)
+  await expect(banner).toBeVisible()
+  const beforeCode = server.log.mark()
+  await banner
+    .getByRole('link', {
+      name: copy('demo', 'verificationBanner.verify'),
+      exact: true,
+    })
+    .click()
+  const section = verificationSection(page)
+  await expect(section).toBeVisible()
+  const codeField = section.getByLabel(
+    copy('accountUi', 'verification.codeLabel'),
+    { exact: true },
+  )
+  const { code } = await waitForVerificationCode(
+    server.log,
+    'mail',
+    OPERATOR.identifier,
+    { after: beforeCode },
+  )
+  await codeField.fill(code)
+  await section
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('region', {
+      name: copy('accountUi', 'verification.verifiedTitle'),
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
+/** Enter the platform admin from the tenant area, selecting `system` first. */
+async function enterAdminFromHome(page: Page): Promise<void> {
+  await page
+    .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
+    .click()
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: copy('demo', 'home.heading'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await switchOrganization(page, 'system')
+  await openAccountMenu(page)
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
+}
+
+/** One tenant roster row's transfer control. */
+function transferTenantButton(page: Page, id: string): Locator {
+  return rosterRow(page, id).getByRole('button', {
+    name: copy('adminUi', 'tenantLifecycle.transferAria', { id }),
+    exact: true,
+  })
+}
+
+/** One tenant roster row's delete control. */
+function deleteTenantButton(page: Page, id: string): Locator {
+  return rosterRow(page, id).getByRole('button', {
+    name: copy('adminUi', 'tenantLifecycle.deleteAria', { id }),
+    exact: true,
+  })
+}
+
+/** The transfer dialog's open dialog. */
+function transferDialog(page: Page, id: string): Locator {
+  return page.getByRole('dialog', {
+    name: copy('adminUi', 'tenantLifecycle.transfer.title', { id }),
+    exact: true,
+  })
+}
+
+/** Arm and confirm the shared two-step danger dialog. */
+async function confirmTwice(dialog: Locator, confirmLabel: string): Promise<void> {
+  await dialog
+    .getByRole('button', { name: confirmLabel, exact: true })
+    .click()
+  const again = dialog.getByRole('button', {
+    name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+    exact: true,
+  })
+  await expect(again).toBeEnabled({ timeout: 5_000 })
+  await again.click()
+}
+
+test.describe('the platform lifecycle controls', () => {
+  test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
+
+  test('operator-onboards-tenant: the operator transfers a tenant owner through the member selector', async ({
+    demo,
+  }) => {
+    test.setTimeout(180_000)
+
+    const { page, server, accounts } = demo
+
+    await signInAndVerifyOperator(page, server, accounts)
+    await enterAdminFromHome(page)
+    await adminLink(page, copy('adminUi', 'tenants.title')).click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'tenants.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // The operator is acme's tenant-admin, so the transfer dialog offers the
+    // organization's member selector rather than the platform account list.
+    await transferTenantButton(page, SEEDED_TENANT).click()
+    const dialog = transferDialog(page, SEEDED_TENANT)
+    await expect(dialog).toBeVisible()
+    const member = dialog.getByRole('combobox', {
+      name: copy('adminUi', 'tenantLifecycle.transfer.memberLabel'),
+      exact: true,
+    })
+    await expect(member).toBeVisible()
+    await member.click()
+    await expect(
+      page.getByRole('option', {
+        name: new RegExp(
+          `^${escapeRegExp(reviewOrdinaryMember.displayName)} \\(.+\\)$`,
+        ),
+      }),
+    ).toBeVisible()
+    await page
+      .getByRole('option', {
+        name: new RegExp(
+          `^${escapeRegExp(reviewOrdinaryMember.displayName)} \\(.+\\)$`,
+        ),
+      })
+      .click()
+    await dialog
+      .getByRole('button', {
+        name: copy('adminUi', 'tenantLifecycle.transfer.submit'),
+        exact: true,
+      })
+      .click()
+
+    const confirm = page.getByRole('dialog', {
+      name: copy('adminUi', 'tenantLifecycle.transfer.confirmTitle', {
+        id: SEEDED_TENANT,
+      }),
+      exact: true,
+    })
+    await expect(confirm).toBeVisible()
+    await confirmTwice(
+      confirm,
+      copy('adminUi', 'tenantLifecycle.transfer.confirmLabel'),
+    )
+
+    // A landed transfer names the organization and its new owner.
+    await expect(
+      page.getByText(
+        copyPattern('adminUi', 'tenantLifecycle.transfer.success', {
+          id: escapeRegExp(SEEDED_TENANT),
+          target: '.+',
+        }),
+      ),
+    ).toBeVisible()
+  })
+
+  test('operator-onboards-tenant: with only tenant.manage the operator uses the account selector and a non-member is refused', async ({
+    demo,
+  }) => {
+    test.setTimeout(180_000)
+
+    const { page, server, accounts } = demo
+
+    await signInAndVerifyOperator(page, server, accounts)
+    await enterAdminFromHome(page)
+
+    // Leave the admin for the tenant area and switch to the account's personal
+    // organization. Its tenant-admin allowlist withholds membership
+    // management, so the platform transfer dialog falls back to the account
+    // selector. The return to the admin URL is a history visit: a document
+    // load would re-settle the current tenant from the caller's list and drop
+    // the personal organization, which is the state the dialog reads.
+    await openAccountMenu(page)
+    await backToApp(page).click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('demo', 'home.heading'),
+        exact: true,
+      }),
+    ).toBeVisible()
+    await switchOrganization(page, OPERATOR.displayName)
+    await page.goBack()
+    await expect(adminNav(page)).toBeVisible({ timeout: 15_000 })
+
+    await adminLink(page, copy('adminUi', 'tenants.title')).click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'tenants.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await transferTenantButton(page, SEEDED_TENANT).click()
+    const dialog = transferDialog(page, SEEDED_TENANT)
+    await expect(dialog).toBeVisible()
+
+    // The account selector is offered instead of the member selector.
+    const accountField = dialog.getByRole('combobox', {
+      name: copy('adminUi', 'tenantLifecycle.transfer.accountLabel'),
+      exact: true,
+    })
+    await expect(accountField).toBeVisible()
+    await accountField.fill(reviewInvitee.displayName)
+    await expect(
+      page.getByRole('option', {
+        name: new RegExp(
+          `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+        ),
+      }),
+    ).toBeVisible()
+    await page
+      .getByRole('option', {
+        name: new RegExp(
+          `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+        ),
+      })
+      .click()
+    await dialog
+      .getByRole('button', {
+        name: copy('adminUi', 'tenantLifecycle.transfer.submit'),
+        exact: true,
+      })
+      .click()
+
+    const confirm = page.getByRole('dialog', {
+      name: copy('adminUi', 'tenantLifecycle.transfer.confirmTitle', {
+        id: SEEDED_TENANT,
+      }),
+      exact: true,
+    })
+    await expect(confirm).toBeVisible()
+    await confirmTwice(
+      confirm,
+      copy('adminUi', 'tenantLifecycle.transfer.confirmLabel'),
+    )
+
+    // The target is not a member of the organization, so the endpoint answers
+    // 409 and the dialog states that refusal inline rather than claiming the
+    // account is a member.
+    await expect(
+      dialog.getByText(
+        copy('adminUi', 'tenantLifecycle.transfer.failedConflict'),
+        { exact: true },
+      ),
+    ).toBeVisible()
+  })
+})
+
+/** The tenant the platform lifecycle delete branch registers and ends. */
+const LIFECYCLE_TENANT_ID = 'initrode'
+const LIFECYCLE_TENANT_ALIAS = 'initrode-labs'
+const LIFECYCLE_TENANT_NAME = 'Initrode Labs'
+/** A second identifier and alias used for the two collision attempts. */
+const LIFECYCLE_SPARE_ID = 'initrode-two'
+const LIFECYCLE_SPARE_ALIAS = 'initrode-spare'
+
+test.describe('the platform lifecycle delete', () => {
+  test.use({ viewport: { width: 1920, height: 1080 } })
+
+  test('operator-onboards-tenant: the operator deletes a tenant and neither its id nor its alias can be reused', async ({
+    demo,
+  }) => {
+    test.setTimeout(180_000)
+
+    const { page, server, accounts } = demo
+
+    await signInAndVerifyOperator(page, server, accounts)
+    await enterAdminFromHome(page)
+    await adminLink(page, copy('adminUi', 'tenants.title')).click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'tenants.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // Register a tenant of this branch's own, through the roster's page.
+    await page
+      .getByRole('link', { name: copy('adminUi', 'tenants.register'), exact: true })
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'tenants.create.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+    const form = createSection(page)
+    await form
+      .getByLabel(copy('orgCreateUi', 'fields.id'), { exact: true })
+      .fill(LIFECYCLE_TENANT_ID)
+    await form
+      .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
+      .fill(LIFECYCLE_TENANT_ALIAS)
+    await form
+      .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })
+      .fill(LIFECYCLE_TENANT_NAME)
+    await form
+      .getByRole('button', {
+        name: copy('adminUi', 'tenants.create.submit'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'tenantDetail.title', {
+          id: LIFECYCLE_TENANT_ID,
+        }),
+        exact: true,
+      }),
+    ).toBeVisible()
+    await page
+      .getByRole('link', { name: copy('adminUi', 'tenants.title'), exact: true })
+      .first()
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'tenants.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // The platform staff path deletes the tenant: one confirmation, then the
+    // heavy second click.
+    await deleteTenantButton(page, LIFECYCLE_TENANT_ID).click()
+    const deleteDialog = page.getByRole('dialog', {
+      name: copy('adminUi', 'tenantLifecycle.deleteConfirm.title', {
+        id: LIFECYCLE_TENANT_ID,
+      }),
+      exact: true,
+    })
+    await expect(deleteDialog).toBeVisible()
+    await confirmTwice(
+      deleteDialog,
+      copy('adminUi', 'tenantLifecycle.deleteConfirm.confirmLabel'),
+    )
+    await expect(
+      page.getByText(
+        copy('adminUi', 'tenantLifecycle.deleteConfirm.success', {
+          id: LIFECYCLE_TENANT_ID,
+        }),
+        { exact: true },
+      ),
+    ).toBeVisible()
+
+    // The row is a tombstone: its status says deleted and its actions cell
+    // carries no lifecycle control any more.
+    const tombstone = rosterRow(page, LIFECYCLE_TENANT_ID)
+    await expect(
+      tombstone.getByText(copy('adminUi', 'tenants.status.deleted'), {
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 15_000 })
+    await expect(
+      transferTenantButton(page, LIFECYCLE_TENANT_ID),
+    ).toHaveCount(0)
+    await expect(deleteTenantButton(page, LIFECYCLE_TENANT_ID)).toHaveCount(0)
+
+    // Neither the identifier nor the alias the tombstone holds can be
+    // registered again: the roster answers the registration's conflict.
+    await page
+      .getByRole('link', { name: copy('adminUi', 'tenants.register'), exact: true })
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'tenants.create.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+    const again = createSection(page)
+    const idField = again.getByLabel(copy('orgCreateUi', 'fields.id'), {
+      exact: true,
+    })
+    const aliasField = again.getByLabel(copy('orgCreateUi', 'fields.alias'), {
+      exact: true,
+    })
+    const nameField = again.getByLabel(
+      copy('orgCreateUi', 'fields.displayName'),
+      { exact: true },
+    )
+    const submit = again.getByRole('button', {
+      name: copy('adminUi', 'tenants.create.submit'),
+      exact: true,
+    })
+    const conflict = copy('adminUi', 'errors.tenant.conflict')
+
+    await idField.fill(LIFECYCLE_TENANT_ID)
+    await aliasField.fill(LIFECYCLE_SPARE_ALIAS)
+    await nameField.fill('Initrode Spare')
+    await submit.click()
+    await expect(page.getByText(conflict, { exact: true })).toBeVisible()
+
+    await idField.fill(LIFECYCLE_SPARE_ID)
+    await aliasField.fill(LIFECYCLE_TENANT_ALIAS)
+    await nameField.fill('Initrode Second')
+    await submit.click()
+    await expect(page.getByText(conflict, { exact: true })).toBeVisible()
+  })
 })

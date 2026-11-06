@@ -102,6 +102,9 @@ import {
 } from '../fixtures/identity-provider'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import type { ReviewServer } from '../fixtures/server'
+import { createAccounts } from '../helpers/accounts'
+import type { Accounts } from '../helpers/accounts'
 import {
   adminEntry,
   closeAccountMenu,
@@ -2944,5 +2947,988 @@ test.describe('a protected business tenant is read-only', () => {
     })
     expect(refusal.status).toBe(403)
     expect(refusal.problemType).toBe('urn:speed:settings:protected')
+  })
+})
+
+/**
+ * The organization profile page's ownership surface.
+ *
+ * The review seed registers its business tenants as roster rows, not as
+ * organizations: a seeded tenant carries no owner (`owner_account` stays
+ * empty), so the owner-only controls never render on acme. These branches
+ * therefore create an organization through the self-service page, whose
+ * creator becomes the owner and the first tenant-admin in one product write,
+ * and whose success lands on the organization profile page -- the fifth page.
+ * That is the state the ownership controls describe, reached the way a person
+ * reaches it.
+ *
+ * The ownership requirements (REQ-tenancy-060 through REQ-tenancy-064 and
+ * REQ-tenant-admin-068) are registered in the PRD's feature documents but not
+ * in this journey document, so they stay out of `@covers`: the honesty gate
+ * accepts only ids the journey document lists, and the journey document is not
+ * this task's to edit. The gap is reported rather than claimed.
+ */
+const OWNED_ALIAS = 'acme-lab'
+const OWNED_NAME = 'Acme Lab'
+const RENAMED_ORG = 'Acme Lab Renamed'
+const OWNED_DESCRIPTION = 'The lab organization the ownership branches create.'
+const OWNED_CONTACT_EMAIL = 'lab@demo.test'
+const OWNED_WEBSITE = 'https://lab.demo.test'
+
+/** One definition-row value on a detail-style list, by its term. */
+function definitionValue(page: Page, label: string): Locator {
+  return page
+    .locator('dt')
+    .filter({ hasText: new RegExp(`^${escapeRegExp(label)}$`) })
+    .locator('xpath=following-sibling::dd[1]')
+}
+
+/** The profile page's owner-only card. */
+function ownershipSection(page: Page): Locator {
+  return page.getByRole('region', {
+    name: copy('adminUi', 'tenantProfile.ownership.title'),
+    exact: true,
+  })
+}
+
+function transferOwnerButton(page: Page): Locator {
+  return page.getByRole('button', {
+    name: copy('adminUi', 'tenantProfile.ownership.transfer.button'),
+    exact: true,
+  })
+}
+
+function deleteOrganizationButton(page: Page): Locator {
+  return page.getByRole('button', {
+    name: copy('adminUi', 'tenantProfile.ownership.delete.button'),
+    exact: true,
+  })
+}
+
+/**
+ * Create an organization through the self-service page: the account menu's
+ * organization row expands to the create entry, the form is filled, and the
+ * hand-over lands on the new organization's profile page. The creator is its
+ * owner and first tenant-admin.
+ */
+async function createOrganization(
+  page: Page,
+  input: {
+    readonly alias: string
+    readonly displayName: string
+    readonly description?: string
+  },
+): Promise<void> {
+  const menu = await openAccountMenu(page)
+  await menu.getByRole('menuitem').first().click()
+  await menu
+    .getByRole('menuitem', {
+      name: copy('demo', 'organization.create'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: copy('orgCreateUi', 'page.title'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await page
+    .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
+    .fill(input.alias)
+  await page
+    .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })
+    .fill(input.displayName)
+  if (input.description !== undefined) {
+    await page
+      .getByLabel(copy('orgCreateUi', 'fields.description'), { exact: true })
+      .fill(input.description)
+  }
+  await page
+    .getByRole('button', { name: copy('orgCreateUi', 'submit'), exact: true })
+    .click()
+  // The create-then-enter sequence switches the current organization and
+  // navigates to its profile page.
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: copy('adminUi', 'organization.nav.profile'),
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 30_000 })
+  expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
+}
+
+/**
+ * Issue an invitation to `email` on the organization's invitations page and
+ * return the acceptance link the one-time panel hands out. The page is left
+ * (which dismisses the panel) once the link is read.
+ */
+async function issueInvitation(
+  page: Page,
+  server: { readonly url: string },
+  email: string,
+): Promise<string> {
+  await openOrganizationPage(page, 'invitations')
+  await page
+    .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
+      exact: true,
+    })
+    .fill(email)
+  await page
+    .getByRole('button', {
+      name: copy('adminUi', 'invitations.issue.submit'),
+      exact: true,
+    })
+    .click()
+  const panel = invitationLinkPanel(page, email)
+  await expect(panel).toBeVisible()
+  const value = panel.getByText(
+    new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
+  )
+  await expect(value).toBeVisible()
+  const link = ((await value.textContent()) ?? '').trim()
+  expect(link).toMatch(
+    new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
+  )
+  // Leaving the page drops the one-time panel; the link is already captured.
+  await mainNavigation(page)
+    .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
+    .click()
+  await expect(homeHeading(page)).toBeVisible()
+  return link
+}
+
+/** Open an invitation link in a second context, sign the invitee in, accept. */
+async function acceptInvitationAsInvitee(
+  invitee: Page,
+  link: string,
+): Promise<void> {
+  await invitee.goto(link)
+  await expect(
+    invitee.getByRole('heading', {
+      level: 1,
+      name: copy('demo', 'signIn.heading'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await invitee
+    .getByRole('textbox', {
+      name: copy('authUi', 'passwordSignIn.identifierLabel'),
+      exact: true,
+    })
+    .fill(reviewInvitee.username)
+  await invitee
+    .getByRole('textbox', {
+      name: copy('authUi', 'passwordSignIn.passwordLabel'),
+      exact: true,
+    })
+    .fill(reviewInvitee.password)
+  await invitee
+    .getByRole('button', {
+      name: copy('authUi', 'passwordSignIn.submit'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    invitee.getByRole('heading', {
+      name: copy('authUi', 'acceptInvitation.title'),
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 15_000 })
+  await invitee
+    .getByRole('button', {
+      name: copy('authUi', 'acceptInvitation.accept'),
+      exact: true,
+    })
+    .click()
+  await expect(homeHeading(invitee)).toBeVisible({ timeout: 15_000 })
+}
+
+/** Bind a role to one member through the members page's management panel. */
+async function bindMemberRole(
+  page: Page,
+  displayName: string,
+  role: string,
+): Promise<void> {
+  await openOrganizationPage(page, 'invitations')
+  await manageMemberButton(page, displayName).click()
+  const panel = memberPanel(page)
+  await expect(panel).toBeVisible()
+  await panel
+    .getByRole('combobox', {
+      name: copy('adminUi', 'members.panel.roleLabel'),
+      exact: true,
+    })
+    .click()
+  await page.getByRole('option', { name: role, exact: true }).click()
+  await panel
+    .getByRole('button', {
+      name: copy('adminUi', 'members.panel.bind'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    panel.getByText(
+      copy('adminUi', 'members.panel.bindSaved', { account: displayName, role }),
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await panel
+    .getByRole('button', {
+      name: copy('adminUi', 'members.panel.closeAria', { name: displayName }),
+      exact: true,
+    })
+    .click()
+  await expect(panel).toHaveCount(0)
+}
+
+/**
+ * Sign the review template's platform operator in and prove its address. The
+ * platform management writes refuse an account whose email is unproved, and
+ * the seed writes the operator's address as an assertion, not a proof.
+ */
+async function signInAndVerifyOperator(
+  page: Page,
+  server: ReviewServer,
+  accounts: Accounts,
+): Promise<void> {
+  await accounts.signIn({
+    identifier: OPERATOR.username,
+    password: OPERATOR.password,
+  })
+  const banner = verificationBanner(page, OPERATOR.identifier)
+  await expect(banner).toBeVisible()
+  const before = server.log.mark()
+  await banner
+    .getByRole('link', {
+      name: copy('demo', 'verificationBanner.verify'),
+      exact: true,
+    })
+    .click()
+  const section = verificationSection(page)
+  await expect(section).toBeVisible()
+  const codeField = section.getByLabel(
+    copy('accountUi', 'verification.codeLabel'),
+    { exact: true },
+  )
+  const { code } = await waitForVerificationCode(
+    server.log,
+    'mail',
+    OPERATOR.identifier,
+    { after: before },
+  )
+  await codeField.fill(code)
+  await section
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('region', {
+      name: copy('accountUi', 'verification.verifiedTitle'),
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
+test.describe('the organization profile page belongs to its owner', () => {
+  test.use({
+    seedTenantAdmin: true,
+    seedInvitee: true,
+    identityQuota: '10000',
+    viewport: { width: 1920, height: 1080 },
+  })
+
+  test('tenant-admin: the owner reads the profile and saves its four descriptive fields', async ({
+    demo,
+  }) => {
+    test.setTimeout(180_000)
+
+    const { page, accounts } = demo
+
+    await accounts.signIn({
+      identifier: reviewTenantAdmin.username,
+      password: reviewTenantAdmin.password,
+    })
+    await expect(homeHeading(page)).toBeVisible()
+
+    await createOrganization(page, {
+      alias: OWNED_ALIAS,
+      displayName: OWNED_NAME,
+      description: OWNED_DESCRIPTION,
+    })
+
+    // The identity card names the owner, and the caller is that owner: the
+    // two controls render only for the account the profile's owner column
+    // carries.
+    const owner = definitionValue(
+      page,
+      copy('adminUi', 'tenantProfile.field.owner'),
+    )
+    await expect(owner).toBeVisible()
+    const ownerText = (await owner.innerText()).trim()
+    expect(ownerText, 'the profile names no owner').not.toBe('')
+    expect(ownerText).not.toBe(copy('adminUi', 'common.emptyValue'))
+    await expect(
+      definitionValue(page, copy('adminUi', 'tenantProfile.field.alias')),
+    ).toHaveText(OWNED_ALIAS)
+    await expect(ownershipSection(page)).toBeVisible()
+    await expect(transferOwnerButton(page)).toBeVisible()
+    await expect(deleteOrganizationButton(page)).toBeVisible()
+
+    // The four descriptive fields are the page's to edit.
+    await page
+      .getByLabel(copy('adminUi', 'tenantProfile.field.displayName'), {
+        exact: true,
+      })
+      .fill(RENAMED_ORG)
+    await page
+      .getByLabel(copy('adminUi', 'tenantProfile.field.description'), {
+        exact: true,
+      })
+      .fill(OWNED_DESCRIPTION)
+    await page
+      .getByLabel(copy('adminUi', 'tenantProfile.field.contactEmail'), {
+        exact: true,
+      })
+      .fill(OWNED_CONTACT_EMAIL)
+    await page
+      .getByLabel(copy('adminUi', 'tenantProfile.field.website'), {
+        exact: true,
+      })
+      .fill(OWNED_WEBSITE)
+    await page
+      .getByRole('button', {
+        name: copy('adminUi', 'tenantProfile.form.save'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByText(
+        copy('adminUi', 'tenantProfile.form.savedNamed', { name: RENAMED_ORG }),
+        { exact: true },
+      ),
+    ).toBeVisible()
+
+    // The landed save reaches the host's tenant-list reload, so the account
+    // menu's organization row shows the new name at once.
+    await openAccountMenu(page)
+    await expect(organizationRow(page, RENAMED_ORG)).toBeVisible({
+      timeout: 15_000,
+    })
+    await closeAccountMenu(page)
+  })
+
+  test('tenant-admin: a non-owner administrator reads the profile but sees no ownership controls', async ({
+    demo,
+    browser,
+  }) => {
+    test.setTimeout(300_000)
+
+    const { page, server, accounts } = demo
+    let inviteeContext: BrowserContext | undefined
+
+    try {
+      await accounts.signIn({
+        identifier: reviewTenantAdmin.username,
+        password: reviewTenantAdmin.password,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+
+      await createOrganization(page, {
+        alias: OWNED_ALIAS,
+        displayName: OWNED_NAME,
+      })
+
+      // A second tenant administrator who is not the owner: invite the
+      // colleague, accept, then bind the tenant-admin role through the member
+      // panel.
+      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      inviteeContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      const invitee = await inviteeContext.newPage()
+      await acceptInvitationAsInvitee(invitee, link)
+      await bindMemberRole(page, reviewInvitee.displayName, 'tenant-admin')
+
+      // The binding changes the invitee's tenant permission set, which the
+      // session read at sign-in. A fresh sign-in re-reads it; the signed-in
+      // account and the organization stay the same.
+      const inviteeAccounts = createAccounts({ page: invitee, server })
+      await inviteeAccounts.signOut()
+      await inviteeAccounts.signIn({
+        identifier: reviewInvitee.username,
+        password: reviewInvitee.password,
+      })
+      await expect(homeHeading(invitee)).toBeVisible()
+
+      await openOrganizationPage(invitee, 'profile')
+
+      // The page is admitted by the tenant-admin grant and names the owner,
+      // but the caller is not that account: neither control renders, and the
+      // ownership card is absent altogether.
+      const owner = definitionValue(
+        invitee,
+        copy('adminUi', 'tenantProfile.field.owner'),
+      )
+      await expect(owner).toBeVisible()
+      expect((await owner.innerText()).trim()).not.toBe('')
+      await expect(ownershipSection(invitee)).toHaveCount(0)
+      await expect(transferOwnerButton(invitee)).toHaveCount(0)
+      await expect(deleteOrganizationButton(invitee)).toHaveCount(0)
+    } finally {
+      await inviteeContext?.close().catch(() => undefined)
+    }
+  })
+
+  test('tenant-admin: the owner hands the organization to an active member and is removed', async ({
+    demo,
+    browser,
+  }) => {
+    test.setTimeout(300_000)
+
+    const { page, server, accounts } = demo
+    let inviteeContext: BrowserContext | undefined
+
+    try {
+      await accounts.signIn({
+        identifier: reviewTenantAdmin.username,
+        password: reviewTenantAdmin.password,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+
+      await createOrganization(page, {
+        alias: OWNED_ALIAS,
+        displayName: OWNED_NAME,
+      })
+
+      // The target is an active member of the organization, reached through
+      // a real invitation accepted in a second context.
+      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      inviteeContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      const invitee = await inviteeContext.newPage()
+      await acceptInvitationAsInvitee(invitee, link)
+
+      await openOrganizationPage(page, 'profile')
+      await transferOwnerButton(page).click()
+
+      const dialog = page.getByRole('dialog', {
+        name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
+          name: OWNED_NAME,
+        }),
+        exact: true,
+      })
+      await expect(dialog).toBeVisible()
+      await dialog
+        .getByRole('combobox', {
+          name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
+          exact: true,
+        })
+        .click()
+      // Only the organization's active members are offered; the invitee is
+      // one, and the owner is excluded from the list.
+      await expect(
+        page.getByRole('option', {
+          name: new RegExp(
+            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+          ),
+        }),
+      ).toBeVisible()
+      await page
+        .getByRole('option', {
+          name: new RegExp(
+            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+          ),
+        })
+        .click()
+
+      // The transfer asks for the deliberate second confirmation.
+      await dialog
+        .getByRole('button', {
+          name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
+          exact: true,
+        })
+        .click()
+      const again = dialog.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(again).toBeEnabled({ timeout: 5_000 })
+      await again.click()
+
+      // A landed transfer ends the caller's membership: the host leaves the
+      // organization and the confirmation survives the move to the home page.
+      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+      expect(new URL(page.url()).pathname).toBe('/')
+      // The home page's visible confirmation is not the standing live region;
+      // it is the alert that carries the dismiss control.
+      const confirmation = page
+        .getByRole('button', {
+          name: copy('demo', 'home.notice.dismiss'),
+          exact: true,
+        })
+        .locator('xpath=ancestor::div[contains(@class, "MuiAlert-root")][1]')
+      await expect(
+        confirmation.getByText(
+          copyPattern('adminUi', 'tenantProfile.ownership.transfer.saved', {
+            name: escapeRegExp(OWNED_NAME),
+            account: '.+',
+          }),
+        ),
+      ).toBeVisible()
+
+      // The target now holds the organization: its owner controls render for
+      // that account, and its member row carries the tenant-admin binding.
+      const inviteeAccounts = createAccounts({ page: invitee, server })
+      await inviteeAccounts.signOut()
+      await inviteeAccounts.signIn({
+        identifier: reviewInvitee.username,
+        password: reviewInvitee.password,
+      })
+      await expect(homeHeading(invitee)).toBeVisible()
+      await expect(organizationHomeCard(invitee)).toBeVisible({
+        timeout: 15_000,
+      })
+      await openOrganizationPage(invitee, 'profile')
+      const owner = definitionValue(
+        invitee,
+        copy('adminUi', 'tenantProfile.field.owner'),
+      )
+      await expect(owner).toBeVisible()
+      expect((await owner.innerText()).trim()).not.toBe('')
+      await expect(transferOwnerButton(invitee)).toBeVisible()
+      await expect(deleteOrganizationButton(invitee)).toBeVisible()
+
+      await openOrganizationPage(invitee, 'invitations')
+      const members = membersSection(invitee).getByRole('table')
+      const rolesColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.roles'),
+      )
+      const promoted = memberRow(invitee, reviewInvitee.displayName)
+      await expect(promoted).toHaveCount(1)
+      await expect(cell(promoted, rolesColumn)).toContainText('tenant-admin')
+      // The previous owner is no longer a member of the organization.
+      await expect(
+        memberRow(invitee, reviewTenantAdmin.displayName),
+      ).toHaveCount(0)
+
+      // The transfer removed the previous owner's membership, so the
+      // organization is no longer among the caller's tenants: the account
+      // menu keeps the departed tenant as the current row only through its
+      // recorded alias, and the switcher's list offers the remaining
+      // membership (acme) while the departed organization is not offered as
+      // a destination. The target's member list above already proved the
+      // removal from the organization's own side.
+      const menu = await openAccountMenu(page)
+      await expect(organizationRow(page, OWNED_ALIAS)).toBeVisible({
+        timeout: 15_000,
+      })
+      await organizationRow(page, OWNED_ALIAS).click()
+      await expect(
+        menu.getByRole('menuitem', { name: 'acme', exact: true }),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        menu.getByRole('menuitem', { name: OWNED_NAME, exact: true }),
+      ).toHaveCount(0)
+      await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
+      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+      await expectOrganizationEntryPresent(page)
+    } finally {
+      await inviteeContext?.close().catch(() => undefined)
+    }
+  })
+
+  test('tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken', async ({
+    demo,
+  }) => {
+    test.setTimeout(180_000)
+
+    const { page, accounts } = demo
+
+    await accounts.signIn({
+      identifier: reviewTenantAdmin.username,
+      password: reviewTenantAdmin.password,
+    })
+    await expect(homeHeading(page)).toBeVisible()
+
+    await createOrganization(page, {
+      alias: OWNED_ALIAS,
+      displayName: OWNED_NAME,
+    })
+
+    await openOrganizationPage(page, 'profile')
+    await deleteOrganizationButton(page).click()
+
+    // Deletion is terminal, so the dialog asks for the alias and then for the
+    // deliberate second confirmation.
+    const dialog = page.getByRole('dialog', {
+      name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
+        name: OWNED_NAME,
+      }),
+      exact: true,
+    })
+    await expect(dialog).toBeVisible()
+    await dialog
+      .getByLabel(copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'), {
+        exact: true,
+      })
+      .fill(OWNED_ALIAS)
+    await dialog
+      .getByRole('button', {
+        name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
+        exact: true,
+      })
+      .click()
+    const again = dialog.getByRole('button', {
+      name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+      exact: true,
+    })
+    await expect(again).toBeEnabled({ timeout: 5_000 })
+    await again.click()
+
+    // The caller is no longer a member: the host leaves the organization and
+    // the confirmation survives the move to the home page.
+    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    expect(new URL(page.url()).pathname).toBe('/')
+    const confirmation = page
+      .getByRole('button', {
+        name: copy('demo', 'home.notice.dismiss'),
+        exact: true,
+      })
+      .locator('xpath=ancestor::div[contains(@class, "MuiAlert-root")][1]')
+    await expect(
+      confirmation.getByText(
+        copy('adminUi', 'tenantProfile.ownership.delete.saved', {
+          name: OWNED_NAME,
+        }),
+        { exact: true },
+      ),
+    ).toBeVisible()
+
+    // Switch back to the account's remaining organization: the deleted one is
+    // still the current tenant only through its recorded alias, and a
+    // tenant-scoped request that announced it would be refused before the
+    // create handler runs.
+    const menu = await openAccountMenu(page)
+    await expect(organizationRow(page, OWNED_ALIAS)).toBeVisible({
+      timeout: 15_000,
+    })
+    await organizationRow(page, OWNED_ALIAS).click()
+    await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
+    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+
+    // The tombstone keeps the alias: a second creation with the same alias is
+    // refused as an identifier conflict, and the form keeps the values.
+    const createMenu = await openAccountMenu(page)
+    await createMenu.getByRole('menuitem').first().click()
+    await createMenu
+      .getByRole('menuitem', {
+        name: copy('demo', 'organization.create'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('orgCreateUi', 'page.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+    await page
+      .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
+      .fill(OWNED_ALIAS)
+    await page
+      .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })
+      .fill(OWNED_NAME)
+    await page
+      .getByRole('button', { name: copy('orgCreateUi', 'submit'), exact: true })
+      .click()
+    await expect(
+      page.getByText(copy('orgCreateUi', 'errors.org.identifier_unavailable'), {
+        exact: true,
+      }),
+    ).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/organizations/new')
+  })
+
+  test('tenant-admin: a transfer whose target stopped being an active member is refused with the conflict copy', async ({
+    demo,
+    browser,
+  }) => {
+    test.setTimeout(300_000)
+
+    const { page, server, accounts } = demo
+    let otherContext: BrowserContext | undefined
+    let inviteeContext: BrowserContext | undefined
+
+    try {
+      await accounts.signIn({
+        identifier: reviewTenantAdmin.username,
+        password: reviewTenantAdmin.password,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+
+      await createOrganization(page, {
+        alias: OWNED_ALIAS,
+        displayName: OWNED_NAME,
+      })
+
+      // The target is an active member when the dialog lists it.
+      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      inviteeContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      await acceptInvitationAsInvitee(await inviteeContext.newPage(), link)
+
+      await openOrganizationPage(page, 'profile')
+      await transferOwnerButton(page).click()
+      const dialog = page.getByRole('dialog', {
+        name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
+          name: OWNED_NAME,
+        }),
+        exact: true,
+      })
+      await expect(dialog).toBeVisible()
+      await dialog
+        .getByRole('combobox', {
+          name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('option', {
+          name: new RegExp(
+            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+          ),
+        })
+        .click()
+
+      // A second administrator session suspends the target after the dialog
+      // read listed it. The write that follows therefore meets a membership
+      // that is no longer active, which the tenant admin answers as a
+      // conflict.
+      otherContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      const other = await otherContext.newPage()
+      const otherAccounts = createAccounts({ page: other, server })
+      await otherAccounts.signIn({
+        identifier: reviewTenantAdmin.username,
+        password: reviewTenantAdmin.password,
+      })
+      await expect(homeHeading(other)).toBeVisible()
+      await switchOrganization(other, 'acme', OWNED_NAME)
+      await openOrganizationPage(other, 'invitations')
+      await manageMemberButton(other, reviewInvitee.displayName).click()
+      const panel = memberPanel(other)
+      await expect(panel).toBeVisible()
+      await panel
+        .getByRole('button', {
+          name: copy('adminUi', 'members.panel.suspend'),
+          exact: true,
+        })
+        .click()
+      await other
+        .getByRole('dialog', {
+          name: copy('adminUi', 'members.suspendTitle'),
+          exact: true,
+        })
+        .getByRole('button', {
+          name: copy('adminUi', 'common.confirm'),
+          exact: true,
+        })
+        .click()
+      await expect(
+        panel.getByText(copy('adminUi', 'members.status.suspended'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+
+      // The stale confirmation is answered 409; the dialog stays open and
+      // states the conflict beside the chosen target.
+      await dialog
+        .getByRole('button', {
+          name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
+          exact: true,
+        })
+        .click()
+      const again = dialog.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(again).toBeEnabled({ timeout: 5_000 })
+      await again.click()
+      // The refusal closes the dialog and reports beside the controls, which
+      // the refused write leaves in place.
+      await expect(
+        ownershipSection(page).getByText(
+          copy('adminUi', 'tenantProfile.ownership.error.conflict'),
+          { exact: true },
+        ),
+      ).toBeVisible()
+    } finally {
+      await otherContext?.close().catch(() => undefined)
+      await inviteeContext?.close().catch(() => undefined)
+    }
+  })
+
+  test('tenant-admin: a stale owner whose organization was already ended is told it no longer exists', async ({
+    demo,
+    browser,
+  }) => {
+    test.setTimeout(300_000)
+
+    const { page, server, accounts } = demo
+    let operatorContext: BrowserContext | undefined
+
+    try {
+      await accounts.signIn({
+        identifier: reviewTenantAdmin.username,
+        password: reviewTenantAdmin.password,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+
+      await createOrganization(page, {
+        alias: OWNED_ALIAS,
+        displayName: OWNED_NAME,
+      })
+      const organizationId = (
+        await definitionValue(
+          page,
+          copy('adminUi', 'tenantProfile.field.id'),
+        ).innerText()
+      ).trim()
+      expect(organizationId).not.toBe('')
+
+      // Another session ends the organization through the platform surface.
+      // The page under test keeps its cached profile, so its owner controls
+      // are still rendered when the write below is attempted.
+      operatorContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      const operator = await operatorContext.newPage()
+      const operatorAccounts = createAccounts({ page: operator, server })
+      await signInAndVerifyOperator(operator, server, operatorAccounts)
+      await operator
+        .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
+        .click()
+      await expect(
+        operator.getByRole('heading', {
+          level: 1,
+          name: copy('demo', 'home.heading'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await openAccountMenu(operator)
+      await adminEntry(operator).click()
+      await operator
+        .getByRole('link', {
+          name: copy('adminUi', 'tenants.title'),
+          exact: true,
+        })
+        .click()
+      const roster = operator.getByRole('table', {
+        name: copy('uiKit', 'dataTable.ariaLabel'),
+        exact: true,
+      })
+      const created = roster
+        .locator('tbody tr')
+        .filter({ hasText: OWNED_ALIAS })
+      await expect(created).toHaveCount(1)
+      await created
+        .getByRole('button', {
+          name: new RegExp(
+            `^${escapeRegExp(
+              copy('adminUi', 'tenantLifecycle.deleteLabel'),
+            )} .+$`,
+          ),
+        })
+        .click()
+      const platformDelete = operator.getByRole('dialog', {
+        name: copy('adminUi', 'tenantLifecycle.deleteConfirm.title', {
+          id: organizationId,
+        }),
+        exact: true,
+      })
+      await expect(platformDelete).toBeVisible()
+      await platformDelete
+        .getByRole('button', {
+          name: copy('adminUi', 'tenantLifecycle.deleteConfirm.confirmLabel'),
+          exact: true,
+        })
+        .click()
+      const platformAgain = platformDelete.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(platformAgain).toBeEnabled({ timeout: 5_000 })
+      await platformAgain.click()
+      await expect(
+        operator.getByText(
+          copy('adminUi', 'tenantLifecycle.deleteConfirm.success', {
+            id: organizationId,
+          }),
+          { exact: true },
+        ),
+      ).toBeVisible()
+
+      // The stale owner's page still offers the delete control. The write
+      // reaches the tombstone the other session wrote and is answered as a
+      // conflict, which the ownership card states.
+      await deleteOrganizationButton(page).click()
+      const dialog = page.getByRole('dialog', {
+        name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
+          name: OWNED_NAME,
+        }),
+        exact: true,
+      })
+      await expect(dialog).toBeVisible()
+      await dialog
+        .getByLabel(
+          copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'),
+          { exact: true },
+        )
+        .fill(OWNED_ALIAS)
+      await dialog
+        .getByRole('button', {
+          name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
+          exact: true,
+        })
+        .click()
+      const again = dialog.getByRole('button', {
+        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+        exact: true,
+      })
+      await expect(again).toBeEnabled({ timeout: 5_000 })
+      await again.click()
+      // The organization is gone, so the answer is the surface's not-found
+      // copy. The conflict copy belongs to the member-state refusal the
+      // `stopped being an active member` branch drives; a tombstone is
+      // refused before the write, at the tenant resolution.
+      await expect(
+        ownershipSection(page).getByText(
+          copy('adminUi', 'tenantProfile.ownership.error.notFound'),
+          { exact: true },
+        ),
+      ).toBeVisible()
+    } finally {
+      await operatorContext?.close().catch(() => undefined)
+    }
   })
 })
