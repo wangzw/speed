@@ -4087,6 +4087,14 @@ test.describe('the organization profile page belongs to its owner', () => {
         exact: true,
       })
       await expect(platformDelete).toBeVisible()
+      // Deletion asks for the organization's alias before the two-step
+      // confirmation can arm.
+      await platformDelete
+        .getByLabel(
+          copy('adminUi', 'tenantLifecycle.deleteConfirm.aliasLabel'),
+          { exact: true },
+        )
+        .fill(organizationAlias)
       await platformDelete
         .getByRole('button', {
           name: copy('adminUi', 'tenantLifecycle.deleteConfirm.confirmLabel'),

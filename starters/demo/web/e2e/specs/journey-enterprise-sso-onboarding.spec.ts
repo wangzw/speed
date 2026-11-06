@@ -1501,9 +1501,26 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
     await openAdminPage(page, 'tenants.title')
     const personal = organizationAliasRow(page, CLAIM_USERNAME)
     await expect(personal).toHaveCount(1)
-    // The row is the account's personal tenant, not a business one: its
-    // identifier carries the personal prefix and its alias is the username.
-    await expect(personal).toContainText('personal-')
+    // The row is the account's personal tenant, not a business one: its alias
+    // is the account's username, and a personal organization carries no owner
+    // transfer or delete control. The platform operator holds tenant.manage,
+    // so those controls would render on a business tenant's row.
+    await expect(
+      personal.getByRole('button', {
+        name: copy('adminUi', 'tenantLifecycle.transferAria', {
+          alias: CLAIM_USERNAME,
+        }),
+        exact: true,
+      }),
+    ).toHaveCount(0)
+    await expect(
+      personal.getByRole('button', {
+        name: copy('adminUi', 'tenantLifecycle.deleteAria', {
+          alias: CLAIM_USERNAME,
+        }),
+        exact: true,
+      }),
+    ).toHaveCount(0)
 
     await openAdminPage(page, 'accounts.title')
     const opened = accountRow(page, CLAIM_DISPLAY_NAME)
