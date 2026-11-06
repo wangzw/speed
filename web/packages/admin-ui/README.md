@@ -49,9 +49,20 @@ frame, the admin root being a dashboard:
   the roster read (its length and status split) and the newest page of the
   audit query as the recent-activity list;
 - the **tenant roster** over `/api/v1/system/tenants` -- list, rename,
-  enable/disable, and a row opens that tenant's detail page; registration
-  is the standalone `/tenants/new` page, which renders the shared
-  `@speed/org-create-ui` form in platform mode;
+  enable/disable, transfer ownership and delete an organization, and a row
+  opens that tenant's detail page; registration is the standalone
+  `/tenants/new` page, which renders the shared `@speed/org-create-ui` form
+  in platform mode. The transfer and delete entries render only for a
+  caller whose platform permission set holds `tenant.manage`, and a
+  personal organization or a tombstone carries neither. The transfer
+  dialog has two target paths: the organization's member selector when the
+  caller's tenant permission set holds `authn.membership.manage`, and the
+  platform account selector otherwise. The endpoint still refuses a target
+  that is not an active member with 409, and the dialog states that
+  refusal inline; the console never filters the membership check out of
+  the request. Deletion asks through the two-step danger confirmation,
+  whose copy names the impact (the memberships, bindings, roles and grants
+  removed, and the identifier and alias that can never be reused);
 - the **account surface** over `/api/v1/system/auth/accounts` -- list, detail,
   and the writes whose request body the contract declares;
 - the **session surface** over `/api/v1/system/auth/accounts/:id/sessions` --

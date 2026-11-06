@@ -56,6 +56,7 @@ import {
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import type { WriteOutcome } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { AdminLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
@@ -78,6 +79,7 @@ import {
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
+import { TenantLifecycleActions } from './internal/tenant-lifecycle.js'
 import { TenantProfileForm } from './TenantProfileForm.js'
 import {
   displayNameOf,
@@ -196,17 +198,22 @@ export function TenantDetailPage({
   // TenantProfileCard so the two regions never sit in one component.
   const statusFeedback = useWriteFeedback()
   const statusRegionRef = useFailureScroll(statusFeedback.outcome)
+  // The lifecycle group reports its landed writes to a page-level scope:
+  // a deletion turns this page into a tombstone and withdraws the control
+  // group, so its confirmation cannot live inside the group.
+  const lifecycleFeedback = useWriteFeedback()
   // A refresh remounts the profile card through this key: its draft and its
   // own feedback are withdrawn together with the re-read.
   const [profileEpoch, setProfileEpoch] = useState(0)
 
   // The refresh action re-reads the tenant -- the page's one body read --
-  // and resets the status scope first: a result written before the re-read
-  // would describe the page as it stood then.
+  // and resets the status and lifecycle scopes first: a result written
+  // before the re-read would describe the page as it stood then.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenant-detail', tenant)],
     () => {
       statusFeedback.reset()
+      lifecycleFeedback.reset()
       setProfileEpoch((epoch) => epoch + 1)
     },
   )
@@ -343,6 +350,14 @@ export function TenantDetailPage({
         )}
 
         {!deleted && (
+          <TenantLifecycleCard
+            tenant={settled}
+            outcome={lifecycleFeedback.outcome}
+            onSuccess={lifecycleFeedback.succeed}
+          />
+        )}
+
+        {!deleted && (
           <TenantProfileCard
             key={`${settled.id}:${profileEpoch}`}
             tenant={settled}
@@ -448,6 +463,37 @@ export function TenantDetailPage({
         }
       />
     </Box>
+  )
+}
+
+/**
+ * The platform detail's lifecycle card: the transfer and delete control
+ * group in its own section, with the page-level result region the group's
+ * landed write reports to. It is a component of its own so this control
+ * group's result never shares a region with the status control above it.
+ *
+ * The page owns the scope (it resets it on refresh) and passes the slot
+ * down; the card renders the region directly under the controls.
+ */
+function TenantLifecycleCard({
+  tenant,
+  outcome,
+  onSuccess,
+}: {
+  readonly tenant: AdminTenant
+  readonly outcome: WriteOutcome | null
+  readonly onSuccess: (message: string) => void
+}) {
+  const { t } = useAdminUiTranslation()
+  return (
+    <SectionCard
+      title={t('tenantLifecycle.sectionTitle')}
+      description={t('tenantLifecycle.sectionDescription')}
+      sx={{ mb: 3 }}
+    >
+      <TenantLifecycleActions tenant={tenant} onSuccess={onSuccess} />
+      <WriteFeedbackRegion outcome={outcome} />
+    </SectionCard>
   )
 }
 

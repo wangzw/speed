@@ -133,8 +133,10 @@ import {
   smsAdminTemplatesRemove,
   smsAdminTemplatesSetEnabled,
   tenantAdminTenantsCreate,
+  tenantAdminTenantsDelete,
   tenantAdminTenantsProfile,
   tenantAdminTenantsSetStatus,
+  tenantAdminTenantsTransferOwner,
 } from '@speed/api-sdk'
 import type {
   AuditAdminRecord,
@@ -259,6 +261,22 @@ export interface AdminSetTenantStatusInput {
 export interface AdminSetTenantProfileInput {
   readonly id: string
   readonly fields: TenantProfileFields
+}
+
+/** PUT /api/v1/system/tenants/:id/owner body: the target account that
+ * becomes the organization's owner. The tenant id is the route parameter;
+ * the endpoint itself validates that the account is an active member of
+ * that tenant and answers 409 otherwise (the console never asserts
+ * membership on the server's behalf). */
+export interface AdminTransferTenantOwnerInput {
+  readonly id: string
+  readonly account: string
+}
+
+/** DELETE /api/v1/system/tenants/:id target: the tenant whose tombstone
+ * the write lands. */
+export interface AdminDeleteTenantInput {
+  readonly id: string
 }
 
 /** A tenant target for a read that stays disabled while no id is chosen. */
@@ -652,6 +670,21 @@ export interface AdminOperations {
     void,
     unknown,
     AdminSetTenantProfileInput
+  >
+  /** PUT /api/v1/system/tenants/:id/owner -- hand the organization to one
+   * account. The server refuses a target that is not an active member of
+   * the organization (409). */
+  readonly useTransferTenantOwner: () => UseMutationResult<
+    void,
+    unknown,
+    AdminTransferTenantOwnerInput
+  >
+  /** DELETE /api/v1/system/tenants/:id -- write the organization's
+   * tombstone. Deletion is terminal; a tombstone is a 409. */
+  readonly useDeleteTenant: () => UseMutationResult<
+    void,
+    unknown,
+    AdminDeleteTenantInput
   >
   /** GET /api/v1/system/settings[/:namespace] -- the declared items' views. */
   readonly useSettings: (
@@ -1058,6 +1091,45 @@ export const adminOperations: AdminOperations = {
       onSuccess: (_answer, input) => {
         // The roster row carries the four fields, so both the list and the
         // detail read are stale after a profile write.
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsListQueryKey(),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
+        })
+      },
+    })
+  },
+
+  useTransferTenantOwner: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: AdminTransferTenantOwnerInput) =>
+        tenantAdminTenantsTransferOwner(input.id, {
+          account: input.account,
+        }),
+      onSuccess: (_answer, input) => {
+        // The roster view carries the owner account, and the detail view
+        // carries it too (the previous owner also loses every binding in the
+        // organization), so both reads are stale after a transfer.
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsListQueryKey(),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
+        })
+      },
+    })
+  },
+
+  useDeleteTenant: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: AdminDeleteTenantInput) =>
+        tenantAdminTenantsDelete(input.id),
+      onSuccess: (_answer, input) => {
+        // The row is gone from the roster; the detail read still answers the
+        // tombstone, so both are re-read rather than dropped.
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
         })

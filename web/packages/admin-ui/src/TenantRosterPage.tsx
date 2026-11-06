@@ -65,6 +65,7 @@ import {
   useFailureScroll,
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
+import { TenantLifecycleActions } from './internal/tenant-lifecycle.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
@@ -264,11 +265,15 @@ export function TenantRosterPage({
   }, [])
 
   // The refresh action resets every row scope (each row watches the bumped
-  // generation) and re-reads the roster.
+  // generation) and re-reads the roster. The lifecycle actions report their
+  // landed writes to a page-level scope -- a delete removes the row that
+  // carried the control -- so that scope is reset with the re-read too.
+  const lifecycleFeedback = useWriteFeedback()
   const [refreshGeneration, setRefreshGeneration] = useState(0)
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenants', tenants)],
     () => {
+      lifecycleFeedback.reset()
       setRefreshGeneration((generation) => generation + 1)
     },
   )
@@ -350,11 +355,20 @@ export function TenantRosterPage({
       // never mounted.
       cell: (tenant) =>
         tenant.status === 'deleted' ? null : (
-          <TenantRowActions
-            tenant={tenant}
-            refreshGeneration={refreshGeneration}
-            onWritePendingChange={reportRowWritePending}
-          />
+          <Box sx={{ display: 'flex', flexDirection: 'column', rowGap: 1 }}>
+            <TenantRowActions
+              tenant={tenant}
+              refreshGeneration={refreshGeneration}
+              onWritePendingChange={reportRowWritePending}
+            />
+            {/* The lifecycle group is its own control group with its own
+                result area. A landed write reports to the page's scope,
+                because a delete takes this row out of the table. */}
+            <TenantLifecycleActions
+              tenant={tenant}
+              onSuccess={lifecycleFeedback.succeed}
+            />
+          </Box>
         ),
     },
   ]
@@ -400,6 +414,10 @@ export function TenantRosterPage({
         }
         sx={{ mb: 2 }}
       />
+
+      {/* The lifecycle actions' page-level result: their row may leave the
+          table after a delete, so the confirmation cannot live in the row. */}
+      <WriteFeedbackRegion outcome={lifecycleFeedback.outcome} />
 
       <SectionCard flushContent>
         <AdminAsyncSection

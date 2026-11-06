@@ -61,7 +61,8 @@
     },
     "tenant": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
-      "conflict": "该标识或别名已被其他组织占用。"
+      "conflict": "该标识或别名已被其他组织占用。",
+      "protected": "这个组织受保护，不能删除或停用。"
     },
     "settings": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
@@ -334,6 +335,44 @@
         "actor": "操作者",
         "outcome": "结果"
       }
+    }
+  },
+  "tenantLifecycle": {
+    "sectionTitle": "所有权与删除",
+    "sectionDescription": "把这个组织交给另一个账户，或永久终止它。",
+    "transferLabel": "转移所有者",
+    "transferAria": "转移组织 {{id}} 的所有者",
+    "deleteLabel": "删除组织",
+    "deleteAria": "删除组织 {{id}}",
+    "transfer": {
+      "title": "转移组织「{{id}}」的所有权",
+      "description": "选择将成为组织所有者的人。原所有者会失去该组织内的全部角色，并被移出该组织。",
+      "memberLabel": "新所有者",
+      "accountLabel": "新所有者的账户",
+      "accountHint": "该账户必须已经是这个组织的活跃成员。如果不是，转移会被拒绝。",
+      "searching": "正在搜索成员",
+      "noMembers": "没有匹配的活跃成员。",
+      "membersNarrow": "匹配的成员多于此处的列表。请按姓名或登录名缩小范围。",
+      "membersFailed": "成员列表加载失败。",
+      "membersRetry": "重试",
+      "clear": "清除",
+      "open": "展开",
+      "close": "收起",
+      "submit": "转移所有者",
+      "confirmTitle": "确定转移「{{id}}」的所有权？",
+      "confirmMessage": "「{{target}}」将成为所有者并获得管理员角色。原所有者会失去该组织内的全部角色，并被移出该组织。",
+      "confirmLabel": "转移所有者",
+      "failedNotFound": "这个组织已不存在。",
+      "failedConflict": "转移被拒绝：新所有者必须已是这个组织的活跃成员，且其账户处于可用状态。请先把该账户添加为成员，然后再试。",
+      "success": "组织「{{id}}」的所有者已转给 {{target}}。"
+    },
+    "deleteConfirm": {
+      "title": "确定删除组织「{{id}}」？",
+      "message": "这会永久删除该组织：它的成员、角色、角色分配与权限都会被清除，标识和别名也永不能再次使用。此操作无法撤销。",
+      "confirmLabel": "删除组织",
+      "failedConflict": "这个组织已被删除。删除是终态。",
+      "failedNotFound": "这个组织已不存在。",
+      "success": "组织「{{id}}」已删除"
     }
   },
   "tenantDetail": {

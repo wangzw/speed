@@ -61,7 +61,8 @@
     },
     "tenant": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-      "conflict": "That identifier or alias is already taken by another organization."
+      "conflict": "That identifier or alias is already taken by another organization.",
+      "protected": "This organization is protected and cannot be deleted or disabled."
     },
     "settings": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
@@ -334,6 +335,44 @@
         "actor": "Actor",
         "outcome": "Outcome"
       }
+    }
+  },
+  "tenantLifecycle": {
+    "sectionTitle": "Ownership and deletion",
+    "sectionDescription": "Hand this organization to another account, or end it permanently.",
+    "transferLabel": "Transfer owner",
+    "transferAria": "Transfer owner of organization {{id}}",
+    "deleteLabel": "Delete organization",
+    "deleteAria": "Delete organization {{id}}",
+    "transfer": {
+      "title": "Transfer ownership of organization \"{{id}}\"",
+      "description": "Choose the person who will become the organization's owner. The previous owner loses every role in the organization and is removed from it.",
+      "memberLabel": "New owner",
+      "accountLabel": "New owner's account",
+      "accountHint": "The account must already be an active member of this organization. If it is not, the transfer is refused.",
+      "searching": "Searching members",
+      "noMembers": "No active member matches this search.",
+      "membersNarrow": "More members match than are listed. Narrow the search by name or sign-in name.",
+      "membersFailed": "The member list could not be read.",
+      "membersRetry": "Try again",
+      "clear": "Clear",
+      "open": "Open",
+      "close": "Close",
+      "submit": "Transfer owner",
+      "confirmTitle": "Transfer ownership of \"{{id}}\"?",
+      "confirmMessage": "\"{{target}}\" becomes the owner and receives the administrator role. The previous owner loses every role in the organization and is removed from it.",
+      "confirmLabel": "Transfer owner",
+      "failedNotFound": "This organization no longer exists.",
+      "failedConflict": "The transfer was refused. The new owner must be an active member of this organization, and their account must be active. Add the account as a member first, then try again.",
+      "success": "Organization \"{{id}}\" is now owned by {{target}}."
+    },
+    "deleteConfirm": {
+      "title": "Delete organization \"{{id}}\"?",
+      "message": "This permanently deletes the organization. Its members, roles, role assignments and permissions are removed, and its identifier and alias can never be reused. This cannot be undone.",
+      "confirmLabel": "Delete organization",
+      "failedConflict": "This organization was already deleted. Deletion is final.",
+      "failedNotFound": "This organization no longer exists.",
+      "success": "Organization \"{{id}}\" deleted"
     }
   },
   "tenantDetail": {

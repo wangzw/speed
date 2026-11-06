@@ -288,6 +288,21 @@ route-level guard. A page renders its write controls whether or not the
 caller holds the write permission and lets the server refuse — the
 server is the authority, and the page must not invent a client-side gate.
 
+**The organization lifecycle pair is the documented exception.** The
+transfer-owner and delete-organization entries on the roster row and the
+tenant detail render only for a caller whose attached platform permission
+set holds `tenant.manage`. Neither action can complete for any other
+caller, deletion is irreversible, and no other control on the page can
+succeed for them; the entries are a visibility affordance, and the server
+still judges both writes. The pair also never renders on a personal
+organization (an identifier beginning with `personal-`) or on a tombstone.
+The transfer dialog chooses its target path the same way: the
+organization's member selector when the tenant permission set holds
+`authn.membership.manage`, the platform account selector otherwise. That
+choice is not a membership check — the endpoint still validates that the
+target is an active member and answers 409, which the dialog states
+inline.
+
 ## The operations seam (why the pages read through a bound bundle)
 
 The pages read and write through the `AdminOperations` bundle the host
@@ -328,7 +343,7 @@ What the pages reach through the bundle, grouped by surface:
 
 | Members | Routes |
 |---|---|
-| `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantStatus` | `/api/v1/system/tenants/tenants[/:id]` (list / get / create / status) |
+| `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantStatus`, `useSetTenantProfile`, `useTransferTenantOwner`, `useDeleteTenant` | `/api/v1/system/tenants[/:id]` (list / get / create), `/api/v1/system/tenants/:id/status`, `/api/v1/system/tenants/:id/profile`, `/api/v1/system/tenants/:id/owner`, `DELETE /api/v1/system/tenants/:id` |
 | `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/api/v1/system/permissions`, `/api/v1/system/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/api/v1/system/tenants/:tenant/bindings[/:account[/:role]]` |
 | `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useCreateAccount`, `usePatchAccount`, `useSetAccountStatus`, `useSetMFARequired`, `useResetPassword`, `useAddIdentifier`, `useCreateSecret`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/api/v1/system/auth/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions|/status|/mfa-required|/password|/identifiers]]`, `/api/v1/system/auth/sessions/:id` |
 | `useImpersonations`, `useRevokeImpersonation` | `/api/v1/system/tenants/{tenant}/impersonations[/:id]` |

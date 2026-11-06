@@ -301,6 +301,43 @@ describe('adminOperations', () => {
     })
   })
 
+  it('drives the owner-transfer and tenant-delete endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest(answer, { recordBody: true })
+    function Writes() {
+      const transfer = adminOperations.useTransferTenantOwner()
+      const remove = adminOperations.useDeleteTenant()
+      return (
+        <>
+          <button
+            onClick={() =>
+              transfer.mutate({ id: 'acme', account: 'acc-2' })
+            }
+          >
+            transferOwner
+          </button>
+          <button onClick={() => remove.mutate({ id: 'acme' })}>
+            deleteTenant
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<Writes />, { operations: adminOperations })
+    await user.click(screen.getByRole('button', { name: 'transferOwner' }))
+    await user.click(screen.getByRole('button', { name: 'deleteTenant' }))
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        method: 'PUT',
+        path: '/api/v1/system/tenants/acme/owner',
+        body: { account: 'acc-2' },
+      })
+      expect(calls).toContainEqual({
+        method: 'DELETE',
+        path: '/api/v1/system/tenants/acme',
+      })
+    })
+  })
+
   it('drives the settings write endpoints', async () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest(answer)
