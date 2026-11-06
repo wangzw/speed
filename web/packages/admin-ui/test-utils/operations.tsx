@@ -228,8 +228,10 @@ export interface AdminBackend {
   // Tenant management surfaces (the organization bundle's own members).
   getTenantProfile: (tenant: string) => Promise<AdminTenantProfile>
   updateTenantProfile: (input: AdminTenantProfileWriteInput) => Promise<void>
-  transferTenantOwner: (input: AdminTenantOwnerTransferInput) => Promise<void>
-  deleteTenant: (input: AdminTenantRef) => Promise<void>
+  transferOrganizationOwner: (
+    input: AdminTenantOwnerTransferInput,
+  ) => Promise<void>
+  deleteOrganization: (input: AdminTenantRef) => Promise<void>
   listTenantSettings: (tenant: string) => Promise<AdminTenantSettings>
   writeTenantSetting: (input: AdminTenantSetSettingInput) => Promise<void>
   removeTenantSetting: (input: AdminTenantRemoveSettingInput) => Promise<void>
@@ -366,8 +368,8 @@ export function makeAdminBackend(
 
     getTenantProfile: () => Promise.resolve(profileFixture()),
     updateTenantProfile: () => Promise.resolve(),
-    transferTenantOwner: () => Promise.resolve(),
-    deleteTenant: () => Promise.resolve(),
+    transferOrganizationOwner: () => Promise.resolve(),
+    deleteOrganization: () => Promise.resolve(),
     listTenantSettings: () =>
       Promise.resolve({
         settings: [],
@@ -1205,7 +1207,7 @@ export function createAdminOperations(
       const client = useQueryClient()
       return useMutation({
         mutationFn: (input: AdminTenantOwnerTransferInput) =>
-          backend.transferTenantOwner(input),
+          backend.transferOrganizationOwner(input),
         onSuccess: (_answer, input) => {
           // Mirror the shipped bundle: the caller has left, so the profile is
           // not re-read; the confirmed owner change is reflected into the
@@ -1223,7 +1225,7 @@ export function createAdminOperations(
     useTenantOwnerDelete: () => {
       const client = useQueryClient()
       return useMutation({
-        mutationFn: (input: AdminTenantRef) => backend.deleteTenant(input),
+        mutationFn: (input: AdminTenantRef) => backend.deleteOrganization(input),
         onSuccess: (_answer, input) => {
           // Mirror the shipped bundle: the terminal state is reflected into
           // the cached profile instead of a re-read the server would refuse.

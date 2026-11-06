@@ -423,7 +423,7 @@ describe('TenantProfilePage ownership', () => {
             members: [ADA, BOB, SUSPENDED],
             next_cursor: '',
           }),
-        transferTenantOwner: (input) => {
+        transferOrganizationOwner: (input) => {
           transfers.push(input)
           return Promise.resolve()
         },
@@ -587,7 +587,7 @@ describe('TenantProfilePage ownership', () => {
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
-        transferTenantOwner: () =>
+        transferOrganizationOwner: () =>
           Promise.reject({ status: 403, code: 'client.http.403' }),
       },
     })
@@ -626,7 +626,7 @@ describe('TenantProfilePage ownership', () => {
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
-        transferTenantOwner: () =>
+        transferOrganizationOwner: () =>
           Promise.reject({ status: 409, code: 'tenant.conflict' }),
       },
     })
@@ -663,7 +663,7 @@ describe('TenantProfilePage ownership', () => {
     renderPage({
       profile: ownerProfile(),
       backend: {
-        deleteTenant: () =>
+        deleteOrganization: () =>
           Promise.reject({ status: 404, code: 'client.http.404' }),
       },
     })
@@ -700,7 +700,7 @@ describe('TenantProfilePage ownership', () => {
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
-        transferTenantOwner: () =>
+        transferOrganizationOwner: () =>
           Promise.reject({ status: 503, code: 'client.http.503' }),
       },
     })
@@ -740,7 +740,7 @@ describe('TenantProfilePage ownership', () => {
       profile: ownerProfile(),
       onOrganizationLeft,
       backend: {
-        deleteTenant: (input) => {
+        deleteOrganization: (input) => {
           deletes.push(input)
           return Promise.resolve()
         },
@@ -793,7 +793,7 @@ describe('TenantProfilePage ownership', () => {
     renderPage({
       profile: ownerProfile(),
       backend: {
-        deleteTenant: () =>
+        deleteOrganization: () =>
           Promise.reject({ status: 409, code: 'tenant.conflict' }),
       },
     })
