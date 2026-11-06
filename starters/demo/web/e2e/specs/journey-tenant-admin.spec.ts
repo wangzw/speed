@@ -52,6 +52,9 @@
  *    tier.
  *  - REQ-tenant-admin-054 (cursor paging) is not driven: the review tenant
  *    holds one page of members and invitations, so neither pager renders.
+ *  - REQ-tenancy-063 (an owner's account cannot be deleted or deactivated) is
+ *    not driven: this spec never deletes or deactivates an account, and the
+ *    PRD marks that requirement's end-to-end case unimplemented.
  *  - The personal-tenant direct visit is driven as an in-app history visit
  *    (`goBack`), because a full document load re-settles the current tenant
  *    to the account's non-personal membership; the history visit keeps the
@@ -81,7 +84,7 @@
  * the review carrier writes when a notice is delivered.
  */
 // @journey journey-tenant-admin.md
-// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021
+// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenant-admin-068, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-060, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import {

@@ -34,7 +34,7 @@
  * inaccurate; the ids this spec does exercise are the `@covers` line.
  */
 // @journey journey-first-registration-to-personal-organization.md
-// @covers REQ-signin-006, REQ-signup-001, REQ-signup-002, REQ-signup-003, REQ-signup-004, REQ-signup-005, REQ-signup-008, REQ-signup-009, REQ-signup-010, REQ-signup-028, REQ-signup-029, REQ-account-010, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-tenancy-022, REQ-tenancy-026
+// @covers REQ-signin-006, REQ-signup-001, REQ-signup-002, REQ-signup-003, REQ-signup-004, REQ-signup-005, REQ-signup-008, REQ-signup-009, REQ-signup-010, REQ-signup-028, REQ-signup-029, REQ-account-010, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-tenancy-022, REQ-tenancy-026, REQ-tenancy-059, REQ-tenancy-065
 import type { Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'

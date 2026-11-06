@@ -59,7 +59,11 @@
  * current row and leaves the switch to the journeys that drive it. REQ-tenancy-005 is
  * claimed narrowly: the roster is read with the seeded tenants and asserted in
  * identifier order, while the empty-roster clause needs a deployment that seeds
- * no tenant. REQ-tenancy-008 is claimed narrowly too: the creator's member list
+ * no tenant. REQ-platform-admin-058 (the detail page's ownership controls) is
+ * not claimed: this spec reads the detail page's summary and its missing
+ * rename control, while the transfer and delete controls it drives are the
+ * roster's, and the PRD marks that requirement's end-to-end case unimplemented.
+ * REQ-tenancy-008 is claimed narrowly too: the creator's member list
  * and the list after the acceptance are driven, while paging is not.
  * REQ-tenancy-011's malformed-address refusal and REQ-platform-admin-032's
  * blank-expiry default are not driven; the typed expiry is what both the issuer
@@ -75,7 +79,7 @@
  * code from the review process log (fixtures/log.ts).
  */
 // @journey journey-operator-onboards-tenant.md
-// @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-022
+// @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-platform-admin-050, REQ-platform-admin-051, REQ-platform-admin-055, REQ-platform-admin-118, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-022, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { reviewInvitee, reviewOrdinaryMember } from '../fixtures/config'
