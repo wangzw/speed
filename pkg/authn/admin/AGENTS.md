@@ -118,6 +118,12 @@ The API is the package's godoc.
   reads them in one batch (`DomainsMany`), a single-provider answer in one read
   (`Domains`). Neither is on the published `SSOProviders` interface; the group's
   capability is asserted to the narrow shape that carries them.
+- **A provider view and write carry the username strategy.** The view has
+  `username_strategy` and `username_claim` as the stored row holds them. The
+  create and update bodies accept both, and the capability refuses an
+  incomplete or unknown combination; this module passes the two strings through
+  unchanged and validates nothing of its own (`providerWriteFields`,
+  `providerViewOf`).
 - **The impersonation record routes read the capability through an extended
   shape.** They need reading one record by its identifier, which the published
   `authn.Impersonation` interface does not carry, so the group is mounted only

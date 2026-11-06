@@ -8,7 +8,7 @@
 
 - 驱动登录流程：一次登录是 kv 里的一条流程记录，由引擎驱动的多步状态机推进，每次迁移是对流程记录的比较并交换；引擎、流程记录、绑定、迁移表与终态动作只在 `authn/login` 一处实现（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
 - 定义 `LoginMethod` 接口与方法的准入条件。接口在根包 `pkg/authn` 导出；方法只回答「这个人证明了什么」，以 `Proof` 交出事实，不做账户解析、开户、首登开户的用户名收集、关联、第二因素判定、建会话或发令牌。
-- 在第一因素通过之后做与方式无关的全部动作：把证明解析成账户（含开户与显式关联）、向 `MFA` 询问是否还要第二因素或登记因素、建登录会话或发令牌。首登开户在建号之前先取得用户名：账户解析判定要开户时，流程停在待建号，由引擎向客户端索取一个合法用户名，用户名通过之后才建账户（[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。账户解析的规则归 [authn-account](design-authn-account.md)，因素、策略与保障等级的合成归 [authn-mfa](design-authn-mfa.md)，本文只写引擎怎样调用它们、怎样处理它们的结果。
+- 在第一因素通过之后做与方式无关的全部动作：把证明解析成账户（含开户与显式关联）、向 `MFA` 询问是否还要第二因素或登记因素、建登录会话或发令牌。首登开户在建号之前先取得用户名：社交与短信路径停在待建号，由引擎向客户端索取一个合法用户名；企业即时开通按提供方的策略，`user-confirm` 同样停在待建号，`claim` 在解析内取得用户名后直接建户。用户名通过之后才建账户（[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。账户解析的规则归 [authn-account](design-authn-account.md)，因素、策略与保障等级的合成归 [authn-mfa](design-authn-mfa.md)，本文只写引擎怎样调用它们、怎样处理它们的结果。
 - 规定口令登录只接受用户名或账户选作登录方式的已验证邮箱，短信登录只接受账户选作登录方式的已验证手机号；提供方声明的地址不作口令登录名，提供方登录与口令登录不混用（REQ-signin-006、REQ-signin-011、REQ-signin-038）。
 - 以同一台状态机承载 `login`、`link`、`step-up`、`enroll` 这些目的，终态动作按目的区分。目的取值是封闭集。
 - 在 `authn.gate.mount.endpoints.default` 指定的端、普通接口的基路径之下挂登录路由、回跳路由、方式列表与账户自助路由：未认证的登录流程与回调挂普通接口的基路径。登录、注册与账户自助是全局账户的请求，不带租户名，因而不得落到任何被租户解析或准入层所守的端上。路由与访问级别经 `mount.Mounter` 用同一个调用声明（[authn-gate](design-authn-gate.md)）。账户自助里随装配成立的功能声明为[条件特性](../../../glossary.md)，在决定它们是否成立的同一处判定里经 `feature.Board` 的 `Post` 报告：手机号自助在挂其路由的分支里，邮箱分支在与该分支答 503 同源的判定处（见「声明的特性」）。
@@ -229,7 +229,7 @@ type Proof struct {
 
 完成时，`delivery=session` 设 cookie，体为 `{"state":"authenticated","session":{"id","expires_at"}}`；`delivery=token` 体为 `{"state":"authenticated","token_type":"Bearer","access_token","expires_in","refresh_token"}`。
 
-待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信首登的这一步是 `username`、可选的 `display_name` 与 `password`；企业即时开通的这一步只有 `username`；社交首登的这一步是一个完整的开户页，含 `username` 与 `password`，并把 `provided_method`、`provided_display_name` 与 `provided_email` 随应答带出（都在 `next` 上，各自缺省即不出现，提交时都不回传）：`provided_method` 是发起这次登录的方法名（与发现文档的 `methods[].name` 同一词汇，例如 `wechat.mp`）；`provided_display_name` 是提供方给出的账号名；`provided_email` 是提供方声明为已验证的地址，客户端只读展示、不提供编辑。提供方没有给出其中一项时该成员缺席；其余开户路径的应答不带 `provided_method`、`provided_display_name` 与 `provided_email`。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "display_name":"...", "password":"..."}}` 提交，`display_name` 只在短信首登的这一步接受且可缺省；`password` 在短信首登与社交首登的这一步都接受，企业即时开通不接受。用户名格式不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
+待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信首登的这一步是 `username`、可选的 `display_name` 与 `password`；`user-confirm` 策略的企业即时开通的这一步只有 `username`，`claim` 策略不停在这一步（用户名取自断言，账户在解析时直接建立）；社交首登的这一步是一个完整的开户页，含 `username` 与 `password`，并把 `provided_method`、`provided_display_name` 与 `provided_email` 随应答带出（都在 `next` 上，各自缺省即不出现，提交时都不回传）：`provided_method` 是发起这次登录的方法名（与发现文档的 `methods[].name` 同一词汇，例如 `wechat.mp`）；`provided_display_name` 是提供方给出的账号名；`provided_email` 是提供方声明为已验证的地址，客户端只读展示、不提供编辑。提供方没有给出其中一项时该成员缺席；其余开户路径的应答不带 `provided_method`、`provided_display_name` 与 `provided_email`。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "display_name":"...", "password":"..."}}` 提交，`display_name` 只在短信首登的这一步接受且可缺省；`password` 在短信首登与社交首登的这一步都接受，企业即时开通不接受。用户名格式不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
 
 ### 匿名注册
 
@@ -519,7 +519,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `seq` | 步序号，每次迁移加一；请求必须带当前值，不符即 `ErrStepOutOfOrder`。置为处理中的那次迁移不改 `seq`，因为回跳请求不带它 |
 | `binding` | 绑定秘密的 SHA-256；外部回跳与每次答复都以请求带来的流程令牌重算后常量时间比对 |
 | `account`、`proof` | 解析出的账户标识与方法交出的证明，解析之后才有 |
-| `pending` | 待建号的开户事实：账户解析判定要开户之后、用户名与口令取得之前，方法交出的开户所需部分（外部身份或手机标识、来源租户、`EmailVerified`、显示名、属性、`Aliases`）与开户用途；显示名在短信首登的这一步由当事人选填，在社交首登与企业即时开通取提供方的值，任何一条路径没有给出时建号取用户名。它只在 kv 的流程记录里，账户、绑定、标识与成员关系行在用户名答复之前都不存在 |
+| `pending` | 待建号的开户事实：账户解析判定要开户之后、用户名与口令取得之前，方法交出的开户所需部分（外部身份或手机标识、来源租户、`EmailVerified`、显示名、属性、`Aliases`）与开户用途；显示名在短信首登的这一步由当事人选填，在社交首登与 `user-confirm` 的企业即时开通取提供方的值，任何一条路径没有给出时建号取用户名。`claim` 策略的企业即时开通不使用它：用户名来自断言，解析直接建户。它只在 kv 的流程记录里，账户、绑定、标识与成员关系行在用户名答复之前都不存在 |
 | `mfa` | `{required, offered, challenge_ref, attempts, passed, enrolled}`：`passed` 是第二因素通过的结论，形如 `{methods, user_verified}`，供完成时经 `MFA.Assurance` 合成保障等级；`enrolled` 是 `enroll` 状态里已登记的因素标识（因素行在 `MFA.Enroll` 的最后一步已置为启用，记录只留它的标识） |
 | `method_state` | 方法私有状态：OAuth 的 `state` 摘要、PKCE（[REF-rfc7636](../../../references.md)）校验串、`nonce`；SAML 的请求标识与提供方标识；WebAuthn 仪式数据 |
 | `method_step` | 方法自己的步名，`FlowState.Step` 取它：方法在 `StepPrompt` 上命名的步（如口令的 `new_password`），答复时按它分派回方法 |
@@ -656,9 +656,9 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `first` | `submit`，`StepRefused` | `first`，`seq` 不变，`answers` 加一，受 8 次上限；方法的步与私有状态保留 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`）；成因是 `ErrHumanVerificationRequired` 或 `ErrHumanProofTooLong` 时按 403 `human-verification-required` 或 400 答，且不计登录失败指标与审计 | 方法自己记退避 |
 | `first` | `submit`，`StepThrottled` | 不变 | 429 带 `Retry-After`；`retryAfter` 为零时不带 | 无 |
 | `first` | `submit`，`StepUnavailable` | 不变 | 503 | 无 |
-| `first` | `submit`，`StepProven` | 账户解析，随后按策略判定落入 `second`、`enroll` 或 `ready`；解析判定要开户时落入 `signup`；解析失败落入 `failed` | 200 或 401 | 见「账户解析与策略判定」；落入 `signup` 时写 `pending` |
+| `first` | `submit`，`StepProven` | 账户解析，随后按策略判定落入 `second`、`enroll` 或 `ready`；解析判定要用户在开户前给出用户名时落入 `signup`，`claim` 策略的企业即时开通在解析时直接建户；解析失败落入 `failed` | 200 或 401 | 见「账户解析与策略判定」；落入 `signup` 时写 `pending` |
 | `first` | `callback` | 先交换成 `processing`，再调 `Answer` | 无 | 无 |
-| `processing` | `StepProven` | 同上，账户解析与策略判定；判定要开户时落入 `signup` | 303；例外：`delivery=token` 且无后续步骤、回跳又不是顶层导航时答 200 | 落入 `signup` 时写 `pending` |
+| `processing` | `StepProven` | 同上，账户解析与策略判定；判定要用户在开户前给出用户名时落入 `signup`，`claim` 策略的企业即时开通在解析时直接建户 | 303；例外：`delivery=token` 且无后续步骤、回跳又不是顶层导航时答 200 | 落入 `signup` 时写 `pending` |
 | `signup` | `submit`，合法用户名（短信首登与社交首登另需合法口令） | 建号，随后按策略判定落入 `second`、`enroll` 或 `ready` | 200 | 账户与 `via = self` 的用户名标识在同一事务写入，绑定或手机标识随开户写入（短信首登写下的手机标识建号时即为登录方式，见 [authn-account](design-authn-account.md)）；短信首登与社交首登在同一事务写入口令凭据，企业即时开通不写口令；`pending` 清空，`account` 写入；显示名取待建号的显示名，去掉无效文本与控制字符、去首尾空白并截断到 100 个字符，待建号没有显示名时由账户模块建号时取用户名，这条回退覆盖短信、社交与企业即时开通三条首登开户路径（`pkg/authn/account/admin.go` `displayNameOrDefault`） |
 | `signup` | `submit`，口令不合策略或缺失（短信首登与社交首登） | `signup`，`seq` 不变，`answers` 加一，受 8 次上限 | 400 `bad-request` | 不建号 |
 | `signup` | `submit`，用户名格式不合或保留字 | `signup`，`seq` 不变，`answers` 加一，受 8 次上限 | 400 `username-invalid` 或 `username-reserved` | 不建号 |
@@ -694,9 +694,9 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 - `Account` 非空：引擎仍读取账户并核对状态为启用，不信任方法的断言。
 - `Identifier` 非空（短信验证的手机）：按标识查账户；查到而该手机未被持有人选作登录方式时按凭据失败处理（401 `login-failed`），不当作未知标识、不进入开户（REQ-signin-011）；查不到时按注册设置决定开户或失败；决定开户时不立即建户，而是把流程停到待建号，取得用户名之后建户，建号时该手机即为登录方式（见 [authn-account](design-authn-account.md) 的首登开户）。
-- `External` 非空：按（提供方，主体）查绑定；无绑定时不按提供方声明的地址关联一个既有账户或建立绑定（企业预置的匹配是唯一例外，归 A5）：该地址已登记在现有账户的邮箱标识上时按 `ErrLinkRequired` 拒绝，否则按外部身份的来源与设置走首登开户，决定开户时同样先停到待建号，新建的账户只带提供方给的显示名，提供方没有给出时取用户名（REQ-signin-017、REQ-signup-048、REQ-signup-049、REQ-signup-051）。`Aliases` 用于旧键升级。键永远是（提供方，主体），不用邮箱。社交证明的提供方不带 `oidc:`、`saml:` 命名空间，企业证明的提供方属于一个租户；社交证明落在 `oidc:`、`saml:` 命名空间，或企业证明的 `ext.Tenant` 与提供方行的租户不一致，都按 `ErrInvalidArgument` 拒绝（fail-closed，判据隐含于 A1 的命名空间与 A5 的租户归属）。
+- `External` 非空：按（提供方，主体）查绑定；无绑定时不按提供方声明的地址关联一个既有账户或建立绑定（企业预置的匹配是唯一例外，归 A5）：该地址已登记在现有账户的邮箱标识上时按 `ErrLinkRequired` 拒绝，否则按外部身份的来源与设置走首登开户。社交与短信的首登开户先停到待建号；企业即时开通按提供方的用户名策略分叉：`user-confirm` 停到待建号，`claim` 在解析内取得用户名、校验后直接建户。新建的账户只带提供方给的显示名，提供方没有给出时取用户名（REQ-signin-017、REQ-signup-048、REQ-signup-049、REQ-signup-051）。`Aliases` 用于旧键升级。键永远是（提供方，主体），不用邮箱。社交证明的提供方不带 `oidc:`、`saml:` 命名空间，企业证明的提供方属于一个租户；社交证明落在 `oidc:`、`saml:` 命名空间，或企业证明的 `ext.Tenant` 与提供方行的租户不一致，都按 `ErrInvalidArgument` 拒绝（fail-closed，判据隐含于 A1 的命名空间与 A5 的租户归属）。
 
-已有绑定或已有标识的账户直接进入策略判定，不进入待建号；待建号只在账户解析判定「要开户」时进入。库中没有用户名的行只来自绕过写入接口，照常以它已有的标识登录。
+已有绑定或已有标识的账户直接进入策略判定，不进入待建号；待建号只在账户解析判定「要开户」且这条路径需要用户给出用户名时进入。企业即时开通的 `claim` 策略在同一解析内取得用户名、过滤失败并直接建户，因此不进入待建号；它的用户名取自 `preferred_username` 或邮箱本地部分，经共享的 slug 规则规范化，缺失、不合法、保留字或已被占用时以 `ErrJITUsernameMissing`、`ErrJITUsernameInvalid`、`ErrJITUsernameTaken` 拒绝，不写任何行。提供方没有策略或策略取值不认识时以 `ErrJITUsernameStrategy` 拒绝。库中没有用户名的行只来自绕过写入接口，照常以它已有的标识登录。
 
 显式关联、企业 SSO 的域核对与预开户、首登开户、`Provisioner` 钩子的判据全部归 [authn-account](design-authn-account.md)（[ADR-authn-external-binding](../../../adr/adr-authn-external-binding.md)、[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。自动关联与自动并入不再存在（REQ-signup-049）。引擎承担的是这些规则的结果怎样落到流程上：
 
@@ -707,6 +707,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 账户非启用，来源是口令或短信 | `failed` | 401 `login-failed`，与错口令一致 |
 | 账户是 `service` 类型（任何来源） | `failed` | 401 `login-failed`：服务账户是 API 客户端，不是交互登录目标 |
 | 无绑定且注册关闭（`ErrSignupClosed`）、域不符（`ErrDomainMismatch`）、未预开户（`ErrNotProvisioned`）、宿主拒绝开户（`ErrProvisionRefused`） | `failed` | 401 `login-failed`，成因进日志 |
+| 即时开通的用户名取不到或不合法（`ErrJITUsernameMissing`、`ErrJITUsernameInvalid`、`ErrJITUsernameTaken`、`ErrJITUsernameStrategy`） | `failed` | 401 `login-failed`，成因进日志 |
 | 无绑定而提供方声明的地址已登记在现有账户的邮箱标识上，且不属于企业预置的匹配（`ErrLinkRequired`） | `failed` | 401 `link-required` |
 | 开户事务里提供方声明的地址被另一个账户取得（`ErrContactTaken`：判定「无人持有」到建户之间输了竞态） | `failed` | 401 `link-required`，与该地址早已登记时同一结果；落地的片段同样带掩码地址 |
 | 外部身份已被别的账户占用（`ErrBindingConflict`） | `failed` | 409 `conflict` |
@@ -841,7 +842,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 4. `Exchange(ctx, code, oauth2.VerifierOption(verifier))`。
 5. OIDC：`Provider.Verifier` 验 `id_token` 的签名、`iss`、`aud`、`exp`；**另自行校验** `nonce` 与多受众时的 `azp`；不调 userinfo，只取 ID 令牌里的声明；`email_verified` 为布尔真才视为已验证邮箱。
 
-回跳证明通过、账户解析判定要开户时，引擎把流程停在待建号并应答 `challenge`；用户名与口令由引擎收集，方法不与这一步交互。短信首登与社交首登的这一步都收集口令；短信首登的这一步另收集一个可选的显示名，企业即时开通只收集用户名。
+回跳证明通过、账户解析判定要开户时，引擎按路径决定是否停在待建号：社交、短信与 `user-confirm` 的企业即时开通停在这一步并应答 `challenge`，用户名与口令由引擎收集，方法不与这一步交互；`claim` 的企业即时开通在同一解析里直接建户，不停在待建号。短信首登与社交首登的这一步都收集口令；短信首登的这一步另收集一个可选的显示名，`user-confirm` 的企业即时开通只收集用户名。
 
 出站客户端全经 `internal/egress`：超时、体上限、不跟随重定向、连接时拒绝非公网地址；并以 `oidc.ClientContext` 注入，未注入时库用无超时的默认客户端，所以未经注入的出站调用本身是缺陷。`google`、`github` 与企业 `oidc`、`saml` 的客户端在 `observability.Transport` 之内套 `log.Transport`，每次出站请求成功与失败各写一条记录：方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时带底层成因；授权码与令牌都不进记录，请求头与正文同样不记。方法交出的 `Proof.External` 带（提供方，主体）、邮箱与 `EmailVerified`，邮箱只是线索：除企业预置的匹配（A5）外，引擎不用它解析账户，也不把它写入新账户；它只在提供方声明已验证且该地址已登记在现有账户时触发 `link-required`（REQ-signin-017、REQ-signup-048）。
 

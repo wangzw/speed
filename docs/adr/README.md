@@ -151,7 +151,7 @@
 | [用户档案的自助功能与管理面分立](adr-authn-selfservice-profile.md) |
 | [登录标识的自助添加：用户名直接写，邮箱经验证码证明所有权](adr-authn-selfservice-identifier.md) |
 | [自助注册即建号，账户的邮箱只有已验证与未验证两种状态](adr-authn-signup.md) |
-| [每个用户账户在建号之前取得用户名，用户名须 URL 安全并排除保留用户名](adr-authn-username-required.md) |
+| [每个用户账户在建号之前取得用户名，即时开通由提供方选定获取方式](adr-authn-username-required.md) |
 | [用户名一经写入不可删除、不可更换](adr-authn-username-permanent.md) |
 | [口令账户必须保留一个登录名，最后一个登录名保护只约束邮箱](adr-authn-login-identifier.md) |
 | [口令登录方式不可被关闭](adr-authn-password-method-required.md) |

@@ -30,6 +30,15 @@ step-up refusal carries, because a typed handler returns a fault and has no
 response writer. This package builds the first two and calls them, and uses
 `stepup` for its own refusals; none is reachable from another module.
 
+An enterprise just-in-time first login determines its username by the
+provider's `username_strategy`. `user-confirm` parks the flow at the pending
+signup, which asks the person before anything is written. `claim` reads the
+configured claim — `preferred_username`, or the local part of the email — folds
+it with the shared username rule and opens the account in the same resolution,
+so it never reaches the pending step. A missing, invalid or taken claim, and a
+provider with no usable strategy, refuse the login with their own sentinel and
+write no account.
+
 The anonymous register route `POST /auth/register` is the one place this package
 takes part in opening an account rather than reading one, and it opens none
 itself: `authn.Signups.Register` owns the one transaction, this route owns the

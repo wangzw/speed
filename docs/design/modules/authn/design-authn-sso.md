@@ -21,7 +21,7 @@
 ### 非职责
 
 - **不运行登录流程。** 流程记录、状态机迁移、比较并交换、账户解析、会话与令牌的发放归登录引擎（[design-authn-login](design-authn-login.md)）；方法只回答「这次回跳证明了什么」，交出 `Proof`。
-- **不决定账户。** 外部身份的绑定键、首登开户、预置账户匹配与需先绑定的判定归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`merge_existing`、所属租户、声明地址的验证状态与邮箱域的验证状态。用户名不由提供方断言提供、不经属性映射写入，它在建户前由登录引擎向用户取得（[design-authn-login](design-authn-login.md)、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。
+- **不决定账户。** 外部身份的绑定键、首登开户、预置账户匹配与需先绑定的判定归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`username_strategy`、`username_claim`、`merge_existing`、所属租户、声明地址的验证状态与邮箱域的验证状态。即时开通的用户名由提供方的策略决定：`claim` 从断言的 `preferred_username` 或邮箱本地部分取值，`user-confirm` 在建户前向用户取得；两者都由登录引擎执行，本模块只保存并交出配置（[design-authn-login](design-authn-login.md)、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。
 - **不合成保障等级。** 方法只报 `Proof.IDPAsserted` 这一事实，是否采信、等级是多少只在 `authn.mfa` 一处合成（[design-authn-mfa](design-authn-mfa.md)）。
 - **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
 - **不写管理面路由，不做判定。** 提供方、域与元数据刷新的 HTTP 路由、`Decider` 的判定与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）。
@@ -59,6 +59,8 @@ type SSOProvider struct {
 	Name              string
 	Enabled           bool   // 零值视为停用
 	Provisioning      string // jit、preprovisioned
+	UsernameStrategy  string // claim、user-confirm；preprovisioned 为空
+	UsernameClaim     string // claim 模式：preferred_username、email
 	TrustIDPMFA       bool
 	AllowIDPInitiated bool
 	AllowSHA1         bool
@@ -94,7 +96,7 @@ type SSOProviders interface {
 | `Get`、`List`、`Tenant` | 读提供方行。读出的 `SSOProvider` 不含 `client_secret`，`Config` 里也没有任何秘密；应答里只有「是否已设置」。`List` 按租户列出，含停用的行。`Tenant` 只回答所属租户，供租户准入层核对会话的提供方是否属于请求所在的租户。 |
 | `Secret` | 单独取 `client_secret`，只给协议模块用。取用者是 `authn.sso.oidc`；管理面、日志、审计、事件与指标都不经它。OIDC 以外的提供方没有秘密。 |
 | `Discover` | 只在「域已验证且提供方已启用」的行里找，规范化与失败应答的结构见「域所有权与发现」一节。 |
-| `Put` | 新建或更新。`secret` 为 `nil` 表示保持原值，非 `nil` 表示写入该值。校验 `Config`（写入时校验，未知键拒绝）；更新时 `Tenant` 不可变，与已存的不同即 `ErrInvalidConfig`；创建时 `Tenant` 取调用方给的值，管理面要求它与路径里的租户一致。`Provisioning` 无默认值，取值不在 `jit`、`preprovisioned` 之内即 `ErrInvalidConfig`。每次写入使 `version` 加一。 |
+| `Put` | 新建或更新。`secret` 为 `nil` 表示保持原值，非 `nil` 表示写入该值。校验 `Config`（写入时校验，未知键拒绝）；更新时 `Tenant` 不可变，与已存的不同即 `ErrInvalidConfig`；创建时 `Tenant` 取调用方给的值，管理面要求它与路径里的租户一致。`Provisioning` 无默认值，取值不在 `jit`、`preprovisioned` 之内即 `ErrInvalidConfig`。`username_strategy` 与 `username_claim` 按「即时开通的用户名」一节校验，不完整的组合即 `ErrInvalidConfig`。每次写入使 `version` 加一。 |
 | `Delete` | 删除提供方行及其域声明，在同一个事务里完成。 |
 | `ClaimDomain` | 为提供方声明一个邮箱域，写入一行未验证的声明并返回 `verifyToken`；该域已被另一个提供方验证时返回 `ErrDomainClaimed`。未验证的声明可以并存。声明本身不改变发现所依据的已生效状态，所以不发 `authn.idp.changed`（`change` 闭集里没有 `domain-added`）；验证命中时才发 `domain-verified`。提供方不存在返回 `ErrProviderNotFound`。 |
 | `VerifyDomain` | 查 `_speed-authn.<域>` 的 TXT 记录，内容为 `speed-authn=<token>`；命中则置 `verified_at`。该域已被另一个提供方验证，或并发验证败于唯一约束，返回 `ErrDomainClaimed`。失败不改状态。 |
@@ -220,6 +222,8 @@ classDiagram
         +Protocol string
         +Enabled bool
         +Provisioning string
+        +UsernameStrategy string
+        +UsernameClaim string
         +Version int
     }
     class SsoEngine
@@ -299,6 +303,8 @@ CREATE TABLE authn_idps (
     name                TEXT        NOT NULL CHECK (length(name) BETWEEN 1 AND 64),
     status              SMALLINT    NOT NULL DEFAULT 0 CHECK (status IN (0, 1)),   -- 0 停用（零值）
     provisioning        TEXT        NOT NULL CHECK (provisioning IN ('jit', 'preprovisioned')),   -- 无默认值
+    username_strategy   TEXT        NOT NULL DEFAULT '',   -- 空：preprovisioned；jit 必填 claim 或 user-confirm
+    username_claim      TEXT        NOT NULL DEFAULT '',   -- claim 模式：preferred_username 或 email
     trust_idp_mfa       BOOLEAN     NOT NULL DEFAULT FALSE,
     merge_existing      BOOLEAN     NOT NULL DEFAULT FALSE, -- 列存在；取值不打开并入，JIT 从不并入现有账户
     allow_idp_initiated BOOLEAN     NOT NULL DEFAULT FALSE,
@@ -359,7 +365,26 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 - `email` 只在匹配预置账户与判断社交登录、企业即时开通是否需先绑定时读取，不写入账户：新开立的账户不带提供方声明的地址（REQ-signup-048；[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。映射缺邮箱不是错误，只是没有可匹配的线索，开户照常进行。
 - `display_name` 只在首登开户时写入：取提供方给出的名字，去掉无效文本与控制字符、去首尾空白并截断到 100 个字符；没有给出时账户以用户名作显示名（REQ-signup-051）。
 - `attr.<名>` 经根包的界限校验后写进该次登录会话的载荷，键加 `idp.` 前缀，值在 UTF-8 字符边界截断到 128 字节（分项上限，见 [design-authn-gate](design-authn-gate.md#出口检查)）；随该会话终结，不写入账户。
-- `provisioning` 为 `jit` 时，开户只取提供方的显示名与（提供方，主体）绑定，不要求 `email` 映射：没有声明地址只是没有可匹配的现有账户，开户照常进行。`ErrNotProvisioned` 只用于 `preprovisioned` 的提供方匹配不到预置账户。用户名不是提供方断言的事实、不在属性映射里，它在建户之前由登录引擎向用户取得，没有合法用户名不建户（REQ-signup-047）。即时开通建出的账户不设口令：口令既不在属性映射里，也不在即时开通的开户一步取得；需要口令登录时由持有人在账户界面设置首个口令。
+- `provisioning` 为 `jit` 时，开户只取提供方的显示名与（提供方，主体）绑定，不要求 `email` 映射：没有声明地址只是没有可匹配的现有账户，开户照常进行。`ErrNotProvisioned` 只用于 `preprovisioned` 的提供方匹配不到预置账户。即时开通建出的账户不设口令：口令既不在属性映射里，也不在即时开通的开户一步取得；需要口令登录时由持有人在账户界面设置首个口令。
+
+### 即时开通的用户名
+
+即时开通的账户必须在建户时持有一个合法用户名，个人租户的别名就是它（[design-tenant-personal](../tenant/design-tenant-personal.md)）。用户名如何确定由提供方在写入时选定，登录路径不设回退：
+
+| `username_strategy` | `username_claim` | 含义 |
+|---|---|---|
+| `claim` | `preferred_username` | 从断言的 `preferred_username` 取值。OIDC 读 ID 令牌的标准声明，不经 `claims` 映射；SAML 读 `Name` 或 `FriendlyName` 为 `preferred_username` 的属性。 |
+| `claim` | `email` | 从 `claims` 映射交给 `email` 的地址取 `@` 前的本地部分；没有映射或映射不到值时按声明缺失处理。 |
+| `user-confirm` | 空 | 首次登录在建户之前停到待建号，由当事人确认或填写用户名。 |
+| 空 | 空 | 只允许 `preprovisioned` 的提供方；它从不建户，不需要策略。 |
+
+写入时按上表的组合校验：`jit` 必须给出策略；`claim` 必须给出两个取值之一；`user-confirm` 与 `preprovisioned` 不带 `username_claim`；`username_claim` 不得在没有策略时出现。任一不成立即 `ErrInvalidConfig`。
+
+**claim 模式。** 取值经与用户名、租户别名同一套规范化（NFKC、转小写、`^[a-z0-9][a-z0-9-]{2,62}$`）后作为用户名。断言没有该声明、取值规范化为空或不合法、落在保留用户名清单内、或已被另一个账户作为用户名持有，都拒绝登录：依次为 `ErrJITUsernameMissing`、`ErrJITUsernameInvalid`、`ErrJITUsernameTaken`，对外一律 401 `login-failed`，成因进日志。这些拒绝发生在任何写入之前，因此账户、绑定、成员关系与个人租户都不存在；claim 模式不向用户索取输入，当事人无法自行纠正，错误文案指向联系管理员。
+
+**user-confirm 模式。** 首次登录停在登录引擎的待建号步骤，流程记录里只有开户所需的事实，没有任何账户行。当事人提交的用户名经同一套规范化与保留字校验通过后，账户、用户名标识、外部绑定、租户成员关系与个人租户在同一事务里写入；用户名此后不可删除、不可更换（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）。
+
+**存量行。** 迁移前写入的即时开通提供方没有策略。这类行在登录时以 `ErrJITUsernameStrategy` 拒绝，不建账户；管理员补全策略后才能使用。平台不设派生别名或空用户名回退。
 
 ### 进程内缓存
 
@@ -398,7 +423,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 `Put` 在一个事务里完成，走模型路径（加密列的序列化器只对模型字段起作用），顺序如下：
 
-1. 校验：`name` 长度；`protocol` 在封闭集内；`provisioning` 显式给出；更新时 `Tenant` 与已存相同；`config` 按上一节的结构逐项校验，OIDC 以外的协议带非空 `secret` 一律拒绝；失败即 `ErrInvalidConfig`，点名不合法之处。
+1. 校验：`name` 长度；`protocol` 在封闭集内；`provisioning` 显式给出；更新时 `Tenant` 与已存相同；`username_strategy` 与 `username_claim` 按「即时开通的用户名」一节给出的组合校验；`config` 按上一节的结构逐项校验，OIDC 以外的协议带非空 `secret` 一律拒绝；失败即 `ErrInvalidConfig`，点名不合法之处。
 2. 写入，`version` 创建时为 1、更新时加一；`secret` 为 `nil` 时不动 `client_secret`。
 3. 提交之后发布 `authn.idp.changed`，使各副本的协议模块丢弃缓存；`change` 取：新建为 `created`，启用态 0→1 为 `enabled`、1→0 为 `disabled`，其余更新为 `updated`（值集是封闭集，见 [design-authn-events](design-authn-events.md)）；发布失败只记 `Warn`，从不令写入失败（事件是提示，不是权威）。
 
@@ -544,12 +569,16 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 
 | 哨兵 | 产生处 | 含义 | 对外 |
 |---|---|---|---|
-| `ErrInvalidConfig` | `Put`、构造 | `config` 格式不合法、含未知键、`provisioning` 缺失、更新时 `Tenant` 与已存的不同、`sign_requests` 为真而没有 SP 密钥 | 管理面 400，点名不合法之处；启动期启动失败 |
+| `ErrInvalidConfig` | `Put`、构造 | `config` 格式不合法、含未知键、`provisioning` 缺失、用户名策略与声明的组合不完整、更新时 `Tenant` 与已存的不同、`sign_requests` 为真而没有 SP 密钥 | 管理面 400，点名不合法之处；启动期启动失败 |
 | `ErrDomainClaimed` | `ClaimDomain`、`VerifyDomain` | 该域已被另一个提供方验证过 | 409 |
 | `ErrAssertionReplay` | SAML 断言消费 | 断言标识已见过 | 登录失败，统一 `login-failed`；记 `Warn` 与指标 |
 | `ErrProviderNotFound` | `Get`、`Secret`、`Tenant`、`Put`（更新路径）、`Delete`、`ClaimDomain` | 点名的提供方行不存在 | 管理面裸 404（不带问题码） |
 | `ErrNotProvisioned` | 引擎的账户解析，取自本模块交出的提供方 | `preprovisioned` 的提供方没有预置账户 | 401 `login-failed`，成因进日志 |
 | `ErrDomainMismatch` | 引擎的账户解析 | 断言邮箱的域不属于该提供方所属租户的已验证域 | 401 `login-failed`，成因进日志 |
+| `ErrJITUsernameMissing` | 引擎的账户解析，读本模块交出的策略与声明 | claim 模式下断言没有配置的声明，或邮箱没有本地部分 | 401 `login-failed`，成因进日志 |
+| `ErrJITUsernameInvalid` | 引擎的账户解析 | claim 值规范化后不是合法用户名，或是保留用户名 | 401 `login-failed`，成因进日志 |
+| `ErrJITUsernameTaken` | 引擎的账户解析 | claim 值已被另一个账户作为用户名持有 | 401 `login-failed`，成因进日志 |
+| `ErrJITUsernameStrategy` | 引擎的账户解析 | 即时开通的提供方没有策略，或策略取值本构建不认识 | 401 `login-failed`，成因进日志 |
 | `ErrUnavailable` | 构造提供方、发现与 JWKS 取回、元数据刷新、db | IdP 不可用，或 db 不可用 | 503；对外不区分是哪个依赖 |
 | `ErrNoEncryptionKey` | `Start` | `db` 没有根密钥 | 启动失败 |
 | `ErrNotMigrated` | `Start` | 探测不到自己的表 | 启动失败，点名施加迁移的命令 |
@@ -562,7 +591,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 - **IdP 不可用时只拒这一个提供方。** OIDC 的发现、JWKS 或令牌端点不可达，其他提供方不受影响。回跳阶段不可达，该提供方的登录答 503，流程作废，用户重新开始（授权码已用，见 [design-authn-login](design-authn-login.md) 的迁移表）；开始阶段（`Begin` 的发现失败）答 503，流程仍处 `first`。
 - **元数据刷新失败时保留旧配置。** 解析或校验失败保留旧的 `idp_certs`、`idp_sso_url`、`idp_entity_id`，记 `Warn`，返回错误。这是有界的放宽：被 IdP 撤销的旧证书继续被接受，直到管理员更新；放宽的上界是「管理员触发刷新或手工更新」，不自动刷新。
 - **证书轮换没有跟上时拒绝。** IdP 换了证书而管理员没有更新，该提供方的登录全部失败。
-- **缺省拒绝。** IdP 发起登录缺省关；`provisioning` 无默认值；JIT 从不并入现有账户；未验证的域不参与发现；声明地址的域不属于该提供方所属租户时拒绝；SHA-1 签名缺省拒绝；`transient` 的 `NameID` 一律拒绝。
+- **缺省拒绝。** IdP 发起登录缺省关；`provisioning` 无默认值；即时开通必须显式给出用户名策略，取不到合法用户名就不建户；JIT 从不并入现有账户；未验证的域不参与发现；声明地址的域不属于该提供方所属租户时拒绝；SHA-1 签名缺省拒绝；`transient` 的 `NameID` 一律拒绝。
 - **出站拒绝非公网地址。** 受限出站客户端拒绝的连接（目的地不是公网地址、方案不是 `https`、响应体超出上限，各有一个哨兵，见 [design-authn-failure](design-authn-failure.md)）按 IdP 不可用处理：该提供方的登录答 503，成因只进日志。
 
 ### 幂等

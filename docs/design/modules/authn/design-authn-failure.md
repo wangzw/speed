@@ -252,6 +252,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 退避中；自助注册的按用户名退避（`ThrottleScope` 的 `signup-username`）、来源地址分钟预算或全局小时预算生效 | 429 `throttled`，带 `Retry-After`；令牌端点是 401 `invalid_client` 并带 `Retry-After`；Basic 路径是 `Denied` |
 | `ErrFlowInvalid`、`ErrStepOutOfOrder` | 流程过期、已用、绑定不符、被并发消费；步序不符 | 401 `flow-invalid` |
 | `ErrLinkRequired`、`ErrNotProvisioned`、`ErrDomainMismatch`、`ErrProvisionRefused` | 社交登录或企业即时开通无绑定而提供方声明的地址命中现有账户；企业 SSO 的预置模式匹配不到预置账户，或声明地址的域不属于该提供方所属租户；宿主拒绝开户 | `ErrLinkRequired` 是 401 `link-required`，其余对外一律 401 `login-failed`，成因进日志 |
+| `ErrJITUsernameMissing`、`ErrJITUsernameInvalid`、`ErrJITUsernameTaken`、`ErrJITUsernameStrategy` | 企业即时开通的用户名取不到：`claim` 策略的声明缺失、值不合法或保留字、已被占用；提供方没有可用策略 | 一律 401 `login-failed`，成因进日志；不写任何行 |
 | `ErrSignupClosed` | 首登开户关闭；自助注册开关 `authn.account.password-signup` 不是 `open` | 首登开户路径 401 `login-failed`；自助注册路由 403 `signup-closed` |
 | `ErrContactRequired` | 未验证账户（`SignupStateOf` 为 `SignupPending`：有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力 | 403 `contact-required` |
 | `ErrPhoneRequired` | 账户没有一条已证明的手机标识，而短信因素登记与发码时要求它 | 403 `phone-required` |

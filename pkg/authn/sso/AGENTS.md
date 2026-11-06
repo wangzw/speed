@@ -43,6 +43,13 @@ The API is the package's godoc. Read the `SSOProviders` comments in
   `ErrInvalidConfig` naming the key (`validateConfig`,
   `TestPutRefusesAConfigItCannotRunOn`). `provisioning` has no default, and an
   update may not move a provider to another tenant.
+- **The username strategy is a combination the write refuses incomplete.** A
+  `jit` provider names `username_strategy`, `claim` or `user-confirm`; a `claim`
+  strategy names `username_claim`, `preferred_username` or `email`; no other
+  strategy carries a claim; a `preprovisioned` provider needs none. The
+  application holds the closed sets rather than a CHECK on the added columns,
+  and a stored `jit` row with no usable strategy is refused at login
+  (`checkUsernameStrategy`, `TestPutHoldsTheUsernameStrategyToItsCombinations`).
 - **The failure direction is closed.** A database that cannot be read is
   `ErrUnavailable` on every method; a domain verification that finds no record
   changes nothing; a re-verification whose lookup fails keeps the verification and
