@@ -101,6 +101,7 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 		writeGuard:   r.writeGuard,
 		audit:        r.audit,
 		verification: r.signup,
+		aliases:      identityAliases{},
 		logger:       logs.logger(),
 		cfg:          resolved{endpoints: []string{"public"}},
 	}
@@ -220,4 +221,12 @@ func TestTheStubsStartEmpty(t *testing.T) {
 	if got := (&recordingAudit{}).entries(); len(got) != 0 {
 		t.Errorf("a fresh recording audit recorded %d rows, want none", len(got))
 	}
+}
+
+// identityAliases stands in for the roster's id-to-alias seam over an assembly
+// whose fixture identifiers double as their aliases.
+type identityAliases struct{}
+
+func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+	return id, nil
 }

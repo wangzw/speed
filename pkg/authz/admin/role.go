@@ -12,11 +12,11 @@ import (
 )
 
 // handleRoleList answers GET /api/v1/system/tenants/:tenant/roles: every role of
-// the tenant. The tenant in the path is the policy domain, taken as the
-// identifier and not an alias; this module holds no tenant roster and does not
-// look the tenant up. It is a read, so the action is role.read; the identity and
-// the permission are decided by the route's guard wrapper before this handler is
-// called.
+// the tenant. The path carries the tenant's alias; the platform alias layer has
+// already replaced it with the internal identifier the policy store keys rows
+// by, and the views name the tenant by the alias again. It is a read, so the
+// action is role.read; the identity and the permission are decided by the
+// route's guard wrapper before this handler is called.
 //
 // Each view carries the role's description, its grant count, its active member
 // count and whether the caller may manage roles. The member count is read only
@@ -40,9 +40,13 @@ func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListB
 	if err != nil {
 		return roleListBody{}, err
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return roleListBody{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	views := make([]AuthzAdminRoleView, len(roles))
 	for i, r := range roles {
-		views[i] = p.roleViewOf(ctx, r, grantCounts[r.Role], memberCounts[r.Role], canManage)
+		views[i] = p.roleViewOf(ctx, r, grantCounts[r.Role], memberCounts[r.Role], canManage, tenantAlias)
 	}
 	return roleListBody{Roles: views}, nil
 }
@@ -177,10 +181,14 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteRole); err != nil {
 		return struct{}{}, err
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionRolePut, string(role), map[string]string{
 		detailActionID: actionID,
-		detailTenant:   in.Tenant,
+		detailTenant:   tenantAlias,
 		detailRole:     string(role),
 		detailChange:   roleChange,
 	})); err != nil {
@@ -209,10 +217,14 @@ func (p *product) handleRoleDelete(ctx context.Context, in roleInput) (struct{},
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteRole); err != nil {
 		return struct{}{}, err
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionRoleDelete, string(role), map[string]string{
 		detailActionID: actionID,
-		detailTenant:   in.Tenant,
+		detailTenant:   tenantAlias,
 		detailRole:     string(role),
 	})); err != nil {
 		return struct{}{}, err

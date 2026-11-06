@@ -220,7 +220,11 @@ type product struct {
 	// nil when the assembly delivers no i18n engine. With none the catalog route
 	// answers an empty description and a client shows the permission code alone.
 	localizer i18n.Localizer
-	logger    *slog.Logger
+	// aliases answers the alias a tenant identifier is addressed by, nil when
+	// the assembly supplies no resolver. With none a view names no tenant rather
+	// than exposing the internal identifier.
+	aliases authz.TenantAliasResolver
+	logger  *slog.Logger
 
 	cfg resolved
 }
@@ -323,6 +327,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.identities = identities
+	}
+	if aliases, found, err := optional[authz.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
+		return err
+	} else if found {
+		p.aliases = aliases
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

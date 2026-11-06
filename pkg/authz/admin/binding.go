@@ -18,7 +18,11 @@ func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindin
 	if err != nil {
 		return bindingListBody{}, p.failureOf("listing the bindings", err)
 	}
-	return bindingListBody{Bindings: bindingViewsOf(bindings)}, nil
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return bindingListBody{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
+	return bindingListBody{Bindings: bindingViewsOf(bindings, tenantAlias)}, nil
 }
 
 // handleBindingOf answers GET
@@ -29,14 +33,19 @@ func (p *product) handleBindingOf(ctx context.Context, in tenantAccountInput) (a
 	if err != nil {
 		return accountBindingListBody{}, p.failureOf("listing the account's bindings", err)
 	}
-	return accountBindingListBody{Bindings: bindingViewsOf(bindings)}, nil
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return accountBindingListBody{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
+	return accountBindingListBody{Bindings: bindingViewsOf(bindings, tenantAlias)}, nil
 }
 
-// bindingViewsOf builds the views of a binding read.
-func bindingViewsOf(bindings []authz.Binding) []AuthzAdminBindingView {
+// bindingViewsOf builds the views of a binding read. Every row of one read
+// belongs to the tenant the request named, so the alias is resolved once.
+func bindingViewsOf(bindings []authz.Binding, tenantAlias string) []AuthzAdminBindingView {
 	views := make([]AuthzAdminBindingView, len(bindings))
 	for i, b := range bindings {
-		views[i] = bindingViewOf(b)
+		views[i] = bindingViewOf(b, tenantAlias)
 	}
 	return views
 }
@@ -59,10 +68,14 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteBinding); err != nil {
 		return struct{}{}, err
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionBindingPut, in.Account, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   in.Tenant,
+		detailTenant:   tenantAlias,
 		detailAccount:  in.Account,
 		detailRole:     string(role),
 	})); err != nil {
@@ -102,10 +115,14 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteBinding); err != nil {
 		return struct{}{}, err
 	}
+	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
+	if aliasErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionBindingDelete, in.Account, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   in.Tenant,
+		detailTenant:   tenantAlias,
 		detailAccount:  in.Account,
 		detailRole:     string(role),
 	})); err != nil {
