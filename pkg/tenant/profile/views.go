@@ -12,12 +12,16 @@ import (
 // added to the record later does not reach a client by being there.
 
 // TenantProfileView is one tenant's organization profile as the tenant profile
-// routes show it. It carries the read-only alias, the owning account and the
-// state beside the four descriptive fields. It carries no identifier: the
-// identifier is internal, and the request surface addresses the tenant by the
-// alias. It is deliberately not the platform management surface's view: that
-// one renders the disable source, which belongs to the platform surface and not
-// to a tenant administrator's own profile page.
+// routes show it. It carries the read-only alias, the kind and the state beside
+// the four descriptive fields. The owner is shown by display name and username
+// together, because a display name alone is ambiguous when two members share
+// one; the owning account travels beside them as the internal key the ownership
+// decision and the transfer-target exclusion use, and a client compares it to
+// identify the owner. It carries no tenant identifier: the identifier is
+// internal, and the request surface addresses the tenant by the alias. It is
+// deliberately not the platform management surface's view: that one renders the
+// disable source, which belongs to the platform surface and not to a tenant
+// administrator's own profile page.
 //
 // The kind is the one value a client branches on: a personal organization has
 // no ownership controls, and its alias is the owner's username, which says
@@ -29,17 +33,19 @@ import (
 // tenant's own policy domain, so a member without it is refused before the view
 // is built.
 type TenantProfileView struct {
-	_ struct{} `description:"One tenant's organization profile: the read-only alias, the kind, the owning account, the state and the four descriptive fields, behind tenant.profile.read."`
+	_ struct{} `description:"One tenant's organization profile: the read-only alias, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read."`
 
-	Alias        string    `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
-	Kind         string    `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias."`
-	DisplayName  string    `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the alias then."`
-	Description  string    `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
-	ContactEmail string    `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
-	Website      string    `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
-	OwnerAccount string    `json:"ownerAccount" required:"true" description:"The account that owns the organization, from the roster row's owner column. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner."`
-	Status       string    `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
-	CreatedAt    time.Time `json:"createdAt" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
+	Alias            string    `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by."`
+	Kind             string    `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias."`
+	DisplayName      string    `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the alias then."`
+	Description      string    `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
+	ContactEmail     string    `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
+	Website          string    `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
+	OwnerDisplayName string    `json:"ownerDisplayName" required:"true" description:"The owner's display name, read from the account store. It is not the account identifier. Empty when the owner cannot be resolved, and never an identifier."`
+	OwnerUsername    string    `json:"ownerUsername" required:"true" description:"The owner's account username, read from the account store: unique and user-facing, and not the account identifier. Empty when the owner cannot be resolved or the account has none, and never an identifier."`
+	OwnerAccount     string    `json:"ownerAccount" required:"true" description:"The owning account's internal identifier, from the roster row's owner column. It is the key the ownership decision and the transfer-target exclusion use, and a client compares it to identify the owner; it is not displayed. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner."`
+	Status           string    `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
+	CreatedAt        time.Time `json:"createdAt" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
 }
 
 // profileViewOf builds the view field by field from a root-package value.

@@ -2289,7 +2289,7 @@ export const TenantProfileViewStatus = {
 } as const;
 
 /**
- * One tenant's organization profile: the read-only alias, the kind, the owning account, the state and the four descriptive fields, behind tenant.profile.read.
+ * One tenant's organization profile: the read-only alias, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read.
  */
 export interface TenantProfileView {
   /** The alias the request surface addresses the tenant by. */
@@ -2304,8 +2304,12 @@ export interface TenantProfileView {
   displayName: string;
   /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias. */
   kind: TenantProfileViewKind;
-  /** The account that owns the organization, from the roster row's owner column. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner. */
+  /** The owning account's internal identifier, from the roster row's owner column. It is the key the ownership decision and the transfer-target exclusion use, and a client compares it to identify the owner; it is not displayed. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner. */
   ownerAccount: string;
+  /** The owner's display name, read from the account store. It is not the account identifier. Empty when the owner cannot be resolved, and never an identifier. */
+  ownerDisplayName: string;
+  /** The owner's account username, read from the account store: unique and user-facing, and not the account identifier. Empty when the owner cannot be resolved or the account has none, and never an identifier. */
+  ownerUsername: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
   status: TenantProfileViewStatus;
   /** The organization's absolute http or https address. Empty when its profile names none. */

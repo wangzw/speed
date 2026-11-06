@@ -31,7 +31,14 @@ func (p *product) handleGet(ctx context.Context, _ profileInput, _ *speedhttp.Me
 	if kindErr != nil {
 		return p.replyFailure("reading a tenant's kind", kindErr)
 	}
-	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: profileViewOf(got, kind)}), nil
+	view := profileViewOf(got, kind)
+	ownerDisplayName, ownerUsername, ownerErr := p.ownerNames(ctx, got.OwnerAccount)
+	if ownerErr != nil {
+		return nil, ownerErr
+	}
+	view.OwnerDisplayName = ownerDisplayName
+	view.OwnerUsername = ownerUsername
+	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: view}), nil
 }
 
 // handleSet answers PATCH /api/v1/tenants/{tenant}/profile: it writes one
@@ -85,5 +92,12 @@ func (p *product) handleSet(ctx context.Context, in profileWriteInput, _ *speedh
 		return p.replyFailure("reading a tenant's kind", kindErr)
 	}
 	got.Profile = profile
-	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: profileViewOf(got, kind)}), nil
+	view := profileViewOf(got, kind)
+	ownerDisplayName, ownerUsername, ownerErr := p.ownerNames(ctx, got.OwnerAccount)
+	if ownerErr != nil {
+		return nil, ownerErr
+	}
+	view.OwnerDisplayName = ownerDisplayName
+	view.OwnerUsername = ownerUsername
+	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: view}), nil
 }

@@ -101,7 +101,9 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // a command that takes this one in does not pull either in: the host writes
 // them down. The verification read is what lets a write refuse an account whose
 // email address is not proved. The logger is optional, taken up so that it is
-// initialised first.
+// initialised first. The account read surface is optional too: with it the
+// owner is shown by display name and username, and without it the owner stays
+// unresolved rather than being named by the internal account identifier.
 //
 // The HTTP entry point, the tenant administration guard, the route-declaration
 // surface and the logger are taken up in Init: a command that mounts routes and
@@ -171,7 +173,7 @@ func productOf(instance any) (*product, bool) {
 }
 
 // product is the module's instance. It holds the required capabilities and the
-// optional route-declaration surface taken up in Init.
+// optional seams taken up in Init.
 type product struct {
 	catalog tenant.Catalog
 	guard   guard.Guard
@@ -180,6 +182,12 @@ type product struct {
 	// got. A write route reads it before the permission decision, so an account
 	// whose email address is not proved cannot change a profile.
 	verification authn.SignupVerification
+
+	// accounts reads the account that owns a tenant, so the owner is shown by
+	// display name and username rather than by the internal account identifier.
+	// Nil means the assembly delivers none: the owner is unresolved and both
+	// names stay empty.
+	accounts authn.Accounts
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every route open on it.
@@ -253,11 +261,17 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 }
 
 // wire runs in Init, where every instance exists. It takes up the optional
-// route-declaration surface and the logger, mounts the routes, declares them
-// open, and writes the start diagnostic.
+// seams, mounts the routes, declares them open, and writes the start
+// diagnostic. The account read is optional: without it the owner is unresolved
+// rather than named by the identifier, which is never shown.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
+	}
+	if accounts, found, err := optional[authn.Accounts](reg, "the account read surface"); err != nil {
+		return err
+	} else if found {
+		p.accounts = accounts
 	}
 	if gate, found, err := optional[authz.Gate](reg, "the route-declaration surface"); err != nil {
 		return err

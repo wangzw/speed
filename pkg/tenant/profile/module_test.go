@@ -58,6 +58,9 @@ type moduleAssembly struct {
 	router speedhttp.Router
 	// gate is the optional route-declaration surface.
 	gate authz.Gate
+	// accounts is the optional account read surface the owner resolution uses;
+	// nil leaves the seam out, which is a legal assembly.
+	accounts authn.Accounts
 	// logger is the logging capability; nil uses a recorder.
 	logger *slog.Logger
 	// record, when set, receives the product New built.
@@ -119,6 +122,10 @@ func (a moduleAssembly) drive(t *testing.T, depth core.Stage, action func(contex
 	if a.gate != nil {
 		reg.Register(standIn("stand-in.gate", a.gate, (*authz.Gate)(nil)))
 		names = append(names, "stand-in.gate")
+	}
+	if a.accounts != nil {
+		reg.Register(standIn("stand-in.accounts", a.accounts, (*authn.Accounts)(nil)))
+		names = append(names, "stand-in.accounts")
 	}
 	if action == nil {
 		action = func(context.Context, *core.Registry) error { return nil }
