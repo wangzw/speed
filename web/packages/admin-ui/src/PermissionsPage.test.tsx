@@ -638,7 +638,13 @@ describe('PermissionsPage', () => {
     })
     expect(within(option).getByText(described)).toBeInTheDocument()
     await user.click(option)
-    const picker = screen.getByLabelText(zhCN.permissions.grants.permissionLabel)
+    // The menu closes asynchronously, and until its listbox unmounts the
+    // label addresses both it and the combobox: wait the listbox out and
+    // name the combobox by role so the read cannot match two elements.
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+    const picker = screen.getByRole('combobox', {
+      name: zhCN.permissions.grants.permissionLabel,
+    })
     expect(picker).toHaveTextContent('crm.deal.read')
     expect(picker).not.toHaveTextContent(described)
   })
@@ -678,8 +684,14 @@ describe('PermissionsPage', () => {
     expect(option.querySelector(`.${typographyClasses.caption}`)).toBeNull()
     expect(option.textContent).toBe('crm.deal.read')
     await user.click(option)
+    // Same close transition as the described picker: the listbox still
+    // carries the label while the menu closes, so wait it out and address
+    // the combobox by role.
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
     expect(
-      screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.grants.permissionLabel,
+      }),
     ).toHaveTextContent(/^crm\.deal\.read$/)
   })
 

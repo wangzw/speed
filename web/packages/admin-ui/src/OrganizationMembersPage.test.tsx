@@ -409,6 +409,21 @@ function manageButton(name: string): HTMLElement {
   })
 }
 
+/**
+ * Waits for the row holding `target` and its resend action.
+ *
+ * A resend's confirmation closes with a transition, and until it unmounts
+ * the page beside it is `aria-hidden`, so a role query made too early sees
+ * no button. The row is re-queried on every attempt so a re-render cannot
+ * leave the lookup pointing at a detached node.
+ */
+async function findResendButtonOf(target: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const row = rowOf(target)
+    return within(row).getByRole('button', { name: zhCN.invitations.resend })
+  })
+}
+
 async function openPanel(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
@@ -1803,9 +1818,7 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    const failedResend = within(
-      rowOf(PENDING_INVITATION.email),
-    ).getByRole('button', { name: zhCN.invitations.resend })
+    const failedResend = await findResendButtonOf(PENDING_INVITATION.email)
     await waitFor(() =>
       expect(failedResend).toHaveAttribute('aria-invalid', 'true'),
     )
@@ -1844,9 +1857,7 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    const failedResend = within(
-      rowOf(PENDING_INVITATION.email),
-    ).getByRole('button', { name: zhCN.invitations.resend })
+    const failedResend = await findResendButtonOf(PENDING_INVITATION.email)
     await waitFor(() =>
       expect(failedResend).toHaveAttribute('aria-invalid', 'true'),
     )
