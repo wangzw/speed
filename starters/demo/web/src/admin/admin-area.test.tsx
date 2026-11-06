@@ -299,7 +299,7 @@ describe('AdminArea', () => {
       const method = options?.method ?? 'GET'
       if (path === '/api/v1/system/tenants' && method === 'GET') {
         return Promise.resolve({
-          tenants: [{ id: 'acme', alias: 'Acme', status: 'active' }],
+          tenants: [{ alias: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }],
         } as T)
       }
       if (

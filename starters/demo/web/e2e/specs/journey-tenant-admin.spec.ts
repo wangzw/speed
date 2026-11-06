@@ -4024,13 +4024,15 @@ test.describe('the organization profile page belongs to its owner', () => {
         alias: OWNED_ALIAS,
         displayName: OWNED_NAME,
       })
-      const organizationId = (
+      // The identity card names the organization by its alias, the name the
+      // request surface uses; it carries no internal identifier.
+      const organizationAlias = (
         await definitionValue(
           page,
-          copy('adminUi', 'tenantProfile.field.id'),
+          copy('adminUi', 'tenantProfile.field.alias'),
         ).innerText()
       ).trim()
-      expect(organizationId).not.toBe('')
+      expect(organizationAlias).toBe(OWNED_ALIAS)
 
       // Another session ends the organization through the platform surface.
       // The page under test keeps its cached profile, so its owner controls
@@ -4080,7 +4082,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         .click()
       const platformDelete = operator.getByRole('dialog', {
         name: copy('adminUi', 'tenantLifecycle.deleteConfirm.title', {
-          id: organizationId,
+          name: OWNED_NAME,
         }),
         exact: true,
       })
@@ -4100,7 +4102,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(
         operator.getByText(
           copy('adminUi', 'tenantLifecycle.deleteConfirm.success', {
-            id: organizationId,
+            alias: organizationAlias,
           }),
           { exact: true },
         ),

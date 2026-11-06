@@ -39,8 +39,8 @@ import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
   getCurrentTenantAlias,
-  getCurrentTenantId,
-  setCurrentTenantId,
+  getCurrentTenant,
+  setCurrentTenant,
   setTenantAliases,
 } from './chrome.js'
 import { clearSelfTenants } from './tenant-self.js'
@@ -100,7 +100,7 @@ function announcementRegion(): HTMLElement {
   return regions[0]!
 }
 
-const TENANT = { id: 'acme', alias: 'acme', status: 'active' as const }
+const TENANT = { alias: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }
 
 interface GrantFixture {
   readonly id: string
@@ -380,7 +380,11 @@ function makeBackend(options: {
   /** The tenant id the start write grants; defaults to the fixture's. */
   readonly startTenant?: string
   /** The tenants the caller tenant read answers; defaults to none. */
-  readonly selfTenants?: readonly { readonly id: string; readonly alias: string }[]
+  readonly selfTenants?: readonly {
+    readonly alias: string
+    readonly displayName?: string
+    readonly kind?: 'business' | 'personal'
+  }[]
   /** Refuses the status read once it has been issued more than this many
    * times. A self-driving 404 loop is a microtask storm that would otherwise
    * hang the test until its timeout; this turns it into an answer the test
@@ -520,7 +524,7 @@ function makeBackend(options: {
     // whose function returned undefined.
     if (path === '/api/v1/notifications/messages/unread-count') {
       unreadReads += 1
-      unreadTenantIds.push(getCurrentTenantId())
+      unreadTenantIds.push(getCurrentTenant())
       unreadAliases.push(getCurrentTenantAlias())
       return Promise.resolve({ unread: 0 } as T)
     }
@@ -576,7 +580,7 @@ function streamClient(): {
     openEventStream: () => {
       const record = { closed: 0 }
       opened.push(record)
-      tenants.push(getCurrentTenantId())
+      tenants.push(getCurrentTenant())
       return {
         close: () => {
           record.closed += 1
@@ -635,7 +639,7 @@ const TENANT_ID = 'acme'
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  setCurrentTenantId(TENANT_ID)
+  setCurrentTenant(TENANT_ID)
   setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
   // The caller tenant list is module state: a case starts with no rows and
   // loads its own through the scripted backend.
@@ -781,7 +785,7 @@ describe('the impersonation shell', () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      selfTenants: [{ alias: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
@@ -812,7 +816,7 @@ describe('the impersonation shell', () => {
     await waitFor(() =>
       expect(organizationEntry(reopened, 'acme')).not.toBeNull(),
     )
-    expect(getCurrentTenantId()).toBe('acme')
+    expect(getCurrentTenant()).toBe('acme')
   })
 
   it('keeps the switcher out of the bar while the caller tenant read settles after an impersonation ends', async () => {
@@ -822,7 +826,7 @@ describe('the impersonation shell', () => {
     const self = deferred()
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      selfTenants: [{ alias: 'acme' }],
       selfGateAfterEnd: self.promise,
     })
     bindRequestFn(backend.fn)
@@ -866,7 +870,7 @@ describe('the impersonation shell', () => {
     await waitFor(() =>
       expect(organizationEntry(gapMenu, 'acme')).not.toBeNull(),
     )
-    expect(getCurrentTenantId()).toBe('acme')
+    expect(getCurrentTenant()).toBe('acme')
   })
 
   it('keeps the switcher out of the bar until the caller tenant read settles after an impersonation ends', async () => {
@@ -881,7 +885,7 @@ describe('the impersonation shell', () => {
     const self = deferred()
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      selfTenants: [{ alias: 'acme' }],
       rosterGate: roster.promise,
       selfGateAfterEnd: self.promise,
     })
@@ -931,7 +935,7 @@ describe('the impersonation shell', () => {
     await waitFor(() =>
       expect(organizationEntry(menu, 'acme')).not.toBeNull(),
     )
-    expect(getCurrentTenantId()).toBe('acme')
+    expect(getCurrentTenant()).toBe('acme')
   })
 
   it('keeps the no-current-tenant state for a viewer whose caller tenant list settles empty', async () => {
@@ -940,7 +944,7 @@ describe('the impersonation shell', () => {
     // not an identity change. The switcher mounts and states that state -- only
     // the impersonation-end transition withholds it -- and no roster read is
     // spent, because the member holds no tenant.read.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     const backend = makeBackend()
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
@@ -960,7 +964,7 @@ describe('the impersonation shell', () => {
   it('leaves the top bar unchanged for a member who is not impersonating', async () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
-      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      selfTenants: [{ alias: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
@@ -984,7 +988,7 @@ describe('the impersonation shell', () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      selfTenants: [{ alias: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const { client, opened } = streamClient()
@@ -1285,11 +1289,11 @@ describe('the impersonation shell', () => {
     // impersonated account's own membership list can name the grant's tenant,
     // and a tenant-scoped read that announces no alias is refused by the
     // admission layer.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      selfTenants: [{ alias: 'acme' }],
     })
     bindRequestFn(backend.fn)
 
@@ -2045,7 +2049,7 @@ describe('the impersonation shell', () => {
     // read as empty, the area redirects; without the read it waits forever.
     window.history.replaceState({}, '', '/admin/tenants')
     // A full load starts with no current tenant and no alias cache.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     const request: RequestFn = <T,>(
       path: string,
@@ -2055,7 +2059,7 @@ describe('the impersonation shell', () => {
       }
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: 'acme', alias: 'acme' }],
+          tenants: [{ alias: 'acme', kind: 'business' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -2107,13 +2111,13 @@ describe('the impersonation shell', () => {
     // The frame starts an impersonation with no settled tenant (the module
     // cell may still hold the operator's from before). The permission read
     // follows the cell, so the case starts from the state the frame settles.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
       // The operator's own membership is the platform's organization: the
       // admin entry is offered only there, so the end must settle it for the
       // entry to be the observable this case reads.
-      selfTenants: [{ id: 'system', alias: 'system' }],
+      selfTenants: [{ alias: 'system', kind: 'business' }],
     })
     // The read fails while the session impersonates and answers for the
     // operator: the test needs the two outcomes, not a reason the
@@ -2421,7 +2425,7 @@ describe('the impersonation shell', () => {
       window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
       // The operator's tenant is what the module-level cell holds while the
       // admin has the frame unmounted.
-      setCurrentTenantId('acme')
+      setCurrentTenant('acme')
       setTenantAliases(
         new Map([
           ['acme', 'acme'],
@@ -2474,13 +2478,13 @@ describe('the impersonation shell', () => {
           )?.fetchStatus,
         ).toBe('fetching'),
       )
-      expect(getCurrentTenantId()).toBeNull()
+      expect(getCurrentTenant()).toBeNull()
       // Hold the claim past React Query's retry delay: a tenant read retried
       // at one second would fall outside a fixed 20 ms window.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2_000)
       })
-      expect(getCurrentTenantId()).toBeNull()
+      expect(getCurrentTenant()).toBeNull()
       expect(backend.tenantReads()).toBe(tenantBefore)
       expect(opened.length).toBe(openedBefore)
 
@@ -2977,7 +2981,7 @@ describe('the admin under an impersonation', () => {
         ...grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
         tenant: 'system',
       },
-      selfTenants: [{ id: 'system', alias: 'system' }],
+      selfTenants: [{ alias: 'system', kind: 'business' }],
     })
     bindRequestFn(<T,>(path: string, options?: RequestOptions): Promise<T> => {
       if (path === '/api/v1/authz/me/permissions') {
@@ -3009,7 +3013,7 @@ describe('the admin under an impersonation', () => {
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
       // The operator's own organization is the platform's: the menu offers
       // the admin entry only there.
-      selfTenants: [{ id: 'system', alias: 'system' }],
+      selfTenants: [{ alias: 'system', kind: 'business' }],
     })
     bindRequestFn(backend.fn)
     const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())

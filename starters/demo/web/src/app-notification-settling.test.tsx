@@ -15,8 +15,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import {
-  getCurrentTenantId,
-  setCurrentTenantId,
+  getCurrentTenant,
+  setCurrentTenant,
   setTenantAliases,
 } from './chrome.js'
 import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
@@ -31,7 +31,6 @@ const ROSTER_PATH = '/api/v1/system/tenants'
 const SELF_PATH = '/api/v1/auth/me/tenants'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 
-const PERSONAL_ID = 'personal-account-1'
 const PERSONAL_ALIAS = 'notice-member'
 
 /** The caller's own profile: no self-registration, so the verification gate
@@ -59,7 +58,7 @@ const STREAM_FEATURES = [
 
 beforeEach(() => {
   // The tenant a previous session in this tab left behind.
-  setCurrentTenantId('acme')
+  setCurrentTenant('acme')
   setTenantAliases(new Map([['acme', 'acme']]))
 })
 
@@ -112,12 +111,12 @@ describe('the live subscription and the tenant context', () => {
     // session's tenant is gone and the new context has not settled, so neither
     // tenant-scoped surface may open.
     await waitFor(() => expect(calls).toContain(`GET ${SELF_PATH}`))
-    expect(getCurrentTenantId()).toBeNull()
+    expect(getCurrentTenant()).toBeNull()
     expect(openStream).not.toHaveBeenCalled()
     expect(calls).not.toContain(`GET ${UNREAD_PATH}`)
 
     resolveSelf({
-      tenants: [{ id: PERSONAL_ID, alias: PERSONAL_ALIAS, kind: 'personal' }],
+      tenants: [{ alias: PERSONAL_ALIAS, kind: 'personal' }],
     })
 
     // The list settled the current tenant, and both surfaces follow. The
@@ -127,7 +126,7 @@ describe('the live subscription and the tenant context', () => {
     await waitFor(() => expect(openStream).toHaveBeenCalledTimes(2))
     expect(closes).toHaveLength(1)
     expect(openStream.mock.calls.length - closes.length).toBe(1)
-    expect(getCurrentTenantId()).toBe(PERSONAL_ID)
+    expect(getCurrentTenant()).toBe(PERSONAL_ALIAS)
     await waitFor(() => expect(calls).toContain(`GET ${UNREAD_PATH}`))
   })
 })

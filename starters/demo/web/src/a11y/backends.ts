@@ -117,8 +117,8 @@ const ZERO_INSTANT = '0001-01-01T00:00:00Z'
 // --- The canned rows (data mode), typed against the generated shapes. -------
 
 const TENANT: TenantAdminTenant = {
-  id: 'acme',
-  alias: 'Acme Inc.',
+  alias: 'acme',
+  kind: 'business',
   status: 'active',
   contactEmail: 'ops@acme.example',
   description: 'The canned organization the fixture answers with.',
@@ -132,7 +132,6 @@ const TENANT: TenantAdminTenant = {
  * carries. The profile route is a single object, so both modes answer it:
  * the page has no empty state to reach. */
 const TENANT_PROFILE: TenantProfileView = {
-  id: TENANT.id,
   alias: TENANT.alias,
   status: TENANT.status,
   contactEmail: TENANT.contactEmail,
@@ -164,7 +163,7 @@ const ACCOUNT: AuthnAdminAccount = {
  */
 const MEMBER: AuthnAdminMember = {
   account: ACCOUNT.id,
-  tenant: TENANT.id,
+  tenant: TENANT.alias,
   active: true,
   display_name: 'Test User',
   sso_exempt: false,
@@ -180,7 +179,7 @@ const MEMBER: AuthnAdminMember = {
  */
 const INVITATION_ROW: AuthnInviteInvitation = {
   id: 'invite-1',
-  tenant: TENANT.id,
+  tenant: TENANT.alias,
   email: 'invitee@example.com',
   invited_by: ACCOUNT.id,
   status: 'pending',
@@ -192,7 +191,7 @@ const INVITATION_ROW: AuthnInviteInvitation = {
 /** One SSO provider of the scan tenant, with no claimed domain. */
 const SSO_PROVIDER: AuthnAdminProvider = {
   id: 'provider-1',
-  tenant: TENANT.id,
+  tenant: TENANT.alias,
   name: 'Example IdP',
   protocol: 'oidc',
   enabled: true,
@@ -247,7 +246,7 @@ const TENANT_ROLE: AuthzTenantAdminRoleView = {
   description: '',
   permission_count: 0,
   role: 'support',
-  tenant: TENANT.id,
+  tenant: TENANT.alias,
 }
 
 const TENANT_PERMISSION: AuthzTenantAdminPermissionView = {
@@ -264,14 +263,14 @@ const TENANT_GRANT: AuthzTenantAdminGrantView = {
   permission: TENANT_PERMISSION.permission,
   resource: 'tenant.settings',
   role: TENANT_ROLE.role,
-  tenant: TENANT.id,
+  tenant: TENANT.alias,
 }
 
 const TENANT_BINDING: AuthzTenantAdminBindingView = {
   account: ACCOUNT.id,
   granted_at: INSTANT,
   role: TENANT_ROLE.role,
-  tenant: TENANT.id,
+  tenant: TENANT.alias,
 }
 
 /** The two sign-in policies the organization security page manages, as the
@@ -459,7 +458,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     {
       tenants: [
         {
-          id: TENANT.id,
           alias: TENANT.alias,
           kind: 'business',
           displayName: TENANT.displayName,
@@ -473,7 +471,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     {
       tenants: [
         {
-          id: TENANT.id,
           alias: TENANT.alias,
           kind: 'business',
           displayName: TENANT.displayName,

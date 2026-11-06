@@ -20,7 +20,7 @@ import {
 import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createBackend } from './a11y/backends.js'
-import { setCurrentTenantId, setTenantAliases } from './chrome.js'
+import { setCurrentTenant, setTenantAliases } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
 import {
@@ -51,7 +51,7 @@ function triggerName(count: string): string {
 }
 
 beforeEach(() => {
-  setCurrentTenantId('acme')
+  setCurrentTenant('acme')
   setTenantAliases(new Map([['acme', 'acme']]))
 })
 

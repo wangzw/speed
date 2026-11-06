@@ -32,7 +32,7 @@ import { organizationAdminRoutes } from '@speed/admin-ui'
 import type { AdminRoute, AdminRouteTable } from '@speed/admin-ui'
 import {
   getRecordedTenantKind,
-  useCurrentTenantId,
+  useCurrentTenant,
 } from './chrome.js'
 import { ORGANIZATION_ADMIN_PREFIX } from './paths.js'
 import {
@@ -66,7 +66,7 @@ export const organizationAdminShellRoutes: AdminRouteTable =
  * render. */
 export interface OrganizationAdminEntry {
   /** The current tenant the surface acts on; every request names it. */
-  readonly tenantId: string
+  readonly tenantAlias: string
   /** The first declaration the caller may open. */
   readonly target: string
   /** The narrowed declarations, prefixed. */
@@ -123,7 +123,7 @@ export function useOrganizationAdminPermission(
  */
 export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
   const snapshot = useAuthState()
-  const tenantId = useCurrentTenantId()
+  const tenantAlias = useCurrentTenant()
   const self = useSelfTenantState()
   const read = usePermissionRead()
   const presence = featurePresence(useFeatureState())
@@ -142,22 +142,22 @@ export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
       ? { status: 'failed' }
       : { status: 'pending' }
   }
-  if (tenantId === null) {
+  if (tenantAlias === null) {
     // No tenant is settled. A failed caller-tenants read is why: the read
     // that supplies the settlement never answered, so this is a retryable
     // failure, not a wait. A settled list may still be about to settle the
     // tenant in the same commit, which is the pending case.
     return self.failed ? { status: 'failed' } : { status: 'pending' }
   }
-  if (tenantId === 'system') {
+  if (tenantAlias === 'system') {
     return { status: 'denied' }
   }
   // The kind is the host's answer for this tenant: the caller tenant read
   // carries it, and an operation's answer can record it before the list
   // does. A tenant the host knows nothing about is not shown as a business
   // tenant; a list that has not settled yet is still pending.
-  const row = self.tenants.find((tenant) => tenant.id === tenantId)
-  const kind = row?.kind ?? getRecordedTenantKind(tenantId)
+  const row = self.tenants.find((tenant) => tenant.alias === tenantAlias)
+  const kind = row?.kind ?? getRecordedTenantKind(tenantAlias)
   if (kind === null) {
     // An unknown kind after a failed caller-tenants read is a fault, not a
     // "not a member": the read never answered, so the admission retries
@@ -180,7 +180,7 @@ export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
   // clears and re-reads, so that window stays pending rather than admitting
   // the new tenant with the old tenant's set. A failure tagged with another
   // tenant is likewise not this tenant's failure -- the re-read is in flight.
-  if (read.tenantId !== tenantId) {
+  if (read.tenantAlias !== tenantAlias) {
     return { status: 'pending' }
   }
   if (read.failed) {
@@ -232,5 +232,5 @@ export function useOrganizationAdminAdmission(): OrganizationAdminAdmission {
         onClick: item.onClick,
       }),
     )
-  return { status: 'allowed', tenantId, target, routes: narrowed, children }
+  return { status: 'allowed', tenantAlias, target, routes: narrowed, children }
 }

@@ -23,7 +23,7 @@ import {
 } from '@speed/org-create-ui'
 import { useNavigate } from '@speed/route-kit'
 import { orgCreateCreate } from '../app-api/index.js'
-import { setCurrentTenantId, setTenantAlias } from '../chrome.js'
+import { setCurrentTenant, setTenantAlias } from '../chrome.js'
 import { ORGANIZATION_ADMIN_PROFILE_PATH } from '../paths.js'
 import { loadSelfTenants } from '../tenant-self.js'
 
@@ -43,7 +43,6 @@ export function OrganizationCreateRoute(): ReactElement {
         })
         const tenant = answer.tenant
         return {
-          id: tenant.id,
           alias: tenant.alias,
           displayName: tenant.displayName,
           description: tenant.description,
@@ -53,8 +52,8 @@ export function OrganizationCreateRoute(): ReactElement {
         // Record the alias and kind before the switch: the request surface
         // announces the alias, and the account menu labels the row by the
         // kind an operation's answer recorded.
-        setTenantAlias(created.id, created.alias, 'business')
-        setCurrentTenantId(created.id)
+        setTenantAlias(created.alias, 'business')
+        setCurrentTenant(created.alias)
         const state = await loadSelfTenants()
         if (state.failed) {
           throw { code: 'client.network' }

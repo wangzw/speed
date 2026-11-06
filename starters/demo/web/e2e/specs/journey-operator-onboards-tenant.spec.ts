@@ -113,11 +113,8 @@ const OPERATOR = {
 /** The tenant the seed registers; its identifier and alias are the same. */
 const SEEDED_TENANT = 'acme'
 
-/** The identifier of the tenant this journey registers. */
-const TENANT_ID = 'globex'
-
-/** The alias the tenant is registered with; it differs from the identifier. */
-const TENANT_ALIAS = 'globex-labs'
+/** The alias the tenant this journey registers is addressed by. */
+const TENANT_ALIAS = 'globex'
 
 /** The display name the registration form requires. */
 const TENANT_DISPLAY_NAME = 'Globex Labs'
@@ -257,14 +254,10 @@ function rosterRow(page: Page, id: string): Locator {
     .filter({ hasText: id })
 }
 
-/**
- * The identifier cell of a roster row. The identifier is the row's link to the
- * tenant's detail page; the alias cell beside it may carry the same text (a
- * tenant registered with alias equal to identifier), so the two are addressed
- * by role and by title respectively rather than by text.
- */
-function rosterIdentifier(row: Locator, id: string): Locator {
-  return row.getByRole('link', { name: id, exact: true })
+/** The display-name cell of a roster row; it is the row's link to the
+ * tenant's detail page. */
+function rosterDisplayName(row: Locator, name: string): Locator {
+  return row.getByRole('link', { name, exact: true })
 }
 
 /**
@@ -458,7 +451,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(rows).toHaveCount(5)
       const seeded = rosterRow(page, SEEDED_TENANT)
       await expect(seeded).toHaveCount(1)
-      await expect(rosterIdentifier(seeded, SEEDED_TENANT)).toBeVisible()
+      await expect(rosterDisplayName(seeded, SEEDED_TENANT)).toBeVisible()
       await expect(rosterAlias(seeded, SEEDED_TENANT)).toBeVisible()
       await expect(
         seeded.getByText(copy('adminUi', 'tenants.status.active'), {
@@ -488,10 +481,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       const form = createSection(page)
-      const idField = form.getByLabel(
-        copy('orgCreateUi', 'fields.id'),
-        { exact: true },
-      )
       const aliasField = form.getByLabel(
         copy('orgCreateUi', 'fields.alias'),
         { exact: true },
@@ -506,33 +495,23 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       })
       const conflict = copy('adminUi', 'errors.tenant.conflict')
 
-      // REQ-tenancy-001's first collision branch: an identifier another tenant
-      // holds is refused, and the page stays on the registration form.
-      await idField.fill(SEEDED_TENANT)
-      await aliasField.fill('acme-alias-clash')
+      // REQ-tenancy-001: an alias another tenant holds is refused, and the
+      // page stays on the registration form. The form asks for no internal
+      // identifier: the server mints it.
+      await aliasField.fill(SEEDED_TENANT)
       await displayNameField.fill('Acme Alias Clash')
       await submit.click()
       await expect(page.getByText(conflict, { exact: true })).toBeVisible()
 
-      // Its second branch: an alias another tenant holds is refused the same
-      // way, with a fresh identifier.
-      await idField.fill(`${TENANT_ID}-spare`)
-      await aliasField.fill(SEEDED_TENANT)
-      await displayNameField.fill('Acme Spare')
-      await submit.click()
-      await expect(page.getByText(conflict, { exact: true })).toBeVisible()
-
       // The successful registration navigates to the new tenant's detail
-      // page. The alias differs from the identifier, so the later accept
-      // summary and account-menu assertions can tell the two names apart.
-      await idField.fill(TENANT_ID)
+      // page, addressed by the alias the answer returned.
       await aliasField.fill(TENANT_ALIAS)
       await displayNameField.fill(TENANT_DISPLAY_NAME)
       await submit.click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('adminUi', 'tenantDetail.title', { id: TENANT_ID }),
+          name: copy('adminUi', 'tenantDetail.title', { name: TENANT_DISPLAY_NAME }),
           exact: true,
         }),
       ).toBeVisible()
@@ -555,9 +534,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
       await expect(rows).toHaveCount(before + 1)
-      const created = rosterRow(page, TENANT_ID)
+      const created = rosterRow(page, TENANT_ALIAS)
       await expect(created).toHaveCount(1)
-      await expect(rosterIdentifier(created, TENANT_ID)).toBeVisible()
+      await expect(rosterDisplayName(created, TENANT_DISPLAY_NAME)).toBeVisible()
       await expect(rosterAlias(created, TENANT_ALIAS)).toBeVisible()
       await expect(
         created.getByText(copy('adminUi', 'tenants.status.active'), {
@@ -568,30 +547,29 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // The roster is read in identifier order: acme first, the new tenant
       // after it.
       await expect(rows.nth(0)).toContainText(SEEDED_TENANT)
-      await expect(rows.nth(1)).toContainText(TENANT_ID)
+      await expect(rows.nth(1)).toContainText(TENANT_ALIAS)
     })
 
-    await test.step("step 4: the detail page shows the tenant's identifier, alias and status", async () => {
+    await test.step("step 4: the detail page shows the tenant's alias, display name and status", async () => {
       // REQ-platform-admin-011: the detail page is reached from the roster row
-      // and shows the identifier, the alias and the status.
-      await rosterRow(page, TENANT_ID)
-        .getByRole('link', { name: TENANT_ID, exact: true })
+      // and shows the alias, the display name and the status.
+      await rosterRow(page, TENANT_ALIAS)
+        .getByRole('link', { name: TENANT_DISPLAY_NAME, exact: true })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('adminUi', 'tenantDetail.title', { id: TENANT_ID }),
+          name: copy('adminUi', 'tenantDetail.title', { name: TENANT_DISPLAY_NAME }),
           exact: true,
         }),
       ).toBeVisible()
 
-      // Summary fields, in the page's own order: identifier, alias, display
-      // name, status. An alias is immutable after creation: the cell is
-      // read-only and the page offers no rename control.
-      await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
-      await expect(summaryValue(page, 1)).toHaveText(TENANT_ALIAS)
-      await expect(summaryValue(page, 2)).toHaveText(TENANT_DISPLAY_NAME)
-      await expect(summaryValue(page, 3)).toHaveText(
+      // Summary fields, in the page's own order: alias, display name, status.
+      // An alias is immutable after creation: the cell is read-only and the
+      // page offers no rename control.
+      await expect(summaryValue(page, 0)).toHaveText(TENANT_ALIAS)
+      await expect(summaryValue(page, 1)).toHaveText(TENANT_DISPLAY_NAME)
+      await expect(summaryValue(page, 2)).toHaveText(
         copy('adminUi', 'tenants.status.active'),
       )
       await expect(
@@ -608,9 +586,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .click()
-      await expect(rosterRow(page, TENANT_ID)).toHaveCount(1)
+      await expect(rosterRow(page, TENANT_ALIAS)).toHaveCount(1)
       await expect(
-        rosterAlias(rosterRow(page, TENANT_ID), TENANT_ALIAS),
+        rosterAlias(rosterRow(page, TENANT_ALIAS), TENANT_ALIAS),
       ).toBeVisible()
     })
 
@@ -903,7 +881,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await panel
         .getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
-            tenant: TENANT_ID,
+            tenant: TENANT_ALIAS,
             email: reviewInvitee.identifier,
           }),
           exact: true,
@@ -955,7 +933,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toHaveCount(0)
       await expect(
         invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_ID }),
+          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_ALIAS }),
           { exact: true },
         ),
       ).toHaveCount(0)
@@ -995,7 +973,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // the expiry the issue carried.
       await expect(
         invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_ID }),
+          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_ALIAS }),
           { exact: true },
         ),
       ).toBeVisible()
@@ -1260,7 +1238,7 @@ async function enterAdminFromHome(page: Page): Promise<void> {
 /** One tenant roster row's transfer control. */
 function transferTenantButton(page: Page, id: string): Locator {
   return rosterRow(page, id).getByRole('button', {
-    name: copy('adminUi', 'tenantLifecycle.transferAria', { id }),
+    name: copy('adminUi', 'tenantLifecycle.transferAria', { alias: id }),
     exact: true,
   })
 }
@@ -1268,7 +1246,7 @@ function transferTenantButton(page: Page, id: string): Locator {
 /** One tenant roster row's delete control. */
 function deleteTenantButton(page: Page, id: string): Locator {
   return rosterRow(page, id).getByRole('button', {
-    name: copy('adminUi', 'tenantLifecycle.deleteAria', { id }),
+    name: copy('adminUi', 'tenantLifecycle.deleteAria', { alias: id }),
     exact: true,
   })
 }
@@ -1276,7 +1254,7 @@ function deleteTenantButton(page: Page, id: string): Locator {
 /** The transfer dialog's open dialog. */
 function transferDialog(page: Page, id: string): Locator {
   return page.getByRole('dialog', {
-    name: copy('adminUi', 'tenantLifecycle.transfer.title', { id }),
+    name: copy('adminUi', 'tenantLifecycle.transfer.title', { name: id }),
     exact: true,
   })
 }
@@ -1349,7 +1327,7 @@ test.describe('the platform lifecycle controls', () => {
 
     const confirm = page.getByRole('dialog', {
       name: copy('adminUi', 'tenantLifecycle.transfer.confirmTitle', {
-        id: SEEDED_TENANT,
+        name: SEEDED_TENANT,
       }),
       exact: true,
     })
@@ -1363,7 +1341,7 @@ test.describe('the platform lifecycle controls', () => {
     await expect(
       page.getByText(
         copyPattern('adminUi', 'tenantLifecycle.transfer.success', {
-          id: escapeRegExp(SEEDED_TENANT),
+          alias: escapeRegExp(SEEDED_TENANT),
           target: '.+',
         }),
       ),
@@ -1442,7 +1420,7 @@ test.describe('the platform lifecycle controls', () => {
 
     const confirm = page.getByRole('dialog', {
       name: copy('adminUi', 'tenantLifecycle.transfer.confirmTitle', {
-        id: SEEDED_TENANT,
+        name: SEEDED_TENANT,
       }),
       exact: true,
     })
@@ -1465,12 +1443,8 @@ test.describe('the platform lifecycle controls', () => {
 })
 
 /** The tenant the platform lifecycle delete branch registers and ends. */
-const LIFECYCLE_TENANT_ID = 'initrode'
-const LIFECYCLE_TENANT_ALIAS = 'initrode-labs'
+const LIFECYCLE_TENANT_ALIAS = 'initrode'
 const LIFECYCLE_TENANT_NAME = 'Initrode Labs'
-/** A second identifier and alias used for the two collision attempts. */
-const LIFECYCLE_SPARE_ID = 'initrode-two'
-const LIFECYCLE_SPARE_ALIAS = 'initrode-spare'
 
 test.describe('the platform lifecycle delete', () => {
   test.use({ viewport: { width: 1920, height: 1080 } })
@@ -1506,9 +1480,6 @@ test.describe('the platform lifecycle delete', () => {
     ).toBeVisible()
     const form = createSection(page)
     await form
-      .getByLabel(copy('orgCreateUi', 'fields.id'), { exact: true })
-      .fill(LIFECYCLE_TENANT_ID)
-    await form
       .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
       .fill(LIFECYCLE_TENANT_ALIAS)
     await form
@@ -1524,7 +1495,7 @@ test.describe('the platform lifecycle delete', () => {
       page.getByRole('heading', {
         level: 1,
         name: copy('adminUi', 'tenantDetail.title', {
-          id: LIFECYCLE_TENANT_ID,
+          name: LIFECYCLE_TENANT_NAME,
         }),
         exact: true,
       }),
@@ -1543,10 +1514,10 @@ test.describe('the platform lifecycle delete', () => {
 
     // The platform staff path deletes the tenant: one confirmation, then the
     // heavy second click.
-    await deleteTenantButton(page, LIFECYCLE_TENANT_ID).click()
+    await deleteTenantButton(page, LIFECYCLE_TENANT_ALIAS).click()
     const deleteDialog = page.getByRole('dialog', {
       name: copy('adminUi', 'tenantLifecycle.deleteConfirm.title', {
-        id: LIFECYCLE_TENANT_ID,
+        name: LIFECYCLE_TENANT_NAME,
       }),
       exact: true,
     })
@@ -1558,7 +1529,7 @@ test.describe('the platform lifecycle delete', () => {
     await expect(
       page.getByText(
         copy('adminUi', 'tenantLifecycle.deleteConfirm.success', {
-          id: LIFECYCLE_TENANT_ID,
+          alias: LIFECYCLE_TENANT_ALIAS,
         }),
         { exact: true },
       ),
@@ -1566,19 +1537,19 @@ test.describe('the platform lifecycle delete', () => {
 
     // The row is a tombstone: its status says deleted and its actions cell
     // carries no lifecycle control any more.
-    const tombstone = rosterRow(page, LIFECYCLE_TENANT_ID)
+    const tombstone = rosterRow(page, LIFECYCLE_TENANT_ALIAS)
     await expect(
       tombstone.getByText(copy('adminUi', 'tenants.status.deleted'), {
         exact: true,
       }),
     ).toBeVisible({ timeout: 15_000 })
     await expect(
-      transferTenantButton(page, LIFECYCLE_TENANT_ID),
+      transferTenantButton(page, LIFECYCLE_TENANT_ALIAS),
     ).toHaveCount(0)
-    await expect(deleteTenantButton(page, LIFECYCLE_TENANT_ID)).toHaveCount(0)
+    await expect(deleteTenantButton(page, LIFECYCLE_TENANT_ALIAS)).toHaveCount(0)
 
-    // Neither the identifier nor the alias the tombstone holds can be
-    // registered again: the roster answers the registration's conflict.
+    // The alias the tombstone holds cannot be registered again: the roster
+    // answers the registration's conflict.
     await page
       .getByRole('link', { name: copy('adminUi', 'tenants.register'), exact: true })
       .click()
@@ -1590,9 +1561,6 @@ test.describe('the platform lifecycle delete', () => {
       }),
     ).toBeVisible()
     const again = createSection(page)
-    const idField = again.getByLabel(copy('orgCreateUi', 'fields.id'), {
-      exact: true,
-    })
     const aliasField = again.getByLabel(copy('orgCreateUi', 'fields.alias'), {
       exact: true,
     })
@@ -1606,13 +1574,6 @@ test.describe('the platform lifecycle delete', () => {
     })
     const conflict = copy('adminUi', 'errors.tenant.conflict')
 
-    await idField.fill(LIFECYCLE_TENANT_ID)
-    await aliasField.fill(LIFECYCLE_SPARE_ALIAS)
-    await nameField.fill('Initrode Spare')
-    await submit.click()
-    await expect(page.getByText(conflict, { exact: true })).toBeVisible()
-
-    await idField.fill(LIFECYCLE_SPARE_ID)
     await aliasField.fill(LIFECYCLE_TENANT_ALIAS)
     await nameField.fill('Initrode Second')
     await submit.click()

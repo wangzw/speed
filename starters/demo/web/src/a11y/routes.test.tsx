@@ -46,7 +46,7 @@ import type { AppShellShellLayout } from '@speed/layout-kit'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
 import {
-  setCurrentTenantId,
+  setCurrentTenant,
   setTenantAlias,
   setTenantAliases,
 } from '../chrome.js'
@@ -248,9 +248,9 @@ beforeEach(() => {
   // organization admission reads that recorded kind, and the empty backend's
   // caller-tenant answer lists no rows.
   clearSelfTenants()
-  setCurrentTenantId(SCAN_TENANT_ID)
-  setTenantAliases(new Map([[SCAN_TENANT_ID, SCAN_TENANT_ID]]))
-  setTenantAlias(SCAN_TENANT_ID, SCAN_TENANT_ID, 'business')
+  setCurrentTenant(SCAN_TENANT_ID)
+  setTenantAliases(new Map())
+  setTenantAlias(SCAN_TENANT_ID, 'business')
   missingKeys.length = 0
   const original = console.warn
   warnSpy = vi.spyOn(console, 'warn').mockImplementation((message, ...rest) => {

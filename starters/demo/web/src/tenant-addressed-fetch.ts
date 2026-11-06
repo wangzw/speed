@@ -12,11 +12,10 @@
  * path-tenant guard refused the pair with a bare 404.
  *
  * A tenant-addressed path is itself the request's tenant fact: the contract
- * addresses the tenant by its identifier in the path. This wrapper announces
- * that identifier as the tenant header for such a request, and leaves every
- * other request on the client's own value. The server's resolution layer
- * accepts an identifier as well as an alias, so a renamed tenant is still
- * reached by the stable identifier the path names.
+ * addresses the tenant by its alias in the path. This wrapper announces that
+ * alias as the tenant header for such a request, and leaves every other
+ * request on the client's own value. The server resolves the path segment and
+ * the header by the same alias, so the pair always names one tenant.
  *
  * The header name is the api client's default (`x-tenant`; `ClientOptions`
  * renames it with `tenantHeader`). The demo configures no `client.tenantHeader`,
@@ -33,10 +32,9 @@ const TENANT_ADDRESSED_PREFIX = '/api/v1/tenants/'
 const TENANT_HEADER = 'x-tenant'
 
 /**
- * The tenant identifier a request URL addresses, or null when it is not a
- * tenant-addressed path. The identifier is returned verbatim: the contract's
- * path parameter is the tenant's identifier, not its alias, and the server
- * resolves it as one.
+ * The tenant alias a request URL addresses, or null when it is not a
+ * tenant-addressed path. The alias is returned verbatim: the contract's path
+ * parameter is the tenant's alias, and the server resolves it as one.
  */
 export function tenantFromRequestURL(url: string): string | null {
   let pathname: string
@@ -60,13 +58,13 @@ export function tenantFromRequestURL(url: string): string | null {
     return decodeURIComponent(segment)
   } catch {
     // A malformed escape names nothing; leave the request on the client's
-    // own value rather than sending a half-decoded identifier.
+    // own value rather than sending a half-decoded alias.
     return null
   }
 }
 
 /**
- * One fetch with the tenant header rewritten to the identifier a
+ * One fetch with the tenant header rewritten to the alias a
  * tenant-addressed URL names. Every other request is passed through
  * untouched, so the tenant area keeps announcing the host's current tenant.
  *
@@ -101,7 +99,7 @@ function fetchWithTenant(
 }
 
 /**
- * `fetch` with the tenant header rewritten to the identifier a
+ * `fetch` with the tenant header rewritten to the alias a
  * tenant-addressed URL names, for the client's `fetch` option.
  */
 export const tenantAddressedFetch: typeof fetch = (input, init) =>

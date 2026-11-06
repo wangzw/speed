@@ -27,8 +27,8 @@ import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
   getCurrentTenantAlias,
-  getCurrentTenantId,
-  setCurrentTenantId,
+  getCurrentTenant,
+  setCurrentTenant,
   setTenantAliases,
 } from './chrome.js'
 import { clearSelfTenants } from './tenant-self.js'
@@ -376,7 +376,7 @@ const ALL_ORGANIZATION_PERMISSIONS = [
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  setCurrentTenantId('acme')
+  setCurrentTenant('acme')
   setTenantAliases(new Map([['acme', 'acme']]))
   clearSelfTenants()
 })
@@ -429,7 +429,7 @@ describe('the organization admin entry', () => {
 
   it('does not appear for a personal tenant', async () => {
     const user = userEvent.setup()
-    setCurrentTenantId('personal-account-1')
+    setCurrentTenant('personal-account-1')
     setTenantAliases(new Map([['personal-account-1', 'my-space']]))
     mountApp({
       tenants: [
@@ -448,7 +448,7 @@ describe('the organization admin entry', () => {
 
   it('does not appear for the system tenant', async () => {
     const user = userEvent.setup()
-    setCurrentTenantId('system')
+    setCurrentTenant('system')
     setTenantAliases(new Map([['system', 'system']]))
     mountApp({
       tenants: [],
@@ -470,7 +470,7 @@ describe('the organization admin entry', () => {
     // The grant settles the current tenant, so the surface has everything it
     // would need but for the impersonation itself.
     await screen.findByText(demoEnUS.home.heading)
-    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    await waitFor(() => expect(getCurrentTenant()).toBe('acme'))
     await flushReads()
     expectOrganizationAbsent(await organizationEntry(user))
   })
@@ -518,7 +518,7 @@ describe('the organization admin entry', () => {
 
     // The switch clears the tenant domain and the read for globex has not
     // answered: the old tenant's set must not stand in for the new tenant.
-    await waitFor(() => expect(getCurrentTenantId()).toBe('globex'))
+    await waitFor(() => expect(getCurrentTenant()).toBe('globex'))
     const whileStale = await organizationEntry(user)
     expect(whileStale.header.group).toBeNull()
     expect(whileStale.sidebar.group).toBeNull()
@@ -863,7 +863,7 @@ describe('the organization admin route admission', () => {
   })
 
   it('still sends a personal tenant direct visit to the tenant home', async () => {
-    setCurrentTenantId('personal-account-1')
+    setCurrentTenant('personal-account-1')
     setTenantAliases(new Map([['personal-account-1', 'my-space']]))
     mountApp({
       path: '/organization/admin/invitations',
@@ -888,7 +888,7 @@ describe('the organization admin route admission', () => {
   })
 
   it('still sends the system tenant direct visit to the tenant home', async () => {
-    setCurrentTenantId('system')
+    setCurrentTenant('system')
     setTenantAliases(new Map([['system', 'system']]))
     mountApp({
       path: '/organization/admin/invitations',
@@ -917,7 +917,7 @@ describe('the organization admin route admission', () => {
       impersonating: true,
       impersonationGrant: true,
     })
-    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    await waitFor(() => expect(getCurrentTenant()).toBe('acme'))
     await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(
       screen.queryByRole('heading', { name: tAdmin('invitations.title') }),

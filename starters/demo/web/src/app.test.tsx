@@ -54,9 +54,9 @@ import {
   readyFeatures,
 } from './test-utils/session.js'
 import {
-  getCurrentTenantId,
+  getCurrentTenant,
   initialThemePreset,
-  setCurrentTenantId,
+  setCurrentTenant,
   setTenantAliases,
   THEME_PRESET_STORAGE_KEY,
 } from './chrome.js'
@@ -114,7 +114,7 @@ async function closeAccountMenu(
 /** Makes the platform's own organization the current tenant: the admin entry
  * is offered only there, so a case about that entry must settle it. */
 function settlePlatformOrganization(): void {
-  setCurrentTenantId('system')
+  setCurrentTenant('system')
   setTenantAliases(new Map([['system', 'system']]))
 }
 
@@ -124,7 +124,7 @@ beforeEach(() => {
   // reads it); reset it so a switch in one test does not leak into the next.
   // The alias cache is reset with it: a current tenant no source names would
   // not survive the frame's settlement.
-  setCurrentTenantId(TENANT_ID)
+  setCurrentTenant(TENANT_ID)
   setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
   // The caller tenant list is module state too: a case starts with no rows
   // and loads its own through the scripted backend.
@@ -394,7 +394,7 @@ describe('the admin area', () => {
     // away. The area settles the caller list's default itself before the
     // read; no platform roster read is spent, because that read needs the
     // permission this settle exists to let the read answer.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     window.history.replaceState({}, '', '/admin/tenants')
     const requested: string[] = []
     const tenantAtRead: (string | null)[] = []
@@ -406,7 +406,7 @@ describe('the admin area', () => {
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
-        tenantAtRead.push(getCurrentTenantId())
+        tenantAtRead.push(getCurrentTenant())
         return Promise.resolve({
           platform: ['tenant.read'],
           tenant: [],
@@ -458,7 +458,7 @@ describe('the admin area', () => {
     // tenant. The admin area must still settle the caller's own list, or the
     // guarded permission read never carries a tenant name and a staff operator
     // on an admin deep link waits forever.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     window.history.replaceState({}, '', '/admin/settings')
     const requested: string[] = []
@@ -598,7 +598,7 @@ describe('the admin area', () => {
     // is empty -- a known empty set, unlike a failed read -- and the area gate
     // redirects: no roster read is spent, because the roster needs tenant.read
     // and the member holds nothing.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     window.history.replaceState({}, '', '/admin/tenants')
     const requested: string[] = []
@@ -653,7 +653,7 @@ describe('the admin area', () => {
     // is empty, and the redirect lands in the tenant area with that tenant
     // current. No roster read is spent on the way.
     const INVITED = 'invited-tenant'
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     window.history.replaceState({}, '', '/admin')
     const requested: string[] = []
@@ -688,7 +688,7 @@ describe('the admin area', () => {
     })
 
     await waitFor(() => expect(window.location.pathname).toBe('/'))
-    await waitFor(() => expect(getCurrentTenantId()).toBe(INVITED))
+    await waitFor(() => expect(getCurrentTenant()).toBe(INVITED))
     expect(requested).not.toContain('/api/v1/system/tenants')
 
     clearSelfTenants()
@@ -699,8 +699,8 @@ describe('the admin area', () => {
     // holds only their personal space. The admin area settles that row, the
     // guarded permission read carries it, and the non-empty platform set
     // grants the admin. The roster decides nothing here.
-    const PERSONAL = 'personal-account-1'
-    setCurrentTenantId(null)
+    const PERSONAL = 'my-space'
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     window.history.replaceState({}, '', '/admin/settings')
     const tenantAtRead: (string | null)[] = []
@@ -709,11 +709,11 @@ describe('the admin area', () => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: PERSONAL, alias: 'my-space', kind: 'personal' }],
+          tenants: [{ alias: PERSONAL, kind: 'personal' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
-        tenantAtRead.push(getCurrentTenantId())
+        tenantAtRead.push(getCurrentTenant())
         return Promise.resolve({
           platform: ['tenant.read'],
           tenant: [],
@@ -981,8 +981,8 @@ describe('the organization admin path', () => {
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
           tenants: [
-            { id: 'acme', alias: 'acme', kind: 'business' },
-            { id: 'globex', alias: 'globex', kind: 'business' },
+            { alias: 'acme', kind: 'business' },
+            { alias: 'globex', kind: 'business' },
           ],
         } as T)
       }
@@ -1002,7 +1002,7 @@ describe('the organization admin path', () => {
     // so the host leaves the management surface for the tenant home rather
     // than staying on a page the new tenant may not offer.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
-    expect(getCurrentTenantId()).toBe('globex')
+    expect(getCurrentTenant()).toBe('globex')
   })
 })
 
@@ -1183,7 +1183,7 @@ describe('the tenant area header controls', () => {
         name: demoEnUS.userMenu.organizations,
       }),
     ).toBeNull()
-    expect(getCurrentTenantId()).toBe('acme')
+    expect(getCurrentTenant()).toBe('acme')
   })
 
   it('collapses and expands the sidebar from the header control', async () => {
@@ -1779,7 +1779,7 @@ describe('a failed admin access read', () => {
   }
 
   it('keeps a failed permission read unknown and retries it before deciding', async () => {
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     clearSelfTenants()
     window.history.replaceState({}, '', '/admin/settings')
@@ -1847,7 +1847,7 @@ describe('a failed admin access read', () => {
     // reaches its verification branch. A failed profile read says nothing
     // about the verification state; the pending answer is the one that
     // redirects.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     setTenantAliases(new Map())
     clearSelfTenants()
     window.history.replaceState({}, '', '/admin/settings')

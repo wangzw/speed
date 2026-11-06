@@ -1,13 +1,16 @@
 /**
  * The host's own tenant list: the answer of the caller tenant read
  * (`GET /api/v1/auth/me/tenants`, the tenant.self module) as the tenant
- * switcher's rows and as the alias source for tenant-scoped requests.
+ * switcher's rows and as the name source for tenant-scoped requests.
  *
- * Two facts are held apart. `tenants` is the list itself, ordered by
- * identifier as the read answers it, each row carrying its host-answered
- * `kind`. `settled` says whether the LAST read produced a real answer: a
- * failure is not an empty list, so it leaves the rows already on hand in
- * place and clears the flag. The settlement and the failure rendering read
+ * The alias is the tenant's only name here: it is the key the switcher uses
+ * and the value the request surface announces, because the request surface
+ * resolves a tenant by alias and the answer carries no internal identifier.
+ *
+ * `tenants` is the list itself as the read answers it, each row carrying
+ * its host-answered `kind`. `settled` says whether the LAST read produced a
+ * real answer: a failure is not an empty list, so it leaves the rows already
+ * on hand in place and clears the flag. The settlement and the failure rendering read
  * exactly that distinction: a failed read must never settle a current tenant
  * or be mistaken for "no memberships".
  *
@@ -27,9 +30,8 @@ import { tenantSelfTenantsList } from './app-api/index.js'
 
 /** One tenant the account holds an active membership in. */
 export interface SelfTenant {
-  /** The tenant's stable identifier. */
-  readonly id: string
-  /** The name the request surface addresses the tenant by. */
+  /** The name the request surface addresses the tenant by; the switcher's
+   * key and the tenant's only name. */
   readonly alias: string
   /** The organization's display name as its profile reports it, empty when
    * the profile names none. A surface falls back to the alias then. */
@@ -132,8 +134,7 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
     const answer = await tenantSelfTenantsList()
     if (applies()) {
       publish({
-        tenants: answer.tenants.map(({ id, alias, displayName, kind }) => ({
-          id,
+        tenants: answer.tenants.map(({ alias, displayName, kind }) => ({
           alias,
           // The generated answer carries the field, but a suite's scripted
           // rows predating it may not: an absent name is the same fact as an
@@ -153,16 +154,18 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
   return state
 }
 
-/** One listed tenant's alias, or null when the list does not hold it. */
-export function selfTenantAlias(tenantId: string): string | null {
-  return state.tenants.find((tenant) => tenant.id === tenantId)?.alias ?? null
+/** The alias a listed tenant is addressed by, or null when the list does
+ * not hold it. The value is the row's own name, so this is a membership
+ * test: a current tenant the list names is already the alias to announce. */
+export function selfTenantAlias(alias: string): string | null {
+  return state.tenants.some((tenant) => tenant.alias === alias) ? alias : null
 }
 
 /** One listed tenant's name as a surface shows it: the organization's
  * display name, or its alias when the profile names none. Null when the
  * list does not hold the tenant. */
-export function selfTenantDisplayName(tenantId: string): string | null {
-  const tenant = state.tenants.find((row) => row.id === tenantId)
+export function selfTenantDisplayName(alias: string): string | null {
+  const tenant = state.tenants.find((row) => row.alias === alias)
   if (tenant === undefined) {
     return null
   }

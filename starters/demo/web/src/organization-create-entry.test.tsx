@@ -16,9 +16,9 @@ import { adminUiResources } from '@speed/admin-ui'
 import { orgCreateUiResources } from '@speed/org-create-ui'
 import { uiKitResources } from '@speed/ui-kit'
 import {
-  getCurrentTenantId,
+  getCurrentTenant,
   getRecordedTenantAlias,
-  setCurrentTenantId,
+  setCurrentTenant,
   setTenantAliases,
 } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
@@ -53,7 +53,7 @@ const uiEn = uiKitResources['en-US'] as unknown as {
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   clearSelfTenants()
-  setCurrentTenantId(null)
+  setCurrentTenant(null)
   setTenantAliases(new Map())
 })
 
@@ -229,7 +229,6 @@ describe('the self-service creation success flow', () => {
     const user = userEvent.setup()
     let tenants = [
       {
-        id: 'personal-1',
         alias: 'tester',
         displayName: '',
         kind: 'personal',
@@ -241,7 +240,6 @@ describe('the self-service creation success flow', () => {
       }
       if (path === '/api/v1/orgs' && options?.method === 'POST') {
         const created = {
-          id: 'org-1',
           alias: 'team',
           displayName: 'E2E Team',
           description: '',
@@ -250,7 +248,6 @@ describe('the self-service creation success flow', () => {
         tenants = [
           ...tenants,
           {
-            id: created.id,
             alias: created.alias,
             displayName: created.displayName,
             kind: 'business',
@@ -284,7 +281,7 @@ describe('the self-service creation success flow', () => {
     })
     // The hand-over recorded the alias and made the new organization the
     // current one before navigating.
-    expect(getCurrentTenantId()).toBe('org-1')
-    expect(getRecordedTenantAlias('org-1')).toBe('team')
+    expect(getCurrentTenant()).toBe('team')
+    expect(getRecordedTenantAlias('team')).toBe('team')
   })
 })

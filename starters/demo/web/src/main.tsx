@@ -124,11 +124,10 @@ export async function bootstrapDemoApp(
     },
     // The tenant every request announces as X-Tenant, except one whose path
     // is tenant-addressed (that request's header is rewritten to the path's
-    // tenant identifier by `client.fetch` above): the host's current tenant's
-    // ALIAS, read per attempt (src/chrome.tsx holds the one value and
-    // resolves its alias). The server's tenant resolution layer looks the
-    // name up as an alias first, then as a tenant identifier; a tenant-scoped
-    // call that resolves to neither is refused 404.
+    // tenant alias by `client.fetch` above): the host's current tenant's
+    // alias, read per attempt (src/chrome.tsx holds the one value). The
+    // server's tenant resolution layer resolves the name as an alias; a name
+    // no tenant carries is refused 404.
     tenantProvider: getCurrentTenantAlias,
   })
   // The entry document's title follows the language the assembly resolved,

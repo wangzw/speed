@@ -32,16 +32,15 @@ import { AppServicesProvider } from './app-services.js'
 import {
   COLOR_MODE_STORAGE_KEY,
   getCurrentTenantAlias,
-  getCurrentTenantId,
+  getCurrentTenant,
   getRecordedTenantDisplayName,
   getRecordedTenantKind,
   initialColorModePreference,
   persistColorModePreference,
   readStoredColorModePreference,
-  setCurrentTenantId,
+  setCurrentTenant,
   setTenantAlias,
   setTenantAliases,
-  tenantAlias,
   tenantDisplayName,
   UserMenu,
   useTenantSelection,
@@ -72,48 +71,24 @@ const tLayout = createSpeedI18n({
 
 afterEach(() => {
   setTenantAliases(new Map())
-  setCurrentTenantId(null)
+  setCurrentTenant(null)
   // The suite setup installs the desktop branch once per file; restore it
   // after the narrow-viewport case.
   mockMatchMedia(true)
 })
 
-describe('the tenant alias layer', () => {
-  it('resolves a tenant id to its alias, not back to the id', () => {
-    const tenants = [{ id: 'acme', alias: 'acme-inc', name: 'Acme Inc.' }]
-    expect(tenantAlias('acme', tenants)).toBe('acme-inc')
-    // An id nobody lists, and the no-tenant case, resolve to nothing.
-    expect(tenantAlias('absent', tenants)).toBeNull()
-    expect(tenantAlias(null, tenants)).toBeNull()
-  })
-
-  it('announces the alias while the switcher keeps the id', () => {
-    // A tenant whose alias a rename has moved away from its id: the id the
-    // switcher compares a pick against and the name the server resolves are no
-    // longer the same string.
-    setTenantAliases(new Map([['acme', 'acme-inc']]))
-    setCurrentTenantId('acme')
-
-    // The switcher's current tenant is the id...
-    expect(getCurrentTenantId()).toBe('acme')
-    // ...and the value announced to the server is the alias. Reading the id
-    // here would be the defect: the server's resolve layer looks the name up in
-    // the roster's alias column, so the id would be refused 404.
+describe('the current tenant', () => {
+  it('holds the alias the request surface announces', () => {
+    setCurrentTenant('acme-inc')
+    // The switcher and the request surface read the same value: the tenant's
+    // alias, the only name the request surface resolves.
+    expect(getCurrentTenant()).toBe('acme-inc')
     expect(getCurrentTenantAlias()).toBe('acme-inc')
   })
 
-  it('announces nothing for a tenant no source names', () => {
-    // The placeholder roster is retired. A current tenant that neither the
-    // caller tenant list nor the roster alias cache names has no alias to
-    // announce; a fallback list would send a name the server may no longer
-    // resolve, so the request surface stays silent instead.
-    setCurrentTenantId('acme')
-    expect(getCurrentTenantAlias()).toBeNull()
-  })
-
   it('announces nothing with no current tenant', () => {
-    setCurrentTenantId(null)
-    expect(getCurrentTenantId()).toBeNull()
+    setCurrentTenant(null)
+    expect(getCurrentTenant()).toBeNull()
     expect(getCurrentTenantAlias()).toBeNull()
   })
 
@@ -122,33 +97,25 @@ describe('the tenant alias layer', () => {
     // the kind; the label of a row the caller tenant read has not listed yet
     // comes from this record. A later roster read carries aliases only, and
     // must not drop it.
-    setTenantAlias('acme', 'acme', 'business')
+    setTenantAlias('acme', 'business')
     expect(getRecordedTenantKind('acme')).toBe('business')
 
-    setTenantAliases(new Map([['acme', 'renamed']]))
+    setTenantAliases(new Map([['acme', 'Acme Inc.']]))
     expect(getRecordedTenantKind('acme')).toBe('business')
     expect(getRecordedTenantKind('unknown')).toBeNull()
   })
 
   it('records the roster display name and renders it over the alias', () => {
-    setTenantAliases(
-      new Map([['acme', 'acme-inc']]),
-      new Map([['acme', 'Acme Incorporated']]),
-    )
-    expect(getRecordedTenantDisplayName('acme')).toBe('Acme Incorporated')
-    // A later alias-only read keeps the recorded display name rather than
-    // dropping it.
-    setTenantAliases(new Map([['acme', 'acme-inc']]))
+    setTenantAliases(new Map([['acme', 'Acme Incorporated']]))
     expect(getRecordedTenantDisplayName('acme')).toBe('Acme Incorporated')
     expect(getRecordedTenantDisplayName('unknown')).toBeNull()
 
     // A business row renders its display name, falling back to the alias
-    // when the profile names none.
+    // when the profile names none. TenantOption.id is the alias here.
     expect(
       tenantDisplayName(
         {
-          id: 'acme',
-          alias: 'acme-inc',
+          id: 'acme-inc',
           name: 'Acme Incorporated',
           displayName: 'Acme Incorporated',
         },
@@ -156,17 +123,13 @@ describe('the tenant alias layer', () => {
       ),
     ).toBe('Acme Incorporated')
     expect(
-      tenantDisplayName(
-        { id: 'acme', alias: 'acme-inc', name: 'acme-inc' },
-        'Organization',
-      ),
+      tenantDisplayName({ id: 'acme-inc', name: 'acme-inc' }, 'Organization'),
     ).toBe('acme-inc')
     // A personal row keeps the account's own name, never the profile's.
     expect(
       tenantDisplayName(
         {
-          id: 'personal-1',
-          alias: 'my-space',
+          id: 'my-space',
           name: 'my-space',
           kind: 'personal',
           displayName: 'The account space',
@@ -197,8 +160,8 @@ function installStorageDouble(): Map<string, string> {
 
 /** Two tenants, as a host with a membership source would offer them. */
 const TWO_TENANTS: readonly DemoTenant[] = [
-  { id: 'acme', alias: 'acme', name: 'Acme Inc.', kind: 'business' },
-  { id: 'globex', alias: 'globex', name: 'Globex Corp.', kind: 'business' },
+  { id: 'acme', name: 'Acme Inc.', kind: 'business' },
+  { id: 'globex', name: 'Globex Corp.', kind: 'business' },
 ]
 
 /** The one organization an account with a single membership may enter, and the
@@ -206,7 +169,6 @@ const TWO_TENANTS: readonly DemoTenant[] = [
 const SOLE_TENANT: readonly DemoTenant[] = [
   {
     id: 'acme',
-    alias: 'acme',
     name: 'Acme Inc.',
     displayName: 'Acme Inc.',
     kind: 'business',
@@ -218,13 +180,13 @@ const SOLE_TENANT_NAME = 'Acme Inc.'
  * frame composes it: the organization rows live in the menu, so the harness
  * renders the real surface rather than the rows alone. */
 function TenantSwitchHarness(): ReactElement {
-  const [tenantId, setTenantId] = useTenantSelection('acme')
+  const [tenantAlias, setTenantAlias] = useTenantSelection('acme')
   return (
     <UserMenu
       organizations={{
         tenants: TWO_TENANTS,
-        tenantId,
-        onSelect: setTenantId,
+        tenantAlias,
+        onSelect: setTenantAlias,
       }}
     />
   )
@@ -233,13 +195,13 @@ function TenantSwitchHarness(): ReactElement {
 /** The account menu over an account that may enter one organization, where the
  * row is context rather than a switcher. */
 function SingleOrganizationSwitchHarness(): ReactElement {
-  const [tenantId, setTenantId] = useTenantSelection('acme')
+  const [tenantAlias, setTenantAlias] = useTenantSelection('acme')
   return (
     <UserMenu
       organizations={{
         tenants: SOLE_TENANT,
-        tenantId,
-        onSelect: setTenantId,
+        tenantAlias,
+        onSelect: setTenantAlias,
       }}
     />
   )
@@ -280,7 +242,7 @@ function renderTenantSwitch(harness: ReactElement = <TenantSwitchHarness />) {
 
 describe('the tenant switch', () => {
   afterEach(() => {
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
   })
 
   it("evicts the departing tenant's cached rows when the menu switches", async () => {
@@ -301,7 +263,7 @@ describe('the tenant switch', () => {
     // subtree is gone, and the new tenant is what every later read is keyed
     // under. A row left behind would be served to the new tenant's reads --
     // or, worse, shown as the new tenant's data.
-    expect(getCurrentTenantId()).toBe('globex')
+    expect(getCurrentTenant()).toBe('globex')
     expect(
       queryClient.getQueryData(tenantQueryKey('acme', 'rows')),
     ).toBeUndefined()
@@ -348,7 +310,7 @@ describe('the tenant switch', () => {
 
 describe('the tenant switch permission reset', () => {
   afterEach(() => {
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     // Detach the session this suite attached, so a later case does not read
     // it through auth-core's hooks.
     attachSession(createTestSession())
@@ -399,7 +361,7 @@ describe('the tenant switch permission reset', () => {
     function Harness() {
       const [tenantIdState, select] = useTenantSelection('acme')
       const snapshot = useAuthState()
-      const current = getCurrentTenantId()
+      const current = getCurrentTenant()
       const set = snapshot.permissionSets.tenant
       pairings.push(
         `${current ?? 'none'}|${set === null ? 'unknown' : set.join(',')}`,
@@ -707,12 +669,12 @@ describe('the header account menu in the temporary drawer', () => {
     // the entry in the row and renders no avatar menu.
     mockMatchMedia(false)
     window.history.replaceState({}, '', '/')
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     setTenantAliases(new Map([['acme', 'acme']]))
     bindRequestFn(<T,>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+          tenants: [{ alias: 'acme', kind: 'business' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {

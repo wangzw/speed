@@ -40,7 +40,7 @@ import {
   adminShellRoutes,
   useAdminTarget,
 } from '../admin-routes.js'
-import { useCurrentTenantId } from '../chrome.js'
+import { useCurrentTenant } from '../chrome.js'
 import { useOrganizationAdminAdmission } from '../organization-admin.js'
 import { ACCOUNT_PATH, NOTIFICATIONS_PATH, ORGANIZATIONS_NEW_PATH } from '../paths.js'
 import { useAppNotice } from '../app-notice.js'
@@ -209,11 +209,11 @@ function RouteStartCard({
  */
 function AdminStartCard(): ReactElement | null {
   const presence = featurePresence(useFeatureState())
-  const tenantId = useCurrentTenantId()
+  const tenantAlias = useCurrentTenant()
   const target = useAdminTarget(
     presentDeclarations(adminShellRoutes, presence),
   )
-  if (target === null || tenantId !== 'system') {
+  if (target === null || tenantAlias !== 'system') {
     return null
   }
   return <StartCardView card={{ key: 'admin', path: target }} />

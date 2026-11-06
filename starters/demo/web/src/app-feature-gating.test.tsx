@@ -41,7 +41,7 @@ import {
 import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import {
-  setCurrentTenantId,
+  setCurrentTenant,
   setTenantAliases,
 } from './chrome.js'
 import { renderDemoApp } from './test-utils/render.js'
@@ -80,7 +80,7 @@ const TENANT_ID = 'acme'
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  setCurrentTenantId(TENANT_ID)
+  setCurrentTenant(TENANT_ID)
   setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
@@ -449,7 +449,7 @@ describe('the admin entry and home card follow the served declarations', () => {
     // dashboard and roster are out; the settings page remains and its code is
     // held, so both the menu entry and the home card point at it instead of
     // the admin root (which would 404).
-    setCurrentTenantId('system')
+    setCurrentTenant('system')
     setTenantAliases(new Map([['system', 'system']]))
     const user = userEvent.setup()
     renderDemoApp({
@@ -473,7 +473,7 @@ describe('the admin entry and home card follow the served declarations', () => {
   it('hides both when the document serves no admin page', async () => {
     // The tenant condition is satisfied on purpose: the only fact that
     // removes both surfaces is the document serving no admin page.
-    setCurrentTenantId('system')
+    setCurrentTenant('system')
     setTenantAliases(new Map([['system', 'system']]))
     const user = userEvent.setup()
     renderDemoApp({

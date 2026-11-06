@@ -68,35 +68,22 @@ import {
   NOTIFICATIONS_PATH,
 } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
-import { selfTenantAlias } from './tenant-self.js'
 import type { SelfTenantKind } from './tenant-self.js'
 
 /**
- * One tenant the switcher offers. Its two identifiers are distinct on
- * purpose, and telling them apart is the whole reason this type is not
- * tenancy-ui's TenantOption:
- *
- *  - `id` is the tenant's stable identity -- the value the switcher
- *    compares a pick against and reports back (TenantOption.id). It is
- *    what the chrome shows as "the current tenant".
- *  - `alias` is the name the request surface carries. The server resolves
- *    a request's tenant off its surface by this name (the resolve layer
- *    reads the X-Tenant header and looks it up in the roster's alias
- *    column), so the value the client announces (the tenantProvider, wired
- *    in src/main.tsx) is this one and never `id`. A rename moves the alias
- *    and leaves the id, so the two diverge over a tenant's life; announcing
- *    the id would put every request behind a name the roster no longer
- *    answers to, and the server would refuse it 404.
+ * One tenant the switcher offers. The switcher keys on tenancy-ui's
+ * TenantOption.id, and this host fills that key with the tenant's alias: the
+ * request surface resolves a tenant by alias, the caller tenant read answers
+ * an alias and no internal identifier, and the alias is immutable -- so the
+ * key the switcher reports is already the name every request announces.
+ * There is no second, private identifier to keep in step.
  *
  * `name` is the display label the switcher renders.
  *
  * It is tenancy-ui's TenantOption -- the switcher takes the list as that type,
- * so DemoTenant drops straight in -- plus the alias, which the switcher neither
- * reads nor shows.
+ * so DemoTenant drops straight in -- plus the display name and the kind.
  */
 export interface DemoTenant extends TenantOption {
-  /** The name the request surface carries (the roster alias). */
-  readonly alias: string
   /** The organization's display name as its profile reports it, empty when
    * the profile names none. Business rows render it in preference to the
    * alias; a personal row keeps the account's own name. */
@@ -108,14 +95,13 @@ export interface DemoTenant extends TenantOption {
 }
 
 /**
- * The host's current tenant, held as a request-time fact. Two values come
- * off it and they must not be conflated: the identity the switcher compares
- * against (currentTenantId) and the alias every tenant-scoped request
- * announces (getCurrentTenantAlias). The server resolves the tenant off the
- * request surface, so the call must carry the alias, not the id. It is the
- * one place the host holds the current tenant -- the tenant area's React
- * state (src/app.tsx) projects it for rendering, and a switch writes both,
- * so the value a request carries and the value the chrome shows agree.
+ * The host's current tenant, held as a request-time fact: the tenant's alias.
+ * It is the one name the host holds -- the switcher keys on it
+ * (TenantOption.id) and the request surface announces it
+ * (getCurrentTenantAlias), so the value a request carries and the value the
+ * chrome shows are the same string. It is the one place the host holds the
+ * current tenant: the tenant area's React state (src/app.tsx) projects it for
+ * rendering, and a switch writes it, so the two never disagree.
  *
  * It starts empty: the app settles it from the caller tenant list (the first
  * membership that is not the caller's personal tenant, else the first row) in
@@ -123,7 +109,7 @@ export interface DemoTenant extends TenantOption {
  * tenant-scoped request from firing before the current tenant's alias is
  * known.
  */
-let currentTenantId: string | null = null
+let currentTenantAlias: string | null = null
 
 // The listeners notified when the current tenant moves. This cell is the one
 // place the host holds the tenant, and a component mounted above the tenant
@@ -131,21 +117,22 @@ let currentTenantId: string | null = null
 // sets -- cannot take it up as a prop, so it subscribes here instead.
 const currentTenantListeners = new Set<() => void>()
 
-/** The tenant the switcher treats as current (its TenantOption.id). */
-export function getCurrentTenantId(): string | null {
-  return currentTenantId
+/** The tenant the switcher treats as current (its TenantOption.id, which
+ * this host fills with the alias). */
+export function getCurrentTenant(): string | null {
+  return currentTenantAlias
 }
 
 /**
- * Records the host's current tenant; the switcher's pick (a tenant id) lands
- * here. Listeners are notified only when the value moves, so a write of the
- * value already held does not re-run the reads keyed on the tenant.
+ * Records the host's current tenant; the switcher's pick (a tenant alias)
+ * lands here. Listeners are notified only when the value moves, so a write of
+ * the value already held does not re-run the reads keyed on the tenant.
  */
-export function setCurrentTenantId(tenantId: string | null): void {
-  if (currentTenantId === tenantId) {
+export function setCurrentTenant(alias: string | null): void {
+  if (currentTenantAlias === alias) {
     return
   }
-  currentTenantId = tenantId
+  currentTenantAlias = alias
   for (const listener of currentTenantListeners) {
     listener()
   }
@@ -170,106 +157,82 @@ export function subscribeCurrentTenant(listener: () => void): () => void {
  * useSyncExternalStore is what lets a component mounted above the frame
  * follow it too.
  */
-export function useCurrentTenantId(): string | null {
-  return useSyncExternalStore(subscribeCurrentTenant, getCurrentTenantId)
+export function useCurrentTenant(): string | null {
+  return useSyncExternalStore(subscribeCurrentTenant, getCurrentTenant)
 }
 
 /**
- * The alias -- the request-surface name -- of one tenant, in the given list;
- * null when the id is null or not on the list. Kept separate from the tenant
- * id so a rename (which moves the alias and not the id) cannot leak the id
- * into the field the server resolves against.
- */
-export function tenantAlias(
-  tenantId: string | null,
-  tenants: readonly DemoTenant[],
-): string | null {
-  if (tenantId === null) {
-    return null
-  }
-  return tenants.find((tenant) => tenant.id === tenantId)?.alias ?? null
-}
-
-/**
- * The names and kinds the host has recorded for known tenant ids: the aliases
- * the roster reported and the aliases and kinds learned from an operation's
- * answer. The switcher's rows come from the caller tenant list; this cache is
- * the source for a tenant that list does not hold -- a platform staff member
- * entering a tenant they are not a member of, or an invitation's accepted
- * tenant whose membership read has not landed yet. A tenant the cache does not
- * hold and the caller list does not list has no alias, and the request surface
- * announces none rather than a stale default.
+ * The names and kinds the host has recorded for known tenant aliases: the
+ * display names the roster reported and the names and kinds learned from an
+ * operation's answer. The switcher's rows come from the caller tenant list;
+ * this cache is the source for a tenant that list does not hold -- a platform
+ * staff member entering a tenant they are not a member of, or an invitation's
+ * accepted tenant whose membership read has not landed yet. A tenant the cache
+ * does not hold and the caller list does not list is not nameable, and the
+ * request surface announces nothing rather than a stale default.
  */
 interface RecordedTenant {
-  readonly alias: string
   readonly displayName?: string
   readonly kind?: SelfTenantKind
 }
 
 let recordedTenants: ReadonlyMap<string, RecordedTenant> = new Map()
 
-/** Records the roster's current aliases and, when the caller read them, the
- * display names too, keyed by tenant id. The roster read carries no kind: a
- * kind an operation's answer already recorded for one of these ids is kept,
- * and a fresh id gets none. An alias recorded without a display name keeps
- * the one already known, so the two readers cannot drop each other's facts. */
+/** Records the roster's current aliases and their display names, keyed by the
+ * alias. The roster read carries no kind: a kind an operation's answer already
+ * recorded for one of these aliases is kept, and a fresh alias gets none. A
+ * display name that is absent keeps the one already known, so the two readers
+ * cannot drop each other's facts. */
 export function setTenantAliases(
-  aliases: ReadonlyMap<string, string>,
   displayNames?: ReadonlyMap<string, string>,
 ): void {
-  recordedTenants = new Map(
-    [...aliases].map(([id, alias]) => [
-      id,
-      {
-        alias,
-        displayName:
-          displayNames?.get(id) ??
-          recordedTenants.get(id)?.displayName ??
-          '',
-        kind: recordedTenants.get(id)?.kind,
-      },
-    ]),
-  )
+  const next = new Map<string, RecordedTenant>()
+  for (const [alias, displayName] of displayNames ?? []) {
+    next.set(alias, {
+      displayName:
+        displayName ?? recordedTenants.get(alias)?.displayName ?? '',
+      kind: recordedTenants.get(alias)?.kind,
+    })
+  }
+  recordedTenants = next
 }
 
 /**
- * Records one tenant's current alias, leaving the rest as they were, and its
- * kind and display name when the answer carries them. An operation's answer
- * that lands the viewer in a tenant records it here before the caller tenant
- * list re-reads, so the request surface can name the tenant it is about to
- * act in and the switcher can label the row.
+ * Records one tenant's alias, leaving the rest as they were, and its kind and
+ * display name when the answer carries them. An operation's answer that lands
+ * the viewer in a tenant records it here before the caller tenant list
+ * re-reads, so the request surface can name the tenant it is about to act in
+ * and the switcher can label the row.
  */
 export function setTenantAlias(
-  tenantId: string,
   alias: string,
   kind?: SelfTenantKind,
   displayName?: string,
 ): void {
   const next = new Map(recordedTenants)
-  next.set(tenantId, {
-    alias,
-    displayName: displayName ?? next.get(tenantId)?.displayName ?? '',
-    kind: kind ?? next.get(tenantId)?.kind,
+  next.set(alias, {
+    displayName: displayName ?? next.get(alias)?.displayName ?? '',
+    kind: kind ?? next.get(alias)?.kind,
   })
   recordedTenants = next
 }
 
 /**
  * One tenant's alias as the host recorded it, or null when the cache does not
- * hold that id. The tenant list the switcher renders adds the current tenant
- * from here when the caller tenant read does not list it -- a platform staff
- * member entering a tenant they are not a member of -- so the trigger can name
- * it and leave it.
+ * hold that alias. The tenant list the switcher renders adds the current
+ * tenant from here when the caller tenant read does not list it -- a platform
+ * staff member entering a tenant they are not a member of -- so the trigger
+ * can name it and leave it.
  */
-export function getRecordedTenantAlias(tenantId: string): string | null {
-  return recordedTenants.get(tenantId)?.alias ?? null
+export function getRecordedTenantAlias(alias: string): string | null {
+  return recordedTenants.has(alias) ? alias : null
 }
 
 /** One tenant's display name as the host recorded it, or null when none did.
  * A recorded empty value is the profile's own empty value, not an answer a
  * surface should render: the caller falls back to the alias. */
-export function getRecordedTenantDisplayName(tenantId: string): string | null {
-  const displayName = recordedTenants.get(tenantId)?.displayName
+export function getRecordedTenantDisplayName(alias: string): string | null {
+  const displayName = recordedTenants.get(alias)?.displayName
   return displayName === undefined || displayName.trim() === ''
     ? null
     : displayName
@@ -278,27 +241,18 @@ export function getRecordedTenantDisplayName(tenantId: string): string | null {
 /** One tenant's kind as an operation's answer recorded it, or null when none
  * did. The switcher labels a row the caller tenant read does not list by
  * this. */
-export function getRecordedTenantKind(tenantId: string): SelfTenantKind | null {
-  return recordedTenants.get(tenantId)?.kind ?? null
+export function getRecordedTenantKind(alias: string): SelfTenantKind | null {
+  return recordedTenants.get(alias)?.kind ?? null
 }
 
 /**
  * The value the client announces on every request as X-Tenant: the current
- * tenant's ALIAS, the name the request surface carries -- the roster's or the
- * host's recorded alias when there is one, the caller tenant list's
- * otherwise. Null when no source names the tenant. This is the tenantProvider
- * the assembly reads per attempt (src/main.tsx); it is not
- * getCurrentTenantId, whose value the switcher keys on.
+ * tenant's alias. The host's current tenant is already that name, so this is
+ * the cell itself. Null when no tenant is settled. This is the tenantProvider
+ * the assembly reads per attempt (src/main.tsx).
  */
 export function getCurrentTenantAlias(): string | null {
-  if (currentTenantId === null) {
-    return null
-  }
-  return (
-    recordedTenants.get(currentTenantId)?.alias ??
-    selfTenantAlias(currentTenantId) ??
-    null
-  )
+  return currentTenantAlias
 }
 
 /**
@@ -314,7 +268,7 @@ export function getCurrentTenantAlias(): string | null {
  * before it announces the new tenant -- the re-read that follows attaches the
  * new tenant's set, and no frame in between can pair the new tenant with the
  * previous one's permissions. This is the one path every switch funnels
- * through; setCurrentTenantId alone carries no session and cannot do it.
+ * through; setCurrentTenant alone carries no session and cannot do it.
  * The cached rows are the second: every tenant-scoped read is keyed under the
  * tenant it was read in, so the setter hands the departing id to auth-core's
  * evictTenantQueries before announcing the new one -- read *before* the
@@ -323,17 +277,17 @@ export function getCurrentTenantAlias(): string | null {
  * switch: nothing was read for "no tenant", so it clears and evicts nothing.
  */
 export function useTenantSelection(
-  initialTenantId: string | null,
-): readonly [string | null, (tenantId: string | null) => void] {
+  initialTenantAlias: string | null,
+): readonly [string | null, (tenantAlias: string | null) => void] {
   const { queryClient, session } = useAppServices()
-  const [tenantId, setTenantId] = useState<string | null>(initialTenantId)
-  // The committed id, kept beside the state so the setter reads the tenant
+  const [tenantAlias, setSelected] = useState<string | null>(initialTenantAlias)
+  // The committed alias, kept beside the state so the setter reads the tenant
   // actually left rather than a value captured when the callback was built.
-  const committed = useRef<string | null>(initialTenantId)
+  const committed = useRef<string | null>(initialTenantAlias)
   const select = useCallback(
-    (nextTenantId: string | null): void => {
+    (nextTenantAlias: string | null): void => {
       const previous = committed.current
-      if (previous !== null && previous !== nextTenantId) {
+      if (previous !== null && previous !== nextTenantAlias) {
         // The tenant-domain set belongs to the tenant it was read in. Clear
         // it before the new tenant is announced: the read that follows the
         // switch attaches the new tenant's set, and nothing renders with the
@@ -341,13 +295,13 @@ export function useTenantSelection(
         session.setPermissionSet('tenant', null)
         evictTenantQueries(queryClient, previous)
       }
-      committed.current = nextTenantId
-      setCurrentTenantId(nextTenantId)
-      setTenantId(nextTenantId)
+      committed.current = nextTenantAlias
+      setCurrentTenant(nextTenantAlias)
+      setSelected(nextTenantAlias)
     },
     [queryClient, session],
   )
-  return [tenantId, select]
+  return [tenantAlias, select]
 }
 
 /**
@@ -383,10 +337,10 @@ export interface AccountMenuOrganizations {
   /** The caller tenant read's rows plus the current tenant when the list does
    * not hold it, each with the display name it renders. */
   readonly tenants: readonly DemoTenant[]
-  /** The id of the tenant the host currently resolves to, or null. */
-  readonly tenantId: string | null
+  /** The alias of the tenant the host currently resolves to, or null. */
+  readonly tenantAlias: string | null
   /** Reports the tenant the user picked; the host switches its route/state. */
-  readonly onSelect: (tenantId: string) => void
+  readonly onSelect: (tenantAlias: string) => void
   /** The roster read's failure notice, rendered under the rows: the read names
    * tenants outside the caller's own memberships, and a failed one explains
    * what could not be named and offers the retry. */
@@ -415,7 +369,8 @@ export function tenantDisplayName(
     return personalLabel
   }
   const displayName = tenant.displayName?.trim() ?? ''
-  return displayName === '' ? tenant.alias : displayName
+  // TenantOption.id is the tenant's alias in this host.
+  return displayName === '' ? tenant.id : displayName
 }
 
 /**
@@ -693,14 +648,14 @@ export function UserMenu({
   // reliably announced.
   const [switchedTenant, setSwitchedTenant] = useState<string | null>(null)
   const personalOrganizationName = usePersonalOrganizationName()
-  const selectTenant = (tenantId: string): void => {
+  const selectTenant = (tenantAlias: string): void => {
     if (organizations === undefined) {
       return
     }
     const picked = organizations.tenants.find(
-      (tenant) => tenant.id === tenantId,
+      (tenant) => tenant.id === tenantAlias,
     )
-    organizations.onSelect(tenantId)
+    organizations.onSelect(tenantAlias)
     setSwitchedTenant(
       picked === undefined
         ? null
@@ -1256,13 +1211,13 @@ export function OrganizationMenuEntry({
     }),
   )
   const current =
-    options.find((tenant) => tenant.id === organizations.tenantId) ?? null
+    options.find((tenant) => tenant.id === organizations.tenantAlias) ?? null
   // The row above already names the current organization, so the expansion
   // lists only the others: one row per fact, and no organization appears
   // twice. An account with a single organization has nothing to switch to,
   // so its row is context rather than a control.
   const others = options.filter(
-    (tenant) => tenant.id !== organizations.tenantId,
+    (tenant) => tenant.id !== organizations.tenantAlias,
   )
   const rowContent = (
     <>
@@ -1328,7 +1283,7 @@ export function OrganizationMenuEntry({
         <Box role="group" aria-label={t('userMenu.organizations')}>
           <TenantMenuItems
             tenants={others}
-            currentTenantId={organizations.tenantId}
+            currentTenantId={organizations.tenantAlias}
             onSelect={organizations.onSelect}
             onDismiss={() => {
               setExpanded(false)
@@ -1451,14 +1406,14 @@ export function AccountEntry({
   // menu, which closes on the pick.
   const [switchedTenant, setSwitchedTenant] = useState<string | null>(null)
   const personalOrganizationName = usePersonalOrganizationName()
-  const selectTenant = (tenantId: string): void => {
+  const selectTenant = (tenantAlias: string): void => {
     if (organizations === undefined) {
       return
     }
     const picked = organizations.tenants.find(
-      (tenant) => tenant.id === tenantId,
+      (tenant) => tenant.id === tenantAlias,
     )
-    organizations.onSelect(tenantId)
+    organizations.onSelect(tenantAlias)
     setSwitchedTenant(
       picked === undefined
         ? null

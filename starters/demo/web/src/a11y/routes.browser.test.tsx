@@ -32,7 +32,7 @@ import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { getNotificationInboxGetUnreadCountQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { tenantQueryKey } from '@speed/auth-core'
-import { setCurrentTenantId, setTenantAlias, setTenantAliases } from '../chrome.js'
+import { setCurrentTenant, setTenantAlias, setTenantAliases } from '../chrome.js'
 import { clearSelfTenants } from '../tenant-self.js'
 import { PlatformPermissions } from '../platform-permissions.js'
 import { renderDemoApp } from '../test-utils/render.js'
@@ -151,13 +151,13 @@ beforeEach(async () => {
   // tenant rows and re-record the scan tenant's kind before every route, so a
   // route's state does not depend on which mode ran before it.
   clearSelfTenants()
-  setCurrentTenantId(SCAN_TENANT_ID)
-  setTenantAliases(new Map([[SCAN_TENANT_ID, SCAN_TENANT_ID]]))
-  setTenantAlias(SCAN_TENANT_ID, SCAN_TENANT_ID, 'business')
+  setCurrentTenant(SCAN_TENANT_ID)
+  setTenantAliases(new Map())
+  setTenantAlias(SCAN_TENANT_ID, 'business')
 })
 
 afterEach(() => {
-  setCurrentTenantId(null)
+  setCurrentTenant(null)
   setTenantAliases(new Map())
 })
 

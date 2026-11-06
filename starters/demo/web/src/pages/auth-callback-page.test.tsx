@@ -24,7 +24,7 @@ import { openFlow } from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { createBackend } from '../a11y/backends.js'
 import {
-  setCurrentTenantId,
+  setCurrentTenant,
   setTenantAliases,
 } from '../chrome.js'
 import {
@@ -114,7 +114,7 @@ function providerSession() {
 beforeEach(() => {
   window.history.replaceState({}, '', AUTH_CALLBACK_PATH)
   window.sessionStorage.clear()
-  setCurrentTenantId(TENANT_ID)
+  setCurrentTenant(TENANT_ID)
   setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
 })
 

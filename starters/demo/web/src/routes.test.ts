@@ -90,7 +90,7 @@ describe('the route table', () => {
       ADMIN_PREFIX,
       `${ADMIN_PREFIX}/tenants`,
       `${ADMIN_PREFIX}/tenants/new`,
-      `${ADMIN_PREFIX}/tenants/:id`,
+      `${ADMIN_PREFIX}/tenants/:alias`,
       `${ADMIN_PREFIX}/accounts`,
       `${ADMIN_PREFIX}/sessions`,
       `${ADMIN_PREFIX}/impersonations`,

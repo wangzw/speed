@@ -18,7 +18,7 @@ import { attachSession } from '@speed/auth-core'
 import type { AuthDomain, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
-import { getCurrentTenantId, setCurrentTenantId } from './chrome.js'
+import { getCurrentTenant, setCurrentTenant } from './chrome.js'
 import {
   PlatformPermissions,
   usePermissionRead,
@@ -86,7 +86,7 @@ function ReadProbe(): ReactElement {
   return (
     <div>
       <span data-testid="read">{read.failed ? 'failed' : 'ok'}</span>
-      <span data-testid="tenant">{read.tenantId ?? 'none'}</span>
+      <span data-testid="tenant">{read.tenantAlias ?? 'none'}</span>
       <span data-testid="perms">
         {read.perms === null ? 'unknown' : JSON.stringify(read.perms)}
       </span>
@@ -127,13 +127,13 @@ describe('PlatformPermissions', () => {
   afterEach(() => {
     // The current tenant is a module-level cell; a case that moves it must not
     // leave the next one reading from a tenant it never settled.
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
   })
 
   it("attaches the caller's own platform and tenant permission sets", async () => {
     // The guarded route needs a tenant name: the host settles the current
     // tenant before the read, as the tenant frame does on a page load.
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read', 'tenant.read'],
       tenant: ['notes:read'],
@@ -161,7 +161,7 @@ describe('PlatformPermissions', () => {
   })
 
   it('keeps both sets unknown when the read fails, and a retry answers for them', async () => {
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     let answer: { platform: string[]; tenant: string[] } | null = null
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
@@ -215,7 +215,7 @@ describe('PlatformPermissions', () => {
   it('attaches an answered empty document as a known empty set', async () => {
     // Both domains empty is a read answer, not a failure: a member's known
     // empty set is what the admin gate turns into the home redirect.
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     const requested = bindPermissionsAnswer({ platform: [], tenant: [] })
 
     const { session, attached } = recordingSession()
@@ -235,7 +235,7 @@ describe('PlatformPermissions', () => {
   })
 
   it('never reads the declared-permission catalog', async () => {
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read'],
       tenant: [],
@@ -259,7 +259,7 @@ describe('PlatformPermissions', () => {
   it('reads even when the feature document does not serve authz.admin', async () => {
     // The permission read is caller-scoped and serves no optional capability,
     // so its availability does not depend on the management surface's feature.
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read'],
       tenant: [],
@@ -315,7 +315,7 @@ describe('PlatformPermissions', () => {
   )
 
   it('re-reads when the effective identity changes', async () => {
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     let answer = {
       platform: ['audit.read'],
       tenant: ['notes:read'],
@@ -369,7 +369,7 @@ describe('PlatformPermissions', () => {
   })
 
   it('does not read until the current tenant settles, then follows every switch', async () => {
-    setCurrentTenantId(null)
+    setCurrentTenant(null)
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
@@ -379,10 +379,10 @@ describe('PlatformPermissions', () => {
       // The tenant list answers for the tenant the request resolved to, and
       // the host announces the current tenant from the cell, so the answer
       // varies with it.
-      const tenantId = getCurrentTenantId()
+      const tenantAlias = getCurrentTenant()
       return Promise.resolve({
         platform: ['audit.read'],
-        tenant: tenantId === null ? [] : [`${tenantId}:read`],
+        tenant: tenantAlias === null ? [] : [`${tenantAlias}:read`],
       } as T)
     })
 
@@ -406,7 +406,7 @@ describe('PlatformPermissions', () => {
     // The host settles the tenant: the first read carries its name and
     // attaches the set held there.
     act(() => {
-      setCurrentTenantId('acme')
+      setCurrentTenant('acme')
     })
     await waitFor(() =>
       expect(attached).toEqual([
@@ -419,7 +419,7 @@ describe('PlatformPermissions', () => {
 
     // A switch to another tenant reads again and attaches that tenant's set.
     act(() => {
-      setCurrentTenantId('globex')
+      setCurrentTenant('globex')
     })
     await waitFor(() =>
       expect(attached).toEqual([
@@ -437,7 +437,7 @@ describe('PlatformPermissions', () => {
   })
 
   it('tags the settled sets with the tenant they were read for', async () => {
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     bindRequestFn(<T,>(path: string): Promise<T> => {
       if (path !== PERMISSIONS_PATH) {
         return Promise.reject(new Error(`unexpected request: ${path}`))
@@ -463,7 +463,7 @@ describe('PlatformPermissions', () => {
   })
 
   it("never tags the new tenant with the previous tenant's set", async () => {
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     const answers: Array<
       ReturnType<typeof deferred<{ platform: string[]; tenant: string[] }>>
     > = []
@@ -491,7 +491,7 @@ describe('PlatformPermissions', () => {
     // Switch while the new read is in flight: the tag names the new tenant and
     // the sets are unknown until that tenant's answer lands. No frame carries
     // globex with acme's set.
-    act(() => setCurrentTenantId('globex'))
+    act(() => setCurrentTenant('globex'))
     expect(screen.getByTestId('tenant')).toHaveTextContent('globex')
     expect(screen.getByTestId('tenant-set')).toHaveTextContent('unknown')
     expect(screen.getByTestId('pending')).toHaveTextContent('pending')
@@ -506,7 +506,7 @@ describe('PlatformPermissions', () => {
   })
 
   it('discards a slow answer for the tenant the viewer has left', async () => {
-    setCurrentTenantId('acme')
+    setCurrentTenant('acme')
     const answers: Array<
       ReturnType<typeof deferred<{ platform: string[]; tenant: string[] }>>
     > = []
@@ -525,7 +525,7 @@ describe('PlatformPermissions', () => {
 
     await waitFor(() => expect(answers).toHaveLength(1))
     // Move the tenant with the first read still in flight.
-    act(() => setCurrentTenantId('globex'))
+    act(() => setCurrentTenant('globex'))
     await waitFor(() => expect(answers).toHaveLength(2))
 
     // The answer for acme lands late: neither the session nor the tagged

@@ -29,8 +29,8 @@ import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import {
   getCurrentTenantAlias,
-  getCurrentTenantId,
-  setCurrentTenantId,
+  getCurrentTenant,
+  setCurrentTenant,
   setTenantAliases,
   OrganizationMenuEntry,
 } from './chrome.js'
@@ -65,21 +65,21 @@ function bindSelf(read: () => unknown): void {
 beforeEach(() => {
   clearSelfTenants()
   setTenantAliases(new Map())
-  setCurrentTenantId(null)
+  setCurrentTenant(null)
 })
 
 afterEach(() => {
   clearSelfTenants()
   setTenantAliases(new Map())
-  setCurrentTenantId(null)
+  setCurrentTenant(null)
 })
 
 describe('the caller tenant list store', () => {
   it('replaces the list and marks it settled on a successful read', async () => {
     bindSelf(() => ({
       tenants: [
-        { id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' },
-        { id: 'personal-account-1', alias: 'my-space', displayName: '', kind: 'personal' },
+        { alias: 'acme-inc', displayName: '', kind: 'business' },
+        { alias: 'my-space', displayName: '', kind: 'personal' },
       ],
     }))
 
@@ -89,8 +89,8 @@ describe('the caller tenant list store', () => {
     // default settlement branch on it.
     expect(getSelfTenantState()).toEqual({
       tenants: [
-        { id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' },
-        { id: 'personal-account-1', alias: 'my-space', displayName: '', kind: 'personal' },
+        { alias: 'acme-inc', displayName: '', kind: 'business' },
+        { alias: 'my-space', displayName: '', kind: 'personal' },
       ],
       settled: true,
       failed: false,
@@ -101,13 +101,11 @@ describe('the caller tenant list store', () => {
     bindSelf(() => ({
       tenants: [
         {
-          id: 'acme',
           alias: 'acme-inc',
           displayName: 'Acme Incorporated',
           kind: 'business',
         },
         {
-          id: 'personal-account-1',
           alias: 'my-space',
           displayName: '',
           kind: 'personal',
@@ -118,14 +116,14 @@ describe('the caller tenant list store', () => {
 
     // A profile that names a display name carries it; an empty one is the
     // same fact as no name, so the accessor falls back to the alias.
-    expect(selfTenantDisplayName('acme')).toBe('Acme Incorporated')
-    expect(selfTenantDisplayName('personal-account-1')).toBe('my-space')
+    expect(selfTenantDisplayName('acme-inc')).toBe('Acme Incorporated')
+    expect(selfTenantDisplayName('my-space')).toBe('my-space')
     expect(selfTenantDisplayName('unknown')).toBeNull()
   })
 
   it('keeps the settled rows and marks the list unsettled when a read fails', async () => {
     bindSelf(() => ({
-      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
     }))
     await loadSelfTenants()
 
@@ -138,7 +136,7 @@ describe('the caller tenant list store', () => {
     // the unsettled flag keeps a failed read from settling a current tenant or
     // standing in for "no memberships".
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
       settled: false,
       failed: true,
     })
@@ -183,7 +181,7 @@ describe('the caller tenant list store', () => {
       return calls === 1
         ? older
         : {
-            tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
+            tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
           }
     })
 
@@ -191,7 +189,7 @@ describe('the caller tenant list store', () => {
     const newerRead = loadSelfTenants()
     await newerRead
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
       settled: true,
       failed: false,
     })
@@ -202,14 +200,14 @@ describe('the caller tenant list store', () => {
     rejectOlder(new Error('the older read failed'))
     await olderRead
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ id: 'acme', alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
       settled: true,
       failed: false,
     })
   })
 
   it('clears the rows and the settled flag', async () => {
-    bindSelf(() => ({ tenants: [{ id: 'acme', alias: 'acme-inc' }] }))
+    bindSelf(() => ({ tenants: [{ alias: 'acme-inc' }] }))
     await loadSelfTenants()
 
     clearSelfTenants()
@@ -222,12 +220,12 @@ describe('the caller tenant list store', () => {
   })
 
   it('announces a self-list row alias on the request surface', async () => {
-    bindSelf(() => ({ tenants: [{ id: 'globex', alias: 'globex-renamed' }] }))
+    bindSelf(() => ({ tenants: [{ alias: 'globex-renamed' }] }))
     await loadSelfTenants()
-    setCurrentTenantId('globex')
+    setCurrentTenant('globex-renamed')
 
-    // The id and the alias diverge after a rename; the request surface carries
-    // the alias and never the id.
+    // The caller tenant list's row is named by its alias; that is the value
+    // the request surface announces.
     expect(getCurrentTenantAlias()).toBe('globex-renamed')
   })
 })
@@ -239,20 +237,19 @@ describe('the caller tenant list store', () => {
  * caller's own row carries an identifier no derivation would produce, so a
  * label driven by the identifier rather than by `kind` fails here. */
 const OFFERED: readonly DemoTenant[] = [
-  { id: 'my-space', alias: 'my-space', name: 'my-space', kind: 'personal' },
+  { id: 'my-space', name: 'my-space', kind: 'personal' },
   {
-    id: 'personal-account-2',
-    alias: 'other-space',
+    id: 'other-space',
     name: 'other-space',
     kind: 'business',
   },
-  { id: 'acme', alias: 'acme', name: 'acme', kind: 'business' },
+  { id: 'acme', name: 'acme', kind: 'business' },
 ]
 
 /** Renders the account menu's organization group under the production stack. */
 function renderTenantMenu(props: {
   readonly tenants: readonly DemoTenant[]
-  readonly tenantId: string | null
+  readonly tenantAlias: string | null
 }): void {
   const i18n = createSpeedI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
@@ -276,7 +273,7 @@ function renderTenantMenu(props: {
       <OrganizationMenuEntry
         organizations={{
           tenants: props.tenants,
-          tenantId: props.tenantId,
+          tenantAlias: props.tenantAlias,
           onSelect: () => undefined,
         }}
         onClose={() => undefined}
@@ -294,7 +291,7 @@ describe('the tenant switcher over the self list', () => {
   it('keeps every row and labels the row the read answers as personal', async () => {
     renderTenantMenu({
       tenants: OFFERED,
-      tenantId: 'acme',
+      tenantAlias: 'acme',
     })
 
     // The menu states the current organization in its first row and expands
@@ -322,7 +319,7 @@ describe('the tenant switcher over the self list', () => {
   it('leaves the current tenant in the list but not selectable', async () => {
     renderTenantMenu({
       tenants: OFFERED,
-      tenantId: 'acme',
+      tenantAlias: 'acme',
     })
 
     const user = userEvent.setup()
@@ -340,8 +337,8 @@ describe('the tenant switcher over the self list', () => {
     // list does not hold the row, so only the roster's alias cache can name
     // it. Without the added row the bar could neither show nor leave that
     // tenant.
-    setTenantAliases(new Map([['globex', 'globex-renamed']]))
-    setCurrentTenantId('globex')
+    setTenantAliases(new Map([['globex-renamed', 'Globex Renamed']]))
+    setCurrentTenant('globex-renamed')
     bindRequestFn((async (path: string) => {
       if (path === SELF_PATH) {
         return { tenants: [] }
@@ -349,7 +346,12 @@ describe('the tenant switcher over the self list', () => {
       if (path === '/api/v1/system/tenants') {
         return {
           tenants: [
-            { id: 'globex', alias: 'globex-renamed', status: 'active' },
+            {
+              alias: 'globex-renamed',
+              displayName: 'Globex Renamed',
+              kind: 'business',
+              status: 'active',
+            },
           ],
         }
       }
@@ -363,8 +365,8 @@ describe('the tenant switcher over the self list', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByTestId('user-menu-trigger'))
     expect(
-      within(await screen.findByRole('menu')).getByText('globex-renamed'),
+      within(await screen.findByRole('menu')).getByText('Globex Renamed'),
     ).toBeInTheDocument()
-    expect(getCurrentTenantId()).toBe('globex')
+    expect(getCurrentTenant()).toBe('globex-renamed')
   })
 })

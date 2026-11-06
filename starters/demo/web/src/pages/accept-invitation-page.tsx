@@ -46,10 +46,9 @@ import type { AuthnInviteView } from '../app-api/index.js'
 import { useAppNotice } from '../app-notice.js'
 import { useAppServices } from '../app-services.js'
 import {
-  getCurrentTenantId,
-  setCurrentTenantId,
-  setTenantAlias,
-} from '../chrome.js'
+  getCurrentTenant,
+  setCurrentTenant,
+  } from '../chrome.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 import { loadSelfTenants } from '../tenant-self.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
@@ -71,7 +70,7 @@ export function AcceptInvitationPage({
   // The tenant the acceptance wrote, as its answer named it. The screen's own
   // onAccepted callback takes no argument, so the tenant identifier is
   // captured where the acceptance resolves and read back when it lands.
-  const acceptedTenantId = useRef<string | null>(null)
+  const acceptedTenantAlias = useRef<string | null>(null)
 
   // The screen drives these two operations; they reach the backend through
   // the generated surface over the request function the assembly bound
@@ -92,36 +91,35 @@ export function AcceptInvitationPage({
             : { display_name: input.displayName }),
           ...(input.password === undefined ? {} : { password: input.password }),
         }).then((answer) => {
-          acceptedTenantId.current = answer.tenant
+          acceptedTenantAlias.current = answer.tenant
           return undefined
         }),
     }),
     [],
   )
 
-  // The landing the acceptance's own answer cannot complete: the alias is
-  // resolved from the caller tenant read, then written together with the
-  // tenant so every tenant-scoped request announces a name the server
-  // resolves. The announcement comes first -- it is the confirmation the
-  // home page shows -- and the navigation happens either way, including when
-  // the alias read fails.
+  // The landing the acceptance's own answer cannot complete on its own: the
+  // accepted tenant is named by its alias, and the landing confirms the
+  // caller tenant list now holds it before switching. The announcement comes
+  // first -- it is the confirmation the home page shows -- and the navigation
+  // happens either way, including when the membership read does not name the
+  // tenant.
   const landInInvitedTenant = useCallback((): void => {
     notice.announce(t('home.notice.membershipTitle'))
-    const tenantId = acceptedTenantId.current
-    void resolveInvitedTenantAlias(tenantId).then((alias) => {
-      const previous = getCurrentTenantId()
-      if (tenantId !== null && alias !== null) {
-        if (previous !== null && previous !== tenantId) {
+    const invited = acceptedTenantAlias.current
+    void resolveInvitedTenant(invited).then((tenantAlias) => {
+      const previous = getCurrentTenant()
+      if (tenantAlias !== null) {
+        if (previous !== null && previous !== tenantAlias) {
           evictTenantQueries(queryClient, previous)
         }
-        setTenantAlias(tenantId, alias)
-        setCurrentTenantId(tenantId)
+        setCurrentTenant(tenantAlias)
       } else if (previous !== null) {
         // No name for the invited tenant: the outgoing tenant is not this
         // landing's, so it must not stay current behind an unnameable
         // context. Drop it and let the frame settle from its own reads.
         evictTenantQueries(queryClient, previous)
-        setCurrentTenantId(null)
+        setCurrentTenant(null)
       }
       navigate(TENANT_HOME_PATH)
     })
@@ -181,17 +179,19 @@ export function AcceptInvitationPage({
  * acceptance writes a membership -- so a settled read that omits it is the
  * same unusable answer as a failure.
  */
-async function resolveInvitedTenantAlias(
-  tenantId: string | null,
+async function resolveInvitedTenant(
+  invited: string | null,
 ): Promise<string | null> {
-  if (tenantId === null) {
+  if (invited === null) {
     return null
   }
   const state = await loadSelfTenants()
   if (!state.settled) {
     return null
   }
-  return state.tenants.find((tenant) => tenant.id === tenantId)?.alias ?? null
+  return state.tenants.some((tenant) => tenant.alias === invited)
+    ? invited
+    : null
 }
 
 /** Narrows the generated acceptView answer to the screen's own summary. */
