@@ -395,6 +395,7 @@ export function tenantFixture(
   return {
     id: 'acme',
     alias: 'Acme',
+    ownerAccount: 'acc-1',
     status: 'active',
     contactEmail: '',
     createdAt: '2026-10-15T12:00:00Z',
