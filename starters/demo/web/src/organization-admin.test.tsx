@@ -195,6 +195,8 @@ function scriptReads(options: {
           contactEmail: '',
           website: '',
           ownerAccount: '',
+          ownerDisplayName: '',
+          ownerUsername: '',
           status: 'active',
           createdAt: '2026-01-01T00:00:00Z',
         },

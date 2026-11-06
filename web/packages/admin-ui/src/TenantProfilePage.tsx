@@ -78,6 +78,32 @@ export interface TenantProfilePageProps {
  * label, never a raw value. */
 const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 
+/**
+ * How the identity card names the owner: the display name and the username
+ * together, because a display name alone is ambiguous when two members share
+ * one; either alone when the other is absent; and the neutral label when the
+ * owner could not be resolved. The account identifier is never a fallback --
+ * it is internal and the ownership decision is the only thing that reads it.
+ */
+function ownerLabelOf(
+  ownerDisplayName: string,
+  ownerUsername: string,
+  unnamed: string,
+): string {
+  const displayName = ownerDisplayName.trim()
+  const username = ownerUsername.trim()
+  if (displayName !== '' && username !== '') {
+    return `${displayName} (${username})`
+  }
+  if (username !== '') {
+    return username
+  }
+  if (displayName !== '') {
+    return displayName
+  }
+  return unnamed
+}
+
 function statusLabel(status: string, t: (key: string) => string): string {
   return KNOWN_STATUSES.has(status)
     ? t(`tenants.status.${status}`)
@@ -228,9 +254,11 @@ export function TenantProfilePage({
                   />
                   <DefinitionRow
                     label={t('tenantProfile.field.owner')}
-                    value={
-                      settledProfile.ownerAccount || t('common.emptyValue')
-                    }
+                    value={ownerLabelOf(
+                      settledProfile.ownerDisplayName,
+                      settledProfile.ownerUsername,
+                      t('tenantProfile.owner.unnamed'),
+                    )}
                   />
                   <DefinitionRow
                     label={t('tenantProfile.field.status')}

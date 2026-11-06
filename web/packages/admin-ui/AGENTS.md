@@ -105,7 +105,7 @@ admission policies as switches, with their status, effect, impact and the
 platform floor, saving each switch on its own and rendering no table. The
 profile wrapper hands the current tenant, the host's `onTenantUpdated` and
 `onOrganizationLeft` to the shared `TenantProfilePage`: a read-only identity
-card (with the owner account), an editable profile card, and a
+card (with the owner's display name and username), an editable profile card, and a
 current-owner-only ownership card that searches the organization's members,
 transfers it to one of them, or deletes it after the alias is typed. A
 landed save asks the host to reload the caller tenant list the account menu

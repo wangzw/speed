@@ -421,6 +421,9 @@
       "description": "These details identify the organization and cannot be changed here.",
       "aliasHint": "The alias is fixed after the organization is created. It is the name links use to address the organization."
     },
+    "owner": {
+      "unnamed": "Organization owner"
+    },
     "field": {
       "alias": "Alias",
       "owner": "Owner",

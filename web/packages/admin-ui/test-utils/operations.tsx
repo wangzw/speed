@@ -448,6 +448,8 @@ export function profileFixture(
     contactEmail: '',
     website: '',
     ownerAccount: 'acc-1',
+    ownerDisplayName: '',
+    ownerUsername: '',
     status: 'active',
     createdAt: '2026-10-15T12:00:00Z',
     ...overrides,
@@ -1216,7 +1218,14 @@ export function createAdminOperations(
             (profile) =>
               profile === undefined
                 ? profile
-                : { ...profile, ownerAccount: input.account },
+                : {
+                    ...profile,
+                    ownerAccount: input.account,
+                    // The new owner's names were not read here, and the old
+                    // owner's are no longer true.
+                    ownerDisplayName: '',
+                    ownerUsername: '',
+                  },
           )
         },
       })

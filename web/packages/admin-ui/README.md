@@ -128,7 +128,7 @@ policies as switches, each saving on its own, platform-enforced policies
 read-only, and a protected tenant's page read-only with no switches. The
 profile wrapper hands the current tenant, the host's
 `onTenantUpdated` and `onOrganizationLeft` to `TenantProfilePage`: a
-read-only identity card (including the owner account), an editable profile
+read-only identity card (including the owner's display name and username), an editable profile
 card, and an ownership card only the current owner sees, from which the
 organization can be transferred to a searched member or deleted after the
 alias is typed; a landed save asks the host to reload the caller tenant list
@@ -506,7 +506,7 @@ the current tenant:
 - the profile wrapper is given the current tenant, the host's
   `onTenantUpdated` and `onOrganizationLeft`: it reads and writes
   `/api/v1/tenants/{tenant}/profile`, renders a read-only identity card
-  (with the owner account), an editable profile card and a current-owner-only
+  (with the owner's display name and username), an editable profile card and a current-owner-only
   ownership card that searches the organization's members and transfers the
   organization to one of them or deletes it after the alias is typed, asks
   the host to reload the caller tenant list after a landed save, and asks the

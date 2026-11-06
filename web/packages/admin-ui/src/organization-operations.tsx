@@ -667,6 +667,11 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
         reflectTenantProfile(queryClient, input.tenant, (profile) => ({
           ...profile,
           ownerAccount: input.account,
+          // The new owner's names were not read here, and the old owner's are
+          // no longer true: the identifier is the only fact this write
+          // establishes, so the row falls back to its neutral label.
+          ownerDisplayName: '',
+          ownerUsername: '',
         }))
       },
     })

@@ -38,6 +38,10 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 const TENANT = 'acme'
 const OWNER = 'acc-1'
 const OTHER_ACCOUNT = 'acc-2'
+const OWNER_DISPLAY_NAME = 'Ada Lovelace'
+const OWNER_USERNAME = 'ada'
+/** An owner account identifier the page must never render. */
+const UNSHOWN_OWNER = '8f14e45f-ceea-467a-9d3d-0c1b7e2f4a51'
 
 /** The ui-kit label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
@@ -379,8 +383,27 @@ function ownerProfile(
     alias: ORG_ALIAS,
     displayName: ORG_NAME,
     ownerAccount: OWNER,
+    ownerDisplayName: OWNER_DISPLAY_NAME,
+    ownerUsername: OWNER_USERNAME,
     ...overrides,
   })
+}
+
+/** The owner row's whole definition row: the label cell and its value. */
+function ownerRow(container: HTMLElement): HTMLElement {
+  const label = within(container).getByText(zhCN.tenantProfile.field.owner)
+  const row = label.closest('div')
+  if (row === null) {
+    throw new Error('the owner row was not found')
+  }
+  return row
+}
+
+/** The identifier must be absent from the rendered page, attributes
+ * included: it is the internal key, never a fallback for the label. */
+function expectNoOwnerAccount(container: HTMLElement, account: string): void {
+  expect(container.innerHTML).not.toContain(account)
+  expect(container.textContent).not.toContain(account)
 }
 
 function transferTitle(): string {
@@ -404,6 +427,105 @@ async function armAndConfirm(
   await waitFor(() => expect(again).toBeEnabled())
   await user.click(again)
 }
+
+describe('TenantProfilePage owner row', () => {
+  it('shows the display name and the username, never the account identifier', async () => {
+    const { container } = renderPage({
+      profile: profileFixture({
+        ownerAccount: UNSHOWN_OWNER,
+        ownerDisplayName: OWNER_DISPLAY_NAME,
+        ownerUsername: OWNER_USERNAME,
+      }),
+    })
+    await ready()
+
+    expect(
+      within(ownerRow(container)).getByText(
+        `${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`,
+      ),
+    ).toBeInTheDocument()
+    expectNoOwnerAccount(container, UNSHOWN_OWNER)
+  })
+
+  it('tells two owners sharing one display name apart by their usernames', async () => {
+    // The username is shown because a display name alone does not identify
+    // the owner: two members may carry the same one.
+    const first = renderPage({
+      profile: profileFixture({
+        ownerAccount: UNSHOWN_OWNER,
+        ownerDisplayName: 'Alex Kim',
+        ownerUsername: 'alex-one',
+      }),
+    })
+    await ready()
+    expect(
+      within(ownerRow(first.container)).getByText('Alex Kim (alex-one)'),
+    ).toBeInTheDocument()
+    first.unmount()
+
+    const second = renderPage({
+      profile: profileFixture({
+        ownerAccount: UNSHOWN_OWNER,
+        ownerDisplayName: 'Alex Kim',
+        ownerUsername: 'alex-two',
+      }),
+    })
+    await ready()
+    expect(
+      within(ownerRow(second.container)).getByText('Alex Kim (alex-two)'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows only the display name when the owner has no username', async () => {
+    const { container } = renderPage({
+      profile: profileFixture({
+        ownerAccount: UNSHOWN_OWNER,
+        ownerDisplayName: OWNER_DISPLAY_NAME,
+        ownerUsername: '',
+      }),
+    })
+    await ready()
+
+    expect(
+      within(ownerRow(container)).getByText(OWNER_DISPLAY_NAME),
+    ).toBeInTheDocument()
+    expectNoOwnerAccount(container, UNSHOWN_OWNER)
+  })
+
+  it('shows only the username when the owner has no display name', async () => {
+    const { container } = renderPage({
+      profile: profileFixture({
+        ownerAccount: UNSHOWN_OWNER,
+        ownerDisplayName: '',
+        ownerUsername: OWNER_USERNAME,
+      }),
+    })
+    await ready()
+
+    expect(
+      within(ownerRow(container)).getByText(OWNER_USERNAME),
+    ).toBeInTheDocument()
+    expectNoOwnerAccount(container, UNSHOWN_OWNER)
+  })
+
+  it('shows the neutral label when the owner cannot be resolved, never the identifier', async () => {
+    // A static credential-table subject has no account row, so both name
+    // fields are empty; the page still must not fall back to the identifier.
+    const { container } = renderPage({
+      profile: profileFixture({
+        ownerAccount: UNSHOWN_OWNER,
+        ownerDisplayName: '',
+        ownerUsername: '',
+      }),
+    })
+    await ready()
+
+    expect(
+      within(ownerRow(container)).getByText(zhCN.tenantProfile.owner.unnamed),
+    ).toBeInTheDocument()
+    expectNoOwnerAccount(container, UNSHOWN_OWNER)
+  })
+})
 
 describe('TenantProfilePage ownership', () => {
   it('lets the current owner transfer the organization and hands the confirmation to the departure action', async () => {
@@ -430,9 +552,12 @@ describe('TenantProfilePage ownership', () => {
     })
     await ready()
 
-    // The owner account is shown on the identity card.
+    // The owner is shown by display name and username; the transfer control
+    // is offered because the acting account is the profile's ownerAccount.
     expect(screen.getByText(zhCN.tenantProfile.field.owner)).toBeInTheDocument()
-    expect(screen.getByText(OWNER)).toBeInTheDocument()
+    expect(
+      screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
+    ).toBeInTheDocument()
 
     await user.click(
       screen.getByRole('button', {
@@ -478,8 +603,11 @@ describe('TenantProfilePage ownership', () => {
     expect(onTenantUpdated).not.toHaveBeenCalled()
     expect(screen.queryByText(message)).toBeNull()
     // The landed write is reflected locally; the page issues no re-read the
-    // caller would be refused.
-    expect(await screen.findByText(OTHER_ACCOUNT)).toBeInTheDocument()
+    // caller would be refused. The new owner's names were not read here, so
+    // the row falls back to the neutral label rather than a stale name.
+    expect(
+      await screen.findByText(zhCN.tenantProfile.owner.unnamed),
+    ).toBeInTheDocument()
     expect(
       screen.queryByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,
@@ -542,9 +670,12 @@ describe('TenantProfilePage ownership', () => {
     renderPage({ profile: ownerProfile() })
     await ready()
 
-    // The administrator still sees who the owner is, but no ownership control.
+    // The administrator still sees who the owner is, but no ownership
+    // control: the controls branch on ownerAccount, not on the row's label.
     expect(screen.getByText(zhCN.tenantProfile.field.owner)).toBeInTheDocument()
-    expect(screen.getByText(OWNER)).toBeInTheDocument()
+    expect(
+      screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
+    ).toBeInTheDocument()
     expect(
       screen.queryByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,

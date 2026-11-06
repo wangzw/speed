@@ -140,6 +140,8 @@ const TENANT_PROFILE: TenantProfileView = {
   displayName: TENANT.displayName,
   website: TENANT.website,
   ownerAccount: TENANT.ownerAccount,
+  ownerDisplayName: 'Test User',
+  ownerUsername: '',
   createdAt: TENANT.createdAt,
 }
 
