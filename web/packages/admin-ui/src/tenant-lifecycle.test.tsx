@@ -344,6 +344,90 @@ describe('platform tenant lifecycle entries', () => {
     // The account path never issued the member read.
     expect(memberReads).toBe(0)
   })
+
+  it('states a transfer 404 as the organization no longer existing', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [accountFixture({ id: 'acc-9', display_name: 'Bob' })],
+            next_cursor: '',
+          }),
+        transferTenantOwner: () =>
+          Promise.reject({ status: 404, code: 'client.http.404' }),
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await chooseAccount(
+      user,
+      zhCN.tenantLifecycle.transfer.accountLabel,
+      'Bob',
+      'Bob (acc-9)',
+    )
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.submit,
+      }),
+    )
+    await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.tenantLifecycle.transfer.failedNotFound,
+    )
+  })
+
+  it('resolves a bare transfer 403 to the permission refusal', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [accountFixture({ id: 'acc-9', display_name: 'Bob' })],
+            next_cursor: '',
+          }),
+        transferTenantOwner: () =>
+          Promise.reject({ status: 403, code: 'client.http.403' }),
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await chooseAccount(
+      user,
+      zhCN.tenantLifecycle.transfer.accountLabel,
+      'Bob',
+      'Bob (acc-9)',
+    )
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.submit,
+      }),
+    )
+    await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.client.httpForbidden,
+    )
+  })
 })
 
 describe('platform tenant deletion', () => {
@@ -427,6 +511,63 @@ describe('platform tenant deletion', () => {
     expect(alert).not.toHaveTextContent(zhCN.errors.tenant.conflict)
     expect(screen.getByText('Acme')).toBeInTheDocument()
   })
+
+  it('states a delete 404 as the organization no longer existing', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () =>
+          Promise.resolve([
+            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+          ]),
+        deleteTenant: () =>
+          Promise.reject({ status: 404, code: 'client.http.404' }),
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+      }),
+    )
+    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.tenantLifecycle.deleteConfirm.failedNotFound,
+    )
+    expect(screen.getByText('Acme')).toBeInTheDocument()
+  })
+
+  it('renders a protected-tenant delete refusal as the protected copy', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () =>
+          Promise.resolve([
+            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+          ]),
+        deleteTenant: () =>
+          Promise.reject({ status: 403, code: 'tenant.protected' }),
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+      }),
+    )
+    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.tenant.protected)
+    expect(screen.getByText('Acme')).toBeInTheDocument()
+  })
 })
 
 describe('tenant detail lifecycle', () => {
@@ -475,6 +616,14 @@ describe('tenant detail lifecycle', () => {
         }),
       }),
     ).toBeNull()
+    // The group renders no entry on a personal organization, so the page
+    // renders no card for it either -- not just no buttons inside one.
+    expect(
+      screen.queryByText(zhCN.tenantLifecycle.sectionTitle),
+    ).toBeNull()
+    expect(
+      screen.queryByText(zhCN.tenantLifecycle.sectionDescription),
+    ).toBeNull()
     personal.unmount()
 
     attachPermissions({ system: [] })
@@ -484,6 +633,14 @@ describe('tenant detail lifecycle', () => {
       screen.queryByRole('button', {
         name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
       }),
+    ).toBeNull()
+    // Without tenant.manage the group has nothing to show, and the card is
+    // absent rather than empty.
+    expect(
+      screen.queryByText(zhCN.tenantLifecycle.sectionTitle),
+    ).toBeNull()
+    expect(
+      screen.queryByText(zhCN.tenantLifecycle.sectionDescription),
     ).toBeNull()
   })
 
@@ -537,5 +694,47 @@ describe('tenant detail lifecycle', () => {
       expect(writes).toEqual([{ id: 'acme', account: 'acc-2' }])
     })
     await waitFor(() => expect(reads).toBeGreaterThan(1))
+  })
+
+  it('keeps the delete confirmation after the detail settles into a tombstone', async () => {
+    const user = userEvent.setup()
+    let status: AdminTenant['status'] = 'active'
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getTenant: () =>
+          Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status })),
+        deleteTenant: () => {
+          status = 'deleted'
+          return Promise.resolve()
+        },
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findAllByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+      }),
+    )
+    await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
+
+    const confirmation = text(zhCN.tenantLifecycle.deleteConfirm.success, {
+      id: 'acme',
+    })
+    expect(await screen.findByText(confirmation)).toBeInTheDocument()
+
+    // The delete invalidates the detail read, which settles as the
+    // tombstone; the page withdraws the lifecycle card with it. The
+    // confirmation lives at page level, so it survives that removal instead
+    // of flashing and vanishing with the card.
+    expect(
+      await screen.findByText(zhCN.tenants.status.deleted),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.tenantLifecycle.sectionTitle),
+    ).toBeNull()
+    expect(screen.getByText(confirmation)).toBeInTheDocument()
   })
 })

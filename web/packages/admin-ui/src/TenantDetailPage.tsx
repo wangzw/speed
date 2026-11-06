@@ -12,7 +12,12 @@
  * and the creation time; a profile card below the status control writes
  * those four fields through the same shared form the organization surface
  * uses. The status and profile are two control groups with two feedback
- * scopes, each region directly under its own control.
+ * scopes, each region directly under its own control. The lifecycle group
+ * below them renders only when it has a control to show -- the caller holds
+ * tenant.manage and the subject is a live business organization -- so it
+ * never leaves an empty card behind; its landed-write confirmation is a
+ * page-level region, because a deletion turns the read into a tombstone and
+ * withdraws the group the confirmation would otherwise sit in.
  *
  * The read is an operation on the console operations bundle, so the page
  * builds no client and writes no query key. The status renders from the
@@ -50,13 +55,13 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
+import { usePermission } from '@speed/auth-core'
 import { formatInstant } from '@speed/i18n'
 import {
   ListSkeleton,
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import type { WriteOutcome } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { AdminLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
@@ -79,7 +84,10 @@ import {
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
-import { TenantLifecycleActions } from './internal/tenant-lifecycle.js'
+import {
+  isPersonalTenant,
+  TenantLifecycleActions,
+} from './internal/tenant-lifecycle.js'
 import { TenantProfileForm } from './TenantProfileForm.js'
 import {
   displayNameOf,
@@ -202,6 +210,10 @@ export function TenantDetailPage({
   // a deletion turns this page into a tombstone and withdraws the control
   // group, so its confirmation cannot live inside the group.
   const lifecycleFeedback = useWriteFeedback()
+  // The lifecycle group renders no control without tenant.manage, and never
+  // on a personal organization or a tombstone. The page decides with the
+  // same rule, so a group with nothing to show leaves no empty card behind.
+  const canManageTenant = usePermission('system', 'tenant.manage')
   // A refresh remounts the profile card through this key: its draft and its
   // own feedback are withdrawn together with the re-read.
   const [profileEpoch, setProfileEpoch] = useState(0)
@@ -264,6 +276,11 @@ export function TenantDetailPage({
     // A tombstone is read-only: deletion is terminal, so the page renders
     // the tenant and no write control at all.
     const deleted = settled.status === 'deleted'
+    // The lifecycle group renders its entries only for a caller holding
+    // tenant.manage on a live business organization. The page asks the same
+    // question the group does, so the card and its region exist only when
+    // the group will render inside them.
+    const lifecycle = canManageTenant && !isPersonalTenant(settled.id)
     return (
       <>
         <SectionCard title={t('tenantDetail.summary')} sx={{ mb: 3 }}>
@@ -349,10 +366,9 @@ export function TenantDetailPage({
         </SectionCard>
         )}
 
-        {!deleted && (
+        {!deleted && lifecycle && (
           <TenantLifecycleCard
             tenant={settled}
-            outcome={lifecycleFeedback.outcome}
             onSuccess={lifecycleFeedback.succeed}
           />
         )}
@@ -411,6 +427,12 @@ export function TenantDetailPage({
         sx={{ mb: 2 }}
       />
 
+      {/* The lifecycle group's landed-write confirmation lives at page
+          level: a deletion withdraws the group with the write's own effect,
+          so a result rendered inside it would flash and vanish. Its refusals
+          stay beside the controls, inside the group. */}
+      <WriteFeedbackRegion outcome={lifecycleFeedback.outcome} />
+
       <DetailLayout
         main={
           <AdminAsyncSection
@@ -468,20 +490,19 @@ export function TenantDetailPage({
 
 /**
  * The platform detail's lifecycle card: the transfer and delete control
- * group in its own section, with the page-level result region the group's
- * landed write reports to. It is a component of its own so this control
+ * group in its own section. It is a component of its own so this control
  * group's result never shares a region with the status control above it.
  *
- * The page owns the scope (it resets it on refresh) and passes the slot
- * down; the card renders the region directly under the controls.
+ * The page renders the card only when the group has entries to show, and it
+ * owns the success region (pushed up through onSuccess) because a deletion
+ * withdraws this card; a refusal stays inside the group, beside the controls
+ * that were refused.
  */
 function TenantLifecycleCard({
   tenant,
-  outcome,
   onSuccess,
 }: {
   readonly tenant: AdminTenant
-  readonly outcome: WriteOutcome | null
   readonly onSuccess: (message: string) => void
 }) {
   const { t } = useAdminUiTranslation()
@@ -492,7 +513,6 @@ function TenantLifecycleCard({
       sx={{ mb: 3 }}
     >
       <TenantLifecycleActions tenant={tenant} onSuccess={onSuccess} />
-      <WriteFeedbackRegion outcome={outcome} />
     </SectionCard>
   )
 }
