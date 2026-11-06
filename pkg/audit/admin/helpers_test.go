@@ -24,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // The stubs implement the seams the module takes up, so a stub and an interface
@@ -349,10 +350,11 @@ func newRig(t *testing.T) *rig {
 		logs:   logs,
 	}
 	r.p = &product{
-		reader: r.reader,
-		guard:  r.guard,
-		logger: logs.logger(),
-		cfg:    resolved{endpoints: []string{"public"}},
+		reader:  r.reader,
+		guard:   r.guard,
+		aliases: identityAliases{},
+		logger:  logs.logger(),
+		cfg:     resolved{endpoints: []string{"public"}},
 	}
 	r.engine = r.mount()
 	return r
@@ -416,4 +418,12 @@ func (r *rig) server(t *testing.T, opts ...authntest.Option) *httptest.Server {
 	server.Start()
 	t.Cleanup(server.Close)
 	return server
+}
+
+// identityAliases stands in for the roster's id-to-alias seam over an assembly
+// whose fixture identifiers double as their aliases.
+type identityAliases struct{}
+
+func (identityAliases) AliasOf(_ context.Context, id tenant.ID) (string, error) {
+	return string(id), nil
 }

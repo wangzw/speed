@@ -75,7 +75,7 @@ func (p *product) writeExport(ctx context.Context, w io.Writer, readerCtx contex
 ) error {
 	written := 0
 	for {
-		n, err := writeRecordViews(w, rows)
+		n, err := p.writeRecordViews(ctx, w, rows)
 		written += n
 		if err != nil {
 			return p.exportFailed(ctx, q, written, err)
@@ -98,10 +98,14 @@ func (p *product) writeExport(ctx context.Context, w io.Writer, readerCtx contex
 // wrote, so a failure partway through a page still counts the rows that reached
 // the caller. Every line is the same view the list route answers; there is no
 // envelope, no header line and no total.
-func writeRecordViews(w io.Writer, rows []journal.Row) (int, error) {
+func (p *product) writeRecordViews(ctx context.Context, w io.Writer, rows []journal.Row) (int, error) {
 	encoder := json.NewEncoder(w)
 	for i, row := range rows {
-		if err := encoder.Encode(recordViewOf(row)); err != nil {
+		alias, aliasErr := p.aliasOf(ctx, row.Tenant)
+		if aliasErr != nil {
+			return i, aliasErr
+		}
+		if err := encoder.Encode(recordViewOf(row, alias)); err != nil {
 			return i, err
 		}
 	}
