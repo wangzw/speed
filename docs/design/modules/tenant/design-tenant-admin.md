@@ -294,7 +294,7 @@ sequenceDiagram
 | 资料、转移、删除或改状态点名一个已删除的租户 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantDeleted` |
 | 转移的目标不是活跃成员，或不是账户标识 | 409（`urn:speed:tenant:conflict`），组织写报 `tenant.ErrOwnerNotMember` |
 | 转移的目标账户不存在、停用或删除 | 409（`urn:speed:tenant:conflict`），组织写报 `tenant.ErrOwnerInactive` |
-| 所有者发起的删除观察到所有者已变 | 409（`urn:speed:tenant:conflict`），组织写报 `tenant.ErrOwnerChanged` |
+| 所有者发起的转移或删除观察到所有者已变 | 409（`urn:speed:tenant:conflict`），组织写报 `tenant.ErrOwnerChanged` |
 | 平台面删除的调用方没有平台域的 `tenant.manage`，或租户面的调用方不是组织所有者 | 403 |
 | 发起者视为未验证（`SignupPending`），而这是写路由 | 403 `contact-required`（`authn.ErrContactRequired`），动作不执行 |
 | 状态路由停用或删除路由删除一个受保护的租户 | 403（`urn:speed:tenant:protected`），`WriteGuard` 答复拒绝，动作不执行；读失败答 503 |
