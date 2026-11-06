@@ -40,7 +40,7 @@ admin-ui 是平台侧与租户侧的管理面在浏览器里的页面家族，�
 - **不拥有、不切换当前租户。** 切换当前租户是租户侧的动作，归 [tenancy-ui](design-web-tenancy-ui.md)；管理名册（开租户、改名、停用）是平台管理面的动作。切换改的是宿主的路由，管理改的是名册，两者不共用控件、不共用查询键。平台管理面的按租户寻址页面持的租户选择器选的是**请求的实参**，不是当前租户；组织管理面把宿主给出的当前租户写进请求路径，仍不持切换器。两个面的租户都不由本包推导。
 - **不做导航、不解析 URL。** 页面的路径匹配、链接构造、深链接解析与未命中回退归 `route-kit` 的收集方，特性缺席的页面落到未命中回退同样在那里发生；本包只提供页面与它们的声明，不做路径匹配。
 - **不读特性态。** 本包不取回特性文档，也不调用 auth-core 读特性态的钩子；页内控件所依赖的特性是否在场，由宿主经 `AdminShell` 的 `hasFeature` 给出（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
-- **不做判定。** 名册、账户、会话、冒充、权限、邀请与成员、SSO、设置与审计的授权判定都在服务端做出（判定域按能力：冒充与权限在平台域，邀请与成员、SSO 在那个租户的域，设置的全局层在平台域、租户层在那个租户的域），本包只渲染应答；路由级的授权是宿主的组合（经 [layout-kit](design-web-layout-kit.md) 的路由守卫与 [auth-core](design-web-auth-core.md) 的权限读数），不在本包内。
+- **不做判定。** 名册、账户、会话、冒充、权限、邀请与成员、SSO、设置、组织资料与审计的授权判定都在服务端做出（判定域按能力：冒充与权限在平台域，邀请与成员、SSO 与组织资料在那个租户的域，设置的全局层在平台域、租户层在那个租户的域），本包只渲染应答；路由级的授权是宿主的组合（经 [layout-kit](design-web-layout-kit.md) 的路由守卫与 [auth-core](design-web-auth-core.md) 的权限读数），不在本包内。
 - **不遮蔽敏感值。** 敏感设置项的值由 [settings.admin](../settings/design-settings-admin.md) 在应答里遮蔽；本包照渲染应答，不做第二处遮蔽。
 - **不持规则、不持数据。** 每条路的动作是一次生成的调用；名册的写入语义、账户的状态机、权限的取值、审计的列都在各自的模块里定义。
 - **不拥有查询客户端。** 读经 `@speed/api-sdk` 的生成 react-query（[REF-tanstack-query](../../../references.md)）钩子跑在宿主拥有的 QueryClient 上，写经同一 `bindRequestFn` 绑定的生成 mutation；本包从不自造 QueryClient。查询键由生成钩子自带（`get<operation>QueryKey`），本包不自写键；平台管理面按租户寻址的读的键由生成工厂按租户分段。组织操作束在生成键之外再经 [auth-core](design-web-auth-core.md) 的 `tenantQueryKey` 把当前租户写成键的最外层段（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)），写经同一工厂失效，故切租户即换键。
@@ -213,13 +213,15 @@ function OrganizationAdminBreadcrumbProvider(
 
 // 组织操作束：租户作用域的读钩子与写 mutation。邀请与成员、SSO 的成员
 // 取自平台操作束的同一批生成绑定；设置与角色权限的成员取自
-// settings.tenantadmin 与 authz.tenantadmin 的生成操作。租户作用域的读键
+// settings.tenantadmin 与 authz.tenantadmin 的生成操作；组织资料的成员
+// 取自 tenant.profile 的生成操作。租户作用域的读键
 // 以租户标识为最外层段。成员读交出整页（行与 next_cursor），不是只有行。
 interface OrganizationAdminOperations {
   // 邀请与成员、SSO：/api/v1/tenants/{tenant}/...
   // 设置：/api/v1/tenants/{tenant}/settings[/{namespace}[/{key}]]
   // 角色、权限、授予与使用情况：/api/v1/tenants/{tenant}/roles、/permissions、
   // /roles/{role}/grants 与 /roles/{role}/bindings
+  // 组织资料：/api/v1/tenants/{tenant}/profile
 }
 
 export const organizationAdminOperations: OrganizationAdminOperations
@@ -251,7 +253,7 @@ export function OrganizationProfilePage(): ReactElement
 - **`OrganizationAdminProvider` 只安装上下文，不渲染外壳。** 宿主已用 `ProductShell` 渲染了租户侧的壳，组织管理面因此不另造一帧：provider 把当前租户、操作束、会话、特性判定、导航回调、路由表、面包屑、邀请链接构造器、受保护角色与租户更新回调交给包装页，本身不渲染 DOM；操作束经 `OrganizationAdminOperationsProvider` 一并发布给页面。它不 import `product-shell` 与 `tenancy-ui`；当前租户是一个属性，不是它从会话或路由推导的值。
 - **面包屑上下文优先，且只在一个地方判断。** 包装页经 `OrganizationAdminBreadcrumbProvider` 发布组织管理面的面包屑（当前组织名称到该页，起点不可点）；管理面各页面统一经 `AdminPageHeader` 渲染页头，由它优先取这个上下文，没有它时渲染页面自己的平台管理面面包屑。页面只声明自己的平台面包屑，不需要感知上下文，新增页面也不会漏掉这条规则。两个面的面包屑因此不会互相泄漏。`OrganizationAdminProvider` 在给出 `breadcrumbs` 时挂载同一个提供者；渲染自有外壳、只用页面组件的宿主单独挂载它，形态同 `AdminSessionProvider`。
 - **包装页是薄组合。** 五个包装页读 provider 的上下文。成员与邀请包装页把当前租户交给 `OrganizationMembersPage`；资料包装页把当前租户与 `onTenantUpdated` 交给共享的 `TenantProfilePage`；SSO 包装页把当前租户作为受控租户交给共享页；设置包装页挂载组织管理面自己的 `OrganizationSecurityPage`；角色权限包装页挂载组织管理面自己的 `OrganizationRolesPage`，把当前租户与 provider 的 `protectedRoles` 交给它。它们不复制页面逻辑：成员与邀请的读写都在 `OrganizationMembersPage` 里，资料的读写都在 `TenantProfilePage` 里，SSO 的读写都在共享页里，设置与角色的读写分别在 `OrganizationSecurityPage` 与 `OrganizationRolesPage` 里。
-- **组织操作束是租户作用域的。** `OrganizationAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点，设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)，角色、授予与绑定指向 [authz.tenantadmin](../design-authz.md)。它不持有平台操作，也不接受 `/api/v1/system` 的路径。租户作用域的读键以租户标识为最外层段：`tenantQueryKey` 套在生成的裸键之外，写经同一工厂失效，切租户即换键、离任租户的缓存由宿主逐出。`organizationAdminOperations` 是出厂绑定；宿主可改挂自己的，页面经 `useOrganizationAdminOperations` 取用。
+- **组织操作束是租户作用域的。** `OrganizationAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点，设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)，角色、授予与绑定指向 [authz.tenantadmin](../design-authz.md)，组织资料指向 [tenant.profile](../tenant/design-tenant-profile.md) 的生成操作。它不持有平台操作，也不接受 `/api/v1/system` 的路径。租户作用域的读键以租户标识为最外层段：`tenantQueryKey` 套在生成的裸键之外，写经同一工厂失效，切租户即换键、离任租户的缓存由宿主逐出。`organizationAdminOperations` 是出厂绑定；宿主可改挂自己的，页面经 `useOrganizationAdminOperations` 取用。
 
 ### 组织管理面的页面声明
 
@@ -411,8 +413,8 @@ graph TD
 | 特性判定 | `(name: FeatureName) => boolean` | 宿主经 `AdminShell` 的 `hasFeature` 给出，经包内上下文交给页面 |
 | 租户作用域选择 | 页面自身状态 | 按租户寻址的页面持有的租户 id，作为请求实参，缺省为空即禁用该页的租户作用域读 |
 | 账户选择 | `AccountSelector` 的 `value` | 页面持有的已选账户（不是 id 文本），选择器交出账户对象，页面从中取 id 作为请求实参 |
-| 组织上下文 | `OrganizationAdminProviderProps` | 当前租户、组织操作束、会话、特性判定、路由表、面包屑、邀请链接构造器与受保护角色；只安装上下文，不渲染 DOM |
-| 组织操作束 | `OrganizationAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO、设置、角色、权限、授予与绑定，全部落在 `/api/v1/tenants/{tenant}/...`；读键以租户标识为最外层段 |
+| 组织上下文 | `OrganizationAdminProviderProps` | 当前租户、组织操作束、会话、特性判定、路由表、面包屑、邀请链接构造器、受保护角色与租户更新回调（`onTenantUpdated`）；只安装上下文，不渲染 DOM |
+| 组织操作束 | `OrganizationAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO、设置、角色、权限、授予与绑定，以及组织资料的读写（`useTenantProfile`、`useTenantProfileWrite`），全部落在 `/api/v1/tenants/{tenant}/...`；读键以租户标识为最外层段 |
 | 组织操作束的发布 | `OrganizationAdminOperationsProvider` | `OrganizationAdminProvider` 挂载它把操作束交给页面；页面经 `useOrganizationAdminOperations` 取用，没有挂载时取出厂绑定 |
 | 游标翻页 | `CursorPager` | 成员表与邀请表共用的上一页／下一页控件；页码从 1 起显示，单页时不渲染，写入或下一页读在途时两个方向都禁用 |
 | 邀请观察态 | `invitationStatusOf` | 由存量状态与期限推出 `pending／expired／accepted／revoked`；期限解析不出时保留 `pending` |
@@ -581,7 +583,7 @@ graph TD
 
 ### 与租户侧的分工
 
-租户这个概念在三处是三类动作：**切换当前租户**（改变宿主路由解析出的租户）在租户侧，归 [tenancy-ui](design-web-tenancy-ui.md)；**管理租户名册**（开租户、改名、停用）是平台管理面的动作；**管理当前租户自身**（邀请与成员、SSO、设置、角色权限）是组织管理面的动作。平台管理面的按租户寻址页面持的租户选择器既不是当前租户、也不是名册管理：它是平台请求的一个实参。组织管理面的租户是宿主给出的当前租户，不是页面选择器。三者不共用控件、不共用查询键。
+租户这个概念在三处是三类动作：**切换当前租户**（改变宿主路由解析出的租户）在租户侧，归 [tenancy-ui](design-web-tenancy-ui.md)；**管理租户名册**（开租户、改名、停用）是平台管理面的动作；**管理当前租户自身**（邀请与成员、SSO、设置、角色权限、组织资料）是组织管理面的动作。平台管理面的按租户寻址页面持的租户选择器既不是当前租户、也不是名册管理：它是平台请求的一个实参。组织管理面的租户是宿主给出的当前租户，不是页面选择器。三者不共用控件、不共用查询键。
 
 ### 账户页的详情与创建面板
 
