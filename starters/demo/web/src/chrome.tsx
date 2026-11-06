@@ -859,10 +859,12 @@ const accountMenuItemIconSx = {
  * 9px margin and 1px border. */
 const accountMenuItemSx = { pl: '6px' } as const
 
-/** The organization row when it is context rather than a control: the account
+/** The organization row when it is context rather than an action: the account
  * may enter only one organization, so there is nothing to switch to. It keeps
- * a menu entry's metrics so it sits on the same track, and offers no hover or
- * focus. */
+ * a menu entry's metrics so it sits on the same track, offers no hover or
+ * focus, and is a named group -- an allowed menu child that is not a menuitem,
+ * so the menu's focus cycle skips it -- whose accessible name is the
+ * organization it states. */
 const nonInteractiveRowSx = {
   display: 'flex',
   alignItems: 'center',
@@ -1285,7 +1287,11 @@ export function OrganizationMenuEntry({
   if (others.length === 0) {
     return (
       <>
-        <Box sx={[nonInteractiveRowSx, itemSx ?? {}] as SxProps<Theme>}>
+        <Box
+          role="group"
+          aria-label={current?.name ?? t('userMenu.organizations')}
+          sx={[nonInteractiveRowSx, itemSx ?? {}] as SxProps<Theme>}
+        >
           {rowContent}
         </Box>
         {organizations.notice}

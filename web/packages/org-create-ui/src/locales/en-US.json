@@ -22,9 +22,12 @@
     "required": "This field is required.",
     "aliasShape": "Use 3–63 lowercase letters, digits or dashes, starting with a letter or digit.",
     "aliasReserved": "That alias is reserved. Choose another one.",
+    "displayNameTooLong": "Keep the display name to 100 characters or fewer.",
     "descriptionTooLong": "Keep the description to 500 characters or fewer.",
     "emailShape": "Enter one email address, for example team@example.com.",
-    "websiteShape": "Enter an absolute http or https address with a host, for example https://example.com."
+    "websiteShape": "Enter an absolute http or https address with a host, for example https://example.com.",
+    "websiteTooLong": "Keep the website to 2048 bytes or fewer.",
+    "identifierShape": "The identifier cannot contain blanks or control characters."
   },
   "submit": "Create organization",
   "submitting": "Creating organization…",

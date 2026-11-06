@@ -17,11 +17,14 @@ export {
 
 export {
   DESCRIPTION_MAX_RUNES,
+  DISPLAY_NAME_MAX_RUNES,
   EMPTY_ORGANIZATION_CREATE_VALUES,
   RESERVED_ALIASES,
   RESERVED_ALIAS_PREFIX,
+  WEBSITE_MAX_BYTES,
   aliasViolation,
   isAliasShape,
+  isRejectedIdentifier,
   isReservedAlias,
   normalizeOrganizationCreateValues,
   validateOrganizationCreateValues,

@@ -201,6 +201,19 @@ const TWO_TENANTS: readonly DemoTenant[] = [
   { id: 'globex', alias: 'globex', name: 'Globex Corp.', kind: 'business' },
 ]
 
+/** The one organization an account with a single membership may enter, and the
+ * name its row carries. */
+const SOLE_TENANT: readonly DemoTenant[] = [
+  {
+    id: 'acme',
+    alias: 'acme',
+    name: 'Acme Inc.',
+    displayName: 'Acme Inc.',
+    kind: 'business',
+  },
+]
+const SOLE_TENANT_NAME = 'Acme Inc.'
+
 /** The account menu over the host's own selection state, the way the tenant
  * frame composes it: the organization rows live in the menu, so the harness
  * renders the real surface rather than the rows alone. */
@@ -217,8 +230,23 @@ function TenantSwitchHarness(): ReactElement {
   )
 }
 
+/** The account menu over an account that may enter one organization, where the
+ * row is context rather than a switcher. */
+function SingleOrganizationSwitchHarness(): ReactElement {
+  const [tenantId, setTenantId] = useTenantSelection('acme')
+  return (
+    <UserMenu
+      organizations={{
+        tenants: SOLE_TENANT,
+        tenantId,
+        onSelect: setTenantId,
+      }}
+    />
+  )
+}
+
 /** Renders the switcher under the production stack and its own services. */
-function renderTenantSwitch() {
+function renderTenantSwitch(harness: ReactElement = <TenantSwitchHarness />) {
   const i18n = createSpeedI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
     defaultLanguage: 'en-US',
@@ -242,7 +270,7 @@ function renderTenantSwitch() {
     <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
       <AppServicesProvider services={services}>
         <RouteProvider table={[]} fallback={() => null}>
-          <TenantSwitchHarness />
+          {harness}
         </RouteProvider>
       </AppServicesProvider>
     </SpeedAppProviders>,
@@ -302,6 +330,19 @@ describe('the tenant switch', () => {
     expect(style.position).toBe('absolute')
     expect(parseFloat(style.width)).toBeLessThanOrEqual(1)
     expect(parseFloat(style.height)).toBeLessThanOrEqual(1)
+  })
+
+  it('names a lone organization row by the organization, as a menu group rather than a menuitem', async () => {
+    const user = userEvent.setup()
+    renderTenantSwitch(<SingleOrganizationSwitchHarness />)
+    await user.click(screen.getByTestId('user-menu-trigger'))
+
+    // The account may enter one organization, so its row has no expansion
+    // control. It is a group, not a menuitem: its accessible name states the
+    // organization and the menu's focus cycle skips it.
+    const row = await screen.findByRole('group', { name: SOLE_TENANT_NAME })
+    expect(row).toHaveAccessibleName(SOLE_TENANT_NAME)
+    expect(screen.queryByRole('menuitem', { name: SOLE_TENANT_NAME })).toBeNull()
   })
 })
 

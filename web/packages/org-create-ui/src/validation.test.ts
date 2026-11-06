@@ -1,9 +1,9 @@
 /**
  * The client-side validation the server remains authoritative over: the
- * alias slug and reserved names, the required display name, the
- * description bound, and the platform-only fields. The self-service form
- * ignores the identifier, contact address and website even when a host
- * seeds them.
+ * alias slug and reserved names, the required and bounded display name,
+ * the description bound, the identifier domain, the website byte bound,
+ * and the platform-only fields. The self-service form ignores the
+ * identifier, contact address and website even when a host seeds them.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -11,6 +11,7 @@ import {
   EMPTY_ORGANIZATION_CREATE_VALUES,
   aliasViolation,
   isAliasShape,
+  isRejectedIdentifier,
   isReservedAlias,
   normalizeOrganizationCreateValues,
   validateOrganizationCreateValues,
@@ -57,6 +58,29 @@ describe('the alias rule', () => {
   })
 })
 
+describe('the identifier rule', () => {
+  it('admits a non-empty value with no blank or control character', () => {
+    for (const value of ['acme', 'Acme-Inc', 'acme.company', 'Acme_Inc', 'Acme-Café']) {
+      expect(isRejectedIdentifier(value), value).toBe(false)
+    }
+  })
+
+  it('refuses an empty value, a blank, or a control character', () => {
+    for (const value of [
+      '',
+      'Acme Corp',
+      'Acme\tCo',
+      'Acme\nCo',
+      ' Acme',
+      'Acme ',
+      'Acme\u0000',
+      'Ac\u007felme',
+    ]) {
+      expect(isRejectedIdentifier(value), JSON.stringify(value)).toBe(true)
+    }
+  })
+})
+
 describe('validateOrganizationCreateValues', () => {
   it('requires the display name after trimming', () => {
     const violations = validateOrganizationCreateValues(
@@ -64,6 +88,46 @@ describe('validateOrganizationCreateValues', () => {
       'self-service',
     )
     expect(violations).toEqual({ displayName: 'required' })
+  })
+
+  it('bounds the display name in runes, on both surfaces', () => {
+    for (const mode of ['platform', 'self-service'] as const) {
+      const atLimit = validateOrganizationCreateValues(
+        withValues({
+          alias: 'acme',
+          id: 'org-acme',
+          displayName: '😀'.repeat(100),
+        }),
+        mode,
+      )
+      expect(atLimit.displayName, mode).toBeUndefined()
+
+      const overLimit = validateOrganizationCreateValues(
+        withValues({
+          alias: 'acme',
+          id: 'org-acme',
+          displayName: '😀'.repeat(101),
+        }),
+        mode,
+      )
+      expect(overLimit.displayName, mode).toBe('displayNameTooLong')
+    }
+  })
+
+  it('refuses a platform identifier carrying a blank or a control character', () => {
+    for (const id of ['org acme', 'org\tacme', 'org\nacme', 'org\u007facme']) {
+      const violations = validateOrganizationCreateValues(
+        withValues({ alias: 'acme', displayName: 'Acme', id }),
+        'platform',
+      )
+      expect(violations.id, JSON.stringify(id)).toBe('identifierShape')
+    }
+    expect(
+      validateOrganizationCreateValues(
+        withValues({ alias: 'acme', displayName: 'Acme', id: 'org-acme' }),
+        'platform',
+      ).id,
+    ).toBeUndefined()
   })
 
   it('bounds the description in runes, not UTF-16 units', () => {
@@ -118,6 +182,33 @@ describe('validateOrganizationCreateValues', () => {
       'platform',
     )
     expect(violations).toEqual({})
+  })
+
+  it('bounds the website in bytes, not UTF-16 units', () => {
+    const prefix = 'https://example.com/'
+    const atLimit = validateOrganizationCreateValues(
+      withValues({
+        alias: 'acme',
+        displayName: 'Acme',
+        id: 'org-acme',
+        // 20 ASCII bytes plus 676 three-byte runes: exactly 2048 bytes, and
+        // 1352 UTF-16 units.
+        website: `${prefix}${'中'.repeat(676)}`,
+      }),
+      'platform',
+    )
+    expect(atLimit.website).toBeUndefined()
+
+    const overLimit = validateOrganizationCreateValues(
+      withValues({
+        alias: 'acme',
+        displayName: 'Acme',
+        id: 'org-acme',
+        website: `${prefix}${'中'.repeat(677)}`,
+      }),
+      'platform',
+    )
+    expect(overLimit.website).toBe('websiteTooLong')
   })
 
   it('rejects a website with userinfo and a relative address', () => {

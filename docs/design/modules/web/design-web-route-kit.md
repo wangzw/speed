@@ -352,7 +352,7 @@ flowchart TD
 |---|---|---|
 | 声明接口（`RouteDeclaration`、`RouteTable`、`RouteContext`、`requires`、`RoutePresence`） | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence` |
 | 接线与渲染（`RouteProvider`、`RouteView`、未命中回退、按在场谓词分派） | 已实现 | `web/packages/route-kit/src/RouteProvider.tsx` `RouteProvider`；`web/packages/route-kit/src/RouteView.tsx` `RouteView` |
-| 装配期的注册表校验 | 已实现 | `web/packages/route-kit/src/table.ts` `assertRouteTable` |
+| 装配期的注册表校验（含字面 pattern 先于同深度 `:name` pattern 的消解规则） | 已实现 | `web/packages/route-kit/src/table.ts` `assertRouteTable`；`web/packages/route-kit/src/pathing.ts` `patternsConflict`、`isMoreSpecific` |
 | 导航收集与选中态（`useNavItems`，只在有效注册表上） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useNavItems`；`web/packages/route-kit/src/nav.ts` `deriveNavItems` |
 | 有效注册表（`presentDeclarations`） | 已实现 | `web/packages/route-kit/src/presence.ts` `presentDeclarations` |
 | 精确命中与入口判定（`useMatch`、`useHasRoute`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useMatch`、`useHasRoute`；`web/packages/route-kit/src/pathing.ts` `matchDeclaration` |

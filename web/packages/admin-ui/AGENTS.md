@@ -7,8 +7,8 @@ shape and one operations seam. The platform surface is the platform-staff
 console; the organization surface is the tenant-scoped half. The
 organization surface ships its context provider, route declarations,
 operation bundle
-and the invitations/membership, SSO, tenant roles/permissions and
-security and access page wrappers.
+and the invitations/membership, SSO, tenant roles/permissions,
+security and access, and organization profile page wrappers.
 
 User-visible text in this package calls the tenant an organization
 (「组织」 in the Chinese bundle). The tenancy mechanism keeps its own
@@ -27,8 +27,8 @@ interchangeable:
   caller: the caller needs a separate binding in that tenant.
 - **The organization surface** under `/api/v1/tenants/{tenant}/...`, judged in
   the current tenant's domain: invitations and membership, SSO, tenant-layer
-  settings, and tenant roles and permissions, scoped to the tenant the host
-  supplies.
+  settings, tenant roles and permissions, and the organization profile, scoped
+  to the tenant the host supplies.
 
 **The platform surface** is the platform-staff admin — the second shell.
 It renders the platform's backend administration surfaces as one admin
@@ -40,7 +40,10 @@ the SSO surface (`/api/v1/tenants/:tenant/sso`), the settings read-write surface
 (`/api/v1/system/settings`), the SMS template surface (`/api/v1/system/sms`) and the
 audit query (`/api/v1/system/audit`). The admin root renders a dashboard, and
 the tenant roster and the audit query each link a row to that record's
-detail page.
+detail page. The roster's header links to the standalone `/tenants/new`
+page (`TenantCreatePage`), which renders `@speed/org-create-ui`'s shared
+form in platform mode; the alias, profile bounds and identifier domain are
+that package's rules.
 
 The platform surface has **no current-tenant switcher and no
 current-tenant query key**: it is not a page of `@speed/tenancy-ui` or
@@ -62,8 +65,8 @@ mounted under a host-chosen prefix (`/organization/admin` in the demo)
 inside `@speed/product-shell`. It acts on the
 **current tenant the host supplies** and addresses every request at
 `/api/v1/tenants/{tenant}/...`: invitations and membership, SSO
-providers, tenant roles and permissions, and security and access.
-It reads nothing under `/api/v1/system`. It does not own or switch the
+providers, tenant roles and permissions, security and access, and the
+organization profile. It reads nothing under `/api/v1/system`. It does not own or switch the
 current tenant: the host mounts it inside the tenant frame and hands
 `OrganizationAdminProvider` the resolved tenant. The organization surface
 renders no `AppShell` — the tenant frame already renders one — and
@@ -78,7 +81,8 @@ props and the tenant/protected-role hooks), `OrganizationAdminBreadcrumb.tsx`
 (`OrganizationAdminOperations`, `organizationAdminOperations`,
 `OrganizationAdminOperationsProvider`, `useOrganizationAdminOperations`) and
 `organization-pages.tsx` (`OrganizationInvitationsPage`, `OrganizationSsoPage`,
-`OrganizationPermissionsPage`, `OrganizationSettingsPage`) exist in `src/`, and
+`OrganizationPermissionsPage`, `OrganizationSettingsPage`,
+`OrganizationProfilePage`) exist in `src/`, and
 `src/index.ts` exports them. The invitations wrapper renders the
 organization-only `OrganizationMembersPage` with the current tenant: the
 page carries the members table and the invitations table, each with
@@ -99,6 +103,10 @@ Binding and unbinding belong to the member panel, and the host's
 wrapper renders `OrganizationSecurityPage`: the two declared tenant
 admission policies as switches, with their status, effect, impact and the
 platform floor, saving each switch on its own and rendering no table. The
+profile wrapper hands the current tenant and the host's `onTenantUpdated`
+to the shared `TenantProfilePage`: a read-only identity card and an
+editable profile card, whose landed save asks the host to reload the
+caller tenant list the account menu and breadcrumb read. The
 shared pages render through `AdminPageHeader`, which prefers the
 organization breadcrumb context and falls back to the page's own platform
 trail otherwise, so neither surface leaks the other's trail.
@@ -230,15 +238,17 @@ tenant detail, the audit detail) carries neither, so it is reachable from
 a row without appearing in the navigation.
 
 The `organizationAdminRoutes` table declares invitations and membership, SSO
-providers, tenant roles and permissions, and security and access.
+providers, tenant roles and permissions, security and access, and the
+organization profile.
 Its declarations carry the tenant-domain permission codes
 (`authn.membership.manage`, `authn.idp.manage`,
-`authz.tenant.role.read`, `settings.tenant.read`) and the tenant-scoped
-features they need (`authn.admin` + `authn.invitations`, `authn.admin` +
-`authn.admin.sso`, `authz.tenantadmin`, `settings.tenantadmin`). They never
+`authz.tenant.role.read`, `settings.tenant.read`, `tenant.profile.read`) and
+the tenant-scoped features they need (`authn.admin` + `authn.invitations`,
+`authn.admin` + `authn.admin.sso`, `authz.tenantadmin`,
+`settings.tenantadmin`, `tenant.profile`). They never
 name `tenant.admin`: the organization surface reads no roster and holds no
 tenant selector. The write codes (`settings.tenant.write`,
-`authz.tenant.role.manage`) are not declaration permissions: a page
+`authz.tenant.role.manage`, `tenant.profile.write`) are not declaration permissions: a page
 renders its write controls and lets the server refuse. A declaration
 carries an optional stable `id` (the sibling-link address) — this
 package's own declarations all carry one, a host's may omit it — a path
@@ -330,7 +340,8 @@ What the pages reach through the bundle, grouped by surface:
 
 The organization surface reads through `OrganizationAdminOperations`:
 `/api/v1/tenants/{tenant}/invitations` and `/members`, the tenant's SSO
-providers, the tenant settings members
+providers, the tenant profile members (`useTenantProfile`,
+`useTenantProfileWrite`), the tenant settings members
 (`useTenantSettingsList`, `useTenantSettingsWrite`,
 `useTenantSettingsRemove`) and the tenant
 authorization members (`useTenantRoles`, `useTenantPermissions`,
@@ -575,11 +586,11 @@ own suite (its reads, writes and failure branches, with an axe scan); the
 surface, driven over the request rig, plus the provider fallback and the
 key-splitting helper); `routes` (the declarations' paths, permissions,
 `requires` names, icons and translated labels); `resources`,
-`internal/error-text`, `internal/identifier`, `internal/datetime`,
+`internal/error-text`, `internal/datetime`,
 `internal/async-section`, `internal/export-file` and
 `internal/write-feedback` (bundle key parity, whitelist pairing, the
-identifier rule, the zero-instant sentinel, the export name and download
-handoff, the 403/retry/stale split, and the region's resolver binding);
+zero-instant sentinel, the export name and download handoff, the
+403/retry/stale split, and the region's resolver binding);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).
 
@@ -600,7 +611,11 @@ resolve left marked. The security page's suite covers the two declared
 policies only, the platform-enforced read-only switch, the two-step
 confirmation before turning a policy off, optimistic save and rollback on
 refusal, the protected tenant's switch-less read-only page, both
-languages, and axe. The platform settings suite covers the platform
+languages, and axe. The profile suite (`TenantProfilePage.test.tsx`)
+covers the read-only identity card, the profile card's write, the
+clearable display name's fallback to the alias, the host's
+`onTenantUpdated` hand-over, and axe; `TenantProfileFields.test.ts`
+covers the field bounds. The platform settings suite covers the platform
 key/value table and its editable numeric inputs. The
 roles suite (`OrganizationRolesPage.test.tsx`) covers the role table's
 description and counts, creation, description editing, deletion, the

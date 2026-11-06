@@ -10,9 +10,10 @@
  * "Already current" is therefore decided from the organization row itself,
  * never from a text scan of the menu: a menu-wide text match would take a
  * merely listed tenant for the current one and close the menu without
- * switching. An account with a single organization renders that row as plain
- * context without the expansion control, so the row's position -- the menu's
- * first entry -- identifies it, and the target has to be the name it carries.
+ * switching. An account with a single organization renders that row as a
+ * named group without the expansion control, so the row's position -- the
+ * menu's first entry -- identifies it, and the target has to be the accessible
+ * name it carries.
  */
 
 import { expect, type Locator, type Page } from '@playwright/test'
@@ -24,7 +25,7 @@ import { expectClippedAnnouncement } from './tenant-switch'
 /**
  * The account menu's current organization row: the only entry that carries
  * `aria-expanded`. Empty when the account may enter one organization, whose
- * row is context rather than a control.
+ * row is a named group rather than an expansion control.
  */
 function currentOrganizationRow(menu: Locator): Locator {
   return menu.locator('[role="menuitem"][aria-expanded]')
@@ -45,12 +46,14 @@ export async function switchToTenant(
   const menu = await openAccountMenu(page)
   const currentRow = currentOrganizationRow(menu)
   if ((await currentRow.count()) === 0) {
-    // A lone organization has no expansion control: its row is context, not a
-    // pick. Locate it by its position rather than by a text scan of the menu,
-    // so the decision never depends on where a tenant's name happens to appear.
+    // A lone organization has no expansion control: its row is a named group,
+    // not a pick. Locate it by its position rather than by a text scan of the
+    // menu, so the decision never depends on where a tenant's name happens to
+    // appear; its accessible name proves the target, as the multi-organization
+    // branch does.
     const loneRow = menu.locator(':scope > div').first()
     await expect(loneRow).toHaveCount(1)
-    await expect(loneRow).toContainText(tenant)
+    await expect(loneRow).toHaveAccessibleName(tenant)
     await closeAccountMenu(page)
     return
   }

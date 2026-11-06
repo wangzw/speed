@@ -21,7 +21,7 @@ admin-ui 是平台侧与租户侧的管理面在浏览器里的页面家族，�
 - **读写短信模板**：读写运行期短信模板，经 `/api/v1/system/sms`。
 - **查询审计**：检索与导出审计记录，经 `/api/v1/system/audit`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin](../../../adr/adr-audit-admin.md)）。
 
-**组织管理面**是租户侧的管理面：挂在 `/organization/admin`，渲染在 [product-shell](design-web-product-shell.md) 之内，作用于宿主给出的当前租户。它经 `/api/v1/tenants/{tenant}/...` 寻址该租户的邀请与成员、SSO 提供方、运行期设置与角色权限，不读 `/api/v1/system` 下的任何接口。它复用平台管理面的页面组件，但成员与邀请是组织管理面自己的页面（`OrganizationMembersPage`）：租户是请求的路径段，页面不持租户选择器，不读平台账户检索。平台管理面的邀请与成员页仍使用共享的 `InvitationsPage`。组织管理面的入口（账户菜单里的组织分组与首页卡片）由宿主从收窄后的声明与排除条件派生，见「入口的派生」与 [design-web](design-web.md) 的「管理面」。
+**组织管理面**是租户侧的管理面：挂在 `/organization/admin`，渲染在 [product-shell](design-web-product-shell.md) 之内，作用于宿主给出的当前租户。它经 `/api/v1/tenants/{tenant}/...` 寻址该租户的邀请与成员、SSO 提供方、运行期设置、角色权限与组织资料，不读 `/api/v1/system` 下的任何接口。它复用平台管理面的页面组件，但成员与邀请是组织管理面自己的页面（`OrganizationMembersPage`）：租户是请求的路径段，页面不持租户选择器，不读平台账户检索。平台管理面的邀请与成员页仍使用共享的 `InvitationsPage`。组织管理面的入口（账户菜单里的组织分组与首页卡片）由宿主从收窄后的声明与排除条件派生，见「入口的派生」与 [design-web](design-web.md) 的「管理面」。
 
 **平台管理面的根（`/`）渲染仪表盘**，其指标与最近活动由名册读与审计读拼出；各管理面的列表页可链入其详情页。
 
@@ -193,6 +193,9 @@ interface OrganizationAdminProviderProps {
   // 包装页把它交给角色与权限页，页面把那些行渲染为只读。缺席时没有行被
   // 视为受保护。
   readonly protectedRoles?: readonly string[]
+  // 组织资料保存落地后宿主的动作：重读账户菜单与面包屑所读的调用方租户表。
+  // 缺席时资料页只重读自己的读。
+  readonly onTenantUpdated?: () => void | Promise<unknown>
   readonly children: ReactNode
 }
 
@@ -234,17 +237,20 @@ function OrganizationAdminOperationsProvider(
 
 function useOrganizationAdminOperations(): OrganizationAdminOperations
 
-// 四个轻量包装页：作为 organizationAdminRoutes 的视图。成员与邀请的包装页挂载
-// 组织管理面自己的 OrganizationMembersPage；其余三个把下面的共享页面按租户模式组合。
+// 五个轻量包装页：作为 organizationAdminRoutes 的视图。成员与邀请的包装页挂载
+// 组织管理面自己的 OrganizationMembersPage；资料包装页把当前租户与
+// onTenantUpdated 交给共享的资料页；SSO 包装页把当前租户按租户模式交给共享页；
+// 角色与权限、设置包装页各自挂载组织管理面自己的页面。
 export function OrganizationInvitationsPage(): ReactElement
 export function OrganizationSsoPage(): ReactElement
 export function OrganizationPermissionsPage(): ReactElement
 export function OrganizationSettingsPage(): ReactElement
+export function OrganizationProfilePage(): ReactElement
 ```
 
-- **`OrganizationAdminProvider` 只安装上下文，不渲染外壳。** 宿主已用 `ProductShell` 渲染了租户侧的壳，组织管理面因此不另造一帧：provider 把当前租户、操作束、会话、特性判定、导航回调、路由表、面包屑、邀请链接构造器与受保护角色交给包装页，本身不渲染 DOM；操作束经 `OrganizationAdminOperationsProvider` 一并发布给页面。它不 import `product-shell` 与 `tenancy-ui`；当前租户是一个属性，不是它从会话或路由推导的值。
+- **`OrganizationAdminProvider` 只安装上下文，不渲染外壳。** 宿主已用 `ProductShell` 渲染了租户侧的壳，组织管理面因此不另造一帧：provider 把当前租户、操作束、会话、特性判定、导航回调、路由表、面包屑、邀请链接构造器、受保护角色与租户更新回调交给包装页，本身不渲染 DOM；操作束经 `OrganizationAdminOperationsProvider` 一并发布给页面。它不 import `product-shell` 与 `tenancy-ui`；当前租户是一个属性，不是它从会话或路由推导的值。
 - **面包屑上下文优先，且只在一个地方判断。** 包装页经 `OrganizationAdminBreadcrumbProvider` 发布组织管理面的面包屑（当前组织名称到该页，起点不可点）；管理面各页面统一经 `AdminPageHeader` 渲染页头，由它优先取这个上下文，没有它时渲染页面自己的平台管理面面包屑。页面只声明自己的平台面包屑，不需要感知上下文，新增页面也不会漏掉这条规则。两个面的面包屑因此不会互相泄漏。`OrganizationAdminProvider` 在给出 `breadcrumbs` 时挂载同一个提供者；渲染自有外壳、只用页面组件的宿主单独挂载它，形态同 `AdminSessionProvider`。
-- **包装页是薄组合。** 四个包装页读 provider 的上下文。成员与邀请包装页把当前租户交给 `OrganizationMembersPage`；SSO 与设置包装页把当前租户作为受控租户交给共享页面；角色权限包装页挂载组织管理面自己的 `OrganizationRolesPage`，把当前租户与 provider 的 `protectedRoles` 交给它。它们不复制页面逻辑：成员与邀请的读写都在 `OrganizationMembersPage` 里，SSO 与设置的读写都在共享页面里，角色的读写都在 `OrganizationRolesPage` 里。
+- **包装页是薄组合。** 五个包装页读 provider 的上下文。成员与邀请包装页把当前租户交给 `OrganizationMembersPage`；资料包装页把当前租户与 `onTenantUpdated` 交给共享的 `TenantProfilePage`；SSO 包装页把当前租户作为受控租户交给共享页；设置包装页挂载组织管理面自己的 `OrganizationSecurityPage`；角色权限包装页挂载组织管理面自己的 `OrganizationRolesPage`，把当前租户与 provider 的 `protectedRoles` 交给它。它们不复制页面逻辑：成员与邀请的读写都在 `OrganizationMembersPage` 里，资料的读写都在 `TenantProfilePage` 里，SSO 的读写都在共享页里，设置与角色的读写分别在 `OrganizationSecurityPage` 与 `OrganizationRolesPage` 里。
 - **组织操作束是租户作用域的。** `OrganizationAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点，设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)，角色、授予与绑定指向 [authz.tenantadmin](../design-authz.md)。它不持有平台操作，也不接受 `/api/v1/system` 的路径。租户作用域的读键以租户标识为最外层段：`tenantQueryKey` 套在生成的裸键之外，写经同一工厂失效，切租户即换键、离任租户的缓存由宿主逐出。`organizationAdminOperations` 是出厂绑定；宿主可改挂自己的，页面经 `useOrganizationAdminOperations` 取用。
 
 ### 组织管理面的页面声明
@@ -257,10 +263,11 @@ export function OrganizationSettingsPage(): ReactElement
 | SSO 提供方 | `organization-sso` | `/sso` | `organization.nav.sso` | `authn.idp.manage` | `authn.admin`、`authn.admin.sso` |
 | 角色与权限 | `organization-roles` | `/roles` | `organization.nav.roles` | `authz.tenant.role.read` | `authz.tenantadmin`、`authn.admin` |
 | 设置 | `organization-settings` | `/settings` | `organization.nav.settings` | `settings.tenant.read` | `settings.tenantadmin` |
+| 组织资料 | `organization-profile` | `/profile` | `organization.nav.profile` | `tenant.profile.read` | `tenant.profile` |
 
-**组织声明用租户域的那一套权限码。** 邀请与 SSO 用 `authn.membership.manage` 与 `authn.idp.manage`；设置用 `settings.tenant.read`，角色与权限用 `authz.tenant.role.read`。写码不进声明：`settings.tenant.write` 与 `authz.tenant.role.manage` 由服务端在每次写上判定，页面照常渲染写控件（平台管理面同样只把读码列进声明）。两套码分属平台域与租户域，不互相替代。
+**组织声明用租户域的那一套权限码。** 邀请与 SSO 用 `authn.membership.manage` 与 `authn.idp.manage`；设置用 `settings.tenant.read`，角色与权限用 `authz.tenant.role.read`，组织资料用 `tenant.profile.read`。写码不进声明：`settings.tenant.write`、`authz.tenant.role.manage` 与 `tenant.profile.write` 由服务端在每次写上判定，页面照常渲染写控件（平台管理面同样只把读码列进声明）。两套码分属平台域与租户域，不互相替代。
 
-**`requires` 只列该页依赖的租户作用域特性。** 邀请与成员、SSO 的读写由 `authn.admin` 与 `authn.invitations`、`authn.admin.sso` 服务；设置由 `settings.tenantadmin` 服务，角色与权限由 `authz.tenantadmin` 与 `authn.admin` 服务。组织声明不列 `tenant.admin`：那是平台名册的特性，组织管理面不读名册、也不持租户选择器。
+**`requires` 只列该页依赖的租户作用域特性。** 邀请与成员、SSO 的读写由 `authn.admin` 与 `authn.invitations`、`authn.admin.sso` 服务；设置由 `settings.tenantadmin` 服务，角色与权限由 `authz.tenantadmin` 与 `authn.admin` 服务，组织资料由 `tenant.profile` 服务。组织声明不列 `tenant.admin`：那是平台名册的特性，组织管理面不读名册、也不持租户选择器。
 
 ### 租户模式的页面行为
 
@@ -270,6 +277,7 @@ export function OrganizationSettingsPage(): ReactElement
 - **SSO 提供方。** 当前租户受控给出，选择器不渲染；页面的读写全部落在该租户的提供方上。
 - **设置（安全与访问）。** 当前租户受控给出，页面只读写 `/api/v1/tenants/{tenant}/settings`，从不读写 `/api/v1/system/settings`。组织侧页面是 `OrganizationSecurityPage`，不是平台设置页的租户分支：它只渲染服务端返回的两项准入策略，每项是一个开关，带标题、说明、状态徽标、生效范围与关闭影响；没有键值表、命名空间导航、搜索、分页或批量保存。平台强制一项策略时开关只读为开并显示原因；关闭策略的确认由声明的 `danger` 驱动：声明为空时直接保存，`critical` 走两步确认，其他值走单步确认（服务端当前的封闭集只有空值与 `critical`，其他值分支为前向兼容）；开启即时保存，行内短暂显示已保存，失败回滚并显示解析后的拒绝。`writable` 为假时整体只读：顶部按 `read_only_reason` 说明原因，不渲染开关，刷新仍可用。两种原因分开说明：`protected` 表示宿主写守卫拒绝该租户，部署方保护它是持久事实，提示按信息级呈现；`unavailable` 表示宿主写 seam 一时读不出答案，写限制只是暂时未知，提示按警告级呈现，并在原地给出「重试」按钮重新读取。查询键以当前租户为最外层段，与平台管理面的设置读不共用键，切租户即换键，离任租户的缓存由宿主逐出。
 - **角色与权限。** 组织角色与权限页是组织管理面自己的页面（`OrganizationRolesPage`），不是共享权限页的租户模式；它的分区、控件来源与只读规则见「组织管理面的角色与权限页」。平台 `PermissionsPage` 只服务平台域：角色、授权、目录、绑定与按账户查询都读 `/api/v1/system`，绑定与账户查询保留。
+- **组织资料。** 当前租户由上下文给出，资料页读写 `/api/v1/tenants/{tenant}/profile`，不读 `/api/v1/system` 下的租户资料。页面由一张只读的身份卡与一张可编辑的资料卡组成：身份卡陈列标识、别名、状态与注册时间；资料卡编辑显示名、描述、联系邮箱与网站，显示名可清空、清空后各处以别名代替。保存落地后页面调用 provider 的 `onTenantUpdated`，账户菜单与面包屑随即重读调用方的租户表；宿主不给回调时只重读资料页自己的读。读被拒与其他失败按「读的失败情形」分开呈现，写拒绝按白名单渲染。
 
 ### 平台管理面的页面声明
 
@@ -307,7 +315,7 @@ export function OrganizationSettingsPage(): ReactElement
 - **列表页**（`TenantRosterPage`、`AccountsPage`、`SessionsPage`、`ImpersonationsPage`、`PermissionsPage`、`InvitationsPage`、`SsoPage`、`SmsPage`、`AuditPage`）：页头、工具栏或写入区、数据表、分页。行详情与创建表单在操作者需要参照列表时由侧边面板承载（`AccountsPage`），见「账户页的详情与创建面板」。**租户名册的状态列按名册的每一个状态取值渲染**，`active`、`disabled` 与 `deleted` 各一条文案，集合之外的值渲染同一条通用文案；已删除的行不渲染改名与启停控件——名册拒绝写它，摆出来的控件只能空转。停用的行在状态列里另带停用来源的文案（运营者或账户），取自视图的 `disabledBy` 字段，运营者据它判断这个租户会不会随账户恢复。租户名册不承载内联注册表单：页头给出到 `/tenants/new` 的「登记组织」链接，注册表单是独立的创建页。
 组织管理面的 `OrganizationMembersPage` 由两个列表页型分区组成：成员分区与邀请分区各自有工具栏、数据表与游标分页，页头只负责标题、面包屑与页级刷新。组织管理面的 `OrganizationRolesPage` 由四个带标题的分区组成：角色表、选中角色的授权表、使用情况表与底部折叠的权限目录参考区，页头同样只负责标题、面包屑与刷新。
 
-- **创建页**（`TenantCreatePage`）：独立的路由 `/tenants/new`，由名册页头的链接进入。表单持有标识、别名、显示名、描述、联系邮箱与网站；显示名必填，别名与资料字段的客户端校验来自公共前端包 `org-create-ui`（[design-web](design-web.md)），服务端仍是权威。提交成功后跳到该租户的详情页；注册失败保留全部草稿，并按名册页的同一套错误码白名单渲染拒绝。
+- **创建页**（`TenantCreatePage`、`OrganizationCreatePage`）：平台侧的独立路由 `/tenants/new`，由名册页头的链接进入；自助创建是公共前端包 `org-create-ui` 的独立路由 `/organizations/new`，入口由宿主从 `org.create` 特性与当前会话派生，不属于任何管理面（[design-web](design-web.md) 的「管理面」）。两页共用 `org-create-ui` 的表单与客户端校验：平台表单持有标识、别名、显示名、描述、联系邮箱与网站，自助表单只有别名、显示名与描述。显示名必填且不超过 100 个字符，标识不得为空且不得含空白或控制字符，网站不超过 2048 字节，描述不超过 500 个字符，别名按服务端的 slug 形状与保留名集校验；服务端仍是权威。平台提交成功后跳到该租户的详情页，自助创建成功后经宿主的切换与落点进入新组织；拒绝保留全部草稿，并按各页的同一套错误码白名单渲染。
 - **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页；详情声明另把匹配路径去掉最后两段得到的管理后台根交给页面。租户详情页的兄弟链接按稳定 `id`（`permissions`、`invitations`、`sso`、`impersonations`）在壳发布的路由表里解析目标路径，不以字面 `/tenants` 匹配拼路径——管理后台挂在任何前缀下都成立；声明缺席或目标页依赖的特性缺席时该链接不渲染，`relatedHref` 可逐条覆写目标链接。每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户，动作可以没有用途），省掉这一行会掩盖记录携带空值。
 - **平台设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一张占满内容区的分页表（键／类型／当前值／状态／操作）、底部一条粘性保存条。平台设置页没有租户模式；组织侧的设置页是独立的「安全与访问」页（见「租户模式的页面行为」）。键格在键之下另叠该行的声明：先是它的说明，再是带标签的声明默认值，与相邻的当前值分开；没有声明默认值时这一行不渲染，也不以标签配空值。每行只取自己的声明，不借用别行的说明或默认值。键行本身取主辨识列的共用上限（`primaryColumnMaxWidthSx`）并在上限内截断，完整键由复制控件承载；说明与声明默认值是正文，不套这个上限，按单元格可用宽度换行。整行按顶部对齐（`rowVerticalAlign: 'top'`），当前值输入与复制控件因此贴住键行，而不是落在多行键格的垂直中点。行的状态取自该层视图的 `has_row`：该层没有行时值走回退（标「默认」），持有行时标「已覆盖」。`written` 只用于显示，不参与判定——显式写入的空串与无行在文本上不可区分，行是否存在由 `has_row` 单独给出。只有持有行的行渲染可点的移除控件，默认行不渲染它——默认值没有可撤的覆盖行，摆一个只能空转的开关只会误导读屏用户与操作者；204 的幂等删除语义不变。**敏感项**：[settings.admin](../settings/design-settings-admin.md) 在应答里把敏感项的 `written` 与 `value` 换成遮蔽串，`has_row` 照常报出行是否存在，故页面按同一判据统计状态，并只对持有行的敏感项渲染移除控件；键格的「敏感」标记说明该行的值是遮蔽串。
 
@@ -369,7 +377,7 @@ export function OrganizationSettingsPage(): ReactElement
 
 ## UML 图
 
-两个面共用一份声明结构，打向三类后端端点；页面声明由应用的组合层收齐，特性判定、当前租户、路由表与会话由宿主交给壳或组织 provider、经包级上下文交给页面。图里画不到的约束：平台资产在 `/api/v1/system` 下、按平台域判定，平台管理面的邀请与成员、SSO 两页按租户寻址、在那个租户的域判定，壳里没有当前租户切换器；组织管理面挂在 `ProductShell` 之内，当前租户由宿主属性给出、写进每条请求的路径，组织的包装页是邀请与成员、SSO、角色与权限、设置四个；两个面的判定都在服务端做出，本包只渲染应答；声明结构即 route-kit 的 `RouteDeclaration`，但本包不 import `route-kit`；`requires` 由收集方据特性在场收窄，本包不据它判定。
+两个面共用一份声明结构，打向三类后端端点；页面声明由应用的组合层收齐，特性判定、当前租户、路由表与会话由宿主交给壳或组织 provider、经包级上下文交给页面。图里画不到的约束：平台资产在 `/api/v1/system` 下、按平台域判定，平台管理面的邀请与成员、SSO 两页按租户寻址、在那个租户的域判定，壳里没有当前租户切换器；组织管理面挂在 `ProductShell` 之内，当前租户由宿主属性给出、写进每条请求的路径，组织的包装页是邀请与成员、SSO、角色与权限、设置与组织资料；两个面的判定都在服务端做出，本包只渲染应答；声明结构即 route-kit 的 `RouteDeclaration`，但本包不 import `route-kit`；`requires` 由收集方据特性在场收窄，本包不据它判定。
 
 ```mermaid
 graph TD
@@ -379,7 +387,7 @@ graph TD
     pframe["AdminShell / AdminProvider\n平台管理面上下文（无当前租户）"]
     ppages["平台页面\n概览 · 名册 · 账户 · 会话 · 冒充 · 权限\n邀请与成员 · SSO · 设置 · 短信 · 审计"]
     wframe["OrganizationAdminProvider\n组织管理面上下文（当前租户 · 面包屑）"]
-    wpages["组织包装页\n邀请与成员 · SSO · 角色与权限 · 设置"]
+    wpages["组织包装页\n邀请与成员 · SSO · 角色与权限 · 设置 · 组织资料"]
     papi["平台资产\n/api/v1/system/..."]
     tapi["按租户寻址端点\n/api/v1/tenants/{tenant}/..."]
     ppages --> decl
@@ -813,7 +821,9 @@ graph TD
 | SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton` |
 | 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/admin-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh` |
 | 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/admin-ui/src/operations.tsx` `adminOperations` |
-| 组织管理面的声明表 `organizationAdminRoutes`（邀请与成员、SSO、角色与权限、设置）与四个包装页（`organization-routes.tsx`、`organization-pages.tsx`） | 已实现 | `web/packages/admin-ui/src/organization-routes.tsx` `organizationAdminRoutes`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationInvitationsPage`、`OrganizationSsoPage`、`OrganizationPermissionsPage`、`OrganizationSettingsPage` |
+| 组织管理面的声明表 `organizationAdminRoutes`（邀请与成员、SSO、角色与权限、设置、组织资料）与五个包装页（`organization-routes.tsx`、`organization-pages.tsx`） | 已实现 | `web/packages/admin-ui/src/organization-routes.tsx` `organizationAdminRoutes`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationInvitationsPage`、`OrganizationSsoPage`、`OrganizationPermissionsPage`、`OrganizationSettingsPage`、`OrganizationProfilePage` |
+| 组织资料页（只读身份卡、可编辑资料卡、显示名清空后回退别名、保存落地后经 `onTenantUpdated` 重读调用方租户表） | 已实现 | `web/packages/admin-ui/src/TenantProfilePage.tsx` `TenantProfilePage`；`web/packages/admin-ui/src/TenantProfileFields.tsx` `TenantProfileFields`；`web/packages/admin-ui/src/TenantProfileForm.tsx` `TenantProfileForm`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationProfilePage` |
+| 平台创建页与共享创建表单（`/tenants/new`，平台模式；客户端校验含标识域、显示名与网站界限） | 已实现 | `web/packages/admin-ui/src/TenantCreatePage.tsx` `TenantCreatePage`；`web/packages/admin-ui/src/routes.tsx` `tenantAdminRoutes`；`web/packages/org-create-ui/src/OrganizationCreateForm.tsx` `OrganizationCreateForm`；`web/packages/org-create-ui/src/validation.ts` `validateOrganizationCreateValues`、`isRejectedIdentifier` |
 | 组织管理面的上下文与面包屑提供者（`OrganizationAdminProvider.tsx` 的 `OrganizationAdminProvider`、`OrganizationAdminBreadcrumb.tsx` 的 `OrganizationAdminBreadcrumbProvider`） | 已实现 | `web/packages/admin-ui/src/OrganizationAdminProvider.tsx` `OrganizationAdminProvider`、`useOrganizationAdminTenant`、`useOrganizationAdminProtectedRoles`；`web/packages/admin-ui/src/OrganizationAdminBreadcrumb.tsx` `OrganizationAdminBreadcrumbProvider`、`useOrganizationAdminBreadcrumbs` |
 | 组织操作束（`organization-operations.tsx` 的 `OrganizationAdminOperations`、`organizationAdminOperations`）及其发布上下文 | 已实现 | `web/packages/admin-ui/src/organization-operations.tsx` `OrganizationAdminOperations`、`organizationAdminOperations`、`OrganizationAdminOperationsProvider`、`useOrganizationAdminOperations` |
 | SSO 页的租户模式页面行为 | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |

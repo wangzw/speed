@@ -9,8 +9,8 @@ The platform console renders `OrganizationCreateForm` in `platform` mode
 inside its own registration page; the demo host renders
 `OrganizationCreatePage` over its `org.create` operation. The server
 remains authoritative on every rule: the client repeats the alias shape,
-the built-in reserved names and the profile bounds so a typo is caught in
-place.
+the built-in reserved names, the identifier domain and the profile bounds
+so a typo is caught in place.
 
 The package owns no request, no router and no tenant state. A host that
 renders the self-service page supplies the creation operation, the

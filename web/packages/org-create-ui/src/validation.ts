@@ -2,7 +2,8 @@
  * The shared creation form's values and client-side validation.
  *
  * The server is the authority on every rule here: this module repeats the
- * alias shape, the built-in reserved-name set and the profile bounds so
+ * alias shape, the built-in reserved-name set, the identifier domain and
+ * the profile bounds -- the display-name and website limits included -- so
  * the operator meets a typo in place instead of a refusal after a round
  * trip. A deployment may append reserved names through
  * `authn.account.reserved-usernames`; the client cannot know those, so a
@@ -51,9 +52,12 @@ export type OrganizationCreateViolation =
   | 'required'
   | 'aliasShape'
   | 'aliasReserved'
+  | 'displayNameTooLong'
   | 'descriptionTooLong'
   | 'emailShape'
   | 'websiteShape'
+  | 'websiteTooLong'
+  | 'identifierShape'
 
 /** The violations a form render can show, one per field at most. */
 export type OrganizationCreateViolations = Partial<
@@ -98,12 +102,32 @@ export const RESERVED_ALIASES: readonly string[] = [
 /** The reserved prefix no alias may begin with (personal tenant ids). */
 export const RESERVED_ALIAS_PREFIX = 'personal-'
 
+/** The maximum display-name length, in runes, the server enforces. */
+export const DISPLAY_NAME_MAX_RUNES = 100
+
 /** The maximum description length, in runes, the server enforces. */
 export const DESCRIPTION_MAX_RUNES = 500
+
+/** The maximum website length, in bytes, the server enforces. */
+export const WEBSITE_MAX_BYTES = 2048
+
+/** Blanks and control characters -- the code points the identifier rule refuses. */
+const REJECTED_IDENTIFIER = /[\s\u0000-\u001f\u007f]/
 
 /** Whether a value is a slug the alias domain admits. */
 export function isAliasShape(value: string): boolean {
   return ALIAS_SHAPE.test(value)
+}
+
+/**
+ * Reports whether a value the platform surface's identifier field carries
+ * would be refused by the tenant identifier domain: `true` for an empty
+ * value or one containing a blank or a control character. The server's
+ * `tenant.IsIdentifier` is the authority; this mirror lets the operator meet
+ * the typo in place instead of after a round trip.
+ */
+export function isRejectedIdentifier(value: string): boolean {
+  return value === '' || REJECTED_IDENTIFIER.test(value)
 }
 
 /** Whether a value is in the built-in reserved set or its reserved prefix. */
@@ -150,6 +174,11 @@ function runeLength(value: string): number {
   return Array.from(value).length
 }
 
+/** The number of UTF-8 bytes in a string, the unit the website bound uses. */
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).length
+}
+
 /** Whether a contact address is a single bare email address. */
 function isBareEmail(value: string): boolean {
   if (value.length > 254 || /\s/.test(value)) {
@@ -193,6 +222,8 @@ export function validateOrganizationCreateValues(
   }
   if (normalized.displayName === '') {
     violations.displayName = 'required'
+  } else if (runeLength(normalized.displayName) > DISPLAY_NAME_MAX_RUNES) {
+    violations.displayName = 'displayNameTooLong'
   }
   if (runeLength(normalized.description) > DESCRIPTION_MAX_RUNES) {
     violations.description = 'descriptionTooLong'
@@ -201,6 +232,8 @@ export function validateOrganizationCreateValues(
   if (mode === 'platform') {
     if (normalized.id === '') {
       violations.id = 'required'
+    } else if (isRejectedIdentifier(normalized.id)) {
+      violations.id = 'identifierShape'
     }
     if (
       normalized.contactEmail !== '' &&
@@ -208,8 +241,12 @@ export function validateOrganizationCreateValues(
     ) {
       violations.contactEmail = 'emailShape'
     }
-    if (normalized.website !== '' && !isAbsoluteWebAddress(normalized.website)) {
-      violations.website = 'websiteShape'
+    if (normalized.website !== '') {
+      if (byteLength(normalized.website) > WEBSITE_MAX_BYTES) {
+        violations.website = 'websiteTooLong'
+      } else if (!isAbsoluteWebAddress(normalized.website)) {
+        violations.website = 'websiteShape'
+      }
     }
   }
 

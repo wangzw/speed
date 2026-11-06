@@ -22,9 +22,12 @@
     "required": "此项为必填。",
     "aliasShape": "请使用 3–63 个小写字母、数字或连字符，并以字母或数字开头。",
     "aliasReserved": "该别名已被系统保留，请换一个。",
+    "displayNameTooLong": "显示名请控制在 100 个字符以内。",
     "descriptionTooLong": "描述请控制在 500 个字符以内。",
     "emailShape": "请填写一个邮箱地址，例如 team@example.com。",
-    "websiteShape": "请填写一个以 http 或 https 开头的完整地址，例如 https://example.com。"
+    "websiteShape": "请填写一个以 http 或 https 开头的完整地址，例如 https://example.com。",
+    "websiteTooLong": "网站地址请控制在 2048 个字节以内。",
+    "identifierShape": "标识不能包含空白或控制字符。"
   },
   "submit": "创建组织",
   "submitting": "正在创建组织……",

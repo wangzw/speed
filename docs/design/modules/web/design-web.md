@@ -98,7 +98,7 @@ interface SpeedAppDefinition {
 |---|---|---|---|---|---|
 | 平台资产 | 平台管理面 | 名册、账户、会话、冒充记录、权限、设置、短信、审计 | 平台侧外壳 `AdminShell` | 平台域 | `/api/v1/system/...` |
 | 平台管理面的按租户寻址页 | 平台管理面 | 邀请与成员、SSO 提供方 | 平台侧外壳 `AdminShell` | 那个租户的域；持 `platform-admin` 本身不放行，调用方须在该租户另有绑定 | `/api/v1/tenants/{tenant}/...` |
-| 组织管理面 | 组织管理面 | 邀请与成员、SSO 提供方、租户层设置、角色与权限 | 租户侧 [product-shell](design-web-product-shell.md) 的 `AppShell` 内容区 | 当前租户的域 | `/api/v1/tenants/{tenant}/...` |
+| 组织管理面 | 组织管理面 | 邀请与成员、SSO 提供方、租户层设置、角色与权限、组织资料 | 租户侧 [product-shell](design-web-product-shell.md) 的 `AppShell` 内容区 | 当前租户的域 | `/api/v1/tenants/{tenant}/...` |
 
 **三类端点的判定域各自成立。** 平台资产在平台域判定。平台管理面的邀请与成员、SSO 两页按租户寻址，在那个租户的域判定：调用方要在该租户持有 `tenant-admin` 或相应权限，`platform-admin` 本身不放行。组织管理面在当前租户的域判定，平台域权限本身不放行。平台管理面不持**当前租户**，其按租户寻址页持的是请求的实参（租户选择器）；组织管理面把宿主给出的当前租户写进每条请求的路径。
 
