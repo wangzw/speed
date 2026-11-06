@@ -43,7 +43,7 @@
 查询串点名作用在哪一层：
 
 - **`layer`** 取 `global` 或 `tenant`，无缺省；缺席或取值不在闭集内即 400。
-- **`tenant`** 在 `layer=tenant` 时必给，点名那个租户；`layer=global` 时不给。给或不给与 `layer` 对不上即 400。
+- **`tenant`** 在 `layer=tenant` 时必给，点名那个租户的别名；`layer=global` 时不给。给或不给与 `layer` 对不上即 400。别名经可选的 `authn.TenantDirectory` 换成内部标识；解析不到或目录缺席时按请求错误拒绝，不把名字当标识。
 
 一条路由的动作是一次 `settings.Store` 调用（方法集与各方法的语义见 [design-settings](design-settings.md)）：
 
@@ -111,7 +111,7 @@
 | `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | `pkg/log` | 可选：记诊断 |
 
-**本模块不 import `pkg/tenant` 与 `pkg/db`。** 它复述租户标识的取值域而不是 import 它，也不触存储——设置的表由设置模块拥有，本模块每个动作都是一次 `settings.Store` 调用。这一形态与 `sms.admin`、`tenant.admin` 相同（[design-sms](../design-sms.md)、[design-tenant-admin](../tenant/design-tenant-admin.md)）。
+**本模块不 import `pkg/tenant` 与 `pkg/db`。** 它复述租户标识的取值域而不是 import 它，并经 `pkg/authn` 根包的可选 `TenantDirectory` 把查询串里的别名换成标识；它也不触存储——设置的表由设置模块拥有，本模块每个动作都是一次 `settings.Store` 调用。这一形态与 `sms.admin`、`tenant.admin` 相同（[design-sms](../design-sms.md)、[design-tenant-admin](../tenant/design-tenant-admin.md)）。
 
 **本模块可撤掉，不改变调用方或设置模块的代码。** 它 import `pkg/authz`、`pkg/audit`、`pkg/authn`、`pkg/http` 来挂一条受保护的管理面，是设置能力目录里唯一这样做的一层；设置根包本身不因它背上这些依赖。依赖方向满足架构不变量：本模块 import `pkg/settings` 的根包与 `pkg/authz`，而 `pkg/settings` 根包不 import 本模块、也不 import `pkg/authz`，不构成环；本模块落在依赖图的上层，是一个叶子。
 

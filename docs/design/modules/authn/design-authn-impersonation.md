@@ -101,6 +101,8 @@ type Impersonation interface {
 }
 ```
 
+**结构里的 `Tenant` 是内部标识；对外视图与应答里的 `tenant` 是别名**，经可选的 `authn.TenantAliasResolver` 从记录上的标识换成；接缝缺席或解析不到时为空，不回退成标识。
+
 | 方法 | 语义 |
 |---|---|
 | `Start` | 在调用方身份 `actor` 上开始一次冒充：校验全部结构性限制，询问 `Decider`，写强制档审计，写记录。同一个会话同时至多一条未结束的记录。成功返回记录；失败返回的哨兵与对外形态见「错误与失败语义」。`Start` 不挂接载体、不签发令牌、不发 `started` 事件：换出的会话令牌与冒充访问令牌要交到响应里，而 `Start` 拿不到响应写出器，这三件事由处理器在 `Start` 返回之后完成。顺序与每一步的失败处置见「开始的顺序」。 |
@@ -124,7 +126,7 @@ type Impersonation interface {
 
 | 方法与路径 | 访问 | 要求与应答 |
 |---|---|---|
-| `POST B/impersonation` | Required | CSRF；请求体 `{"account","tenant","reason","ttl_seconds"}`；调用 `Start`，成功后由处理器挂接载体并发事件（见「开始的顺序」）。cookie 凭据下应答带 `{grant:{id, target, tenant, ends_at}}`，换出的会话令牌经 `Sessions.SetCookie` 写出；Bearer（[REF-rfc6750](../../../references.md)）凭据下应答另带一枚冒充访问令牌。 |
+| `POST B/impersonation` | Required | CSRF；请求体 `{"account","tenant","reason","ttl_seconds"}`，其中 `tenant` 是租户别名；处理器经可选的 `authn.TenantDirectory` 把它换成内部标识后调用 `Start`，解析不到或目录缺席时按目标不在该租户拒绝，绝不把名字当标识。`Start` 成功后由处理器挂接载体并发事件（见「开始的顺序」）。cookie 凭据下应答带 `{grant:{id, target, tenant, ends_at}}`，换出的会话令牌经 `Sessions.SetCookie` 写出；Bearer（[REF-rfc6750](../../../references.md)）凭据下应答另带一枚冒充访问令牌。 |
 | `GET B/impersonation` | Required，`Impersonable` | 返回当前会话上的冒充状态；会话上没有有效的记录时 404（裸 404，不带问题码）。 |
 | `DELETE B/impersonation` | Required，`Impersonable` | CSRF；调用 `End`，冒充身份下允许；cookie 凭据下处理器随后清除会话上的记录标识，不换令牌、不写 cookie；Bearer 凭据下只结束记录。 |
 
