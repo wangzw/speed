@@ -24,7 +24,6 @@ export {
   WEBSITE_MAX_BYTES,
   aliasViolation,
   isAliasShape,
-  isRejectedIdentifier,
   isReservedAlias,
   normalizeOrganizationCreateValues,
   validateOrganizationCreateValues,

@@ -37,8 +37,10 @@ function PlatformForm() {
 
 function boxes() {
   return {
-    id: screen.getByLabelText(enUS.fields.id).getBoundingClientRect(),
-    alias: screen.getByLabelText(enUS.fields.alias).getBoundingClientRect(),
+    contactEmail: screen
+      .getByLabelText(enUS.fields.contactEmail)
+      .getBoundingClientRect(),
+    website: screen.getByLabelText(enUS.fields.website).getBoundingClientRect(),
   }
 }
 
@@ -47,23 +49,23 @@ describe('OrganizationCreateForm responsive grid', () => {
     await page.viewport(599, 900)
     renderWithProviders(<PlatformForm />, { language: 'en-US' })
 
-    const { id, alias } = boxes()
-    // The alias is the next grid row: below the identifier, on the same
-    // left edge.
-    expect(alias.top).toBeGreaterThan(id.top + 1)
-    expect(Math.abs(alias.left - id.left)).toBeLessThan(1)
+    const { contactEmail, website } = boxes()
+    // The website is the next grid row: below the contact address, on the
+    // same left edge.
+    expect(website.top).toBeGreaterThan(contactEmail.top + 1)
+    expect(Math.abs(website.left - contactEmail.left)).toBeLessThan(1)
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
       window.innerWidth,
     )
   })
 
-  it('puts the identifier and alias side by side from sm up', async () => {
+  it('puts the contact address and website side by side from sm up', async () => {
     await page.viewport(900, 900)
     renderWithProviders(<PlatformForm />, { language: 'en-US' })
 
-    const { id, alias } = boxes()
-    // One row, two tracks: same top edge, the alias in the second track.
-    expect(Math.abs(alias.top - id.top)).toBeLessThan(1)
-    expect(alias.left).toBeGreaterThan(id.left + id.width / 2)
+    const { contactEmail, website } = boxes()
+    // One row, two tracks: same top edge, the website in the second track.
+    expect(Math.abs(website.top - contactEmail.top)).toBeLessThan(1)
+    expect(website.left).toBeGreaterThan(contactEmail.left + contactEmail.width / 2)
   })
 })

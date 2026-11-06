@@ -2,17 +2,17 @@
  * The shared creation form's values and client-side validation.
  *
  * The server is the authority on every rule here: this module repeats the
- * alias shape, the built-in reserved-name set, the identifier domain and
- * the profile bounds -- the display-name and website limits included -- so
- * the operator meets a typo in place instead of a refusal after a round
- * trip. A deployment may append reserved names through
- * `authn.account.reserved-usernames`; the client cannot know those, so a
- * name the server alone refuses still reaches the error region.
+ * alias shape, the built-in reserved-name set and the profile bounds -- the
+ * display-name and website limits included -- so the operator meets a typo
+ * in place instead of a refusal after a round trip. A deployment may append
+ * reserved names through `authn.account.reserved-usernames`; the client
+ * cannot know those, so a name the server alone refuses still reaches the
+ * error region.
  *
- * The values are one flat shape for both surfaces. The platform form
- * renders the identifier, contact address and website; the self-service
- * form renders only the alias, display name and description, and its
- * validator ignores the other three even when a host seeds them.
+ * The values are one flat shape for both surfaces. The platform form adds
+ * the contact address and website to the alias, display name and
+ * description; the self-service form renders only the latter three, and its
+ * validator ignores the platform-only fields even when a host seeds them.
  */
 
 /** Which surface is rendering the form. */
@@ -20,8 +20,6 @@ export type OrganizationCreateMode = 'platform' | 'self-service'
 
 /** One creation form's controlled values. */
 export interface OrganizationCreateValues {
-  /** The platform surface's internal identifier; ignored by self-service. */
-  readonly id: string
   /** The public slug, unique across the roster and immutable after creation. */
   readonly alias: string
   /** The organization's display name; required after trimming. */
@@ -36,7 +34,6 @@ export interface OrganizationCreateValues {
 
 /** The form's starting values. */
 export const EMPTY_ORGANIZATION_CREATE_VALUES: OrganizationCreateValues = {
-  id: '',
   alias: '',
   displayName: '',
   description: '',
@@ -57,7 +54,6 @@ export type OrganizationCreateViolation =
   | 'emailShape'
   | 'websiteShape'
   | 'websiteTooLong'
-  | 'identifierShape'
 
 /** The violations a form render can show, one per field at most. */
 export type OrganizationCreateViolations = Partial<
@@ -99,7 +95,7 @@ export const RESERVED_ALIASES: readonly string[] = [
   'root',
 ]
 
-/** The reserved prefix no alias may begin with (personal tenant ids). */
+/** The reserved prefix no alias may begin with (personal tenant aliases). */
 export const RESERVED_ALIAS_PREFIX = 'personal-'
 
 /** The maximum display-name length, in runes, the server enforces. */
@@ -111,29 +107,9 @@ export const DESCRIPTION_MAX_RUNES = 500
 /** The maximum website length, in bytes, the server enforces. */
 export const WEBSITE_MAX_BYTES = 2048
 
-/**
- * The code points the identifier rule refuses: Unicode white space and
- * control characters (`Cc`), the set the server's `unicode.IsSpace` and
- * `unicode.IsControl` cover. The Unicode property escapes are required here:
- * JavaScript's `\s` omits the C1 controls (U+0080--U+009F) and includes
- * U+FEFF, which the server admits.
- */
-const REJECTED_IDENTIFIER = /\p{White_Space}|\p{Cc}/u
-
 /** Whether a value is a slug the alias domain admits. */
 export function isAliasShape(value: string): boolean {
   return ALIAS_SHAPE.test(value)
-}
-
-/**
- * Reports whether a value the platform surface's identifier field carries
- * would be refused by the tenant identifier domain: `true` for an empty
- * value or one containing a blank or a control character. The server's
- * `tenant.IsIdentifier` is the authority; this mirror lets the operator meet
- * the typo in place instead of after a round trip.
- */
-export function isRejectedIdentifier(value: string): boolean {
-  return value === '' || REJECTED_IDENTIFIER.test(value)
 }
 
 /** Whether a value is in the built-in reserved set or its reserved prefix. */
@@ -166,7 +142,6 @@ export function normalizeOrganizationCreateValues(
   values: OrganizationCreateValues,
 ): OrganizationCreateValues {
   return {
-    id: values.id.trim(),
     alias: values.alias.trim(),
     displayName: values.displayName.trim(),
     description: values.description.trim(),
@@ -236,11 +211,6 @@ export function validateOrganizationCreateValues(
   }
 
   if (mode === 'platform') {
-    if (normalized.id === '') {
-      violations.id = 'required'
-    } else if (isRejectedIdentifier(normalized.id)) {
-      violations.id = 'identifierShape'
-    }
     if (
       normalized.contactEmail !== '' &&
       !isBareEmail(normalized.contactEmail)
@@ -268,7 +238,6 @@ export interface OrganizationCreateSubmission {
 
 /** The organization a creation operation answers with. */
 export interface CreatedOrganization {
-  readonly id: string
   readonly alias: string
   readonly displayName: string
   readonly description: string

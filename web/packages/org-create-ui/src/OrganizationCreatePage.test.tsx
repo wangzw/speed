@@ -14,7 +14,6 @@ import { renderWithProviders } from '../test-utils/render.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 const CREATED: CreatedOrganization = {
-  id: 'org-abc',
   alias: 'acme',
   displayName: 'Acme Ltd',
   description: 'A team',

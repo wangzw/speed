@@ -4,7 +4,6 @@
     "intro": "为你的团队创建一个业务组织。你将成为它的首位管理员。"
   },
   "fields": {
-    "id": "标识",
     "alias": "别名",
     "displayName": "显示名",
     "description": "描述",
@@ -12,7 +11,6 @@
     "website": "网站"
   },
   "helpers": {
-    "id": "内部标识，创建后不可更改。",
     "alias": "3–63 个小写字母、数字或连字符，以字母或数字开头；创建后不可更改。",
     "description": "可选，最多 500 个字符。",
     "contactEmail": "可选，组织的联系邮箱。",
@@ -26,8 +24,7 @@
     "descriptionTooLong": "描述请控制在 500 个字符以内。",
     "emailShape": "请填写一个邮箱地址，例如 team@example.com。",
     "websiteShape": "请填写一个以 http 或 https 开头的完整地址，例如 https://example.com。",
-    "websiteTooLong": "网站地址请控制在 2048 个字节以内。",
-    "identifierShape": "标识不能包含空白或控制字符。"
+    "websiteTooLong": "网站地址请控制在 2048 个字节以内。"
   },
   "submit": "创建组织",
   "submitting": "正在创建组织……",

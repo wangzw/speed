@@ -1,9 +1,9 @@
 /**
  * The client-side validation the server remains authoritative over: the
  * alias slug and reserved names, the required and bounded display name,
- * the description bound, the identifier domain, the website byte bound,
- * and the platform-only fields. The self-service form ignores the
- * identifier, contact address and website even when a host seeds them.
+ * the description bound, the website byte bound, and the platform-only
+ * fields. Neither surface asks for an internal identifier; the self-service
+ * form ignores the contact address and website even when a host seeds them.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -11,7 +11,6 @@ import {
   EMPTY_ORGANIZATION_CREATE_VALUES,
   aliasViolation,
   isAliasShape,
-  isRejectedIdentifier,
   isReservedAlias,
   normalizeOrganizationCreateValues,
   validateOrganizationCreateValues,
@@ -58,40 +57,6 @@ describe('the alias rule', () => {
   })
 })
 
-describe('the identifier rule', () => {
-  it('admits a non-empty value with no blank or control character', () => {
-    for (const value of ['acme', 'Acme-Inc', 'acme.company', 'Acme_Inc', 'Acme-Café']) {
-      expect(isRejectedIdentifier(value), value).toBe(false)
-    }
-  })
-
-  it('refuses an empty value, a blank, or a control character', () => {
-    for (const value of [
-      '',
-      'Acme Corp',
-      'Acme\tCo',
-      'Acme\nCo',
-      ' Acme',
-      'Acme ',
-      'Acme\u0000',
-      'Ac\u007felme',
-    ]) {
-      expect(isRejectedIdentifier(value), JSON.stringify(value)).toBe(true)
-    }
-  })
-
-  it('matches the server on the C1 controls and U+FEFF', () => {
-    // The C1 controls are `Cc` but are absent from JavaScript's `\s`;
-    // U+FEFF is present in `\s` but is neither `Cc` nor Unicode white
-    // space. The server's unicode.IsSpace || unicode.IsControl refuses the
-    // former and admits the latter, so the client mirror must too.
-    for (const value of ['Ac\u0080me', 'Ac\u009fme']) {
-      expect(isRejectedIdentifier(value), JSON.stringify(value)).toBe(true)
-    }
-    expect(isRejectedIdentifier(`Ac${String.fromCharCode(0xfeff)}me`)).toBe(false)
-  })
-})
-
 describe('validateOrganizationCreateValues', () => {
   it('requires the display name after trimming', () => {
     const violations = validateOrganizationCreateValues(
@@ -106,7 +71,6 @@ describe('validateOrganizationCreateValues', () => {
       const atLimit = validateOrganizationCreateValues(
         withValues({
           alias: 'acme',
-          id: 'org-acme',
           displayName: '😀'.repeat(100),
         }),
         mode,
@@ -116,29 +80,12 @@ describe('validateOrganizationCreateValues', () => {
       const overLimit = validateOrganizationCreateValues(
         withValues({
           alias: 'acme',
-          id: 'org-acme',
           displayName: '😀'.repeat(101),
         }),
         mode,
       )
       expect(overLimit.displayName, mode).toBe('displayNameTooLong')
     }
-  })
-
-  it('refuses a platform identifier carrying a blank or a control character', () => {
-    for (const id of ['org acme', 'org\tacme', 'org\nacme', 'org\u007facme']) {
-      const violations = validateOrganizationCreateValues(
-        withValues({ alias: 'acme', displayName: 'Acme', id }),
-        'platform',
-      )
-      expect(violations.id, JSON.stringify(id)).toBe('identifierShape')
-    }
-    expect(
-      validateOrganizationCreateValues(
-        withValues({ alias: 'acme', displayName: 'Acme', id: 'org-acme' }),
-        'platform',
-      ).id,
-    ).toBeUndefined()
   })
 
   it('bounds the description in runes, not UTF-16 units', () => {
@@ -167,12 +114,10 @@ describe('validateOrganizationCreateValues', () => {
     const values = withValues({
       alias: 'acme',
       displayName: 'Acme',
-      id: '',
       contactEmail: 'not-an-address',
       website: 'ftp://example.com',
     })
     expect(validateOrganizationCreateValues(values, 'platform')).toMatchObject({
-      id: 'required',
       contactEmail: 'emailShape',
       website: 'websiteShape',
     })
@@ -186,7 +131,6 @@ describe('validateOrganizationCreateValues', () => {
       withValues({
         alias: 'acme',
         displayName: 'Acme',
-        id: 'org-acme',
         contactEmail: 'team@example.com',
         website: 'https://example.com/about',
       }),
@@ -201,7 +145,6 @@ describe('validateOrganizationCreateValues', () => {
       withValues({
         alias: 'acme',
         displayName: 'Acme',
-        id: 'org-acme',
         // 20 ASCII bytes plus 676 three-byte runes: exactly 2048 bytes, and
         // 1352 UTF-16 units.
         website: `${prefix}${'中'.repeat(676)}`,
@@ -214,7 +157,6 @@ describe('validateOrganizationCreateValues', () => {
       withValues({
         alias: 'acme',
         displayName: 'Acme',
-        id: 'org-acme',
         website: `${prefix}${'中'.repeat(677)}`,
       }),
       'platform',
@@ -229,7 +171,7 @@ describe('validateOrganizationCreateValues', () => {
       'example.com',
     ]) {
       const violations = validateOrganizationCreateValues(
-        withValues({ alias: 'acme', displayName: 'Acme', id: 'org-acme', website }),
+        withValues({ alias: 'acme', displayName: 'Acme', website }),
         'platform',
       )
       expect(violations.website, website).toBe('websiteShape')
@@ -239,7 +181,6 @@ describe('validateOrganizationCreateValues', () => {
   it('normalizes every field before the request', () => {
     expect(
       normalizeOrganizationCreateValues({
-        id: ' org-acme ',
         alias: ' acme ',
         displayName: ' Acme Ltd ',
         description: ' A team ',
@@ -247,7 +188,6 @@ describe('validateOrganizationCreateValues', () => {
         website: ' https://example.com ',
       }),
     ).toEqual({
-      id: 'org-acme',
       alias: 'acme',
       displayName: 'Acme Ltd',
       description: 'A team',

@@ -2,8 +2,9 @@
  * The shared organization-creation form.
  *
  * Both surfaces render this component: the platform console's registration
- * page (with the identifier, contact address and website) and the
- * self-service page (alias, display name and description only). It is
+ * page (with the contact address and website in addition to the shared
+ * fields) and the self-service page (alias, display name and description
+ * only). Neither surface asks for an internal identifier. It is
  * fully controlled -- the page owns the draft and the violations -- so a
  * refused write can keep every value, and it renders one column below
  * `sm` and two from `sm` up, with the long fields spanning the row.
@@ -120,7 +121,6 @@ export function OrganizationCreateForm({
           rowGap: 2,
         }}
       >
-        {platform && field('id', 'fields.id', { hintKey: 'helpers.id' })}
         {field('alias', 'fields.alias', { hintKey: 'helpers.alias' })}
         {field('displayName', 'fields.displayName', { fullWidth: true })}
         {field('description', 'fields.description', {

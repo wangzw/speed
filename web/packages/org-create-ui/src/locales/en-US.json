@@ -4,7 +4,6 @@
     "intro": "Create a business organization for your team. You become its first administrator."
   },
   "fields": {
-    "id": "Identifier",
     "alias": "Alias",
     "displayName": "Display name",
     "description": "Description",
@@ -12,7 +11,6 @@
     "website": "Website"
   },
   "helpers": {
-    "id": "The internal identifier. It cannot be changed after creation.",
     "alias": "3–63 lowercase letters, digits or dashes, starting with a letter or digit. It cannot be changed after creation.",
     "description": "Optional. Up to 500 characters.",
     "contactEmail": "Optional. The organization's contact address.",
@@ -26,8 +24,7 @@
     "descriptionTooLong": "Keep the description to 500 characters or fewer.",
     "emailShape": "Enter one email address, for example team@example.com.",
     "websiteShape": "Enter an absolute http or https address with a host, for example https://example.com.",
-    "websiteTooLong": "Keep the website to 2048 bytes or fewer.",
-    "identifierShape": "The identifier cannot contain blanks or control characters."
+    "websiteTooLong": "Keep the website to 2048 bytes or fewer."
   },
   "submit": "Create organization",
   "submitting": "Creating organization…",

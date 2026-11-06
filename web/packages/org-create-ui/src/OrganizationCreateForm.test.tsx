@@ -51,19 +51,17 @@ describe('OrganizationCreateForm', () => {
     expect(screen.getByLabelText(enUS.fields.alias)).toBeInTheDocument()
     expect(screen.getByLabelText(enUS.fields.displayName)).toBeInTheDocument()
     expect(screen.getByLabelText(enUS.fields.description)).toBeInTheDocument()
-    expect(screen.queryByLabelText(enUS.fields.id)).not.toBeInTheDocument()
     expect(
       screen.queryByLabelText(enUS.fields.contactEmail),
     ).not.toBeInTheDocument()
     expect(screen.queryByLabelText(enUS.fields.website)).not.toBeInTheDocument()
   })
 
-  it('renders the identifier and profile fields in platform mode', () => {
+  it('renders the profile fields in platform mode, with no identifier', () => {
     renderWithProviders(<ControlledForm mode="platform" />, {
       language: 'en-US',
     })
     for (const label of [
-      enUS.fields.id,
       enUS.fields.alias,
       enUS.fields.displayName,
       enUS.fields.description,
@@ -72,6 +70,8 @@ describe('OrganizationCreateForm', () => {
     ]) {
       expect(screen.getByLabelText(label), label).toBeInTheDocument()
     }
+    // The server mints the internal identifier; no surface asks for it.
+    expect(screen.queryByLabelText('Identifier')).not.toBeInTheDocument()
   })
 
   it('reports each field change with its field name', async () => {
