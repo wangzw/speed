@@ -35,6 +35,11 @@ func (r *Resolver) claimEnterprise(ctx context.Context, prov authn.SSOProvider, 
 	switch {
 	case err == nil:
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameTaken)
+	case authn.IsUsernameShape(err), errors.Is(err, authn.ErrInvalidIdentifier):
+		// The lookup normalizes too. A value the shared slug rule accepts but the
+		// account module keeps for itself, such as one shaped like an account
+		// identifier, is still not a username the login may use.
+		return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameInvalid)
 	case !errors.Is(err, authn.ErrAccountNotFound):
 		return Result{}, err
 	}

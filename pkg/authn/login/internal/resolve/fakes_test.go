@@ -47,6 +47,7 @@ type store struct {
 	failCreate   error
 	failDiscover error
 	failGet      error
+	failLookup   error
 	failByExt    error
 	failExtern   error
 	failTenants  error
@@ -231,6 +232,9 @@ func (v accountsView) Lookup(_ context.Context, kind authn.IdentifierKind, value
 	}
 	v.s.mu.Lock()
 	defer v.s.mu.Unlock()
+	if v.s.failLookup != nil {
+		return "", v.s.failLookup
+	}
 	id, ok := v.s.identifier[ikey(kind, n)]
 	if !ok {
 		return "", authn.ErrAccountNotFound

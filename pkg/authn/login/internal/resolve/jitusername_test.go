@@ -97,6 +97,21 @@ func TestClaimStrategyRefusesAnInvalidClaim(t *testing.T) {
 	}
 }
 
+// A claim value the shared slug rule accepts but the account module keeps for
+// itself, such as one shaped like an account identifier, is a JIT username
+// refusal, not the field error a form would show.
+func TestClaimStrategyRefusesAValueTheAccountModuleKeepsForItself(t *testing.T) {
+	e := newEnv(t, withClaimProvider(authn.UsernameClaimPreferredUsername))
+	e.s.failLookup = authn.UsernameShape(authn.ErrInvalidIdentifier)
+	_, err := e.resolve(enterpriseWithUsername("u1", "ann@acme.com", "123e4567-e89b-12d3-a456-426614174000"))
+	if !errors.Is(err, authn.ErrJITUsernameInvalid) {
+		t.Fatalf("err = %v, want ErrJITUsernameInvalid", err)
+	}
+	if e.s.writes() != 0 {
+		t.Errorf("%d writes, want none", e.s.writes())
+	}
+}
+
 // A claim value another account already holds as a username refuses the login,
 // and nothing is written.
 func TestClaimStrategyRefusesATakenUsername(t *testing.T) {
