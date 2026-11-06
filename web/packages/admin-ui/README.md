@@ -127,13 +127,14 @@ renders `OrganizationSecurityPage`: the two declared tenant admission
 policies as switches, each saving on its own, platform-enforced policies
 read-only, and a protected tenant's page read-only with no switches. The
 profile wrapper hands the current tenant, the host's
-`onTenantUpdated` and `onOrganizationDeleted` to `TenantProfilePage`: a
+`onTenantUpdated` and `onOrganizationLeft` to `TenantProfilePage`: a
 read-only identity card (including the owner account), an editable profile
 card, and an ownership card only the current owner sees, from which the
-organization can be transferred to an active member or deleted after the
+organization can be transferred to a searched member or deleted after the
 alias is typed; a landed save asks the host to reload the caller tenant list
-the account menu and breadcrumb read, and a landed deletion asks the host to
-leave the organization and reload that list. The
+the account menu and breadcrumb read, and a landed transfer or deletion asks
+the host to leave the organization, reload that list and show the
+confirmation where the viewer lands. The
 shared pages render through the
 package-internal `AdminPageHeader`, which prefers the organization
 breadcrumb context and falls back to the page's own platform trail
@@ -300,7 +301,7 @@ feature-gated control without importing the host's session package.
 | `AuditPage.tsx` | `AuditPage` |
 | `AuditDetailPage.tsx` | `AuditDetailPage`, `AuditDetailPageProps` |
 | `resources.ts` | `ADMIN_UI_NAMESPACE`, `adminUiResources` |
-| `OrganizationAdminProvider.tsx` | `OrganizationAdminProvider`, `OrganizationAdminProviderProps`, `OrganizationAdminContextValue`, `useOrganizationAdminContext`, `useOrganizationAdminTenant`, `useOrganizationAdminProtectedRoles`, `useOrganizationAdminOnTenantUpdated`, `useOrganizationAdminOnOrganizationDeleted` |
+| `OrganizationAdminProvider.tsx` | `OrganizationAdminProvider`, `OrganizationAdminProviderProps`, `OrganizationAdminContextValue`, `useOrganizationAdminContext`, `useOrganizationAdminTenant`, `useOrganizationAdminProtectedRoles`, `useOrganizationAdminOnTenantUpdated`, `useOrganizationAdminOnOrganizationLeft` |
 | `OrganizationAdminBreadcrumb.tsx` | `OrganizationAdminBreadcrumbProvider`, `OrganizationAdminBreadcrumbProviderProps`, `useOrganizationAdminBreadcrumbs` |
 | `organization-operations.tsx` | `OrganizationAdminOperations`, `organizationAdminOperations`, `OrganizationAdminOperationsProvider`, `OrganizationAdminOperationsProviderProps`, `useOrganizationAdminOperations`, `AdminTenantSetting`, `AdminTenantSettings`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantOwnerTransferInput`, `AdminTenantRef`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
 | `organization-routes.tsx` | `organizationAdminRoutes` |
@@ -313,8 +314,9 @@ page reads the governed catalog, the role list, its grants and its usage
 page, and writes roles, descriptions and grants; the profile page reads
 and writes `/api/v1/tenants/{tenant}/profile`, shows the current owner, and
 offers the current owner the transfer and deletion controls; a landed save
-asks the host to reload the caller tenant list, and a landed deletion asks
-the host to leave the organization and reload it. The platform
+asks the host to reload the caller tenant list, and a landed transfer or
+deletion asks the host to leave the organization, reload it, and show the
+confirmation where the viewer lands. The platform
 `PermissionsPage` remains the platform surface's own page and keeps its
 bindings and account lookup.
 
@@ -502,13 +504,14 @@ the current tenant:
   policies as switches, saves each switch on its own, and draws a
   platform-enforced policy as read-only;
 - the profile wrapper is given the current tenant, the host's
-  `onTenantUpdated` and `onOrganizationDeleted`: it reads and writes
+  `onTenantUpdated` and `onOrganizationLeft`: it reads and writes
   `/api/v1/tenants/{tenant}/profile`, renders a read-only identity card
   (with the owner account), an editable profile card and a current-owner-only
-  ownership card that transfers the organization or deletes it after the
-  alias is typed, asks the host to reload the caller tenant list after a
-  landed save, and asks the host to leave the organization and reload that
-  list after a landed deletion.
+  ownership card that searches the organization's members and transfers the
+  organization to one of them or deletes it after the alias is typed, asks
+  the host to reload the caller tenant list after a landed save, and asks the
+  host to leave the organization, reload that list and show the confirmation
+  where the viewer lands after a landed transfer or deletion.
 
 None of the five wrappers issues an `/api/v1/system` request.
 

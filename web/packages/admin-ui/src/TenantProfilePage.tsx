@@ -65,12 +65,14 @@ export interface TenantProfilePageProps {
    */
   readonly onTenantUpdated?: () => void | Promise<unknown>
   /**
-   * The host's action after an organization deletion lands: leave the
-   * organization (the caller is no longer a member) and reload the caller
-   * tenant list the account menu and the breadcrumb read. Absent, the page
-   * falls back to `onTenantUpdated` and stays where it is.
+   * The host's action after a write ends the caller's membership -- a
+   * transfer hands the organization on, a deletion ends it: leave the
+   * organization, reload the caller tenant list the account menu and the
+   * breadcrumb read, and show `message` on the destination. Absent, the page
+   * falls back to `onTenantUpdated` and keeps the message in the ownership
+   * card.
    */
-  readonly onOrganizationDeleted?: () => void | Promise<unknown>
+  readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }
 
 /** The roster's closed state set; a value outside it renders the generic
@@ -92,7 +94,7 @@ function profileSignature(profile: AdminTenantProfile): string {
 export function TenantProfilePage({
   tenant,
   onTenantUpdated,
-  onOrganizationDeleted,
+  onOrganizationLeft,
 }: TenantProfilePageProps) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
@@ -161,18 +163,6 @@ export function TenantProfilePage({
   }
 
   const pending = profile.isPending && settled === undefined
-
-  // A 409 from an ownership write is one server type; the profile re-read is
-  // what tells a tombstone from a transferred owner, and a refused re-read is
-  // classified by its own status.
-  const reloadProfile = async (): Promise<AdminTenantProfile | undefined> => {
-    try {
-      const result = await profile.refetch()
-      return result.data
-    } catch {
-      return undefined
-    }
-  }
 
   return (
     <Box>
@@ -316,8 +306,7 @@ export function TenantProfilePage({
                   settledProfile.alias,
                 )}
                 onTenantUpdated={onTenantUpdated}
-                onOrganizationDeleted={onOrganizationDeleted}
-                reloadProfile={reloadProfile}
+                onOrganizationLeft={onOrganizationLeft}
               />
             </>
           )

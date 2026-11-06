@@ -50,11 +50,13 @@ export interface OrganizationAdminContextValue {
    */
   readonly onTenantUpdated?: () => void | Promise<unknown>
   /**
-   * The host's action after the current organization is deleted: leave it
-   * and reload the caller tenant list the account menu and the breadcrumb
-   * read. Absent, the profile page falls back to `onTenantUpdated`.
+   * The host's action after a write ends the caller's membership in the
+   * current organization (a transfer hands it on, a deletion ends it):
+   * leave the organization, reload the caller tenant list the account menu
+   * and the breadcrumb read, and show the message on the destination.
+   * Absent, the profile page falls back to `onTenantUpdated`.
    */
-  readonly onOrganizationDeleted?: () => void | Promise<unknown>
+  readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }
 
 const OrganizationAdminContext = createContext<OrganizationAdminContextValue | null>(
@@ -94,12 +96,12 @@ export function useOrganizationAdminOnTenantUpdated():
   return useOrganizationAdminContext().onTenantUpdated
 }
 
-/** The host's action after the current organization is deleted, when the
+/** The host's action after a write ends the caller's membership, when the
  * host supplied one. */
-export function useOrganizationAdminOnOrganizationDeleted():
-  | (() => void | Promise<unknown>)
+export function useOrganizationAdminOnOrganizationLeft():
+  | ((message: string) => void | Promise<unknown>)
   | undefined {
-  return useOrganizationAdminContext().onOrganizationDeleted
+  return useOrganizationAdminContext().onOrganizationLeft
 }
 
 export interface OrganizationAdminProviderProps {
@@ -136,10 +138,10 @@ export interface OrganizationAdminProviderProps {
    * list the account menu and the breadcrumb read. Absent, the profile page
    * only re-reads its own read. */
   readonly onTenantUpdated?: () => void | Promise<unknown>
-  /** The host's action after the current organization is deleted: leave it
-   * and reload the caller tenant list. Absent, the profile page falls back
-   * to `onTenantUpdated`. */
-  readonly onOrganizationDeleted?: () => void | Promise<unknown>
+  /** The host's action after a write ends the caller's membership: leave the
+   * organization, reload the caller tenant list and show the message on the
+   * destination. Absent, the profile page falls back to `onTenantUpdated`. */
+  readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
   readonly children: ReactNode
 }
 
@@ -158,7 +160,7 @@ export function OrganizationAdminProvider({
   invitationLink,
   protectedRoles,
   onTenantUpdated,
-  onOrganizationDeleted,
+  onOrganizationLeft,
   children,
 }: OrganizationAdminProviderProps) {
   // The operations context is declared in the console bundle's type, but
@@ -176,7 +178,7 @@ export function OrganizationAdminProvider({
         tenant,
         protectedRoles: protectedRoles ?? [],
         onTenantUpdated,
-        onOrganizationDeleted,
+        onOrganizationLeft,
       }}
     >
       <AdminOperationsProvider operations={scopedOperations}>

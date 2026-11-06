@@ -43,7 +43,7 @@ import {
 import { useCurrentTenantId } from '../chrome.js'
 import { useOrganizationAdminAdmission } from '../organization-admin.js'
 import { ACCOUNT_PATH, NOTIFICATIONS_PATH, ORGANIZATIONS_NEW_PATH } from '../paths.js'
-import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
+import { useAppNotice } from '../app-notice.js'
 import { ReviewNoticeControl } from '../review-notice-control.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
@@ -89,22 +89,23 @@ const START_CARDS: readonly StartCard[] = [
 /** The app's starting page: the platform's capabilities as a card grid. */
 export function HomePage(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  // The acceptance confirmation the invitation landing announced on its way
-  // here (src/tenant-membership-notice.tsx). It is a one-shot notice: the
-  // viewer dismisses it, and the dismissal lasts for the identity's session.
-  const membershipNotice = useTenantMembershipNotice()
-  // The acceptance navigated here from the landing, which unmounts on the
-  // way: focus would otherwise fall to the document body with no signal that
-  // the page changed. The confirmation is the journey's result, so it takes
-  // the focus when it is the reason this page mounted. The announcement
-  // itself is the provider's standing live region; this block is its visible
-  // twin and carries no live semantics of its own.
+  // The confirmation the announcing page left on its way here
+  // (src/app-notice.tsx): an accepted invitation, or a transfer or deletion
+  // that ended the viewer's membership. It is a one-shot notice: the viewer
+  // dismisses it, and the dismissal lasts for the identity's session.
+  const notice = useAppNotice()
+  // The announcing page navigated here and unmounted on the way: focus would
+  // otherwise fall to the document body with no signal that the page
+  // changed. The confirmation is the journey's result, so it takes the focus
+  // when it is the reason this page mounted. The announcement itself is the
+  // provider's standing live region; this block is its visible twin and
+  // carries no live semantics of its own.
   const confirmation = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (membershipNotice.visible) {
+    if (notice.visible) {
       confirmation.current?.focus()
     }
-  }, [membershipNotice.visible])
+  }, [notice.visible])
   // The review build's notice control is offered only while the process
   // declares its review-only feature. A baseline deployment never does, so the
   // control is absent there; the gate fails closed while the feature document
@@ -112,7 +113,7 @@ export function HomePage(): ReactElement {
   const reviewNoticeServed = useFeature('review.notification.control')
   return (
     <PageLayout title={t('home.heading')} description={t('home.intro')}>
-      {membershipNotice.visible ? (
+      {notice.visible ? (
         <Alert
           ref={confirmation}
           severity="success"
@@ -122,12 +123,10 @@ export function HomePage(): ReactElement {
           // region born with its text is unreliable anyway).
           role="none"
           tabIndex={-1}
-          onClose={membershipNotice.dismiss}
-          closeText={t('home.membershipNotice.dismiss')}
+          onClose={notice.dismiss}
+          closeText={t('home.notice.dismiss')}
         >
-          <Typography variant="body2">
-            {t('home.membershipNotice.title')}
-          </Typography>
+          <Typography variant="body2">{notice.message}</Typography>
         </Alert>
       ) : null}
       <SectionCard>

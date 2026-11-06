@@ -247,7 +247,7 @@ export {
 export {
   OrganizationAdminProvider,
   useOrganizationAdminContext,
-  useOrganizationAdminOnOrganizationDeleted,
+  useOrganizationAdminOnOrganizationLeft,
   useOrganizationAdminOnTenantUpdated,
   useOrganizationAdminProtectedRoles,
   useOrganizationAdminTenant,

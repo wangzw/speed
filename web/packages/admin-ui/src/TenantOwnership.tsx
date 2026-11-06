@@ -9,7 +9,7 @@
  * owner. The package hides the controls for every other caller; the server
  * remains the authority on every write.
  *
- * The transfer dialog lists the organization's active members (the server
+ * The transfer dialog searches the organization's active members (the server
  * grants the target tenant-admin when it does not hold it) and asks for the
  * deliberate second confirmation. The delete dialog requires the operator to
  * type the organization's alias and also asks for the second confirmation;
@@ -17,10 +17,18 @@
  * ones.
  *
  * A refusal is resolved locally rather than through the console's server-code
- * whitelist: the tenant admin answers every 409 with one conflict type, so
- * the page re-reads the profile to tell an already-deleted organization from
- * an ownership change that beat this attempt. Each case gets its own
- * sentence, and nothing outside that closed set renders a raw code.
+ * whitelist, from the write's own answer. A removed or unauthorized caller
+ * is answered 403, a vanished organization 404, and every conflict -- a
+ * target that stopped being an active member, an ownership change that beat
+ * this attempt, a tombstone another request wrote -- with the one problem
+ * type the tenant admin uses. The answer cannot separate those conflicts, so
+ * they share one sentence; nothing is re-read to guess which one it was.
+ *
+ * A landed transfer or deletion ends the caller's membership. The host's
+ * departure action leaves the organization and shows the success message on
+ * the destination, so the confirmation never renders inside a page the
+ * server is about to refuse. A host that supplies no departure action gets
+ * the message in the card, with the controls withdrawn.
  */
 
 import { useState } from 'react'
@@ -45,13 +53,12 @@ import type { AdminMember } from './operations.js'
 
 /**
  * The local failure codes this surface resolves. They are UI facts, not
- * server codes: the tenant admin answers every conflict with one type, and
- * only the profile re-read can say which conflict it was.
+ * server codes: the tenant admin answers 403, 404 and one conflict type, so
+ * these are the cases the page can name without inventing a distinction the
+ * answer does not carry.
  */
 const OWNERSHIP_FORBIDDEN = 'ownership.forbidden'
 const OWNERSHIP_NOT_FOUND = 'ownership.not_found'
-const OWNERSHIP_OWNER_CHANGED = 'ownership.owner_changed'
-const OWNERSHIP_DELETED = 'ownership.deleted'
 const OWNERSHIP_CONFLICT = 'ownership.conflict'
 const OWNERSHIP_UNKNOWN = 'ownership.unknown'
 
@@ -61,18 +68,15 @@ function ownershipFailure(code: string): Error & { readonly code: string } {
 }
 
 /**
- * The readable case behind a refusal. A 403, a 404 and a non-conflict status
- * are read from the answer itself; every 409 is one server type, so the
- * profile is re-read: a tombstone is the deleted case, a different owner is
- * the ownership-changed case, and anything else is a general conflict (for
- * example a target that stopped being an active member between the dialog's
- * read and the write).
+ * The readable case behind a refusal, read from the write's own answer. A
+ * 403 is a caller the server no longer accepts, a 404 an organization that
+ * is gone, and a 409 every conflict the tenant admin reports under its one
+ * conflict type -- an ownership change that beat this attempt, a target
+ * that stopped being a member, a tombstone. Those conflicts cannot be told
+ * apart from the answer, so they share the conflict sentence; nothing is
+ * re-read to guess which one it was.
  */
-async function ownershipFailureCode(
-  error: unknown,
-  ownerAccount: string,
-  reload: () => Promise<AdminTenantProfile | undefined>,
-): Promise<string> {
+function ownershipFailureCode(error: unknown): string {
   const status = httpStatusOf(error)
   if (status === 403) {
     return OWNERSHIP_FORBIDDEN
@@ -80,33 +84,10 @@ async function ownershipFailureCode(
   if (status === 404) {
     return OWNERSHIP_NOT_FOUND
   }
-  if (status !== 409) {
-    return OWNERSHIP_UNKNOWN
-  }
-  let fresh: AdminTenantProfile | undefined
-  try {
-    fresh = await reload()
-  } catch (reloadError) {
-    // A caller who stopped being the owner is removed from the organization,
-    // so the re-read of the profile is refused while the organization itself
-    // still exists: that is the ownership-changed case. A missing row is the
-    // not-found case; any other failure leaves the general conflict.
-    const reloadStatus = httpStatusOf(reloadError)
-    if (reloadStatus === 403) {
-      return OWNERSHIP_OWNER_CHANGED
-    }
-    if (reloadStatus === 404) {
-      return OWNERSHIP_NOT_FOUND
-    }
+  if (status === 409) {
     return OWNERSHIP_CONFLICT
   }
-  if (fresh?.status === 'deleted') {
-    return OWNERSHIP_DELETED
-  }
-  if (fresh !== undefined && fresh.ownerAccount !== ownerAccount) {
-    return OWNERSHIP_OWNER_CHANGED
-  }
-  return OWNERSHIP_CONFLICT
+  return OWNERSHIP_UNKNOWN
 }
 
 /** The host callback's own refusal never overturns a landed write. */
@@ -130,14 +111,16 @@ export interface TenantOwnershipProps {
   readonly profile: AdminTenantProfile
   /** The organization's display name (or alias) for the dialog and notices. */
   readonly displayName: string
-  /** The host's action after a transfer lands: reload the caller tenant list
-   * the account menu and breadcrumb read. */
+  /** The host's action when no departure action is supplied: reload the
+   * caller tenant list the account menu and breadcrumb read. */
   readonly onTenantUpdated?: () => void | Promise<unknown>
-  /** The host's action after a delete lands: leave the organization and
-   * reload the caller tenant list. */
-  readonly onOrganizationDeleted?: () => void | Promise<unknown>
-  /** Re-reads the profile; used to classify a 409 refusal. */
-  readonly reloadProfile: () => Promise<AdminTenantProfile | undefined>
+  /**
+   * The host's action after a write ends the caller's membership -- a
+   * transfer hands the organization on, a deletion ends it. The host leaves
+   * the organization, reloads the caller tenant list, and shows `message`
+   * on the destination, so the confirmation outlives this page.
+   */
+  readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }
 
 /** The owner-only controls on the organization profile page. */
@@ -146,8 +129,7 @@ export function TenantOwnership({
   profile,
   displayName,
   onTenantUpdated,
-  onOrganizationDeleted,
-  reloadProfile,
+  onOrganizationLeft,
 }: TenantOwnershipProps): ReactElement | null {
   const { t } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
@@ -157,6 +139,10 @@ export function TenantOwnership({
   const feedback = useWriteFeedback()
   const [transferOpen, setTransferOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // A landed transfer or deletion ends the caller's membership. The local
+  // flag withdraws the controls even when the host supplies no departure
+  // action (the card then carries the confirmation alone).
+  const [departed, setDeparted] = useState(false)
 
   const currentAccount =
     snapshot.state === 'authenticated'
@@ -170,23 +156,20 @@ export function TenantOwnership({
         return t('tenantProfile.ownership.error.forbidden')
       case OWNERSHIP_NOT_FOUND:
         return t('tenantProfile.ownership.error.notFound')
-      case OWNERSHIP_OWNER_CHANGED:
-        return t('tenantProfile.ownership.error.ownerChanged')
-      case OWNERSHIP_DELETED:
-        return t('tenantProfile.ownership.error.deleted')
       case OWNERSHIP_CONFLICT:
         return t('tenantProfile.ownership.error.conflict')
       default:
-        return t('errors.unknown')
+        return t('tenantProfile.ownership.error.unknown')
     }
   }
 
-  // Only the current owner sees the controls; a personal organization and a
-  // tombstone never carry them. The server decides every write regardless.
-  // A refusal can leave the profile naming another owner (or a tombstone)
-  // underneath this component; the message of the attempt that observed the
-  // change stays visible even though the controls are gone.
+  // Only the current owner sees the controls; a personal organization, a
+  // tombstone and a caller who already left carry none. The server decides
+  // every write regardless. A refusal can leave the profile naming another
+  // owner underneath this component; the message of the attempt that
+  // observed the change stays visible even though the controls are gone.
   const controlsAllowed =
+    !departed &&
     !personal &&
     profile.status !== 'deleted' &&
     currentAccount !== '' &&
@@ -218,20 +201,39 @@ export function TenantOwnership({
     setDeleteOpen(true)
   }
 
+  // The caller has left: hand the confirmation to the host's departure
+  // action, which leaves the organization and shows it there. A host with no
+  // departure action gets the message in the card instead, after the
+  // fallback tenant-list reload; either way the controls are withdrawn. A
+  // departure action that refuses leaves the message here rather than
+  // dropping the confirmation with it.
+  const leave = async (message: string): Promise<string | null> => {
+    setDeparted(true)
+    if (onOrganizationLeft === undefined) {
+      await settleHost(onTenantUpdated)
+      return message
+    }
+    try {
+      await onOrganizationLeft(message)
+      return null
+    } catch {
+      return message
+    }
+  }
+
   const runTransfer = (account: string, label: string): void => {
     void feedback.run(async () => {
       try {
         await transfer.mutateAsync({ tenant, account })
       } catch (error) {
-        throw ownershipFailure(
-          await ownershipFailureCode(error, profile.ownerAccount, reloadProfile),
-        )
+        throw ownershipFailure(ownershipFailureCode(error))
       }
-      await settleHost(onTenantUpdated)
-      return t('tenantProfile.ownership.transfer.saved', {
-        name: displayName,
-        account: label,
-      })
+      return leave(
+        t('tenantProfile.ownership.transfer.saved', {
+          name: displayName,
+          account: label,
+        }),
+      )
     })
   }
 
@@ -240,12 +242,11 @@ export function TenantOwnership({
       try {
         await remove.mutateAsync({ tenant })
       } catch (error) {
-        throw ownershipFailure(
-          await ownershipFailureCode(error, profile.ownerAccount, reloadProfile),
-        )
+        throw ownershipFailure(ownershipFailureCode(error))
       }
-      await settleHost(onOrganizationDeleted ?? onTenantUpdated)
-      return t('tenantProfile.ownership.delete.saved', { name: displayName })
+      return leave(
+        t('tenantProfile.ownership.delete.saved', { name: displayName }),
+      )
     })
   }
 
@@ -330,9 +331,20 @@ function memberLabel(member: AdminMember): string {
 }
 
 /**
- * The transfer dialog: choose one active member and confirm twice. Mounted
- * only while open, so the member read is issued when the operator asks for it
- * and not on every profile view.
+ * How many matches the dialog's member search asks the server for. The
+ * read is a search, not a paging walk of the roster: an organization larger
+ * than this is reached by narrowing the search, not by scrolling, so the
+ * dialog never needs the member who would fall beyond a page it stopped at.
+ */
+const MEMBER_SEARCH_LIMIT = 100
+
+/**
+ * The transfer dialog: search for one active member, choose one and confirm
+ * twice. Mounted only while open, so the member read is issued when the
+ * operator asks for it and not on every profile view. The search is a
+ * prefix over the members' display names and login identifiers; the list
+ * holds the first `MEMBER_SEARCH_LIMIT` matches, which the operator narrows
+ * with the search field.
  */
 function TransferOwnershipDialog({
   tenant,
@@ -344,8 +356,13 @@ function TransferOwnershipDialog({
 }: TransferOwnershipDialogProps): ReactElement {
   const { t } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
-  const members = operations.useMembers(tenant, { limit: 1000 })
+  const [search, setSearch] = useState('')
   const [target, setTarget] = useState('')
+  const query = search.trim()
+  const members = operations.useMembers(tenant, {
+    ...(query === '' ? {} : { query }),
+    limit: MEMBER_SEARCH_LIMIT,
+  })
 
   const options = (members.data?.members ?? []).filter(
     (member) => member.active && member.account !== ownerAccount,
@@ -357,7 +374,9 @@ function TransferOwnershipDialog({
     : members.isError
       ? t('tenantProfile.ownership.transfer.membersError')
       : options.length === 0
-        ? t('tenantProfile.ownership.transfer.noMembers')
+        ? query === ''
+          ? t('tenantProfile.ownership.transfer.noMembers')
+          : t('tenantProfile.ownership.transfer.noMatches')
         : t('tenantProfile.ownership.transfer.targetHint')
 
   return (
@@ -381,13 +400,30 @@ function TransferOwnershipDialog({
       }}
     >
       <TextField
+        size="small"
+        fullWidth
+        label={t('tenantProfile.ownership.transfer.searchLabel')}
+        value={search}
+        onChange={(event) => {
+          setSearch(event.target.value)
+          // The previous selection may not survive the narrowed list.
+          setTarget('')
+        }}
+        disabled={busy}
+        helperText={t('tenantProfile.ownership.transfer.searchHint', {
+          limit: MEMBER_SEARCH_LIMIT,
+        })}
+        autoComplete="off"
+        sx={{ mt: 2 }}
+      />
+      <TextField
         select
         size="small"
         fullWidth
         label={t('tenantProfile.ownership.transfer.targetLabel')}
         value={target}
         onChange={(event) => setTarget(event.target.value)}
-        disabled={loading}
+        disabled={loading || busy}
         helperText={helperText}
         sx={{ mt: 2 }}
       >

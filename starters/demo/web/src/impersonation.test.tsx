@@ -94,7 +94,7 @@ function announcementRegion(): HTMLElement {
       (region) =>
         region.classList.contains('MuiAlert-root') &&
         region.getAttribute('aria-label') !==
-          demoEnUS.home.membershipNotice.region,
+          demoEnUS.home.notice.region,
     )
   expect(regions).toHaveLength(1)
   return regions[0]!

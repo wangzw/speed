@@ -1031,7 +1031,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       expect(new URL(invitee.url()).pathname).toBe('/')
 
       const dismiss = invitee.getByRole('button', {
-        name: copy('demo', 'home.membershipNotice.dismiss'),
+        name: copy('demo', 'home.notice.dismiss'),
         exact: true,
       })
       await expect(dismiss).toBeVisible()
@@ -1039,7 +1039,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         'xpath=ancestor::div[contains(@class, "MuiAlert-root")][1]',
       )
       await expect(
-        confirmation.getByText(copy('demo', 'home.membershipNotice.title'), {
+        confirmation.getByText(copy('demo', 'home.notice.membershipTitle'), {
           exact: true,
         }),
       ).toBeVisible()

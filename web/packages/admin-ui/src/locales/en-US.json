@@ -454,9 +454,12 @@
         "message": "After the transfer you lose every role and your membership in this organization, and the target member is granted the tenant administrator role. This cannot be undone.",
         "targetLabel": "New owner",
         "targetHint": "Only active members of this organization can be chosen.",
+        "searchLabel": "Search members",
+        "searchHint": "Search by display name or login identifier; the list shows the first {{limit}} matches, so narrow the search in a large organization.",
         "loading": "Loading members…",
         "membersError": "The member list could not be loaded. Close this dialog and try again.",
         "noMembers": "This organization has no other active member.",
+        "noMatches": "No active member matches this search.",
         "confirmLabel": "Confirm transfer",
         "saved": "Ownership of {{name}} was transferred to {{account}}."
       },
@@ -472,8 +475,6 @@
       "error": {
         "forbidden": "You are not the owner of this organization, so you cannot do that.",
         "notFound": "This organization no longer exists.",
-        "ownerChanged": "The owner of this organization has changed and this page is out of date. Refresh and try again.",
-        "deleted": "This organization has been deleted and can no longer be changed.",
         "conflict": "That change conflicts with the organization's current state. Refresh and try again.",
         "unknown": "The action did not complete. Try again."
       }

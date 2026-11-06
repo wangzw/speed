@@ -475,7 +475,7 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     // the sentence outside it); the scan below is only meaningful once that
     // state is really on screen.
     await within(screen.getByRole('main')).findByText(
-      demoEnUS.home.membershipNotice.title,
+      demoEnUS.home.notice.membershipTitle,
     )
     // The home page mounts its own reads as it lands; wait for the tree to
     // stop changing so the scan reads the settled post-accept state rather

@@ -327,7 +327,7 @@ describe('the invitation landing', () => {
     // The page's visible confirmation, inside the tenant shell's main
     // landmark: the host's live region carries the same sentence outside it.
     const confirmation = await within(screen.getByRole('main')).findByText(
-      demoEnUS.home.membershipNotice.title,
+      demoEnUS.home.notice.membershipTitle,
     )
     expect(confirmation).toBeInTheDocument()
 
@@ -336,17 +336,17 @@ describe('the invitation landing', () => {
     // body with no signal that the page changed.
     await waitFor(() => expect(document.activeElement).not.toBe(document.body))
     expect(document.activeElement).toHaveTextContent(
-      demoEnUS.home.membershipNotice.title,
+      demoEnUS.home.notice.membershipTitle,
     )
 
     // Dismissing it removes the confirmation.
     await user.click(
       screen.getByRole('button', {
-        name: demoEnUS.home.membershipNotice.dismiss,
+        name: demoEnUS.home.notice.dismiss,
       }),
     )
     expect(
-      screen.queryByText(demoEnUS.home.membershipNotice.title),
+      screen.queryByText(demoEnUS.home.notice.membershipTitle),
     ).not.toBeInTheDocument()
 
     // A later visit to the home page in the same session does not bring it
@@ -371,7 +371,7 @@ describe('the invitation landing', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText(demoEnUS.home.membershipNotice.title),
+      screen.queryByText(demoEnUS.home.notice.membershipTitle),
     ).not.toBeInTheDocument()
   })
 
@@ -389,7 +389,7 @@ describe('the invitation landing', () => {
       name: authEn.acceptInvitation.accept,
     })
     const region = screen.getByRole('status', {
-      name: demoEnUS.home.membershipNotice.region,
+      name: demoEnUS.home.notice.region,
     })
     expect(region).toHaveTextContent('')
 
@@ -406,10 +406,10 @@ describe('the invitation landing', () => {
     // text), now carrying the confirmation.
     expect(
       screen.getByRole('status', {
-        name: demoEnUS.home.membershipNotice.region,
+        name: demoEnUS.home.notice.region,
       }),
     ).toBe(region)
-    expect(region).toHaveTextContent(demoEnUS.home.membershipNotice.title)
+    expect(region).toHaveTextContent(demoEnUS.home.notice.membershipTitle)
   })
 
   it('returns a password registration to the invitation after its address is verified', async () => {
@@ -522,7 +522,7 @@ describe('the invitation landing', () => {
     ).toBeInTheDocument()
     expect(
       await within(screen.getByRole('main')).findByText(
-        demoEnUS.home.membershipNotice.title,
+        demoEnUS.home.notice.membershipTitle,
       ),
     ).toBeInTheDocument()
   })

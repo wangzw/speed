@@ -658,12 +658,16 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       mutationFn: (input: AdminTenantOwnerTransferInput) =>
         tenantAdminOwnerTransfer(input.tenant, { account: input.account }),
       onSuccess: (_answer, input) => {
-        // The owner column on the profile and the membership the transfer
-        // removes both belong to the same tenant subtree. A landed transfer
-        // refreshes both reads; the host refreshes the caller tenant list
-        // the menu and breadcrumb show.
-        invalidateTenantProfile(queryClient, input.tenant)
-        invalidateTenantMembers(queryClient, input.tenant)
+        // The caller is no longer a member, so re-reading the profile or the
+        // members would only be refused (403). The confirmed owner change is
+        // reflected into the cached read instead: a page that stays -- a host
+        // with no departure action -- shows the new owner and withdraws the
+        // controls, and the host's tenant switch evicts the departed
+        // tenant's subtree.
+        reflectTenantProfile(queryClient, input.tenant, (profile) => ({
+          ...profile,
+          ownerAccount: input.account,
+        }))
       },
     })
   },
@@ -674,11 +678,14 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       mutationFn: (input: AdminTenantRef) =>
         tenantAdminOwnerDelete(input.tenant),
       onSuccess: (_answer, input) => {
-        // The organization is a tombstone: its profile and member reads can
-        // only answer the terminal state, so refresh them too. Leaving the
-        // organization is the host's action (`onOrganizationDeleted`).
-        invalidateTenantProfile(queryClient, input.tenant)
-        invalidateTenantMembers(queryClient, input.tenant)
+        // The organization is a tombstone and the caller is no longer a
+        // member: its reads can only be refused (404). The terminal state is
+        // reflected into the cached profile; the host's departure action
+        // leaves the organization.
+        reflectTenantProfile(queryClient, input.tenant, (profile) => ({
+          ...profile,
+          status: 'deleted',
+        }))
       },
     })
   },
@@ -985,8 +992,8 @@ function invalidateTenantSsoProvider(
 }
 
 /**
- * Invalidates the tenant settings read a write leaves stale. The generated
- * bare key is wrapped in the tenant prefix the read uses, so the
+ * Invalidates the tenant profile read a profile save leaves stale. The
+ * generated bare key is wrapped in the tenant prefix the read uses, so the
  * invalidation cannot drift from it.
  */
 function invalidateTenantProfile(
@@ -999,6 +1006,32 @@ function invalidateTenantProfile(
       ...getTenantProfileGetQueryKey(tenant),
     ),
   })
+}
+
+/**
+ * Reflects a confirmed write into the cached profile of a tenant the caller
+ * has just left. The read cannot be refreshed -- the server now refuses it --
+ * so the fact the write established is written over the cached answer; a
+ * page that stays (a host with no departure action) renders it, and the
+ * host's tenant switch discards the departed tenant's whole subtree.
+ */
+function reflectTenantProfile(
+  queryClient: ReturnType<typeof useQueryClient>,
+  tenant: string,
+  update: (profile: AdminTenantProfile) => AdminTenantProfile,
+): void {
+  queryClient.setQueriesData<{ readonly profile: AdminTenantProfile }>(
+    {
+      queryKey: tenantQueryKey(
+        tenant,
+        ...getTenantProfileGetQueryKey(tenant),
+      ),
+    },
+    (envelope) =>
+      envelope === undefined
+        ? envelope
+        : { ...envelope, profile: update(envelope.profile) },
+  )
 }
 
 function invalidateTenantSettings(

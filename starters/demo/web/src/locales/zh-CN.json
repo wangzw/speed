@@ -31,10 +31,10 @@
   "home": {
     "heading": "开始使用",
     "intro": "本骨架不带业务域；下列是平台开箱即用的能力，先四处看看，再长你自己的业务。",
-    "membershipNotice": {
-      "region": "成员确认",
-      "title": "你已成为该组织的成员。",
-      "dismiss": "关闭加入成员确认"
+    "notice": {
+      "region": "确认提示",
+      "membershipTitle": "你已成为该组织的成员。",
+      "dismiss": "关闭确认提示"
     },
     "cards": {
       "account": {

@@ -880,7 +880,7 @@ test.describe('the tenant administrator manages the organization', () => {
         expect(new URL(invitee.url()).pathname).toBe('/')
         await expect(
           invitee.getByRole('button', {
-            name: copy('demo', 'home.membershipNotice.dismiss'),
+            name: copy('demo', 'home.notice.dismiss'),
             exact: true,
           }),
         ).toBeVisible()

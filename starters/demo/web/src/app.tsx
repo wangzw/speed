@@ -135,7 +135,7 @@ import {
 } from './organization-admin.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { AdminNavIcon } from './nav-icons.js'
-import { TenantMembershipNoticeHost } from './tenant-membership-notice.js'
+import { AppNoticeHost, useAppNotice } from './app-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import {
@@ -273,13 +273,14 @@ export function DemoApp({
             permission set, the current tenant and the live subscription
             belong to (src/impersonation). */}
         <IdentityChangeProvider>
-          {/* Above the shell switch: an accepted invitation announces the new
-              membership on its way from the landing (outside both shells) to
-              the tenant home (inside the tenant frame), so the confirmation has
-              to outlive that route change (src/tenant-membership-notice.tsx). */}
-          <TenantMembershipNoticeHost>
+          {/* Above the shell switch: an accepted invitation and a departure
+              from an organization both announce a confirmation on their way
+              to the tenant home (inside the tenant frame) from a page that
+              unmounts on the way, so the confirmation has to outlive that
+              route change (src/app-notice.tsx). */}
+          <AppNoticeHost>
             <AppFrame presence={presence} shellLayout={shellLayout} />
-          </TenantMembershipNoticeHost>
+          </AppNoticeHost>
         </IdentityChangeProvider>
       </RouteProvider>
     </WriteFeedbackPageProvider>
@@ -307,6 +308,10 @@ function AppFrame({
   // organization branch consumes the result.
   const organizationAdmission = useOrganizationAdminAdmission()
   const navigate = useNavigate()
+  // The one-shot confirmation the tenant home shows: an accepted invitation
+  // and a landed ownership change both announce through it before leaving
+  // the page that performed the write.
+  const notice = useAppNotice()
   const { session } = useAppServices()
   // The host's identity-change action, handed to the admin page so a
   // settled start or end re-reads the identity the way the tenant frame's
@@ -482,11 +487,14 @@ function AppFrame({
             invitationLink={invitationPath}
             protectedRoles={organizationAdminProtectedRoles}
             onTenantUpdated={loadSelfTenants}
-            onOrganizationDeleted={async () => {
-              // The deleted organization is no longer a membership. Reload the
-              // caller tenant list (the menu and breadcrumb read it, and the
-              // tenant frame settles a new default from it) and leave the
-              // organization surface for the tenant home.
+            onOrganizationLeft={async (message) => {
+              // The transfer or deletion ended the caller's membership. The
+              // confirmation is announced above the shell switch so it
+              // survives the move; the caller tenant list is reloaded (the
+              // menu and breadcrumb read it, and the tenant frame settles a
+              // new default from it) and the organization surface is left
+              // for the tenant home.
+              notice.announce(message)
               await loadSelfTenants()
               navigate(TENANT_HOME_PATH)
             }}

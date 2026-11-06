@@ -31,10 +31,10 @@
   "home": {
     "heading": "Get started",
     "intro": "This skeleton ships no business domain of its own. These are the platform capabilities that already work -- take a look around before you grow your own.",
-    "membershipNotice": {
-      "region": "Membership confirmation",
-      "title": "You are now a member of the organization.",
-      "dismiss": "Dismiss membership confirmation"
+    "notice": {
+      "region": "Confirmation",
+      "membershipTitle": "You are now a member of the organization.",
+      "dismiss": "Dismiss confirmation"
     },
     "cards": {
       "account": {

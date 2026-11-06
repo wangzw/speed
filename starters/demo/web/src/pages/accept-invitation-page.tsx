@@ -16,7 +16,7 @@
  * (src/app-api, the platform document's operations). On acceptance the page
  * announces the new membership to the tenant home, resolves the invited
  * tenant's alias from the caller tenant read, records that tenant as the
- * current one, and navigates there (src/tenant-membership-notice.tsx): the
+ * current one, and navigates there (src/app-notice.tsx): the
  * home page shows the confirmation the journey asks for, which the
  * acceptance's own page cannot keep because the navigation unmounts it.
  *
@@ -39,17 +39,19 @@ import Card from '@mui/material/Card'
 import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { AcceptInvitationScreen } from '@speed/auth-ui'
 import type { InvitationOperations } from '@speed/auth-ui'
+import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import { authnInviteAccept, authnInviteAcceptView } from '../app-api/index.js'
 import type { AuthnInviteView } from '../app-api/index.js'
+import { useAppNotice } from '../app-notice.js'
 import { useAppServices } from '../app-services.js'
 import {
   getCurrentTenantId,
   setCurrentTenantId,
   setTenantAlias,
 } from '../chrome.js'
+import { DEMO_NAMESPACE } from '../resources.js'
 import { loadSelfTenants } from '../tenant-self.js'
-import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 import { SignInView } from './sign-in-view.js'
 
@@ -61,9 +63,10 @@ export interface AcceptInvitationPageProps {
 export function AcceptInvitationPage({
   token,
 }: AcceptInvitationPageProps): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
   const snapshot = useAuthState()
   const navigate = useNavigate()
-  const membershipNotice = useTenantMembershipNotice()
+  const notice = useAppNotice()
   const { queryClient } = useAppServices()
   // The tenant the acceptance wrote, as its answer named it. The screen's own
   // onAccepted callback takes no argument, so the tenant identifier is
@@ -103,7 +106,7 @@ export function AcceptInvitationPage({
   // home page shows -- and the navigation happens either way, including when
   // the alias read fails.
   const landInInvitedTenant = useCallback((): void => {
-    membershipNotice.announce()
+    notice.announce(t('home.notice.membershipTitle'))
     const tenantId = acceptedTenantId.current
     void resolveInvitedTenantAlias(tenantId).then((alias) => {
       const previous = getCurrentTenantId()
@@ -122,7 +125,7 @@ export function AcceptInvitationPage({
       }
       navigate(TENANT_HOME_PATH)
     })
-  }, [membershipNotice, navigate, queryClient])
+  }, [notice, navigate, queryClient, t])
 
   // The host renders its sign-in / register surface ahead of the accept
   // screen so the invitee arrives with a session of their own; the accept

@@ -572,7 +572,7 @@ describe('the organization ownership writes', () => {
   function OwnershipProbe({ action }: { readonly action: 'transfer' | 'delete' }) {
     const operations = useOrganizationAdminOperations()
     const profile = operations.useTenantProfile(TENANT)
-    const members = operations.useMembers(TENANT, { limit: 1000 })
+    const members = operations.useMembers(TENANT, { limit: 100 })
     const transfer = operations.useTenantOwnerTransfer()
     const remove = operations.useTenantOwnerDelete()
     return (
@@ -594,10 +594,12 @@ describe('the organization ownership writes', () => {
     )
   }
 
-  it('transfers at the tenant owner path and refreshes the profile and member reads', async () => {
+  it('transfers at the tenant owner path and reflects the new owner without a refused re-read', async () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest(ownershipResponder, { recordBody: true })
-    renderWithProviders(<OwnershipProbe action="transfer" />)
+    const { queryClient } = renderWithProviders(
+      <OwnershipProbe action="transfer" />,
+    )
     expect(await screen.findByText('settled')).toBeInTheDocument()
 
     const profileReads = () =>
@@ -618,20 +620,32 @@ describe('the organization ownership writes', () => {
         body: { account: 'acc-2' },
       }),
     )
-    // The mutation invalidates both tenant-scoped reads, so the active
-    // observers re-read them.
-    await waitFor(() => expect(profileReads()).toBeGreaterThan(1))
-    await waitFor(() => expect(memberReads()).toBeGreaterThan(1))
+    // The caller is no longer a member: a re-read would be refused, so the
+    // confirmed owner change is written over the cached profile instead.
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData([
+          TENANT,
+          `/api/v1/tenants/${TENANT}/profile`,
+        ]),
+      ).toEqual({
+        profile: { ...profileFixture(), ownerAccount: 'acc-2' },
+      }),
+    )
+    expect(profileReads()).toBe(1)
+    expect(memberReads()).toBe(1)
     for (const call of calls) {
       expect(call.path.startsWith(`/api/v1/tenants/${TENANT}`)).toBe(true)
       expect(call.path.startsWith('/api/v1/system')).toBe(false)
     }
   })
 
-  it('deletes at the tenant path and refreshes the profile and member reads', async () => {
+  it('deletes at the tenant path and reflects the tombstone without a refused re-read', async () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest(ownershipResponder)
-    renderWithProviders(<OwnershipProbe action="delete" />)
+    const { queryClient } = renderWithProviders(
+      <OwnershipProbe action="delete" />,
+    )
     expect(await screen.findByText('settled')).toBeInTheDocument()
 
     const profileReads = () =>
@@ -648,8 +662,18 @@ describe('the organization ownership writes', () => {
         path: `/api/v1/tenants/${TENANT}`,
       }),
     )
-    await waitFor(() => expect(profileReads()).toBeGreaterThan(1))
-    await waitFor(() => expect(memberReads()).toBeGreaterThan(1))
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData([
+          TENANT,
+          `/api/v1/tenants/${TENANT}/profile`,
+        ]),
+      ).toEqual({
+        profile: { ...profileFixture(), status: 'deleted' },
+      }),
+    )
+    expect(profileReads()).toBe(1)
+    expect(memberReads()).toBe(1)
     for (const call of calls) {
       expect(call.path.startsWith(`/api/v1/tenants/${TENANT}`)).toBe(true)
       expect(call.path.startsWith('/api/v1/system')).toBe(false)

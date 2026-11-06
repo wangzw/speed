@@ -20,7 +20,7 @@
 
 import type { ReactElement } from 'react'
 import {
-  useOrganizationAdminOnOrganizationDeleted,
+  useOrganizationAdminOnOrganizationLeft,
   useOrganizationAdminOnTenantUpdated,
   useOrganizationAdminProtectedRoles,
   useOrganizationAdminTenant,
@@ -39,16 +39,18 @@ export function OrganizationInvitationsPage(): ReactElement {
 
 /** The organization's profile, scoped to the host's current tenant. A
  * landed save reaches the host's `onTenantUpdated`, which reloads the
- * caller tenant list the menu and the breadcrumb show. */
+ * caller tenant list the menu and the breadcrumb show; a landed transfer or
+ * deletion reaches the host's departure action, which leaves the
+ * organization and shows the confirmation where it lands. */
 export function OrganizationProfilePage(): ReactElement {
   const tenant = useOrganizationAdminTenant()
   const onTenantUpdated = useOrganizationAdminOnTenantUpdated()
-  const onOrganizationDeleted = useOrganizationAdminOnOrganizationDeleted()
+  const onOrganizationLeft = useOrganizationAdminOnOrganizationLeft()
   return (
     <TenantProfilePage
       tenant={tenant}
       onTenantUpdated={onTenantUpdated}
-      onOrganizationDeleted={onOrganizationDeleted}
+      onOrganizationLeft={onOrganizationLeft}
     />
   )
 }

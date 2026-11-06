@@ -1207,10 +1207,16 @@ export function createAdminOperations(
         mutationFn: (input: AdminTenantOwnerTransferInput) =>
           backend.transferTenantOwner(input),
         onSuccess: (_answer, input) => {
-          void client.invalidateQueries({
-            queryKey: tenantProfileKey(input.tenant),
-          })
-          void client.invalidateQueries({ queryKey: membersKey(input.tenant) })
+          // Mirror the shipped bundle: the caller has left, so the profile is
+          // not re-read; the confirmed owner change is reflected into the
+          // cached profile.
+          client.setQueryData<AdminTenantProfile>(
+            tenantProfileKey(input.tenant),
+            (profile) =>
+              profile === undefined
+                ? profile
+                : { ...profile, ownerAccount: input.account },
+          )
         },
       })
     },
@@ -1219,10 +1225,13 @@ export function createAdminOperations(
       return useMutation({
         mutationFn: (input: AdminTenantRef) => backend.deleteTenant(input),
         onSuccess: (_answer, input) => {
-          void client.invalidateQueries({
-            queryKey: tenantProfileKey(input.tenant),
-          })
-          void client.invalidateQueries({ queryKey: membersKey(input.tenant) })
+          // Mirror the shipped bundle: the terminal state is reflected into
+          // the cached profile instead of a re-read the server would refuse.
+          client.setQueryData<AdminTenantProfile>(
+            tenantProfileKey(input.tenant),
+            (profile) =>
+              profile === undefined ? profile : { ...profile, status: 'deleted' },
+          )
         },
       })
     },

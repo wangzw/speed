@@ -98,7 +98,7 @@ function renderPage({
   getTenantProfile,
   updateTenantProfile,
   onTenantUpdated,
-  onOrganizationDeleted,
+  onOrganizationLeft,
   backend = {},
 }: {
   readonly tenant?: string
@@ -112,7 +112,7 @@ function renderPage({
     >[0],
   ) => Promise<void>
   readonly onTenantUpdated?: () => void | Promise<void>
-  readonly onOrganizationDeleted?: () => void | Promise<void>
+  readonly onOrganizationLeft?: (message: string) => void | Promise<void>
   readonly backend?: Partial<AdminBackend>
 } = {}) {
   const operations = createAdminOperations(
@@ -130,7 +130,7 @@ function renderPage({
       <TenantProfilePage
         tenant={tenant}
         onTenantUpdated={onTenantUpdated}
-        onOrganizationDeleted={onOrganizationDeleted}
+        onOrganizationLeft={onOrganizationLeft}
       />
     </OrganizationAdminOperationsProvider>,
     { operations },
@@ -407,19 +407,16 @@ async function armAndConfirm(
 }
 
 describe('TenantProfilePage ownership', () => {
-  it('shows the owner and lets the current owner transfer the organization', async () => {
+  it('lets the current owner transfer the organization and hands the confirmation to the departure action', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
     const transfers: unknown[] = []
     const onTenantUpdated = vi.fn()
-    let profileReads = 0
+    const onOrganizationLeft = vi.fn()
     renderPage({
       profile: ownerProfile(),
-      getTenantProfile: () => {
-        profileReads += 1
-        return Promise.resolve(ownerProfile())
-      },
       onTenantUpdated,
+      onOrganizationLeft,
       backend: {
         listMembers: () =>
           Promise.resolve({
@@ -473,7 +470,58 @@ describe('TenantProfilePage ownership', () => {
     await waitFor(() =>
       expect(transfers).toEqual([{ tenant: TENANT, account: OTHER_ACCOUNT }]),
     )
-    expect(onTenantUpdated).toHaveBeenCalledTimes(1)
+    const message = zhCN.tenantProfile.ownership.transfer.saved
+      .replace('{{name}}', ORG_NAME)
+      .replace('{{account}}', 'Bob Stone (acc-2)')
+    // The caller is no longer a member: the confirmation goes to the host's
+    // departure action, which shows it where the viewer lands.
+    await waitFor(() => expect(onOrganizationLeft).toHaveBeenCalledWith(message))
+    expect(onTenantUpdated).not.toHaveBeenCalled()
+    expect(screen.queryByText(message)).toBeNull()
+    // The landed write is reflected locally; the page issues no re-read the
+    // caller would be refused.
+    expect(await screen.findByText(OTHER_ACCOUNT)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    ).toBeNull()
+  })
+
+  it('keeps the confirmation in the card when the host supplies no departure action', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    const onTenantUpdated = vi.fn()
+    renderPage({
+      profile: ownerProfile(),
+      onTenantUpdated,
+      backend: {
+        listMembers: () =>
+          Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.transfer.confirmLabel,
+    )
+
     expect(
       await screen.findByText(
         zhCN.tenantProfile.ownership.transfer.saved
@@ -481,8 +529,13 @@ describe('TenantProfilePage ownership', () => {
           .replace('{{account}}', 'Bob Stone (acc-2)'),
       ),
     ).toBeInTheDocument()
-    // The bundle invalidates the profile read, so the page re-reads it.
-    await waitFor(() => expect(profileReads).toBeGreaterThan(1))
+    expect(onTenantUpdated).toHaveBeenCalledTimes(1)
+    // The controls are withdrawn: the caller is no longer a member.
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    ).toBeNull()
   })
 
   it('keeps the controls off the page for a tenant administrator who is not the owner', async () => {
@@ -565,19 +618,11 @@ describe('TenantProfilePage ownership', () => {
     )
   })
 
-  it('names an ownership change when a 409 beat the transfer', async () => {
+  it('names the conflict for a 409 refusal', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
-    let reads = 0
     renderPage({
-      getTenantProfile: () => {
-        reads += 1
-        return Promise.resolve(
-          reads === 1
-            ? ownerProfile()
-            : ownerProfile({ ownerAccount: 'acc-9' }),
-        )
-      },
+      profile: ownerProfile(),
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
@@ -608,18 +653,92 @@ describe('TenantProfilePage ownership', () => {
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      zhCN.tenantProfile.ownership.error.ownerChanged,
+      zhCN.tenantProfile.ownership.error.conflict,
     )
   })
 
-  it('deletes the organization after the alias is typed and the guard is fired', async () => {
+  it('names the missing organization for a 404 refusal', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        deleteTenant: () =>
+          Promise.reject({ status: 404, code: 'client.http.404' }),
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: deleteTitle() })
+    await user.type(
+      within(dialog).getByLabelText(
+        zhCN.tenantProfile.ownership.delete.aliasLabel,
+      ),
+      ORG_ALIAS,
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.delete.confirmLabel,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.tenantProfile.ownership.error.notFound,
+    )
+  })
+
+  it('falls back to its own unknown text for any other refusal', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        listMembers: () =>
+          Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
+        transferTenantOwner: () =>
+          Promise.reject({ status: 503, code: 'client.http.503' }),
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.transfer.confirmLabel,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.tenantProfile.ownership.error.unknown,
+    )
+  })
+
+  it('deletes the organization after the alias is typed and hands the confirmation to the departure action', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
     const deletes: unknown[] = []
-    const onOrganizationDeleted = vi.fn()
+    const onOrganizationLeft = vi.fn()
     renderPage({
       profile: ownerProfile(),
-      onOrganizationDeleted,
+      onOrganizationLeft,
       backend: {
         deleteTenant: (input) => {
           deletes.push(input)
@@ -653,28 +772,26 @@ describe('TenantProfilePage ownership', () => {
     )
 
     await waitFor(() => expect(deletes).toEqual([{ tenant: TENANT }]))
-    expect(onOrganizationDeleted).toHaveBeenCalledTimes(1)
+    const message = zhCN.tenantProfile.ownership.delete.saved.replace(
+      '{{name}}',
+      ORG_NAME,
+    )
+    await waitFor(() => expect(onOrganizationLeft).toHaveBeenCalledWith(message))
+    expect(screen.queryByText(message)).toBeNull()
+    // The terminal state is reflected locally and the controls are gone.
+    expect(await screen.findByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
     expect(
-      await screen.findByText(
-        zhCN.tenantProfile.ownership.delete.saved.replace(
-          '{{name}}',
-          ORG_NAME,
-        ),
-      ),
-    ).toBeInTheDocument()
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    ).toBeNull()
   })
 
-  it('names the tombstone when the delete meets an already-deleted organization', async () => {
+  it('names the conflict when the delete meets a 409', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
-    let reads = 0
     renderPage({
-      getTenantProfile: () => {
-        reads += 1
-        return Promise.resolve(
-          reads === 1 ? ownerProfile() : ownerProfile({ status: 'deleted' }),
-        )
-      },
+      profile: ownerProfile(),
       backend: {
         deleteTenant: () =>
           Promise.reject({ status: 409, code: 'tenant.conflict' }),
@@ -701,8 +818,57 @@ describe('TenantProfilePage ownership', () => {
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      zhCN.tenantProfile.ownership.error.deleted,
+      zhCN.tenantProfile.ownership.error.conflict,
     )
+  })
+
+  it('narrows the transfer candidates through the member search', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    const queried: Array<string | undefined> = []
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        listMembers: (_tenant, params) => {
+          queried.push(params?.query)
+          return Promise.resolve({
+            members: params?.query === undefined ? [BOB, SUSPENDED] : [BOB],
+            next_cursor: '',
+          })
+        },
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    // The dialog reads the first page before any search is typed.
+    await waitFor(() => expect(queried).toEqual([undefined]))
+
+    await user.type(
+      within(dialog).getByLabelText(
+        zhCN.tenantProfile.ownership.transfer.searchLabel,
+      ),
+      'Bob',
+    )
+    // The search is a server-side prefix read, so it reaches members beyond
+    // the dialog's first page instead of paging the whole roster.
+    await waitFor(() => expect(queried.at(-1)).toBe('Bob'))
+    expect(
+      screen.queryByRole('option', { name: 'Carol Suspended (acc-3)' }),
+    ).toBeNull()
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    expect(
+      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+    ).toBeInTheDocument()
   })
 
   it('has no axe violations with the ownership controls and dialogs', async () => {
