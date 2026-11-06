@@ -28,16 +28,16 @@
 系统必须允许平台运营者登记一个新租户，为它给出标识与别名，新租户处于启用状态；登记者成为该组织的所有者，并成为首任 tenant-admin。
 
 - **验收**：登记一个未被占用的标识与别名成功，租户随即出现在名册读取结果中且状态为启用；登记者是该租户的所有者并持有 tenant-admin。标识已被占用，或别名已被别的租户占用时被拒绝，名册不新增任何租户。标识或别名为空、含空白或控制字符时在写入之前被拒绝。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-tenancy-002
 
 系统必须为每个租户保持唯一的别名；别名在创建后不可修改。
 
 - **验收**：别名在全部租户中唯一；对已创建租户修改别名的请求被拒绝，别名、状态与标识都不变；以另一个租户已用的别名登记被拒绝。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-tenancy-003
 
@@ -76,7 +76,7 @@
 发起者是未证明邮箱的账户时，登记、转移所有者、删除组织与改状态必须被拒绝；没有任何邮箱的账户与服务账户不受这条限制。
 
 - **验收**：邮箱未证明的运营者执行登记、转移所有者、删除组织与改状态各得到 403，名册与组织不发生改变。同一账户证明邮箱后，同一写动作成功。服务账户或没有任何邮箱的账户的写不被这条拒绝。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenancy-008
@@ -228,8 +228,8 @@
 系统必须为每个用户账户在账户建立时建立一个个人租户，不等邮箱验证；个人租户的建立不依赖进入租户区，也不存在按需补齐或再次创建的入口。服务账户不建立个人租户。
 
 - **验收**：新账户建立后立即拥有个人租户，无论开户来源、无论邮箱是否已证明、无论是否已属于其他组织；进入租户区不会触发第二次创建，系统没有补齐个人租户的入口；服务账户没有个人租户。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-tenancy-027
 
@@ -244,15 +244,15 @@
 邮箱是否已证明不得成为建立个人租户的条件。
 
 - **验收**：邮箱尚未证明的账户在建立时即拥有个人租户，界面同时呈现验证提示；该账户仍被未验证状态限制：绑定外部身份被拒绝并提示先证明邮箱。证明邮箱后同一绑定可进行，个人租户的别名不变。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖未证明邮箱即拥有个人租户与验证提示；未验证状态下的绑定被拒绝不在该用例内驱动）
 
 ### REQ-tenancy-029
 
 已属于其他租户的账户必须同样获得个人租户；其他租户的成员关系不得阻止或替代个人租户的建立。
 
 - **验收**：已属于一个业务租户的账户在建立时同样拥有个人租户，其在业务租户的成员关系不变；个人租户与业务租户是两个不同的租户。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenancy-030
@@ -260,7 +260,7 @@
 系统不得提供按需创建或补齐个人租户的入口；个人租户被停用后，只能由运营者恢复，账户进入租户区不得重新启用它。
 
 - **验收**：系统没有按需创建或补齐个人租户的入口；运营者停用某个个人租户后，账户进入租户区得到租户不可用的结果，该租户保持停用，状态与别名都不变。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenancy-044
@@ -492,39 +492,39 @@
 个人租户的对外别名必须等于账户的用户名，用户不得单独修改；个人租户的内部标识不得出现在界面中，也不得作为用户可查询的标识。
 
 - **验收**：个人租户在账户菜单、切换器与地址中使用由用户名派生的别名；界面没有查看或修改内部标识的入口；用户修改用户名时被拒绝，别名随之保持不变。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖账户菜单以用户名指称个人组织；地址中的别名与用户名修改被拒绝由后端用例覆盖）
 
 ### REQ-tenancy-060
 
 每个业务组织必须有一个 owner；owner 默认为该组织的创建者，必须持有 tenant-admin。owner 对普通成员不可见，tenant-admin 可见。
 
 - **验收**：创建业务组织后，owner 为创建者且持有 tenant-admin；普通成员看不到 owner，tenant-admin 能看到 owner。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner reads the profile and saves its four descriptive fields`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`
 
 ### REQ-tenancy-061
 
 业务组织的 owner 必须可以转移给该组织的 active 成员；目标尚未持有 tenant-admin 时，转移自动授予；转移完成后，原 owner 失去 tenant-admin 并被移出该组织。平台员工可以发起转移。
 
 - **验收**：owner 把所有权转给 active 成员成功，目标获得 tenant-admin；目标原本不是 tenant-admin 时自动获得；原 owner 不再持有 tenant-admin 且不再属于该组织；转给非成员被拒绝；平台员工可以发起同一转移。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner hands the organization to an active member and is removed`；`tenant-admin: a transfer whose target stopped being an active member is refused with the conflict copy`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`（平台员工发起转移）
 
 ### REQ-tenancy-062
 
 只有业务组织的 owner 或平台员工可以删除该组织；删除必须经过明确的二次确认。
 
 - **验收**：owner 可以删除自己的组织；平台员工可以删除任意业务组织；非 owner 的 tenant-admin 不能删除；删除需要输入组织别名确认。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and neither its id nor its alias can be reused`
 
 ### REQ-tenancy-063
 
 账户是任何活跃业务组织的 owner 时，系统必须拒绝删除与停用该账户，直到 owner 被转移或组织被删除。
 
 - **验收**：owner 账户删除被拒绝，提示先转移所有权或删除组织；owner 账户停用同样被拒绝；转移 owner 后同一账户可以删除或停用；不属于任何业务组织 owner 的账户不受影响。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenancy-064
@@ -532,5 +532,13 @@
 业务组织删除必须采用标记删除；删除后组织不再提供服务，别名与内部标识不得复用。业务不提供恢复入口，物理删除由后续合规处理。
 
 - **验收**：删除后按该组织的别名或标识发起请求得到与不存在相同的结果；重新创建相同别名或标识被拒绝；界面没有恢复该组织的入口；数据在物理删除前保留。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`
+
+### REQ-tenancy-065
+
+已验证邮箱的已登录用户必须可以自助创建业务组织，只需提供对外别名、显示名与可选描述；创建者成为该组织的 owner 与首任 tenant-admin；创建成功后当前组织切换到新组织。内部标识由系统生成，用户不填写也看不到。
+
+- **验收**：邮箱已证明的账户在创建页提交未占用的别名、显示名与描述后，组织建立，创建者是 owner 且持有 tenant-admin，界面切到新组织；别名不合规、保留或已被占用时拒绝且不建组织；未证明邮箱的账户被拒绝；服务账户与冒充会话被拒绝；同一账户超出活跃组织上限或创建频率上限时被拒绝。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖创建、切换与落在资料页；拒绝分支由后端用例覆盖）

@@ -72,7 +72,7 @@ flowchart TD
 - 平台设置与授权：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`、`REQ-platform-config-038`、`REQ-platform-config-048`
 - 登录：`REQ-signin-001`、`REQ-signin-003`、`REQ-signin-004`、`REQ-signin-017`、`REQ-signin-020`、`REQ-signin-021`、`REQ-signin-022`、`REQ-signin-023`、`REQ-signin-027`、`REQ-signin-028`
 - 自助注册：`REQ-signup-018`、`REQ-signup-048`、`REQ-signup-049`、`REQ-signup-053`
-- 用户名：`REQ-signup-045`、`REQ-signup-046`、`REQ-signup-047`、`REQ-account-060`
+- 用户名：`REQ-signup-045`、`REQ-signup-046`、`REQ-signup-047`、`REQ-signup-054`、`REQ-account-060`
 - 账户自助：`REQ-account-067`
 - 账户安全：`REQ-security-029`
 - 组织与成员：`REQ-tenancy-009`、`REQ-tenancy-022`、`REQ-tenancy-023`、`REQ-tenancy-035`、`REQ-tenancy-036`
@@ -80,4 +80,4 @@ flowchart TD
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
+`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`；`enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`（开户前确认策略）；`enterprise-sso-onboarding: a claim-strategy provider opens the account with the asserted username`（声明映射策略，含非法值与别名冲突拒绝）

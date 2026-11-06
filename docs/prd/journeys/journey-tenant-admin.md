@@ -51,6 +51,9 @@
 23. 以在 `system` 租户持有 `tenant-admin` 的账户打开 `system` 租户。组织管理区域打不开，直达区域根与任一子路径都回到租户首页；发起任一租户管理写入都被拒绝，`system` 的角色、授权与绑定不变。写入分支端到端不可达：组织管理区域不渲染，页面没有发起租户管理写入的控件；诚实门禁禁止直接调用接口。
 24. 运营者发起冒充进入该业务租户。组织管理面的账户菜单分组与首页卡片不出现，直达任一管理路径回到租户首页；同一会话直接发起的写入按被冒充账户在该租户的权限判定，被冒充账户不持相应权限时被拒绝。写入分支端到端不可达：冒充期间管理面不渲染，页面没有发起写入的控件；诚实门禁禁止直接调用接口。
 25. 以一个邮箱未证明的租户管理员从组织管理面分别发起成员、邀请、SSO、角色、授权、绑定与设置写入，每次都被拒绝并提示先证明邮箱，目标数据不变；该账户证明邮箱后同一写入成功。
+26. 组织所有者打开组织资料页，看到标识、别名、状态与创建时间四项只读，以及显示名、描述、联系邮箱与网站四项可编辑；保存后页面与账户菜单的组织行显示新显示名。不持有该组织所有权的租户管理员打开同一页，可以查看资料，但看不到转移所有权与删除组织的入口。
+27. 组织所有者把所有权转移给该组织的一名 active 成员。转移后该成员持有 `tenant-admin`，原所有者失去 `tenant-admin` 并被移出该组织；原所有者用过期页面继续发起的资料写入与删除被拒绝。目标已不是 active 成员时，转移被拒绝并显示冲突文案。
+28. 组织所有者输入组织别名并二次确认删除该组织。删除后该组织不再提供服务，其别名与标识不可复用，界面没有恢复入口，数据在物理删除前保留。
 
 ## 结果
 
@@ -68,6 +71,8 @@
 - 被拒绝的授权、`platform-admin` 的创建/授予/绑定与解绑尝试都没有改变角色、授权或绑定，界面显示失败提示，审计中没有这些动作的成功记录。
 - 企业身份提供方按登记、域验证、启停与删除各自生效；停用的提供方不参与登录发现，删除后其邮箱域不再参与发现。
 - `system` 租户打不开组织管理区域，其上的租户管理写入被拒绝；冒充期间管理页面不渲染，写入按被冒充账户的权限判定；邮箱未证明的租户管理员的写入被拒绝，证明后同一写入成功。
+- 组织资料页显示四项只读身份与四项可编辑资料，保存后账户菜单的组织行同步显示新显示名；没有查看权限的账户看不到该页，不持有该组织所有权的管理员看不到转移与删除入口。
+- 所有权转移后新所有者持有 `tenant-admin`，原所有者被移出组织；组织删除需要输入别名并二次确认，删除后组织不再提供服务且别名与标识不可复用，没有恢复入口。
 
 ## 备选路径
 
@@ -114,6 +119,10 @@ flowchart TD
     U --> V([管理页不渲染，写入按被冒充账户判定])
     P --> W[邮箱未证明时发起写入]
     W --> X([被拒绝并提示先证明邮箱])
+    P --> Y[打开组织资料页并保存资料]
+    Y --> Y1[把所有权转移给 active 成员]
+    Y1 -->|原所有者被移出组织| Y2[输入别名并二次确认删除组织]
+    Y2 --> Y3([组织不再提供服务且别名不可复用])
 ```
 
 ## 覆盖的需求
@@ -178,6 +187,7 @@ flowchart TD
 - `REQ-tenant-admin-065`
 - `REQ-tenant-admin-066`
 - `REQ-tenant-admin-067`
+- `REQ-tenant-admin-068`
 - `REQ-tenancy-008`
 - `REQ-tenancy-009`
 - `REQ-tenancy-010`
@@ -199,7 +209,12 @@ flowchart TD
 - `REQ-tenancy-056`
 - `REQ-tenancy-057`
 - `REQ-tenancy-058`
+- `REQ-tenancy-060`
+- `REQ-tenancy-061`
+- `REQ-tenancy-062`
+- `REQ-tenancy-063`
+- `REQ-tenancy-064`
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 覆盖账户菜单分组与首页卡片、成员搜索与角色筛选、邀请签发/筛选/重发/撤销与一次性面板、角色创建（含描述）、治理权限的授予与撤销、高危授予的二次确认、权限目录的展开与治理集、内建角色的只读使用情况、成员管理区的绑定与解绑、停用与恢复、停用自己与解绑自己 `tenant-admin` 绑定的控件在请求前禁用并说明原因、移除、设置与租户切换；角色页的描述改写、不可映射授权、「在成员页查看」入口与绑定后回到角色页核对同一角色成员数未由 e2e 驱动，由 `web/packages/admin-ui/src/OrganizationRolesPage.test.tsx` 覆盖；邀请通知邮件的落点与租户从邮件日志读取，并与一次性面板的接受链接比对落点；停用后业务请求不可访问与绕过界面的自停用拒绝不在 e2e 内驱动，由后端用例覆盖；`tenant-admin: the organization registers, verifies, disables and removes an SSO provider` 覆盖企业身份提供方的登记、域验证、启停与删除；`tenant-admin: the system tenant shows no entry and every direct visit returns home` 覆盖 `system` 租户不出现入口且直达管理地址回到租户首页；`tenant-admin: impersonating the administrator renders no organization surface` 覆盖冒充期间管理面不渲染；`tenant-admin: the unproved administrator is refused, proves the address and retries` 覆盖邮箱未证明时写入被拒绝、证明后同一写入成功。
+`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 覆盖账户菜单分组与首页卡片、成员搜索与角色筛选、邀请签发/筛选/重发/撤销与一次性面板、角色创建（含描述）、治理权限的授予与撤销、高危授予的二次确认、权限目录的展开与治理集、内建角色的只读使用情况、成员管理区的绑定与解绑、停用与恢复、停用自己与解绑自己 `tenant-admin` 绑定的控件在请求前禁用并说明原因、移除、设置与租户切换；角色页的描述改写、不可映射授权、「在成员页查看」入口与绑定后回到角色页核对同一角色成员数未由 e2e 驱动，由 `web/packages/admin-ui/src/OrganizationRolesPage.test.tsx` 覆盖；邀请通知邮件的落点与租户从邮件日志读取，并与一次性面板的接受链接比对落点；停用后业务请求不可访问与绕过界面的自停用拒绝不在 e2e 内驱动，由后端用例覆盖；`tenant-admin: the organization registers, verifies, disables and removes an SSO provider` 覆盖企业身份提供方的登记、域验证、启停与删除；`tenant-admin: the system tenant shows no entry and every direct visit returns home` 覆盖 `system` 租户不出现入口且直达管理地址回到租户首页；`tenant-admin: impersonating the administrator renders no organization surface` 覆盖冒充期间管理面不渲染；`tenant-admin: the unproved administrator is refused, proves the address and retries` 覆盖邮箱未证明时写入被拒绝、证明后同一写入成功；`tenant-admin: the owner reads the profile and saves its four descriptive fields` 覆盖资料页的只读身份、四项可编辑资料与保存后的组织菜单更新，`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls` 覆盖非所有者看不到转移与删除入口，`tenant-admin: the owner hands the organization to an active member and is removed` 覆盖所有权转移后原所有者失去 `tenant-admin` 并被移出组织，`tenant-admin: a transfer whose target stopped being an active member is refused with the conflict copy` 覆盖目标不再是 active 成员时的冲突拒绝，`tenant-admin: an owner handed the organization on is refused the write its stale page still offers` 覆盖失去所有权后过期页面的写入被拒绝，`tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken` 覆盖输入别名删除组织与别名不可复用，`tenant-admin: a stale owner whose organization was already ended is told it no longer exists` 覆盖组织已被删除后过期页面的写入得到组织不存在的结果。

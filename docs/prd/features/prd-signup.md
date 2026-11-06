@@ -378,23 +378,23 @@
 配置为即时开户的企业身份提供方必须声明确定用户名的策略：从提供方声明映射，或在开户前由用户确认；系统不得在用户名未确定时建立账户。
 
 - **验收**：声明映射的提供方从允许的提供方声明取值并规范化为合法用户名，缺失、不合规或与已用名称冲突时拒绝登录并提示改用开户前确认；声明开户前确认的提供方在账户建立前要求用户确认用户名，确认后不可变；预置账户提供方不需要该策略；未声明策略的即时开户提供方不能被启用。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`（开户前确认）；`enterprise-sso-onboarding: a claim-strategy provider opens the account with the asserted username`（声明映射）
 
 ### REQ-signup-029
 
 每个用户账户在账户建立时必须得到一个个人租户。
 
 - **验收**：用户账户建立后立即得到一个个人租户，并持有其非内建 `tenant-admin` 角色；邮箱是否已证明、是否已属于其他组织都不影响这一结果。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
 
 ### REQ-signup-040
 
 已有其他成员关系不得阻止个人租户的建立。
 
 - **验收**：一个已是某一租户成员的账户在建立时同样得到一个个人租户，其原有成员关系不变。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-signup-031

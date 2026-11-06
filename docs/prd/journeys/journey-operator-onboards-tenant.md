@@ -15,8 +15,8 @@
 
 1. 运营者以平台运营账户登录后，当前组织为 `system`；他从账户菜单中的管理后台入口或首页的管理后台卡片进入管理后台。进入后看到管理后台框架与分组导航，「租户」位于其中一个分组。
 2. 运营者打开「租户」页。名册按租户标识排序列出全部租户，每行给出标识、别名与状态；一个租户也没有时页面显示空列表提示，而不是错误。
-3. 运营者点「登记租户」，填写租户标识与别名并提交。提交成功后名册新增一行，状态为启用，标识与别名与填写值一致。标识已被占用或别名已被其他租户占用时，页面给出冲突提示，名册不新增行。
-4. 运营者打开该租户的详情页，尝试把别名改成另一个值并提交。提交被拒绝，页面给出别名创建后不可更改的提示，详情页与名册的别名保持原值，状态保持启用。
+3. 运营者点「登记租户」，在独立创建页填写租户标识、别名与显示名并提交；描述、联系邮箱与网站可选。提交成功后跳转到该租户的详情页，名册新增一行，状态为启用，标识、别名与显示名与填写值一致。标识已被占用或别名已被其他租户占用时，页面给出冲突提示，名册不新增行。
+4. 运营者查看该租户的详情页。摘要按顺序给出标识、别名、显示名与状态，资料卡可编辑显示名、描述、联系邮箱与网站，创建时间只读；别名只读，页面没有改名控件。绕过界面发起的别名改名被拒绝为「别名创建后不可变」，详情页与名册的别名保持原值。
 5. 运营者从详情页的入口进入「邀请与成员」页，或从导航打开该页并选定这个租户。选定租户前页面不列出任何属于某个租户的数据；选定后显示该租户的成员列表与邀请列表。新建租户的成员列表包含创建者本人——运营者就是该租户的第一名成员与租户管理员；邀请列表为空。
 6. 运营者在邀请区填写被邀请成员的邮箱与有效期，签发邀请。签发成功后页面列出这条待接受的邀请，包含被邀请地址、状态与有效期，并在该控件组下以只显示一次的面板给出接受链接与复制控件；面板关闭或离开页面后，链接不再显示。
 7. 运营者复制接受链接，经自己的渠道交给目标成员。
@@ -25,6 +25,10 @@
 10. 成员在账户菜单的组织行看到当前租户就是这个租户；若账户另有租户，展开组织行后列出其余租户，选中其一即切到该租户，切回时展示的数据随之切换。再次打开同一条接受链接得到邀请已失效的结果，不产生新的成员关系。
 11. 运营者回到管理后台的「邀请与成员」页并刷新，看到这条邀请的状态为已接受，成员列表包含被邀请地址对应的账户。
 
+12. 运营者在名册中选择一个成员列表含可转移成员的租户，打开转移所有者操作。运营者是该组织的 tenant-admin 时，对话框提供该组织的成员选择器；只持 `tenant.manage` 时提供平台账户选择器。选定 active 成员并二次确认后，转移成功，页面给出点名该租户与新所有者的确认；目标不是该组织 active 成员时被拒绝。
+
+13. 运营者在名册中删除一个自己登记的租户：一次确认对话框与一次加重确认之后，该行以墓碑呈现，转移与删除入口都不再出现；再次登记同一个标识或同一个别名都被拒绝，名册不新增行。
+
 ## 结果
 
 - 名册中存在标识与别名均为运营者所填值、状态为启用的租户。
@@ -32,6 +36,7 @@
 - 该租户的成员列表包含被邀请地址对应的账户。
 - 受邀成员接受后落在该租户的租户区首页，账户菜单的组织行把它显示为当前组织；展示的数据属于该租户。
 - 同一条接受链接再次打开被拒，不产生第二条成员关系。
+- 平台运营者可以转移租户的所有者并删除租户；转移给出点名新所有者的确认，删除后该行以墓碑呈现、入口消失，删除的标识与别名都不能再次登记。
 
 ## 备选路径
 
@@ -66,6 +71,11 @@ flowchart TD
 - `REQ-platform-admin-011`
 - `REQ-platform-admin-032`
 - `REQ-platform-admin-033`
+- `REQ-platform-admin-050`
+- `REQ-platform-admin-051`
+- `REQ-platform-admin-055`
+- `REQ-platform-admin-058`
+- `REQ-platform-admin-118`
 - `REQ-tenancy-001`
 - `REQ-tenancy-002`
 - `REQ-tenancy-005`
@@ -82,7 +92,10 @@ flowchart TD
 - `REQ-tenancy-021`
 - `REQ-tenancy-022`
 - `REQ-tenancy-023`
+- `REQ-tenancy-061`
+- `REQ-tenancy-062`
+- `REQ-tenancy-064`
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
+`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`；`operator-onboards-tenant: the operator transfers a tenant owner through the member selector`（组织成员选择器转移所有者）；`operator-onboards-tenant: with only tenant.manage the operator uses the account selector and a non-member is refused`（平台账户选择器与非成员拒绝）；`operator-onboards-tenant: the operator deletes a tenant and neither its id nor its alias can be reused`（删除与墓碑、标识与别名不可复用）。平台详情页的资料编辑由 `web/packages/admin-ui/src/TenantDetailPage.test.tsx` 覆盖。
