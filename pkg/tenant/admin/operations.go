@@ -416,7 +416,8 @@ var tenantTransferOwnerOperation = speedhttp.NewReplyOperation[ownerTransferInpu
 			Description: "No tenant carries the identifier, or the path tenant is not the tenant the request resolved to or is the platform domain",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The target is not an active member, the target's account is not active, or the tenant is a tombstone"),
+			"The target is not an active member, the target's account is not active, the tenant is a "+
+				"tombstone, or the caller stopped owning the organization before the write committed"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )

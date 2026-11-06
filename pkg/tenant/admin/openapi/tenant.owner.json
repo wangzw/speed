@@ -207,7 +207,7 @@
                 }
               }
             },
-            "description": "The target is not an active member, the target's account is not active, or the tenant is a tombstone"
+            "description": "The target is not an active member, the target's account is not active, the tenant is a tombstone, or the caller stopped owning the organization before the write committed"
           },
           "413": {
             "content": {
