@@ -280,7 +280,7 @@ export function TenantDetailPage({
     // tenant.manage on a live business organization. The page asks the same
     // question the group does, so the card and its region exist only when
     // the group will render inside them.
-    const lifecycle = canManageTenant && !isPersonalTenant(settled.id)
+    const lifecycle = canManageTenant && !isPersonalTenant(settled.kind)
     return (
       <>
         <SectionCard title={t('tenantDetail.summary')} sx={{ mb: 3 }}>

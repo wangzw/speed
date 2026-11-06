@@ -10,9 +10,9 @@
  * affordance for a control group that can only ever fail otherwise, so
  * they render only for a caller whose attached platform permission set
  * holds `tenant.manage`. An unknown or absent set fails closed. A personal
- * organization (an identifier beginning with `personal-`) is the account's
- * own domain and carries no transfer or delete entry, and a tombstone is
- * terminal, so neither does a deleted row.
+ * organization (`kind === 'personal'`) is the account's own domain and
+ * carries no transfer or delete entry, and a tombstone is terminal, so
+ * neither does a deleted row.
  *
  * **Transfer target: two paths, chosen by what the caller may read.** The
  * endpoint itself validates only that the target account is an active
@@ -78,9 +78,6 @@ import type {
 /** The admin-ui namespace's translate function, as the helpers below take it. */
 type Translate = ReturnType<typeof useAdminUiTranslation>['t']
 
-/** The identifier prefix the host reserves for personal organizations. */
-const PERSONAL_TENANT_PREFIX = 'personal-'
-
 /** How many rows one member search asks the page for. */
 const MEMBER_SEARCH_LIMIT = 20
 
@@ -93,9 +90,9 @@ const TENANT_MANAGE = 'tenant.manage'
 /** The tenant permission the member list read requires. */
 const MEMBERSHIP_MANAGE = 'authn.membership.manage'
 
-/** Whether the identifier names an account's own personal organization. */
-export function isPersonalTenant(id: string): boolean {
-  return id.startsWith(PERSONAL_TENANT_PREFIX)
+/** Whether the tenant's kind names an account's own personal organization. */
+export function isPersonalTenant(kind: string): boolean {
+  return kind === 'personal'
 }
 
 /** The option text: the display name beside the account, or the account alone. */
@@ -498,7 +495,7 @@ export function TenantLifecycleActions({
   const [outcome, setOutcome] = useState<LifecycleOutcome | null>(null)
 
   const deleted = tenant.status === 'deleted'
-  const personal = isPersonalTenant(tenant.id)
+  const personal = isPersonalTenant(tenant.kind)
   // A result describes the organization as it stood when the write landed;
   // a different tenant in the same slot drops it.
   useEffect(() => {
