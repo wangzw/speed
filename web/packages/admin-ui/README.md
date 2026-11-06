@@ -126,17 +126,22 @@ read-only beside the server's builtin roles. The settings wrapper
 renders `OrganizationSecurityPage`: the two declared tenant admission
 policies as switches, each saving on its own, platform-enforced policies
 read-only, and a protected tenant's page read-only with no switches. The
-profile wrapper hands the current tenant and the host's
-`onTenantUpdated` to `TenantProfilePage`: a read-only identity card and an
-editable profile card, and a landed save asks the host to reload the
-caller tenant list the account menu and breadcrumb read. The
+profile wrapper hands the current tenant, the host's
+`onTenantUpdated` and `onOrganizationDeleted` to `TenantProfilePage`: a
+read-only identity card (including the owner account), an editable profile
+card, and an ownership card only the current owner sees, from which the
+organization can be transferred to an active member or deleted after the
+alias is typed; a landed save asks the host to reload the caller tenant list
+the account menu and breadcrumb read, and a landed deletion asks the host to
+leave the organization and reload that list. The
 shared pages render through the
 package-internal `AdminPageHeader`, which prefers the organization
 breadcrumb context and falls back to the page's own platform trail
 otherwise. The `OrganizationAdminOperations` bundle carries
 the tenant-scoped invitation, membership and SSO members, the tenant
-settings members and the tenant roles/grants/bindings members; no member
-addresses a platform asset or the platform account read.
+settings members, the tenant roles/grants/bindings members, and the owner
+transfer and organization deletion writes; no member addresses a platform
+asset or the platform account read.
 
 Each page opens with the package-internal `AdminPageHeader` (a binding of
 `@speed/ui-kit`'s `PageHeader`): the page title as the level-one heading and
@@ -295,9 +300,9 @@ feature-gated control without importing the host's session package.
 | `AuditPage.tsx` | `AuditPage` |
 | `AuditDetailPage.tsx` | `AuditDetailPage`, `AuditDetailPageProps` |
 | `resources.ts` | `ADMIN_UI_NAMESPACE`, `adminUiResources` |
-| `OrganizationAdminProvider.tsx` | `OrganizationAdminProvider`, `OrganizationAdminProviderProps`, `OrganizationAdminContextValue`, `useOrganizationAdminContext`, `useOrganizationAdminTenant`, `useOrganizationAdminProtectedRoles`, `useOrganizationAdminOnTenantUpdated` |
+| `OrganizationAdminProvider.tsx` | `OrganizationAdminProvider`, `OrganizationAdminProviderProps`, `OrganizationAdminContextValue`, `useOrganizationAdminContext`, `useOrganizationAdminTenant`, `useOrganizationAdminProtectedRoles`, `useOrganizationAdminOnTenantUpdated`, `useOrganizationAdminOnOrganizationDeleted` |
 | `OrganizationAdminBreadcrumb.tsx` | `OrganizationAdminBreadcrumbProvider`, `OrganizationAdminBreadcrumbProviderProps`, `useOrganizationAdminBreadcrumbs` |
-| `organization-operations.tsx` | `OrganizationAdminOperations`, `organizationAdminOperations`, `OrganizationAdminOperationsProvider`, `OrganizationAdminOperationsProviderProps`, `useOrganizationAdminOperations`, `AdminTenantSetting`, `AdminTenantSettings`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
+| `organization-operations.tsx` | `OrganizationAdminOperations`, `organizationAdminOperations`, `OrganizationAdminOperationsProvider`, `OrganizationAdminOperationsProviderProps`, `useOrganizationAdminOperations`, `AdminTenantSetting`, `AdminTenantSettings`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantOwnerTransferInput`, `AdminTenantRef`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
 | `organization-routes.tsx` | `organizationAdminRoutes` |
 | `organization-pages.tsx` | `OrganizationInvitationsPage`, `OrganizationSsoPage`, `OrganizationPermissionsPage`, `OrganizationSettingsPage`, `OrganizationProfilePage` |
 
@@ -306,8 +311,10 @@ all ship: the settings wrapper reads and writes the two tenant admission
 policies as switches under `/api/v1/tenants/{tenant}/settings`; the roles
 page reads the governed catalog, the role list, its grants and its usage
 page, and writes roles, descriptions and grants; the profile page reads
-and writes `/api/v1/tenants/{tenant}/profile` and asks the host to reload
-the caller tenant list after a landed save. The platform
+and writes `/api/v1/tenants/{tenant}/profile`, shows the current owner, and
+offers the current owner the transfer and deletion controls; a landed save
+asks the host to reload the caller tenant list, and a landed deletion asks
+the host to leave the organization and reload it. The platform
 `PermissionsPage` remains the platform surface's own page and keeps its
 bindings and account lookup.
 
@@ -494,11 +501,14 @@ the current tenant:
   `/api/v1/tenants/{tenant}/settings`, renders the two declared admission
   policies as switches, saves each switch on its own, and draws a
   platform-enforced policy as read-only;
-- the profile wrapper is given the current tenant and the host's
-  `onTenantUpdated`: it reads and writes
+- the profile wrapper is given the current tenant, the host's
+  `onTenantUpdated` and `onOrganizationDeleted`: it reads and writes
   `/api/v1/tenants/{tenant}/profile`, renders a read-only identity card
-  and an editable profile card, and asks the host to reload the caller
-  tenant list after a landed save.
+  (with the owner account), an editable profile card and a current-owner-only
+  ownership card that transfers the organization or deletes it after the
+  alias is typed, asks the host to reload the caller tenant list after a
+  landed save, and asks the host to leave the organization and reload that
+  list after a landed deletion.
 
 None of the five wrappers issues an `/api/v1/system` request.
 

@@ -49,6 +49,12 @@ export interface OrganizationAdminContextValue {
    * only re-reads its own read.
    */
   readonly onTenantUpdated?: () => void | Promise<unknown>
+  /**
+   * The host's action after the current organization is deleted: leave it
+   * and reload the caller tenant list the account menu and the breadcrumb
+   * read. Absent, the profile page falls back to `onTenantUpdated`.
+   */
+  readonly onOrganizationDeleted?: () => void | Promise<unknown>
 }
 
 const OrganizationAdminContext = createContext<OrganizationAdminContextValue | null>(
@@ -88,6 +94,14 @@ export function useOrganizationAdminOnTenantUpdated():
   return useOrganizationAdminContext().onTenantUpdated
 }
 
+/** The host's action after the current organization is deleted, when the
+ * host supplied one. */
+export function useOrganizationAdminOnOrganizationDeleted():
+  | (() => void | Promise<unknown>)
+  | undefined {
+  return useOrganizationAdminContext().onOrganizationDeleted
+}
+
 export interface OrganizationAdminProviderProps {
   /** The current tenant the host resolved. Required: the package never
    * derives it from the session or the URL and never switches it. */
@@ -122,6 +136,10 @@ export interface OrganizationAdminProviderProps {
    * list the account menu and the breadcrumb read. Absent, the profile page
    * only re-reads its own read. */
   readonly onTenantUpdated?: () => void | Promise<unknown>
+  /** The host's action after the current organization is deleted: leave it
+   * and reload the caller tenant list. Absent, the profile page falls back
+   * to `onTenantUpdated`. */
+  readonly onOrganizationDeleted?: () => void | Promise<unknown>
   readonly children: ReactNode
 }
 
@@ -140,6 +158,7 @@ export function OrganizationAdminProvider({
   invitationLink,
   protectedRoles,
   onTenantUpdated,
+  onOrganizationDeleted,
   children,
 }: OrganizationAdminProviderProps) {
   // The operations context is declared in the console bundle's type, but
@@ -153,7 +172,12 @@ export function OrganizationAdminProvider({
   const scopedOperations = operations as unknown as AdminOperations
   const content = (
     <OrganizationAdminContext.Provider
-      value={{ tenant, protectedRoles: protectedRoles ?? [], onTenantUpdated }}
+      value={{
+        tenant,
+        protectedRoles: protectedRoles ?? [],
+        onTenantUpdated,
+        onOrganizationDeleted,
+      }}
     >
       <AdminOperationsProvider operations={scopedOperations}>
         <OrganizationAdminOperationsProvider operations={operations}>

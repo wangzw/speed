@@ -424,6 +424,7 @@
     "field": {
       "id": "Identifier",
       "alias": "Alias",
+      "owner": "Owner",
       "status": "Status",
       "createdAt": "Created",
       "displayName": "Display name",
@@ -442,6 +443,39 @@
         "description": "Keep the description to 500 characters or fewer.",
         "contactEmail": "Enter a single email address.",
         "website": "Enter an absolute http or https address."
+      }
+    },
+    "ownership": {
+      "title": "Organization ownership",
+      "description": "An organization has one owner. The owner can hand ownership to another member or delete the organization.",
+      "transfer": {
+        "button": "Transfer ownership",
+        "title": "Transfer ownership of {{name}}",
+        "message": "After the transfer you lose every role and your membership in this organization, and the target member is granted the tenant administrator role. This cannot be undone.",
+        "targetLabel": "New owner",
+        "targetHint": "Only active members of this organization can be chosen.",
+        "loading": "Loading members…",
+        "membersError": "The member list could not be loaded. Close this dialog and try again.",
+        "noMembers": "This organization has no other active member.",
+        "confirmLabel": "Confirm transfer",
+        "saved": "Ownership of {{name}} was transferred to {{account}}."
+      },
+      "delete": {
+        "button": "Delete organization",
+        "title": "Delete {{name}}",
+        "message": "Deleting marks the organization and its memberships as deleted and stops serving it. Its alias and identifier can never be used again, and there is no way to restore it.",
+        "aliasLabel": "Type the organization alias to confirm",
+        "aliasHint": "Type {{alias}}.",
+        "confirmLabel": "Confirm deletion",
+        "saved": "The organization {{name}} was deleted."
+      },
+      "error": {
+        "forbidden": "You are not the owner of this organization, so you cannot do that.",
+        "notFound": "This organization no longer exists.",
+        "ownerChanged": "The owner of this organization has changed and this page is out of date. Refresh and try again.",
+        "deleted": "This organization has been deleted and can no longer be changed.",
+        "conflict": "That change conflicts with the organization's current state. Refresh and try again.",
+        "unknown": "The action did not complete. Try again."
       }
     }
   },

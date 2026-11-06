@@ -247,6 +247,7 @@ export {
 export {
   OrganizationAdminProvider,
   useOrganizationAdminContext,
+  useOrganizationAdminOnOrganizationDeleted,
   useOrganizationAdminOnTenantUpdated,
   useOrganizationAdminProtectedRoles,
   useOrganizationAdminTenant,
@@ -267,8 +268,10 @@ export {
   type AdminTenantGrant,
   type AdminTenantGrantRef,
   type AdminTenantPermission,
+  type AdminTenantOwnerTransferInput,
   type AdminTenantProfile,
   type AdminTenantProfileWriteInput,
+  type AdminTenantRef,
   type AdminTenantRemoveSettingInput,
   type AdminTenantRole,
   type AdminTenantRoleRef,

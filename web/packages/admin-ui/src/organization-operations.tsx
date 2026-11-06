@@ -88,6 +88,8 @@ import {
   getTenantProfileGetQueryOptions,
   settingsTenantadminSettingsRemove,
   settingsTenantadminSettingsSet,
+  tenantAdminOwnerDelete,
+  tenantAdminOwnerTransfer,
   tenantProfileUpdate,
 } from '@speed/api-sdk'
 import type {
@@ -145,6 +147,18 @@ export type AdminTenantProfile = TenantProfileView
 export interface AdminTenantProfileWriteInput {
   readonly tenant: string
   readonly fields: TenantProfileFields
+}
+
+/** PUT /api/v1/tenants/{tenant}/owner body: the member who becomes the
+ * organization's owner. */
+export interface AdminTenantOwnerTransferInput {
+  readonly tenant: string
+  readonly account: string
+}
+
+/** DELETE /api/v1/tenants/{tenant} target. */
+export interface AdminTenantRef {
+  readonly tenant: string
 }
 
 /** One tenant role (GET .../tenants/{tenant}/roles), structurally the
@@ -259,6 +273,24 @@ export interface OrganizationAdminOperations
     void,
     unknown,
     AdminTenantProfileWriteInput
+  >
+
+  // --- Owner transfer and organization deletion (/api/v1/tenants/{tenant}) ---
+
+  /** PUT .../tenants/{tenant}/owner -- hand the organization's ownership to
+   * an active member. The server grants the target tenant-admin when it does
+   * not hold it and removes the caller from the organization. */
+  readonly useTenantOwnerTransfer: () => UseMutationResult<
+    void,
+    unknown,
+    AdminTenantOwnerTransferInput
+  >
+  /** DELETE .../tenants/{tenant} -- tombstone the organization and clear its
+   * core relations. Terminal: there is no restore route. */
+  readonly useTenantOwnerDelete: () => UseMutationResult<
+    void,
+    unknown,
+    AdminTenantRef
   >
 
   // --- Tenant settings (/api/v1/tenants/{tenant}/settings) --------------
@@ -614,6 +646,39 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
         ),
       onSuccess: (_answer, input) => {
         invalidateTenantProfile(queryClient, input.tenant)
+      },
+    })
+  },
+
+  // --- Owner transfer and organization deletion -------------------------
+
+  useTenantOwnerTransfer: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: AdminTenantOwnerTransferInput) =>
+        tenantAdminOwnerTransfer(input.tenant, { account: input.account }),
+      onSuccess: (_answer, input) => {
+        // The owner column on the profile and the membership the transfer
+        // removes both belong to the same tenant subtree. A landed transfer
+        // refreshes both reads; the host refreshes the caller tenant list
+        // the menu and breadcrumb show.
+        invalidateTenantProfile(queryClient, input.tenant)
+        invalidateTenantMembers(queryClient, input.tenant)
+      },
+    })
+  },
+
+  useTenantOwnerDelete: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: AdminTenantRef) =>
+        tenantAdminOwnerDelete(input.tenant),
+      onSuccess: (_answer, input) => {
+        // The organization is a tombstone: its profile and member reads can
+        // only answer the terminal state, so refresh them too. Leaving the
+        // organization is the host's action (`onOrganizationDeleted`).
+        invalidateTenantProfile(queryClient, input.tenant)
+        invalidateTenantMembers(queryClient, input.tenant)
       },
     })
   },

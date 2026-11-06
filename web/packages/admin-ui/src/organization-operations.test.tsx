@@ -34,6 +34,7 @@ import { organizationAdminRoutes } from './organization-routes.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import type { ObservedCall } from '../test-utils/request-rig.js'
+import { profileFixture } from '../test-utils/operations.js'
 
 const TENANT = 'acme'
 
@@ -526,6 +527,8 @@ describe('the organization operations bundle', () => {
       'useTenantGrants',
       'useTenantRoleBindings',
       'useTenantBindings',
+      'useTenantOwnerTransfer',
+      'useTenantOwnerDelete',
     ]) {
       expect(members).toContain(member)
     }
@@ -543,6 +546,113 @@ describe('the organization operations bundle', () => {
       'useAuditRecords',
     ]) {
       expect(members).not.toContain(platform)
+    }
+  })
+})
+
+describe('the organization ownership writes', () => {
+  /** Every request the ownership probe makes, with a settled read pair. */
+  function ownershipResponder(call: ObservedCall): unknown {
+    if (call.path === `/api/v1/tenants/${TENANT}/profile`) {
+      return { profile: profileFixture() }
+    }
+    if (call.path === `/api/v1/tenants/${TENANT}/members`) {
+      return { members: [], next_cursor: '' }
+    }
+    if (
+      (call.method === 'PUT' || call.method === 'DELETE') &&
+      (call.path === `/api/v1/tenants/${TENANT}/owner` ||
+        call.path === `/api/v1/tenants/${TENANT}`)
+    ) {
+      return undefined
+    }
+    throw new Error(`unexpected request: ${call.method} ${call.path}`)
+  }
+
+  function OwnershipProbe({ action }: { readonly action: 'transfer' | 'delete' }) {
+    const operations = useOrganizationAdminOperations()
+    const profile = operations.useTenantProfile(TENANT)
+    const members = operations.useMembers(TENANT, { limit: 1000 })
+    const transfer = operations.useTenantOwnerTransfer()
+    const remove = operations.useTenantOwnerDelete()
+    return (
+      <div>
+        <p>{profile.isSuccess && members.isSuccess ? 'settled' : 'loading'}</p>
+        <button
+          type="button"
+          onClick={() => {
+            if (action === 'transfer') {
+              transfer.mutate({ tenant: TENANT, account: 'acc-2' })
+            } else {
+              remove.mutate({ tenant: TENANT })
+            }
+          }}
+        >
+          write
+        </button>
+      </div>
+    )
+  }
+
+  it('transfers at the tenant owner path and refreshes the profile and member reads', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest(ownershipResponder, { recordBody: true })
+    renderWithProviders(<OwnershipProbe action="transfer" />)
+    expect(await screen.findByText('settled')).toBeInTheDocument()
+
+    const profileReads = () =>
+      calls.filter((call) => call.path === `/api/v1/tenants/${TENANT}/profile`)
+        .length
+    const memberReads = () =>
+      calls.filter((call) => call.path === `/api/v1/tenants/${TENANT}/members`)
+        .length
+    expect(profileReads()).toBe(1)
+    expect(memberReads()).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: 'write' }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'PUT',
+        path: `/api/v1/tenants/${TENANT}/owner`,
+        query: undefined,
+        body: { account: 'acc-2' },
+      }),
+    )
+    // The mutation invalidates both tenant-scoped reads, so the active
+    // observers re-read them.
+    await waitFor(() => expect(profileReads()).toBeGreaterThan(1))
+    await waitFor(() => expect(memberReads()).toBeGreaterThan(1))
+    for (const call of calls) {
+      expect(call.path.startsWith(`/api/v1/tenants/${TENANT}`)).toBe(true)
+      expect(call.path.startsWith('/api/v1/system')).toBe(false)
+    }
+  })
+
+  it('deletes at the tenant path and refreshes the profile and member reads', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest(ownershipResponder)
+    renderWithProviders(<OwnershipProbe action="delete" />)
+    expect(await screen.findByText('settled')).toBeInTheDocument()
+
+    const profileReads = () =>
+      calls.filter((call) => call.path === `/api/v1/tenants/${TENANT}/profile`)
+        .length
+    const memberReads = () =>
+      calls.filter((call) => call.path === `/api/v1/tenants/${TENANT}/members`)
+        .length
+
+    await user.click(screen.getByRole('button', { name: 'write' }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'DELETE',
+        path: `/api/v1/tenants/${TENANT}`,
+      }),
+    )
+    await waitFor(() => expect(profileReads()).toBeGreaterThan(1))
+    await waitFor(() => expect(memberReads()).toBeGreaterThan(1))
+    for (const call of calls) {
+      expect(call.path.startsWith(`/api/v1/tenants/${TENANT}`)).toBe(true)
+      expect(call.path.startsWith('/api/v1/system')).toBe(false)
     }
   })
 })

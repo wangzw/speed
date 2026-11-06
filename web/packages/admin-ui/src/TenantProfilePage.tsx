@@ -52,6 +52,7 @@ import {
   profileFieldsOf,
 } from './TenantProfileFields.js'
 import type { TenantProfileFields } from './TenantProfileFields.js'
+import { TenantOwnership } from './TenantOwnership.js'
 
 export interface TenantProfilePageProps {
   /** The organization the profile belongs to; every request names it. */
@@ -63,6 +64,13 @@ export interface TenantProfilePageProps {
    * page only re-reads its own profile.
    */
   readonly onTenantUpdated?: () => void | Promise<unknown>
+  /**
+   * The host's action after an organization deletion lands: leave the
+   * organization (the caller is no longer a member) and reload the caller
+   * tenant list the account menu and the breadcrumb read. Absent, the page
+   * falls back to `onTenantUpdated` and stays where it is.
+   */
+  readonly onOrganizationDeleted?: () => void | Promise<unknown>
 }
 
 /** The roster's closed state set; a value outside it renders the generic
@@ -84,6 +92,7 @@ function profileSignature(profile: AdminTenantProfile): string {
 export function TenantProfilePage({
   tenant,
   onTenantUpdated,
+  onOrganizationDeleted,
 }: TenantProfilePageProps) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
@@ -95,6 +104,9 @@ export function TenantProfilePage({
 
   const settled = profile.data
   const [draft, setDraft] = useState<TenantProfileFields | null>(null)
+  // A page refresh remounts the ownership card, withdrawing its dialog,
+  // draft and feedback together with the re-read.
+  const [ownershipEpoch, setOwnershipEpoch] = useState(0)
   // The values the draft was last built from. A settled read whose values
   // actually changed (a landed save, a refresh) replaces the draft; a
   // background refetch with the same values leaves an edit in place.
@@ -119,6 +131,7 @@ export function TenantProfilePage({
       setDraft(null)
       appliedSignature.current = ''
       feedback.reset()
+      setOwnershipEpoch((epoch) => epoch + 1)
     },
   )
 
@@ -148,6 +161,18 @@ export function TenantProfilePage({
   }
 
   const pending = profile.isPending && settled === undefined
+
+  // A 409 from an ownership write is one server type; the profile re-read is
+  // what tells a tombstone from a transferred owner, and a refused re-read is
+  // classified by its own status.
+  const reloadProfile = async (): Promise<AdminTenantProfile | undefined> => {
+    try {
+      const result = await profile.refetch()
+      return result.data
+    } catch {
+      return undefined
+    }
+  }
 
   return (
     <Box>
@@ -217,6 +242,12 @@ export function TenantProfilePage({
                     value={settledProfile.alias}
                   />
                   <DefinitionRow
+                    label={t('tenantProfile.field.owner')}
+                    value={
+                      settledProfile.ownerAccount || t('common.emptyValue')
+                    }
+                  />
+                  <DefinitionRow
                     label={t('tenantProfile.field.status')}
                     value={statusLabel(settledProfile.status, t)}
                   />
@@ -275,6 +306,19 @@ export function TenantProfilePage({
                   </>
                 )}
               </SectionCard>
+
+              <TenantOwnership
+                key={`ownership:${ownershipEpoch}`}
+                tenant={tenant}
+                profile={settledProfile}
+                displayName={displayNameOf(
+                  settledProfile.displayName,
+                  settledProfile.alias,
+                )}
+                onTenantUpdated={onTenantUpdated}
+                onOrganizationDeleted={onOrganizationDeleted}
+                reloadProfile={reloadProfile}
+              />
             </>
           )
         }}

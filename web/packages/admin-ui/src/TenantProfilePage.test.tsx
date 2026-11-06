@@ -9,31 +9,99 @@
  * exactly as the operator typed it.
  */
 
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { attachSession } from '@speed/auth-core'
+import { uiKitResources } from '@speed/ui-kit'
 import { TenantProfilePage } from './TenantProfilePage.js'
 import {
   OrganizationAdminOperationsProvider,
   type AdminTenantProfile,
 } from './organization-operations.js'
+import type { AdminMember } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   createAdminOperations,
   makeAdminBackend,
   profileFixture,
+  type AdminBackend,
 } from '../test-utils/operations.js'
+import {
+  ANONYMOUS_SNAPSHOT,
+  AUTHENTICATED_SNAPSHOT,
+  createStepUpSession,
+} from '../test-utils/session.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = 'acme'
+const OWNER = 'acc-1'
+const OTHER_ACCOUNT = 'acc-2'
+
+/** The ui-kit label the confirm button shows once the two-step guard arms. */
+const CONFIRM_AGAIN_LABEL = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly confirmDialog: { readonly confirmAgainLabel: string }
+  }
+).confirmDialog.confirmAgainLabel
+
+const ADA: AdminMember = {
+  account: OWNER,
+  tenant: TENANT,
+  active: true,
+  display_name: 'Ada Lovelace',
+  source: 'admin',
+  sso_exempt: false,
+  roles: ['tenant-admin'],
+  joined_at: '2026-10-15T12:00:00Z',
+}
+
+const BOB: AdminMember = {
+  account: OTHER_ACCOUNT,
+  tenant: TENANT,
+  active: true,
+  display_name: 'Bob Stone',
+  source: 'invite',
+  sso_exempt: false,
+  roles: [],
+  joined_at: '2026-10-20T08:30:00Z',
+}
+
+const SUSPENDED: AdminMember = {
+  ...BOB,
+  account: 'acc-3',
+  display_name: 'Carol Suspended',
+  active: false,
+}
+
+/** Attach the session the page reads the acting account from. */
+function attachAccount(accountId: string): void {
+  attachSession(
+    createStepUpSession({
+      ...AUTHENTICATED_SNAPSHOT,
+      principal: {
+        ...AUTHENTICATED_SNAPSHOT.principal!,
+        account_id: accountId,
+      },
+    }),
+  )
+}
+
+afterEach(() => {
+  attachSession(createStepUpSession(ANONYMOUS_SNAPSHOT))
+})
 
 function renderPage({
+  tenant = TENANT,
   profile = profileFixture(),
   getTenantProfile,
   updateTenantProfile,
   onTenantUpdated,
+  onOrganizationDeleted,
+  backend = {},
 }: {
+  readonly tenant?: string
   readonly profile?: AdminTenantProfile
   readonly getTenantProfile?: (
     tenant: string,
@@ -44,21 +112,25 @@ function renderPage({
     >[0],
   ) => Promise<void>
   readonly onTenantUpdated?: () => void | Promise<void>
+  readonly onOrganizationDeleted?: () => void | Promise<void>
+  readonly backend?: Partial<AdminBackend>
 } = {}) {
   const operations = createAdminOperations(
     makeAdminBackend({
       getTenantProfile: () =>
         getTenantProfile === undefined
           ? Promise.resolve(profile)
-          : getTenantProfile(TENANT),
+          : getTenantProfile(tenant),
       ...(updateTenantProfile === undefined ? {} : { updateTenantProfile }),
+      ...backend,
     }),
   )
   return renderWithProviders(
     <OrganizationAdminOperationsProvider operations={operations}>
       <TenantProfilePage
-        tenant={TENANT}
+        tenant={tenant}
         onTenantUpdated={onTenantUpdated}
+        onOrganizationDeleted={onOrganizationDeleted}
       />
     </OrganizationAdminOperationsProvider>,
     { operations },
@@ -294,6 +366,372 @@ describe('TenantProfilePage', () => {
   it('has no axe violations', async () => {
     renderPage()
     await ready()
+    await expectNoAxeViolations()
+  })
+})
+
+const ORG_NAME = 'Acme Incorporated'
+const ORG_ALIAS = 'acme-inc'
+
+function ownerProfile(
+  overrides: Partial<AdminTenantProfile> = {},
+): AdminTenantProfile {
+  return profileFixture({
+    alias: ORG_ALIAS,
+    displayName: ORG_NAME,
+    ownerAccount: OWNER,
+    ...overrides,
+  })
+}
+
+function transferTitle(): string {
+  return zhCN.tenantProfile.ownership.transfer.title.replace('{{name}}', ORG_NAME)
+}
+
+function deleteTitle(): string {
+  return zhCN.tenantProfile.ownership.delete.title.replace('{{name}}', ORG_NAME)
+}
+
+/** Arm the dialog's two-step guard and fire it. */
+async function armAndConfirm(
+  user: ReturnType<typeof userEvent.setup>,
+  dialog: HTMLElement,
+  confirmLabel: string,
+): Promise<void> {
+  await user.click(within(dialog).getByRole('button', { name: confirmLabel }))
+  const again = await within(dialog).findByRole('button', {
+    name: CONFIRM_AGAIN_LABEL,
+  })
+  await waitFor(() => expect(again).toBeEnabled())
+  await user.click(again)
+}
+
+describe('TenantProfilePage ownership', () => {
+  it('shows the owner and lets the current owner transfer the organization', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    const transfers: unknown[] = []
+    const onTenantUpdated = vi.fn()
+    let profileReads = 0
+    renderPage({
+      profile: ownerProfile(),
+      getTenantProfile: () => {
+        profileReads += 1
+        return Promise.resolve(ownerProfile())
+      },
+      onTenantUpdated,
+      backend: {
+        listMembers: () =>
+          Promise.resolve({
+            members: [ADA, BOB, SUSPENDED],
+            next_cursor: '',
+          }),
+        transferTenantOwner: (input) => {
+          transfers.push(input)
+          return Promise.resolve()
+        },
+      },
+    })
+    await ready()
+
+    // The owner account is shown on the identity card.
+    expect(screen.getByText(zhCN.tenantProfile.field.owner)).toBeInTheDocument()
+    expect(screen.getByText(OWNER)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    // Only active members other than the owner are offered.
+    expect(
+      screen.queryByRole('option', {
+        name: 'Carol Suspended (acc-3)',
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('option', {
+        name: 'Ada Lovelace (acc-1)',
+      }),
+    ).toBeNull()
+    await user.click(
+      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+    )
+
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.transfer.confirmLabel,
+    )
+
+    await waitFor(() =>
+      expect(transfers).toEqual([{ tenant: TENANT, account: OTHER_ACCOUNT }]),
+    )
+    expect(onTenantUpdated).toHaveBeenCalledTimes(1)
+    expect(
+      await screen.findByText(
+        zhCN.tenantProfile.ownership.transfer.saved
+          .replace('{{name}}', ORG_NAME)
+          .replace('{{account}}', 'Bob Stone (acc-2)'),
+      ),
+    ).toBeInTheDocument()
+    // The bundle invalidates the profile read, so the page re-reads it.
+    await waitFor(() => expect(profileReads).toBeGreaterThan(1))
+  })
+
+  it('keeps the controls off the page for a tenant administrator who is not the owner', async () => {
+    attachAccount(OTHER_ACCOUNT)
+    renderPage({ profile: ownerProfile() })
+    await ready()
+
+    // The administrator still sees who the owner is, but no ownership control.
+    expect(screen.getByText(zhCN.tenantProfile.field.owner)).toBeInTheDocument()
+    expect(screen.getByText(OWNER)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    ).toBeNull()
+  })
+
+  it('renders neither ownership control for a personal organization', async () => {
+    const personal = 'personal-acc-1'
+    attachAccount(OWNER)
+    renderPage({
+      tenant: personal,
+      profile: ownerProfile({ id: personal, alias: 'my-space' }),
+    })
+    await ready()
+
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    ).toBeNull()
+  })
+
+  it('resolves a refused transfer to its readable text', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        listMembers: () =>
+          Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
+        transferTenantOwner: () =>
+          Promise.reject({ status: 403, code: 'client.http.403' }),
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.transfer.confirmLabel,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.tenantProfile.ownership.error.forbidden,
+    )
+  })
+
+  it('names an ownership change when a 409 beat the transfer', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    let reads = 0
+    renderPage({
+      getTenantProfile: () => {
+        reads += 1
+        return Promise.resolve(
+          reads === 1
+            ? ownerProfile()
+            : ownerProfile({ ownerAccount: 'acc-9' }),
+        )
+      },
+      backend: {
+        listMembers: () =>
+          Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
+        transferTenantOwner: () =>
+          Promise.reject({ status: 409, code: 'tenant.conflict' }),
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.transfer.confirmLabel,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.tenantProfile.ownership.error.ownerChanged,
+    )
+  })
+
+  it('deletes the organization after the alias is typed and the guard is fired', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    const deletes: unknown[] = []
+    const onOrganizationDeleted = vi.fn()
+    renderPage({
+      profile: ownerProfile(),
+      onOrganizationDeleted,
+      backend: {
+        deleteTenant: (input) => {
+          deletes.push(input)
+          return Promise.resolve()
+        },
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: deleteTitle() })
+    const confirm = within(dialog).getByRole('button', {
+      name: zhCN.tenantProfile.ownership.delete.confirmLabel,
+    })
+    expect(confirm).toBeDisabled()
+
+    await user.type(
+      within(dialog).getByLabelText(
+        zhCN.tenantProfile.ownership.delete.aliasLabel,
+      ),
+      ORG_ALIAS,
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.delete.confirmLabel,
+    )
+
+    await waitFor(() => expect(deletes).toEqual([{ tenant: TENANT }]))
+    expect(onOrganizationDeleted).toHaveBeenCalledTimes(1)
+    expect(
+      await screen.findByText(
+        zhCN.tenantProfile.ownership.delete.saved.replace(
+          '{{name}}',
+          ORG_NAME,
+        ),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('names the tombstone when the delete meets an already-deleted organization', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    let reads = 0
+    renderPage({
+      getTenantProfile: () => {
+        reads += 1
+        return Promise.resolve(
+          reads === 1 ? ownerProfile() : ownerProfile({ status: 'deleted' }),
+        )
+      },
+      backend: {
+        deleteTenant: () =>
+          Promise.reject({ status: 409, code: 'tenant.conflict' }),
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: deleteTitle() })
+    await user.type(
+      within(dialog).getByLabelText(
+        zhCN.tenantProfile.ownership.delete.aliasLabel,
+      ),
+      ORG_ALIAS,
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.delete.confirmLabel,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.tenantProfile.ownership.error.deleted,
+    )
+  })
+
+  it('has no axe violations with the ownership controls and dialogs', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        listMembers: () =>
+          Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
+      },
+    })
+    await ready()
+    await expectNoAxeViolations()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    await user.click(
+      within(dialog).getByRole('combobox', {
+        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+    )
     await expectNoAxeViolations()
   })
 })

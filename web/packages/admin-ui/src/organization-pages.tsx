@@ -20,6 +20,7 @@
 
 import type { ReactElement } from 'react'
 import {
+  useOrganizationAdminOnOrganizationDeleted,
   useOrganizationAdminOnTenantUpdated,
   useOrganizationAdminProtectedRoles,
   useOrganizationAdminTenant,
@@ -42,8 +43,13 @@ export function OrganizationInvitationsPage(): ReactElement {
 export function OrganizationProfilePage(): ReactElement {
   const tenant = useOrganizationAdminTenant()
   const onTenantUpdated = useOrganizationAdminOnTenantUpdated()
+  const onOrganizationDeleted = useOrganizationAdminOnOrganizationDeleted()
   return (
-    <TenantProfilePage tenant={tenant} onTenantUpdated={onTenantUpdated} />
+    <TenantProfilePage
+      tenant={tenant}
+      onTenantUpdated={onTenantUpdated}
+      onOrganizationDeleted={onOrganizationDeleted}
+    />
   )
 }
 

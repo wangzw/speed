@@ -103,16 +103,21 @@ Binding and unbinding belong to the member panel, and the host's
 wrapper renders `OrganizationSecurityPage`: the two declared tenant
 admission policies as switches, with their status, effect, impact and the
 platform floor, saving each switch on its own and rendering no table. The
-profile wrapper hands the current tenant and the host's `onTenantUpdated`
-to the shared `TenantProfilePage`: a read-only identity card and an
-editable profile card, whose landed save asks the host to reload the
-caller tenant list the account menu and breadcrumb read. The
+profile wrapper hands the current tenant, the host's `onTenantUpdated` and
+`onOrganizationDeleted` to the shared `TenantProfilePage`: a read-only
+identity card (with the owner account), an editable profile card, and a
+current-owner-only ownership card that transfers the organization to an
+active member or deletes it after the alias is typed. A landed save asks the
+host to reload the caller tenant list the account menu and breadcrumb read; a
+landed deletion asks the host to leave the organization and reload that
+list. The
 shared pages render through `AdminPageHeader`, which prefers the
 organization breadcrumb context and falls back to the page's own platform
 trail otherwise, so neither surface leaks the other's trail.
 `OrganizationAdminOperations` carries the tenant-scoped invitation,
 membership and SSO members, the
-tenant settings members and the tenant roles/grants/bindings members; no
+tenant settings members, the tenant roles/grants/bindings members, and the
+owner transfer and organization deletion writes; no
 member addresses a platform asset or the platform account read.
 
 The package ships one entry (`src/index.ts`, the export set in the
@@ -627,9 +632,11 @@ policies only, the platform-enforced read-only switch, the two-step
 confirmation before turning a policy off, optimistic save and rollback on
 refusal, the protected tenant's switch-less read-only page, both
 languages, and axe. The profile suite (`TenantProfilePage.test.tsx`)
-covers the read-only identity card, the profile card's write, the
-clearable display name's fallback to the alias, the host's
-`onTenantUpdated` hand-over, and axe; `TenantProfileFields.test.ts`
+covers the read-only identity card and owner row, the profile card's write,
+the clearable display name's fallback to the alias, the host's
+`onTenantUpdated` hand-over, the current owner's transfer and deletion
+controls (including their refusal text and the non-owner, personal and
+tombstone exclusions), and axe; `TenantProfileFields.test.ts`
 covers the field bounds. The platform settings suite covers the platform
 key/value table and its editable numeric inputs. The
 roles suite (`OrganizationRolesPage.test.tsx`) covers the role table's

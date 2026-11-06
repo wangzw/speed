@@ -425,6 +425,8 @@ describe('OrganizationAdminProvider', () => {
         'useTenantBindings',
         'useTenantGrantPermission',
         'useTenantGrants',
+        'useTenantOwnerDelete',
+        'useTenantOwnerTransfer',
         'useTenantPermissions',
         'useTenantProfile',
         'useTenantProfileWrite',

@@ -106,8 +106,10 @@ import type {
   AdminTenantGrant,
   AdminTenantGrantRef,
   AdminTenantPermission,
+  AdminTenantOwnerTransferInput,
   AdminTenantProfile,
   AdminTenantProfileWriteInput,
+  AdminTenantRef,
   AdminTenantRemoveSettingInput,
   AdminTenantRole,
   AdminTenantRoleBindingPage,
@@ -226,6 +228,8 @@ export interface AdminBackend {
   // Tenant management surfaces (the organization bundle's own members).
   getTenantProfile: (tenant: string) => Promise<AdminTenantProfile>
   updateTenantProfile: (input: AdminTenantProfileWriteInput) => Promise<void>
+  transferTenantOwner: (input: AdminTenantOwnerTransferInput) => Promise<void>
+  deleteTenant: (input: AdminTenantRef) => Promise<void>
   listTenantSettings: (tenant: string) => Promise<AdminTenantSettings>
   writeTenantSetting: (input: AdminTenantSetSettingInput) => Promise<void>
   removeTenantSetting: (input: AdminTenantRemoveSettingInput) => Promise<void>
@@ -362,6 +366,8 @@ export function makeAdminBackend(
 
     getTenantProfile: () => Promise.resolve(profileFixture()),
     updateTenantProfile: () => Promise.resolve(),
+    transferTenantOwner: () => Promise.resolve(),
+    deleteTenant: () => Promise.resolve(),
     listTenantSettings: () =>
       Promise.resolve({
         settings: [],
@@ -1192,6 +1198,31 @@ export function createAdminOperations(
           void client.invalidateQueries({
             queryKey: tenantProfileKey(input.tenant),
           })
+        },
+      })
+    },
+    useTenantOwnerTransfer: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantOwnerTransferInput) =>
+          backend.transferTenantOwner(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantProfileKey(input.tenant),
+          })
+          void client.invalidateQueries({ queryKey: membersKey(input.tenant) })
+        },
+      })
+    },
+    useTenantOwnerDelete: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantRef) => backend.deleteTenant(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantProfileKey(input.tenant),
+          })
+          void client.invalidateQueries({ queryKey: membersKey(input.tenant) })
         },
       })
     },

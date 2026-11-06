@@ -482,6 +482,14 @@ function AppFrame({
             invitationLink={invitationPath}
             protectedRoles={organizationAdminProtectedRoles}
             onTenantUpdated={loadSelfTenants}
+            onOrganizationDeleted={async () => {
+              // The deleted organization is no longer a membership. Reload the
+              // caller tenant list (the menu and breadcrumb read it, and the
+              // tenant frame settles a new default from it) and leave the
+              // organization surface for the tenant home.
+              await loadSelfTenants()
+              navigate(TENANT_HOME_PATH)
+            }}
           >
             <OrganizationRouteGuard target={organizationAdmission.target}>
               <RouteView />
