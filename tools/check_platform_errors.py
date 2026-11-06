@@ -207,9 +207,10 @@ KEPT = {
         "starters/demo/web/src/impersonation.test.tsx; no writer in this tree"
     ),
     "tenant.alias_immutable": (
-        "the alias-change route and its problem type were removed in T4; the "
-        "frontend rename control, its copy in web/packages/admin-ui/src/"
-        "internal/error-text.ts and the e2e spec that pins it are removed in T6"
+        "the alias-change route and its problem type were removed in T4, as were "
+        "the frontend rename control and its e2e step; only the error-text "
+        "whitelist entry in web/packages/admin-ui/src/internal/error-text.ts "
+        "remains to be removed in T6"
     ),
 }
 
