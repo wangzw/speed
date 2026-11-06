@@ -242,7 +242,7 @@ var transferOwnerOperation = speedhttp.NewReplyOperation[transferOwnerInput](
 			Description: "No tenant carries the identifier",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The target is not an active member of the organization, or the tenant is a tombstone"),
+			"The target is not an active member of the organization, the target's account is not active, or the tenant is a tombstone"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )

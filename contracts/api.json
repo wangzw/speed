@@ -9620,7 +9620,7 @@
                 }
               }
             },
-            "description": "The target is not an active member of the organization, or the tenant is a tombstone"
+            "description": "The target is not an active member of the organization, the target's account is not active, or the tenant is a tombstone"
           },
           "413": {
             "content": {
