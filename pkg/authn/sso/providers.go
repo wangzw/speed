@@ -281,20 +281,24 @@ func (p *product) checkPutShape(in authn.SSOProvider, secret *string) error {
 }
 
 // checkUsernameStrategy holds the two username fields to the combinations a
-// just-in-time login can carry out. A provider that never provisions needs no
-// strategy, but a claim without a strategy, or a strategy outside the closed
-// set, is still refused: the stored row has to describe a decision the login
+// just-in-time login can carry out. A preprovisioned provider never creates an
+// account, so it carries neither field. A just-in-time provider has to name a
+// strategy: the claim strategy also names a claim, and the user-confirm
+// strategy carries none. A claim without a strategy, or a strategy outside the
+// closed set, is refused: the stored row has to describe a decision the login
 // path can read.
 func checkUsernameStrategy(in authn.SSOProvider) error {
+	if in.Provisioning == model.ProvisioningPreprovisioned {
+		if in.UsernameStrategy != "" || in.UsernameClaim != "" {
+			return fmt.Errorf("%w: a %s provider carries no username strategy or claim",
+				authn.ErrInvalidConfig, model.ProvisioningPreprovisioned)
+		}
+		return nil
+	}
 	switch in.UsernameStrategy {
 	case "":
-		if in.Provisioning == model.ProvisioningJIT {
-			return fmt.Errorf("%w: a just-in-time provider has to name a username strategy, %s or %s",
-				authn.ErrInvalidConfig, model.UsernameStrategyClaim, model.UsernameStrategyUserConfirm)
-		}
-		if in.UsernameClaim != "" {
-			return fmt.Errorf("%w: username_claim is set without a username strategy", authn.ErrInvalidConfig)
-		}
+		return fmt.Errorf("%w: a just-in-time provider has to name a username strategy, %s or %s",
+			authn.ErrInvalidConfig, model.UsernameStrategyClaim, model.UsernameStrategyUserConfirm)
 	case model.UsernameStrategyClaim:
 		switch in.UsernameClaim {
 		case model.UsernameClaimPreferredUsername, model.UsernameClaimEmail:

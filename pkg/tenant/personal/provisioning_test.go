@@ -119,7 +119,10 @@ func TestProvisionAccountReplaysOnAnExistingTenant(t *testing.T) {
 }
 
 // An alias another tenant holds is this module's exported refusal, and it wraps
-// the roster's own error so a caller may match either.
+// the roster's own error so a caller may match either. It also carries
+// authn.ErrAccountExists, which is what the account module passes through: a
+// login therefore answers the name as taken rather than as an unavailable
+// dependency.
 func TestProvisionAccountAliasConflictReturnsTheSentinel(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	roster.createErr = tenant.ErrAliasConflict
@@ -132,6 +135,9 @@ func TestProvisionAccountAliasConflictReturnsTheSentinel(t *testing.T) {
 	}
 	if !errors.Is(err, tenant.ErrAliasConflict) {
 		t.Errorf("the refusal does not wrap the roster's error: %v", err)
+	}
+	if !errors.Is(err, authn.ErrAccountExists) {
+		t.Errorf("the refusal does not carry authn.ErrAccountExists, so the account module would call it unavailable: %v", err)
 	}
 	if len(writer.put)+len(manager.roles)+len(manager.binding) != 0 {
 		t.Errorf("the refused provisioning wrote past the tenant row")

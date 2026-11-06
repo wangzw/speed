@@ -378,11 +378,11 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 | `user-confirm` | 空 | 首次登录在建户之前停到待建号，由当事人确认或填写用户名。 |
 | 空 | 空 | 只允许 `preprovisioned` 的提供方；它从不建户，不需要策略。 |
 
-写入时按上表的组合校验：`jit` 必须给出策略；`claim` 必须给出两个取值之一；`user-confirm` 与 `preprovisioned` 不带 `username_claim`；`username_claim` 不得在没有策略时出现。任一不成立即 `ErrInvalidConfig`。
+写入时按上表的组合校验：`jit` 必须给出策略；`claim` 必须给出两个取值之一；`user-confirm` 不带 `username_claim`；`preprovisioned` 的策略与 `username_claim` 都为空；`username_claim` 不得在没有策略时出现。任一不成立即 `ErrInvalidConfig`。
 
-**claim 模式。** 取值经与用户名、租户别名同一套规范化（NFKC、转小写、`^[a-z0-9][a-z0-9-]{2,62}$`）后作为用户名。断言没有该声明、取值规范化为空或不合法、落在保留用户名清单内、或已被另一个账户作为用户名持有，都拒绝登录：依次为 `ErrJITUsernameMissing`、`ErrJITUsernameInvalid`、`ErrJITUsernameTaken`，对外一律 401 `login-failed`，成因进日志。这些拒绝发生在任何写入之前，因此账户、绑定、成员关系与个人租户都不存在；claim 模式不向用户索取输入，当事人无法自行纠正，错误文案指向联系管理员。
+**claim 模式。** 取值经与用户名、租户别名同一套规范化（NFKC、转小写、`^[a-z0-9][a-z0-9-]{2,62}$`）后作为用户名。断言没有该声明、取值规范化为空或不合法、落在保留用户名清单内、已被另一个账户作为用户名持有，或已被业务组织占用为租户别名，都拒绝登录：依次为 `ErrJITUsernameMissing`、`ErrJITUsernameInvalid`、`ErrJITUsernameTaken`，对外一律 401 `login-failed`，成因进日志。前三类与账户已被占用的那一类都发生在任何写入之前；别名冲突只在账户事务写入租户行时由别名的唯一约束仲裁，事务回滚后不留下任何行。无论哪一种，账户、绑定、成员关系与个人租户都不存在；claim 模式不向用户索取输入，当事人无法自行纠正，错误文案指向联系管理员。
 
-**user-confirm 模式。** 首次登录停在登录引擎的待建号步骤，流程记录里只有开户所需的事实，没有任何账户行。当事人提交的用户名经同一套规范化与保留字校验通过后，账户、用户名标识、外部绑定、租户成员关系与个人租户在同一事务里写入；用户名此后不可删除、不可更换（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）。
+**user-confirm 模式。** 首次登录停在登录引擎的待建号步骤，流程记录里只有开户所需的事实，没有任何账户行。当事人提交的用户名经同一套规范化与保留字校验通过后，账户、用户名标识与个人租户在账户模块的同一事务里写入；外部绑定与租户成员关系在此之后分两步写入，任一步失败都会删除刚建成的账户（个人租户随账户删除写成墓碑），而进程在这两步之间崩溃会留下一个没有绑定或成员关系的账户与个人租户。用户名此后不可删除、不可更换（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）。
 
 **存量行。** 迁移前写入的即时开通提供方没有策略。这类行在登录时以 `ErrJITUsernameStrategy` 拒绝，不建账户；管理员补全策略后才能使用。平台不设派生别名或空用户名回退。
 

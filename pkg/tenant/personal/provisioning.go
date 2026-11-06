@@ -15,9 +15,12 @@ import (
 )
 
 // ErrAliasConflict reports a personal tenant whose alias another tenant holds.
-// It wraps tenant.ErrAliasConflict, so a caller may match either; the exported
-// sentinel exists so a caller and a test can identify this module's refusal
-// without depending on the roster's own error text.
+// It wraps tenant.ErrAliasConflict and authn.ErrAccountExists, so a caller may
+// match any of the three: the roster's error names the conflict, and the authn
+// sentinel lets the account module and the login path tell a taken name from an
+// unavailable dependency. The exported sentinel exists so a caller and a test
+// can identify this module's refusal without depending on the roster's own
+// error text.
 var ErrAliasConflict = errors.New("personal: the personal tenant's alias is held by another tenant")
 
 // ErrUsernameMissing refuses a user account that carries no username. The
@@ -82,12 +85,12 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 	case errors.Is(err, tenant.ErrTenantExists):
 		// The row is already there; the remaining steps are the replay.
 	case errors.Is(err, tenant.ErrAliasConflict):
-		// The username is one namespace with the roster's aliases. A business
-		// organization already holding the name means the account cannot take
-		// its username, which the account module answers as a taken identifier;
-		// carrying that class keeps the refusal a 409 rather than an outage.
-		return fmt.Errorf("%w: %w", authn.ErrAccountExists,
-			fmt.Errorf("%w: %w", ErrAliasConflict, err))
+		// The alias is the account's username, so a business tenant holding it
+		// takes the name in the shared namespace. The error also carries
+		// authn.ErrAccountExists: the account module passes that through as a
+		// domain refusal rather than an unavailable dependency, and a login can
+		// then answer the name as taken instead of failing it as a fault.
+		return fmt.Errorf("%w: %w: %w", ErrAliasConflict, authn.ErrAccountExists, err)
 	default:
 		return fmt.Errorf("registering the personal tenant in the account's transaction: %w", err)
 	}

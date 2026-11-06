@@ -457,6 +457,24 @@ func TestPutHoldsTheUsernameStrategyToItsCombinations(t *testing.T) {
 			wantErr: authn.ErrInvalidConfig,
 		},
 		{
+			name: "preprovisioned with a claim strategy",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningPreprovisioned, UsernameStrategy: authn.UsernameStrategyClaim,
+				UsernameClaim: authn.UsernameClaimEmail, Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
+			name: "preprovisioned with the user-confirm strategy",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningPreprovisioned, UsernameStrategy: authn.UsernameStrategyUserConfirm,
+				Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
 			name: "preprovisioned with no strategy",
 			in: authn.SSOProvider{
 				Tenant: "tenant-a", Protocol: "oidc", Name: "p",

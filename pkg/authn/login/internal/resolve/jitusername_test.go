@@ -2,6 +2,7 @@ package resolve
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -123,6 +124,23 @@ func TestClaimStrategyRefusesATakenUsername(t *testing.T) {
 	}
 	if e.s.writes() != 0 {
 		t.Errorf("%d writes, want none", e.s.writes())
+	}
+}
+
+// A name a business tenant holds as its alias is not visible to the account
+// lookup, so it surfaces when the creation writes the personal tenant. The
+// personal seam reports that collision as authn.ErrAccountExists, and the claim
+// strategy answers it as the same taken-name refusal the pre-check gives.
+func TestClaimStrategyMapsACreationTimeNameConflictToTheUsernameRefusal(t *testing.T) {
+	e := newEnv(t, withClaimProvider(authn.UsernameClaimPreferredUsername))
+	e.s.failCreate = fmt.Errorf("%w: creating an account: %w", authn.ErrAccountExists,
+		errors.New("personal: the personal tenant's alias is held by another tenant"))
+	_, err := e.resolve(enterpriseWithUsername("u1", "ann@acme.com", "ann"))
+	if !errors.Is(err, authn.ErrJITUsernameTaken) {
+		t.Fatalf("err = %v, want ErrJITUsernameTaken", err)
+	}
+	if errors.Is(err, authn.ErrUnavailable) {
+		t.Errorf("err = %v, want the name taken, not an unavailable dependency", err)
 	}
 }
 

@@ -260,7 +260,9 @@ func TestAFailedProvisioningLeavesNoAccount(t *testing.T) {
 }
 
 // An account whose username is already a business tenant's alias cannot own a
-// personal tenant addressed by it, and the whole creation rolls back.
+// personal tenant addressed by it, and the whole creation rolls back. The
+// refusal reaches the account module's caller as ErrAccountExists, so a login
+// answers the name as taken rather than as an unavailable dependency.
 func TestAnAliasConflictLeavesNoAccount(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
@@ -274,6 +276,9 @@ func TestAnAliasConflictLeavesNoAccount(t *testing.T) {
 		}
 		if !errors.Is(err, authn.ErrAccountExists) {
 			t.Errorf("the alias conflict gave %v, want the account module's ErrAccountExists", err)
+		}
+		if errors.Is(err, authn.ErrUnavailable) {
+			t.Errorf("the refusal = %v, want it not to read as an unavailable dependency", err)
 		}
 		if n := a.count(t, "authn_accounts", ""); n != 0 {
 			t.Errorf("the refused creation left %d account row(s), want none", n)
