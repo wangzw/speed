@@ -1,14 +1,13 @@
 /**
  * TenantRosterPage: the roster-administration page.
  *
- * Its read renders the settled list as a table (with the roster's own
- * status spelling, a value outside the closed set falling to the generic
- * label), and its writes drive the operations bundle -- a successful
- * create invalidates the list and the new row appears, and a refused write
+ * Its read renders the settled list as a table keyed by alias (with the
+ * roster's own status spelling, a value outside the closed set falling to
+ * the generic label), and its writes drive the operations bundle -- a
+ * successful status write names the row's alias, and a refused write
  * renders the answer's code text (a roster collision reading the conflict
- * text), never a raw key. A landed write clears the input that carried it;
- * a refused one keeps it. The identifier and alias inputs mark themselves
- * invalid while a typed value breaks the identifier domain.
+ * text), never a raw key. The roster carries no text input at all: it is a
+ * table and a link to the standalone registration page.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -71,8 +70,8 @@ describe('TenantRosterPage', () => {
 
   it('lists tenants with the roster status spelling', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
-      tenantFixture({ id: 'old', alias: 'Old Co', status: 'disabled' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'old', displayName: 'Old Co', status: 'disabled' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -85,7 +84,7 @@ describe('TenantRosterPage', () => {
 
   it('renders the deleted state and hides a tombstone row\'s write controls', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'gone', alias: 'Gone Co', status: 'deleted' }),
+      tenantFixture({ alias: 'gone', displayName: 'Gone Co', status: 'deleted' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -96,21 +95,21 @@ describe('TenantRosterPage', () => {
     // A tombstone is terminal: the row carries no enable/disable toggle.
     expect(
       screen.queryByRole('button', {
-        name: text(zhCN.tenants.enableAria, { id: 'gone' }),
+        name: text(zhCN.tenants.enableAria, { alias: 'gone' }),
       }),
     ).toBeNull()
     expect(
       screen.queryByRole('button', {
-        name: text(zhCN.tenants.disableAria, { id: 'gone' }),
+        name: text(zhCN.tenants.disableAria, { alias: 'gone' }),
       }),
     ).toBeNull()
   })
 
   it('shows who disabled a disabled row and nothing on a row that is not disabled', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'op', alias: 'Operator Off', status: 'disabled', disabledBy: 'operator' }),
-      tenantFixture({ id: 'acc', alias: 'Account Off', status: 'disabled', disabledBy: 'account' }),
-      tenantFixture({ id: 'on', alias: 'Still On', status: 'active' }),
+      tenantFixture({ alias: 'op', displayName: 'Operator Off', status: 'disabled', disabledBy: 'operator' }),
+      tenantFixture({ alias: 'acc', displayName: 'Account Off', status: 'disabled', disabledBy: 'account' }),
+      tenantFixture({ alias: 'on', displayName: 'Still On', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -126,8 +125,8 @@ describe('TenantRosterPage', () => {
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
-      tenantFixture({ id: 'old', alias: 'Old Co', status: 'disabled' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'old', displayName: 'Old Co', status: 'disabled' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -136,8 +135,8 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
     const gated = [
       screen.getByRole('button', { name: zhCN.common.refresh }),
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
-      screen.getByRole('button', { name: text(zhCN.tenants.enableAria, { id: 'old' }) }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
+      screen.getByRole('button', { name: text(zhCN.tenants.enableAria, { alias: 'old' }) }),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -157,7 +156,7 @@ describe('TenantRosterPage', () => {
       screen.getByRole('link', { name: zhCN.tenants.register }),
     ).toHaveAttribute('href', '/admin/tenants/new')
     // The registration form is its own page now: the roster carries no
-    // text input at all (no inline identifier or alias field).
+    // text input at all (no inline alias or display-name field).
     expect(screen.queryAllByRole('textbox')).toHaveLength(0)
   })
 
@@ -174,13 +173,13 @@ describe('TenantRosterPage', () => {
     const user = userEvent.setup()
     const calls: string[] = []
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () => Promise.resolve(tenants),
         setTenantStatus: (input) => {
-          calls.push(`${input.id}:${input.status}`)
+          calls.push(`${input.alias}:${input.status}`)
           return Promise.resolve()
         },
       }),
@@ -190,15 +189,15 @@ describe('TenantRosterPage', () => {
     // The row's enable/disable control names its own tenant, so it is not
     // confusable with another row's toggle.
     await user.click(
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
     )
     expect(calls).toEqual(['acme:disabled'])
   })
 
   it('names each row control with its own tenant', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
-      tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -206,21 +205,21 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    // The two rows carry the same control distinguished only by the tenant
-    // id baked into each accessible name -- never two identical "Disable"
+    // The two rows carry the same control distinguished only by the alias
+    // baked into each accessible name -- never two identical "Disable"
     // buttons.
     expect(
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'globex' }) }),
+      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'globex' }) }),
     ).toBeInTheDocument()
   })
 
   it('announces a landed status change', async () => {
     const user = userEvent.setup()
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -233,15 +232,15 @@ describe('TenantRosterPage', () => {
 
     // The success notice is a standing status region: mounted clipped until a
     // write lands, then filled with the confirmation.
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
     expect(
-      await screen.findByText(text(zhCN.tenants.disabledToast, { id: 'acme' })),
+      await screen.findByText(text(zhCN.tenants.disabledToast, { alias: 'acme' })),
     ).toBeInTheDocument()
   })
 
   it('opens with the page header: the title as h1, a breadcrumb trail, and a refresh action', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
     ]
     const listTenants = vi.fn(() => Promise.resolve(tenants))
     const operations = createAdminOperations(makeAdminBackend({ listTenants }))
@@ -274,7 +273,7 @@ describe('TenantRosterPage', () => {
         listTenants: () => {
           reads.push('read')
           return Promise.resolve([
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
           ])
         },
         setTenantStatus: () => pending.promise,
@@ -284,7 +283,7 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
     expect(reads).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
 
     // The row's scope is in flight, so the page-level refresh is
     // natively disabled. The scope is chosen, so the disabled control
@@ -319,7 +318,7 @@ describe('TenantRosterPage', () => {
         listTenants: () => {
           reads.push('read')
           return Promise.resolve([
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
           ])
         },
         setTenantStatus: () => pending.promise,
@@ -331,7 +330,7 @@ describe('TenantRosterPage', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+        name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
       }),
     )
 
@@ -358,13 +357,13 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
     for (const name of [
-      zhCN.tenants.column.id,
+      zhCN.tenantProfile.field.displayName,
       zhCN.tenants.column.alias,
       zhCN.tenants.column.status,
       zhCN.tenants.column.actions,
@@ -379,7 +378,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(
@@ -401,7 +400,7 @@ describe('TenantRosterPage', () => {
     expect(
       screen.getAllByRole('columnheader').map((cell) => cell.textContent),
     ).toEqual([
-      zhCN.tenants.column.id,
+      zhCN.tenantProfile.field.displayName,
       zhCN.tenants.column.alias,
       zhCN.tenants.column.status,
       'Region',
@@ -409,38 +408,40 @@ describe('TenantRosterPage', () => {
     ])
   })
 
-  it('caps the long alias and identifier at the shared primary width', async () => {
-    const id = 'tenant-emea-production-000123'
-    const alias = 'AcmeCorporationInternationalHoldingsEMEA'
+  it('caps the long display name and alias at the shared primary width', async () => {
+    const displayName = 'AcmeCorporationInternationalHoldingsEMEA'
+    const alias = 'tenant-emea-production-000123'
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id, alias, status: 'active' })]),
+          Promise.resolve([
+            tenantFixture({ alias, displayName, status: 'active' }),
+          ]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
-    await screen.findByText(alias)
+    await screen.findByText(displayName)
 
-    // The alias is the page's primary identity: it never hides, and the
-    // shared cap (160px below `md`, 200px from `md` up) keeps a long
-    // value from pushing the row's controls out of the table's container.
-    // The complete value rides the cell's title.
-    const aliasText = screen.getByText(alias)
-    expect(aliasText).toHaveAttribute('title', alias)
-    expect(containerMaxWidthOf(aliasText)).toEqual(
+    // The display name is the page's primary label and the row's link: the
+    // shared cap (160px below `md`, 200px from `md` up) keeps a long value
+    // from pushing the row's controls out of the table's container. The
+    // cap counts the copy control beside it, so the whole cell stays inside
+    // the same budget while the title and the control keep the full value.
+    const nameCell = screen.getByText(displayName).closest('td')
+    expect(nameCell).not.toBeNull()
+    expect(nameCell).toHaveAttribute('title', displayName)
+    expect(containerMaxWidthOf(nameCell!.firstElementChild!)).toEqual(
       new Map([
         [0, 160],
         [900, 200],
       ]),
     )
 
-    // The identifier is host-supplied and unbounded; the cap counts the
-    // copy control beside it, so the whole cell stays inside the same
-    // budget while the title and the control keep the full value.
-    const idCell = screen.getByText(id).closest('td')
-    expect(idCell).not.toBeNull()
-    expect(idCell).toHaveAttribute('title', id)
-    expect(containerMaxWidthOf(idCell!.firstElementChild!)).toEqual(
+    // The alias never hides either, and the same shared cap keeps a long
+    // value contained; the complete value rides the cell's title.
+    const aliasText = screen.getByText(alias)
+    expect(aliasText).toHaveAttribute('title', alias)
+    expect(containerMaxWidthOf(aliasText)).toEqual(
       new Map([
         [0, 160],
         [900, 200],
@@ -481,14 +482,15 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage basePath="/admin/tenants" />, {
       operations,
     })
     await screen.findByText('Acme')
-    expect(screen.getByRole('link', { name: 'acme' })).toHaveAttribute(
+    // The display name is the link text; the alias is the path segment.
+    expect(screen.getByRole('link', { name: 'Acme' })).toHaveAttribute(
       'href',
       '/admin/tenants/acme',
     )
@@ -500,11 +502,11 @@ describe('TenantRosterPage', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
-            tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
           ]),
         setTenantStatus: (input) =>
-          input.id === 'acme'
+          input.alias === 'acme'
             ? Promise.reject({ code: 'tenant.conflict' })
             : Promise.reject({ code: 'tenant.bad_request' }),
       }),
@@ -513,7 +515,7 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
 
     const acmeToggle = screen.getByRole('button', {
-      name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+      name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
     })
     await user.click(acmeToggle)
     // The same resolved text stands in the row marker and in the region.
@@ -522,7 +524,7 @@ describe('TenantRosterPage', () => {
     ).toHaveLength(2)
 
     const globexToggle = screen.getByRole('button', {
-      name: text(zhCN.tenants.disableAria, { id: 'globex' }),
+      name: text(zhCN.tenants.disableAria, { alias: 'globex' }),
     })
     await user.click(globexToggle)
     expect(
@@ -548,14 +550,14 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
         setTenantStatus: () => Promise.reject({ code: 'tenant.bad_request' }),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const toggle = screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) })
+    const toggle = screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) })
     await user.click(toggle)
 
     const alert = await screen.findByRole('alert')
@@ -579,16 +581,16 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
     // The row's status change names its tenant and the new state.
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { id: 'acme' }) }))
+    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
     expect(
-      await screen.findByText(text(zhCN.tenants.disabledToast, { id: 'acme' })),
+      await screen.findByText(text(zhCN.tenants.disabledToast, { alias: 'acme' })),
     ).toBeInTheDocument()
   })
 
@@ -597,7 +599,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
         setTenantStatus: () =>
           Promise.reject({ status: 400, code: 'client.http.400' }),
       }),
@@ -605,7 +607,7 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
     const toggle = screen.getByRole('button', {
-      name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+      name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
     })
     await user.click(toggle)
 
@@ -629,7 +631,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
         setTenantStatus: () => Promise.resolve(),
       }),
     )
@@ -637,10 +639,10 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenants.disableAria, { id: 'acme' }),
+        name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
       }),
     )
-    const confirmation = text(zhCN.tenants.disabledToast, { id: 'acme' })
+    const confirmation = text(zhCN.tenants.disabledToast, { alias: 'acme' })
     expect(await screen.findByText(confirmation)).toBeInTheDocument()
 
     await user.click(
@@ -655,7 +657,7 @@ describe('TenantRosterPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listTenants: () =>
-          Promise.resolve([tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })]),
+          Promise.resolve([tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })]),
       }),
     )
     renderWithProviders(<TenantRosterPage />, { operations })

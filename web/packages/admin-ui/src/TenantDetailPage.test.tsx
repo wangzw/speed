@@ -93,7 +93,7 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderDetail(
       <TenantDetailPage
-        id="acme"
+        alias="acme"
         parentHref="/admin/tenants"
         rootHref="/admin"
       />,
@@ -121,7 +121,7 @@ describe('TenantDetailPage', () => {
   it('hides the related-page links when no route table is published', async () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderDetail(
-      <TenantDetailPage id="acme" rootHref="/admin" />,
+      <TenantDetailPage alias="acme" rootHref="/admin" />,
       { operations },
       { routes: null },
     )
@@ -142,7 +142,7 @@ describe('TenantDetailPage', () => {
     const relativeRoutes: readonly AdminRoute[] = [
       { id: 'permissions', path: '/permissions', view: () => null },
     ]
-    renderDetail(<TenantDetailPage id="acme" />, { operations }, {
+    renderDetail(<TenantDetailPage alias="acme" />, { operations }, {
       routes: relativeRoutes,
     })
     await screen.findAllByText('Acme')
@@ -154,7 +154,7 @@ describe('TenantDetailPage', () => {
   it('hides a sibling link whose declaration is absent', async () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderDetail(
-      <TenantDetailPage id="acme" rootHref="/admin" />,
+      <TenantDetailPage alias="acme" rootHref="/admin" />,
       { operations },
       { routes: RELATED_ROUTES.filter((route) => route.id !== 'sso') },
     )
@@ -171,7 +171,7 @@ describe('TenantDetailPage', () => {
   it('hides a sibling link whose target feature is absent', async () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderDetail(
-      <TenantDetailPage id="acme" rootHref="/admin" />,
+      <TenantDetailPage alias="acme" rootHref="/admin" />,
       { operations },
       { hasFeature: (name) => name !== 'authn.admin.sso' },
     )
@@ -189,7 +189,7 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderDetail(
       <TenantDetailPage
-        id="acme"
+        alias="acme"
         rootHref="/admin"
         relatedHref={{ permissions: '/bespoke/permissions' }}
       />,
@@ -206,7 +206,7 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderDetail(
       <TenantDetailPage
-        id="acme"
+        alias="acme"
         rootHref="/admin"
         relatedHref={{ permissions: '/bespoke/permissions?scope=all' }}
       />,
@@ -225,11 +225,11 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderDetail(
       <TenantDetailPage
-        id="acme"
+        alias="acme"
         parentHref="/admin/tenants"
         rootHref="/admin"
         sections={(tenant) => <p>{`Section ${tenant.alias}`}</p>}
-        aside={(tenant) => <p>{`Aside ${tenant.id}`}</p>}
+        aside={(tenant) => <p>{`Aside ${tenant.alias}`}</p>}
       />,
       { operations },
     )
@@ -237,7 +237,7 @@ describe('TenantDetailPage', () => {
 
     // Both slots receive the loaded tenant, and the host section follows
     // the page's own sections in the main column.
-    const section = screen.getByText('Section Acme')
+    const section = screen.getByText('Section acme')
     expect(section).toBeInTheDocument()
     expect(screen.getByText('Aside acme')).toBeInTheDocument()
     const related = screen.getByRole('heading', {
@@ -258,23 +258,23 @@ describe('TenantDetailPage', () => {
 
   it('raises its refresh action to the 44px floor under a coarse pointer', async () => {
     const operations = createAdminOperations(makeAdminBackend())
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     const refresh = await screen.findByRole('button', {
       name: zhCN.common.refresh,
     })
     expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
   })
 
-  it('renders the tenant fields read by id', async () => {
+  it('renders the tenant fields read by alias', async () => {
     const getTenant = vi.fn(() =>
-      Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })),
+      Promise.resolve(tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })),
     )
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
 
     expect(await screen.findAllByText('Acme')).not.toHaveLength(0)
     expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
-    expect(getTenant).toHaveBeenCalledWith({ id: 'acme' })
+    expect(getTenant).toHaveBeenCalledWith({ alias: 'acme' })
   })
 
   it('disables the tenant through the main-column control', async () => {
@@ -282,14 +282,14 @@ describe('TenantDetailPage', () => {
     const calls: string[] = []
     const operations = createAdminOperations(
       makeAdminBackend({
-        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', status: 'active' })),
+        getTenant: () => Promise.resolve(tenantFixture({ alias: 'acme', status: 'active' })),
         setTenantStatus: (input) => {
-          calls.push(`${input.id}:${input.status}`)
+          calls.push(`${input.alias}:${input.status}`)
           return Promise.resolve()
         },
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
@@ -302,7 +302,7 @@ describe('TenantDetailPage', () => {
     const user = userEvent.setup()
     let status: AdminTenant['status'] = 'active'
     const getTenant = vi.fn(() =>
-      Promise.resolve(tenantFixture({ id: 'acme', status })),
+      Promise.resolve(tenantFixture({ alias: 'acme', status })),
     )
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -313,7 +313,7 @@ describe('TenantDetailPage', () => {
         },
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
@@ -334,14 +334,14 @@ describe('TenantDetailPage', () => {
     let status: AdminTenant['status'] = 'active'
     const operations = createAdminOperations(
       makeAdminBackend({
-        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', status })),
+        getTenant: () => Promise.resolve(tenantFixture({ alias: 'acme', status })),
         setTenantStatus: (input) => {
           status = input.status
           return Promise.resolve()
         },
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
@@ -350,7 +350,7 @@ describe('TenantDetailPage', () => {
       }),
     )
     const confirmation = zhCN.tenantDetail.actions.disabled.replace(
-      '{{id}}',
+      '{{alias}}',
       'acme',
     )
     expect(await screen.findByText(confirmation)).toBeInTheDocument()
@@ -375,11 +375,11 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () =>
-          Promise.resolve(tenantFixture({ id: 'acme', status: 'active' })),
+          Promise.resolve(tenantFixture({ alias: 'acme', status: 'active' })),
         setTenantStatus: () => Promise.reject({ code: 'tenant.conflict' }),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
@@ -407,14 +407,14 @@ describe('TenantDetailPage', () => {
     let settle: (() => void) | undefined
     const operations = createAdminOperations(
       makeAdminBackend({
-        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', status: 'active' })),
+        getTenant: () => Promise.resolve(tenantFixture({ alias: 'acme', status: 'active' })),
         setTenantStatus: () =>
           new Promise<void>((resolve) => {
             settle = resolve
           }),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findByText(zhCN.tenants.status.active)
 
     const refresh = () => screen.getByRole('button', { name: zhCN.common.refresh })
@@ -434,7 +434,7 @@ describe('TenantDetailPage', () => {
   it('links back to the roster when given the roster path', async () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderWithProviders(
-      <TenantDetailPage id="acme" parentHref="/admin/tenants" />,
+      <TenantDetailPage alias="acme" parentHref="/admin/tenants" />,
       { operations },
     )
     await screen.findAllByText('Acme')
@@ -452,7 +452,7 @@ describe('TenantDetailPage', () => {
         getTenant: () => Promise.reject({ status: 403, code: 'client.http.403' }),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: zhCN.tenantDetail.retry })).toBeNull()
   })
@@ -465,11 +465,11 @@ describe('TenantDetailPage', () => {
       return calls === 1
         ? Promise.reject({ status: 404, code: 'client.http.404' })
         : Promise.resolve(
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
           )
     })
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
 
     // A bare 404 keeps the wording undecided about deletion ("not found or
     // unavailable") and still offers the retry that checks again.
@@ -488,12 +488,12 @@ describe('TenantDetailPage', () => {
       calls += 1
       return calls === 1
         ? Promise.resolve(
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
           )
         : Promise.reject({ status: 404, code: 'client.http.404' })
     })
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
 
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
@@ -511,7 +511,7 @@ describe('TenantDetailPage', () => {
         getTenant: () => Promise.reject(new Error('boom')),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     expect(await screen.findByText(zhCN.tenantDetail.error.title)).toBeInTheDocument()
     expect(
       screen.getByText(zhCN.tenantDetail.error.description),
@@ -525,15 +525,14 @@ describe('TenantDetailPage', () => {
         getTenant: () =>
           Promise.resolve(
             tenantFixture({
-              id: 'acme',
-              alias: 'Acme',
+              alias: 'acme', displayName: 'Acme',
               status: 'disabled',
               disabledBy: 'account',
             }),
           ),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
     expect(
       screen.getByText(zhCN.tenantDetail.field.disabledBy),
@@ -547,15 +546,14 @@ describe('TenantDetailPage', () => {
         getTenant: () =>
           Promise.resolve(
             tenantFixture({
-              id: 'acme',
-              alias: 'Acme',
+              alias: 'acme', displayName: 'Acme',
               status: 'disabled',
               disabledBy: 'operator',
             }),
           ),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
     expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
     expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
@@ -567,10 +565,10 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () =>
-          Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status: 'disabled' })),
+          Promise.resolve(tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'disabled' })),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
     expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
   })
@@ -578,10 +576,10 @@ describe('TenantDetailPage', () => {
   it('shows no disable source on a tenant that is not disabled', async () => {
     const operations = createAdminOperations(
       makeAdminBackend({
-        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme' })),
+        getTenant: () => Promise.resolve(tenantFixture({ alias: 'acme', displayName: 'Acme' })),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
     expect(screen.queryByText(zhCN.tenantDetail.field.disabledBy)).toBeNull()
     expect(screen.queryByText(zhCN.tenants.disabledBy.operator)).toBeNull()
@@ -595,7 +593,6 @@ describe('TenantDetailPage', () => {
         getTenant: () =>
           Promise.resolve(
             tenantFixture({
-              id: 'acme',
               alias: 'acme-inc',
               displayName: 'Acme Incorporated',
               description: 'A canned organization.',
@@ -606,8 +603,8 @@ describe('TenantDetailPage', () => {
           ),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findAllByText('acme-inc')
+    renderWithProviders(<TenantDetailPage alias="acme-inc" />, { operations })
+    await screen.findByText('Acme Incorporated')
 
     // The summary states each profile fact once per field; the editable
     // values also sit in the form, so the assertion is scoped to the summary
@@ -636,7 +633,6 @@ describe('TenantDetailPage', () => {
         getTenant: () =>
           Promise.resolve(
             tenantFixture({
-              id: 'acme',
               alias: 'acme-inc',
               displayName: 'Acme',
               description: 'Old description',
@@ -648,8 +644,8 @@ describe('TenantDetailPage', () => {
         },
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findAllByText('acme-inc')
+    renderWithProviders(<TenantDetailPage alias="acme-inc" />, { operations })
+    await screen.findByLabelText(zhCN.tenantProfile.field.displayName)
 
     await user.clear(
       screen.getByLabelText(zhCN.tenantProfile.field.displayName),
@@ -664,7 +660,7 @@ describe('TenantDetailPage', () => {
 
     await vi.waitFor(() => expect(updates).toHaveLength(1))
     expect(updates[0]).toEqual({
-      id: 'acme',
+      alias: 'acme-inc',
       fields: {
         displayName: 'New name',
         description: 'Old description',
@@ -684,12 +680,14 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () =>
-          Promise.resolve(tenantFixture({ id: 'acme', alias: 'acme-inc' })),
+          Promise.resolve(
+            tenantFixture({ alias: 'acme-inc', displayName: '' }),
+          ),
         setTenantProfile: () => Promise.reject({ code: 'tenant.conflict' }),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
-    await screen.findAllByText('acme-inc')
+    renderWithProviders(<TenantDetailPage alias="acme-inc" />, { operations })
+    await screen.findByLabelText(zhCN.tenantProfile.field.displayName)
 
     const displayName = screen.getByLabelText(
       zhCN.tenantProfile.field.displayName,
@@ -712,11 +710,11 @@ describe('TenantDetailPage', () => {
       makeAdminBackend({
         getTenant: () =>
           Promise.resolve(
-            tenantFixture({ id: 'gone', alias: 'Gone Co', status: 'deleted' }),
+            tenantFixture({ alias: 'gone', displayName: 'Gone Co', status: 'deleted' }),
           ),
       }),
     )
-    renderWithProviders(<TenantDetailPage id="gone" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="gone" />, { operations })
     await screen.findAllByText('Gone Co')
     expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
     // A source describes a disabled tenant, and a tombstone is not one.
@@ -734,7 +732,7 @@ describe('TenantDetailPage', () => {
 
   it('has no axe violations', async () => {
     const operations = createAdminOperations(makeAdminBackend())
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
     await expectNoAxeViolations()
   })

@@ -79,7 +79,7 @@ describe('admin page declarations', () => {
 
   it('carries the list page permission on each detail declaration', () => {
     expect(
-      adminRoutes.find((route) => route.path === '/tenants/:id')?.permission,
+      adminRoutes.find((route) => route.path === '/tenants/:alias')?.permission,
     ).toBe('tenant.read')
     expect(
       adminRoutes.find((route) => route.path === '/audit/:id')?.permission,
@@ -107,11 +107,11 @@ describe('admin page declarations', () => {
     // The admin may be mounted under a host prefix, so the page looks the
     // sibling up by declaration id instead of guessing a path from a
     // literal segment.
-    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:id')
+    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:alias')
     expect(detail).toBeDefined()
     const view = detail?.view({
       path: '/admin/tenants/acme',
-      params: { id: 'acme' },
+      params: { alias: 'acme' },
     })
     const published: readonly AdminRoute[] = [
       { id: 'permissions', path: '/admin/permissions', view: () => null },
@@ -140,14 +140,14 @@ describe('admin page declarations', () => {
       { id: 'permissions', path: '/permissions', view: () => null },
       { id: 'sso', path: '/sso', view: () => null },
     ]
-    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:id')
+    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:alias')
     expect(detail).toBeDefined()
     renderWithProviders(
       <AdminFeatureProvider hasFeature={() => true}>
         <AdminRouteTableProvider routes={published}>
           {detail?.view({
             path: '/admin/tenants/acme',
-            params: { id: 'acme' },
+            params: { alias: 'acme' },
           })}
         </AdminRouteTableProvider>
       </AdminFeatureProvider>,
@@ -169,12 +169,12 @@ describe('admin page declarations', () => {
     const published: readonly AdminRoute[] = [
       { id: 'permissions', path: 'permissions', view: () => null },
     ]
-    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:id')
+    const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:alias')
     expect(detail).toBeDefined()
     renderWithProviders(
       <AdminFeatureProvider hasFeature={() => true}>
         <AdminRouteTableProvider routes={published}>
-          {detail?.view({ path: '/tenants/acme', params: { id: 'acme' } })}
+          {detail?.view({ path: '/tenants/acme', params: { alias: 'acme' } })}
         </AdminRouteTableProvider>
       </AdminFeatureProvider>,
       { operations },
@@ -258,7 +258,7 @@ describe('admin page declarations', () => {
       '/',
       '/tenants',
       '/tenants/new',
-      '/tenants/:id',
+      '/tenants/:alias',
       '/accounts',
       '/sessions',
       '/impersonations',
@@ -272,15 +272,15 @@ describe('admin page declarations', () => {
     ])
     // The registration page and the detail routes are reachable but not
     // listed in the navigation.
-    for (const path of ['/tenants/new', '/tenants/:id', '/audit/:id']) {
+    for (const path of ['/tenants/new', '/tenants/:alias', '/audit/:id']) {
       expect(adminRoutes.find((route) => route.path === path)?.label).toBeUndefined()
     }
-    // '/tenants/new' must be declared before '/tenants/:id', or the detail
-    // pattern would read the literal 'new' as a tenant identifier.
+    // '/tenants/new' must be declared before '/tenants/:alias', or the detail
+    // pattern would read the literal 'new' as a tenant alias.
     expect(
       adminRoutes.findIndex((route) => route.path === '/tenants/new'),
     ).toBeLessThan(
-      adminRoutes.findIndex((route) => route.path === '/tenants/:id'),
+      adminRoutes.findIndex((route) => route.path === '/tenants/:alias'),
     )
   })
 

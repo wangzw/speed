@@ -83,7 +83,7 @@ export const dashboardAdminRoutes: AdminRouteTable = [
 
 /**
  * The console root derived from a matched detail path: the path with its
- * last two segments (the list segment and the id) removed. The console may
+ * last two segments (the list segment and the name) removed. The console may
  * be mounted under a host-chosen prefix, so the root is computed from the
  * matched path rather than from a literal segment: '/tenants/abc' yields
  * '', '/admin/tenants/abc' yields '/admin'.
@@ -96,8 +96,8 @@ function adminRootOf(path: string): string {
  * The tenant pages: the roster, the standalone registration form and one
  * tenant's detail. The registration declaration is declared before the
  * detail pattern because '/tenants/new' would otherwise be read as a tenant
- * identifier; like the detail it is unlabelled (it is reached from the
- * roster's page header, not the navigation).
+ * alias; like the detail it is unlabelled (it is reached from the roster's
+ * page header, not the navigation).
  */
 export const tenantAdminRoutes: AdminRouteTable = [
   {
@@ -121,10 +121,10 @@ export const tenantAdminRoutes: AdminRouteTable = [
   },
   {
     id: 'tenant-detail',
-    path: '/tenants/:id',
+    path: '/tenants/:alias',
     view: (context) => (
       <TenantDetailPage
-        id={context.params.id ?? ''}
+        alias={context.params.alias ?? ''}
         parentHref={context.path.replace(/\/[^/]+$/, '')}
         rootHref={adminRootOf(context.path)}
       />

@@ -12,9 +12,10 @@
  *
  * The selector lists the platform roster (GET /api/v1/system/tenants, the
  * same read the roster page owns) so the operator picks a registered
- * tenant by its alias rather than typing an identifier. The value is the
- * chosen tenant id, or '' for none chosen yet; a page holds it in its own
- * state and disables its tenant-scoped reads while it is empty.
+ * tenant by the name its profile shows (its display name, or its alias when
+ * the profile names none). The value it reports is the chosen tenant alias,
+ * or '' for none chosen yet; a page holds it in its own state and disables
+ * its tenant-scoped reads while it is empty.
  *
  * A tenant-addressed page also opens on a tenant named by the `tenant`
  * query parameter, so a link can carry the tenant across pages (the
@@ -41,11 +42,12 @@ import { isForbidden } from './async-section.js'
 import { SelectorRow } from './selector-row.js'
 import { useAdminUiTranslation } from './translation.js'
 import { useAdminOperations } from '../operations.js'
+import { displayNameOf } from '../TenantProfileFields.js'
 
 /** The query parameter a tenant-addressed page reads its tenant from. */
 export const TENANT_QUERY_PARAM = 'tenant'
 
-/** The tenant id a query string names, or '' when the parameter is absent. */
+/** The tenant alias a query string names, or '' when the parameter is absent. */
 export function tenantFromSearch(search: string): string {
   return new URLSearchParams(search).get(TENANT_QUERY_PARAM)?.trim() ?? ''
 }
@@ -58,9 +60,9 @@ export function tenantFromLocation(): string {
 }
 
 export interface TenantScopeProps {
-  /** The chosen tenant id, or '' when none is chosen. */
+  /** The chosen tenant alias, or '' when none is chosen. */
   readonly value: string
-  /** Reports the chosen tenant id ('' clears the selection). */
+  /** Reports the chosen tenant alias ('' clears the selection). */
   readonly onSelect: (tenant: string) => void
   /**
    * Whether the selector is disabled. A page disables it while any scope
@@ -90,8 +92,8 @@ export function TenantScope({
   // A value seeded from the query string shows before the roster read
   // settles (and stays shown if the roster does not list it), so the
   // selector never blanks a tenant a link carried in; once the roster
-  // answers, the id and its alias are the same entry.
-  const listed = options.some((tenant) => tenant.id === value)
+  // answers, the alias and its listed row are the same entry.
+  const listed = options.some((tenant) => tenant.alias === value)
 
   const loading = tenants.isPending
   const forbidden = isForbidden(tenants.error)
@@ -136,8 +138,8 @@ export function TenantScope({
       <MenuItem value="">{t('common.tenantNone')}</MenuItem>
       {value !== '' && !listed && <MenuItem value={value}>{value}</MenuItem>}
       {options.map((tenant) => (
-        <MenuItem key={tenant.id} value={tenant.id}>
-          {tenant.alias === '' ? tenant.id : tenant.alias}
+        <MenuItem key={tenant.alias} value={tenant.alias}>
+          {displayNameOf(tenant.displayName, tenant.alias)}
         </MenuItem>
       ))}
     </TextField>

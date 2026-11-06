@@ -236,11 +236,12 @@ export type AdminMemberPage = AuthnAdminMemberList
 export type AdminSmsTemplatePage = SmsAdminTemplatesList200
 
 /** POST /api/v1/system/tenants body: a tenant not registered yet, with the
- * organization profile the registration form carries. The four descriptive
- * fields are omitted from the request when empty, because the endpoint
- * treats an absent field as "none" and rejects an empty address. */
+ * organization profile the registration form carries. The server mints the
+ * internal identifier; the request names the tenant by its alias only. The
+ * four descriptive fields are omitted from the request when empty, because
+ * the endpoint treats an absent field as "none" and rejects an empty
+ * address. */
 export interface AdminCreateTenantInput {
-  readonly id: string
   readonly alias: string
   readonly displayName: string
   readonly description: string
@@ -248,41 +249,41 @@ export interface AdminCreateTenantInput {
   readonly website: string
 }
 
-/** POST /api/v1/system/tenants/:id/status body: a new state, one of the
+/** POST /api/v1/system/tenants/{tenant}/status body: a new state, one of the
  * writable set active/disabled. */
 export interface AdminSetTenantStatusInput {
-  readonly id: string
+  readonly alias: string
   readonly status: AdminSetTenantStatusValue
 }
 
-/** PATCH /api/v1/system/tenants/:id/profile body: the four descriptive
- * fields to write, with the tenant they belong to. The identifier, alias,
- * state and creation time are not writable. */
+/** PATCH /api/v1/system/tenants/{tenant}/profile body: the four descriptive
+ * fields to write, with the tenant they belong to. The alias, state and
+ * creation time are not writable. */
 export interface AdminSetTenantProfileInput {
-  readonly id: string
+  readonly alias: string
   readonly fields: TenantProfileFields
 }
 
-/** PUT /api/v1/system/tenants/:id/owner body: the target account that
- * becomes the organization's owner. The tenant id is the route parameter;
+/** PUT /api/v1/system/tenants/{tenant}/owner body: the target account that
+ * becomes the organization's owner. The tenant alias is the route parameter;
  * the endpoint itself validates that the account is an active member of
  * that tenant and answers 409 otherwise (the console never asserts
  * membership on the server's behalf). */
 export interface AdminTransferTenantOwnerInput {
-  readonly id: string
+  readonly alias: string
   readonly account: string
 }
 
-/** DELETE /api/v1/system/tenants/:id target: the tenant whose tombstone
+/** DELETE /api/v1/system/tenants/{tenant} target: the tenant whose tombstone
  * the write lands. */
 export interface AdminDeleteTenantInput {
-  readonly id: string
+  readonly alias: string
 }
 
-/** A tenant target for a read that stays disabled while no id is chosen. */
+/** A tenant target for a read that stays disabled while no alias is chosen. */
 export interface AdminTenantQuery {
-  /** The tenant id, or undefined to read nothing. */
-  readonly id: string | undefined
+  /** The tenant alias, or undefined to read nothing. */
+  readonly alias: string | undefined
 }
 
 /**
@@ -648,7 +649,8 @@ export interface AdminAuditRecordsOptions {
 export interface AdminOperations {
   /** GET /api/v1/system/tenants -- the whole roster, in the roster's order. */
   readonly useTenants: () => UseQueryResult<readonly AdminTenant[], unknown>
-  /** GET /api/v1/system/tenants/:id -- one tenant (disabled while no id). */
+  /** GET /api/v1/system/tenants/{tenant} -- one tenant by its alias
+   * (disabled while no alias). */
   readonly useTenant: (
     query: AdminTenantQuery,
   ) => UseQueryResult<AdminTenant, unknown>
@@ -658,20 +660,20 @@ export interface AdminOperations {
     unknown,
     AdminCreateTenantInput
   >
-  /** POST /api/v1/system/tenants/:id/status -- enable or disable a tenant. */
+  /** POST /api/v1/system/tenants/{tenant}/status -- enable or disable a tenant. */
   readonly useSetTenantStatus: () => UseMutationResult<
     void,
     unknown,
     AdminSetTenantStatusInput
   >
-  /** PATCH /api/v1/system/tenants/:id/profile -- write a tenant's four
+  /** PATCH /api/v1/system/tenants/{tenant}/profile -- write a tenant's four
    * descriptive fields. */
   readonly useSetTenantProfile: () => UseMutationResult<
     void,
     unknown,
     AdminSetTenantProfileInput
   >
-  /** PUT /api/v1/system/tenants/:id/owner -- hand the organization to one
+  /** PUT /api/v1/system/tenants/{tenant}/owner -- hand the organization to one
    * account. The server refuses a target that is not an active member of
    * the organization (409). */
   readonly useTransferTenantOwner: () => UseMutationResult<
@@ -679,7 +681,7 @@ export interface AdminOperations {
     unknown,
     AdminTransferTenantOwnerInput
   >
-  /** DELETE /api/v1/system/tenants/:id -- write the organization's
+  /** DELETE /api/v1/system/tenants/{tenant} -- write the organization's
    * tombstone. Deletion is terminal; a tombstone is a 409. */
   readonly useDeleteTenant: () => UseMutationResult<
     void,
@@ -1032,11 +1034,11 @@ export const adminOperations: AdminOperations = {
       select: (page) => page.tenants,
     }),
 
-  useTenant: ({ id }) =>
+  useTenant: ({ alias }) =>
     useQuery({
-      ...getTenantAdminTenantsGetQueryOptions(id ?? ''),
+      ...getTenantAdminTenantsGetQueryOptions(alias ?? ''),
       select: (envelope) => envelope.tenant,
-      enabled: id !== undefined && id !== '',
+      enabled: alias !== undefined && alias !== '',
     }),
 
   useCreateTenant: () => {
@@ -1044,7 +1046,6 @@ export const adminOperations: AdminOperations = {
     return useMutation({
       mutationFn: (input: AdminCreateTenantInput) =>
         tenantAdminTenantsCreate({
-          id: input.id,
           alias: input.alias,
           ...(input.displayName === ''
             ? {}
@@ -1069,13 +1070,13 @@ export const adminOperations: AdminOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: AdminSetTenantStatusInput) =>
-        tenantAdminTenantsSetStatus(input.id, { status: input.status }),
+        tenantAdminTenantsSetStatus(input.alias, { status: input.status }),
       onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
         })
         void queryClient.invalidateQueries({
-          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
+          queryKey: getTenantAdminTenantsGetQueryKey(input.alias),
         })
       },
     })
@@ -1085,9 +1086,10 @@ export const adminOperations: AdminOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: AdminSetTenantProfileInput) =>
-        tenantAdminTenantsProfile(input.id, profileWriteOf(input.fields)).then(
-          () => undefined,
-        ),
+        tenantAdminTenantsProfile(
+          input.alias,
+          profileWriteOf(input.fields),
+        ).then(() => undefined),
       onSuccess: (_answer, input) => {
         // The roster row carries the four fields, so both the list and the
         // detail read are stale after a profile write.
@@ -1095,7 +1097,7 @@ export const adminOperations: AdminOperations = {
           queryKey: getTenantAdminTenantsListQueryKey(),
         })
         void queryClient.invalidateQueries({
-          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
+          queryKey: getTenantAdminTenantsGetQueryKey(input.alias),
         })
       },
     })
@@ -1105,7 +1107,7 @@ export const adminOperations: AdminOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: AdminTransferTenantOwnerInput) =>
-        tenantAdminTenantsTransferOwner(input.id, {
+        tenantAdminTenantsTransferOwner(input.alias, {
           account: input.account,
         }),
       onSuccess: (_answer, input) => {
@@ -1116,7 +1118,7 @@ export const adminOperations: AdminOperations = {
           queryKey: getTenantAdminTenantsListQueryKey(),
         })
         void queryClient.invalidateQueries({
-          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
+          queryKey: getTenantAdminTenantsGetQueryKey(input.alias),
         })
       },
     })
@@ -1126,7 +1128,7 @@ export const adminOperations: AdminOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: AdminDeleteTenantInput) =>
-        tenantAdminTenantsDelete(input.id),
+        tenantAdminTenantsDelete(input.alias),
       onSuccess: (_answer, input) => {
         // The row is gone from the roster; the detail read still answers the
         // tombstone, so both are re-read rather than dropped.
@@ -1134,7 +1136,7 @@ export const adminOperations: AdminOperations = {
           queryKey: getTenantAdminTenantsListQueryKey(),
         })
         void queryClient.invalidateQueries({
-          queryKey: getTenantAdminTenantsGetQueryKey(input.id),
+          queryKey: getTenantAdminTenantsGetQueryKey(input.alias),
         })
       },
     })

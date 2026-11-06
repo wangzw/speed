@@ -3,11 +3,10 @@
  *
  * The page reads one tenant's organization profile (GET
  * /api/v1/tenants/{tenant}/profile) and renders it as two cards. The
- * identity card is read-only: the identifier and alias are fixed after
- * creation, the state is the platform's to change, and the creation time is
- * a fact. The profile card edits the four descriptive fields the
- * organization owns -- display name, description, contact email and
- * website.
+ * identity card is read-only: the alias is fixed after creation, the state
+ * is the platform's to change, and the creation time is a fact. The profile
+ * card edits the four descriptive fields the organization owns -- display
+ * name, description, contact email and website.
  *
  * The display name may be cleared. An empty display name is not an error:
  * every surface falls back to the alias, and the field's placeholder shows
@@ -223,10 +222,6 @@ export function TenantProfilePage({
                 sx={{ mb: 3 }}
               >
                 <Box component="dl" sx={{ margin: 0 }}>
-                  <DefinitionRow
-                    label={t('tenantProfile.field.id')}
-                    value={settledProfile.id}
-                  />
                   <DefinitionRow
                     label={t('tenantProfile.field.alias')}
                     value={settledProfile.alias}

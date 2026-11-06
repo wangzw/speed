@@ -21,7 +21,7 @@ import type { AdminImpersonation } from './operations.js'
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS = [{ id: 'acme', alias: 'Acme', status: 'active' as const }]
+const TENANTS = [{ alias: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }]
 
 const RECORDS: readonly AdminImpersonation[] = [
   {

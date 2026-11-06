@@ -23,7 +23,7 @@ import type { AdminAuditRecord } from './operations.js'
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
 const TENANTS = [
-  { id: 'acme', alias: 'Acme', status: 'active' as const },
+  { alias: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const },
   { id: 'beta', alias: 'Beta', status: 'active' as const },
   { id: 'old', alias: 'Old', status: 'disabled' as const },
 ]

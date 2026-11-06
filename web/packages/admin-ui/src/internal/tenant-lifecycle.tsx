@@ -4,8 +4,8 @@
  * account, or write its tombstone.
  *
  * Both entries are platform operations over the roster
- * (`PUT /api/v1/system/tenants/:id/owner`,
- * `DELETE /api/v1/system/tenants/:id`), judged in the platform domain with
+ * (`PUT /api/v1/system/tenants/{tenant}/owner`,
+ * `DELETE /api/v1/system/tenants/{tenant}`), judged in the platform domain with
  * `tenant.manage`. The server is the authority; the entries are a UX
  * affordance for a control group that can only ever fail otherwise, so
  * they render only for a caller whose attached platform permission set
@@ -33,10 +33,15 @@
  * two-step guard: the transfer dialog gathers the target, the confirmation
  * names it, and only the confirming click writes.
  *
+ * **The visible title names the organization; the controls and the write
+ * name the alias.** A dialog heading is read by a person, so it says the
+ * display name (falling back to the alias). A control's accessible name and
+ * every request use the alias, the tenant's name on the request surface.
+ *
  * **Delete is terminal.** It asks through the same shared confirmation
  * with the two-step guard, and its copy states the impact: memberships,
- * bindings, roles and grants are removed, and the identifier and alias can
- * never be reused.
+ * bindings, roles and grants are removed, and the alias can never be
+ * reused.
  *
  * **Failure text is the dialog's own.** Both the transfer endpoint and the
  * delete endpoint answer 409 for several distinct refusals under the same
@@ -69,6 +74,7 @@ import { useAdminUiErrorText } from './error-text.js'
 import { useAdminUiTranslation } from './translation.js'
 import { WriteFeedbackRegion } from './write-feedback.js'
 import { useAdminOperations } from '../operations.js'
+import { displayNameOf } from '../TenantProfileFields.js'
 import type {
   AdminAccount,
   AdminMember,
@@ -332,6 +338,9 @@ function TransferOwnerDialog({
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  // The dialog's heading names the organization the way its profile does;
+  // the request and its controls name the alias.
+  const name = displayNameOf(tenant.displayName, tenant.alias)
 
   // The dialog belongs to one tenant and one target path. A close, a
   // tenant change or a path change withdraws the draft and its result.
@@ -340,7 +349,7 @@ function TransferOwnerDialog({
     setAccount(null)
     setConfirming(false)
     setFailure(null)
-  }, [open, tenant.id, canReadMembers])
+  }, [open, tenant.alias, canReadMembers])
 
   const targetAccount =
     canReadMembers ? (member?.account ?? null) : (account?.id ?? null)
@@ -363,12 +372,12 @@ function TransferOwnerDialog({
     void (async () => {
       try {
         await transfer.mutateAsync({
-          id: tenant.id,
+          alias: tenant.alias,
           account: targetAccount,
         })
         onTransferred(
           t('tenantLifecycle.transfer.success', {
-            id: tenant.id,
+            alias: tenant.alias,
             target: targetLabel,
           }),
         )
@@ -395,7 +404,7 @@ function TransferOwnerDialog({
         aria-describedby={descriptionId}
       >
         <DialogTitle id={titleId}>
-          {t('tenantLifecycle.transfer.title', { id: tenant.id })}
+          {t('tenantLifecycle.transfer.title', { name })}
         </DialogTitle>
         <DialogContent>
           <DialogContentText id={descriptionId}>
@@ -404,7 +413,7 @@ function TransferOwnerDialog({
           <Box sx={{ mt: 2 }}>
             {canReadMembers ? (
               <TenantMemberSelector
-                tenant={tenant.id}
+                tenant={tenant.alias}
                 value={member}
                 onChange={setMember}
                 disabled={pending}
@@ -458,7 +467,7 @@ function TransferOwnerDialog({
         open={confirming}
         variant="danger"
         doubleConfirm
-        title={t('tenantLifecycle.transfer.confirmTitle', { id: tenant.id })}
+        title={t('tenantLifecycle.transfer.confirmTitle', { name })}
         message={t('tenantLifecycle.transfer.confirmMessage', {
           target: targetLabel,
         })}
@@ -496,11 +505,12 @@ export function TenantLifecycleActions({
 
   const deleted = tenant.status === 'deleted'
   const personal = isPersonalTenant(tenant.kind)
+  const name = displayNameOf(tenant.displayName, tenant.alias)
   // A result describes the organization as it stood when the write landed;
   // a different tenant in the same slot drops it.
   useEffect(() => {
     setOutcome(null)
-  }, [tenant.id])
+  }, [tenant.alias])
 
   if (!canManage || deleted || personal) {
     return null
@@ -517,7 +527,7 @@ export function TenantLifecycleActions({
   const requestDelete = () => {
     setOutcome(null)
     confirm.ask({
-      title: t('tenantLifecycle.deleteConfirm.title', { id: tenant.id }),
+      title: t('tenantLifecycle.deleteConfirm.title', { name }),
       message: t('tenantLifecycle.deleteConfirm.message'),
       confirmLabel: t('tenantLifecycle.deleteConfirm.confirmLabel'),
       doubleConfirm: true,
@@ -525,9 +535,11 @@ export function TenantLifecycleActions({
         setOutcome(null)
         void (async () => {
           try {
-            await remove.mutateAsync({ id: tenant.id })
+            await remove.mutateAsync({ alias: tenant.alias })
             settleSuccess(
-              t('tenantLifecycle.deleteConfirm.success', { id: tenant.id }),
+              t('tenantLifecycle.deleteConfirm.success', {
+                alias: tenant.alias,
+              }),
             )
           } catch (error) {
             setOutcome({
@@ -560,7 +572,7 @@ export function TenantLifecycleActions({
           type="button"
           size="small"
           variant="outlined"
-          aria-label={t('tenantLifecycle.transferAria', { id: tenant.id })}
+          aria-label={t('tenantLifecycle.transferAria', { alias: tenant.alias })}
           disabled={remove.isPending}
           onClick={() => {
             setOutcome(null)
@@ -574,7 +586,7 @@ export function TenantLifecycleActions({
           size="small"
           variant="outlined"
           color="error"
-          aria-label={t('tenantLifecycle.deleteAria', { id: tenant.id })}
+          aria-label={t('tenantLifecycle.deleteAria', { alias: tenant.alias })}
           disabled={remove.isPending}
           loading={remove.isPending}
           onClick={requestDelete}

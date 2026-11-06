@@ -10,23 +10,27 @@ import { screen } from '@testing-library/react'
 import { page } from 'vitest/browser'
 import { TenantRosterPage } from './TenantRosterPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { createAdminOperations, makeAdminBackend } from '../test-utils/operations.js'
+import {
+  createAdminOperations,
+  makeAdminBackend,
+  tenantFixture,
+} from '../test-utils/operations.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
-import type { AdminTenant } from './operations.js'
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS: readonly AdminTenant[] = [
-  {
-    id: 'acme-corporation-identifier',
-    alias: 'Acme Corporation',
+const TENANTS = [
+  tenantFixture({
+    alias: 'acme-corporation',
+    displayName: 'Acme Corporation',
     status: 'active',
-  },
-  {
-    id: 'beta-industries-identifier',
-    alias: 'Beta Industries',
+  }),
+  tenantFixture({
+    alias: 'beta-industries',
+    displayName: 'Beta Industries',
     status: 'disabled',
-  },
+    disabledBy: 'operator',
+  }),
 ]
 
 describe('TenantRosterPage horizontal overflow in Chromium', () => {

@@ -115,7 +115,7 @@ afterEach(() => {
 })
 
 describe('platform tenant lifecycle entries', () => {
-  const acme = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
+  const acme = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
 
   it('shows the transfer and delete entries only with tenant.manage', async () => {
     const operations = createAdminOperations(
@@ -126,12 +126,12 @@ describe('platform tenant lifecycle entries', () => {
     await screen.findByText('Acme')
     expect(
       screen.queryByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     ).toBeNull()
     expect(
       screen.queryByRole('button', {
-        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     ).toBeNull()
     first.unmount()
@@ -141,21 +141,21 @@ describe('platform tenant lifecycle entries', () => {
     await screen.findByText('Acme')
     expect(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     ).toBeInTheDocument()
   })
 
   it('shows no entry on a personal organization or a tombstone', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ id: 'personal-alice', alias: 'Alice', status: 'active' }),
-      tenantFixture({ id: 'gone', alias: 'Gone Co', status: 'deleted' }),
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'personal-alice', displayName: 'Alice', kind: 'personal', status: 'active' }),
+      tenantFixture({ alias: 'gone', displayName: 'Gone Co', status: 'deleted' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -179,14 +179,14 @@ describe('platform tenant lifecycle entries', () => {
     // The business organization beside them still carries both.
     expect(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     ).toBeInTheDocument()
   })
 
   it('transfers through the member selector when membership.manage is held', async () => {
     const user = userEvent.setup()
-    const writes: Array<{ id: string; account: string }> = []
+    const writes: Array<{ alias: string; account: string }> = []
     let reads = 0
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -211,19 +211,19 @@ describe('platform tenant lifecycle entries', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     )
     const dialog = await screen.findByRole('dialog')
     expect(
       within(dialog).getByRole('heading', {
-        name: text(zhCN.tenantLifecycle.transfer.title, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
       }),
     ).toBeInTheDocument()
     // The dialog names itself by its title and describes the target paths
     // by its lead paragraph.
     expect(dialog).toHaveAccessibleName(
-      text(zhCN.tenantLifecycle.transfer.title, { id: 'acme' }),
+      text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
     )
     expect(dialog).toHaveAccessibleDescription(
       zhCN.tenantLifecycle.transfer.description,
@@ -257,12 +257,12 @@ describe('platform tenant lifecycle entries', () => {
     await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
 
     await waitFor(() => {
-      expect(writes).toEqual([{ id: 'acme', account: 'acc-2' }])
+      expect(writes).toEqual([{ alias: 'acme', account: 'acc-2' }])
     })
     expect(
       await screen.findByText(
         text(zhCN.tenantLifecycle.transfer.success, {
-          id: 'acme',
+          alias: 'acme',
           target: 'Ada Lovelace (acc-2)',
         }),
       ),
@@ -274,7 +274,7 @@ describe('platform tenant lifecycle entries', () => {
 
   it('uses the account selector without the member read, and explains the 409 inline', async () => {
     const user = userEvent.setup()
-    const writes: Array<{ id: string; account: string }> = []
+    const writes: Array<{ alias: string; account: string }> = []
     let memberReads = 0
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -301,7 +301,7 @@ describe('platform tenant lifecycle entries', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -330,7 +330,7 @@ describe('platform tenant lifecycle entries', () => {
     // The request carried the account; the server's non-member 409 stands
     // inline in the still-open dialog.
     await waitFor(() => {
-      expect(writes).toEqual([{ id: 'acme', account: 'acc-9' }])
+      expect(writes).toEqual([{ alias: 'acme', account: 'acc-9' }])
     })
     const failure = await screen.findByRole('alert')
     expect(failure).toHaveTextContent(
@@ -338,7 +338,7 @@ describe('platform tenant lifecycle entries', () => {
     )
     expect(
       screen.getByRole('heading', {
-        name: text(zhCN.tenantLifecycle.transfer.title, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
       }),
     ).toBeInTheDocument()
     // The account path never issued the member read.
@@ -365,7 +365,7 @@ describe('platform tenant lifecycle entries', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -407,7 +407,7 @@ describe('platform tenant lifecycle entries', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -434,7 +434,7 @@ describe('platform tenant deletion', () => {
   it('deletes through the two-step confirmation and refreshes the roster', async () => {
     const user = userEvent.setup()
     let tenants: AdminTenant[] = [
-      tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+      tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
     ]
     let reads = 0
     const deletes: string[] = []
@@ -445,7 +445,7 @@ describe('platform tenant deletion', () => {
           return Promise.resolve(tenants)
         },
         deleteTenant: (input) => {
-          deletes.push(input.id)
+          deletes.push(input.alias)
           tenants = []
           return Promise.resolve()
         },
@@ -457,7 +457,7 @@ describe('platform tenant deletion', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -472,7 +472,7 @@ describe('platform tenant deletion', () => {
     await waitFor(() => expect(deletes).toEqual(['acme']))
     expect(
       await screen.findByText(
-        text(zhCN.tenantLifecycle.deleteConfirm.success, { id: 'acme' }),
+        text(zhCN.tenantLifecycle.deleteConfirm.success, { alias: 'acme' }),
       ),
     ).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Acme')).toBeNull())
@@ -485,7 +485,7 @@ describe('platform tenant deletion', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
           ]),
         deleteTenant: () =>
           Promise.reject({ status: 409, code: 'tenant.conflict' }),
@@ -497,7 +497,7 @@ describe('platform tenant deletion', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
     await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
@@ -518,7 +518,7 @@ describe('platform tenant deletion', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
           ]),
         deleteTenant: () =>
           Promise.reject({ status: 404, code: 'client.http.404' }),
@@ -530,7 +530,7 @@ describe('platform tenant deletion', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
     await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
@@ -547,7 +547,7 @@ describe('platform tenant deletion', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' }),
           ]),
         deleteTenant: () =>
           Promise.reject({ status: 403, code: 'tenant.protected' }),
@@ -559,7 +559,7 @@ describe('platform tenant deletion', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
     await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
@@ -576,8 +576,9 @@ describe('tenant detail lifecycle', () => {
       getTenant: (query) =>
         Promise.resolve(
           tenantFixture({
-            id: query.id ?? 'acme',
-            alias: query.id === 'personal-alice' ? 'Alice' : 'Acme',
+            alias: query.alias ?? 'acme',
+            displayName: query.alias === 'personal-alice' ? 'Alice' : 'Acme',
+            kind: query.alias === 'personal-alice' ? 'personal' : 'business',
           }),
         ),
     })
@@ -585,34 +586,34 @@ describe('tenant detail lifecycle', () => {
 
     attachPermissions({ system: ['tenant.manage'] })
     const first = renderWithProviders(
-      <TenantDetailPage id="acme" />,
+      <TenantDetailPage alias="acme" />,
       { operations },
     )
     await screen.findByText(zhCN.tenantLifecycle.sectionTitle)
     expect(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     ).toBeInTheDocument()
     first.unmount()
 
     attachPermissions({ system: ['tenant.manage'] })
     const personal = renderWithProviders(
-      <TenantDetailPage id="personal-alice" />,
+      <TenantDetailPage alias="personal-alice" />,
       { operations },
     )
     await screen.findAllByText('Alice')
     expect(
       screen.queryByRole('button', {
         name: text(zhCN.tenantLifecycle.transferAria, {
-          id: 'personal-alice',
+          alias: 'personal-alice',
         }),
       }),
     ).toBeNull()
     expect(
       screen.queryByRole('button', {
         name: text(zhCN.tenantLifecycle.deleteAria, {
-          id: 'personal-alice',
+          alias: 'personal-alice',
         }),
       }),
     ).toBeNull()
@@ -627,11 +628,11 @@ describe('tenant detail lifecycle', () => {
     personal.unmount()
 
     attachPermissions({ system: [] })
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
     expect(
       screen.queryByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     ).toBeNull()
     // Without tenant.manage the group has nothing to show, and the card is
@@ -647,13 +648,13 @@ describe('tenant detail lifecycle', () => {
   it('refreshes the detail read after a landed transfer', async () => {
     const user = userEvent.setup()
     let reads = 0
-    const writes: Array<{ id: string; account: string }> = []
+    const writes: Array<{ alias: string; account: string }> = []
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () => {
           reads += 1
           return Promise.resolve(
-            tenantFixture({ id: 'acme', alias: 'Acme' }),
+            tenantFixture({ alias: 'acme', displayName: 'Acme' }),
           )
         },
         listMembers: () =>
@@ -668,12 +669,12 @@ describe('tenant detail lifecycle', () => {
       system: ['tenant.manage'],
       tenant: ['authn.membership.manage'],
     })
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -691,7 +692,7 @@ describe('tenant detail lifecycle', () => {
     await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
 
     await waitFor(() => {
-      expect(writes).toEqual([{ id: 'acme', account: 'acc-2' }])
+      expect(writes).toEqual([{ alias: 'acme', account: 'acc-2' }])
     })
     await waitFor(() => expect(reads).toBeGreaterThan(1))
   })
@@ -702,7 +703,7 @@ describe('tenant detail lifecycle', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () =>
-          Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status })),
+          Promise.resolve(tenantFixture({ alias: 'acme', displayName: 'Acme', status })),
         deleteTenant: () => {
           status = 'deleted'
           return Promise.resolve()
@@ -710,18 +711,18 @@ describe('tenant detail lifecycle', () => {
       }),
     )
     attachPermissions({ system: ['tenant.manage'] })
-    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    renderWithProviders(<TenantDetailPage alias="acme" />, { operations })
     await screen.findAllByText('Acme')
 
     await user.click(
       screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.deleteAria, { id: 'acme' }),
+        name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
       }),
     )
     await confirmTwice(user, zhCN.tenantLifecycle.deleteConfirm.confirmLabel)
 
     const confirmation = text(zhCN.tenantLifecycle.deleteConfirm.success, {
-      id: 'acme',
+      alias: 'acme',
     })
     expect(await screen.findByText(confirmation)).toBeInTheDocument()
 

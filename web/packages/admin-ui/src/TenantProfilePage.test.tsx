@@ -150,7 +150,6 @@ describe('TenantProfilePage', () => {
   it('renders the identity read-only with no alias input', async () => {
     renderPage({
       profile: profileFixture({
-        id: 'acme',
         alias: 'acme-inc',
         displayName: 'Acme Incorporated',
         status: 'active',
@@ -563,7 +562,7 @@ describe('TenantProfilePage ownership', () => {
     attachAccount(OWNER)
     renderPage({
       tenant: personal,
-      profile: ownerProfile({ id: personal, alias: 'my-space' }),
+      profile: ownerProfile({ alias: 'my-space' }),
     })
     await ready()
 

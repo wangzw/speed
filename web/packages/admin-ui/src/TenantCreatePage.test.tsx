@@ -33,10 +33,9 @@ const orgZh = orgCreateUiResources['zh-CN'] as unknown as {
 
 async function fill(
   user: ReturnType<typeof userEvent.setup>,
-  overrides: Partial<Record<'id' | 'alias' | 'displayName' | 'description' | 'contactEmail' | 'website', string>> = {},
+  overrides: Partial<Record<'alias' | 'displayName' | 'description' | 'contactEmail' | 'website', string>> = {},
 ) {
   const values = {
-    id: 'org-acme',
     alias: 'acme',
     displayName: 'Acme Ltd',
     description: 'A team',
@@ -96,7 +95,6 @@ describe('TenantCreatePage', () => {
           received = input
           return Promise.resolve(
             tenantFixture({
-              id: input.id,
               alias: input.alias,
               displayName: input.displayName,
               description: input.description,
@@ -114,7 +112,7 @@ describe('TenantCreatePage', () => {
     })
 
     await fill(user, {
-      id: '  org-acme  ',
+      alias: '  acme  ',
       displayName: '  Acme Ltd  ',
       description: '  A team  ',
     })
@@ -124,7 +122,6 @@ describe('TenantCreatePage', () => {
       expect(onCreated).toHaveBeenCalledTimes(1)
     })
     expect(received).toEqual({
-      id: 'org-acme',
       alias: 'acme',
       displayName: 'Acme Ltd',
       description: 'A team',
@@ -132,8 +129,8 @@ describe('TenantCreatePage', () => {
       website: 'https://example.com',
     })
     expect(onCreated.mock.calls[0]?.[0]).toMatchObject({
-      id: 'org-acme',
       alias: 'acme',
+      displayName: 'Acme Ltd',
     })
   })
 
@@ -167,7 +164,12 @@ describe('TenantCreatePage', () => {
       makeAdminBackend({
         createTenant: (input) => {
           received = input
-          return Promise.resolve(tenantFixture({ id: input.id, alias: input.alias }))
+          return Promise.resolve(
+            tenantFixture({
+              alias: input.alias,
+              displayName: input.displayName,
+            }),
+          )
         },
       }),
     )

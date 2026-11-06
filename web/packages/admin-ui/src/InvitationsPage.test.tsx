@@ -46,7 +46,7 @@ import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { uiKitResources } from '@speed/ui-kit'
 
-const TENANT = tenantFixture({ id: 'acme', alias: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
 
 /**
  * The member-source labels a test injects into the namespace, so a
@@ -678,7 +678,7 @@ describe('InvitationsPage', () => {
 
   it('starts a switched tenant with no member cursor', async () => {
     const user = userEvent.setup()
-    const globex = tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' })
+    const globex = tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' })
     const firstPage = Array.from({ length: 101 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
@@ -2065,7 +2065,7 @@ describe('InvitationsPage', () => {
       listTenants: () =>
         Promise.resolve([
           TENANT,
-          tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
+          tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
         ]),
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
@@ -2165,7 +2165,7 @@ describe('InvitationsPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            tenantFixture({ id: 'globex', alias: 'Globex', status: 'active' }),
+            tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
           ]),
         listInvitations,
         listMembers,

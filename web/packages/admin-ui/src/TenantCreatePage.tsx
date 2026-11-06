@@ -3,19 +3,21 @@
  * registration.
  *
  * The roster used to carry an inline registration form; this page lets the
- * form hold the organization profile beside the identifier and alias
- * without crowding the roster table. It renders the shared creation form
- * from @speed/org-create-ui in platform mode, so the alias rules, the
- * built-in reserved names and the profile bounds are the same ones the
- * self-service page uses.
+ * form hold the organization profile beside the alias without crowding the
+ * roster table. It renders the shared creation form from
+ * @speed/org-create-ui in platform mode, so the alias rules, the built-in
+ * reserved names and the profile bounds are the same ones the self-service
+ * page uses. The server mints the internal identifier; the page asks for no
+ * identifier and never sees one.
  *
  * Registration writes through the console operations bundle. The form
  * requires a display name, which is narrower than the endpoint: the API
  * accepts a registration without a profile. A landed registration hands
  * the new tenant to `onCreated` when the host supplies one, and otherwise
- * routes to the tenant detail through the shell's in-place navigation
- * seam. A refused registration keeps every draft and reports the answer's
- * code through the console's error-text resolver.
+ * routes to the tenant detail -- addressed by the alias the answer returned
+ * -- through the shell's in-place navigation seam. A refused registration
+ * keeps every draft and reports the answer's code through the console's
+ * error-text resolver.
  */
 
 import { useState } from 'react'
@@ -114,14 +116,14 @@ export function TenantCreatePage({
       if (onCreated !== undefined) {
         onCreated(created)
       } else if (basePath !== undefined) {
-        const href = `${basePath}/${encodeURIComponent(created.id)}`
+        const href = `${basePath}/${encodeURIComponent(created.alias)}`
         if (navigate === undefined) {
           window.location.assign(href)
         } else {
           navigate(href)
         }
       }
-      return t('tenants.created', { id: created.id })
+      return t('tenants.created', { alias: created.alias })
     })
   }
 
