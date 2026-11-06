@@ -25,25 +25,25 @@
 
 ### REQ-tenancy-001
 
-系统必须允许平台运营者登记一个新租户，为它给出标识与别名，新租户处于启用状态；登记者成为该组织的所有者，并成为首任 tenant-admin。
+系统必须允许平台运营者登记一个新租户，为它给出别名、显示名与可选资料，新租户处于启用状态；登记者成为该组织的所有者，并成为首任 tenant-admin。内部标识由系统生成，运营者不填写，界面也不展示。
 
-- **验收**：登记一个未被占用的标识与别名成功，租户随即出现在名册读取结果中且状态为启用；登记者是该租户的所有者并持有 tenant-admin。标识已被占用，或别名已被别的租户占用时被拒绝，名册不新增任何租户。标识或别名为空、含空白或控制字符时在写入之前被拒绝。
+- **验收**：登记一个未被占用的别名与显示名成功，租户随即出现在名册读取结果中且状态为启用；登记者是该租户的所有者并持有 tenant-admin。别名已被别的租户占用时被拒绝，名册不新增任何租户。别名为空、含空白或控制字符时在写入之前被拒绝。界面没有填写或查看内部标识的入口。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖登记、标识与别名冲突拒绝、启用状态；登记者即所有者与首任 tenant-admin 由后端用例覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖登记、别名冲突拒绝、启用状态；登记者即所有者与首任 tenant-admin 由后端用例覆盖）
 
 ### REQ-tenancy-002
 
 系统必须为每个租户保持唯一的别名；别名在创建后不可修改。
 
-- **验收**：别名在全部租户中唯一；对已创建租户修改别名的请求被拒绝，别名、状态与标识都不变；以另一个租户已用的别名登记被拒绝。
+- **验收**：别名在全部租户中唯一；对已创建租户修改别名的请求被拒绝，别名与状态都不变；以另一个租户已用的别名登记被拒绝。内部标识不随别名变化，也不在界面上出现。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖别名冲突拒绝与详情页无改名控件；改名请求被拒绝由后端用例覆盖）
 
 ### REQ-tenancy-003
 
-系统必须允许平台运营者停用与重新启用租户，停用不删除租户、它的标识与别名。
+系统必须允许平台运营者停用与重新启用租户，停用不删除租户，别名不变。
 
-- **验收**：停用后名册中该租户状态为停用，仍可按标识读取到它，标识与别名与停用前相同。重新启用后状态为启用。
+- **验收**：停用后名册中该租户状态为停用，仍可按别名读取到它，别名与停用前相同。重新启用后状态为启用。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -57,9 +57,9 @@
 
 ### REQ-tenancy-005
 
-系统必须允许平台运营者列出全部租户，结果按标识排序；一个租户也没有时给出空列表而不是错误。
+系统必须允许平台运营者列出全部租户，结果按别名排序；一个租户也没有时给出空列表而不是错误。
 
-- **验收**：名册中有若干租户时，列表包含全部租户且按标识排序。一个租户都没有时，读取成功且列表为空。
+- **验收**：名册中有若干租户时，列表包含全部租户且按别名排序。一个租户都没有时，读取成功且列表为空。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
@@ -281,9 +281,9 @@
 
 ### REQ-tenancy-046
 
-已删除租户的标识与别名不得被重新使用；以曾被使用的标识或别名登记新租户必须被拒绝。
+已删除租户的别名不得被重新使用；以曾被使用的别名登记新租户必须被拒绝。
 
-- **验收**：删除一个租户后，以同一标识或同一别名登记新租户都被拒绝，名册不新增租户；已删除的租户仍以已删除的状态存在，不被新租户取代。
+- **验收**：删除一个租户后，以同一别名登记新租户被拒绝，名册不新增租户；已删除的租户仍以已删除的状态存在，不被新租户取代。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -307,7 +307,7 @@
 
 账户删除时，其个人租户必须被标记为已删除；点名该租户的请求必须得到与租户不存在相同的结果。
 
-- **验收**：删除账户后，名册中该个人租户显示为已删除；按该租户标识发起的请求得到与租户不存在相同的结果。
+- **验收**：删除账户后，名册中该个人租户显示为已删除；按该租户别名发起的请求得到与租户不存在相同的结果。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -517,7 +517,7 @@
 
 - **验收**：owner 可以删除自己的组织；平台员工可以删除任意业务组织；非 owner 的 tenant-admin 不能删除；删除需要输入组织别名确认。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`（非 owner 的 tenant-admin 看不到删除入口）；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and neither its id nor its alias can be reused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`（非 owner 的 tenant-admin 看不到删除入口）；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`
 
 ### REQ-tenancy-063
 
@@ -529,11 +529,11 @@
 
 ### REQ-tenancy-064
 
-业务组织删除必须采用标记删除；删除后组织不再提供服务，别名与内部标识不得复用。业务不提供恢复入口，物理删除由后续合规处理。
+业务组织删除必须采用标记删除；删除后组织不再提供服务，别名不得复用。业务不提供恢复入口，物理删除由后续合规处理。
 
-- **验收**：删除后按该组织的别名或标识发起请求得到与不存在相同的结果；重新创建相同别名或标识被拒绝；界面没有恢复该组织的入口；数据在物理删除前保留。
+- **验收**：删除后按该组织的别名发起请求得到与不存在相同的结果；重新创建相同别名被拒绝；界面没有恢复该组织的入口；数据在物理删除前保留。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and neither its id nor its alias can be reused`（覆盖删除与别名、标识不可复用；删除后按标识或别名的请求与无恢复入口不在用例内驱动）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（覆盖删除与别名不可复用；删除后按别名的请求与无恢复入口不在用例内驱动）
 
 ### REQ-tenancy-065
 
