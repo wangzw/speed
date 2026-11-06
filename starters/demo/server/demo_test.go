@@ -1816,7 +1816,7 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 
 	const created = "newco"
 	registered := send(t, client, http.MethodPost, base+"/api/v1/system/tenants",
-		map[string]any{"id": created, "alias": created}, auth)
+		map[string]any{"alias": created}, auth)
 	if registered.status != http.StatusCreated {
 		t.Fatalf("registering a tenant answered %d, want 201:\n%s", registered.status, registered.body)
 	}

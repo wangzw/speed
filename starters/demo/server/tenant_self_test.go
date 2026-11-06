@@ -6,12 +6,10 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/tenant"
-	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
 )
 
@@ -101,14 +99,14 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	}
 	var answer struct {
 		Tenants []struct {
-			ID   string `json:"id"`
-			Kind string `json:"kind"`
+			Alias string `json:"alias"`
+			Kind  string `json:"kind"`
 		} `json:"tenants"`
 	}
 	if err := json.Unmarshal(read.body, &answer); err != nil {
 		t.Fatalf("the answer is not JSON: %v\n%s", err, read.body)
 	}
-	if len(answer.Tenants) != 1 || !strings.HasPrefix(answer.Tenants[0].ID, tenantpersonal.IDPrefix) {
+	if len(answer.Tenants) != 1 || answer.Tenants[0].Alias == "" {
 		t.Errorf("the seeded account answered %d tenant(s), want its one personal tenant:\n%s",
 			len(answer.Tenants), read.body)
 	}
