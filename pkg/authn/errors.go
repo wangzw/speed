@@ -314,6 +314,26 @@ var (
 	// Outwardly it is a 401 login-failed, and the cause goes to the log.
 	ErrProvisionRefused = errors.New("authn: the host refused to create the account")
 
+	// ErrJITUsernameMissing reports a just-in-time login whose provider has a
+	// claim strategy and whose assertion does not carry the configured claim.
+	// Outwardly it is a 401 login-failed, and the cause goes to the log.
+	ErrJITUsernameMissing = errors.New("authn: the provider's username claim is absent")
+
+	// ErrJITUsernameInvalid reports a just-in-time login whose claim value does
+	// not normalize to a username, or is one the system keeps for itself.
+	// Outwardly it is a 401 login-failed, and the cause goes to the log.
+	ErrJITUsernameInvalid = errors.New("authn: the provider's username claim is not a usable username")
+
+	// ErrJITUsernameTaken reports a just-in-time login whose claim names a
+	// username another account already holds. Outwardly it is a 401
+	// login-failed, and the cause goes to the log.
+	ErrJITUsernameTaken = errors.New("authn: the provider's username claim names a taken username")
+
+	// ErrJITUsernameStrategy reports a just-in-time provider whose stored
+	// username strategy is absent or one this build does not know. Outwardly it
+	// is a 401 login-failed, and the cause goes to the log.
+	ErrJITUsernameStrategy = errors.New("authn: the provider has no usable username strategy")
+
 	// ErrUnavailable reports that an external dependency, the database, the
 	// key-value store, a sender or an IdP, cannot be reached. The dependency's own
 	// error is wrapped in it and goes to the log. Outwardly it is a 503 that does

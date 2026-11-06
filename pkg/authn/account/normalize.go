@@ -9,6 +9,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/slug"
 )
 
 // The bounds an identifier is held to.
@@ -22,11 +23,6 @@ const (
 )
 
 var (
-	// usernameShape is the form a normalized username takes. It holds no @, so a
-	// username and an email address are told apart by that character alone. The
-	// form is the same one a tenant alias takes, because a personal tenant's
-	// alias is its owner's username and the two share one namespace.
-	usernameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,62}$`)
 	// usernamePrefixShape is the form a prefix of a normalized username takes.
 	usernamePrefixShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	// phoneShape is E.164: a plus sign, a country code that does not begin with
@@ -80,9 +76,9 @@ func NormalizeIdentifier(kind authn.IdentifierKind, value string) (string, error
 }
 
 func normalizeUsername(value string) (string, error) {
-	folded := strings.ToLower(norm.NFKC.String(value))
+	folded, ok := slug.Normalize(value)
 	switch {
-	case !usernameShape.MatchString(folded):
+	case !ok:
 		return "", errNotWellFormed(authn.IdentifierUsername, "is not 3 to 63 of [a-z0-9-] beginning with a letter or a digit")
 	case strings.HasPrefix(folded, authn.StaticPrefix):
 		return "", errNotWellFormed(authn.IdentifierUsername, "begins with the prefix of the static credential table")

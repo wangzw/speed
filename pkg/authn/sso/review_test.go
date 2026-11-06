@@ -26,11 +26,17 @@ func (f fakeConfigReader) Decode(path string, target any) error {
 }
 
 func oidcProviderOf(cfg string) authn.SSOProvider {
-	return authn.SSOProvider{Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", Config: json.RawMessage(cfg)}
+	return authn.SSOProvider{
+		Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+		UsernameStrategy: "user-confirm", Config: json.RawMessage(cfg),
+	}
 }
 
 func samlProviderOf(cfg string) authn.SSOProvider {
-	return authn.SSOProvider{Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", Config: json.RawMessage(cfg)}
+	return authn.SSOProvider{
+		Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+		UsernameStrategy: "user-confirm", Config: json.RawMessage(cfg),
+	}
 }
 
 // TestTheConfigRulesHoldAtTheirEdges drives each config rule at the boundary a

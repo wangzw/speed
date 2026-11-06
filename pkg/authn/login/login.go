@@ -43,6 +43,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/authn/internal/slug"
 	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
 	"github.com/vislake/speed/pkg/authn/login/internal/selfservice"
 	"github.com/vislake/speed/pkg/config"
@@ -416,11 +417,12 @@ func (p *product) readConfig(reader config.Reader) error {
 // store at each resolution, so a change takes effect without a restart.
 func (p *product) buildResolver() error {
 	r, err := resolve.New(resolve.Config{
-		Accounts:    p.accounts,
-		Admin:       p.admin,
-		Memberships: p.memberships,
-		SSO:         p.sso,
-		Provisioner: p.provisioner,
+		Accounts:          p.accounts,
+		Admin:             p.admin,
+		Memberships:       p.memberships,
+		SSO:               p.sso,
+		Provisioner:       p.provisioner,
+		NormalizeUsername: slug.Normalize,
 		Switches: func() resolve.Signup {
 			return resolve.Signup(p.settings.signup())
 		},

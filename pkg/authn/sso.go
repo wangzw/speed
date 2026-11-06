@@ -30,7 +30,10 @@ type SSOProviders interface {
 	// Put creates or updates a provider. A nil secret keeps the stored one and a
 	// non-nil value writes it. Config is validated on write and an unknown key is
 	// refused; an update may not change Tenant; Provisioning has no default and a
-	// value other than jit and preprovisioned is ErrInvalidConfig. Every write
+	// value other than jit and preprovisioned is ErrInvalidConfig. A jit provider
+	// names UsernameStrategy, claim or user-confirm; a claim strategy names
+	// UsernameClaim, preferred_username or email, no other strategy carries one,
+	// and an incomplete or unknown combination is ErrInvalidConfig. Every write
 	// raises Version by one.
 	Put(ctx context.Context, p SSOProvider, secret *string) (SSOProvider, error)
 	// Delete deletes a provider row and its domain claims in one transaction.

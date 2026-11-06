@@ -338,12 +338,13 @@ func (r *rig) putOIDC(tenant, name string) authn.SSOProvider {
 	r.t.Helper()
 	secret := "shh-" + name
 	p, err := r.p.Put(context.Background(), authn.SSOProvider{
-		Tenant:       tenant,
-		Protocol:     "oidc",
-		Name:         name,
-		Enabled:      true,
-		Provisioning: "jit",
-		Config:       oidcConfig(),
+		Tenant:           tenant,
+		Protocol:         "oidc",
+		Name:             name,
+		Enabled:          true,
+		Provisioning:     "jit",
+		UsernameStrategy: "user-confirm",
+		Config:           oidcConfig(),
 	}, &secret)
 	if err != nil {
 		r.t.Fatalf("Put (create oidc): %v", err)

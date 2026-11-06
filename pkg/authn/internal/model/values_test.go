@@ -60,7 +60,7 @@ func fullPrincipal() Principal {
 func fullExternal() External {
 	return External{
 		Provider: "google", Subject: "s", Email: "e@x", EmailVerified: true, DisplayName: "d",
-		Tenant: "t", Attributes: map[string]string{"idp.k": "v"},
+		PreferredUsername: "pu", Tenant: "t", Attributes: map[string]string{"idp.k": "v"},
 	}
 }
 

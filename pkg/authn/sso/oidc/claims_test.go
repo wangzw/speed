@@ -29,6 +29,12 @@ func TestBuildProfileMapsClaims(t *testing.T) {
 	if got.subject != "alice" || got.email != "alice@example.com" || got.displayName != "Alice" {
 		t.Errorf("profile = %+v, want the mapped values", got)
 	}
+	// preferred_username is read as the standard claim itself, not through the
+	// mapping: a claim-strategy just-in-time login names it as the source of the
+	// username it creates the account with.
+	if got.preferredUsername != "alice" {
+		t.Errorf("preferredUsername = %q, want the standard claim's value", got.preferredUsername)
+	}
 	if !got.emailVerified {
 		t.Error("emailVerified = false, want true")
 	}

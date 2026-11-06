@@ -21,6 +21,28 @@ import (
 // future gosaml2 changes it.
 var _ func(*saml2.SAMLServiceProvider, string) (*types.Response, error) = (*saml2.SAMLServiceProvider).ValidateEncodedResponse
 
+// A SAML provider sends the standard preferred_username under an attribute of
+// that name or friendly name, and a claim-strategy just-in-time login reads it
+// there. A provider that sends neither asserts no preferred username.
+func TestPreferredUsernameIsReadFromItsAttribute(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		attr types.Attribute
+		want string
+	}{
+		{"the name", types.Attribute{Name: preferredUsernameAttribute, Values: []types.AttributeValue{{Value: "alice"}}}, "alice"},
+		{"the friendly name", types.Attribute{FriendlyName: preferredUsernameAttribute, Values: []types.AttributeValue{{Value: "alice"}}}, "alice"},
+		{"absent", types.Attribute{Name: "urn:oid:0.9.2342.19200300.100.1.1", Values: []types.AttributeValue{{Value: "alice"}}}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertion := &types.Assertion{AttributeStatement: &types.AttributeStatement{Attributes: []types.Attribute{tc.attr}}}
+			if got := attributeValue(assertion, preferredUsernameAttribute); got != tc.want {
+				t.Errorf("attributeValue = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // consumeWith drives the assertion checks with a chosen method state, as
 // Answer does after resolving the provider and building the service provider.
 func consumeWith(t *testing.T, p *product, row authn.SSOProvider, st methodState, encoded, relay string) authn.Step {

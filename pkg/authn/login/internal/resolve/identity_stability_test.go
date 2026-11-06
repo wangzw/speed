@@ -18,6 +18,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	mountinternal "github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/authn/internal/slug"
 	"github.com/vislake/speed/pkg/authn/invite"
 	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/config"
@@ -178,11 +179,12 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		invites := mustResolve[invite.Invites](t, reg)
 
 		r, err := New(Config{
-			Accounts:    accounts,
-			Admin:       admin,
-			Memberships: memberships,
-			SSO:         jitRegister{},
-			Signup:      SignupOpen,
+			Accounts:          accounts,
+			Admin:             admin,
+			Memberships:       memberships,
+			SSO:               jitRegister{},
+			NormalizeUsername: slug.Normalize,
+			Signup:            SignupOpen,
 		})
 		if err != nil {
 			t.Fatalf("New: %v", err)
@@ -472,6 +474,7 @@ func (jitRegister) provider() authn.SSOProvider {
 	return authn.SSOProvider{
 		ID: idpAcme, Tenant: tenantAcme, Protocol: authn.SSOProtocolOIDC,
 		Enabled: true, Provisioning: authn.ProvisioningJIT,
+		UsernameStrategy: authn.UsernameStrategyUserConfirm,
 	}
 }
 

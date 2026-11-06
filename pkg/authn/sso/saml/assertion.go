@@ -217,17 +217,19 @@ func (p *product) extract(ctx context.Context, row authn.SSOProvider, cfg provid
 	}
 	email := mappedValue(cfg, assertion, "email")
 	display := mappedValue(cfg, assertion, "display_name")
+	preferredUsername := attributeValue(assertion, preferredUsernameAttribute)
 	attrs := attributeSnapshot(cfg, assertion)
 
 	proof := authn.Proof{
 		External: &authn.External{
-			Provider:      providerName + ":" + row.ID,
-			Subject:       subject,
-			Email:         email,
-			EmailVerified: p.emailVerified(ctx, row, email),
-			DisplayName:   display,
-			Tenant:        row.Tenant,
-			Attributes:    attrs,
+			Provider:          providerName + ":" + row.ID,
+			Subject:           subject,
+			Email:             email,
+			EmailVerified:     p.emailVerified(ctx, row, email),
+			DisplayName:       display,
+			PreferredUsername: preferredUsername,
+			Tenant:            row.Tenant,
+			Attributes:        attrs,
 		},
 		Methods:  []authn.Method{authn.MethodSAML},
 		Provider: row.ID,
@@ -240,6 +242,12 @@ func (p *product) extract(ctx context.Context, row authn.SSOProvider, cfg provid
 
 // providerName is the namespace prefix an enterprise SAML subject is keyed in.
 const providerName = "saml"
+
+// preferredUsernameAttribute is the attribute name a SAML provider sends the
+// standard preferred_username value under. The attribute's Name or FriendlyName
+// may carry it; a provider that sends neither asserts no preferred username,
+// and a just-in-time claim strategy that reads it refuses the login.
+const preferredUsernameAttribute = "preferred_username"
 
 // subjectOf takes the subject from the configured subject attribute, or from the
 // assertion's NameID when its format can carry a stable identifier. A transient

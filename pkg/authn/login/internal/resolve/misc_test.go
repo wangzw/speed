@@ -10,11 +10,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/slug"
 )
 
 func TestNewHoldsItsDependenciesAndSwitchesToTheirSets(t *testing.T) {
 	s := newStore()
-	good := Config{Accounts: accountsView{s: s}, Admin: adminView{s: s}, Memberships: membershipsView{s: s}}
+	good := Config{
+		Accounts: accountsView{s: s}, Admin: adminView{s: s}, Memberships: membershipsView{s: s},
+		NormalizeUsername: slug.Normalize,
+	}
 	if _, err := New(good); err != nil {
 		t.Fatalf("New(good) = %v", err)
 	}
@@ -22,6 +26,7 @@ func TestNewHoldsItsDependenciesAndSwitchesToTheirSets(t *testing.T) {
 		"no accounts":    func(c *Config) { c.Accounts = nil },
 		"no admin":       func(c *Config) { c.Admin = nil },
 		"no memberships": func(c *Config) { c.Memberships = nil },
+		"no normalizer":  func(c *Config) { c.NormalizeUsername = nil },
 		"signup unknown": func(c *Config) { c.Signup = "invite" },
 	} {
 		c := good

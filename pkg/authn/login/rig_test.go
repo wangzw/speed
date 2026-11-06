@@ -22,6 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
+	"github.com/vislake/speed/pkg/authn/internal/slug"
 	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
 )
 
@@ -667,7 +668,10 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 	}
 	p.methodNames = slices.Sorted(maps.Keys(p.methods))
 
-	r, err := resolve.New(resolve.Config{Accounts: accounts, Admin: admin, Memberships: stubMemberships{}})
+	r, err := resolve.New(resolve.Config{
+		Accounts: accounts, Admin: admin, Memberships: stubMemberships{},
+		NormalizeUsername: slug.Normalize,
+	})
 	if err != nil {
 		t.Fatalf("building the resolver: %v", err)
 	}
@@ -810,10 +814,11 @@ func (t *fakeTokens) NewRefresh(_ context.Context, _ authn.SessionID) (authn.Ref
 func (r *rig) withOpenSignup() {
 	r.t.Helper()
 	res, err := resolve.New(resolve.Config{
-		Accounts:    r.accounts,
-		Admin:       r.admin,
-		Memberships: stubMemberships{},
-		Signup:      resolve.SignupOpen,
+		Accounts:          r.accounts,
+		Admin:             r.admin,
+		Memberships:       stubMemberships{},
+		NormalizeUsername: slug.Normalize,
+		Signup:            resolve.SignupOpen,
 	})
 	if err != nil {
 		r.t.Fatalf("building the resolver: %v", err)

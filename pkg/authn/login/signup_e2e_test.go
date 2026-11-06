@@ -437,6 +437,7 @@ func jitProvider() authn.SSOProvider {
 	return authn.SSOProvider{
 		ID: jitProviderID, Tenant: "acme", Protocol: authn.SSOProtocolOIDC,
 		Enabled: true, Provisioning: authn.ProvisioningJIT,
+		UsernameStrategy: authn.UsernameStrategyUserConfirm,
 	}
 }
 

@@ -204,6 +204,8 @@ func (p *product) Put(ctx context.Context, in authn.SSOProvider, secret *string)
 		Name:              in.Name,
 		Status:            boolStatus(in.Enabled),
 		Provisioning:      in.Provisioning,
+		UsernameStrategy:  in.UsernameStrategy,
+		UsernameClaim:     in.UsernameClaim,
 		TrustIDPMFA:       in.TrustIDPMFA,
 		MergeExisting:     in.MergeExisting,
 		AllowIDPInitiated: in.AllowIDPInitiated,
@@ -274,6 +276,41 @@ func (p *product) checkPutShape(in authn.SSOProvider, secret *string) error {
 	}
 	if secret != nil && *secret != "" && in.Protocol != model.SSOProtocolOIDC {
 		return fmt.Errorf("%w: only an OIDC provider carries a client secret", authn.ErrInvalidConfig)
+	}
+	return checkUsernameStrategy(in)
+}
+
+// checkUsernameStrategy holds the two username fields to the combinations a
+// just-in-time login can carry out. A provider that never provisions needs no
+// strategy, but a claim without a strategy, or a strategy outside the closed
+// set, is still refused: the stored row has to describe a decision the login
+// path can read.
+func checkUsernameStrategy(in authn.SSOProvider) error {
+	switch in.UsernameStrategy {
+	case "":
+		if in.Provisioning == model.ProvisioningJIT {
+			return fmt.Errorf("%w: a just-in-time provider has to name a username strategy, %s or %s",
+				authn.ErrInvalidConfig, model.UsernameStrategyClaim, model.UsernameStrategyUserConfirm)
+		}
+		if in.UsernameClaim != "" {
+			return fmt.Errorf("%w: username_claim is set without a username strategy", authn.ErrInvalidConfig)
+		}
+	case model.UsernameStrategyClaim:
+		switch in.UsernameClaim {
+		case model.UsernameClaimPreferredUsername, model.UsernameClaimEmail:
+		default:
+			return fmt.Errorf("%w: a %s strategy has to name a username claim, %s or %s",
+				authn.ErrInvalidConfig, model.UsernameStrategyClaim,
+				model.UsernameClaimPreferredUsername, model.UsernameClaimEmail)
+		}
+	case model.UsernameStrategyUserConfirm:
+		if in.UsernameClaim != "" {
+			return fmt.Errorf("%w: a %s strategy carries no username claim",
+				authn.ErrInvalidConfig, model.UsernameStrategyUserConfirm)
+		}
+	default:
+		return fmt.Errorf("%w: username strategy has to be %s or %s",
+			authn.ErrInvalidConfig, model.UsernameStrategyClaim, model.UsernameStrategyUserConfirm)
 	}
 	return nil
 }

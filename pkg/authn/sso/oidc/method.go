@@ -239,13 +239,14 @@ func (p *product) exchange(ctx context.Context, id string, prov authn.SSOProvide
 	p.meters.assertion(ctx, protocolOIDC, outcomeAccepted)
 	return authn.StepProven(authn.Proof{
 		External: &authn.External{
-			Provider:      namespaceOIDC + id,
-			Subject:       sum.subject,
-			Email:         sum.email,
-			EmailVerified: sum.emailVerified,
-			DisplayName:   sum.displayName,
-			Tenant:        prov.Tenant,
-			Attributes:    sum.attributes,
+			Provider:          namespaceOIDC + id,
+			Subject:           sum.subject,
+			Email:             sum.email,
+			EmailVerified:     sum.emailVerified,
+			DisplayName:       sum.displayName,
+			PreferredUsername: sum.preferredUsername,
+			Tenant:            prov.Tenant,
+			Attributes:        sum.attributes,
 		},
 		Methods:     []authn.Method{authn.MethodOIDC},
 		IDPAsserted: idpAsserted(prov, cfg, claims),

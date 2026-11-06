@@ -237,6 +237,8 @@ func (r *routes) fail(c *call, err error) {
 	case errors.Is(err, authn.ErrInvalidCredentials), errors.Is(err, authn.ErrAccountNotFound),
 		errors.Is(err, authn.ErrSignupClosed), errors.Is(err, authn.ErrDomainMismatch),
 		errors.Is(err, authn.ErrNotProvisioned), errors.Is(err, authn.ErrProvisionRefused),
+		errors.Is(err, authn.ErrJITUsernameMissing), errors.Is(err, authn.ErrJITUsernameInvalid),
+		errors.Is(err, authn.ErrJITUsernameTaken), errors.Is(err, authn.ErrJITUsernameStrategy),
 		errors.Is(err, authn.ErrNoFactor), errors.Is(err, authn.ErrFactorNotEnrolled):
 		c.unauthorized(mount.CodeLoginFailed)
 	case errors.Is(err, authn.ErrHumanVerificationRequired):

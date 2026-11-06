@@ -34,7 +34,7 @@ func TestDiscoverReturnsOnlyVerifiedAndEnabledRows(t *testing.T) {
 	off := r.verified("tenant-b", "off", "disabled.example.com")
 	if _, err := r.p.Put(context.Background(), authn.SSOProvider{
 		ID: off.ID, Tenant: "tenant-b", Protocol: "oidc", Name: "off", Enabled: false,
-		Provisioning: "jit", Config: oidcConfig(),
+		Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 	}, nil); err != nil {
 		t.Fatalf("disabling a provider: %v", err)
 	}

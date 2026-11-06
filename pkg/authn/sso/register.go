@@ -39,6 +39,8 @@ type idpRow struct {
 	Name              string    `gorm:"column:name"`
 	Status            int       `gorm:"column:status"`
 	Provisioning      string    `gorm:"column:provisioning"`
+	UsernameStrategy  string    `gorm:"column:username_strategy"`
+	UsernameClaim     string    `gorm:"column:username_claim"`
 	TrustIDPMFA       bool      `gorm:"column:trust_idp_mfa"`
 	MergeExisting     bool      `gorm:"column:merge_existing"`
 	AllowIDPInitiated bool      `gorm:"column:allow_idp_initiated"`
@@ -56,8 +58,9 @@ func (idpRow) TableName() string { return idpTable }
 
 // providerColumns is every column of authn_idps except the client secret, which
 // no read handed out selects.
-const providerColumns = "id, tenant_id, protocol, name, status, provisioning, trust_idp_mfa, " +
-	"merge_existing, allow_idp_initiated, allow_sha1, config, version, created_at, updated_at"
+const providerColumns = "id, tenant_id, protocol, name, status, provisioning, username_strategy, " +
+	"username_claim, trust_idp_mfa, merge_existing, allow_idp_initiated, allow_sha1, config, version, " +
+	"created_at, updated_at"
 
 // domainRow is one row of authn_idp_domains.
 type domainRow struct {
@@ -90,6 +93,8 @@ func toProvider(r idpRow) authn.SSOProvider {
 		Name:              r.Name,
 		Enabled:           r.Status != 0,
 		Provisioning:      r.Provisioning,
+		UsernameStrategy:  r.UsernameStrategy,
+		UsernameClaim:     r.UsernameClaim,
 		TrustIDPMFA:       r.TrustIDPMFA,
 		AllowIDPInitiated: r.AllowIDPInitiated,
 		AllowSHA1:         r.AllowSHA1,
@@ -168,8 +173,9 @@ func (g *register) listIDPs(ctx context.Context, tenant string) ([]idpRow, error
 func (g *register) discover(ctx context.Context, domain string) ([]idpRow, error) {
 	var rows []idpRow
 	err := g.session(ctx).Table(idpTable+" AS i").
-		Select("i.id, i.tenant_id, i.protocol, i.name, i.status, i.provisioning, i.trust_idp_mfa, "+
-			"i.merge_existing, i.allow_idp_initiated, i.allow_sha1, i.config, i.version, i.created_at, i.updated_at").
+		Select("i.id, i.tenant_id, i.protocol, i.name, i.status, i.provisioning, i.username_strategy, "+
+			"i.username_claim, i.trust_idp_mfa, i.merge_existing, i.allow_idp_initiated, i.allow_sha1, "+
+			"i.config, i.version, i.created_at, i.updated_at").
 		Joins("JOIN "+domainTable+" AS d ON d.idp_id = i.id").
 		Where("d.domain = ? AND d.verified_at IS NOT NULL AND i.status = 1", domain).
 		Order("i.id ASC").Find(&rows).Error
@@ -400,16 +406,17 @@ func (g *register) roundTrip(ctx context.Context) error {
 	now := clock.UTC(time.Now())
 	secret := probePlaintext
 	probe := idpRow{
-		ID:           "probe:" + event.NewID(),
-		TenantID:     "probe",
-		Protocol:     model.SSOProtocolOIDC,
-		Name:         "probe",
-		Provisioning: model.ProvisioningJIT,
-		Config:       "{}",
-		ClientSecret: &secret,
-		Version:      1,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:               "probe:" + event.NewID(),
+		TenantID:         "probe",
+		Protocol:         model.SSOProtocolOIDC,
+		Name:             "probe",
+		Provisioning:     model.ProvisioningJIT,
+		UsernameStrategy: model.UsernameStrategyUserConfirm,
+		Config:           "{}",
+		ClientSecret:     &secret,
+		Version:          1,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 	if err := tx.Create(&probe).Error; err != nil {
 		return fmt.Errorf("writing the encrypted-column check row: %w", err)

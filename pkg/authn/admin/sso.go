@@ -33,6 +33,8 @@ func providerViewOf(p authn.SSOProvider, domains []authn.SSOProviderDomain) Auth
 		Name:              p.Name,
 		Enabled:           p.Enabled,
 		Provisioning:      p.Provisioning,
+		UsernameStrategy:  p.UsernameStrategy,
+		UsernameClaim:     p.UsernameClaim,
 		TrustIDPMFA:       p.TrustIDPMFA,
 		AllowIDPInitiated: p.AllowIDPInitiated,
 		AllowSHA1:         p.AllowSHA1,
@@ -76,6 +78,8 @@ type providerWriteFields struct {
 	Name              string
 	Enabled           *bool
 	Provisioning      string
+	UsernameStrategy  *string
+	UsernameClaim     *string
 	TrustIDPMFA       *bool
 	AllowIDPInitiated *bool
 	AllowSHA1         *bool
@@ -88,6 +92,7 @@ type providerWriteFields struct {
 func (in providerCreateInput) writeFields() providerWriteFields {
 	return providerWriteFields{
 		Protocol: in.Protocol, Name: in.Name, Enabled: in.Enabled, Provisioning: in.Provisioning,
+		UsernameStrategy: in.UsernameStrategy, UsernameClaim: in.UsernameClaim,
 		TrustIDPMFA: in.TrustIDPMFA, AllowIDPInitiated: in.AllowIDPInitiated, AllowSHA1: in.AllowSHA1,
 		MergeExisting: in.MergeExisting, Config: configObject(in.Config), ClientSecret: in.ClientSecret,
 	}
@@ -97,6 +102,7 @@ func (in providerCreateInput) writeFields() providerWriteFields {
 func (in providerUpdateInput) writeFields() providerWriteFields {
 	return providerWriteFields{
 		Protocol: in.Protocol, Name: in.Name, Enabled: in.Enabled, Provisioning: in.Provisioning,
+		UsernameStrategy: in.UsernameStrategy, UsernameClaim: in.UsernameClaim,
 		TrustIDPMFA: in.TrustIDPMFA, AllowIDPInitiated: in.AllowIDPInitiated, AllowSHA1: in.AllowSHA1,
 		MergeExisting: in.MergeExisting, Config: configObject(in.Config), ClientSecret: in.ClientSecret,
 	}
@@ -125,6 +131,8 @@ func (f providerWriteFields) provider(id, tenant string, base authn.SSOProvider)
 		Protocol:          f.Protocol,
 		Name:              f.Name,
 		Provisioning:      f.Provisioning,
+		UsernameStrategy:  base.UsernameStrategy,
+		UsernameClaim:     base.UsernameClaim,
 		Config:            f.Config,
 		Enabled:           base.Enabled,
 		TrustIDPMFA:       base.TrustIDPMFA,
@@ -146,6 +154,12 @@ func (f providerWriteFields) provider(id, tenant string, base authn.SSOProvider)
 	}
 	if f.MergeExisting != nil {
 		p.MergeExisting = *f.MergeExisting
+	}
+	if f.UsernameStrategy != nil {
+		p.UsernameStrategy = *f.UsernameStrategy
+	}
+	if f.UsernameClaim != nil {
+		p.UsernameClaim = *f.UsernameClaim
 	}
 	return p
 }

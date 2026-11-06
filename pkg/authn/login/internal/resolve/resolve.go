@@ -49,6 +49,10 @@ type Config struct {
 	// Provisioner is the host's hook before an account is created; nil means no
 	// hook.
 	Provisioner authn.Provisioner
+	// NormalizeUsername folds a claim value to the shared username and alias
+	// form. The account module delivers the same rule; the engine hands it in so
+	// that this package imports neither the account module nor its library.
+	NormalizeUsername func(string) (string, bool)
 	// Signup is the relaxation switch, read when Switches is not set; its zero
 	// value is the closed one.
 	Signup Signup
@@ -66,6 +70,7 @@ type Resolver struct {
 	memberships authn.Memberships
 	sso         authn.SSOProviders
 	provisioner authn.Provisioner
+	normalize   func(string) (string, bool)
 	signup      Signup
 	switches    func() Signup
 }
@@ -80,6 +85,8 @@ func New(c Config) (*Resolver, error) {
 		return nil, fmt.Errorf("%w: resolve: no AccountAdmin", authn.ErrInvalidConfig)
 	case c.Memberships == nil:
 		return nil, fmt.Errorf("%w: resolve: no Memberships", authn.ErrInvalidConfig)
+	case c.NormalizeUsername == nil:
+		return nil, fmt.Errorf("%w: resolve: no username normalizer", authn.ErrInvalidConfig)
 	}
 	switch c.Signup {
 	case "", SignupClosed, SignupOpen:
@@ -92,6 +99,7 @@ func New(c Config) (*Resolver, error) {
 		memberships: c.Memberships,
 		sso:         c.SSO,
 		provisioner: c.Provisioner,
+		normalize:   c.NormalizeUsername,
 		signup:      c.Signup,
 		switches:    c.Switches,
 	}, nil

@@ -485,6 +485,10 @@ export interface AuthnAdminProvider {
   tenant: string;
   /** True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list. */
   trust_idp_mfa: boolean;
+  /** The claim a claim strategy reads: preferred_username or email (the address's local part). Empty for every other strategy. */
+  username_claim: string;
+  /** How a jit login determines the username it opens the account with: claim reads username_claim from the assertion, user-confirm asks the person before any account is written. Empty for a preprovisioned provider. */
+  username_strategy: string;
   /** The provider's version, raised by every write. */
   version: number;
   /** Absent when no setting loosens a default */
@@ -538,6 +542,10 @@ export interface AuthnAdminProviderWrite {
   tenant?: string;
   /** Absent leaves the flag as it is (false on a create) */
   trust_idp_mfa?: boolean;
+  /** The claim a claim strategy reads: preferred_username or email (the address's local part). Required on a create when the strategy is claim; absent keeps the stored value on an update; empty for every other strategy. */
+  username_claim?: string;
+  /** How a jit login determines the username: claim or user-confirm. Required on a create when provisioning is jit; absent keeps the stored value on an update; empty for preprovisioned, and a claim strategy requires username_claim. */
+  username_strategy?: string;
 }
 
 /**
@@ -13457,7 +13465,7 @@ export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof 
 
 
 /**
- * Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.
+ * Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A jit provider names username_strategy, claim or user-confirm; a claim strategy names username_claim, preferred_username or email, and no other strategy carries one. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.
  * @summary Create an SSO provider in a tenant
  */
 export const authnAdminSsoProvidersCreate = (
@@ -13688,7 +13696,7 @@ export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof a
 
 
 /**
- * A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. Booleans left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.
+ * A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. A jit provider names username_strategy, claim or user-confirm; a claim strategy names username_claim, preferred_username or email, and no other strategy carries one. Booleans, username_strategy and username_claim left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.
  * @summary Update an SSO provider
  */
 export const authnAdminSsoProvidersUpdate = (

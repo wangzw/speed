@@ -13516,7 +13516,7 @@
         "x-endpoint": "api"
       },
       "post": {
-        "description": "Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.",
+        "description": "Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A jit provider names username_strategy, claim or user-confirm; a claim strategy names username_claim, preferred_username or email, and no other strategy carries one. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.",
         "operationId": "authn.admin.sso.providers.create",
         "parameters": [
           {
@@ -13537,7 +13537,7 @@
               }
             }
           },
-          "description": "The provider to create. protocol, name, provisioning and config are required; the config is validated against the protocol and an unknown key is refused.",
+          "description": "The provider to create. protocol, name, provisioning and config are required; username_strategy is required when provisioning is jit, username_claim when the strategy is claim, and an incomplete or unknown combination is refused; the config is validated against the protocol and an unknown key is refused.",
           "required": true
         },
         "responses": {
@@ -13810,7 +13810,7 @@
         "x-endpoint": "api"
       },
       "put": {
-        "description": "A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. Booleans left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.",
+        "description": "A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. A jit provider names username_strategy, claim or user-confirm; a claim strategy names username_claim, preferred_username or email, and no other strategy carries one. Booleans, username_strategy and username_claim left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.",
         "operationId": "authn.admin.sso.providers.update",
         "parameters": [
           {
@@ -13840,7 +13840,7 @@
               }
             }
           },
-          "description": "The provider to write. protocol, name, provisioning and config are required; booleans left out keep their stored value, and an absent client_secret keeps the stored one.",
+          "description": "The provider to write. protocol, name, provisioning and config are required; username_strategy must be present (stored or in the body) when provisioning is jit, username_claim when the strategy is claim, and an incomplete or unknown combination is refused; booleans, username_strategy and username_claim left out keep their stored value, and an absent client_secret keeps the stored one.",
           "required": true
         },
         "responses": {
@@ -15246,6 +15246,14 @@
             "description": "True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list.",
             "type": "boolean"
           },
+          "username_claim": {
+            "description": "The claim a claim strategy reads: preferred_username or email (the address's local part). Empty for every other strategy.",
+            "type": "string"
+          },
+          "username_strategy": {
+            "description": "How a jit login determines the username it opens the account with: claim reads username_claim from the assertion, user-confirm asks the person before any account is written. Empty for a preprovisioned provider.",
+            "type": "string"
+          },
           "version": {
             "description": "The provider's version, raised by every write.",
             "type": "integer"
@@ -15265,6 +15273,8 @@
           "name",
           "enabled",
           "provisioning",
+          "username_strategy",
+          "username_claim",
           "trust_idp_mfa",
           "allow_idp_initiated",
           "allow_sha1",
@@ -15369,6 +15379,14 @@
           "trust_idp_mfa": {
             "description": "Absent leaves the flag as it is (false on a create)",
             "type": "boolean"
+          },
+          "username_claim": {
+            "description": "The claim a claim strategy reads: preferred_username or email (the address's local part). Required on a create when the strategy is claim; absent keeps the stored value on an update; empty for every other strategy.",
+            "type": "string"
+          },
+          "username_strategy": {
+            "description": "How a jit login determines the username: claim or user-confirm. Required on a create when provisioning is jit; absent keeps the stored value on an update; empty for preprovisioned, and a claim strategy requires username_claim.",
+            "type": "string"
           }
         },
         "required": [

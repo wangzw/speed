@@ -21,11 +21,12 @@ const (
 
 // profile is what an identity token proves about the person, after the mapping.
 type profile struct {
-	subject       string
-	email         string
-	emailVerified bool
-	displayName   string
-	attributes    map[string]string // keys already carry the reserved idp. prefix
+	subject           string
+	email             string
+	emailVerified     bool
+	displayName       string
+	preferredUsername string
+	attributes        map[string]string // keys already carry the reserved idp. prefix
 }
 
 // buildProfile maps an identity token's claims to a profile. The mapping names a
@@ -53,6 +54,11 @@ func buildProfile(cfg providerConfig, tokenSubject string, claims map[string]any
 		}
 	}
 	p.emailVerified = boolClaim(claims["email_verified"])
+	// preferred_username is read as the standard claim itself, not through the
+	// configured mapping: a just-in-time provider may name it as the source of
+	// the username it creates the account with, and that source is the token,
+	// not a mapping an administrator had to add beside it.
+	p.preferredUsername = stringClaim(claims["preferred_username"])
 	if len(p.attributes) == 0 {
 		p.attributes = nil
 	}

@@ -27,7 +27,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "an unknown key in an OIDC config",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"c","saml_only":true}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -35,7 +35,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "a SAML-only key in an OIDC config",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"c","idp_sso_url":"https://x"}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -59,7 +59,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "an OIDC issuer with an aggregator placeholder",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"https://login.example.com/common/v2.0","client_id":"c"}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -67,7 +67,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "an OIDC issuer that is not https",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"http://idp.example.com","client_id":"c"}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -75,7 +75,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "OIDC algs containing none",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"c","algs":["RS256","none"]}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -83,7 +83,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "OIDC algs containing a symmetric algorithm",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"c","algs":["HS256"]}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -91,7 +91,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML missing idp_sso_url",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_entity_id":"e","idp_certs":["x"]}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -99,7 +99,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML missing idp_entity_id",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_sso_url":"https://idp.example.com/sso","idp_certs":["x"]}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -107,7 +107,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML missing idp_certs",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_entity_id":"e","idp_sso_url":"https://idp.example.com/sso"}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -115,7 +115,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML idp_sso_url with user information",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_entity_id":"e","idp_sso_url":"https://user:pass@idp.example.com/sso","idp_certs":["x"]}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -123,7 +123,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML too many certificates",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_entity_id":"e","idp_sso_url":"https://idp.example.com/sso","idp_certs":["a","b","c","d","e"]}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -131,7 +131,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML with a transient NameID",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_entity_id":"e","idp_sso_url":"https://idp.example.com/sso","idp_certs":["x"],"name_id_format":"transient"}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -139,7 +139,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML with an emailAddress NameID and no subject attribute",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_entity_id":"e","idp_sso_url":"https://idp.example.com/sso","idp_certs":["x"],"name_id_format":"emailAddress"}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -147,7 +147,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "SAML asking signed requests with no service provider key",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"idp_entity_id":"e","idp_sso_url":"https://idp.example.com/sso","idp_certs":["x"],"sign_requests":true}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -155,7 +155,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "an empty name",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: oidcConfig(),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -163,7 +163,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "a name longer than the bound",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: strings.Repeat("x", maxNameChars+1), Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: strings.Repeat("x", maxNameChars+1), Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: oidcConfig(),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -171,7 +171,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "a protocol outside the closed set",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "ldap", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "ldap", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: oidcConfig(),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -179,7 +179,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "a secret on a SAML provider",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "saml", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: samlConfig(),
 			},
 			secret:  &existingSAMLSecret,
@@ -188,7 +188,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "a claims map naming an unknown target",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"c","claims":{"name":"role"}}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -196,7 +196,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 		{
 			name: "a claims map with too many attributes",
 			in: authn.SSOProvider{
-				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit",
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p", Provisioning: "jit", UsernameStrategy: "user-confirm",
 				Config: json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"c","claims":{"a1":"attr.1","a2":"attr.2","a3":"attr.3","a4":"attr.4","a5":"attr.5","a6":"attr.6","a7":"attr.7","a8":"attr.8","a9":"attr.9"}}`),
 			},
 			wantErr: authn.ErrInvalidConfig,
@@ -205,7 +205,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 			name: "an update that moves the provider to another tenant",
 			in: authn.SSOProvider{
 				ID: existing.ID, Tenant: "tenant-b", Protocol: "oidc", Name: "kept",
-				Provisioning: "jit", Config: oidcConfig(),
+				Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 			},
 			wantErr: authn.ErrInvalidConfig,
 		},
@@ -213,7 +213,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 			name: "an update of a provider that is not there",
 			in: authn.SSOProvider{
 				ID: "0192f5a0-0000-7000-8000-000000000000", Tenant: "tenant-a", Protocol: "oidc",
-				Name: "ghost", Provisioning: "jit", Config: oidcConfig(),
+				Name: "ghost", Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 			},
 			wantErr: ErrProviderNotFound,
 		},
@@ -252,7 +252,7 @@ func TestPutCreateAndUpdateVersionAndKeepTheSecret(t *testing.T) {
 	// An update with a nil secret keeps the stored one.
 	updated, err := r.p.Put(context.Background(), authn.SSOProvider{
 		ID: created.ID, Tenant: "tenant-a", Protocol: "oidc", Name: "renamed", Enabled: true,
-		Provisioning: "jit", Config: oidcConfig(),
+		Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 	}, nil)
 	if err != nil {
 		t.Fatalf("Put (update, nil secret): %v", err)
@@ -268,7 +268,7 @@ func TestPutCreateAndUpdateVersionAndKeepTheSecret(t *testing.T) {
 	replacement := "new-secret"
 	if _, err := r.p.Put(context.Background(), authn.SSOProvider{
 		ID: created.ID, Tenant: "tenant-a", Protocol: "oidc", Name: "renamed", Enabled: true,
-		Provisioning: "jit", Config: oidcConfig(),
+		Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 	}, &replacement); err != nil {
 		t.Fatalf("Put (update, new secret): %v", err)
 	}
@@ -329,7 +329,7 @@ func TestPutAndDeletePublishTheChange(t *testing.T) {
 	}
 	if _, err := r.p.Put(context.Background(), authn.SSOProvider{
 		ID: created.ID, Tenant: "tenant-a", Protocol: "oidc", Name: "renamed", Enabled: true,
-		Provisioning: "jit", Config: oidcConfig(),
+		Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 	}, nil); err != nil {
 		t.Fatalf("Put (update): %v", err)
 	}
@@ -351,7 +351,7 @@ func TestPutAndDeletePublishTheChange(t *testing.T) {
 func TestPutNamesAStatusChange(t *testing.T) {
 	r := newRigSQLite(t)
 	created, err := r.p.Put(context.Background(), authn.SSOProvider{
-		Tenant: "tenant-a", Protocol: "oidc", Name: "off", Enabled: false, Provisioning: "jit", Config: oidcConfig(),
+		Tenant: "tenant-a", Protocol: "oidc", Name: "off", Enabled: false, Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 	}, nil)
 	if err != nil {
 		t.Fatalf("Put (create disabled): %v", err)
@@ -363,7 +363,7 @@ func TestPutNamesAStatusChange(t *testing.T) {
 		t.Helper()
 		if _, err := r.p.Put(context.Background(), authn.SSOProvider{
 			ID: created.ID, Tenant: "tenant-a", Protocol: "oidc", Name: "off", Enabled: enabled,
-			Provisioning: "jit", Config: oidcConfig(),
+			Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 		}, nil); err != nil {
 			t.Fatalf("Put (set enabled=%v): %v", enabled, err)
 		}
@@ -380,7 +380,7 @@ func TestPutNamesAStatusChange(t *testing.T) {
 func TestListTakesTheDisabledOnesToo(t *testing.T) {
 	r := newRigSQLite(t)
 	disabled, err := r.p.Put(context.Background(), authn.SSOProvider{
-		Tenant: "tenant-a", Protocol: "oidc", Name: "off", Enabled: false, Provisioning: "jit", Config: oidcConfig(),
+		Tenant: "tenant-a", Protocol: "oidc", Name: "off", Enabled: false, Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
 	}, nil)
 	if err != nil {
 		t.Fatalf("Put: %v", err)
@@ -391,6 +391,128 @@ func TestListTakesTheDisabledOnesToo(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].ID != disabled.ID || list[0].Enabled {
 		t.Errorf("List = %+v, want the one disabled provider", list)
+	}
+}
+
+// TestPutHoldsTheUsernameStrategyToItsCombinations drives the two username
+// fields through Put: a just-in-time provider has to state a strategy, a claim
+// strategy has to name a claim, no other strategy carries one, and a
+// preprovisioned provider needs none. The accepted combinations are read back,
+// so the fields survive the round trip.
+func TestPutHoldsTheUsernameStrategyToItsCombinations(t *testing.T) {
+	r := newRigSQLite(t)
+	cases := []struct {
+		name    string
+		in      authn.SSOProvider
+		wantErr error
+	}{
+		{
+			name: "jit with no strategy",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
+			name: "jit with an unknown strategy",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, UsernameStrategy: "surprise", Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
+			name: "claim with no claim",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, UsernameStrategy: authn.UsernameStrategyClaim, Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
+			name: "claim with an unknown claim",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, UsernameStrategy: authn.UsernameStrategyClaim,
+				UsernameClaim: "surprise", Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
+			name: "user-confirm with a claim",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, UsernameStrategy: authn.UsernameStrategyUserConfirm,
+				UsernameClaim: authn.UsernameClaimEmail, Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
+			name: "preprovisioned with a claim and no strategy",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningPreprovisioned, UsernameClaim: authn.UsernameClaimEmail, Config: oidcConfig(),
+			},
+			wantErr: authn.ErrInvalidConfig,
+		},
+		{
+			name: "preprovisioned with no strategy",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningPreprovisioned, Config: oidcConfig(),
+			},
+		},
+		{
+			name: "jit claim preferred_username",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, UsernameStrategy: authn.UsernameStrategyClaim,
+				UsernameClaim: authn.UsernameClaimPreferredUsername, Config: oidcConfig(),
+			},
+		},
+		{
+			name: "jit claim email",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, UsernameStrategy: authn.UsernameStrategyClaim,
+				UsernameClaim: authn.UsernameClaimEmail, Config: oidcConfig(),
+			},
+		},
+		{
+			name: "jit user-confirm",
+			in: authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: "oidc", Name: "p",
+				Provisioning: authn.ProvisioningJIT, UsernameStrategy: authn.UsernameStrategyUserConfirm,
+				Config: oidcConfig(),
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			written, err := r.p.Put(context.Background(), tc.in, nil)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("Put returned %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Put: %v", err)
+			}
+			if written.UsernameStrategy != tc.in.UsernameStrategy || written.UsernameClaim != tc.in.UsernameClaim {
+				t.Errorf("Put returned %+v, want the strategy %q and claim %q",
+					written, tc.in.UsernameStrategy, tc.in.UsernameClaim)
+			}
+			got, err := r.p.Get(context.Background(), written.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got.UsernameStrategy != tc.in.UsernameStrategy || got.UsernameClaim != tc.in.UsernameClaim {
+				t.Errorf("Get returned %+v, want the strategy %q and claim %q",
+					got, tc.in.UsernameStrategy, tc.in.UsernameClaim)
+			}
+		})
 	}
 }
 

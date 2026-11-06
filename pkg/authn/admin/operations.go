@@ -202,6 +202,8 @@ type providerCreateInput struct {
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           *bool                      `json:"enabled" description:"Absent leaves the enabled flag as it is (false on a create)"`
 	Provisioning      string                     `json:"provisioning" required:"true" description:"jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. Required, with no default."`
+	UsernameStrategy  *string                    `json:"username_strategy" description:"How a jit login determines the username: claim or user-confirm. Required on a create when provisioning is jit; absent keeps the stored value on an update; empty for preprovisioned, and a claim strategy requires username_claim."`
+	UsernameClaim     *string                    `json:"username_claim" description:"The claim a claim strategy reads: preferred_username or email (the address's local part). Required on a create when the strategy is claim; absent keeps the stored value on an update; empty for every other strategy."`
 	TrustIDPMFA       *bool                      `json:"trust_idp_mfa" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowIDPInitiated *bool                      `json:"allow_idp_initiated" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowSHA1         *bool                      `json:"allow_sha1" description:"Absent leaves the flag as it is (false on a create)"`
@@ -220,6 +222,8 @@ type providerUpdateInput struct {
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           *bool                      `json:"enabled" description:"Absent leaves the enabled flag as it is (false on a create)"`
 	Provisioning      string                     `json:"provisioning" required:"true" description:"jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. Required, with no default."`
+	UsernameStrategy  *string                    `json:"username_strategy" description:"How a jit login determines the username: claim or user-confirm. Required on a create when provisioning is jit; absent keeps the stored value on an update; empty for preprovisioned, and a claim strategy requires username_claim."`
+	UsernameClaim     *string                    `json:"username_claim" description:"The claim a claim strategy reads: preferred_username or email (the address's local part). Required on a create when the strategy is claim; absent keeps the stored value on an update; empty for every other strategy."`
 	TrustIDPMFA       *bool                      `json:"trust_idp_mfa" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowIDPInitiated *bool                      `json:"allow_idp_initiated" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowSHA1         *bool                      `json:"allow_sha1" description:"Absent leaves the flag as it is (false on a create)"`
@@ -804,10 +808,10 @@ var providerCreateOperation = speedhttp.NewReplyOperation[providerCreateInput](
 	http.MethodPost,
 	pathProviders,
 	"Create an SSO provider in a tenant",
-	"Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.",
+	"Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A jit provider names username_strategy, claim or user-confirm; a claim strategy names username_claim, preferred_username or email, and no other strategy carries one. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The provider to create. protocol, name, provisioning and config are required; the config is validated against the protocol and an unknown key is refused.",
+		Description: "The provider to create. protocol, name, provisioning and config are required; username_strategy is required when provisioning is jit, username_claim when the strategy is claim, and an incomplete or unknown combination is refused; the config is validated against the protocol and an unknown key is refused.",
 		Required:    true,
 		Name:        "AuthnAdminProviderWrite",
 	},
@@ -842,10 +846,10 @@ var providerUpdateOperation = speedhttp.NewReplyOperation[providerUpdateInput](
 	http.MethodPut,
 	pathProvider,
 	"Update an SSO provider",
-	"A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. Booleans left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.",
+	"A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. A jit provider names username_strategy, claim or user-confirm; a claim strategy names username_claim, preferred_username or email, and no other strategy carries one. Booleans, username_strategy and username_claim left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The provider to write. protocol, name, provisioning and config are required; booleans left out keep their stored value, and an absent client_secret keeps the stored one.",
+		Description: "The provider to write. protocol, name, provisioning and config are required; username_strategy must be present (stored or in the body) when provisioning is jit, username_claim when the strategy is claim, and an incomplete or unknown combination is refused; booleans, username_strategy and username_claim left out keep their stored value, and an absent client_secret keeps the stored one.",
 		Required:    true,
 		Name:        "AuthnAdminProviderWrite",
 	},

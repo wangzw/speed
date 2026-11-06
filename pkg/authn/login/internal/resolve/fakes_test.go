@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/slug"
 )
 
 // store is an in-memory account store with the uniqueness semantics the real one
@@ -519,10 +520,31 @@ func withProvisioner(p provisionerFunc) option {
 }
 
 // withProvider registers an enterprise provider of tenantAcme with the given
-// provisioning and merge switch, and its verified domain acme.com.
+// provisioning and merge switch, and its verified domain acme.com. A JIT
+// provider asks the person for a username, which is the strategy the older
+// cases exercised; a claim strategy is added by withClaimProvider.
 func withProvider(provisioning string, merge bool) option {
 	return func(_ *Config, s *store) {
-		p := authn.SSOProvider{ID: idpAcme, Tenant: tenantAcme, Protocol: authn.SSOProtocolOIDC, Enabled: true, Provisioning: provisioning, MergeExisting: merge}
+		p := authn.SSOProvider{
+			ID: idpAcme, Tenant: tenantAcme, Protocol: authn.SSOProtocolOIDC, Enabled: true,
+			Provisioning: provisioning, MergeExisting: merge,
+		}
+		if provisioning == authn.ProvisioningJIT {
+			p.UsernameStrategy = authn.UsernameStrategyUserConfirm
+		}
+		s.providers[idpAcme] = p
+		s.domains["acme.com"] = []authn.SSOProvider{p}
+	}
+}
+
+// withClaimProvider registers a just-in-time provider of tenantAcme that reads
+// its username from the given claim.
+func withClaimProvider(claim string) option {
+	return func(_ *Config, s *store) {
+		p := authn.SSOProvider{
+			ID: idpAcme, Tenant: tenantAcme, Protocol: authn.SSOProtocolOIDC, Enabled: true,
+			Provisioning: authn.ProvisioningJIT, UsernameStrategy: authn.UsernameStrategyClaim, UsernameClaim: claim,
+		}
 		s.providers[idpAcme] = p
 		s.domains["acme.com"] = []authn.SSOProvider{p}
 	}
@@ -532,10 +554,11 @@ func newEnv(t *testing.T, opts ...option) *env {
 	t.Helper()
 	s := newStore()
 	cfg := Config{
-		Accounts:    accountsView{s: s},
-		Admin:       adminView{s: s},
-		Memberships: membershipsView{s: s},
-		SSO:         ssoView{s: s},
+		Accounts:          accountsView{s: s},
+		Admin:             adminView{s: s},
+		Memberships:       membershipsView{s: s},
+		SSO:               ssoView{s: s},
+		NormalizeUsername: slug.Normalize,
 	}
 	for _, o := range opts {
 		o(&cfg, s)
@@ -599,6 +622,14 @@ func enterprise(subject, email string) authn.Proof {
 		Provider: idpAcme,
 		External: &authn.External{Provider: "oidc:" + idpAcme, Subject: subject, Email: email, Tenant: tenantAcme, DisplayName: "Ann"},
 	}
+}
+
+// enterpriseWithUsername is an enterprise proof that asserts a preferred
+// username, for the claim strategy.
+func enterpriseWithUsername(subject, email, preferredUsername string) authn.Proof {
+	p := enterprise(subject, email)
+	p.External.PreferredUsername = preferredUsername
+	return p
 }
 
 func phone(value string) authn.Proof {

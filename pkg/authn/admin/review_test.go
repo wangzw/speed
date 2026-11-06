@@ -781,6 +781,7 @@ func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{
 		ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML, Name: "n", Provisioning: authn.ProvisioningJIT,
+		UsernameStrategy: authn.UsernameStrategyClaim, UsernameClaim: authn.UsernameClaimPreferredUsername,
 		Enabled: true, TrustIDPMFA: true, AllowIDPInitiated: true, AllowSHA1: true, MergeExisting: true,
 	})
 	rec := r.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/sso/providers/"+idpA,
@@ -792,11 +793,19 @@ func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 	if !got.Enabled || !got.TrustIDPMFA || !got.AllowIDPInitiated || !got.AllowSHA1 || !got.MergeExisting {
 		t.Errorf("a partial update reset the flags to %+v, want them carried", got)
 	}
+	if got.UsernameStrategy != authn.UsernameStrategyClaim || got.UsernameClaim != authn.UsernameClaimPreferredUsername {
+		t.Errorf("a partial update reset the username strategy to %q/%q, want it carried",
+			got.UsernameStrategy, got.UsernameClaim)
+	}
 
-	// An explicit enabled:false on a create is obeyed.
+	// An explicit enabled:false on a create is obeyed, and the strategy it
+	// states is written.
 	created := newRig(t)
 	rec = created.do(http.MethodPost, "/api/v1/tenants/"+tenantA+"/sso/providers",
-		map[string]any{"protocol": "saml", "name": "n", "provisioning": "jit", "enabled": false, "trust_idp_mfa": true}, fresh()...)
+		map[string]any{
+			"protocol": "saml", "name": "n", "provisioning": "jit", "enabled": false,
+			"trust_idp_mfa": true, "username_strategy": "user-confirm",
+		}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create: status = %d, want 201; body %s", rec.Code, rec.Body.String())
 	}
@@ -806,6 +815,9 @@ func TestProviderWriteInheritsAndOverridesTheFlags(t *testing.T) {
 	}
 	if !got.TrustIDPMFA {
 		t.Error("an explicit trust_idp_mfa:true was ignored")
+	}
+	if got.UsernameStrategy != authn.UsernameStrategyUserConfirm || got.UsernameClaim != "" {
+		t.Errorf("the create wrote %q/%q, want user-confirm with no claim", got.UsernameStrategy, got.UsernameClaim)
 	}
 }
 

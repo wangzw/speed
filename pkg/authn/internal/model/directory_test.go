@@ -339,6 +339,7 @@ func fullStepInput() StepInput {
 func fullSSOProvider() SSOProvider {
 	return SSOProvider{
 		ID: "i", Tenant: "t", Protocol: SSOProtocolOIDC, Name: "n", Enabled: true, Provisioning: ProvisioningJIT,
+		UsernameStrategy: UsernameStrategyClaim, UsernameClaim: UsernameClaimPreferredUsername,
 		TrustIDPMFA: true, AllowIDPInitiated: true, AllowSHA1: true, MergeExisting: true,
 		Config: []byte(`{"a":1}`), Version: 3,
 	}

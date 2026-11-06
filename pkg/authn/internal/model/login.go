@@ -78,8 +78,12 @@ type External struct {
 	Email         string // normalized; may be empty; a hint only
 	EmailVerified bool   // the provider claims it verified the address; whether to believe it depends on the source
 	DisplayName   string
-	Tenant        string            // the tenant an enterprise IdP belongs to; empty for social login
-	Attributes    map[string]string // from the IdP's attribute mapping, keys carrying the idp. prefix
+	// PreferredUsername is the standard preferred_username claim the provider
+	// asserted, read by a claim-strategy just-in-time login and empty when the
+	// provider did not assert one.
+	PreferredUsername string
+	Tenant            string            // the tenant an enterprise IdP belongs to; empty for social login
+	Attributes        map[string]string // from the IdP's attribute mapping, keys carrying the idp. prefix
 }
 
 // Clone returns a copy that shares no map with e.

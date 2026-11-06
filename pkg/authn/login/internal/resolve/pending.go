@@ -120,7 +120,7 @@ func (r *Resolver) Create(ctx context.Context, p Pending, username, password, na
 	case SourcePhone:
 		return r.createPhone(ctx, p, username, password, name)
 	case SourceEnterprise:
-		return r.createEnterprise(ctx, p, username)
+		return r.createEnterprise(ctx, p, username, authn.Verification{Via: authn.VerifiedViaSelf})
 	}
 	return r.createSocial(ctx, p, username, password)
 }
@@ -157,7 +157,16 @@ func pendingPhone(phone string) Result {
 // just-in-time first login. The account carries the provider's display name and
 // the membership of its tenant, and no address.
 func pendingEnterprise(prov authn.SSOProvider, ext *authn.External, aliases []authn.ExternalLink) Result {
-	return Result{Pending: &Pending{
+	p := enterprisePending(prov, ext, aliases)
+	return Result{Pending: &p}
+}
+
+// enterprisePending is the account facts a just-in-time first login decided,
+// before a username is added. Both strategies use it: the user-confirm strategy
+// parks it at the pending signup until the person answers, and the claim
+// strategy opens the account immediately with the username its claim named.
+func enterprisePending(prov authn.SSOProvider, ext *authn.External, aliases []authn.ExternalLink) Pending {
+	return Pending{
 		Source:      SourceEnterprise,
 		Via:         viaJIT,
 		External:    externalOf(ext),
@@ -166,7 +175,7 @@ func pendingEnterprise(prov authn.SSOProvider, ext *authn.External, aliases []au
 		Tenant:      prov.Tenant,
 		DisplayName: displayNameOrDefault(ext.DisplayName, ""),
 		Attributes:  cloneAttributes(ext.Attributes),
-	}}
+	}
 }
 
 // externalOf copies an external identity for a pending signup; a nil one stays

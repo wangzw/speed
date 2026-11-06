@@ -183,53 +183,80 @@ func (a *assembly) count(t *testing.T, table, where string, args ...any) int64 {
 	return n
 }
 
-// An account and its personal tenant come into being in one transaction.
+// An account and its personal tenant come into being in one transaction. The
+// just-in-time row is the shape both SSO username strategies hand Create: a
+// user account with a username and Via jit. A username it opens with is
+// immutable from then on.
 func TestAnAccountAndItsPersonalTenantStandTogether(t *testing.T) {
-	withAssembly(t, func(t *testing.T, a *assembly) {
-		created, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "alice", Via: "admin"})
-		if err != nil {
-			t.Fatalf("creating an account: %v", err)
-		}
-		personalID := personal.TenantID(created.ID)
-		held, found, err := a.catalog.Get(t.Context(), personalID)
-		if err != nil || !found {
-			t.Fatalf("reading the personal tenant: found=%t err=%v", found, err)
-		}
-		if held.Alias != "alice" {
-			t.Errorf("the personal tenant's alias is %q, want the username", held.Alias)
-		}
-		if held.OwnerAccount != created.ID.String() {
-			t.Errorf("the personal tenant's owner is %q, want %q", held.OwnerAccount, created.ID)
-		}
-		if n := a.count(t, "authn_memberships", "account_id = ? AND tenant_id = ?", created.ID.String(), string(personalID)); n != 1 {
-			t.Errorf("the account holds %d personal membership(s), want one", n)
-		}
-		if n := a.count(t, "authz_bindings", "tenant_id = ? AND account_id = ?", string(personalID), created.ID.String()); n != 1 {
-			t.Errorf("the account holds %d personal binding(s), want one", n)
-		}
-	})
+	for _, via := range []string{"admin", "jit"} {
+		t.Run(via, func(t *testing.T) {
+			withAssembly(t, func(t *testing.T, a *assembly) {
+				created, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "alice", Via: via})
+				if err != nil {
+					t.Fatalf("creating an account: %v", err)
+				}
+				personalID := personal.TenantID(created.ID)
+				held, found, err := a.catalog.Get(t.Context(), personalID)
+				if err != nil || !found {
+					t.Fatalf("reading the personal tenant: found=%t err=%v", found, err)
+				}
+				if held.Alias != "alice" {
+					t.Errorf("the personal tenant's alias is %q, want the username", held.Alias)
+				}
+				if held.OwnerAccount != created.ID.String() {
+					t.Errorf("the personal tenant's owner is %q, want %q", held.OwnerAccount, created.ID)
+				}
+				if n := a.count(t, "authn_memberships", "account_id = ? AND tenant_id = ?", created.ID.String(), string(personalID)); n != 1 {
+					t.Errorf("the account holds %d personal membership(s), want one", n)
+				}
+				if n := a.count(t, "authz_bindings", "tenant_id = ? AND account_id = ?", string(personalID), created.ID.String()); n != 1 {
+					t.Errorf("the account holds %d personal binding(s), want one", n)
+				}
+				identifiers, err := a.accounts.Identifiers(t.Context(), created.ID)
+				if err != nil {
+					t.Fatalf("reading the identifiers: %v", err)
+				}
+				var usernameID string
+				for _, identifier := range identifiers {
+					if identifier.Kind == authn.IdentifierUsername {
+						usernameID = identifier.ID
+					}
+				}
+				if usernameID == "" {
+					t.Fatalf("the account holds no username identifier: %+v", identifiers)
+				}
+				if err := a.admin.RemoveIdentifier(t.Context(), created.ID, usernameID); !errors.Is(err, authn.ErrUsernameImmutable) {
+					t.Errorf("removing the username gave %v, want ErrUsernameImmutable", err)
+				}
+			})
+		})
+	}
 }
 
 // A creation whose provisioning fails after the tenant row was written leaves
 // neither the account nor the tenant row.
 func TestAFailedProvisioningLeavesNoAccount(t *testing.T) {
-	withAssembly(t, func(t *testing.T, a *assembly) {
-		// The membership write is the second step of the seam. Without its table
-		// it fails after the tenant row has been written, which is the ordering
-		// the rollback case needs.
-		if err := a.handle.Exec("DROP TABLE authn_memberships").Error; err != nil {
-			t.Fatalf("dropping the memberships table: %v", err)
-		}
-		if _, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "alice", Via: "admin"}); err == nil {
-			t.Fatal("creating an account whose provisioning failed succeeded")
-		}
-		if n := a.count(t, "authn_accounts", ""); n != 0 {
-			t.Errorf("the failed provisioning left %d account row(s), want none", n)
-		}
-		if n := a.count(t, "tenants", ""); n != 0 {
-			t.Errorf("the failed provisioning left %d tenant row(s), want none", n)
-		}
-	})
+	for _, via := range []string{"admin", "jit"} {
+		t.Run(via, func(t *testing.T) {
+			withAssembly(t, func(t *testing.T, a *assembly) {
+				// The membership write is the second step of the seam. Without its
+				// table it fails after the tenant row has been written, which is the
+				// ordering the rollback case needs.
+				if err := a.handle.Exec("DROP TABLE authn_memberships").Error; err != nil {
+					t.Fatalf("dropping the memberships table: %v", err)
+				}
+				if _, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "alice", Via: via}); err == nil {
+					t.Fatal("creating an account whose provisioning failed succeeded")
+				}
+				if n := a.count(t, "authn_accounts", ""); n != 0 {
+					t.Errorf("the failed provisioning left %d account row(s), want none", n)
+				}
+				if n := a.count(t, "tenants", ""); n != 0 {
+					t.Errorf("the failed provisioning left %d tenant row(s), want none", n)
+				}
+			})
+		})
+	}
 }
 
 // An account whose username is already a business tenant's alias cannot own a

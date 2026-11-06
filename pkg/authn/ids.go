@@ -448,6 +448,12 @@ const (
 	SSOProtocolSAML            = model.SSOProtocolSAML
 	ProvisioningJIT            = model.ProvisioningJIT
 	ProvisioningPreprovisioned = model.ProvisioningPreprovisioned
+
+	UsernameStrategyClaim       = model.UsernameStrategyClaim
+	UsernameStrategyUserConfirm = model.UsernameStrategyUserConfirm
+
+	UsernameClaimPreferredUsername = model.UsernameClaimPreferredUsername
+	UsernameClaimEmail             = model.UsernameClaimEmail
 )
 
 // SSOProvider is one enterprise IdP of a tenant. What is read out of the store

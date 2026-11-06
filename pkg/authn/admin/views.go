@@ -180,6 +180,8 @@ type AuthnAdminProvider struct {
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           bool                       `json:"enabled" required:"true" description:"True when the provider may be used for sign-in."`
 	Provisioning      string                     `json:"provisioning" required:"true" description:"jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created."`
+	UsernameStrategy  string                     `json:"username_strategy" required:"true" description:"How a jit login determines the username it opens the account with: claim reads username_claim from the assertion, user-confirm asks the person before any account is written. Empty for a preprovisioned provider."`
+	UsernameClaim     string                     `json:"username_claim" required:"true" description:"The claim a claim strategy reads: preferred_username or email (the address's local part). Empty for every other strategy."`
 	TrustIDPMFA       bool                       `json:"trust_idp_mfa" required:"true" description:"True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list."`
 	AllowIDPInitiated bool                       `json:"allow_idp_initiated" required:"true" description:"True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against."`
 	AllowSHA1         bool                       `json:"allow_sha1" required:"true" description:"True when SHA-1 signed assertions are accepted; the route then warns about the downgrade."`

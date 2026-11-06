@@ -188,6 +188,7 @@ func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 		{"an attribute value of 257 bytes", authn.CreateAccount{Attributes: map[string]string{"k": long[:257]}}, authn.ErrInvalidArgument},
 		{"a password and a hash", authn.CreateAccount{Username: "alice1", Password: "correct horse battery", PasswordHash: "$argon2id$x"}, authn.ErrInvalidArgument},
 		{"a password on a service account", authn.CreateAccount{Kind: authn.KindService, Username: "svc1", Password: "correct horse battery"}, authn.ErrInvalidArgument},
+		{"a just-in-time account naming no username", authn.CreateAccount{Via: "jit"}, authn.ErrInvalidIdentifier},
 		{"a password on an import naming no username", authn.CreateAccount{Phone: "+8613812345678", PhoneVerifiedVia: admin, Password: "correct horse battery", Via: "import"}, authn.ErrInvalidIdentifier},
 		{"a hash on an import naming no username", authn.CreateAccount{PasswordHash: "$argon2id$x", Via: "import"}, authn.ErrInvalidIdentifier},
 		{"a password shorter than eight", authn.CreateAccount{Username: "alice1", Password: "short"}, authn.ErrPasswordPolicy},

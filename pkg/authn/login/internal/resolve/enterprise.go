@@ -59,7 +59,17 @@ func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l a
 		if found {
 			return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
 		}
-		return pendingEnterprise(prov, ext, aliases), nil
+		switch prov.UsernameStrategy {
+		case authn.UsernameStrategyClaim:
+			return r.claimEnterprise(ctx, prov, ext, aliases)
+		case authn.UsernameStrategyUserConfirm:
+			return pendingEnterprise(prov, ext, aliases), nil
+		default:
+			// A stored provider whose strategy is absent or unknown came from a
+			// write this build would refuse. No username can be determined, so no
+			// account may be opened.
+			return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameStrategy)
+		}
 	}
 	return Result{}, fmt.Errorf("%w: resolve: the provider's provisioning is not one that is known", authn.ErrInvalidArgument)
 }
@@ -115,12 +125,14 @@ func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext
 // display name and nothing else: the address it declared is not written. A
 // username another login took in the race for the same name is
 // authn.ErrAccountExists for the answer route's 409.
-func (r *Resolver) createEnterprise(ctx context.Context, p Pending, username string) (Result, error) {
+func (r *Resolver) createEnterprise(ctx context.Context, p Pending, username string,
+	usernameVia authn.Verification,
+) (Result, error) {
 	create := authn.CreateAccount{
 		Kind:                authn.KindUser,
 		DisplayName:         p.DisplayName,
 		Username:            username,
-		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
+		UsernameVerifiedVia: usernameVia,
 		Via:                 p.Via,
 	}
 	create, err := r.provision(ctx, create, p.Via)
