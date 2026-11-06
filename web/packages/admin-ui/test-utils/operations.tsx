@@ -1165,7 +1165,8 @@ export function createAdminOperations(
         queryKey: tenantSettingsKey(tenant),
         queryFn: () => backend.listTenantSettings(tenant),
         enabled: tenant !== '',
-      }),    useTenantSettingsWrite: () => {
+      }),
+    useTenantSettingsWrite: () => {
       const client = useQueryClient()
       return useMutation({
         mutationFn: (input: AdminTenantSetSettingInput) =>
