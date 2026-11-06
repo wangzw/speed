@@ -428,10 +428,17 @@ var tenantTransferOwnerOperation = speedhttp.NewReplyOperation[ownerTransferInpu
 	},
 )
 
+// tenantDeleteInput is the request of the tenant-surface delete: the alias in
+// the path, held to the resolved tenant by the tenant administration guard
+// before the handler runs.
+type tenantDeleteInput struct {
+	ID string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404."`
+}
+
 // tenantDeleteOperation declares DELETE /:tenant on the tenant surface: the
 // organization's own owner ends it. Its handler builds the answer because an
 // unknown tenant is a bare 404.
-var tenantDeleteOperation = speedhttp.NewReplyOperation[getTenantInput](
+var tenantDeleteOperation = speedhttp.NewReplyOperation[tenantDeleteInput](
 	"tenant.admin.owner.delete",
 	http.MethodDelete,
 	pathOrganizationFragment,

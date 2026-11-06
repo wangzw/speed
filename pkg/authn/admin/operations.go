@@ -269,7 +269,7 @@ type impersonationListInput struct {
 
 // impersonationIDInput addresses one impersonation record.
 type impersonationIDInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404."`
 	ID     string `path:"id" description:"The impersonation record's identifier."`
 }
 

@@ -316,7 +316,7 @@ func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransfe
 // wins the race therefore leaves the old owner's deletion a 409
 // (tenant.ErrOwnerChanged) rather than deleting an organization the caller no
 // longer governs.
-func (p *product) handleTenantOwnerDelete(ctx context.Context, in getTenantInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+func (p *product) handleTenantOwnerDelete(ctx context.Context, in tenantDeleteInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	tenantID, ok := tenant.FromContext(ctx)
 	if !ok {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
