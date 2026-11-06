@@ -433,8 +433,13 @@ func newRig(t *testing.T) *rig {
 		guard:        r.guard,
 		audit:        r.audit,
 		verification: r.signup,
-		logger:       logs.logger(),
-		cfg:          resolved{endpoints: []string{"public"}},
+		// The route cases name the fixture tenant "acme", so the stand-in roster
+		// carries that alias. A case that needs the alias and the identifier
+		// apart replaces it with a mapping of its own; a case that wants the
+		// absent roster sets it to nil.
+		directory: directoryStub{"acme": "acme"},
+		logger:    logs.logger(),
+		cfg:       resolved{endpoints: []string{"public"}},
 	}
 	r.engine = r.mount()
 	return r

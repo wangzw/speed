@@ -8,11 +8,11 @@ import (
 // tenantIDOf answers the identifier the tenant alias names. The query string
 // names a tenant by its alias, the only external name a tenant has, and the
 // settings layer keys by the identifier. An assembly with no roster has no
-// aliases and reads the value as the identifier itself, which is the only name
-// such an assembly has.
+// aliases to resolve, so the name is refused: the internal identifier is never
+// a value a request may carry, and reading the query as one would accept it.
 func (p *product) tenantIDOf(ctx context.Context, alias string) (string, bool, error) {
 	if p.directory == nil {
-		return alias, true, nil
+		return "", false, nil
 	}
 	id, found, err := p.directory.TenantIDOf(ctx, alias)
 	if err != nil {

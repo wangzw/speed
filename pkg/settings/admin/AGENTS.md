@@ -63,15 +63,20 @@ row.
 
 - **`layer`** is `global` or `tenant`, with no default. It is absent or outside
   that set is a 400.
-- **`tenant`** is required when `layer=tenant` and names that tenant; it must be
-  absent when `layer=global`. Present or absent against `layer` is a 400.
+- **`tenant`** is required when `layer=tenant` and names that tenant by its
+  alias, the only external name a tenant has; it must be absent when
+  `layer=global`. Present or absent against `layer` is a 400.
 
-The tenant identifier is external input and is held here to the tenant
+The alias is resolved through the optional `authn.TenantDirectory` the roster
+delivers, before a layer is built: an alias no tenant carries is a 400. An
+assembly that supplies no roster has no aliases to resolve, so a tenant layer
+cannot be selected there and the request is a 400; the surface never reads the
+query as an identifier, which is internal. The alias is held to the tenant
 identifier's value domain — non-empty, and free of blanks and control characters
-— before a layer is built. `settings.ForTenant` panics on an identifier outside
-that domain, so a value outside it is a 400 rather than a panic. The domain is
-restated here and the tenant capability is not imported: a module that stores
-values per tenant by their identifier is deliberately not dependent on it.
+— before it is resolved, so a value outside it is a 400 rather than the panic
+`settings.ForTenant` raises on such an identifier. The domain is restated here
+and the tenant capability is not imported: a module that stores values per
+tenant by their identifier is deliberately not dependent on it.
 
 ## The view
 
@@ -126,8 +131,8 @@ changes nothing.
   without asking the guard. On a write it then reads the request's actor's
   self-registration state and refuses an unverified one (see the next bullet).
   Then it settles the layer and the domain from the query string: a layer
-  selection or a tenant identifier outside its value domain is a 400, written
-  before the guard is asked. Then it asks the guard for the route's permission in
+  selection or an alias no roster carries is a 400, written before the guard is
+  asked. Then it asks the guard for the route's permission in
   the layer's domain: a shortfall is the guard's own refusal, a 403 for a denial
   and a 503 for an outage. Only past the decision does the entry point bind a
   write's body and the declared handler run its shape checks, land its audit and
@@ -211,11 +216,13 @@ changes nothing.
   on fails the startup before any route is mounted. The HTTP entry point is taken
   up in `Init` and is required — a command that mounts the management routes and
   has no entry point has nothing to mount on, which is `authz.ErrNoRouter`. The
-  logger is the one optional requirement, and the route-declaration surface is
-  taken up optionally in `Init`.
+  tenant directory is optional and taken up in `Init`: without it the global
+  layer still works, and every request for a tenant layer is a 400 because no
+  alias can be resolved. The logger and the route-declaration surface are also
+  optional, both taken up in `Init`.
 - **The module validates no value.** A value's type and domain are judged by the
   settings module when it is written; this module checks only the request's shape
-  — the layer selection, the tenant identifier, the full key's declaration and
+  — the layer selection, the tenant alias, the full key's declaration and
   the body's readability.
 
 ## Configuration

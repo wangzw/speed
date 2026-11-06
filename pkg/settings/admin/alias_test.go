@@ -73,3 +73,25 @@ func TestATenantAliasNoRosterCarriesIsA400(t *testing.T) {
 		t.Errorf("the guard was asked %v, want nothing", got)
 	}
 }
+
+// TestATenantLayerWithNoRosterIsRefused holds the assembly with no tenant
+// directory: the query carries an alias and there is nothing to resolve it
+// with, so the surface refuses rather than reading the value as an identifier.
+// The global layer is untouched by the absence.
+func TestATenantLayerWithNoRosterIsRefused(t *testing.T) {
+	r := newRig(t)
+	r.store.declared = []settings.DeclaredItem{
+		decl("app.mode", "app", reflect.TypeFor[string](), "auto", settings.Item{}),
+	}
+	r.p.directory = nil
+	w := r.do(http.MethodGet, "/api/v1/system/settings?layer=tenant&tenant=acme", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("the request ended with %d, want 400: %s", w.Code, w.Body.String())
+	}
+	if got := r.guard.askedFor(); len(got) != 0 {
+		t.Errorf("the guard was asked %v, want nothing", got)
+	}
+	if got := r.store.ops(); len(got) != 0 {
+		t.Errorf("the settings surface was reached %v, want nothing", got)
+	}
+}

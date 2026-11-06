@@ -69,16 +69,16 @@ type selection struct {
 	// global layer.
 	tenant string
 	// alias is the tenant's alias, the name a client reads, empty for the global
-	// layer. An assembly with no tenant roster has no alias to resolve and keeps
-	// the identifier the query named as the alias too.
+	// layer. An assembly with no tenant roster cannot select a tenant layer, so
+	// this stays empty there.
 	alias string
 }
 
 // selectionOf builds the selection of a request whose layer the route's
-// authorization step already validated: a tenant layer was held to the tenant
-// identifier's domain and a global layer carried no tenant. It validates
-// nothing itself, which is why it is called only from the declared handlers,
-// behind that step.
+// authorization step already validated: a tenant layer's alias was held to the
+// tenant identifier's value domain and a global layer carried no tenant. It
+// validates nothing itself, which is why it is called only from the declared
+// handlers, behind that step.
 func selectionOf(layer, tenant, alias string) selection {
 	if layer == layerTenant {
 		return selection{
@@ -227,12 +227,13 @@ func quoteRealm(name string) string {
 // route returns before the guard is asked. The tenant is named by its alias,
 // the only external name a tenant has, and the layer keys by the identifier, so
 // the alias is resolved through the roster before a layer is built; an alias no
-// tenant carries is a 400. The resolved identifier is held to the tenant
-// identifier's domain — settings.ForTenant panics on one outside it, non-empty
-// and free of blanks and control characters. An assembly with no tenant roster
-// has no aliases to resolve and reads the value as the identifier itself, which
-// is the only name such an assembly has. The domain follows the layer: the
-// platform domain for the global layer, the named tenant's for a tenant's.
+// tenant carries is a 400. The alias is held to the tenant identifier's value
+// domain — settings.ForTenant panics on an identifier outside it, non-empty and
+// free of blanks and control characters — before it is resolved. An assembly
+// with no tenant roster has no aliases to resolve, so a tenant layer cannot be
+// selected: the query is refused rather than read as an identifier, which is
+// internal. The domain follows the layer: the platform domain for the global
+// layer, the named tenant's for a tenant's.
 func (p *product) selectLayer(c *gin.Context) (selection, bool) {
 	query := c.Request.URL.Query()
 	switch c.Query(queryLayer) {

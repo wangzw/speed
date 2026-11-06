@@ -215,8 +215,9 @@ type product struct {
 	// decision.
 	gate authz.Gate
 	// directory answers the identifier a tenant alias names, nil when the
-	// assembly supplies no roster. With none the query's tenant is the
-	// identifier itself: an assembly without a roster has no aliases.
+	// assembly supplies no roster. With none a tenant layer cannot be selected:
+	// the query carries an alias, and the surface refuses rather than reading it
+	// as an identifier.
 	directory authn.TenantDirectory
 	logger    *slog.Logger
 

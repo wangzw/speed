@@ -144,6 +144,45 @@ func TestStartRefusesAnAliasNoTenantCarries(t *testing.T) {
 	})
 }
 
+// TestStartRefusesTheInternalIdentifierAsTheTenantName holds the request
+// surface's input domain: the body names a tenant by its alias, never by the
+// internal identifier the record and the membership store key by. The fixture's
+// two values differ, so a body carrying the identifier — the shape the surface
+// accepted before the alias rule — is refused, while the same pair's alias is
+// accepted.
+func TestStartRefusesTheInternalIdentifierAsTheTenantName(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		pair := aliasPair{alias: "team-alpha", id: tenantA}
+		r.p.tenantAliases = pair
+		r.p.tenantDirectory = pair
+		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
+		r.p.mountRoutes()
+
+		// The identifier is not an alias of the pair, so the directory answers
+		// unknown and the start is refused before any record or token.
+		w := r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"` + tenantA + `","reason":"a support call"}`))
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403 when the body carries the internal identifier: %s", w.Code, w.Body.String())
+		}
+		if r.recordCount() != 0 {
+			t.Errorf("the table holds %d records, want none", r.recordCount())
+		}
+		if len(r.tokens.issued) != 0 {
+			t.Errorf("a token was issued: %+v", r.tokens.issued)
+		}
+
+		// The same fixture's alias is accepted, so the refusal above is the
+		// name's identity and not a rig that refuses every start.
+		w = r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"team-alpha","reason":"a support call"}`))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 for the alias team-alpha: %s", w.Code, w.Body.String())
+		}
+		if r.recordCount() != 1 {
+			t.Errorf("the table holds %d records, want one after the alias start", r.recordCount())
+		}
+	})
+}
+
 // aliasPair is one alias and the identifier it names, answering both directions
 // of the tenant seam over the same pair.
 type aliasPair struct{ alias, id string }
