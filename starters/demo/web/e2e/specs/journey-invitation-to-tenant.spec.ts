@@ -426,9 +426,10 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         .locator('tbody tr')
         .filter({ hasText: EXISTING_MEMBER })
       await expect(existing).toHaveCount(1)
-      // The member read supplies the name, and the identity column beside it
-      // names the member by display name and login username. The internal
-      // account id the read carries is not what the column shows.
+      // The member read supplies the name, and the account column beside it
+      // names the member through the account read by display name and login
+      // username. The internal account id the read carries is not what the
+      // column shows.
       await expect(existing.locator('td').nth(nameColumn)).toHaveText(
         EXISTING_MEMBER,
       )

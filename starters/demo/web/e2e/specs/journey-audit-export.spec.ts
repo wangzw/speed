@@ -72,6 +72,7 @@ import {
   switchOrganization,
 } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
+import { expectNoAccountIds } from '../helpers/organization-admin'
 
 // The settings table's type column and the audit table's least important
 // columns render only from their container's larger widths. The desktop
@@ -501,11 +502,7 @@ async function collectListedRecords(
       // appear in the cell's text or any attribute.
       const actorCell = cells.nth(actorColumn)
       const actor = await rawActors.of(id)
-      const renderedActor = await actorCell.evaluate((element) => element.outerHTML)
-      expect(
-        renderedActor,
-        `audit row ${id} rendered the raw actor ${actor}`,
-      ).not.toContain(actor)
+      await expectNoAccountIds(actorCell, [actor])
 
       listed.push({
         id,

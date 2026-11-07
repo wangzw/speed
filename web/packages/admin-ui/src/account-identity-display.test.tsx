@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { uiKitResources } from '@speed/ui-kit'
 import { AccountIdentity, TenantAccountIdentity } from './internal/account-identity.js'
@@ -22,17 +22,20 @@ import { AccountsPage } from './AccountsPage.js'
 import { ImpersonationsPage } from './ImpersonationsPage.js'
 import { PermissionsPage } from './PermissionsPage.js'
 import { AuditPage } from './AuditPage.js'
+import { AuditDetailPage } from './AuditDetailPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   accountFixture,
   createAdminOperations,
   makeAdminBackend,
+  recordFixture,
 } from '../test-utils/operations.js'
 import type { AdminAccount, AdminAuditRecord } from './operations.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = 'acme'
-const UUID = 'acc-1'
+/** An account id has the shape of a UUID; the value is opaque beyond that. */
+const UUID = '019a2d4f-1c3e-7b52-9f00-6d7a1b2c3d4e'
 
 /** One username identifier row, in the shape the account read carries. */
 function usernameIdentifier(value: string): AdminAccount['identifiers'][number] {
@@ -170,13 +173,13 @@ describe('AccountSelector', () => {
 })
 
 describe('OrganizationMembersPage', () => {
-  function renderMembers() {
+  function renderMembers(username = 'ada') {
     const member = {
       account: UUID,
       tenant: TENANT,
       active: true,
       display_name: 'Ada Lovelace',
-      username: 'ada',
+      username,
       source: 'admin',
       sso_exempt: false,
       roles: [],
@@ -200,10 +203,13 @@ describe('OrganizationMembersPage', () => {
     )
   }
 
-  it('shows the composed identity and copies the username, never the id', async () => {
+  it('shows the username beside the display name and copies it, never the id', async () => {
     renderMembers()
-    const identity = await screen.findByText('Ada Lovelace (ada)')
-    const row = identity.closest('tr')
+    // The name column carries the display name; the column beside it shows
+    // the member record's login username as it is.
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+    const username = await screen.findByText('ada', { exact: true })
+    const row = username.closest('tr')
     expect(row).not.toBeNull()
     expect(within(row as HTMLElement).queryByText(UUID)).toBeNull()
     expect(
@@ -220,6 +226,18 @@ describe('OrganizationMembersPage', () => {
         name: fill(zhCN.members.manageAria, { name: 'Ada Lovelace (ada)' }),
       }),
     ).toBeInTheDocument()
+  })
+
+  it('shows the neutral copy, not the display name again, when the username is empty', async () => {
+    renderMembers('')
+    // The name column keeps the display name; the username column beside it
+    // must not repeat it, and it never falls back to the account id.
+    const names = await screen.findAllByText('Ada Lovelace')
+    expect(names.length).toBe(1)
+    expect(
+      await screen.findByText(zhCN.common.accountUnavailable),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(UUID)).toBeNull()
   })
 })
 
@@ -421,6 +439,158 @@ describe('AuditPage', () => {
     expect(await screen.findByText('role:reader')).toBeInTheDocument()
     // The actor still resolves; only the object stays as recorded.
     expect(await screen.findByText('Ada Lovelace (ada)')).toBeInTheDocument()
+    expect(screen.queryByText(UUID)).toBeNull()
+  })
+
+  it.each([
+    'authn.login',
+    'authn.factor.enroll',
+    'authn.factor.remove',
+    'authz.tenant.binding.put',
+    'authz.tenant.binding.delete',
+    'authn.profile.update',
+    'authn.signup',
+    'authn.password.reset',
+  ])(
+    'resolves the account object of %s, which writes the id outside the account administration vocabulary',
+    async (action) => {
+      const operations = createAdminOperations(
+        makeAdminBackend({
+          getAccount: () => Promise.resolve(account()),
+          listRecords: () =>
+            Promise.resolve({ entries: [record({ action })], next: '' }),
+        }),
+      )
+      renderWithProviders(<AuditPage />, { operations })
+
+      // The actor and the object both resolve to the account's identity.
+      const identities = await screen.findAllByText('Ada Lovelace (ada)')
+      expect(identities.length).toBeGreaterThanOrEqual(2)
+      // The id is neither rendered nor handed over as a title or a copy
+      // value by either cell.
+      expect(screen.queryByText(UUID)).toBeNull()
+      expect(screen.queryByTitle(UUID)).toBeNull()
+      expect(
+        screen.queryByRole('button', { name: new RegExp(UUID) }),
+      ).toBeNull()
+      for (const identity of identities) {
+        expect(identity.closest('td')).not.toHaveAttribute('title')
+      }
+    },
+  )
+
+  it('renders a UUID-shaped object the account read does not know as recorded', async () => {
+    const sessionId = '019a2d4f-2b84-7c63-8a11-7e5f3c2d1b0a'
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        // The same action carries an account id on one row and a session id on
+        // the next: the read resolves the account and answers 404 for the
+        // session, which then stays as recorded.
+        getAccount: (query: { readonly id?: string }) =>
+          query.id === UUID
+            ? Promise.resolve(account())
+            : Promise.reject({ status: 404, code: 'authn.account.not_found' }),
+        listRecords: () =>
+          Promise.resolve({
+            entries: [
+              record({ id: 'rec-1', action: 'authn.session.revoke' }),
+              record({
+                id: 'rec-2',
+                action: 'authn.session.revoke',
+                object: sessionId,
+              }),
+            ],
+            next: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+
+    // The account object resolves to its identity; the session id -- the same
+    // shape -- is not an account and stays as recorded.
+    expect(await screen.findByText(sessionId)).toBeInTheDocument()
+    expect(
+      screen.queryByText(UUID),
+    ).toBeNull()
+    expect(
+      screen.getAllByText('Ada Lovelace (ada)').length,
+    ).toBeGreaterThanOrEqual(2)
+  })
+
+  it('never shows the recorded object when the admin face is absent', async () => {
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getAccount: () => Promise.resolve(account()),
+        listRecords: () =>
+          Promise.resolve({ entries: [record()], next: '' }),
+      }),
+    )
+    renderWithProviders(<AuditPage />, {
+      operations,
+      hasFeature: (name) => name !== 'authn.admin',
+    })
+
+    // No read is issued without the feature, so neither the actor nor the
+    // object can resolve; the value may still name an account, so both cells
+    // keep the neutral copy and never the recorded identifier.
+    await screen.findAllByText(zhCN.common.accountUnavailable)
+    expect(screen.queryByText(UUID)).toBeNull()
+  })
+})
+
+describe('AuditDetailPage detail identities', () => {
+  it('renders "by" by what the action makes it: a class as recorded, an account by identity', async () => {
+    const factorOperations = createAdminOperations(
+      makeAdminBackend({
+        getRecord: () =>
+          Promise.resolve(
+            recordFixture({
+              action: 'authn.factor.enroll',
+              object: UUID,
+              detail: { by: 'self', kind: 'totp' },
+            }),
+          ),
+        getAccount: () => Promise.resolve(account()),
+      }),
+    )
+    renderWithProviders(<AuditDetailPage id="rec-1" />, { operations: factorOperations })
+
+    // `self` is the actor class of the factor event, not an account id: it
+    // must render as recorded rather than as the neutral identity.
+    expect(await screen.findByText('self')).toBeInTheDocument()
+    // Wait for the actor and the object to resolve before the absence of the
+    // neutral copy means anything: a pending read shows that copy.
+    await waitFor(() => {
+      expect(
+        screen.getAllByText('Ada Lovelace (ada)').length,
+      ).toBeGreaterThanOrEqual(2)
+    })
+    expect(screen.queryByText(zhCN.common.accountUnavailable)).toBeNull()
+
+    cleanup()
+
+    const impersonationOperations = createAdminOperations(
+      makeAdminBackend({
+        getRecord: () =>
+          Promise.resolve(
+            recordFixture({
+              action: 'authn.impersonation.revoke',
+              object: UUID,
+              actor: UUID,
+              detail: { by: UUID, on_behalf_of: UUID },
+            }),
+          ),
+        getAccount: () => Promise.resolve(account()),
+      }),
+    )
+    renderWithProviders(<AuditDetailPage id="rec-1" />, {
+      operations: impersonationOperations,
+    })
+
+    // On a revoke the `by` value is the account that ended the grant, so it
+    // resolves like `on_behalf_of`; the object and the actor resolve too.
+    const identities = await screen.findAllByText('Ada Lovelace (ada)')
+    expect(identities.length).toBeGreaterThanOrEqual(3)
     expect(screen.queryByText(UUID)).toBeNull()
   })
 })

@@ -4,8 +4,9 @@
  * The picker reads accounts only after the operator types, so a test
  * selects an account the way an operator does: type into the labelled
  * combobox, wait for the search's options, and click the one that names
- * the account. The option's text is the account's display name beside its
- * id ("Ada (acc-2)").
+ * the account. The option's text is the account's display name with its
+ * login username ("Ada (ada)"), either alone when only one resolves, and
+ * the neutral copy when neither does -- never the opaque account id.
  *
  * The search behind the popup is debounced and settles in several reads,
  * so the option list can re-render while a click's pointer sequence is in

@@ -265,6 +265,22 @@ function bodyCellWith(container: HTMLElement, value: string): HTMLElement {
 }
 
 /**
+ * Wait until the member table renders `displayName`. The invitation table
+ * names the same person as its inviter, so the query stays inside the member
+ * table instead of matching whichever name cell rendered first.
+ */
+async function waitForMemberName(displayName: string): Promise<void> {
+  await waitFor(() => {
+    expect(
+      bodyCellWith(
+        tableFor(enUS.members.column.displayName).container,
+        displayName,
+      ),
+    ).toBeInTheDocument()
+  })
+}
+
+/**
  * Assert the page itself keeps its content inside the viewport when the
  * content region is below the `sm` container floor. At that width the
  * design keeps only the unprioritized columns and lets the table scroll
@@ -446,7 +462,7 @@ describe('OrganizationMembersPage horizontal overflow in Chromium', () => {
       await page.viewport(width, 900)
       renderPage()
 
-      await screen.findByText(ADA.display_name)
+      await waitForMemberName(ADA.display_name)
       await screen.findByText(INVITATIONS[0].email)
       await expectNoHorizontalOverflow()
     })
@@ -457,6 +473,8 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
   const LONG_DISPLAY_NAME = 'Alexandria Cassandra Montgomery-Worthington'
   const LONG_ACCOUNT =
     'account-identifier-with-a-long-unbroken-value-0000000001'
+  const LONG_USERNAME =
+    'alexandria.cassandra.montgomery-worthington.the.third'
   const LONG_EMAIL =
     'first.last.with.a.very.long.mailbox.name@example-organization-with-a-long-domain.test'
 
@@ -464,6 +482,7 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     ...ADA,
     account: LONG_ACCOUNT,
     display_name: LONG_DISPLAY_NAME,
+    username: LONG_USERNAME,
   }
   const LONG_INVITATION: AdminInvitation = {
     ...INVITATIONS[0],
@@ -482,7 +501,7 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     // The values are longer than their columns' content caps. At 900px the
     // container is below the md tier, so the primary, high and action
     // columns share the narrow width with those long values. The display
-    // name and account are both nowrap identity columns, so their caps --
+    // name and username are both nowrap identity columns, so their caps --
     // tightened below `md` so the row still fits the sm floor -- bound the
     // members table's unbreakable width, and the full values stay reachable
     // through the title and copy control. Both tables must stay inside their
@@ -491,7 +510,7 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
 
     for (const [container, value] of [
       [members.container, LONG_DISPLAY_NAME],
-      [members.container, LONG_ACCOUNT],
+      [members.container, LONG_USERNAME],
       [invitations.container, LONG_EMAIL],
     ] as const) {
       const cell = bodyCellWith(container, value)
@@ -726,7 +745,7 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
   it('keeps the core member and invitation columns from the high tier up', async () => {
     await page.viewport(1200, 900)
     renderPage()
-    await screen.findByText(ADA.display_name)
+    await waitForMemberName(ADA.display_name)
     await screen.findByText(INVITATIONS[0].email)
 
     const members = tableFor(enUS.members.column.displayName)
@@ -784,7 +803,7 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
   it('keeps the core columns visible in the 1024px desktop shell beside the 280px sidebar', async () => {
     await page.viewport(1024, 900)
     renderShellPage()
-    await screen.findByText(ADA.display_name)
+    await waitForMemberName(ADA.display_name)
     await screen.findByText(INVITATIONS[0].email)
     // The shell's content region is ~640-700px wide here, above the sm
     // container floor; the page must fit it without a horizontal scroll.
@@ -850,7 +869,7 @@ describe('OrganizationMembersPage management panel width in Chromium', () => {
   it('takes the 36rem tier on a wide viewport', async () => {
     await page.viewport(1200, 900)
     renderPage()
-    await screen.findByText(ADA.display_name)
+    await waitForMemberName(ADA.display_name)
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: manageName(ADA) }))
@@ -872,7 +891,7 @@ describe('OrganizationMembersPage management panel width in Chromium', () => {
   it('fills a phone-sized viewport', async () => {
     await page.viewport(480, 800)
     renderPage()
-    await screen.findByText(ADA.display_name)
+    await waitForMemberName(ADA.display_name)
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: manageName(ADA) }))
@@ -895,7 +914,7 @@ describe('OrganizationMembersPage dark mode in Chromium', () => {
   it('paints the page on the dark surface and keeps the common columns', async () => {
     await page.viewport(1200, 900)
     renderPage({ defaultMode: 'dark' }, <ThemeProbe />)
-    await screen.findByText(ADA.display_name)
+    await waitForMemberName(ADA.display_name)
     await screen.findByText(INVITATIONS[0].email)
 
     const probe = screen.getByTestId('theme-probe')
@@ -942,7 +961,7 @@ describe('OrganizationMembersPage touch targets in Chromium', () => {
     )
 
     renderPage()
-    await screen.findByText(ADA.display_name)
+    await waitForMemberName(ADA.display_name)
     await screen.findByText(INVITATIONS[0].email)
 
     // The panel's own controls are part of the page's touch surface: open it

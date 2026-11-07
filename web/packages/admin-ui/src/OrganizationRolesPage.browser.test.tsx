@@ -301,7 +301,9 @@ describe('OrganizationRolesPage over-long values in Chromium', () => {
     await screen.findByText(LONG_ROLE)
     await selectRole(LONG_ROLE)
     await screen.findAllByText(LONG_PERMISSION)
-    await screen.findAllByText(LONG_ACCOUNT)
+    // The binding row names its account by the display name the binding
+    // carries, never by the account id.
+    await screen.findAllByText(LONG_HOLDERS.bindings[0].display_name)
     await expandCatalog()
 
     // The helper pins each table's own containment box to the sm, md and lg

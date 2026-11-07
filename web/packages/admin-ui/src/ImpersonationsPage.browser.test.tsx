@@ -7,7 +7,7 @@
  * in force", a bare 404) so the record half renders. The tenant is
  * seeded through the query parameter the page opens on.
  */
-import { afterEach, describe, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { page } from 'vitest/browser'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
@@ -65,7 +65,10 @@ describe('ImpersonationsPage horizontal overflow in Chromium', () => {
       )
       renderWithProviders(<ImpersonationsPage />, { operations, language: 'en-US' })
 
-      await screen.findByText('staff-1')
+      // The actor and the target are named by the account read's display
+      // name, never by the recorded identifier.
+      await screen.findAllByText('Operator')
+      expect(screen.queryByText('staff-1')).toBeNull()
       await expectNoHorizontalOverflow()
     })
   }

@@ -57,12 +57,9 @@ describe('SessionsPage horizontal overflow in Chromium', () => {
       renderWithProviders(<SessionsPage />, { operations, language: 'en-US' })
 
       const user = userEvent.setup()
-      await chooseAccount(
-        user,
-        enUS.sessions.accountLabel,
-        'Ada',
-        'Ada (acc-9)',
-      )
+      // The picker names the account by its display name and username; this
+      // account carries no username, so the display name alone is the label.
+      await chooseAccount(user, enUS.sessions.accountLabel, 'Ada', 'Ada')
 
       await expectNoHorizontalOverflow()
     })

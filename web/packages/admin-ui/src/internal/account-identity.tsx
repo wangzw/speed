@@ -282,57 +282,84 @@ function NeutralIdentity({ note }: { readonly note?: string }) {
 }
 
 /**
- * The audit actions whose `object` field carries an account identifier. The
- * audit module does not type its object, so the emitting capability's action
- * vocabulary is the only fact that says what the value is: these prefixes
- * are the authn and authz actions that write an account id there, and every
- * other action's object -- a tenant alias, a role name, a session or an
- * invitation id -- renders unchanged.
+ * The shape an account identifier always has: the account module creates
+ * every account id as a UUID. The shape makes a value a candidate, not a
+ * fact -- a session id has the same shape -- so the account read decides;
+ * the shape only keeps a tenant alias, a role name or a permission code from
+ * being sent to that read.
  */
-const ACCOUNT_OBJECT_ACTION_PREFIXES = [
-  'authn.account.',
-  'authn.mfa.',
-  'authn.membership.',
-  'authn.secret.',
-  'authn.impersonation.',
-  'authz.binding.',
-] as const
+const ACCOUNT_IDENTIFIER_SHAPE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** Whether one audit record's object is an account identifier. */
-export function auditObjectNamesAccount(action: string): boolean {
-  return ACCOUNT_OBJECT_ACTION_PREFIXES.some((prefix) =>
-    action.startsWith(prefix),
-  )
+/** Whether a value has the shape an account identifier always has. */
+export function isAccountIdentifierShaped(value: string): boolean {
+  return ACCOUNT_IDENTIFIER_SHAPE.test(value)
 }
 
 /**
- * The detail keys the audit journal and the impersonation capability write
- * as account identifiers: the impersonated account and the ending identity.
+ * The impersonation actions whose `by` detail is the account that ended or
+ * revoked the grant. The factor events write `by` as the actor class (self,
+ * admin, system), which is not an account and renders as recorded.
  */
-const ACCOUNT_DETAIL_KEYS: ReadonlySet<string> = new Set([
-  'on_behalf_of',
-  'by',
+const IMPERSONATION_BY_ACTIONS: ReadonlySet<string> = new Set([
+  'authn.impersonation.end',
+  'authn.impersonation.revoke',
 ])
 
-/** Whether one audit detail key's value is an account identifier. */
-export function auditDetailNamesAccount(key: string): boolean {
-  return ACCOUNT_DETAIL_KEYS.has(key)
+/**
+ * Whether one audit detail value is an account identifier. The journal writes
+ * `on_behalf_of` only from an impersonating identity, so it is always an
+ * account id. `by` is one only on an impersonation end or revoke; the factor
+ * events carry a class there instead.
+ */
+export function auditDetailNamesAccount(action: string, key: string): boolean {
+  if (key === 'on_behalf_of') {
+    return true
+  }
+  if (key === 'by') {
+    return IMPERSONATION_BY_ACTIONS.has(action)
+  }
+  return false
 }
 
 /**
- * One audit record's object: an account id the record's action names is
- * rendered as that account's identity, and every other object -- a tenant
- * alias, a role name, a session or an invitation id -- renders as recorded.
+ * One audit record's object. A value shaped like an account identifier is
+ * resolved through the account read, and the read's answer decides: an
+ * account renders its identity, a value the read answers 404 for is not an
+ * account (a session id has the same shape) and renders as recorded. Every
+ * other value -- a tenant alias, a role name, a permission code -- is not an
+ * account identifier by shape and renders as recorded without a read. A
+ * refusal and an absent admin face both keep the neutral copy and never the
+ * recorded identifier: the value may name an account, and neither state can
+ * prove it does not.
  */
-export function AuditObjectIdentity({
-  action,
-  object,
-}: {
-  readonly action: string
-  readonly object: string
-}) {
-  if (object === '' || !auditObjectNamesAccount(action)) {
+export function AuditObjectIdentity({ object }: { readonly object: string }) {
+  if (!isAccountIdentifierShaped(object)) {
     return <>{object}</>
   }
-  return <AccountIdentity account={object} />
+  return <AuditObjectAccount account={object} />
+}
+
+function AuditObjectAccount({ account }: { readonly account: string }) {
+  const { t } = useAdminUiTranslation()
+  const { name, username, refused, missing, gated } = useAccountIdentity(account)
+  const label = identityLabel(name, username)
+  if (label !== undefined) {
+    return <>{label}</>
+  }
+  // The read answered "no such account", so this value does not name one.
+  if (missing) {
+    return <>{account}</>
+  }
+  // No read was issued: the identity is unresolved for that reason, and the
+  // value may name an account, so the cell keeps the neutral copy.
+  if (gated) {
+    return <NeutralIdentity note={t('common.accountUnresolved')} />
+  }
+  // The read was refused: the value may name an account, so the cell renders
+  // the neutral copy and never the recorded identifier.
+  if (refused) {
+    return <NeutralIdentity note={t('common.accountUnresolved')} />
+  }
+  return <NeutralIdentity />
 }

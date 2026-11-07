@@ -530,10 +530,11 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(admin, nameColumn)).toHaveText(
           reviewTenantAdmin.displayName,
         )
-        // The identity cell names the member by display name and login
-        // username together; the internal account id is not what it shows.
+        // The username column shows the member record's login username; the
+        // name column beside it is the display name, and the internal account
+        // id is not what either shows.
         await expect(cell(admin, usernameColumn)).toHaveText(
-          `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+          reviewTenantAdmin.username,
         )
         await expect(cell(admin, rolesColumn)).toContainText('tenant-admin')
         await expect(cell(admin, statusColumn)).toHaveText(
@@ -549,7 +550,7 @@ test.describe('the tenant administrator manages the organization', () => {
         const ordinary = memberRow(page, reviewOrdinaryMember.displayName)
         await expect(ordinary).toHaveCount(1)
         await expect(cell(ordinary, usernameColumn)).toHaveText(
-          `${reviewOrdinaryMember.displayName} (${ORDINARY_MEMBER_USERNAME})`,
+          ORDINARY_MEMBER_USERNAME,
         )
         await expect(cell(ordinary, rolesColumn)).toHaveText(
           copy('adminUi', 'members.roles.none'),
@@ -1004,12 +1005,13 @@ test.describe('the tenant administrator manages the organization', () => {
         )
         const joined = memberRow(page, reviewInvitee.displayName)
         await expect(joined).toHaveCount(1)
-        // The account cell is the displayed identity label, which the member
-        // panel's own notices repeat below.
+        // The username column shows the record's login username. The member
+        // panel's own notices name the account by display name and username,
+        // which is where the composed reference comes from.
         await expect(cell(joined, usernameColumn)).toHaveText(
-          `${reviewInvitee.displayName} (${reviewInvitee.username})`,
+          reviewInvitee.username,
         )
-        inviteeAccount = (await cell(joined, usernameColumn).innerText()).trim()
+        inviteeAccount = `${reviewInvitee.displayName} (${reviewInvitee.username})`
         await expect(cell(joined, sourceColumn)).toHaveText(
           copy('adminUi', 'members.source.invite'),
         )

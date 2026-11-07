@@ -632,6 +632,19 @@ test('operator-first-run: the operator proves the email and lands the first sett
       .filter({ hasText: /^settings\.set$/ })
     await expect(writeLink).toBeVisible()
     const writeRow = writeLink.locator('xpath=ancestor::tr[1]')
+
+    // The login that opened this session records the operator's account as
+    // its object. The row names that account by identity in both the object
+    // and the actor cell, never by the opaque identifier the export keeps.
+    const loginRow = table
+      .getByRole('link', { name: 'authn.login', exact: true })
+      .locator('xpath=ancestor::tr[1]')
+    await expect(loginRow).toHaveCount(1)
+    await expect(
+      loginRow.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+        exact: true,
+      }),
+    ).toHaveCount(2)
     const outcome = (
       (await writeRow.getByRole('cell').last().textContent()) ?? ''
     ).trim()

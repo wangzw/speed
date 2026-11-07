@@ -115,10 +115,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
               settled.object === '' ? (
                 t('common.emptyValue')
               ) : (
-                <AuditObjectIdentity
-                  action={settled.action}
-                  object={settled.object}
-                />
+                <AuditObjectIdentity object={settled.object} />
               )
             }
           />
@@ -141,7 +138,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
                   value={
                     value === ''
                       ? t('common.emptyValue')
-                      : auditDetailNamesAccount(key)
+                      : auditDetailNamesAccount(settled.action, key)
                         ? <AccountIdentity account={value} />
                         : value
                   }

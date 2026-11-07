@@ -57,8 +57,8 @@ import type { DataTableColumn, PageRefresh } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import {
   AccountIdentity,
-  auditObjectNamesAccount,
   AuditObjectIdentity,
+  isAccountIdentifierShaped,
 } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatInstant } from '@speed/i18n'
@@ -481,16 +481,17 @@ function DashboardWithAudit({
       header: t('dashboard.recent.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
       cellWrap: 'nowrap',
-      // An account object resolves through the same rule as the audit
-      // query; anything else renders as recorded.
+      // An object shaped like an account id resolves through the same rule as
+      // the audit query, and its copy value is withheld; anything else
+      // renders as recorded.
       cellFullValue: (record) =>
-        record.object === '' || auditObjectNamesAccount(record.action)
+        record.object === '' || isAccountIdentifierShaped(record.object)
           ? undefined
           : record.object,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
-          <AuditObjectIdentity action={record.action} object={record.object} />
+          <AuditObjectIdentity object={record.object} />
         </Typography>
       ),
     },

@@ -12,6 +12,10 @@ import { screen, waitFor } from '@testing-library/react'
 import Box from '@mui/material/Box'
 import { page } from 'vitest/browser'
 import { AccountsPage } from './AccountsPage.js'
+import {
+  accountUsername,
+  identityLabel,
+} from './internal/account-identity.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   accountFixture,
@@ -44,6 +48,13 @@ const NARROW_ACCOUNT = accountFixture({
     { kind: 'username', value: 'ada.lovelace@example.com', proven: true, sign_in: true, contact: false, default_contact: false },
   ],
 })
+
+/** The identity the row shows and its controls name: the display name with
+ * the login username, never the account id. */
+const NARROW_LABEL = identityLabel(
+  NARROW_ACCOUNT.display_name,
+  accountUsername(NARROW_ACCOUNT.identifiers),
+) as string
 
 /** One pixel of tolerance for subpixel layout rounding. */
 const PIN_TOLERANCE = 0.5
@@ -88,15 +99,14 @@ describe('AccountsPage row actions at 375 in Chromium', () => {
       { operations, language: 'en-US' },
     )
 
-    const accountId = NARROW_ACCOUNT.id
-    await screen.findByText(NARROW_ACCOUNT.display_name)
+    await screen.findByText(NARROW_LABEL)
     await document.fonts.ready
 
     const manage = screen.getByRole('button', {
-      name: enUS.accounts.manageAria.replace('{{id}}', accountId),
+      name: enUS.accounts.manageAria.replace('{{name}}', NARROW_LABEL),
     })
     const remove = screen.getByRole('button', {
-      name: enUS.accounts.deleteAria.replace('{{id}}', accountId),
+      name: enUS.accounts.deleteAria.replace('{{name}}', NARROW_LABEL),
     })
     const container = manage.closest<HTMLElement>('.MuiTableContainer-root')
     expect(container).not.toBeNull()

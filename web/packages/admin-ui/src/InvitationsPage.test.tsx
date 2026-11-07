@@ -437,8 +437,10 @@ describe('InvitationsPage', () => {
         name: zhCN.members.column.displayName,
       }),
     ).toBeInTheDocument()
+    // The username column renders the record's username beside the display
+    // name column, never the account id.
     expect(
-      await within(memberSection).findByText('Ada Lovelace (ada)'),
+      await within(memberSection).findByText('ada', { exact: true }),
     ).toBeInTheDocument()
     expect(within(memberSection).queryByText('acc-1')).toBeNull()
   })
@@ -474,9 +476,9 @@ describe('InvitationsPage', () => {
     const accountCell = row!.children[
       (accountHeader as HTMLTableCellElement).cellIndex
     ]
-    // The display name column carries the name; the account column carries
-    // the composed identity the member record resolves, never its id.
-    expect(accountCell).toHaveTextContent('Ada Lovelace (ada)')
+    // The display name column carries the name; the username column carries
+    // the member record's username, never its id.
+    expect(accountCell).toHaveTextContent('ada')
     expect(accountCell).not.toHaveTextContent('acc-1')
   })
 

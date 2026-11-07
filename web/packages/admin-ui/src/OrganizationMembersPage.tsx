@@ -659,18 +659,20 @@ export function OrganizationMembersPage({
       id: 'username',
       header: t('members.column.username'),
       priority: 'high',
-      // The copy control hands over the login username -- the unique value
-      // an operator can act on -- never the account's internal identifier.
+      // The column shows the member record's login username as it is: the
+      // display name is the identity column beside it, and the account's
+      // internal identifier is never shown. The copy control hands over the
+      // username -- the unique value an operator can act on. A member the
+      // record carries no username for gets the neutral copy rather than a
+      // repeat of the display name.
       cellWrap: 'nowrap',
       cellFullValue: (member) =>
         member.username === '' ? undefined : member.username,
       contentMaxWidth: MEMBER_IDENTITY_MAX_WIDTH,
-      cell: (member) => (
-        <Typography variant="body2">
-          {identityLabel(member.display_name, member.username) ??
-            t('common.accountUnavailable')}
-        </Typography>
-      ),
+      cell: (member) =>
+        member.username === ''
+          ? t('common.accountUnavailable')
+          : member.username,
     },
     {
       id: 'roles',

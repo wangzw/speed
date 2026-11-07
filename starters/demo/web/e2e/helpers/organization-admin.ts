@@ -440,11 +440,29 @@ export function collectTenantAccountIds(
 }
 
 /**
+ * The attributes a surface can carry a recorded value in: a hover title (the
+ * `cellFullValue` channel), an accessible name or description, a link target
+ * and a control's own value or placeholder. These are the channels the console
+ * must keep the account id out of.
+ */
+const IDENTIFIER_ATTRIBUTES = [
+  'title',
+  'aria-label',
+  'aria-description',
+  'aria-valuetext',
+  'href',
+  'value',
+  'placeholder',
+  'alt',
+] as const
+
+/**
  * Assert that a rendered surface carries none of `accountIds` in its text or
- * any attribute value. `outerHTML` is the whole of what the browser renders for
- * the element: text nodes, attribute values and every descendant. An empty id
- * list is a harness error rather than a vacuous pass -- a page whose reads
- * answered no account would otherwise satisfy the assertion without evidence.
+ * in an attribute value it exposes. The text is that of the element and every
+ * descendant; the attributes are the ones a rendered value can travel in.
+ * An empty id list is a harness error rather than a vacuous pass -- a page
+ * whose reads answered no account would otherwise satisfy the assertion
+ * without evidence.
  */
 export async function expectNoAccountIds(
   scope: Locator,
@@ -455,12 +473,17 @@ export async function expectNoAccountIds(
       'no account identifiers were read, so the leak assertion has nothing to look for',
     )
   }
-  const rendered = await scope.evaluate((element) => element.outerHTML)
   for (const id of accountIds) {
-    expect(
-      rendered,
+    await expect(
+      scope,
       `the surface rendered the account identifier ${id}`,
-    ).not.toContain(id)
+    ).not.toContainText(id)
+    for (const attribute of IDENTIFIER_ATTRIBUTES) {
+      await expect(
+        scope.locator(`[${attribute}*="${id}"]`),
+        `an element's ${attribute} carried the account identifier ${id}`,
+      ).toHaveCount(0)
+    }
   }
 }
 

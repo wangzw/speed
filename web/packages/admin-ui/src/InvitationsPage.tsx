@@ -82,7 +82,6 @@ import {
   AccountIdentity,
   accountIdentityValue,
   accountNotice,
-  identityLabel,
   TenantAccountIdentity,
   useAccountIdentity,
   type AccountIdentityValue,
@@ -624,14 +623,17 @@ export function InvitationsPage({
       priority: 'high',
       cellWrap: 'nowrap',
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      // The organization surface names the member from its own record's
-      // display name and username; the platform surface resolves the account
-      // through the account read. Neither shows or copies the account id.
+      // The organization surface shows the member record's username beside
+      // its display name column; the platform surface resolves the account
+      // through the account read. Neither shows or copies the account id. A
+      // record with no username gets the neutral copy, never the display
+      // name repeated from the column beside it.
       cell: (member) =>
         tenantMode ? (
           <Typography variant="body2">
-            {identityLabel(member.display_name, member.username) ??
-              t('common.accountUnavailable')}
+            {member.username === ''
+              ? t('common.accountUnavailable')
+              : member.username}
           </Typography>
         ) : (
           <AccountIdentity account={member.account} />
