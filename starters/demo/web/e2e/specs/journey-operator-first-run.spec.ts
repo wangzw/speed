@@ -238,10 +238,71 @@ function fieldValue(page: Page, label: string): Locator {
   return term(page, label).locator('xpath=following-sibling::dd[1]')
 }
 
+/** The audit list read the console's page itself fetches. */
+const AUDIT_LIST_PATH = '/api/v1/system/audit/records'
+
+/**
+ * The raw actor of the login record, learned from the audit list read the
+ * page itself receives. The row renders the actor's readable identity and
+ * never the account id, so the response is where the id is learned for the
+ * attribute leak assertions.
+ */
+function observeLoginActor(page: Page): () => Promise<string> {
+  let actor = ''
+  page.on('response', (response) => {
+    if (response.request().method() !== 'GET' || !response.ok()) {
+      return
+    }
+    if (new URL(response.url()).pathname !== AUDIT_LIST_PATH) {
+      return
+    }
+    response
+      .json()
+      .then(
+        (body: {
+          readonly entries: readonly {
+            readonly action: string
+            readonly actor: string
+          }[]
+        }) => {
+          const login = body.entries.find(
+            (record) => record.action === 'authn.login' && record.actor !== '',
+          )
+          if (login !== undefined) actor = login.actor
+        },
+      )
+      .catch(() => undefined)
+  })
+  return async () => {
+    await expect
+      .poll(() => actor, {
+        timeout: 15_000,
+        message: 'the audit list read never answered the login record actor',
+      })
+      .not.toBe('')
+    return actor
+  }
+}
+
+/**
+ * The attributes a rendered value can reach: a hover title, an accessible
+ * name or description, a link target and a control's own value or
+ * placeholder. The console must keep the account id out of all of them.
+ */
+const ACCOUNT_ID_ATTRIBUTES = [
+  'title',
+  'aria-label',
+  'aria-description',
+  'href',
+  'value',
+  'placeholder',
+] as const
+
 test('operator-first-run: the operator proves the email and lands the first settings write', async ({
   demo,
 }) => {
   const { page, server, accounts } = demo
+  const loginActor = observeLoginActor(page)
 
   await test.step('the operator signs in and the pending-email notice names the address', async () => {
     // The operator holds a username and a password; the journey's sign-in
@@ -657,6 +718,18 @@ test('operator-first-run: the operator proves the email and lands the first sett
         exact: true,
       }),
     ).toHaveCount(2)
+
+    // The object and actor cells render the readable identity; the account id
+    // the list read answered must not reach the row through an attribute
+    // either -- a hover title, an accessible name or description, a link
+    // target or a control's value or placeholder.
+    const accountId = await loginActor()
+    for (const attribute of ACCOUNT_ID_ATTRIBUTES) {
+      await expect(
+        loginRow.locator(`[${attribute}*="${accountId}"]`),
+        `the login row carried the account id in a ${attribute} attribute`,
+      ).toHaveCount(0)
+    }
 
     await page
       .getByRole('button', {
