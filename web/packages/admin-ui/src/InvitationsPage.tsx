@@ -11,16 +11,17 @@
  *  - the tenant's members: list them (display name, account, active, SSO
  *    exemption, source) and remove a membership.
  *
- * On the platform surface the inviter and the member account render through
- * the shared account identity unit: the readable display name and username
- * where the account read answers, the neutral copy with an unresolved note
- * where it is refused. On the organization surface (`tenantMode`) both resolve
- * from the tenant's own member read instead -- the inviter through the
- * member row carrying that account, the member through its own row's
- * `display_name` and `username` -- so the page issues no platform account
- * read, and the member write form (whose account field searches the platform
- * roster) is not rendered. No column offers the recorded account identifier
- * as its copy or hover value.
+ * A member row renders from the member read on both surfaces: the display
+ * name column and the login username column carry that row's `display_name`
+ * and `username`, and the row's actions name the member the same way, so a
+ * member row never issues a platform account read. The inviter renders through
+ * the shared account identity unit on the platform surface -- the readable
+ * display name and username where the account read answers, the neutral copy
+ * with an unresolved note where it is refused -- and from the tenant's own
+ * member row on the organization surface (`tenantMode`). That surface also
+ * omits the member write form, whose account field searches the platform
+ * roster. No column offers the recorded account identifier as its copy or
+ * hover value.
  *
  * Inviting an address mints an invitation the invitee accepts through the
  * tenant-facing invite surface; the console issues and revokes, it does
@@ -83,7 +84,6 @@ import {
   accountIdentityValue,
   accountNotice,
   TenantAccountIdentity,
-  useAccountIdentity,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
@@ -607,10 +607,10 @@ export function InvitationsPage({
         member.display_name === '' ? undefined : member.display_name,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       // The member read carries the account's display name, so the name is the
-      // row's primary identity even where the account read is refused. An
-      // account with no display name leaves this cell empty: the account model
-      // defines no fallback for the name, and the identifier column beside it
-      // still names the row.
+      // row's primary identity without any platform account read. An account
+      // with no display name leaves this cell empty: the account model defines
+      // no fallback for the name, and the username column beside it still
+      // names the row.
       cell: (member) => member.display_name,
     },
     {
@@ -623,20 +623,18 @@ export function InvitationsPage({
       priority: 'high',
       cellWrap: 'nowrap',
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      // The organization surface shows the member record's username beside
-      // its display name column; the platform surface resolves the account
-      // through the account read. Neither shows or copies the account id. A
-      // record with no username gets the neutral copy, never the display
-      // name repeated from the column beside it.
+      // Both surfaces show the member record's login username beside its
+      // display name column, and the header names exactly that. Neither shows
+      // or copies the account id, and no account read is needed: the member
+      // read carries the username. A record with no username gets the neutral
+      // copy, never the display name repeated from the column beside it.
       cell: (member) =>
-        tenantMode ? (
+        member.username === '' ? (
           <Typography variant="body2">
-            {member.username === ''
-              ? t('common.accountUnavailable')
-              : member.username}
+            {t('common.accountUnavailable')}
           </Typography>
         ) : (
-          <AccountIdentity account={member.account} />
+          member.username
         ),
     },
     {
@@ -686,7 +684,6 @@ export function InvitationsPage({
           failureText={memberFailureText}
           pending={membersFeedback.pending}
           ssoExemption={ssoExemption}
-          tenantMode={tenantMode}
           onRemove={requestRemoveMember}
           onToggleSsoExempt={toggleSsoExempt}
         />
@@ -960,9 +957,6 @@ interface MemberRowActionsProps {
   readonly pending: boolean
   /** Whether the SSO surface is present, so the toggle exists. */
   readonly ssoExemption: boolean
-  /** Whether the row is on the organization surface, which resolves the
-   * identity from the member read rather than the platform account read. */
-  readonly tenantMode: boolean
   readonly onRemove: (
     member: AdminMember,
     identity: AccountIdentityValue,
@@ -975,27 +969,18 @@ interface MemberRowActionsProps {
 
 /**
  * The member row's own actions. A landed write names the account the way the
- * row shows it: the platform surface reads the identity through the account
- * read the row's cell renders, and the organization surface uses the member
- * read's own display name and username -- never the recorded identifier as a
- * fallback.
+ * row shows it -- from the member read, on both surfaces -- and never the
+ * recorded identifier as a fallback.
  */
 function MemberRowActions(props: MemberRowActionsProps) {
-  return props.tenantMode ? (
+  return (
     <MemberActionsBody {...props} identity={memberRowIdentity(props.member)} />
-  ) : (
-    <PlatformMemberActions {...props} />
   )
 }
 
-function PlatformMemberActions(props: MemberRowActionsProps) {
-  const { name, username } = useAccountIdentity(props.member.account)
-  return <MemberActionsBody {...props} identity={{ name, username }} />
-}
-
 /**
- * The organization surface's identity: the member read's own display name
- * and login username. Neither is an identifier standing in for the other.
+ * The member row's identity: the member read's own display name and login
+ * username. Neither is an identifier standing in for the other.
  */
 function memberRowIdentity(member: AdminMember): AccountIdentityValue {
   return {

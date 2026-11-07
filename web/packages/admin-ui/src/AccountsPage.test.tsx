@@ -3629,7 +3629,7 @@ describe('AccountsPage', () => {
     expect(kind).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
     expect(status).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(kind!.visibleFrom).toBeGreaterThan(status!.visibleFrom)
-    expect(columnVisibility(header(zhCN.accounts.column.displayName))).toBeNull()
+    expect(columnVisibility(header(zhCN.accounts.column.identity))).toBeNull()
     expect(columnVisibility(header(zhCN.accounts.column.mfa))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
@@ -3641,8 +3641,8 @@ describe('AccountsPage', () => {
     expect(screen.queryByText(id)).toBeNull()
     expect(screen.queryByText(id.slice(0, 8))).toBeNull()
 
-    // The display name's primary cell keeps the shared whole-cell cap:
-    // 160px below `md`, 200px from `md` up.
+    // The identity's primary cell keeps the shared whole-cell cap: 160px
+    // below `md`, 200px from `md` up.
     const nameCell = screen.getByText('Ada Lovelace').closest('td')
     expect(nameCell).not.toBeNull()
     expect(containerMaxWidthOf(nameCell!.firstElementChild!)).toEqual(

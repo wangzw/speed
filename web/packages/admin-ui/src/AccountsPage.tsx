@@ -556,10 +556,10 @@ export function AccountsPage({
   }
 
   // The delete confirmation names the account the way the roster does: its
-  // display name, and the first login identifier beside it when the view
-  // carries one. An account with no display name is named by that identifier
-  // alone; neither gives the neutral sentence. The opaque id never enters the
-  // copy -- an operator cannot match it to a row.
+  // display name, and the login username beside it when the view carries one.
+  // An account with no display name is named by that username alone; neither
+  // gives the neutral sentence. The opaque id never enters the copy -- an
+  // operator cannot match it to a row.
   function deleteMessageFor(row: AdminAccount): string {
     const username = accountUsername(row.identifiers)
     if (row.display_name !== '') {
@@ -695,7 +695,7 @@ export function AccountsPage({
     },
     {
       id: 'identity',
-      header: t('accounts.column.displayName'),
+      header: t('accounts.column.identity'),
       cellWrap: 'nowrap',
       // The identity an operator can match to a row: the display name and
       // login username, either alone, or the neutral copy when the account

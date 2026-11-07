@@ -832,6 +832,7 @@
     "column": {
       "kind": "类型",
       "displayName": "显示名",
+      "identity": "身份",
       "status": "状态",
       "mfa": "强制 MFA",
       "actions": "操作"

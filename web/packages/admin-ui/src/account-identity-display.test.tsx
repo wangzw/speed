@@ -9,11 +9,15 @@
  * and on every surface that previously fell back to the raw id.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { uiKitResources } from '@speed/ui-kit'
-import { AccountIdentity, TenantAccountIdentity } from './internal/account-identity.js'
+import {
+  AccountIdentity,
+  AuditObjectIdentity,
+  TenantAccountIdentity,
+} from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
 import { OrganizationMembersPage } from './OrganizationMembersPage.js'
@@ -127,6 +131,28 @@ describe('AccountIdentity', () => {
       await screen.findByText(zhCN.common.accountUnavailable),
     ).toBeInTheDocument()
     expect(screen.queryByText(UUID)).toBeNull()
+  })
+
+  it('renders an empty placeholder when there is no actor', () => {
+    const getAccount = vi.fn(() => Promise.resolve(account()))
+    const operations = createAdminOperations(makeAdminBackend({ getAccount }))
+    const { container } = renderWithProviders(<AccountIdentity account="" />, {
+      operations,
+    })
+    // No actor is a system row, not an account that failed to resolve.
+    expect(container).toHaveTextContent('')
+    expect(screen.queryByText(zhCN.common.accountUnavailable)).toBeNull()
+    expect(getAccount).not.toHaveBeenCalled()
+  })
+
+  it('renders a static principal as recorded and issues no account read', () => {
+    const getAccount = vi.fn(() => Promise.resolve(account()))
+    const operations = createAdminOperations(makeAdminBackend({ getAccount }))
+    renderWithProviders(<AccountIdentity account="static.operator" />, {
+      operations,
+    })
+    expect(screen.getByText('static.operator')).toBeInTheDocument()
+    expect(getAccount).not.toHaveBeenCalled()
   })
 })
 
@@ -315,6 +341,13 @@ describe('AccountsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
     const identity = await screen.findByText('Ada Lovelace (ada)')
     expect(identity).toBeInTheDocument()
+    // The column header names the identity the cell shows, not one of its
+    // parts: the cell composes the display name with the login username.
+    expect(
+      screen.getByRole('columnheader', {
+        name: zhCN.accounts.column.identity,
+      }),
+    ).toBeInTheDocument()
     // The identity column is the row handle; open the detail from it.
     const rowElement = identity.closest('tr') as HTMLElement
     await user.click(
@@ -401,7 +434,7 @@ describe('AuditPage', () => {
       actor: UUID,
       source: 'console',
       action: 'authn.account.update',
-      object: UUID,
+      object: `account:${UUID}`,
       outcome: 'success',
       purpose: '',
       detail: {},
@@ -458,7 +491,10 @@ describe('AuditPage', () => {
         makeAdminBackend({
           getAccount: () => Promise.resolve(account()),
           listRecords: () =>
-            Promise.resolve({ entries: [record({ action })], next: '' }),
+            Promise.resolve({
+              entries: [record({ action, object: `account:${UUID}` })],
+              next: '',
+            }),
         }),
       )
       renderWithProviders(<AuditPage />, { operations })
@@ -479,17 +515,19 @@ describe('AuditPage', () => {
     },
   )
 
-  it('renders a UUID-shaped object the account read does not know as recorded', async () => {
+  it('renders a bare session id as recorded and issues no account read for it', async () => {
     const sessionId = '019a2d4f-2b84-7c63-8a11-7e5f3c2d1b0a'
+    const getAccount = vi.fn((query: { readonly id?: string }) =>
+      query.id === UUID
+        ? Promise.resolve(account())
+        : Promise.reject({ status: 404, code: 'authn.account.not_found' }),
+    )
     const operations = createAdminOperations(
       makeAdminBackend({
-        // The same action carries an account id on one row and a session id on
-        // the next: the read resolves the account and answers 404 for the
-        // session, which then stays as recorded.
-        getAccount: (query: { readonly id?: string }) =>
-          query.id === UUID
-            ? Promise.resolve(account())
-            : Promise.reject({ status: 404, code: 'authn.account.not_found' }),
+        // The same action names an account on one row and a session on the
+        // next. Only the marked object is an account; the session id has the
+        // same opaque shape but no marker, so it renders as recorded.
+        getAccount,
         listRecords: () =>
           Promise.resolve({
             entries: [
@@ -506,15 +544,92 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
 
-    // The account object resolves to its identity; the session id -- the same
-    // shape -- is not an account and stays as recorded.
     expect(await screen.findByText(sessionId)).toBeInTheDocument()
+    expect(screen.queryByText(UUID)).toBeNull()
+    expect(screen.queryByText(`account:${UUID}`)).toBeNull()
     expect(
-      screen.queryByText(UUID),
-    ).toBeNull()
-    expect(
-      screen.getAllByText('Ada Lovelace (ada)').length,
+      (await screen.findAllByText('Ada Lovelace (ada)')).length,
     ).toBeGreaterThanOrEqual(2)
+    // The session id was never handed to the account read.
+    expect(getAccount.mock.calls.some(([query]) => query.id === sessionId)).toBe(
+      false,
+    )
+  })
+
+  it('renders the neutral label, never the id, for a marked account the read answers 404 for', async () => {
+    const deleted = '019a2d4f-3c95-7d74-9b22-8f6a4d3e2c1b'
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getAccount: (query: { readonly id?: string }) =>
+          query.id === UUID
+            ? Promise.resolve(account())
+            : Promise.reject({ status: 404, code: 'authn.account.not_found' }),
+        listRecords: () =>
+          Promise.resolve({
+            entries: [record({ object: `account:${deleted}` })],
+            next: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+
+    // The marker says the object names an account, so a deleted one renders
+    // the neutral label with the deleted note -- never the recorded id.
+    expect(
+      await screen.findByTitle(zhCN.common.accountMissing),
+    ).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(screen.queryByText(deleted)).toBeNull()
+    // The actor still resolves to its identity.
+    expect(await screen.findByText('Ada Lovelace (ada)')).toBeInTheDocument()
+  })
+
+  it('renders an empty placeholder for a system row with no actor', async () => {
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: () =>
+          Promise.resolve({
+            entries: [record({ actor: '', object: 'settings.set' })],
+            next: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+
+    const object = await screen.findByText('settings.set')
+    expect(screen.queryByText(UUID)).toBeNull()
+    // No actor means no identity, not an unresolved account: the neutral copy
+    // never appears for the row.
+    expect(screen.queryByText(zhCN.common.accountUnavailable)).toBeNull()
+    const actorHeader = screen.getByRole('columnheader', {
+      name: zhCN.audit.column.actor,
+    })
+    const row = object.closest('tr')
+    expect(row).not.toBeNull()
+    expect(
+      row!.children[(actorHeader as HTMLTableCellElement).cellIndex],
+    ).toHaveTextContent('')
+  })
+
+  it('renders a static principal as recorded and issues no account read', async () => {
+    const getAccount = vi.fn(() => Promise.resolve(account()))
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getAccount,
+        listRecords: () =>
+          Promise.resolve({
+            entries: [
+              record({ actor: 'static.operator', object: 'settings.set' }),
+            ],
+            next: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+
+    expect(await screen.findByText('static.operator')).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.common.accountUnavailable)).toBeNull()
+    // A configured static subject is not an account the library holds.
+    expect(getAccount).not.toHaveBeenCalled()
   })
 
   it('never shows the recorded object when the admin face is absent', async () => {
@@ -546,7 +661,7 @@ describe('AuditDetailPage detail identities', () => {
           Promise.resolve(
             recordFixture({
               action: 'authn.factor.enroll',
-              object: UUID,
+              object: `account:${UUID}`,
               detail: { by: 'self', kind: 'totp' },
             }),
           ),
@@ -575,7 +690,7 @@ describe('AuditDetailPage detail identities', () => {
           Promise.resolve(
             recordFixture({
               action: 'authn.impersonation.revoke',
-              object: UUID,
+              object: `account:${UUID}`,
               actor: UUID,
               detail: { by: UUID, on_behalf_of: UUID },
             }),
@@ -592,5 +707,52 @@ describe('AuditDetailPage detail identities', () => {
     const identities = await screen.findAllByText('Ada Lovelace (ada)')
     expect(identities.length).toBeGreaterThanOrEqual(3)
     expect(screen.queryByText(UUID)).toBeNull()
+  })
+
+  it('resolves the account detail key by identity and never renders the uuid', async () => {
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getRecord: () =>
+          Promise.resolve(
+            recordFixture({
+              action: 'authz.tenant.binding.put',
+              object: 'role:reader',
+              actor: UUID,
+              detail: { account: UUID, role: 'reader' },
+            }),
+          ),
+        getAccount: () => Promise.resolve(account()),
+      }),
+    )
+    renderWithProviders(<AuditDetailPage id="rec-1" />, { operations })
+
+    // The detail key `account` is a keyed account field carrying a bare
+    // identifier: it resolves like the actor, and the uuid never renders.
+    await waitFor(() => {
+      expect(
+        screen.getAllByText('Ada Lovelace (ada)').length,
+      ).toBeGreaterThanOrEqual(2)
+    })
+    expect(screen.queryByText(UUID)).toBeNull()
+    // The object names a role, not an account, and stays as recorded.
+    expect(screen.getByText('role:reader')).toBeInTheDocument()
+  })
+})
+
+describe('AuditObjectIdentity', () => {
+  it('resolves only a marked account object', () => {
+    const operations = createAdminOperations(
+      makeAdminBackend({ getAccount: () => Promise.resolve(account()) }),
+    )
+    const { unmount } = renderWithProviders(
+      <AuditObjectIdentity object={`account:${UUID}`} />,
+      { operations },
+    )
+    expect(screen.queryByText(`account:${UUID}`)).toBeNull()
+    unmount()
+    renderWithProviders(<AuditObjectIdentity object={UUID} />, { operations })
+    // A bare identifier of the same shape is not an account: it renders as
+    // recorded, marker or not.
+    expect(screen.getByText(UUID)).toBeInTheDocument()
   })
 })

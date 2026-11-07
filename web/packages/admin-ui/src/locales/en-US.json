@@ -832,6 +832,7 @@
     "column": {
       "kind": "Kind",
       "displayName": "Display name",
+      "identity": "Identity",
       "status": "Status",
       "mfa": "MFA required",
       "actions": "Actions"

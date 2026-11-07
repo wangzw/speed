@@ -342,7 +342,8 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
-      listMembers: () => Promise.resolve([member()]),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Member One' })]),
       getAccount: ({ id }) =>
         Promise.resolve(
           accountFixture({
@@ -355,6 +356,8 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
     expect(screen.getByText(zhCN.invitations.status.pending)).toBeInTheDocument()
+    // The inviter resolves through the platform account read; the member row
+    // carries its own display name.
     expect(screen.getByText('Staff One')).toBeInTheDocument()
     expect(screen.getByText('Member One')).toBeInTheDocument()
   })
@@ -389,30 +392,49 @@ describe('InvitationsPage', () => {
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
-  it("shows the member's display name, or the neutral copy marked unresolved when the lookup is refused", async () => {
+  it('names the platform member by the member read, never a lookup or the account id', async () => {
     const user = userEvent.setup()
-    const resolving = withTenant({
-      listMembers: () => Promise.resolve([member()]),
-      getAccount: () =>
-        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+    // The member table's Username column shows exactly the username the
+    // member read carries: the header names that column, so the cell never
+    // composes the display name into it and never issues an account read.
+    const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Ada Lovelace' })]),
+      getAccount,
     })
-    const first = renderWithProviders(<InvitationsPage />, {
-      operations: resolving,
-    })
+    renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findByText('Member One')).toBeInTheDocument()
-    first.unmount()
 
-    const refused = withTenant({
-      listMembers: () => Promise.resolve([member()]),
-      getAccount: () => Promise.reject(new Error('forbidden')),
+    const memberSection = section(zhCN.members.title)
+    const nameCell = await within(memberSection).findByText('Ada Lovelace')
+    const usernameHeader = within(memberSection).getByRole('columnheader', {
+      name: zhCN.members.column.username,
     })
-    renderWithProviders(<InvitationsPage />, { operations: refused })
+    const row = nameCell.closest('tr')
+    expect(row).not.toBeNull()
+    const usernameCell =
+      row!.children[(usernameHeader as HTMLTableCellElement).cellIndex]
+    expect(usernameCell).toHaveTextContent('ada')
+    expect(usernameCell).not.toHaveTextContent('Ada Lovelace (ada)')
+    expect(usernameCell).not.toHaveTextContent('acc-1')
+    expect(getAccount).not.toHaveBeenCalled()
+  })
+
+  it('shows the neutral copy when the platform member has no username', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Ada Lovelace', username: '' })]),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
-    expect(cell).not.toHaveTextContent('acc-1')
-    expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
+
+    const memberSection = section(zhCN.members.title)
+    expect(
+      await within(memberSection).findByText(zhCN.common.accountUnavailable),
+    ).toBeInTheDocument()
+    expect(within(memberSection).queryByText('acc-1')).toBeNull()
   })
 
   it('shows the member read display name and username, never the account id', async () => {
@@ -791,11 +813,11 @@ describe('InvitationsPage', () => {
     expect(within(invitationSection).getByText('Member 99 (ada)')).toBeInTheDocument()
   })
 
-  it('leaves the name cell empty when the account has no display name', async () => {
+  it('leaves the name cell empty and names the username when the member has no display name', async () => {
     const user = userEvent.setup()
     const operations = withTenant({
-      listMembers: () => Promise.resolve([member()]),
-      getAccount: () => Promise.reject(new Error('forbidden')),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: '', username: 'ada' })]),
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
@@ -804,19 +826,21 @@ describe('InvitationsPage', () => {
     const nameHeader = within(memberSection).getByRole('columnheader', {
       name: zhCN.members.column.displayName,
     })
+    const usernameHeader = within(memberSection).getByRole('columnheader', {
+      name: zhCN.members.column.username,
+    })
     const row = memberSection.querySelector('tbody tr')
     expect(row).not.toBeNull()
     const nameCell = row!.children[
       (nameHeader as HTMLTableCellElement).cellIndex
     ]
-    expect(nameCell).toBeDefined()
     expect(nameCell!.textContent).toBe('')
-    // The account column renders the neutral copy, never the recorded id.
-    const accountCell = await within(memberSection).findByTitle(
-      zhCN.common.accountUnresolved,
-    )
-    expect(accountCell).toHaveTextContent(zhCN.common.accountUnavailable)
-    expect(accountCell).not.toHaveTextContent('acc-1')
+    // The username column names the row from the member read, never the
+    // recorded id.
+    const usernameCell =
+      row!.children[(usernameHeader as HTMLTableCellElement).cellIndex]
+    expect(usernameCell).toHaveTextContent('ada')
+    expect(usernameCell).not.toHaveTextContent('acc-1')
   })
 
   it('tenant mode drops the platform account picker and resolves identities from members', async () => {
@@ -917,7 +941,8 @@ describe('InvitationsPage', () => {
           invitations: [invitation({ email })],
           next_cursor: '',
         }),
-      listMembers: () => Promise.resolve([member()]),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Operator', username: '' })]),
       getAccount: (query) =>
         Promise.resolve(
           accountFixture({
@@ -1262,9 +1287,8 @@ describe('InvitationsPage', () => {
     const user = userEvent.setup()
     const removed: string[] = []
     const operations = withTenant({
-      listMembers: () => Promise.resolve([member()]),
-      getAccount: () =>
-        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Member One' })]),
       removeMember: (input) => {
         removed.push(input.account)
         return Promise.resolve()
@@ -1281,12 +1305,11 @@ describe('InvitationsPage', () => {
     })
   })
 
-  it('names the removed member by the resolved display name and never the recorded id', async () => {
+  it('names the removed member by the member read and never the recorded id', async () => {
     const user = userEvent.setup()
     const resolving = withTenant({
-      listMembers: () => Promise.resolve([member()]),
-      getAccount: () =>
-        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Member One' })]),
     })
     const first = renderWithProviders(<InvitationsPage />, {
       operations: resolving,
@@ -1297,20 +1320,24 @@ describe('InvitationsPage', () => {
     let dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText(fill(zhCN.members.removed, { account: byName('Member One') })),
+      await screen.findByText(
+        fill(zhCN.members.removed, {
+          account: byNameAndIdentifier('Member One', 'ada'),
+        }),
+      ),
     ).toBeInTheDocument()
     first.unmount()
 
-    // A refused account read resolves neither a display name nor an
-    // identifier, so the success copy stays neutral: the recorded id is a
-    // machine value the operator cannot match to a roster row.
-    const refused = withTenant({
-      listMembers: () => Promise.resolve([member()]),
-      getAccount: () => Promise.reject(new Error('forbidden')),
+    // A member with neither a display name nor a username resolves nothing,
+    // so the success copy stays neutral: the recorded id is a machine value
+    // the operator cannot match to a roster row.
+    const unnamed = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ display_name: '', username: '' })]),
     })
-    renderWithProviders(<InvitationsPage />, { operations: refused })
+    renderWithProviders(<InvitationsPage />, { operations: unnamed })
     await pickTenant(user)
-    await screen.findByTitle(zhCN.common.accountUnresolved)
+    await screen.findByText(zhCN.common.accountUnavailable)
     await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
@@ -1319,32 +1346,29 @@ describe('InvitationsPage', () => {
   })
 
   // The removal confirmation names the member the way the roster shows it:
-  // by display name and, when the account view carries one, its first login
-  // identifier; an identifier alone names an account with no display name.
+  // from the member read -- display name and login username, either alone.
   // The account id is a machine value the operator cannot match against a
-  // roster row, so it never enters the sentence: an identity the account read
-  // resolves neither name nor identifier for (pending, refused, missing, or a
-  // deployment without authn.admin) gets the neutral sentence.
+  // roster row, so it never enters the sentence: a member with neither a
+  // display name nor a username gets the neutral sentence.
   const MEMBER_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
 
   async function openRemovalConfirmation(
     user: ReturnType<typeof userEvent.setup>,
     options: {
-      readonly getAccount?: AdminBackend['getAccount']
+      readonly member?: Partial<AdminMember>
       readonly hasFeature?: (name: FeatureName) => boolean
-      /** Waits for the identity cell to reach the state under test. */
-      readonly settled: () => Promise<unknown>
-    },
+    } = {},
   ): Promise<HTMLElement> {
     const operations = withTenant({
-      listMembers: () => Promise.resolve([member({ account: MEMBER_UUID })]),
-      getAccount: () =>
-        Promise.resolve(
-          accountFixture({ id: MEMBER_UUID, display_name: 'Ada Lovelace' }),
-        ),
-      ...(options.getAccount === undefined
-        ? {}
-        : { getAccount: options.getAccount }),
+      listMembers: () =>
+        Promise.resolve([
+          member({
+            account: MEMBER_UUID,
+            display_name: 'Ada Lovelace',
+            username: 'ada',
+            ...options.member,
+          }),
+        ]),
     })
     renderWithProviders(<InvitationsPage />, {
       operations,
@@ -1353,7 +1377,6 @@ describe('InvitationsPage', () => {
         : { hasFeature: options.hasFeature }),
     })
     await pickTenant(user)
-    await options.settled()
     await user.click(
       await screen.findByRole('button', { name: zhCN.members.remove }),
     )
@@ -1367,34 +1390,9 @@ describe('InvitationsPage', () => {
     expect(dialog).not.toHaveTextContent(MEMBER_UUID)
   }
 
-  it('names the member being removed by its display name', async () => {
+  it('names the member being removed by its display name and login username', async () => {
     const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, {
-      settled: () => screen.findByText('Ada Lovelace'),
-    })
-    expect(
-      within(dialog).getByText(
-        fill(zhCN.members.removeMessage, { name: 'Ada Lovelace' }),
-      ),
-    ).toBeInTheDocument()
-  })
-
-  it('names the member being removed by its display name and first identifier', async () => {
-    const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, {
-      getAccount: () =>
-        Promise.resolve(
-          accountFixture({
-            id: MEMBER_UUID,
-            display_name: 'Ada Lovelace',
-            identifiers: [
-              { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
-              { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
-            ],
-          }),
-        ),
-      settled: () => screen.findByText('Ada Lovelace (ada)'),
-    })
+    const dialog = await openRemovalConfirmation(user)
     expect(
       within(dialog).getByText(
         fill(zhCN.members.removeMessageWithIdentifier, {
@@ -1403,25 +1401,25 @@ describe('InvitationsPage', () => {
         }),
       ),
     ).toBeInTheDocument()
-    // The login identifier names the member; the opaque id still does not.
     expect(dialog).not.toHaveTextContent(MEMBER_UUID)
   })
 
-  it('names the member being removed by its first identifier when the display name is empty', async () => {
+  it('names the member being removed by its display name when there is no username', async () => {
     const user = userEvent.setup()
     const dialog = await openRemovalConfirmation(user, {
-      getAccount: () =>
-        Promise.resolve(
-          accountFixture({
-            id: MEMBER_UUID,
-            display_name: '',
-            identifiers: [
-              { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
-              { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
-            ],
-          }),
-        ),
-      settled: () => screen.findByText('ada'),
+      member: { username: '' },
+    })
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.members.removeMessage, { name: 'Ada Lovelace' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('names the member being removed by its username when the display name is empty', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, {
+      member: { display_name: '' },
     })
     expect(
       within(dialog).getByText(
@@ -1433,67 +1431,54 @@ describe('InvitationsPage', () => {
 
   it('keeps the member UUID out of the removal confirmation', async () => {
     const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, {
-      settled: () => screen.findByText('Ada Lovelace'),
-    })
+    const dialog = await openRemovalConfirmation(user)
     expect(dialog).not.toHaveTextContent(MEMBER_UUID)
   })
 
-  it('uses the neutral sentence when the account has no display name', async () => {
+  it('uses the neutral sentence when the member has neither display name nor username', async () => {
     const user = userEvent.setup()
     const dialog = await openRemovalConfirmation(user, {
-      getAccount: () =>
-        Promise.resolve(
-          accountFixture({ id: MEMBER_UUID, display_name: '' }),
-        ),
-      settled: () =>
-        screen.findByText(zhCN.common.accountUnavailable),
+      member: { display_name: '', username: '' },
     })
     expectNeutralRemovalConfirmation(dialog)
   })
 
-  it('uses the neutral sentence while the account read is pending', async () => {
-    const user = userEvent.setup()
-    const pending = deferred<AdminAccount>()
-    const dialog = await openRemovalConfirmation(user, {
-      getAccount: () => pending.promise,
-      // The identity cell shows the neutral copy while the read is pending.
-      settled: () =>
-        screen.findByText(zhCN.common.accountUnavailable),
-    })
-    expectNeutralRemovalConfirmation(dialog)
-  })
-
-  it('uses the neutral sentence when the account read is refused', async () => {
-    const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, {
-      getAccount: () => Promise.reject(new Error('forbidden')),
-      settled: () => screen.findByTitle(zhCN.common.accountUnresolved),
-    })
-    expectNeutralRemovalConfirmation(dialog)
-  })
-
-  it('uses the neutral sentence when the account read answers 404', async () => {
-    const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, {
-      getAccount: () => Promise.reject({ status: 404, code: 'client.http.404' }),
-      settled: () => screen.findByTitle(zhCN.common.accountMissing),
-    })
-    expectNeutralRemovalConfirmation(dialog)
-  })
-
-  it('uses the neutral sentence when the authn.admin feature is absent', async () => {
+  it('names the member from the member read without the authn.admin feature', async () => {
     const user = userEvent.setup()
     const getAccount = vi.fn(() =>
-      Promise.reject(new Error('the gated read must not run')),
+      Promise.reject(new Error('the member row must not issue a read')),
     )
-    const dialog = await openRemovalConfirmation(user, {
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([
+          member({
+            account: MEMBER_UUID,
+            display_name: 'Ada Lovelace',
+            username: 'ada',
+          }),
+        ]),
       getAccount,
-      hasFeature: (name) => name !== 'authn.admin',
-      settled: () => screen.findByTitle(zhCN.common.accountUnresolved),
     })
+    renderWithProviders(<InvitationsPage />, {
+      operations,
+      hasFeature: (name) => name !== 'authn.admin',
+    })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.members.remove }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.members.removeTitle,
+    })
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.members.removeMessageWithIdentifier, {
+          name: 'Ada Lovelace',
+          identifier: 'ada',
+        }),
+      ),
+    ).toBeInTheDocument()
     expect(getAccount).not.toHaveBeenCalled()
-    expectNeutralRemovalConfirmation(dialog)
   })
 
   it('writes the chosen account id, not the typed name', async () => {
@@ -1562,20 +1547,25 @@ describe('InvitationsPage', () => {
     identifiers: AdminAccount['identifiers'],
     expected: string,
   ): Promise<HTMLElement> {
-    const getAccount = vi.fn(() =>
-      Promise.resolve(
-        accountFixture({ display_name: displayName, identifiers }),
-      ),
-    )
+    // A member row names its account from the member read: the display name
+    // and login username it carries, never the opaque id.
+    const username =
+      identifiers.find((identifier) => identifier.kind === 'username')?.value ??
+      ''
     const operations = withTenant({
       listMembers: () =>
-        Promise.resolve([member({ sso_exempt: action === 'sso-cleared' })]),
+        Promise.resolve([
+          member({
+            sso_exempt: action === 'sso-cleared',
+            display_name: displayName,
+            username,
+          }),
+        ]),
       listAccounts: () =>
         Promise.resolve({
           accounts: [account({ display_name: displayName, identifiers })],
           next_cursor: '',
         }),
-      getAccount,
       removeMember: () => Promise.resolve(),
       setMemberSsoExempt: () => Promise.resolve(),
       writeMember: () => Promise.resolve(),
@@ -1602,13 +1592,9 @@ describe('InvitationsPage', () => {
         screen.getByRole('button', { name: zhCN.members.write.submit }),
       )
     } else {
-      // The row's identity cell issues the account read; wait for it to
-      // settle before the action captures the identity.
+      // The row's identity comes from the member read, so the action names
+      // the account as soon as the row renders.
       await screen.findByRole('button', { name: zhCN.members.remove })
-      await vi.waitFor(() => expect(getAccount).toHaveBeenCalled())
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0))
-      })
       if (action === 'remove') {
         await user.click(
           screen.getByRole('button', { name: zhCN.members.remove }),
@@ -1690,7 +1676,10 @@ describe('InvitationsPage', () => {
       ) {
         memberRows += 1
         return {
-          members: memberRows > 1 ? [member({ account: 'acc-2' })] : [],
+          members:
+            memberRows > 1
+              ? [member({ account: 'acc-2', display_name: 'Ada', username: 'ada' })]
+              : [],
           next_cursor: '',
         }
       }
@@ -1735,7 +1724,11 @@ describe('InvitationsPage', () => {
         }),
       ),
     ).toBeInTheDocument()
-    expect(await screen.findByText('Ada (ada)')).toBeInTheDocument()
+    // The member row renders from the member read: display name and login
+    // username in their own columns.
+    const memberSection = section(zhCN.members.title)
+    expect(await within(memberSection).findByText('Ada')).toBeInTheDocument()
+    expect(within(memberSection).getByText('ada')).toBeInTheDocument()
     expect(listReads()).toBe(2)
 
     // A refused write leaves the list as it was: no read follows it.
@@ -1750,9 +1743,8 @@ describe('InvitationsPage', () => {
     const user = userEvent.setup()
     const toggled: AdminSetMemberSSOExemptInput[] = []
     const operations = withTenant({
-      listMembers: () => Promise.resolve([member({ sso_exempt: false })]),
-      getAccount: () =>
-        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+      listMembers: () =>
+        Promise.resolve([member({ sso_exempt: false, display_name: 'Member One' })]),
       setMemberSsoExempt: (input) => {
         toggled.push(input)
         return Promise.resolve()
@@ -1940,7 +1932,8 @@ describe('InvitationsPage', () => {
     const user = userEvent.setup()
     const session = createStepUpSession()
     const operations = withTenant({
-      listMembers: () => Promise.resolve([member()]),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Operator' })]),
       setMemberSsoExempt: () =>
         Promise.reject({ status: 401, code: 'authn.sso_required' }),
     })
@@ -2040,7 +2033,8 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
-      listMembers: () => Promise.resolve([member()]),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Operator', username: '' })]),
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
@@ -2090,7 +2084,8 @@ describe('InvitationsPage', () => {
         ]),
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
-      listMembers: () => Promise.resolve([member()]),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Operator', username: '' })]),
       issueInvitation: () =>
         pending.promise.then(() => issuedInvitationFixture()),
     })
@@ -2222,9 +2217,8 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({ invitations: [], next_cursor: '' }),
-      listMembers: () => Promise.resolve([member()]),
-      getAccount: () =>
-        Promise.resolve(accountFixture({ display_name: 'Member One' })),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Member One' })]),
       writeMember: (input) => {
         written.push(input)
         return Promise.resolve()

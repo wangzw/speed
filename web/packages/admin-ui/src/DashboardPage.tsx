@@ -58,7 +58,7 @@ import { AdminAsyncSection } from './internal/async-section.js'
 import {
   AccountIdentity,
   AuditObjectIdentity,
-  isAccountIdentifierShaped,
+  isAccountObject,
 } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatInstant } from '@speed/i18n'
@@ -485,7 +485,7 @@ function DashboardWithAudit({
       // the audit query, and its copy value is withheld; anything else
       // renders as recorded.
       cellFullValue: (record) =>
-        record.object === '' || isAccountIdentifierShaped(record.object)
+        record.object === '' || isAccountObject(record.object)
           ? undefined
           : record.object,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,

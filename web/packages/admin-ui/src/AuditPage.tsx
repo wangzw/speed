@@ -68,7 +68,7 @@ import { AdminAsyncSection } from './internal/async-section.js'
 import {
   AccountIdentity,
   AuditObjectIdentity,
-  isAccountIdentifierShaped,
+  isAccountObject,
 } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { exportFileName, saveBlob } from './internal/export-file.js'
@@ -238,12 +238,12 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       header: t('audit.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
       cellWrap: 'nowrap',
-      // A value shaped like an account id resolves through the account read,
-      // and its copy control is withheld: the opaque id is not a value an
-      // operator acts on. Every other object -- a tenant alias, a role name,
-      // a permission code -- stays as recorded and copyable.
+      // An object marked as an account resolves through the account read, and
+      // its copy control is withheld: the opaque id is not a value an operator
+      // acts on. Every other object -- a session id, a tenant alias, a role
+      // name, a permission code -- stays as recorded and copyable.
       cellFullValue: (record) =>
-        record.object === '' || isAccountIdentifierShaped(record.object)
+        record.object === '' || isAccountObject(record.object)
           ? undefined
           : record.object,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,

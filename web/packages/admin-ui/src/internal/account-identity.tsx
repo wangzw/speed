@@ -26,6 +26,15 @@
  * copy instead of a spinner, so the surface is never blank. The lookup is
  * keyed by the account id, so rows sharing an account -- and any re-render --
  * reuse one cached read.
+ *
+ * An audit record's object and detail are read differently. The journal marks
+ * an object that names an account with the `account:` prefix, because an
+ * account identifier and a session identifier have the same opaque shape; only
+ * a marked object is resolved, and every other object renders as recorded. The
+ * detail keys that name an account (`account`, `on_behalf_of` and the `by` of
+ * an impersonation end or revoke) carry bare identifiers and are resolved by
+ * key. An empty actor is a system row and renders empty; a static credential
+ * subject (`static.` prefix) is a configured principal and renders as recorded.
  */
 
 import Box from '@mui/material/Box'
@@ -231,6 +240,21 @@ export function TenantAccountIdentity({
 }
 
 export function AccountIdentity({ account }: { readonly account: string }) {
+  // A system row carries no actor. It renders the empty placeholder, not the
+  // neutral copy: "no actor" and "an account that could not be resolved" are
+  // different facts.
+  if (account === '') {
+    return null
+  }
+  // A static credential subject is a configured principal, not an account the
+  // library holds: it is named as recorded and issues no account read.
+  if (isStaticPrincipal(account)) {
+    return <>{account}</>
+  }
+  return <ResolvedAccountIdentity account={account} />
+}
+
+function ResolvedAccountIdentity({ account }: { readonly account: string }) {
   const { t } = useAdminUiTranslation()
   const { name, username, refused, missing, gated } = useAccountIdentity(account)
   const label = identityLabel(name, username)
@@ -244,7 +268,7 @@ export function AccountIdentity({ account }: { readonly account: string }) {
     return <NeutralIdentity note={t('common.accountUnresolved')} />
   }
   // A 404 is "this identifier names no account (any more)", which is not a
-  // permission problem: the marker says deleted or not-an-account, never
+  // permission problem: the answer says deleted or never an account, never
   // that the viewer lacks the account read.
   if (missing) {
     return <NeutralIdentity note={t('common.accountMissing')} />
@@ -282,18 +306,41 @@ function NeutralIdentity({ note }: { readonly note?: string }) {
 }
 
 /**
- * The shape an account identifier always has: the account module creates
- * every account id as a UUID. The shape makes a value a candidate, not a
- * fact -- a session id has the same shape -- so the account read decides;
- * the shape only keeps a tenant alias, a role name or a permission code from
- * being sent to that read.
+ * The marker an audit object that names an account begins with. An object is
+ * "type + identifier" throughout the table, and an account identifier has the
+ * same opaque shape as a session's or an invitation's, so the journal states
+ * the type: this prefix, then the identifier unchanged.
  */
-const ACCOUNT_IDENTIFIER_SHAPE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const ACCOUNT_OBJECT_PREFIX = 'account:'
 
-/** Whether a value has the shape an account identifier always has. */
-export function isAccountIdentifierShaped(value: string): boolean {
-  return ACCOUNT_IDENTIFIER_SHAPE.test(value)
+/** Whether an audit object names an account. */
+export function isAccountObject(object: string): boolean {
+  return object.startsWith(ACCOUNT_OBJECT_PREFIX)
+}
+
+/**
+ * The account id an audit object names, or `undefined` when the object names
+ * something else. Only the marker decides: a UUID-shaped value that carries no
+ * marker is a session, an invitation or another identifier and is never sent
+ * to the account read.
+ */
+export function accountObjectId(object: string): string | undefined {
+  return isAccountObject(object)
+    ? object.slice(ACCOUNT_OBJECT_PREFIX.length)
+    : undefined
+}
+
+/**
+ * The prefix of a static credential subject's identifier (`static.operator`,
+ * for one). It is a principal the deployment configured, not an account the
+ * library holds, so it is named as recorded and no account read is issued for
+ * it.
+ */
+const STATIC_PRINCIPAL_PREFIX = 'static.'
+
+/** Whether an actor identifier names a configured static principal. */
+function isStaticPrincipal(value: string): boolean {
+  return value.startsWith(STATIC_PRINCIPAL_PREFIX)
 }
 
 /**
@@ -307,13 +354,17 @@ const IMPERSONATION_BY_ACTIONS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Whether one audit detail value is an account identifier. The journal writes
- * `on_behalf_of` only from an impersonating identity, so it is always an
- * account id. `by` is one only on an impersonation end or revoke; the factor
- * events carry a class there instead.
+ * Whether one audit detail value is an account identifier. `account` is the
+ * binding and membership detail key and always names an account. The journal
+ * writes `on_behalf_of` only from an impersonating identity, so it is always
+ * an account id. `by` is one only on an impersonation end or revoke; the
+ * factor events carry a class there instead.
+ *
+ * These are keyed detail fields, not objects: their values stay bare account
+ * identifiers, without the object marker.
  */
 export function auditDetailNamesAccount(action: string, key: string): boolean {
-  if (key === 'on_behalf_of') {
+  if (key === 'account' || key === 'on_behalf_of') {
     return true
   }
   if (key === 'by') {
@@ -323,21 +374,19 @@ export function auditDetailNamesAccount(action: string, key: string): boolean {
 }
 
 /**
- * One audit record's object. A value shaped like an account identifier is
- * resolved through the account read, and the read's answer decides: an
- * account renders its identity, a value the read answers 404 for is not an
- * account (a session id has the same shape) and renders as recorded. Every
- * other value -- a tenant alias, a role name, a permission code -- is not an
- * account identifier by shape and renders as recorded without a read. A
- * refusal and an absent admin face both keep the neutral copy and never the
- * recorded identifier: the value may name an account, and neither state can
- * prove it does not.
+ * One audit record's object. Only an object that starts with the account
+ * marker names an account; its remainder is the account id and is resolved
+ * through the account read. Every other object -- a session id (the same
+ * opaque shape as an account id), a tenant alias, a role name, a permission
+ * code -- renders as recorded, unchanged, with no read and no neutral
+ * fallback.
  */
 export function AuditObjectIdentity({ object }: { readonly object: string }) {
-  if (!isAccountIdentifierShaped(object)) {
+  const account = accountObjectId(object)
+  if (account === undefined) {
     return <>{object}</>
   }
-  return <AuditObjectAccount account={object} />
+  return <AuditObjectAccount account={account} />
 }
 
 function AuditObjectAccount({ account }: { readonly account: string }) {
@@ -347,16 +396,18 @@ function AuditObjectAccount({ account }: { readonly account: string }) {
   if (label !== undefined) {
     return <>{label}</>
   }
-  // The read answered "no such account", so this value does not name one.
+  // The marked object names an account the read answered 404 for: the account
+  // was deleted, or the identifier never named one. The marker says it is an
+  // account, so the recorded identifier is never shown in its place.
   if (missing) {
-    return <>{account}</>
+    return <NeutralIdentity note={t('common.accountMissing')} />
   }
   // No read was issued: the identity is unresolved for that reason, and the
-  // value may name an account, so the cell keeps the neutral copy.
+  // object names an account, so the cell keeps the neutral copy.
   if (gated) {
     return <NeutralIdentity note={t('common.accountUnresolved')} />
   }
-  // The read was refused: the value may name an account, so the cell renders
+  // The read was refused: the object names an account, so the cell renders
   // the neutral copy and never the recorded identifier.
   if (refused) {
     return <NeutralIdentity note={t('common.accountUnresolved')} />
