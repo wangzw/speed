@@ -483,7 +483,7 @@ func TestPatchIsReachableWhileImpersonating(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("audit rows = %+v, want one: a write that now reaches the account is audited", rows)
 	}
-	if row := rows[0]; row.Action != actionProfileUpdate || row.Object != string(meAccount) || row.Outcome != outcomeSuccess {
+	if row := rows[0]; row.Action != actionProfileUpdate || row.Object != "account:"+string(meAccount) || row.Outcome != outcomeSuccess {
 		t.Errorf("the audit row = %+v, want %s on the effective account %s", row, actionProfileUpdate, meAccount)
 	}
 	ids, found := r.audit.writtenUnder()
@@ -654,7 +654,7 @@ func TestPatchAuditRowIsTheCapabilitysOwn(t *testing.T) {
 		t.Fatalf("audit rows = %+v, want one", rows)
 	}
 	row := rows[0]
-	if row.Action != actionProfileUpdate || row.Object != string(meAccount) || row.Outcome != outcomeSuccess {
+	if row.Action != actionProfileUpdate || row.Object != "account:"+string(meAccount) || row.Outcome != outcomeSuccess {
 		t.Errorf("the audit row = %+v, want action %s on %s", row, actionProfileUpdate, meAccount)
 	}
 	for _, v := range row.Detail {

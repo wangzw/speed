@@ -52,7 +52,7 @@ func TestDeletingABindingAsksForTenantRoleManageAndLandsOneSuccessRow(t *testing
 	if len(rows) != 1 || rows[0].Action != actionBindingDelete || rows[0].Outcome != outcomeSuccess {
 		t.Fatalf("the audit rows = %+v, want one success row for %s", rows, actionBindingDelete)
 	}
-	if rows[0].Object != "acct-1" {
+	if rows[0].Object != "account:acct-1" {
 		t.Fatalf("the mandatory row's object = %q, want the account acct-1", rows[0].Object)
 	}
 }
@@ -223,7 +223,7 @@ func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 		t.Fatalf("the manager calls = %+v, want one PutBinding carrying role editor", got)
 	}
 	rows := r.audit.entries()
-	if len(rows) != 1 || rows[0].Object != "acct-1" {
+	if len(rows) != 1 || rows[0].Object != "account:acct-1" {
 		t.Fatalf("the mandatory row = %+v, want its object to be the account acct-1", rows)
 	}
 }

@@ -56,7 +56,7 @@ func TestARegistrationAuditRowIsWrittenUnderADerivedIdentity(t *testing.T) {
 	if got.Action != wantSignupAction {
 		t.Errorf("action = %q, want %q", got.Action, wantSignupAction)
 	}
-	if got.Object != "acct-new" {
+	if got.Object != "account:acct-new" {
 		t.Errorf("object = %q, want the account the module opened", got.Object)
 	}
 	if got.Outcome != "success" {

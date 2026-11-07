@@ -135,8 +135,8 @@ func TestRevokeEndsByIdForceAndIsIdempotent(t *testing.T) {
 			t.Errorf("the revoker is %v, want the revoker's key", endedBy)
 		}
 		rows := r.audit.entries()
-		if len(rows) != 1 || rows[0].Action != actionRevoke {
-			t.Errorf("the audit rows are %+v, want one revoke row", rows)
+		if len(rows) != 1 || rows[0].Action != actionRevoke || rows[0].Object != "account:"+string(targetID) {
+			t.Errorf("the audit rows are %+v, want one revoke row naming the target as an account object", rows)
 		}
 		events := r.bus.ofType(authn.EventImpersonationEnded)
 		if len(events) != 1 {

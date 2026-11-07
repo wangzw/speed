@@ -44,7 +44,7 @@ func (r *routes) auditSignup(c *call, account authn.AccountID, outcome string) {
 	}
 	err := r.audit.Record(ctx, audit.Entry{
 		Action:  actionSignup,
-		Object:  string(account),
+		Object:  audit.AccountObject(string(account)),
 		Outcome: outcome,
 		Detail:  map[string]string{"method": signupMethod},
 	})

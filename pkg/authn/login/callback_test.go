@@ -476,7 +476,7 @@ func TestACompletedLinkWritesItsAuditRow(t *testing.T) {
 	if len(linkRows) != 1 {
 		t.Fatalf("the audit holds %d rows of authn.binding.link, want 1: %+v", len(linkRows), sink.rows())
 	}
-	if linkRows[0].Object != "acct1" || linkRows[0].Outcome != "success" {
+	if linkRows[0].Object != "account:acct1" || linkRows[0].Outcome != "success" {
 		t.Errorf("the audit row = %+v, want object acct1 and outcome success", linkRows[0])
 	}
 	if got := linkRows[0].Detail["provider"]; got != "google" {

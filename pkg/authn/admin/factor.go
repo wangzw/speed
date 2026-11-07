@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -83,12 +84,12 @@ func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *spe
 		return nil, err
 	}
 	actionID := newActionID()
-	if err := m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+	if err := m.auditRequired(ctx, mandatory(actionAccountUpdate, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailChange: "mfa-required"})); err != nil {
 		return nil, err
 	}
 	if err := m.accountAdm.SetMFARequired(ctx, accountID, in.Required); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "changing the required flag", err)
 	}
 	return speedhttp.EmptyReply(204), nil
@@ -124,22 +125,22 @@ func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *spee
 		return nil, err
 	}
 	actionID := newActionID()
-	if err = m.auditRequired(ctx, mandatory(actionMFAReset, string(accountID),
+	if err = m.auditRequired(ctx, mandatory(actionMFAReset, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID})); err != nil {
 		return nil, err
 	}
 	hasWay, err := m.accountAdm.HasLoginWayOtherThanPasskey(ctx, accountID)
 	if err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionMFAReset, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "reading the account's ways to log in", err)
 	}
 	if !hasWay {
-		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionMFAReset, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "resetting factors", authn.ErrLastLoginMethod)
 	}
 	removed, err := m.mfa.Reset(ctx, accountID, authn.ReasonAdmin)
 	if err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionMFAReset, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "resetting factors", err)
 	}
 	return speedhttp.JSONReply(200, AuthnAdminRemoved{Removed: removed}), nil
@@ -178,13 +179,13 @@ func (m *product) handlePasswordReset(ctx context.Context, in passwordResetInput
 		return nil, err
 	}
 	actionID := newActionID()
-	if err = m.auditRequired(ctx, mandatory(actionAccountAuthReset, string(accountID),
+	if err = m.auditRequired(ctx, mandatory(actionAccountAuthReset, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID})); err != nil {
 		return nil, err
 	}
 	err = m.passwords.Set(ctx, accountID, in.Password, authn.SetPasswordOptions{MustChange: true})
 	if err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionAccountAuthReset, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionAccountAuthReset, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "resetting a password", err)
 	}
 	m.revokeAfterPassword(ctx, accountID)

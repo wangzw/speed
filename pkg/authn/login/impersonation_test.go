@@ -365,7 +365,7 @@ func TestAnImpersonatedLinkAuditNamesTheOperator(t *testing.T) {
 		t.Fatalf("the audit holds no authn.binding.link row: %+v", rows)
 	}
 	row := rows[index]
-	if row.Object != "acct-target" || row.Outcome != "success" {
+	if row.Object != "account:acct-target" || row.Outcome != "success" {
 		t.Errorf("the link row = %+v, want object acct-target and outcome success", row)
 	}
 	if row.Detail["provider"] != "google" {

@@ -1170,7 +1170,7 @@ func (r *routes) resetAudit(c *call, account authn.AccountID, channel, outcome, 
 	actx := identity.With(c.ctx, id)
 	err := r.audit.Record(actx, audit.Entry{
 		Action:  actionPasswordReset,
-		Object:  string(account),
+		Object:  audit.AccountObject(string(account)),
 		Outcome: outcome,
 		Detail:  map[string]string{"channel": channel, "action_id": actionID},
 	})

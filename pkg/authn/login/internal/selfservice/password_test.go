@@ -63,7 +63,7 @@ func TestTheHandlerDoesNotPublishThePasswordChangedEvent(t *testing.T) {
 		t.Errorf("the handler published %v", events)
 	}
 	rows := h.audit.entries()
-	if len(rows) != 1 || rows[0].Action != "authn.password.change" || rows[0].Outcome != "success" || rows[0].Object != string(account) {
+	if len(rows) != 1 || rows[0].Action != "authn.password.change" || rows[0].Outcome != "success" || rows[0].Object != "account:"+string(account) {
 		t.Errorf("audit rows = %+v, want one authn.password.change success for the account", rows)
 	}
 }

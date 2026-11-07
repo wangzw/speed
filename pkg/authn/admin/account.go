@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
@@ -296,7 +297,7 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 		return nil, err
 	}
 	actionID := newActionID()
-	if err = m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+	if err = m.auditRequired(ctx, mandatory(actionAccountUpdate, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailChange: "update"})); err != nil {
 		return nil, err
 	}
@@ -319,7 +320,7 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 func (m *product) applyPatch(ctx context.Context, id authn.AccountID, in accountPatchInput, actionID string) error {
 	done := func(err error) error {
 		if err != nil {
-			m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(id), actionID))
+			m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, audit.AccountObject(string(id)), actionID))
 		}
 		return err
 	}
@@ -399,10 +400,10 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	// transaction would survive a rollback it did not describe. A failed
 	// transaction still writes a compensation row, best effort.
 	if err := m.accountAdm.Delete(ctx, accountID, authn.ReasonAdmin); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionAccountDelete, string(accountID), newActionID()))
+		m.auditBestEffort(ctx, failedAudit(actionAccountDelete, audit.AccountObject(string(accountID)), newActionID()))
 		return m.replyFailure(ctx, "deleting an account", err)
 	}
-	m.auditBestEffort(ctx, mandatory(actionAccountDelete, string(accountID),
+	m.auditBestEffort(ctx, mandatory(actionAccountDelete, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: newActionID()}))
 	return speedhttp.EmptyReply(204), nil
 }
@@ -439,12 +440,12 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 		return nil, err
 	}
 	actionID := newActionID()
-	if err = m.auditRequired(ctx, mandatory(actionAccountDisable, string(accountID),
+	if err = m.auditRequired(ctx, mandatory(actionAccountDisable, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailChange: in.Status})); err != nil {
 		return nil, err
 	}
 	if err = m.accountAdm.SetStatus(ctx, accountID, status, authn.ReasonAdmin); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionAccountDisable, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionAccountDisable, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "changing an account's status", err)
 	}
 	account, err := m.accounts.Get(ctx, accountID)
@@ -490,13 +491,13 @@ func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput
 		return nil, err
 	}
 	actionID := newActionID()
-	if err = m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+	if err = m.auditRequired(ctx, mandatory(actionAccountUpdate, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailChange: "identifier-add"})); err != nil {
 		return nil, err
 	}
 	err = m.accountAdm.AddIdentifier(ctx, accountID, kind, in.Value, authn.Verification{Via: authn.VerifiedViaAdmin})
 	if err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "adding an identifier", err)
 	}
 	return speedhttp.EmptyReply(204), nil
@@ -526,12 +527,12 @@ func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemov
 		return nil, err
 	}
 	actionID := newActionID()
-	if err := m.auditRequired(ctx, mandatory(actionAccountUpdate, string(accountID),
+	if err := m.auditRequired(ctx, mandatory(actionAccountUpdate, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailChange: "identifier-remove"})); err != nil {
 		return nil, err
 	}
 	if err := m.accountAdm.RemoveIdentifier(ctx, accountID, in.Identifier); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionAccountUpdate, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "removing an identifier", err)
 	}
 	return speedhttp.EmptyReply(204), nil

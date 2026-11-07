@@ -353,7 +353,7 @@ func (m *product) mandatoryAudit(ctx context.Context, actor authn.Identity, r au
 	}
 	err := m.audit.Record(ctx, audit.Entry{
 		Action:  actionStart,
-		Object:  string(r.Target),
+		Object:  audit.AccountObject(string(r.Target)),
 		Outcome: outcomeGranted,
 		Purpose: strings.TrimSpace(r.Reason),
 		Detail:  startDetail(actor, r, grantID, ttl, tenantAlias),
@@ -383,7 +383,7 @@ func (m *product) failedAudit(ctx context.Context, actor authn.Identity, r authn
 	tenantAlias, _ := m.aliasOf(ctx, r.Tenant)
 	m.writeAudit(ctx, audit.Entry{
 		Action:  actionStart,
-		Object:  string(r.Target),
+		Object:  audit.AccountObject(string(r.Target)),
 		Outcome: outcomeFailed,
 		Purpose: strings.TrimSpace(r.Reason),
 		Detail:  map[string]string{detailGrantID: grantID, detailTenant: tenantAlias, detailSID: string(actor.Session())},
@@ -399,7 +399,7 @@ func (m *product) refuse(ctx context.Context, actor authn.Identity, r authn.Impe
 	tenantAlias, _ := m.aliasOf(ctx, r.Tenant)
 	m.writeAudit(ctx, audit.Entry{
 		Action:  actionStart,
-		Object:  string(r.Target),
+		Object:  audit.AccountObject(string(r.Target)),
 		Outcome: outcomeDenied,
 		Purpose: strings.TrimSpace(r.Reason),
 		Detail:  map[string]string{detailTenant: tenantAlias, detailSID: string(actor.Session())},

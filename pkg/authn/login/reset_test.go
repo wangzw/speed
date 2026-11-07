@@ -433,6 +433,12 @@ func TestResetSetsThePasswordAndRevokesTheAccountsSessions(t *testing.T) {
 		rows[1].Outcome != "success" {
 		t.Errorf("audit rows %+v, want attempted then success", rows)
 	}
+	// Both rows name the account as an account object: the type marker and the
+	// identifier, so a reader can tell it from a session or an invitation.
+	if rows[0].Object != "account:acct-ok" || rows[1].Object != "account:acct-ok" {
+		t.Errorf("audit objects %q and %q, want the account marker and acct-ok",
+			rows[0].Object, rows[1].Object)
+	}
 	if rows[0].Detail["channel"] != "email" || rows[0].Detail["action_id"] == "" ||
 		rows[0].Detail["action_id"] != rows[1].Detail["action_id"] {
 		t.Errorf("audit details %+v and %+v, want one channel and one action id", rows[0].Detail, rows[1].Detail)

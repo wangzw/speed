@@ -7,6 +7,7 @@ import (
 	"slices"
 	"unicode/utf8"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
@@ -298,7 +299,7 @@ func (m *product) handleMemberPut(ctx context.Context, in memberWriteInput, _ *s
 		return nil, m.unavailable("reading the tenant's alias", aliasErr)
 	}
 	actionID := newActionID()
-	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, string(accountID),
+	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
 		return nil, err
 	}
@@ -307,7 +308,7 @@ func (m *product) handleMemberPut(ctx context.Context, in memberWriteInput, _ *s
 		Source: source, SSOExempt: in.SSOExempt,
 	}
 	if err := m.memberships.Put(ctx, mem); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionMembershipSet, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionMembershipSet, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "writing a membership", err)
 	}
 	return speedhttp.EmptyReply(204), nil
@@ -338,12 +339,12 @@ func (m *product) handleMemberRemove(ctx context.Context, in memberAddressInput,
 		return nil, m.unavailable("reading the tenant's alias", aliasErr)
 	}
 	actionID := newActionID()
-	if err := m.auditRequired(ctx, mandatory(actionMembershipRemove, string(accountID),
+	if err := m.auditRequired(ctx, mandatory(actionMembershipRemove, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
 		return nil, err
 	}
 	if err := m.memberships.Remove(ctx, accountID, in.Tenant); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionMembershipRemove, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionMembershipRemove, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "removing a membership", err)
 	}
 	return speedhttp.EmptyReply(204), nil
@@ -383,13 +384,13 @@ func (m *product) handleMemberSSOExempt(ctx context.Context, in memberExemptInpu
 		return nil, m.unavailable("reading the tenant's alias", aliasErr)
 	}
 	actionID := newActionID()
-	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, string(accountID),
+	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailTenant: tenantAlias, detailChange: "sso-exempt"})); err != nil {
 		return nil, err
 	}
 	mem.SSOExempt = in.SSOExempt
 	if err := m.memberships.Put(ctx, mem); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionMembershipSet, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionMembershipSet, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "writing the SSO exemption", err)
 	}
 	return speedhttp.EmptyReply(204), nil

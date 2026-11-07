@@ -45,7 +45,7 @@ func TestStartBeginsAnImpersonation(t *testing.T) {
 		if len(rows) != 1 || rows[0].Action != actionStart || rows[0].Outcome != outcomeGranted {
 			t.Errorf("the audit rows are %+v, want one granted start", rows)
 		}
-		if rows[0].Object != string(targetID) || rows[0].Purpose != "a support call" {
+		if rows[0].Object != "account:"+string(targetID) || rows[0].Purpose != "a support call" {
 			t.Errorf("the granted row reads object %q purpose %q, want the target and the reason", rows[0].Object, rows[0].Purpose)
 		}
 		if rows[0].Detail[detailGrantID] != g.ID || rows[0].Detail[detailTenant] != tenantA {

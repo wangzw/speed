@@ -179,7 +179,7 @@ func (m *product) record(ctx context.Context, action, outcome string, rec authn.
 	}
 	err := m.audit.Record(ctx, audit.Entry{
 		Action:  action,
-		Object:  string(rec.Account),
+		Object:  audit.AccountObject(string(rec.Account)),
 		Outcome: outcome,
 		Detail:  detail,
 	})

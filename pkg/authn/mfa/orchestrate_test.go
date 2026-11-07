@@ -101,7 +101,7 @@ func TestARegistrationActivatesTheRowOnTheLastStepOnly(t *testing.T) {
 		}
 		entries := r.audit.entries()
 		if len(entries) != 1 || entries[0].Action != "authn.factor.enroll" || entries[0].Outcome != "success" ||
-			entries[0].Object != string(acct) || entries[0].Detail["factor_id"] != rows[0].ID || entries[0].Detail["kind"] != "totp" {
+			entries[0].Object != "account:"+string(acct) || entries[0].Detail["factor_id"] != rows[0].ID || entries[0].Detail["kind"] != "totp" {
 			t.Errorf("the audit rows are %+v, want the one best-effort enrol row", entries)
 		}
 		for k := range entries[0].Detail {

@@ -94,6 +94,24 @@ type Entry struct {
 	Detail map[string]string
 }
 
+// AccountObjectPrefix starts the object of an entry that names an account.
+//
+// An object is "type + identifier" throughout the table. An account's
+// identifier is opaque, and a reader cannot tell it from a session's or an
+// invitation's by its shape, so an entry whose object names an account states
+// the type: the prefix, then the identifier unchanged.
+const AccountObjectPrefix = "account:"
+
+// AccountObject returns the object that names the account id: the account type
+// marker followed by the identifier. An empty id yields no object at all --
+// an entry that names no account carries an empty object, not a bare marker.
+func AccountObject(id string) string {
+	if id == "" {
+		return ""
+	}
+	return AccountObjectPrefix + id
+}
+
 // Source names the capture path an entry came through.
 type Source string
 

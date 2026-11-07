@@ -122,7 +122,7 @@ func (r *routes) auditLoginOutcome(ctx context.Context, rec record, outcome stri
 	}
 	err := r.audit.Record(ctx, audit.Entry{
 		Action:  actionLogin,
-		Object:  rec.Account,
+		Object:  audit.AccountObject(rec.Account),
 		Outcome: outcome,
 		Detail:  map[string]string{"method": rec.Method, "delivery": rec.Delivery},
 	})
@@ -156,7 +156,7 @@ func (r *routes) auditLogin(c *call, rec record, account authn.AccountID, sessio
 	actx := identity.With(base, id)
 	err := r.audit.Record(actx, audit.Entry{
 		Action:  actionLogin,
-		Object:  string(account),
+		Object:  audit.AccountObject(string(account)),
 		Outcome: "success",
 		Detail:  map[string]string{"method": rec.Method, "delivery": rec.Delivery},
 	})
@@ -248,7 +248,7 @@ func (r *routes) auditBindingLink(c *call, rec record, provider string) {
 	}
 	err := r.audit.Record(r.flowAuditContext(base, rec), audit.Entry{
 		Action:  actionBindingLink,
-		Object:  string(account),
+		Object:  audit.AccountObject(string(account)),
 		Outcome: outcomeSuccess,
 		Detail:  detail,
 	})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
@@ -79,13 +80,13 @@ func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, 
 		return nil, err
 	}
 	actionID := newActionID()
-	if err = m.auditRequired(ctx, mandatory(actionServiceKeyCreate, string(accountID),
+	if err = m.auditRequired(ctx, mandatory(actionServiceKeyCreate, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID})); err != nil {
 		return nil, err
 	}
 	secretID, secret, err := m.accountAdm.CreateServiceSecret(ctx, accountID, in.Label, in.ExpiresAt)
 	if err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionServiceKeyCreate, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionServiceKeyCreate, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "creating a service secret", err)
 	}
 	expires := time.Time{}
@@ -125,12 +126,12 @@ func (m *product) handleSecretRevoke(ctx context.Context, in secretRevokeInput, 
 		return nil, err
 	}
 	actionID := newActionID()
-	if err := m.auditRequired(ctx, mandatory(actionServiceKeyRevoke, string(accountID),
+	if err := m.auditRequired(ctx, mandatory(actionServiceKeyRevoke, audit.AccountObject(string(accountID)),
 		map[string]string{detailActionID: actionID, detailSecretID: in.Secret})); err != nil {
 		return nil, err
 	}
 	if err := m.accountAdm.RevokeServiceSecret(ctx, accountID, in.Secret); err != nil {
-		m.auditBestEffort(ctx, failedAudit(actionServiceKeyRevoke, string(accountID), actionID))
+		m.auditBestEffort(ctx, failedAudit(actionServiceKeyRevoke, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "revoking a service secret", err)
 	}
 	return speedhttp.EmptyReply(204), nil

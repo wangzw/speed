@@ -185,7 +185,7 @@ func TestASecondFactorRefusalWritesOneRowForTheAccount(t *testing.T) {
 	if row.entry.Outcome != "failure" {
 		t.Errorf("outcome = %q, want failure", row.entry.Outcome)
 	}
-	if row.entry.Object != "acct1" {
+	if row.entry.Object != "account:acct1" {
 		t.Errorf("object = %q, want the account the first factor proved", row.entry.Object)
 	}
 	expectDetail(t, row, "password", deliverySession)

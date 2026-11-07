@@ -113,7 +113,7 @@ func TestUnlinkingRotatesRevokesTheOthersAndPublishes(t *testing.T) {
 		t.Errorf("payload = %+v", events[0].Payload)
 	}
 	rows := h.audit.entries()
-	if len(rows) != 1 || rows[0].Action != "authn.binding.unlink" || rows[0].Outcome != "success" || rows[0].Object != string(account) || rows[0].Detail["provider"] != "oidc" {
+	if len(rows) != 1 || rows[0].Action != "authn.binding.unlink" || rows[0].Outcome != "success" || rows[0].Object != "account:"+string(account) || rows[0].Detail["provider"] != "oidc" {
 		t.Errorf("audit rows = %+v", rows)
 	}
 	if v, ok := cookieValue(w, "sid"); !ok || v != "rotated-token" {

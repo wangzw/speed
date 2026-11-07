@@ -266,7 +266,7 @@ func (m *product) compensate(ctx context.Context, g authn.ImpersonationGrant, ca
 	tenantAlias, _ := m.aliasOf(ctx, g.Tenant)
 	m.writeAudit(ctx, audit.Entry{
 		Action:  actionStart,
-		Object:  string(g.Target),
+		Object:  audit.AccountObject(string(g.Target)),
 		Outcome: outcomeFailed,
 		Purpose: g.Reason,
 		Detail:  map[string]string{detailGrantID: g.ID, detailTenant: tenantAlias, detailSID: string(g.SessionID)},

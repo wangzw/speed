@@ -31,7 +31,7 @@ func (p *product) auditProfile(ctx context.Context, account authn.AccountID) {
 	}
 	err := p.audit.Record(ctx, audit.Entry{
 		Action:  actionProfileUpdate,
-		Object:  string(account),
+		Object:  audit.AccountObject(string(account)),
 		Outcome: outcomeSuccess,
 		Detail:  map[string]string{detailChange: changeProfile},
 	})

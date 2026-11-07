@@ -272,7 +272,7 @@ func (r *routes) record(ctx context.Context, action, outcome string, account aut
 	}
 	err := r.deps.Audit.Record(ctx, audit.Entry{
 		Action:  action,
-		Object:  string(account),
+		Object:  audit.AccountObject(string(account)),
 		Outcome: outcome,
 		Detail:  detail,
 	})

@@ -3,6 +3,7 @@ package tenantadmin
 import (
 	"context"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authz"
 )
 
@@ -125,7 +126,7 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionBindingPut, in.Account, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionBindingPut, audit.AccountObject(in.Account), map[string]string{
 		detailActionID: actionID,
 		detailTenant:   tenantAlias,
 		detailAccount:  in.Account,
@@ -135,7 +136,7 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 	}
 	binding := authz.Binding{Tenant: in.Tenant, Account: in.Account, Role: role}
 	if err := p.manager.PutBinding(ctx, binding); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionBindingPut, in.Account, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionBindingPut, audit.AccountObject(in.Account), actionID))
 		return struct{}{}, p.failureOf("writing a binding", err)
 	}
 	return struct{}{}, nil
@@ -170,7 +171,7 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionBindingDelete, in.Account, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionBindingDelete, audit.AccountObject(in.Account), map[string]string{
 		detailActionID: actionID,
 		detailTenant:   tenantAlias,
 		detailAccount:  in.Account,
@@ -179,7 +180,7 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 		return struct{}{}, err
 	}
 	if err := p.manager.DeleteBinding(ctx, in.Tenant, in.Account, role); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionBindingDelete, in.Account, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionBindingDelete, audit.AccountObject(in.Account), actionID))
 		return struct{}{}, p.failureOf("deleting a binding", err)
 	}
 	return struct{}{}, nil

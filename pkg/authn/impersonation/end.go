@@ -109,7 +109,7 @@ func (m *product) endTrail(ctx context.Context, g authn.ImpersonationGrant, acti
 	}
 	m.writeAudit(ctx, audit.Entry{
 		Action:  action,
-		Object:  string(g.Target),
+		Object:  audit.AccountObject(string(g.Target)),
 		Outcome: outcomeSuccess,
 		Purpose: reason,
 		Detail:  detail,

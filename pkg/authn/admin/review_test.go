@@ -28,6 +28,18 @@ func auditHas(t *testing.T, r *rig, action, outcome string) bool {
 	return false
 }
 
+// auditNamesObject reports whether the recorded audit holds a row of action
+// whose object is object.
+func auditNamesObject(t *testing.T, r *rig, action, object string) bool {
+	t.Helper()
+	for _, e := range r.audit.entries() {
+		if e.Action == action && e.Object == object {
+			return true
+		}
+	}
+	return false
+}
+
 // identifiersIn collects the distinct values the rows carry under key, so a case
 // can tell rows linked by one identifier from rows carrying several.
 func identifiersIn(rows []audit.Entry, key string) map[string]bool {
@@ -945,6 +957,22 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 	mem.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/"+string(userID), map[string]any{"active": true}, fresh()...)
 	if !auditHas(t, mem, actionMembershipSet, outcomeSuccess) {
 		t.Error("the membership write wrote no row named authn.membership.set")
+	}
+	// The row names the account as an account object: the type marker and the
+	// identifier, so a reader does not mistake it for the session or tenant
+	// alias another row of the table carries.
+	if !auditNamesObject(t, mem, actionMembershipSet, audit.AccountObject(string(userID))) {
+		t.Errorf("the membership row does not name the account object %q: %+v",
+			audit.AccountObject(string(userID)), mem.audit.entries())
+	}
+
+	// An account administration write names the account the same way.
+	upd := newRig(t)
+	upd.do(http.MethodPatch, "/api/v1/system/auth/accounts/"+string(userID),
+		map[string]any{"display_name": "Ada"}, fresh()...)
+	if !auditNamesObject(t, upd, actionAccountUpdate, audit.AccountObject(string(userID))) {
+		t.Errorf("the account-update row does not name the account object %q: %+v",
+			audit.AccountObject(string(userID)), upd.audit.entries())
 	}
 	sess := newRig(t)
 	sess.sessions.put(authn.SessionInfo{ID: sessionA, Account: userID, Kind: authn.SessionBrowser})
