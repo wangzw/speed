@@ -426,15 +426,14 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         .locator('tbody tr')
         .filter({ hasText: EXISTING_MEMBER })
       await expect(existing).toHaveCount(1)
-      // The member read supplies the name, and the account column beside it
-      // names the member through the account read by display name and login
-      // username. The internal account id the read carries is not what the
-      // column shows.
+      // The member read supplies both columns: the display name under its own
+      // header and the login username under the username header. The internal
+      // account id the read carries is not what either column shows.
       await expect(existing.locator('td').nth(nameColumn)).toHaveText(
         EXISTING_MEMBER,
       )
       await expect(existing.locator('td').nth(usernameColumn)).toHaveText(
-        `${EXISTING_MEMBER} (${EXISTING_MEMBER_USERNAME})`,
+        EXISTING_MEMBER_USERNAME,
       )
       await expect(existing.locator('td').nth(sourceColumn)).toHaveText(
         copy('adminUi', 'members.source.admin'),
@@ -976,8 +975,10 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       await expect(invited.locator('td').nth(nameColumn)).toHaveText(
         reviewInvitee.displayName,
       )
+      // The Username column carries the member read's login username, not
+      // the composed identity: the header names exactly that value.
       await expect(invited.locator('td').nth(usernameColumn)).toHaveText(
-        `${reviewInvitee.displayName} (${reviewInvitee.username})`,
+        reviewInvitee.username,
       )
       await expect(invited.locator('td').nth(sourceColumn)).toHaveText(
         copy('adminUi', 'members.source.invite'),

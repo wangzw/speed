@@ -636,15 +636,36 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // The login that opened this session records the operator's account as
     // its object. The row names that account by identity in both the object
     // and the actor cell, never by the opaque identifier the export keeps.
+    // Background statement rows can push the login off the first page, so the
+    // action filter brings it into view; the reset returns to the full list.
+    await page
+      .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
+      .fill('authn.login')
+    await page
+      .getByRole('button', {
+        name: copy('adminUi', 'audit.filters.apply'),
+        exact: true,
+      })
+      .click()
     const loginRow = table
       .getByRole('link', { name: 'authn.login', exact: true })
+      .first()
       .locator('xpath=ancestor::tr[1]')
-    await expect(loginRow).toHaveCount(1)
+    await expect(loginRow).toBeVisible()
     await expect(
       loginRow.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
         exact: true,
       }),
     ).toHaveCount(2)
+
+    await page
+      .getByRole('button', {
+        name: copy('adminUi', 'audit.filters.reset'),
+        exact: true,
+      })
+      .click()
+    await expect(writeLink).toBeVisible()
+
     const outcome = (
       (await writeRow.getByRole('cell').last().textContent()) ?? ''
     ).trim()
