@@ -847,7 +847,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .filter({ hasText: ROLE })
       await expect(bound).toHaveCount(1)
       await expect(
-        bound.getByText(OPERATOR.displayName, { exact: true }),
+        bound.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+          exact: true,
+        }),
       ).toBeVisible()
       await expect(bound.getByText(ROLE, { exact: true })).toBeVisible()
     })
@@ -953,7 +955,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
       await expect(
-        row.getByText(OPERATOR.displayName, { exact: true }),
+        row.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+          exact: true,
+        }),
       ).toBeVisible()
       await expect(row).toContainText(EXPECTED_EXPIRY)
 

@@ -30,16 +30,21 @@
  * WHAT THE TWO FILES PROVE. The list is paged by cursor and the export is not
  * a page: the spec walks every page the list offers, keeps each row's record
  * id (from the row's own detail link) together with the action, object,
- * outcome, the raw actor its cell carries as a full value, and the time it
+ * outcome, the raw actor the list read answers for that id, and the time it
  * renders, and then requires the exported NDJSON lines to be the same set of
  * ids -- same count, same action, same object, same outcome and, per id, the
- * same raw actor the row carries (whose visible text resolves to the
- * operator's display name) -- and the second file to be exactly the narrowed
- * list's set and a strict subset of the first. Both sequences must read
- * newest first, and the downloaded name must name the export instant inside
- * the window around the click. Reading the downloaded file is a named read of
- * the file the browser saved; the spec writes nothing and opens no other
- * channel.
+ * same raw actor the read answered -- and the second file to be exactly the
+ * narrowed list's set and a strict subset of the first. Both sequences must
+ * read newest first, and the downloaded name must name the export instant
+ * inside the window around the click. Reading the downloaded file is a named
+ * read of the file the browser saved; the spec writes nothing and opens no
+ * other channel.
+ *
+ * THE ROW NAMES THE ACTOR, THE FILE KEEPS ITS KEY. The audit list renders an
+ * actor as the account's display name and login username, never as the opaque
+ * account id; the export is data and keeps the id. The raw actor is therefore
+ * learned from the list response the page itself received, and each row is
+ * also asserted not to render it.
  *
  * DISCLOSURE. The second half of REQ-platform-admin-112 -- a caller without
  * audit.read must be refused the export -- is not reachable through the UI: an
@@ -126,8 +131,8 @@ const AUDIT_LIST_PATH = '/api/v1/system/audit/records'
 interface ListedRecord {
   readonly id: string
   readonly outcome: string
-  /** The raw actor the row's cell carries as its full value (the DataTable's
-   * `title` and copy control), which is what the export must repeat. */
+  /** The raw actor the list read answers for this id, which is what the
+   * export must repeat. The row itself renders the readable identity. */
   readonly actor: string
   /** The row's rendered time parsed back to an instant. The render drops
    * sub-minute precision, so two rows of one minute compare equal. */
@@ -374,16 +379,63 @@ async function rowRecordId(row: Locator): Promise<string> {
 }
 
 /**
+ * The raw actor each audit record id answers in the list read, learned from the
+ * response the page itself receives. The console renders the readable identity
+ * and never the id, so this is where the value the export repeats is learned.
+ */
+interface RawActors {
+  readonly of: (id: string) => Promise<string>
+}
+
+/** Observe the audit page's own list reads and answer the raw actor per id. */
+function observeRawActors(page: Page): RawActors {
+  const actors = new Map<string, string>()
+  page.on('response', (response) => {
+    if (response.request().method() !== 'GET' || !response.ok()) {
+      return
+    }
+    if (new URL(response.url()).pathname !== AUDIT_LIST_PATH) {
+      return
+    }
+    response
+      .json()
+      .then(
+        (body: {
+          readonly entries: readonly {
+            readonly id: string
+            readonly actor: string
+          }[]
+        }) => {
+          for (const entry of body.entries) actors.set(entry.id, entry.actor)
+        },
+      )
+      .catch(() => undefined)
+  })
+  return {
+    of: async (id: string) => {
+      await expect
+        .poll(() => actors.get(id) ?? '', {
+          timeout: 15_000,
+          message: `the audit list read never answered the actor of record ${id}`,
+        })
+        .not.toBe('')
+      return actors.get(id) ?? ''
+    },
+  }
+}
+
+/**
  * Walk every page the applied filter matches, asserting what each rendered row
  * says and returning the id, outcome, raw actor and time of every row. The
- * rows must read newest first across the pages, and the actor cell must carry
- * the raw identity the export repeats, not only the readable name it renders.
- * The first page of a match longer than a page must be exactly the page size
- * the page asked for; the later pages carry the rest.
+ * rows must read newest first across the pages, the actor cell must render the
+ * readable identity, and the raw id the export repeats must appear nowhere in
+ * that cell. The first page of a match longer than a page must be exactly the
+ * page size the page asked for; the later pages carry the rest.
  */
 async function collectListedRecords(
   page: Page,
   pageSize: number,
+  rawActors: RawActors,
 ): Promise<readonly ListedRecord[]> {
   const listed: ListedRecord[] = []
   const seen = new Set<string>()
@@ -412,13 +464,15 @@ async function collectListedRecords(
 
       // The rendered row repeats the export's action, object, actor and
       // outcome: the action is the link's own name, the object is the key on
-      // screen, the actor resolves to the operator's display name, and exactly
-      // one of the two outcome texts is present.
+      // screen, the actor resolves to the operator's display name and login
+      // username, and exactly one of the two outcome texts is present.
       await expect(
         row.getByText(SETTING_KEY, { exact: true }),
       ).toBeVisible()
       await expect(
-        row.getByText(OPERATOR.displayName, { exact: true }),
+        row.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+          exact: true,
+        }),
       ).toBeVisible()
       const failed = await row
         .getByText(FAILED, { exact: true })
@@ -442,22 +496,16 @@ async function collectListedRecords(
       }
       previousInstant = occurredAt
 
-      // The actor cell's full value is the raw identity the export carries;
-      // the visible text is only the resolved display name. Both channels of
-      // the cell (its title and the copy control's name) must carry the same
-      // raw value, so the export comparison below binds to a real identity
-      // rather than to whatever the export happens to name.
+      // The actor cell renders the readable identity; the raw actor the
+      // export carries is the list read's value for this id and must not
+      // appear in the cell's text or any attribute.
       const actorCell = cells.nth(actorColumn)
-      const actor = await actorCell.getAttribute('title')
-      if (actor === null || actor === '') {
-        throw new Error(`audit row ${id} carries no actor full value`)
-      }
-      await expect(
-        actorCell.getByRole('button', {
-          name: copy('uiKit', 'dataTable.copyValue', { value: actor }),
-          exact: true,
-        }),
-      ).toBeVisible()
+      const actor = await rawActors.of(id)
+      const renderedActor = await actorCell.evaluate((element) => element.outerHTML)
+      expect(
+        renderedActor,
+        `audit row ${id} rendered the raw actor ${actor}`,
+      ).not.toContain(actor)
 
       listed.push({
         id,
@@ -608,6 +656,11 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
   demo,
 }) => {
   const { page, server } = demo
+
+  // The console renders an actor's readable identity, never the raw value the
+  // export repeats; the page's own list reads are where the raw values are
+  // learned.
+  const rawActors = observeRawActors(page)
 
   // The page's requested page size, observed from the list request the audit
   // page issues. It is read before the saves so the run makes one page's worth
@@ -915,7 +968,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
 
     // The match is longer than one page, and the pager offers the next one.
     await expect(nextPageButton(page)).toBeEnabled()
-    firstListed = await collectListedRecords(page, pageSize)
+    firstListed = await collectListedRecords(page, pageSize, rawActors)
     expect(firstListed.length).toBeGreaterThan(pageSize)
     expect(firstListed.filter((record) => record.outcome === FAILED)).toHaveLength(1)
   })
@@ -939,14 +992,14 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
       expect(record.action).toBe(SETTINGS_SET)
       expect(record.object).toBe(SETTING_KEY)
       expect(record.outcome).toBe(listed?.outcome)
-      // The export's actor is the raw identity the list row for this same id
-      // carries, whose visible text resolved to the operator's display name --
+      // The export's actor is the raw value the list read answered for this
+      // same id, whose row rendered the operator's display name and username --
       // so the file names the operator, not merely any one account.
       expect(record.actor).toBe(listed?.actor)
     }
 
     // Every record names one and the same non-empty actor: the operator who
-    // made the writes the list rendered under that display name.
+    // made the writes the list rendered under that identity.
     const actors = new Set(firstExport.map((record) => record.actor))
     expect(actors.size).toBe(1)
     const [actor] = [...actors]
@@ -980,7 +1033,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     // Applying resets the list to its first page; the narrowed match fits on
     // that one page.
     await expect(previousPageButton(page)).toBeDisabled({ timeout: 15_000 })
-    const secondListed = await collectListedRecords(page, pageSize)
+    const secondListed = await collectListedRecords(page, pageSize, rawActors)
     expect(secondListed).toHaveLength(FIRST_PHASE_SAVES)
     expect(secondListed.filter((record) => record.outcome === FAILED)).toHaveLength(0)
     await expect(nextPageButton(page)).toBeDisabled()

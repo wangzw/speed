@@ -14,7 +14,7 @@
  */
 import { expect, type Locator, type Page } from '@playwright/test'
 
-import { copy } from './i18n'
+import { copy, copyPattern } from './i18n'
 
 /** The tenant home's heading. */
 export function homeHeading(page: Page): Locator {
@@ -249,11 +249,16 @@ export function memberRow(page: Page, displayName: string): Locator {
     .filter({ has: page.getByText(displayName, { exact: true }) })
 }
 
-/** One member row's Manage control, named after the member. */
-export function manageMemberButton(page: Page, name: string): Locator {
-  return membersSection(page).getByRole('button', {
-    name: copy('adminUi', 'members.manageAria', { name }),
-    exact: true,
+/**
+ * One member row's Manage control. The row is found by the display name it
+ * shows, and the control's accessible name is matched against the bundle's
+ * sentence with its variable left open: the product names the member by the
+ * composed display-name and username label, which this helper does not
+ * reproduce. A control whose sentence moved still fails here.
+ */
+export function manageMemberButton(page: Page, displayName: string): Locator {
+  return memberRow(page, displayName).getByRole('button', {
+    name: copyPattern('adminUi', 'members.manageAria', { name: '[^"]*' }),
   })
 }
 
@@ -354,6 +359,109 @@ export async function columnIndex(
 /** The cell at `index` in one table row. */
 export function cell(row: Locator, index: number): Locator {
   return row.locator('td').nth(index)
+}
+
+/**
+ * The account identifiers the page's own tenant reads answer, for the leak
+ * assertions below. The console resolves a member's or an inviter's identity
+ * from the read it already makes, so those responses are where the internal
+ * account ids are learned: the pages must never render them. The collection is
+ * passive -- it listens to the product's own reads and issues none.
+ */
+export interface TenantAccountIdReads {
+  /** Wait for every read seen so far to finish parsing and answer its ids. */
+  readonly settled: () => Promise<readonly string[]>
+}
+
+/** One tenant member row's identity fields, as the read answers them. */
+interface MemberReadRow {
+  readonly account: string
+}
+
+/** One invitation row's issuer, as the read answers it. */
+interface InvitationReadRow {
+  readonly invited_by: string
+}
+
+/**
+ * Collect the account ids from the member and invitation reads the page makes
+ * for `tenant`. The invitation issuer is empty for a host command, which names
+ * no account and therefore contributes nothing.
+ */
+export function collectTenantAccountIds(
+  page: Page,
+  tenant: string,
+): TenantAccountIdReads {
+  const ids = new Set<string>()
+  const pending: Promise<unknown>[] = []
+  const membersPath = `/api/v1/tenants/${tenant}/members`
+  const invitationsPath = `/api/v1/tenants/${tenant}/invitations`
+  page.on('response', (response) => {
+    if (response.request().method() !== 'GET' || !response.ok()) {
+      return
+    }
+    const path = new URL(response.url()).pathname
+    if (path === membersPath) {
+      pending.push(
+        response
+          .json()
+          .then((body: { readonly members: readonly MemberReadRow[] }) => {
+            for (const member of body.members) ids.add(member.account)
+          })
+          .catch(() => undefined),
+      )
+      return
+    }
+    if (path === invitationsPath) {
+      pending.push(
+        response
+          .json()
+          .then((body: { readonly invitations: readonly InvitationReadRow[] }) => {
+            for (const invitation of body.invitations) {
+              if (invitation.invited_by !== '') ids.add(invitation.invited_by)
+            }
+          })
+          .catch(() => undefined),
+      )
+    }
+  })
+  return {
+    settled: async () => {
+      // A read may answer while the previous batch is still parsing, so wait
+      // until no new one arrived during a pass.
+      for (;;) {
+        const seen = pending.length
+        await Promise.all(pending)
+        if (seen === pending.length) break
+      }
+      return [...ids]
+    },
+  }
+}
+
+/**
+ * Assert that a rendered surface carries none of `accountIds` in its text or
+ * any attribute value. `outerHTML` is the whole of what the browser renders for
+ * the element: text nodes, attribute values and every descendant. An empty id
+ * list is a harness error rather than a vacuous pass -- a page whose reads
+ * answered no account would otherwise satisfy the assertion without evidence.
+ */
+export async function expectNoAccountIds(
+  scope: Locator,
+  accountIds: readonly string[],
+): Promise<void> {
+  if (accountIds.length === 0) {
+    throw new Error(
+      'no account identifiers were read, so the leak assertion has nothing to look for',
+    )
+  }
+  const rendered = await scope.evaluate((element) => element.outerHTML)
+  for (const id of accountIds) {
+    expect(
+      rendered,
+      `the surface rendered the account identifier ${id}`,
+    ).not.toContain(id)
+  }
 }
 
 /** The tenant switcher's trigger, named by the current organization. */

@@ -663,7 +663,9 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
         ).toBeVisible()
         await expect(row.getByText(SETTING_KEY, { exact: true })).toBeVisible()
         await expect(
-          row.getByText(OPERATOR.displayName, { exact: true }),
+          row.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+            exact: true,
+          }),
         ).toBeVisible()
         await expect(row.getByText('success', { exact: true })).toBeVisible()
       }
@@ -721,7 +723,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       ).toHaveText('success')
       await expect(
         fieldValue(page, copy('adminUi', 'auditDetail.field.actor')),
-      ).toHaveText(OPERATOR.displayName)
+      ).toHaveText(`${OPERATOR.displayName} (${OPERATOR.username})`)
       await expect(
         fieldValue(page, copy('adminUi', 'auditDetail.field.tenant')),
       ).toHaveText(copy('adminUi', 'common.emptyValue'))

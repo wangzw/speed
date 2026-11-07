@@ -76,8 +76,11 @@
  * ascending order are not exercised by this spec.
  *
  * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts. The only non-UI read is the operator's email verification
- * code from the review process log (fixtures/log.ts).
+ * helpers/i18n.ts. The operator's email verification code comes from the
+ * review process log (fixtures/log.ts). The page's own member and invitation
+ * reads are also observed: their account identifiers must never appear on the
+ * rendered page, so the test learns the values from the responses the page
+ * itself received and asserts neither section carries one.
  */
 // @journey journey-invitation-to-tenant.md
 // @covers REQ-platform-admin-001, REQ-platform-admin-032, REQ-platform-admin-033, REQ-signin-030, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-035, REQ-tenancy-043, REQ-tenancy-057, REQ-tenancy-058
@@ -93,6 +96,10 @@ import {
   organizationRow,
 } from '../helpers/account-menu'
 import { copy, copyKey } from '../helpers/i18n'
+import {
+  collectTenantAccountIds,
+  expectNoAccountIds,
+} from '../helpers/organization-admin'
 import { switchToTenant } from '../helpers/switch-tenant'
 
 // The admin's invitation table has a low-priority expiry column, and the
@@ -113,6 +120,9 @@ const TENANT = 'acme'
 
 /** The member the tenant already holds before the journey starts. */
 const EXISTING_MEMBER = 'Demo Member'
+
+/** The existing member's login username, as the review seed writes it. */
+const EXISTING_MEMBER_USERNAME = 'member'
 
 /**
  * The expiry the operator types into the issue form: two days out, truncated
@@ -287,6 +297,9 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
   browser,
 }) => {
   const { page, server, accounts } = demo
+  // The account ids the invitations page reads must never reach the rendered
+  // page; this collects them from the product's own reads.
+  const accountIds = collectTenantAccountIds(page, TENANT)
   let inviteeContext: BrowserContext | undefined
   let inviteePage: Page | undefined
   let acceptanceLink = ''
@@ -401,9 +414,9 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         members,
         copy('adminUi', 'members.column.displayName'),
       )
-      const accountColumn = await columnIndex(
+      const usernameColumn = await columnIndex(
         members,
-        copy('adminUi', 'members.column.account'),
+        copy('adminUi', 'members.column.username'),
       )
       const sourceColumn = await columnIndex(
         members,
@@ -413,15 +426,24 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         .locator('tbody tr')
         .filter({ hasText: EXISTING_MEMBER })
       await expect(existing).toHaveCount(1)
-      // The member read supplies the name, and the account identifier keeps its
-      // own column beside it.
+      // The member read supplies the name, and the identity column beside it
+      // names the member by display name and login username. The internal
+      // account id the read carries is not what the column shows.
       await expect(existing.locator('td').nth(nameColumn)).toHaveText(
         EXISTING_MEMBER,
       )
-      await expect(existing.locator('td').nth(accountColumn)).not.toBeEmpty()
+      await expect(existing.locator('td').nth(usernameColumn)).toHaveText(
+        `${EXISTING_MEMBER} (${EXISTING_MEMBER_USERNAME})`,
+      )
       await expect(existing.locator('td').nth(sourceColumn)).toHaveText(
         copy('adminUi', 'members.source.admin'),
       )
+
+      // Both sections are read from the same tenant read that answers the ids;
+      // neither may render one of them in its text or any attribute.
+      const ids = await accountIds.settled()
+      await expectNoAccountIds(invitationSection(page), ids)
+      await expectNoAccountIds(memberSection(page), ids)
     })
 
     await test.step('step 2: the operator invites the address with an expiry and sees the confirmation', async () => {
@@ -613,7 +635,9 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         pending.getByText(reviewInvitee.identifier, { exact: true }),
       ).toBeVisible()
       await expect(
-        pending.getByText(OPERATOR.displayName, { exact: true }),
+        pending.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+          exact: true,
+        }),
       ).toBeVisible()
       // The typed expiry is the instant the list renders, not the default.
       await expect(pending).toContainText(EXPECTED_EXPIRY)
@@ -932,6 +956,10 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         members,
         copy('adminUi', 'members.column.displayName'),
       )
+      const usernameColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.username'),
+      )
       const sourceColumn = await columnIndex(
         members,
         copy('adminUi', 'members.column.source'),
@@ -947,12 +975,21 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       await expect(invited.locator('td').nth(nameColumn)).toHaveText(
         reviewInvitee.displayName,
       )
+      await expect(invited.locator('td').nth(usernameColumn)).toHaveText(
+        `${reviewInvitee.displayName} (${reviewInvitee.username})`,
+      )
       await expect(invited.locator('td').nth(sourceColumn)).toHaveText(
         copy('adminUi', 'members.source.invite'),
       )
       await expect(invited.locator('td').nth(activeColumn)).toHaveText(
         copy('adminUi', 'members.activeYes'),
       )
+
+      // The refreshed reads answered the new member's account id as well; the
+      // page still renders none of them.
+      const ids = await accountIds.settled()
+      await expectNoAccountIds(invitationSection(page), ids)
+      await expectNoAccountIds(memberSection(page), ids)
     })
   } finally {
     // The invitee context holds its own cookie session; closing it keeps a

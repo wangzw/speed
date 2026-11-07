@@ -701,7 +701,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     ).toHaveText(outcome)
     await expect(
       fieldValue(page, copy('adminUi', 'auditDetail.field.actor')),
-    ).toHaveText(OPERATOR.displayName)
+    ).toHaveText(`${OPERATOR.displayName} (${OPERATOR.username})`)
     await expect(
       fieldValue(page, copy('adminUi', 'auditDetail.field.tenant')),
     ).toHaveText(copy('adminUi', 'common.emptyValue'))

@@ -83,9 +83,11 @@
  * path or a different refusal, so those assertions could not fail on them.
  *
  * Expected copy is read from the shipped en-US locale bundles through
- * helpers/i18n.ts. The one non-UI read is the SMS code the review carrier
- * writes to the process log (fixtures/log.ts), as on every journey that
- * verifies a code.
+ * helpers/i18n.ts. The SMS code the review carrier writes to the process log
+ * (fixtures/log.ts) is read as on every journey that verifies a code. The
+ * accounts page's own roster read is observed for the operator's account id,
+ * which the audit actor filter still takes and the page never renders; the
+ * target is chosen through the account picker by a login name instead.
  */
 // @journey journey-impersonation-for-support.md
 // @covers REQ-platform-admin-001, REQ-platform-admin-003, REQ-platform-admin-021, REQ-platform-admin-022, REQ-platform-admin-023, REQ-platform-admin-024, REQ-platform-admin-027, REQ-platform-admin-029, REQ-platform-admin-078, REQ-platform-admin-081, REQ-platform-admin-082, REQ-platform-admin-084, REQ-platform-admin-109, REQ-platform-admin-110, REQ-security-014, REQ-security-015, REQ-tenancy-024, REQ-tenancy-038
@@ -116,8 +118,12 @@ const OPERATOR = {
   displayName: 'Demo Operator',
 } as const
 
-/** The seeded target: an enabled, unprotected member of acme, not the operator. */
-const TARGET = { displayName: 'Demo Member' } as const
+/**
+ * The seeded target: an enabled, unprotected member of acme, not the operator.
+ * Its login username is the seed's `member` identifier; the console renders
+ * the composed `Demo Member (member)` label.
+ */
+const TARGET = { displayName: 'Demo Member', username: 'member' } as const
 
 /** The tenant the impersonation is confined to. */
 const TENANT = 'acme'
@@ -225,7 +231,7 @@ function tenantSelector(page: Page): Locator {
 
 /** The impersonation page's start form controls. */
 function targetField(page: Page): Locator {
-  return page.getByRole('textbox', {
+  return page.getByRole('combobox', {
     name: copy('adminUi', 'impersonations.start.accountLabel'),
     exact: true,
   })
@@ -249,35 +255,59 @@ function startButton(page: Page): Locator {
   })
 }
 
-/** The admin's account list and one row's full account identifier.
- *
- * The list's identifier column renders only a short prefix, but each row's
- * manage control carries the whole identifier in its accessible name
- * (`accounts.manageAria`), so the identifier is read off the rendered row
- * rather than from any data channel. */
-function accountRow(page: Page, displayName: string): Locator {
-  return page.getByRole('row').filter({ hasText: displayName })
+/**
+ * The target account's rendered identity label: the display name with the
+ * login username beside it, which is how every console surface names it.
+ */
+function targetLabel(): string {
+  return `${TARGET.displayName} (${TARGET.username})`
 }
 
-async function accountIdOf(page: Page, displayName: string): Promise<string> {
-  const managePrefix = copy('adminUi', 'accounts.manageAria', {
-    id: '__ACCOUNT_ID__',
-  }).split('__ACCOUNT_ID__')[0] ?? ''
-  const row = accountRow(page, displayName)
-  await expect(row).toHaveCount(1)
-  const label = await row
-    .getByRole('button', { name: managePrefix })
-    .getAttribute('aria-label')
-  if (label === null || !label.startsWith(managePrefix)) {
-    throw new Error(
-      `the accounts row for ${displayName} carries no identifier in its manage control`,
-    )
+/**
+ * Choose the impersonation target through the account picker. The operator
+ * identifies an account by a login name it can read; the picker searches the
+ * roster and hands the chosen row's internal id to the request. The caller
+ * re-runs this after a status read remounts the form, because a remount drops
+ * the selection with the draft.
+ */
+async function chooseTarget(page: Page): Promise<void> {
+  const field = targetField(page)
+  await field.click()
+  await field.fill(TARGET.username)
+  await page
+    .getByRole('option', { name: new RegExp(escapeRegExp(TARGET.displayName)) })
+    .click()
+}
+
+/**
+ * Wait for the accounts page's own roster read and answer the account id of
+ * the row carrying `displayName`. The page never renders that id -- it names
+ * accounts by their display name and username -- but the audit actor filter
+ * still takes one, so the test learns the value from the response the page
+ * itself received.
+ */
+async function accountIdFromRoster(
+  page: Page,
+  displayName: string,
+): Promise<string> {
+  const response = await page.waitForResponse(
+    (candidate) =>
+      candidate.request().method() === 'GET' &&
+      new URL(candidate.url()).pathname === '/api/v1/system/auth/accounts',
+    { timeout: 30_000 },
+  )
+  expect(response.ok()).toBe(true)
+  const body = (await response.json()) as {
+    readonly accounts: readonly {
+      readonly display_name: string
+      readonly id: string
+    }[]
   }
-  const id = label.slice(managePrefix.length).trim()
-  if (id === '') {
-    throw new Error(`the accounts row for ${displayName} carries an empty identifier`)
+  const row = body.accounts.find((account) => account.display_name === displayName)
+  if (row === undefined) {
+    throw new Error(`the account roster carries no row named ${displayName}`)
   }
-  return id
+  return row.id
 }
 
 /** Escape the characters a regular expression reads as syntax. */
@@ -307,7 +337,6 @@ test('impersonation-for-support: the operator acts as a member and the record an
 
   const { page, server, accounts } = demo
   let operatorAccountId = ''
-  let targetAccountId = ''
 
   await test.step('precondition: the operator signs in with the password and the authenticator code', async () => {
     // The password step parks the login on its second factor; the operator has
@@ -409,10 +438,12 @@ test('impersonation-for-support: the operator acts as a member and the record an
   })
 
   await test.step('step 2: the target organization and account are chosen, and the start is submitted', async () => {
-    // The start form takes the target's account identifier, so the operator
-    // looks it up the way the admin exposes it: the accounts page's own
-    // rows. The operator's identifier is read from the same list for the
-    // audit filter later.
+    // The target is chosen through the account picker, by a login name the
+    // operator can read. The audit actor filter still takes an account id, so
+    // the operator's id is learned from the roster read the accounts page
+    // makes on the way to the impersonation page; the id is never rendered.
+    const operatorIdRead = accountIdFromRoster(page, OPERATOR.displayName)
+    const targetIdRead = accountIdFromRoster(page, TARGET.displayName)
     await adminNav(page)
       .getByRole('link', {
         name: copy('adminUi', 'accounts.title'),
@@ -426,9 +457,10 @@ test('impersonation-for-support: the operator acts as a member and the record an
         exact: true,
       }),
     ).toBeVisible()
-    operatorAccountId = await accountIdOf(page, OPERATOR.displayName)
-    targetAccountId = await accountIdOf(page, TARGET.displayName)
-    expect(targetAccountId).not.toBe(operatorAccountId)
+    operatorAccountId = await operatorIdRead
+    // The target is a different account from the operator, which is the
+    // requirement the start form's roster check leaves to the server.
+    expect(await targetIdRead).not.toBe(operatorAccountId)
 
     await adminNav(page)
       .getByRole('link', {
@@ -446,7 +478,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
 
     await tenantSelector(page).click()
     await page.getByRole('option', { name: TENANT, exact: true }).click()
-    await targetField(page).fill(targetAccountId)
+    await chooseTarget(page)
     await expect(startButton(page)).toBeEnabled()
 
     // The TTL is left empty on purpose: the server's default lifetime is what
@@ -472,7 +504,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
 
     /** Re-enter the probe; the status re-read may have remounted the form. */
     const submitProbe = async (): Promise<void> => {
-      await targetField(page).fill(targetAccountId)
+      await chooseTarget(page)
       await reasonField(page).fill(OVERLONG_REASON)
       await expect(startButton(page)).toBeEnabled()
       await startButton(page).click({ timeout: 3_000 })
@@ -554,7 +586,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
       // The form is re-entered for the same reason as in the wait above: the
       // status read may have remounted it. The target and the corrected
       // reason are the body the gate must replay.
-      await targetField(page).fill(targetAccountId)
+      await chooseTarget(page)
       await reasonField(page).fill(REASON)
       await expect(startButton(page)).toBeEnabled()
       await startButton(page).click({ timeout: 3_000 })
@@ -606,11 +638,12 @@ test('impersonation-for-support: the operator acts as a member and the record an
     const notice = banner(page)
     await expect(notice).toBeVisible()
 
-    // The banner names the target, the grant's tenant, the planned end, and
-    // the management restriction; its end control is the way out.
+    // The banner names the target by display name and username together, the
+    // grant's tenant, the planned end, and the management restriction; its end
+    // control is the way out.
     await expect(notice).toContainText(
       copy('authUi', 'impersonation.actingAs', {
-        subject: TARGET.displayName,
+        subject: targetLabel(),
       }),
     )
     await expect(notice).toContainText(
@@ -822,11 +855,15 @@ test('impersonation-for-support: the operator acts as a member and the record an
     const rows = table.locator('tbody tr')
     await expect(rows).toHaveCount(1)
     const record = rows.first()
+    // The actor and target cells name the accounts by display name and login
+    // username together, never by the recorded account id.
     await expect(
-      record.getByText(OPERATOR.displayName, { exact: true }),
+      record.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+        exact: true,
+      }),
     ).toBeVisible()
     await expect(
-      record.getByText(TARGET.displayName, { exact: true }),
+      record.getByText(targetLabel(), { exact: true }),
     ).toBeVisible()
     await expect(record.getByText(TENANT, { exact: true })).toBeVisible()
     await expect(
@@ -894,8 +931,9 @@ test('impersonation-for-support: the operator acts as a member and the record an
       }),
     ).toBeVisible()
 
-    // The end row names the operator as the actor, the target account as the
-    // object, the grant's tenant, and carries the session in its detail.
+    // The end row names the operator as the actor and the target account as
+    // the object, both by display name and login username; the account ids the
+    // record carries never reach the page.
     await expect(
       fieldValue(page, copy('adminUi', 'auditDetail.field.action')),
     ).toHaveText(ACTION_END)
@@ -904,10 +942,10 @@ test('impersonation-for-support: the operator acts as a member and the record an
     ).toHaveText('success')
     await expect(
       fieldValue(page, copy('adminUi', 'auditDetail.field.actor')),
-    ).toHaveText(OPERATOR.displayName)
+    ).toHaveText(`${OPERATOR.displayName} (${OPERATOR.username})`)
     await expect(
       fieldValue(page, copy('adminUi', 'auditDetail.field.object')),
-    ).toHaveText(targetAccountId)
+    ).toHaveText(targetLabel())
     await expect(
       fieldValue(page, copy('adminUi', 'auditDetail.field.purpose')),
     ).toHaveText(copy('adminUi', 'common.emptyValue'))
@@ -956,10 +994,12 @@ test('impersonation-for-support: the operator acts as a member and the record an
     await expect(auditTable.locator('tbody tr')).toHaveCount(1)
     const startRow = auditTable.locator('tbody tr').first()
     await expect(
-      startRow.getByText(OPERATOR.displayName, { exact: true }),
+      startRow.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
+        exact: true,
+      }),
     ).toBeVisible()
     await expect(
-      startRow.getByText(targetAccountId, { exact: true }),
+      startRow.getByText(targetLabel(), { exact: true }),
     ).toBeVisible()
     await expect(
       startRow.getByText('granted', { exact: true }),

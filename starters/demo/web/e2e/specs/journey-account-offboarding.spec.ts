@@ -73,7 +73,7 @@ import {
   selectAccountSection,
 } from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
-import { copy } from '../helpers/i18n'
+import { copy, copyPattern } from '../helpers/i18n'
 import { switchToTenant } from '../helpers/switch-tenant'
 import { totpCode } from '../helpers/totp'
 
@@ -152,34 +152,24 @@ function memberRow(page: Page): Locator {
     .filter({ hasText: MEMBER.displayName })
 }
 
-/** The manage-control label prefix of an account row. */
-function managePrefix(): string {
-  return (
-    copy('adminUi', 'accounts.manageAria', { id: '__ACCOUNT_ID__' }).split(
-      '__ACCOUNT_ID__',
-    )[0] ?? ''
-  )
+/**
+ * The detail panel's accessible name for the member this journey acts on: the
+ * console names an account by its display name and login username together,
+ * never by the opaque account id.
+ */
+function detailTitle(): string {
+  return `${MEMBER.displayName} (${MEMBER.identifier})`
 }
 
-/** The full identifier the row's manage control carries in its name. */
-async function accountIdOf(row: Locator): Promise<string> {
-  const prefix = managePrefix()
-  const label = await row
-    .getByRole('button', { name: prefix })
-    .getAttribute('aria-label')
-  if (label === null || !label.startsWith(prefix)) {
-    throw new Error('the account row carries no identifier in its manage control')
-  }
-  const id = label.slice(prefix.length).trim()
-  if (id === '') {
-    throw new Error('the account row carries an empty identifier')
-  }
-  return id
-}
-
-/** The detail panel's accessible name for one account. */
-function detailTitle(id: string): string {
-  return copy('adminUi', 'accounts.detail.title', { id })
+/**
+ * The account row's manage control. Its accessible name is the bundle's
+ * sentence with the composed identity label left open, because the label is a
+ * rendering rule this helper does not reproduce.
+ */
+function manageButton(row: Locator): Locator {
+  return row.getByRole('button', {
+    name: copyPattern('adminUi', 'accounts.manageAria', { name: '[^"]*' }),
+  })
 }
 
 /**
@@ -311,7 +301,6 @@ test('account-offboarding: an operator disables a member and the member returns 
   let memberBContext: BrowserContext | undefined
   let memberAPage: Page | undefined
   let memberBPage: Page | undefined
-  let memberId = ''
 
   try {
     await test.step('precondition: the operator signs in with a factor, and the member holds two sessions', async () => {
@@ -460,9 +449,8 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toBeVisible()
 
-      memberId = await accountIdOf(row)
-      await row.getByRole('button', { name: managePrefix() }).click()
-      const dialog = page.getByRole('dialog', { name: detailTitle(memberId) })
+      await manageButton(row).click()
+      const dialog = page.getByRole('dialog', { name: detailTitle() })
       await expect(dialog).toBeVisible()
       await expect(
         statusLine(dialog, copy('adminUi', 'accounts.status.active')),
@@ -470,7 +458,7 @@ test('account-offboarding: an operator disables a member and the member returns 
     })
 
     await test.step('step 3: the operator saves the account as disabled, and the detail and the list show it', async () => {
-      const dialog = page.getByRole('dialog', { name: detailTitle(memberId) })
+      const dialog = page.getByRole('dialog', { name: detailTitle() })
       await dialog
         .getByRole('combobox', {
           name: copy('adminUi', 'accounts.status.label'),
@@ -625,8 +613,8 @@ test('account-offboarding: an operator disables a member and the member returns 
       // opened again and the status moved back.
       const row = memberRow(page)
       await expect(row).toHaveCount(1)
-      await row.getByRole('button', { name: managePrefix() }).click()
-      const dialog = page.getByRole('dialog', { name: detailTitle(memberId) })
+      await manageButton(row).click()
+      const dialog = page.getByRole('dialog', { name: detailTitle() })
       await expect(dialog).toBeVisible()
       await expect(
         statusLine(dialog, copy('adminUi', 'accounts.status.disabled')),

@@ -921,10 +921,14 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
       .locator('tbody tr')
       .filter({ hasText: EMPLOYEE_DISPLAY_NAME })
     await expect(accountRow).toHaveCount(1)
-    // The row's secondary line is the account's first identifier, which is the
-    // username the create named; the address remains on record beside it.
+    // The identity cell names the account by display name and login username
+    // together, which is the username the create named; the address remains on
+    // record beside it and the internal id is never rendered.
     await expect(
-      accountRow.getByText(EMPLOYEE_USERNAME, { exact: true }),
+      accountRow.getByText(
+        `${EMPLOYEE_DISPLAY_NAME} (${EMPLOYEE_USERNAME})`,
+        { exact: true },
+      ),
     ).toBeVisible()
 
     const writeMembership = async (tenant: string): Promise<void> => {
@@ -1525,8 +1529,13 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
     await openAdminPage(page, 'accounts.title')
     const opened = accountRow(page, CLAIM_DISPLAY_NAME)
     await expect(opened).toHaveCount(1)
-    // The account's first identifier is the username the claim supplied, which
-    // is also the personal tenant's alias asserted above.
-    await expect(opened.getByText(CLAIM_USERNAME, { exact: true })).toBeVisible()
+    // The identity cell names the account by the display name and the username
+    // the claim supplied, which is also the personal tenant's alias asserted
+    // above; the internal id is never rendered.
+    await expect(
+      opened.getByText(`${CLAIM_DISPLAY_NAME} (${CLAIM_USERNAME})`, {
+        exact: true,
+      }),
+    ).toBeVisible()
   })
 })

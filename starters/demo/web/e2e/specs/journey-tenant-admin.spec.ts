@@ -81,10 +81,12 @@
  * module's own catalog, because that is the string the mail carrier renders.
  * The only non-UI reads are the email verification code and the impersonation
  * step-up SMS code from the review process log, the invitation mail line the
- * review carrier writes when a notice is delivered, and the organization
- * profile read whose answer the profile page renders: the owner's internal
- * account identifier never appears on the page, so the test that proves its
- * absence learns the value from the response the page itself received.
+ * review carrier writes when a notice is delivered, and the responses the
+ * pages themselves receive: the organization profile read, whose owner
+ * account identifier never appears on the page, and the tenant's member and
+ * invitation reads, whose account identifiers the identity surfaces must
+ * likewise never render. Those tests learn the values from the response the
+ * page itself received and assert the rendered surface carries neither.
  */
 // @journey journey-tenant-admin.md
 // @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenant-admin-068, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-060, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
@@ -121,8 +123,10 @@ import { copy, copyKey, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 import {
   cell,
+  collectTenantAccountIds,
   columnIndex,
   domainsSection,
+  expectNoAccountIds,
   escapeRegExp,
   expectOrganizationEntryAbsent,
   expectOrganizationEntryPresent,
@@ -151,6 +155,13 @@ import {
 
 /** The seeded business tenant the organization surface acts on. Its id is its alias. */
 const TENANT = 'acme'
+
+/**
+ * The template's ordinary member's login username. The review seed writes the
+ * account as a username with no separate email identifier, so the member read
+ * answers this value.
+ */
+const ORDINARY_MEMBER_USERNAME = 'member'
 
 /** The non-builtin role the administrator creates. */
 const ROLE = 'Support'
@@ -231,16 +242,18 @@ async function openMemberPanel(page: Page, displayName: string): Promise<Locator
   return panel
 }
 
-/** Close one member's management panel through its close control. */
-async function closeMemberPanel(
-  page: Page,
-  displayName: string,
-): Promise<void> {
+/**
+ * Close one member's management panel through its close control. The control
+ * is named by the member's composed identity label, which this helper leaves
+ * open; the panel itself is matched by its own title.
+ */
+async function closeMemberPanel(page: Page): Promise<void> {
   const panel = memberPanel(page)
   await panel
     .getByRole('button', {
-      name: copy('adminUi', 'members.panel.closeAria', { name: displayName }),
-      exact: true,
+      name: copyPattern('adminUi', 'members.panel.closeAria', {
+        name: '[^"]*',
+      }),
     })
     .click()
   await expect(panel).toHaveCount(0)
@@ -262,41 +275,30 @@ async function chooseInvitationStatus(
     .click()
 }
 
-/** The account's display name as the admin's accounts row carries it. */
-function accountManagePrefix(): string {
-  return (
-    copy('adminUi', 'accounts.manageAria', { id: '__ACCOUNT_ID__' }).split(
-      '__ACCOUNT_ID__',
-    )[0] ?? ''
-  )
-}
-
-/** Read one account's full identifier off its admin accounts row. */
-async function accountIdOf(page: Page, displayName: string): Promise<string> {
-  const prefix = accountManagePrefix()
-  const row = page.getByRole('row').filter({ hasText: displayName })
-  await expect(row).toHaveCount(1)
-  const label = await row
-    .getByRole('button', { name: prefix })
-    .getAttribute('aria-label')
-  if (label === null || !label.startsWith(prefix)) {
-    throw new Error(
-      `the accounts row for ${displayName} carries no identifier in its manage control`,
-    )
-  }
-  const id = label.slice(prefix.length).trim()
-  if (id === '') {
-    throw new Error(`the accounts row for ${displayName} carries an empty identifier`)
-  }
-  return id
-}
-
 /** The impersonation page's start controls. */
 function targetField(page: Page): Locator {
-  return page.getByRole('textbox', {
+  return page.getByRole('combobox', {
     name: copy('adminUi', 'impersonations.start.accountLabel'),
     exact: true,
   })
+}
+
+/**
+ * Choose the impersonation target through the account picker. The operator
+ * identifies an account by a login name it can read, never by the internal id:
+ * the field searches the account roster and hands the chosen row's id to the
+ * request. The caller re-runs this after a status read remounts the form,
+ * because a remount drops the selection with the draft.
+ */
+async function chooseImpersonationTarget(page: Page): Promise<void> {
+  const field = targetField(page)
+  await field.click()
+  await field.fill(reviewTenantAdmin.username)
+  await page
+    .getByRole('option', {
+      name: new RegExp(escapeRegExp(reviewTenantAdmin.displayName)),
+    })
+    .click()
 }
 function reasonField(page: Page): Locator {
   return page.getByRole('textbox', {
@@ -448,10 +450,13 @@ test.describe('the tenant administrator manages the organization', () => {
     test.setTimeout(600_000)
 
     const { page, server, accounts } = demo
+    // The account ids the organization surface reads must never reach the
+    // rendered page; this collects them from the product's own reads so the
+    // assertions below can look for them.
+    const accountIds = collectTenantAccountIds(page, TENANT)
     let inviteeContext: BrowserContext | undefined
     let inviteePage: Page | undefined
     let acceptanceLink = ''
-    let tenantAdminAccount = ''
     let inviteeAccount = ''
 
     try {
@@ -496,9 +501,9 @@ test.describe('the tenant administrator manages the organization', () => {
           table,
           copy('adminUi', 'members.column.displayName'),
         )
-        const accountColumn = await columnIndex(
+        const usernameColumn = await columnIndex(
           table,
-          copy('adminUi', 'members.column.account'),
+          copy('adminUi', 'members.column.username'),
         )
         const rolesColumn = await columnIndex(
           table,
@@ -525,11 +530,11 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(admin, nameColumn)).toHaveText(
           reviewTenantAdmin.displayName,
         )
-        tenantAdminAccount = (await cell(admin, accountColumn).innerText()).trim()
-        expect(
-          tenantAdminAccount,
-          'the member row carried no account identifier',
-        ).not.toBe('')
+        // The identity cell names the member by display name and login
+        // username together; the internal account id is not what it shows.
+        await expect(cell(admin, usernameColumn)).toHaveText(
+          `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+        )
         await expect(cell(admin, rolesColumn)).toContainText('tenant-admin')
         await expect(cell(admin, statusColumn)).toHaveText(
           copy('adminUi', 'members.status.active'),
@@ -543,6 +548,9 @@ test.describe('the tenant administrator manages the organization', () => {
         // nothing from another tenant is.
         const ordinary = memberRow(page, reviewOrdinaryMember.displayName)
         await expect(ordinary).toHaveCount(1)
+        await expect(cell(ordinary, usernameColumn)).toHaveText(
+          `${reviewOrdinaryMember.displayName} (${ORDINARY_MEMBER_USERNAME})`,
+        )
         await expect(cell(ordinary, rolesColumn)).toHaveText(
           copy('adminUi', 'members.roles.none'),
         )
@@ -552,6 +560,13 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(ordinary, sourceColumn)).toHaveText(
           copy('adminUi', 'members.source.admin'),
         )
+
+        // The organization surface resolves every identity from its own member
+        // read; neither section renders the account ids that read carries, in
+        // visible text or in any attribute.
+        const ids = await accountIds.settled()
+        await expectNoAccountIds(invitationsSection(page), ids)
+        await expectNoAccountIds(membersSection(page), ids)
       })
 
       await test.step('step 4: the member search narrows the list and distinguishes an empty search', async () => {
@@ -782,7 +797,10 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toBeVisible()
         await expect(
-          row.getByText(reviewTenantAdmin.displayName, { exact: true }),
+          row.getByText(
+            `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+            { exact: true },
+          ),
         ).toBeVisible()
         const expiryColumn = await columnIndex(
           invitationsSection(page).getByRole('table'),
@@ -968,9 +986,9 @@ test.describe('the tenant administrator manages the organization', () => {
         // The member table gained the colleague, active, role-less and
         // invitation-sourced.
         const table = membersSection(page).getByRole('table')
-        const accountColumn = await columnIndex(
+        const usernameColumn = await columnIndex(
           table,
-          copy('adminUi', 'members.column.account'),
+          copy('adminUi', 'members.column.username'),
         )
         const rolesColumn = await columnIndex(
           table,
@@ -986,10 +1004,12 @@ test.describe('the tenant administrator manages the organization', () => {
         )
         const joined = memberRow(page, reviewInvitee.displayName)
         await expect(joined).toHaveCount(1)
-        inviteeAccount = (await cell(joined, accountColumn).innerText()).trim()
-        expect(inviteeAccount, 'the joined member carried no account').not.toBe(
-          '',
+        // The account cell is the displayed identity label, which the member
+        // panel's own notices repeat below.
+        await expect(cell(joined, usernameColumn)).toHaveText(
+          `${reviewInvitee.displayName} (${reviewInvitee.username})`,
         )
+        inviteeAccount = (await cell(joined, usernameColumn).innerText()).trim()
         await expect(cell(joined, sourceColumn)).toHaveText(
           copy('adminUi', 'members.source.invite'),
         )
@@ -999,6 +1019,12 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(cell(joined, rolesColumn)).toHaveText(
           copy('adminUi', 'members.roles.none'),
         )
+
+        // The refreshed page read the new member's account id with the rest of
+        // the roster; no section renders it.
+        const ids = await accountIds.settled()
+        await expectNoAccountIds(invitationsSection(page), ids)
+        await expectNoAccountIds(membersSection(page), ids)
       })
 
       await test.step('step 10: the administrator creates a described role, grants and revokes a governed permission, and reads the usage', async () => {
@@ -1212,7 +1238,10 @@ test.describe('the tenant administrator manages the organization', () => {
           ),
         ).toBeVisible()
         await expect(
-          usage.getByText(reviewTenantAdmin.displayName, { exact: true }),
+          usage.getByText(
+            `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+            { exact: true },
+          ),
         ).toBeVisible()
         await expect(usage.getByRole('button', { name: /bind/i })).toHaveCount(
           0,
@@ -1251,6 +1280,12 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
+
+        // The panel names the member by display name and username; the account
+        // id its row record carries appears nowhere in the dialog, text or
+        // attributes.
+        const ids = await accountIds.settled()
+        await expectNoAccountIds(panel, ids)
 
         // REQ-tenant-admin-030 / REQ-tenant-admin-051: bind the role.
         await chooseRole(panel)
@@ -1312,7 +1347,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await chooseRole(panel)
         await bindRole(panel)
         await expect(bindingRow(panel, ROLE)).toHaveCount(1)
-        await closeMemberPanel(page, reviewInvitee.displayName)
+        await closeMemberPanel(page)
 
         const table = membersSection(page).getByRole('table')
         const rolesColumn = await columnIndex(
@@ -1395,7 +1430,7 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toBeDisabled()
 
-        await closeMemberPanel(page, reviewInvitee.displayName)
+        await closeMemberPanel(page)
         await expect(
           cell(memberRow(page, reviewInvitee.displayName), statusColumn),
         ).toHaveText(copy('adminUi', 'members.status.suspended'))
@@ -1425,7 +1460,7 @@ test.describe('the tenant administrator manages the organization', () => {
             { exact: true },
           ),
         ).toBeVisible()
-        await closeMemberPanel(page, reviewInvitee.displayName)
+        await closeMemberPanel(page)
         await expect(
           cell(memberRow(page, reviewInvitee.displayName), statusColumn),
         ).toHaveText(copy('adminUi', 'members.status.active'))
@@ -1465,7 +1500,7 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toBeVisible()
 
-        await closeMemberPanel(page, reviewTenantAdmin.displayName)
+        await closeMemberPanel(page)
       })
 
       await test.step('step 14: removing the member clears them from the list after the double confirmation', async () => {
@@ -2387,25 +2422,6 @@ test.describe('an impersonated session hides the organization', () => {
       await adminEntry(page).click()
       await expect(adminNavigation(page)).toBeVisible()
 
-      // The target's identifier is read off the admin's own accounts table.
-      await adminNavigation(page)
-        .getByRole('link', {
-          name: copy('adminUi', 'accounts.title'),
-          exact: true,
-        })
-        .click()
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('adminUi', 'accounts.title'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      const targetAccountId = await accountIdOf(
-        page,
-        reviewTenantAdmin.displayName,
-      )
-
       await adminNavigation(page)
         .getByRole('link', {
           name: copy('adminUi', 'impersonations.title'),
@@ -2427,7 +2443,7 @@ test.describe('an impersonated session hides the organization', () => {
         })
         .click()
       await page.getByRole('option', { name: TENANT, exact: true }).click()
-      await targetField(page).fill(targetAccountId)
+      await chooseImpersonationTarget(page)
       await reasonField(page).fill(IMPERSONATION_REASON)
       await expect(startButton(page)).toBeEnabled()
 
@@ -2438,7 +2454,7 @@ test.describe('an impersonated session hides the organization', () => {
       await expect(async () => {
         if (await dialog.isVisible()) return
         if (await homeHeading(page).isVisible()) return
-        await targetField(page).fill(targetAccountId)
+        await chooseImpersonationTarget(page)
         await reasonField(page).fill(IMPERSONATION_REASON)
         await startButton(page).click({ timeout: 3_000 })
         throw new Error('the impersonation start has not answered yet')
@@ -3225,8 +3241,9 @@ async function bindMemberRole(
   ).toBeVisible()
   await panel
     .getByRole('button', {
-      name: copy('adminUi', 'members.panel.closeAria', { name: displayName }),
-      exact: true,
+      name: copyPattern('adminUi', 'members.panel.closeAria', {
+        name: '[^"]*',
+      }),
     })
     .click()
   await expect(panel).toHaveCount(0)
