@@ -1164,7 +1164,7 @@ export function AccountsPage({
                     {t('accounts.detail.displayNameLine', {
                       value:
                         settled.display_name === ''
-                          ? t('common.accountUnavailable')
+                          ? t('common.emptyValue')
                           : settled.display_name,
                     })}
                   </Typography>

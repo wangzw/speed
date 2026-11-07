@@ -361,6 +361,44 @@ describe('AccountsPage', () => {
     expect(within(panel).getByText(zhCN.accounts.detail.usernameLine.replace('{{value}}', 'ada'))).toBeInTheDocument()
     expect(within(panel).queryByText(UUID)).toBeNull()
   })
+
+  it('shows the empty placeholder for a missing display name, not the unavailable copy', async () => {
+    const user = userEvent.setup()
+    const row = account({ display_name: '' })
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: () =>
+          Promise.resolve({ accounts: [row], next_cursor: '' }),
+        getAccount: () => Promise.resolve(row),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    fireEvent.change(screen.getByLabelText(zhCN.accounts.displayNamePrefixLabel), {
+      target: { value: 'ada' },
+    })
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
+    // The account has a username but no display name, so the row reads the
+    // username alone. Its detail panel must not claim the account is
+    // unavailable: the missing display name is an empty field, not a failed
+    // resolution.
+    const identity = await screen.findByText('ada')
+    const rowElement = identity.closest('tr') as HTMLElement
+    await user.click(
+      within(rowElement).getByRole('button', {
+        name: fill(zhCN.accounts.manageAria, { name: 'ada' }),
+      }),
+    )
+    const panel = await screen.findByRole('dialog', { name: 'ada' })
+    expect(
+      within(panel).getByText(
+        fill(zhCN.accounts.detail.displayNameLine, {
+          value: zhCN.common.emptyValue,
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(within(panel).queryByText(zhCN.common.accountUnavailable)).toBeNull()
+    expect(within(panel).queryByText(UUID)).toBeNull()
+  })
 })
 
 describe('ImpersonationsPage', () => {
