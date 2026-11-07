@@ -156,8 +156,8 @@ func TestTheRoleBindingPageReportsIdentityAndCursors(t *testing.T) {
 	active := true
 	inactive := false
 	r.identities.answer(map[string]authz.AccountIdentity{
-		"acct-1": {DisplayName: "Alice", Active: active},
-		"acct-2": {DisplayName: "Bob", Active: inactive},
+		"acct-1": {DisplayName: "Alice", Username: "alice", Active: active},
+		"acct-2": {DisplayName: "Bob", Username: "bob", Active: inactive},
 	})
 	e := r.engine()
 
@@ -178,6 +178,12 @@ func TestTheRoleBindingPageReportsIdentityAndCursors(t *testing.T) {
 	}
 	if page.Bindings[0].Account != "acct-1" || page.Bindings[0].DisplayName != "Alice" {
 		t.Errorf("the first row = %+v, want acct-1 named Alice", page.Bindings[0])
+	}
+	if page.Bindings[0].Username != "alice" {
+		t.Errorf("the first row's username = %q, want the account's username", page.Bindings[0].Username)
+	}
+	if page.Bindings[1].Username != "bob" {
+		t.Errorf("the second row's username = %q, want the account's username", page.Bindings[1].Username)
 	}
 	if page.Bindings[0].Active == nil || !*page.Bindings[0].Active {
 		t.Errorf("the first row's active = %v, want true", page.Bindings[0].Active)
@@ -204,8 +210,8 @@ func TestTheRoleBindingPageReportsIdentityAndCursors(t *testing.T) {
 	if page.NextCursor != "" {
 		t.Errorf("the last page's next_cursor = %q, want empty", page.NextCursor)
 	}
-	if page.Bindings[0].DisplayName != "" || page.Bindings[0].Active != nil {
-		t.Errorf("an account the reader does not know = %+v, want an empty name and a null activity", page.Bindings[0])
+	if page.Bindings[0].DisplayName != "" || page.Bindings[0].Username != "" || page.Bindings[0].Active != nil {
+		t.Errorf("an account the reader does not know = %+v, want an empty name, an empty username and a null activity", page.Bindings[0])
 	}
 
 	calls := r.manager.recorded()
@@ -251,6 +257,9 @@ func TestTheRoleBindingPageWithoutAnIdentityReader(t *testing.T) {
 	}
 	if row.DisplayName != "" {
 		t.Errorf("the row's display name = %q, want empty with no identity reader", row.DisplayName)
+	}
+	if row.Username != "" {
+		t.Errorf("the row's username = %q, want empty with no identity reader", row.Username)
 	}
 	if row.Active != nil {
 		t.Errorf("the row's active = %v, want null with no identity reader", row.Active)

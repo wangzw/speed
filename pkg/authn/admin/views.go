@@ -143,6 +143,7 @@ type AuthnAdminMember struct {
 
 	Account     string    `json:"account" required:"true" description:"The member account's identifier."`
 	DisplayName string    `json:"display_name" required:"true" description:"The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none."`
+	Username    string    `json:"username" required:"true" description:"The account's login username: unique, user-facing, and not an identifier of the account. The empty string when the account has none; it is never a fallback to another login identifier."`
 	Tenant      string    `json:"tenant" required:"true" description:"The tenant's alias."`
 	Active      bool      `json:"active" required:"true" description:"True when the membership is in force; false means suspended, which reads as not a member."`
 	SSOExempt   bool      `json:"sso_exempt" required:"true" description:"True when the member is exempt from the tenant's enforced SSO requirement."`

@@ -121,11 +121,16 @@
             "description": "When the binding was written, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
+          },
+          "username": {
+            "description": "The account's login username, as the host's account identity reader reports it: unique, user-facing, and not an identifier of the account. Empty when the assembly delivers no identity reader or the account has none; it is never a fallback to another login identifier.",
+            "type": "string"
           }
         },
         "required": [
           "account",
           "display_name",
+          "username",
           "granted_at"
         ],
         "type": "object"

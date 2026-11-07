@@ -14,7 +14,7 @@ import (
 // for a tenant: the alias the request surface uses, never the internal
 // identifier.
 func TestTheTenantViewsNameTheAlias(t *testing.T) {
-	member := memberViewOf(authn.Membership{Account: "acct-1", Tenant: "t1"}, "", nil, "acme")
+	member := memberViewOf(authn.Membership{Account: "acct-1", Tenant: "t1"}, "", "", nil, "acme")
 	if member.Tenant != "acme" {
 		t.Errorf("the member view names %q, want the alias acme", member.Tenant)
 	}

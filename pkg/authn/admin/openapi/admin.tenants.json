@@ -53,11 +53,16 @@
           "tenant": {
             "description": "The tenant's alias.",
             "type": "string"
+          },
+          "username": {
+            "description": "The account's login username: unique, user-facing, and not an identifier of the account. The empty string when the account has none; it is never a fallback to another login identifier.",
+            "type": "string"
           }
         },
         "required": [
           "account",
           "display_name",
+          "username",
           "tenant",
           "active",
           "sso_exempt",

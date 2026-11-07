@@ -1902,6 +1902,8 @@ export interface AuthnAdminMember {
   sso_exempt: boolean;
   /** The tenant's alias. */
   tenant: string;
+  /** The account's login username: unique, user-facing, and not an identifier of the account. The empty string when the account has none; it is never a fallback to another login identifier. */
+  username: string;
 }
 
 /**
@@ -2060,6 +2062,8 @@ export interface AuthzTenantAdminRoleBindingView {
   display_name: string;
   /** When the binding was written, as an RFC 3339 instant in UTC. */
   granted_at: string;
+  /** The account's login username, as the host's account identity reader reports it: unique, user-facing, and not an identifier of the account. Empty when the assembly delivers no identity reader or the account has none; it is never a fallback to another login identifier. */
+  username: string;
 }
 
 /**

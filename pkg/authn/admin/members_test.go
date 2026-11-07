@@ -60,6 +60,88 @@ func TestTheMemberViewCarriesTheAccountDisplayName(t *testing.T) {
 	}
 }
 
+// TestTheMemberViewCarriesTheAccountUsername holds that a member row carries the
+// account's login username, found among the identifiers by kind and never by
+// position, and the empty string when the account carries none. An account
+// whose only identifier is an email has no username: an email is never a
+// stand-in. The username is the user-facing name the workspace surface shows, so
+// it must never be the account identifier.
+func TestTheMemberViewCarriesTheAccountUsername(t *testing.T) {
+	r := newRig(t)
+	r.accounts.put(userID, authn.Account{
+		Kind: authn.KindUser, Status: authn.StatusActive, DisplayName: "Ada Lovelace",
+	})
+	// The email is written first, so an implementation that names the account by
+	// identifiers[0] answers the email instead of the username.
+	r.accounts.putIdentifiers(userID,
+		authn.Identifier{Kind: authn.IdentifierEmail, Value: "ada@example.com"},
+		authn.Identifier{Kind: authn.IdentifierUsername, Value: "ada"},
+	)
+	emailOnly := authn.AccountID("member-with-email-only")
+	r.accounts.put(emailOnly, authn.Account{
+		Kind: authn.KindUser, Status: authn.StatusActive, DisplayName: "Email Only",
+	})
+	r.accounts.putIdentifiers(emailOnly,
+		authn.Identifier{Kind: authn.IdentifierEmail, Value: "only@example.com"},
+	)
+	r.members.put(authn.Membership{
+		Account: emailOnly, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin,
+	})
+	// A membership row whose account is gone: no identifier entry, so no
+	// username, and the row still answers.
+	gone := authn.AccountID("member-without-account")
+	r.members.put(authn.Membership{
+		Account: gone, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin,
+	})
+
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("listing members: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	page := readMemberPage(t, rec.Body.Bytes())
+	byAccount := map[string]map[string]any{}
+	for _, member := range page.members {
+		byAccount[fmt.Sprint(member["account"])] = member
+	}
+	if got := fmt.Sprint(byAccount[string(userID)]["username"]); got != "ada" {
+		t.Errorf("the member %q carries username %q, want the account's username %q", userID, got, "ada")
+	}
+	if got := fmt.Sprint(byAccount[string(emailOnly)]["username"]); got != "" {
+		t.Errorf("the member %q carries username %q, want the empty string: an email is not a username", emailOnly, got)
+	}
+	if got := fmt.Sprint(byAccount[string(gone)]["username"]); got != "" {
+		t.Errorf("the member %q carries username %q, want the empty string", gone, got)
+	}
+	// The account identifier is never what a row names the account by.
+	for account, member := range byAccount {
+		if fmt.Sprint(member["username"]) == account {
+			t.Errorf("the member %q carries its own account identifier as username", account)
+		}
+	}
+	// The whole page costs one batch read, not one read per row.
+	if got := r.accounts.identifierBatchCalls(); got != 1 {
+		t.Errorf("the member page made %d batch identifier reads, want one", got)
+	}
+	if got := r.accounts.identifierSingleCalls(); got != 0 {
+		t.Errorf("the member page made %d per-account identifier reads, want none", got)
+	}
+}
+
+// TestTheMemberListWhoseIdentifierReadFailsIs503 holds the failure direction: a
+// page whose usernames could not be read is an outage, never an empty username
+// presented as resolved.
+func TestTheMemberListWhoseIdentifierReadFailsIs503(t *testing.T) {
+	r := newRig(t)
+	r.accounts.failIdentifiers(errors.New("the identifier store is down"))
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("listing members over a failed identifier read: status = %d, want 503; body %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"members"`) {
+		t.Errorf("the refusal %q carries a member page, want none", rec.Body.String())
+	}
+}
+
 // TestTheMemberListRefusesANonUTF8Query holds that the query parameter is
 // text: a byte sequence that is not valid UTF-8 is a 400 and the membership
 // read is never made, rather than a filter the read hands to the database,

@@ -12,12 +12,13 @@ import (
 )
 
 // memberViewOf builds one membership as the management routes show it,
-// carrying the account's display name resolved outside the membership store and
-// the role names the policy side holds for the account.
-func memberViewOf(mem authn.Membership, displayName string, roles []string, tenantAlias string) AuthnAdminMember {
+// carrying the account's display name and login username resolved outside the
+// membership store and the role names the policy side holds for the account.
+func memberViewOf(mem authn.Membership, displayName, username string, roles []string, tenantAlias string) AuthnAdminMember {
 	return AuthnAdminMember{
 		Account:     string(mem.Account),
 		DisplayName: displayName,
+		Username:    username,
 		Tenant:      tenantAlias,
 		Active:      mem.Active,
 		SSOExempt:   mem.SSOExempt,
@@ -86,20 +87,48 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 	if aliasErr != nil {
 		return AuthnAdminMemberList{}, m.unavailable("reading the tenant's alias", aliasErr)
 	}
+	// One identifier read for the whole page, so the login username of every
+	// member is resolved in a single batch. The member read is the only
+	// identity source of the workspace administration face, which does not read
+	// the platform account surface.
+	ids := make([]authn.AccountID, len(members))
+	for i, mem := range members {
+		ids[i] = mem.Account
+	}
+	var identifiers map[authn.AccountID][]authn.Identifier
+	if len(ids) > 0 {
+		if identifiers, err = m.accounts.IdentifiersMany(ctx, ids); err != nil {
+			// A page whose identifiers could not be read is an outage, never an
+			// empty username presented as resolved.
+			return AuthnAdminMemberList{}, m.unavailable("listing the members' identifiers", err)
+		}
+	}
 	views := make([]AuthnAdminMember, len(members))
 	for i, mem := range members {
-		// The member read carries the account's display name so the workspace
-		// administration face needs no platform account read. The account read
-		// has no batch form, so the page resolves one row at a time; an account
-		// deleted between the two reads has no name, the empty display name the
-		// account model gives an account it never wrote.
+		// The account read has no batch form, so the display name is resolved
+		// one row at a time; an account deleted between the two reads has no
+		// name, the empty display name the account model gives an account it
+		// never wrote, and no entry in the identifier map, so its username is
+		// empty too.
 		name, err := m.memberDisplayName(ctx, mem.Account)
 		if err != nil {
 			return AuthnAdminMemberList{}, err
 		}
-		views[i] = memberViewOf(mem, name, roles[mem.Account], tenantAlias)
+		views[i] = memberViewOf(mem, name, usernameOf(identifiers[mem.Account]), roles[mem.Account], tenantAlias)
 	}
 	return AuthnAdminMemberList{Members: views, NextCursor: next}, nil
+}
+
+// usernameOf returns the login username among an account's identifiers. Only a
+// username counts: an email or phone is never a stand-in for one, so an account
+// carrying neither username nor any identifier answers the empty string.
+func usernameOf(identifiers []authn.Identifier) string {
+	for _, identifier := range identifiers {
+		if identifier.Kind == authn.IdentifierUsername && identifier.Value != "" {
+			return identifier.Value
+		}
+	}
+	return ""
 }
 
 // memberPage reads one page of members and answers the cursor of the next page,

@@ -214,9 +214,10 @@ func (p *tenancyProduct) IsMember(ctx context.Context, tenantID, account string)
 	return p.memberships.IsMember(ctx, id, tenantID)
 }
 
-// Identities implements authz.AccountIdentityReader: the display name comes
-// from the account store and the activity from the account's state in this
-// tenant. An account is active only while its status is active and its
+// Identities implements authz.AccountIdentityReader: the display name and login
+// username come from the account store, the username from one batched identifier
+// read, and the activity from the account's state in this tenant. An account is
+// active only while its status is active and its
 // membership is in force, because a disabled account or a suspended membership
 // is not a member a role-usage count should show as present.
 //
@@ -228,12 +229,14 @@ func (p *tenancyProduct) IsMember(ctx context.Context, tenantID, account string)
 //
 // A subject of the static credential table is the one exception: the deployment
 // configured that operator in its own table, so it is active with no account
-// row and therefore no display name. This mirrors IsMember's answer for the
-// same principal.
+// row and therefore no display name or username. This mirrors IsMember's answer
+// for the same principal.
 func (p *tenancyProduct) Identities(ctx context.Context, tenantID string,
 	accounts []string,
 ) (map[string]authz.AccountIdentity, error) {
 	identities := make(map[string]authz.AccountIdentity, len(accounts))
+	names := make([]string, 0, len(accounts))
+	ids := make([]authn.AccountID, 0, len(accounts))
 	for _, account := range accounts {
 		id, err := authn.ParseAccountID(account)
 		if err != nil {
@@ -243,6 +246,22 @@ func (p *tenancyProduct) Identities(ctx context.Context, tenantID string,
 			identities[account] = authz.AccountIdentity{Active: true}
 			continue
 		}
+		names = append(names, account)
+		ids = append(ids, id)
+	}
+	// One identifier read answers the username of every account on the page. An
+	// account this host no longer knows is absent from the answer, which the
+	// empty username below reports rather than failing the whole read.
+	var identifiers map[authn.AccountID][]authn.Identifier
+	if len(ids) > 0 {
+		var err error
+		if identifiers, err = p.accounts.IdentifiersMany(ctx, ids); err != nil {
+			return nil, fmt.Errorf("%s: reading the login identifiers of the named accounts: %w",
+				tenancyModuleName, err)
+		}
+	}
+	for i, id := range ids {
+		account := names[i]
 		held, err := p.accounts.Get(ctx, id)
 		if errors.Is(err, authn.ErrAccountNotFound) {
 			continue
@@ -257,10 +276,22 @@ func (p *tenancyProduct) Identities(ctx context.Context, tenantID string,
 		}
 		identities[account] = authz.AccountIdentity{
 			DisplayName: held.DisplayName,
+			Username:    usernameOf(identifiers[id]),
 			Active:      found && membership.Active && held.Status == authn.StatusActive,
 		}
 	}
 	return identities, nil
+}
+
+// usernameOf returns the login username among an account's identifiers. Only a
+// username counts: an email or phone is never a stand-in for one.
+func usernameOf(identifiers []authn.Identifier) string {
+	for _, identifier := range identifiers {
+		if identifier.Kind == authn.IdentifierUsername && identifier.Value != "" {
+			return identifier.Value
+		}
+	}
+	return ""
 }
 
 // CheckMembershipRemoval implements authn.MembershipGuard. A personal tenant is

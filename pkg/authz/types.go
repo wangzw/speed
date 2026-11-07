@@ -157,10 +157,13 @@ type Grant struct {
 }
 
 // AccountIdentity is what a host knows about one account, as the role-usage read
-// needs it: the name to show and whether the account is still active. The
-// capability holds no account table of its own, so a host supplies both through
-// AccountIdentityReader.
+// needs it: the display name and login username to show, and whether the account
+// is still active. The username is the account's user-facing login name, never
+// an identifier used as a fallback; a host that knows no username answers the
+// empty string. The capability holds no account table of its own, so a host
+// supplies all of it through AccountIdentityReader.
 type AccountIdentity struct {
 	DisplayName string
+	Username    string
 	Active      bool
 }

@@ -108,7 +108,7 @@ func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 		{
 			"AccountIdentity",
 			structFields(t, AccountIdentity{}),
-			[]string{"DisplayName string", "Active bool"},
+			[]string{"DisplayName string", "Username string", "Active bool"},
 		},
 		{
 			"GrantRecord",

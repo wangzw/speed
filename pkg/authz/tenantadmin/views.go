@@ -173,6 +173,8 @@ type AuthzTenantAdminRoleBindingView struct {
 
 	DisplayName string `json:"display_name" required:"true" description:"The account's display name, as the host's account identity reader reports it. Empty when the assembly delivers no identity reader or the reader knows no name for the account."`
 
+	Username string `json:"username" required:"true" description:"The account's login username, as the host's account identity reader reports it: unique, user-facing, and not an identifier of the account. Empty when the assembly delivers no identity reader or the account has none; it is never a fallback to another login identifier."`
+
 	Active *bool `json:"active" description:"Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false."`
 
 	GrantedAt time.Time `json:"granted_at" required:"true" description:"When the binding was written, as an RFC 3339 instant in UTC."`
@@ -189,6 +191,7 @@ func roleBindingViewOf(b authz.Binding, identity authz.AccountIdentity, known bo
 		return view
 	}
 	view.DisplayName = identity.DisplayName
+	view.Username = identity.Username
 	active := identity.Active
 	view.Active = &active
 	return view

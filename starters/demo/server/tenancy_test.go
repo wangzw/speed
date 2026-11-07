@@ -49,13 +49,36 @@ func tenancyProductOf(
 // than passing silently.
 type fakeAccounts struct {
 	authn.Accounts
-	byID  map[authn.AccountID]authn.Account
-	reads []authn.AccountID
-	err   error
+	byID        map[authn.AccountID]authn.Account
+	identifiers map[authn.AccountID][]authn.Identifier
+	reads       []authn.AccountID
+	batches     int
+	err         error
 }
 
 func newFakeAccounts() *fakeAccounts {
-	return &fakeAccounts{byID: map[authn.AccountID]authn.Account{}}
+	return &fakeAccounts{
+		byID:        map[authn.AccountID]authn.Account{},
+		identifiers: map[authn.AccountID][]authn.Identifier{},
+	}
+}
+
+// IdentifiersMany answers the batch identifier read the identity seam makes for
+// the usernames of a page. An id this fake does not know is left out, the same
+// absence the real read reports for an account it cannot resolve.
+func (a *fakeAccounts) IdentifiersMany(_ context.Context, ids []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
+	a.batches++
+	if a.err != nil {
+		return nil, a.err
+	}
+	out := make(map[authn.AccountID][]authn.Identifier, len(ids))
+	for _, id := range ids {
+		if _, ok := a.byID[id]; !ok {
+			continue
+		}
+		out[id] = append([]authn.Identifier{}, a.identifiers[id]...)
+	}
+	return out, nil
 }
 
 // Get reads one account, reporting an absent one as the account module does.
@@ -140,6 +163,18 @@ func TestTheIdentityReaderResolvesDisplayNamesAndActivity(t *testing.T) {
 	accounts.byID["acct-1"] = authn.Account{ID: "acct-1", Status: authn.StatusActive, DisplayName: "Alice"}
 	accounts.byID["acct-2"] = authn.Account{ID: "acct-2", Status: authn.StatusDisabled, DisplayName: "Bob"}
 	accounts.byID["acct-4"] = authn.Account{ID: "acct-4", Status: authn.StatusActive, DisplayName: "Carol"}
+	// The email is written first, so a username taken from identifiers[0]
+	// answers the email instead of the username.
+	accounts.identifiers["acct-1"] = []authn.Identifier{
+		{Kind: authn.IdentifierEmail, Value: "alice@example.com"},
+		{Kind: authn.IdentifierUsername, Value: "alice"},
+	}
+	accounts.identifiers["acct-2"] = []authn.Identifier{
+		{Kind: authn.IdentifierEmail, Value: "bob@example.com"},
+	}
+	accounts.identifiers["acct-4"] = []authn.Identifier{
+		{Kind: authn.IdentifierUsername, Value: "carol"},
+	}
 	product := tenancyProductOf(newFakeRoster(), memberships, nil, nil, nil)
 	product.accounts = accounts
 
@@ -150,9 +185,9 @@ func TestTheIdentityReaderResolvesDisplayNamesAndActivity(t *testing.T) {
 		t.Fatalf("Identities: %v", err)
 	}
 	want := map[string]authz.AccountIdentity{
-		"acct-1":          {DisplayName: "Alice", Active: true},
+		"acct-1":          {DisplayName: "Alice", Username: "alice", Active: true},
 		"acct-2":          {DisplayName: "Bob", Active: false},
-		"acct-4":          {DisplayName: "Carol", Active: false},
+		"acct-4":          {DisplayName: "Carol", Username: "carol", Active: false},
 		"static.operator": {Active: true},
 	}
 	if len(got) != len(want) {
@@ -167,6 +202,9 @@ func TestTheIdentityReaderResolvesDisplayNamesAndActivity(t *testing.T) {
 		if _, ok := got[account]; ok {
 			t.Errorf("Identities answered %q, which names no account this host knows", account)
 		}
+	}
+	if accounts.batches != 1 {
+		t.Errorf("the identity read made %d identifier batch reads, want one for the whole page", accounts.batches)
 	}
 }
 
