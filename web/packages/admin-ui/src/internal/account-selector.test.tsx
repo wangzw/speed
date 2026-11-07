@@ -34,7 +34,9 @@ function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
     mfa_required: false,
     protected: false,
     password_set: true,
-    identifiers: [],
+    identifiers: [
+      { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+    ],
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
@@ -222,7 +224,7 @@ describe('AccountSelector', () => {
       operations,
     })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
-    await screen.findByRole('option', { name: 'Ada (acc-2)' })
+    await screen.findByRole('option', { name: 'Ada (ada)' })
     // The combobox is operable without a pointer: arrow keys move through
     // the options and Enter selects.
     await user.keyboard('{ArrowDown}{Enter}')

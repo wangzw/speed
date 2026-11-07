@@ -186,10 +186,13 @@ describe('AuditPage', () => {
     ).toEqual(new Map())
 
     // The actor renders its resolved display name inside the capped box;
-    // the complete recorded identifier stays on the cell title.
+    // the recorded identifier is neither a title nor a copy value.
     const actorText = await screen.findByText('Operator')
     const actorCell = actorText.closest('td')
-    expect(actorCell).toHaveAttribute('title', 'acc-1')
+    expect(actorCell).not.toHaveAttribute('title', 'acc-1')
+    expect(
+      within(actorCell as HTMLElement).queryByRole('button'),
+    ).toBeNull()
     expect(actorCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
     expect(
       containerMaxWidthOf(actorCell!.firstElementChild!),
@@ -235,7 +238,7 @@ describe('AuditPage', () => {
     expect(screen.queryByText('acc-1')).not.toBeInTheDocument()
   })
 
-  it('falls back to the recorded actor when the account read fails', async () => {
+  it('renders the neutral copy when the account read fails, never the recorded actor', async () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         listRecords: () =>
@@ -244,7 +247,10 @@ describe('AuditPage', () => {
       }),
     )
     renderWithProviders(<AuditPage />, { operations })
-    expect(await screen.findByText('system')).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.common.accountUnavailable),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('system')).toBeNull()
   })
 
   it('marks an actor whose account read is refused as unresolved', async () => {
@@ -255,10 +261,11 @@ describe('AuditPage', () => {
       }),
     )
     renderWithProviders(<AuditPage />, { operations })
-    // The cell shows the recorded id, but labelled as unresolved rather
-    // than passed off as a resolved (or system) name.
+    // The cell renders the neutral copy with the unresolved note; the
+    // recorded id is never the visible fallback.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent('acc-1')
+    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(cell).not.toHaveTextContent('acc-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 

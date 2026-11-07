@@ -44,7 +44,6 @@ import { AdminInvitationLinkProvider } from './internal/invitation-link.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
-import { uiKitResources } from '@speed/ui-kit'
 
 const TENANT = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
 
@@ -88,16 +87,6 @@ function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-/** The ui-kit copy control's accessible name, from its zh-CN template. */
-function copyLabel(value: string): string {
-  const template = (
-    uiKitResources['zh-CN'] as unknown as {
-      readonly dataTable: { readonly copyValue: string }
-    }
-  ).dataTable.copyValue
-  return template.replace('{{value}}', value)
-}
-
 function invitation(overrides: Partial<AdminInvitation> = {}): AdminInvitation {
   return {
     id: 'inv-1',
@@ -118,6 +107,7 @@ function member(overrides: Partial<AdminMember> = {}): AdminMember {
     tenant: 'acme',
     active: true,
     display_name: '',
+    username: 'ada',
     sso_exempt: false,
     source: 'direct',
     roles: [],
@@ -136,7 +126,9 @@ function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
     mfa_required: false,
     protected: false,
     password_set: true,
-    identifiers: [],
+    identifiers: [
+      { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+    ],
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
@@ -389,14 +381,15 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations: refused })
     await pickTenant(user)
-    // The cell keeps the recorded id but labels it unresolved rather than
-    // passing it off as a resolved name.
+    // The cell renders the neutral copy with the unresolved note; the
+    // recorded id never becomes the visible fallback.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent('staff-1')
+    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(cell).not.toHaveTextContent('staff-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
-  it("shows the member's display name, or the recorded id marked unresolved when the lookup is refused", async () => {
+  it("shows the member's display name, or the neutral copy marked unresolved when the lookup is refused", async () => {
     const user = userEvent.setup()
     const resolving = withTenant({
       listMembers: () => Promise.resolve([member()]),
@@ -417,38 +410,40 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations: refused })
     await pickTenant(user)
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent('acc-1')
+    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(cell).not.toHaveTextContent('acc-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
-  it('shows the member read display name beside the recorded account identifier', async () => {
-    const user = userEvent.setup()
+  it('shows the member read display name and username, never the account id', async () => {
     const operations = withTenant({
       listMembers: () =>
         Promise.resolve([member({ display_name: 'Ada Lovelace' })]),
       // The organization face has no platform account read; the member read's
-      // display name is the identity even when the lookup is refused.
+      // display name and username are the identity even when the lookup is
+      // refused.
       getAccount: () => Promise.reject(new Error('forbidden')),
     })
-    renderWithProviders(<InvitationsPage />, { operations })
-    await pickTenant(user)
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
 
     const memberSection = section(zhCN.members.title)
+    expect(
+      await within(memberSection).findByText('Ada Lovelace'),
+    ).toBeInTheDocument()
     expect(
       within(memberSection).getByRole('columnheader', {
         name: zhCN.members.column.displayName,
       }),
     ).toBeInTheDocument()
     expect(
-      await within(memberSection).findByText('Ada Lovelace'),
+      await within(memberSection).findByText('Ada Lovelace (ada)'),
     ).toBeInTheDocument()
-    const identifier = await within(memberSection).findByTitle(
-      zhCN.common.accountUnresolved,
-    )
-    expect(identifier).toHaveTextContent('acc-1')
+    expect(within(memberSection).queryByText('acc-1')).toBeNull()
   })
 
-  it('tenant mode names the account column by its recorded identifier', async () => {
+  it('tenant mode names the account column by display name and username', async () => {
     const operations = withTenant({
       listMembers: () =>
         Promise.resolve([
@@ -466,7 +461,7 @@ describe('InvitationsPage', () => {
       name: zhCN.members.column.displayName,
     })
     const accountHeader = within(memberSection).getByRole('columnheader', {
-      name: zhCN.members.column.account,
+      name: zhCN.members.column.username,
     })
     const nameCell = nameCells.find(
       (cell) =>
@@ -480,8 +475,9 @@ describe('InvitationsPage', () => {
       (accountHeader as HTMLTableCellElement).cellIndex
     ]
     // The display name column carries the name; the account column carries
-    // the record's own account identifier rather than repeating the name.
-    expect(accountCell).toHaveTextContent('acc-1')
+    // the composed identity the member record resolves, never its id.
+    expect(accountCell).toHaveTextContent('Ada Lovelace (ada)')
+    expect(accountCell).not.toHaveTextContent('acc-1')
   })
 
   it('pages the organization member table through every member', async () => {
@@ -776,7 +772,7 @@ describe('InvitationsPage', () => {
     await within(memberSection).findByText('Member 0')
     const invitationSection = section(zhCN.invitations.section.title)
     expect(
-      await within(invitationSection).findByText('Member 99'),
+      await within(invitationSection).findByText('Member 99 (ada)'),
     ).toBeInTheDocument()
 
     await user.click(
@@ -790,7 +786,7 @@ describe('InvitationsPage', () => {
     // The member who invited is not on the page now shown, but the name the
     // read resolved on page one still names the inviter.
     expect(within(memberSection).queryByText('Member 99')).toBeNull()
-    expect(within(invitationSection).getByText('Member 99')).toBeInTheDocument()
+    expect(within(invitationSection).getByText('Member 99 (ada)')).toBeInTheDocument()
   })
 
   it('leaves the name cell empty when the account has no display name', async () => {
@@ -813,10 +809,12 @@ describe('InvitationsPage', () => {
     ]
     expect(nameCell).toBeDefined()
     expect(nameCell!.textContent).toBe('')
-    // The identifier column still names the row.
-    expect(
-      await within(memberSection).findByTitle(zhCN.common.accountUnresolved),
-    ).toHaveTextContent('acc-1')
+    // The account column renders the neutral copy, never the recorded id.
+    const accountCell = await within(memberSection).findByTitle(
+      zhCN.common.accountUnresolved,
+    )
+    expect(accountCell).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(accountCell).not.toHaveTextContent('acc-1')
   })
 
   it('tenant mode drops the platform account picker and resolves identities from members', async () => {
@@ -838,14 +836,16 @@ describe('InvitationsPage', () => {
     })
 
     // The member row and the invitation's inviter both resolve to the one
-    // display name the member read carries.
+    // display name and username pair the member read carries.
     const memberSection = section(zhCN.members.title)
     expect(
       (await within(memberSection).findAllByText('Ada Lovelace')).length,
     ).toBeGreaterThan(0)
     const invitationSection = section(zhCN.invitations.section.title)
     expect(
-      (await within(invitationSection).findAllByText('Ada Lovelace')).length,
+      (
+        await within(invitationSection).findAllByText('Ada Lovelace (ada)')
+      ).length,
     ).toBeGreaterThan(0)
     // The member write form searches the platform account roster, so tenant
     // mode does not render it.
@@ -871,11 +871,14 @@ describe('InvitationsPage', () => {
     })
 
     const invitationSection = section(zhCN.invitations.section.title)
-    // The recorded identifier stays, annotated as unresolved -- never a
-    // platform lookup as the fallback.
+    // An inviter the member read cannot resolve renders the neutral copy,
+    // never the recorded identifier and never a platform lookup.
     expect(
-      await within(invitationSection).findByTitle(zhCN.common.accountUnresolved),
-    ).toHaveTextContent('ghost-1')
+      await within(invitationSection).findByText(
+        zhCN.common.accountUnavailable,
+      ),
+    ).toBeInTheDocument()
+    expect(within(invitationSection).queryByText('ghost-1')).toBeNull()
     expect(getAccount).not.toHaveBeenCalled()
   })
 
@@ -958,13 +961,15 @@ describe('InvitationsPage', () => {
     // The inviter is a long-text column, not the primary identity: the
     // flat 160 cap bounds the whole cell (name and copy control), so a
     // long display name cannot push the table past the md floor.
-    expect(
-      await within(inviteSection).findByText(invitedByName),
-    ).toBeInTheDocument()
-    const invitedByCell = within(inviteSection)
-      .getByRole('button', { name: copyLabel('staff-1') })
-      .closest('td')
+    const invitedByIdentity = await within(inviteSection).findByText(
+      invitedByName,
+    )
+    const invitedByCell = invitedByIdentity.closest('td')
     expect(invitedByCell).not.toBeNull()
+    // No copy control offers the recorded account id.
+    expect(
+      within(invitedByCell as HTMLElement).queryByRole('button'),
+    ).toBeNull()
     const invitedByWrapper = invitedByCell!.firstElementChild as HTMLElement
     expect(invitedByWrapper).toHaveStyle({ maxWidth: '160px' })
     expect(containerMaxWidthOf(invitedByWrapper)).toEqual(new Map())
@@ -974,7 +979,7 @@ describe('InvitationsPage', () => {
     // yields at that tier, source stays from md, SSO exemption from lg.
     const memberSection = section(zhCN.members.title)
     expect(columnVisibility(header(memberSection, zhCN.members.column.displayName))).toBeNull()
-    expect(columnVisibility(header(memberSection, zhCN.members.column.account))).toEqual({
+    expect(columnVisibility(header(memberSection, zhCN.members.column.username))).toEqual({
       hiddenAt: 0,
       visibleFrom: 600,
     })
@@ -1386,7 +1391,7 @@ describe('InvitationsPage', () => {
             ],
           }),
         ),
-      settled: () => screen.findByText('Ada Lovelace'),
+      settled: () => screen.findByText('Ada Lovelace (ada)'),
     })
     expect(
       within(dialog).getByText(
@@ -1414,7 +1419,7 @@ describe('InvitationsPage', () => {
             ],
           }),
         ),
-      settled: () => screen.findByText(MEMBER_UUID),
+      settled: () => screen.findByText('ada'),
     })
     expect(
       within(dialog).getByText(
@@ -1439,7 +1444,8 @@ describe('InvitationsPage', () => {
         Promise.resolve(
           accountFixture({ id: MEMBER_UUID, display_name: '' }),
         ),
-      settled: () => screen.findByText(MEMBER_UUID),
+      settled: () =>
+        screen.findByText(zhCN.common.accountUnavailable),
     })
     expectNeutralRemovalConfirmation(dialog)
   })
@@ -1449,8 +1455,9 @@ describe('InvitationsPage', () => {
     const pending = deferred<AdminAccount>()
     const dialog = await openRemovalConfirmation(user, {
       getAccount: () => pending.promise,
-      // The identity cell shows the recorded value while the read is pending.
-      settled: () => screen.findByText(MEMBER_UUID),
+      // The identity cell shows the neutral copy while the read is pending.
+      settled: () =>
+        screen.findByText(zhCN.common.accountUnavailable),
     })
     expectNeutralRemovalConfirmation(dialog)
   })
@@ -1504,7 +1511,7 @@ describe('InvitationsPage', () => {
     ).toBeDisabled()
     // A display name finds the account; the write carries its id ("acc-2"),
     // never the typed name.
-    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     await vi.waitFor(() => {
       expect(written).toEqual([
@@ -1578,7 +1585,11 @@ describe('InvitationsPage', () => {
       // The picker's option names the account by its display name beside the
       // id, or by the id alone when it has none.
       const optionName =
-        displayName === '' ? 'acc-2' : `${displayName} (acc-2)`
+        displayName === '' && identifiers.length === 0
+          ? zhCN.common.accountUnavailable
+          : displayName === ''
+            ? 'ada'
+            : `${displayName} (ada)`
       await chooseAccount(
         user,
         zhCN.members.write.accountLabel,
@@ -1713,17 +1724,21 @@ describe('InvitationsPage', () => {
 
     // A landed write re-runs the member read, so the row it created is on
     // screen without the operator pressing refresh.
-    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
-      await screen.findByText(fill(zhCN.members.write.saved, { account: byName('Ada') })),
+      await screen.findByText(
+        fill(zhCN.members.write.saved, {
+          account: byNameAndIdentifier('Ada', 'ada'),
+        }),
+      ),
     ).toBeInTheDocument()
-    expect(await screen.findByText('Ada')).toBeInTheDocument()
+    expect(await screen.findByText('Ada (ada)')).toBeInTheDocument()
     expect(listReads()).toBe(2)
 
     // A refused write leaves the list as it was: no read follows it.
     writeFails = true
-    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(await within(section(zhCN.members.title)).findByRole('alert')).toBeInTheDocument()
     expect(listReads()).toBe(2)
@@ -2036,10 +2051,14 @@ describe('InvitationsPage', () => {
     ).toBeInTheDocument()
 
     // The membership write names the chosen account.
-    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
-      await screen.findByText(fill(zhCN.members.write.saved, { account: byName('Ada') })),
+      await screen.findByText(
+        fill(zhCN.members.write.saved, {
+          account: byNameAndIdentifier('Ada', 'ada'),
+        }),
+      ),
     ).toBeInTheDocument()
 
     // The SSO exemption names the member by its readable identity.
@@ -2231,7 +2250,7 @@ describe('InvitationsPage', () => {
     ).toBeNull()
 
     // The membership write still works, and carries no exemption field.
-    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     await vi.waitFor(() => {
       expect(written).toEqual([

@@ -55,6 +55,7 @@ const ADA: AdminMember = {
   tenant: TENANT,
   active: true,
   display_name: 'Ada Lovelace',
+  username: 'ada',
   source: 'admin',
   sso_exempt: false,
   roles: ['tenant-admin'],
@@ -66,6 +67,7 @@ const BOB: AdminMember = {
   tenant: TENANT,
   active: true,
   display_name: 'Bob Stone',
+  username: 'bob',
   source: 'invite',
   sso_exempt: false,
   roles: [],
@@ -76,6 +78,7 @@ const SUSPENDED: AdminMember = {
   ...BOB,
   account: 'acc-3',
   display_name: 'Carol Suspended',
+  username: 'carol',
   active: false,
 }
 
@@ -573,16 +576,16 @@ describe('TenantProfilePage ownership', () => {
     // Only active members other than the owner are offered.
     expect(
       screen.queryByRole('option', {
-        name: 'Carol Suspended (acc-3)',
+        name: 'Carol Suspended (carol)',
       }),
     ).toBeNull()
     expect(
       screen.queryByRole('option', {
-        name: 'Ada Lovelace (acc-1)',
+        name: 'Ada Lovelace (ada)',
       }),
     ).toBeNull()
     await user.click(
-      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
     )
 
     await armAndConfirm(
@@ -596,7 +599,7 @@ describe('TenantProfilePage ownership', () => {
     )
     const message = zhCN.tenantProfile.ownership.transfer.saved
       .replace('{{name}}', ORG_NAME)
-      .replace('{{account}}', 'Bob Stone (acc-2)')
+      .replace('{{account}}', 'Bob Stone (bob)')
     // The caller is no longer a member: the confirmation goes to the host's
     // departure action, which shows it where the viewer lands.
     await waitFor(() => expect(onOrganizationLeft).toHaveBeenCalledWith(message))
@@ -641,7 +644,7 @@ describe('TenantProfilePage ownership', () => {
       }),
     )
     await user.click(
-      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
     )
     await armAndConfirm(
       user,
@@ -653,7 +656,7 @@ describe('TenantProfilePage ownership', () => {
       await screen.findByText(
         zhCN.tenantProfile.ownership.transfer.saved
           .replace('{{name}}', ORG_NAME)
-          .replace('{{account}}', 'Bob Stone (acc-2)'),
+          .replace('{{account}}', 'Bob Stone (bob)'),
       ),
     ).toBeInTheDocument()
     expect(onTenantUpdated).toHaveBeenCalledTimes(1)
@@ -734,7 +737,7 @@ describe('TenantProfilePage ownership', () => {
       }),
     )
     await user.click(
-      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
     )
     await armAndConfirm(
       user,
@@ -773,7 +776,7 @@ describe('TenantProfilePage ownership', () => {
       }),
     )
     await user.click(
-      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
     )
     await armAndConfirm(
       user,
@@ -847,7 +850,7 @@ describe('TenantProfilePage ownership', () => {
       }),
     )
     await user.click(
-      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
     )
     await armAndConfirm(
       user,
@@ -988,7 +991,7 @@ describe('TenantProfilePage ownership', () => {
     // the dialog's first page instead of paging the whole roster.
     await waitFor(() => expect(queried.at(-1)).toBe('Bob'))
     expect(
-      screen.queryByRole('option', { name: 'Carol Suspended (acc-3)' }),
+      screen.queryByRole('option', { name: 'Carol Suspended (carol)' }),
     ).toBeNull()
     await user.click(
       within(dialog).getByRole('combobox', {
@@ -996,7 +999,7 @@ describe('TenantProfilePage ownership', () => {
       }),
     )
     expect(
-      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
     ).toBeInTheDocument()
   })
 
@@ -1025,7 +1028,7 @@ describe('TenantProfilePage ownership', () => {
       }),
     )
     await user.click(
-      await screen.findByRole('option', { name: 'Bob Stone (acc-2)' }),
+      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
     )
     await expectNoAxeViolations()
   })

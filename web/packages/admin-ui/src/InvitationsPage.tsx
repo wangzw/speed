@@ -12,15 +12,15 @@
  *    exemption, source) and remove a membership.
  *
  * On the platform surface the inviter and the member account render through
- * the shared account identity unit: the readable display name where the
- * account read answers, the recorded identifier with an unresolved note
+ * the shared account identity unit: the readable display name and username
+ * where the account read answers, the neutral copy with an unresolved note
  * where it is refused. On the organization surface (`tenantMode`) both resolve
  * from the tenant's own member read instead -- the inviter through the
  * member row carrying that account, the member through its own row's
- * `display_name` -- so the page issues no platform account read, and the
- * member write form (whose account field searches the platform roster) is
- * not rendered. The table columns keep the recorded identifier as their full
- * value, so the copy and hover channel stays the value the record carries.
+ * `display_name` and `username` -- so the page issues no platform account
+ * read, and the member write form (whose account field searches the platform
+ * roster) is not rendered. No column offers the recorded account identifier
+ * as its copy or hover value.
  *
  * Inviting an address mints an invitation the invitee accepts through the
  * tenant-facing invite surface; the console issues and revokes, it does
@@ -82,6 +82,7 @@ import {
   AccountIdentity,
   accountIdentityValue,
   accountNotice,
+  identityLabel,
   TenantAccountIdentity,
   useAccountIdentity,
   type AccountIdentityValue,
@@ -135,7 +136,7 @@ const TENANT_HINT_ID = 'invitations-tenant-hint'
 const MEMBER_PAGE_SIZE = 100
 
 /** No member names resolved yet, for a tenant the page has read no page of. */
-const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
+const EMPTY_MEMBER_IDENTITIES: ReadonlyMap<string, AdminMember> = new Map()
 
 /** The invitation just issued, with the tenant it was issued under. */
 type IssuedInvitation = AdminIssuedInvitation & { readonly tenant: string }
@@ -254,26 +255,32 @@ export function InvitationsPage({
   const memberRows = members.data?.members
   // Tenant mode resolves an account's identity from the member rows this
   // page has read. An account the read has not settled on, was refused, or
-  // does not carry is unresolved -- rendered by its recorded identifier with
-  // the unresolved note -- rather than looked up through the platform account
-  // read whose access the organization surface does not have. Names accumulate
+  // does not carry is unresolved -- rendered by the neutral copy -- rather
+  // than looked up through the platform account read whose access the
+  // organization surface does not have. Identities accumulate
   // across the member pages the operator visits, so an inviter resolved on an
   // earlier page stays named after paging past it.
-  const [memberNamesByTenant, setMemberNamesByTenant] = useState<
-    Readonly<Record<string, ReadonlyMap<string, string>>>
+  const [memberIdentitiesByTenant, setMemberIdentitiesByTenant] = useState<
+    Readonly<Record<string, ReadonlyMap<string, AdminMember>>>
   >({})
-  const memberDisplayNames = memberNamesByTenant[tenant] ?? EMPTY_MEMBER_NAMES
+  const memberIdentities =
+    memberIdentitiesByTenant[tenant] ?? EMPTY_MEMBER_IDENTITIES
   useEffect(() => {
     if (memberRows === undefined) {
       return
     }
-    setMemberNamesByTenant((previous) => {
-      const current = previous[tenant] ?? EMPTY_MEMBER_NAMES
+    setMemberIdentitiesByTenant((previous) => {
+      const current = previous[tenant] ?? EMPTY_MEMBER_IDENTITIES
       const next = new Map(current)
       let changed = false
       for (const row of memberRows) {
-        if (next.get(row.account) !== row.display_name) {
-          next.set(row.account, row.display_name)
+        const recorded = next.get(row.account)
+        if (
+          recorded === undefined ||
+          recorded.display_name !== row.display_name ||
+          recorded.username !== row.username
+        ) {
+          next.set(row.account, row)
           changed = true
         }
       }
@@ -405,24 +412,24 @@ export function InvitationsPage({
     confirm.ask({
       title: t('members.removeTitle'),
       // The confirmation names the member the way the roster does: by
-      // display name and, when the account view carries one, its first login
-      // identifier. An empty display name is named by that identifier alone.
+      // display name and, when the account view carries one, its login
+      // username. An empty display name is named by that username alone.
       // The account id is a machine value the operator cannot match to a row,
-      // so an identity with neither name nor identifier (a pending, refused,
+      // so an identity with neither name nor username (a pending, refused,
       // missing or feature-gated account read) keeps the sentence neutral
       // rather than falling back to it.
       message:
         identity.name === undefined
-          ? identity.identifier === undefined
+          ? identity.username === undefined
             ? t('members.removeMessageUnnamed')
             : t('members.removeMessageByIdentifier', {
-                identifier: identity.identifier,
+                identifier: identity.username,
               })
-          : identity.identifier === undefined
+          : identity.username === undefined
             ? t('members.removeMessage', { name: identity.name })
             : t('members.removeMessageWithIdentifier', {
                 name: identity.name,
-                identifier: identity.identifier,
+                identifier: identity.username,
               }),
       confirmLabel: t('common.confirm'),
       run: () => {
@@ -529,17 +536,18 @@ export function InvitationsPage({
       header: t('invitations.column.invitedBy'),
       priority: 'medium',
       cellWrap: 'nowrap',
-      cellFullValue: (invitation) => invitation.invited_by,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
-      cell: (invitation) =>
-        tenantMode ? (
+      cell: (invitation) => {
+        const inviter = memberIdentities.get(invitation.invited_by)
+        return tenantMode ? (
           <TenantAccountIdentity
-            account={invitation.invited_by}
-            name={memberDisplayNames.get(invitation.invited_by)}
+            name={inviter?.display_name}
+            username={inviter?.username}
           />
         ) : (
           <AccountIdentity account={invitation.invited_by} />
-        ),
+        )
+      },
     },
     {
       id: 'expires',
@@ -607,24 +615,24 @@ export function InvitationsPage({
       cell: (member) => member.display_name,
     },
     {
-      id: 'account',
-      header: t('members.column.account'),
+      id: 'username',
+      header: t('members.column.username'),
       // The display name beside it is the page's primary identity, so the
-      // recorded account identifier is the secondary one: it sheds below the
-      // sm floor, where the primary cell and the row actions stay on screen,
-      // and remains visible at every tier floor from sm up.
+      // composed identity is the secondary one: it sheds below the sm floor,
+      // where the primary cell and the row actions stay on screen, and
+      // remains visible at every tier floor from sm up.
       priority: 'high',
       cellWrap: 'nowrap',
-      cellFullValue: (member) => member.account,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      // The account column is the membership record's own account identifier,
-      // which is the fact the display name column beside it does not carry.
-      // The organization surface has no platform account read, so tenant mode
-      // renders the recorded identifier; the platform surface resolves the
-      // identity it records through the account read.
+      // The organization surface names the member from its own record's
+      // display name and username; the platform surface resolves the account
+      // through the account read. Neither shows or copies the account id.
       cell: (member) =>
         tenantMode ? (
-          <Typography variant="body2">{member.account}</Typography>
+          <Typography variant="body2">
+            {identityLabel(member.display_name, member.username) ??
+              t('common.accountUnavailable')}
+          </Typography>
         ) : (
           <AccountIdentity account={member.account} />
         ),
@@ -967,7 +975,8 @@ interface MemberRowActionsProps {
  * The member row's own actions. A landed write names the account the way the
  * row shows it: the platform surface reads the identity through the account
  * read the row's cell renders, and the organization surface uses the member
- * read's own display name -- never the recorded identifier as a fallback.
+ * read's own display name and username -- never the recorded identifier as a
+ * fallback.
  */
 function MemberRowActions(props: MemberRowActionsProps) {
   return props.tenantMode ? (
@@ -978,15 +987,18 @@ function MemberRowActions(props: MemberRowActionsProps) {
 }
 
 function PlatformMemberActions(props: MemberRowActionsProps) {
-  const { name, identifier } = useAccountIdentity(props.member.account)
-  return <MemberActionsBody {...props} identity={{ name, identifier }} />
+  const { name, username } = useAccountIdentity(props.member.account)
+  return <MemberActionsBody {...props} identity={{ name, username }} />
 }
 
-/** The organization surface's identity: the member read's own display name. */
+/**
+ * The organization surface's identity: the member read's own display name
+ * and login username. Neither is an identifier standing in for the other.
+ */
 function memberRowIdentity(member: AdminMember): AccountIdentityValue {
   return {
     name: member.display_name === '' ? undefined : member.display_name,
-    identifier: undefined,
+    username: member.username === '' ? undefined : member.username,
   }
 }
 

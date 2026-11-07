@@ -25,6 +25,7 @@ import type {
   AdminTenantRoleBinding,
   AdminTenantRoleBindingPage,
 } from '../../organization-operations.js'
+import { identityLabel } from '../account-identity.js'
 import { AdminAsyncSection } from '../async-section.js'
 import { CursorPager } from '../cursor-pager.js'
 import { AdminLink } from '../navigation.js'
@@ -72,17 +73,15 @@ export function RoleUsageSection({
       id: 'member',
       header: t('permissions.usage.column.name'),
       cellWrap: 'wrap',
-      cellFullValue: (binding) => binding.display_name || binding.account,
+      // The member is named by display name and login username, either
+      // alone, or the neutral copy when neither resolves. The account id is
+      // the row key, never visible text or a copy value.
+      cellFullValue: (binding) =>
+        identityLabel(binding.display_name, binding.username),
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      cell: (binding) => binding.display_name || binding.account,
-    },
-    {
-      id: 'account',
-      header: t('permissions.usage.column.account'),
-      cellWrap: 'nowrap',
-      cellFullValue: (binding) => binding.account,
-      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      cell: (binding) => binding.account,
+      cell: (binding) =>
+        identityLabel(binding.display_name, binding.username) ??
+        t('common.accountUnavailable'),
     },
     {
       id: 'status',

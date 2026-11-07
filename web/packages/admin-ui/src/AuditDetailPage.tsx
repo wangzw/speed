@@ -37,7 +37,11 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { ListSkeleton, SectionCard } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
-import { AccountIdentity } from './internal/account-identity.js'
+import {
+  AccountIdentity,
+  auditDetailNamesAccount,
+  AuditObjectIdentity,
+} from './internal/account-identity.js'
 import { formatInstant } from '@speed/i18n'
 import { AdminLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
@@ -105,7 +109,19 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             }
           />
           <DefinitionRow label={t('auditDetail.field.action')} value={shown(settled.action)} />
-          <DefinitionRow label={t('auditDetail.field.object')} value={shown(settled.object)} />
+          <DefinitionRow
+            label={t('auditDetail.field.object')}
+            value={
+              settled.object === '' ? (
+                t('common.emptyValue')
+              ) : (
+                <AuditObjectIdentity
+                  action={settled.action}
+                  object={settled.object}
+                />
+              )
+            }
+          />
           <DefinitionRow label={t('auditDetail.field.outcome')} value={shown(settled.outcome)} />
           <DefinitionRow label={t('auditDetail.field.purpose')} value={shown(settled.purpose)} />
           <DefinitionRow label={t('auditDetail.field.tenant')} value={shown(settled.tenant)} />
@@ -119,7 +135,17 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             </Typography>
             <Box component="dl" sx={{ margin: 0 }}>
               {detailEntries.map(([key, value]) => (
-                <DefinitionRow key={key} label={key} value={shown(value)} />
+                <DefinitionRow
+                  key={key}
+                  label={key}
+                  value={
+                    value === ''
+                      ? t('common.emptyValue')
+                      : auditDetailNamesAccount(key)
+                        ? <AccountIdentity account={value} />
+                        : value
+                  }
+                />
               ))}
             </Box>
           </Box>

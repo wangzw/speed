@@ -145,18 +145,21 @@ const GRANT_UNMAPPABLE = grant('', 'tenant_role', 'write')
 const HOLDER_ADA = {
   account: 'acc-1',
   display_name: 'Ada Lovelace',
+  username: '',
   active: true,
   granted_at: '2026-10-15T12:00:00Z',
 }
 const HOLDER_BOB = {
   account: 'acc-2',
   display_name: 'Bob Stone',
+  username: '',
   active: false,
   granted_at: '2026-10-20T08:30:00Z',
 }
 const HOLDER_UNKNOWN = {
   account: 'acc-3',
   display_name: '',
+  username: '',
   granted_at: '2026-10-21T09:00:00Z',
 }
 
@@ -959,7 +962,10 @@ describe('the role usage section', () => {
         after: 'acc-2',
       }),
     )
-    expect((await screen.findAllByText('acc-3')).length).toBeGreaterThan(0)
+    expect(
+      (await screen.findAllByText(zhCN.common.accountUnavailable)).length,
+    ).toBeGreaterThan(0)
+    expect(screen.queryByText('acc-3')).toBeNull()
     expect(
       screen.getByText(zhCN.permissions.usage.status.unavailable),
     ).toBeInTheDocument()

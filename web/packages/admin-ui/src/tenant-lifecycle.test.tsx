@@ -76,6 +76,7 @@ const MEMBERS: readonly AdminMember[] = [
     tenant: 'acme',
     account: 'acc-2',
     display_name: 'Ada Lovelace',
+    username: 'ada',
     active: true,
     joined_at: '2026-01-01T00:00:00Z',
     roles: [],
@@ -86,6 +87,7 @@ const MEMBERS: readonly AdminMember[] = [
     tenant: 'acme',
     account: 'acc-3',
     display_name: 'Grace Hopper',
+    username: 'grace',
     active: false,
     joined_at: '2026-01-01T00:00:00Z',
     roles: [],
@@ -255,7 +257,7 @@ describe('platform tenant lifecycle entries', () => {
     })
     await user.click(memberInput)
     expect(
-      await screen.findByRole('option', { name: 'Ada Lovelace (acc-2)' }),
+      await screen.findByRole('option', { name: 'Ada Lovelace (ada)' }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('option', { name: /Grace Hopper/ }),
@@ -264,7 +266,7 @@ describe('platform tenant lifecycle entries', () => {
       user,
       zhCN.tenantLifecycle.transfer.memberLabel,
       'Ada',
-      'Ada Lovelace (acc-2)',
+      'Ada Lovelace (ada)',
     )
 
     await expectNoAxeViolations()
@@ -283,7 +285,7 @@ describe('platform tenant lifecycle entries', () => {
       await screen.findByText(
         text(zhCN.tenantLifecycle.transfer.success, {
           alias: 'acme',
-          target: 'Ada Lovelace (acc-2)',
+          target: 'Ada Lovelace (ada)',
         }),
       ),
     ).toBeInTheDocument()
@@ -338,7 +340,7 @@ describe('platform tenant lifecycle entries', () => {
       user,
       zhCN.tenantLifecycle.transfer.accountLabel,
       'Bob',
-      'Bob (acc-9)',
+      'Bob',
     )
     await user.click(
       within(dialog).getByRole('button', {
@@ -393,7 +395,7 @@ describe('platform tenant lifecycle entries', () => {
       user,
       zhCN.tenantLifecycle.transfer.accountLabel,
       'Bob',
-      'Bob (acc-9)',
+      'Bob',
     )
     await user.click(
       within(dialog).getByRole('button', {
@@ -435,7 +437,7 @@ describe('platform tenant lifecycle entries', () => {
       user,
       zhCN.tenantLifecycle.transfer.accountLabel,
       'Bob',
-      'Bob (acc-9)',
+      'Bob',
     )
     await user.click(
       within(dialog).getByRole('button', {
@@ -740,7 +742,7 @@ describe('tenant detail lifecycle', () => {
       user,
       zhCN.tenantLifecycle.transfer.memberLabel,
       'Ada',
-      'Ada Lovelace (acc-2)',
+      'Ada Lovelace (ada)',
     )
     await user.click(
       within(dialog).getByRole('button', {

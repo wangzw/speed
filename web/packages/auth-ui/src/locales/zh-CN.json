@@ -222,6 +222,7 @@
   "impersonation": {
     "regionLabel": "冒充提示",
     "actingAs": "你正在以 {{subject}} 的身份操作。",
+    "accountUnavailable": "账户不可用",
     "tenant": "组织：{{tenant}}",
     "expiresAt": "冒充将在 {{expiresAt}} 到期。",
     "managementUnavailable": "冒充期间管理功能不可用。",

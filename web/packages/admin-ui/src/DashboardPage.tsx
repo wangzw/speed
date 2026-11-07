@@ -55,7 +55,11 @@ import {
 } from '@speed/ui-kit'
 import type { DataTableColumn, PageRefresh } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
-import { AccountIdentity } from './internal/account-identity.js'
+import {
+  AccountIdentity,
+  auditObjectNamesAccount,
+  AuditObjectIdentity,
+} from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { formatInstant } from '@speed/i18n'
 import { RefreshButton } from '@speed/ui-kit'
@@ -477,12 +481,16 @@ function DashboardWithAudit({
       header: t('dashboard.recent.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
       cellWrap: 'nowrap',
+      // An account object resolves through the same rule as the audit
+      // query; anything else renders as recorded.
       cellFullValue: (record) =>
-        record.object === '' ? undefined : record.object,
+        record.object === '' || auditObjectNamesAccount(record.action)
+          ? undefined
+          : record.object,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
-          {record.object}
+          <AuditObjectIdentity action={record.action} object={record.object} />
         </Typography>
       ),
     },
@@ -491,8 +499,8 @@ function DashboardWithAudit({
       header: t('dashboard.recent.column.actor'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
       cellWrap: 'nowrap',
-      cellFullValue: (record) =>
-        record.actor === '' ? undefined : record.actor,
+      // The actor's identity comes from the account read, so no copy control
+      // hands over the opaque id.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },

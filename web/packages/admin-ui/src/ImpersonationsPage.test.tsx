@@ -42,7 +42,6 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
-import { uiKitResources } from '@speed/ui-kit'
 
 const ZERO = '0001-01-01T00:00:00Z'
 const TENANT = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
@@ -77,16 +76,6 @@ function byNameAndIdentifier(name: string, identifier: string): string {
     name,
     identifier,
   })
-}
-
-/** The ui-kit copy control's accessible name, from its zh-CN template. */
-function copyLabel(value: string): string {
-  const template = (
-    uiKitResources['zh-CN'] as unknown as {
-      readonly dataTable: { readonly copyValue: string }
-    }
-  ).dataTable.copyValue
-  return template.replace('{{value}}', value)
 }
 
 /** The in-force panel's target line: its prefixed label beside the name. */
@@ -229,6 +218,49 @@ const ACCOUNT_NAMES: Record<string, string> = {
   'staff-1': 'Staff One',
   'acc-1': 'Target One',
   'acc-7': 'Target Seven',
+  'acc-9': 'Target Nine',
+}
+
+/** The accounts the start form's picker can find. */
+const START_ACCOUNTS: readonly AdminAccount[] = [
+  accountFixture({
+    id: 'acc-1',
+    display_name: 'Target One',
+    identifiers: [
+      { kind: 'username', value: 'target-one', proven: true, sign_in: true, contact: false, default_contact: false },
+    ],
+  }),
+  accountFixture({
+    id: 'acc-9',
+    display_name: 'Target Nine',
+    identifiers: [
+      { kind: 'username', value: 'target-nine', proven: true, sign_in: true, contact: false, default_contact: false },
+    ],
+  }),
+]
+
+/** Chooses the start form's target through the shared account picker. */
+async function pickStartAccount(
+  user: ReturnType<typeof userEvent.setup>,
+  id: string,
+): Promise<void> {
+  const account = START_ACCOUNTS.find((row) => row.id === id)
+  if (account === undefined) {
+    throw new Error(`no start account ${id}`)
+  }
+  const label = screen.getByRole('combobox', {
+    name: zhCN.impersonations.start.accountLabel,
+  })
+  await user.click(label)
+  await user.type(label, account.display_name)
+  await user.click(
+    await screen.findByRole('option', {
+      name: `${account.display_name} (${
+        account.identifiers.find((identifier) => identifier.kind === 'username')
+          ?.value ?? ''
+      })`,
+    }),
+  )
 }
 
 function withPage(
@@ -237,6 +269,8 @@ function withPage(
   return createAdminOperations(
     makeAdminBackend({
       listTenants: () => Promise.resolve([TENANT]),
+      listAccounts: () =>
+        Promise.resolve({ accounts: [...START_ACCOUNTS], next_cursor: '' }),
       getAccount: ({ id }) => {
         const accountId = id ?? ''
         return Promise.resolve(
@@ -384,9 +418,10 @@ describe('ImpersonationsPage', () => {
     const actorCell = screen.getByText('Staff One').closest('td')
     expect(actorCell).not.toBeNull()
     expect(actorCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
+    // The recorded account id is not offered as a copy value.
     expect(
-      within(actorCell as HTMLElement).getByRole('button', { name: copyLabel('staff-1') }),
-    ).toBeInTheDocument()
+      within(actorCell as HTMLElement).queryByRole('button'),
+    ).toBeNull()
   })
 
   it('keeps the recorded ids marked unresolved when the account read is refused', async () => {
@@ -402,13 +437,15 @@ describe('ImpersonationsPage', () => {
       }),
     })
     await pickTenant(user)
-    const recordIds = await screen.findAllByTitle(zhCN.common.accountUnresolved)
-    expect(recordIds.map((cell) => cell.textContent)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('staff-1'),
-        expect.stringContaining('acc-1'),
-      ]),
+    const recordCells = await screen.findAllByTitle(
+      zhCN.common.accountUnresolved,
     )
+    expect(recordCells).toHaveLength(2)
+    for (const cell of recordCells) {
+      expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
+    }
+    expect(screen.queryByText('staff-1')).toBeNull()
+    expect(screen.queryByText('acc-1')).toBeNull()
     recordHalf.unmount()
 
     const backend = makeCallerSessionBackend()
@@ -423,9 +460,12 @@ describe('ImpersonationsPage', () => {
     renderWithProviders(<ImpersonationsPage />, {
       operations: withPage({ getAccount: () => Promise.reject(new Error('forbidden')) }),
     })
-    const grantIds = await screen.findAllByTitle(zhCN.common.accountUnresolved)
-    expect(grantIds).toHaveLength(1)
-    expect(grantIds[0]).toHaveTextContent('acc-7')
+    const grantCells = await screen.findAllByTitle(
+      zhCN.common.accountUnresolved,
+    )
+    expect(grantCells).toHaveLength(1)
+    expect(grantCells[0]).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(screen.queryByText('acc-7')).toBeNull()
   })
 
   it('marks an ended record with its reason and disables termination', async () => {
@@ -530,10 +570,7 @@ describe('ImpersonationsPage', () => {
     })
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(
-      screen.getByLabelText(zhCN.impersonations.start.accountLabel),
-      'acc-1',
-    )
+    await pickStartAccount(user, 'acc-1')
     await settleIdentity(getAccount, 'acc-1')
     await user.click(
       screen.getByRole('button', { name: zhCN.impersonations.start.submit }),
@@ -978,7 +1015,7 @@ describe('ImpersonationsPage', () => {
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
 
     await screen.findByText(zhCN.impersonations.current.none)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     const submit = screen.getByRole('button', { name: zhCN.impersonations.start.submit })
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
@@ -1001,7 +1038,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.type(screen.getByLabelText(zhCN.impersonations.start.reasonLabel), 'investigate ticket')
     await user.type(
       screen.getByLabelText(zhCN.impersonations.start.ttlLabel),
@@ -1035,7 +1072,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => {
@@ -1058,7 +1095,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-1')
+    await pickStartAccount(user, 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
@@ -1083,7 +1120,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-1')
+    await pickStartAccount(user, 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
@@ -1331,7 +1368,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
     // A start writes a record into the tenant's list as well, so the list
     // is re-read (the read ran once when the tenant was selected).
@@ -1409,7 +1446,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     // The first refusal settled without touching the slot (no banner for
@@ -1458,7 +1495,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-1')
+    await pickStartAccount(user, 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await vi.waitFor(() => expect(starting).toHaveBeenCalledTimes(1))
@@ -1511,7 +1548,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     expect(await screen.findByText(zhCN.errors.authn.forbidden)).toBeInTheDocument()
@@ -1576,7 +1613,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     // The gate took the first refusal over and the replay is a new run, so
@@ -1615,7 +1652,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     const alert = await screen.findByRole('alert')
@@ -1655,7 +1692,12 @@ describe('ImpersonationsPage', () => {
     await screen.findByText('You are not impersonating any account.')
     await user.click(screen.getByLabelText('Organization'))
     await user.click(await screen.findByRole('option', { name: 'Acme' }))
-    await user.type(screen.getByLabelText('Target account'), 'acc-9')
+    const target = screen.getByRole('combobox', { name: 'Target account' })
+    await user.click(target)
+    await user.type(target, 'Target Nine')
+    await user.click(
+      await screen.findByRole('option', { name: 'Target Nine (target-nine)' }),
+    )
     await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
 
     const alert = await screen.findByRole('alert')
@@ -1783,7 +1825,7 @@ describe('ImpersonationsPage', () => {
       // The list is read before any impersonation starts.
       expect(await screen.findByText('Staff One')).toBeInTheDocument()
 
-      await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+      await pickStartAccount(user, 'acc-9')
       await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
       // Once the status read lands on the grant, the record half is closed.
       expect(await screen.findByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
@@ -1853,7 +1895,7 @@ describe('ImpersonationsPage', () => {
 
     await screen.findByText(zhCN.impersonations.current.none)
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.impersonations.start.accountLabel), 'acc-9')
+    await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     expect(

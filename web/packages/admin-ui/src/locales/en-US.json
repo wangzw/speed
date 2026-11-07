@@ -177,6 +177,7 @@
     "emptyValue": "—",
     "accountUnresolved": "Identity unavailable (requires permission to view accounts)",
     "accountMissing": "Not an account or deleted",
+    "accountUnavailable": "Account unavailable",
     "accountReference": {
       "name": "\"{{name}}\"",
       "identifier": "\"{{identifier}}\"",
@@ -750,7 +751,6 @@
       },
       "column": {
         "name": "Member",
-        "account": "Account",
         "status": "Status",
         "grantedAt": "Granted at"
       },
@@ -762,7 +762,7 @@
     },
     "bindings": {
       "title": "Bindings",
-      "accountLabel": "Account",
+      "accountLabel": "Account to bind",
       "roleLabel": "Role",
       "bind": "Bind",
       "loading": "Loading bindings",
@@ -789,7 +789,7 @@
     },
     "lookup": {
       "title": "Look up an account's bindings",
-      "accountLabel": "Account identifier",
+      "accountLabel": "Account",
       "apply": "Look up",
       "loading": "Loading the account's bindings",
       "error": {
@@ -807,7 +807,6 @@
     "title": "Accounts",
     "identifierLabel": "Login identifier",
     "identifierKindLabel": "Identifier kind",
-    "identifiersMore": "+{{count}}",
     "displayNamePrefixLabel": "Display name prefix",
     "identifierKind": {
       "username": "Username",
@@ -831,7 +830,6 @@
     },
     "retry": "Retry",
     "column": {
-      "id": "Identifier",
       "kind": "Kind",
       "displayName": "Display name",
       "status": "Status",
@@ -842,8 +840,8 @@
     "mfaNo": "No",
     "manage": "Manage",
     "delete": "Delete",
-    "manageAria": "Manage account {{id}}",
-    "deleteAria": "Delete account {{id}}",
+    "manageAria": "Manage account {{name}}",
+    "deleteAria": "Delete account {{name}}",
     "deleteTitle": "Delete account",
     "deleteMessage": "Deleting the account \"{{name}}\" also removes its login identifiers, secrets and sessions.",
     "deleteMessageWithIdentifier": "Deleting the account \"{{name}}\" ({{identifier}}) also removes its login identifiers, secrets and sessions.",
@@ -951,14 +949,14 @@
       "handedOver": "Service secret \"{{label}}\" (shown once):",
       "copy": "Copy service secret",
       "close": "Close",
-      "closeAria": "Close the service secret \"{{label}}\" display for account \"{{name}}\" ({{id}})",
+      "closeAria": "Close the service secret \"{{label}}\" display for account {{name}}",
       "discardTitle": "Discard the unclosed service secret",
       "discardMessage": "Closing the account detail discards this secret, which is shown only once.",
       "discardConfirm": "Discard"
     },
     "detail": {
-      "title": "Account \"{{id}}\"",
       "displayNameLine": "Display name: {{value}}",
+      "usernameLine": "Username: {{value}}",
       "statusLine": "Status: {{value}}",
       "kindLine": "Kind: {{value}}",
       "loading": "Loading the account detail",
@@ -1288,7 +1286,7 @@
     "retry": "Retry",
     "column": {
       "displayName": "Display name",
-      "account": "Account",
+      "username": "Username",
       "roles": "Roles",
       "status": "Status",
       "active": "Active",
@@ -1311,7 +1309,7 @@
       "close": "Close",
       "closeAria": "Close the management panel for \"{{name}}\"",
       "summary": "Member summary",
-      "account": "Account",
+      "username": "Username",
       "status": "Status",
       "joinedAt": "Joined",
       "field": "{{label}}: {{value}}",

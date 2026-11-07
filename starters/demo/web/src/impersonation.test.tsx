@@ -511,6 +511,15 @@ function makeBackend(options: {
         return Promise.resolve(undefined as T)
       }
     }
+    if (path === '/api/v1/system/auth/accounts') {
+      return Promise.resolve({
+        accounts: [PICKER_ACCOUNT],
+        next_cursor: '',
+      } as T)
+    }
+    if (path === '/api/v1/system/auth/accounts/acc-1') {
+      return Promise.resolve({ account: PICKER_ACCOUNT } as T)
+    }
     if (path.startsWith('/api/v1/system/tenants/') && path.endsWith('/impersonations')) {
       recordReads += 1
       recordSignal = request?.signal
@@ -637,6 +646,45 @@ function organizationEntry(
  * the host holds no default roster, so a current tenant must be nameable. */
 const TENANT_ID = 'acme'
 
+/** The account the start form's picker finds and the operator impersonates. */
+const PICKER_ACCOUNT = {
+  id: 'acc-1',
+  kind: 'user',
+  status: 'active',
+  display_name: 'Target One',
+  mfa_required: false,
+  protected: false,
+  password_set: true,
+  attributes: {},
+  identifiers: [
+    {
+      kind: 'username',
+      value: 'target-one',
+      proven: true,
+      sign_in: true,
+      contact: false,
+      default_contact: false,
+    },
+  ],
+  created_at: '2026-10-15T12:00:00Z',
+} as const
+
+/** Chooses the start form's target through the shared account picker. */
+async function pickStartAccount(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  const picker = screen.getByRole('combobox', {
+    name: tAdmin('impersonations.start.accountLabel'),
+  })
+  await user.click(picker)
+  await user.type(picker, PICKER_ACCOUNT.display_name)
+  await user.click(
+    await screen.findByRole('option', {
+      name: `${PICKER_ACCOUNT.display_name} (target-one)`,
+    }),
+  )
+}
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenant(TENANT_ID)
@@ -671,7 +719,7 @@ describe('the impersonation shell', () => {
 
     // The admin page is reachable and the start form waits for its fields.
     await screen.findByText(tAdmin('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
     // The start settled; the host's action re-read the session and moved the
@@ -1641,7 +1689,7 @@ describe('the impersonation shell', () => {
       // record read is in flight.
       await screen.findByText(tAdmin('impersonations.current.none'))
       await waitFor(() => expect(backend.recordReads()).toBe(1))
-      await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+      await pickStartAccount(user)
 
       // The write is issued: the record read in flight is cancelled at that
       // moment, and the client's queries are paused.
@@ -1698,7 +1746,7 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session: transitions.session })
 
     await screen.findByText(tAdmin('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
@@ -2253,7 +2301,7 @@ describe('the impersonation shell', () => {
     })
 
     await screen.findByText(tAdmin('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
     // The write settled and the identity change is waiting on the session
@@ -2320,7 +2368,7 @@ describe('the impersonation shell', () => {
     })
 
     await screen.findByText(tAdmin('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
@@ -2460,7 +2508,7 @@ describe('the impersonation shell', () => {
       const renderResult = renderDemoApp({ session, api: client })
 
       await screen.findByText(tAdmin('impersonations.current.none'))
-      await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+      await pickStartAccount(user)
       const tenantBefore = backend.tenantReads()
       const openedBefore = opened.length
       await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
@@ -2522,8 +2570,11 @@ describe('the impersonation shell', () => {
       name: tAuth('impersonation.regionLabel'),
     })
     expect(notice).toHaveTextContent(
-      tAuth('impersonation.actingAs', { subject: 'acc-1' }),
+      tAuth('impersonation.actingAs', {
+        subject: tAuth('impersonation.accountUnavailable'),
+      }),
     )
+    expect(notice).not.toHaveTextContent('acc-1')
   })
 
   it('starts without a blanking window: the banner appears when the re-read settles', async () => {
@@ -2549,7 +2600,7 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     await screen.findByText(tAdmin('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await pickStartAccount(user)
     await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
     // A start announces itself through the re-read: the banner appears with

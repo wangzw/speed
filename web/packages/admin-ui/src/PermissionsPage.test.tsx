@@ -229,7 +229,13 @@ function withAuthz(
         Promise.resolve({
           accounts: [
             account(),
-            account({ id: 'acc-2', display_name: 'Ada' }),
+            account({
+              id: 'acc-2',
+              display_name: 'Ada',
+              identifiers: [
+                { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+              ],
+            }),
           ],
           next_cursor: '',
         }),
@@ -374,7 +380,7 @@ describe('PermissionsPage', () => {
     const reads = listRoles.mock.calls.length
 
     await user.type(screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }), 'viewer')
-    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
     await expectRefreshInert(listRoles, reads)
 
@@ -397,7 +403,7 @@ describe('PermissionsPage', () => {
     await screen.findByText('editor')
     const reads = listRoles.mock.calls.length
 
-    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
     await user.click(
       await screen.findByRole('button', {
@@ -1099,7 +1105,7 @@ describe('PermissionsPage', () => {
     expect(screen.getByRole('button', { name: zhCN.permissions.bindings.bind })).toBeDisabled()
     // A display name finds the account; the write carries its id ("acc-2"),
     // never the typed name.
-    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
     await user.click(screen.getByRole('button', { name: text(zhCN.permissions.bindings.unbindAria, { account: 'Operator', role: 'editor' }) }))
     await vi.waitFor(() => {
@@ -1121,14 +1127,20 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    // The cell keeps the recorded id, labelled unresolved rather than
+    // The cell renders the neutral copy, labelled unresolved rather than
     // passed off as a resolved identity.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent('acc-1')
-    // The unbind control names the account by the recorded id when no
-    // readable name was resolved.
+    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(cell).not.toHaveTextContent('acc-1')
+    // The unbind control names the account by the same neutral copy when no
+    // readable identity was resolved.
     expect(
-      screen.getByRole('button', { name: text(zhCN.permissions.bindings.unbindAria, { account: 'acc-1', role: 'viewer' }) }),
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.bindings.unbindAria, {
+          account: zhCN.common.accountUnavailable,
+          role: 'viewer',
+        }),
+      }),
     ).toBeInTheDocument()
   })
 
@@ -1175,7 +1187,7 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     // No account chosen yet, so the lookup is not offered.
     expect(screen.getByRole('button', { name: zhCN.permissions.lookup.apply })).toBeDisabled()
-    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
     // The read is addressed by the account id, not the typed name.
     await vi.waitFor(() => {
@@ -1192,7 +1204,7 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
 
     const lookup = section(zhCN.permissions.lookup.title)
@@ -1222,7 +1234,7 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
 
     const lookup = section(zhCN.permissions.lookup.title)
@@ -1532,7 +1544,7 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
 
     const lookup = section(zhCN.permissions.lookup.title)
@@ -1595,7 +1607,7 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await user.type(screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }), 'viewer')
-    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
 
     // The chosen account drives the bindings scope: it is disabled while
@@ -1607,13 +1619,23 @@ describe('PermissionsPage', () => {
       await pending.promise
     })
     expect(
-      await screen.findByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: byName('Ada') })),
+      await screen.findByText(
+        text(zhCN.permissions.bindings.bound, {
+          role: 'viewer',
+          account: byNameAndIdentifier('Ada', 'ada'),
+        }),
+      ),
     ).toBeInTheDocument()
 
     // Choosing another account is another context: the confirmation goes.
-    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Operator', 'Operator (acc-1)')
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Operator', 'Operator')
     expect(
-      screen.queryByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: byName('Ada') })),
+      screen.queryByText(
+        text(zhCN.permissions.bindings.bound, {
+          role: 'viewer',
+          account: byNameAndIdentifier('Ada', 'ada'),
+        }),
+      ),
     ).toBeNull()
   })
 
@@ -1650,8 +1672,17 @@ describe('PermissionsPage', () => {
         }),
         'viewer',
       )
+      const username =
+        identifiers.find((identifier) => identifier.kind === 'username')
+          ?.value ?? ''
       const optionName =
-        displayName === '' ? 'acc-2' : `${displayName} (acc-2)`
+        displayName === '' && username === ''
+          ? zhCN.common.accountUnavailable
+          : displayName === ''
+            ? username
+            : username === ''
+              ? displayName
+              : `${displayName} (${username})`
       await chooseAccount(
         user,
         zhCN.permissions.bindings.accountLabel,
@@ -1686,10 +1717,21 @@ describe('PermissionsPage', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
+    const username =
+      identifiers.find((identifier) => identifier.kind === 'username')
+        ?.value ?? ''
+    const composed =
+      displayName === '' && username === ''
+        ? zhCN.common.accountUnavailable
+        : displayName === ''
+          ? username
+          : username === ''
+            ? displayName
+            : `${displayName} (${username})`
     await user.click(
       screen.getByRole('button', {
         name: text(zhCN.permissions.bindings.unbindAria, {
-          account: displayName === '' ? 'acc-1' : displayName,
+          account: composed,
           role: 'editor',
         }),
       }),
@@ -1831,7 +1873,7 @@ describe('PermissionsPage', () => {
       user,
       zhCN.permissions.lookup.accountLabel,
       'Ada',
-      'Ada (acc-2)',
+      'Ada (ada)',
     )
     await user.click(
       screen.getByRole('button', { name: zhCN.permissions.lookup.apply }),

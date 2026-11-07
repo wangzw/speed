@@ -92,14 +92,19 @@ const PREVIOUS_PAGE_LABEL =
 /** The fixture account the suite administers. */
 const ACCOUNT_ID = 'acc-1'
 
-/** The detail panel's accessible name for the fixture account. */
-const DETAIL_PANEL_NAME = fill(zhCN.accounts.detail.title, { id: ACCOUNT_ID })
+/** The detail panel's accessible name: the account's display name, since the
+ * default detail fixture carries no username. */
+const DETAIL_PANEL_NAME = 'Operator'
 
 /** The row control that opens the fixture account's detail panel. */
-const MANAGE_ACCOUNT_NAME = fill(zhCN.accounts.manageAria, { id: ACCOUNT_ID })
+const MANAGE_ACCOUNT_NAME = fill(zhCN.accounts.manageAria, {
+  name: 'Ada Lovelace',
+})
 
 /** The row control that deletes the fixture account. */
-const DELETE_ACCOUNT_NAME = fill(zhCN.accounts.deleteAria, { id: ACCOUNT_ID })
+const DELETE_ACCOUNT_NAME = fill(zhCN.accounts.deleteAria, {
+  name: 'Ada Lovelace',
+})
 
 /** A secret's own revoke control, named by its label. */
 const REVOKE_SECRET_CI_NAME = fill(zhCN.accounts.secrets.revokeAria, {
@@ -1091,30 +1096,24 @@ describe('AccountsPage', () => {
     expect(screen.getByText(zhCN.accounts.status.active)).toBeInTheDocument()
   })
 
-  it('keeps its short-value and identifier columns on one line and the identifier reachable in full', async () => {
-    // The status cell must not split the active-status label across two lines, a
-    // display name with a space must not break at it, and an identifier
-    // must not break mid-token. jsdom does no layout, so the proof is
-    // the declared `white-space: nowrap` on the rendered cells; the
-    // table's TableContainer scroll is what absorbs the resulting width
-    // (asserted in ui-kit's DataTable suite). The complete identifier
-    // stays reachable without that scroll: the cell carries it as its
-    // title and a focusable copy control copies it.
+  it('keeps its short-value and identity columns on one line', async () => {
+    // The status cell must not split the active-status label across two
+    // lines, and a display name with a space must not break at it. jsdom does
+    // no layout, so the proof is the declared `white-space: nowrap` on the
+    // rendered cells; the table's TableContainer scroll is what absorbs the
+    // resulting width (asserted in ui-kit's DataTable suite). The account id
+    // is not a column and is not copyable.
     const user = userEvent.setup()
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
     const statusCell = (await screen.findByText(zhCN.accounts.status.active)).closest('td')
     const nameCell = screen.getByText('Ada Lovelace').closest('td')
-    const idCell = screen.getByText('acc-1').closest('td')
-    for (const cell of [statusCell, nameCell, idCell]) {
+    for (const cell of [statusCell, nameCell]) {
       expect(cell).not.toBeNull()
       expect(cell).toHaveStyle({ whiteSpace: 'nowrap' })
     }
-    expect(idCell).toHaveAttribute('title', 'acc-1')
-    expect(
-      within(idCell as HTMLElement).getByRole('button', { name: /acc-1/ }),
-    ).toBeInTheDocument()
+    expect(screen.queryByText('acc-1')).toBeNull()
   })
 
   it('sends the identifier prefix and its kind when the search is submitted', async () => {
@@ -1518,7 +1517,7 @@ describe('AccountsPage', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: fill(zhCN.accounts.deleteAria, { id: 'acc-2' }),
+        name: fill(zhCN.accounts.deleteAria, { name: 'Grace Hopper' }),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -1769,7 +1768,7 @@ describe('AccountsPage', () => {
     await search(user)
     await user.click(
       await screen.findByRole('button', {
-        name: fill(zhCN.accounts.deleteAria, { id: DELETE_UUID }),
+        name: fill(zhCN.accounts.deleteAria, { name: 'Ada Lovelace' }),
       }),
     )
     const dialog = await screen.findByRole('dialog', {
@@ -1783,6 +1782,7 @@ describe('AccountsPage', () => {
   })
 
   it('names the account being deleted by its display name and first identifier', async () => {
+    // (the delete control's accessible name below carries the same pair)
     const user = userEvent.setup()
     const operations = accountsWith(
       accountFixture({
@@ -1798,7 +1798,7 @@ describe('AccountsPage', () => {
     await search(user)
     await user.click(
       await screen.findByRole('button', {
-        name: fill(zhCN.accounts.deleteAria, { id: DELETE_UUID }),
+        name: fill(zhCN.accounts.deleteAria, { name: 'Ada Lovelace (ada)' }),
       }),
     )
     const dialog = await screen.findByRole('dialog', {
@@ -1832,7 +1832,7 @@ describe('AccountsPage', () => {
     await search(user)
     await user.click(
       await screen.findByRole('button', {
-        name: fill(zhCN.accounts.deleteAria, { id: DELETE_UUID }),
+        name: fill(zhCN.accounts.deleteAria, { name: 'ada' }),
       }),
     )
     const dialog = await screen.findByRole('dialog', {
@@ -1855,7 +1855,7 @@ describe('AccountsPage', () => {
     await search(user)
     await user.click(
       await screen.findByRole('button', {
-        name: fill(zhCN.accounts.deleteAria, { id: DELETE_UUID }),
+        name: fill(zhCN.accounts.deleteAria, { name: 'Ada Lovelace' }),
       }),
     )
     const dialog = await screen.findByRole('dialog', {
@@ -1873,7 +1873,7 @@ describe('AccountsPage', () => {
     await search(user)
     await user.click(
       await screen.findByRole('button', {
-        name: fill(zhCN.accounts.deleteAria, { id: DELETE_UUID }),
+        name: fill(zhCN.accounts.deleteAria, { name: '账户不可用' }),
       }),
     )
     const dialog = await screen.findByRole('dialog', {
@@ -2209,6 +2209,23 @@ describe('AccountsPage', () => {
     { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
   ]
 
+  /** The identity label the console shows for one account view. */
+  function identityLabelOf(
+    displayName: string,
+    identifiers: AdminAccount['identifiers'],
+  ): string {
+    const username =
+      identifiers.find((identifier) => identifier.kind === 'username')
+        ?.value ?? ''
+    if (displayName !== '' && username !== '') {
+      return `${displayName} (${username})`
+    }
+    if (username !== '') {
+      return username
+    }
+    return displayName !== '' ? displayName : zhCN.common.accountUnavailable
+  }
+
   /** Drives one detail write with the selected account's view as given. */
   async function driveDetailNotice(
     user: ReturnType<typeof userEvent.setup>,
@@ -2226,7 +2243,7 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     const panel = await screen.findByRole('dialog', {
-      name: DETAIL_PANEL_NAME,
+      name: identityLabelOf(displayName, identifiers),
     })
     await entry.drive(user, panel)
     return panel
@@ -2384,8 +2401,11 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
-    await screen.findByRole('button', { name: DELETE_ACCOUNT_NAME })
-    await user.click(screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }))
+    const deleteName = fill(zhCN.accounts.deleteAria, {
+      name: identityLabelOf(displayName, identifiers),
+    })
+    await screen.findByRole('button', { name: deleteName })
+    await user.click(screen.getByRole('button', { name: deleteName }))
     await confirmDelete(user)
   }
 
@@ -3145,14 +3165,17 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await screen.findByText('Ada')
 
-    // The two rows' manage/delete controls carry the account id in their
-    // accessible name -- no two identical "Delete" buttons.
+    // The two rows' manage/delete controls carry each account's readable
+    // identity in their accessible name -- no two identical "Delete"
+    // buttons and no account id.
     expect(
-      screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }),
+      screen.getByRole('button', {
+        name: fill(zhCN.accounts.manageAria, { name: 'Ada' }),
+      }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', {
-        name: fill(zhCN.accounts.deleteAria, { id: 'acc-2' }),
+        name: fill(zhCN.accounts.deleteAria, { name: 'Grace' }),
       }),
     ).toBeInTheDocument()
   })
@@ -3430,7 +3453,7 @@ describe('AccountsPage', () => {
     const operations = withAccounts({ getAccount })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    const panel = await screen.findByRole('dialog', { name: 'Ada Lovelace' })
 
     // A by-id 404 replaces the panel's content with the "not found or
     // unavailable" placeholder and keeps the retry that re-reads.
@@ -3598,14 +3621,9 @@ describe('AccountsPage', () => {
 
     const header = (label: string): Element =>
       screen.getByRole('columnheader', { name: label })
-    // The type and identifier columns are low and shed first; the status
-    // column stays high, so a narrow container loses type before status;
-    // the display name (the primary identity) and the row actions never
-    // hide.
-    expect(columnVisibility(header(zhCN.accounts.column.id))).toEqual({
-      hiddenAt: 0,
-      visibleFrom: 1200,
-    })
+    // The type column is low and sheds first; the status column stays high,
+    // so a narrow container loses type before status; the identity (the
+    // primary column) and the row actions never hide.
     const kind = columnVisibility(header(zhCN.accounts.column.kind))
     const status = columnVisibility(header(zhCN.accounts.column.status))
     expect(kind).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
@@ -3618,26 +3636,10 @@ describe('AccountsPage', () => {
     })
     expect(columnVisibility(header(zhCN.accounts.column.actions))).toBeNull()
 
-    // The identifier cell shows the 8-character prefix; the complete id
-    // rides the cell title and the copy control.
-    const prefix = screen.getByText(id.slice(0, 8))
-    const idCell = prefix.closest('td')
-    expect(idCell).not.toBeNull()
-    expect(within(idCell as HTMLElement).queryByText(id)).toBeNull()
-    expect(idCell).toHaveAttribute('title', id)
-    expect(
-      within(idCell as HTMLElement).getByRole('button', {
-        name: fill(COPY_VALUE_TEMPLATE, { value: id }),
-      }),
-    ).toBeInTheDocument()
-    // The identifier column's cap counts that copy control: the whole
-    // wrapper is 160px below `md`, 200px from `md` up.
-    expect(containerMaxWidthOf(idCell!.firstElementChild!)).toEqual(
-      new Map([
-        [0, 160],
-        [900, 200],
-      ]),
-    )
+    // The identity is the primary cell: the account id is neither a column
+    // nor a copy value.
+    expect(screen.queryByText(id)).toBeNull()
+    expect(screen.queryByText(id.slice(0, 8))).toBeNull()
 
     // The display name's primary cell keeps the shared whole-cell cap:
     // 160px below `md`, 200px from `md` up.
@@ -3651,7 +3653,7 @@ describe('AccountsPage', () => {
     )
   })
 
-  it('shows the first login identifier under the display name and keeps the complete list on the cell', async () => {
+  it('shows the display name with the username and never an email beside it', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -3672,26 +3674,24 @@ describe('AccountsPage', () => {
     )
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
-    const name = await screen.findByText('Ada Lovelace')
-    const cell = name.closest('td')
+    const identity = await screen.findByText('Ada Lovelace (ada)')
+    const cell = identity.closest('td')
     expect(cell).not.toBeNull()
 
-    // The secondary line names the account by the first identifier only;
-    // the complete list rides the cell title and the copy control.
-    expect(within(cell as HTMLElement).getByText('ada')).toBeInTheDocument()
+    // The email is a login identifier, never a stand-in for the username:
+    // it does not appear in the cell, its title or its copy value.
     expect(
       within(cell as HTMLElement).queryByText('ada@example.com'),
     ).toBeNull()
-    const complete = 'ada, ada@example.com'
-    expect(cell).toHaveAttribute('title', complete)
+    expect(cell).toHaveAttribute('title', 'Ada Lovelace (ada)')
     expect(
       within(cell as HTMLElement).getByRole('button', {
-        name: fill(COPY_VALUE_TEMPLATE, { value: complete }),
+        name: fill(COPY_VALUE_TEMPLATE, { value: 'Ada Lovelace (ada)' }),
       }),
     ).toBeInTheDocument()
   })
 
-  it('appends the number of remaining identifiers to the visible line', async () => {
+  it('falls back to the display name when there is no username, never an email', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -3701,7 +3701,40 @@ describe('AccountsPage', () => {
               accountFixture({
                 display_name: 'Ada Lovelace',
                 identifiers: [
-                  { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+                  { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
+                ],
+              }),
+            ],
+            next_cursor: '',
+          }),
+        }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    const identity = await screen.findByText('Ada Lovelace')
+    const cell = identity.closest('td')
+    expect(cell).not.toBeNull()
+    expect(
+      within(cell as HTMLElement).queryByText('ada@example.com'),
+    ).toBeNull()
+    expect(cell).toHaveAttribute('title', 'Ada Lovelace')
+    expect(
+      within(cell as HTMLElement).getByRole('button', {
+        name: fill(COPY_VALUE_TEMPLATE, { value: 'Ada Lovelace' }),
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the neutral copy for an account with neither name nor username', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [
+              accountFixture({
+                display_name: '',
+                identifiers: [
                   { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
                 ],
               }),
@@ -3712,34 +3745,11 @@ describe('AccountsPage', () => {
     )
     renderWithProviders(<AccountsPage />, { operations })
     await search(user)
-    const cell = (await screen.findByText('Ada Lovelace')).closest('td')
-    expect(cell).not.toBeNull()
     expect(
-      within(cell as HTMLElement).getByText(
-        fill(zhCN.accounts.identifiersMore, { count: '1' }),
-      ),
+      await screen.findByText(zhCN.common.accountUnavailable),
     ).toBeInTheDocument()
-  })
-
-  it('renders no identifier line for an account with no identifiers', async () => {
-    const user = userEvent.setup()
-    const operations = createAdminOperations(
-      makeAdminBackend({
-        listAccounts: () =>
-          Promise.resolve({
-            accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
-            next_cursor: '',
-          }),
-      }),
-    )
-    renderWithProviders(<AccountsPage />, { operations })
-    await search(user)
-    const cell = (await screen.findByText('Ada Lovelace')).closest('td')
-    expect(cell).not.toBeNull()
-    // Nothing secondary, and no copy control to hand over an empty list.
-    expect(cell?.textContent).toBe('Ada Lovelace')
-    expect(within(cell as HTMLElement).queryByRole('button')).toBeNull()
-    expect(cell).not.toHaveAttribute('title')
+    expect(screen.queryByText('ada@example.com')).toBeNull()
+    expect(screen.queryByText('acc-1')).toBeNull()
   })
 
   it("applies the designed priorities and caps to the panel's three tables", async () => {

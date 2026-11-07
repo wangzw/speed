@@ -45,6 +45,7 @@ import {
   useWriteFeedback,
   WriteFeedbackRegion,
 } from '@speed/ui-kit'
+import { identityLabel } from './internal/account-identity.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { useOrganizationAdminOperations } from './organization-operations.js'
 import type { AdminTenantProfile } from './organization-operations.js'
@@ -323,12 +324,20 @@ interface TransferOwnershipDialogProps {
   readonly onConfirm: (account: string, label: string) => void
 }
 
-/** The member the transfer names, as the select and the notice show it. */
-function memberLabel(member: AdminMember): string {
-  const name = member.display_name.trim()
-  return name === '' || name === member.account
-    ? member.account
-    : `${name} (${member.account})`
+/**
+ * The member the transfer names, as the select and the notice show it: the
+ * display name with the login username beside it, either alone, or the
+ * neutral copy when the member record carries neither. The account id never
+ * becomes a label.
+ */
+function memberLabel(
+  t: ReturnType<typeof useAdminUiTranslation>['t'],
+  member: AdminMember,
+): string {
+  return (
+    identityLabel(member.display_name, member.username) ??
+    t('common.accountUnavailable')
+  )
 }
 
 /**
@@ -396,7 +405,7 @@ function TransferOwnershipDialog({
       onCancel={onCancel}
       onConfirm={() => {
         if (selected !== undefined) {
-          onConfirm(selected.account, memberLabel(selected))
+          onConfirm(selected.account, memberLabel(t, selected))
         }
       }}
     >
@@ -430,7 +439,7 @@ function TransferOwnershipDialog({
       >
         {options.map((member) => (
           <MenuItem key={member.account} value={member.account}>
-            {memberLabel(member)}
+            {memberLabel(t, member)}
           </MenuItem>
         ))}
       </TextField>

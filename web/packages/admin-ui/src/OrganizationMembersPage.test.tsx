@@ -61,6 +61,7 @@ const ADA: AdminMember = {
   tenant: TENANT,
   active: true,
   display_name: 'Ada Lovelace',
+  username: 'ada',
   source: 'admin',
   sso_exempt: false,
   roles: ['tenant-operator'],
@@ -72,6 +73,7 @@ const BOB: AdminMember = {
   tenant: TENANT,
   active: false,
   display_name: 'Bob Stone',
+  username: 'bob',
   source: 'invite',
   sso_exempt: false,
   roles: [],
@@ -403,9 +405,16 @@ function rowOf(target: string | HTMLElement): HTMLElement {
   return row
 }
 
-function manageButton(name: string): HTMLElement {
+/** The member's composed identity, as the row's Manage control names it. */
+function composedName(member: AdminMember): string {
+  return member.username === ''
+    ? member.display_name
+    : `${member.display_name} (${member.username})`
+}
+
+function manageButton(member: AdminMember): HTMLElement {
   return screen.getByRole('button', {
-    name: zhCN.members.manageAria.replace('{{name}}', name),
+    name: zhCN.members.manageAria.replace('{{name}}', composedName(member)),
   })
 }
 
@@ -426,12 +435,12 @@ async function findResendButtonOf(target: string): Promise<HTMLElement> {
 
 async function openPanel(
   user: ReturnType<typeof userEvent.setup>,
-  name: string,
+  member: AdminMember,
 ): Promise<HTMLElement> {
   // The display name can appear twice once the inviter identity resolves
   // against the member read; the row's Manage control is the unique handle.
-  await screen.findAllByText(name)
-  await user.click(manageButton(name))
+  await screen.findAllByText(member.display_name)
+  await user.click(manageButton(member))
   return screen.getByRole('dialog', { name: zhCN.members.panel.title })
 }
 
@@ -726,7 +735,7 @@ describe('the member search and paging', () => {
     renderWithProviders(<SwitchTenant />)
 
     await screen.findAllByText(ADA.display_name)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     expect(panel).toBeInTheDocument()
 
     // The host mounts the organization surface for another tenant in place.
@@ -979,7 +988,7 @@ describe('the role filter', () => {
 
     // A removal's success is written into the member list's scope; the
     // filter change is what then clears that scope.
-    const panel = await openPanel(user, BOB.display_name)
+    const panel = await openPanel(user, BOB)
     await user.click(
       within(panel).getByRole('button', { name: zhCN.members.remove }),
     )
@@ -996,7 +1005,7 @@ describe('the role filter', () => {
     )
     const removedMessage = zhCN.members.removed.replace(
       '{{account}}',
-      BOB.account,
+      composedName(BOB),
     )
     expect(
       await screen.findByText(removedMessage, undefined, { timeout: 3000 }),
@@ -1034,7 +1043,7 @@ describe('the member management panel', () => {
       listTenantAccountBindings: () => Promise.resolve([SUPER_BINDING]),
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
 
     const select = within(panel).getByRole('combobox', {
       name: zhCN.members.panel.roleLabel,
@@ -1129,7 +1138,7 @@ describe('the member management panel', () => {
       listTenantRoles: () => Promise.resolve([ROLE_OPERATOR]),
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
 
     // The only role the tenant has is the one the member already holds.
     expect(
@@ -1156,7 +1165,7 @@ describe('the member management panel', () => {
       listTenantAccountBindings: () => Promise.resolve([ownBinding]),
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
 
     expect(
       await within(panel).findByText(zhCN.members.panel.cannotUnbindOwnAdmin),
@@ -1176,7 +1185,7 @@ describe('the member management panel', () => {
     const { backend, recorder } = scripted()
     renderPage(backend)
 
-    const activePanel = await openPanel(user, ADA.display_name)
+    const activePanel = await openPanel(user, ADA)
     await user.click(
       within(activePanel).getByRole('button', {
         name: zhCN.members.panel.suspend,
@@ -1196,7 +1205,7 @@ describe('the member management panel', () => {
       within(activePanel).getByRole('button', {
         name: zhCN.members.panel.closeAria.replace(
           '{{name}}',
-          ADA.display_name,
+          composedName(ADA),
         ),
       }),
     )
@@ -1206,7 +1215,7 @@ describe('the member management panel', () => {
       ).toBeNull(),
     )
 
-    const suspendedPanel = await openPanel(user, BOB.display_name)
+    const suspendedPanel = await openPanel(user, BOB)
     await user.click(
       within(suspendedPanel).getByRole('button', {
         name: zhCN.members.panel.resume,
@@ -1242,7 +1251,7 @@ describe('the member management panel', () => {
       },
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
 
     await user.click(
       within(panel).getByRole('button', {
@@ -1284,7 +1293,7 @@ describe('the member management panel', () => {
     const user = userEvent.setup()
     const { backend } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     expect(
       within(panel).getByRole('button', {
         name: zhCN.members.panel.suspend,
@@ -1299,7 +1308,7 @@ describe('the member management panel', () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, BOB.display_name)
+    const panel = await openPanel(user, BOB)
 
     await user.click(
       within(panel).getByRole('button', { name: zhCN.members.remove }),
@@ -1325,7 +1334,7 @@ describe('the member management panel', () => {
     // The success is written into the list's scope after the panel exits.
     expect(
       await screen.findByText(
-        zhCN.members.removed.replace('{{account}}', BOB.account),
+        zhCN.members.removed.replace('{{account}}', composedName(BOB)),
         undefined,
         { timeout: 3000 },
       ),
@@ -1338,7 +1347,7 @@ describe('the member management panel', () => {
       removeMember: () => Promise.reject({ code: 'authn.conflict' }),
     })
     renderPage(backend)
-    const panel = await openPanel(user, BOB.display_name)
+    const panel = await openPanel(user, BOB)
     await user.click(
       within(panel).getByRole('button', { name: zhCN.members.remove }),
     )
@@ -1363,7 +1372,7 @@ describe('the member management panel', () => {
     const user = userEvent.setup()
     const { backend } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     await user.click(
       within(panel).getByRole('button', { name: zhCN.members.remove }),
     )
@@ -1384,7 +1393,7 @@ describe('the role permission tiers', () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
 
     expect(
       within(panel).getByText(zhCN.members.panel.rolesNoRead),
@@ -1415,7 +1424,7 @@ describe('the role permission tiers', () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
 
     expect(
       await within(panel).findByText(ROLE_OPERATOR.role),
@@ -1448,7 +1457,7 @@ describe('the role permission tiers', () => {
     const user = userEvent.setup()
     const { backend } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
 
     expect(
       within(panel).getByRole('combobox', {
@@ -1469,7 +1478,7 @@ describe('the bind escalation check', () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     const select = within(panel).getByRole('combobox', {
       name: zhCN.members.panel.roleLabel,
     })
@@ -1497,7 +1506,7 @@ describe('the bind escalation check', () => {
       listTenantGrants: () => Promise.resolve(GOVERNED_GRANTS),
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     const select = within(panel).getByRole('combobox', {
       name: zhCN.members.panel.roleLabel,
     })
@@ -1544,7 +1553,7 @@ describe('the bind escalation check', () => {
       listTenantGrants: () => Promise.resolve(grants),
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     const select = within(panel).getByRole('combobox', {
       name: zhCN.members.panel.roleLabel,
     })
@@ -1580,7 +1589,7 @@ describe('the bind escalation check', () => {
         ]),
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     const select = within(panel).getByRole('combobox', {
       name: zhCN.members.panel.roleLabel,
     })
@@ -1625,7 +1634,7 @@ describe('the bind escalation check', () => {
       listTenantGrants: () => Promise.reject(new Error('grants unavailable')),
     })
     renderPage(backend)
-    const panel = await openPanel(user, ADA.display_name)
+    const panel = await openPanel(user, ADA)
     const select = within(panel).getByRole('combobox', {
       name: zhCN.members.panel.roleLabel,
     })
@@ -1651,7 +1660,7 @@ describe('the bind escalation check', () => {
     const user = userEvent.setup()
     const { backend } = scripted()
     renderPage(backend)
-    const panel = await openPanel(user, BOB.display_name)
+    const panel = await openPanel(user, BOB)
     const select = within(panel).getByRole('combobox', {
       name: zhCN.members.panel.roleLabel,
     })

@@ -717,12 +717,23 @@ export function useImpersonationNoticeState(
   }, [endImpersonation, feedback, holdUntilSettled, session, t])
 
   const principal = snapshot.principal
+  // The subject names the account the way every console surface does: the
+  // display name with the login username beside it, either alone, and the
+  // neutral copy when neither resolves. The account id is the internal key
+  // and never the subject.
+  const username =
+    principal?.identifiers.find((identifier) => identifier.kind === 'username')
+      ?.value ?? ''
   const subject =
     principal === null
       ? ''
-      : principal.display_name !== ''
-        ? principal.display_name
-        : principal.account_id
+      : principal.display_name !== '' && username !== ''
+        ? `${principal.display_name} (${username})`
+        : username !== ''
+          ? username
+          : principal.display_name !== ''
+            ? principal.display_name
+            : t('impersonation.accountUnavailable')
 
   // A standing end confirmation or failure belongs to the impersonation
   // that produced it. A new impersonation (or a different impersonated

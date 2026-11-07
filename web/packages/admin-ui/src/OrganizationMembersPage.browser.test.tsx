@@ -62,6 +62,7 @@ const ADA: AdminMember = {
   tenant: TENANT,
   active: true,
   display_name: 'Ada Lovelace',
+  username: '',
   source: 'admin',
   sso_exempt: false,
   roles: ['support'],
@@ -73,6 +74,7 @@ const BOB: AdminMember = {
   tenant: TENANT,
   active: false,
   display_name: 'Bob Stone',
+  username: '',
   source: 'invite',
   sso_exempt: false,
   roles: [],
@@ -396,7 +398,11 @@ function requiredWidthAtFloor(
 
 /** The management control's accessible name for a member. */
 function manageName(member: AdminMember): string {
-  return enUS.members.manageAria.replace('{{name}}', member.display_name)
+  const name =
+    member.username === ''
+      ? member.display_name
+      : `${member.display_name} (${member.username})`
+  return enUS.members.manageAria.replace('{{name}}', name)
 }
 
 /** A human-readable name for a control in a touch-target failure message. */
@@ -661,7 +667,7 @@ describe('OrganizationMembersPage single-token identity values in Chromium', () 
 
     for (const header of [
       enUS.members.column.displayName,
-      enUS.members.column.account,
+      enUS.members.column.username,
       enUS.members.column.roles,
       enUS.members.column.status,
       enUS.members.column.joinedAt,

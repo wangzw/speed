@@ -71,6 +71,7 @@ import { usePermission } from '@speed/auth-core'
 import { ConfirmDialog, errorCodeOf, httpStatusOf } from '@speed/ui-kit'
 import { AccountSelector } from './account-selector.js'
 import { useAdminUiErrorText } from './error-text.js'
+import { accountUsername, identityLabel } from './account-identity.js'
 import { useAdminUiTranslation } from './translation.js'
 import { WriteFeedbackRegion } from './write-feedback.js'
 import { useAdminOperations } from '../operations.js'
@@ -101,18 +102,32 @@ export function isPersonalTenant(kind: string): boolean {
   return kind === 'personal'
 }
 
-/** The option text: the display name beside the account, or the account alone. */
-function memberOptionLabel(member: AdminMember): string {
-  return member.display_name === ''
-    ? member.account
-    : `${member.display_name} (${member.account})`
+/**
+ * The option text: the member's display name with the login username beside
+ * it, either alone, or the neutral copy when the member record carries
+ * neither. The account id never becomes the option text.
+ */
+function memberOptionLabel(
+  t: Translate,
+  member: AdminMember,
+): string {
+  return (
+    identityLabel(member.display_name, member.username) ??
+    t('common.accountUnavailable')
+  )
 }
 
 /** The option text of a platform account. */
-function accountOptionLabel(account: AdminAccount): string {
-  return account.display_name === ''
-    ? account.id
-    : `${account.display_name} (${account.id})`
+function accountOptionLabel(
+  t: Translate,
+  account: AdminAccount,
+): string {
+  return (
+    identityLabel(
+      account.display_name,
+      accountUsername(account.identifiers),
+    ) ?? t('common.accountUnavailable')
+  )
 }
 
 /**
@@ -218,7 +233,7 @@ function TenantMemberSelector({
         options={rows}
         loading={members.isLoading || members.isFetching}
         filterOptions={(options) => options}
-        getOptionLabel={memberOptionLabel}
+        getOptionLabel={(member) => memberOptionLabel(t, member)}
         isOptionEqualToValue={(option, current) =>
           option.account === current.account
         }
@@ -357,10 +372,10 @@ function TransferOwnerDialog({
     canReadMembers
       ? member === null
         ? ''
-        : memberOptionLabel(member)
+        : memberOptionLabel(t, member)
       : account === null
         ? ''
-        : accountOptionLabel(account)
+        : accountOptionLabel(t, account)
 
   const write = () => {
     if (targetAccount === null) {

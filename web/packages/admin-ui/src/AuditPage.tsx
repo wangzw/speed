@@ -65,7 +65,11 @@ import {
 import type { DataTableColumn } from '@speed/ui-kit'
 import { formatInstant } from '@speed/i18n'
 import { AdminAsyncSection } from './internal/async-section.js'
-import { AccountIdentity } from './internal/account-identity.js'
+import {
+  AccountIdentity,
+  auditObjectNamesAccount,
+  AuditObjectIdentity,
+} from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
 import { exportFileName, saveBlob } from './internal/export-file.js'
 import { InlineError } from './internal/inline-error.js'
@@ -234,12 +238,18 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       header: t('audit.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
       cellWrap: 'nowrap',
+      // An object that is an account id resolves to the account's identity,
+      // and its copy control is withheld: the opaque id is not a value an
+      // operator acts on. Every other object -- a tenant alias, a role name,
+      // a session or an invitation id -- stays as recorded and copyable.
       cellFullValue: (record) =>
-        record.object === '' ? undefined : record.object,
+        record.object === '' || auditObjectNamesAccount(record.action)
+          ? undefined
+          : record.object,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => (
         <Typography variant="body2" noWrap>
-          {record.object}
+          <AuditObjectIdentity action={record.action} object={record.object} />
         </Typography>
       ),
     },
@@ -248,8 +258,8 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       header: t('audit.column.actor'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
       cellWrap: 'nowrap',
-      cellFullValue: (record) =>
-        record.actor === '' ? undefined : record.actor,
+      // The actor's identity comes from the account read, so the copy
+      // control is withheld rather than handing over the opaque id.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },

@@ -67,7 +67,9 @@ function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
     mfa_required: false,
     protected: false,
     password_set: true,
-    identifiers: [],
+    identifiers: [
+      { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+    ],
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
@@ -89,7 +91,7 @@ function withSessions(
 async function loadAccount(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
-  await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (acc-9)')
+  await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (ada)')
 }
 
 /** A promise the test settles by hand, for observing an in-flight write. */
@@ -265,7 +267,13 @@ describe('SessionsPage', () => {
         Promise.resolve({
           accounts: [
             account(),
-            account({ id: 'acc-10', display_name: 'Bob' }),
+            account({
+              id: 'acc-10',
+              display_name: 'Bob',
+              identifiers: [
+                { kind: 'username', value: 'bob', proven: true, sign_in: true, contact: false, default_contact: false },
+              ],
+            }),
           ],
           next_cursor: '',
         }),
@@ -326,7 +334,7 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     // Choosing the account is the whole gesture: no further control stands
     // between the picker and the read.
-    await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (acc-9)')
+    await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (ada)')
     await vi.waitFor(() => {
       expect(queried).toEqual(['acc-9'])
     })
@@ -565,7 +573,13 @@ describe('SessionsPage', () => {
         Promise.resolve({
           accounts: [
             account(),
-            account({ id: 'acc-10', display_name: 'Bob' }),
+            account({
+              id: 'acc-10',
+              display_name: 'Bob',
+              identifiers: [
+                { kind: 'username', value: 'bob', proven: true, sign_in: true, contact: false, default_contact: false },
+              ],
+            }),
           ],
           next_cursor: '',
         }),
@@ -573,7 +587,7 @@ describe('SessionsPage', () => {
       revokeSession: () => Promise.resolve(),
     })
     renderWithProviders(<SessionsPage />, { operations })
-    await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (acc-9)')
+    await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (ada)')
     await screen.findByText('sess-1')
 
     await user.click(
@@ -595,7 +609,7 @@ describe('SessionsPage', () => {
     // The account is an argument of the revoke, so choosing another one is
     // a context change: the previous account's confirmation must not stand
     // beside the new list the picker is about to read.
-    await chooseAccount(user, zhCN.sessions.accountLabel, 'Bob', 'Bob (acc-10)')
+    await chooseAccount(user, zhCN.sessions.accountLabel, 'Bob', 'Bob (bob)')
     await vi.waitFor(() => {
       expect(screen.queryByText(zhCN.sessions.revokedNotice)).toBeNull()
     })

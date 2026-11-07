@@ -35,6 +35,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { httpStatusOf } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './translation.js'
+import { accountUsername, identityLabel } from './account-identity.js'
 import { useAdminOperations } from '../operations.js'
 import type { AdminAccount } from '../operations.js'
 
@@ -72,11 +73,19 @@ const EMPTY_SEARCH: AccountSearchState = {
   truncated: false,
 }
 
-/** The option's text: the display name beside the id, or the id alone. */
-function accountOptionLabel(account: AdminAccount): string {
-  return account.display_name === ''
-    ? account.id
-    : `${account.display_name} (${account.id})`
+/**
+ * The option's text: the display name with the login username beside it,
+ * either alone, or the neutral copy when the account has neither. The opaque
+ * account id never becomes the option text.
+ */
+function accountOptionLabel(
+  t: ReturnType<typeof useAdminUiTranslation>['t'],
+  account: AdminAccount,
+): string {
+  return (
+    identityLabel(account.display_name, accountUsername(account.identifiers)) ??
+    t('common.accountUnavailable')
+  )
 }
 
 /** Whether every character is visible ASCII, the listing's email alphabet. */
@@ -190,7 +199,7 @@ export function AccountSelector({
 
   // The text a chosen account fills into the box is not a search: it names
   // the selection already made.
-  const selectedLabel = value === null ? '' : accountOptionLabel(value)
+  const selectedLabel = value === null ? '' : accountOptionLabel(t, value)
 
   // A caller that clears the choice after a landed write clears the box
   // too, so the box never shows a label the control no longer holds.
@@ -224,7 +233,7 @@ export function AccountSelector({
         options={query === '' ? EMPTY_SEARCH.rows : search.rows}
         loading={searching}
         filterOptions={(options) => options}
-        getOptionLabel={accountOptionLabel}
+        getOptionLabel={(account) => accountOptionLabel(t, account)}
         isOptionEqualToValue={(option, current) => option.id === current.id}
         noOptionsText={
           query === ''

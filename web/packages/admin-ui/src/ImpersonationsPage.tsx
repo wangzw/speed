@@ -63,10 +63,10 @@
  *
  * A record is in force while its `ended_at` is the zero instant (the
  * sentinel the view carries); the state column says so and the terminate
- * control is offered only then. Every account identifier the page shows --
- * the record's actor and target and the in-force panel's target -- renders
- * through the shared account identity unit, with the recorded identifier
- * kept as the column's full value. The timestamps render in UTC through
+ * control is offered only then. Every account the page shows -- the record's
+ * actor and target and the in-force panel's target -- renders through the
+ * shared account identity unit, never by its opaque identifier. The
+ * timestamps render in UTC through
  * Intl. The page opens with ui-kit's PageHeader.
  *
  * The tenant scope is optionally controlled: `tenant` locks the page to the
@@ -120,6 +120,7 @@ import {
   useAccountIdentity,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
+import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { isZeroInstant } from './internal/datetime.js'
 import {
@@ -134,7 +135,7 @@ import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
-import type { AdminImpersonation } from './operations.js'
+import type { AdminAccount, AdminImpersonation } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
 
 /** The caller's own impersonation status as the section renders it: the
@@ -176,7 +177,7 @@ function TerminateButton({
       onClick={() =>
         onTerminate(record, {
           name: identity.name,
-          identifier: identity.identifier,
+          username: identity.username,
         })
       }
     >
@@ -450,10 +451,9 @@ export function ImpersonationsPage({
       header: t('impersonations.column.actor'),
       priority: 'medium',
       cellWrap: 'nowrap',
-      cellFullValue: (record) => record.actor,
       // A long-text identity beside the record's primary one: the flat
-      // long-text cap bounds it at every tier, and the complete value
-      // stays on the cell title and the copy control.
+      // long-text cap bounds it at every tier. The account id is never the
+      // copy value.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },
@@ -461,10 +461,9 @@ export function ImpersonationsPage({
       id: 'target',
       header: t('impersonations.column.target'),
       cellWrap: 'nowrap',
-      cellFullValue: (record) => record.target,
       // The record's primary identity: it never hides, and the shared
-      // whole-cell cap -- which counts the copy control -- keeps the
-      // terminate action on screen at every tier.
+      // whole-cell cap keeps the terminate action on screen at every tier.
+      // The account id is never the copy value.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.target} />,
     },
@@ -781,25 +780,29 @@ function StartImpersonationForm({
     },
   })
 
-  const [account, setAccount] = useState('')
+  // The target is chosen through the shared account picker: the operator
+  // identifies the account by display name or login identifier, and the
+  // picker hands the internal id to the request only.
+  const [account, setAccount] = useState<AdminAccount | null>(null)
   const [reason, setReason] = useState('')
   const [ttl, setTtl] = useState('')
-  // The target account's readable identity, resolved through the same unit
+  // The chosen account's readable identity, resolved through the same unit
   // the in-force section renders. An unresolved read leaves the notice
   // neutral; the recorded id is never its fallback.
-  const identity = useAccountIdentity(
-    account.trim() === '' ? undefined : account.trim(),
-  )
+  const identity = useAccountIdentity(account?.id)
 
   const ttlSeconds = ttl.trim() === '' ? undefined : Number(ttl)
 
   const submit = (): void => {
     // The refused write's body is captured here: a step-up replay must
     // re-fire exactly this request, not whatever the fields hold later.
-    const typedAccount = account
+    if (account === null) {
+      return
+    }
+    const typedAccount = account.id
     const body = {
       data: {
-        account,
+        account: typedAccount,
         tenant,
         ...(reason.trim() === '' ? {} : { reason }),
         ...(ttlSeconds === undefined || Number.isNaN(ttlSeconds)
@@ -815,7 +818,7 @@ function StartImpersonationForm({
       return feedback.run(async () => {
         try {
           const answer = await startImpersonation.mutateAsync(body)
-          setAccount('')
+          setAccount(null)
           setReason('')
           setTtl('')
           onStarted()
@@ -834,8 +837,8 @@ function StartImpersonationForm({
               unnamed: 'impersonations.current.startedUnnamed',
             },
             answer.grant.target === typedAccount
-              ? { name: identity.name, identifier: identity.identifier }
-              : { name: undefined, identifier: undefined },
+              ? { name: identity.name, username: identity.username }
+              : { name: undefined, username: undefined },
           )
         } catch (error) {
           // The gate takes a step-up refusal over; the attempt settles
@@ -873,11 +876,10 @@ function StartImpersonationForm({
           rowGap: 1,
         }}
       >
-        <TextField
-          size="small"
-          value={account}
-          onChange={(event) => setAccount(event.target.value)}
+        <AccountSelector
           label={t('impersonations.start.accountLabel')}
+          value={account}
+          onChange={setAccount}
         />
         <TextField
           size="small"
@@ -894,11 +896,7 @@ function StartImpersonationForm({
         <Button
           type="button"
           variant="contained"
-          disabled={
-            feedback.pending ||
-            account.trim() === '' ||
-            tenant === ''
-          }
+          disabled={feedback.pending || account === null || tenant === ''}
           loading={feedback.pending}
           onClick={submit}
         >

@@ -102,6 +102,7 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import {
   AccountIdentity,
   accountIdentityValue,
+  accountLabel,
   accountNotice,
   useAccountIdentity,
   type AccountIdentityValue,
@@ -249,7 +250,6 @@ function groupCatalog(entries: readonly AdminPermission[]) {
  */
 function UnbindButton({
   binding,
-  name,
   identity,
   disabled,
   invalid,
@@ -257,8 +257,7 @@ function UnbindButton({
   onClick,
 }: {
   readonly binding: AdminBinding
-  /** The account's display name, when the surface resolved one. */
-  readonly name: string | undefined
+  /** The account's resolved identity, or the neutral copy when none. */
   readonly identity: AccountIdentityValue
   readonly disabled: boolean
   /** Whether this row is the one the scope's failure names. */
@@ -275,7 +274,7 @@ function UnbindButton({
       variant="outlined"
       color="error"
       aria-label={t('permissions.bindings.unbindAria', {
-        account: name ?? binding.account,
+        account: accountLabel(t, identity),
         role: binding.role,
       })}
       aria-invalid={invalid}
@@ -292,19 +291,10 @@ function UnbindButton({
 /** The platform surface's unbind control: the account identity comes from
  * the platform account read. */
 function PlatformUnbindButton(
-  props: Omit<
-    Parameters<typeof UnbindButton>[0],
-    'name' | 'identity'
-  >,
+  props: Omit<Parameters<typeof UnbindButton>[0], 'identity'>,
 ) {
-  const { name, identifier } = useAccountIdentity(props.binding.account)
-  return (
-    <UnbindButton
-      {...props}
-      name={name}
-      identity={{ name, identifier }}
-    />
-  )
+  const { name, username } = useAccountIdentity(props.binding.account)
+  return <UnbindButton {...props} identity={{ name, username }} />
 }
 
 /** The key a binding row carries through the page's failure markers. */
@@ -1056,10 +1046,9 @@ function PermissionsPageBody({
         id: 'account',
         header: t('permissions.bindings.column.account'),
         cellWrap: 'nowrap',
-        cellFullValue: (binding) => binding.account,
-        // The account is the row's identity: the shared primary cap keeps
-        // the recorded identifier -- which the refused lookup renders in
-        // full -- inside the sm floor alongside the row actions.
+        // The account is the row's identity, so the shared primary cap keeps
+        // it inside the sm floor alongside the row actions. The opaque
+        // account id is neither shown nor offered as a copy value.
         contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
         cell: (binding) => <AccountIdentity account={binding.account} />,
       },

@@ -222,6 +222,7 @@
   "impersonation": {
     "regionLabel": "Impersonation notice",
     "actingAs": "You are operating as {{subject}}.",
+    "accountUnavailable": "Account unavailable",
     "tenant": "Organization: {{tenant}}",
     "expiresAt": "This impersonation ends at {{expiresAt}}.",
     "managementUnavailable": "Management features are unavailable while you are impersonating.",

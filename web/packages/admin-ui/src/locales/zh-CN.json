@@ -177,6 +177,7 @@
     "emptyValue": "—",
     "accountUnresolved": "身份无法显示（需要查看账户的权限）",
     "accountMissing": "非账户或已删除",
+    "accountUnavailable": "账户不可用",
     "accountReference": {
       "name": "「{{name}}」",
       "identifier": "「{{identifier}}」",
@@ -750,7 +751,6 @@
       },
       "column": {
         "name": "成员",
-        "account": "账户",
         "status": "状态",
         "grantedAt": "授予时间"
       },
@@ -762,7 +762,7 @@
     },
     "bindings": {
       "title": "绑定",
-      "accountLabel": "账户",
+      "accountLabel": "要绑定的账户",
       "roleLabel": "角色",
       "bind": "绑定",
       "loading": "正在加载绑定",
@@ -789,7 +789,7 @@
     },
     "lookup": {
       "title": "查询账户的绑定",
-      "accountLabel": "账户标识",
+      "accountLabel": "账户",
       "apply": "查询",
       "loading": "正在加载该账户的绑定",
       "error": {
@@ -807,7 +807,6 @@
     "title": "账户",
     "identifierLabel": "登录标识",
     "identifierKindLabel": "标识类型",
-    "identifiersMore": "+{{count}}",
     "displayNamePrefixLabel": "显示名前缀",
     "identifierKind": {
       "username": "用户名",
@@ -831,7 +830,6 @@
     },
     "retry": "重试",
     "column": {
-      "id": "标识",
       "kind": "类型",
       "displayName": "显示名",
       "status": "状态",
@@ -842,8 +840,8 @@
     "mfaNo": "否",
     "manage": "管理",
     "delete": "删除",
-    "manageAria": "管理账户 {{id}}",
-    "deleteAria": "删除账户 {{id}}",
+    "manageAria": "管理账户 {{name}}",
+    "deleteAria": "删除账户 {{name}}",
     "deleteTitle": "删除账户",
     "deleteMessage": "删除账户「{{name}}」会一并移除其全部登录标识、密钥与会话。",
     "deleteMessageWithIdentifier": "删除账户「{{name}}」（{{identifier}}）会一并移除其全部登录标识、密钥与会话。",
@@ -951,14 +949,14 @@
       "handedOver": "服务密钥「{{label}}」（仅显示这一次）：",
       "copy": "复制服务密钥",
       "close": "关闭",
-      "closeAria": "关闭账户「{{name}}」（{{id}}）的服务密钥「{{label}}」显示",
+      "closeAria": "关闭账户{{name}}的服务密钥「{{label}}」显示",
       "discardTitle": "放弃未关闭的服务密钥",
       "discardMessage": "关闭账户详情会丢弃这份只显示一次的密钥。",
       "discardConfirm": "放弃"
     },
     "detail": {
-      "title": "账户「{{id}}」",
       "displayNameLine": "显示名：{{value}}",
+      "usernameLine": "用户名：{{value}}",
       "statusLine": "状态：{{value}}",
       "kindLine": "类型：{{value}}",
       "loading": "正在加载账户详情",
@@ -1288,7 +1286,7 @@
     "retry": "重试",
     "column": {
       "displayName": "显示名",
-      "account": "账户",
+      "username": "用户名",
       "roles": "角色",
       "status": "状态",
       "active": "在册",
@@ -1311,7 +1309,7 @@
       "close": "关闭",
       "closeAria": "关闭「{{name}}」的管理面板",
       "summary": "成员概况",
-      "account": "账户",
+      "username": "用户名",
       "status": "状态",
       "joinedAt": "加入时间",
       "field": "{{label}}：{{value}}",

@@ -138,7 +138,10 @@ import type {
 import { AdminAsyncSection } from './internal/async-section.js'
 import {
   accountIdentityValue,
+  accountLabel,
   accountNotice,
+  accountUsername,
+  identityLabel,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
 import {
@@ -188,6 +191,7 @@ const ACCOUNTS_PAGE_SIZE = 100
 /** One service secret handed out once, held by the page across panel
  * closes so a scope reset cannot drop the only copy. */
 interface OneTimeSecret {
+  /** The account the secret belongs to: an internal scope, never rendered. */
   readonly accountId: string
   readonly accountName: string
   readonly label: string
@@ -400,14 +404,18 @@ export function AccountsPage({
   const account = operations.useAccount({
     id: selectedId === '' ? undefined : selectedId,
   })
-  // The selected account's readable identity, as a success notice names it.
-  // A detail write can only be started from a settled panel, but the read's
-  // type does not say so; an absent read resolves nothing and the notice
-  // stays neutral instead of naming the recorded identifier.
+  // The selected account's readable identity, as the panel title and a
+  // success notice name it. A row the list already carries names the panel
+  // even before the detail read settles, so the title never falls back to
+  // the account id; an absent read resolves nothing and the notice stays
+  // neutral instead of naming the recorded identifier.
+  const selectedRow = accounts.data?.accounts.find((row) => row.id === selectedId)
   const selectedIdentity: AccountIdentityValue =
-    account.data === undefined
-      ? { name: undefined, identifier: undefined }
-      : accountIdentityValue(account.data)
+    account.data !== undefined
+      ? accountIdentityValue(account.data)
+      : selectedRow !== undefined
+        ? accountIdentityValue(selectedRow)
+        : { name: undefined, username: undefined }
   // The factors and secrets reads live in their feature-gated sections, so
   // an absent feature takes the read with it. The sessions read stays here:
   // the bulk revoke's confirmation in the action row needs to know whether
@@ -553,18 +561,18 @@ export function AccountsPage({
   // alone; neither gives the neutral sentence. The opaque id never enters the
   // copy -- an operator cannot match it to a row.
   function deleteMessageFor(row: AdminAccount): string {
-    const identifier = row.identifiers[0]?.value
+    const username = accountUsername(row.identifiers)
     if (row.display_name !== '') {
-      return identifier === undefined
+      return username === undefined
         ? t('accounts.deleteMessage', { name: row.display_name })
         : t('accounts.deleteMessageWithIdentifier', {
             name: row.display_name,
-            identifier,
+            identifier: username,
           })
     }
-    return identifier === undefined
+    return username === undefined
       ? t('accounts.deleteMessageUnnamed')
-      : t('accounts.deleteMessageByIdentifier', { identifier })
+      : t('accounts.deleteMessageByIdentifier', { identifier: username })
   }
 
   function resetAllFactors(): Promise<void> {
@@ -678,19 +686,6 @@ export function AccountsPage({
 
   const columns: DataTableColumn<AdminAccount>[] = [
     {
-      id: 'id',
-      header: t('accounts.column.id'),
-      priority: 'low',
-      cellWrap: 'nowrap',
-      cellFullValue: (row) => row.id,
-      // The prefix is short, but the cap counts the copy control beside
-      // it, so the whole identifier cell stays inside the shared budget.
-      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      cell: (row) => (
-        <Typography variant="body2">{identifierPrefix(row.id)}</Typography>
-      ),
-    },
-    {
       id: 'kind',
       header: t('accounts.column.kind'),
       priority: 'low',
@@ -699,73 +694,25 @@ export function AccountsPage({
         closedSetLabel('accounts.create.kind', row.kind, t, i18n),
     },
     {
-      id: 'displayName',
+      id: 'identity',
       header: t('accounts.column.displayName'),
       cellWrap: 'nowrap',
-      // The complete identifier list, not only the one on the secondary
-      // line: the cell's hover title and copy control hand over every
-      // identifier an operator may need to match the row.
+      // The identity an operator can match to a row: the display name and
+      // login username, either alone, or the neutral copy when the account
+      // has neither. The opaque account id is never shown or copied.
       cellFullValue: (row) =>
-        row.identifiers.length === 0
-          ? undefined
-          : row.identifiers.map((identifier) => identifier.value).join(', '),
+        identityLabel(row.display_name, accountUsername(row.identifiers)),
       // The page's primary identity: it never hides, and the shared
       // whole-cell cap -- which counts the copy control -- keeps it from
       // pushing the actions off screen in a narrow container. The detail
       // panel carries the full value.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      cell: (row) => {
-        const firstIdentifier = row.identifiers[0]
-        const remaining = row.identifiers.length - 1
-        return (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              rowGap: 0.25,
-              minWidth: 0,
-            }}
-          >
-            <Typography
-              variant="body2"
-              noWrap
-              title={row.display_name}
-            >
-              {row.display_name}
-            </Typography>
-            {firstIdentifier !== undefined && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  columnGap: 0.5,
-                  minWidth: 0,
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  noWrap
-                  sx={{ minWidth: 0 }}
-                >
-                  {firstIdentifier.value}
-                </Typography>
-                {remaining > 0 && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ flexShrink: 0 }}
-                  >
-                    {t('accounts.identifiersMore', {
-                      count: String(remaining),
-                    })}
-                  </Typography>
-                )}
-              </Box>
-            )}
-          </Box>
-        )
-      },
+      cell: (row) => (
+        <Typography variant="body2" noWrap>
+          {identityLabel(row.display_name, accountUsername(row.identifiers)) ??
+            t('common.accountUnavailable')}
+        </Typography>
+      ),
     },
     {
       id: 'status',
@@ -795,7 +742,9 @@ export function AccountsPage({
             type="button"
             size="small"
             variant="outlined"
-            aria-label={t('accounts.manageAria', { id: row.id })}
+            aria-label={t('accounts.manageAria', {
+              name: accountLabel(t, accountIdentityValue(row)),
+            })}
             // The panel is modal: this control only opens it. Closing is
             // the panel's own exit, never a second click here.
             aria-haspopup="dialog"
@@ -811,7 +760,9 @@ export function AccountsPage({
             size="small"
             variant="outlined"
             color="error"
-            aria-label={t('accounts.deleteAria', { id: row.id })}
+            aria-label={t('accounts.deleteAria', {
+              name: accountLabel(t, accountIdentityValue(row)),
+            })}
             loading={listWrite.pending}
             disabled={listWrite.pending}
             onClick={() =>
@@ -1171,7 +1122,7 @@ export function AccountsPage({
       <SidePanel
         open={detailOpen}
         size="wide"
-        title={t('accounts.detail.title', { id: selectedId })}
+        title={accountLabel(t, selectedIdentity)}
         busy={detailBusy}
         onClose={requestDetailClose}
         onExited={detailExited}
@@ -1211,9 +1162,19 @@ export function AccountsPage({
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2">
                     {t('accounts.detail.displayNameLine', {
-                      value: settled.display_name,
+                      value:
+                        settled.display_name === ''
+                          ? t('common.accountUnavailable')
+                          : settled.display_name,
                     })}
                   </Typography>
+                  {accountUsername(settled.identifiers) !== undefined && (
+                    <Typography variant="body2">
+                      {t('accounts.detail.usernameLine', {
+                        value: accountUsername(settled.identifiers) ?? '',
+                      })}
+                    </Typography>
+                  )}
                   <Typography variant="body2">
                     {t('accounts.detail.statusLine', {
                       value: statusLabel(settled.status, t),
@@ -2220,7 +2181,6 @@ function OneTimeSecretNotice({
         copyLabel={t('accounts.createSecret.copy')}
         closeLabel={t('accounts.createSecret.close')}
         closeAriaLabel={t('accounts.createSecret.closeAria', {
-          id: notice.accountId,
           name: notice.accountName,
           label: notice.label,
         })}
@@ -2465,7 +2425,7 @@ function AccountDetailWrites({
       // survives this scope's reset and the panel content's remount.
       onSecretCreated({
         accountId: id,
-        accountName: account.display_name === '' ? id : account.display_name,
+        accountName: accountLabel(t, identity),
         label: created.label,
         secret: created.secret,
       })

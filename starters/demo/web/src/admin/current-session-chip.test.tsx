@@ -165,8 +165,8 @@ describe('the current-session chip', () => {
     })
     await user.click(picker)
     await user.type(picker, 'Ada')
-    await user.click(await screen.findByRole('option', { name: 'Ada (acc-1)' }))
-    await waitFor(() => expect(picker).toHaveValue('Ada (acc-1)'))
+    await user.click(await screen.findByRole('option', { name: 'Ada' }))
+    await waitFor(() => expect(picker).toHaveValue('Ada'))
 
     await screen.findByText(adminEnUS.sessions.current)
     // One assertion over both renders: the admin's chip carries the same

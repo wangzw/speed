@@ -68,6 +68,7 @@ import type { AdminMember } from '../operations.js'
 import type { AdminTenantBinding } from '../organization-operations.js'
 import { useOrganizationAdminOperations } from '../organization-operations.js'
 import { useOrganizationAdminProtectedRoles } from '../OrganizationAdminProvider.js'
+import { identityLabel } from './account-identity.js'
 import { AdminAsyncSection } from './async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './confirm.js'
 import { useAdminUiTranslation } from './translation.js'
@@ -191,7 +192,8 @@ export function MemberPanel({
 
   const displayName =
     member.display_name === '' ? undefined : member.display_name
-  const memberName = displayName ?? member.account
+  const composedName = identityLabel(displayName, member.username)
+  const memberName = composedName ?? t('common.accountUnavailable')
   const statusLabel = member.active
     ? t('members.status.active')
     : t('members.status.suspended')
@@ -337,8 +339,8 @@ export function MemberPanel({
               active,
             })
             return active
-              ? t('members.resumed', { account: member.account })
-              : t('members.suspended', { account: member.account })
+              ? t('members.resumed', { account: memberName })
+              : t('members.suspended', { account: memberName })
           } catch (error) {
             startWrite({ kind: active ? 'resume' : 'suspend' })
             throw error
@@ -367,9 +369,9 @@ export function MemberPanel({
               account: member.account,
             })
             onRemoved(
-              displayName === undefined
+              composedName === undefined
                 ? t('members.removedUnnamed')
-                : t('members.removed', { account: member.account }),
+                : t('members.removed', { account: composedName }),
             )
             return null
           } catch (error) {
@@ -459,9 +461,9 @@ export function MemberPanel({
       description={memberName}
       busy={feedback.pending}
       closeLabel={
-        displayName === undefined
+        composedName === undefined
           ? t('members.panel.close')
-          : t('members.panel.closeAria', { name: displayName })
+          : t('members.panel.closeAria', { name: composedName })
       }
       onClose={onClose}
       onExited={onExited}
@@ -470,12 +472,14 @@ export function MemberPanel({
         {t('members.panel.summary')}
       </Typography>
       <Box sx={{ mt: 1, mb: 2 }}>
-        <Typography variant="body2">
-          {t('members.panel.field', {
-            label: t('members.panel.account'),
-            value: member.account,
-          })}
-        </Typography>
+        {member.username !== '' && (
+          <Typography variant="body2">
+            {t('members.panel.field', {
+              label: t('members.panel.username'),
+              value: member.username,
+            })}
+          </Typography>
+        )}
         <Box
           sx={{
             display: 'flex',

@@ -8,7 +8,7 @@
  * two body lists together.
  *
  * Members: a server-side search over `query` (debounced), a table of display
- * name, account, roles, status, source and joined-at, cursor pagination, and
+ * name, username, roles, status, source and joined-at, cursor pagination, and
  * a management panel opened from each row. The panel owns bind/unbind,
  * suspend/resume and remove; its permission degradation and the role
  * escalation check live in `internal/member-panel.tsx`.
@@ -52,7 +52,10 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { formatInstant } from '@speed/i18n'
 import { AdminPageHeader } from './internal/page-header.js'
 import { AdminAsyncSection } from './internal/async-section.js'
-import { TenantAccountIdentity } from './internal/account-identity.js'
+import {
+  identityLabel,
+  TenantAccountIdentity,
+} from './internal/account-identity.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { CursorPager } from './internal/cursor-pager.js'
 import { useAdminInvitationLink } from './internal/invitation-link.js'
@@ -91,8 +94,8 @@ const DEFAULT_EXPIRY_DAYS = 7
 /** The expiry choices the issue form offers, in days. */
 const EXPIRY_CHOICES = [1, 7, 30] as const
 
-/** No member names resolved yet, for a tenant no page has been read for. */
-const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
+/** No member identities resolved yet, for a tenant no page has been read for. */
+const EMPTY_MEMBER_IDENTITIES: ReadonlyMap<string, AdminMember> = new Map()
 
 /**
  * The two tables carry five high-priority columns from the `sm` container
@@ -305,23 +308,31 @@ export function OrganizationMembersPage({
   }, [tenant])
 
   // The inviter identity on the organization surface resolves from the same
-  // member reads the table uses; names accumulate across pages, so an
+  // member reads the table uses; identities accumulate across pages, so an
   // inviter resolved on an earlier page stays named after paging past it.
-  const [memberNamesByTenant, setMemberNamesByTenant] = useState<
-    Readonly<Record<string, ReadonlyMap<string, string>>>
+  // The member row itself is kept, so the inviter renders the same display
+  // name and username pair the member table shows.
+  const [memberIdentitiesByTenant, setMemberIdentitiesByTenant] = useState<
+    Readonly<Record<string, ReadonlyMap<string, AdminMember>>>
   >({})
-  const memberDisplayNames = memberNamesByTenant[tenant] ?? EMPTY_MEMBER_NAMES
+  const memberIdentities =
+    memberIdentitiesByTenant[tenant] ?? EMPTY_MEMBER_IDENTITIES
   useEffect(() => {
     if (memberRows === undefined) {
       return
     }
-    setMemberNamesByTenant((previous) => {
-      const current = previous[tenant] ?? EMPTY_MEMBER_NAMES
+    setMemberIdentitiesByTenant((previous) => {
+      const current = previous[tenant] ?? EMPTY_MEMBER_IDENTITIES
       const next = new Map(current)
       let changed = false
       for (const row of memberRows) {
-        if (next.get(row.account) !== row.display_name) {
-          next.set(row.account, row.display_name)
+        const recorded = next.get(row.account)
+        if (
+          recorded === undefined ||
+          recorded.display_name !== row.display_name ||
+          recorded.username !== row.username
+        ) {
+          next.set(row.account, row)
           changed = true
         }
       }
@@ -645,13 +656,21 @@ export function OrganizationMembersPage({
       cell: (member) => member.display_name,
     },
     {
-      id: 'account',
-      header: t('members.column.account'),
+      id: 'username',
+      header: t('members.column.username'),
       priority: 'high',
+      // The copy control hands over the login username -- the unique value
+      // an operator can act on -- never the account's internal identifier.
       cellWrap: 'nowrap',
-      cellFullValue: (member) => member.account,
+      cellFullValue: (member) =>
+        member.username === '' ? undefined : member.username,
       contentMaxWidth: MEMBER_IDENTITY_MAX_WIDTH,
-      cell: (member) => <Typography variant="body2">{member.account}</Typography>,
+      cell: (member) => (
+        <Typography variant="body2">
+          {identityLabel(member.display_name, member.username) ??
+            t('common.accountUnavailable')}
+        </Typography>
+      ),
     },
     {
       id: 'roles',
@@ -730,9 +749,8 @@ export function OrganizationMembersPage({
           variant="outlined"
           aria-label={t('members.manageAria', {
             name:
-              member.display_name === ''
-                ? member.account
-                : member.display_name,
+              identityLabel(member.display_name, member.username) ??
+              t('common.accountUnavailable'),
           })}
           onClick={() => openPanel(member)}
         >
@@ -767,18 +785,21 @@ export function OrganizationMembersPage({
       header: t('invitations.column.invitedBy'),
       priority: 'high',
       // The resolved inviter is a row identity too: a short name stays on
-      // one line and truncates inside its cap at the high floor. The
-      // complete recorded identifier stays reachable through the title and
-      // the copy control `cellFullValue` adds.
+      // one line and truncates inside its cap at the high floor. An inviter
+      // the member read does not resolve -- not a member any more, or
+      // issued by a host command -- renders the neutral copy, and no copy
+      // control offers a recorded identifier.
       cellWrap: 'nowrap',
-      cellFullValue: (invitation) => invitation.invited_by,
       contentMaxWidth: INVITATION_IDENTITY_MAX_WIDTH.invitedBy,
-      cell: (invitation) => (
-        <TenantAccountIdentity
-          account={invitation.invited_by}
-          name={memberDisplayNames.get(invitation.invited_by)}
-        />
-      ),
+      cell: (invitation) => {
+        const inviter = memberIdentities.get(invitation.invited_by)
+        return (
+          <TenantAccountIdentity
+            name={inviter?.display_name}
+            username={inviter?.username}
+          />
+        )
+      },
     },
     {
       id: 'expires',

@@ -148,10 +148,11 @@ describe('DashboardPage', () => {
       }),
     )
     renderDashboard({ operations })
-    // The cell keeps the recorded id but labels it unresolved rather than
-    // passing it off as a resolved (or system) actor.
+    // The cell renders the neutral copy with the unresolved note; the
+    // recorded id is never the visible fallback.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent('acc-1')
+    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(cell).not.toHaveTextContent('acc-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
@@ -230,7 +231,10 @@ describe('DashboardPage', () => {
 
     const actorText = await screen.findByText('Operator')
     const actorCell = actorText.closest('td')
-    expect(actorCell).toHaveAttribute('title', 'acc-1')
+    expect(actorCell).not.toHaveAttribute('title', 'acc-1')
+    expect(
+      within(actorCell as HTMLElement).queryByRole('button'),
+    ).toBeNull()
     expect(actorCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
     expect(
       containerMaxWidthOf(actorCell!.firstElementChild!),

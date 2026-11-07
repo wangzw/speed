@@ -73,10 +73,11 @@ describe('AuditDetailPage', () => {
     renderWithProviders(<AuditDetailPage id="rec-9" />, {
       operations: refused,
     })
-    // The row keeps the recorded id but labels it unresolved rather than
-    // passing it off as a resolved name.
+    // The row renders the neutral copy with the unresolved note; the
+    // recorded id is never the visible fallback.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent('acc-9')
+    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(cell).not.toHaveTextContent('acc-9')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 

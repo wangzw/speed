@@ -169,6 +169,7 @@ const MEMBER: AuthnAdminMember = {
   tenant: TENANT.alias,
   active: true,
   display_name: 'Test User',
+  username: 'test-user',
   sso_exempt: false,
   source: 'admin',
   roles: [],
