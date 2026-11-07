@@ -67,7 +67,9 @@ type Audit interface {
 type Entry struct {
 	// Action 是动作，一个动词。
 	Action string
-	// Object 是对象的类型与标识。
+	// Object 是对象的类型与标识，写成 `<类型>:<标识>`。
+	// 账户对象因而写成 `account:<账户标识>`；这是界面据以把账户标识
+	// 解析成可读身份的唯一判别，不靠标识的形状猜测。
 	Object string
 	// Outcome 是结果。
 	Outcome string
