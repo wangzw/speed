@@ -152,11 +152,43 @@ func TestDecisionFill(t *testing.T) {
 		{"account delete", http.MethodDelete, "/api/v1/system/auth/accounts/acct-t2", nil, authn.ActionAccountDelete, "", "acct-t2", "acct-t2"},
 		{"provider delete", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA, nil, authn.ActionIDPManage, tenantB, idpA, ""},
 	}
+	// Each case that names an account as its audit object must write the
+	// account type marker and the identifier, so a reader can tell it from a
+	// session or a provider identifier.
+	accountObjects := map[string]struct{ action, object string }{
+		"account patch":     {actionAccountUpdate, "account:acct-t2"},
+		"account status":    {actionAccountDisable, "account:acct-t2"},
+		"identifier add":    {actionAccountUpdate, "account:acct-t2"},
+		"identifier remove": {actionAccountUpdate, "account:acct-t2"},
+		"password reset":    {actionAccountAuthReset, "account:acct-t2"},
+		"mfa required":      {actionAccountUpdate, "account:acct-t2"},
+		"mfa reset":         {actionMFAReset, "account:acct-t2"},
+		"secret create":     {actionServiceKeyCreate, "account:acct-t2"},
+		"secret revoke":     {actionServiceKeyRevoke, "account:acct-t2"},
+		"member put":        {actionMembershipSet, "account:acct-t2"},
+		"sso exempt":        {actionMembershipSet, "account:acct-t2"},
+		"member remove":     {actionMembershipRemove, "account:acct-t2"},
+		"account delete":    {actionAccountDelete, "account:acct-t2"},
+	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			before := len(r.audit.entries())
 			rec := r.do(tc.method, tc.path, tc.body, fresh()...)
 			if rec.Code < 200 || rec.Code >= 300 {
 				t.Fatalf("status = %d, want a success; body %s", rec.Code, rec.Body.String())
+			}
+			if want, ok := accountObjects[tc.name]; ok {
+				rows := r.audit.entries()[before:]
+				found := false
+				for _, entry := range rows {
+					if entry.Action == want.action && entry.Object == want.object {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("the route wrote no %s row naming the account object %q: %+v",
+						want.action, want.object, rows)
+				}
 			}
 			got, ok := r.decider.last()
 			if !ok {
