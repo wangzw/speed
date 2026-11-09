@@ -1031,6 +1031,17 @@ func (*fakeStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
 	return time.Time{}, false, nil
 }
 
+func (s *fakeStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // readerWithDisabled builds a settings reader whose disabled-methods switch lists
 // the names given.
 func readerWithDisabled(t *testing.T, names ...string) *reader {

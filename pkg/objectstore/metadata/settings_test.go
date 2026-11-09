@@ -322,6 +322,17 @@ func (s tunableStore) WrittenAt(settings.Layer, string) (time.Time, bool, error)
 	return time.Time{}, false, nil
 }
 
+func (s tunableStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // declaredSettings returns the items of this module's settings declaration, or
 // stops the case when it makes none.
 func declaredSettings(t *testing.T) map[string]settings.Item {

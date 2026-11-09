@@ -153,6 +153,10 @@ func (s *stubCatalog) SetOwner(context.Context, tenant.ID, string) error {
 	return errors.New("the profile surface must not transfer a tenant's owner")
 }
 
+func (s *stubCatalog) SetOwnerIfEmpty(context.Context, tenant.ID, string) (bool, error) {
+	return false, errors.New("the profile surface must not repair a tenant's owner")
+}
+
 func (s *stubCatalog) SetProfile(_ context.Context, id tenant.ID, profile tenant.Profile) error {
 	s.record(catalogCall{op: "SetProfile", id: id, profile: profile})
 	s.mu.Lock()

@@ -42,6 +42,18 @@ func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 			r.serve(r.as(acme, authntest.WithAuthTime(written))), acrMultiFactor)
 	})
 
+	t.Run("a sub-second boundary does not exempt the same whole second", func(t *testing.T) {
+		// The row's write time carries nanoseconds and the session's auth time
+		// is whole seconds. A session stamped at the boundary's own second is
+		// not older than the write, so it must be held to the requirement.
+		r := newRig(t)
+		boundary := written.Add(300 * time.Millisecond)
+		r.withSettings().setAt(settings.ForTenant(acme), requireMFAKey, true, boundary)
+		stepUp(t, "a session in the write's second",
+			r.serve(r.as(acme, authntest.WithAuthTime(written))), acrMultiFactor)
+		r.onlyCounted(stepUpMFA)
+	})
+
 	t.Run("a multi-factor session newer than the row is admitted", func(t *testing.T) {
 		r := newRig(t)
 		r.withSettings().setAt(settings.ForTenant(acme), requireMFAKey, true, written)

@@ -187,6 +187,17 @@ type Catalog interface {
 	// a no-op. An identifier no row carries is refused with ErrInvalidTenant, and
 	// a tombstone with ErrTenantDeleted: its owner stays with the row.
 	SetOwner(ctx context.Context, id ID, owner string) error
+	// SetOwnerIfEmpty writes one tenant's owner account only while the row still
+	// carries no owner, and reports whether it wrote. It is the repair path for a
+	// row that predates the owner rule, not a transfer: an owner written by a
+	// transfer that lands between the caller's read and this write stands, and
+	// the call returns false without changing the row. The condition is in the
+	// statement itself, so the check and the write cannot be separated.
+	//
+	// The owner value is held to the domain SetOwner holds it to, with the empty
+	// value refused with ErrInvalidTenant. An identifier no row carries is
+	// refused with ErrInvalidTenant, and a tombstone with ErrTenantDeleted.
+	SetOwnerIfEmpty(ctx context.Context, id ID, owner string) (bool, error)
 	// SetProfile rewrites one tenant's organization profile and nothing else:
 	// the display name, the description, the contact email and the website.
 	// The name, the owner, the status, the disable source and the creation

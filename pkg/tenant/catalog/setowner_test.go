@@ -117,6 +117,63 @@ func TestSetOwnerIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestSetOwnerIfEmptyRepairsOnlyAnOwnerlessRow holds the conditional write: an
+// ownerless row is filled and reports the write, while an owner that arrived
+// since the caller's read stands and the call reports no write. The identifier
+// and tombstone refusals match SetOwner's.
+func TestSetOwnerIfEmptyRepairsOnlyAnOwnerlessRow(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("an ownerless row is filled", func(t *testing.T) {
+		r := rosterOver(t, insert("t_acme", "acme"))
+		wrote, err := r.SetOwnerIfEmpty(ctx, "t_acme", "acct-repair")
+		if err != nil {
+			t.Fatalf("repairing the owner: %v", err)
+		}
+		if !wrote {
+			t.Error("the repair of an ownerless row reported no write")
+		}
+		held, _ := rowOf(t, r, "t_acme")
+		if held.OwnerAccount != "acct-repair" {
+			t.Errorf("the owner reads %q, want acct-repair", held.OwnerAccount)
+		}
+	})
+
+	t.Run("a standing owner survives", func(t *testing.T) {
+		r := rosterOver(t, "INSERT INTO tenants (id, name, status, owner_account) VALUES "+
+			"('t_acme', 'acme', 1, 'acct-standing')")
+		wrote, err := r.SetOwnerIfEmpty(ctx, "t_acme", "acct-repair")
+		if err != nil {
+			t.Fatalf("repairing over a standing owner: %v", err)
+		}
+		if wrote {
+			t.Error("the repair wrote over a standing owner")
+		}
+		held, _ := rowOf(t, r, "t_acme")
+		if held.OwnerAccount != "acct-standing" {
+			t.Errorf("the standing owner became %q, want it left alone", held.OwnerAccount)
+		}
+	})
+
+	t.Run("an unknown tenant", func(t *testing.T) {
+		r := rosterOver(t, insert("t_acme", "acme"))
+		if _, err := r.SetOwnerIfEmpty(ctx, "t_ghost", "acct-repair"); !errors.Is(err, tenant.ErrInvalidTenant) {
+			t.Fatalf("repairing an identifier no row carries gave %v, want ErrInvalidTenant", err)
+		}
+	})
+
+	t.Run("a tombstone", func(t *testing.T) {
+		r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDeleted, tenant.DisabledByOperator))
+		if _, err := r.SetOwnerIfEmpty(ctx, "t_acme", "acct-repair"); !errors.Is(err, tenant.ErrTenantDeleted) {
+			t.Fatalf("repairing a tombstone gave %v, want ErrTenantDeleted", err)
+		}
+		held, _ := rowOf(t, r, "t_acme")
+		if held.OwnerAccount != "" {
+			t.Errorf("the refused repair left the owner as %q, want none", held.OwnerAccount)
+		}
+	})
+}
+
 // TestCreateWritesTheOwnerAndPutLeavesItAlone holds the creation path and the
 // rewrite path apart: Create writes the value's owner, and a rewrite through Put
 // changes the state and the disable source without transferring the organization

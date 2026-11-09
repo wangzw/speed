@@ -69,10 +69,12 @@ type stored struct {
 	value any
 	text  string
 	// updatedAt is when this row was last written. It is kept beside the value
-	// so that a reader comparing the value with an instant — the admission
-	// layer comparing a session's authentication time with the moment a
-	// requirement was switched on — gets both from one snapshot, with no IO and
-	// no race between two reads.
+	// so that Read, which takes one snapshot for every layer it answers, can
+	// hand a value and its revision out together — the admission layer's
+	// comparison of a session's authentication time with the moment a
+	// requirement was switched on among them. Get and WrittenAt each take the
+	// snapshot pointer on their own call, so a pair of those two is not one
+	// snapshot.
 	updatedAt time.Time
 }
 

@@ -375,6 +375,17 @@ func (s *fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error
 	return time.Time{}, false, nil
 }
 
+func (s *fakeSettings) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // harness is the module's product over a migrated database of one dialect, with
 // the optional capabilities replaced by ones a case can read.
 type harness struct {

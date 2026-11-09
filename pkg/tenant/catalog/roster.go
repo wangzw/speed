@@ -1221,6 +1221,52 @@ func (r *roster) SetOwner(ctx context.Context, id tenant.ID, owner string) error
 	return err
 }
 
+// SetOwnerIfEmpty implements tenant.Catalog, and is the repair write for a row
+// that carries no owner.
+//
+// The condition is in the statement: the update matches only a row whose owner
+// column is still empty and whose status is not deleted. A transfer that lands
+// between the caller's read and this write therefore stands, and the call
+// answers false with nothing written. The owner value is held to the same
+// domain SetOwner holds it to, with the empty value refused.
+//
+// A statement that updated no row is read again inside the same transaction to
+// tell a standing owner, which is the expected race and not a failure, apart
+// from an identifier no row carries, refused with ErrInvalidTenant, and a
+// tombstone, refused with ErrTenantDeleted.
+func (r *roster) SetOwnerIfEmpty(ctx context.Context, id tenant.ID, owner string) (bool, error) {
+	if err := checkField("identifier", string(id)); err != nil {
+		return false, err
+	}
+	if err := checkField("owner", owner); err != nil {
+		return false, err
+	}
+	return r.writeResult(ctx, func(tx *gorm.DB) (bool, error) {
+		written := tx.Model(&row{}).
+			Where("id = ? AND owner_account = ? AND status <> ?", string(id), "", int(tenant.StatusDeleted)).
+			Update("owner_account", owner)
+		if written.Error != nil {
+			return false, written.Error
+		}
+		if written.RowsAffected > 0 {
+			return true, nil
+		}
+		held, err := lookUp(tx, "id", string(id))
+		if err != nil {
+			return false, err
+		}
+		if len(held) == 0 {
+			return false, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+		}
+		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
+			return false, tombstone(id)
+		}
+		// The owner is no longer empty: a transfer got there first, and this
+		// repair leaves it as it stands.
+		return false, nil
+	}, nil)
+}
+
 // SetProfile implements tenant.Catalog, and writes the organization profile
 // alone.
 //

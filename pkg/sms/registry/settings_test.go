@@ -51,6 +51,17 @@ func (f *fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error
 	return time.Time{}, false, nil
 }
 
+func (f *fakeSettings) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := f.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 func (f *fakeSettings) set(key string, value any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

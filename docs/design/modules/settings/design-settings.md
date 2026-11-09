@@ -75,6 +75,10 @@ type Store interface {
     // 本模块的 Init 装载快照之前读取报 ErrNotLoaded。
     Get(layer Layer, key string, target any) error
 
+    // Read 从同一份快照读出每个指名层的取值与该层显式行的写入时刻。
+    // 层没有显式行时取值是声明默认值，Present 为假；层之间不回退。
+    Read(key string, reads ...LayerRead) ([]LayerReadResult, error)
+
     // Set 按声明的类型编码 w.Value 并写入 w.Layer 指名的那一层。
     // 写入成功后发布 settings.changed。
     Set(ctx context.Context, w Write) error
@@ -92,6 +96,28 @@ type Store interface {
 // Get 是 Store.Get 的泛型封装，像 core.Resolve 一样把断言收进函数里；
 // 类型参数与声明类型不符时返回 ErrTypeMismatch。
 func Get[T any](s Store, layer Layer, key string) (T, error)
+
+// LayerRead 指名一个要读的层，以及接收该层取值的非 nil 指针。
+type LayerRead struct {
+    Layer  Layer
+    Target any
+}
+
+// LayerReadResult 是一层的读取结果。
+type LayerReadResult struct {
+    WrittenAt time.Time // 该层显式行的写入时刻；Present 为假时是零值
+    Present   bool      // 该层是否持有显式行
+}
+
+// LayerValue 是 ReadLayers 对一层的回答：声明类型的取值与显式行。
+type LayerValue[T any] struct {
+    Value     T
+    WrittenAt time.Time
+    Present   bool
+}
+
+// ReadLayers 是 Store.Read 的泛型封装，按给定层的顺序回答。
+func ReadLayers[T any](s Store, key string, layers ...Layer) ([]LayerValue[T], error)
 
 type Write struct {
     Layer Layer  // Global() 或 ForTenant(id)
@@ -204,6 +230,8 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 **读取不判取值域。** 一行解得成声明类型、却落在声明给出的取值域之外——它写在取值域声明之前，或是绕过本模块写进表的——读取照原样交出它，不报错，也不回退到下一级。按读到的值行事的使用方要判它读到的值，限流即如此（[ADR-settings-domain](../../../adr/adr-settings-domain.md)）。
 
+**一次读取同时回答取值与该层显式行的写入时刻。** `Read` 在一份快照上读出调用方指名的每一层：值按声明类型解码进该层的目标，结果给出该层是否持有显式行与那一行的写入时刻。层没有显式行时取值是声明默认值，`Present` 为假；层之间不回退，租户层回答的是租户自己的行，不是 `Get` 会解析到的全局行。`ReadLayers` 是它的泛型封装。**这项读取服务的对象是成对的取值与时刻。** `Get` 与 `WrittenAt` 各自取一次快照指针，两次调用之间的一次重载可以让取值与写入时刻来自不同状态；`Read` 对所有指名的层只取一次快照，准入层因而把「策略是否生效」与「从哪一刻起算」放进同一份快照。`Get` 与 `WrittenAt` 的语义不变。
+
 **值在快照装载时按声明预解码**，标量种类的读取路径上没有文本转换。**自带文本形式的类型每次读取由文本重新解码**，那一行的文本，或声明默认值的文本：这类类型的拷贝之间可能共享存储而反射看不透——`net.IP` 底层是切片，`math/big.Int` 的方法原地改写拷贝共享的数位——读取方拿读到的值做运算，改掉的就是声明默认值或快照里的值，进程内其余读取方随之读到它。重新解码交出的值与本模块的存储无关。解码失败的行单独记下（键与层到错误的映射），读取命中它时报 `ErrTypeMismatch` 并点名键；其余键照常可用。装载因此不因一行坏值而失败——坏值的作用范围限于读它的代码路径，进程照常启动，其余设置照常可用。
 
 **目标参数与层选的非法形态是调用点的编程错误，panic 而不返回错误**：目标传入非指针、传入 `nil`；层选传入 `nil`、`ForTenant` 收到落在租户标识取值域之外的标识（空、或含空白与控制字符）。判据与配置的取值规则同一条（[config](../design-config.md) 的取值与校验一节）；这一类不涉及第二方、与数据无关，调用点无从处理它。**这一判定先于键表**：`Get` 与 `Set` 先判层选与目标，再查键、编码值，同一个调用点因而无论键是否已声明、值能否编码都当场 panic，不会这一次返回错误、下一次才 panic。
@@ -303,7 +331,7 @@ type Change struct {
 
 ### 对外接口
 
-`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的接口。**设置读写用的权限码分两套**：全局层用 `settings.read`／`settings.write`；租户层（平台侧的 `layer=tenant` 与租户可达前缀下的租户侧）用 `settings.tenant.read`／`settings.tenant.write`。平台员工要在某个租户读写租户层，须在该租户持有对应的租户码，通常经该租户的 `tenant-admin`（治理集）。两套码由授权能力承载，本模块不声明也不判定它们。一个设置项的取值域是声明方的接口：给它声明或收窄取值域，以前写得进去的值随之被拒绝。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](../event/design-event.md) 记有同一条）。
+`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Read`、`LayerRead`、`LayerReadResult`、`LayerValue`、`ReadLayers`、`WrittenAt`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的接口。**设置读写用的权限码分两套**：全局层用 `settings.read`／`settings.write`；租户层（平台侧的 `layer=tenant` 与租户可达前缀下的租户侧）用 `settings.tenant.read`／`settings.tenant.write`。平台员工要在某个租户读写租户层，须在该租户持有对应的租户码，通常经该租户的 `tenant-admin`（治理集）。两套码由授权能力承载，本模块不声明也不判定它们。一个设置项的取值域是声明方的接口：给它声明或收窄取值域，以前写得进去的值随之被拒绝。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](../event/design-event.md) 记有同一条）。
 
 表名、列名与迁移文件的组织是内部实现，不在对外接口内。
 
@@ -340,6 +368,7 @@ classDiagram
     class Store {
         <<interface>>
         +Get(layer, key, target) error
+        +Read(key, reads) []LayerReadResult, error
         +Set(ctx, w) error
         +Delete(ctx, layer, key, actor) error
         +List(ctx, layer) []Entry, error
@@ -471,7 +500,7 @@ flowchart TD
 
 **键表**是装配期由全部声明聚合出的只读映射：键到声明类型、默认值（连同它的文本形式）与元信息，另带一份按键的字节序排好的设置项列表。它在 `New` 建立，装载快照、两个读写方向与 `Declared` 都读它；`Declared` 交出的是那份列表的拷贝。
 
-**快照**是全部已写入行在内存里的拷贝，含键与层到预解码值的映射，以及键与层到解码错误的映射（装载时解码失败的行）。它在 `Init` 装载、在 `Start` 再装载一次，此后由写入重载、事件重载与周期刷新整体替换；替换经一个原子指针完成，请求路径读到的永远是一份自洽的快照。
+**快照**是全部已写入行在内存里的拷贝，含键与层到预解码值的映射（每个值连同该行的写入时刻）、以及键与层到解码错误的映射（装载时解码失败的行）。它在 `Init` 装载、在 `Start` 再装载一次，此后由写入重载、事件重载与周期刷新整体替换；替换经一个原子指针完成，请求路径读到的永远是一份自洽的快照。`Read` 在一份快照上同时回答取值与写入时刻，配对的两项因而不跨两次替换。
 
 **发布与订阅的接线**：本模块在 `Init` 以 `ChangedEventType` 订阅事件总线，处理函数只做一件事——重载快照。
 
@@ -612,7 +641,7 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`Get` |
+| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`Get`、`Read`、`LayerRead`、`LayerReadResult`、`LayerValue`、`ReadLayers`、`WrittenAt` |
 | 取值域的收集期判定与写入判定 | 已实现 | `pkg/settings/keys.go` `domainDefect`；`pkg/settings/codec.go` `encodeValue`、`admit` |
 | 声明接口与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`encodesToText`、`defaultText`、`fieldName`、`camelToKebab` |
 | 读取的三级回退与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `decodeValue`、`assignTarget` |

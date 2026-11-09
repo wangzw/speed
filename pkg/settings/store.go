@@ -116,6 +116,56 @@ func (s *settingsStore) WrittenAt(layer Layer, key string) (time.Time, bool, err
 	return at, present, nil
 }
 
+// Read serves the values and revisions of several layers from one snapshot.
+//
+// The layers are judged first, then the key, then each target, in the order Get
+// gives them: those are the call site's mistakes, and none waits on the data.
+// The snapshot is taken once for every layer, which is the point of the read:
+// two calls to Get and WrittenAt take the pointer twice, and a reload between
+// them can answer a value and a revision from different states.
+//
+// A layer whose row is absent answers the declaration's default rather than
+// falling through to a layer below: a tenant-layer read is the tenant's own
+// answer, and Present false is what tells the caller it holds no row.
+func (s *settingsStore) Read(key string, reads ...LayerRead) ([]LayerReadResult, error) {
+	for _, read := range reads {
+		tenantOf(read.Layer)
+	}
+	entry, declared := s.keys.lookup(key)
+	for _, read := range reads {
+		requireTarget(read.Target, key, entry, declared)
+	}
+	if !declared {
+		return nil, fmt.Errorf("%w: %q. Add a declaration covering it, or correct the key at the "+
+			"call site", ErrUnknownKey, key)
+	}
+	current := s.snapshot.Load()
+	if current == nil {
+		return nil, notLoaded(key)
+	}
+	results := make([]LayerReadResult, len(reads))
+	for i, read := range reads {
+		row, found, err := current.layer(entry.key, read.Layer)
+		if err != nil {
+			return nil, err
+		}
+		text, value := entry.defText, entry.def
+		if found {
+			text, value = row.text, row.value
+		}
+		if entry.kind == kindText {
+			if value, err = decodeValue(entry, text); err != nil {
+				return nil, err
+			}
+		}
+		if err := assignTarget(entry, read.Target, value); err != nil {
+			return nil, err
+		}
+		results[i] = LayerReadResult{WrittenAt: row.updatedAt, Present: found}
+	}
+	return results, nil
+}
+
 // notLoaded is the refusal of a read that arrived before the first snapshot.
 //
 // Nothing has been read from the table yet, so a value read would answer with

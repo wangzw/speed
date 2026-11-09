@@ -530,6 +530,17 @@ func (standInSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error
 	return time.Time{}, false, nil
 }
 
+func (s standInSettings) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // standInAudit accepts every entry and keeps none: the invitation module
 // requires the capability, and no case here reads what it wrote.
 type standInAudit struct{}

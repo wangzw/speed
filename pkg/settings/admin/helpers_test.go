@@ -171,6 +171,23 @@ func (s *stubStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
 	return time.Time{}, false, nil
 }
 
+// Read answers from the stub's Get and WrittenAt. The surfaces here never call
+// it; it is present because Store carries it.
+func (s *stubStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		at, present, err := s.WrittenAt(read.Layer, key)
+		if err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{WrittenAt: at, Present: present}
+	}
+	return results, nil
+}
+
 // stubGuard is a stand-in guard.Guard. It records the permission every decision
 // asked about and the domain it decided in, and answers from one setting: allow,
 // deny, or fail. The write-out matches the real guard's — a 403 for a denial and

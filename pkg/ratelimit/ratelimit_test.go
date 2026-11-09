@@ -1029,6 +1029,17 @@ func (s *recordingStore) WrittenAt(settings.Layer, string) (time.Time, bool, err
 	return time.Time{}, false, nil
 }
 
+func (s *recordingStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // fakeStore serves the two items this module reads.
 type fakeStore struct {
 	values map[string]any
@@ -1067,6 +1078,17 @@ func (s *fakeStore) Declared() []settings.DeclaredItem { return nil }
 
 func (s *fakeStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
 	return time.Time{}, false, nil
+}
+
+func (s *fakeStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
 }
 
 // fakeKV is an in-process counter store that remembers what expiry each key

@@ -328,6 +328,12 @@ func (j *judging) ssoBinds() (bool, error) {
 // the platform is not lifted by a later tenant write. A tenant row of false
 // contributes nothing, which is what leaves the platform's revision standing.
 //
+// The comparison is at whole seconds. A row's write time carries sub-second
+// precision while a session's authentication time is whole seconds, so
+// comparing the instants directly would let a write in the same second as the
+// session's sign-in exempt that session. The session is exempt only when its
+// second is before the boundary's second.
+//
 // An enabled layer whose revision cannot be read does not exempt the session:
 // a missing revision must not silently weaken a requirement the layer holds on.
 func (j *judging) binds(key string) (bool, error) {
@@ -337,54 +343,41 @@ func (j *judging) binds(key string) (bool, error) {
 	if !nameableLayer(string(j.tenant)) {
 		return false, fmt.Errorf("reading %s: %w", key, errSettingLayer)
 	}
+	tenantLayer := settings.ForTenant(string(j.tenant))
+
+	// One read answers both layers from one snapshot: the effective value and
+	// the revision it was written at cannot then come from two states.
+	layers, err := settings.ReadLayers[bool](j.store, key, settings.Global(), tenantLayer)
+	if err != nil {
+		return false, fmt.Errorf("reading %s: %w", key, err)
+	}
+	platform, tenantRow := layers[0], layers[1]
 
 	var (
 		enabled  bool
 		boundary time.Time
-		present  bool
-		written  time.Time
 	)
 
-	// The platform layer is the floor every tenant stands on. It resolves
-	// through the declared default when it holds no row, and a default of true
-	// has no row and so no revision: such a requirement binds every session.
-	platform, err := settings.Get[bool](j.store, settings.Global(), key)
-	if err != nil {
-		return false, fmt.Errorf("reading %s: %w", key, err)
-	}
-	if platform {
+	// The platform layer is the floor every tenant stands on. Its value is the
+	// declared default when it holds no row, and a default of true has no row
+	// and so no revision: such a requirement binds every session.
+	if platform.Value {
 		enabled = true
-		written, present, err = j.store.WrittenAt(settings.Global(), key)
-		if err != nil {
-			return false, fmt.Errorf("reading %s: %w", key, err)
-		}
-		if !present || written.IsZero() {
+		if !platform.Present || platform.WrittenAt.IsZero() {
 			return true, nil
 		}
-		boundary = written
+		boundary = platform.WrittenAt
 	}
 
 	// The tenant layer contributes only through its own explicit row: a tenant
 	// row of false leaves the platform's revision to decide.
-	tenantLayer := settings.ForTenant(string(j.tenant))
-	written, present, err = j.store.WrittenAt(tenantLayer, key)
-	if err != nil {
-		return false, fmt.Errorf("reading %s: %w", key, err)
-	}
-	if present {
-		var tenantValue bool
-		tenantValue, err = settings.Get[bool](j.store, tenantLayer, key)
-		if err != nil {
-			return false, fmt.Errorf("reading %s: %w", key, err)
+	if tenantRow.Present && tenantRow.Value {
+		enabled = true
+		if tenantRow.WrittenAt.IsZero() {
+			return true, nil
 		}
-		if tenantValue {
-			enabled = true
-			if written.IsZero() {
-				return true, nil
-			}
-			if boundary.IsZero() || written.Before(boundary) {
-				boundary = written
-			}
+		if boundary.IsZero() || tenantRow.WrittenAt.Before(boundary) {
+			boundary = tenantRow.WrittenAt
 		}
 	}
 
@@ -398,7 +391,7 @@ func (j *judging) binds(key string) (bool, error) {
 		// requirement is the safe reading.
 		return true, nil
 	}
-	return !authenticated.Before(boundary), nil
+	return authenticated.Unix() >= boundary.Unix(), nil
 }
 
 // nameableLayer reports whether the settings can name a layer for the tenant: the

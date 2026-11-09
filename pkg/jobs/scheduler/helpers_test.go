@@ -152,6 +152,10 @@ func (c *fakeCatalog) SetStatusByAccount(context.Context, tenant.ID, tenant.Stat
 }
 func (c *fakeCatalog) Delete(context.Context, tenant.ID) error           { return nil }
 func (c *fakeCatalog) SetOwner(context.Context, tenant.ID, string) error { return nil }
+func (c *fakeCatalog) SetOwnerIfEmpty(context.Context, tenant.ID, string) (bool, error) {
+	return false, nil
+}
+
 func (c *fakeCatalog) SetProfile(context.Context, tenant.ID, tenant.Profile) error {
 	return nil
 }

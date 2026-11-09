@@ -123,6 +123,17 @@ func (f *fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error
 	return time.Time{}, false, nil
 }
 
+func (f *fakeSettings) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := f.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // counting wraps the backend's derivation so that a case can tell when one ran.
 func counting(b *backend) *atomic.Int64 {
 	var n atomic.Int64

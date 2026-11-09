@@ -394,6 +394,10 @@ func (fakeRoster) SetOwner(context.Context, tenant.ID, string) error {
 	return errors.New("not used by the resolution layer")
 }
 
+func (fakeRoster) SetOwnerIfEmpty(context.Context, tenant.ID, string) (bool, error) {
+	return false, errors.New("not used by the resolution layer")
+}
+
 func (fakeRoster) SetProfile(context.Context, tenant.ID, tenant.Profile) error {
 	return errors.New("not used by the resolution layer")
 }

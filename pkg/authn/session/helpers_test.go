@@ -216,6 +216,17 @@ func (*fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error) 
 	return time.Time{}, false, nil
 }
 
+func (s *fakeSettings) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // declaredDefault is the declared default of a setting path.
 func declaredDefault(path string) any {
 	switch path {

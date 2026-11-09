@@ -26,9 +26,13 @@ import (
 type fakeRoster struct {
 	tenant.Catalog
 
-	mu        sync.Mutex
-	rows      map[tenant.ID]tenant.Tenant
-	lagging   map[tenant.ID]bool
+	mu      sync.Mutex
+	rows    map[tenant.ID]tenant.Tenant
+	lagging map[tenant.ID]bool
+	// ownerless makes Get report a row without its owner, standing for a read
+	// that predates an ownership transfer. SetOwnerIfEmpty still sees the row's
+	// real owner.
+	ownerless []tenant.ID
 	createErr error
 	creates   int
 	entered   int
@@ -116,6 +120,9 @@ func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, 
 	if found && r.lagging[id] {
 		return tenant.Tenant{}, false, nil
 	}
+	if found && slices.Contains(r.ownerless, id) {
+		row.OwnerAccount = ""
+	}
 	return row, found, nil
 }
 
@@ -135,6 +142,27 @@ func (r *fakeRoster) SetOwner(_ context.Context, id tenant.ID, owner string) err
 	row.OwnerAccount = owner
 	r.rows[id] = row
 	return nil
+}
+
+// SetOwnerIfEmpty writes the owner only while the row still carries none, as
+// the roster's conditional repair does. An owner that arrived since the caller's
+// read stands.
+func (r *fakeRoster) SetOwnerIfEmpty(_ context.Context, id tenant.ID, owner string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row, found := r.rows[id]
+	if !found {
+		return false, fmt.Errorf("%w: identifier %q", tenant.ErrInvalidTenant, id)
+	}
+	if row.Status == tenant.StatusDeleted {
+		return false, fmt.Errorf("%w: identifier %q", tenant.ErrTenantDeleted, id)
+	}
+	if row.OwnerAccount != "" {
+		return false, nil
+	}
+	row.OwnerAccount = owner
+	r.rows[id] = row
+	return true, nil
 }
 
 func (r *fakeRoster) Create(_ context.Context, t tenant.Tenant) error {

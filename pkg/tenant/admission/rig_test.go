@@ -310,6 +310,34 @@ func (s *settingsStub) WrittenAt(layer settings.Layer, key string) (time.Time, b
 	return s.revisions[row], true, nil
 }
 
+// Read answers each named layer from the stub's rows, as the real store reads
+// both layers from one snapshot. The boolean keys this module declares default
+// to false, which is what an absent layer answers.
+func (s *settingsStub) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		s.reads = append(s.reads, settingRead{layer: read.Layer, key: key})
+		if err := s.errors[key]; err != nil {
+			return nil, err
+		}
+		out, ok := read.Target.(*bool)
+		if !ok {
+			panic("settingsStub: a target of a type no setting here is declared with")
+		}
+		row := settingRow{layer: read.Layer, key: key}
+		value, found := s.rows[row]
+		if found {
+			*out = value.(bool)
+		} else {
+			*out = false
+		}
+		results[i] = settings.LayerReadResult{WrittenAt: s.revisions[row], Present: found}
+	}
+	return results, nil
+}
+
 func (s *settingsStub) readsOf(key string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

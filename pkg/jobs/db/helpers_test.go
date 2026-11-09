@@ -199,6 +199,17 @@ func (s *queueStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) 
 	return time.Time{}, false, nil
 }
 
+func (s *queueStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // host is one assembled run of this module: the engine and the database it sits
 // on, whether an event bus takes part, the configuration section of jobs.db,
 // whatever extra modules a case takes in, and the stage the run reaches.

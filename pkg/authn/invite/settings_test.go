@@ -268,6 +268,17 @@ func (s *fakeSettingsStore) WrittenAt(settings.Layer, string) (time.Time, bool, 
 	return time.Time{}, false, nil
 }
 
+func (s *fakeSettingsStore) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+	results := make([]settings.LayerReadResult, len(reads))
+	for i, read := range reads {
+		if err := s.Get(read.Layer, key, read.Target); err != nil {
+			return nil, err
+		}
+		results[i] = settings.LayerReadResult{}
+	}
+	return results, nil
+}
+
 // recordingEventBus is the event bus of the assembly: a publish reaches every
 // handler subscribed to the type, in the publisher's goroutine.
 type recordingEventBus struct {

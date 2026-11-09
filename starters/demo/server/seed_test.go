@@ -1427,6 +1427,29 @@ func TestSeedTenantWritesTheConfiguredOwner(t *testing.T) {
 	}
 }
 
+// TestSeedTenantLeavesATransferThatLandsDuringTheRepair holds the race the
+// conditional write closes: the read sees an ownerless row, an ownership
+// transfer lands before the repair writes, and the seed must leave that owner
+// standing rather than overwrite it with the configured one.
+func TestSeedTenantLeavesATransferThatLandsDuringTheRepair(t *testing.T) {
+	t.Parallel()
+
+	roster := newFakeRoster()
+	roster.rows["acme"] = tenant.Tenant{
+		ID: "acme", Name: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-transferred",
+	}
+	// Get reports the row without its owner, as a read that predates the
+	// transfer does; the repair still sees the owner the row carries.
+	roster.ownerless = []tenant.ID{"acme"}
+
+	if err := seedTenant(t.Context(), roster, "acme", "acct-seed"); err != nil {
+		t.Fatalf("seedTenant: %v", err)
+	}
+	if got := roster.rows["acme"].OwnerAccount; got != "acct-transferred" {
+		t.Errorf("the repair overwrote the transferred owner with %q", got)
+	}
+}
+
 func TestSeedFailsOnASystemNameConflict(t *testing.T) {
 	roster := newFakeRoster()
 	roster.createErr = fmt.Errorf("%w: name %q is held by tenant %q",

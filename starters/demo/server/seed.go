@@ -956,12 +956,19 @@ func seedTenant(ctx context.Context, roster tenant.Catalog, id, owner string) er
 		// A seeded tenant is created by the administrator the configuration
 		// names first, and the profile surface reads the owner from the roster
 		// row. A row that predates this rule carries no owner; it takes the
-		// configured one, which is a repair and not a transfer.
+		// configured one, which is a repair and not a transfer. The repair is
+		// conditional in the statement, so an ownership transfer that lands
+		// between this read and the write stands.
 		if owner != "" && got.OwnerAccount == "" && got.Status != tenant.StatusDeleted {
-			if err := roster.SetOwner(ctx, tenant.ID(id), owner); err != nil {
+			wrote, err := roster.SetOwnerIfEmpty(ctx, tenant.ID(id), owner)
+			if err != nil {
 				return fmt.Errorf("seed: setting the owner of %s: %w", id, err)
 			}
-			fmt.Printf("seeded: tenant %s owner %s\n", id, owner)
+			if wrote {
+				fmt.Printf("seeded: tenant %s owner %s\n", id, owner)
+			} else {
+				fmt.Printf("skipped: tenant %s owner (set since the read)\n", id)
+			}
 			return nil
 		}
 		fmt.Printf("skipped: tenant %s (exists)\n", id)

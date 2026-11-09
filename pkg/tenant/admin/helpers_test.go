@@ -197,6 +197,11 @@ func (s *stubCatalog) SetOwner(_ context.Context, id tenant.ID, owner string) er
 	return errors.New("the management surface must not transfer a tenant's owner")
 }
 
+func (s *stubCatalog) SetOwnerIfEmpty(_ context.Context, id tenant.ID, owner string) (bool, error) {
+	s.record(catalogCall{op: "SetOwnerIfEmpty", id: id, owner: owner})
+	return false, errors.New("the management surface must not repair a tenant's owner")
+}
+
 func (s *stubCatalog) SetProfile(_ context.Context, id tenant.ID, profile tenant.Profile) error {
 	if s.during != nil {
 		s.during()

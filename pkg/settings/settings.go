@@ -186,6 +186,32 @@ type Store interface {
 	// no IO, so there is nothing to cancel.
 	WrittenAt(layer Layer, key string) (time.Time, bool, error)
 
+	// Read answers, from one snapshot, what each named layer holds for a key:
+	// the layer's value decoded into that read's target, and the moment of the
+	// layer's own explicit row.
+	//
+	// The value is the layer's row when it holds one and the declaration's
+	// default when it does not; a layer never falls through to the layer below
+	// here, so the answer for a tenant is the tenant layer's alone. The result
+	// says whether the layer held a row, and carries that row's write time,
+	// which is zero when it held none.
+	//
+	// The layers are answered from a single snapshot rather than one read per
+	// layer, so a caller combining a value with the moment it was written — an
+	// admission decision comparing a session's authentication time with the
+	// write that switched a requirement on — sees one state rather than two
+	// that a reload can separate.
+	//
+	// Every judgement Get and WrittenAt make is made here: an undeclared key is
+	// ErrUnknownKey, a read before this module's Init loaded the snapshot is
+	// ErrNotLoaded, a row that fails to decode is ErrTypeMismatch, and an
+	// illegal target or layer panics. Results come back in the order the reads
+	// were given.
+	//
+	// It takes no context because it reads the in-memory snapshot and starts
+	// no IO, so there is nothing to cancel.
+	Read(key string, reads ...LayerRead) ([]LayerReadResult, error)
+
 	// Set encodes w.Value under the declared type and writes it to the layer
 	// w.Layer names. A successful write publishes a settings.changed event.
 	//
@@ -273,6 +299,66 @@ func Get[T any](s Store, layer Layer, key string) (T, error) {
 // that reads a value through Get reads the row's revision through this.
 func WrittenAt(s Store, layer Layer, key string) (time.Time, bool, error) {
 	return s.WrittenAt(layer, key)
+}
+
+// LayerRead names one layer for Store.Read and the target that layer's value
+// is decoded into.
+type LayerRead struct {
+	// Layer is the layer whose value and explicit row are read. It is
+	// judged as Get judges a layer.
+	Layer Layer
+	// Target is a non-nil pointer to the key's declared type, as Get takes.
+	// It receives the layer's value: the layer's own row when it holds one,
+	// the declared default when it does not.
+	Target any
+}
+
+// LayerReadResult is one layer's answer from Store.Read.
+type LayerReadResult struct {
+	// WrittenAt is when the layer's explicit row was last written. It is the
+	// zero time when Present is false.
+	WrittenAt time.Time
+	// Present reports whether the layer held an explicit row. A value read
+	// from a layer with no row is the declaration's default.
+	Present bool
+}
+
+// LayerValue is one layer's answer from ReadLayers: the value in the declared
+// type and the layer's explicit row.
+type LayerValue[T any] struct {
+	// Value is the layer's own row's value, or the declared default when the
+	// layer holds no row.
+	Value T
+	// WrittenAt is when the layer's explicit row was last written, zero when
+	// Present is false.
+	WrittenAt time.Time
+	// Present reports whether the layer held an explicit row.
+	Present bool
+}
+
+// ReadLayers is the generic wrapper over Store.Read: it reads one key's value
+// and explicit row for each named layer from a single snapshot, in the order
+// the layers are given. A layer with no row answers the declaration's default
+// with Present false.
+func ReadLayers[T any](s Store, key string, layers ...Layer) ([]LayerValue[T], error) {
+	targets := make([]T, len(layers))
+	reads := make([]LayerRead, len(layers))
+	for i, layer := range layers {
+		reads[i] = LayerRead{Layer: layer, Target: &targets[i]}
+	}
+	results, err := s.Read(key, reads...)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]LayerValue[T], len(results))
+	for i, result := range results {
+		values[i] = LayerValue[T]{
+			Value:     targets[i],
+			WrittenAt: result.WrittenAt,
+			Present:   result.Present,
+		}
+	}
+	return values, nil
 }
 
 // Write is one value to write. It is what Set takes.

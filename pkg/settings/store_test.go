@@ -814,6 +814,71 @@ func TestWrittenAtDoesNotFallBack(t *testing.T) {
 	}
 }
 
+// Read answers every named layer from one snapshot: each layer's own value and
+// the moment its explicit row was written, with a layer holding no row
+// answering the declaration's default and reporting itself absent.
+func TestReadAnswersEveryLayerWithItsOwnRow(t *testing.T) {
+	keys := demoTable(t)
+	store, _ := storeOf(t, keys, newRecordingBus())
+	ctx := context.Background()
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 200}); err != nil {
+		t.Fatalf("writing the global row: %v", err)
+	}
+	if err := store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 300}); err != nil {
+		t.Fatalf("writing the tenant row: %v", err)
+	}
+
+	values, err := ReadLayers[int](store, "demo.limit", Global(), ForTenant("t1"), ForTenant("t2"))
+	if err != nil {
+		t.Fatalf("reading the layers: %v", err)
+	}
+	if values[0].Value != 200 || !values[0].Present || values[0].WrittenAt.IsZero() {
+		t.Errorf("the global layer answered %+v, want its own row's 200", values[0])
+	}
+	if values[1].Value != 300 || !values[1].Present || values[1].WrittenAt.IsZero() {
+		t.Errorf("tenant t1 answered %+v, want its own row's 300", values[1])
+	}
+	if values[2].Value != 100 || values[2].Present || !values[2].WrittenAt.IsZero() {
+		t.Errorf("tenant t2 answered %+v, want the declared default with no row", values[2])
+	}
+
+	// The tenant layer does not fall through to the global row: t2's answer is
+	// its own absence and the default, not the 200 a Get would resolve to.
+	if got, _ := Get[int](store, ForTenant("t2"), "demo.limit"); got != 200 {
+		t.Fatalf("the fallback read is %v, so the case is not testing the absence", got)
+	}
+}
+
+// Read is judged as Get and WrittenAt are: a read before the snapshot loads and
+// an undeclared key are errors, a bad target or layer panics.
+func TestReadJudgesItsArgumentsAsTheOtherReadsDo(t *testing.T) {
+	keys := demoTable(t)
+	store, _ := storeOf(t, keys, newRecordingBus())
+	var target int
+
+	if _, err := (&settingsStore{keys: keys}).Read("demo.limit",
+		LayerRead{Layer: Global(), Target: &target}); !errors.Is(err, ErrNotLoaded) {
+		t.Errorf("a read before the snapshot loaded gave %v, want ErrNotLoaded", err)
+	}
+	if _, err := store.Read("demo.missing",
+		LayerRead{Layer: Global(), Target: &target}); !errors.Is(err, ErrUnknownKey) {
+		t.Errorf("a read of an undeclared key gave %v, want ErrUnknownKey", err)
+	}
+	for name, call := range map[string]func(){
+		"a bad target": func() { _, _ = store.Read("demo.limit", LayerRead{Layer: Global(), Target: 0}) },
+		"a zero layer": func() { _, _ = store.Read("demo.limit", LayerRead{Layer: nil, Target: &target}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Read with %s did not panic", name)
+				}
+			}()
+			call()
+		})
+	}
+}
+
 // A write moves the revision, and a reload keeps the row's own time rather
 // than the moment the replica read it.
 func TestWrittenAtMovesAfterASetAndSurvivesAReload(t *testing.T) {
