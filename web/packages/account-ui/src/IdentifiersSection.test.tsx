@@ -3102,7 +3102,7 @@ describe('IdentifiersSection', () => {
       within(signInRegion).getByText(zhCN.identifiers.usage.emailNone),
     ).toBeTruthy()
     await user.click(
-      within(signInRegion).getByRole('button', {
+      within(signInRegion).getByRole('switch', {
         name: zhCN.identifiers.action.enable,
       }),
     )
@@ -3216,7 +3216,7 @@ describe('IdentifiersSection', () => {
       name: zhCN.identifiers.groups.signIn,
     })
     await user.click(
-      within(signInRegion).getByRole('button', {
+      within(signInRegion).getByRole('switch', {
         name: zhCN.identifiers.action.disable,
       }),
     )
@@ -3588,7 +3588,7 @@ describe('IdentifiersSection', () => {
       }),
     ).toBeNull()
     expect(
-      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.enable }),
     ).toBeTruthy()
   })
 
@@ -3661,7 +3661,7 @@ describe('IdentifiersSection', () => {
       within(phoneGroup).getByText(zhCN.identifiers.usage.phoneNotSignIn),
     ).toBeTruthy()
     expect(
-      within(phoneGroup).getByRole('button', {
+      within(phoneGroup).getByRole('switch', {
         name: zhCN.identifiers.action.enable,
       }),
     ).toBeTruthy()
@@ -3855,9 +3855,10 @@ describe('IdentifiersSection', () => {
     const usernameRow = usernameHeading.parentElement
     expect(usernameRow).not.toBeNull()
     expect(within(usernameRow as HTMLElement).queryByRole('button')).toBeNull()
+    expect(within(usernameRow as HTMLElement).queryByRole('switch')).toBeNull()
 
     expect(
-      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.disable }),
     ).toBeTruthy()
   })
 
@@ -3903,7 +3904,7 @@ describe('IdentifiersSection', () => {
     })
     expect(combo).toHaveTextContent('ada@x.test')
     await user.click(
-      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.disable }),
     )
 
     await waitFor(() => expect(writes).toEqual([{ sign_in: false }]))
@@ -3917,7 +3918,7 @@ describe('IdentifiersSection', () => {
     )
     expect(screen.getByText(zhCN.identifiers.usage.emailNone)).toBeTruthy()
     expect(
-      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.enable }),
     ).toBeTruthy()
   })
 
@@ -3983,14 +3984,14 @@ describe('IdentifiersSection', () => {
       }),
     ).toHaveTextContent('a@x.test')
     await user.click(
-      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.disable }),
     )
     await waitFor(() =>
       expect(screen.queryByRole('combobox')).toBeNull(),
     )
 
     await user.click(
-      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.enable }),
     )
 
     await waitFor(() => expect(aSignIn).toBe(true))
@@ -4084,14 +4085,14 @@ describe('IdentifiersSection', () => {
       }),
     ).toHaveTextContent('a@x.test')
     await user.click(
-      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.disable }),
     )
     await waitFor(() =>
       expect(screen.getByText(zhCN.identifiers.usage.emailNone)).toBeTruthy(),
     )
 
     await user.click(
-      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+      screen.getByRole('switch', { name: zhCN.identifiers.action.enable }),
     )
 
     await waitFor(() => expect(bSignIn).toBe(true))

@@ -225,6 +225,7 @@ import TableRow from '@mui/material/TableRow'
 import Select from '@mui/material/Select'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -1636,18 +1637,23 @@ export function IdentifiersSection({
             </Typography>
           ) : null}
           {kind === 'username' ? null : kind === 'email' ? (
-            <Button
-              variant="outlined"
-              size="small"
+            <Switch
+              checked={emailSignInRow !== null}
               disabled={
                 writeBusy ||
                 addBusy ||
                 (emailSignInRow === null && provenEmails.length === 0)
               }
-              aria-describedby={
-                emailSignInRow === null ? `${headingId}-off` : undefined
-              }
-              onClick={() => {
+              slotProps={{
+                input: {
+                  'aria-label': emailSignInRow === null
+                    ? t('identifiers.action.enable')
+                    : t('identifiers.action.disable'),
+                  'aria-describedby':
+                    emailSignInRow === null ? `${headingId}-off` : undefined,
+                },
+              }}
+              onChange={() => {
                 if (emailSignInRow !== null) {
                   setLastDisabledSignInEmail({
                     id: emailSignInRow.id,
@@ -1683,26 +1689,24 @@ export function IdentifiersSection({
                   signIn: true,
                 })
               }}
-            >
-              {emailSignInRow === null
-                ? t('identifiers.action.enable')
-                : t('identifiers.action.disable')}
-            </Button>
+            />
           ) : signInRow?.id != null ? (
-            <Button
-              variant="outlined"
-              size="small"
+            <Switch
+              checked={signInRow.sign_in === true}
               disabled={writeBusy || addBusy}
-              onClick={() =>
+              slotProps={{
+                input: {
+                  'aria-label': signInRow.sign_in === true
+                    ? t('identifiers.action.disable')
+                    : t('identifiers.action.enable'),
+                },
+              }}
+              onChange={() =>
                 void setFlags(signInRow.id as string, signInRow.value ?? '', {
                   signIn: signInRow.sign_in !== true,
                 })
               }
-            >
-              {signInRow.sign_in === true
-                ? t('identifiers.action.disable')
-                : t('identifiers.action.enable')}
-            </Button>
+            />
           ) : null}
         </Box>
         {kind === 'email' ? (
