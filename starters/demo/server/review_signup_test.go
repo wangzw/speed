@@ -168,7 +168,7 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	// transaction wrote the personal tenant, and the verification notice is a
 	// separate surface. The read after verification below finds the same tenant.
 	personal := readPersonalTenant(t, client, base, auth)
-	if personal.ID == "" || personal.Kind != string(tenant.KindPersonal) {
+	if personal.Name == "" || personal.Kind != string(tenant.KindPersonal) {
 		t.Errorf("the account's tenant is %+v, want the personal tenant its creation wrote", personal)
 	}
 	if personal.Name != reviewSignupUsername {
@@ -210,14 +210,14 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	// The proved address lifts the registration limit; the organization the
 	// creation wrote is the same row.
 	again := readPersonalTenant(t, client, base, auth)
-	if again.ID != personal.ID || again.Name != personal.Name {
+	if again.Name != personal.Name || again.Kind != personal.Kind {
 		t.Errorf("the tenant after verification is %+v, want the existing one %+v", again, personal)
 	}
 }
 
 // personalTenantView is the personal row the caller tenant read answers.
+// The read carries no identifier: a client addresses a tenant by its name.
 type personalTenantView struct {
-	ID   string
 	Name string
 	Kind string
 }
@@ -234,7 +234,6 @@ func readPersonalTenant(t *testing.T, client *http.Client, base string,
 	}
 	var answer struct {
 		Tenants []struct {
-			ID   string `json:"id"`
 			Name string `json:"name"`
 			Kind string `json:"kind"`
 		} `json:"tenants"`
@@ -244,7 +243,7 @@ func readPersonalTenant(t *testing.T, client *http.Client, base string,
 	}
 	for _, entry := range answer.Tenants {
 		if entry.Kind == string(tenant.KindPersonal) {
-			return personalTenantView{ID: entry.ID, Name: entry.Name, Kind: entry.Kind}
+			return personalTenantView{Name: entry.Name, Kind: entry.Kind}
 		}
 	}
 	t.Fatalf("the caller's tenant list carries no personal tenant:\n%s", read.body)

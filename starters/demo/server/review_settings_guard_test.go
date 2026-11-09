@@ -201,10 +201,10 @@ func TestReviewProtectedTenantIsReadOnlyOnTheSettingsSurface(t *testing.T) {
 	// holds no settings permission, so the route's authorization refuses the
 	// read before the host seam is asked; the seam's personal refusal itself is
 	// pinned by TestReviewSettingsWriteGuardRefusesTheProtectedFixture.
-	personalID := personalTenantOf(t, client, base, auth)
+	personalName := personalTenantNameOf(t, client, base, auth)
 	personalRead := send(t, client, http.MethodGet,
-		base+"/api/v1/tenants/"+personalID+"/settings", nil,
-		withTenant(auth, personalID))
+		base+"/api/v1/tenants/"+personalName+"/settings", nil,
+		withTenant(auth, personalName))
 	if personalRead.status != http.StatusForbidden {
 		t.Fatalf("the personal tenant's settings read answered %d, want the authorization refusal:\n%s",
 			personalRead.status, personalRead.body)
@@ -278,9 +278,9 @@ func readTenantSettings(t *testing.T, client *http.Client, base string,
 	return answer
 }
 
-// personalTenantOf reads the caller's personal tenant from the account's own
+// personalTenantNameOf reads the caller's personal tenant name from the account's own
 // tenant list.
-func personalTenantOf(t *testing.T, client *http.Client, base string,
+func personalTenantNameOf(t *testing.T, client *http.Client, base string,
 	headers map[string]string,
 ) string {
 	t.Helper()
@@ -290,7 +290,7 @@ func personalTenantOf(t *testing.T, client *http.Client, base string,
 	}
 	var answer struct {
 		Tenants []struct {
-			ID   string `json:"id"`
+			Name string `json:"name"`
 			Kind string `json:"kind"`
 		} `json:"tenants"`
 	}
@@ -299,7 +299,7 @@ func personalTenantOf(t *testing.T, client *http.Client, base string,
 	}
 	for _, entry := range answer.Tenants {
 		if entry.Kind == string(tenant.KindPersonal) {
-			return entry.ID
+			return entry.Name
 		}
 	}
 	t.Fatalf("the caller answered no personal tenant:\n%s", read.body)
