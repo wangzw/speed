@@ -3,24 +3,30 @@
  * a local first factor re-authenticates through the tenant's enterprise
  * provider before the tenant accepts an invitation write.
  *
- * The journey's five steps, all through the rendered product:
+ * The journey's steps, all through the rendered product:
  *
- *   1. The tenant administrator opens the invitations-and-members page and
- *      submits an invitation.
- *   2. The tenant admission layer refuses the write and the page names the
- *      enterprise sign-in: the sentence comes from the product's own
- *      `authn.sso_required` copy and a re-login action sits under it. No local
- *      step-up dialog opens and no local factor is listed, because no local
- *      factor can satisfy the tenant's requirement.
- *   3. The administrator takes the re-login action; the admin's session gate
+ *   1. The requirement is switched on through the admin's settings surface
+ *      while the administrator's session predates it. The admission layer binds
+ *      only sessions authenticated at or after the moment the effective value
+ *      was written, so that session is exempt and the write itself is admitted.
+ *   2. The administrator ends that exempt session and signs in again with the
+ *      local first factor. The new session is established after the
+ *      requirement's start moment, so the requirement binds it.
+ *   3. The administrator opens the tenant's invitations-and-members page; the
+ *      page's tenant-scoped read is refused `401 authn.sso_required` and the
+ *      page names the enterprise sign-in: the sentence comes from the product's
+ *      own `authn.sso_required` copy and a re-login action sits under it. No
+ *      local step-up dialog opens and no local factor is listed, because no
+ *      local factor can satisfy the tenant's requirement.
+ *   4. The administrator takes the re-login action; the admin's session gate
  *      returns to the sign-in surface.
- *   4. The administrator signs in through the tenant's enterprise entry: the
+ *   5. The administrator signs in through the tenant's enterprise entry: the
  *      work address, the organization the verified domain discovers, and the
  *      provider's approval. The callback lands on the tenant home.
- *   5. Back on the invitations page, the same invitation is submitted again and
- *      the page confirms it exactly as a direct submit does; the one-time panel
- *      hands over the acceptance link and the invitation list carries the
- *      pending row.
+ *   6. Back on the invitations page, an invitation is submitted and the page
+ *      confirms it exactly as a direct submit does; the one-time panel hands
+ *      over the acceptance link and the invitation list carries the pending
+ *      row.
  *
  * Two things are non-UI, and only these:
  *
@@ -49,8 +55,10 @@
  * after the administrator's session and admin area are established, rather
  * than seeded before the server starts: switching it on while the page is open
  * is the operational sequence in which a signed-in member first meets the
- * requirement. The setting's global row is the value the tenant falls back to,
- * and the settings page writes that layer.
+ * requirement. Because the admission policies bind only sessions
+ * authenticated at or after the moment the effective value was written, the
+ * session that writes it is exempt; the journey therefore ends that session
+ * and signs in again before it looks for the refusal.
  *
  * The administrator is also a platform administrator because this host's
  * admin is platform-staff only, and the invitations-and-members page lives in
@@ -205,10 +213,11 @@ async function openConsole(page: Page): Promise<void> {
  * The setting's global row is the value the tenant falls back to, and the
  * settings page writes the global layer. The requirement is switched on here,
  * after the administrator's admin session is established, because the
- * admin's own permission read is a request the admission layer judges: with
- * the requirement already on, the read is refused and the admin area cannot
- * be entered at all. Switching it on while the page is open is also the
- * operational sequence in which a signed-in member first meets the requirement.
+ * admission policies bind only sessions authenticated at or after the moment
+ * the effective value was written: the session that carries the write predates
+ * it and is exempt, so the admin area stays usable through the write. The
+ * journey ends that session and signs in again to meet the requirement as a
+ * member would.
  */
 async function enableTenantSSORequirement(page: Page): Promise<void> {
   await adminLink(page, copy('adminUi', 'settings.title')).click()
@@ -590,45 +599,44 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // to open it.
   })
 
-  await test.step('precondition: the tenant requirement is switched on after the administrator is signed in', async () => {
+  await test.step('precondition: the tenant requirement is switched on while the administrator session predates it', async () => {
     // The operator and the administrator are one account in this host: the
     // admin that carries the invitations page is platform-staff only. The
     // requirement is switched on through that admin's settings surface once
-    // the administrator's session and admin area are established, which is
-    // the sequence in which a signed-in member first meets the requirement.
+    // the administrator's session and admin area are established. The
+    // admission layer binds only sessions authenticated at or after this
+    // write, so the session that performs it is exempt and the write lands.
     await openConsole(page)
     await enableTenantSSORequirement(page)
   })
 
-  await test.step('step 1: the tenant administrator submits an invitation', async () => {
-    await adminLink(page, copy('adminUi', 'invitations.title')).click()
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: copy('adminUi', 'invitations.title'),
-        exact: true,
-      }),
-    ).toBeVisible()
+  await test.step('step 1: the administrator ends the exempt session and signs in again with the local first factor', async () => {
+    // The requirement constrains only sessions authenticated at or after the
+    // moment it was written. The session that switched it on predates that
+    // moment and is exempt, so the journey ends it and builds a new one with
+    // the local first factor: that new session is the one the requirement
+    // binds.
+    await leaveConsole(page)
+    await accounts.signOut()
+    await accounts.signIn({
+      identifier: tenantSSOAdmin.username,
+      password: tenantSSOAdmin.password,
+    })
+    await expect(homeHeading(page)).toBeVisible()
+  })
+
+  await test.step('step 2: the invitations surface is refused and the page names the enterprise sign-in', async () => {
+    // Opening the surface reads the tenant's invitation list. The session was
+    // established after the requirement's start moment and built from the
+    // local first factor, so the admission layer refuses the read. The same
+    // refusal answers an invitation write; the journey does not attempt a
+    // write it already knows is refused, and this read proves it.
+    await openInvitations(page)
     await selectTenant(page, TENANT)
 
     const section = invitationSection(page)
-    await section
-      .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
-        exact: true,
-      })
-      .fill(INVITEE_EMAIL)
-    await section
-      .getByRole('button', {
-        name: copy('adminUi', 'invitations.issue.submit'),
-        exact: true,
-      })
-      .click()
-  })
-
-  await test.step('step 2: the page names the enterprise sign-in and offers no local factor', async () => {
-    const section = invitationSection(page)
-    // The refused write and the refused list read carry the same sentence;
-    // the assertion is that the page renders it, not how many surfaces do.
+    // The refused read carries the sentence; the assertion is that the page
+    // renders it.
     await expect(
       section
         .getByText(copy('adminUi', 'errors.authn.sso_required'), {
@@ -666,9 +674,8 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
   })
 
   await test.step('step 3: the re-login action ends the session and the sign-in surface appears', async () => {
-    // Both the refused list read and the refused write offer the same exit:
-    // ending the session is the only way to a sign-in through the tenant's
-    // provider. Either control is the documented action.
+    // The refused read offers the re-login exit: ending the session is the
+    // only way to a sign-in through the tenant's provider.
     await invitationSection(page)
       .getByRole('button', {
         name: copy('adminUi', 'stepUp.relogin'),
@@ -714,7 +721,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     await expectAccountMenuName(userMenu, tenantSSOAdmin.displayName)
   })
 
-  await test.step('step 5: the same invitation is accepted with the direct-submit confirmation', async () => {
+  await test.step('step 5: the invitation is accepted with the direct-submit confirmation', async () => {
     // The write is judged in the tenant its path names, so the journey does
     // not move the tenant area first; the way back into the admin is the
     // account menu's entry, offered while the platform's own organization is
@@ -722,6 +729,10 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     await openInvitations(page)
     await selectTenant(page, TENANT)
 
+    // The session is now the provider's: the tenant-scoped reads are admitted
+    // and the invitation is issued for the first time. Nothing was created
+    // before, because the local session's read was refused rather than an
+    // invitation being written and rolled back.
     const section = invitationSection(page)
     await section
       .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {

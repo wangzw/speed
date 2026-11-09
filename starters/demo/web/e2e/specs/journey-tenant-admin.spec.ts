@@ -2771,8 +2771,16 @@ test.describe('a policy the platform holds on', () => {
       }),
       exact: true,
     })
+    // The organization has registered no SSO provider, so the switch is held
+    // off with the reason named: turning the requirement on without a
+    // provider would lock the organization out of every request.
     await expect(ssoSwitch).not.toBeChecked()
-    await expect(ssoSwitch).toBeEnabled()
+    await expect(ssoSwitch).toBeDisabled()
+    await expect(
+      page.getByText(copy('adminUi', 'organization.security.sso.noProvider'), {
+        exact: true,
+      }),
+    ).toBeVisible()
 
     // REQ-tenant-admin-018: the rendered state above promises that turning
     // the enforced policy off cannot land, and the disabled switch offers no
