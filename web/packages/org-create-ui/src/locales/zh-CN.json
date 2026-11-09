@@ -4,7 +4,7 @@
     "intro": "为你的团队创建一个业务组织。你将成为它的首位管理员。"
   },
   "fields": {
-    "alias": "别名",
+    "alias": "名称",
     "displayName": "显示名",
     "description": "描述",
     "contactEmail": "联系邮箱",
@@ -19,7 +19,7 @@
   "validation": {
     "required": "此项为必填。",
     "aliasShape": "请使用 3–63 个小写字母、数字或连字符，并以字母或数字开头。",
-    "aliasReserved": "该别名已被系统保留，请换一个。",
+    "aliasReserved": "该名称已被系统保留，请换一个。",
     "displayNameTooLong": "显示名请控制在 100 个字符以内。",
     "descriptionTooLong": "描述请控制在 500 个字符以内。",
     "emailShape": "请填写一个邮箱地址，例如 team@example.com。",
@@ -66,7 +66,7 @@
       "rate_limited_wait": "创建组织过于频繁，请 {{seconds}} 秒后再试。",
       "rate_limited_wait_long": "创建组织过于频繁，请约 {{minutes}} 分钟后再试。",
       "creation_in_progress": "已有一次组织创建正在进行，请等待它完成后再试。",
-      "identifier_unavailable": "该别名已被其他组织占用，请换一个。"
+      "identifier_unavailable": "该名称已被其他组织占用，请换一个。"
     }
   }
 }
