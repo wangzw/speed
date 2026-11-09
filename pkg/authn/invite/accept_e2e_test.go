@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -315,6 +316,10 @@ func (openPasswordSignup) List(context.Context, settings.Layer) ([]settings.Entr
 }
 
 func (openPasswordSignup) Declared() []settings.DeclaredItem { return nil }
+
+func (openPasswordSignup) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
 
 // provideSettings declares the stand-in module that hands the settings store
 // over.

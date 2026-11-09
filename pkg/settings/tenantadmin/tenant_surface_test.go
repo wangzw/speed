@@ -31,7 +31,7 @@ func admissionItem() settings.Item {
 		DescriptionKey: "tenant.admission.item.description",
 		Control:        settings.ControlSwitch,
 		Danger:         settings.DangerCritical,
-		Effect:         settings.EffectImmediate,
+		Effect:         settings.EffectNextSignIn,
 		TenantAccess:   settings.TenantReadWrite,
 	}
 }
@@ -358,8 +358,8 @@ func TestTheViewCarriesEveryDeclaredField(t *testing.T) {
 	if item.Danger != "critical" {
 		t.Errorf("danger = %q, want critical", item.Danger)
 	}
-	if item.Effect != "immediate" {
-		t.Errorf("effect = %q, want immediate", item.Effect)
+	if item.Effect != "next-sign-in" {
+		t.Errorf("effect = %q, want next-sign-in", item.Effect)
 	}
 	if item.TenantAccess != "read-write" {
 		t.Errorf("tenant_access = %q, want read-write", item.TenantAccess)

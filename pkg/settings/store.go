@@ -80,13 +80,7 @@ func (s *settingsStore) Get(layer Layer, key string, target any) error {
 	}
 	current := s.snapshot.Load()
 	if current == nil {
-		// Nothing has been read from the table yet, so every key would answer
-		// with its declared default whatever the table holds, and the reader
-		// would act on that value with nothing saying it was not the real one.
-		return fmt.Errorf("%w: key %q was read before the %s module's Init loaded it. A module "+
-			"reading settings in its own Init declares Requires (*settings.Store)(nil), which "+
-			"initialises it after this one; a drive that reads them runs to Init at least",
-			ErrNotLoaded, key, ModuleName)
+		return notLoaded(key)
 	}
 	resolved, err := current.value(entry, layer)
 	if err != nil {
@@ -99,6 +93,39 @@ func (s *settingsStore) Get(layer Layer, key string, target any) error {
 		}
 	}
 	return assignTarget(entry, target, value)
+}
+
+// WrittenAt serves a revision out of the snapshot.
+//
+// The layer is judged first and the key looked up next, for the reason Get
+// gives: both are the call site's mistakes, and neither waits on the data.
+// Past that the answer comes from the snapshot alone — a load keeps each row's
+// write time beside its value — so no statement runs, and a layer holding no
+// explicit row answers absent rather than falling back.
+func (s *settingsStore) WrittenAt(layer Layer, key string) (time.Time, bool, error) {
+	tenantOf(layer)
+	if _, declared := s.keys.lookup(key); !declared {
+		return time.Time{}, false, fmt.Errorf("%w: %q. Add a declaration covering it, or correct "+
+			"the key at the call site", ErrUnknownKey, key)
+	}
+	current := s.snapshot.Load()
+	if current == nil {
+		return time.Time{}, false, notLoaded(key)
+	}
+	at, present := current.writtenAt(key, layer)
+	return at, present, nil
+}
+
+// notLoaded is the refusal of a read that arrived before the first snapshot.
+//
+// Nothing has been read from the table yet, so a value read would answer with
+// the declared default whatever the table holds, and the reader would act on
+// that value with nothing saying it was not the real one.
+func notLoaded(key string) error {
+	return fmt.Errorf("%w: key %q was read before the %s module's Init loaded it. A module "+
+		"reading settings in its own Init declares Requires (*settings.Store)(nil), which "+
+		"initialises it after this one; a drive that reads them runs to Init at least",
+		ErrNotLoaded, key, ModuleName)
 }
 
 // Set writes one value and republishes what follows from it.

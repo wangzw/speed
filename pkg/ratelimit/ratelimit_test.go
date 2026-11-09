@@ -1025,6 +1025,10 @@ func (s *recordingStore) List(context.Context, settings.Layer) ([]settings.Entry
 
 func (s *recordingStore) Declared() []settings.DeclaredItem { return nil }
 
+func (s *recordingStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // fakeStore serves the two items this module reads.
 type fakeStore struct {
 	values map[string]any
@@ -1060,6 +1064,10 @@ func (s *fakeStore) List(context.Context, settings.Layer) ([]settings.Entry, err
 }
 
 func (s *fakeStore) Declared() []settings.DeclaredItem { return nil }
+
+func (s *fakeStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
 
 // fakeKV is an in-process counter store that remembers what expiry each key
 // was created with.

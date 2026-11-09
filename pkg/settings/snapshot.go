@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -47,6 +48,10 @@ type snapshot struct {
 type brokenRow struct {
 	text string
 	err  error
+	// updatedAt is when the row was last written, kept for the same reason
+	// stored keeps it: a revision read answers for a row that is there,
+	// whatever decoding its value turned out to do.
+	updatedAt time.Time
 }
 
 // stored is one written row: the value decoded under its declaration, and the
@@ -63,6 +68,12 @@ type brokenRow struct {
 type stored struct {
 	value any
 	text  string
+	// updatedAt is when this row was last written. It is kept beside the value
+	// so that a reader comparing the value with an instant — the admission
+	// layer comparing a session's authentication time with the moment a
+	// requirement was switched on — gets both from one snapshot, with no IO and
+	// no race between two reads.
+	updatedAt time.Time
 }
 
 // emptySnapshot is a snapshot holding no rows, the one a load fills.
@@ -129,11 +140,32 @@ func (s *snapshot) layer(key string, l Layer) (row stored, found bool, err error
 	return row, true, nil
 }
 
+// writtenAt reports when one layer's row for a key was last written, and
+// whether that layer holds such a row.
+//
+// It is the revision read, and it deliberately does not fall back: the answer
+// is about the explicit row of the named layer, so a layer holding no row of
+// its own answers absent even when a value read would resolve through the
+// layer below. A row whose text did not decode still answers its write time,
+// because the revision is a fact about the row and knowing it needs no decode.
+func (s *snapshot) writtenAt(key string, l Layer) (time.Time, bool) {
+	c := cell{tenant: tenantOf(l), key: key}
+	if broken, ok := s.broken[c]; ok {
+		return broken.updatedAt, true
+	}
+	row, ok := s.values[c]
+	if !ok {
+		return time.Time{}, false
+	}
+	return row.updatedAt, true
+}
+
 // row is one settings row as it is read back for loading.
 type row struct {
-	TenantID string `gorm:"column:tenant_id"`
-	Key      string `gorm:"column:key"`
-	Value    string `gorm:"column:value"`
+	TenantID  string    `gorm:"column:tenant_id"`
+	Key       string    `gorm:"column:key"`
+	Value     string    `gorm:"column:value"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 // loadSnapshot reads the whole table and decodes every row under its
@@ -148,7 +180,7 @@ type row struct {
 // The failure of the read itself is where ErrTableMissing is decided.
 func loadSnapshot(ctx context.Context, handle *gorm.DB, keys *keyTable) (*snapshot, error) {
 	var rows []row
-	err := handle.WithContext(ctx).Raw("SELECT tenant_id, key, value FROM " + tableName).Scan(&rows).Error
+	err := handle.WithContext(ctx).Raw("SELECT tenant_id, key, value, updated_at FROM " + tableName).Scan(&rows).Error
 	if err != nil {
 		if tableMissing(err, tableName) {
 			return nil, fmt.Errorf("%w: %s. Write %s into the declaration set of the command that "+
@@ -167,10 +199,10 @@ func loadSnapshot(ctx context.Context, handle *gorm.DB, keys *keyTable) (*snapsh
 		c := cell{tenant: r.TenantID, key: r.Key}
 		decoded, err := decodeValue(entry, r.Value)
 		if err != nil {
-			loaded.broken[c] = brokenRow{text: r.Value, err: err}
+			loaded.broken[c] = brokenRow{text: r.Value, err: err, updatedAt: r.UpdatedAt}
 			continue
 		}
-		loaded.values[c] = stored{value: decoded, text: r.Value}
+		loaded.values[c] = stored{value: decoded, text: r.Value, updatedAt: r.UpdatedAt}
 	}
 	return loaded, nil
 }
@@ -178,25 +210,26 @@ func loadSnapshot(ctx context.Context, handle *gorm.DB, keys *keyTable) (*snapsh
 // sameRows reports whether two snapshots hold the same rows, read the same
 // way.
 //
-// A row is compared by the text it was decoded from rather than by the decoded
-// value: the text is what the table holds, and two rows carrying one text
-// decode to one value under one declaration. That also keeps a snapshot
-// loaded before a row's declaration changed from reading as unchanged, which
-// is right — the rows are the same; what changed was how they are read, and
-// that is a startup-time matter.
+// A row is compared by the text it was decoded from and the time it was
+// written: the text is what the table holds, and two rows carrying one text
+// decode to one value under one declaration, while a rewrite of the same value
+// still moves the row's write time and so changes the revision a reader gets.
+// That also keeps a snapshot loaded before a row's declaration changed from
+// reading as unchanged, which is right — the rows are the same; what changed
+// was how they are read, and that is a startup-time matter.
 func sameRows(a, b *snapshot) bool {
 	if len(a.values) != len(b.values) || len(a.broken) != len(b.broken) {
 		return false
 	}
 	for c, row := range b.values {
 		other, ok := a.values[c]
-		if !ok || other.text != row.text {
+		if !ok || other.text != row.text || !other.updatedAt.Equal(row.updatedAt) {
 			return false
 		}
 	}
 	for c, row := range b.broken {
 		other, ok := a.broken[c]
-		if !ok || other.text != row.text {
+		if !ok || other.text != row.text || !other.updatedAt.Equal(row.updatedAt) {
 			return false
 		}
 	}

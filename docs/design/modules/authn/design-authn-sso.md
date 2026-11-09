@@ -23,7 +23,7 @@
 - **不运行登录流程。** 流程记录、状态机迁移、比较并交换、账户解析、会话与令牌的发放归登录引擎（[design-authn-login](design-authn-login.md)）；方法只回答「这次回跳证明了什么」，交出 `Proof`。
 - **不决定账户。** 外部身份的绑定键、首登开户、预置账户匹配与需先绑定的判定归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`username_strategy`、`username_claim`、`merge_existing`、所属租户、声明地址的验证状态与邮箱域的验证状态。即时开通的用户名由提供方的策略决定：`claim` 从断言的 `preferred_username` 或邮箱本地部分取值，`user-confirm` 在建户前向用户取得；两者都由登录引擎执行，本模块只保存并交出配置（[design-authn-login](design-authn-login.md)、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。
 - **不合成保障等级。** 方法只报 `Proof.IDPAsserted` 这一事实，是否采信、等级是多少只在 `authn.mfa` 一处合成（[design-authn-mfa](design-authn-mfa.md)）。
-- **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
+- **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行，只约束认证时刻不早于该要求最后写入时刻的会话（[design-tenant-admission](../tenant/design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
 - **不写管理面路由，不做判定。** 提供方、域与元数据刷新的 HTTP 路由、`Decider` 的判定与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）。
 - **不创建会话，不计算会话期限。** `Provider` 非空的会话的期限规则由 `authn.session` 统一计算（[design-authn-session](design-authn-session.md)）。
 - **不映射角色与组。** IdP 的组声明不转成任何角色或属性，角色归授权。`attr.<名>` 只是给宿主读的只读属性。
@@ -539,7 +539,7 @@ Google 与企业 OIDC 走同一条代码路径，差别在配置来源与启用�
 
 ### 租户强制 SSO 的承接
 
-租户级强制 SSO 只在请求期由 `tenant.admission` 执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）：租户设置 `require-sso` 为真时，要求该租户内请求所用会话是经**这个租户**的某个提供方登录的。判据是会话上的提供方标识（`Identity.Provider()`），再经 `SSOProviders.Tenant` 核对其租户；不看 `Methods`，因为加强认证会把方式集换成新那次事件的方式集，而提供方标识不随之丢失。不满足则 `401 insufficient_user_authentication`（[REF-rfc9470](../../../references.md)），`acr_values` 取 `sso`。
+租户级强制 SSO 只在请求期由 `tenant.admission` 执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）：租户设置 `require-sso` 为真时，要求该租户内请求所用会话是经**这个租户**的某个提供方登录的。该要求只约束认证时刻不早于 `require-sso` 最后写入时刻的会话：开启要求之前建立的会话在自身到期或被撤销之前继续可用，开启要求不使其失效；此后的每一次登录受约束。判据是会话上的提供方标识（`Identity.Provider()`），再经 `SSOProviders.Tenant` 核对其租户；不看 `Methods`，因为加强认证会把方式集换成新那次事件的方式集，而提供方标识不随之丢失。不满足则 `401 insufficient_user_authentication`（[REF-rfc9470](../../../references.md)），`acr_values` 取 `sso`。
 
 账户全局，强制只作用于该租户内的请求，账户仍可用口令登录并访问别的租户。`authn_memberships.sso_exempt` 为真的成员可以不经 SSO，该开关的设置、审计与残余风险归 [design-authn-account](design-authn-account.md) 与 [design-authn-admin](design-authn-admin.md)。`authn.sso` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制 SSO 无人执行。
 

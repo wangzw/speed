@@ -52,7 +52,7 @@ func (r *levelRecorder) errors() []string {
 func holdReadsUntilCancelled(t *testing.T, handle *gorm.DB, entered chan<- struct{}, returned *atomic.Bool) {
 	t.Helper()
 	isRead := func(tx *gorm.DB) bool {
-		return strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value FROM "+tableName)
+		return strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value, updated_at FROM "+tableName)
 	}
 	var once sync.Once
 	if err := handle.Callback().Row().Before("gorm:row").Register("test:hold", func(tx *gorm.DB) {

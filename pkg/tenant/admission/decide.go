@@ -116,7 +116,7 @@ func (j *judging) outsider(scoped bool) decision {
 // authenticated: multi-factor first, then a sign-in through one of the tenant's
 // own identity providers.
 func (j *judging) requirements() decision {
-	mfa, err := j.flag(requireMFAKey)
+	mfa, err := j.mfaBinds()
 	if err != nil {
 		return unavailableFor(err)
 	}
@@ -130,7 +130,11 @@ func (j *judging) requirements() decision {
 		}
 	}
 
-	sso, err := j.flag(requireSSOKey)
+	// The sign-in requirement follows the same revision rule as multi-factor:
+	// turning it on binds the sessions established at or after the write, and
+	// one already authenticated keeps working until its next sign-in. A session
+	// the rule exempts passes without the provider check.
+	sso, err := j.ssoBinds()
 	if err != nil {
 		return unavailableFor(err)
 	}
@@ -300,36 +304,101 @@ func (j *judging) providerOwnsSession() (bool, error) {
 // for.
 var errSettingLayer = errors.New("the tenant identifier is outside the settings' identifier domain")
 
-// flag reads one of the two switches for this tenant. The effective value is
-// the platform floor OR the tenant's own choice: a platform requirement applies
-// to every tenant, and a tenant may turn a policy on for itself but may not
-// turn off one the platform holds. The tenant-facing view computes the same OR,
-// so the page a tenant reads and the judgement its next request gets agree.
+// mfaBinds reports whether the tenant's multi-factor requirement applies to
+// this session. It is the revision rule of binds applied to its key.
+func (j *judging) mfaBinds() (bool, error) {
+	return j.binds(requireMFAKey)
+}
+
+// ssoBinds reports whether the tenant's sign-in requirement applies to this
+// session. It is the revision rule of binds applied to its key.
+func (j *judging) ssoBinds() (bool, error) {
+	return j.binds(requireSSOKey)
+}
+
+// binds reports whether the requirement named by key applies to this session.
 //
-// The settings are an optional dependency: without them each switch reads as the
-// default declared, which is off, and the requirement cannot be turned on in
-// that assembly. A switch that cannot be read is an error, never the default,
-// because the default is the permissive value.
-func (j *judging) flag(key string) (bool, error) {
+// Turning the policy on applies to members at their next sign-in, not to
+// sessions that already exist: a session authenticated before the moment the
+// effective value was written is exempt for its lifetime, and one established
+// at or after that moment must meet the requirement. The boundary is per layer.
+// The effective value is the platform row's OR the tenant row's, and each
+// enabled layer contributes its own row's revision; the session is exempt only
+// when it predates every one of them, so a requirement that was already on at
+// the platform is not lifted by a later tenant write. A tenant row of false
+// contributes nothing, which is what leaves the platform's revision standing.
+//
+// An enabled layer whose revision cannot be read does not exempt the session:
+// a missing revision must not silently weaken a requirement the layer holds on.
+func (j *judging) binds(key string) (bool, error) {
 	if j.store == nil {
 		return false, nil
 	}
 	if !nameableLayer(string(j.tenant)) {
 		return false, fmt.Errorf("reading %s: %w", key, errSettingLayer)
 	}
-	// The global layer is the platform's own row and the floor every tenant
-	// stands on. It is read on its own first; the tenant read below falls back
-	// to it, so a tenant row of false resolves false and leaves the floor to
-	// decide, while a tenant row of true raises the answer.
+
+	var (
+		enabled  bool
+		boundary time.Time
+		present  bool
+		written  time.Time
+	)
+
+	// The platform layer is the floor every tenant stands on. It resolves
+	// through the declared default when it holds no row, and a default of true
+	// has no row and so no revision: such a requirement binds every session.
 	platform, err := settings.Get[bool](j.store, settings.Global(), key)
 	if err != nil {
 		return false, fmt.Errorf("reading %s: %w", key, err)
 	}
-	tenantValue, err := settings.Get[bool](j.store, settings.ForTenant(string(j.tenant)), key)
+	if platform {
+		enabled = true
+		written, present, err = j.store.WrittenAt(settings.Global(), key)
+		if err != nil {
+			return false, fmt.Errorf("reading %s: %w", key, err)
+		}
+		if !present || written.IsZero() {
+			return true, nil
+		}
+		boundary = written
+	}
+
+	// The tenant layer contributes only through its own explicit row: a tenant
+	// row of false leaves the platform's revision to decide.
+	tenantLayer := settings.ForTenant(string(j.tenant))
+	written, present, err = j.store.WrittenAt(tenantLayer, key)
 	if err != nil {
 		return false, fmt.Errorf("reading %s: %w", key, err)
 	}
-	return platform || tenantValue, nil
+	if present {
+		var tenantValue bool
+		tenantValue, err = settings.Get[bool](j.store, tenantLayer, key)
+		if err != nil {
+			return false, fmt.Errorf("reading %s: %w", key, err)
+		}
+		if tenantValue {
+			enabled = true
+			if written.IsZero() {
+				return true, nil
+			}
+			if boundary.IsZero() || written.Before(boundary) {
+				boundary = written
+			}
+		}
+	}
+
+	if !enabled {
+		return false, nil
+	}
+	authenticated := j.id.AuthTime()
+	if authenticated.IsZero() {
+		// The gateway stamps a non-zero time on every identity it admits, so a
+		// zero one here is a broken assembly. Holding the session to the
+		// requirement is the safe reading.
+		return true, nil
+	}
+	return !authenticated.Before(boundary), nil
 }
 
 // nameableLayer reports whether the settings can name a layer for the tenant: the

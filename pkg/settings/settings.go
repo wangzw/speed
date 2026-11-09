@@ -168,6 +168,24 @@ type Store interface {
 	// IO, so there is nothing to cancel.
 	Get(layer Layer, key string, target any) error
 
+	// WrittenAt reports when key's explicit row in the layer was last written,
+	// and whether that layer holds such a row at all.
+	//
+	// It does not fall back: naming a tenant layer asks about the tenant's row
+	// alone, so a tenant whose value read resolves through the global row still
+	// answers no revision here. The two layers are therefore combined by the
+	// caller, which is what makes each answer a revision of one row rather
+	// than of a resolved value.
+	//
+	// An undeclared key is ErrUnknownKey, and a read before this module's Init
+	// loaded the snapshot is ErrNotLoaded, both as for Get. A row whose value
+	// does not decode still answers its write time: the revision is a fact
+	// about the row, and knowing it needs no decoding.
+	//
+	// It takes no context because it reads the in-memory snapshot and starts
+	// no IO, so there is nothing to cancel.
+	WrittenAt(layer Layer, key string) (time.Time, bool, error)
+
 	// Set encodes w.Value under the declared type and writes it to the layer
 	// w.Layer names. A successful write publishes a settings.changed event.
 	//
@@ -249,6 +267,12 @@ func Get[T any](s Store, layer Layer, key string) (T, error) {
 		return target, err
 	}
 	return target, nil
+}
+
+// WrittenAt is the function form of Store.WrittenAt, beside Get: a call site
+// that reads a value through Get reads the row's revision through this.
+func WrittenAt(s Store, layer Layer, key string) (time.Time, bool, error) {
+	return s.WrittenAt(layer, key)
 }
 
 // Write is one value to write. It is what Set takes.
@@ -384,6 +408,9 @@ const (
 	EffectNone Effect = ""
 	// EffectImmediate marks a change that applies as soon as it is saved.
 	EffectImmediate Effect = "immediate"
+	// EffectNextSignIn marks a change that applies to a member at the next
+	// sign-in, or at a comparable later event the item's declaration names.
+	EffectNextSignIn Effect = "next-sign-in"
 )
 
 // Item is the metadata of one setting item.

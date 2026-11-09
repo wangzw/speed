@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -164,6 +165,10 @@ func (s *stubStore) Declared() []settings.DeclaredItem {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]settings.DeclaredItem(nil), s.declared...)
+}
+
+func (s *stubStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
 }
 
 // stubGuard is a stand-in guard.Guard. It records the permission every decision

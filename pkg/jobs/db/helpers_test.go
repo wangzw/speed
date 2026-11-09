@@ -195,6 +195,10 @@ func (s *queueStore) List(context.Context, settings.Layer) ([]settings.Entry, er
 // own schema.
 func (s *queueStore) Declared() []settings.DeclaredItem { return nil }
 
+func (s *queueStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // host is one assembled run of this module: the engine and the database it sits
 // on, whether an event bus takes part, the configuration section of jobs.db,
 // whatever extra modules a case takes in, and the stage the run reaches.

@@ -10,7 +10,7 @@
 
 - 判定身份是否是请求所在租户的成员。成员关系的事实读自 `authn.Memberships`；静态口令表主体没有成员关系行，不是任何租户的成员。
 - 就非成员询问判定接口：不带冒充范围的非成员可经 `Decider` 的 `authn.tenant.access` 动作放行，缺省拒绝（[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)）。
-- 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。这类强度要求只能在请求期判，登录时账户全局，租户未知（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。`tenant.admission.sso-exempt-tenants` 列出的租户不受 SSO 要求约束：该要求问的是「这次会话是不是经本租户自己的身份提供方登录」，而一个没有提供方的租户永远答不出是——平台自己的 `system` 租户就是这种租户，对它执行这条要求会拒绝该租户上的每一个请求，管理后台一并被关掉。成员关系与多因素要求对这些租户照常生效。
+- 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。这类强度要求只能在请求期判，登录时账户全局，租户未知（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。两项要求都只约束认证时刻不早于起算时刻的会话：更早建立的会话按原强度继续工作，开启策略不使其失效，开启之后的每一次登录都受约束；准入层读取有效值时一并取得起算时刻。`tenant.admission.sso-exempt-tenants` 列出的租户不受 SSO 要求约束：该要求问的是「这次会话是不是经本租户自己的身份提供方登录」，而一个没有提供方的租户永远答不出是——平台自己的 `system` 租户就是这种租户，对它执行这条要求会拒绝该租户上的每一个请求，管理后台一并被关掉。成员关系与多因素要求对这些租户照常生效。
 - 执行冒充身份的租户范围：身份携带的 `Scope()` 与请求的租户不符，或请求没有租户上下文时拒绝（[ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。
 - 交付 `authn.ScopeGuard`：声明自己守哪些端，使网关与 `authn.impersonation` 不 import `pkg/tenant` 即可得知冒充身份能被放进哪些端。
 - 交付定序锚点 `(*tenant.Admission)(nil)`：授权功能目录（[authz](../design-authz.md)）与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
@@ -42,6 +42,7 @@
 |---|---|---|---|
 | 所守的端 | guarded endpoint | 本文与租户准入的决策记录 | `tenant.admission.endpoints` 列出的端点：准入层在这些端上登记了中间件。`ScopeGuard.Covers` 对这些端回答真。 |
 | 有效保障等级 | effective assurance | 本文与租户准入的决策记录 | 准入层在比对 `tenant.admission.require-mfa` 时使用的等级，由身份的 `Assurance()` 与 `AssuranceFromIDP()` 导出；规则见「有效保障等级」一节。 |
+| 起算时刻 | effective-since instant | 本文与租户准入的决策记录 | 对一项准入策略，使它有效值为真的各层中最后一次写入的时刻；会话的认证时刻不早于它才受该策略约束，规则见「强度要求的起算时刻」一节。 |
 
 ## 外部接口契约
 
@@ -97,14 +98,14 @@ type ScopeGuard interface {
 | 401 | 缺身份而路由必需认证；或强度要求未满足 | 强度未满足时带加强认证挑战，见下 |
 | 503 | 成员核对、`Decider` 或 IdP 归属的读取出错 | 不放行，不当作拒绝 |
 
-强度未满足的 401 头为 `WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication", acr_values="…"`（[REF-rfc9470](../../../references.md)）：`acr_values` 在多因素要求下取 `"2"`，在 SSO 要求下取 `"sso"`。Problem 类型随要求区分：多因素要求写 `urn:speed:authn:insufficient_user_authentication`，SSO 要求写 `urn:speed:authn:sso_required`，使客户端知道本地因素满足不了后一种要求，只有经本租户的提供方重新登录才行。方案名取身份的 `Challenge()`，即网关按凭据载体盖章的那一个。挑战不带 `max_age`：准入层只比对等级与提供方，不含新鲜度要求，没有可填的取值。账户登记了因素与没有登记因素时收到同一个多因素应答，客户端据此走加强认证或登记；准入层不读因素登记簿，登记与加强认证的端点所在的端不受租户解析守卫，客户端总有路可走（[design-authn-mfa](../authn/design-authn-mfa.md)）。
+强度未满足的 401 头为 `WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication", acr_values="…"`（[REF-rfc9470](../../../references.md)）：`acr_values` 在多因素要求下取 `"2"`，在 SSO 要求下取 `"sso"`。Problem 类型随要求区分：多因素要求写 `urn:speed:authn:insufficient_user_authentication`，SSO 要求写 `urn:speed:authn:sso_required`，使客户端知道本地因素满足不了后一种要求，只有经本租户的提供方重新登录才行。方案名取身份的 `Challenge()`，即网关按凭据载体盖章的那一个。挑战不带 `max_age`：准入层只比对等级与提供方，不含新鲜度要求，没有可填的取值。多因素要求与 SSO 要求的挑战都只发给受该要求约束的会话，即认证时刻不早于起算时刻的那些；更早建立的会话不进入这些判定。账户登记了因素与没有登记因素时收到同一个多因素应答，客户端据此走加强认证或登记；准入层不读因素登记簿，登记与加强认证的端点所在的端不受租户解析守卫，客户端总有路可走（[design-authn-mfa](../authn/design-authn-mfa.md)）。
 
 ### 配置与设置
 
 输入项的完整键表、取值域与缺省值只在 [design-authn-config](../authn/design-authn-config.md) 给出；本节写语义。
 
 - **`tenant.admission.endpoints`**（配置，字符串列表）：准入层所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`**（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。清单的结构同 `tenant.resolve.endpoints`，一般与它相同；对 `*` 的处置不同：解析层把 `*` 当作未声明的端名，以 `ErrUnknownEndpoint` 终止，准入层以 `ErrInvalidConfig` 终止。**清单必须是 `tenant.resolve.endpoints` 的子集**：本模块在 `Prepare` 里读对方清单，列出对方不解析的端即 `ErrInvalidConfig`。落在那样的端上的请求没有租户上下文，而本层对非冒充的无租户上下文请求一律放行，成员检查就不会发生；对方清单未写出或未声明时无从比较，那一档由解析层自己的必填与空清单规则处理。清单不得含普通作用域与平台管理作用域的认证挂载端；租户管理作用域的挂载端必须同时在本清单与解析清单里，覆盖关系的核对由网关执行。
-- **`tenant.admission.require-mfa`、`tenant.admission.require-sso`**（设置，布尔）：按租户取值，有效值是全局层与租户层的 OR。全局层是平台下限，任一层显式写下真即要求该策略；两层都没有行时取声明的默认值，默认关闭。平台在租户已写下假行之后打开时，OR 让要求继续生效。
+- **`tenant.admission.require-mfa`、`tenant.admission.require-sso`**（设置，布尔）：按租户取值，有效值是全局层与租户层的 OR。全局层是平台下限，任一层显式写下真即要求该策略；两层都没有行时取声明的默认值，默认关闭。平台在租户已写下假行之后打开时，OR 让要求继续生效。一项策略的有效值为真时，它的起算时刻取使它为真的各层中最后一次写入的时刻；租户层写下假不移动这个时刻。有效值与起算时刻来自同一次设置读取。
 - **`tenant.admission.sso-exempt-tenants`**（配置，字符串列表，可选，缺省为空）：不受 SSO 要求约束的租户标识。名单里的租户仍要过成员关系行与多因素要求，只是不必经本租户的提供方登录。示范装配把平台自己的 `system` 租户写进名单。名单只在列出本模块的端时一并生效；它不改变任何租户对多因素要求的取值。
 - **`tenant.admission.check-ttl`**（设置，时长）：成员结果与放行结果在进程内的缓存时长，只读全局层；0 关闭缓存，有上限。
 
@@ -251,8 +252,8 @@ sequenceDiagram
 | 成员 | `Memberships.IsMember(Account(), 租户)` 为假 | `Decider` 在场且 `Scope()` 为空：询问 `Decide(Decision{Action: ActionTenantAccess, Actor, Tenant})`，为真则终止判定并放行（计 `admitted-by-policy`），否则 **404**；`Decider` 缺席或身份带冒充范围时直接 **404** |
 | 成员出错 | `IsMember` 或 `Decide` 返回 error | **503**，不放行 |
 | 豁免 | 身份是冒充身份，或 `Methods` 含 `client-secret`（服务账户） | 跳过多因素强度与 SSO 强度的判定 |
-| 多因素强度 | `tenant.admission.require-mfa` 的有效值为真（平台层 OR 租户层）且有效保障等级低于多因素（等级的导出见「有效保障等级」） | **401** `insufficient_user_authentication`，`acr_values="2"` |
-| SSO 强度 | `tenant.admission.require-sso` 的有效值为真（平台层 OR 租户层）且 `Identity.Provider()` 为空或对应提供方不属于本租户；成员的 `sso_exempt` 为真时改为只要求多因素 | **401** `sso_required`，`acr_values="sso"`；`sso_exempt` 成员未达多因素时，应答同多因素强度判定 |
+| 多因素强度 | `tenant.admission.require-mfa` 的有效值为真（平台层 OR 租户层）、会话的认证时刻不早于起算时刻，且有效保障等级低于多因素（起算时刻见「强度要求的起算时刻」，等级的导出见「有效保障等级」） | **401** `insufficient_user_authentication`，`acr_values="2"` |
+| SSO 强度 | `tenant.admission.require-sso` 的有效值为真（平台层 OR 租户层）、会话的认证时刻不早于起算时刻，且 `Identity.Provider()` 为空或对应提供方不属于本租户（起算时刻见「强度要求的起算时刻」）；成员的 `sso_exempt` 为真时改为只要求多因素 | **401** `sso_required`，`acr_values="sso"`；`sso_exempt` 成员未达多因素时，应答同多因素强度判定 |
 | 通过 | 以上均未命中 | 放行 |
 
 ```mermaid
@@ -275,9 +276,9 @@ flowchart TD
     d -- 是 --> pass
     d -- 否 --> r404c["404"]
     sk -- 是 --> pass
-    sk -- 否 --> mfa{"require-mfa 且等级不足?"}
+    sk -- 否 --> mfa{"require-mfa 且会话受约束且等级不足?"}
     mfa -- 是 --> r401b["401 acr_values 2"]
-    mfa -- 否 --> sso{"require-sso 且未经本租户提供方?"}
+    mfa -- 否 --> sso{"require-sso 且会话受约束且未经本租户提供方?"}
     sso -- 是 --> r401c["401 sso_required acr_values sso"]
     sso -- 否 --> pass
 ```
@@ -290,27 +291,38 @@ flowchart TD
 
 `require-mfa` 比对的是有效保障等级：身份的 `Assurance()`，但 `AssuranceFromIDP()` 为真时，只有 `SSOProviders.Tenant(Provider())` 等于本租户，多因素才保持多因素；提供方属于别的租户，或 `SSOProviders` 缺席，IdP 声明的多因素按单因素计，别的租户的 `require-mfa` 不认（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。`sso_exempt` 的成员须达到的多因素同样按有效保障等级比对。
 
+### 强度要求的起算时刻
+
+多因素要求与 SSO 要求都只约束认证时刻不早于起算时刻的会话。起算时刻按策略各自计算，是使该策略的有效值为真的各层中最后一次写入的时刻：
+
+- 有效值为假时没有起算时刻，该策略不生效。
+- 有效值为真时，全局层与租户层中显式写下真的那些层各自贡献自己的最后写入时刻，取其中最大者。平台强制期间租户层写下假，不移动起算时刻；租户层关掉再打开，起算时刻改为重新打开的那次写入。
+- 认证时刻等于起算时刻的会话受约束。访问令牌的 `auth_time` 只到秒，相等按受约束处理，使同一秒内的会话不落到豁免一侧。
+- 认证时刻为零，或有效值为真而起算时刻为零时，按受约束处理，失败时收紧。
+- 有效值与起算时刻来自同一次设置快照读取：读取不做 IO，两者属于同一份快照，不跨两次替换。读取失败按强制类开关处理，应答 503。
+- 加强认证更新会话的认证时刻（[authn-session](../authn/design-authn-session.md) 的 `Sessions.Elevate`）；更新之后按新时刻判定。对多因素要求，此时会话已具备多因素，照常通过；对 SSO 要求，加强认证不改变提供方，仍未满足提供方要求的会话继续被拒。
+
 ### SSO 要求的比对
 
-`require-sso` 的判据是提供方标识 `Identity.Provider()`，经 `SSOProviders.Tenant` 核对其租户，不看 `Methods`：加强认证会把方式集换成新那次事件的方式集，提供方标识不随之丢失（[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。提供方不存在视为不属于本租户；查询出错 503。`SSOProviders` 缺席时 `require-sso` 一律拒绝，失败时拒绝。`sso_exempt` 为真的成员改为只要求多因素：该标记只能由经 `Decider`（动作 `authn.membership.manage`）的管理员设置并审计，用途是 IdP 故障时租户不被锁死；它读自 `Memberships.Membership`，只在身份未经本租户的提供方登录时才读取。
+`require-sso` 只作用于认证时刻不早于起算时刻的会话，更早建立的会话不经这条判定。判据是提供方标识 `Identity.Provider()`，经 `SSOProviders.Tenant` 核对其租户，不看 `Methods`：加强认证会把方式集换成新那次事件的方式集，提供方标识不随之丢失（[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。提供方不存在视为不属于本租户；查询出错 503。`SSOProviders` 缺席时 `require-sso` 一律拒绝，失败时拒绝。`sso_exempt` 为真的成员改为只要求多因素：该标记只能由经 `Decider`（动作 `authn.membership.manage`）的管理员设置并审计，用途是 IdP 故障时租户不被锁死；它读自 `Memberships.Membership`，只在身份未经本租户的提供方登录时才读取。
 
 ### 成员与放行的缓存
 
 成员结果、豁免结果与放行结果缓存在进程内，键是（账户，租户），时长取设置 `tenant.admission.check-ttl`，0 关闭缓存。出错不缓存。放宽只来自缓存与设置快照的刷新周期：
 
 - 成员被移除或暂停后，其他副本最多在 `check-ttl` 内仍放行；`authn.membership.changed` 事件（载荷含 `account_id`，信封带租户）使各副本丢弃该账户在该租户的缓存项，缩短这个窗口；事件总线缺席或事件丢失时，窗口仍以 `check-ttl` 为界。事件是提示，不是权威。
-- 租户设置刚开启 `require-mfa` 或 `require-sso` 之后，设置的刷新周期内个别副本仍放行。准入判定读设置读的是内存快照，不做 IO，变更经 `settings.changed` 事件与周期刷新传播（[design-settings](../settings/design-settings.md)）。
+- 租户设置刚开启 `require-mfa` 或 `require-sso` 之后，设置的刷新周期内个别副本仍按旧值判定。两项要求下，这段窗口里建立的会话都可能被尚未刷新到新值（连同起算时刻）的副本放行；按起算时刻豁免的既有会话不属于这个窗口，那是要求的定义。准入判定读设置读的是内存快照，不做 IO，变更经 `settings.changed` 事件与周期刷新传播（[design-settings](../settings/design-settings.md)）。
 - 准入层对 `Decider` 答复的 TTL 缓存是撤销生效延迟的上界之一：放行结果在缓存里保留至 `check-ttl` 过期，一个主体的平台级角色被撤销之后，其他副本最多在这个窗口内仍放行。见 [design-authz](../design-authz.md) 的非保证。
 
 订阅在 `Init` 里登记，类型静态，处理函数幂等，只做「丢本地缓存」。
 
 ### 设置读取的方向
 
-`require-mfa` 与 `require-sso` 是强制类开关：读不出来按拒绝，503。`check-ttl` 是调参类：读不出来取声明的默认值并记 Error。`settings.Store` 缺席时强制类开关取声明的默认值，即关闭，租户级强度要求在该装配里不可开启。
+`require-mfa` 与 `require-sso` 是强制类开关：读不出来按拒绝，503。两项的读取都同时交出有效值与起算时刻，两者来自同一份快照，任一项取不到与读不出来同档。`check-ttl` 是调参类：读不出来取声明的默认值并记 Error。`settings.Store` 缺席时强制类开关取声明的默认值，即关闭，租户级强度要求在该装配里不可开启。
 
 ### 复杂度
 
-每个请求的判定是常数时间：端集合与缓存的查找、有限次的设置快照读取与字段比对。缓存命中时不做 IO；未命中时多一次成员关系的点查（`Memberships` 的 db 读），经 `Decider` 放行的路径另多一次 `Decide` 调用，两者都只发生在缓存过期之后。
+每个请求的判定是常数时间：端集合与缓存的查找、有限次的设置快照读取（两项要求的有效值与起算时刻都在同一次读取里）与字段比对。缓存命中时不做 IO；未命中时多一次成员关系的点查（`Memberships` 的 db 读），经 `Decider` 放行的路径另多一次 `Decide` 调用，两者都只发生在缓存过期之后。
 
 ### 日志与诊断
 
@@ -359,7 +371,8 @@ flowchart TD
 - **所守的端上，被租户解析豁免的路由没有租户上下文。** 非冒充身份照常放行，冒充身份得 404；`ScopeGuard.Covers` 只说准入层守哪些端，不核对宿主有没有在那些端上开解析豁免。
 - **宿主为准入层预置的实例不是本模块的产物时，链上没有准入层，而注册表答它在场。** 回调对这样的实例不做事，成员核对、强度要求与冒充范围都随之缺席，由预置它的宿主自己负责（[ADR-supplied-instance](../../../adr/adr-supplied-instance.md)）。
 - **不保证记录与限流阶段这次装配里有层。** 准入层的次序由它声明的授权阶段与固定的阶段顺序给出，它在解析、审计与限流之内；审计或限流不在装配里时，记录或限流阶段上没有层，非成员的拒绝既不进审计也不计入限流。守住它的测试：在同时纳入网关、解析、审计、限流与准入层的装配里读链清单，断言准入层位于解析、审计与限流之内（失效条件见 [ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。
-- **不保证租户的强度要求即时生效。** 放宽的上界分别是 `check-ttl` 与设置的刷新周期。
+- **不保证租户的强度要求即时生效。** 两项要求都按定义豁免认证时刻早于起算时刻的会话，这些会话在自身到期或被撤销之前一直可用；起算时刻之后的会话在设置的刷新周期内仍可能被尚未刷新到新值的副本放行。
+- **不保证起算时刻与认证时刻的先后严格对应墙钟。** 起算时刻取写入方的应用时钟，认证时刻取登录方的应用时钟；跨副本的时钟偏差使紧邻边界的会话可能被多约束或少约束，判定以两个时刻的直接比较为准。
 
 ### 威胁与对策
 
@@ -374,6 +387,7 @@ flowchart TD
 | 冒充绕过租户的多因素与 SSO 要求 | 冒充的强认证在开始时核验，范围限定一个租户 | 租户的多因素与 SSO 要求在冒充期间对被冒充者本人不起作用 |
 | `sso_exempt` 成员绕过强制 SSO | 标记只能由经 `Decider` 的管理员设置并审计；该成员仍须达到多因素 | 每个豁免成员是一条绕过 SSO 的口子；`authn.membership.changed` 与审计供监测 |
 | 设置写权限被滥用来关闭租户的强度要求 | 宿主不对租户与普通管理员开放 `tenant.admission.*` 的写权限 | 设置写入接口没有访问控制；拿到写权限的主体能放宽，且不能事前阻止 |
+| 开启一项强度要求之前建立的会话在开启后继续访问 | 两项要求都只约束认证时刻不早于起算时刻的会话；开启后的下一次登录起受约束 | 既有会话在自身到期或被撤销前一直可用，这是这两项要求的定义 |
 | 失效的成员关系在缓存里继续放行 | 事件主动清缓存；`check-ttl` 有上限 | 窗口以 `check-ttl` 为界 |
 
 ## 并发与事务边界

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
@@ -45,6 +46,10 @@ func (f *fakeSettings) List(context.Context, settings.Layer) ([]settings.Entry, 
 }
 
 func (f *fakeSettings) Declared() []settings.DeclaredItem { return nil }
+
+func (f *fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
 
 func (f *fakeSettings) set(key string, value any) {
 	f.mu.Lock()

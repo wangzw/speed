@@ -212,6 +212,10 @@ func (*fakeSettings) Delete(context.Context, settings.Layer, string, string) err
 func (*fakeSettings) List(context.Context, settings.Layer) ([]settings.Entry, error) { return nil, nil }
 func (*fakeSettings) Declared() []settings.DeclaredItem                              { return nil }
 
+func (*fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // declaredDefault is the declared default of a setting path.
 func declaredDefault(path string) any {
 	switch path {

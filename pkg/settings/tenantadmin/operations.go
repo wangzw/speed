@@ -82,7 +82,7 @@ type SettingsTenantAdminSetting struct {
 	Type             string `json:"type" required:"true" description:"The declared type's name as reflection reports it. The tenant surface renders switches, so this is \"bool\"."`
 	Control          string `json:"control" required:"true" enum:"switch" description:"The control the surface renders for the item."`
 	Danger           string `json:"danger" required:"true" description:"How destructive turning the item off is: \"critical\" when the surface must confirm the change first, empty when there is no such warning."`
-	Effect           string `json:"effect" required:"true" description:"When a change to the item takes effect: \"immediate\" when it applies as soon as it is saved, empty when the declaration names none."`
+	Effect           string `json:"effect" required:"true" description:"When a change to the item takes effect: \"immediate\" when it applies as soon as it is saved, \"next-sign-in\" when it applies to a member at the next sign-in, empty when the declaration names none."`
 	TenantAccess     string `json:"tenant_access" required:"true" enum:"read,read-write" description:"How much of the item the tenant surface exposes: \"read\" for a visible but unwritable item, \"read-write\" for one the tenant may change."`
 	EffectiveValue   string `json:"effective_value" required:"true" description:"The text the item resolves to: the platform policy OR the tenant policy, in the declared type's text form. The mask string for a sensitive item."`
 	PlatformValue    string `json:"platform_value" required:"true" description:"The global layer's value in the declared type's text form, the declared default when the global layer holds no row. The mask string for a sensitive item."`

@@ -220,6 +220,8 @@ func TestAZeroLayerPanics(t *testing.T) {
 	}{
 		{"Get", func() { _ = store.Get(nil, "demo.limit", &target) }},
 		{"the generic read", func() { _, _ = Get[int](store, nil, "demo.limit") }},
+		{"WrittenAt", func() { _, _, _ = store.WrittenAt(nil, "demo.limit") }},
+		{"the helper revision read", func() { _, _, _ = WrittenAt(store, nil, "demo.limit") }},
 		{"Set", func() { _ = store.Set(ctx, Write{Key: "demo.limit", Value: 1}) }},
 		{"Delete", func() { _ = store.Delete(ctx, nil, "demo.limit", "operator") }},
 		{"List", func() { _, _ = store.List(ctx, nil) }},
@@ -228,6 +230,7 @@ func TestAZeroLayerPanics(t *testing.T) {
 		// let the same line return an error on one run and panic on the next,
 		// and the first run that happened to carry a bad key would hide it.
 		{"Get of an undeclared key", func() { _ = store.Get(nil, "demo.missing", &target) }},
+		{"WrittenAt of an undeclared key", func() { _, _, _ = store.WrittenAt(nil, "demo.missing") }},
 		{"Set of an undeclared key", func() { _ = store.Set(ctx, Write{Key: "demo.missing", Value: 1}) }},
 		{"Set of a value that does not convert", func() {
 			_ = store.Set(ctx, Write{Key: "demo.limit", Value: "not a number"})
@@ -744,6 +747,166 @@ func TestAWriteIsVisibleToTheWriterImmediately(t *testing.T) {
 	}
 }
 
+// A written row answers the time the table holds for it, and the answer comes
+// from the snapshot rather than a statement of its own.
+func TestWrittenAtReportsTheRowsWriteTime(t *testing.T) {
+	keys := demoTable(t)
+	store, handle := storeOf(t, keys, newRecordingBus())
+	if err := store.Set(context.Background(), Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 5}); err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+
+	at, present, err := store.WrittenAt(ForTenant("t1"), "demo.limit")
+	if err != nil {
+		t.Fatalf("reading the revision: %v", err)
+	}
+	if !present {
+		t.Fatal("the layer holds the row, and the read reported it absent")
+	}
+	var stored time.Time
+	if err := handle.Raw("SELECT updated_at FROM "+tableName+" WHERE tenant_id = ? AND key = ?",
+		"t1", "demo.limit").Row().Scan(&stored); err != nil {
+		t.Fatalf("reading the row's column: %v", err)
+	}
+	if !at.Equal(stored) {
+		t.Errorf("the revision is %v, and the row's updated_at is %v", at, stored)
+	}
+
+	// The answer comes from the snapshot: with the table gone, the read still
+	// answers.
+	if err := handle.Exec("DROP TABLE " + tableName).Error; err != nil {
+		t.Fatalf("dropping the table: %v", err)
+	}
+	if again, stillPresent, err := store.WrittenAt(ForTenant("t1"), "demo.limit"); err != nil ||
+		!stillPresent || !again.Equal(at) {
+		t.Errorf("with the table gone the revision is %v, present=%v, err=%v; want %v",
+			again, stillPresent, err, at)
+	}
+}
+
+// The revision read has no fallback: a tenant holding only the global row
+// answers absent, even though a value read resolves through that row.
+func TestWrittenAtDoesNotFallBack(t *testing.T) {
+	keys := demoTable(t)
+	store, _ := storeOf(t, keys, newRecordingBus())
+	ctx := context.Background()
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 200}); err != nil {
+		t.Fatalf("writing the global row: %v", err)
+	}
+	if got, _ := Get[int](store, ForTenant("t1"), "demo.limit"); got != 200 {
+		t.Fatalf("the value read is %v, so the case is not testing the fallback", got)
+	}
+
+	at, present, err := store.WrittenAt(ForTenant("t1"), "demo.limit")
+	if err != nil {
+		t.Fatalf("reading a tenant revision: %v", err)
+	}
+	if present {
+		t.Errorf("tenant t1 holds no row of its own, and the read reported one written at %v", at)
+	}
+	if !at.IsZero() {
+		t.Errorf("an absent revision carries %v, want the zero time", at)
+	}
+
+	// The global row it fell through to has a revision of its own.
+	if _, present, err := store.WrittenAt(Global(), "demo.limit"); err != nil || !present {
+		t.Errorf("the global layer reported present=%v, err=%v, want its row", present, err)
+	}
+}
+
+// A write moves the revision, and a reload keeps the row's own time rather
+// than the moment the replica read it.
+func TestWrittenAtMovesAfterASetAndSurvivesAReload(t *testing.T) {
+	keys := demoTable(t)
+	store, _ := storeOf(t, keys, newRecordingBus())
+	ctx := context.Background()
+	if err := store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 1}); err != nil {
+		t.Fatalf("the first write: %v", err)
+	}
+	first, present, err := store.WrittenAt(ForTenant("t1"), "demo.limit")
+	if err != nil || !present {
+		t.Fatalf("the first revision: present=%v, err=%v", present, err)
+	}
+
+	if err = store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 2}); err != nil {
+		t.Fatalf("the second write: %v", err)
+	}
+	second, _, err := store.WrittenAt(ForTenant("t1"), "demo.limit")
+	if err != nil {
+		t.Fatalf("the second revision: %v", err)
+	}
+	if !second.After(first) {
+		t.Errorf("the revision after a second write is %v, and the first was %v; it did not move",
+			second, first)
+	}
+
+	store.reload(ctx)
+	after, present, err := store.WrittenAt(ForTenant("t1"), "demo.limit")
+	if err != nil || !present {
+		t.Fatalf("the revision after a reload: present=%v, err=%v", present, err)
+	}
+	if !after.Equal(second) {
+		t.Errorf("the reload brought the revision %v, want the row's own %v", after, second)
+	}
+}
+
+// A revision a reload brings in is the column's value, not the moment the
+// replica read it.
+func TestAReloadedRevisionIsTheRowsOwnTime(t *testing.T) {
+	keys := demoTable(t)
+	store, handle := storeOf(t, keys, newRecordingBus())
+	written := time.Date(2026, 10, 1, 8, 30, 0, 0, time.UTC)
+	if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
+		"VALUES ('t1', 'demo.limit', '7', 1, ?)", written).Error; err != nil {
+		t.Fatalf("planting a row: %v", err)
+	}
+	store.reload(context.Background())
+
+	at, present, err := store.WrittenAt(ForTenant("t1"), "demo.limit")
+	if err != nil || !present {
+		t.Fatalf("the revision: present=%v, err=%v", present, err)
+	}
+	if !at.Equal(written) {
+		t.Errorf("the revision is %v, want the row's own %v", at, written)
+	}
+}
+
+// The revision read judges its arguments the way Get does, and a row whose
+// value does not decode still answers its write time: the revision belongs to
+// the row, and the value read is what refuses it.
+func TestWrittenAtJudgesItsArgumentsAsGetDoes(t *testing.T) {
+	keys := demoTable(t)
+	if _, _, err := (&settingsStore{keys: keys}).WrittenAt(ForTenant("t1"), "demo.limit"); !errors.Is(err, ErrNotLoaded) {
+		t.Errorf("a read before the load returned %v, want ErrNotLoaded", err)
+	}
+
+	store, handle := storeOf(t, keys, newRecordingBus())
+	if _, _, err := store.WrittenAt(ForTenant("t1"), "demo.missing"); !errors.Is(err, ErrUnknownKey) {
+		t.Errorf("an undeclared key returned %v, want ErrUnknownKey", err)
+	}
+	if _, present, err := WrittenAt(store, ForTenant("t1"), "demo.limit"); err != nil || present {
+		t.Errorf("the helper answered present=%v, err=%v, want absent and no error", present, err)
+	}
+
+	written := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
+	if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
+		"VALUES ('t2', 'demo.limit', 'not-a-number', 1, ?)", written).Error; err != nil {
+		t.Fatalf("planting a bad row: %v", err)
+	}
+	store.reload(context.Background())
+	at, present, err := store.WrittenAt(ForTenant("t2"), "demo.limit")
+	if err != nil || !present {
+		t.Fatalf("the broken row's revision: present=%v, err=%v", present, err)
+	}
+	if !at.Equal(written) {
+		t.Errorf("the broken row's revision is %v, want its write time %v", at, written)
+	}
+	var target int
+	if err := store.Get(ForTenant("t2"), "demo.limit", &target); !errors.Is(err, ErrTypeMismatch) {
+		t.Errorf("reading the broken value returned %v, want ErrTypeMismatch", err)
+	}
+}
+
 // cancelWhenReadingBack cancels a context the moment the store starts reading
 // the table back, which on the write path is the moment the write's statement
 // has committed. It stands for a caller whose request ends just then: a client
@@ -752,7 +915,7 @@ func cancelWhenReadingBack(t *testing.T, handle *gorm.DB, cancel context.CancelF
 	t.Helper()
 	err := handle.Callback().Row().Before("gorm:row").Register("test:cancel-when-reading-back",
 		func(tx *gorm.DB) {
-			if strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value FROM "+tableName) {
+			if strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value, updated_at FROM "+tableName) {
 				cancel()
 			}
 		})
@@ -799,7 +962,7 @@ func TestAWriteThatLandedFinishesAfterTheCallerLeaves(t *testing.T) {
 	deleting, stop := context.WithCancel(context.Background())
 	defer stop()
 	cancelOnDelete := func(tx *gorm.DB) {
-		if strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value FROM "+tableName) {
+		if strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value, updated_at FROM "+tableName) {
 			stop()
 		}
 	}

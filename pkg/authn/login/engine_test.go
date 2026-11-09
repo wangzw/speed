@@ -1027,6 +1027,10 @@ func (*fakeStore) Delete(context.Context, settings.Layer, string, string) error 
 func (*fakeStore) List(context.Context, settings.Layer) ([]settings.Entry, error) { return nil, nil }
 func (*fakeStore) Declared() []settings.DeclaredItem                              { return nil }
 
+func (*fakeStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // readerWithDisabled builds a settings reader whose disabled-methods switch lists
 // the names given.
 func readerWithDisabled(t *testing.T, names ...string) *reader {

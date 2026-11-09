@@ -176,7 +176,7 @@ func settingsSchema() settings.Schema {
 				DescriptionKey: ConfigNamespace + "." + requireMFAItem + ".description",
 				Control:        settings.ControlSwitch,
 				Danger:         settings.DangerCritical,
-				Effect:         settings.EffectImmediate,
+				Effect:         settings.EffectNextSignIn,
 				TenantAccess:   settings.TenantReadWrite,
 			},
 			requireSSOItem: {
@@ -187,7 +187,7 @@ func settingsSchema() settings.Schema {
 				DescriptionKey: ConfigNamespace + "." + requireSSOItem + ".description",
 				Control:        settings.ControlSwitch,
 				Danger:         settings.DangerCritical,
-				Effect:         settings.EffectImmediate,
+				Effect:         settings.EffectNextSignIn,
 				TenantAccess:   settings.TenantReadWrite,
 			},
 			checkTTLItem: {

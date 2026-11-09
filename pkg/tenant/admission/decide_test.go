@@ -754,7 +754,7 @@ func TestNoTenantIdentifierTheSettingsRefuseReachesThem(t *testing.T) {
 	r := newRig(t)
 	r.withSettings()
 	j := &judging{layer: r.l, ctx: r.base(), id: authntestIdentity(t), tenant: ""}
-	if _, err := j.flag(requireMFAKey); err == nil {
+	if _, err := j.binds(requireMFAKey); err == nil {
 		t.Fatal("a switch was read for the empty tenant, which the settings answer with a panic")
 	}
 }

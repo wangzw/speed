@@ -74,7 +74,7 @@ func TestViewOfBuildsAnItem(t *testing.T) {
 	if v.Title != item.Description || v.Description != item.Description {
 		t.Errorf("title/description are %q/%q, want the declared English text", v.Title, v.Description)
 	}
-	if v.Control != "switch" || v.Danger != "critical" || v.Effect != "immediate" || v.TenantAccess != "read-write" {
+	if v.Control != "switch" || v.Danger != "critical" || v.Effect != "next-sign-in" || v.TenantAccess != "read-write" {
 		t.Errorf("the control metadata is %+v", v)
 	}
 	if v.EffectiveValue != "true" || v.PlatformValue != "true" || v.TenantValue != "false" {

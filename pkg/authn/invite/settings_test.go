@@ -264,6 +264,10 @@ func (s *fakeSettingsStore) List(context.Context, settings.Layer) ([]settings.En
 
 func (s *fakeSettingsStore) Declared() []settings.DeclaredItem { return nil }
 
+func (s *fakeSettingsStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // recordingEventBus is the event bus of the assembly: a publish reaches every
 // handler subscribed to the type, in the publisher's goroutine.
 type recordingEventBus struct {

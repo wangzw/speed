@@ -17783,7 +17783,7 @@
             "type": "string"
           },
           "effect": {
-            "description": "When a change to the item takes effect: \"immediate\" when it applies as soon as it is saved, empty when the declaration names none.",
+            "description": "When a change to the item takes effect: \"immediate\" when it applies as soon as it is saved, \"next-sign-in\" when it applies to a member at the next sign-in, empty when the declaration names none.",
             "type": "string"
           },
           "effective_value": {

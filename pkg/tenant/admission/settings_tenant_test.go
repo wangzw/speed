@@ -38,8 +38,8 @@ func TestTheTwoTenantSwitchesAreDeclaredForTheTenantSurface(t *testing.T) {
 		if item.Danger != settings.DangerCritical {
 			t.Errorf("%s carries danger %q, want DangerCritical", key, item.Danger)
 		}
-		if item.Effect != settings.EffectImmediate {
-			t.Errorf("%s carries effect %q, want EffectImmediate", key, item.Effect)
+		if item.Effect != settings.EffectNextSignIn {
+			t.Errorf("%s carries effect %q, want EffectNextSignIn", key, item.Effect)
 		}
 	}
 }

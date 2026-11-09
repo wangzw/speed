@@ -318,6 +318,10 @@ func (s tunableStore) List(context.Context, settings.Layer) ([]settings.Entry, e
 
 func (s tunableStore) Declared() []settings.DeclaredItem { return nil }
 
+func (s tunableStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // declaredSettings returns the items of this module's settings declaration, or
 // stops the case when it makes none.
 func declaredSettings(t *testing.T) map[string]settings.Item {

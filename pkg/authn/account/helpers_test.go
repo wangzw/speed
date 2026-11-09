@@ -371,6 +371,10 @@ func (s *fakeSettings) List(context.Context, settings.Layer) ([]settings.Entry, 
 
 func (s *fakeSettings) Declared() []settings.DeclaredItem { return nil }
 
+func (s *fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // harness is the module's product over a migrated database of one dialect, with
 // the optional capabilities replaced by ones a case can read.
 type harness struct {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -524,6 +525,10 @@ func (standInSettings) List(context.Context, settings.Layer) ([]settings.Entry, 
 }
 
 func (standInSettings) Declared() []settings.DeclaredItem { return nil }
+
+func (standInSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
 
 // standInAudit accepts every entry and keeps none: the invitation module
 // requires the capability, and no case here reads what it wrote.

@@ -404,9 +404,10 @@ func tenantDefect(entry keyEntry, tenantFacing bool) string {
 		return fmt.Sprintf("its danger %q is outside the closed set: DangerNone or DangerCritical",
 			entry.item.Danger)
 	}
-	if entry.item.Effect != EffectNone && entry.item.Effect != EffectImmediate {
-		return fmt.Sprintf("its effect %q is outside the closed set: EffectNone or EffectImmediate",
-			entry.item.Effect)
+	if entry.item.Effect != EffectNone && entry.item.Effect != EffectImmediate &&
+		entry.item.Effect != EffectNextSignIn {
+		return fmt.Sprintf("its effect %q is outside the closed set: EffectNone, "+
+			"EffectImmediate or EffectNextSignIn", entry.item.Effect)
 	}
 	return ""
 }

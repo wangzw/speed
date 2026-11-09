@@ -221,10 +221,11 @@ func standardProviders() *providersStub {
 type settingsStub struct {
 	settings.Store
 
-	mu     sync.Mutex
-	rows   map[settingRow]any
-	errors map[string]error
-	reads  []settingRead
+	mu        sync.Mutex
+	rows      map[settingRow]any
+	revisions map[settingRow]time.Time
+	errors    map[string]error
+	reads     []settingRead
 }
 
 type settingRow struct {
@@ -238,13 +239,29 @@ type settingRead struct {
 }
 
 func newSettingsStub() *settingsStub {
-	return &settingsStub{rows: map[settingRow]any{}, errors: map[string]error{}}
+	return &settingsStub{
+		rows:      map[settingRow]any{},
+		revisions: map[settingRow]time.Time{},
+		errors:    map[string]error{},
+	}
 }
 
+// set writes a row without a revision. A case that needs the revision a real
+// write carries uses setAt; a row with none is one the store cannot place a
+// session against, which is the pre-revision behaviour.
 func (s *settingsStub) set(layer settings.Layer, key string, value any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rows[settingRow{layer: layer, key: key}] = value
+}
+
+// setAt writes a row and the moment it was written.
+func (s *settingsStub) setAt(layer settings.Layer, key string, value any, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row := settingRow{layer: layer, key: key}
+	s.rows[row] = value
+	s.revisions[row] = at
 }
 
 func (s *settingsStub) failKey(key string, err error) {
@@ -277,6 +294,20 @@ func (s *settingsStub) Get(layer settings.Layer, key string, target any) error {
 		panic("settingsStub: a target of a type no setting here is declared with")
 	}
 	return nil
+}
+
+func (s *settingsStub) WrittenAt(layer settings.Layer, key string) (time.Time, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads = append(s.reads, settingRead{layer: layer, key: key})
+	if err := s.errors[key]; err != nil {
+		return time.Time{}, false, err
+	}
+	row := settingRow{layer: layer, key: key}
+	if _, found := s.rows[row]; !found {
+		return time.Time{}, false, nil
+	}
+	return s.revisions[row], true, nil
 }
 
 func (s *settingsStub) readsOf(key string) int {

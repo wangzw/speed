@@ -119,6 +119,10 @@ func (f *fakeSettings) List(context.Context, settings.Layer) ([]settings.Entry, 
 }
 func (f *fakeSettings) Declared() []settings.DeclaredItem { return nil }
 
+func (f *fakeSettings) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 // counting wraps the backend's derivation so that a case can tell when one ran.
 func counting(b *backend) *atomic.Int64 {
 	var n atomic.Int64

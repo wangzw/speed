@@ -7,7 +7,7 @@
 ## 职责
 
 - **登记因素。** 为账户的每个因素写一行 `authn_factors`，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据，[REF-rfc6238](../../../references.md)、[REF-webauthn](../../../references.md)）才放各因素子包自己的表。
-- **判定第二因素。** 在第一因素通过之后按账户级与全局级策略回答是否还要第二因素，并给出可用的因素清单；租户级策略在请求期执行，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
+- **判定第二因素。** 在第一因素通过之后按账户级与全局级策略回答是否还要第二因素，并给出可用的因素清单；租户级策略在请求期执行，其中多因素要求只约束认证时刻不早于策略值最后写入时刻的会话，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
 - **编排因素的登记、发码与校验。** `MFA` 驱动各因素实现，并在自己这一处统一做失败退避、审计记录与事件发布，因素实现不做（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。
 - **合成保障等级。** 由 `MFA.Assurance` 计算整个认证功能目录唯一的保障等级，网关的校验后端、请求期的租户准入、`guard.Require` 与冒充发起读到的都是登录会话行里已记录的值。
 - **给出最高权限动作的因素要求。** 由 `MFA.Seasoned` 判定因素年龄，并约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
@@ -20,7 +20,7 @@
 ### 非职责
 
 - **不实现第一因素，也不驱动登录流程。** 第一因素的方法、流程记录与状态机、登记与加强认证的入口路由都在登录引擎（[authn-login](design-authn-login.md)）；本模块只被引擎经 `MFA` 调用。`authn.mfa.webauthn` 同时交付的通行密钥登录方法遵守同一份方法契约。
-- **不执行租户级 MFA 强制。** 登录时账户全局、租户未知，租户级强制只能在请求期判；该判定属于 `tenant.admission`，它读本模块经登录会话行记录的值。
+- **不执行租户级 MFA 强制。** 登录时账户全局、租户未知，租户级强制只能在请求期判；多因素要求只约束认证时刻不早于策略值最后写入时刻的会话，因此开启策略不使既有会话失效。该判定属于 `tenant.admission`，它读本模块经登录会话行记录的强度与认证时刻。
 - **不做授权判定，不写 403。** 管理员重置因素的授权经 `Decider`，其接口与管理面路由在 [authn-admin](design-authn-admin.md)；本模块不认识角色。
 - **不实现短信验证码引擎与发送方。** 短信因素复用 `authn.sms` 的 `SMSCodes`（[authn-sms](design-authn-sms.md)）。
 - **不持有登录会话。** 加强认证完成后更新会话的是 `Sessions.Elevate`（[authn-session](design-authn-session.md)）；`MFA.Reset` 与删除因素时的撤销、轮换只经 `Sessions` 发起。`MFA.Remove` 本身不撤销会话、也不对会话作任何承诺，删除后的撤销与轮换由用户侧 DELETE 路由编排（见「删除与重置」）。
@@ -442,7 +442,7 @@ CREATE TABLE authn_webauthn_credentials (
 - **第二因素的认证方式不得与第一因素已有的方式相交。** 可用清单已剔除相交者。短信登录之后不能用短信因素当第二因素：二者走同一条通道，对 SIM 劫持而言等于一个因素。账户只有同种类的因素时清单为空，该次登录无法完成，应答 `login-failed`，用户走管理员重置。
 - **因素实现缺席按「该因素不可用」处理。** 装配里没有某个因素种类的实现而账户有该种类的有效因素时，该因素不进可用清单，不得当作账户没有因素；账户没有任何可用因素时登录无法完成，运维从启动诊断（已登记的因素种类）与事件发现。
 - **没有「记住此设备」。** 除第一因素本身已证明两类因素（带用户验证的通行密钥）外，每次登录都要答第二因素。客户端留下的任何标记都不是服务端能证明的设备身份。
-- **租户级强制只在请求期判。** 登录时账户是全局的，任何范围线索都能被绕开。
+- **租户级强制只在请求期判。** 登录时账户是全局的，任何范围线索都能被绕开。多因素要求与 SSO 要求都只约束自策略值最后写入时刻起建立的会话：开启策略后既有会话继续按其强度工作，下一次登录起受约束。
 
 ### 保障等级的合成
 
@@ -471,7 +471,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### 请求期的租户级判定
 
-租户级 `require-mfa` 为真而 `Assurance` 低于多因素时，准入层应答 `401 insufficient_user_authentication`；`require-sso` 为真而未满足时应答 `401 sso_required`，`acr_values="sso"`；`IDPAssured` 的多因素只在该提供方所属的租户内计数。账户没有因素时同一应答告诉客户端去登记。`authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制多因素无人执行。判定顺序与应答在 [tenant.admission](../tenant/design-tenant-admission.md)。登记与加强认证的端点所在的端不受租户解析守卫，所以客户端总有路可走。
+租户级 `require-mfa` 为真、会话的认证时刻不早于策略值最后写入时刻而 `Assurance` 低于多因素时，准入层应答 `401 insufficient_user_authentication`；更早建立的会话不经这条判定，开启策略不使其失效。`require-sso` 为真、会话的认证时刻不早于策略值最后写入时刻而未满足时应答 `401 sso_required`，`acr_values="sso"`；更早建立的会话不经这条判定；`IDPAssured` 的多因素只在该提供方所属的租户内计数。账户没有因素时同一应答告诉客户端去登记。`authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制多因素无人执行。判定顺序与应答在 [tenant.admission](../tenant/design-tenant-admission.md)。登记与加强认证的端点所在的端不受租户解析守卫，所以客户端总有路可走。
 
 ### 统一收口：`Challenge`、`Verify`、`Enroll`
 

@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -78,7 +79,8 @@ func TestTheLayerReadsTheSwitchesTheStoreHoldsPerTenant(t *testing.T) {
 
 		// A row for acme binds acme alone.
 		write(t, ctx, store, settings.ForTenant(acme), requireMFAKey, true)
-		stepUp(t, "acme with its own row", r.serve(r.as(acme)), acrMultiFactor)
+		afterTenant := time.Now().UTC().Add(time.Second)
+		stepUp(t, "acme with its own row", r.serve(r.as(acme, authntest.WithAuthTime(afterTenant))), acrMultiFactor)
 		if rp := r.serve(r.as(globex)); !rp.reached() {
 			t.Fatalf("globex answered %d, want it admitted: only acme has a row", rp.status)
 		}
@@ -87,8 +89,10 @@ func TestTheLayerReadsTheSwitchesTheStoreHoldsPerTenant(t *testing.T) {
 		// not lower that floor: the effective value is the OR of the two.
 		write(t, ctx, store, settings.ForTenant(acme), requireMFAKey, false)
 		write(t, ctx, store, settings.Global(), requireMFAKey, true)
-		stepUp(t, "globex under the global row", r.serve(r.as(globex)), acrMultiFactor)
-		stepUp(t, "acme under the global row despite its own false row", r.serve(r.as(acme)), acrMultiFactor)
+		afterGlobal := time.Now().UTC().Add(time.Second)
+		stepUp(t, "globex under the global row", r.serve(r.as(globex, authntest.WithAuthTime(afterGlobal))), acrMultiFactor)
+		stepUp(t, "acme under the global row despite its own false row",
+			r.serve(r.as(acme, authntest.WithAuthTime(afterGlobal))), acrMultiFactor)
 	})
 }
 
