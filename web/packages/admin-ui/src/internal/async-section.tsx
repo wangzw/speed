@@ -43,9 +43,14 @@
  * authn.insufficient_user_authentication` refusal is the same shape of
  * answer for a tenant that requires multi-factor authentication: no retry
  * raises the session's strength, and a fresh sign-in does. A caller that
- * offers the sign-in exit passes `mfaRelogin`, and the section renders it
- * the same way. Every other failure, and a caller that passes no exit,
- * keeps the branches above.
+ * offers the sign-in exit passes `mfaRelogin`. The exit itself splits on
+ * the account's own factors (internal/mfa-refusal reads
+ * GET /api/v1/auth/factors): with an enabled factor the section keeps the
+ * sign-in exit, because a new sign-in completes the second factor; with
+ * none it names the missing two-step verification and points at the
+ * enrollment surface through the host's account-settings destination
+ * instead, because a sign-in cannot add a factor. Every other failure, and
+ * a caller that passes no exit, keeps the branches above.
  */
 
 import type { ReactNode } from 'react'
@@ -58,7 +63,10 @@ import {
   type AsyncSectionErrorState,
 } from '@speed/ui-kit'
 import type { EmptyStateHeadingLevel } from '@speed/ui-kit'
+import { useAdminAccountHref } from './account-href.js'
 import { useAdminUiErrorText } from './error-text.js'
+import { useNoMfaFactor } from './mfa-refusal.js'
+import { AdminLink } from './navigation.js'
 import { useAdminUiTranslation } from './translation.js'
 
 /**
@@ -145,13 +153,15 @@ export interface AdminAsyncSectionProps<Payload> {
    */
   readonly ssoRelogin?: () => void
   /**
-   * The re-login exit for the tenant admission layer's multi-factor
+   * The sign-in exit for the tenant admission layer's multi-factor
    * refusal. When the read settles
-   * `authn.insufficient_user_authentication`, the section names the
-   * refusal and renders this action instead of the retryable placeholder:
-   * a new sign-in is what satisfies the organization's requirement, while
-   * a retry of the same request is refused again. Every other failure, and
-   * a caller that omits it, keeps the branches above.
+   * `authn.insufficient_user_authentication`, the section reads the
+   * caller's own factors and replaces the retryable placeholder: with an
+   * enabled factor it renders this sign-in action, because a fresh sign-in
+   * completes the second factor; with none it names the missing two-step
+   * verification and points at the host's account settings instead, because
+   * a sign-in cannot add a factor. Every other failure, and a caller that
+   * omits it, keeps the branches above.
    */
   readonly mfaRelogin?: () => void
 }
@@ -170,6 +180,20 @@ export function AdminAsyncSection<Payload>({
 }: AdminAsyncSectionProps<Payload>) {
   const { t } = useAdminUiTranslation()
   const resolve = useAdminUiErrorText()
+  // The host's account settings page, where an operator registers
+  // two-step verification. The package holds no host path, so the no-factor
+  // state is text-only when the host supplies none.
+  const accountHref = useAdminAccountHref()
+  const failureCode = errorCodeOf(error)
+  // The multi-factor refusal branch, and the account's ability to clear it
+  // by signing in again, are read before the early returns (hooks run on
+  // every render): only the surface that offers the exit takes the branch,
+  // and only while it is the settled answer.
+  const mfaRefused =
+    !rest.pending &&
+    mfaRelogin !== undefined &&
+    stepUpReasonOf(failureCode) === 'mfa'
+  const noMfaFactor = useNoMfaFactor(mfaRefused)
   // A refusal replaces the content whatever the payload is: the older data
   // no longer means anything, so it is never marked stale and no retry is
   // offered. A first load still pending renders the loading announcement.
@@ -186,7 +210,6 @@ export function AdminAsyncSection<Payload>({
   // The tenant admission layer's SSO refusal is answered the same way while
   // the session stays a local one: no retry can change it. Only a surface
   // that offers the sign-in exit takes this branch.
-  const failureCode = errorCodeOf(error)
   if (
     !rest.pending &&
     ssoRelogin !== undefined &&
@@ -206,19 +229,32 @@ export function AdminAsyncSection<Payload>({
   }
   // The tenant admission layer's multi-factor refusal is answered the same
   // way: no retry of the same request raises the session's strength, while
-  // a new sign-in does. Only a surface that offers the sign-in exit takes
-  // this branch.
-  if (
-    !rest.pending &&
-    mfaRelogin !== undefined &&
-    stepUpReasonOf(failureCode) === 'mfa'
-  ) {
+  // a new sign-in does -- but only for an account that has a factor to
+  // prove. An account with none must register one first, so the branch
+  // names the missing two-step verification and points at the enrollment
+  // surface instead of offering a sign-in that would land in the same
+  // refusal. Only a surface that offers the exit takes this branch.
+  if (mfaRefused) {
     return (
       <EmptyState
         variant="error"
         title={errorState.title}
-        description={resolve(failureCode)}
-        action={<Button onClick={mfaRelogin}>{t('stepUp.relogin')}</Button>}
+        description={
+          noMfaFactor
+            ? t('stepUp.mfaEnrollRequired')
+            : resolve(failureCode)
+        }
+        action={
+          noMfaFactor
+            ? accountHref === undefined
+              ? undefined
+              : (
+                  <AdminLink href={accountHref}>
+                    {t('stepUp.goToAccount')}
+                  </AdminLink>
+                )
+            : <Button onClick={mfaRelogin}>{t('stepUp.relogin')}</Button>
+        }
         headingLevel={headingLevel}
       />
     )

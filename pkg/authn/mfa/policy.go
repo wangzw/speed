@@ -58,8 +58,9 @@ func disjoint(a, b []authn.Method) bool {
 //     assembly and whose methods do not intersect the first factor's; it may be
 //     empty, and then the login cannot be completed. An enterprise IdP's
 //     declaration does not override the account's own factor.
-//  3. An account that requires a factor, or a deployment that does, and an
-//     account that has none: the login can only register one.
+//  3. An account that requires a factor -- by its own flag, the deployment's
+//     switch, or a tenant it is an active member of -- and an account that has
+//     none: the login can only register one.
 //  4. An enterprise IdP's declaration of multi-factor, when none of the above
 //     applies: nothing more is asked, and Assurance marks the result as the
 //     IdP's.
@@ -97,6 +98,17 @@ func (m *product) Require(ctx context.Context, proof, requirement authn.AccountI
 		if err != nil {
 			return authn.MFANone, nil, m.unavailable(err)
 		}
+	}
+	if !required && m.tenantMFA != nil {
+		// Any tenant the account is an active member of that requires a factor
+		// makes the account require one. A read that fails is not an exemption:
+		// the account is treated as required, so the login cannot complete
+		// without registering one.
+		tenantRequired, terr := m.tenantMFA.RequiresMFA(ctx, requirement)
+		if terr != nil {
+			tenantRequired = true
+		}
+		required = tenantRequired
 	}
 	if required {
 		return authn.MFAEnroll, nil, nil

@@ -27,6 +27,7 @@
 | 开通一个租户并让首位成员进入 | [开通一个租户并让首位成员进入](journeys/journey-operator-onboards-tenant.md) |
 | 租户管理员接管一个业务租户的日常管理 | [租户管理员接管一个业务租户的日常管理](journeys/journey-tenant-admin.md) |
 | 为租户接入企业身份提供方 | [为租户接入企业身份提供方](journeys/journey-enterprise-sso-onboarding.md) |
+| 租户要求多因素认证时的登录内登记 | [租户要求多因素认证时的登录内登记](journeys/journey-tenant-required-mfa-enrollment.md) |
 | 租户要求单点登录时的重新认证 | [租户要求单点登录时的重新认证](journeys/journey-tenant-sso-required.md) |
 | 冒充一位成员排障后结束冒充 | [冒充一位成员排障后结束冒充](journeys/journey-impersonation-for-support.md) |
 | 运营者首次登录并解除管理写入的限制 | [运营者首次登录并解除管理写入的限制](journeys/journey-operator-first-run.md) |

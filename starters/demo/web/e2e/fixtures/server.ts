@@ -780,6 +780,7 @@ export async function startReviewServer(
     readonly seedSystemTenantAdmin?: boolean
     readonly seedProtectedTenant?: boolean
     readonly platformRequireMFA?: boolean
+    readonly tenantRequireMFA?: boolean
     readonly tenantAdmins?: Readonly<Record<string, readonly string[]>>
     readonly recentWindow?: string
     readonly mfaRequired?: boolean
@@ -883,6 +884,7 @@ export async function startReviewServer(
       seedSystemTenantAdmin: options.seedSystemTenantAdmin,
       seedProtectedTenant: options.seedProtectedTenant,
       platformRequireMFA: options.platformRequireMFA,
+      tenantRequireMFA: options.tenantRequireMFA,
       tenantAdmins: options.tenantAdmins,
       socialProvider,
       ssoProvider,
@@ -919,6 +921,7 @@ export async function startReviewServer(
         seedSystemTenantAdmin: options.seedSystemTenantAdmin,
         seedProtectedTenant: options.seedProtectedTenant,
         platformRequireMFA: options.platformRequireMFA,
+        tenantRequireMFA: options.tenantRequireMFA,
         tenantAdmins: options.tenantAdmins,
         socialProvider,
         ssoProvider,

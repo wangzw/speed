@@ -14,14 +14,47 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { getAuthnMfaFactorsQueryKey } from '@speed/api-sdk'
 import { AdminAsyncSection, isForbidden } from './async-section.js'
+import { AdminAccountHrefProvider } from './account-href.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import { bindAdminRequest } from '../../test-utils/request-rig.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
 /** A caller-supplied retry label fixture; the section renders what it is given. */
 const RETRY = 'Retry'
+
+/** One active factor as the caller's own factor read answers it. */
+const ACTIVE_FACTOR = {
+  id: 'factor-1',
+  kind: 'totp',
+  label: 'Authenticator app',
+  status: 'active',
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+/** Binds the refusal exit's factor read; any other request leg is a defect. */
+function bindFactors(factors: readonly unknown[]): void {
+  bindAdminRequest((call) => {
+    if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+      return { factors }
+    }
+    throw new Error(`unexpected ${call.method} ${call.path}`)
+  })
+}
+
+/** Waits until the refusal exit's factor read has settled. */
+async function awaitFactorRead(
+  queryClient: ReturnType<typeof renderWithProviders>['queryClient'],
+): Promise<void> {
+  await waitFor(() => {
+    expect(
+      queryClient.getQueryState(getAuthnMfaFactorsQueryKey())?.status,
+    ).toBe('success')
+  })
+}
 
 describe('isForbidden', () => {
   it('reads a module refusal carried by the HTTP status alone', () => {
@@ -112,9 +145,10 @@ describe('AdminAsyncSection', () => {
     expect(screen.getByRole('button', { name: RETRY })).toBeInTheDocument()
   })
 
-  it('renders the sign-in exit for a multi-factor refusal, with no retry', async () => {
+  it('renders the sign-in exit for a multi-factor refusal when the account has a factor', async () => {
+    bindFactors([ACTIVE_FACTOR])
     const mfaRelogin = vi.fn()
-    renderWithProviders(
+    const { queryClient } = renderWithProviders(
       <Probe
         error={{
           status: 401,
@@ -124,15 +158,66 @@ describe('AdminAsyncSection', () => {
       />,
     )
     // The organization's requirement is named through the console resolver,
-    // and a fresh sign-in clears it: retrying the same request cannot.
+    // and with a factor registered a fresh sign-in clears it: retrying the
+    // same request cannot.
     expect(
-      screen.getByText(zhCN.errors.authn.insufficient_user_authentication),
+      await screen.findByText(
+        zhCN.errors.authn.insufficient_user_authentication,
+      ),
     ).toBeInTheDocument()
+    // The factor read settles with an active factor: the sign-in exit
+    // stays, not the enrollment guidance.
+    await awaitFactorRead(queryClient)
+    expect(screen.queryByText(zhCN.stepUp.mfaEnrollRequired)).toBeNull()
     expect(screen.queryByRole('button', { name: RETRY })).toBeNull()
     await userEvent.click(
       screen.getByRole('button', { name: zhCN.stepUp.relogin }),
     )
     expect(mfaRelogin).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the missing second factor and points at enrollment when the account has none', async () => {
+    bindFactors([])
+    renderWithProviders(
+      <AdminAccountHrefProvider accountHref="/account/security">
+        <Probe
+          error={{
+            status: 401,
+            code: 'authn.insufficient_user_authentication',
+          }}
+          mfaRelogin={() => {}}
+        />
+      </AdminAccountHrefProvider>,
+    )
+    // Signing in again cannot add a factor, so the section names the
+    // missing two-step verification and points at the host's account
+    // settings; it offers no sign-in button and no retry.
+    expect(
+      await screen.findByText(zhCN.stepUp.mfaEnrollRequired),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.stepUp.relogin })).toBeNull()
+    expect(screen.queryByRole('button', { name: RETRY })).toBeNull()
+    expect(
+      screen.getByRole('link', { name: zhCN.stepUp.goToAccount }),
+    ).toHaveAttribute('href', '/account/security')
+  })
+
+  it('renders the no-factor guidance as text when the host supplies no account destination', async () => {
+    bindFactors([])
+    renderWithProviders(
+      <Probe
+        error={{
+          status: 401,
+          code: 'authn.insufficient_user_authentication',
+        }}
+        mfaRelogin={() => {}}
+      />,
+    )
+    expect(
+      await screen.findByText(zhCN.stepUp.mfaEnrollRequired),
+    ).toBeInTheDocument()
+    // The package holds no host path of its own.
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
   })
 
   it('keeps a generic 401 on the retryable placeholder', () => {

@@ -7,10 +7,11 @@
  * attaches the password channel's own text to the password field (invalid,
  * described by the message, focused) and changes nothing, an empty
  * submit never reaches the network, a forced password change renders the
- * shared step renderer's new-password field and completes the flow, the
- * en-US bundle renders on an English-starting instance, and the tree
- * passes axe. Text expectations read the bundle values, never inline
- * language.
+ * shared step renderer's new-password field and completes the flow, a login
+ * that a tenant's requirement makes register a factor drives enroll ->
+ * reprove -> second and completes with the new factor, the en-US bundle
+ * renders on an English-starting instance, and the tree passes axe. Text
+ * expectations read the bundle values, never inline language.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -276,6 +277,165 @@ describe('PasswordSignInForm', () => {
     })
     expect(answerBodies[1]).toMatchObject({ step: 'complete' })
     expect(harness.store.get()).toBe('access-1')
+  })
+
+  it('register a required factor, prove the password again, and finish with the new factor', async () => {
+    // A tenant's require-mfa makes this login register a factor inside the
+    // same flow. Completing the registration does not complete the login:
+    // the server holds the flow at `reprove` (the password proved again) and
+    // only then offers the factor just registered as the second factor. The
+    // channel's shared step renderer drives every one of those steps to the
+    // multi-factor session.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'enroll', kinds: ['totp'] },
+        }),
+      [LOGIN_ANSWER]: (call) => {
+        const body = call.options?.body as {
+          step?: string
+          input?: Record<string, string>
+        }
+        const input = body.input ?? {}
+        switch (body.step) {
+          case 'enroll':
+            return input.code === undefined
+              ? openFlow({
+                  seq: 2,
+                  state: 'enroll',
+                  next: {
+                    kind: 'webauthn',
+                    options: { otpauth_uri: OTPAUTH_URI },
+                  },
+                })
+              : openFlow({
+                  seq: 3,
+                  state: 'reprove',
+                  next: {
+                    kind: 'challenge',
+                    fields: [
+                      { name: 'identifier', kind: 'text', required: true },
+                      {
+                        name: 'password',
+                        kind: 'password',
+                        required: true,
+                        secret: true,
+                      },
+                    ],
+                  },
+                })
+          case 'answer':
+            return openFlow({
+              seq: 4,
+              state: 'second',
+              next: {
+                kind: 'factor',
+                factors: [{ id: 'f1', kind: 'totp' }],
+              },
+            })
+          case 'factor':
+            return input.code === undefined
+              ? openFlow({
+                  seq: 5,
+                  state: 'second',
+                  next: {
+                    kind: 'challenge',
+                    fields: [{ name: 'code', kind: 'code', required: true }],
+                  },
+                })
+              : completeFlow(6)
+          case 'complete':
+            return authenticatedCompletion()
+          default:
+            throw new Error(`unexpected step ${String(body.step)}`)
+        }
+      },
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <PasswordSignInForm session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    const user = userEvent.setup()
+    await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+
+    // The proved account has no factor and the tenant requires one: the
+    // flow parks on the registration, then on the TOTP setup.
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.signInFlow.factorKind.totp,
+      }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.signInFlow.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+
+    // Completing the registration leaves the flow at the password step, not
+    // at a completion: the login must prove the password again before the
+    // factor it just created can strengthen it.
+    await screen.findByLabelText(zhCN.passwordSignIn.identifierLabel)
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      'alice@example.com',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      's3cret-pass',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+
+    // The second factor is the factor just registered, and its challenge
+    // completes the flow.
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.signInFlow.factorKind.totp,
+      }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
+      '654321',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(harness.store.get()).toBe('access-1')
+    const answerBodies = harness.calls
+      .filter((call) => call.path === '/api/v1/auth/flows/answer')
+      .map((call) => call.options?.body)
+    expect(answerBodies.map((body) => (body as { step?: string }).step)).toEqual([
+      'enroll',
+      'enroll',
+      'answer',
+      'factor',
+      'factor',
+      'complete',
+    ])
+    expect(answerBodies[1]).toMatchObject({
+      step: 'enroll',
+      input: { kind: 'totp', code: '123456' },
+    })
+    expect(answerBodies[2]).toMatchObject({
+      step: 'answer',
+      input: { identifier: 'alice@example.com', password: 's3cret-pass' },
+    })
+    expect(answerBodies[3]).toMatchObject({
+      step: 'factor',
+      input: { factor: 'f1' },
+    })
+    expect(answerBodies[4]).toMatchObject({
+      step: 'factor',
+      input: { factor: 'f1', code: '654321' },
+    })
   })
 
   it('return to the credentials fields from a step this channel cannot render', async () => {

@@ -50,7 +50,7 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 		// An answer submitted at the first factor goes to the method; one
 		// submitted at the pending signup carries the username the engine opens
 		// the account with, and no method is asked.
-		if rec.State != stateFirst && rec.State != stateSignup {
+		if rec.State != stateFirst && rec.State != stateSignup && rec.State != stateReprove {
 			c.unauthorized(mount.CodeFlowInvalid)
 			return c.result()
 		}

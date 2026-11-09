@@ -103,6 +103,10 @@ func (r *routes) nextOf(rec record) stepView {
 		return stepView{Kind: nextComplete}
 	case stateSignup:
 		return signupStep(rec.Pending, rec.Method)
+	case stateReprove:
+		// The password a tenant's requirement makes the account prove again; the
+		// method names its own step, so the client answers it like any challenge.
+		return stepView{Kind: nextChallenge}
 	case stateSecond:
 		return stepView{Kind: nextFactor, Factors: rec.MFA.Offered}
 	case stateEnroll:

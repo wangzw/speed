@@ -96,7 +96,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // It delivers the ordering anchor and the confinement guard, each exclusively:
 // two admission layers on one endpoint would leave it unsaid which of them let a
-// request in. A second provider of either fails the startup.
+// request in. A second provider of either fails the startup. It also delivers
+// authn.TenantMFARequirement, the seam by which the authentication side learns
+// whether a tenant an account belongs to requires multi-factor; it is supplied
+// here because this layer already reads the memberships and the switch.
 //
 // It requires the memberships and the resolution layer, and neither is optional:
 // without the first there is no fact to check, and without the second no tenant
@@ -125,6 +128,12 @@ func Module() core.Module {
 		Provides: []core.Provision{
 			{Token: (*tenant.Admission)(nil), Exclusive: true},
 			{Token: (*authn.ScopeGuard)(nil), Exclusive: true},
+			// The seam the login engine and the multi-factor policy read to learn
+			// whether a tenant an account belongs to requires multi-factor. It is
+			// supplied here because this layer already reads both the memberships
+			// and the switch, and the authentication tree imports nothing of the
+			// tenant one.
+			{Token: (*authn.TenantMFARequirement)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), settingsSchema()},
 

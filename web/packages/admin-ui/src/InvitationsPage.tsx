@@ -885,6 +885,7 @@ export function InvitationsPage({
               <WriteFeedbackRegion
                 outcome={invitationFeedback.outcome}
                 ssoRelogin={session === null ? undefined : relogin}
+                mfaRelogin={session === null ? undefined : relogin}
               />
             </Box>
           </SectionCard>
@@ -943,6 +944,7 @@ export function InvitationsPage({
               <WriteFeedbackRegion
                 outcome={membersFeedback.outcome}
                 ssoRelogin={session === null ? undefined : relogin}
+                mfaRelogin={session === null ? undefined : relogin}
               />
             </Box>
           </SectionCard>

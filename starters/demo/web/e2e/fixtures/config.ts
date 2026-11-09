@@ -199,6 +199,15 @@ export interface ReviewConfigInput {
    */
   readonly platformRequireMFA?: boolean
   /**
+   * Hold the admission policy `tenant.admission.require-mfa` on in the seeded
+   * tenant's own layer, so a member of that tenant reads it as a requirement
+   * without the platform layer being on. Off by default: only the journey
+   * whose member must enrol a factor at login turns it on. The binary's own
+   * seed writes the tenant-layer row, so the value is the product's, not a row
+   * written around it.
+   */
+  readonly tenantRequireMFA?: boolean
+  /**
    * Replace the administrators each seeded tenant starts with, keyed by tenant
    * name. An absent key keeps the tenant's default administrator list, and a
    * key naming a tenant the default list does not carry adds that tenant. This
@@ -560,6 +569,9 @@ function seedAccountEntry(
 interface ReviewTenantAdmins {
   readonly name: string
   readonly admins: readonly string[]
+  /** Settings the seed writes into this tenant's own layer, as YAML lines
+   * indented under the entry's `settings:` key. */
+  readonly settings?: readonly string[]
 }
 
 /**
@@ -613,14 +625,33 @@ function defaultAcmeAdmins(input: ReviewConfigInput): string[] {
  */
 function reviewTenants(input: ReviewConfigInput): ReviewTenantAdmins[] {
   const base = defaultTenantAdmins(input)
-  if (input.tenantAdmins === undefined) return base
+  const overrides = input.tenantAdmins
   const named = new Set(base.map((entry) => entry.name))
   const out: ReviewTenantAdmins[] = base.map((entry) => ({
     name: entry.name,
-    admins: input.tenantAdmins?.[entry.name] ?? entry.admins,
+    admins: overrides?.[entry.name] ?? entry.admins,
   }))
-  for (const [name, admins] of Object.entries(input.tenantAdmins)) {
-    if (!named.has(name)) out.push({ name, admins })
+  if (overrides !== undefined) {
+    for (const [name, admins] of Object.entries(overrides)) {
+      if (!named.has(name)) out.push({ name, admins })
+    }
+  }
+  if (input.tenantRequireMFA === true) {
+    const target = out.find((entry) => entry.name === reviewMember.tenant)
+    if (target === undefined) {
+      throw new Error(
+        `the review tenant ${reviewMember.tenant} is not in the seeded tenant list, ` +
+          'so the tenant-layer require-mfa switch has no layer to land in',
+      )
+    }
+    out[out.indexOf(target)] = {
+      ...target,
+      settings: [
+        ...(target.settings ?? []),
+        '- key: "tenant.admission.require-mfa"',
+        '  value: "true"',
+      ],
+    }
   }
   return out
 }
@@ -630,7 +661,13 @@ function seedTenantEntries(entries: readonly ReviewTenantAdmins[]): string {
   return entries
     .map((entry) => {
       const admins = entry.admins.map((admin) => `        - ${admin}`).join('\n')
-      return `    - name: ${entry.name}\n      admins:\n${admins}\n`
+      const settings =
+        entry.settings === undefined || entry.settings.length === 0
+          ? ''
+          : `      settings:\n${entry.settings
+              .map((line) => `        ${line}`)
+              .join('\n')}\n`
+      return `    - name: ${entry.name}\n      admins:\n${admins}\n${settings}`
     })
     .join('')
 }

@@ -17,21 +17,33 @@
  * brings a region into view when its scope settles a failure, so a failure
  * reported below a long table is still seen.
  *
- * A surface that offers a sign-in exit passes `ssoRelogin`: when the slot
- * settles the tenant admission layer's `authn.sso_required` refusal, the
- * region renders the exit under the resolved sentence, and every other
- * code keeps its existing rendering.
+ * A surface that offers a sign-in exit passes `ssoRelogin` and
+ * `mfaRelogin`. When the slot settles the tenant admission layer's
+ * `authn.sso_required` refusal, the first renders the region's exit under
+ * the resolved sentence. When it settles the layer's
+ * `authn.insufficient_user_authentication` refusal, the second splits on
+ * the account's own factors (internal/mfa-refusal reads
+ * GET /api/v1/auth/factors): with an enabled factor the region renders the
+ * sign-in exit, because a new sign-in completes the second factor; with
+ * none it replaces the code's sentence with the missing two-step
+ * verification and points at the enrollment surface through the host's
+ * account-settings destination. Every other code keeps its existing
+ * rendering, and so does a surface that offers neither exit.
  */
 
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Typography from '@mui/material/Typography'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { stepUpReasonOf } from '@speed/auth-core'
 import { WriteFeedbackRegion as SharedWriteFeedbackRegion } from '@speed/ui-kit'
 import type { WriteOutcome } from '@speed/ui-kit'
+import { useAdminAccountHref } from './account-href.js'
 import { useAdminUiErrorText } from './error-text.js'
+import { useNoMfaFactor } from './mfa-refusal.js'
+import { AdminLink } from './navigation.js'
 import { useAdminUiTranslation } from './translation.js'
 
 export interface WriteFeedbackRegionProps {
@@ -47,6 +59,17 @@ export interface WriteFeedbackRegionProps {
    * own.
    */
   readonly ssoRelogin?: () => void
+  /**
+   * The sign-in or enrollment exit for the tenant admission layer's
+   * multi-factor refusal. When the scope settles
+   * `authn.insufficient_user_authentication`, the region reads the
+   * caller's factors: with an enabled one it renders this sign-in exit
+   * under the resolved sentence, and with none it replaces that sentence
+   * with the missing two-step verification and points at the host's
+   * account settings. Every other code keeps its existing rendering. Omit
+   * it on a surface with no exit of its own.
+   */
+  readonly mfaRelogin?: () => void
 }
 
 /** The console's feedback region: one scope's slot rendered with its resolver. */
@@ -54,21 +77,57 @@ export function WriteFeedbackRegion({
   outcome,
   sx,
   ssoRelogin,
+  mfaRelogin,
 }: WriteFeedbackRegionProps) {
   const resolve = useAdminUiErrorText()
   const { t } = useAdminUiTranslation()
+  const accountHref = useAdminAccountHref()
   const ssoRefused =
     outcome !== null &&
     outcome.kind === 'failure' &&
     stepUpReasonOf(outcome.code) === 'sso'
+  const mfaRefused =
+    outcome !== null &&
+    outcome.kind === 'failure' &&
+    mfaRelogin !== undefined &&
+    stepUpReasonOf(outcome.code) === 'mfa'
+  const noMfaFactor = useNoMfaFactor(mfaRefused)
+  // With no factor the code's own sentence tells the operator to sign in
+  // again, which would meet the same refusal. The alert carries the
+  // enrollment guidance instead, so the sentence and the link below it
+  // agree.
+  const shownResolve = noMfaFactor
+    ? (code: string) =>
+        stepUpReasonOf(code) === 'mfa'
+          ? t('stepUp.mfaEnrollRequired')
+          : resolve(code)
+    : resolve
   return (
     <>
-      <SharedWriteFeedbackRegion outcome={outcome} resolve={resolve} sx={sx} />
+      <SharedWriteFeedbackRegion
+        outcome={outcome}
+        resolve={shownResolve}
+        sx={sx}
+      />
       {ssoRefused && ssoRelogin !== undefined && (
         <Box sx={{ mt: 1 }}>
           <Button type="button" variant="contained" onClick={ssoRelogin}>
             {t('stepUp.relogin')}
           </Button>
+        </Box>
+      )}
+      {mfaRefused && !noMfaFactor && (
+        <Box sx={{ mt: 1 }}>
+          <Button type="button" variant="contained" onClick={mfaRelogin}>
+            {t('stepUp.relogin')}
+          </Button>
+        </Box>
+      )}
+      {mfaRefused && noMfaFactor && accountHref !== undefined && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="body2">
+            <AdminLink href={accountHref}>{t('stepUp.goToAccount')}</AdminLink>
+          </Typography>
         </Box>
       )}
     </>

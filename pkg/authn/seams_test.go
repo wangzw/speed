@@ -84,6 +84,9 @@ var seamSignatures = map[string][]string{
 	"TenantDirectory": {
 		"TenantIDOf(ctx context.Context, name string) (string, bool, error)",
 	},
+	"TenantMFARequirement": {
+		"RequiresMFA(ctx context.Context, id AccountID) (bool, error)",
+	},
 	"Memberships": {
 		"IsMember(ctx context.Context, id AccountID, tenant string) (bool, error)",
 		"Membership(ctx context.Context, tenant string, id AccountID) (Membership, bool, error)",
@@ -384,6 +387,7 @@ var moduleDeliveries = map[string][]reflect.Type{
 	"sms":       {reflect.TypeFor[SMSCodes](), reflect.TypeFor[AccountLifecycle]()},
 	"token":     {reflect.TypeFor[Tokens](), reflect.TypeFor[Verifier](), reflect.TypeFor[Challenger]()},
 	"passkey":   {reflect.TypeFor[Factor](), reflect.TypeFor[LoginMethod]()},
+	"admission": {reflect.TypeFor[ScopeGuard](), reflect.TypeFor[TenantMFARequirement]()},
 }
 
 // nameClashes reports the method names that two of the interfaces share with

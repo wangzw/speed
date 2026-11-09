@@ -512,6 +512,23 @@ func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte
 	case step.KindEnrolled:
 		recalled := step.RecordOf(got)
 		rec.MFA.Enrolled = recalled.ID
+		if rec.MFA.EnrollMulti {
+			// A tenant's requirement caused this registration, so the login does
+			// not complete here: the account proves its password again, and only
+			// then is the factor just made active used as the second factor. A
+			// factor registered during the session may strengthen it only after
+			// the password is proved again.
+			rec.State = stateReprove
+			rec.Method = methodPassword
+			rec.MethodStep = ""
+			rec.MethodState = nil
+			// The same call a step-up uses to prove a first factor again: it
+			// begins the password method and, when it prompts, swaps the record
+			// and answers the step. The record goes from enroll straight to
+			// reprove in that one swap.
+			r.applyFirstBegin(c, token, echo, rec, raw, nil, "")
+			return
+		}
 		rec.State = stateReady
 		rec.MethodStep = ""
 		rec.MethodState = nil

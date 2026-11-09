@@ -366,7 +366,7 @@ type Proof struct {
 
 ### 状态机
 
-一次登录在 kv 里是一条流程记录，每步用比较并交换推进。图里的 `账户解析` 与 `策略判定` 是同一次请求内的瞬时步骤，不落入流程记录；落入记录的状态是 `first`、`processing`、`signup`、`second`、`enroll`、`ready` 与终态墓碑 `done`、`failed`（对应图中的第一因素、处理中、待建号、第二因素、登记因素、就绪、完成、失败）。`signup` 是首登开户在建号之前索取用户名的持久步骤，跨请求保留。`POST flows` 总是从第一因素进入；`POST flows/authenticated` 按目的从第一因素、第二因素或登记因素进入，见「在已登录身份上开始流程」。回跳类的一步先把记录置为处理中再调用方法，使授权码与断言至多被处理一次；`完成` 之后才建登录会话或发令牌。目的 `link`、`step-up`、`enroll` 复用这台机器，终态动作不同，见「终态动作」。逐条迁移、答复与副作用见「答复与迁移」。
+一次登录在 kv 里是一条流程记录，每步用比较并交换推进。图里的 `账户解析` 与 `策略判定` 是同一次请求内的瞬时步骤，不落入流程记录；落入记录的状态是 `first`、`processing`、`signup`、`second`、`enroll`、`reprove`、`ready` 与终态墓碑 `done`、`failed`（对应图中的第一因素、处理中、待建号、第二因素、登记因素、重证口令、就绪、完成、失败）。`signup` 是首登开户在建号之前索取用户名的持久步骤，跨请求保留。`reprove` 是租户的多因素要求引起的登记完成之后重新证明口令的步骤：这次登记不直接完成登录，口令再次证明之后策略判定才看到刚登记的因素并把它作为第二因素。`POST flows` 总是从第一因素进入；`POST flows/authenticated` 按目的从第一因素、第二因素或登记因素进入，见「在已登录身份上开始流程」。回跳类的一步先把记录置为处理中再调用方法，使授权码与断言至多被处理一次；`完成` 之后才建登录会话或发令牌。目的 `link`、`step-up`、`enroll` 复用这台机器，终态动作不同，见「终态动作」。逐条迁移、答复与副作用见「答复与迁移」。
 
 ```mermaid
 stateDiagram-v2
@@ -393,6 +393,10 @@ stateDiagram-v2
     第二因素 --> 失败: 次数用尽 超时
     第二因素 --> 就绪: 一个种类不同的因素通过
     登记因素 --> 就绪: 因素登记完成 完成时才启用 本次登录不计入保障等级
+    登记因素 --> 重证口令: 租户要求引起的登记完成
+    重证口令 --> 策略判定: 口令再次证明
+    重证口令 --> 重证口令: 口令被拒后重试 每流程至多八次答复
+    重证口令 --> 失败: 次数用尽 超时
     就绪 --> 完成: complete 建登录会话或发令牌
     完成 --> [*]: 流程记录转墓碑
     失败 --> [*]: 流程记录转墓碑
@@ -520,7 +524,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `binding` | 绑定秘密的 SHA-256；外部回跳与每次答复都以请求带来的流程令牌重算后常量时间比对 |
 | `account`、`proof` | 解析出的账户标识与方法交出的证明，解析之后才有 |
 | `pending` | 待建号的开户事实：账户解析判定要开户之后、用户名与口令取得之前，方法交出的开户所需部分（外部身份或手机标识、来源租户、`EmailVerified`、显示名、属性、`Aliases`）与开户用途；显示名在短信首登的这一步由当事人选填，在社交首登与 `user-confirm` 的企业即时开通取提供方的值，任何一条路径没有给出时建号取用户名。`claim` 策略的企业即时开通不使用它：用户名来自断言，解析直接建户。它只在 kv 的流程记录里，账户、绑定、标识与成员关系行在用户名答复之前都不存在 |
-| `mfa` | `{required, offered, challenge_ref, attempts, passed, enrolled}`：`passed` 是第二因素通过的结论，形如 `{methods, user_verified}`，供完成时经 `MFA.Assurance` 合成保障等级；`enrolled` 是 `enroll` 状态里已登记的因素标识（因素行在 `MFA.Enroll` 的最后一步已置为启用，记录只留它的标识） |
+| `mfa` | `{required, offered, challenge_ref, attempts, passed, enrolled, enroll_multi}`：`passed` 是第二因素通过的结论，形如 `{methods, user_verified}`，供完成时经 `MFA.Assurance` 合成保障等级；`enrolled` 是 `enroll` 状态里已登记的因素标识（因素行在 `MFA.Enroll` 的最后一步已置为启用，记录只留它的标识）；`enroll_multi` 为真表示这次登记由账户所属租户的 `require-mfa` 引起，登记完成不结束登录，流程转入 `reprove` |
 | `method_state` | 方法私有状态：OAuth 的 `state` 摘要、PKCE（[REF-rfc7636](../../../references.md)）校验串、`nonce`；SAML 的请求标识与提供方标识；WebAuthn 仪式数据 |
 | `method_step` | 方法自己的步名，`FlowState.Step` 取它：方法在 `StepPrompt` 上命名的步（如口令的 `new_password`），答复时按它分派回方法 |
 | `merged` | 恒为假；自动并入不再发生，完成时不再执行 A10。读到旧的 `merged = true` 记录按流程失效处理 |
@@ -530,7 +534,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `locale` | `Begin` 时取到的请求语言：`i18n.FromContext` 定下的那个（`localeOf`），取不到时为空串；没有 i18n 中间件的装配里 `localeOf` 退回读 `Accept-Language` 的第一个标签、原样带出。它原样交给 `SendCode.Locale`，由短信模块解析到载体声明的语言、落不到时用配置的默认语言 |
 | `created_at`、`expires_at` | 绝对到期，与键的生存期一致 |
 
-`state` 的取值是封闭集：`first`（第一因素）、`processing`（处理中，仅回跳类）、`signup`（待建号）、`second`（第二因素）、`enroll`（登记因素）、`ready`（就绪），以及终态墓碑 `done` 与 `failed`。墓碑与记录同寿，交换不改动过期。
+`state` 的取值是封闭集：`first`（第一因素）、`processing`（处理中，仅回跳类）、`signup`（待建号）、`second`（第二因素）、`enroll`（登记因素）、`reprove`（重证口令）、`ready`（就绪），以及终态墓碑 `done` 与 `failed`。墓碑与记录同寿，交换不改动过期。
 
 **记录格式与滚动升级。** 记录按拒绝未知字段解码，`v` 是格式版本，读到不认识的 `v` 一律拒绝。`provider` 与 `require_multi` 是记录的可选字段，都不抬高 `v`，缺省取各自的零值。滚动升级期里，旧二进制读到带 `provider` 的记录会因未知字段被拒读，新二进制读到旧记录时 `provider` 为空即与回跳路径不符——两条路径都 fail-closed，被拒的是该次回跳，用户重新开始。`require_multi` 缺省为假：新二进制读到缺该字段的旧记录时，完成复核按「账户无有效因素」取要求，对一份账户当时有有效因素的记录，这让完成按新鲜的第一因素核对，其窗口比开始时按的新鲜本地多因素更短，方向是更严而非放宽。在途流程因此作废或有界，窗口有界：流程 TTL 至多 30 分钟。
 
@@ -551,7 +555,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ### 状态一览
 
-流程记录的 `state` 是封闭集：`first`、`processing`、`signup`、`second`、`enroll`、`ready` 与终态墓碑 `done`、`failed`。下表的「当前动作」列是推进状态的一方，固定为登录引擎；方法只交出回答，不改写记录。
+流程记录的 `state` 是封闭集：`first`、`processing`、`signup`、`second`、`enroll`、`reprove`、`ready` 与终态墓碑 `done`、`failed`。下表的「当前动作」列是推进状态的一方，固定为登录引擎；方法只交出回答，不改写记录。
 
 | 状态 | 一句话含义 | 当前动作（登录引擎） | 直觉画面 |
 |---|---|---|---|
@@ -560,6 +564,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `signup` | 账户解析判定要开户，等用户名与口令 | 收集用户名，方法不参与这一步 | 门开了但屋里还没建好，先登记姓名 |
 | `second` | 第一因素已过，等第二因素 | 把可用因素清单交给客户端，`MFA` 校验 | 第一道门已过，第二道门正在点名 |
 | `enroll` | 策略要求登记因素 | 驱动 `MFA.Enroll`，本次登录不计入保障等级 | 门上要求装锁，装完才放行 |
+| `reprove` | 租户要求引起的登记已完成，等账户再次证明口令 | 用口令方法重证第一因素，通过后重新做策略判定 | 锁装好了，持钥匙的人要先证明还是他本人 |
 | `ready` | 认证已完成，等客户端取结果 | 等待 `step=complete`，终态动作尚未执行 | 门已开，通行证还没递出 |
 | `done` | 终态墓碑，终态动作已执行 | 拒绝后续答复，记录与流程同寿 | 票根撕下，通道关闭 |
 | `failed` | 终态墓碑，流程已作废 | 拒绝后续答复，用户重新开始 | 票已作废，回到队尾重排 |
@@ -642,7 +647,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ### 答复与迁移
 
-`POST B/flows/answer` 先校验绑定，读出记录，再核对：`seq` 等于记录的 `seq`，否则 `ErrStepOutOfOrder`；`step` 与记录状态相容，`answer` 在 `first` 或 `signup`，`factor` 只在 `second`，`enroll` 只在 `enroll`，`complete` 只在 `ready`；`answers` 未达 8。`seq`、`step` 与 `answers` 任一不符都应答 `flow-invalid`。`step=answer` 在 `first` 交给方法的 `Answer`，在 `signup` 由引擎按用户名处理；`step=factor` 与 `step=enroll` 交给 `MFA`，具体字段由因素决定（[authn-mfa](design-authn-mfa.md)）；`step=complete` 由引擎执行终态动作。
+`POST B/flows/answer` 先校验绑定，读出记录，再核对：`seq` 等于记录的 `seq`，否则 `ErrStepOutOfOrder`；`step` 与记录状态相容，`answer` 在 `first`、`signup` 或 `reprove`，`factor` 只在 `second`，`enroll` 只在 `enroll`，`complete` 只在 `ready`；`answers` 未达 8。`seq`、`step` 与 `answers` 任一不符都应答 `flow-invalid`。`step=answer` 在 `first` 交给方法的 `Answer`，在 `signup` 由引擎按用户名处理，在 `reprove` 交给口令方法的 `Answer`；`step=factor` 与 `step=enroll` 交给 `MFA`，具体字段由因素决定（[authn-mfa](design-authn-mfa.md)）；`step=complete` 由引擎执行终态动作。
 
 答复里的 `human_proof` 由引擎原样交给方法与因素；引擎自己不校验。`step=answer` 的短信方法把证明交给 `SMSCodes.Send`，`step=factor` 选中的因素种类是 `sms` 时由 `authn.mfa.sms` 把证明交给同一个 `Send`，两者都在发送入口、任何发送预算之前校验并消费。一次被拒绝的证明交 `StepRefused`，`submit` 类的一步保留流程记录（只计一次答复，记录等到期），对外的 403 或 400 与「开始流程」一致。
 
@@ -670,8 +675,14 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `second` | `StepThrottled`（`ScopeFactor` 退避中） | 不变 | 429 带 `Retry-After` | 无 |
 | `second` | `StepUnavailable` | 不变 | 503 | 无 |
 | `second` | 答复数用尽、超时 | `failed` | 401 `login-failed` | 无 |
-| `enroll` | 因素实现交出 `StepEnrolled` | `ready` | 200 | 因素标识存入记录的 `mfa.enrolled`；本次登记的因素不计入保障等级 |
+| `enroll` | 因素实现交出 `StepEnrolled`，该登记不是租户要求引起的 | `ready` | 200 | 因素标识存入记录的 `mfa.enrolled`；本次登记的因素不计入保障等级 |
+| `enroll` | 因素实现交出 `StepEnrolled`，该登记由租户的 `require-mfa` 引起（`mfa.enroll_multi` 为真） | `reprove`，随后由口令方法的提示步作答 | 200，`next` 是口令方法的挑战步 | 因素标识存入 `mfa.enrolled`；记录转入 `reprove`，引擎以口令方法重新开始第一因素，`seq` 与答复计数随该步推进 |
 | `enroll` | 因素实现交出 `StepRefused`（确认码不符等） | `enroll`，`seq` 不变，`answers` 加一；登记中的因素与方法的步保留 | 401 `login-failed`；成因是 `ErrPhoneRequired` 时按 403 `phone-required` 答 | 可原地重试确认码 |
+| `reprove` | `submit`，方法交出 `StepProven` | 策略判定，按结局落入 `second` 或 `ready`；刚登记的因素使账户有了有效因素，通常落入 `second` | 200 | 解析出的账户写回记录；刚登记的因素进入第二因素清单 |
+| `reprove` | `submit`，`StepProven`，解析出的账户与该流程登记因素的账户不同 | `failed` | 401 `login-failed` | 不把流程带到另一个账户；重证不能让一个本登录从未证明过的账户启用因素 |
+| `reprove` | `submit`，`StepRefused` | `reprove`，`seq` 不变，`answers` 加一；方法的步保留 | 401 `login-failed` | 可原地重试 |
+| `reprove` | `StepThrottled` / `StepUnavailable` | 不变 | 429 带 `Retry-After` / 503 | 无 |
+| `reprove` | 答复数用尽、超时 | `failed` | 401 `login-failed` | 无 |
 | `challenge` | 选中因素的 `Challenge` 交出 `StepRefused` | `second`，`seq` 不变，`answers` 加一；因素清单保留 | 401 `login-failed`；成因是 `ErrHumanVerificationRequired` 或 `ErrHumanProofTooLong` 时按 403 `human-verification-required` 或 400 答，成因是 `ErrPhoneRequired` 时按 403 `phone-required` 答，这些都不计登录失败指标与审计 | 可改选另一因素或重试 |
 | `ready` | `complete` | `done` | 见「终态动作」 | 终态动作 |
 | 任意 | `answers` 达 8、过期、`DELETE flows/current`、方法被 `disabled-methods` 关 | `failed` | 401 `flow-invalid` | 无 |
@@ -716,9 +727,9 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 自动并入不再发生；旧行为下已并入的账户按写入时的方式继续工作，不回溯改写（REQ-signin-034）。显式关联（`link`）不建会话；它按 A6 撤销发起会话之外的会话，不删除口令凭据。
 
-**策略判定。** 引擎调用 `MFA.Require(账户, Proof)`。结局的判据与可用清单的计算归 [authn-mfa](design-authn-mfa.md)；引擎按结局落入流程状态：`MFANone` 落入 `ready`，`MFAFactor` 落入 `second` 并把清单存入记录的 `mfa.offered`，`MFAEnroll` 落入 `enroll`。
+**策略判定。** 引擎调用 `MFA.Require(账户, Proof)`。结局的判据与可用清单的计算归 [authn-mfa](design-authn-mfa.md)；引擎按结局落入流程状态：`MFANone` 落入 `ready`，`MFAFactor` 落入 `second` 并把清单存入记录的 `mfa.offered`，`MFAEnroll` 落入 `enroll`。`MFAEnroll` 时引擎再经租户多因素要求接缝 `authn.TenantMFARequirement` 问一次账户所属的租户是否要求多因素，把结论记入 `mfa.enroll_multi`：真表示这次登记由租户要求引起，登记完成不结束登录，见「终态动作」。
 
-`MFAFactor` 的可用清单为空，或装配里没有账户所登记因素种类的实现时，该次登录无法完成，应答 `login-failed`，运维从日志与事件发现；不得当作账户没有因素。租户级的强度策略在请求期由 [tenant-admission](../tenant/design-tenant-admission.md) 执行，登录时账户全局、租户未知，登录期间的任何范围线索都能被绕开。
+`MFAFactor` 的可用清单为空，或装配里没有账户所登记因素种类的实现时，该次登录无法完成，应答 `login-failed`，运维从日志与事件发现；不得当作账户没有因素。租户级强度策略的请求期判定仍归 [tenant-admission](../tenant/design-tenant-admission.md)：它约束认证时刻不早于策略起算时刻的会话，约束的是进入该租户的请求。登录时引擎不按任何「目标租户」线索判定，口令证明已把账户确定下来，它读的是该账户自己的成员关系与这些租户的有效值（接缝由准入层交付）；任一租户要求而账户没有因素时，这次登录只能登记。由租户要求引起的登记在重证口令并用新因素通过第二因素之后才完成，所以登录期间不发放任何会话，进入应用的路在因素通过之前不存在。
 
 ### 终态动作
 
@@ -726,12 +737,12 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 | 目的 | 完成时 |
 |---|---|
-| `login` | 以 `MFA.Assurance` 合成强度；记录的 `mfa.enrolled` 非空（策略要求登记而账户没有因素的登录）时本次会话仍记单因素；`Sessions.Create` 建会话，`delivery=session` 时 `Kind` 为 `browser`、cookie 经 `Sessions.SetCookie` 写出，`delivery=token` 时 `Kind` 为 `token`、不写 cookie，并对该会话调 `Tokens.Issue` 与 `Tokens.NewRefresh`；账户 `Touch`；写 `authn.login` 审计（尽力）；发 `authn.login.succeeded`；请求带着可解析的旧会话 cookie（`Sessions.Current`）时经 `Sessions.Revoke` 撤销旧会话 |
+| `login` | 以 `MFA.Assurance` 合成强度；记录的 `mfa.enrolled` 非空且 `mfa.enroll_multi` 为假（账户级或全局级策略要求登记而账户没有因素的登录）时本次会话仍记单因素；`mfa.enroll_multi` 为真的登记在重证口令并再次以新因素通过第二因素之后才完成，会话记多因素；`Sessions.Create` 建会话，`delivery=session` 时 `Kind` 为 `browser`、cookie 经 `Sessions.SetCookie` 写出，`delivery=token` 时 `Kind` 为 `token`、不写 cookie，并对该会话调 `Tokens.Issue` 与 `Tokens.NewRefresh`；账户 `Touch`；写 `authn.login` 审计（尽力）；发 `authn.login.succeeded`；请求带着可解析的旧会话 cookie（`Sessions.Current`）时经 `Sessions.Revoke` 撤销旧会话 |
 | `link` | 复核；`AccountAdmin.LinkExternal`，外部身份已被别的账户占用则 409 `conflict`，不并入；这是账户侧显式绑定提供方的唯一路径，账户取记录的 `account`，不按提供方声明的地址选择账户（REQ-signin-017）；`Sessions.RevokeAccount(except = 发起会话)`；发 `authn.binding.changed`；不建新会话 |
 | `step-up` | 复核；`Sessions.Elevate` 更新等级、认证时刻与方式集并轮换令牌，不建新会话；cookie 会话写新 cookie，令牌会话在应答里带新访问令牌。`Elevation` 的方式集、等级与 `IDPAssured` 取 `MFA.Assurance`（以会话方式集构成的 `Proof` 与通过的 `Pass`）的结果 |
 | `enroll` | 复核；`Sessions.RevokeAccount(except = 发起会话)`；不改会话等级 |
 
-`login` 建会话时 `NewSession` 的取值：`Account` 是解析出的账户；`Methods` 是 `Proof.Methods` 加第二因素 `Pass.Methods`；`Assurance` 与 `IDPAssured` 取 `MFA.Assurance` 的结果（结局为 `MFAEnroll` 时为单因素、`IDPAssured` 为假）；`AuthTime` 是完成时刻；`Provider` 取 `Proof.Provider`，`Attributes` 取 `Proof.External.Attributes`；`Client` 取请求的 `ClientInfo`。令牌的 `IssueToken` 由同一份取值与 `Issued.ID` 构成。
+`login` 建会话时 `NewSession` 的取值：`Account` 是解析出的账户；`Methods` 是 `Proof.Methods` 加第二因素 `Pass.Methods`；`Assurance` 与 `IDPAssured` 取 `MFA.Assurance` 的结果（登记完成后直接结束的登录为单因素、`IDPAssured` 为假；租户要求引起的登记在重证口令并以新因素通过第二因素之后，以第二因素结论合成多因素）；`AuthTime` 是完成时刻；`Provider` 取 `Proof.Provider`，`Attributes` 取 `Proof.External.Attributes`；`Client` 取请求的 `ClientInfo`。令牌的 `IssueToken` 由同一份取值与 `Issued.ID` 构成。
 
 **完成应答体。** `login` 见「请求与应答的结构」的 `authenticated` 体（`delivery=session` 设 cookie 并回 `session`，`delivery=token` 回令牌对）。`step-up` 的 cookie 会话写新 cookie 并回与 `login` 一致的 `authenticated` 体，令牌会话回 `{"state":"elevated","token_type":"Bearer","access_token","expires_in"}`。`link` 回 `{"state":"linked"}`。`enroll` 回 `{"state":"enrolled"}`；因素行在 `MFA.Enroll` 的最后一步已置为启用，引擎不再调任何启用方法。`step-up`、`link`、`enroll` 在回跳类里的收尾形态见「回跳类的收尾」。
 
@@ -997,6 +1008,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 |---|---|---|
 | 根包登录接口：`LoginMethod`、`Start`、`FlowState`、`StepInput`、`Step` 及构造器、`Proof`、`Field` | 已实现 | `pkg/authn/login.go` `LoginMethod`、`StepPrompt`；`pkg/authn/ids.go` `Proof`、`Field`、`Start`、`FlowState`、`StepInput`；`pkg/authn/internal/step/step.go` `Step`、`Prompt`、`KindOf`、`ProofOf`；`pkg/authn/internal/model/flow.go` `Start`、`FlowState`、`StepInput`；`pkg/authn/internal/model/login.go` `Proof`、`Field` |
 | 登录引擎：流程记录、状态机、迁移、比较并交换 | 部分实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/engine.go`、`pkg/authn/login/flow.go` |
+| 租户要求引起的登录内登记：`reprove` 状态、`mfa.enroll_multi`、登记后重证口令并使用新因素 | 已实现 | `pkg/authn/login/flow.go` `stateReprove`、`mfaState.EnrollMulti`；`pkg/authn/login/engine.go` `(*routes).decidePolicy`、`(*routes).tenantRequiresMFA`；`pkg/authn/login/start.go` `(*routes).applyEnroll`；`pkg/authn/login/answer.go`、`pkg/authn/login/respond.go` `(*routes).nextOf`；`pkg/authn/login/login.go` `product.tenantMFA` |
 | 流程令牌的承载与绑定（cookie 与请求头载体） | 已实现 | `pkg/authn/login/flow.go`、`pkg/authn/login/callback.go` |
 | 账户解析与策略判定的引擎侧编排 | 部分实现 | `pkg/authn/login/engine.go`、`pkg/authn/login/identity.go`；`pkg/authn/login/internal/resolve` `Resolver`、`Result`、`Outcome` |
 | 首登开户建号前的一步（`signup` 状态、流程记录的 `pending`、用户名与口令答复及建号） | 已实现 | `pkg/authn/login/engine.go`、`pkg/authn/login/flow.go`、`pkg/authn/login/answer.go`、`pkg/authn/login/internal/resolve` |

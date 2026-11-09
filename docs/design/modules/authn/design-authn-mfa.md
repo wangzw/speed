@@ -7,7 +7,7 @@
 ## 职责
 
 - **登记因素。** 为账户的每个因素写一行 `authn_factors`，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据，[REF-rfc6238](../../../references.md)、[REF-webauthn](../../../references.md)）才放各因素子包自己的表。
-- **判定第二因素。** 在第一因素通过之后按账户级与全局级策略回答是否还要第二因素，并给出可用的因素清单；租户级策略在请求期执行，其中多因素要求只约束认证时刻不早于策略值最后写入时刻的会话，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
+- **判定第二因素。** 在第一因素通过之后按账户级、全局级与租户级策略回答是否还要第二因素，并给出可用的因素清单。租户级策略经接缝 `authn.TenantMFARequirement` 读账户所属租户的有效值，在登录时参与「只能登记」的判定；请求期的租户准入仍独立执行同一份要求，约束进入该租户的请求（[tenant.admission](../tenant/design-tenant-admission.md)）。
 - **编排因素的登记、发码与校验。** `MFA` 驱动各因素实现，并在自己这一处统一做失败退避、审计记录与事件发布，因素实现不做（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。
 - **合成保障等级。** 由 `MFA.Assurance` 计算整个认证功能目录唯一的保障等级，网关的校验后端、请求期的租户准入、`guard.Require` 与冒充发起读到的都是登录会话行里已记录的值。
 - **给出最高权限动作的因素要求。** 由 `MFA.Seasoned` 判定因素年龄，并约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
@@ -20,7 +20,7 @@
 ### 非职责
 
 - **不实现第一因素，也不驱动登录流程。** 第一因素的方法、流程记录与状态机、登记与加强认证的入口路由都在登录引擎（[authn-login](design-authn-login.md)）；本模块只被引擎经 `MFA` 调用。`authn.mfa.webauthn` 同时交付的通行密钥登录方法遵守同一份方法契约。
-- **不执行租户级 MFA 强制。** 登录时账户全局、租户未知，租户级强制只能在请求期判；多因素要求只约束认证时刻不早于策略值最后写入时刻的会话，因此开启策略不使既有会话失效。该判定属于 `tenant.admission`，它读本模块经登录会话行记录的强度与认证时刻。
+- **不执行请求期的租户准入判定。** 租户的 `require-mfa` 在请求期由 `tenant.admission` 执行；本模块只在登录时经接缝读取同一份有效值，回答「该账户是否只能登记一个因素」。开启策略不使既有会话失效，请求期只约束认证时刻不早于起算时刻的会话，这条判定属于准入层，它读本模块经登录会话行记录的强度与认证时刻。
 - **不做授权判定，不写 403。** 管理员重置因素的授权经 `Decider`，其接口与管理面路由在 [authn-admin](design-authn-admin.md)；本模块不认识角色。
 - **不实现短信验证码引擎与发送方。** 短信因素复用 `authn.sms` 的 `SMSCodes`（[authn-sms](design-authn-sms.md)）。
 - **不持有登录会话。** 加强认证完成后更新会话的是 `Sessions.Elevate`（[authn-session](design-authn-session.md)）；`MFA.Reset` 与删除因素时的撤销、轮换只经 `Sessions` 发起。`MFA.Remove` 本身不撤销会话、也不对会话作任何承诺，删除后的撤销与轮换由用户侧 DELETE 路由编排（见「删除与重置」）。
@@ -115,7 +115,7 @@ type MFA interface {
 | 方法 | 承诺 |
 |---|---|
 | `Factors` | 返回账户名下的因素行，含状态；不含任何种子、公钥或其他种类专属数据。 |
-| `Require` | 按「策略判定」一节的顺序回答结局；结局为 `MFAFactor` 时同时返回可用清单：状态为启用、且认证方式与 `first.Methods` 不相交的因素。清单可以为空，空清单即该次登录无法完成。结局按 `requirement` 账户的因素与策略取定，清单取 `proof` 账户的因素：两者在普通登录里是同一账户，冒充期间分别是生效账户与发起者自己的账户。 |
+| `Require` | 按「策略判定」一节的顺序回答结局；结局为 `MFAFactor` 时同时返回可用清单：状态为启用、且认证方式与 `first.Methods` 不相交的因素。清单可以为空，空清单即该次登录无法完成。结局按 `requirement` 账户的因素与策略取定，清单取 `proof` 账户的因素：两者在普通登录里是同一账户，冒充期间分别是生效账户与发起者自己的账户。租户级 `require-mfa` 经 `authn.TenantMFARequirement` 读取，读失败按「要求」处理。 |
 | `Challenge` | 对选定的因素发码或生成断言选项；先 `Throttle.Check`，退避中不发。TOTP 无事可做。 |
 | `Verify` | 先 `Throttle.Check`（`ScopeFactor`，键为因素标识），退避中不校验；再转调 `Factor.Verify`；失败 `Throttle.Fail`，成功 `Throttle.Succeed`；审计与事件在此统一。 |
 | `Enroll` | 登记的唯一入口：按种类核对上限（`max-per-kind`，验证器应用另封顶为 1，再登记即替换）、写待确认行、转调 `Factor.Enroll`、最后一步置启用。 |
@@ -302,8 +302,8 @@ flowchart TD
     A -->|是| F{"可用清单非空"}
     F -->|是| MF["MFAFactor：必须用清单里的一个"]
     F -->|否| X["该次登录无法完成：login-failed"]
-    A -->|否| R{"mfa_required 或 global-required"}
-    R -->|是| E["MFAEnroll：只能登记，本次记单因素"]
+    A -->|否| R{"mfa_required 或 global-required 或租户 require-mfa"}
+    R -->|是| E["MFAEnroll：只能登记，登记后的走向按要求的来源"]
     R -->|否| I{"IDPAsserted"}
     I -->|是| N2["MFANone：多因素，标 IDPAssured"]
     I -->|否| N3["MFANone：单因素完成"]
@@ -428,21 +428,24 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### 策略判定
 
-登录时 `MFA.Require` 的判定顺序，自上而下取第一条命中。账户级策略是账户的 `mfa_required`，全局级策略是设置 `authn.mfa.global-required`，租户级策略是 `tenant.admission.require-mfa`，不在本表。
+登录时 `MFA.Require` 的判定顺序，自上而下取第一条命中。账户级策略是账户的 `mfa_required`，全局级策略是设置 `authn.mfa.global-required`，租户级策略是账户所属租户的 `tenant.admission.require-mfa` 有效值（经 `authn.TenantMFARequirement` 读取）。
 
 | 条件 | 结果 |
 |---|---|
 | 第一因素带用户验证（`Proof.UserVerified`；登录断言要求用户验证，所以通行密钥第一因素即多因素） | 不要求第二因素；`MFA.Assurance` 记多因素 |
 | 账户有任何有效因素 | `MFAFactor`：必须用一个与第一因素种类不同的因素；即使第一因素是声明了多因素的 IdP，IdP 的声明盖不过账户自己的因素 |
-| 账户 `mfa_required` 为真，或 `global-required` 为真，而账户尚无有效因素 | `MFAEnroll`：只能登记；本次登录会话记单因素，登记的因素不计入本次保障等级 |
-| `Proof.IDPAsserted` 为真，而账户没有因素、也没有账户级与全局级的强制 | 不要求第二因素；`MFA.Assurance` 记多因素并标 `IDPAssured` |
+| 账户 `mfa_required` 为真，或 `global-required` 为真，或账户所属任一租户的 `require-mfa` 有效值为真，而账户尚无有效因素 | `MFAEnroll`：只能登记；登记完成后的走向由登录引擎按要求的来源决定（见其后两条） |
+| `Proof.IDPAsserted` 为真，而账户没有因素、也没有账户级、全局级与租户级的强制 | 不要求第二因素；`MFA.Assurance` 记多因素并标 `IDPAssured` |
 | 其余 | 单因素完成 |
 
 - **策略只加严，不放宽。** 任一级不得抵消另一级。
 - **第二因素的认证方式不得与第一因素已有的方式相交。** 可用清单已剔除相交者。短信登录之后不能用短信因素当第二因素：二者走同一条通道，对 SIM 劫持而言等于一个因素。账户只有同种类的因素时清单为空，该次登录无法完成，应答 `login-failed`，用户走管理员重置。
 - **因素实现缺席按「该因素不可用」处理。** 装配里没有某个因素种类的实现而账户有该种类的有效因素时，该因素不进可用清单，不得当作账户没有因素；账户没有任何可用因素时登录无法完成，运维从启动诊断（已登记的因素种类）与事件发现。
 - **没有「记住此设备」。** 除第一因素本身已证明两类因素（带用户验证的通行密钥）外，每次登录都要答第二因素。客户端留下的任何标记都不是服务端能证明的设备身份。
-- **租户级强制只在请求期判。** 登录时账户是全局的，任何范围线索都能被绕开。多因素要求与 SSO 要求都只约束自策略值最后写入时刻起建立的会话：开启策略后既有会话继续按其强度工作，下一次登录起受约束。
+- **账户级与全局级要求登记时，登记完成即完成登录，本次会话记单因素。** 登记的因素不计入本次保障等级；要得到多因素须下一次登录，或按「加强认证」再次证明口令后使用它。
+- **租户级要求登记时，登记完成不完成登录。** 登录引擎在 `MFAEnroll` 之后经同一接缝再问一次，把「由租户要求引起」记入流程；这样的登记完成之后，账户重新证明口令，刚登记的因素才作为第二因素提供，通过之后会话记多因素。这个次序使「本次会话期间登记的因素须在再次证明口令后使用」对租户强制登记同样成立；登录期间不发放会话。
+- **接缝读失败按「要求」处理。** `authn.TenantMFARequirement` 读不出结论时，账户按要求登记处理，登录不能在一个无法确立的要求上完成。
+- **请求期的租户准入独立执行同一份要求。** 租户的 `require-mfa` 与 `require-sso` 只约束认证时刻不早于起算时刻的会话：开启策略后既有会话继续按其强度工作，请求期判定归 [tenant.admission](../tenant/design-tenant-admission.md)。登录时的登记判定不按请求里的范围线索选择目标租户，读的是账户自己的成员关系。
 
 ### 保障等级的合成
 
@@ -457,7 +460,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 1. 提供方行显式开启信任（`trust_idp_mfa`），断言里带落在该行 `mfa_acr_values` 内的取值；`Proof.IDPAsserted` 即上述判定的结论。
 2. 账户没有任何有效因素。
-3. 账户 `mfa_required` 与全局 `global-required` 都不要求登记。
+3. 账户 `mfa_required`、全局 `global-required` 与账户所属租户的 `require-mfa` 都不要求登记。
 
 抬高时合成结果为多因素并标 `IDPAssured`，会话记 `idp_assured`。该多因素是 IdP 的声明，不是本地验证过的因素：
 
@@ -465,13 +468,13 @@ CREATE TABLE authn_webauthn_credentials (
 - 设了 `Requirement.Local` 的动作不采信它。
 - 本地因素完成加强认证后，`Elevation.IDPAssured` 为假，会话转为本地多因素。
 
-**调用约定。** 登录引擎只在结局为 `MFANone` 与第二因素通过之后调用 `Assurance`。结局为 `MFAEnroll` 的登录不调用它：会话记单因素，`Methods` 只含第一因素，`IDPAssured` 为假。第二因素通过时，`Assurance` 不抬高 `IDPAssured`：账户有有效因素即不满足采信条件。
+**调用约定。** 登录引擎只在结局为 `MFANone` 与第二因素通过之后调用 `Assurance`。结局为 `MFAEnroll` 且登记完成后直接结束的登录不调用它：会话记单因素，`Methods` 只含第一因素，`IDPAssured` 为假。租户要求引起的登记之后，账户重证口令并以刚登记的因素通过第二因素，引擎在这时按第二因素通过的情形调用 `Assurance`，合成多因素。第二因素通过时，`Assurance` 不抬高 `IDPAssured`：账户有有效因素即不满足采信条件。
 
-**本次会话期间登记的因素不抬高登记它们的这次登录的强度。** 这次登录的会话记单因素。要得到多因素，须下一次登录，或做加强认证：加强认证先要求账户再次证明口令，通过之后才提供本次会话期间登记的因素；启用时刻早于当前会话 `AuthTime` 的因素无需再次证明口令。
+**本次会话期间登记的因素不抬高登记它们的这次登录的强度。** 登记完成即结束的登录，会话记单因素。要得到多因素，须下一次登录，或做加强认证：加强认证先要求账户再次证明口令，通过之后才提供本次会话期间登记的因素；启用时刻早于当前会话 `AuthTime` 的因素无需再次证明口令。租户要求引起的登记是同一规则在登录内的实现：登记不结束登录，账户在同一条流程里重证口令，再用刚登记的因素通过第二因素。
 
 ### 请求期的租户级判定
 
-租户级 `require-mfa` 为真、会话的认证时刻不早于策略值最后写入时刻而 `Assurance` 低于多因素时，准入层应答 `401 insufficient_user_authentication`；更早建立的会话不经这条判定，开启策略不使其失效。`require-sso` 为真、会话的认证时刻不早于策略值最后写入时刻而未满足时应答 `401 sso_required`，`acr_values="sso"`；更早建立的会话不经这条判定；`IDPAssured` 的多因素只在该提供方所属的租户内计数。账户没有因素时同一应答告诉客户端去登记。`authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制多因素无人执行。判定顺序与应答在 [tenant.admission](../tenant/design-tenant-admission.md)。登记与加强认证的端点所在的端不受租户解析守卫，所以客户端总有路可走。
+租户级 `require-mfa` 为真、会话的认证时刻不早于策略值最后写入时刻而 `Assurance` 低于多因素时，准入层应答 `401 insufficient_user_authentication`；更早建立的会话不经这条判定，开启策略不使其失效。`require-sso` 为真、会话的认证时刻不早于策略值最后写入时刻而未满足时应答 `401 sso_required`，`acr_values="sso"`；更早建立的会话不经这条判定；`IDPAssured` 的多因素只在该提供方所属的租户内计数。账户没有因素时同一应答告诉客户端去登记。`authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制多因素无人执行。判定顺序与应答在 [tenant.admission](../tenant/design-tenant-admission.md)。登记与加强认证的端点所在的端不受租户解析守卫，所以客户端总有路可走。登录时的强制登记是同一要求的另一面：它保证开启策略之后的下一次登录不会以低于多因素的强度进入该租户；请求期的判定仍负责更早建立、仍然有效的会话。
 
 ### 统一收口：`Challenge`、`Verify`、`Enroll`
 
@@ -491,6 +494,8 @@ CREATE TABLE authn_webauthn_credentials (
 3. 写一行 `status=0` 的待确认行，转调 `Factor.Enroll`。可选名称取自第一步的 `input.label`，见下。
 4. 因素实现的最后一步交出 `StepEnrolled`，`MFA` 把行置为启用（`FactorActive`），写入 `activated_at`，写审计并发 `authn.factor.changed`（`enrolled`）。
 5. 引擎在完成时撤销该账户除发起会话之外的其余会话；会话的保障等级不变（[authn-login](design-authn-login.md)）。
+
+登录内由租户要求引起的登记不结束登录：引擎在 `StepEnrolled` 之后把流程转到 `reprove`，账户重证口令，刚登记的因素再作为第二因素提供（[authn-login](design-authn-login.md) 的「答复与迁移」）。这一步的次序不改变登记本身：因素行在 `MFA.Enroll` 的最后一步已置为启用。
 
 **放弃登记流程。** 引擎在删除流程记录前把流程的私有字节交给 `MFA.Abandon`；它从中取出这次流程写下的待确认行标识，按「仍为待确认」条件删除该行，并让该因素的实现清掉它为这行保存的数据。同一账户里另一条登记写下的待确认行不受影响；标识缺失、行已不在或已不是待确认时按无事发生处理，因此对同一流程重复放弃是安全的。回调失败只记日志，流程记录照常删除（[authn-login](design-authn-login.md)）。
 
@@ -686,6 +691,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `guard.Require` 与加强认证应答 | 已实现 | `pkg/authn/guard/guard.go` |
 | 加强认证的 `Elevate` 与仪式数据承载；归 [authn-session](design-authn-session.md) 与 [authn-login](design-authn-login.md) | 已实现 | `pkg/authn/session/sessions.go` `Elevate`；`pkg/authn/login/engine.go` |
 | 根包 import 守卫 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
+| `Require` 的租户级输入：`authn.TenantMFARequirement` 的读取与「读失败按要求处理」 | 已实现 | `pkg/authn/tenant_mfa.go` `TenantMFARequirement`；`pkg/authn/mfa/mfa.go` `product.tenantMFA`；`pkg/authn/mfa/policy.go` `Require`；`pkg/tenant/admission/mfa_requirement.go` `(*layer).RequiresMFA` |
 | operation 声明与对外契约片段生成：`openapi/mfa.json` | 已实现 | `pkg/authn/mfa/operations.go`；`pkg/authn/mfa/openapi_generated_test.go`；片段 `pkg/authn/mfa/openapi/mfa.json` |
 | 静态特性 `authn.mfa` 的声明 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/feature_test.go` `TestTheModuleDeclaresTheMultiFactorFeature` |
 | 找回途径中的匿名口令重置（因素保留、下一次登录仍过第二因素） | 已实现 | `pkg/authn/login/reset.go` `(*routes).passwordResetComplete`；`pkg/authn/login/reset_test.go` `TestResetKeepsTheSecondFactor` |

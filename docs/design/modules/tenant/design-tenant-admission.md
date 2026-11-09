@@ -10,11 +10,12 @@
 
 - 判定身份是否是请求所在租户的成员。成员关系的事实读自 `authn.Memberships`；静态口令表主体没有成员关系行，不是任何租户的成员。
 - 就非成员询问判定接口：不带冒充范围的非成员可经 `Decider` 的 `authn.tenant.access` 动作放行，缺省拒绝（[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)）。
-- 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。这类强度要求只能在请求期判，登录时账户全局，租户未知（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。两项要求都只约束认证时刻不早于起算时刻的会话：更早建立的会话按原强度继续工作，开启策略不使其失效，开启之后的每一次登录都受约束；准入层读取有效值时一并取得起算时刻。`tenant.admission.sso-exempt-tenants` 列出的租户不受 SSO 要求约束：该要求问的是「这次会话是不是经本租户自己的身份提供方登录」，而一个没有提供方的租户永远答不出是——平台自己的 `system` 租户就是这种租户，对它执行这条要求会拒绝该租户上的每一个请求，管理后台一并被关掉。成员关系与多因素要求对这些租户照常生效。
+- 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。请求期的准入判定是这类要求对访问的执行点：两项要求都只约束认证时刻不早于起算时刻的会话，更早建立的会话按原强度继续工作，开启策略不使其失效，开启之后的每一次登录都受约束；准入层读取有效值时一并取得起算时刻。登录时认证侧还经本层交付的 `authn.TenantMFARequirement` 读同一份有效值：账户是哪一个租户的成员由账户解析确定，不依赖请求里的范围线索；任一租户要求而账户没有因素时，这次登录只能登记一个因素，登记完成后重证口令并用新因素通过第二因素，登录期间不发放会话。这条登录时判定是「不让下一次登录以低于多因素的强度进来」的前置条件，不替代请求期对既有会话的判定。`tenant.admission.sso-exempt-tenants` 列出的租户不受 SSO 要求约束：该要求问的是「这次会话是不是经本租户自己的身份提供方登录」，而一个没有提供方的租户永远答不出是——平台自己的 `system` 租户就是这种租户，对它执行这条要求会拒绝该租户上的每一个请求，管理后台一并被关掉。成员关系与多因素要求对这些租户照常生效。
 - 执行冒充身份的租户范围：身份携带的 `Scope()` 与请求的租户不符，或请求没有租户上下文时拒绝（[ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。
 - 交付 `authn.ScopeGuard`：声明自己守哪些端，使网关与 `authn.impersonation` 不 import `pkg/tenant` 即可得知冒充身份能被放进哪些端。
 - 交付定序锚点 `(*tenant.Admission)(nil)`：授权功能目录（[authz](../design-authz.md)）与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
 - 报出每次判定的结果：指标 `tenant.admission.decisions`，以及每次拒绝一行日志。
+- 交付 `authn.TenantMFARequirement`：供登录引擎与多因素策略在登录时询问「账户所属的任一租户是否要求多因素」。它读本层已经持有的成员关系与同一份租户设置有效值，不新增存储，也不把登录的推进带回本层。
 
 准入层的判据是判定所需的输入：需要同时读身份与租户上下文的判定归本层；只读凭据与主体来源的归认证；角色与授权归授权功能目录。
 
@@ -30,7 +31,7 @@
 - **不合成保障等级。** 等级只在 `authn.mfa` 一处合成；准入层读身份上已盖章的 `Assurance()` 与 `AssuranceFromIDP()`（[design-authn-mfa](../authn/design-authn-mfa.md)）。
 - **不核对网关的挂载端是否落在自己所守的端里。** 这条核对由网关在 `Start` 里经 `ScopeGuard.Covers` 执行（[design-authn-gate](../authn/design-authn-gate.md)）；本模块只核对自己的清单落在解析层清单之内。
 - **不核对宿主有没有在所守的端上开租户解析的豁免。** `ScopeGuard.Covers` 只说准入层守哪些端。
-- **不约束账户登录。** 强度要求与冒充范围约束的是该租户内的请求；账户全局，仍可登录、仍可访问它所属的其他租户。
+- **不约束账户登录。** 强度要求与冒充范围约束的是该租户内的请求；账户全局，仍可登录、仍可访问它所属的其他租户。本层交付的 `authn.TenantMFARequirement` 只把「账户所属租户是否要求多因素」这一事实交给认证侧，登录流程的推进与会话的建立仍归 `authn.login`。
 - **不提供判定接口、成员关系或 IdP 登记的默认实现。** `Decider`、`SSOProviders` 缺席时的行为是判定的一部分，写在核心算法与流程。
 - **不决定哪条命令纳入准入层。** 模块无从知道自己出现在哪条命令下（[ADR-command-tree](../../../adr/adr-command-tree.md)）。
 
@@ -54,7 +55,7 @@
 
 | 登记单元 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标○） |
 |---|---|---|---|---|---|
-| `pkg/tenant/admission` | `tenant.admission` | `(*tenant.Admission)(nil)`、`(*authn.ScopeGuard)(nil)` | 两者均是 | `authn.Memberships`、`(*tenant.Resolution)(nil)` | `http.Router`、`authn.SSOProviders`○、`authn.Decider`○、`settings.Store`○、`event.Bus`○、`log.Logger`○、`observability.MeterProvider`○ |
+| `pkg/tenant/admission` | `tenant.admission` | `(*tenant.Admission)(nil)`、`(*authn.ScopeGuard)(nil)`、`(*authn.TenantMFARequirement)(nil)` | 三者均是 | `authn.Memberships`、`(*tenant.Resolution)(nil)` | `http.Router`、`authn.SSOProviders`○、`authn.Decider`○、`settings.Store`○、`event.Bus`○、`log.Logger`○、`observability.MeterProvider`○ |
 
 包导出自己的 `ModuleName` 常量，配置命名空间与设置键前缀取同一个取值。`Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：排他加 `StateAuto` 正是消解要禁用的那一格，是否运行是命令树上的决定（[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)）。
 
@@ -71,9 +72,15 @@ type ScopeGuard interface {
     // Covers 报告 endpoint 是否是准入层所守的端。
     Covers(endpoint string) bool
 }
+
+// pkg/authn：登录时的租户多因素要求，由准入层排他交付。
+type TenantMFARequirement interface {
+    // RequiresMFA 报告账户是否为某个要求多因素的租户的 active 成员。
+    RequiresMFA(ctx context.Context, id AccountID) (bool, error)
+}
 ```
 
-交付声明写作 `Provides: []core.Provision{{Token: (*tenant.Admission)(nil), Exclusive: true}, {Token: (*authn.ScopeGuard)(nil), Exclusive: true}}`。这些排他性不可局部违反：两层准入同时在链上时，一个请求被谁放行说不清。
+交付声明写作 `Provides: []core.Provision{{Token: (*tenant.Admission)(nil), Exclusive: true}, {Token: (*authn.ScopeGuard)(nil), Exclusive: true}, {Token: (*authn.TenantMFARequirement)(nil), Exclusive: true}}`。这些排他性不可局部违反：两层准入同时在链上时，一个请求被谁放行说不清；两个租户多因素要求提供方同时在场时，登录读到哪一个说不清。
 
 `tenant.Admission` 带一个**导出**的标记方法。接口在 `pkg/tenant` 根包、实现在 `pkg/tenant/admission`，别的包的类型无法实现带本包未导出方法的接口，用未导出方法时交付核对必然失败（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。授权功能目录只 import 根包，在授权阶段之内取 `(*tenant.Admission)(nil)` 作 `After` 锚点。
 
@@ -287,6 +294,17 @@ flowchart TD
 
 经 `authn.tenant.access` 放行的非成员终止判定，不再适用该租户的 `require-mfa` 与 `require-sso`：租户级强度要求约束的是该租户的成员，对放行者的强度要求由 `Decider` 的实现方决定。
 
+### 登录时的租户多因素要求
+
+`authn.TenantMFARequirement.RequiresMFA` 回答一个账户是否为某个要求多因素的租户的 active 成员。它不读请求的租户，也不接受任何范围线索：
+
+1. 读平台层 `tenant.admission.require-mfa`；平台层为真时直接回答真。设置存储缺席时没有可成立的要求，回答假。
+2. 列出该账户的全部成员关系，跳过非 active 的行。每一行的租户读自己的 `tenant.admission.require-mfa`；任一层为真即回答真。
+3. 平台层或某个租户层的读取失败以错误返回，调用方按要求处理：要求读不出来时不把它读成「不要求」。
+
+有效值与请求期的判定取同一个平台层 OR 租户层，因此登录时强制登记与请求期拒绝的是同一份要求。租户层写假在平台层为真时不让要求消失，与请求期的 OR 一致。这个判断只回答「是否要求」，不判断起算时刻：起算时刻约束的是既有会话，登录流程要建立的是一条新会话。
+
+
 ### 有效保障等级
 
 `require-mfa` 比对的是有效保障等级：身份的 `Assurance()`，但 `AssuranceFromIDP()` 为真时，只有 `SSOProviders.Tenant(Provider())` 等于本租户，多因素才保持多因素；提供方属于别的租户，或 `SSOProviders` 缺席，IdP 声明的多因素按单因素计，别的租户的 `require-mfa` 不认（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。`sso_exempt` 的成员须达到的多因素同样按有效保障等级比对。
@@ -417,6 +435,7 @@ flowchart TD
 | 经 `Decider` 的 `authn.tenant.access` 放行 | 已实现 | `pkg/tenant/admission/decide.go`；`pkg/authn/decide.go` `Decider` |
 | 成员、豁免与放行结果的缓存，以及 `authn.membership.changed` 订阅 | 已实现 | `pkg/tenant/admission/cache.go`；`pkg/tenant/admission/admission.go` |
 | 租户设置 `require-mfa`、`require-sso` 与 `check-ttl` 的声明与读取 | 已实现 | `pkg/tenant/admission/config.go`；`pkg/tenant/admission/admission.go` |
+| `authn.TenantMFARequirement` 的交付与登录时判定 | 已实现 | `pkg/authn/tenant_mfa.go` `TenantMFARequirement`；`pkg/tenant/admission/mfa_requirement.go` `(*layer).RequiresMFA`；`pkg/tenant/admission/admission.go` `Module` 的 `Provides` |
 | 指标 `tenant.admission.decisions`、拒绝日志与启动诊断 | 已实现 | `pkg/tenant/admission/admission.go`、`pkg/tenant/admission/decide.go` |
 
 依赖的接口在代码里的现状：

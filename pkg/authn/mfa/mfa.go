@@ -196,14 +196,18 @@ type product struct {
 	mounter  mount.Mounter
 
 	// What Init takes up. factors is read-only after Init.
-	factors  map[authn.FactorKind]authn.Factor
-	kinds    []authn.FactorKind
-	sessions authn.Sessions
-	audit    audit.Audit
-	bus      event.Bus
-	meters   *meters
-	settings *reader
-	logger   *slog.Logger
+	factors map[authn.FactorKind]authn.Factor
+	kinds   []authn.FactorKind
+	// tenantMFA is the seam that answers whether a tenant any member belongs to
+	// requires multi-factor. It is nil in an assembly that wires none, and then
+	// only the account and deployment policies decide.
+	tenantMFA authn.TenantMFARequirement
+	sessions  authn.Sessions
+	audit     audit.Audit
+	bus       event.Bus
+	meters    *meters
+	settings  *reader
+	logger    *slog.Logger
 
 	clock clock.Source
 	seen  *seenEvents
@@ -280,6 +284,9 @@ func (m *product) wire(reg *core.Registry) error {
 	}
 
 	if m.sessions, err = optional[authn.Sessions](reg, "the session store"); err != nil {
+		return err
+	}
+	if m.tenantMFA, err = optional[authn.TenantMFARequirement](reg, "the tenant multi-factor requirement"); err != nil {
 		return err
 	}
 	if m.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {

@@ -19,9 +19,9 @@ import (
 // one collaborator another's bytes would let it misread them.
 //
 // No shipped first-factor method keeps state of its own today, so the
-// stateFirst/stateProcessing branch has no production implementer yet. It is
-// kept because it is the designed seam for one that does: a redirect method
-// whose upstream transaction is still open while its flow is at its first
+// stateFirst/stateProcessing/stateReprove branch has no production implementer
+// yet. It is kept because it is the designed seam for one that does: a redirect
+// method whose upstream transaction is still open while its flow is at its first
 // factor or swapped to processing. Such a method implements MethodAbandoner
 // and gets the flow's private bytes handed over before the record is removed,
 // instead of waiting for the upstream transaction to lapse.
@@ -34,7 +34,7 @@ func (r *routes) abandonOwner(rec record) authn.MethodAbandoner {
 		}
 		owner, _ := r.mfa.(authn.MethodAbandoner)
 		return owner
-	case stateFirst, stateProcessing:
+	case stateFirst, stateProcessing, stateReprove:
 		method, ok := r.method(rec.Method)
 		if !ok {
 			return nil

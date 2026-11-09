@@ -1742,6 +1742,39 @@ describe('response guards reject a contract-violating 2xx', () => {
     })
   })
 
+  it('accepts the reprove state a tenant-required registration leaves the login at', async () => {
+    // Completing a factor enrollment under a tenant's require-mfa does not
+    // complete the login: the engine holds it at `reprove` so the password is
+    // proved again before the newly registered factor strengthens the
+    // session. That is an ordinary open step, not a protocol violation.
+    const harness = makeHarness({
+      [LOGIN_ANSWER]: () =>
+        openFlow({
+          seq: 3,
+          state: 'reprove',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'identifier', kind: 'text', required: true },
+              {
+                name: 'password',
+                kind: 'password',
+                required: true,
+                secret: true,
+              },
+            ],
+          },
+        }),
+    })
+    await expect(
+      harness.session.answerFlow({
+        seq: 2,
+        step: 'enroll',
+        input: { code: '123456' },
+      }),
+    ).resolves.toMatchObject({ seq: 3, state: 'reprove' })
+  })
+
   it('parses the profile identifiers, links and attribute set field by field', async () => {
     const harness = makeHarness({
       [LOGIN_ANSWER]: () => authenticatedCompletion(),

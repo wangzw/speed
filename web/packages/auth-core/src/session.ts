@@ -278,8 +278,10 @@ type ElevatedCompletion = Omit<AuthnLoginToken, 'refresh_token'> & {
  * enumeration listed only the three the client renders a prompt for;
  * 'ready' is reachable too (a submit step that reached the ready state
  * answers `next.kind: 'complete'` while still carrying
- * `state: 'ready'`), so it is part of the set rather than a protocol
- * violation. */
+ * `state: 'ready'`), and 'reprove' is the password an account proves
+ * again after a tenant's requirement made it register a factor in the
+ * same login, so both are part of the set rather than protocol
+ * violations. */
 export type AuthnFlowState =
   | (AuthnLoginFlow & { state: OpenFlowState; next: AuthnStep })
   | SessionCompletion
@@ -903,12 +905,16 @@ function parseStep(body: unknown): AuthnStep {
  * refuses it with a 401 -- so it is not in the set. 'signup' is the
  * pending-signup state a first login parks at until the username that
  * opens the account arrives; it answers with `step: 'answer'` like `first`
- * (the engine's answer handler). */
+ * (the engine's answer handler). 'reprove' is the password an account
+ * proves again after a tenant's requirement made the same login register
+ * a factor; it answers with `step: 'answer'` too, because the password
+ * method names its own challenge step. */
 const OPEN_FLOW_STATES = [
   'first',
   'processing',
   'second',
   'enroll',
+  'reprove',
   'ready',
   'signup',
 ] as const

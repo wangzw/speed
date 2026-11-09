@@ -249,10 +249,18 @@ type fakeMFA struct {
 	// engine forwarded.
 	challenges      int
 	challengeStates []authn.FlowState
+	// require, when set, answers each Require call so a case can script the
+	// outcome the flow sees at each first-factor proof. assure likewise composes
+	// the assurance from the arguments the completion hands it.
+	require func() (authn.MFAOutcome, []authn.FactorRecord, error)
+	assure  func(first authn.Proof, second *authn.Pass) authn.MFAResult
 }
 
 func (m *fakeMFA) Require(_ context.Context, proof, requirement authn.AccountID, first authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
 	m.required = append(m.required, requireCall{proof, requirement})
+	if m.require != nil {
+		return m.require()
+	}
 	return m.outcome, m.offered, m.reason
 }
 
@@ -265,7 +273,14 @@ type requireCall struct {
 func (m *fakeMFA) Factors(context.Context, authn.AccountID) ([]authn.FactorRecord, error) {
 	return m.factors, m.reason
 }
-func (m *fakeMFA) Assurance(authn.Proof, *authn.Pass) authn.MFAResult { return m.assurance }
+
+func (m *fakeMFA) Assurance(first authn.Proof, second *authn.Pass) authn.MFAResult {
+	if m.assure != nil {
+		return m.assure(first, second)
+	}
+	return m.assurance
+}
+
 func (m *fakeMFA) Challenge(_ context.Context, f authn.FlowState, factorID string) (authn.Step, error) {
 	m.challenges++
 	m.challengeStates = append(m.challengeStates, f)

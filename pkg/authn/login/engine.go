@@ -300,6 +300,19 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	// enrollment are bound to the account the flow was started on, so their record
 	// keeps it even when the proof was the operator's own.
 	if rec.Purpose == authn.PurposeLogin {
+		if rec.State == stateReprove && res.Account != authn.AccountID(rec.Account) {
+			// The password proved an account other than the one this flow
+			// registered the factor on. Carrying the flow onto it would let a
+			// re-proof enable a factor for an account whose password this login
+			// never proved, so the answer is a failed credential.
+			rec.State = stateFailed
+			if !r.swap(c, token, raw, rec) {
+				return
+			}
+			r.reportLogin(c.ctx, rec, outcomeFailed)
+			c.unauthorized(mount.CodeLoginFailed)
+			return
+		}
 		rec.Account = string(res.Account)
 	}
 	p := proof
@@ -478,7 +491,10 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 // decidePolicy sets the flow's next state from the multi-factor policy. A login
 // with a second factor becomes second, a login the policy requires a factor of
 // becomes enroll, and every other purpose and a login with no factor requirement
-// becomes ready. A step-up that started at the password because every factor was
+// becomes ready. An enrollment records whether a tenant's requirement caused it:
+// such a flow does not complete on the registration alone but goes on to prove
+// the password again and use the new factor, so the session it records is
+// multi-factor. A step-up that started at the password because every factor was
 // registered during the session offers those factors as its second step once the
 // password has been proved again.
 func (r *routes) decidePolicy(ctx context.Context, rec *record, proof authn.Proof) error {
@@ -507,10 +523,27 @@ func (r *routes) decidePolicy(ctx context.Context, rec *record, proof authn.Proo
 		rec.MFA.Offered = factorViews(offered)
 	case authn.MFAEnroll:
 		rec.State = stateEnroll
+		multi, terr := r.tenantRequiresMFA(ctx, authn.AccountID(rec.Account))
+		if terr != nil {
+			return fmt.Errorf("%w: %w", authn.ErrUnavailable, terr)
+		}
+		rec.MFA.EnrollMulti = multi
 	default:
 		return fmt.Errorf("%w: the policy gave an outcome outside its set", authn.ErrUnavailable)
 	}
 	return nil
+}
+
+// tenantRequiresMFA reports whether a tenant the account is an active member of
+// requires multi-factor authentication, as the injected seam answers. An
+// assembly that wires no seam has no tenant requirement. A read that fails is
+// carried out as an error: a login must not complete on a requirement it cannot
+// establish.
+func (r *routes) tenantRequiresMFA(ctx context.Context, account authn.AccountID) (bool, error) {
+	if r.tenantMFA == nil {
+		return false, nil
+	}
+	return r.tenantMFA.RequiresMFA(ctx, account)
 }
 
 // factorViews renders the offered factors for the client.

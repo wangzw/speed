@@ -11,11 +11,12 @@
  *    which is a settled completion (it carries an outcome);
  *  - the answer step a given open step expects. The server pairs the
  *    answer's `step` field with the record's live state -- `answer` only
- *    in `first`, `factor` only in `second`, `enroll` only in `enroll`,
- *    `complete` only in `ready` -- so the step name is a function of the
- *    reply's state, never of the step's rendered kind. A factor's
- *    challenge (state `second`, next.kind `challenge`) is still answered
- *    with `factor`, which is exactly the distinction this reader keeps.
+ *    in `first`, `signup` and `reprove`, `factor` only in `second`,
+ *    `enroll` only in `enroll`, `complete` only in `ready` -- so the step
+ *    name is a function of the reply's state, never of the step's
+ *    rendered kind. A factor's challenge (state `second`, next.kind
+ *    `challenge`) is still answered with `factor`, which is exactly this
+ *    distinction this reader keeps.
  */
 
 import type { AuthnFlowState } from '@speed/auth-core'
@@ -39,9 +40,9 @@ export function isSettledFlow(state: AuthnFlowState): state is SettledFlowState 
 
 /**
  * The answer step name the given open reply expects, derived from the
- * record's live state (see the module header). `first` and the
- * transient `processing` both answer the method with `answer`; only
- * `ready` takes the result with `complete`.
+ * record's live state (see the module header). `first`, the transient
+ * `processing`, `signup` and `reprove` all answer the method with
+ * `answer`; only `ready` takes the result with `complete`.
  */
 export function answerStepFor(state: OpenFlowState): AnswerStep {
   switch (state.state) {

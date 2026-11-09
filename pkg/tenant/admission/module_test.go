@@ -37,9 +37,10 @@ func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 	wantProvides := []core.Provision{
 		{Token: (*tenant.Admission)(nil), Exclusive: true},
 		{Token: (*authn.ScopeGuard)(nil), Exclusive: true},
+		{Token: (*authn.TenantMFARequirement)(nil), Exclusive: true},
 	}
 	if !slices.Equal(m.Provides, wantProvides) {
-		t.Fatalf("the module provides %+v, want the anchor and the guard, each exclusive", m.Provides)
+		t.Fatalf("the module provides %+v, want the anchor, the guard and the tenant requirement, each exclusive", m.Provides)
 	}
 	if m.Name != ModuleName || m.Prepare == nil || m.New == nil || m.Init == nil {
 		t.Fatal("a callback of the descriptor is missing")
@@ -61,11 +62,11 @@ func TestPrepareStatesEnabledNeverAuto(t *testing.T) {
 	}
 }
 
-// TestTheRegistryDeliversBothCapabilitiesFromOneInstance drives the real
+// TestTheRegistryDeliversEveryCapabilityFromOneInstance drives the real
 // registry to Init. The delivery check the registry runs on construction is
-// the one that matters: a product that lacked a method of either interface
+// the one that matters: a product that lacked a method of one of the interfaces
 // fails the drive with ErrUndeliveredCapability.
-func TestTheRegistryDeliversBothCapabilitiesFromOneInstance(t *testing.T) {
+func TestTheRegistryDeliversEveryCapabilityFromOneInstance(t *testing.T) {
 	err := fixture{}.drive(t, core.StageInit, func(_ context.Context, reg *core.Registry) error {
 		anchor, err := core.Resolve[tenant.Admission](reg)
 		if err != nil {
@@ -77,9 +78,15 @@ func TestTheRegistryDeliversBothCapabilitiesFromOneInstance(t *testing.T) {
 			t.Errorf("resolving the guard: %v", err)
 			return nil
 		}
+		requirement, err := core.Resolve[authn.TenantMFARequirement](reg)
+		if err != nil {
+			t.Errorf("resolving the tenant requirement: %v", err)
+			return nil
+		}
 		product, ok := anchor.(*layer)
-		if !ok || any(guard) != any(product) {
-			t.Errorf("the anchor is %T and the guard %T, want one instance of this module's product", anchor, guard)
+		if !ok || any(guard) != any(product) || any(requirement) != any(product) {
+			t.Errorf("the anchor is %T, the guard %T and the tenant requirement %T, want one instance of this module's product",
+				anchor, guard, requirement)
 			return nil
 		}
 		anchor.AdmissionLayer()
@@ -303,6 +310,9 @@ type hostAdmission struct{}
 
 func (*hostAdmission) AdmissionLayer()    {}
 func (*hostAdmission) Covers(string) bool { return true }
+func (*hostAdmission) RequiresMFA(context.Context, authn.AccountID) (bool, error) {
+	return false, nil
+}
 
 type wrapped struct{ *layer }
 

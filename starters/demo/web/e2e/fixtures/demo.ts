@@ -132,6 +132,12 @@ export const test = base.extend<{
    */
   platformRequireMFA: boolean
   /**
+   * Hold the tenant-layer admission policy `tenant.admission.require-mfa` on
+   * for the seeded tenant, so a member of that tenant who has no second factor
+   * must enrol one at login. Every other spec keeps the template's own seed.
+   */
+  tenantRequireMFA: boolean
+  /**
    * Replace the administrators of the named tenants. A spec that needs a tenant
    * with exactly one tenant-admin binding sets this; every other spec keeps the
    * default administrator list.
@@ -177,6 +183,7 @@ export const test = base.extend<{
   seedSystemTenantAdmin: [false, { option: true }],
   seedProtectedTenant: [false, { option: true }],
   platformRequireMFA: [false, { option: true }],
+  tenantRequireMFA: [false, { option: true }],
   tenantAdmins: [undefined, { option: true }],
   recentWindow: [undefined, { option: true }],
   mfaRequired: [false, { option: true }],
@@ -196,6 +203,7 @@ export const test = base.extend<{
       seedSystemTenantAdmin,
       seedProtectedTenant,
       platformRequireMFA,
+      tenantRequireMFA,
       tenantAdmins,
       recentWindow,
       mfaRequired,
@@ -218,6 +226,7 @@ export const test = base.extend<{
       seedSystemTenantAdmin,
       seedProtectedTenant,
       platformRequireMFA,
+      tenantRequireMFA,
       tenantAdmins,
       recentWindow,
       mfaRequired,

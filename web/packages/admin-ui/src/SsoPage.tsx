@@ -536,6 +536,7 @@ export function SsoPage({
               <WriteFeedbackRegion
                 outcome={listFeedback.outcome}
                 ssoRelogin={session === null ? undefined : relogin}
+                mfaRelogin={session === null ? undefined : relogin}
               />
             </Box>
           </SectionCard>
@@ -571,6 +572,7 @@ export function SsoPage({
               <WriteFeedbackRegion
                 outcome={formFeedback.outcome}
                 ssoRelogin={session === null ? undefined : relogin}
+                mfaRelogin={session === null ? undefined : relogin}
               />
             </Box>
           </SectionCard>
@@ -740,6 +742,7 @@ export function SsoPage({
               <WriteFeedbackRegion
                 outcome={domainsFeedback.outcome}
                 ssoRelogin={session === null ? undefined : relogin}
+                mfaRelogin={session === null ? undefined : relogin}
               />
             </Box>
           </SectionCard>

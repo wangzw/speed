@@ -872,7 +872,7 @@ export interface AuthnLoginFlow {
   next: AuthnLoginStep;
   /** The step number the next answer must echo */
   seq: number;
-  /** The flow's state: first, signup, second, enroll, ready, processing, done or failed */
+  /** The flow's state: first, signup, second, enroll, reprove, ready, processing, done or failed */
   state: string;
 }
 

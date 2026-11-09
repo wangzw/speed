@@ -381,3 +381,11 @@
 - **验收**：账户已有验证器应用时再登记一次，成功后清单里只有一个验证器应用，前一个用它的设置密钥算出的码被拒；再一次登记在验证码通过前被取消或输错码时，前一个仍可用且仍在清单里；没有已启用的验证器应用时才新增第一个。通行密钥不受此限，仍可保有多条。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
+
+### REQ-security-046
+
+当账户是某个要求多因素认证的租户的 active 成员、且账户尚无已启用的两步验证方式时，系统必须在这次登录流程内强制其登记一个方式；登记完成后必须重新证明第一因素，再用刚登记的方式通过第二因素，之后才建立多因素会话。登记与第二因素通过之前不得发放任何会话。
+
+- **验收**：这样的账户以口令登录后停在登记步骤，应用其余部分不可达；完成验证器应用登记后出现口令重证步骤，重证通过后列出刚登记的方式作为第二因素；通过后进入组织首页，会话为多因素。租户未要求多因素，或账户已有已启用方式时，不出现这次强制登记；要求生效之前建立的会话不受影响。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-required-mfa-enrollment.spec.ts` `tenant-required-mfa-enrollment: a required factor is enrolled, the password proved again, and the new factor used before the session exists`

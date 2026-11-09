@@ -198,6 +198,7 @@ type product struct {
 	emailReset    authn.EmailResetCodeSender
 	sso           authn.SSOProviders
 	provisioner   authn.Provisioner
+	tenantMFA     authn.TenantMFARequirement
 	store         settings.Store
 	audit         audit.Audit
 	bus           event.Bus
@@ -287,6 +288,9 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.provisioner, err = optional[authn.Provisioner](reg, "the provisioning hook"); err != nil {
+		return err
+	}
+	if p.tenantMFA, err = optional[authn.TenantMFARequirement](reg, "the tenant multi-factor requirement"); err != nil {
 		return err
 	}
 	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {

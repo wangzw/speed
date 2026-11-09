@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -98,8 +100,10 @@ type memberStub struct {
 	rows        map[cacheKey]authn.Membership
 	err         error
 	rowErr      error
+	tenantsErr  error
 	isMemberN   int
 	membershipN int
+	tenantsN    int
 	// during runs inside IsMember, before it answers.
 	during func()
 }
@@ -136,6 +140,34 @@ func (m *memberStub) failRow(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.rowErr = err
+}
+
+// failTenants arms a failure of the membership listing.
+func (m *memberStub) failTenants(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tenantsErr = err
+}
+
+// Tenants lists every row a case wrote for the account, by tenant. It reads the
+// same rows Membership answers from, so a case that sets a row sees it here too.
+func (m *memberStub) Tenants(_ context.Context, id authn.AccountID) ([]authn.Membership, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tenantsN++
+	if m.tenantsErr != nil {
+		return nil, m.tenantsErr
+	}
+	var out []authn.Membership
+	for key, row := range m.rows {
+		if key.account == id {
+			out = append(out, row)
+		}
+	}
+	slices.SortFunc(out, func(a, b authn.Membership) int {
+		return strings.Compare(a.Tenant, b.Tenant)
+	})
+	return out, nil
 }
 
 func (m *memberStub) IsMember(_ context.Context, id authn.AccountID, tenantID string) (bool, error) {

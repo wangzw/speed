@@ -615,6 +615,15 @@ export const journeys: readonly JourneyEntry[] = [
     ],
   },
   {
+    journey: 'journey-tenant-required-mfa-enrollment.md',
+    status: 'covered',
+    covers: [
+      'REQ-security-008',
+      'REQ-security-010',
+      'REQ-security-046',
+    ],
+  },
+  {
     journey: 'journey-tenant-sso-required.md',
     status: 'covered',
     covers: [

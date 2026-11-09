@@ -20,14 +20,16 @@ import (
 // The states of the flow machine. The set is closed: first is the first factor,
 // processing is the moment a callback's answer is being handled, signup is the
 // username a first login collects before it opens an account, second is the
-// second factor, enroll is a registration, ready is a flow whose steps are done,
-// and done and failed are the two tombstones.
+// second factor, enroll is a registration, reprove is the password an account
+// proves again after a requirement made it register a factor in this flow, ready
+// is a flow whose steps are done, and done and failed are the two tombstones.
 const (
 	stateFirst      = "first"
 	stateProcessing = "processing"
 	stateSignup     = "signup"
 	stateSecond     = "second"
 	stateEnroll     = "enroll"
+	stateReprove    = "reprove"
 	stateReady      = "ready"
 	stateDone       = "done"
 	stateFailed     = "failed"
@@ -121,7 +123,10 @@ type record struct {
 // mfaState is the second-factor part of a flow. offered is the usable factors
 // the step-up flow is to show, each with the label the client displays; passed
 // is the conclusion of the second factor that held; enrolled is the identifier
-// of a factor a registration has made, for the completion to enable.
+// of a factor a registration has made, for the completion to enable. enrollMulti
+// records that a tenant's requirement made the policy answer MFAEnroll: the
+// registration does not complete the login, which then re-proves the password
+// and uses the new factor before it records a multi-factor session.
 type mfaState struct {
 	Required     bool         `json:"required,omitempty"`
 	Offered      []factorView `json:"offered,omitempty"`
@@ -129,6 +134,7 @@ type mfaState struct {
 	Attempts     int          `json:"attempts,omitempty"`
 	Passed       *passState   `json:"passed,omitempty"`
 	Enrolled     string       `json:"enrolled,omitempty"`
+	EnrollMulti  bool         `json:"enroll_multi,omitempty"`
 }
 
 // passState is the conclusion of a second factor that held, kept so that the

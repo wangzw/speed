@@ -239,6 +239,7 @@
     "passkeyFailedSignIn": "Passkey sign-in didn't complete. Try again.",
     "redirectNotice": "This verification continues on an external page, which this dialog does not open.",
     "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first.",
+    "mfaEnrollRequired": "This organization requires multi-factor authentication, but this account has no two-step verification set up. Add a verification method under Two-step verification in the account settings, then sign in again.",
     "goToAccount": "Go to account settings",
     "restart": "Restart verification"
   },
