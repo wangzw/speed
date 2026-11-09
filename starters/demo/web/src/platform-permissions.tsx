@@ -101,13 +101,13 @@ export interface PermissionReadState {
    * `perms` only when this still names the tenant it is rendering for: the
    * tenant domain set belongs to the tenant the request resolved to, and a
    * switched tenant must never read the previous tenant's set. */
-  readonly tenantAlias: string | null
+  readonly tenantName: string | null
   /** The sets the last settled read attached, or null while unknown -- a read
    * is pending, the last read failed, or no read has been issued. The system
    * set is the tenant-independent platform set; the tenant set is the one
-   * held in `tenantAlias`. */
+   * held in `tenantName`. */
   readonly perms: AuthPermissionSets | null
-  /** A read is in flight for `tenantAlias`; `perms` is not yet its answer. */
+  /** A read is in flight for `tenantName`; `perms` is not yet its answer. */
   readonly pending: boolean
   /** The last read failed: the sets are unknown, not empty. */
   readonly failed: boolean
@@ -118,14 +118,14 @@ export interface PermissionReadState {
 /** The part of the read state the read itself produces; `retry` belongs to
  * the provider's control surface, not to an attempt. */
 interface PermissionOutcome {
-  readonly tenantAlias: string | null
+  readonly tenantName: string | null
   readonly perms: AuthPermissionSets | null
   readonly pending: boolean
   readonly failed: boolean
 }
 
 const NO_READ_OUTCOME: PermissionOutcome = {
-  tenantAlias: null,
+  tenantName: null,
   perms: null,
   pending: false,
   failed: false,
@@ -160,8 +160,8 @@ export function usePermissionRead(): PermissionReadState {
  */
 export function useTenantPermissionSet(): readonly string[] | null {
   const read = usePermissionRead()
-  const tenantAlias = useCurrentTenant()
-  if (read.tenantAlias !== tenantAlias || read.perms === null) {
+  const tenantName = useCurrentTenant()
+  if (read.tenantName !== tenantName || read.perms === null) {
     return null
   }
   return read.perms.tenant
@@ -190,7 +190,7 @@ export function PlatformPermissions({
   const retry = useCallback(() => setAttempt((current) => current + 1), [])
   const value = useMemo<PermissionReadState>(
     () => ({
-      tenantAlias: outcome.tenantAlias,
+      tenantName: outcome.tenantName,
       perms: outcome.perms,
       pending: outcome.pending,
       failed: outcome.failed,
@@ -257,7 +257,7 @@ function usePlatformPermissions(
   // The tenant the host currently resolves requests to. It is not part of the
   // session snapshot -- the tenant area settles and switches it -- so it is
   // read from the host's own cell and joins the identity as a re-read key.
-  const tenantAlias = useCurrentTenant()
+  const tenantName = useCurrentTenant()
   const features = useFeatureState()
   const ready = features.state === 'ready'
   // The newest read this component issued. A read captures the value it bumps
@@ -270,19 +270,19 @@ function usePlatformPermissions(
   useEffect(() => {
     const issuedSequence = sequence.current + 1
     sequence.current = issuedSequence
-    if (!authenticated || !ready || tenantAlias === null) {
+    if (!authenticated || !ready || tenantName === null) {
       // Nothing is read: no answer belongs to this state. The tagged set is
       // unknown for the tenant the host holds, and a previous failure no
       // longer describes this state.
-      publish({ tenantAlias, perms: null, pending: false, failed: false })
+      publish({ tenantName, perms: null, pending: false, failed: false })
       return undefined
     }
-    const issuedAlias = tenantAlias
+    const issuedName = tenantName
     // The answer applies only while it is still the newest read and the tenant
     // it was issued for is still the current one.
     const applies = (): boolean =>
       sequence.current === issuedSequence &&
-      getCurrentTenant() === issuedAlias
+      getCurrentTenant() === issuedName
     // Resetting to unknown belongs to this read, not to the identity-change
     // action that prompted it: the sets must go unknown immediately before a
     // new read is issued, so a read that hangs or is refused leaves the admin
@@ -290,7 +290,7 @@ function usePlatformPermissions(
     session.setPermissionSet(PLATFORM_DOMAIN, null)
     session.setPermissionSet(TENANT_DOMAIN, null)
     publish({
-      tenantAlias: issuedAlias,
+      tenantName: issuedName,
       perms: null,
       pending: true,
       failed: false,
@@ -304,7 +304,7 @@ function usePlatformPermissions(
         session.setPermissionSet(PLATFORM_DOMAIN, answer.platform)
         session.setPermissionSet(TENANT_DOMAIN, answer.tenant)
         publish({
-          tenantAlias: issuedAlias,
+          tenantName: issuedName,
           perms: { system: answer.platform, tenant: answer.tenant },
           pending: false,
           failed: false,
@@ -317,7 +317,7 @@ function usePlatformPermissions(
         // The sets were reset to unknown above and stay there: a failed read
         // says nothing about which permissions the caller holds.
         publish({
-          tenantAlias: issuedAlias,
+          tenantName: issuedName,
           perms: null,
           pending: false,
           failed: true,
@@ -334,7 +334,7 @@ function usePlatformPermissions(
     session,
     principalId,
     impersonating,
-    tenantAlias,
+    tenantName,
     attempt,
     publish,
   ])

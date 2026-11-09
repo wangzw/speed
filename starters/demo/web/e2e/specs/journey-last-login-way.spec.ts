@@ -491,14 +491,20 @@ async function claimAndVerifyDomain(
     .getByRole('listitem')
     .filter({ hasText: enterpriseIdentityProviderDomain })
   await expect(domainRow).toHaveCount(1)
-  const verifyButton = domainRow.getByRole('button', {
-    name: copy('adminUi', 'sso.domains.verifyAria', {
+  const domainActions = domainRow.getByRole('button', {
+    name: copy('adminUi', 'sso.domains.actionsAria', {
       domain: enterpriseIdentityProviderDomain,
     }),
     exact: true,
   })
-  await expect(verifyButton).toBeVisible()
-  await verifyButton.click()
+  await expect(domainActions).toBeVisible()
+  await domainActions.click()
+  const verifyItem = page.getByRole('menuitem', {
+    name: copy('adminUi', 'sso.domains.verify'),
+    exact: true,
+  })
+  await expect(verifyItem).toBeVisible()
+  await verifyItem.click()
 
   await expect(
     page.getByText(

@@ -1,6 +1,6 @@
 /**
  * TenantCreatePage: the shared form in platform mode, the profile fields
- * it sends, the display-name requirement, the alias rules, a refused
+ * it sends, the display-name requirement, the name rules, a refused
  * registration's error text, and the host hand-off on success.
  */
 
@@ -21,22 +21,22 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 const orgZh = orgCreateUiResources['zh-CN'] as unknown as {
   readonly fields: {
     readonly id: string
-    readonly alias: string
+    readonly name: string
     readonly displayName: string
     readonly description: string
     readonly contactEmail: string
     readonly website: string
   }
-  readonly validation: { readonly required: string; readonly aliasReserved: string }
+  readonly validation: { readonly required: string; readonly nameReserved: string }
   readonly submit: string
 }
 
 async function fill(
   user: ReturnType<typeof userEvent.setup>,
-  overrides: Partial<Record<'alias' | 'displayName' | 'description' | 'contactEmail' | 'website', string>> = {},
+  overrides: Partial<Record<'name' | 'displayName' | 'description' | 'contactEmail' | 'website', string>> = {},
 ) {
   const values = {
-    alias: 'acme',
+    name: 'acme',
     displayName: 'Acme Ltd',
     description: 'A team',
     contactEmail: 'team@example.com',
@@ -72,18 +72,18 @@ describe('TenantCreatePage', () => {
     ).toHaveAccessibleDescription(orgZh.validation.required)
   })
 
-  it('shows a reserved alias in place before the first submit', async () => {
+  it('shows a reserved name in place before the first submit', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(makeAdminBackend())
     renderWithProviders(<TenantCreatePage onCreated={vi.fn()} />, {
       operations,
     })
 
-    await user.type(screen.getByLabelText(orgZh.fields.alias), 'admin')
+    await user.type(screen.getByLabelText(orgZh.fields.name), 'admin')
 
     expect(
-      screen.getByLabelText(orgZh.fields.alias),
-    ).toHaveAccessibleDescription(orgZh.validation.aliasReserved)
+      screen.getByLabelText(orgZh.fields.name),
+    ).toHaveAccessibleDescription(orgZh.validation.nameReserved)
   })
 
   it('registers with every profile field and hands the tenant to the host', async () => {
@@ -95,7 +95,7 @@ describe('TenantCreatePage', () => {
           received = input
           return Promise.resolve(
             tenantFixture({
-              alias: input.alias,
+              name: input.name,
               displayName: input.displayName,
               description: input.description,
               contactEmail: input.contactEmail,
@@ -112,7 +112,7 @@ describe('TenantCreatePage', () => {
     })
 
     await fill(user, {
-      alias: '  acme  ',
+      name: '  acme  ',
       displayName: '  Acme Ltd  ',
       description: '  A team  ',
     })
@@ -122,14 +122,14 @@ describe('TenantCreatePage', () => {
       expect(onCreated).toHaveBeenCalledTimes(1)
     })
     expect(received).toEqual({
-      alias: 'acme',
+      name: 'acme',
       displayName: 'Acme Ltd',
       description: 'A team',
       contactEmail: 'team@example.com',
       website: 'https://example.com',
     })
     expect(onCreated.mock.calls[0]?.[0]).toMatchObject({
-      alias: 'acme',
+      name: 'acme',
       displayName: 'Acme Ltd',
     })
   })
@@ -151,7 +151,7 @@ describe('TenantCreatePage', () => {
     expect(
       await screen.findByText(zhCN.errors.tenant.conflict),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText(orgZh.fields.alias)).toHaveValue('acme')
+    expect(screen.getByLabelText(orgZh.fields.name)).toHaveValue('acme')
     expect(screen.getByLabelText(orgZh.fields.displayName)).toHaveValue(
       'Acme Ltd',
     )
@@ -166,7 +166,7 @@ describe('TenantCreatePage', () => {
           received = input
           return Promise.resolve(
             tenantFixture({
-              alias: input.alias,
+              name: input.name,
               displayName: input.displayName,
             }),
           )

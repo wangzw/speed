@@ -26,10 +26,10 @@ import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
-  getCurrentTenantAlias,
+  getCurrentTenantName,
   getCurrentTenant,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from './chrome.js'
 import { clearSelfTenants } from './tenant-self.js'
 import { renderDemoApp } from './test-utils/render.js'
@@ -65,7 +65,7 @@ const ORGANIZATION_FEATURES = readyFeatures(
 
 interface TenantRow {
   readonly id: string
-  readonly alias: string
+  readonly name: string
   readonly kind: 'business' | 'personal'
 }
 
@@ -100,7 +100,7 @@ function tenantRole(role: string): TenantRoleRow {
 }
 
 type PermissionsFor = (
-  alias: string | null,
+  name: string | null,
 ) => PermissionAnswer | Promise<PermissionAnswer>
 
 /** Scripts the reads the entry and the two pages depend on, recording every
@@ -129,7 +129,7 @@ function scriptReads(options: {
     }
     if (path === PERMISSIONS_PATH) {
       return Promise.resolve(
-        options.permissionsFor(getCurrentTenantAlias()),
+        options.permissionsFor(getCurrentTenantName()),
       ).then((answer) => answer as T)
     }
     if (path === '/api/v1/auth/impersonation') {
@@ -189,7 +189,7 @@ function scriptReads(options: {
       return Promise.resolve({
         profile: {
           id: 'acme',
-          alias: 'acme',
+          name: 'acme',
           displayName: '',
           description: '',
           contactEmail: '',
@@ -303,7 +303,7 @@ async function switchOrganization(
   // others; the pick closes the menu.
   await user.click(
     within(menu).getByRole('menuitem', {
-      name: getCurrentTenantAlias() ?? '',
+      name: getCurrentTenantName() ?? '',
     }),
   )
   await user.click(await screen.findByRole('menuitem', { name }))
@@ -360,11 +360,11 @@ function expectOrganizationAbsent(
 
 /** The four organization entries' labels, in the declarations' order. */
 const ORGANIZATION_ENTRY_LABELS = [
+  tAdmin('organization.nav.profile'),
   tAdmin('organization.nav.invitations'),
   tAdmin('organization.nav.sso'),
   tAdmin('organization.nav.roles'),
   tAdmin('organization.nav.settings'),
-  tAdmin('organization.nav.profile'),
 ] as const
 
 /** Every organization permission, so all five declarations are openable. */
@@ -379,7 +379,7 @@ const ALL_ORGANIZATION_PERMISSIONS = [
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenant('acme')
-  setTenantAliases(new Map([['acme', 'acme']]))
+  setTenantNames(new Map([['acme', 'acme']]))
   clearSelfTenants()
 })
 
@@ -387,7 +387,7 @@ describe('the organization admin entry', () => {
   it('appears in both account menus for a business tenant that grants the organization permissions', async () => {
     const user = userEvent.setup()
     mountApp({
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: [...ALL_ORGANIZATION_PERMISSIONS],
@@ -414,7 +414,7 @@ describe('the organization admin entry', () => {
     // lists first, or a card that drifts to another page passes unnoticed.
     const cardAnchor = entry.card?.closest('a')
     const firstHref = entry.header.firstHref
-    expect(firstHref).toBe('/organization/admin/invitations')
+    expect(firstHref).toBe('/organization/admin/profile')
     expect(entry.sidebar.firstHref).toBe(firstHref)
     expect(cardAnchor?.getAttribute('href')).toBe(firstHref)
 
@@ -432,12 +432,12 @@ describe('the organization admin entry', () => {
   it('does not appear for a personal tenant', async () => {
     const user = userEvent.setup()
     setCurrentTenant('personal-account-1')
-    setTenantAliases(new Map([['personal-account-1', 'my-space']]))
+    setTenantNames(new Map([['personal-account-1', 'my-space']]))
     mountApp({
       tenants: [
         {
           id: 'personal-account-1',
-          alias: 'my-space',
+          name: 'my-space',
           kind: 'personal',
         },
       ],
@@ -451,7 +451,7 @@ describe('the organization admin entry', () => {
   it('does not appear for the system tenant', async () => {
     const user = userEvent.setup()
     setCurrentTenant('system')
-    setTenantAliases(new Map([['system', 'system']]))
+    setTenantNames(new Map([['system', 'system']]))
     mountApp({
       tenants: [],
       permissionsFor: () => ({ platform: [], tenant: ['authn.membership.manage'] }),
@@ -464,7 +464,7 @@ describe('the organization admin entry', () => {
   it('does not appear while the session impersonates another account', async () => {
     const user = userEvent.setup()
     mountApp({
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({ platform: [], tenant: ['authn.membership.manage'] }),
       impersonating: true,
       impersonationGrant: true,
@@ -480,7 +480,7 @@ describe('the organization admin entry', () => {
   it('does not appear while the tenant permission read is pending', async () => {
     const user = userEvent.setup()
     const { requested } = mountApp({
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       // A read that never answers: the entry must wait, not guess.
       permissionsFor: () => new Promise<PermissionAnswer>(() => undefined),
     })
@@ -495,11 +495,11 @@ describe('the organization admin entry', () => {
     let settleGlobex: (value: PermissionAnswer) => void = () => undefined
     const { requested } = mountApp({
       tenants: [
-        { id: 'acme', alias: 'acme', kind: 'business' },
-        { id: 'globex', alias: 'globex', kind: 'business' },
+        { id: 'acme', name: 'acme', kind: 'business' },
+        { id: 'globex', name: 'globex', kind: 'business' },
       ],
-      permissionsFor: (alias) =>
-        alias === 'acme'
+      permissionsFor: (name) =>
+        name === 'acme'
           ? { platform: [], tenant: ['authn.membership.manage'] }
           : new Promise<PermissionAnswer>((resolve) => {
               settleGlobex = resolve
@@ -541,7 +541,7 @@ describe('the organization admin entry', () => {
   it('navigates to each organization page from the account menu', async () => {
     const user = userEvent.setup()
     mountApp({
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: [...ALL_ORGANIZATION_PERMISSIONS],
@@ -550,11 +550,11 @@ describe('the organization admin entry', () => {
     await screen.findByText(demoEnUS.home.heading)
 
     const destinations = [
+      [tAdmin('organization.nav.profile'), '/organization/admin/profile'],
       [tAdmin('organization.nav.invitations'), '/organization/admin/invitations'],
       [tAdmin('organization.nav.sso'), '/organization/admin/sso'],
       [tAdmin('organization.nav.roles'), '/organization/admin/roles'],
       [tAdmin('organization.nav.settings'), '/organization/admin/settings'],
-      [tAdmin('organization.nav.profile'), '/organization/admin/profile'],
     ] as const
     for (const [label, path] of destinations) {
       await user.click(screen.getByTestId('user-menu-trigger'))
@@ -571,7 +571,7 @@ describe('the organization admin entry', () => {
   it('renders each organization entry as an anchor to its route', async () => {
     const user = userEvent.setup()
     mountApp({
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: [...ALL_ORGANIZATION_PERMISSIONS],
@@ -580,11 +580,11 @@ describe('the organization admin entry', () => {
     await screen.findByText(demoEnUS.home.heading)
 
     const destinations = [
+      [tAdmin('organization.nav.profile'), '/organization/admin/profile'],
       [tAdmin('organization.nav.invitations'), '/organization/admin/invitations'],
       [tAdmin('organization.nav.sso'), '/organization/admin/sso'],
       [tAdmin('organization.nav.roles'), '/organization/admin/roles'],
       [tAdmin('organization.nav.settings'), '/organization/admin/settings'],
-      [tAdmin('organization.nav.profile'), '/organization/admin/profile'],
     ] as const
     await user.click(screen.getByTestId('user-menu-trigger'))
     const menu = await screen.findByRole('menu')
@@ -610,7 +610,7 @@ describe('the organization admin entry', () => {
   it('leaves a modified click on an organization entry to the browser', async () => {
     const user = userEvent.setup()
     mountApp({
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: [...ALL_ORGANIZATION_PERMISSIONS],
@@ -656,7 +656,7 @@ describe('the organization admin route admission', () => {
   it('renders a page only with the permission scoped to the current tenant', async () => {
     const { requested } = mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({ platform: [], tenant: ['authn.membership.manage'] }),
     })
     expect(
@@ -671,7 +671,7 @@ describe('the organization admin route admission', () => {
   it('sends the viewer to the first page the tenant admits when the page code is unheld', async () => {
     const { requested } = mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       // SSO is openable; invitations is not. The guard redirects to the
       // first openable declaration.
       permissionsFor: () => ({ platform: [], tenant: ['authn.idp.manage'] }),
@@ -693,8 +693,8 @@ describe('the organization admin route admission', () => {
     mountApp({
       path: '/organization/admin/invitations',
       tenants: [
-        { id: 'acme', alias: 'acme', kind: 'business' },
-        { id: 'globex', alias: 'globex', kind: 'business' },
+        { id: 'acme', name: 'acme', kind: 'business' },
+        { id: 'globex', name: 'globex', kind: 'business' },
       ],
       permissionsFor: () => ({
         platform: [],
@@ -769,7 +769,7 @@ describe('the organization admin route admission', () => {
     const user = userEvent.setup()
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => Promise.reject(new Error('permission read refused')),
     })
     expect(
@@ -796,7 +796,7 @@ describe('the organization admin route admission', () => {
     const user = userEvent.setup()
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       features: { state: 'failed', error: new Error('feature read refused') },
       permissionsFor: () => ({
         platform: [],
@@ -855,7 +855,7 @@ describe('the organization admin route admission', () => {
 
     await act(async () => {
       settleRetry({
-        tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+        tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       })
     })
     // The retry settles the admission into the page it retried for.
@@ -866,13 +866,13 @@ describe('the organization admin route admission', () => {
 
   it('still sends a personal tenant direct visit to the tenant home', async () => {
     setCurrentTenant('personal-account-1')
-    setTenantAliases(new Map([['personal-account-1', 'my-space']]))
+    setTenantNames(new Map([['personal-account-1', 'my-space']]))
     mountApp({
       path: '/organization/admin/invitations',
       tenants: [
         {
           id: 'personal-account-1',
-          alias: 'my-space',
+          name: 'my-space',
           kind: 'personal',
         },
       ],
@@ -891,7 +891,7 @@ describe('the organization admin route admission', () => {
 
   it('still sends the system tenant direct visit to the tenant home', async () => {
     setCurrentTenant('system')
-    setTenantAliases(new Map([['system', 'system']]))
+    setTenantNames(new Map([['system', 'system']]))
     mountApp({
       path: '/organization/admin/invitations',
       tenants: [],
@@ -911,7 +911,7 @@ describe('the organization admin route admission', () => {
   it('still sends an impersonating viewer direct visit to the tenant home', async () => {
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: ['authn.membership.manage'],
@@ -951,7 +951,7 @@ describe('the organization admin route admission', () => {
     const user = userEvent.setup()
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       // A known, empty tenant permission set: a member, not a fault.
       permissionsFor: () => ({ platform: [], tenant: [] }),
     })
@@ -967,7 +967,7 @@ describe('the organization admin route admission', () => {
     const user = userEvent.setup()
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       // The feature document is ready but serves none of the organization
       // declarations: narrowing leaves no page to admit.
       features: readyFeatures(),
@@ -987,7 +987,7 @@ describe('the organization admin route admission', () => {
     const user = userEvent.setup()
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       features: { state: 'pending' },
       permissionsFor: () => ({
         platform: [],
@@ -1005,7 +1005,7 @@ describe('the organization admin route admission', () => {
   it('serves the organization SSO page without reading any platform asset', async () => {
     const { requested } = mountApp({
       path: '/organization/admin/sso',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({ platform: [], tenant: ['authn.idp.manage'] }),
     })
     expect(
@@ -1020,7 +1020,7 @@ describe('the organization admin route admission', () => {
   it('serves the organization roles page from the tenant namespace only', async () => {
     const { requested } = mountApp({
       path: '/organization/admin/roles',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: ['authz.tenant.role.read'],
@@ -1050,7 +1050,7 @@ describe('the organization admin route admission', () => {
     // mark, so a page that dropped the prop would show its write controls.
     mountApp({
       path: '/organization/admin/roles',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       roles: [tenantRole('tenant-admin'), tenantRole('editor')],
       permissionsFor: () => ({
         platform: [],
@@ -1090,14 +1090,20 @@ describe('the organization admin route admission', () => {
 
     // An ordinary tenant role keeps its write controls, so the absence above
     // distinguishes the host's protected mark from an empty action column.
+    const user = userEvent.setup()
+    const editorActions = screen.getByRole('button', {
+      name: tAdmin('permissions.roles.actionsAria', { role: 'editor' }),
+    })
+    expect(editorActions).toBeEnabled()
+    await user.click(editorActions)
     expect(
-      screen.getByRole('button', {
-        name: tAdmin('permissions.roles.manageGrantsAria', { role: 'editor' }),
+      await screen.findByRole('menuitem', {
+        name: tAdmin('permissions.roles.manageGrants'),
       }),
     ).toBeEnabled()
     expect(
-      screen.getByRole('button', {
-        name: tAdmin('permissions.roles.removeAria', { role: 'editor' }),
+      screen.getByRole('menuitem', {
+        name: tAdmin('permissions.roles.remove'),
       }),
     ).toBeEnabled()
   })
@@ -1105,7 +1111,7 @@ describe('the organization admin route admission', () => {
   it('serves the organization settings page from the tenant namespace only', async () => {
     const { requested } = mountApp({
       path: '/organization/admin/settings',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: ['settings.tenant.read'],
@@ -1128,7 +1134,7 @@ describe('the organization admin route admission', () => {
   it('sends a viewer without the roles code to the first page they may open', async () => {
     const { requested } = mountApp({
       path: '/organization/admin/roles',
-      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
       // Settings is openable and roles is not: the page guard redirects to
       // the admission's first enterable declaration.
       permissionsFor: () => ({
@@ -1149,11 +1155,11 @@ describe('the organization admin route admission', () => {
   })
 
   it('names the organization first in the breadcrumb without linking it', async () => {
-    // The organization's display name is the caller tenant list's alias.
+    // The organization's display name is the caller tenant list's name.
     const organizationName = 'acme'
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [{ id: 'acme', alias: organizationName, kind: 'business' }],
+      tenants: [{ id: 'acme', name: organizationName, kind: 'business' }],
       permissionsFor: () => ({
         platform: [],
         tenant: ['authn.membership.manage'],

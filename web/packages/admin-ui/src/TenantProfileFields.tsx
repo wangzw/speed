@@ -5,8 +5,8 @@
  * The organization surface's profile page and the platform console's tenant
  * detail both edit the same four values, so the shape, the wire conversion
  * and the client-side bounds live here once. The identity (identifier,
- * alias, state, creation time) is not part of this shape: it is read-only on
- * both surfaces, and the alias is the fallback a surface shows when the
+ * name, state, creation time) is not part of this shape: it is read-only on
+ * both surfaces, and the name is the fallback a surface shows when the
  * display name is empty.
  *
  * The bounds mirror the root module's profile rules (display name 100 runes,
@@ -17,7 +17,7 @@
  * the server and resolved through the console's error text.
  *
  * `displayNameOf` is the one fallback rule: a display name a surface can
- * show, or the alias when the profile names none.
+ * show, or the name when the profile names none.
  */
 
 /** The four descriptive fields in the spelling the views carry. */
@@ -84,9 +84,9 @@ export function profileWriteOf(fields: TenantProfileFields): TenantProfileWriteB
 }
 
 /** The name a surface shows for an organization: its display name, or the
- * alias when the profile names none. */
-export function displayNameOf(displayName: string, alias: string): string {
-  return displayName.trim() === '' ? alias : displayName
+ * name when the profile names none. */
+export function displayNameOf(displayName: string, name: string): string {
+  return displayName.trim() === '' ? name : displayName
 }
 
 /** A string's length in Unicode code points, the unit the server's rune
@@ -130,7 +130,7 @@ function looksLikeWebsite(value: string): boolean {
 /**
  * The fields the form refuses locally. Empty fields are always accepted --
  * every one of the four may be cleared, and the display name falling back to
- * the alias is the documented behaviour, not a mistake.
+ * the name is the documented behaviour, not a mistake.
  */
 export function validateTenantProfileFields(
   fields: TenantProfileFields,

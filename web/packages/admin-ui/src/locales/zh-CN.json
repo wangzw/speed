@@ -253,7 +253,7 @@
     "retry": "重试",
     "register": "登记组织",
     "column": {
-      "alias": "名称",
+      "name": "名称",
       "status": "状态",
       "actions": "操作"
     },
@@ -274,17 +274,17 @@
     "rename": {
       "label": "新名称",
       "submit": "改名",
-      "ariaWithAlias": "组织 {{alias}} 的新名称",
-      "submitAria": "为组织 {{alias}} 改名"
+      "ariaWithName": "组织 {{name}} 的新名称",
+      "submitAria": "为组织 {{name}} 改名"
     },
     "enable": "启用",
     "disable": "停用",
-    "enableAria": "启用组织 {{alias}}",
-    "disableAria": "停用组织 {{alias}}",
-    "created": "组织「{{alias}}」已登记",
-    "renamed": "组织「{{alias}}」的名称已更新",
-    "enabledToast": "组织「{{alias}}」已启用",
-    "disabledToast": "组织「{{alias}}」已停用"
+    "enableAria": "启用组织 {{name}}",
+    "disableAria": "停用组织 {{name}}",
+    "created": "组织「{{name}}」已登记",
+    "renamed": "组织「{{name}}」的名称已更新",
+    "enabledToast": "组织「{{name}}」已启用",
+    "disabledToast": "组织「{{name}}」已停用"
   },
   "forbidden": {
     "title": "权限不足",
@@ -342,9 +342,9 @@
     "sectionTitle": "所有权与删除",
     "sectionDescription": "把这个组织交给另一个账户，或永久终止它。",
     "transferLabel": "转移所有者",
-    "transferAria": "转移组织 {{alias}} 的所有者",
+    "transferAria": "转移组织 {{name}} 的所有者",
     "deleteLabel": "删除组织",
-    "deleteAria": "删除组织 {{alias}}",
+    "deleteAria": "删除组织 {{name}}",
     "transfer": {
       "title": "转移组织「{{name}}」的所有权",
       "description": "选择将成为组织所有者的人。原所有者会失去该组织内的全部角色，并被移出该组织。",
@@ -365,17 +365,17 @@
       "confirmLabel": "转移所有者",
       "failedNotFound": "这个组织已不存在。",
       "failedConflict": "转移被拒绝：新所有者必须已是这个组织的活跃成员，且其账户处于可用状态。请先把该账户添加为成员，然后再试。",
-      "success": "组织「{{alias}}」的所有者已转给 {{target}}。"
+      "success": "组织「{{name}}」的所有者已转给 {{target}}。"
     },
     "deleteConfirm": {
       "title": "确定删除组织「{{name}}」？",
       "message": "这会永久删除该组织：它的成员、角色、角色分配与权限都会被清除，名称也永不能再次使用。此操作无法撤销。",
-      "aliasLabel": "输入组织名称以确认",
-      "aliasHint": "请输入 {{alias}}。",
+      "nameLabel": "输入组织名称以确认",
+      "nameHint": "请输入 {{name}}。",
       "confirmLabel": "删除组织",
       "failedConflict": "这个组织已被删除。删除是终态。",
       "failedNotFound": "这个组织已不存在。",
-      "success": "组织「{{alias}}」已删除"
+      "success": "组织「{{name}}」已删除"
     }
   },
   "tenantDetail": {
@@ -389,7 +389,7 @@
     "retry": "重试",
     "summary": "概要",
     "field": {
-      "alias": "名称",
+      "name": "名称",
       "status": "状态",
       "disabledBy": "停用来源"
     },
@@ -399,9 +399,9 @@
       "renameSubmit": "改名",
       "enable": "启用",
       "disable": "停用",
-      "renamed": "组织「{{alias}}」的名称已更新",
-      "enabled": "组织「{{alias}}」已启用",
-      "disabled": "组织「{{alias}}」已停用"
+      "renamed": "组织「{{name}}」的名称已更新",
+      "enabled": "组织「{{name}}」已启用",
+      "disabled": "组织「{{name}}」已停用"
     },
     "related": {
       "title": "相关页面",
@@ -421,13 +421,13 @@
     "identity": {
       "title": "身份",
       "description": "这些信息标识这个组织，不能在此修改。",
-      "aliasHint": "名称在组织创建后固定，用于在链接中指代这个组织。"
+      "nameHint": "名称在组织创建后固定，用于在链接中指代这个组织。"
     },
     "owner": {
       "unnamed": "组织所有者"
     },
     "field": {
-      "alias": "名称",
+      "name": "名称",
       "owner": "所有者",
       "status": "状态",
       "createdAt": "创建时间",
@@ -471,8 +471,8 @@
         "button": "删除组织",
         "title": "删除「{{name}}」",
         "message": "删除后，这个组织及其成员关系会被标记为已删除，不再提供服务。名称不能再次使用，也没有恢复入口。",
-        "aliasLabel": "输入组织名称以确认",
-        "aliasHint": "请输入「{{alias}}」。",
+        "nameLabel": "输入组织名称以确认",
+        "nameHint": "请输入「{{name}}」。",
         "confirmLabel": "确认删除",
         "saved": "组织「{{name}}」已删除。"
       },

@@ -8,8 +8,8 @@
  * is named on the field it belongs to and the request is not sent.
  *
  * The four fields may all be cleared. The display name is the one with a
- * fallback: leaving it empty makes every surface show the alias, and the
- * field's placeholder is that alias so the operator can see what will be
+ * fallback: leaving it empty makes every surface show the name, and the
+ * field's placeholder is that name so the operator can see what will be
  * shown. Below `sm` the fields stack in one column; from `sm` the short ones
  * pair up and the description spans the width.
  */
@@ -40,10 +40,10 @@ export interface TenantProfileFormProps {
   /** Whether a write is in flight: the save control stays disabled and busy. */
   readonly saving: boolean
   /**
-   * The alias the organization is addressed by, shown as the display name's
+   * The name the organization is addressed by, shown as the display name's
    * placeholder so an empty field says what will be shown instead.
    */
-  readonly alias?: string
+  readonly name?: string
 }
 
 /** The label a local field refusal renders. */
@@ -70,7 +70,7 @@ export function TenantProfileForm({
   onChange,
   onSubmit,
   saving,
-  alias,
+  name,
 }: TenantProfileFormProps): ReactElement {
   const { t } = useAdminUiTranslation()
   const [errors, setErrors] = useState<TenantProfileFieldErrors>({})
@@ -124,7 +124,7 @@ export function TenantProfileForm({
         value={value.displayName}
         onChange={(event) => update('displayName', event.target.value)}
         label={t('tenantProfile.field.displayName')}
-        placeholder={alias}
+        placeholder={name}
         error={errors.displayName !== undefined}
         helperText={helperOf(
           'displayName',

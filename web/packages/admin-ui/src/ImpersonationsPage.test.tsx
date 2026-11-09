@@ -44,7 +44,7 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 const ZERO = '0001-01-01T00:00:00Z'
-const TENANT = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
 
 /** The end-reason labels a test injects into the namespace. */
 const END_REASON_LABELS = { revoked: 'end-reason-revoked' } as const
@@ -842,7 +842,7 @@ describe('ImpersonationsPage', () => {
             listTenants: () =>
               Promise.resolve([
                 TENANT,
-                tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
+                tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
               ]),
             listImpersonations,
           }),

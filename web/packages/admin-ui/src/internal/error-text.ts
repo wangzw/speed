@@ -68,7 +68,7 @@ export const ERROR_TEXT_CODES = [
   // <module>.<code> from the module's RFC 9457 problem `type`).
   //
   // tenant admin: a 400 shape refusal, the 409 a registration
-  // colliding with an existing identifier or alias (or a tombstone's write)
+  // colliding with an existing identifier or name (or a tombstone's write)
   // is answered with, and the 403 the host's write guard answers a write
   // into a protected tenant with.
   'tenant.bad_request',
@@ -77,7 +77,7 @@ export const ERROR_TEXT_CODES = [
   // org create (the demo host's self-service surface): the 409s a
   // creation is refused with -- another creation in flight, the
   // account's active-organization cap, and a generated identifier or
-  // alias collision -- and the 429 the hourly creation limit answers
+  // name collision -- and the 429 the hourly creation limit answers
   // with.
   'org.creation_in_progress',
   'org.identifier_unavailable',

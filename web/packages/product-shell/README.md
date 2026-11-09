@@ -184,10 +184,10 @@ bootstrapSpeedApp(document.getElementById('root')!, {
     clearMyDraft()
   },
   // Optional: the tenant every request announces as the tenant header
-  // (X-Tenant unless client.tenantHeader renames it) — the tenant ALIAS
+  // (X-Tenant unless client.tenantHeader renames it) — the tenant NAME
   // the backend's resolution layer looks up by name, read per attempt.
   // Omit it when the app makes no tenant-scoped calls.
-  tenantProvider: () => currentTenantAlias,
+  tenantProvider: () => currentTenantName,
 })
 ```
 
@@ -229,7 +229,7 @@ of them behaves exactly as the shipped defaults describe.
 | `client` | Options merged into `createClient`: `credentials` (`'same-origin'` — the default — or `'include'`), `reporter`, `retryPolicy`, `timeoutMs`, `fetch`, `tenantHeader`. |
 | `theme` | `projectTokens`, `defaultMode` and the preset pair `presets` / `defaultPreset`, forwarded to the `AppThemeProvider` inside the stack. `presets` is the shelf of named token diffs the provider may switch between (a host supplies the shipped `@speed/theme-presets` or its own); `defaultPreset` is the id to start at, and an id absent from the list falls back to its first entry rather than throwing. `projectTokens` follows the token role tones: a role's `main` is its light-surface tone and `light` its dark-surface tone, so a brand recolor names both. `defaultMode` is the initial color-mode preference and accepts `'system'`, which follows the device. |
 | `i18n` | Options merged into `createI18n`: `supportedLanguages`, `defaultLanguage`, `storageKey`, `urlParameterName`, `onMissingKey`, `profileLanguage`. |
-| `tenantProvider` | The tenant alias announced per request as the tenant header. See below for how it differs from the tenant id. |
+| `tenantProvider` | The tenant name announced per request as the tenant header. See below for how it differs from the tenant id. |
 | `documentLanguage` | `false` disables the `<html lang>` binding. |
 
 **`client.credentials` and deployment topology.** The session cookie is
@@ -240,13 +240,13 @@ deployment. A cross-origin **same-site** deployment (the API on
 the backend must accept credentials from that origin. A cross-**site**
 deployment is not supported: the session cookie refuses `SameSite=None`.
 
-**`tenantProvider` is the alias, not the tenant id.** The value is
+**`tenantProvider` is the name, not the tenant id.** The value is
 transported as the tenant header (`x-tenant` unless `client.tenantHeader`
 renames it) and is the name the backend's tenant resolution layer looks a
 tenant up by; the roster turns it into an identifier. It is a different
 fact from the tenant id `@speed/auth-core`'s `TenantProvider` carries,
-which is what host query keys are scoped by. A host whose aliases differ
-from its ids answers with the alias here and keeps the id in
+which is what host query keys are scoped by. A host whose names differ
+from its ids answers with the name here and keeps the id in
 `TenantProvider`.
 
 **Tenant white-labelling is runtime composition, not a definition

@@ -377,7 +377,7 @@ export function auditDetailNamesAccount(action: string, key: string): boolean {
  * One audit record's object. Only an object that starts with the account
  * marker names an account; its remainder is the account id and is resolved
  * through the account read. Every other object -- a session id (the same
- * opaque shape as an account id), a tenant alias, a role name, a permission
+ * opaque shape as an account id), a tenant name, a role name, a permission
  * code -- renders as recorded, unchanged, with no read and no neutral
  * fallback.
  */

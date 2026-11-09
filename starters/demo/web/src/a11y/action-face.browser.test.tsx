@@ -24,7 +24,7 @@ import { screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
-import { setCurrentTenant, setTenantAliases } from '../chrome.js'
+import { setCurrentTenant, setTenantNames } from '../chrome.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createBackend } from './backends.js'
 import {
@@ -80,12 +80,12 @@ function isPageAction(control: Element, scope: Element): boolean {
 beforeEach(async () => {
   await page.viewport(1280, 900)
   setCurrentTenant(SCAN_TENANT_ID)
-  setTenantAliases(new Map([[SCAN_TENANT_ID, SCAN_TENANT_ID]]))
+  setTenantNames(new Map([[SCAN_TENANT_ID, SCAN_TENANT_ID]]))
 })
 
 afterEach(() => {
   setCurrentTenant(null)
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
 })
 
 describe('account page action face in Chromium', () => {

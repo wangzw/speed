@@ -5,7 +5,7 @@
  * follows it. It never talks to the transport itself: the host supplies
  * `createOrganization` (the org.create operation mapped to this package's
  * submission shape) and `onCreated` (the host's switch to the new
- * organization -- recording its alias, settling it as current and
+ * organization -- recording its name, settling it as current and
  * re-reading the caller's tenants). After `onCreated` resolves the page
  * navigates to `successHref`; a failure there is a retry of the hand-over
  * alone, never a second creation, so a network fault after a landed write
@@ -34,7 +34,7 @@ import type { OrganizationCreateFailure } from './error-text.js'
 import { ORG_CREATE_UI_NAMESPACE } from './resources.js'
 import {
   EMPTY_ORGANIZATION_CREATE_VALUES,
-  aliasViolation,
+  nameViolation,
   normalizeOrganizationCreateValues,
   validateOrganizationCreateValues,
 } from './validation.js'
@@ -52,7 +52,7 @@ export interface OrganizationCreatePageProps {
     submission: OrganizationCreateSubmission,
   ) => Promise<CreatedOrganization>
   /**
-   * The host's hand-over after a landed creation: record the alias, settle
+   * The host's hand-over after a landed creation: record the name, settle
    * the new organization as current and re-read the caller's tenants. A
    * rejection is offered as a retry of this hand-over, not of the write.
    */
@@ -67,7 +67,7 @@ export interface OrganizationCreatePageProps {
 type Phase = 'idle' | 'creating' | 'switching' | 'switch-failed'
 
 /**
- * The violations to show before the first submit: only the alias, and
+ * The violations to show before the first submit: only the name, and
  * only once the operator has typed something, so an untouched form is not
  * painted with a required-field error.
  */
@@ -79,11 +79,11 @@ function visibleViolations(
   if (submitted) {
     return all
   }
-  if (values.alias.trim() === '') {
+  if (values.name.trim() === '') {
     return {}
   }
-  const alias = aliasViolation(values.alias)
-  return alias === undefined ? {} : { alias }
+  const name = nameViolation(values.name)
+  return name === undefined ? {} : { name }
 }
 
 export function OrganizationCreatePage({
@@ -147,7 +147,7 @@ export function OrganizationCreatePage({
     let organization: CreatedOrganization
     try {
       organization = await createOrganization({
-        alias: normalized.alias,
+        name: normalized.name,
         displayName: normalized.displayName,
         description: normalized.description,
       })

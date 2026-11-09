@@ -518,7 +518,7 @@ describe('AccountSettingsPage sections', () => {
     // is always a login name and offers none. The pane adds no new identifier
     // here.
     expect(
-      await screen.findByRole('button', {
+      await screen.findByRole('switch', {
         name: accountEnUS.identifiers.action.disable,
       }),
     ).toBeInTheDocument()

@@ -92,7 +92,7 @@ test.use({ seedMember: true })
  * row's label: the demo composes the matrix without a type-label override. */
 const TYPE_KEY = 'review.notice'
 
-/** The seeded tenant's name: the alias its organization row renders. */
+/** The seeded tenant's name, as its organization row renders it. */
 const TENANT_NAME = reviewMember.tenant
 
 /** Escape the characters a regular expression reads as syntax. */

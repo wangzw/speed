@@ -90,12 +90,12 @@ import { useAppServices } from './app-services.js'
 import {
   AppBrand,
   getCurrentTenant,
-  getRecordedTenantAlias,
+  getRecordedTenantName,
   getRecordedTenantDisplayName,
   getRecordedTenantKind,
   persistColorModePreference,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
   TenantRosterFailure,
   UserMenu,
   AccountEntry,
@@ -178,27 +178,27 @@ const ADMIN_PERMISSION_DOMAIN = 'system'
  * belongs to a business tenant. The chosen row is nameable from the list
  * itself. Null when the list is empty.
  */
-function defaultSelfTenantAlias(
-  tenants: readonly { readonly alias: string; readonly kind: string }[],
+function defaultSelfTenantName(
+  tenants: readonly { readonly name: string; readonly kind: string }[],
 ): string | null {
   return (
-    tenants.find((tenant) => tenant.kind !== 'personal')?.alias ??
-    tenants[0]?.alias ??
+    tenants.find((tenant) => tenant.kind !== 'personal')?.name ??
+    tenants[0]?.name ??
     null
   )
 }
 
 /**
  * Whether the host can name a tenant: either the caller tenant list holds the
- * row, or the roster's alias cache does (a platform staff member entering a
+ * row, or the roster's name cache does (a platform staff member entering a
  * tenant they are not a member of). A current tenant that no source names
  * would leave the caller in a tenant the bar cannot show and the switcher
  * cannot leave, while every tenant-scoped request is refused.
  */
-function tenantNameable(tenantAlias: string, self: SelfTenantState): boolean {
+function tenantNameable(tenantName: string, self: SelfTenantState): boolean {
   return (
-    self.tenants.some((tenant) => tenant.alias === tenantAlias) ||
-    getRecordedTenantAlias(tenantAlias) !== null
+    self.tenants.some((tenant) => tenant.name === tenantName) ||
+    getRecordedTenantName(tenantName) !== null
   )
 }
 
@@ -223,7 +223,7 @@ export function DemoApp({
       : ''
   const impersonating = authenticated && snapshot.impersonating
   // A session that ends leaves no identity for the host's current tenant or
-  // its alias map to belong to. Clear both module-level cells here, in the
+  // its name map to belong to. Clear both module-level cells here, in the
   // always-mounted root, so the clearing does not depend on which frame is
   // mounted: the admin area's session gate unmounts TenantFrame, and a
   // viewer who signs in again from there would otherwise inherit the ended
@@ -233,7 +233,7 @@ export function DemoApp({
   useEffect(() => {
     if (!authenticated) {
       setCurrentTenant(null)
-      setTenantAliases(new Map())
+      setTenantNames(new Map())
     }
   }, [authenticated])
   // The caller tenant list belongs to an identity, not to the page. Read it
@@ -241,10 +241,10 @@ export function DemoApp({
   // tenant frame, which the admin area and the sign-in surface do not mount
   // -- after forgetting the previous account's rows. It is read while
   // impersonating too: the answer is narrowed to the grant's tenant on the
-  // server, and it is the alias source the tenant area has after a full page
+  // server, and it is the name source the tenant area has after a full page
   // load, when the roster cache the operator read before is gone. The
   // switcher stays unmounted during an impersonation, so the list has no
-  // tenant to offer there; the alias it names is what the request surface
+  // tenant to offer there; the name it reports is what the request surface
   // announces.
   useEffect(() => {
     if (!authenticated) {
@@ -434,12 +434,12 @@ function AppFrame({
     // The organization's display name, the crumb's first step. The admission
     // having settled `allowed` guarantees the tenant is known; a row the
     // caller tenant list holds names it by display name, falling back to the
-    // alias, and the recorded cache covers a list that has not answered yet.
+    // name, and the recorded cache covers a list that has not answered yet.
     // The id is the last resort so the crumb never goes blank.
     const organizationRow =
       organizationAdmission.status === 'allowed'
         ? selfTenants.tenants.find(
-            (tenant) => tenant.alias === organizationAdmission.tenantAlias,
+            (tenant) => tenant.name === organizationAdmission.tenantName,
           )
         : undefined
     const organizationName =
@@ -447,11 +447,11 @@ function AppFrame({
         ? (organizationRow === undefined
             ? null
             : (organizationRow.displayName.trim() === ''
-                ? organizationRow.alias
+                ? organizationRow.name
                 : organizationRow.displayName)) ??
-          getRecordedTenantDisplayName(organizationAdmission.tenantAlias) ??
-          getRecordedTenantAlias(organizationAdmission.tenantAlias) ??
-          organizationAdmission.tenantAlias
+          getRecordedTenantDisplayName(organizationAdmission.tenantName) ??
+          getRecordedTenantName(organizationAdmission.tenantName) ??
+          organizationAdmission.tenantName
         : ''
     // The first step names the organization and is not a destination: the
     // organization surface has no root page of its own, so a link here could
@@ -475,8 +475,8 @@ function AppFrame({
       >
         {organizationAdmission.status === 'allowed' ? (
           <OrganizationAdminProvider
-            key={`organization-admin:${organizationAdmission.tenantAlias}`}
-            tenant={organizationAdmission.tenantAlias}
+            key={`organization-admin:${organizationAdmission.tenantName}`}
+            tenant={organizationAdmission.tenantName}
             operations={organizationAdminOperations}
             hasFeature={hasFeature}
             session={session}
@@ -682,19 +682,19 @@ function TenantFrame({
   const featuresReady = presence.state === 'ready'
   // The current tenant is a host fact (the server resolves it per request
   // from the request's tenant header). chrome.tsx holds the two values that
-  // come off it -- the switcher's identity and the alias the request surface
+  // come off it -- the switcher's identity and the name the request surface
   // carries -- and this state projects the identity for rendering; the setter
   // writes the cell too, so the value a request announces and the value the
   // chrome shows agree. It starts empty and is settled from the caller tenant
   // list (the personal row, then its first row) or, for platform staff, from
   // the roster's staff default first: until that settles, a tenant-scoped
-  // request announces no alias and is refused 404.
+  // request announces no name and is refused 404.
   // A frame mounting during an impersonation starts unknown too: the
   // module-level cell still holds the operator's tenant from before the
   // admin took over, and a first frame carrying it would issue one read
   // (and open one stream) under the impersonated session and the operator's
-  // alias before the status read settles the grant's tenant.
-  const [tenantAlias, selectTenantAlias] = useTenantSelection(
+  // name before the status read settles the grant's tenant.
+  const [tenantName, selectTenantName] = useTenantSelection(
     impersonating ? null : getCurrentTenant(),
   )
   // A switch made while the viewer is inside the organization admin area takes
@@ -704,13 +704,13 @@ function TenantFrame({
   // is where the new tenant's entry decides afresh whether that surface is
   // offered at all. The first settlement (null to a tenant) and the null
   // that follows a session end are not switches.
-  const previousTenantForSwitch = useRef<string | null>(tenantAlias)
+  const previousTenantForSwitch = useRef<string | null>(tenantName)
   useEffect(() => {
     const previous = previousTenantForSwitch.current
-    previousTenantForSwitch.current = tenantAlias
+    previousTenantForSwitch.current = tenantName
     if (
       previous !== null &&
-      previous !== tenantAlias &&
+      previous !== tenantName &&
       isOrganizationAdminPath(pathname) &&
       !(
         // An authenticated viewer whose tenant went unknown because the
@@ -718,14 +718,14 @@ function TenantFrame({
         // switching: the organization admission renders its pending or retryable
         // failure view in place. Redirecting here would replace that view
         // with the tenant home and hide the retry.
-        tenantAlias === null &&
+        tenantName === null &&
         authenticated &&
         !featuresReady
       )
     ) {
       navigate(TENANT_HOME_PATH)
     }
-  }, [tenantAlias, pathname, navigate, authenticated, featuresReady])
+  }, [tenantName, pathname, navigate, authenticated, featuresReady])
   // The caller's own tenant list: the memberships read the root loads, and
   // the fact the current tenant settles from. A read that has not settled
   // (a failure included) is not an empty answer, so the settlement never
@@ -767,14 +767,14 @@ function TenantFrame({
       setIdentitySettling(true)
     }
   }
-  // Read the platform roster for the aliases of tenants outside the caller's
+  // Read the platform roster for the names of tenants outside the caller's
   // own memberships (a staff member entering a tenant they do not belong to).
   // It is a platform management read: it is issued only when the platform
   // permission set is known and holds tenant.read, so an ordinary member
   // never spends a request that can only be refused. The read decides no
   // tenant and infers no membership: the current tenant is settled from the
   // caller's own list, and a failed read is a fault the switcher explains and
-  // retries -- the alias cache stands as it was.
+  // retries -- the name cache stands as it was.
   useEffect(() => {
     if (
       !authenticated ||
@@ -799,9 +799,9 @@ function TenantFrame({
         if (cancelled) {
           return
         }
-        setTenantAliases(
+        setTenantNames(
           new Map(
-            answer.tenants.map((tenant) => [tenant.alias, tenant.displayName]),
+            answer.tenants.map((tenant) => [tenant.name, tenant.displayName]),
           ),
         )
         setRosterFailed(false)
@@ -837,7 +837,7 @@ function TenantFrame({
   // a route that named one, or a previous settlement); then the first listed
   // membership that is not someone's personal tenant; then the list's first
   // row; otherwise the current tenant stays unknown and tenant-scoped reads
-  // stay disabled. The roster plays no part: it is a staff alias source, and
+  // stay disabled. The roster plays no part: it is a staff name source, and
   // a failed read decides nothing. A list that has not settled -- and left no
   // rows on hand -- is not an empty answer, so nothing is settled from it.
   useEffect(() => {
@@ -845,32 +845,32 @@ function TenantFrame({
       // The root already cleared the module-level cells; this keeps the
       // frame's own state in step while it stays mounted (the ending
       // session keeps rendering the sign-in surface until it flips).
-      selectTenantAlias(null)
+      selectTenantName(null)
       setTenantSettled(false)
       return
     }
     setTenantSettled(false)
     if (impersonating) {
-      // The grant names the tenant by its alias, the name the request surface
+      // The grant supplies the tenant's name, the name the request surface
       // announces. The impersonated account's own membership list is narrowed
       // to the grant's tenant on the server; until a source names it, the
       // current tenant stays unknown and tenant-scoped reads stay disabled,
       // rather than going out under a name no source holds.
       const granted = grant?.tenant ?? null
-      selectTenantAlias(granted)
+      selectTenantName(granted)
       setTenantSettled(granted !== null)
       return
     }
     if (!featuresReady) {
       // A pending or failed document never stands in for "no tenant": the
       // current tenant stays unknown.
-      selectTenantAlias(null)
+      selectTenantName(null)
       setIdentitySettling(false)
       return
     }
     // Keep a current tenant the host can name: a switch, a route that named
     // one, or a previous settlement. It must be nameable -- a row of the list
-    // or a roster alias -- or the caller would sit in a tenant the bar cannot
+    // or a roster name -- or the caller would sit in a tenant the bar cannot
     // show and the switcher cannot leave.
     const current = getCurrentTenant()
     if (
@@ -878,7 +878,7 @@ function TenantFrame({
       current !== null &&
       tenantNameable(current, selfState)
     ) {
-      selectTenantAlias(current)
+      selectTenantName(current)
       setTenantSettled(true)
       return
     }
@@ -886,7 +886,7 @@ function TenantFrame({
     // failure with no rows on hand is not an empty answer.
     const listUsable = selfState.settled || selfState.tenants.length > 0
     if (!listUsable) {
-      selectTenantAlias(null)
+      selectTenantName(null)
       // A read that has not answered yet has not decided the tenant either.
       // The identity-change gap stays open until the caller tenant read has
       // an outcome, or the switcher would state "no current tenant" against a
@@ -897,8 +897,8 @@ function TenantFrame({
       setIdentitySettling(false)
       return
     }
-    const next = defaultSelfTenantAlias(selfState.tenants)
-    selectTenantAlias(next)
+    const next = defaultSelfTenantName(selfState.tenants)
+    selectTenantName(next)
     setTenantSettled(next !== null)
     setIdentitySettling(false)
   }, [
@@ -910,7 +910,7 @@ function TenantFrame({
     // The grant's tenant is the impersonated session's only name source: the
     // effect must re-run when the status read answers it.
     grant?.tenant,
-    selectTenantAlias,
+    selectTenantName,
   ])
 
   // The router's navigate callback changes identity with the location, so an
@@ -922,35 +922,36 @@ function TenantFrame({
   }, [navigate])
 
   // The switcher's rows: every member tenant from the caller tenant read, in
-  // its alias order, plus the current tenant when the list does not
+  // its name order, plus the current tenant when the list does not
   // hold it -- a platform staff member entering a tenant they are not a member
-  // of. The added row is nameable through the roster's alias cache; when the
-  // cache has no alias either, the row is not added and the trigger shows its
+  // of. The added row is nameable through the roster's name cache; when the
+  // cache has no name either, the row is not added and the trigger shows its
   // no-current-tenant state (the documented limitation).
   const menuTenants: DemoTenant[] = selfState.tenants.map((tenant) => ({
-    // TenantOption.id is the tenant's alias in this host.
-    id: tenant.alias,
+    // TenantOption.id is the tenant's name in this host.
+    id: tenant.name,
     // `name` is the row's display label: the profile's display name when it
-    // names one, the alias otherwise. The menu's own helper applies the same
-    // fallback (and keeps a personal row on the account's name).
-    name: tenant.displayName.trim() === '' ? tenant.alias : tenant.displayName,
+    // names one, the request-surface name otherwise. The menu's own helper
+    // applies the same fallback (and keeps a personal row on the account's
+    // name).
+    name: tenant.displayName.trim() === '' ? tenant.name : tenant.displayName,
     displayName: tenant.displayName,
     kind: tenant.kind,
   }))
   if (
-    tenantAlias !== null &&
-    !menuTenants.some((row) => row.id === tenantAlias)
+    tenantName !== null &&
+    !menuTenants.some((row) => row.id === tenantName)
   ) {
-    const recordedDisplayName = getRecordedTenantDisplayName(tenantAlias)
-    if (getRecordedTenantAlias(tenantAlias) !== null) {
+    const recordedDisplayName = getRecordedTenantDisplayName(tenantName)
+    if (getRecordedTenantName(tenantName) !== null) {
       // The kind an operation's answer recorded lets the switcher label a row
       // the caller tenant read does not list yet; a row with none renders its
-      // alias.
+      // name.
       menuTenants.push({
-        id: tenantAlias,
-        name: recordedDisplayName ?? tenantAlias,
+        id: tenantName,
+        name: recordedDisplayName ?? tenantName,
         displayName: recordedDisplayName ?? undefined,
-        kind: getRecordedTenantKind(tenantAlias) ?? undefined,
+        kind: getRecordedTenantKind(tenantName) ?? undefined,
       })
     }
   }
@@ -982,8 +983,8 @@ function TenantFrame({
       ? undefined
       : {
           tenants: menuTenants,
-          tenantAlias,
-          onSelect: selectTenantAlias,
+          tenantName,
+          onSelect: selectTenantName,
           // The self-service entry is offered only while the feature is
           // served and the session is not impersonating; the whole section
           // is withheld during an impersonation anyway, which keeps the
@@ -1010,7 +1011,7 @@ function TenantFrame({
   // never disagree.
   const adminTarget = useAdminTarget(adminRoutes)
   const adminDestination: AccountMenuDestination | undefined =
-    adminTarget === null || tenantAlias !== 'system'
+    adminTarget === null || tenantName !== 'system'
       ? undefined
       : {
           id: 'admin',
@@ -1047,7 +1048,7 @@ function TenantFrame({
     )
 
   return (
-    <TenantProvider tenantId={tenantAlias}>
+    <TenantProvider tenantId={tenantName}>
       {/* The account's saved color-mode preference, mirrored onto the theme
           provider while the tenant frame is the authenticated surface. It
           renders nothing: it only reconciles the two once the profile read
@@ -1061,7 +1062,7 @@ function TenantFrame({
           once the session is authenticated, the process serves
           notification.stream, AND the tenant context has settled: the
           caller tenant list settles the account's personal tenant, and a
-          connection opened before it settles would announce no alias and be
+          connection opened before it settles would announce no name and be
           refused. An absent feature would otherwise open a
           connection the server must refuse with a bare 404 on every mount,
           identity change and tab return. */}
@@ -1250,18 +1251,18 @@ function AdminFeatureGate({
  * that fails is a fault, not a membership test.
  */
 function useAdminTenantSettle(authenticated: boolean): void {
-  const tenantAlias = useCurrentTenant()
+  const tenantName = useCurrentTenant()
   const selfState = useSelfTenantState()
   useEffect(() => {
-    if (!authenticated || tenantAlias !== null) {
+    if (!authenticated || tenantName !== null) {
       return
     }
-    const next = defaultSelfTenantAlias(selfState.tenants)
+    const next = defaultSelfTenantName(selfState.tenants)
     if (next === null) {
       return
     }
     setCurrentTenant(next)
-  }, [authenticated, tenantAlias, selfState])
+  }, [authenticated, tenantName, selfState])
 }
 
 /**

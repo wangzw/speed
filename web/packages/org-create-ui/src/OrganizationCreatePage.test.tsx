@@ -14,7 +14,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 const CREATED: CreatedOrganization = {
-  alias: 'acme',
+  name: 'acme',
   displayName: 'Acme Ltd',
   description: 'A team',
 }
@@ -36,7 +36,7 @@ async function fillForm(
   displayName: string = 'Acme Ltd',
   description: string = 'A team',
 ) {
-  await user.type(screen.getByLabelText(enUS.fields.alias), 'acme')
+  await user.type(screen.getByLabelText(enUS.fields.name), 'acme')
   await user.type(screen.getByLabelText(enUS.fields.displayName), displayName)
   if (description !== '') {
     await user.type(screen.getByLabelText(enUS.fields.description), description)
@@ -65,7 +65,7 @@ function page(
 }
 
 describe('OrganizationCreatePage', () => {
-  it('blocks the write until the alias and display name are valid', async () => {
+  it('blocks the write until the name and display name are valid', async () => {
     const user = userEvent.setup()
     const createOrganization = vi.fn()
     const onCreated = vi.fn()
@@ -74,7 +74,7 @@ describe('OrganizationCreatePage', () => {
     await submit(user)
 
     expect(createOrganization).not.toHaveBeenCalled()
-    expect(screen.getByLabelText(enUS.fields.alias)).toHaveAccessibleDescription(
+    expect(screen.getByLabelText(enUS.fields.name)).toHaveAccessibleDescription(
       enUS.validation.required,
     )
     expect(
@@ -82,17 +82,17 @@ describe('OrganizationCreatePage', () => {
     ).toHaveAccessibleDescription(enUS.validation.required)
   })
 
-  it('shows a reserved alias in place before the first submit', async () => {
+  it('shows a reserved name in place before the first submit', async () => {
     const user = userEvent.setup()
     const createOrganization = vi.fn()
     const onCreated = vi.fn()
     page(createOrganization, onCreated)
 
-    await user.type(screen.getByLabelText(enUS.fields.alias), 'admin')
+    await user.type(screen.getByLabelText(enUS.fields.name), 'admin')
 
     expect(
-      screen.getByLabelText(enUS.fields.alias),
-    ).toHaveAccessibleDescription(enUS.validation.aliasReserved)
+      screen.getByLabelText(enUS.fields.name),
+    ).toHaveAccessibleDescription(enUS.validation.nameReserved)
     await submit(user)
     expect(createOrganization).not.toHaveBeenCalled()
   })
@@ -108,7 +108,7 @@ describe('OrganizationCreatePage', () => {
 
     await waitFor(() => {
       expect(createOrganization).toHaveBeenCalledWith({
-        alias: 'acme',
+        name: 'acme',
         displayName: 'Acme Ltd',
         description: 'A team',
       })
@@ -154,7 +154,7 @@ describe('OrganizationCreatePage', () => {
       await screen.findByText(/Verify your email address/),
     ).toBeInTheDocument()
     expect(onCreated).not.toHaveBeenCalled()
-    expect(screen.getByLabelText(enUS.fields.alias)).toHaveValue('acme')
+    expect(screen.getByLabelText(enUS.fields.name)).toHaveValue('acme')
     expect(screen.getByLabelText(enUS.fields.displayName)).toHaveValue(
       'Acme Ltd',
     )

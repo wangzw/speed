@@ -57,13 +57,13 @@ import {
   getCurrentTenant,
   initialThemePreset,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
   THEME_PRESET_STORAGE_KEY,
 } from './chrome.js'
 import { PlatformPermissions } from './platform-permissions.js'
 import { clearSelfTenants, loadSelfTenants } from './tenant-self.js'
 
-/** The tenant the suite acts in: an identifier and the alias the host has
+/** The tenant the suite acts in: an identifier and the name the host has
  * recorded for it. The host now holds no default roster, so a case that
  * starts with a current tenant must make it nameable too. */
 const TENANT_ID = 'acme'
@@ -115,17 +115,17 @@ async function closeAccountMenu(
  * is offered only there, so a case about that entry must settle it. */
 function settlePlatformOrganization(): void {
   setCurrentTenant('system')
-  setTenantAliases(new Map([['system', 'system']]))
+  setTenantNames(new Map([['system', 'system']]))
 }
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   // The current tenant is module-level host state (the client's tenantProvider
   // reads it); reset it so a switch in one test does not leak into the next.
-  // The alias cache is reset with it: a current tenant no source names would
+  // The name cache is reset with it: a current tenant no source names would
   // not survive the frame's settlement.
   setCurrentTenant(TENANT_ID)
-  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
+  setTenantNames(new Map([[TENANT_ID, TENANT_ID]]))
   // The caller tenant list is module state too: a case starts with no rows
   // and loads its own through the scripted backend.
   clearSelfTenants()
@@ -402,7 +402,7 @@ describe('the admin area', () => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: TENANT_ID, alias: 'acme' }],
+          tenants: [{ id: TENANT_ID, name: 'acme' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -459,14 +459,14 @@ describe('the admin area', () => {
     // guarded permission read never carries a tenant name and a staff operator
     // on an admin deep link waits forever.
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     window.history.replaceState({}, '', '/admin/settings')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: TENANT_ID, alias: TENANT_ID }],
+          tenants: [{ id: TENANT_ID, name: TENANT_ID }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -599,14 +599,14 @@ describe('the admin area', () => {
     // redirects: no roster read is spent, because the roster needs tenant.read
     // and the member holds nothing.
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     window.history.replaceState({}, '', '/admin/tenants')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: TENANT_ID, alias: TENANT_ID }],
+          tenants: [{ id: TENANT_ID, name: TENANT_ID }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -654,14 +654,14 @@ describe('the admin area', () => {
     // current. No roster read is spent on the way.
     const INVITED = 'invited-tenant'
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     window.history.replaceState({}, '', '/admin')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: INVITED, alias: INVITED }],
+          tenants: [{ id: INVITED, name: INVITED }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -701,7 +701,7 @@ describe('the admin area', () => {
     // grants the admin. The roster decides nothing here.
     const PERSONAL = 'my-space'
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     window.history.replaceState({}, '', '/admin/settings')
     const tenantAtRead: (string | null)[] = []
     const requested: string[] = []
@@ -709,7 +709,7 @@ describe('the admin area', () => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ alias: PERSONAL, kind: 'personal' }],
+          tenants: [{ name: PERSONAL, kind: 'personal' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -981,8 +981,8 @@ describe('the organization admin path', () => {
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
           tenants: [
-            { alias: 'acme', kind: 'business' },
-            { alias: 'globex', kind: 'business' },
+            { name: 'acme', kind: 'business' },
+            { name: 'globex', kind: 'business' },
           ],
         } as T)
       }
@@ -1780,7 +1780,7 @@ describe('a failed admin access read', () => {
 
   it('keeps a failed permission read unknown and retries it before deciding', async () => {
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     clearSelfTenants()
     window.history.replaceState({}, '', '/admin/settings')
     const backend = createBackend('data')
@@ -1848,7 +1848,7 @@ describe('a failed admin access read', () => {
     // about the verification state; the pending answer is the one that
     // redirects.
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     clearSelfTenants()
     window.history.replaceState({}, '', '/admin/settings')
     const backend = createBackend('data')

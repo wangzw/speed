@@ -1,8 +1,9 @@
 /**
  * The platform roster read (src/app.tsx): a caller whose platform permission
  * set holds tenant.read reads the roster for the names of tenants outside its
- * own memberships. A tenant is named by its alias, which is both the switcher's
- * key and the value the request surface announces as X-Tenant. The roster
+ * own memberships. A tenant is identified by its name, which is both the
+ * switcher's key and the value the request surface announces as X-Tenant. The
+ * roster
  * decides no tenant: the current tenant is settled from the caller's own tenant
  * list.
  *
@@ -16,11 +17,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { RequestFn } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import {
-  getCurrentTenantAlias,
+  getCurrentTenantName,
   getCurrentTenant,
   getRecordedTenantDisplayName,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
@@ -31,7 +32,7 @@ import {
 } from './test-utils/session.js'
 
 afterEach(() => {
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
   setCurrentTenant(null)
   clearSelfTenants()
 })
@@ -42,11 +43,11 @@ describe('who spends the platform roster read', () => {
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
-        return { tenants: [{ alias: 'acme', kind: 'business' }] } as T
+        return { tenants: [{ name: 'acme', kind: 'business' }] } as T
       }
       if (path === '/api/v1/system/tenants') {
         return {
-          tenants: [{ alias: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)
@@ -86,7 +87,7 @@ describe('who spends the platform roster read', () => {
       ),
     })
 
-    await waitFor(() => expect(getCurrentTenantAlias()).toBe('acme'))
+    await waitFor(() => expect(getCurrentTenantName()).toBe('acme'))
     expect(
       requested.filter((path) => path === '/api/v1/system/tenants'),
     ).toHaveLength(1)
@@ -94,14 +95,14 @@ describe('who spends the platform roster read', () => {
 })
 
 describe('the announced tenant, once the roster is read', () => {
-  it('announces the settled alias, the same value the switcher keys on', async () => {
+  it('announces the settled name, the same value the switcher keys on', async () => {
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
-        return { tenants: [{ alias: 'acme', kind: 'business' }] } as T
+        return { tenants: [{ name: 'acme', kind: 'business' }] } as T
       }
       if (path === '/api/v1/system/tenants') {
         return {
-          tenants: [{ alias: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)
@@ -118,7 +119,7 @@ describe('the announced tenant, once the roster is read', () => {
     await waitFor(() => {
       expect(getCurrentTenant()).toBe('acme')
     })
-    expect(getCurrentTenantAlias()).toBe('acme')
+    expect(getCurrentTenantName()).toBe('acme')
     expect(getRecordedTenantDisplayName('acme')).toBe('Acme Inc.')
   })
 
@@ -134,15 +135,15 @@ describe('the announced tenant, once the roster is read', () => {
       if (path === '/api/v1/auth/me/tenants') {
         return {
           tenants: [
-            { alias: 'bob', kind: 'business' },
-            { alias: 'my-space', kind: 'personal' },
-            { alias: 'zzz', kind: 'business' },
+            { name: 'bob', kind: 'business' },
+            { name: 'my-space', kind: 'personal' },
+            { name: 'zzz', kind: 'business' },
           ],
         } as T
       }
       if (path === '/api/v1/system/tenants') {
         return {
-          tenants: [{ alias: 'aaa', displayName: 'AAA', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'aaa', displayName: 'AAA', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)
@@ -158,26 +159,26 @@ describe('the announced tenant, once the roster is read', () => {
     await waitFor(() => {
       expect(getCurrentTenant()).toBe('bob')
     })
-    expect(getCurrentTenantAlias()).toBe('bob')
+    expect(getCurrentTenantName()).toBe('bob')
   })
 })
 
 describe('a failed roster read', () => {
   it('explains the fault beside the switcher, leaves the tenant, and retries', async () => {
-    // The roster is a staff alias source: a failed read decides no tenant and
+    // The roster is a staff name source: a failed read decides no tenant and
     // infers no membership, so the switcher keeps the tenant the caller's own
     // list settled and shows what could not be named with a retry. The notice
     // sits under the organization row and needs no expansion to be read.
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     clearSelfTenants()
     let rosterReads = 0
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
         return {
           tenants: [
-            { alias: 'acme', kind: 'business' },
-            { alias: 'globex', kind: 'business' },
+            { name: 'acme', kind: 'business' },
+            { name: 'globex', kind: 'business' },
           ],
         } as T
       }
@@ -187,7 +188,7 @@ describe('a failed roster read', () => {
           throw new Error('the roster service is unavailable')
         }
         return {
-          tenants: [{ alias: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)
@@ -215,13 +216,13 @@ describe('a failed roster read', () => {
     )
 
     // The retry issues the read again; its answer clears the notice. The
-    // settled tenant keeps its alias.
+    // settled tenant keeps its request-surface name.
     await waitFor(() =>
       expect(screen.queryByText(demoEnUS.tenantRoster.failed)).toBeNull(),
     )
     expect(rosterReads).toBe(2)
     expect(getCurrentTenant()).toBe('acme')
-    expect(getCurrentTenantAlias()).toBe('acme')
+    expect(getCurrentTenantName()).toBe('acme')
   })
 
   it('reports the fault under a lone organization, whose row never expands', async () => {
@@ -229,11 +230,11 @@ describe('a failed roster read', () => {
     // The failed read still has to be reported, so the notice renders under
     // the row itself.
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     clearSelfTenants()
     bindRequestFn((async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
-        return { tenants: [{ alias: 'acme', kind: 'business' }] } as T
+        return { tenants: [{ name: 'acme', kind: 'business' }] } as T
       }
       if (path === '/api/v1/system/tenants') {
         throw new Error('the roster service is unavailable')

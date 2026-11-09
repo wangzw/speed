@@ -9,7 +9,7 @@
  * reads the username from the assertion's `preferred_username`, so the first
  * login lands directly in the account; it drives the two refusal branches
  * (a value the shared username form refuses, and one a business tenant already
- * holds as its alias) before the legal attempt. Everything after the sign-in
+ * holds as its name) before the legal attempt. Everything after the sign-in
  * surface -- the domain claim, the discovery by address, the switcher -- is
  * common to all three.
  *
@@ -159,7 +159,7 @@ const CLAIM_PROVIDER_NAME = 'Globex Workforce Claim'
 /**
  * The legal `preferred_username` the provider asserts for the first login. It
  * is already in the shared username form, so normalization leaves it alone and
- * the personal tenant's alias must read exactly this.
+ * the personal tenant's name must read exactly this.
  */
 const CLAIM_USERNAME = 'annsmith'
 
@@ -167,7 +167,7 @@ const CLAIM_USERNAME = 'annsmith'
 const INVALID_CLAIM_USERNAME = 'ann.smith'
 
 /**
- * A claim value a business tenant already holds as its alias. The account
+ * A claim value a business tenant already holds as its name. The account
  * lookup cannot see the tenant namespace, so this collision surfaces when the
  * personal tenant is written and the whole creation rolls back.
  */
@@ -416,12 +416,12 @@ function accountRow(page: Page, displayName: string): Locator {
     .filter({ hasText: displayName })
 }
 
-/** The Organizations page's row whose alias is the given value. */
-function organizationAliasRow(page: Page, alias: string): Locator {
+/** The Organizations page's row whose name is the given value. */
+function organizationNameRow(page: Page, name: string): Locator {
   return page
     .getByRole('table')
     .locator('tbody tr')
-    .filter({ hasText: alias })
+    .filter({ hasText: name })
 }
 
 /** The globex member rows, on the invitations page's member section. */
@@ -734,14 +734,20 @@ async function claimAndVerifyDomain(
       exact: true,
     }),
   ).toBeVisible()
-  const verifyButton = domainRow.getByRole('button', {
-    name: copy('adminUi', 'sso.domains.verifyAria', {
+  const domainActions = domainRow.getByRole('button', {
+    name: copy('adminUi', 'sso.domains.actionsAria', {
       domain: enterpriseIdentityProviderDomain,
     }),
     exact: true,
   })
-  await expect(verifyButton).toBeVisible()
-  await verifyButton.click()
+  await expect(domainActions).toBeVisible()
+  await domainActions.click()
+  const verifyItem = page.getByRole('menuitem', {
+    name: copy('adminUi', 'sso.domains.verify'),
+    exact: true,
+  })
+  await expect(verifyItem).toBeVisible()
+  await verifyItem.click()
 
   // The write names the domain and the row flips in place: verified, no
   // longer unverified, and its verification action is gone.
@@ -764,7 +770,17 @@ async function claimAndVerifyDomain(
       exact: true,
     }),
   ).toHaveCount(0)
-  await expect(verifyButton).toHaveCount(0)
+  // Reopening the verified row's menu proves the verification action is gone;
+  // removal, the only remaining write, is still offered there.
+  await domainActions.click()
+  await expect(
+    page.getByRole('menuitem', {
+      name: copy('adminUi', 'sso.domains.remove'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(verifyItem).toHaveCount(0)
+  await page.keyboard.press('Escape')
 
   // Closing the one-time panel drops the only copy of the token and the record
   // it handed over.
@@ -1327,8 +1343,8 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
  * The refusal branches come first, so the administrator's own pages can prove
  * they wrote nothing before the legal attempt opens the account: a value the
  * shared username form refuses, and a value a business tenant already holds as
- * its alias. The second is the creation-time collision the account lookup
- * cannot see; it surfaces when the personal tenant, whose alias is the
+ * its name. The second is the creation-time collision the account lookup
+ * cannot see; it surfaces when the personal tenant, whose name is the
  * username, is written and rolls the whole creation back.
  */
 test('enterprise-sso-onboarding: a claim-strategy provider opens the account with the asserted username', async ({
@@ -1412,7 +1428,7 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
     await expectClaimRefused(page)
   })
 
-  await test.step('step 5: a value a business tenant holds as its alias refuses the login', async () => {
+  await test.step('step 5: a value a business tenant holds as its name refuses the login', async () => {
     await attemptClaimSignIn(demo, COLLIDING_CLAIM_USERNAME)
     await expectClaimRefused(page)
   })
@@ -1436,13 +1452,13 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
       baseline.organizationsCount,
     )
     // Neither refused value added a tenant. The collision value is already the
-    // business tenant's alias, so the roster keeps exactly its own row.
-    await expect(organizationAliasRow(page, CLAIM_USERNAME)).toHaveCount(0)
+    // business tenant's name, so the roster keeps exactly its own row.
+    await expect(organizationNameRow(page, CLAIM_USERNAME)).toHaveCount(0)
     await expect(
-      organizationAliasRow(page, INVALID_CLAIM_USERNAME),
+      organizationNameRow(page, INVALID_CLAIM_USERNAME),
     ).toHaveCount(0)
     await expect(
-      organizationAliasRow(page, COLLIDING_CLAIM_USERNAME),
+      organizationNameRow(page, COLLIDING_CLAIM_USERNAME),
     ).toHaveCount(1)
 
     await openAdminPage(page, 'invitations.title')
@@ -1474,7 +1490,7 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
       TARGET_TENANT,
     )
     // The personal organization's menu row is named by the account's display
-    // name (REQ-tenancy-050), so the alias is not the menu's to show; the
+    // name (REQ-tenancy-050), so the name is not the menu's to show; the
     // roster below is where it is read.
     await menu.getByRole('menuitem').first().click()
     const choices = menu.getByRole('group', {
@@ -1492,7 +1508,7 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
 
   await test.step('step 8: the account and its personal tenant carry the asserted username', async () => {
     // The tenant area names the personal organization after the account; the
-    // alias the request surface would use is on the platform roster, so the
+    // name the request surface would use is on the platform roster, so the
     // operator returns there.
     await accounts.signOut()
     await accounts.signIn({
@@ -1503,16 +1519,16 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
     await openConsole(page)
 
     await openAdminPage(page, 'tenants.title')
-    const personal = organizationAliasRow(page, CLAIM_USERNAME)
+    const personal = organizationNameRow(page, CLAIM_USERNAME)
     await expect(personal).toHaveCount(1)
-    // The row is the account's personal tenant, not a business one: its alias
+    // The row is the account's personal tenant, not a business one: its name
     // is the account's username, and a personal organization carries no owner
     // transfer or delete control. The platform operator holds tenant.manage,
     // so those controls would render on a business tenant's row.
     await expect(
       personal.getByRole('button', {
         name: copy('adminUi', 'tenantLifecycle.transferAria', {
-          alias: CLAIM_USERNAME,
+          name: CLAIM_USERNAME,
         }),
         exact: true,
       }),
@@ -1520,7 +1536,7 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
     await expect(
       personal.getByRole('button', {
         name: copy('adminUi', 'tenantLifecycle.deleteAria', {
-          alias: CLAIM_USERNAME,
+          name: CLAIM_USERNAME,
         }),
         exact: true,
       }),
@@ -1530,7 +1546,7 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
     const opened = accountRow(page, CLAIM_DISPLAY_NAME)
     await expect(opened).toHaveCount(1)
     // The identity cell names the account by the display name and the username
-    // the claim supplied, which is also the personal tenant's alias asserted
+    // the claim supplied, which is also the personal tenant's name asserted
     // above; the internal id is never rendered.
     await expect(
       opened.getByText(`${CLAIM_DISPLAY_NAME} (${CLAIM_USERNAME})`, {

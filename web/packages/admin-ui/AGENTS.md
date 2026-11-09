@@ -42,7 +42,7 @@ audit query (`/api/v1/system/audit`). The admin root renders a dashboard, and
 the tenant roster and the audit query each link a row to that record's
 detail page. The roster's header links to the standalone `/tenants/new`
 page (`TenantCreatePage`), which renders `@speed/org-create-ui`'s shared
-form in platform mode; the alias, profile bounds and identifier domain are
+form in platform mode; the name, profile bounds and identifier domain are
 that package's rules.
 
 The platform surface has **no current-tenant switcher and no
@@ -107,7 +107,7 @@ profile wrapper hands the current tenant, the host's `onTenantUpdated` and
 `onOrganizationLeft` to the shared `TenantProfilePage`: a read-only identity
 card (with the owner's display name and username), an editable profile card, and a
 current-owner-only ownership card that searches the organization's members,
-transfers it to one of them, or deletes it after the alias is typed. A
+transfers it to one of them, or deletes it after the name is typed. A
 landed save asks the host to reload the caller tenant list the account menu
 and breadcrumb read; a landed transfer or deletion asks the host to leave
 the organization, reload that list, and show the confirmation where the
@@ -634,7 +634,7 @@ confirmation before turning a policy off, optimistic save and rollback on
 refusal, the protected tenant's switch-less read-only page, both
 languages, and axe. The profile suite (`TenantProfilePage.test.tsx`)
 covers the read-only identity card and owner row, the profile card's write,
-the clearable display name's fallback to the alias, the host's
+the clearable display name's fallback to the name, the host's
 `onTenantUpdated` hand-over, the current owner's transfer and deletion
 controls (the member search, the departure hand-over and its in-card
 fallback, their refusal text, and the non-owner, personal and tombstone

@@ -86,7 +86,7 @@ function ReadProbe(): ReactElement {
   return (
     <div>
       <span data-testid="read">{read.failed ? 'failed' : 'ok'}</span>
-      <span data-testid="tenant">{read.tenantAlias ?? 'none'}</span>
+      <span data-testid="tenant">{read.tenantName ?? 'none'}</span>
       <span data-testid="perms">
         {read.perms === null ? 'unknown' : JSON.stringify(read.perms)}
       </span>
@@ -379,10 +379,10 @@ describe('PlatformPermissions', () => {
       // The tenant list answers for the tenant the request resolved to, and
       // the host announces the current tenant from the cell, so the answer
       // varies with it.
-      const tenantAlias = getCurrentTenant()
+      const tenantName = getCurrentTenant()
       return Promise.resolve({
         platform: ['audit.read'],
-        tenant: tenantAlias === null ? [] : [`${tenantAlias}:read`],
+        tenant: tenantName === null ? [] : [`${tenantName}:read`],
       } as T)
     })
 

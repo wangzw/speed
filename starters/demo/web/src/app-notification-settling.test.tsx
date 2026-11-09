@@ -17,7 +17,7 @@ import { bindRequestFn } from '@speed/api-sdk/runtime'
 import {
   getCurrentTenant,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from './chrome.js'
 import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
 import {
@@ -31,7 +31,7 @@ const ROSTER_PATH = '/api/v1/system/tenants'
 const SELF_PATH = '/api/v1/auth/me/tenants'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 
-const PERSONAL_ALIAS = 'notice-member'
+const PERSONAL_NAME = 'notice-member'
 
 /** The caller's own profile: no self-registration, so the verification gate
  * lets the tenant context settle. */
@@ -59,7 +59,7 @@ const STREAM_FEATURES = [
 beforeEach(() => {
   // The tenant a previous session in this tab left behind.
   setCurrentTenant('acme')
-  setTenantAliases(new Map([['acme', 'acme']]))
+  setTenantNames(new Map([['acme', 'acme']]))
 })
 
 describe('the live subscription and the tenant context', () => {
@@ -116,7 +116,7 @@ describe('the live subscription and the tenant context', () => {
     expect(calls).not.toContain(`GET ${UNREAD_PATH}`)
 
     resolveSelf({
-      tenants: [{ alias: PERSONAL_ALIAS, kind: 'personal' }],
+      tenants: [{ name: PERSONAL_NAME, kind: 'personal' }],
     })
 
     // The list settled the current tenant, and both surfaces follow. The
@@ -126,7 +126,7 @@ describe('the live subscription and the tenant context', () => {
     await waitFor(() => expect(openStream).toHaveBeenCalledTimes(2))
     expect(closes).toHaveLength(1)
     expect(openStream.mock.calls.length - closes.length).toBe(1)
-    expect(getCurrentTenant()).toBe(PERSONAL_ALIAS)
+    expect(getCurrentTenant()).toBe(PERSONAL_NAME)
     await waitFor(() => expect(calls).toContain(`GET ${UNREAD_PATH}`))
   })
 })

@@ -96,7 +96,7 @@ const MEMBER = {
   displayName: 'Demo Member',
 } as const
 
-/** The organization the member belongs to; its alias is the identifier. */
+/** The organization the member belongs to; its name is the identifier. */
 const TENANT = 'acme'
 
 /**

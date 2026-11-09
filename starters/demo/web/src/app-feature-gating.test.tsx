@@ -42,7 +42,7 @@ import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import {
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from './chrome.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
@@ -74,14 +74,14 @@ const tNotifications = textI18n.getFixedT(
   NOTIFICATION_UI_NAMESPACE,
 )
 
-/** The tenant the suite acts in, with the alias the host has recorded for it;
+/** The tenant the suite acts in, with the name the host has recorded for it;
  * the host holds no default roster, so a current tenant must be nameable. */
 const TENANT_ID = 'acme'
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenant(TENANT_ID)
-  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
+  setTenantNames(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
 /** An authenticated session over exactly this feature document. */
@@ -450,7 +450,7 @@ describe('the admin entry and home card follow the served declarations', () => {
     // held, so both the menu entry and the home card point at it instead of
     // the admin root (which would 404).
     setCurrentTenant('system')
-    setTenantAliases(new Map([['system', 'system']]))
+    setTenantNames(new Map([['system', 'system']]))
     const user = userEvent.setup()
     renderDemoApp({
       session: sessionWith(readyFeatures('settings.admin'), {
@@ -474,7 +474,7 @@ describe('the admin entry and home card follow the served declarations', () => {
     // The tenant condition is satisfied on purpose: the only fact that
     // removes both surfaces is the document serving no admin page.
     setCurrentTenant('system')
-    setTenantAliases(new Map([['system', 'system']]))
+    setTenantNames(new Map([['system', 'system']]))
     const user = userEvent.setup()
     renderDemoApp({
       session: sessionWith(readyFeatures('notification.inbox'), {
@@ -506,10 +506,10 @@ describe('the live notification stream', () => {
     // deployment with notification.stream always can.
     bindRequestFn((async (path: string) => {
       if (path === '/api/v1/auth/me/tenants') {
-        return { tenants: [{ id: 'acme', alias: 'acme' }] }
+        return { tenants: [{ id: 'acme', name: 'acme' }] }
       }
       if (path === '/api/v1/system/tenants') {
-        return { tenants: [{ id: 'acme', alias: 'acme', status: 'active' }] }
+        return { tenants: [{ id: 'acme', name: 'acme', status: 'active' }] }
       }
       throw new Error(`the gating suite binds only the roster: ${path}`)
     }) as RequestFn)

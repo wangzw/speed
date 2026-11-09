@@ -297,14 +297,14 @@ export interface SpeedAppDefinition {
   readonly i18n?: SpeedAppI18nOptions
   /** The tenant every request announces as the tenant header (`X-Tenant`
    * unless `client.tenantHeader` renames it): the host returns the
-   * tenant **alias** the backend's resolution layer looks up by name,
+   * tenant **name** the backend's resolution layer looks up by name,
    * read per attempt so a request after a tenant switch carries the
    * tenant the user is now acting in. This is not the tenant id: the id
    * is what `@speed/auth-core`'s TenantProvider carries for query-key
-   * scoping, while the transport announces the alias the resolution
+   * scoping, while the transport announces the name the resolution
    * layer maps to a tenant on each request (the tenant is not a claim of
-   * the access token) -- so a host whose aliases differ from its ids
-   * must answer with the alias here. Passed straight to the client's
+   * the access token) -- so a host whose names differ from its ids
+   * must answer with the name here. Passed straight to the client's
    * `tenantProvider`; absent, or answering null/empty, no tenant header
    * is sent. */
   readonly tenantProvider?: () => string | null
@@ -764,7 +764,7 @@ export function bootstrapSpeedApp(
     // serves as "requester is recipient" content (an SMS code, the type
     // directory) renders in it.
     languageProvider: () => i18n.language,
-    // The host's current tenant alias, announced as the tenant header on
+    // The host's current tenant name, announced as the tenant header on
     // every request, read per attempt. Absent from the definition, no
     // tenant header is sent -- a host with no tenant-scoped traffic leaves
     // it out.

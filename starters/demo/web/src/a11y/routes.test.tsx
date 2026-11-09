@@ -47,8 +47,8 @@ import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
 import {
   setCurrentTenant,
-  setTenantAlias,
-  setTenantAliases,
+  setTenantName,
+  setTenantNames,
 } from '../chrome.js'
 import { clearSelfTenants } from '../tenant-self.js'
 import { ACCOUNT_SECTION_PATHS, ACCOUNT_SECTIONS } from '../paths.js'
@@ -249,8 +249,8 @@ beforeEach(() => {
   // caller-tenant answer lists no rows.
   clearSelfTenants()
   setCurrentTenant(SCAN_TENANT_ID)
-  setTenantAliases(new Map())
-  setTenantAlias(SCAN_TENANT_ID, 'business')
+  setTenantNames(new Map())
+  setTenantName(SCAN_TENANT_ID, 'business')
   missingKeys.length = 0
   const original = console.warn
   warnSpy = vi.spyOn(console, 'warn').mockImplementation((message, ...rest) => {

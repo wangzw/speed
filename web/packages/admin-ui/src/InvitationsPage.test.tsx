@@ -45,7 +45,7 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-const TENANT = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
 
 /**
  * The member-source labels a test injects into the namespace, so a
@@ -326,7 +326,7 @@ describe('InvitationsPage', () => {
       const operations = withTenant({ listInvitations, listMembers })
       renderWithProviders(<InvitationsPage />, { operations })
       // The link that carried the tenant arrives with a selection already
-      // made: both reads run for it and the selector shows its alias.
+      // made: both reads run for it and the selector shows its name.
       expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.invitations.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
@@ -698,7 +698,7 @@ describe('InvitationsPage', () => {
 
   it('starts a switched tenant with no member cursor', async () => {
     const user = userEvent.setup()
-    const globex = tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' })
+    const globex = tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' })
     const firstPage = Array.from({ length: 101 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
@@ -2080,7 +2080,7 @@ describe('InvitationsPage', () => {
       listTenants: () =>
         Promise.resolve([
           TENANT,
-          tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
+          tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
         ]),
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
@@ -2181,7 +2181,7 @@ describe('InvitationsPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
+            tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
           ]),
         listInvitations,
         listMembers,

@@ -50,7 +50,7 @@ function text(
 }
 
 const TENANT = tenantFixture({
-  alias: 'acme',
+  name: 'acme',
   displayName: 'Acme Corporation',
   status: 'active',
 })
@@ -119,7 +119,7 @@ describe('tenant lifecycle geometry in Chromium', () => {
       // member selector settles inside the paper.
       await user.click(
         screen.getByRole('button', {
-          name: text(zhCN.tenantLifecycle.transferAria, { alias: 'acme' }),
+          name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
         }),
       )
       const transfer = await screen.findByRole('dialog')
@@ -136,7 +136,7 @@ describe('tenant lifecycle geometry in Chromium', () => {
       // The delete confirmation: same containment, on the danger dialog.
       await user.click(
         screen.getByRole('button', {
-          name: text(zhCN.tenantLifecycle.deleteAria, { alias: 'acme' }),
+          name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
         }),
       )
       const confirm = await screen.findByRole('dialog')

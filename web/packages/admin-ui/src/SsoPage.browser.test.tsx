@@ -21,7 +21,7 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS = [{ alias: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }]
+const TENANTS = [{ name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }]
 
 const PROVIDERS = [
   providerFixture({ name: 'Acme Corporate Identity Provider' }),
@@ -110,10 +110,10 @@ describe('SsoPage domain list and DNS record panel in Chromium', () => {
 
       const viewportWidth = document.documentElement.clientWidth
       for (const { domain } of DOMAIN_PROVIDER.domains) {
-        const remove = screen.getByRole('button', {
-          name: enUS.sso.domains.removeAria.replace('{{domain}}', domain),
+        const actions = screen.getByRole('button', {
+          name: enUS.sso.domains.actionsAria.replace('{{domain}}', domain),
         })
-        const bounds = horizontalBounds(remove)
+        const bounds = horizontalBounds(actions)
         expect(bounds.width).toBeGreaterThan(0)
         expect(bounds.left).toBeGreaterThanOrEqual(0)
         expect(bounds.right).toBeLessThanOrEqual(viewportWidth + 1)

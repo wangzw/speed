@@ -21,12 +21,12 @@ const FLOOR_WIDTHS = [600, 900, 1200] as const
 
 const TENANTS = [
   tenantFixture({
-    alias: 'acme-corporation',
+    name: 'acme-corporation',
     displayName: 'Acme Corporation',
     status: 'active',
   }),
   tenantFixture({
-    alias: 'beta-industries',
+    name: 'beta-industries',
     displayName: 'Beta Industries',
     status: 'disabled',
     disabledBy: 'operator',

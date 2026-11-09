@@ -1,6 +1,6 @@
 /**
  * The host's own tenant list: the caller tenant read's answer as the switcher's
- * list and the announcement's alias source.
+ * list and the announcement's name source.
  *
  * Two layers are held here. The module store is the one place the list lives:
  * a successful read replaces it, carrying each row's host-answered `kind`, a
@@ -9,7 +9,7 @@
  * sign-out clears it. The switcher renders every row of that list, labels a row
  * whose `kind` is `personal` with the personal-organization copy, and leaves the
  * current row unselectable. Another account's personal tenant comes back as
- * `business`, so it renders its alias.
+ * `business`, so it renders its request-surface name.
  */
 
 import { render, screen, within } from '@testing-library/react'
@@ -28,10 +28,10 @@ import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import {
-  getCurrentTenantAlias,
+  getCurrentTenantName,
   getCurrentTenant,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
   OrganizationMenuEntry,
 } from './chrome.js'
 import type { DemoTenant } from './chrome.js'
@@ -64,13 +64,13 @@ function bindSelf(read: () => unknown): void {
 
 beforeEach(() => {
   clearSelfTenants()
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
   setCurrentTenant(null)
 })
 
 afterEach(() => {
   clearSelfTenants()
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
   setCurrentTenant(null)
 })
 
@@ -78,8 +78,8 @@ describe('the caller tenant list store', () => {
   it('replaces the list and marks it settled on a successful read', async () => {
     bindSelf(() => ({
       tenants: [
-        { alias: 'acme-inc', displayName: '', kind: 'business' },
-        { alias: 'my-space', displayName: '', kind: 'personal' },
+        { name: 'acme-inc', displayName: '', kind: 'business' },
+        { name: 'my-space', displayName: '', kind: 'personal' },
       ],
     }))
 
@@ -89,24 +89,24 @@ describe('the caller tenant list store', () => {
     // default settlement branch on it.
     expect(getSelfTenantState()).toEqual({
       tenants: [
-        { alias: 'acme-inc', displayName: '', kind: 'business' },
-        { alias: 'my-space', displayName: '', kind: 'personal' },
+        { name: 'acme-inc', displayName: '', kind: 'business' },
+        { name: 'my-space', displayName: '', kind: 'personal' },
       ],
       settled: true,
       failed: false,
     })
   })
 
-  it('carries the display name and falls back to the alias when it is empty', async () => {
+  it('carries the display name and falls back to the request-surface name when it is empty', async () => {
     bindSelf(() => ({
       tenants: [
         {
-          alias: 'acme-inc',
+          name: 'acme-inc',
           displayName: 'Acme Incorporated',
           kind: 'business',
         },
         {
-          alias: 'my-space',
+          name: 'my-space',
           displayName: '',
           kind: 'personal',
         },
@@ -115,7 +115,7 @@ describe('the caller tenant list store', () => {
     await loadSelfTenants()
 
     // A profile that names a display name carries it; an empty one is the
-    // same fact as no name, so the accessor falls back to the alias.
+    // same fact as no name, so the accessor falls back to the request-surface name.
     expect(selfTenantDisplayName('acme-inc')).toBe('Acme Incorporated')
     expect(selfTenantDisplayName('my-space')).toBe('my-space')
     expect(selfTenantDisplayName('unknown')).toBeNull()
@@ -123,7 +123,7 @@ describe('the caller tenant list store', () => {
 
   it('keeps the settled rows and marks the list unsettled when a read fails', async () => {
     bindSelf(() => ({
-      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
     }))
     await loadSelfTenants()
 
@@ -136,7 +136,7 @@ describe('the caller tenant list store', () => {
     // the unsettled flag keeps a failed read from settling a current tenant or
     // standing in for "no memberships".
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
       settled: false,
       failed: true,
     })
@@ -181,7 +181,7 @@ describe('the caller tenant list store', () => {
       return calls === 1
         ? older
         : {
-            tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
+            tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
           }
     })
 
@@ -189,7 +189,7 @@ describe('the caller tenant list store', () => {
     const newerRead = loadSelfTenants()
     await newerRead
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
       settled: true,
       failed: false,
     })
@@ -200,14 +200,14 @@ describe('the caller tenant list store', () => {
     rejectOlder(new Error('the older read failed'))
     await olderRead
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ alias: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
       settled: true,
       failed: false,
     })
   })
 
   it('clears the rows and the settled flag', async () => {
-    bindSelf(() => ({ tenants: [{ alias: 'acme-inc' }] }))
+    bindSelf(() => ({ tenants: [{ name: 'acme-inc' }] }))
     await loadSelfTenants()
 
     clearSelfTenants()
@@ -219,21 +219,21 @@ describe('the caller tenant list store', () => {
     })
   })
 
-  it('announces a self-list row alias on the request surface', async () => {
-    bindSelf(() => ({ tenants: [{ alias: 'globex-renamed' }] }))
+  it('announces a self-list row name on the request surface', async () => {
+    bindSelf(() => ({ tenants: [{ name: 'globex-renamed' }] }))
     await loadSelfTenants()
     setCurrentTenant('globex-renamed')
 
-    // The caller tenant list's row is named by its alias; that is the value
+    // The caller tenant list's row is addressed by its name; that is the value
     // the request surface announces.
-    expect(getCurrentTenantAlias()).toBe('globex-renamed')
+    expect(getCurrentTenantName()).toBe('globex-renamed')
   })
 })
 
 /** The rows the host offers: the caller's own space, another account's
  * personal tenant, and a business tenant. The read answers `kind` per row, and
  * the host's resolver marks only the caller's own space personal; another
- * account's personal tenant comes back as business and renders its alias. The
+ * account's personal tenant comes back as business and renders its request-surface name. The
  * caller's own row carries an identifier no derivation would produce, so a
  * label driven by the identifier rather than by `kind` fails here. */
 const OFFERED: readonly DemoTenant[] = [
@@ -249,7 +249,7 @@ const OFFERED: readonly DemoTenant[] = [
 /** Renders the account menu's organization group under the production stack. */
 function renderTenantMenu(props: {
   readonly tenants: readonly DemoTenant[]
-  readonly tenantAlias: string | null
+  readonly tenantName: string | null
 }): void {
   const i18n = createSpeedI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
@@ -273,7 +273,7 @@ function renderTenantMenu(props: {
       <OrganizationMenuEntry
         organizations={{
           tenants: props.tenants,
-          tenantAlias: props.tenantAlias,
+          tenantName: props.tenantName,
           onSelect: () => undefined,
         }}
         onClose={() => undefined}
@@ -291,7 +291,7 @@ describe('the tenant switcher over the self list', () => {
   it('keeps every row and labels the row the read answers as personal', async () => {
     renderTenantMenu({
       tenants: OFFERED,
-      tenantAlias: 'acme',
+      tenantName: 'acme',
     })
 
     // The menu states the current organization in its first row and expands
@@ -302,7 +302,7 @@ describe('the tenant switcher over the self list', () => {
 
     // Every tenant the account holds a membership in is offered. The row the
     // read answers as personal carries the personal-organization copy; another
-    // account's personal tenant came back as business, so it keeps its alias.
+    // account's personal tenant came back as business, so it keeps its request-surface name.
     expect(
       await screen.findByRole('menuitem', {
         name: demoEnUS.organization.personal,
@@ -319,7 +319,7 @@ describe('the tenant switcher over the self list', () => {
   it('leaves the current tenant in the list but not selectable', async () => {
     renderTenantMenu({
       tenants: OFFERED,
-      tenantAlias: 'acme',
+      tenantName: 'acme',
     })
 
     const user = userEvent.setup()
@@ -333,11 +333,11 @@ describe('the tenant switcher over the self list', () => {
 
   it('adds a current tenant the list does not hold, named from the roster cache', async () => {
     // A platform staff member works in a tenant they are not a member of (a
-    // route named it and the roster read cached its alias): the caller tenant
-    // list does not hold the row, so only the roster's alias cache can name
+    // route named it and the roster read cached its name): the caller tenant
+    // list does not hold the row, so only the roster's name cache can name
     // it. Without the added row the bar could neither show nor leave that
     // tenant.
-    setTenantAliases(new Map([['globex-renamed', 'Globex Renamed']]))
+    setTenantNames(new Map([['globex-renamed', 'Globex Renamed']]))
     setCurrentTenant('globex-renamed')
     bindRequestFn((async (path: string) => {
       if (path === SELF_PATH) {
@@ -347,7 +347,7 @@ describe('the tenant switcher over the self list', () => {
         return {
           tenants: [
             {
-              alias: 'globex-renamed',
+              name: 'globex-renamed',
               displayName: 'Globex Renamed',
               kind: 'business',
               status: 'active',

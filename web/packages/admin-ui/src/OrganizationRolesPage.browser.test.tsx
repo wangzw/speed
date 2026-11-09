@@ -180,7 +180,12 @@ async function selectRole(roleName: string): Promise<void> {
   const user = userEvent.setup()
   await user.click(
     await screen.findByRole('button', {
-      name: enUS.permissions.roles.manageGrantsAria.replace('{{role}}', roleName),
+      name: enUS.permissions.roles.actionsAria.replace('{{role}}', roleName),
+    }),
+  )
+  await user.click(
+    await screen.findByRole('menuitem', {
+      name: enUS.permissions.roles.manageGrants,
     }),
   )
   await screen.findByText(

@@ -253,7 +253,7 @@
     "retry": "Retry",
     "register": "Register an organization",
     "column": {
-      "alias": "Name",
+      "name": "Name",
       "status": "Status",
       "actions": "Actions"
     },
@@ -274,17 +274,17 @@
     "rename": {
       "label": "New name",
       "submit": "Rename",
-      "ariaWithAlias": "New name for organization {{alias}}",
-      "submitAria": "Rename organization {{alias}}"
+      "ariaWithName": "New name for organization {{name}}",
+      "submitAria": "Rename organization {{name}}"
     },
     "enable": "Enable",
     "disable": "Disable",
-    "enableAria": "Enable organization {{alias}}",
-    "disableAria": "Disable organization {{alias}}",
-    "created": "Organization \"{{alias}}\" registered",
-    "renamed": "Name of organization \"{{alias}}\" updated",
-    "enabledToast": "Organization \"{{alias}}\" enabled",
-    "disabledToast": "Organization \"{{alias}}\" disabled"
+    "enableAria": "Enable organization {{name}}",
+    "disableAria": "Disable organization {{name}}",
+    "created": "Organization \"{{name}}\" registered",
+    "renamed": "Name of organization \"{{name}}\" updated",
+    "enabledToast": "Organization \"{{name}}\" enabled",
+    "disabledToast": "Organization \"{{name}}\" disabled"
   },
   "forbidden": {
     "title": "Not permitted",
@@ -342,9 +342,9 @@
     "sectionTitle": "Ownership and deletion",
     "sectionDescription": "Hand this organization to another account, or end it permanently.",
     "transferLabel": "Transfer owner",
-    "transferAria": "Transfer owner of organization {{alias}}",
+    "transferAria": "Transfer owner of organization {{name}}",
     "deleteLabel": "Delete organization",
-    "deleteAria": "Delete organization {{alias}}",
+    "deleteAria": "Delete organization {{name}}",
     "transfer": {
       "title": "Transfer ownership of organization \"{{name}}\"",
       "description": "Choose the person who will become the organization's owner. The previous owner loses every role in the organization and is removed from it.",
@@ -365,17 +365,17 @@
       "confirmLabel": "Transfer owner",
       "failedNotFound": "This organization no longer exists.",
       "failedConflict": "The transfer was refused. The new owner must be an active member of this organization, and their account must be active. Add the account as a member first, then try again.",
-      "success": "Organization \"{{alias}}\" is now owned by {{target}}."
+      "success": "Organization \"{{name}}\" is now owned by {{target}}."
     },
     "deleteConfirm": {
       "title": "Delete organization \"{{name}}\"?",
       "message": "This permanently deletes the organization. Its members, roles, role assignments and permissions are removed, and its name can never be reused. This cannot be undone.",
-      "aliasLabel": "Type the organization name to confirm",
-      "aliasHint": "Type {{alias}}.",
+      "nameLabel": "Type the organization name to confirm",
+      "nameHint": "Type {{name}}.",
       "confirmLabel": "Delete organization",
       "failedConflict": "This organization was already deleted. Deletion is final.",
       "failedNotFound": "This organization no longer exists.",
-      "success": "Organization \"{{alias}}\" deleted"
+      "success": "Organization \"{{name}}\" deleted"
     }
   },
   "tenantDetail": {
@@ -389,7 +389,7 @@
     "retry": "Retry",
     "summary": "Summary",
     "field": {
-      "alias": "Name",
+      "name": "Name",
       "status": "Status",
       "disabledBy": "Disabled by"
     },
@@ -399,9 +399,9 @@
       "renameSubmit": "Rename",
       "enable": "Enable",
       "disable": "Disable",
-      "renamed": "Name of organization \"{{alias}}\" updated",
-      "enabled": "Organization \"{{alias}}\" enabled",
-      "disabled": "Organization \"{{alias}}\" disabled"
+      "renamed": "Name of organization \"{{name}}\" updated",
+      "enabled": "Organization \"{{name}}\" enabled",
+      "disabled": "Organization \"{{name}}\" disabled"
     },
     "related": {
       "title": "Related pages",
@@ -421,13 +421,13 @@
     "identity": {
       "title": "Identity",
       "description": "These details identify the organization and cannot be changed here.",
-      "aliasHint": "The name is fixed after the organization is created. It is what links use to address the organization."
+      "nameHint": "The name is fixed after the organization is created. It is what links use to address the organization."
     },
     "owner": {
       "unnamed": "Organization owner"
     },
     "field": {
-      "alias": "Name",
+      "name": "Name",
       "owner": "Owner",
       "status": "Status",
       "createdAt": "Created",
@@ -471,8 +471,8 @@
         "button": "Delete organization",
         "title": "Delete {{name}}",
         "message": "Deleting marks the organization and its memberships as deleted and stops serving it. Its name can never be used again, and there is no way to restore it.",
-        "aliasLabel": "Type the organization name to confirm",
-        "aliasHint": "Type {{alias}}.",
+        "nameLabel": "Type the organization name to confirm",
+        "nameHint": "Type {{name}}.",
         "confirmLabel": "Confirm deletion",
         "saved": "The organization {{name}} was deleted."
       },

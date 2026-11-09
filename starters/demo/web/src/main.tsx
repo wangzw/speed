@@ -48,7 +48,7 @@ import { themePresets } from '@speed/theme-presets'
 import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
 import {
-  getCurrentTenantAlias,
+  getCurrentTenantName,
   initialColorModePreference,
   initialThemePreset,
 } from './chrome.js'
@@ -124,11 +124,11 @@ export async function bootstrapDemoApp(
     },
     // The tenant every request announces as X-Tenant, except one whose path
     // is tenant-addressed (that request's header is rewritten to the path's
-    // tenant alias by `client.fetch` above): the host's current tenant's
-    // alias, read per attempt (src/chrome.tsx holds the one value). The
-    // server's tenant resolution layer resolves the name as an alias; a name
-    // no tenant carries is refused 404.
-    tenantProvider: getCurrentTenantAlias,
+    // tenant name by `client.fetch` above): the host's current tenant's
+    // name, read per attempt (src/chrome.tsx holds the one value). The
+    // server's tenant resolution layer resolves that name; a name no tenant
+    // carries is refused 404.
+    tenantProvider: getCurrentTenantName,
   })
   // The entry document's title follows the language the assembly resolved,
   // so the tab names the brand in the interface's own language. `<html lang>`

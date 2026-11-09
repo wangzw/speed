@@ -1,6 +1,6 @@
 # @speed/org-create-ui
 
-The shared organization-creation surface: one controlled form (alias,
+The shared organization-creation surface: one controlled form (name,
 display name, description, plus the platform-only identifier, contact
 address and website), the client-side validation for those fields, the
 self-service creation page, and the bilingual `org-create-ui` namespace.
@@ -8,7 +8,7 @@ self-service creation page, and the bilingual `org-create-ui` namespace.
 The platform console renders `OrganizationCreateForm` in `platform` mode
 inside its own registration page; the demo host renders
 `OrganizationCreatePage` over its `org.create` operation. The server
-remains authoritative on every rule: the client repeats the alias shape,
+remains authoritative on every rule: the client repeats the name shape,
 the built-in reserved names, the identifier domain and the profile bounds
 so a typo is caught in place.
 

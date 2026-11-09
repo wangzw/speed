@@ -96,7 +96,7 @@ function adminRootOf(path: string): string {
  * The tenant pages: the roster, the standalone registration form and one
  * tenant's detail. The registration declaration is declared before the
  * detail pattern because '/tenants/new' would otherwise be read as a tenant
- * alias; like the detail it is unlabelled (it is reached from the roster's
+ * name; like the detail it is unlabelled (it is reached from the roster's
  * page header, not the navigation).
  */
 export const tenantAdminRoutes: AdminRouteTable = [
@@ -121,10 +121,10 @@ export const tenantAdminRoutes: AdminRouteTable = [
   },
   {
     id: 'tenant-detail',
-    path: '/tenants/:alias',
+    path: '/tenants/:name',
     view: (context) => (
       <TenantDetailPage
-        alias={context.params.alias ?? ''}
+        name={context.params.name ?? ''}
         parentHref={context.path.replace(/\/[^/]+$/, '')}
         rootHref={adminRootOf(context.path)}
       />

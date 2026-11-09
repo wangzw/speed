@@ -19,7 +19,7 @@ import {
 } from '@speed/notification-ui'
 import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import { createBackend } from './a11y/backends.js'
-import { setCurrentTenant, setTenantAliases } from './chrome.js'
+import { setCurrentTenant, setTenantNames } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
 import {
@@ -32,7 +32,7 @@ describe('the admin entry surface', () => {
     await page.viewport(1100, 900)
     // The platform's own organization: the entry is offered only there.
     setCurrentTenant('system')
-    setTenantAliases(new Map([['system', 'system']]))
+    setTenantNames(new Map([['system', 'system']]))
     const session = createTestSession(
       authenticatedSnapshot({ system: ['tenant.read'] }),
     )

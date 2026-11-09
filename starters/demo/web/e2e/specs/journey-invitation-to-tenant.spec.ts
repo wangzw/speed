@@ -115,7 +115,7 @@ const OPERATOR = {
   displayName: 'Demo Operator',
 } as const
 
-/** The seeded tenant the invitation is addressed to. Its id is its alias. */
+/** The seeded tenant the invitation is addressed to. Its id is its name. */
 const TENANT = 'acme'
 
 /** The member the tenant already holds before the journey starts. */
@@ -395,7 +395,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       ).toBeVisible()
 
       // The page reads nothing until a tenant is chosen; the roster names the
-      // seeded tenant by its alias.
+      // seeded tenant by its name.
       await tenantSelector(page).click()
       await page.getByRole('option', { name: TENANT, exact: true }).click()
 

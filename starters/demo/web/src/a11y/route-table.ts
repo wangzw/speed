@@ -282,7 +282,7 @@ export async function settle(): Promise<void> {
   )
 }
 
-/** The tenant every sweep scans under, with the alias the host has recorded
+/** The tenant every sweep scans under, with the name the host has recorded
  * for it; the host holds no default roster, so a current tenant must be
  * nameable. */
 export const SCAN_TENANT_ID = 'acme'

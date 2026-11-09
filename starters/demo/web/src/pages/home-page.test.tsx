@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { emittedStyleText } from '../test-utils/emitted-css.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { setCurrentTenant, setTenantAliases } from '../chrome.js'
+import { setCurrentTenant, setTenantNames } from '../chrome.js'
 import { clearSelfTenants } from '../tenant-self.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
@@ -36,7 +36,7 @@ beforeEach(() => {
   // organization, so the suite settles the current organization there; each
   // case then isolates the fact it varies (permission or impersonation).
   setCurrentTenant('system')
-  setTenantAliases(new Map([['system', 'system']]))
+  setTenantNames(new Map([['system', 'system']]))
   clearSelfTenants()
 })
 

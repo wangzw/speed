@@ -1,6 +1,6 @@
 /**
  * The client-side validation the server remains authoritative over: the
- * alias slug and reserved names, the required and bounded display name,
+ * name slug and reserved names, the required and bounded display name,
  * the description bound, the website byte bound, and the platform-only
  * fields. Neither surface asks for an internal identifier; the self-service
  * form ignores the contact address and website even when a host seeds them.
@@ -9,9 +9,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_ORGANIZATION_CREATE_VALUES,
-  aliasViolation,
-  isAliasShape,
-  isReservedAlias,
+  nameViolation,
+  isNameShape,
+  isReservedName,
   normalizeOrganizationCreateValues,
   validateOrganizationCreateValues,
 } from './validation.js'
@@ -22,12 +22,12 @@ function withValues(
   return { ...EMPTY_ORGANIZATION_CREATE_VALUES, ...overrides }
 }
 
-describe('the alias rule', () => {
+describe('the name rule', () => {
   it('accepts the server slug shape and rejects everything outside it', () => {
-    for (const alias of ['acme', 'acme-labs', 'a1b', 'a'.repeat(63)]) {
-      expect(isAliasShape(alias), alias).toBe(true)
+    for (const name of ['acme', 'acme-labs', 'a1b', 'a'.repeat(63)]) {
+      expect(isNameShape(name), name).toBe(true)
     }
-    for (const alias of [
+    for (const name of [
       'ab',
       'a'.repeat(64),
       '-acme',
@@ -36,31 +36,31 @@ describe('the alias rule', () => {
       'acme labs',
       'acme.labs',
     ]) {
-      expect(isAliasShape(alias), alias).toBe(false)
+      expect(isNameShape(name), name).toBe(false)
     }
   })
 
   it('refuses the built-in reserved names and the personal prefix', () => {
-    for (const alias of ['admin', 'api', 'system', 'www']) {
-      expect(isReservedAlias(alias), alias).toBe(true)
+    for (const name of ['admin', 'api', 'system', 'www']) {
+      expect(isReservedName(name), name).toBe(true)
     }
-    expect(isReservedAlias('personal-alice')).toBe(true)
-    expect(isReservedAlias('acme')).toBe(false)
+    expect(isReservedName('personal-alice')).toBe(true)
+    expect(isReservedName('acme')).toBe(false)
   })
 
-  it('reports the first violation an alias carries', () => {
-    expect(aliasViolation('')).toBe('required')
-    expect(aliasViolation('  ')).toBe('required')
-    expect(aliasViolation('Acme')).toBe('aliasShape')
-    expect(aliasViolation('admin')).toBe('aliasReserved')
-    expect(aliasViolation('acme')).toBeUndefined()
+  it('reports the first violation a name carries', () => {
+    expect(nameViolation('')).toBe('required')
+    expect(nameViolation('  ')).toBe('required')
+    expect(nameViolation('Acme')).toBe('nameShape')
+    expect(nameViolation('admin')).toBe('nameReserved')
+    expect(nameViolation('acme')).toBeUndefined()
   })
 })
 
 describe('validateOrganizationCreateValues', () => {
   it('requires the display name after trimming', () => {
     const violations = validateOrganizationCreateValues(
-      withValues({ alias: 'acme', displayName: '   ' }),
+      withValues({ name: 'acme', displayName: '   ' }),
       'self-service',
     )
     expect(violations).toEqual({ displayName: 'required' })
@@ -70,7 +70,7 @@ describe('validateOrganizationCreateValues', () => {
     for (const mode of ['platform', 'self-service'] as const) {
       const atLimit = validateOrganizationCreateValues(
         withValues({
-          alias: 'acme',
+          name: 'acme',
           displayName: '😀'.repeat(100),
         }),
         mode,
@@ -79,7 +79,7 @@ describe('validateOrganizationCreateValues', () => {
 
       const overLimit = validateOrganizationCreateValues(
         withValues({
-          alias: 'acme',
+          name: 'acme',
           displayName: '😀'.repeat(101),
         }),
         mode,
@@ -91,7 +91,7 @@ describe('validateOrganizationCreateValues', () => {
   it('bounds the description in runes, not UTF-16 units', () => {
     const atLimit = validateOrganizationCreateValues(
       withValues({
-        alias: 'acme',
+        name: 'acme',
         displayName: 'Acme',
         description: '😀'.repeat(500),
       }),
@@ -101,7 +101,7 @@ describe('validateOrganizationCreateValues', () => {
 
     const overLimit = validateOrganizationCreateValues(
       withValues({
-        alias: 'acme',
+        name: 'acme',
         displayName: 'Acme',
         description: '😀'.repeat(501),
       }),
@@ -112,7 +112,7 @@ describe('validateOrganizationCreateValues', () => {
 
   it('checks the platform fields, and only in platform mode', () => {
     const values = withValues({
-      alias: 'acme',
+      name: 'acme',
       displayName: 'Acme',
       contactEmail: 'not-an-address',
       website: 'ftp://example.com',
@@ -129,7 +129,7 @@ describe('validateOrganizationCreateValues', () => {
   it('accepts an absolute http/https website and a bare address', () => {
     const violations = validateOrganizationCreateValues(
       withValues({
-        alias: 'acme',
+        name: 'acme',
         displayName: 'Acme',
         contactEmail: 'team@example.com',
         website: 'https://example.com/about',
@@ -143,7 +143,7 @@ describe('validateOrganizationCreateValues', () => {
     const prefix = 'https://example.com/'
     const atLimit = validateOrganizationCreateValues(
       withValues({
-        alias: 'acme',
+        name: 'acme',
         displayName: 'Acme',
         // 20 ASCII bytes plus 676 three-byte runes: exactly 2048 bytes, and
         // 1352 UTF-16 units.
@@ -155,7 +155,7 @@ describe('validateOrganizationCreateValues', () => {
 
     const overLimit = validateOrganizationCreateValues(
       withValues({
-        alias: 'acme',
+        name: 'acme',
         displayName: 'Acme',
         website: `${prefix}${'中'.repeat(677)}`,
       }),
@@ -171,7 +171,7 @@ describe('validateOrganizationCreateValues', () => {
       'example.com',
     ]) {
       const violations = validateOrganizationCreateValues(
-        withValues({ alias: 'acme', displayName: 'Acme', website }),
+        withValues({ name: 'acme', displayName: 'Acme', website }),
         'platform',
       )
       expect(violations.website, website).toBe('websiteShape')
@@ -181,14 +181,14 @@ describe('validateOrganizationCreateValues', () => {
   it('normalizes every field before the request', () => {
     expect(
       normalizeOrganizationCreateValues({
-        alias: ' acme ',
+        name: ' acme ',
         displayName: ' Acme Ltd ',
         description: ' A team ',
         contactEmail: ' team@example.com ',
         website: ' https://example.com ',
       }),
     ).toEqual({
-      alias: 'acme',
+      name: 'acme',
       displayName: 'Acme Ltd',
       description: 'A team',
       contactEmail: 'team@example.com',

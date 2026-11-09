@@ -3,9 +3,9 @@
  * registration.
  *
  * The roster used to carry an inline registration form; this page lets the
- * form hold the organization profile beside the alias without crowding the
+ * form hold the organization profile beside the name without crowding the
  * roster table. It renders the shared creation form from
- * @speed/org-create-ui in platform mode, so the alias rules, the built-in
+ * @speed/org-create-ui in platform mode, so the name rules, the built-in
  * reserved names and the profile bounds are the same ones the self-service
  * page uses. The server mints the internal identifier; the page asks for no
  * identifier and never sees one.
@@ -14,7 +14,7 @@
  * requires a display name, which is narrower than the endpoint: the API
  * accepts a registration without a profile. A landed registration hands
  * the new tenant to `onCreated` when the host supplies one, and otherwise
- * routes to the tenant detail -- addressed by the alias the answer returned
+ * routes to the tenant detail -- addressed by the name the answer returned
  * -- through the shell's in-place navigation seam. A refused registration
  * keeps every draft and reports the answer's code through the console's
  * error-text resolver.
@@ -26,7 +26,7 @@ import { SectionCard, useWriteFeedback } from '@speed/ui-kit'
 import {
   EMPTY_ORGANIZATION_CREATE_VALUES,
   OrganizationCreateForm,
-  aliasViolation,
+  nameViolation,
   normalizeOrganizationCreateValues,
   validateOrganizationCreateValues,
 } from '@speed/org-create-ui'
@@ -59,7 +59,7 @@ export interface TenantCreatePageProps {
   readonly onCreated?: (tenant: AdminTenant) => void
 }
 
-/** The violations to show before the first submit: the alias alone, once
+/** The violations to show before the first submit: the name alone, once
  * the operator has typed something. */
 function visibleViolations(
   values: OrganizationCreateValues,
@@ -69,11 +69,11 @@ function visibleViolations(
   if (submitted) {
     return all
   }
-  if (values.alias.trim() === '') {
+  if (values.name.trim() === '') {
     return {}
   }
-  const alias = aliasViolation(values.alias)
-  return alias === undefined ? {} : { alias }
+  const name = nameViolation(values.name)
+  return name === undefined ? {} : { name }
 }
 
 export function TenantCreatePage({
@@ -116,14 +116,14 @@ export function TenantCreatePage({
       if (onCreated !== undefined) {
         onCreated(created)
       } else if (basePath !== undefined) {
-        const href = `${basePath}/${encodeURIComponent(created.alias)}`
+        const href = `${basePath}/${encodeURIComponent(created.name)}`
         if (navigate === undefined) {
           window.location.assign(href)
         } else {
           navigate(href)
         }
       }
-      return t('tenants.created', { alias: created.alias })
+      return t('tenants.created', { name: created.name })
     })
   }
 

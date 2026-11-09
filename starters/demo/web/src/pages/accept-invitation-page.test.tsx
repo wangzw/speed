@@ -35,10 +35,10 @@ import {
 } from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import {
-  getCurrentTenantAlias,
+  getCurrentTenantName,
   getCurrentTenant,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from '../chrome.js'
 import { clearSelfTenants } from '../tenant-self.js'
 import { renderDemoApp } from '../test-utils/render.js'
@@ -89,11 +89,11 @@ const REGISTER = 'POST /api/v1/auth/register'
 const TOKEN = 'tok-123'
 const PATH = `${INVITATION_PREFIX}/${TOKEN}`
 
-/** The tenant the acceptance reports, and the different alias the caller
- * tenant read carries for it: the accept answer has no alias, so the landing
+/** The tenant the acceptance reports, and the different name the caller
+ * tenant read carries for it: the accept answer has no name, so the landing
  * resolves one from that read and must announce the read's value, never the
  * identifier. */
-const INVITED_TENANT_ALIAS = 'acme-renamed'
+const INVITED_TENANT_NAME = 'acme-renamed'
 
 /** The acceptView answer for a pending invitation: pending and still ahead of
  * its deadline, so the landing offers the accept action. The deadline is
@@ -148,7 +148,7 @@ function makeInvitationBackend(
       acceptedOnce = true
       return Promise.resolve({
         account: 'acc-1',
-        tenant: INVITED_TENANT_ALIAS,
+        tenant: INVITED_TENANT_NAME,
         active: true,
         source: 'invite',
         sso_exempt: false,
@@ -163,7 +163,7 @@ beforeEach(() => {
   window.history.replaceState({}, '', PATH)
   clearSelfTenants()
   setCurrentTenant(null)
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
 })
 
 describe('the invitation landing', () => {
@@ -237,13 +237,13 @@ describe('the invitation landing', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('lands in the invited tenant and resolves its alias from the caller tenant read', async () => {
+  it('lands in the invited tenant and resolves its name from the caller tenant read', async () => {
     const backend = makeInvitationBackend({
-      selfBefore: () => ({ tenants: [{ alias: 'other' }] }),
+      selfBefore: () => ({ tenants: [{ name: 'other' }] }),
       selfAfter: () => ({
         tenants: [
-          { alias: 'other' },
-          { alias: INVITED_TENANT_ALIAS },
+          { name: 'other' },
+          { name: INVITED_TENANT_NAME },
         ],
       }),
     })
@@ -260,16 +260,16 @@ describe('the invitation landing', () => {
       name: demoEnUS.home.heading,
     })
 
-    // The acceptance names the tenant by identifier only. The alias is read
+    // The acceptance names the tenant by identifier only. The name is read
     // from the caller tenant list after it, and the two diverge here: a
     // landing that announced the identifier (or fell back to an unrelated
     // tenant) would fail this assertion.
     expect(backend.selfReads).toContain('after')
-    expect(getCurrentTenant()).toBe(INVITED_TENANT_ALIAS)
-    expect(getCurrentTenantAlias()).toBe(INVITED_TENANT_ALIAS)
+    expect(getCurrentTenant()).toBe(INVITED_TENANT_NAME)
+    expect(getCurrentTenantName()).toBe(INVITED_TENANT_NAME)
   })
 
-  it('navigates home with no current tenant when the alias read fails', async () => {
+  it('navigates home with no current tenant when the name read fails', async () => {
     const backend = makeInvitationBackend({
       selfBefore: () => ({ tenants: [] }),
       selfAfter: () =>
@@ -294,11 +294,11 @@ describe('the invitation landing', () => {
       }),
     ).toBeInTheDocument()
     // ...but no current tenant is written that the host cannot name: the
-    // alias read failed, so the tenant stays unknown and tenant-scoped reads
+    // name read failed, so the tenant stays unknown and tenant-scoped reads
     // stay disabled rather than naming a placeholder.
     expect(backend.selfReads).toContain('after')
     expect(getCurrentTenant()).toBeNull()
-    expect(getCurrentTenantAlias()).toBeNull()
+    expect(getCurrentTenantName()).toBeNull()
   })
 
   it('confirms the new membership on the tenant home and dismisses once', async () => {
@@ -457,13 +457,13 @@ describe('the invitation landing', () => {
       [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
       [`POST /api/v1/auth/invitations/${TOKEN}`]: () => ({
         account: 'acc-1',
-        tenant: INVITED_TENANT_ALIAS,
+        tenant: INVITED_TENANT_NAME,
         active: true,
         source: 'invite',
         sso_exempt: false,
       }),
       ['GET /api/v1/auth/me/tenants']: () => ({
-        tenants: [{ alias: INVITED_TENANT_ALIAS }],
+        tenants: [{ name: INVITED_TENANT_NAME }],
       }),
     })
     const user = userEvent.setup()

@@ -12,8 +12,8 @@
  *
  * The selector lists the platform roster (GET /api/v1/system/tenants, the
  * same read the roster page owns) so the operator picks a registered
- * tenant by the name its profile shows (its display name, or its alias when
- * the profile names none). The value it reports is the chosen tenant alias,
+ * tenant by the label its profile shows (its display name, or its name when
+ * the profile names none). The value it reports is the chosen tenant name,
  * or '' for none chosen yet; a page holds it in its own state and disables
  * its tenant-scoped reads while it is empty.
  *
@@ -47,7 +47,7 @@ import { displayNameOf } from '../TenantProfileFields.js'
 /** The query parameter a tenant-addressed page reads its tenant from. */
 export const TENANT_QUERY_PARAM = 'tenant'
 
-/** The tenant alias a query string names, or '' when the parameter is absent. */
+/** The tenant name a query string names, or '' when the parameter is absent. */
 export function tenantFromSearch(search: string): string {
   return new URLSearchParams(search).get(TENANT_QUERY_PARAM)?.trim() ?? ''
 }
@@ -60,9 +60,9 @@ export function tenantFromLocation(): string {
 }
 
 export interface TenantScopeProps {
-  /** The chosen tenant alias, or '' when none is chosen. */
+  /** The chosen tenant name, or '' when none is chosen. */
   readonly value: string
-  /** Reports the chosen tenant alias ('' clears the selection). */
+  /** Reports the chosen tenant name ('' clears the selection). */
   readonly onSelect: (tenant: string) => void
   /**
    * Whether the selector is disabled. A page disables it while any scope
@@ -92,8 +92,8 @@ export function TenantScope({
   // A value seeded from the query string shows before the roster read
   // settles (and stays shown if the roster does not list it), so the
   // selector never blanks a tenant a link carried in; once the roster
-  // answers, the alias and its listed row are the same entry.
-  const listed = options.some((tenant) => tenant.alias === value)
+  // answers, the name and its listed row are the same entry.
+  const listed = options.some((tenant) => tenant.name === value)
 
   const loading = tenants.isPending
   const forbidden = isForbidden(tenants.error)
@@ -138,8 +138,8 @@ export function TenantScope({
       <MenuItem value="">{t('common.tenantNone')}</MenuItem>
       {value !== '' && !listed && <MenuItem value={value}>{value}</MenuItem>}
       {options.map((tenant) => (
-        <MenuItem key={tenant.alias} value={tenant.alias}>
-          {displayNameOf(tenant.displayName, tenant.alias)}
+        <MenuItem key={tenant.name} value={tenant.name}>
+          {displayNameOf(tenant.displayName, tenant.name)}
         </MenuItem>
       ))}
     </TextField>

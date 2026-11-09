@@ -62,7 +62,7 @@ frame, the admin root being a dashboard:
   refusal inline; the console never filters the membership check out of
   the request. Deletion asks through the two-step danger confirmation,
   whose copy names the impact (the memberships, bindings, roles and grants
-  removed, and the identifier and alias that can never be reused);
+  removed, and the identifier and name that can never be reused);
 - the **account surface** over `/api/v1/system/auth/accounts` -- list, detail,
   and the writes whose request body the contract declares;
 - the **session surface** over `/api/v1/system/auth/accounts/:id/sessions` --
@@ -131,7 +131,7 @@ profile wrapper hands the current tenant, the host's
 read-only identity card (including the owner's display name and username), an editable profile
 card, and an ownership card only the current owner sees, from which the
 organization can be transferred to a searched member or deleted after the
-alias is typed; a landed save asks the host to reload the caller tenant list
+name is typed; a landed save asks the host to reload the caller tenant list
 the account menu and breadcrumb read, and a landed transfer or deletion asks
 the host to leave the organization, reload that list and show the
 confirmation where the viewer lands. The
@@ -508,7 +508,7 @@ the current tenant:
   `/api/v1/tenants/{tenant}/profile`, renders a read-only identity card
   (with the owner's display name and username), an editable profile card and a current-owner-only
   ownership card that searches the organization's members and transfers the
-  organization to one of them or deletes it after the alias is typed, asks
+  organization to one of them or deletes it after the name is typed, asks
   the host to reload the caller tenant list after a landed save, and asks the
   host to leave the organization, reload that list and show the confirmation
   where the viewer lands after a landed transfer or deletion.

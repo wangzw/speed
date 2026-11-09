@@ -60,7 +60,7 @@ function renderPage({
       getTenantProfile: () =>
         Promise.resolve(
           profileFixture({
-            alias: 'acme-inc',
+            name: 'acme-inc',
             displayName: 'Acme Incorporated',
             description: 'A canned organization the fixture answers with.',
             contactEmail: 'ops@acme.example',

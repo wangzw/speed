@@ -24,13 +24,13 @@
  * The seeded roster already carries acme; the second tenant is registered
  * through the standalone registration page, opened from the roster's header
  * link, and a successful registration lands on the new tenant's detail page,
- * addressed by the alias. The form asks for the alias, the display name and
+ * addressed by its name. The form asks for the name, the display name and
  * the organization profile and never for an internal identifier, so the
- * roster and the detail page name a tenant only by its alias and display
+ * roster and the detail page identify a tenant only by its name and display
  * name; the complete column and summary label lists are read to hold the
- * identifier's absence. The collision branch is an alias acme holds, and the
+ * identifier's absence. The collision branch is a name acme holds, and the
  * roster is then asserted to have gained only the one row; the delete case
- * drives the other reuse conflict, a tombstone's alias. An alias is
+ * drives the other reuse conflict, a tombstone's name. A name is
  * immutable after creation, so the detail page shows it read-only and offers
  * no rename control.
  *
@@ -59,7 +59,7 @@
  * organization list has a second row available, but this spec only observes the
  * current row and leaves the switch to the journeys that drive it. REQ-tenancy-005 is
  * claimed narrowly: the roster is read with the seeded tenants and asserted in
- * alias order, while the empty-roster clause needs a deployment that seeds
+ * name order, while the empty-roster clause needs a deployment that seeds
  * no tenant. REQ-platform-admin-058 (the detail page's ownership controls) is
  * not claimed: this spec reads the detail page's summary and its missing
  * rename control, while the transfer and delete controls it drives are the
@@ -113,19 +113,19 @@ const OPERATOR = {
 
 /**
  * The tenant the seed registers. The seed gives it no display name, so the
- * roster and the lifecycle dialogs show its alias as its name.
+ * roster and the lifecycle dialogs fall back to its name.
  */
 const SEEDED_TENANT = 'acme'
 
-/** The alias the tenant this journey registers is addressed by. */
-const TENANT_ALIAS = 'globex'
+/** The name the tenant this journey registers is addressed by. */
+const TENANT_NAME = 'globex'
 
 /** The display name the registration form requires. */
 const TENANT_DISPLAY_NAME = 'Globex Labs'
 
 /**
  * The organization profile the registration form carries. The form asks for
- * the alias, the display name and these fields, and for no identifier: the
+ * the name, the display name and these fields, and for no identifier: the
  * server mints that.
  */
 const TENANT_DESCRIPTION = 'A partner organization onboarded by the operator.'
@@ -262,26 +262,26 @@ function rosterTable(page: Page): Locator {
 
 /**
  * The roster's column labels, in the table's own order. The roster names a
- * tenant by its display name and its alias and carries no identifier column;
+ * tenant by its display name and its name and carries no identifier column;
  * reading the whole header row is what holds that absence.
  */
 function rosterColumns(): readonly string[] {
   return [
     copy('adminUi', 'tenantProfile.field.displayName'),
-    copy('adminUi', 'tenants.column.alias'),
+    copy('adminUi', 'tenants.column.name'),
     copy('adminUi', 'tenants.column.status'),
     copy('adminUi', 'tenants.column.actions'),
   ]
 }
 
 /**
- * The detail summary's field labels, in the page's own order: alias, display
+ * The detail summary's field labels, in the page's own order: name, display
  * name, status, the three profile fields and the creation time. The internal
  * identifier is not one of them, so the complete list is the absence check.
  */
 function summaryFields(): readonly string[] {
   return [
-    copy('adminUi', 'tenantDetail.field.alias'),
+    copy('adminUi', 'tenantDetail.field.name'),
     copy('adminUi', 'tenantProfile.field.displayName'),
     copy('adminUi', 'tenantDetail.field.status'),
     copy('adminUi', 'tenantProfile.field.description'),
@@ -291,11 +291,11 @@ function summaryFields(): readonly string[] {
   ]
 }
 
-/** One roster row, by the tenant alias it shows. */
-function rosterRow(page: Page, alias: string): Locator {
+/** One roster row, by the tenant name it shows. */
+function rosterRow(page: Page, name: string): Locator {
   return rosterTable(page)
     .locator('tbody tr')
-    .filter({ hasText: alias })
+    .filter({ hasText: name })
 }
 
 /** The display-name cell of a roster row; it is the row's link to the
@@ -305,12 +305,12 @@ function rosterDisplayName(row: Locator, name: string): Locator {
 }
 
 /**
- * The alias cell of a roster row. The shared table puts the same value on the
+ * The name cell of a roster row. The shared table puts the same value on the
  * cell's `title` and on the paragraph inside it, so the paragraph is addressed
- * by the title it carries; the aliases this spec uses are plain tokens.
+ * by the title it carries; the names this spec uses are plain tokens.
  */
-function rosterAlias(row: Locator, alias: string): Locator {
-  return row.locator(`p[title="${alias}"]`)
+function rosterName(row: Locator, name: string): Locator {
+  return row.locator(`p[title="${name}"]`)
 }
 
 /** The tenant detail page's summary section. */
@@ -485,7 +485,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
 
-      // REQ-platform-admin-010: every row carries the display name, the alias
+      // REQ-platform-admin-010: every row carries the display name, the name
       // and the status. The roster is every tenant the process serves: the
       // system tenant, the seeded business tenant acme, and the personal
       // tenant the account-creation hook gives each of this server's three
@@ -502,12 +502,12 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           rosterColumns().length,
         )
       }
-      // REQ-tenancy-005: the roster is read in alias order (the new tenant
+      // REQ-tenancy-005: the roster is read in name order (the new tenant
       // registered in step 3 follows acme).
       const seeded = rosterRow(page, SEEDED_TENANT)
       await expect(seeded).toHaveCount(1)
       await expect(rosterDisplayName(seeded, SEEDED_TENANT)).toBeVisible()
-      await expect(rosterAlias(seeded, SEEDED_TENANT)).toBeVisible()
+      await expect(rosterName(seeded, SEEDED_TENANT)).toBeVisible()
       await expect(
         seeded.getByText(copy('adminUi', 'tenants.status.active'), {
           exact: true,
@@ -536,8 +536,8 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       const form = createSection(page)
-      const aliasField = form.getByLabel(
-        copy('orgCreateUi', 'fields.alias'),
+      const nameField = form.getByLabel(
+        copy('orgCreateUi', 'fields.name'),
         { exact: true },
       )
       const displayNameField = form.getByLabel(
@@ -562,12 +562,12 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       })
       const conflict = copy('adminUi', 'errors.tenant.conflict')
 
-      // The form carries the alias, the display name and the organization
+      // The form carries the name, the display name and the organization
       // profile, and nothing that names an internal identifier: the server
       // mints that. A field labelled after an identifier would fail here.
       await expect(form.getByLabel(/identifier/i)).toHaveCount(0)
       for (const field of [
-        aliasField,
+        nameField,
         displayNameField,
         descriptionField,
         contactEmailField,
@@ -576,17 +576,17 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         await expect(field).toBeVisible()
       }
 
-      // REQ-tenancy-001's first collision branch: an alias another live
+      // REQ-tenancy-001's first collision branch: a name another live
       // tenant holds is refused, and the page stays on the registration form.
-      await aliasField.fill(SEEDED_TENANT)
-      await displayNameField.fill('Acme Alias Clash')
+      await nameField.fill(SEEDED_TENANT)
+      await displayNameField.fill('Acme Name Clash')
       await submit.click()
       await expect(page.getByText(conflict, { exact: true })).toBeVisible()
 
-      // The successful registration carries the alias, the display name and
+      // The successful registration carries the name, the display name and
       // the profile, and navigates to the new tenant's detail page,
-      // addressed by the alias the answer returned.
-      await aliasField.fill(TENANT_ALIAS)
+      // addressed by the name the answer returned.
+      await nameField.fill(TENANT_NAME)
       await displayNameField.fill(TENANT_DISPLAY_NAME)
       await descriptionField.fill(TENANT_DESCRIPTION)
       await contactEmailField.fill(TENANT_CONTACT_EMAIL)
@@ -599,7 +599,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toBeVisible()
-      expect(new URL(page.url()).pathname.endsWith(`/tenants/${TENANT_ALIAS}`)).toBe(
+      expect(new URL(page.url()).pathname.endsWith(`/tenants/${TENANT_NAME}`)).toBe(
         true,
       )
 
@@ -621,26 +621,26 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         }),
       ).toBeVisible()
       await expect(rows).toHaveCount(before + 1)
-      const created = rosterRow(page, TENANT_ALIAS)
+      const created = rosterRow(page, TENANT_NAME)
       await expect(created).toHaveCount(1)
       await expect(rosterDisplayName(created, TENANT_DISPLAY_NAME)).toBeVisible()
-      await expect(rosterAlias(created, TENANT_ALIAS)).toBeVisible()
+      await expect(rosterName(created, TENANT_NAME)).toBeVisible()
       await expect(
         created.getByText(copy('adminUi', 'tenants.status.active'), {
           exact: true,
         }),
       ).toBeVisible()
 
-      // The roster is read in alias order: acme first, the new tenant after
+      // The roster is read in name order: acme first, the new tenant after
       // it.
       await expect(rows.nth(0)).toContainText(SEEDED_TENANT)
-      await expect(rows.nth(1)).toContainText(TENANT_ALIAS)
+      await expect(rows.nth(1)).toContainText(TENANT_NAME)
     })
 
-    await test.step("step 4: the detail page shows the tenant's alias, display name, profile and status", async () => {
+    await test.step("step 4: the detail page shows the tenant's name, display name, profile and status", async () => {
       // REQ-platform-admin-011: the detail page is reached from the roster row
-      // and shows the alias, the display name, the profile and the status.
-      await rosterRow(page, TENANT_ALIAS)
+      // and shows the name, the display name, the profile and the status.
+      await rosterRow(page, TENANT_NAME)
         .getByRole('link', { name: TENANT_DISPLAY_NAME, exact: true })
         .click()
       await expect(
@@ -650,19 +650,19 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toBeVisible()
-      // The detail is addressed by the alias, never by an internal
+      // The detail is addressed by the name, never by an internal
       // identifier.
-      expect(new URL(page.url()).pathname.endsWith(`/tenants/${TENANT_ALIAS}`)).toBe(
+      expect(new URL(page.url()).pathname.endsWith(`/tenants/${TENANT_NAME}`)).toBe(
         true,
       )
 
-      // Summary fields, in the page's own order: alias, display name, status,
+      // Summary fields, in the page's own order: name, display name, status,
       // description, contact email, website, creation time. Reading the whole
       // label list is the absence check for an identifier row.
       await expect(summarySection(page).locator('dt')).toHaveText([
         ...summaryFields(),
       ])
-      await expect(summaryValue(page, 0)).toHaveText(TENANT_ALIAS)
+      await expect(summaryValue(page, 0)).toHaveText(TENANT_NAME)
       await expect(summaryValue(page, 1)).toHaveText(TENANT_DISPLAY_NAME)
       await expect(summaryValue(page, 2)).toHaveText(
         copy('adminUi', 'tenants.status.active'),
@@ -670,7 +670,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(summaryValue(page, 3)).toHaveText(TENANT_DESCRIPTION)
       await expect(summaryValue(page, 4)).toHaveText(TENANT_CONTACT_EMAIL)
       await expect(summaryValue(page, 5)).toHaveText(TENANT_WEBSITE)
-      // An alias is immutable after creation: the cell is read-only and the
+      // A name is immutable after creation: the cell is read-only and the
       // page offers no rename control.
       await expect(
         page.getByLabel(
@@ -679,16 +679,16 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         ),
       ).toHaveCount(0)
 
-      // The roster still shows the alias chosen at registration.
+      // The roster still shows the name chosen at registration.
       await page
         .getByRole('link', {
           name: copy('adminUi', 'tenantDetail.back'),
           exact: true,
         })
         .click()
-      await expect(rosterRow(page, TENANT_ALIAS)).toHaveCount(1)
+      await expect(rosterRow(page, TENANT_NAME)).toHaveCount(1)
       await expect(
-        rosterAlias(rosterRow(page, TENANT_ALIAS), TENANT_ALIAS),
+        rosterName(rosterRow(page, TENANT_NAME), TENANT_NAME),
       ).toBeVisible()
     })
 
@@ -708,7 +708,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       // The selector lists the roster by the name each tenant's profile
-      // shows (its display name), and reports the chosen alias underneath.
+      // shows (its display name), and reports the chosen name underneath.
       await tenantSelector(page).click()
       await page
         .getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true })
@@ -991,7 +991,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await panel
         .getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
-            tenant: TENANT_ALIAS,
+            tenant: TENANT_NAME,
             email: reviewInvitee.identifier,
           }),
           exact: true,
@@ -1043,7 +1043,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toHaveCount(0)
       await expect(
         invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_ALIAS }),
+          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_NAME }),
           { exact: true },
         ),
       ).toHaveCount(0)
@@ -1079,11 +1079,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible({ timeout: 15_000 })
       expect(new URL(invitee.url()).pathname).toBe(invitationPath)
 
-      // The summary names the tenant by alias, the invited address and the
+      // The summary names the tenant by name, the invited address and the
       // expiry the issue carried.
       await expect(
         invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_ALIAS }),
+          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_NAME }),
           { exact: true },
         ),
       ).toBeVisible()
@@ -1141,8 +1141,8 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 
       // REQ-tenancy-021: the current organization is the invited one. The
       // account menu's organization row names it by its display name (the
-      // alias is the fallback when no display name is set); the accept
-      // summary names it by the alias.
+      // name is the fallback when no display name is set); the accept
+      // summary names it by the name.
       await openAccountMenu(invitee)
       await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeVisible({
         timeout: 15_000,
@@ -1347,20 +1347,20 @@ async function enterAdminFromHome(page: Page): Promise<void> {
 
 /**
  * One tenant roster row's transfer control. The control's accessible name
- * is the row's alias -- the name the request surface uses -- while the
- * dialog it opens names the organization by its display name.
+ * is the row's name -- the value the request surface addresses it by --
+ * while the dialog it opens names the organization by its display name.
  */
-function transferTenantButton(page: Page, alias: string): Locator {
-  return rosterRow(page, alias).getByRole('button', {
-    name: copy('adminUi', 'tenantLifecycle.transferAria', { alias }),
+function transferTenantButton(page: Page, name: string): Locator {
+  return rosterRow(page, name).getByRole('button', {
+    name: copy('adminUi', 'tenantLifecycle.transferAria', { name }),
     exact: true,
   })
 }
 
-/** One tenant roster row's delete control, named by the row's alias. */
-function deleteTenantButton(page: Page, alias: string): Locator {
-  return rosterRow(page, alias).getByRole('button', {
-    name: copy('adminUi', 'tenantLifecycle.deleteAria', { alias }),
+/** One tenant roster row's delete control, named by the row's name. */
+function deleteTenantButton(page: Page, name: string): Locator {
+  return rosterRow(page, name).getByRole('button', {
+    name: copy('adminUi', 'tenantLifecycle.deleteAria', { name }),
     exact: true,
   })
 }
@@ -1396,20 +1396,20 @@ async function confirmTwice(dialog: Locator, confirmLabel: string): Promise<void
 
 /**
  * The delete's typed guard: the confirming control is inert until the
- * organization's alias is typed exactly. A near miss leaves it closed, so
+ * organization's name is typed exactly. A near miss leaves it closed, so
  * the dialog is driven the way a person must drive it before the two-step
  * confirmation is armed.
  */
-async function confirmDelete(dialog: Locator, alias: string): Promise<void> {
+async function confirmDelete(dialog: Locator, name: string): Promise<void> {
   const field = dialog.getByLabel(
-    copy('adminUi', 'tenantLifecycle.deleteConfirm.aliasLabel'),
+    copy('adminUi', 'tenantLifecycle.deleteConfirm.nameLabel'),
     { exact: true },
   )
   // The dialog names the organization twice: the visible title by its
-  // display name, the typed guard by its alias.
+  // display name, the typed guard by its name.
   await expect(
     dialog.getByText(
-      copy('adminUi', 'tenantLifecycle.deleteConfirm.aliasHint', { alias }),
+      copy('adminUi', 'tenantLifecycle.deleteConfirm.nameHint', { name }),
       { exact: true },
     ),
   ).toBeVisible()
@@ -1418,9 +1418,9 @@ async function confirmDelete(dialog: Locator, alias: string): Promise<void> {
     exact: true,
   })
   await expect(confirm).toBeDisabled()
-  await field.fill(alias.slice(0, -1))
+  await field.fill(name.slice(0, -1))
   await expect(confirm).toBeDisabled()
-  await field.fill(alias)
+  await field.fill(name)
   await expect(confirm).toBeEnabled()
   await confirmTwice(
     dialog,
@@ -1497,7 +1497,7 @@ test.describe('the platform lifecycle controls', () => {
     await expect(
       page.getByText(
         copyPattern('adminUi', 'tenantLifecycle.transfer.success', {
-          alias: escapeRegExp(SEEDED_TENANT),
+          name: escapeRegExp(SEEDED_TENANT),
           target: '.+',
         }),
       ),
@@ -1599,8 +1599,8 @@ test.describe('the platform lifecycle controls', () => {
 })
 
 /** The tenant the platform lifecycle delete branch registers and ends. */
-const LIFECYCLE_TENANT_ALIAS = 'initrode'
-const LIFECYCLE_TENANT_NAME = 'Initrode Labs'
+const LIFECYCLE_TENANT_NAME = 'initrode'
+const LIFECYCLE_TENANT_DISPLAY_NAME = 'Initrode Labs'
 /** The profile the delete branch's registration carries. */
 const LIFECYCLE_TENANT_DESCRIPTION =
   'A disposable organization for the delete branch.'
@@ -1608,7 +1608,7 @@ const LIFECYCLE_TENANT_DESCRIPTION =
 test.describe('the platform lifecycle delete', () => {
   test.use({ viewport: { width: 1920, height: 1080 } })
 
-  test('operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused', async ({
+  test('operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused', async ({
     demo,
   }) => {
     test.setTimeout(180_000)
@@ -1640,11 +1640,11 @@ test.describe('the platform lifecycle delete', () => {
     const form = createSection(page)
     await expect(form.getByLabel(/identifier/i)).toHaveCount(0)
     await form
-      .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
-      .fill(LIFECYCLE_TENANT_ALIAS)
+      .getByLabel(copy('orgCreateUi', 'fields.name'), { exact: true })
+      .fill(LIFECYCLE_TENANT_NAME)
     await form
       .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })
-      .fill(LIFECYCLE_TENANT_NAME)
+      .fill(LIFECYCLE_TENANT_DISPLAY_NAME)
     await form
       .getByLabel(copy('orgCreateUi', 'fields.description'), { exact: true })
       .fill(LIFECYCLE_TENANT_DESCRIPTION)
@@ -1658,15 +1658,15 @@ test.describe('the platform lifecycle delete', () => {
       page.getByRole('heading', {
         level: 1,
         name: copy('adminUi', 'tenantDetail.title', {
-          name: LIFECYCLE_TENANT_NAME,
+          name: LIFECYCLE_TENANT_DISPLAY_NAME,
         }),
         exact: true,
       }),
     ).toBeVisible()
-    // The detail is addressed by the alias and its summary carries no
+    // The detail is addressed by the name and its summary carries no
     // identifier row.
     expect(
-      new URL(page.url()).pathname.endsWith(`/tenants/${LIFECYCLE_TENANT_ALIAS}`),
+      new URL(page.url()).pathname.endsWith(`/tenants/${LIFECYCLE_TENANT_NAME}`),
     ).toBe(true)
     await expect(summarySection(page).locator('dt')).toHaveText([
       ...summaryFields(),
@@ -1689,17 +1689,17 @@ test.describe('the platform lifecycle delete', () => {
     ])
 
     // The platform staff path deletes the tenant. The row's control is named
-    // by the alias; the dialog's visible title names the display name; the
-    // typed guard names the alias, and only then does the two-step
+    // by the name; the dialog's visible title names the display name; the
+    // typed guard names the name, and only then does the two-step
     // confirmation arm.
-    await deleteTenantButton(page, LIFECYCLE_TENANT_ALIAS).click()
-    const dialog = deleteDialog(page, LIFECYCLE_TENANT_NAME)
+    await deleteTenantButton(page, LIFECYCLE_TENANT_NAME).click()
+    const dialog = deleteDialog(page, LIFECYCLE_TENANT_DISPLAY_NAME)
     await expect(dialog).toBeVisible()
-    await confirmDelete(dialog, LIFECYCLE_TENANT_ALIAS)
+    await confirmDelete(dialog, LIFECYCLE_TENANT_NAME)
     await expect(
       page.getByText(
         copy('adminUi', 'tenantLifecycle.deleteConfirm.success', {
-          alias: LIFECYCLE_TENANT_ALIAS,
+          name: LIFECYCLE_TENANT_NAME,
         }),
         { exact: true },
       ),
@@ -1707,24 +1707,24 @@ test.describe('the platform lifecycle delete', () => {
 
     // The row is a tombstone: its status says deleted and its actions cell
     // carries no lifecycle control any more.
-    const tombstone = rosterRow(page, LIFECYCLE_TENANT_ALIAS)
+    const tombstone = rosterRow(page, LIFECYCLE_TENANT_NAME)
     await expect(
       tombstone.getByText(copy('adminUi', 'tenants.status.deleted'), {
         exact: true,
       }),
     ).toBeVisible({ timeout: 15_000 })
-    // The tombstone names the tenant by alias and display name only; its
+    // The tombstone names the tenant by name and display name only; its
     // row carries exactly the roster's four cells.
     await expect(tombstone.getByRole('cell')).toHaveCount(
       rosterColumns().length,
     )
     await expect(
-      transferTenantButton(page, LIFECYCLE_TENANT_ALIAS),
+      transferTenantButton(page, LIFECYCLE_TENANT_NAME),
     ).toHaveCount(0)
-    await expect(deleteTenantButton(page, LIFECYCLE_TENANT_ALIAS)).toHaveCount(0)
+    await expect(deleteTenantButton(page, LIFECYCLE_TENANT_NAME)).toHaveCount(0)
 
-    // Both reuse conflicts this spec drives are by alias: the main journey
-    // collides with a live tenant's alias, and here the tombstone's alias
+    // Both reuse conflicts this spec drives are by name: the main journey
+    // collides with a live tenant's name, and here the tombstone's name
     // cannot be registered again. The roster answers the registration's
     // conflict in both.
     await page
@@ -1738,10 +1738,10 @@ test.describe('the platform lifecycle delete', () => {
       }),
     ).toBeVisible()
     const again = createSection(page)
-    const aliasField = again.getByLabel(copy('orgCreateUi', 'fields.alias'), {
+    const nameField = again.getByLabel(copy('orgCreateUi', 'fields.name'), {
       exact: true,
     })
-    const nameField = again.getByLabel(
+    const displayNameField = again.getByLabel(
       copy('orgCreateUi', 'fields.displayName'),
       { exact: true },
     )
@@ -1751,8 +1751,8 @@ test.describe('the platform lifecycle delete', () => {
     })
     const conflict = copy('adminUi', 'errors.tenant.conflict')
 
-    await aliasField.fill(LIFECYCLE_TENANT_ALIAS)
-    await nameField.fill('Initrode Second')
+    await nameField.fill(LIFECYCLE_TENANT_NAME)
+    await displayNameField.fill('Initrode Second')
     await submit.click()
     await expect(page.getByText(conflict, { exact: true })).toBeVisible()
   })

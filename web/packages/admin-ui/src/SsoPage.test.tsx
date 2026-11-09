@@ -37,7 +37,7 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-const TENANT = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
 
 /** Fills a locale template's `{{name}}` placeholders. */
 function text(template: string, values: Record<string, string>): string {
@@ -463,7 +463,7 @@ describe('SsoPage', () => {
       renderWithProviders(<SsoPage />, { operations })
       // The link that carried the tenant arrives with a selection already
       // made: the providers read runs for it and the selector shows its
-      // alias.
+      // name.
       expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.sso.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
@@ -1786,7 +1786,7 @@ describe('SsoPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
+            tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
           ]),
         listSsoProviders,
       })

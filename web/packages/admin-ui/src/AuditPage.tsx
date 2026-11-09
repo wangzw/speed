@@ -240,7 +240,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
       cellWrap: 'nowrap',
       // An object marked as an account resolves through the account read, and
       // its copy control is withheld: the opaque id is not a value an operator
-      // acts on. Every other object -- a session id, a tenant alias, a role
+      // acts on. Every other object -- a session id, a tenant name, a role
       // name, a permission code -- stays as recorded and copyable.
       cellFullValue: (record) =>
         record.object === '' || isAccountObject(record.object)

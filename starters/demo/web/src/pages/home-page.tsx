@@ -209,11 +209,11 @@ function RouteStartCard({
  */
 function AdminStartCard(): ReactElement | null {
   const presence = featurePresence(useFeatureState())
-  const tenantAlias = useCurrentTenant()
+  const tenantName = useCurrentTenant()
   const target = useAdminTarget(
     presentDeclarations(adminShellRoutes, presence),
   )
-  if (target === null || tenantAlias !== 'system') {
+  if (target === null || tenantName !== 'system') {
     return null
   }
   return <StartCardView card={{ key: 'admin', path: target }} />

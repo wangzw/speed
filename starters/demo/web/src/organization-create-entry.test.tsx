@@ -17,9 +17,9 @@ import { orgCreateUiResources } from '@speed/org-create-ui'
 import { uiKitResources } from '@speed/ui-kit'
 import {
   getCurrentTenant,
-  getRecordedTenantAlias,
+  getRecordedTenantName,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { clearSelfTenants } from './tenant-self.js'
@@ -33,7 +33,7 @@ import {
 const orgEn = orgCreateUiResources['en-US'] as unknown as {
   readonly page: { readonly title: string }
   readonly fields: {
-    readonly alias: string
+    readonly name: string
     readonly displayName: string
     readonly description: string
   }
@@ -54,7 +54,7 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/')
   clearSelfTenants()
   setCurrentTenant(null)
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
 })
 
 /** Answers the caller tenant read with a personal and a business tenant. */
@@ -65,13 +65,13 @@ function bindSelfTenants(): void {
         tenants: [
           {
             id: 'personal-1',
-            alias: 'tester',
+            name: 'tester',
             displayName: '',
             kind: 'personal',
           },
           {
             id: 'acme',
-            alias: 'acme',
+            name: 'acme',
             displayName: 'Acme Inc',
             kind: 'business',
           },
@@ -229,7 +229,7 @@ describe('the self-service creation success flow', () => {
     const user = userEvent.setup()
     let tenants = [
       {
-        alias: 'tester',
+        name: 'tester',
         displayName: '',
         kind: 'personal',
       },
@@ -240,7 +240,7 @@ describe('the self-service creation success flow', () => {
       }
       if (path === '/api/v1/orgs' && options?.method === 'POST') {
         const created = {
-          alias: 'team',
+          name: 'team',
           displayName: 'E2E Team',
           description: '',
           status: 'active',
@@ -248,7 +248,7 @@ describe('the self-service creation success flow', () => {
         tenants = [
           ...tenants,
           {
-            alias: created.alias,
+            name: created.name,
             displayName: created.displayName,
             kind: 'business',
           },
@@ -269,7 +269,7 @@ describe('the self-service creation success flow', () => {
         name: orgEn.page.title,
       }),
     ).toBeInTheDocument()
-    await user.type(screen.getByLabelText(orgEn.fields.alias), 'team')
+    await user.type(screen.getByLabelText(orgEn.fields.name), 'team')
     await user.type(
       screen.getByLabelText(orgEn.fields.displayName),
       'E2E Team',
@@ -279,9 +279,9 @@ describe('the self-service creation success flow', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/organization/admin/profile')
     })
-    // The hand-over recorded the alias and made the new organization the
+    // The hand-over recorded the name and made the new organization the
     // current one before navigating.
     expect(getCurrentTenant()).toBe('team')
-    expect(getRecordedTenantAlias('team')).toBe('team')
+    expect(getRecordedTenantName('team')).toBe('team')
   })
 })

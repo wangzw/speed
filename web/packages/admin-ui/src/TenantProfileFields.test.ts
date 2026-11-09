@@ -30,7 +30,7 @@ describe('displayNameOf', () => {
     )
   })
 
-  it('falls back to the alias when the display name is empty or blank', () => {
+  it('falls back to the name when the display name is empty or blank', () => {
     expect(displayNameOf('', 'acme-inc')).toBe('acme-inc')
     expect(displayNameOf('   ', 'acme-inc')).toBe('acme-inc')
   })

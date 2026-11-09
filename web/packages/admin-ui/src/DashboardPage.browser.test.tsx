@@ -23,9 +23,9 @@ import type { AdminAuditRecord } from './operations.js'
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
 const TENANTS = [
-  { alias: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const },
-  { id: 'beta', alias: 'Beta', status: 'active' as const },
-  { id: 'old', alias: 'Old', status: 'disabled' as const },
+  { name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const },
+  { id: 'beta', name: 'Beta', status: 'active' as const },
+  { id: 'old', name: 'Old', status: 'disabled' as const },
 ]
 
 /** The shipped en-US dashboard strings the overview assertions read. */

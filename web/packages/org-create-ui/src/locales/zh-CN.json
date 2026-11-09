@@ -4,22 +4,22 @@
     "intro": "为你的团队创建一个业务组织。你将成为它的首位管理员。"
   },
   "fields": {
-    "alias": "名称",
+    "name": "名称",
     "displayName": "显示名",
     "description": "描述",
     "contactEmail": "联系邮箱",
     "website": "网站"
   },
   "helpers": {
-    "alias": "3–63 个小写字母、数字或连字符，以字母或数字开头；创建后不可更改。",
+    "name": "3–63 个小写字母、数字或连字符，以字母或数字开头；创建后不可更改。",
     "description": "可选，最多 500 个字符。",
     "contactEmail": "可选，组织的联系邮箱。",
     "website": "可选，一个以 http 或 https 开头的完整地址。"
   },
   "validation": {
     "required": "此项为必填。",
-    "aliasShape": "请使用 3–63 个小写字母、数字或连字符，并以字母或数字开头。",
-    "aliasReserved": "该名称已被系统保留，请换一个。",
+    "nameShape": "请使用 3–63 个小写字母、数字或连字符，并以字母或数字开头。",
+    "nameReserved": "该名称已被系统保留，请换一个。",
     "displayNameTooLong": "显示名请控制在 100 个字符以内。",
     "descriptionTooLong": "描述请控制在 500 个字符以内。",
     "emailShape": "请填写一个邮箱地址，例如 team@example.com。",

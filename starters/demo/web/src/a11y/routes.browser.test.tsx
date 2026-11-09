@@ -32,7 +32,7 @@ import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { getNotificationInboxGetUnreadCountQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { tenantQueryKey } from '@speed/auth-core'
-import { setCurrentTenant, setTenantAlias, setTenantAliases } from '../chrome.js'
+import { setCurrentTenant, setTenantName, setTenantNames } from '../chrome.js'
 import { clearSelfTenants } from '../tenant-self.js'
 import { PlatformPermissions } from '../platform-permissions.js'
 import { renderDemoApp } from '../test-utils/render.js'
@@ -152,13 +152,13 @@ beforeEach(async () => {
   // route's state does not depend on which mode ran before it.
   clearSelfTenants()
   setCurrentTenant(SCAN_TENANT_ID)
-  setTenantAliases(new Map())
-  setTenantAlias(SCAN_TENANT_ID, 'business')
+  setTenantNames(new Map())
+  setTenantName(SCAN_TENANT_ID, 'business')
 })
 
 afterEach(() => {
   setCurrentTenant(null)
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
 })
 
 describe('route-level Label in Name in Chromium', () => {

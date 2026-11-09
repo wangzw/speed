@@ -1,7 +1,8 @@
 /**
- * The host's two tenant layers: the identity the switcher keys on (the tenant
- * id) and the name the request surface announces (the alias). They are
- * distinct -- a rename moves the alias and leaves the id -- so these tests hold
+ * The host's two tenant layers: the switcher's key (TenantOption.id) and the
+ * name the request surface announces (the request-surface name). They are
+ * distinct facts -- a switch moves the announced name and leaves the key -- so
+ * these tests hold
  * them apart, above all for the diverged case the demo's own seeded tenant does
  * not exhibit.
  *
@@ -31,7 +32,7 @@ import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import {
   COLOR_MODE_STORAGE_KEY,
-  getCurrentTenantAlias,
+  getCurrentTenantName,
   getCurrentTenant,
   getRecordedTenantDisplayName,
   getRecordedTenantKind,
@@ -39,8 +40,8 @@ import {
   persistColorModePreference,
   readStoredColorModePreference,
   setCurrentTenant,
-  setTenantAlias,
-  setTenantAliases,
+  setTenantName,
+  setTenantNames,
   tenantDisplayName,
   UserMenu,
   useTenantSelection,
@@ -70,7 +71,7 @@ const tLayout = createSpeedI18n({
 }).getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 
 afterEach(() => {
-  setTenantAliases(new Map())
+  setTenantNames(new Map())
   setCurrentTenant(null)
   // The suite setup installs the desktop branch once per file; restore it
   // after the narrow-viewport case.
@@ -78,40 +79,41 @@ afterEach(() => {
 })
 
 describe('the current tenant', () => {
-  it('holds the alias the request surface announces', () => {
+  it('holds the name the request surface announces', () => {
     setCurrentTenant('acme-inc')
     // The switcher and the request surface read the same value: the tenant's
-    // alias, the only name the request surface resolves.
+    // name, the only name the request surface resolves.
     expect(getCurrentTenant()).toBe('acme-inc')
-    expect(getCurrentTenantAlias()).toBe('acme-inc')
+    expect(getCurrentTenantName()).toBe('acme-inc')
   })
 
   it('announces nothing with no current tenant', () => {
     setCurrentTenant(null)
     expect(getCurrentTenant()).toBeNull()
-    expect(getCurrentTenantAlias()).toBeNull()
+    expect(getCurrentTenantName()).toBeNull()
   })
 
   it('records an operation answer’s kind and keeps it across a roster read', () => {
-    // An operation that lands the viewer in a tenant can answer the alias and
+    // An operation that lands the viewer in a tenant can answer the name and
     // the kind; the label of a row the caller tenant read has not listed yet
-    // comes from this record. A later roster read carries aliases only, and
+    // comes from this record. A later roster read carries names only, and
     // must not drop it.
-    setTenantAlias('acme', 'business')
+    setTenantName('acme', 'business')
     expect(getRecordedTenantKind('acme')).toBe('business')
 
-    setTenantAliases(new Map([['acme', 'Acme Inc.']]))
+    setTenantNames(new Map([['acme', 'Acme Inc.']]))
     expect(getRecordedTenantKind('acme')).toBe('business')
     expect(getRecordedTenantKind('unknown')).toBeNull()
   })
 
-  it('records the roster display name and renders it over the alias', () => {
-    setTenantAliases(new Map([['acme', 'Acme Incorporated']]))
+  it('records the roster display name and renders it in preference to the name', () => {
+    setTenantNames(new Map([['acme', 'Acme Incorporated']]))
     expect(getRecordedTenantDisplayName('acme')).toBe('Acme Incorporated')
     expect(getRecordedTenantDisplayName('unknown')).toBeNull()
 
-    // A business row renders its display name, falling back to the alias
-    // when the profile names none. TenantOption.id is the alias here.
+    // A business row renders its display name, falling back to the
+    // request-surface name when the profile names none. TenantOption.id
+    // carries the request-surface name here.
     expect(
       tenantDisplayName(
         {
@@ -180,13 +182,13 @@ const SOLE_TENANT_NAME = 'Acme Inc.'
  * frame composes it: the organization rows live in the menu, so the harness
  * renders the real surface rather than the rows alone. */
 function TenantSwitchHarness(): ReactElement {
-  const [tenantAlias, setTenantAlias] = useTenantSelection('acme')
+  const [tenantName, setTenantName] = useTenantSelection('acme')
   return (
     <UserMenu
       organizations={{
         tenants: TWO_TENANTS,
-        tenantAlias,
-        onSelect: setTenantAlias,
+        tenantName,
+        onSelect: setTenantName,
       }}
     />
   )
@@ -195,13 +197,13 @@ function TenantSwitchHarness(): ReactElement {
 /** The account menu over an account that may enter one organization, where the
  * row is context rather than a switcher. */
 function SingleOrganizationSwitchHarness(): ReactElement {
-  const [tenantAlias, setTenantAlias] = useTenantSelection('acme')
+  const [tenantName, setTenantName] = useTenantSelection('acme')
   return (
     <UserMenu
       organizations={{
         tenants: SOLE_TENANT,
-        tenantAlias,
-        onSelect: setTenantAlias,
+        tenantName,
+        onSelect: setTenantName,
       }}
     />
   )
@@ -670,11 +672,11 @@ describe('the header account menu in the temporary drawer', () => {
     mockMatchMedia(false)
     window.history.replaceState({}, '', '/')
     setCurrentTenant('acme')
-    setTenantAliases(new Map([['acme', 'acme']]))
+    setTenantNames(new Map([['acme', 'acme']]))
     bindRequestFn(<T,>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ alias: 'acme', kind: 'business' }],
+          tenants: [{ name: 'acme', kind: 'business' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {

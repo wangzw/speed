@@ -255,24 +255,24 @@ API endpoints -- and set `runtime-config.json`'s `apiOrigin` to that origin.
 The backend's `api` endpoint is tenant-scoped: `tenant.resolve` reads the tenant
 from the request's `X-Tenant` header (the header extractor the platform defaults
 select, whose header name is the module's own default) and looks the
-name up in the roster's **alias** column, so an `api` call that announces no
+name up in the roster's **name** column, so an `api` call that announces no
 tenant -- or a name the roster no longer holds -- is refused 404. The tenant is a
 request-time routing fact, not a claim of the access token (the token carries
-none), so the client announces it as a header. The host keeps the tenant's two
-names apart: the switcher keys on the tenant id (`src/chrome.tsx`'s
-`getCurrentTenantId`; a switch goes through the same file's
-`useTenantSelection`, which writes it, and `DemoApp` clears it when a session
-ends), while
+none), so the client announces it as a header. The host holds one name for the
+tenant: the switcher keys on it (`src/chrome.tsx`'s `getCurrentTenant`, whose
+`TenantOption.id` this host fills with the name; a switch goes through the same
+file's `useTenantSelection`, which writes it, and `DemoApp` clears it when a
+session ends), and
 `bootstrapDemoApp` wires the client's `tenantProvider` to the current tenant's
-**alias** (`getCurrentTenantAlias`), which the client reads on every attempt and
-sends as `X-Tenant`. A rename moves the alias and leaves the id, so the app reads the caller's own
-tenant list (`GET /api/v1/auth/me/tenants`, the `tenant.self` module) once per
-identity: authenticated, no permission needed, it answers each active
-membership's identifier and current alias. That list fills the switcher and is
-the alias source every tenant-scoped request announces. A platform staff
+**name** (`getCurrentTenantName`), which the client reads on every attempt and
+sends as `X-Tenant`. The name is chosen at creation and is immutable, so the app
+reads the caller's own tenant list (`GET /api/v1/auth/me/tenants`, the
+`tenant.self` module) once per identity: authenticated, no permission needed, it
+answers each active membership's current name. That list fills the switcher and
+is the name source every tenant-scoped request announces. A platform staff
 member's roster read (`tenantAdminTenantsList`, `tenant.admin`'s management
 operation, which needs `tenant.read` in the **platform** domain) adds the
-aliases of tenants the caller list does not hold -- a staff member entering a
+names of tenants the caller list does not hold -- a staff member entering a
 tenant they are not a member of -- and names the staff default. An ordinary
 member is answered 403 there and settles from its own list alone. When neither
 source names the current tenant, the client announces nothing and the

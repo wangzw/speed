@@ -71,7 +71,7 @@ function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-const TENANT = tenantFixture({ alias: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
 
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
@@ -424,7 +424,7 @@ describe('PermissionsPage', () => {
       const operations = withAuthz({ listRoles })
       renderWithProviders(<PermissionsPage />, { operations })
       // The link that carried the tenant arrives with a selection already
-      // made: the roles read runs for it and the selector shows its alias.
+      // made: the roles read runs for it and the selector shows its name.
       expect(await screen.findByText('editor')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.permissions.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
@@ -462,7 +462,7 @@ describe('PermissionsPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            tenantFixture({ alias: 'globex', displayName: 'Globex', status: 'active' }),
+            tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
           ]),
       })
       renderWithProviders(

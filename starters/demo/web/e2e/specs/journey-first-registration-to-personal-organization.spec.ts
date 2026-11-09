@@ -299,7 +299,7 @@ test('first-registration: a new visitor reaches a personal organization, and occ
     ).toBeVisible()
 
     await page
-      .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
+      .getByLabel(copy('orgCreateUi', 'fields.name'), { exact: true })
       .fill(organization.username)
     await page
       .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })

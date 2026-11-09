@@ -153,7 +153,7 @@ import {
   organizationPath,
 } from '../helpers/organization-admin'
 
-/** The seeded business tenant the organization surface acts on. Its id is its alias. */
+/** The seeded business tenant the organization surface acts on. Its id is its name. */
 const TENANT = 'acme'
 
 /**
@@ -481,18 +481,22 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           page.getByRole('heading', {
             level: 1,
-            name: copy('adminUi', 'invitations.title'),
+            name: copy('adminUi', 'organization.nav.profile'),
             exact: true,
           }),
         ).toBeVisible()
-        expect(new URL(page.url()).pathname).toBe(organizationPath('/invitations'))
+        expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
 
         await mainNavigation(page)
           .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
           .click()
         await expect(homeHeading(page)).toBeVisible()
+        await openOrganizationPage(page, 'profile')
+        expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
+
+        // The next step reads the member table, so leave the first page for
+        // the invitations page through its account-menu entry.
         await openOrganizationPage(page, 'invitations')
-        expect(new URL(page.url()).pathname).toBe(organizationPath('/invitations'))
       })
 
       await test.step('step 3: the member table lists this tenant with names, roles, status, source and joined-at', async () => {
@@ -1120,9 +1124,15 @@ test.describe('the tenant administrator manages the organization', () => {
         // high-risk, so the page asks for the deliberate second click.
         await roleRow
           .getByRole('button', {
-            name: copy('adminUi', 'permissions.roles.manageGrantsAria', {
+            name: copy('adminUi', 'permissions.roles.actionsAria', {
               role: ROLE,
             }),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('menuitem', {
+            name: copy('adminUi', 'permissions.roles.manageGrants'),
             exact: true,
           })
           .click()
@@ -1587,9 +1597,15 @@ test.describe('the tenant administrator manages the organization', () => {
           .locator('tbody tr')
           .filter({ hasText: ROLE })
           .getByRole('button', {
-            name: copy('adminUi', 'permissions.roles.manageGrantsAria', {
+            name: copy('adminUi', 'permissions.roles.actionsAria', {
               role: ROLE,
             }),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('menuitem', {
+            name: copy('adminUi', 'permissions.roles.manageGrants'),
             exact: true,
           })
           .click()
@@ -1659,6 +1675,14 @@ test.describe('the tenant administrator manages the organization', () => {
         const resentRow = invitationRow(page, RESENT_INVITEE)
         await resentRow
           .getByRole('button', {
+            name: copy('adminUi', 'invitations.actionsAria', {
+              email: RESENT_INVITEE,
+            }),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('menuitem', {
             name: copy('adminUi', 'invitations.resend'),
             exact: true,
           })
@@ -1769,6 +1793,14 @@ test.describe('the tenant administrator manages the organization', () => {
             hasText: copy('adminUi', 'invitations.status.pending'),
           })
           .getByRole('button', {
+            name: copy('adminUi', 'invitations.actionsAria', {
+              email: RESENT_INVITEE,
+            }),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('menuitem', {
             name: copy('adminUi', 'invitations.revoke'),
             exact: true,
           })
@@ -2045,9 +2077,15 @@ test.describe('the organization SSO page', () => {
       ).toBeVisible()
       await domainRow
         .getByRole('button', {
-          name: copy('adminUi', 'sso.domains.verifyAria', {
+          name: copy('adminUi', 'sso.domains.actionsAria', {
             domain: enterpriseIdentityProviderDomain,
           }),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('menuitem', {
+          name: copy('adminUi', 'sso.domains.verify'),
           exact: true,
         })
         .click()
@@ -2329,7 +2367,13 @@ test.describe('the organization SSO page', () => {
         .locator('tbody tr')
         .filter({ hasText: PROVIDER_NAME })
         .getByRole('button', {
-          name: copy('adminUi', 'sso.deleteAria', { name: PROVIDER_NAME }),
+          name: copy('adminUi', 'sso.actionsAria', { name: PROVIDER_NAME }),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('menuitem', {
+          name: copy('adminUi', 'sso.delete'),
           exact: true,
         })
         .click()
@@ -2992,8 +3036,8 @@ test.describe('a protected business tenant is read-only', () => {
  * accepts only ids the journey document lists, and the journey document is not
  * this task's to edit. The gap is reported rather than claimed.
  */
-const OWNED_ALIAS = 'acme-lab'
-const OWNED_NAME = 'Acme Lab'
+const OWNED_NAME = 'acme-lab'
+const OWNED_DISPLAY_NAME = 'Acme Lab'
 const RENAMED_ORG = 'Acme Lab Renamed'
 const RENAMED_DESCRIPTION =
   'The renamed lab organization the profile save writes back.'
@@ -3017,21 +3061,21 @@ interface ProfileOwner {
 }
 
 /**
- * Wait for the product's own organization-profile read of `alias` and return
+ * Wait for the product's own organization-profile read of `name` and return
  * the owner fields it answered. The page shows the owner's display name and
  * username but never the internal account identifier, so this is where a test
  * that must prove the identifier's absence learns the value to look for.
  */
 function waitForProfileOwner(
   page: Page,
-  alias: string,
+  name: string,
 ): Promise<ProfileOwner> {
   return page
     .waitForResponse(
       (response) =>
         response.request().method() === 'GET' &&
         new URL(response.url()).pathname ===
-          `/api/v1/tenants/${alias}/profile`,
+          `/api/v1/tenants/${name}/profile`,
       { timeout: 30_000 },
     )
     .then(async (response) => {
@@ -3072,7 +3116,7 @@ function deleteOrganizationButton(page: Page): Locator {
 async function createOrganization(
   page: Page,
   input: {
-    readonly alias: string
+    readonly name: string
     readonly displayName: string
     readonly description?: string
   },
@@ -3093,8 +3137,8 @@ async function createOrganization(
     }),
   ).toBeVisible()
   await page
-    .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
-    .fill(input.alias)
+    .getByLabel(copy('orgCreateUi', 'fields.name'), { exact: true })
+    .fill(input.name)
   await page
     .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })
     .fill(input.displayName)
@@ -3325,10 +3369,10 @@ test.describe('the organization profile page belongs to its owner', () => {
     // The create-then-enter sequence lands on the profile page; the read it
     // issues is awaited so the owner's internal identifier is known. The page
     // must never render that identifier.
-    const profileRead = waitForProfileOwner(page, OWNED_ALIAS)
+    const profileRead = waitForProfileOwner(page, OWNED_NAME)
     await createOrganization(page, {
-      alias: OWNED_ALIAS,
-      displayName: OWNED_NAME,
+      name: OWNED_NAME,
+      displayName: OWNED_DISPLAY_NAME,
       description: OWNED_DESCRIPTION,
     })
     const profileOwner = await profileRead
@@ -3356,8 +3400,8 @@ test.describe('the organization profile page belongs to its owner', () => {
     await expect(page.getByText(profileOwner.ownerAccount)).toHaveCount(0)
     expect(await page.content()).not.toContain(profileOwner.ownerAccount)
     await expect(
-      definitionValue(page, copy('adminUi', 'tenantProfile.field.alias')),
-    ).toHaveText(OWNED_ALIAS)
+      definitionValue(page, copy('adminUi', 'tenantProfile.field.name')),
+    ).toHaveText(OWNED_NAME)
     await expect(ownershipSection(page)).toBeVisible()
     await expect(transferOwnerButton(page)).toBeVisible()
     await expect(deleteOrganizationButton(page)).toBeVisible()
@@ -3423,8 +3467,8 @@ test.describe('the organization profile page belongs to its owner', () => {
     // payload that dropped any of them leaves that field reading the old value
     // and fails here.
     await expect(
-      definitionValue(page, copy('adminUi', 'tenantProfile.field.alias')),
-    ).toHaveText(OWNED_ALIAS)
+      definitionValue(page, copy('adminUi', 'tenantProfile.field.name')),
+    ).toHaveText(OWNED_NAME)
     const savedFields = [
       ['tenantProfile.field.displayName', RENAMED_ORG],
       ['tenantProfile.field.description', RENAMED_DESCRIPTION],
@@ -3455,8 +3499,8 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(homeHeading(page)).toBeVisible()
 
       await createOrganization(page, {
-        alias: OWNED_ALIAS,
-        displayName: OWNED_NAME,
+        name: OWNED_NAME,
+        displayName: OWNED_DISPLAY_NAME,
       })
 
       // A second tenant administrator who is not the owner: invite the
@@ -3521,8 +3565,8 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(homeHeading(page)).toBeVisible()
 
       await createOrganization(page, {
-        alias: OWNED_ALIAS,
-        displayName: OWNED_NAME,
+        name: OWNED_NAME,
+        displayName: OWNED_DISPLAY_NAME,
       })
 
       // The target is an active member of the organization, reached through
@@ -3541,7 +3585,7 @@ test.describe('the organization profile page belongs to its owner', () => {
 
       const dialog = page.getByRole('dialog', {
         name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
-          name: OWNED_NAME,
+          name: OWNED_DISPLAY_NAME,
         }),
         exact: true,
       })
@@ -3598,7 +3642,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(
         confirmation.getByText(
           copyPattern('adminUi', 'tenantProfile.ownership.transfer.saved', {
-            name: escapeRegExp(OWNED_NAME),
+            name: escapeRegExp(OWNED_DISPLAY_NAME),
             account: '.+',
           }),
         ),
@@ -3648,20 +3692,20 @@ test.describe('the organization profile page belongs to its owner', () => {
       // The transfer removed the previous owner's membership, so the
       // organization is no longer among the caller's tenants: the account
       // menu keeps the departed tenant as the current row only through its
-      // recorded alias, and the switcher's list offers the remaining
+      // recorded name, and the switcher's list offers the remaining
       // membership (acme) while the departed organization is not offered as
       // a destination. The target's member list above already proved the
       // removal from the organization's own side.
       const menu = await openAccountMenu(page)
-      await expect(organizationRow(page, OWNED_ALIAS)).toBeVisible({
+      await expect(organizationRow(page, OWNED_NAME)).toBeVisible({
         timeout: 15_000,
       })
-      await organizationRow(page, OWNED_ALIAS).click()
+      await organizationRow(page, OWNED_NAME).click()
       await expect(
         menu.getByRole('menuitem', { name: 'acme', exact: true }),
       ).toBeVisible({ timeout: 15_000 })
       await expect(
-        menu.getByRole('menuitem', { name: OWNED_NAME, exact: true }),
+        menu.getByRole('menuitem', { name: OWNED_DISPLAY_NAME, exact: true }),
       ).toHaveCount(0)
       await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
       await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
@@ -3690,8 +3734,8 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(homeHeading(page)).toBeVisible()
 
       await createOrganization(page, {
-        alias: OWNED_ALIAS,
-        displayName: OWNED_NAME,
+        name: OWNED_NAME,
+        displayName: OWNED_DISPLAY_NAME,
       })
 
       // The transfer's target is an active member, reached through a real
@@ -3705,7 +3749,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       const invitee = await inviteeContext.newPage()
       await acceptInvitationAsInvitee(invitee, link)
 
-      // The owner's page opens the deletion and clears the alias guard before
+      // The owner's page opens the deletion and clears the name guard before
       // anything changes, so the confirmation is armed and the write needs one
       // more click. The page keeps the profile it read -- this account is the
       // owner in it -- so the control stays on screen while the state
@@ -3714,17 +3758,17 @@ test.describe('the organization profile page belongs to its owner', () => {
       await deleteOrganizationButton(page).click()
       const dialog = page.getByRole('dialog', {
         name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
-          name: OWNED_NAME,
+          name: OWNED_DISPLAY_NAME,
         }),
         exact: true,
       })
       await expect(dialog).toBeVisible()
       await dialog
         .getByLabel(
-          copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'),
+          copy('adminUi', 'tenantProfile.ownership.delete.nameLabel'),
           { exact: true },
         )
-        .fill(OWNED_ALIAS)
+        .fill(OWNED_NAME)
       await dialog
         .getByRole('button', {
           name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
@@ -3752,12 +3796,12 @@ test.describe('the organization profile page belongs to its owner', () => {
         password: reviewTenantAdmin.password,
       })
       await expect(homeHeading(other)).toBeVisible()
-      await switchOrganization(other, 'acme', OWNED_NAME)
+      await switchOrganization(other, 'acme', OWNED_DISPLAY_NAME)
       await openOrganizationPage(other, 'profile')
       await transferOwnerButton(other).click()
       const transferDialog = other.getByRole('dialog', {
         name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
-          name: OWNED_NAME,
+          name: OWNED_DISPLAY_NAME,
         }),
         exact: true,
       })
@@ -3837,7 +3881,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     }
   })
 
-  test('tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken', async ({
+  test('tenant-admin: the owner types the name, deletes the organization, and the name stays taken', async ({
     demo,
   }) => {
     test.setTimeout(180_000)
@@ -3851,37 +3895,37 @@ test.describe('the organization profile page belongs to its owner', () => {
     await expect(homeHeading(page)).toBeVisible()
 
     await createOrganization(page, {
-      alias: OWNED_ALIAS,
-      displayName: OWNED_NAME,
+      name: OWNED_NAME,
+      displayName: OWNED_DISPLAY_NAME,
     })
 
     await openOrganizationPage(page, 'profile')
     await deleteOrganizationButton(page).click()
 
-    // Deletion is terminal, so the dialog asks for the alias and then for the
+    // Deletion is terminal, so the dialog asks for the name and then for the
     // deliberate second confirmation.
     const dialog = page.getByRole('dialog', {
       name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
-        name: OWNED_NAME,
+        name: OWNED_DISPLAY_NAME,
       }),
       exact: true,
     })
     await expect(dialog).toBeVisible()
-    const aliasField = dialog.getByLabel(
-      copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'),
+    const nameField = dialog.getByLabel(
+      copy('adminUi', 'tenantProfile.ownership.delete.nameLabel'),
       { exact: true },
     )
     const confirm = dialog.getByRole('button', {
       name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),
       exact: true,
     })
-    // The typed alias is the guard, not decoration: the confirmation is inert
+    // The typed name is the guard, not decoration: the confirmation is inert
     // while the field is empty or names anything but this organization's own
-    // alias, and only the matching value enables it.
+    // name, and only the matching value enables it.
     await expect(confirm).toBeDisabled()
-    await aliasField.fill(`${OWNED_ALIAS}-not-the-alias`)
+    await nameField.fill(`${OWNED_NAME}-not-the-name`)
     await expect(confirm).toBeDisabled()
-    await aliasField.fill(OWNED_ALIAS)
+    await nameField.fill(OWNED_NAME)
     await expect(confirm).toBeEnabled()
     await confirm.click()
     const again = dialog.getByRole('button', {
@@ -3904,25 +3948,25 @@ test.describe('the organization profile page belongs to its owner', () => {
     await expect(
       confirmation.getByText(
         copy('adminUi', 'tenantProfile.ownership.delete.saved', {
-          name: OWNED_NAME,
+          name: OWNED_DISPLAY_NAME,
         }),
         { exact: true },
       ),
     ).toBeVisible()
 
     // Switch back to the account's remaining organization: the deleted one is
-    // still the current tenant only through its recorded alias, and a
+    // still the current tenant only through its recorded name, and a
     // tenant-scoped request that announced it would be refused before the
     // create handler runs.
     const menu = await openAccountMenu(page)
-    await expect(organizationRow(page, OWNED_ALIAS)).toBeVisible({
+    await expect(organizationRow(page, OWNED_NAME)).toBeVisible({
       timeout: 15_000,
     })
-    await organizationRow(page, OWNED_ALIAS).click()
+    await organizationRow(page, OWNED_NAME).click()
     await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
     await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
 
-    // The tombstone keeps the alias: a second creation with the same alias is
+    // The tombstone keeps the name: a second creation with the same name is
     // refused as an identifier conflict, and the form keeps the values.
     const createMenu = await openAccountMenu(page)
     await createMenu.getByRole('menuitem').first().click()
@@ -3940,11 +3984,11 @@ test.describe('the organization profile page belongs to its owner', () => {
       }),
     ).toBeVisible()
     await page
-      .getByLabel(copy('orgCreateUi', 'fields.alias'), { exact: true })
-      .fill(OWNED_ALIAS)
+      .getByLabel(copy('orgCreateUi', 'fields.name'), { exact: true })
+      .fill(OWNED_NAME)
     await page
       .getByLabel(copy('orgCreateUi', 'fields.displayName'), { exact: true })
-      .fill(OWNED_NAME)
+      .fill(OWNED_DISPLAY_NAME)
     await page
       .getByRole('button', { name: copy('orgCreateUi', 'submit'), exact: true })
       .click()
@@ -3974,8 +4018,8 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(homeHeading(page)).toBeVisible()
 
       await createOrganization(page, {
-        alias: OWNED_ALIAS,
-        displayName: OWNED_NAME,
+        name: OWNED_NAME,
+        displayName: OWNED_DISPLAY_NAME,
       })
 
       // The target is an active member when the dialog lists it.
@@ -3991,7 +4035,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       await transferOwnerButton(page).click()
       const dialog = page.getByRole('dialog', {
         name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
-          name: OWNED_NAME,
+          name: OWNED_DISPLAY_NAME,
         }),
         exact: true,
       })
@@ -4026,7 +4070,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         password: reviewTenantAdmin.password,
       })
       await expect(homeHeading(other)).toBeVisible()
-      await switchOrganization(other, 'acme', OWNED_NAME)
+      await switchOrganization(other, 'acme', OWNED_DISPLAY_NAME)
       await openOrganizationPage(other, 'invitations')
       await manageMemberButton(other, reviewInvitee.displayName).click()
       const panel = memberPanel(other)
@@ -4098,18 +4142,18 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(homeHeading(page)).toBeVisible()
 
       await createOrganization(page, {
-        alias: OWNED_ALIAS,
-        displayName: OWNED_NAME,
+        name: OWNED_NAME,
+        displayName: OWNED_DISPLAY_NAME,
       })
-      // The identity card names the organization by its alias, the name the
+      // The identity card names the organization by its name, the value the
       // request surface uses; it carries no internal identifier.
-      const organizationAlias = (
+      const organizationName = (
         await definitionValue(
           page,
-          copy('adminUi', 'tenantProfile.field.alias'),
+          copy('adminUi', 'tenantProfile.field.name'),
         ).innerText()
       ).trim()
-      expect(organizationAlias).toBe(OWNED_ALIAS)
+      expect(organizationName).toBe(OWNED_NAME)
 
       // Another session ends the organization through the platform surface.
       // The page under test keeps its cached profile, so its owner controls
@@ -4146,7 +4190,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       const created = roster
         .locator('tbody tr')
-        .filter({ hasText: OWNED_ALIAS })
+        .filter({ hasText: OWNED_NAME })
       await expect(created).toHaveCount(1)
       await created
         .getByRole('button', {
@@ -4159,19 +4203,19 @@ test.describe('the organization profile page belongs to its owner', () => {
         .click()
       const platformDelete = operator.getByRole('dialog', {
         name: copy('adminUi', 'tenantLifecycle.deleteConfirm.title', {
-          name: OWNED_NAME,
+          name: OWNED_DISPLAY_NAME,
         }),
         exact: true,
       })
       await expect(platformDelete).toBeVisible()
-      // Deletion asks for the organization's alias before the two-step
+      // Deletion asks for the organization's name before the two-step
       // confirmation can arm.
       await platformDelete
         .getByLabel(
-          copy('adminUi', 'tenantLifecycle.deleteConfirm.aliasLabel'),
+          copy('adminUi', 'tenantLifecycle.deleteConfirm.nameLabel'),
           { exact: true },
         )
-        .fill(organizationAlias)
+        .fill(organizationName)
       await platformDelete
         .getByRole('button', {
           name: copy('adminUi', 'tenantLifecycle.deleteConfirm.confirmLabel'),
@@ -4187,7 +4231,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(
         operator.getByText(
           copy('adminUi', 'tenantLifecycle.deleteConfirm.success', {
-            alias: organizationAlias,
+            name: organizationName,
           }),
           { exact: true },
         ),
@@ -4199,17 +4243,17 @@ test.describe('the organization profile page belongs to its owner', () => {
       await deleteOrganizationButton(page).click()
       const dialog = page.getByRole('dialog', {
         name: copy('adminUi', 'tenantProfile.ownership.delete.title', {
-          name: OWNED_NAME,
+          name: OWNED_DISPLAY_NAME,
         }),
         exact: true,
       })
       await expect(dialog).toBeVisible()
       await dialog
         .getByLabel(
-          copy('adminUi', 'tenantProfile.ownership.delete.aliasLabel'),
+          copy('adminUi', 'tenantProfile.ownership.delete.nameLabel'),
           { exact: true },
         )
-        .fill(OWNED_ALIAS)
+        .fill(OWNED_NAME)
       await dialog
         .getByRole('button', {
           name: copy('adminUi', 'tenantProfile.ownership.delete.confirmLabel'),

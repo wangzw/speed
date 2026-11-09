@@ -124,7 +124,7 @@ white-labelling is runtime host composition (a nested
 `documentLanguage: false` disables the `<html lang>` binding the
 assembly otherwise keeps in step with the instance.
 
-`tenantProvider` answers the tenant **alias** the backend's resolution
+`tenantProvider` answers the tenant **name** the backend's resolution
 layer looks up by name — the tenant header's value — never the tenant id
 `@speed/auth-core`'s `TenantProvider` carries for query-key scoping.
 

@@ -25,7 +25,7 @@ import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { createBackend } from '../a11y/backends.js'
 import {
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from '../chrome.js'
 import {
   pendingInvitationLanding,
@@ -39,7 +39,7 @@ import {
   createTestSession,
 } from '../test-utils/session.js'
 
-/** The tenant the callback route renders over, with the alias the host has
+/** The tenant the callback route renders over, with the name the host has
  * recorded for it; the host holds no default roster, so a current tenant must
  * be nameable. */
 const TENANT_ID = 'acme'
@@ -115,7 +115,7 @@ beforeEach(() => {
   window.history.replaceState({}, '', AUTH_CALLBACK_PATH)
   window.sessionStorage.clear()
   setCurrentTenant(TENANT_ID)
-  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
+  setTenantNames(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
 describe('the auth callback route', () => {

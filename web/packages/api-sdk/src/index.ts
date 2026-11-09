@@ -323,7 +323,7 @@ export interface AuthnImpersonationGrant {
   started_at?: string;
   /** The impersonated account */
   target: string;
-  /** The alias of the tenant the impersonation is confined to */
+  /** The name of the tenant the impersonation is confined to */
   tenant: string;
 }
 
@@ -379,7 +379,7 @@ export interface AuthnInviteInvitation {
   invited_by: string;
   /** The stored state. Expiry is not stored: an expired pending invitation still reads pending. */
   status: AuthnInviteInvitationStatus;
-  /** The alias of the tenant the invitation grants a membership in. */
+  /** The name of the tenant the invitation grants a membership in. */
   tenant: string;
 }
 
@@ -403,7 +403,7 @@ export interface AuthnInviteAccept {
   source: string;
   /** Whether the membership is exempt from SSO enforcement; an acceptance writes false. */
   sso_exempt: boolean;
-  /** The alias of the tenant the membership was written in. */
+  /** The name of the tenant the membership was written in. */
   tenant: string;
 }
 
@@ -957,15 +957,15 @@ export interface NotificationType {
 }
 
 /**
- * The alias, display name and description of the organization to create. The identifier is generated.
+ * The name, display name and description of the organization to create. The identifier is generated.
  */
 export interface OrganizationCreateRequest {
-  /** The organization's public alias: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation. */
-  alias: string;
   /** The organization's description; at most 500 runes after trimming. */
   description?: string;
   /** The organization's display name; 1 to 100 runes after trimming, and the surface requires it non-empty. */
   display_name: string;
+  /** The organization's public name: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation. */
+  name: string;
 }
 
 /**
@@ -979,15 +979,15 @@ export const OrganizationCreatedTenantStatus = {
 } as const;
 
 /**
- * The created organization: the caller's alias and profile, and the active state. The generated identifier is internal and never appears.
+ * The created organization: the caller's name and profile, and the active state. The generated identifier is internal and never appears.
  */
 export interface OrganizationCreatedTenant {
-  /** The request-surface name the caller chose; unique across the roster and immutable after creation. */
-  alias: string;
   /** The organization's description, trimmed. */
   description: string;
   /** The organization's display name, trimmed. */
   displayName: string;
+  /** The request-surface name the caller chose; unique across the roster and immutable after creation. */
+  name: string;
   /** The organization's state; a self-service organization starts active. */
   status: OrganizationCreatedTenantStatus;
 }
@@ -1657,7 +1657,7 @@ export const TenantAdminTenantDisabledBy = {
 } as const;
 
 /**
- * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias.
+ * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name.
  */
 export type TenantAdminTenantKind = typeof TenantAdminTenantKind[keyof typeof TenantAdminTenantKind];
 
@@ -1680,11 +1680,9 @@ export const TenantAdminTenantStatus = {
 } as const;
 
 /**
- * One tenant as the management routes render it: the alias, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.
+ * One tenant as the management routes render it: the name, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.
  */
 export interface TenantAdminTenant {
-  /** The alias the request surface addresses the tenant by, and the name every view and path uses. */
-  alias: string;
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
   contactEmail: string;
   /** When the tenant was registered, as an RFC 3339 instant in UTC. */
@@ -1693,10 +1691,12 @@ export interface TenantAdminTenant {
   description: string;
   /** Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled. */
   disabledBy?: TenantAdminTenantDisabledBy;
-  /** The organization's display name. Empty when its profile names none; a surface falls back to the alias then. */
+  /** The organization's display name. Empty when its profile names none; a surface falls back to the name then. */
   displayName: string;
-  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias. */
+  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name. */
   kind: TenantAdminTenantKind;
+  /** The name the request surface addresses the tenant by, and the one every view and path uses. */
+  name: string;
   /** The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it. */
   ownerAccount: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
@@ -1706,17 +1706,17 @@ export interface TenantAdminTenant {
 }
 
 /**
- * The alias and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body.
+ * The name and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body.
  */
 export interface TenantAdminTenantRegistration {
-  /** The alias to give the tenant; the roster refuses one another tenant already holds. */
-  alias: string;
   /** The organization's contact address, one bare email address of at most 254 bytes. */
   contact_email?: string;
   /** A longer account of the organization, at most 500 runes. */
   description?: string;
   /** The organization's display name, at most 100 runes. Empty when the registration names none. */
   display_name?: string;
+  /** The name to give the tenant; the roster refuses one another tenant already holds. */
+  name: string;
   /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. */
   website?: string;
 }
@@ -1755,7 +1755,7 @@ export interface AuthnAdminImpersonation {
   started_at: string;
   /** The identifier of the account being impersonated. */
   target: string;
-  /** The alias of the tenant the impersonation is confined to. */
+  /** The name of the tenant the impersonation is confined to. */
   tenant: string;
 }
 
@@ -1779,7 +1779,7 @@ export interface TenantAdminTenantProfileWrite {
   contact_email: string;
   /** A longer account of the organization, at most 500 runes. Empty clears it. */
   description: string;
-  /** The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias. */
+  /** The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the name. */
   display_name: string;
   /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it. */
   website: string;
@@ -1844,7 +1844,7 @@ export interface AuthzTenantAdminBindingView {
   granted_at: string;
   /** The role bound to the account. */
   role: string;
-  /** The alias of the tenant the binding belongs to. */
+  /** The name of the tenant the binding belongs to. */
   tenant: string;
 }
 
@@ -1900,7 +1900,7 @@ export interface AuthnAdminMember {
   source: string;
   /** True when the member is exempt from the tenant's enforced SSO requirement. */
   sso_exempt: boolean;
-  /** The tenant's alias. */
+  /** The tenant's name. */
   tenant: string;
   /** The account's login username: unique, user-facing, and not an identifier of the account. The empty string when the account has none; it is never a fallback to another login identifier. */
   username: string;
@@ -1958,7 +1958,7 @@ export interface AuthzTenantAdminPermissionView {
 }
 
 /**
- * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias.
+ * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name.
  */
 export type TenantProfileViewKind = typeof TenantProfileViewKind[keyof typeof TenantProfileViewKind];
 
@@ -1981,21 +1981,21 @@ export const TenantProfileViewStatus = {
 } as const;
 
 /**
- * One tenant's organization profile: the read-only alias, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read.
+ * One tenant's organization profile: the read-only name, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read.
  */
 export interface TenantProfileView {
-  /** The alias the request surface addresses the tenant by. */
-  alias: string;
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
   contactEmail: string;
   /** When the tenant was registered, as an RFC 3339 instant in UTC. */
   createdAt: string;
   /** The organization's description. Empty when its profile names none. */
   description: string;
-  /** The organization's display name. Empty when its profile names none; a surface falls back to the alias then. */
+  /** The organization's display name. Empty when its profile names none; a surface falls back to the name then. */
   displayName: string;
-  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias. */
+  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name. */
   kind: TenantProfileViewKind;
+  /** The name the request surface addresses the tenant by. */
+  name: string;
   /** The owning account's internal identifier, from the roster row's owner column. It is the key the ownership decision and the transfer-target exclusion use, and a client compares it to identify the owner; it is not displayed. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner. */
   ownerAccount: string;
   /** The owner's display name, read from the account store. It is not the account identifier. Empty when the owner cannot be resolved, and never an identifier. */
@@ -2013,7 +2013,7 @@ export interface TenantProfileWrite {
   contact_email: string;
   /** A longer account of the organization, at most 500 runes. Empty clears it. */
   description: string;
-  /** The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias. */
+  /** The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the name. */
   display_name: string;
   /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it. */
   website: string;
@@ -2037,7 +2037,7 @@ export interface AuthzTenantAdminRoleView {
   permission_count: number;
   /** The role name within the tenant. A role is never renamed: the name is the key a binding holds. */
   role: string;
-  /** The alias of the tenant the role belongs to. */
+  /** The name of the tenant the role belongs to. */
   tenant: string;
 }
 
@@ -2080,7 +2080,7 @@ export interface AuthzTenantAdminGrantView {
   resource: string;
   /** The role holding the grant. */
   role: string;
-  /** The alias of the tenant the grant belongs to. */
+  /** The name of the tenant the grant belongs to. */
   tenant: string;
 }
 
@@ -2197,7 +2197,7 @@ export interface AuthnAdminProvider {
   protocol: string;
   /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. */
   provisioning: string;
-  /** The owning tenant's alias; immutable after creation. */
+  /** The owning tenant's name; immutable after creation. */
   tenant: string;
   /** True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list. */
   trust_idp_mfa: boolean;
@@ -2246,7 +2246,7 @@ export interface AuthnAdminProviderWrite {
   protocol: string;
   /** jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created. Required, with no default. */
   provisioning: string;
-  /** The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused. */
+  /** The tenant's name; absent names the provider's own tenant, and a value naming another tenant is refused. */
   tenant?: string;
   /** Absent leaves the flag as it is (false on a create) */
   trust_idp_mfa?: boolean;
@@ -2488,7 +2488,7 @@ export type AuthnImpersonationStartBody = {
   account: string;
   /** Why the impersonation is started. It is trimmed, then must be one to 500 characters with no control characters; it is stored on the record and in the audit row and never appears in a response. */
   reason?: string;
-  /** The alias of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused, and an alias no tenant carries is refused as not a member. */
+  /** The name of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused, and a name no tenant carries is refused as not a member. */
   tenant?: string;
   /** Requested lifetime in whole seconds. Zero or absent takes the max-ttl setting (30 minutes by default); the settled lifetime is the shortest of the request, that setting, the remaining lifetime of the caller's session and a hard ceiling of one hour. */
   ttl_seconds?: number;
@@ -2528,7 +2528,7 @@ export type AuthnProfilePatchBody = {
 };
 
 /**
- * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the alias.
+ * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the name.
  */
 export type TenantSelfTenantsList200TenantsItemKind = typeof TenantSelfTenantsList200TenantsItemKind[keyof typeof TenantSelfTenantsList200TenantsItemKind];
 
@@ -2539,12 +2539,12 @@ export const TenantSelfTenantsList200TenantsItemKind = {
 } as const;
 
 export type TenantSelfTenantsList200TenantsItem = {
-  /** The tenant's alias, the name the request surface addresses it by. */
-  alias: string;
-  /** The organization's display name, empty when its profile names none. A surface falls back to the alias then. */
+  /** The organization's display name, empty when its profile names none. A surface falls back to the name then. */
   displayName: string;
-  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the alias. */
+  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the name. */
   kind: TenantSelfTenantsList200TenantsItemKind;
+  /** The tenant's name, which the request surface addresses it by. */
+  name: string;
 };
 
 /**
@@ -2860,7 +2860,7 @@ export type SettingsAdminSettingsListParams = {
  */
 layer: SettingsAdminSettingsListLayer;
 /**
- * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
+ * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty name or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -2879,7 +2879,7 @@ export type SettingsAdminSettingsListNamespaceParams = {
  */
 layer: SettingsAdminSettingsListNamespaceLayer;
 /**
- * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
+ * The tenant whose layer the listing reads. Required when "layer" is "tenant" and refused when it is "global"; an empty name or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -2898,7 +2898,7 @@ export type SettingsAdminSettingsRemoveParams = {
  */
 layer: SettingsAdminSettingsRemoveLayer;
 /**
- * The tenant whose layer the row is dropped from. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
+ * The tenant whose layer the row is dropped from. Required when "layer" is "tenant" and refused when it is "global"; an empty name or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -2917,7 +2917,7 @@ export type SettingsAdminSettingsSetParams = {
  */
 layer: SettingsAdminSettingsSetLayer;
 /**
- * The tenant whose layer the write lands on. Required when "layer" is "tenant" and refused when it is "global"; an empty alias or one containing blanks or control characters is a 400.
+ * The tenant whose layer the write lands on. Required when "layer" is "tenant" and refused when it is "global"; an empty name or one containing blanks or control characters is a 400.
  */
 tenant?: string;
 };
@@ -2982,7 +2982,7 @@ export type SmsAdminTemplatesSetEnabledBody = {
  * The whole roster in one answer, because the listing is not paged.
  */
 export type TenantAdminTenantsList200 = {
-  /** Every tenant the roster holds, ordered by alias. */
+  /** Every tenant the roster holds, ordered by name. */
   tenants: TenantAdminTenant[];
 };
 
@@ -2995,10 +2995,10 @@ export type TenantAdminTenantsCreate201 = {
 };
 
 /**
- * The tenant the alias named.
+ * The tenant the name named.
  */
 export type TenantAdminTenantsGet200 = {
-  /** The tenant, with its alias, kind, owner account and state. */
+  /** The tenant, with its name, kind, owner account and state. */
   tenant: TenantAdminTenant;
 };
 
@@ -3030,10 +3030,10 @@ after?: string;
 };
 
 /**
- * The tenant the alias named.
+ * The tenant the name named.
  */
 export type TenantAdminTenantsProfile200 = {
-  /** The tenant, with its alias, kind, owner account and state. */
+  /** The tenant, with its name, kind, owner account and state. */
   tenant: TenantAdminTenant;
 };
 
@@ -3151,7 +3151,7 @@ export type AuthzTenantadminPermissionsList200 = {
  * The organization profile of one tenant.
  */
 export type TenantProfileGet200 = {
-  /** The tenant's organization profile, with its alias, kind, owner account and state. */
+  /** The tenant's organization profile, with its name, kind, owner account and state. */
   profile: TenantProfileView;
 };
 
@@ -3159,7 +3159,7 @@ export type TenantProfileGet200 = {
  * The organization profile of one tenant.
  */
 export type TenantProfileUpdate200 = {
-  /** The tenant's organization profile, with its alias, kind, owner account and state. */
+  /** The tenant's organization profile, with its name, kind, owner account and state. */
   profile: TenantProfileView;
 };
 
@@ -4919,7 +4919,7 @@ export const useAuthnProfilePatch = <TError = Problem,
     }
 
 /**
- * Answers the tenants the calling account holds an active membership in, with each tenant's alias, display name and kind. No identifier is exposed: the alias is the name a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the alias then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is in the membership read's order, a stable enumeration over tenants the view exposes by alias alone, and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
+ * Answers the tenants the calling account holds an active membership in, with each tenant's name, display name and kind. No identifier is exposed: the name is what a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the name then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is in the membership read's order, a stable enumeration over tenants the view exposes by name alone, and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
  * @summary List the tenants the caller holds an active membership in
  */
 export const tenantSelfTenantsList = (
@@ -6879,7 +6879,7 @@ export function useNotificationPreferencesListTypes<TData = Awaited<ReturnType<t
 
 
 /**
- * Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated and stays internal. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.
+ * Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the name; the identifier is generated and stays internal. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The name is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.
  * @summary Create a business organization
  */
 export const orgCreateCreate = (
@@ -9100,7 +9100,7 @@ export const useSmsAdminTemplatesSetEnabled = <TError = Problem | void,
     }
 
 /**
- * Reads every tenant in the roster, ordered by alias. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.
+ * Reads every tenant in the roster, ordered by name. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.
  * @summary List every tenant the roster holds
  */
 export const tenantAdminTenantsList = (
@@ -9170,7 +9170,7 @@ export function useTenantAdminTenantsList<TData = Awaited<ReturnType<typeof tena
 
 
 /**
- * Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the alias and optionally the profile's four descriptive fields; the identifier is generated by the server and never appears in a request or a view, and the new tenant starts active. A body that carries an identifier is refused as a bad request. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.
+ * Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the name and optionally the profile's four descriptive fields; the identifier is generated by the server and never appears in a request or a view, and the new tenant starts active. A body that carries an identifier is refused as a bad request. Registration never overwrites: an identifier or a name already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.
  * @summary Register an active tenant
  */
 export const tenantAdminTenantsCreate = (
@@ -9235,7 +9235,7 @@ export const useTenantAdminTenantsCreate = <TError = Problem,
     }
 
 /**
- * Deletes one tenant platform staff names. The write is a tombstone: the alias and the internal identifier stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.
+ * Deletes one tenant platform staff names. The write is a tombstone: the name and the internal identifier stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.
  * @summary Delete one tenant
  */
 export const tenantAdminTenantsDelete = (
@@ -9298,7 +9298,7 @@ export const useTenantAdminTenantsDelete = <TError = Problem | void,
     }
 
 /**
- * Reads one tenant by its alias, the name the request surface addresses it by. An alias the roster does not hold is a 404. Reads write no audit row.
+ * Reads one tenant by its name, which the request surface addresses it by. A name the roster does not hold is a 404. Reads write no audit row.
  * @summary Read one tenant the roster holds
  */
 export const tenantAdminTenantsGet = (
@@ -9847,7 +9847,7 @@ export const useTenantAdminTenantsTransferOwner = <TError = Problem | void,
     }
 
 /**
- * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.
+ * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, name, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.
  * @summary Write one tenant's organization profile
  */
 export const tenantAdminTenantsProfile = (
@@ -10318,7 +10318,7 @@ export const useAuthzAdminGrantsPut = <TError = Problem,
     }
 
 /**
- * Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An alias the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
+ * Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. A name the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
  * @summary Change one tenant's state
  */
 export const tenantAdminTenantsSetStatus = (
@@ -10384,7 +10384,7 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem | void,
     }
 
 /**
- * Deletes one organization, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction, under the same tenant lock the platform surface takes. A protected tenant is refused by the host's write guard. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal.
+ * Deletes one organization, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The write is a tombstone: the identifier and the name stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction, under the same tenant lock the platform surface takes. A protected tenant is refused by the host's write guard. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal.
  * @summary Delete the caller's own organization
  */
 export const tenantAdminOwnerDelete = (
@@ -10926,7 +10926,7 @@ export const useAuthnInviteRevoke = <TError = Problem | void,
     }
 
 /**
- * Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's alias: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.
+ * Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's name: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.
  * @summary List a tenant's members
  */
 export const authnAdminMembersList = (
@@ -11335,7 +11335,7 @@ export function useAuthzTenantadminPermissionsList<TData = Awaited<ReturnType<ty
 
 
 /**
- * Reads one tenant's organization profile: its alias, kind, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An alias the roster does not hold is a 404. Reads write no audit row.
+ * Reads one tenant's organization profile: its name, kind, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. A name the roster does not hold is a 404. Reads write no audit row.
  * @summary Read a tenant's organization profile
  */
 export const tenantProfileGet = (
@@ -11405,7 +11405,7 @@ export function useTenantProfileGet<TData = Awaited<ReturnType<typeof tenantProf
 
 
 /**
- * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The alias, kind, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.
+ * Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The name, kind, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.
  * @summary Write a tenant's organization profile
  */
 export const tenantProfileUpdate = (

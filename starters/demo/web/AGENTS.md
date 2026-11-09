@@ -67,25 +67,27 @@ program beside this directory embeds with `go:embed` and serves through
   file, not an API endpoint -- and is the module `eslint.config.mjs` exempts
   from the no-direct-http rule.
 - **The tenant rides the transport, not the generated calls, and it rides it by
-  its alias.** The backend's `api` endpoint resolves the tenant from the
+  its name.** The backend's `api` endpoint resolves the tenant from the
   `X-Tenant` header (the header extractor the platform defaults select, whose
   header name is the module's own default) and looks the name up in the
-  roster's alias column, so the value announced is the current tenant's
-  **alias**, never its id. The host keeps the two apart: the switcher keys on the
-  tenant id (`getCurrentTenantId` in `src/chrome.tsx`; a switch goes through the
-  same file's `useTenantSelection`, which writes it, and `DemoApp` clears it when
-  a session ends), while `bootstrapDemoApp` wires the client's `tenantProvider` to
-  `getCurrentTenantAlias`; the client announces it on every request, per attempt.
-  A rename moves the alias and leaves the id, so `src/app.tsx` reads the
-  caller's own tenant list (`GET /api/v1/auth/me/tenants`, the `tenant.self`
-  module) once per identity and takes each tenant's current alias from it. A
-  platform staff member's roster read (`tenantAdminTenantsList`, `tenant.admin`'s
-  platform-scoped operation, `tenant.read` in the platform domain) adds the
-  aliases of tenants the caller list does not hold -- a staff member entering a
-  tenant they are not a member of -- and names the staff default; an ordinary
-  member is answered 403 there and settles from its own list alone. Neither
-  source has a placeholder behind it: when no source names the current tenant,
-  `getCurrentTenantAlias` answers null, the client announces nothing, and
+  roster's name column, so the value announced is the current tenant's
+  **name**, never its id. The host holds one name for it: the switcher keys on
+  the name (`getCurrentTenant` in `src/chrome.tsx`, whose `TenantOption.id`
+  this host fills with the name; a switch goes through the same file's
+  `useTenantSelection`, which writes it, and `DemoApp` clears it when a session
+  ends), and `bootstrapDemoApp` wires the client's `tenantProvider` to
+  `getCurrentTenantName`; the client announces it on every request, per attempt.
+  The name is chosen when the tenant is created and is immutable, so
+  `src/app.tsx` reads the caller's own tenant list
+  (`GET /api/v1/auth/me/tenants`, the `tenant.self` module) once per identity
+  and takes each tenant's current name from it. A platform staff member's
+  roster read (`tenantAdminTenantsList`, `tenant.admin`'s platform-scoped
+  operation, `tenant.read` in the platform domain) adds the names of tenants
+  the caller list does not hold -- a staff member entering a tenant they are
+  not a member of -- and names the staff default; an ordinary member is
+  answered 403 there and settles from its own list alone. Neither source has a
+  placeholder behind it: when no source names the current tenant,
+  `getCurrentTenantName` answers null, the client announces nothing, and
   tenant-scoped reads stay disabled until the host can name one.
   A tenant-scoped `api` call without the header -- or with a stale name -- is
   refused 404. The tenant is not a claim of the access token. See README "The

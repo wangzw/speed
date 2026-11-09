@@ -3,14 +3,14 @@
  *
  * The page reads one tenant's organization profile (GET
  * /api/v1/tenants/{tenant}/profile) and renders it as two cards. The
- * identity card is read-only: the alias is fixed after creation, the state
+ * identity card is read-only: the name is fixed after creation, the state
  * is the platform's to change, and the creation time is a fact. The profile
  * card edits the four descriptive fields the organization owns -- display
  * name, description, contact email and website.
  *
  * The display name may be cleared. An empty display name is not an error:
- * every surface falls back to the alias, and the field's placeholder shows
- * that alias. A landed save calls the host's `onTenantUpdated`, so the
+ * every surface falls back to the name, and the field's placeholder shows
+ * that name. A landed save calls the host's `onTenantUpdated`, so the
  * account menu and the breadcrumb -- which read the caller tenant list --
  * show the new name immediately instead of after their next read.
  *
@@ -177,7 +177,7 @@ export function TenantProfilePage({
     if (settled === undefined) {
       return
     }
-    const name = displayNameOf(next.displayName, settled.alias)
+    const name = displayNameOf(next.displayName, settled.name)
     void feedback.run(async () => {
       await write.mutateAsync({ tenant, fields: next })
       // The host re-reads the caller tenant list the menu and the breadcrumb
@@ -249,8 +249,8 @@ export function TenantProfilePage({
               >
                 <Box component="dl" sx={{ margin: 0 }}>
                   <DefinitionRow
-                    label={t('tenantProfile.field.alias')}
-                    value={settledProfile.alias}
+                    label={t('tenantProfile.field.name')}
+                    value={settledProfile.name}
                   />
                   <DefinitionRow
                     label={t('tenantProfile.field.owner')}
@@ -272,7 +272,7 @@ export function TenantProfilePage({
                   />
                 </Box>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  {t('tenantProfile.identity.aliasHint')}
+                  {t('tenantProfile.identity.nameHint')}
                 </Typography>
               </SectionCard>
 
@@ -288,7 +288,7 @@ export function TenantProfilePage({
                       label={t('tenantProfile.field.displayName')}
                       value={displayNameOf(
                         settledProfile.displayName,
-                        settledProfile.alias,
+                        settledProfile.name,
                       )}
                     />
                     <DefinitionRow
@@ -311,7 +311,7 @@ export function TenantProfilePage({
                       onChange={setDraft}
                       onSubmit={save}
                       saving={feedback.pending}
-                      alias={settledProfile.alias}
+                      name={settledProfile.name}
                     />
                     <Box ref={regionRef} sx={{ mt: 2 }}>
                       <WriteFeedbackRegion outcome={feedback.outcome} />
@@ -326,7 +326,7 @@ export function TenantProfilePage({
                 profile={settledProfile}
                 displayName={displayNameOf(
                   settledProfile.displayName,
-                  settledProfile.alias,
+                  settledProfile.name,
                 )}
                 onTenantUpdated={onTenantUpdated}
                 onOrganizationLeft={onOrganizationLeft}

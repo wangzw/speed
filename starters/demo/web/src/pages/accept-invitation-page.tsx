@@ -15,17 +15,17 @@
  * invitation operations this page binds to the app's generated SDK surface
  * (src/app-api, the platform document's operations). On acceptance the page
  * announces the new membership to the tenant home, resolves the invited
- * tenant's alias from the caller tenant read, records that tenant as the
+ * tenant's name from the caller tenant read, records that tenant as the
  * current one, and navigates there (src/app-notice.tsx): the
  * home page shows the confirmation the journey asks for, which the
  * acceptance's own page cannot keep because the navigation unmounts it.
  *
  * The accept answer names the written membership's tenant by identifier only,
- * so the alias the request surface must carry is not in it. The page reads
+ * so the name the request surface must carry is not in it. The page reads
  * the caller tenant list once after the acceptance to resolve it. A failed
  * read still lands the viewer home but leaves the current tenant unknown:
  * writing a tenant the host cannot name would send every tenant-scoped
- * request behind an alias no source holds.
+ * request behind a name no source holds.
  *
  * The route is public and sits outside both shells (the invitee arrives
  * before any session exists), so the app renders its page directly
@@ -70,13 +70,13 @@ export function AcceptInvitationPage({
   // The tenant the acceptance wrote, as its answer named it. The screen's own
   // onAccepted callback takes no argument, so the tenant identifier is
   // captured where the acceptance resolves and read back when it lands.
-  const acceptedTenantAlias = useRef<string | null>(null)
+  const acceptedTenantName = useRef<string | null>(null)
 
   // The screen drives these two operations; they reach the backend through
   // the generated surface over the request function the assembly bound
   // (src/main.tsx). The object is stable across renders -- the screen reads
   // it in an effect -- so it is memoized once. The acceptance records the
-  // tenant it wrote; the answer carries no alias, which the landing resolves
+  // tenant it wrote; the answer carries no name, which the landing resolves
   // separately.
   const invitations = useMemo<InvitationOperations>(
     () => ({
@@ -91,7 +91,7 @@ export function AcceptInvitationPage({
             : { display_name: input.displayName }),
           ...(input.password === undefined ? {} : { password: input.password }),
         }).then((answer) => {
-          acceptedTenantAlias.current = answer.tenant
+          acceptedTenantName.current = answer.tenant
           return undefined
         }),
     }),
@@ -99,21 +99,21 @@ export function AcceptInvitationPage({
   )
 
   // The landing the acceptance's own answer cannot complete on its own: the
-  // accepted tenant is named by its alias, and the landing confirms the
+  // accepted tenant is identified by its name, and the landing confirms the
   // caller tenant list now holds it before switching. The announcement comes
   // first -- it is the confirmation the home page shows -- and the navigation
   // happens either way, including when the membership read does not name the
   // tenant.
   const landInInvitedTenant = useCallback((): void => {
     notice.announce(t('home.notice.membershipTitle'))
-    const invited = acceptedTenantAlias.current
-    void resolveInvitedTenant(invited).then((tenantAlias) => {
+    const invited = acceptedTenantName.current
+    void resolveInvitedTenant(invited).then((tenantName) => {
       const previous = getCurrentTenant()
-      if (tenantAlias !== null) {
-        if (previous !== null && previous !== tenantAlias) {
+      if (tenantName !== null) {
+        if (previous !== null && previous !== tenantName) {
           evictTenantQueries(queryClient, previous)
         }
-        setCurrentTenant(tenantAlias)
+        setCurrentTenant(tenantName)
       } else if (previous !== null) {
         // No name for the invited tenant: the outgoing tenant is not this
         // landing's, so it must not stay current behind an unnameable
@@ -172,7 +172,7 @@ export function AcceptInvitationPage({
 }
 
 /**
- * One read of the caller tenant list, narrowed to the invited tenant's alias.
+ * One read of the caller tenant list, narrowed to the invited tenant's name.
  * Null when the read failed (the list did not settle) or does not name the
  * tenant: the landing must then leave the current tenant unknown rather than
  * announcing a name no source holds. The list already holds the tenant -- an
@@ -189,7 +189,7 @@ async function resolveInvitedTenant(
   if (!state.settled) {
     return null
   }
-  return state.tenants.some((tenant) => tenant.alias === invited)
+  return state.tenants.some((tenant) => tenant.name === invited)
     ? invited
     : null
 }

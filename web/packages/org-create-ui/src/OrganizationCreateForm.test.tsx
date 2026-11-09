@@ -48,7 +48,7 @@ describe('OrganizationCreateForm', () => {
     renderWithProviders(<ControlledForm mode="self-service" />, {
       language: 'en-US',
     })
-    expect(screen.getByLabelText(enUS.fields.alias)).toBeInTheDocument()
+    expect(screen.getByLabelText(enUS.fields.name)).toBeInTheDocument()
     expect(screen.getByLabelText(enUS.fields.displayName)).toBeInTheDocument()
     expect(screen.getByLabelText(enUS.fields.description)).toBeInTheDocument()
     expect(
@@ -62,7 +62,7 @@ describe('OrganizationCreateForm', () => {
       language: 'en-US',
     })
     for (const label of [
-      enUS.fields.alias,
+      enUS.fields.name,
       enUS.fields.displayName,
       enUS.fields.description,
       enUS.fields.contactEmail,
@@ -81,8 +81,8 @@ describe('OrganizationCreateForm', () => {
       <ControlledForm mode="self-service" onChange={onChange} />,
       { language: 'en-US' },
     )
-    await user.type(screen.getByLabelText(enUS.fields.alias), 'acme')
-    expect(onChange).toHaveBeenLastCalledWith('alias', 'acme')
+    await user.type(screen.getByLabelText(enUS.fields.name), 'acme')
+    expect(onChange).toHaveBeenLastCalledWith('name', 'acme')
     await user.type(screen.getByLabelText(enUS.fields.displayName), 'Acme')
     expect(onChange).toHaveBeenLastCalledWith('displayName', 'Acme')
   })
@@ -91,20 +91,20 @@ describe('OrganizationCreateForm', () => {
     renderWithProviders(
       <OrganizationCreateForm
         mode="self-service"
-        values={{ ...EMPTY_ORGANIZATION_CREATE_VALUES, alias: 'Acme' }}
+        values={{ ...EMPTY_ORGANIZATION_CREATE_VALUES, name: 'Acme' }}
         onChange={() => undefined}
-        violations={{ alias: 'aliasShape' }}
+        violations={{ name: 'nameShape' }}
         submitLabel="Create organization"
         onSubmit={() => undefined}
       />,
       { language: 'en-US' },
     )
-    const alias = screen.getByLabelText(enUS.fields.alias)
-    expect(alias).toHaveAttribute('aria-invalid', 'true')
-    expect(alias).toHaveAccessibleDescription(enUS.validation.aliasShape)
+    const name = screen.getByLabelText(enUS.fields.name)
+    expect(name).toHaveAttribute('aria-invalid', 'true')
+    expect(name).toHaveAccessibleDescription(enUS.validation.nameShape)
     // The standing hint gives way to the violation, never both.
     expect(
-      screen.queryByText(enUS.helpers.alias, { exact: true }),
+      screen.queryByText(enUS.helpers.name, { exact: true }),
     ).not.toBeInTheDocument()
   })
 
@@ -113,8 +113,8 @@ describe('OrganizationCreateForm', () => {
       language: 'zh-CN',
     })
     expect(
-      screen.getByLabelText(zhCN.fields.alias),
-    ).toHaveAccessibleDescription(zhCN.helpers.alias)
+      screen.getByLabelText(zhCN.fields.name),
+    ).toHaveAccessibleDescription(zhCN.helpers.name)
   })
 
   it('submits through the form without a page reload', async () => {

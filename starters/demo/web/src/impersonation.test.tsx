@@ -38,10 +38,10 @@ import {
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
-  getCurrentTenantAlias,
+  getCurrentTenantName,
   getCurrentTenant,
   setCurrentTenant,
-  setTenantAliases,
+  setTenantNames,
 } from './chrome.js'
 import { clearSelfTenants } from './tenant-self.js'
 import { renderDemoApp } from './test-utils/render.js'
@@ -100,7 +100,7 @@ function announcementRegion(): HTMLElement {
   return regions[0]!
 }
 
-const TENANT = { alias: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }
+const TENANT = { name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }
 
 interface GrantFixture {
   readonly id: string
@@ -335,10 +335,10 @@ interface Backend {
   /** The current tenant's id at the moment each unread-count read left the
    * browser. */
   readonly unreadTenantIds: () => readonly (string | null)[]
-  /** The alias each unread-count read would have announced as X-Tenant at the
+  /** The name each unread-count read would have announced as X-Tenant at the
    * moment it left the browser (the value the assembly's tenantProvider
    * reads): null when no source names the current tenant. */
-  readonly unreadAliases: () => readonly (string | null)[]
+  readonly unreadNames: () => readonly (string | null)[]
   readonly messagesReads: () => number
   readonly deletes: () => number
   /** A read of a tenant-scoped data surface (the notification centre): what
@@ -381,7 +381,7 @@ function makeBackend(options: {
   readonly startTenant?: string
   /** The tenants the caller tenant read answers; defaults to none. */
   readonly selfTenants?: readonly {
-    readonly alias: string
+    readonly name: string
     readonly displayName?: string
     readonly kind?: 'business' | 'personal'
   }[]
@@ -410,7 +410,7 @@ function makeBackend(options: {
   let postReads = 0
   let unreadReads = 0
   const unreadTenantIds: (string | null)[] = []
-  const unreadAliases: (string | null)[] = []
+  const unreadNames: (string | null)[] = []
   let messagesReads = 0
   let deletes = 0
   let tenantReads = 0
@@ -534,7 +534,7 @@ function makeBackend(options: {
     if (path === '/api/v1/notifications/messages/unread-count') {
       unreadReads += 1
       unreadTenantIds.push(getCurrentTenant())
-      unreadAliases.push(getCurrentTenantAlias())
+      unreadNames.push(getCurrentTenantName())
       return Promise.resolve({ unread: 0 } as T)
     }
     if (path === '/api/v1/notifications/messages') {
@@ -567,7 +567,7 @@ function makeBackend(options: {
     postReads: () => postReads,
     unreadReads: () => unreadReads,
     unreadTenantIds: () => unreadTenantIds,
-    unreadAliases: () => unreadAliases,
+    unreadNames: () => unreadNames,
     messagesReads: () => messagesReads,
     deletes: () => deletes,
     tenantReads: () => tenantReads,
@@ -642,7 +642,7 @@ function organizationEntry(
   )
 }
 
-/** The tenant the suite acts in, with the alias the host has recorded for it;
+/** The tenant the suite acts in, with the name the host has recorded for it;
  * the host holds no default roster, so a current tenant must be nameable. */
 const TENANT_ID = 'acme'
 
@@ -688,7 +688,7 @@ async function pickStartAccount(
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenant(TENANT_ID)
-  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
+  setTenantNames(new Map([[TENANT_ID, TENANT_ID]]))
   // The caller tenant list is module state: a case starts with no rows and
   // loads its own through the scripted backend.
   clearSelfTenants()
@@ -833,7 +833,7 @@ describe('the impersonation shell', () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ alias: 'acme' }],
+      selfTenants: [{ name: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
@@ -874,7 +874,7 @@ describe('the impersonation shell', () => {
     const self = deferred()
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ alias: 'acme' }],
+      selfTenants: [{ name: 'acme' }],
       selfGateAfterEnd: self.promise,
     })
     bindRequestFn(backend.fn)
@@ -933,7 +933,7 @@ describe('the impersonation shell', () => {
     const self = deferred()
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ alias: 'acme' }],
+      selfTenants: [{ name: 'acme' }],
       rosterGate: roster.promise,
       selfGateAfterEnd: self.promise,
     })
@@ -950,7 +950,7 @@ describe('the impersonation shell', () => {
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
     // The impersonation's own read settled: the impersonated account's
-    // membership list is the alias source the reload would otherwise lack.
+    // membership list is the name source the reload would otherwise lack.
     await waitFor(() => expect(backend.selfReads()).toBe(1))
 
     await user.click(
@@ -1012,7 +1012,7 @@ describe('the impersonation shell', () => {
   it('leaves the top bar unchanged for a member who is not impersonating', async () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
-      selfTenants: [{ alias: 'acme' }],
+      selfTenants: [{ name: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
@@ -1036,7 +1036,7 @@ describe('the impersonation shell', () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ alias: 'acme' }],
+      selfTenants: [{ name: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const { client, opened } = streamClient()
@@ -1333,15 +1333,15 @@ describe('the impersonation shell', () => {
   it('keeps the grant tenant named on a full page load while impersonating', async () => {
     window.history.replaceState({}, '', '/')
     // A full document load re-mints the host's module state: neither the
-    // current tenant nor the roster's alias cache survives. Only the
+    // current tenant nor the roster's name cache survives. Only the
     // impersonated account's own membership list can name the grant's tenant,
-    // and a tenant-scoped read that announces no alias is refused by the
+    // and a tenant-scoped read that announces no name is refused by the
     // admission layer.
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      selfTenants: [{ alias: 'acme' }],
+      selfTenants: [{ name: 'acme' }],
     })
     bindRequestFn(backend.fn)
 
@@ -1355,16 +1355,16 @@ describe('the impersonation shell', () => {
     })
 
     // The caller tenant read ran under the impersonated account: it is the
-    // alias source the reload has left.
+    // name source the reload has left.
     await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
 
     // The header's unread count is a tenant-scoped read. Every one of them
-    // ran under the grant's tenant and announced the alias the membership
-    // list named; the identifier alone is not an alias, and a request that
+    // ran under the grant's tenant and announced the name the membership
+    // list named; the identifier alone is not a name, and a request that
     // announces none is the 404 the refusal state renders from.
     await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
     expect(backend.unreadTenantIds().every((id) => id === 'acme')).toBe(true)
-    expect(backend.unreadAliases().every((alias) => alias === 'acme')).toBe(true)
+    expect(backend.unreadNames().every((name) => name === 'acme')).toBe(true)
   })
 
   it('issues no status read and shows no banner for a visitor who is not impersonating', async () => {
@@ -2096,9 +2096,9 @@ describe('the impersonation shell', () => {
     // let the effective account's platform set be read at all. With the set
     // read as empty, the area redirects; without the read it waits forever.
     window.history.replaceState({}, '', '/admin/tenants')
-    // A full load starts with no current tenant and no alias cache.
+    // A full load starts with no current tenant and no name cache.
     setCurrentTenant(null)
-    setTenantAliases(new Map())
+    setTenantNames(new Map())
     const request: RequestFn = <T,>(
       path: string,
     ) => {
@@ -2107,7 +2107,7 @@ describe('the impersonation shell', () => {
       }
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ alias: 'acme', kind: 'business' }],
+          tenants: [{ name: 'acme', kind: 'business' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -2165,7 +2165,7 @@ describe('the impersonation shell', () => {
       // The operator's own membership is the platform's organization: the
       // admin entry is offered only there, so the end must settle it for the
       // entry to be the observable this case reads.
-      selfTenants: [{ alias: 'system', kind: 'business' }],
+      selfTenants: [{ name: 'system', kind: 'business' }],
     })
     // The read fails while the session impersonates and answers for the
     // operator: the test needs the two outcomes, not a reason the
@@ -2474,7 +2474,7 @@ describe('the impersonation shell', () => {
       // The operator's tenant is what the module-level cell holds while the
       // admin has the frame unmounted.
       setCurrentTenant('acme')
-      setTenantAliases(
+      setTenantNames(
         new Map([
           ['acme', 'acme'],
           ['beta', 'beta'],
@@ -3032,7 +3032,7 @@ describe('the admin under an impersonation', () => {
         ...grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
         tenant: 'system',
       },
-      selfTenants: [{ alias: 'system', kind: 'business' }],
+      selfTenants: [{ name: 'system', kind: 'business' }],
     })
     bindRequestFn(<T,>(path: string, options?: RequestOptions): Promise<T> => {
       if (path === '/api/v1/authz/me/permissions') {
@@ -3064,7 +3064,7 @@ describe('the admin under an impersonation', () => {
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
       // The operator's own organization is the platform's: the menu offers
       // the admin entry only there.
-      selfTenants: [{ alias: 'system', kind: 'business' }],
+      selfTenants: [{ name: 'system', kind: 'business' }],
     })
     bindRequestFn(backend.fn)
     const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())

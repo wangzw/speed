@@ -4,22 +4,22 @@
     "intro": "Create a business organization for your team. You become its first administrator."
   },
   "fields": {
-    "alias": "Name",
+    "name": "Name",
     "displayName": "Display name",
     "description": "Description",
     "contactEmail": "Contact email",
     "website": "Website"
   },
   "helpers": {
-    "alias": "3–63 lowercase letters, digits or dashes, starting with a letter or digit. It cannot be changed after creation.",
+    "name": "3–63 lowercase letters, digits or dashes, starting with a letter or digit. It cannot be changed after creation.",
     "description": "Optional. Up to 500 characters.",
     "contactEmail": "Optional. The organization's contact address.",
     "website": "Optional. An absolute http or https address."
   },
   "validation": {
     "required": "This field is required.",
-    "aliasShape": "Use 3–63 lowercase letters, digits or dashes, starting with a letter or digit.",
-    "aliasReserved": "That name is reserved. Choose another one.",
+    "nameShape": "Use 3–63 lowercase letters, digits or dashes, starting with a letter or digit.",
+    "nameReserved": "That name is reserved. Choose another one.",
     "displayNameTooLong": "Keep the display name to 100 characters or fewer.",
     "descriptionTooLong": "Keep the description to 500 characters or fewer.",
     "emailShape": "Enter one email address, for example team@example.com.",

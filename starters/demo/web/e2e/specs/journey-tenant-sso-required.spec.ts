@@ -470,9 +470,15 @@ async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
   await expect(domainRow).toHaveCount(1)
   await domainRow
     .getByRole('button', {
-      name: copy('adminUi', 'sso.domains.verifyAria', {
+      name: copy('adminUi', 'sso.domains.actionsAria', {
         domain: enterpriseIdentityProviderDomain,
       }),
+      exact: true,
+    })
+    .click()
+  await page
+    .getByRole('menuitem', {
+      name: copy('adminUi', 'sso.domains.verify'),
       exact: true,
     })
     .click()

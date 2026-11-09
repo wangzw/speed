@@ -12,7 +12,7 @@
  * The transfer dialog searches the organization's active members (the server
  * grants the target tenant-admin when it does not hold it) and asks for the
  * deliberate second confirmation. The delete dialog requires the operator to
- * type the organization's alias and also asks for the second confirmation;
+ * type the organization's name and also asks for the second confirmation;
  * deletion is a tombstone with no restore route, so both guards are the heavy
  * ones.
  *
@@ -109,7 +109,8 @@ export interface TenantOwnershipProps {
   readonly tenant: string
   /** The settled profile, carrying the owner account. */
   readonly profile: AdminTenantProfile
-  /** The organization's display name (or alias) for the dialog and notices. */
+  /** The organization's display name, falling back to its name, for the
+   * dialog and notices. */
   readonly displayName: string
   /** The host's action when no departure action is supplied: reload the
    * caller tenant list the account menu and breadcrumb read. */
@@ -149,7 +150,7 @@ export function TenantOwnership({
       ? (snapshot.principal?.account_id ?? '')
       : ''
   // The kind is the roster's answer, never a guess from the name: a personal
-  // tenant's alias is its owner's username, which says nothing about the kind.
+  // tenant's name is its owner's username, which says nothing about the kind.
   const personal = profile.kind === 'personal'
 
   const resolve = (code: string): string => {
@@ -301,7 +302,7 @@ export function TenantOwnership({
       )}
       {deleteOpen && (
         <DeleteOrganizationDialog
-          alias={profile.alias}
+          name={profile.name}
           organizationName={displayName}
           busy={feedback.pending}
           onCancel={() => setDeleteOpen(false)}
@@ -448,7 +449,7 @@ function TransferOwnershipDialog({
 }
 
 interface DeleteOrganizationDialogProps {
-  readonly alias: string
+  readonly name: string
   readonly organizationName: string
   readonly busy: boolean
   readonly onCancel: () => void
@@ -456,12 +457,12 @@ interface DeleteOrganizationDialogProps {
 }
 
 /**
- * The delete dialog: type the organization's alias, then confirm twice.
- * Deletion is terminal and has no restore route, so the alias typing and the
+ * The delete dialog: type the organization's name, then confirm twice.
+ * Deletion is terminal and has no restore route, so the name typing and the
  * double confirmation are both required.
  */
 function DeleteOrganizationDialog({
-  alias,
+  name,
   organizationName,
   busy,
   onCancel,
@@ -481,17 +482,17 @@ function DeleteOrganizationDialog({
       confirmLabel={t('tenantProfile.ownership.delete.confirmLabel')}
       cancelLabel={t('common.cancel')}
       confirmLoading={busy}
-      confirmDisabled={typed !== alias}
+      confirmDisabled={typed !== name}
       onCancel={onCancel}
       onConfirm={onConfirm}
     >
       <TextField
         size="small"
         fullWidth
-        label={t('tenantProfile.ownership.delete.aliasLabel')}
+        label={t('tenantProfile.ownership.delete.nameLabel')}
         value={typed}
         onChange={(event) => setTyped(event.target.value)}
-        helperText={t('tenantProfile.ownership.delete.aliasHint', { alias })}
+        helperText={t('tenantProfile.ownership.delete.nameHint', { name })}
         autoComplete="off"
         sx={{ mt: 2 }}
       />

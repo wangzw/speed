@@ -2,14 +2,14 @@
  * TenantDetailPage: one tenant's administration detail.
  *
  * The roster's row-level enable/disable control lives on the roster page; this
- * page is the tenant in full -- its display name, alias, organization profile
- * and status read from GET /api/v1/system/tenants/{tenant}, addressed by the
- * alias, with the same enable/disable write gathered into the main column. It
- * is a detail page: a main column carrying the subject and its controls,
- * beside a fixed-width side column carrying the tenant's metadata and a way
- * back to the roster. The alias is immutable after creation, so it is
- * read-only and there is no rename control. The page title and breadcrumb
- * name the tenant by its display name (falling back to the alias); the
+ * page is the tenant in full -- its display name, its name, its organization
+ * profile and status read from GET /api/v1/system/tenants/{tenant}, addressed
+ * by the name, with the same enable/disable write gathered into the main
+ * column. It is a detail page: a main column carrying the subject and its
+ * controls, beside a fixed-width side column carrying the tenant's metadata
+ * and a way back to the roster. The name is immutable after creation, so it
+ * is read-only and there is no rename control. The page title and breadcrumb
+ * name the tenant by its display name (falling back to the name); the
  * summary shows the profile's four descriptive fields
  * and the creation time; a profile card below the status control writes
  * those four fields through the same shared form the organization surface
@@ -160,8 +160,8 @@ function siblingHref(
 }
 
 export interface TenantDetailPageProps {
-  /** The alias of the tenant to show -- the name the request surface uses. */
-  readonly alias: string
+  /** The tenant's name -- what the request surface addresses it by. */
+  readonly name: string
   /** The roster's path, for the breadcrumb and the back link; absent hides them. */
   readonly parentHref?: string
   /**
@@ -192,7 +192,7 @@ export interface TenantDetailPageProps {
 }
 
 export function TenantDetailPage({
-  alias,
+  name,
   parentHref,
   rootHref,
   relatedHref,
@@ -201,7 +201,7 @@ export function TenantDetailPage({
 }: TenantDetailPageProps) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
-  const tenant = operations.useTenant({ alias })
+  const tenant = operations.useTenant({ name })
   const setStatus = operations.useSetTenantStatus()
   // The status control reports through its own scope and region. The profile
   // card is a second control group with its own scope, held inside
@@ -235,7 +235,7 @@ export function TenantDetailPage({
   // The tenant-addressed pages all read the tenant from the same query
   // parameter (tenantFromLocation seeds their selector), so a link carries
   // this tenant into them instead of landing on an empty selection.
-  const tenantParam = `${TENANT_QUERY_PARAM}=${encodeURIComponent(alias)}`
+  const tenantParam = `${TENANT_QUERY_PARAM}=${encodeURIComponent(name)}`
   // Each sibling is found by its stable declaration id in the table the
   // shell published: the declaration, not a guessed segment, says where the
   // page lives. A sibling the host narrowed away -- its declaration absent,
@@ -266,16 +266,16 @@ export function TenantDetailPage({
   })
 
   // The header and breadcrumb name the tenant the way its profile does: the
-  // display name, or the alias when the profile names none. Before the read
-  // settles only the alias is known, so the route's own name stands in.
-  const name = displayNameOf(tenant.data?.displayName ?? '', alias)
+  // display name, or the name when the profile names none. Before the read
+  // settles only the name is known, so the route's own name stands in.
+  const tenantLabel = displayNameOf(tenant.data?.displayName ?? '', name)
 
   const crumbs = [
     { label: t('shell.title') },
     ...(parentHref === undefined
       ? [{ label: t('tenants.title') }]
       : [{ label: t('tenants.title'), href: parentHref }]),
-    { label: t('tenantDetail.title', { name }) },
+    { label: t('tenantDetail.title', { name: tenantLabel }) },
   ]
 
   const main = (settled: AdminTenant) => {
@@ -292,10 +292,10 @@ export function TenantDetailPage({
       <>
         <SectionCard title={t('tenantDetail.summary')} sx={{ mb: 3 }}>
           <Box component="dl" sx={{ margin: 0 }}>
-            <DefinitionRow label={t('tenantDetail.field.alias')} value={settled.alias} />
+            <DefinitionRow label={t('tenantDetail.field.name')} value={settled.name} />
             <DefinitionRow
               label={t('tenantProfile.field.displayName')}
-              value={displayNameOf(settled.displayName, settled.alias)}
+              value={displayNameOf(settled.displayName, settled.name)}
             />
             <DefinitionRow
               label={t('tenantDetail.field.status')}
@@ -352,14 +352,14 @@ export function TenantDetailPage({
               onChange={() => {
                 void statusFeedback.run(async () => {
                   await setStatus.mutateAsync({
-                    alias: settled.alias,
+                    name: settled.name,
                     status: disabled ? 'active' : 'disabled',
                   })
                   return t(
                     disabled
                       ? 'tenantDetail.actions.enabled'
                       : 'tenantDetail.actions.disabled',
-                    { alias: settled.alias },
+                    { name: settled.name },
                   )
                 })
               }}
@@ -382,7 +382,7 @@ export function TenantDetailPage({
 
         {!deleted && (
           <TenantProfileCard
-            key={`${settled.alias}:${profileEpoch}`}
+            key={`${settled.name}:${profileEpoch}`}
             tenant={settled}
           />
         )}
@@ -421,7 +421,7 @@ export function TenantDetailPage({
   return (
     <Box>
       <AdminPageHeader
-        title={t('tenantDetail.title', { name })}
+        title={t('tenantDetail.title', { name: tenantLabel })}
         breadcrumbs={crumbs}
         actions={
           <RefreshButton
@@ -476,9 +476,9 @@ export function TenantDetailPage({
           </AdminAsyncSection>
         }
         side={
-          <SectionCard title={t('tenantDetail.field.alias')}>
+          <SectionCard title={t('tenantDetail.field.name')}>
             <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-              {alias}
+              {name}
             </Typography>
             {/* Host side content sits above the back link, once the tenant
                 has loaded so it can render the subject it was given. */}
@@ -566,14 +566,14 @@ function TenantProfileCard({ tenant }: { readonly tenant: AdminTenant }) {
         onChange={setDraft}
         onSubmit={(next) => {
           void feedback.run(async () => {
-            await setProfile.mutateAsync({ alias: tenant.alias, fields: next })
+            await setProfile.mutateAsync({ name: tenant.name, fields: next })
             return t('tenantProfile.form.savedNamed', {
-              name: displayNameOf(next.displayName, tenant.alias),
+              name: displayNameOf(next.displayName, tenant.name),
             })
           })
         }}
         saving={feedback.pending}
-        alias={tenant.alias}
+        name={tenant.name}
       />
       <Box ref={regionRef} sx={{ mt: 2 }}>
         <WriteFeedbackRegion outcome={feedback.outcome} />

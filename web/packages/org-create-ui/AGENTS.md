@@ -4,8 +4,8 @@
 
 - the controlled creation form (`OrganizationCreateForm`) and its values;
 - the client-side validation the server remains authoritative over
-  (`validateOrganizationCreateValues`, `aliasViolation`,
-  `isRejectedIdentifier`, the reserved alias set and the display-name,
+  (`validateOrganizationCreateValues`, `nameViolation`,
+  `isRejectedIdentifier`, the reserved name set and the display-name,
   description and website bounds);
 - the self-service creation page (`OrganizationCreatePage`) and its
   create-then-enter sequence;
@@ -26,7 +26,7 @@ and the destination path.
   and host-agnostic.
 - User-facing copy lives only in `src/locales/{zh-CN,en-US}.json`, with
   identical leaf sets. A host registers the namespace once at bootstrap.
-- The server is authoritative on every rule. The client repeats the alias
+- The server is authoritative on every rule. The client repeats the name
   shape, the built-in reserved names, the identifier domain and the
   profile bounds; a deployment may append reserved names the client cannot
   know.

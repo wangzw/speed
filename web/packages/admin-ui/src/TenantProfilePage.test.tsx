@@ -2,7 +2,7 @@
  * TenantProfilePage: the organization's own profile page.
  *
  * It reads one tenant's organization profile, renders the identity card
- * read-only (the alias is never an input), edits the four descriptive
+ * read-only (the name is never an input), edits the four descriptive
  * fields, and reports a landed save through its feedback scope while
  * calling the host's `onTenantUpdated`. The read's 403, 404 and loading
  * branches are the shared async section's; a refused save keeps the draft
@@ -154,10 +154,10 @@ async function ready(): Promise<void> {
 }
 
 describe('TenantProfilePage', () => {
-  it('renders the identity read-only with no alias input', async () => {
+  it('renders the identity read-only with no name input', async () => {
     renderPage({
       profile: profileFixture({
-        alias: 'acme-inc',
+        name: 'acme-inc',
         displayName: 'Acme Incorporated',
         status: 'active',
       }),
@@ -166,13 +166,13 @@ describe('TenantProfilePage', () => {
 
     expect(screen.getByText('acme-inc')).toBeInTheDocument()
     expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
-    // The alias is stated, never editable: there is no control named after
+    // The name is stated, never editable: there is no control named after
     // it, and the read-only explanation sits beside the identity card.
     expect(
-      screen.queryByLabelText(zhCN.tenantProfile.field.alias),
+      screen.queryByLabelText(zhCN.tenantProfile.field.name),
     ).toBeNull()
     expect(
-      screen.getByText(zhCN.tenantProfile.identity.aliasHint),
+      screen.getByText(zhCN.tenantProfile.identity.nameHint),
     ).toBeInTheDocument()
     // The display name is the profile card's editable value, not a second
     // read-only statement on the identity card.
@@ -181,13 +181,13 @@ describe('TenantProfilePage', () => {
     ).toHaveValue('Acme Incorporated')
   })
 
-  it('falls back to the alias when the profile names no display name', async () => {
+  it('falls back to the name when the profile names no display name', async () => {
     renderPage({
-      profile: profileFixture({ alias: 'acme-inc', displayName: '' }),
+      profile: profileFixture({ name: 'acme-inc', displayName: '' }),
     })
     await ready()
-    // The identity card's alias is the only place the name is stated on the
-    // page; the form's display-name field is empty and offers the alias as
+    // The identity card's name is the only place it is stated on the
+    // page; the form's display-name field is empty and offers the name as
     // its placeholder.
     const displayName = screen.getByLabelText(
       zhCN.tenantProfile.field.displayName,
@@ -202,7 +202,7 @@ describe('TenantProfilePage', () => {
     const onTenantUpdated = vi.fn()
     renderPage({
       profile: profileFixture({
-        alias: 'acme-inc',
+        name: 'acme-inc',
         displayName: 'Old name',
         description: 'Old description',
         contactEmail: 'old@acme.example',
@@ -243,11 +243,11 @@ describe('TenantProfilePage', () => {
     ).toBeInTheDocument()
   })
 
-  it('allows the display name to be cleared and names the alias in the confirmation', async () => {
+  it('allows the display name to be cleared and shows the name in the confirmation', async () => {
     const user = userEvent.setup()
     const updates: unknown[] = []
     renderPage({
-      profile: profileFixture({ alias: 'acme-inc', displayName: 'Acme' }),
+      profile: profileFixture({ name: 'acme-inc', displayName: 'Acme' }),
       updateTenantProfile: (input) => {
         updates.push(input)
         return Promise.resolve()
@@ -265,7 +265,7 @@ describe('TenantProfilePage', () => {
     await waitFor(() => expect(updates).toHaveLength(1))
     expect((updates[0] as { fields: { displayName: string } }).fields)
       .toMatchObject({ displayName: '' })
-    // The confirmation names what every surface will show: the alias.
+    // The confirmation names what every surface will show: the name.
     expect(
       await screen.findByText(
         zhCN.tenantProfile.form.savedNamed.replace('{{name}}', 'acme-inc'),
@@ -377,13 +377,13 @@ describe('TenantProfilePage', () => {
 })
 
 const ORG_NAME = 'Acme Incorporated'
-const ORG_ALIAS = 'acme-inc'
+const ORG_URL_NAME = 'acme-inc'
 
 function ownerProfile(
   overrides: Partial<AdminTenantProfile> = {},
 ): AdminTenantProfile {
   return profileFixture({
-    alias: ORG_ALIAS,
+    name: ORG_URL_NAME,
     displayName: ORG_NAME,
     ownerAccount: OWNER,
     ownerDisplayName: OWNER_DISPLAY_NAME,
@@ -695,7 +695,7 @@ describe('TenantProfilePage ownership', () => {
     attachAccount(OWNER)
     renderPage({
       tenant: 'my-space',
-      profile: ownerProfile({ alias: 'my-space', kind: 'personal' }),
+      profile: ownerProfile({ name: 'my-space', kind: 'personal' }),
     })
     await ready()
 
@@ -809,9 +809,9 @@ describe('TenantProfilePage ownership', () => {
     const dialog = await screen.findByRole('dialog', { name: deleteTitle() })
     await user.type(
       within(dialog).getByLabelText(
-        zhCN.tenantProfile.ownership.delete.aliasLabel,
+        zhCN.tenantProfile.ownership.delete.nameLabel,
       ),
-      ORG_ALIAS,
+      ORG_URL_NAME,
     )
     await armAndConfirm(
       user,
@@ -863,7 +863,7 @@ describe('TenantProfilePage ownership', () => {
     )
   })
 
-  it('deletes the organization after the alias is typed and hands the confirmation to the departure action', async () => {
+  it('deletes the organization after the name is typed and hands the confirmation to the departure action', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
     const deletes: unknown[] = []
@@ -893,9 +893,9 @@ describe('TenantProfilePage ownership', () => {
 
     await user.type(
       within(dialog).getByLabelText(
-        zhCN.tenantProfile.ownership.delete.aliasLabel,
+        zhCN.tenantProfile.ownership.delete.nameLabel,
       ),
-      ORG_ALIAS,
+      ORG_URL_NAME,
     )
     await armAndConfirm(
       user,
@@ -939,9 +939,9 @@ describe('TenantProfilePage ownership', () => {
     const dialog = await screen.findByRole('dialog', { name: deleteTitle() })
     await user.type(
       within(dialog).getByLabelText(
-        zhCN.tenantProfile.ownership.delete.aliasLabel,
+        zhCN.tenantProfile.ownership.delete.nameLabel,
       ),
-      ORG_ALIAS,
+      ORG_URL_NAME,
     )
     await armAndConfirm(
       user,

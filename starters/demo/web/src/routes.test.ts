@@ -90,7 +90,7 @@ describe('the route table', () => {
       ADMIN_PREFIX,
       `${ADMIN_PREFIX}/tenants`,
       `${ADMIN_PREFIX}/tenants/new`,
-      `${ADMIN_PREFIX}/tenants/:alias`,
+      `${ADMIN_PREFIX}/tenants/:name`,
       `${ADMIN_PREFIX}/accounts`,
       `${ADMIN_PREFIX}/sessions`,
       `${ADMIN_PREFIX}/impersonations`,
@@ -187,11 +187,11 @@ describe('the route table', () => {
 
   it('mounts the organization declarations under their own prefix, outside the admin prefix', () => {
     expect(organizationAdminShellRoutes.map((route) => route.path)).toEqual([
+      `${ORGANIZATION_ADMIN_PREFIX}/profile`,
       `${ORGANIZATION_ADMIN_PREFIX}/invitations`,
       `${ORGANIZATION_ADMIN_PREFIX}/sso`,
       `${ORGANIZATION_ADMIN_PREFIX}/roles`,
       `${ORGANIZATION_ADMIN_PREFIX}/settings`,
-      `${ORGANIZATION_ADMIN_PREFIX}/profile`,
     ])
     for (const route of organizationAdminShellRoutes) {
       // The two management surfaces have disjoint path spaces: the admin
@@ -205,27 +205,27 @@ describe('the route table', () => {
     // own tenant-domain declaration, not the platform permissions page, and
     // the profile page is the tenant profile module's own read.
     expect(organizationAdminShellRoutes.map((route) => route.id)).toEqual([
+      'organization-profile',
       'organization-invitations',
       'organization-sso',
       'organization-roles',
       'organization-settings',
-      'organization-profile',
     ])
     expect(
       organizationAdminShellRoutes.map((route) => route.permission),
     ).toEqual([
+      'tenant.profile.read',
       'authn.membership.manage',
       'authn.idp.manage',
       'authz.tenant.role.read',
       'settings.tenant.read',
-      'tenant.profile.read',
     ])
     expect(organizationAdminShellRoutes.map((route) => route.requires)).toEqual([
+      ['tenant.profile'],
       ['authn.admin', 'authn.invitations'],
       ['authn.admin', 'authn.admin.sso'],
       ['authz.tenantadmin', 'authn.admin'],
       ['settings.tenantadmin'],
-      ['tenant.profile'],
     ])
   })
 })

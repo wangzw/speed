@@ -287,7 +287,7 @@ export function makeAdminBackend(
     createTenant: (input) =>
       Promise.resolve(
         tenantFixture({
-          alias: input.alias,
+          name: input.name,
           displayName: input.displayName,
           description: input.description,
           contactEmail: input.contactEmail,
@@ -423,7 +423,7 @@ export function tenantFixture(
   overrides: Partial<AdminTenant> = {},
 ): AdminTenant {
   return {
-    alias: 'acme',
+    name: 'acme',
     displayName: 'Acme',
     kind: 'business',
     ownerAccount: 'acc-1',
@@ -441,7 +441,7 @@ export function profileFixture(
   overrides: Partial<AdminTenantProfile> = {},
 ): AdminTenantProfile {
   return {
-    alias: 'acme',
+    name: 'acme',
     kind: 'business',
     displayName: '',
     description: '',
@@ -617,9 +617,9 @@ export function createAdminOperations(
       useQuery({ queryKey: TENANTS_KEY, queryFn: () => backend.listTenants() }),
     useTenant: (query: AdminTenantQuery) =>
       useQuery({
-        queryKey: tenantKey(query.alias ?? ''),
+        queryKey: tenantKey(query.name ?? ''),
         queryFn: () => backend.getTenant(query),
-        enabled: query.alias !== undefined && query.alias !== '',
+        enabled: query.name !== undefined && query.name !== '',
       }),
     useCreateTenant: () => {
       const client = useQueryClient()
@@ -638,7 +638,7 @@ export function createAdminOperations(
           backend.setTenantStatus(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
-          void client.invalidateQueries({ queryKey: tenantKey(input.alias) })
+          void client.invalidateQueries({ queryKey: tenantKey(input.name) })
         },
       })
     },
@@ -649,7 +649,7 @@ export function createAdminOperations(
           backend.setTenantProfile(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
-          void client.invalidateQueries({ queryKey: tenantKey(input.alias) })
+          void client.invalidateQueries({ queryKey: tenantKey(input.name) })
         },
       })
     },
@@ -660,7 +660,7 @@ export function createAdminOperations(
           backend.transferTenantOwner(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
-          void client.invalidateQueries({ queryKey: tenantKey(input.alias) })
+          void client.invalidateQueries({ queryKey: tenantKey(input.name) })
         },
       })
     },
@@ -671,7 +671,7 @@ export function createAdminOperations(
           backend.deleteTenant(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: TENANTS_KEY })
-          void client.invalidateQueries({ queryKey: tenantKey(input.alias) })
+          void client.invalidateQueries({ queryKey: tenantKey(input.name) })
         },
       })
     },

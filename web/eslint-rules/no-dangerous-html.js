@@ -6,7 +6,7 @@
  * escapes the string once when it renders it as a text node, and the
  * engine must not escape it again. That trade is safe only while no
  * layer treats a rendered string as markup. An HTML sink introduced
- * later would turn every interpolated value -- a tenant alias, a
+ * later would turn every interpolated value -- a tenant name, a
  * display name, a path -- into markup, silently reopening an XSS
  * channel that the instance option deliberately closed. This rule
  * makes the premise executable instead of a grep habit.

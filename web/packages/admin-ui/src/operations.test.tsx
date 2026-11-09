@@ -31,13 +31,13 @@ describe('useAdminOperations', () => {
   it('falls back to the shipped bundle when no provider is mounted', async () => {
     const calls = bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/tenants') {
-        return { tenants: [{ alias: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }] }
+        return { tenants: [{ name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }] }
       }
       throw new Error(`unexpected request: ${call.path}`)
     })
     function Roster() {
       const { data } = useAdminOperations().useTenants()
-      return <p>{data ? `roster:${data.map((t) => t.alias).join(',')}` : 'loading'}</p>
+      return <p>{data ? `roster:${data.map((t) => t.name).join(',')}` : 'loading'}</p>
     }
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -58,13 +58,13 @@ describe('adminOperations', () => {
   it('reads the roster from the generated tenant endpoint', async () => {
     const calls = bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/tenants') {
-        return { tenants: [{ alias: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }] }
+        return { tenants: [{ name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }] }
       }
       throw new Error(`unexpected request: ${call.path}`)
     })
     function Roster() {
       const { data } = adminOperations.useTenants()
-      return <p>{data ? `roster:${data.map((t) => t.alias).join(',')}` : 'loading'}</p>
+      return <p>{data ? `roster:${data.map((t) => t.name).join(',')}` : 'loading'}</p>
     }
     renderWithProviders(<Roster />, { operations: adminOperations })
     expect(await screen.findByText('roster:acme')).toBeInTheDocument()
@@ -115,7 +115,7 @@ describe('adminOperations', () => {
         if (call.path === '/api/v1/system/tenants') {
           return {
             tenant: {
-              alias: 'acme',
+              name: 'acme',
               kind: 'business',
               status: 'active',
               displayName: 'Acme Ltd',
@@ -138,7 +138,7 @@ describe('adminOperations', () => {
           type="button"
           onClick={() => {
             create.mutate({
-              alias: 'acme',
+              name: 'acme',
               displayName: 'Acme Ltd',
               description: '',
               contactEmail: '',
@@ -159,7 +159,7 @@ describe('adminOperations', () => {
         // The blank optional fields are omitted, not sent as empty
         // strings: the endpoint reads an absent field as "none" and
         // rejects an empty contact address.
-        body: { alias: 'acme', display_name: 'Acme Ltd' },
+        body: { name: 'acme', display_name: 'Acme Ltd' },
       })
     })
   })
@@ -242,13 +242,13 @@ describe('adminOperations', () => {
   it('reads a single tenant from the generated detail endpoint', async () => {
     const calls = bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/tenants/acme') {
-        return { tenant: { alias: 'acme', displayName: 'Acme', kind: 'business', status: 'active' } }
+        return { tenant: { name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' } }
       }
       throw new Error(`unexpected request: ${call.path}`)
     })
     function Detail() {
-      const { data } = adminOperations.useTenant({ alias: 'acme' })
-      return <p>{data ? `tenant:${data.alias}` : 'loading'}</p>
+      const { data } = adminOperations.useTenant({ name: 'acme' })
+      return <p>{data ? `tenant:${data.name}` : 'loading'}</p>
     }
     renderWithProviders(<Detail />, { operations: adminOperations })
     expect(await screen.findByText('tenant:acme')).toBeInTheDocument()
@@ -284,7 +284,7 @@ describe('adminOperations', () => {
       const status = adminOperations.useSetTenantStatus()
       return (
         <button
-          onClick={() => status.mutate({ alias: 'acme', status: 'disabled' })}
+          onClick={() => status.mutate({ name: 'acme', status: 'disabled' })}
         >
           setStatus
         </button>
@@ -310,12 +310,12 @@ describe('adminOperations', () => {
         <>
           <button
             onClick={() =>
-              transfer.mutate({ alias: 'acme', account: 'acc-2' })
+              transfer.mutate({ name: 'acme', account: 'acc-2' })
             }
           >
             transferOwner
           </button>
-          <button onClick={() => remove.mutate({ alias: 'acme' })}>
+          <button onClick={() => remove.mutate({ name: 'acme' })}>
             deleteTenant
           </button>
         </>
@@ -383,7 +383,7 @@ describe('adminOperations', () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/system/tenants/acme') {
-        return { tenant: { alias: 'acme', displayName: 'Acme', kind: 'business', status: 'active' } }
+        return { tenant: { name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' } }
       }
       if (call.method === 'POST' && call.path === '/api/v1/system/tenants/acme/status') {
         return undefined
@@ -396,13 +396,13 @@ describe('adminOperations', () => {
           call.method === 'GET' && call.path === '/api/v1/system/tenants/acme',
       ).length
     function Detail() {
-      const query = adminOperations.useTenant({ alias: 'acme' })
+      const query = adminOperations.useTenant({ name: 'acme' })
       const status = adminOperations.useSetTenantStatus()
       return (
         <>
-          <p>{query.data ? `tenant:${query.data.alias}` : 'loading'}</p>
+          <p>{query.data ? `tenant:${query.data.name}` : 'loading'}</p>
           <button
-            onClick={() => status.mutate({ alias: 'acme', status: 'disabled' })}
+            onClick={() => status.mutate({ name: 'acme', status: 'disabled' })}
           >
             disable
           </button>

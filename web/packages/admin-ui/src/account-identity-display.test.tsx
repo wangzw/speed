@@ -276,7 +276,7 @@ describe('InvitationsPage', () => {
           listTenants: () =>
             Promise.resolve([
               {
-                alias: TENANT,
+                name: TENANT,
                 displayName: 'Acme',
                 kind: 'business',
                 ownerAccount: UUID,

@@ -2,12 +2,12 @@
  * TenantRosterPage: the roster-administration page of the console.
  *
  * The platform side of the tenant story: it lists the whole roster (the
- * tenants the process serves) as a table (display name, alias, status and
+ * tenants the process serves) as a table (display name, name, status and
  * the row's write control) and enables or disables a tenant. Registration
  * is a page of its own (/tenants/new, TenantCreatePage), reached from the
- * page header's "register organization" link; an alias is immutable after
- * creation, so the alias cell is read-only and the page offers no rename
- * control. The alias is the tenant's name on the request surface and the
+ * page header's "register organization" link; a name is immutable after
+ * creation, so the name cell is read-only and the page offers no rename
+ * control. The name is what the request surface addresses the tenant by and
  * row's identity here: the row key, the detail link and the row's
  * accessible names all use it, never an internal identifier (the roster view
  * does not carry one). Switching the current session's tenant is the
@@ -113,7 +113,7 @@ function disabledByLabel(
  * same resolved text the region shows.
  *
  * Every control here repeats across the rows, so the toggle carries the row's
- * own alias in its accessible name -- a screen-reader user hears "disable
+ * own name in its accessible name -- a screen-reader user hears "disable
  * tenant acme", never a bare "disable" indistinguishable from the row above.
  */
 function TenantRowActions({
@@ -124,7 +124,7 @@ function TenantRowActions({
   readonly tenant: AdminTenant
   /** The page's refresh counter; a change resets this row's scope. */
   readonly refreshGeneration: number
-  readonly onWritePendingChange: (alias: string, pending: boolean) => void
+  readonly onWritePendingChange: (name: string, pending: boolean) => void
 }) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
@@ -137,7 +137,7 @@ function TenantRowActions({
   const [failed, setFailed] = useState(false)
   const resolveErrorText = useAdminUiErrorText()
   const failureText = failureTextOf(feedback.outcome, resolveErrorText)
-  const statusErrorId = `tenant-status-error-${encodeURIComponent(tenant.alias)}`
+  const statusErrorId = `tenant-status-error-${encodeURIComponent(tenant.name)}`
 
   // The page's refresh action re-reads the roster and bumps the generation:
   // this row then clears its scope and its inline marker, because a result
@@ -156,9 +156,9 @@ function TenantRowActions({
   // writing, but this row's scope lives here; the row reports its slot up
   // and withdraws it when it unmounts.
   useEffect(() => {
-    onWritePendingChange(tenant.alias, feedback.pending)
-    return () => onWritePendingChange(tenant.alias, false)
-  }, [feedback.pending, onWritePendingChange, tenant.alias])
+    onWritePendingChange(tenant.name, feedback.pending)
+    return () => onWritePendingChange(tenant.name, false)
+  }, [feedback.pending, onWritePendingChange, tenant.name])
 
   const disabled = tenant.status === 'disabled'
 
@@ -167,12 +167,12 @@ function TenantRowActions({
     void feedback.run(async () => {
       try {
         await setStatus.mutateAsync({
-          alias: tenant.alias,
+          name: tenant.name,
           status: disabled ? 'active' : 'disabled',
         })
         return t(
           disabled ? 'tenants.enabledToast' : 'tenants.disabledToast',
-          { alias: tenant.alias },
+          { name: tenant.name },
         )
       } catch (error) {
         setFailed(true)
@@ -197,8 +197,8 @@ function TenantRowActions({
         slotProps={{
           input: {
             'aria-label': disabled
-              ? t('tenants.enableAria', { alias: tenant.alias })
-              : t('tenants.disableAria', { alias: tenant.alias }),
+              ? t('tenants.enableAria', { name: tenant.name })
+              : t('tenants.disableAria', { name: tenant.name }),
             'aria-invalid': failed,
             'aria-describedby': failed ? statusErrorId : undefined,
           },
@@ -229,7 +229,7 @@ export interface TenantRosterPageProps {
    */
   readonly basePath?: string
   /**
-   * Host columns inserted after the roster's own display name, alias and
+   * Host columns inserted after the roster's own display name, name and
    * status and before the row-actions column. A host column that repeats
    * across rows takes its own ui-kit priority so a narrow container sheds
    * it in a chosen order; the page does not choose for it.
@@ -244,23 +244,23 @@ export function TenantRosterPage({
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const tenants = operations.useTenants()
-  // The aliases whose row scope has a write in flight. Each row reports its
+  // The names whose row scope has a write in flight. Each row reports its
   // own slot up (see TenantRowActions), so the refresh action can disable
   // for the union of every row's scope.
   const [pendingRowWrites, setPendingRowWrites] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   )
   const reportRowWritePending = useCallback(
-    (alias: string, pending: boolean) => {
+    (name: string, pending: boolean) => {
       setPendingRowWrites((current) => {
-        if (current.has(alias) === pending) {
+        if (current.has(name) === pending) {
           return current
         }
         const next = new Set(current)
         if (pending) {
-          next.add(alias)
+          next.add(name)
         } else {
-          next.delete(alias)
+          next.delete(name)
         }
         return next
       })
@@ -284,9 +284,9 @@ export function TenantRosterPage({
 
   // The columns the table renders: a row's read-only fields and its write
   // controls. Status carries a priority, so a narrow viewport sheds it
-  // before the display name, the alias and the controls. When the host
+  // before the display name, the name and the controls. When the host
   // supplies the roster's own path (basePath), the display name links to
-  // that tenant's detail page, addressed by the row's alias; without it the
+  // that tenant's detail page, addressed by the row's name; without it the
   // cell is plain text.
   const columns: DataTableColumn<AdminTenant>[] = [
     {
@@ -294,39 +294,39 @@ export function TenantRosterPage({
       header: t('tenantProfile.field.displayName'),
       cellWrap: 'nowrap',
       cellFullValue: (tenant) =>
-        displayNameOf(tenant.displayName, tenant.alias),
+        displayNameOf(tenant.displayName, tenant.name),
       // The display name is the page's primary label; the shared cap bounds
       // the cell content and its copy control together, and the complete
       // value stays reachable through the title and the control.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (tenant) => {
-        const name = displayNameOf(tenant.displayName, tenant.alias)
+        const name = displayNameOf(tenant.displayName, tenant.name)
         return basePath === undefined ? (
           <Typography variant="body2">{name}</Typography>
         ) : (
-          <AdminLink href={`${basePath}/${encodeURIComponent(tenant.alias)}`}>
+          <AdminLink href={`${basePath}/${encodeURIComponent(tenant.name)}`}>
             {name}
           </AdminLink>
         )
       },
     },
     {
-      id: 'alias',
-      header: t('tenants.column.alias'),
+      id: 'name',
+      header: t('tenants.column.name'),
       cellWrap: 'nowrap',
       cell: (tenant) => (
-        // The alias is the tenant's name on the request surface and the
-        // row's stable identity: it never hides, and the shared
-        // primary-column cap keeps a long alias from pushing the row's
+        // The name is what the request surface addresses the tenant by and
+        // the row's stable identity: it never hides, and the shared
+        // primary-column cap keeps a long name from pushing the row's
         // controls out of a narrow container. The full value rides the
         // cell's title.
         <Typography
           variant="body2"
           noWrap
           sx={{ ...primaryColumnMaxWidthSx, fontWeight: 500 }}
-          title={tenant.alias}
+          title={tenant.name}
         >
-          {tenant.alias}
+          {tenant.name}
         </Typography>
       ),
     },
@@ -459,7 +459,7 @@ export function TenantRosterPage({
             <DataTable
               rows={settled}
               columns={columns}
-              rowKey={(tenant) => tenant.alias}
+              rowKey={(tenant) => tenant.name}
             />
           )}
         </AdminAsyncSection>

@@ -70,7 +70,7 @@
     "sms.config_template": "This template is backed by a configuration and cannot be changed here.",
     "sms.conflict": "A template with that name already exists.",
     "tenant.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-    "tenant.conflict": "That identifier or alias is already taken by another organization.",
+    "tenant.conflict": "That identifier or name is already taken by another organization.",
     "tenant.protected": "This organization is protected and cannot be changed.",
     "org.creation_in_progress": "Another organization creation is already in progress. Wait for it to finish and try again.",
     "org.identifier_unavailable": "Another organization already uses this address or identifier. A personal organization's address is derived from the account, and a business organization's identifier is generated automatically; neither can be changed by hand. Contact an administrator if this keeps happening.",
