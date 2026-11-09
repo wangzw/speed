@@ -166,6 +166,15 @@ describe('TenantProfilePage', () => {
 
     expect(screen.getByText('acme-inc')).toBeInTheDocument()
     expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
+    // The chip names the status field, so a screen reader hears which fact
+    // the value states rather than a bare "Active".
+    expect(
+      screen.getByLabelText(
+        zhCN.tenantProfile.field.statusAria
+          .replace('{{label}}', zhCN.tenantProfile.field.status)
+          .replace('{{value}}', zhCN.tenants.status.active),
+      ),
+    ).toBeInTheDocument()
     // The name is stated, never editable: there is no control named after
     // it, and the read-only explanation sits beside the identity card.
     expect(

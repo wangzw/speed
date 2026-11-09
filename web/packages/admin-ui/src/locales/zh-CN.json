@@ -115,6 +115,7 @@
         "title": "要求企业单点登录",
         "description": "成员必须通过本组织自己的身份提供方登录。",
         "noProvider": "先在本组织登记并启用至少一个 SSO 提供方，才能要求成员用它登录；否则本组织将无法访问。",
+        "providersUnreadable": "无法读取本组织的单点登录提供方，暂时不能要求成员使用单点登录。",
         "impact": "成员将不再被要求通过组织自己的身份提供方登录。"
       },
       "status": {
@@ -432,6 +433,7 @@
       "name": "名称",
       "owner": "所有者",
       "status": "状态",
+      "statusAria": "{{label}}：{{value}}",
       "createdAt": "创建时间",
       "displayName": "显示名",
       "description": "描述",

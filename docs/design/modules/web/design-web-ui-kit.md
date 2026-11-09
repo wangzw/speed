@@ -90,7 +90,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 |---|---|---|
 | `PageLayout` | `title`（渲染为页面的 `h1`）、`description`、`breadcrumbs`、`actions`、子节点、`sx` | 面包屑链接的 `onClick` |
 | `PageHeader` | 标题（渲染为语义 `h1`）、可选面包屑、描述、动作区 | 面包屑链接的 `onClick` |
-| `SectionCard` | `title`、`description`、`actions`、`headingLevel`（`h2`–`h6`，缺省 `h2`）、`flushContent`、子节点、`sx` | — |
+| `SectionCard` | `title`、`icon`、`description`、`actions`、`headingLevel`（`h2`–`h6`，缺省 `h2`）、`flushContent`、`contentAligned`（缺省 `true`）、子节点、`sx` | — |
 | `ActionRow`／`ActionButton` | `ActionRow`：`children`（按显示顺序，主操作在后）、`size`（`medium`/`small`，缺省 `medium`）、`sx`；`ActionButton`：`emphasis`（`primary`/`secondary`，缺省 `secondary`）、`tone`（`default`/`danger`，缺省 `default`）、`size`（缺省继承所在行）、其余 MUI 按钮 props | 按钮自身的 `onClick` 等宿主回调 |
 | `EmptyState` | `variant`（`empty`/`noPermission`/`error`）、可覆写的标题与描述、动作、图标、`headingLevel`（`h1`–`h6` 或 `none`：`none` 把标题渲染为非标题元素、整块成为 `role="status"` 区域，用于不该进入目录层级的空/状态占位） | 动作节点内的宿主回调 |
 | `ConfirmDialog` | `open`、标题、消息、`variant`、`doubleConfirm`、标签、`confirmLoading`、`children`（渲染在消息之后、不进 `aria-describedby`）、`confirmDisabled`（只禁用确认按钮，不改动双次确认的待命与锁定逻辑） | `onConfirm`、`onCancel` |
@@ -232,7 +232,7 @@ sequenceDiagram
 | 主题 provider 入参 | `AppThemeProviderProps` | i18n 实例、预设货架与起始预设、项目层、租户层、子树 |
 | 预设控制 | `AppThemePresetControl` | 当前预设 id 与切换函数；由 `useAppThemePreset` 读取 |
 | 表面角色（解析后） | `SurfaceTheme`、`SurfaceThemeRole` | `page`、`container`、`overlay`、`header`；`fill`（已乘 `opacity`）、`borderColor`（按模式取 `borderColorDark` 或 `borderColor`）、`borderWidth` 是解析后的具体值，`elevation` 与 `backdropFilter` 缺席表示保留组件自身层级或不加滤镜 |
-| 内容节入参 | `SectionCardProps` | 标题、描述、动作、标题层级（`h2`–`h6`）、`flushContent`、子节点、`sx` |
+| 内容节入参 | `SectionCardProps` | 标题、图标、描述、动作、标题层级（`h2`–`h6`）、`flushContent`、内容对齐（`contentAligned`）、子节点、`sx` |
 | 操作行尺寸与按钮档位 | `ActionRowSize`、`ActionEmphasis`、`ActionTone` | 行的两个尺寸（`medium`/`small`）与按钮的两个正交档位（权重与语义色）；缺省 `medium`、`secondary`、`default` |
 | 表单字段渲染状态 | `FormFieldRenderState` | 绑定字段、`invalid`、`isTouched`、`required`、原始错误消息、解析后的显示文本 |
 | 表单校验桥 | `zodFormResolver`、`INVALID_ERROR_KEY` | 把 zod schema 适配成 RHF `Resolver`，失败折成 `ui-kit` 命名空间的键 |
@@ -302,6 +302,10 @@ sequenceDiagram
 **标题与可及名。** 有标题时标题渲染为真实标题元素，层级由 `headingLevel` 决定，缺省 `h2`（页面 `h1` 是 `PageHeader`）；视觉字号固定为 `h5` 排版角色，语义层级与视觉大小因此独立。标题经 `aria-labelledby` 成为节的名称，节同时成为 `region` 地标。无标题时不渲染标题块，也不设 `aria-labelledby`；`description` 与 `actions` 依附标题块，只在有标题时渲染。**纯表面（`SectionSurfaceProvider value="plain"`）只丢卡片与标题元素，不丢节的名字。** 标题是字符串时，节以该字符串为 `aria-label`，仍是 `region` 地标；由区块卡片拼出的页面因此每一节都有自己的名字。
 
 **内容内边距。** 内容默认取主题间距的 `p: 3`；`flushContent` 去掉内容内边距，让表格或列表贴边，表面本身不变。贴边时节标题块取主题间距的 `pb: 3`：标题与贴边内容之间的距离因此是一段间距标尺值，不取决于行高余量——行高余量随预设收紧行高而消失，表头的底色带会压上标题的下伸笔画。
+
+**图标。** 标题可带一个 `icon`，渲染在标题左侧固定宽度的前导列里，取 `text.secondary` 色；它只在有标题且渲染卡片表面时出现，纯表面不渲染它。节的可及名仍是标题，图标不进入名字。
+
+**内容对齐。** 带图标的节默认把内容对齐到标题的左缘（`contentAligned`，缺省 `true`）：内容区左侧跳过图标列与它之后的间距，表单、说明块与标题自同一条左缘起排。带表格的节传 `contentAligned={false}`：标题保留图标列，内容却从卡片自己的内边距起排，把图标列让给表格的可用宽度。`flushContent` 去掉内容内边距后内容直接贴到卡片边缘，`contentAligned` 不再起作用。
 
 **嵌套层级。** 节内再分的块用 `h3`（`headingLevel="h3"`），依次向下。`SidePanel` 本身是浮层表面，面板内不叠 `SectionCard`，用标题与分隔线分节。
 

@@ -973,13 +973,13 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toHaveCount(0)
       })
 
-      await test.step('step 9: the administrator refreshes and the colleague is a member', async () => {
-        await page
-          .getByRole('button', {
-            name: copy('adminUi', 'common.refresh'),
-            exact: true,
-          })
-          .click()
+      await test.step('step 9: the colleague is a member', async () => {
+        // The page carries no refresh control: the browser reload is the
+        // reader's own re-read, and the accepted state lands with it.
+        await page.reload()
+        await expect(
+          invitationsSection(page).getByRole('table'),
+        ).toBeVisible()
 
         // The invitation reached its accepted terminal state.
         await expect
@@ -2806,12 +2806,13 @@ test.describe('a policy the platform holds on', () => {
 
 test.describe('a policy the platform does not hold', () => {
   test.use({
-    // Turning a tenant policy on would challenge the single-factor review
-    // administrator from the next tenant-scoped request onward. The review
-    // build seeds the operator's seasoned authenticator, so this branch names
-    // the operator the tenant's administrator and signs in with that factor;
-    // the session then satisfies the admission rule its own write switched on.
-    // The global layer stays off, so the tenant is free to choose the policy.
+    // A tenant policy applies at members' next sign-in, not to sessions that
+    // already exist, so the session that carries the write is exempt from the
+    // rule it switches on. The review build seeds the operator's seasoned
+    // authenticator, and this branch names the operator acme's administrator;
+    // the seed writes the first configured administrator as the tenant's
+    // owner, so the organization belongs to that operator. The global layer
+    // stays off, so the tenant is free to choose the policy.
     seedImpersonation: true,
     tenantAdmins: { acme: [OPERATOR.identifier] },
     viewport: { width: 1920, height: 1080 },
@@ -2839,12 +2840,6 @@ test.describe('a policy the platform does not hold', () => {
         }),
         exact: true,
       })
-    const refresh = (): Locator =>
-      page.getByRole('button', {
-        name: copy('adminUi', 'common.refresh'),
-        exact: true,
-      })
-
     await signInOperatorWithTotp(page, accounts)
     await openOrganizationPage(page, 'settings')
 
@@ -2878,10 +2873,7 @@ test.describe('a policy the platform does not hold', () => {
       await expect(ssoSwitch()).not.toBeChecked()
     })
 
-    await test.step('a fresh read still reports the policy on', async () => {
-      // The refresh issues a new tenant-scoped read, so this is the stored
-      // value rather than the optimistic one the click left on screen.
-      await refresh().click()
+    await test.step('the row still reports the policy on', async () => {
       await expect(mfaSwitch()).toBeChecked()
       await expect(
         page.getByText(copy('adminUi', 'organization.security.status.enabled'), {
@@ -2947,8 +2939,7 @@ test.describe('a policy the platform does not hold', () => {
       await expect(ssoSwitch()).not.toBeChecked()
     })
 
-    await test.step('a fresh read still reports the policy off', async () => {
-      await refresh().click()
+    await test.step('the row still reports the policy off', async () => {
       await expect(mfaSwitch()).not.toBeChecked()
       await expect(
         page.getByText(copy('adminUi', 'organization.security.status.disabled'), {
@@ -3407,9 +3398,11 @@ test.describe('the organization profile page belongs to its owner', () => {
     // the owner row exposes beside the display name.
     await expect(page.getByText(profileOwner.ownerAccount)).toHaveCount(0)
     expect(await page.content()).not.toContain(profileOwner.ownerAccount)
+    // The status chip shares the value cell with the name, so the name is
+    // asserted as the cell's leading text rather than the whole cell.
     await expect(
       definitionValue(page, copy('adminUi', 'tenantProfile.field.name')),
-    ).toHaveText(OWNED_NAME)
+    ).toContainText(OWNED_NAME)
     await expect(ownershipSection(page)).toBeVisible()
     await expect(transferOwnerButton(page)).toBeVisible()
     await expect(deleteOrganizationButton(page)).toBeVisible()
@@ -3474,9 +3467,11 @@ test.describe('the organization profile page belongs to its owner', () => {
     // written to a value distinct from the organization's creation state, so a
     // payload that dropped any of them leaves that field reading the old value
     // and fails here.
+    // The status chip shares the value cell with the name, so the name is
+    // asserted as the cell's leading text rather than the whole cell.
     await expect(
       definitionValue(page, copy('adminUi', 'tenantProfile.field.name')),
-    ).toHaveText(OWNED_NAME)
+    ).toContainText(OWNED_NAME)
     const savedFields = [
       ['tenantProfile.field.displayName', RENAMED_ORG],
       ['tenantProfile.field.description', RENAMED_DESCRIPTION],
@@ -4155,11 +4150,16 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       // The identity card names the organization by its name, the value the
       // request surface uses; it carries no internal identifier.
+      // The value cell carries the status chip beside the name, so the name
+      // is read from the cell's leading text.
       const organizationName = (
         await definitionValue(
           page,
           copy('adminUi', 'tenantProfile.field.name'),
-        ).innerText()
+        )
+          .locator('p')
+          .first()
+          .innerText()
       ).trim()
       expect(organizationName).toBe(OWNED_NAME)
 

@@ -5,10 +5,10 @@
  * the switch and its feedback on the right, stacked below the sm breakpoint.
  * A browser is the only tier that resolves the actual text metrics and the
  * layout, so this suite holds the page inside the sm/md/lg floor widths, proves
- * the theme's coarse-pointer touch floor reaches the switch and the refresh
- * control, and renders the whole page in the dark theme. The read-only state
- * drops the switch entirely and renders the standing notice; that shape is
- * measured at the narrowest floor too.
+ * the theme's coarse-pointer touch floor reaches the switch, and renders the
+ * whole page in the dark theme. The read-only state drops the switch entirely
+ * and renders the standing notice; that shape is measured at the narrowest
+ * floor too.
  *
  * The touch floor is a `@media (pointer: coarse)` rule, which a headless
  * browser's fine pointer never activates; `hasCoarsePointerTouchTarget` reads
@@ -173,21 +173,19 @@ describe('OrganizationSecurityPage horizontal overflow in Chromium', () => {
 })
 
 describe('OrganizationSecurityPage touch targets in Chromium', () => {
-  it('carries the coarse-pointer floor on the switch and the refresh control', async () => {
+  it('carries the coarse-pointer floor on the switch', async () => {
     await page.viewport(900, VIEWPORT_HEIGHT)
     renderPage()
     await ready()
 
-    const switchInput = screen.getAllByRole('switch')[0]
-    expect(switchInput).toBeDefined()
-    const switchRoot = switchInput?.closest('.MuiSwitch-root')
-    expect(switchRoot, 'the switch renders its MuiSwitch root').not.toBeNull()
-    const refresh = screen.getByRole('button', {
-      name: enUS.common.refresh,
-      exact: true,
-    })
+    const switchInputs = screen.getAllByRole('switch')
+    expect(switchInputs).toHaveLength(2)
 
-    for (const control of [switchRoot as Element, refresh]) {
+    for (const switchInput of switchInputs) {
+      const switchRoot = switchInput.closest('.MuiSwitch-root')
+      expect(switchRoot, 'the switch renders its MuiSwitch root').not.toBeNull()
+
+      const control = switchRoot as Element
       expect(
         hasCoarsePointerTouchTarget(control),
         'the control lacks the theme 44px coarse-pointer floor',

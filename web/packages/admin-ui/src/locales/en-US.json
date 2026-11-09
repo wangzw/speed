@@ -115,6 +115,7 @@
         "title": "Require enterprise single sign-on",
         "description": "Members must sign in through one of this organization's own identity providers.",
         "noProvider": "Register and enable at least one SSO provider in this organization before requiring members to sign in through it; otherwise the organization becomes unreachable.",
+        "providersUnreadable": "The organization's SSO providers could not be read, so single sign-on cannot be required right now.",
         "impact": "Members will no longer be required to sign in through the organization's own identity provider."
       },
       "status": {
@@ -432,6 +433,7 @@
       "name": "Name",
       "owner": "Owner",
       "status": "Status",
+      "statusAria": "{{label}}: {{value}}",
       "createdAt": "Created",
       "displayName": "Display name",
       "description": "Description",

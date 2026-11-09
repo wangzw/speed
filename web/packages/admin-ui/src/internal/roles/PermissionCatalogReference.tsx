@@ -90,6 +90,7 @@ export function PermissionCatalogReference({
     <SectionCard
       title={t('permissions.catalog.title')}
       icon={<PermissionsIcon size={24} />}
+      contentAligned={false}
       actions={
         <Button
           type="button"

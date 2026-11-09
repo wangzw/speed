@@ -392,6 +392,7 @@ export function OrganizationRolesPage({
       <SectionCard
         title={t('permissions.roles.title')}
         icon={<PermissionsIcon size={24} />}
+        contentAligned={false}
         sx={{ mb: 3 }}
       >
         {canManage && (
@@ -450,6 +451,7 @@ export function OrganizationRolesPage({
       <SectionCard
         title={t('permissions.grants.title')}
         icon={<PermissionsIcon size={24} />}
+        contentAligned={false}
         sx={{ mb: 3 }}
       >
         <RoleGrantsSection
@@ -470,6 +472,7 @@ export function OrganizationRolesPage({
       <SectionCard
         title={t('permissions.usage.title')}
         icon={<AccountsIcon size={24} />}
+        contentAligned={false}
         sx={{ mb: 3 }}
       >
         <RoleUsageSection

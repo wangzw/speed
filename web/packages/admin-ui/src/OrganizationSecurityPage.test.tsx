@@ -88,6 +88,7 @@ function renderPage({
   listTenantSettings,
   writeTenantSetting,
   ssoProviders = [],
+  listSsoProviders,
   session,
   language = 'zh-CN',
 }: {
@@ -101,6 +102,8 @@ function renderPage({
   ) => Promise<void>
   /** The organization's SSO providers; the guard reads them. */
   readonly ssoProviders?: readonly AdminSsoProvider[]
+  /** Overrides the provider read itself, for its pending and failed states. */
+  readonly listSsoProviders?: () => Promise<readonly AdminSsoProvider[]>
   /** The session the page offers a sign-in exit through. */
   readonly session?: ReturnType<typeof createStepUpSession>
   readonly language?: string
@@ -111,7 +114,8 @@ function renderPage({
         listTenantSettings === undefined
           ? Promise.resolve(settings)
           : listTenantSettings(settings),
-      listSsoProviders: () => Promise.resolve(ssoProviders),
+      listSsoProviders:
+        listSsoProviders ?? (() => Promise.resolve(ssoProviders)),
       ...(writeTenantSetting === undefined ? {} : { writeTenantSetting }),
     }),
   )
@@ -447,6 +451,51 @@ describe('OrganizationSecurityPage', () => {
     })
     expect(ssoSwitch).not.toBeChecked()
     expect(ssoSwitch).toBeDisabled()
+  })
+
+  it('keeps require-sso disabled while the provider read is pending', async () => {
+    renderPage({
+      // The provider read never answers, so its state is still unknown.
+      listSsoProviders: () => new Promise(() => undefined),
+    })
+
+    await screen.findByRole('heading', { level: 3, name: SSO.title })
+    const ssoSwitch = screen.getByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        SSO.title,
+      ),
+    })
+    expect(ssoSwitch).not.toBeChecked()
+    expect(ssoSwitch).toBeDisabled()
+    // Pending is not the same fact as "no provider": no absence is claimed.
+    expect(
+      screen.queryByText(zhCN.organization.security.sso.noProvider),
+    ).toBeNull()
+  })
+
+  it('treats a failed provider read as unknown and says so', async () => {
+    renderPage({
+      listSsoProviders: () => Promise.reject({ status: 503 }),
+    })
+
+    expect(
+      await screen.findByText(
+        zhCN.organization.security.sso.providersUnreadable,
+      ),
+    ).toBeInTheDocument()
+    const ssoSwitch = screen.getByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        SSO.title,
+      ),
+    })
+    expect(ssoSwitch).not.toBeChecked()
+    expect(ssoSwitch).toBeDisabled()
+    // The failure is not reported as "the organization has no provider".
+    expect(
+      screen.queryByText(zhCN.organization.security.sso.noProvider),
+    ).toBeNull()
   })
 
   it('does not block a policy that is already enabled', async () => {

@@ -25,8 +25,7 @@
  * no batch.
  *
  * A tenant the host's settings write seam protects is read-only as a whole.
- * The page says so above the section and renders no switch at all; the
- * refresh action stays available because reading is still allowed. The
+ * The page says so above the section and renders no switch at all. The
  * envelope names why: "protected" means the seam refused the tenant, and
  * "unavailable" means the seam could not answer at all. The two are not the
  * same fact -- the deployment protects one tenant, while the other's write
@@ -182,6 +181,8 @@ interface SettingSwitchRowProps {
   readonly saving: boolean
   readonly readOnly: boolean
   readonly feedback: RowFeedback | null
+  /** Whether the policy is currently blocked from being turned on. */
+  readonly blocked?: boolean
   /** Why this policy cannot be turned on now, or undefined when it can. */
   readonly blockedReason?: string
   readonly onToggle: (next: boolean) => void
@@ -194,6 +195,7 @@ function SettingSwitchRow({
   saving,
   readOnly,
   feedback,
+  blocked,
   blockedReason,
   onToggle,
 }: SettingSwitchRowProps) {
@@ -289,7 +291,7 @@ function SettingSwitchRow({
             disabled={
               saving ||
               setting.locked_by_platform ||
-              blockedReason !== undefined
+              blocked === true
             }
             slotProps={{
               input: {
@@ -345,18 +347,23 @@ export function OrganizationSecurityPage({
   }, [session])
   // Requiring SSO in an organization with no enabled provider locks every
   // member out with no local factor able to clear the refusal, so the switch
-  // stays off until a provider exists. A policy already on is never blocked:
-  // it must stay possible to turn it off. A deployment that serves no SSO
-  // surface cannot be asked to enforce it either.
+  // stays off until a provider is known to exist. A policy already on is
+  // never blocked: it must stay possible to turn it off. While the provider
+  // read is pending -- and when it fails, whose answer is unknown -- the
+  // switch stays off too, rather than treating "not known yet" as "none".
+  // A deployment that serves no SSO surface cannot be asked to enforce it
+  // either.
   const hasFeature = useAdminHasFeature()
   const ssoServed = hasFeature('authn.admin.sso')
   const ssoProviders = operations.useSsoProviders(tenant)
-  const ssoProviderState: 'pending' | 'ready' | 'none' = ssoProviders.isPending
-    ? 'pending'
-    : ssoProviders.isSuccess &&
-        (ssoProviders.data ?? []).some((provider) => provider.enabled)
-      ? 'ready'
-      : 'none'
+  const ssoProviderState: 'pending' | 'ready' | 'none' | 'unknown' =
+    ssoProviders.isPending
+      ? 'pending'
+      : !ssoProviders.isSuccess
+        ? 'unknown'
+        : (ssoProviders.data ?? []).some((provider) => provider.enabled)
+          ? 'ready'
+          : 'none'
 
   // The switch value a write put on screen before the server answered. The
   // entry is dropped when the settled read reports the same value, or when
@@ -620,11 +627,19 @@ export function OrganizationSecurityPage({
                     !settled.writable ||
                     setting.tenant_access !== 'read-write'
                   const ssoBlocked =
-                    setting.key.endsWith('.require-sso') && !checked
+                    setting.key.endsWith('.require-sso') &&
+                    !checked &&
+                    ssoProviderState !== 'ready'
                   const ssoBlockedReason =
-                    ssoBlocked && ssoProviderState === 'none'
-                      ? t('organization.security.sso.noProvider')
-                      : undefined
+                    !ssoBlocked
+                      ? undefined
+                      : ssoProviderState === 'none'
+                        ? t('organization.security.sso.noProvider')
+                        : ssoProviderState === 'unknown'
+                          ? t(
+                              'organization.security.sso.providersUnreadable',
+                            )
+                          : undefined
                 return (
                   <Box key={setting.key}>
                     {index > 0 && <Divider />}
@@ -634,6 +649,7 @@ export function OrganizationSecurityPage({
                       saving={savingKeys.has(setting.key)}
                       readOnly={readOnly}
                       feedback={feedback[setting.key] ?? null}
+                      blocked={ssoBlocked}
                       blockedReason={ssoBlockedReason}
                       onToggle={(next) => toggle(setting, next)}
                     />

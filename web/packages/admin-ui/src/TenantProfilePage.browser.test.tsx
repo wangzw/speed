@@ -5,7 +5,7 @@
  * column below `sm` and pairs the short fields above it. A browser is the
  * only tier that resolves the actual layout, so this suite holds the page
  * inside the floor widths, proves the theme's coarse-pointer touch floor
- * reaches the save and refresh controls, and renders the page in both the
+ * reaches the save and ownership controls, and renders the page in both the
  * light and the dark theme.
  */
 
@@ -136,7 +136,7 @@ describe('TenantProfilePage horizontal overflow in Chromium', () => {
 })
 
 describe('TenantProfilePage touch targets in Chromium', () => {
-  it('carries the coarse-pointer floor on the save and refresh controls', async () => {
+  it('carries the coarse-pointer floor on the save control', async () => {
     await page.viewport(900, VIEWPORT_HEIGHT)
     renderPage()
     await ready()
@@ -145,19 +145,13 @@ describe('TenantProfilePage touch targets in Chromium', () => {
       name: enUS.tenantProfile.form.save,
       exact: true,
     })
-    const refresh = screen.getByRole('button', {
-      name: enUS.common.refresh,
-      exact: true,
-    })
-    for (const control of [save, refresh]) {
-      expect(
-        hasCoarsePointerTouchTarget(control),
-        'the control lacks the theme 44px coarse-pointer floor',
-      ).toBe(true)
-      const box = control.getBoundingClientRect()
-      expect(box.width).toBeGreaterThan(0)
-      expect(box.height).toBeGreaterThan(0)
-    }
+    expect(
+      hasCoarsePointerTouchTarget(save),
+      'the control lacks the theme 44px coarse-pointer floor',
+    ).toBe(true)
+    const box = save.getBoundingClientRect()
+    expect(box.width).toBeGreaterThan(0)
+    expect(box.height).toBeGreaterThan(0)
   })
 })
 

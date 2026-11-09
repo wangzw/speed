@@ -172,9 +172,6 @@ export function TenantProfilePage({
 
   const settled = profile.data
   const [draft, setDraft] = useState<TenantProfileFields | null>(null)
-  // A page refresh remounts the ownership card, withdrawing its dialog,
-  // draft and feedback together with the re-read.
-  const [ownershipEpoch] = useState(0)
   // The values the draft was last built from. A settled read whose values
   // actually changed (a landed save, a refresh) replaces the draft; a
   // background refetch with the same values leaves an edit in place.
@@ -308,6 +305,10 @@ export function TenantProfilePage({
                         variant="outlined"
                         color={statusColorOf(settledProfile.status)}
                         label={statusLabel(settledProfile.status, t)}
+                        aria-label={t('tenantProfile.field.statusAria', {
+                          label: t('tenantProfile.field.status'),
+                          value: statusLabel(settledProfile.status, t),
+                        })}
                       />
                     </Box>
                   </Box>
@@ -386,7 +387,6 @@ export function TenantProfilePage({
               </SectionCard>
 
               <TenantOwnership
-                key={`ownership:${ownershipEpoch}`}
                 tenant={tenant}
                 profile={settledProfile}
                 displayName={displayNameOf(

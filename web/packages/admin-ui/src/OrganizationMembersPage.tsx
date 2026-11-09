@@ -3,9 +3,7 @@
  * invitations page.
  *
  * One route, two sections in the order the operator works in: members first
- * (the main task), invitations second. The page is not a tabbed surface and
- * its title row carries the page's only refresh action, which re-reads the
- * two body lists together.
+ * (the main task), invitations second. The page is not a tabbed surface.
  *
  * Members: a server-side search over `query` (debounced), a table of display
  * name, username, roles, status, source and joined-at, cursor pagination, and
@@ -915,6 +913,7 @@ export function OrganizationMembersPage({
       <SectionCard
         title={t('members.title')}
         icon={<AccountsIcon size={24} />}
+        contentAligned={false}
         sx={{ mb: 3 }}
       >
         {/* The toolbar stays outside the async section: a loading, empty or
@@ -1062,6 +1061,7 @@ export function OrganizationMembersPage({
       <SectionCard
         title={t('invitations.section.title')}
         icon={<InvitationsIcon size={24} />}
+        contentAligned={false}
         sx={{ mb: 3 }}
       >
         <Box

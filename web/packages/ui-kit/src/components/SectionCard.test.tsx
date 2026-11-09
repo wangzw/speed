@@ -12,6 +12,7 @@
 
 import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'
+import { within } from '@testing-library/react'
 import { cardClasses } from '@mui/material/Card'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
@@ -76,6 +77,28 @@ describe('SectionCard', () => {
     )
     expect(getByText('Body')).not.toHaveStyle({ padding: '24px' })
     expect(container.querySelector('section')).toHaveClass(cardClasses.root)
+  })
+
+  it('aligns the content with the icon rail unless contentAligned is false', () => {
+    const aligned = renderWithProviders(
+      <SectionCard title="Billing" icon={<span>i</span>}>
+        Body
+      </SectionCard>,
+    )
+    // The default inset is the icon column plus the gaps, not plain padding.
+    expect(within(aligned.container).getByText('Body')).not.toHaveStyle({
+      paddingLeft: '24px',
+    })
+
+    const fullWidth = renderWithProviders(
+      <SectionCard title="Billing" icon={<span>i</span>} contentAligned={false}>
+        Body
+      </SectionCard>,
+    )
+    // The content starts at the card's own padding, keeping its full width.
+    expect(within(fullWidth.container).getByText('Body')).toHaveStyle({
+      paddingLeft: '24px',
+    })
   })
 
   it('forwards sx to the card root', () => {

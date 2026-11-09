@@ -28,8 +28,14 @@
  * for them to attach to.
  *
  * The content area is padded at the theme's spacing scale so ordinary
- * section content breathes. `flushContent` removes that padding for a
- * table that must reach the card's edges; the surface itself stays.
+ * section content breathes. With an icon the content also shares the
+ * title's rail -- it starts where the title starts, after the icon column --
+ * so a form or an info block lines up under its heading. A table-bearing
+ * card passes `contentAligned={false}` instead: the heading keeps the icon
+ * rail, but the content starts at the card's own padding, because a table
+ * cannot spare the width the rail would take. `flushContent` removes that
+ * padding for a table that must reach the card's edges; the surface itself
+ * stays.
  *
  * A section nested inside another surface (a row's expanded body inside
  * the pane that already holds a card) would otherwise stack a second card
@@ -96,9 +102,10 @@ export type SectionCardProps = {
    */
   readonly title?: ReactNode
   /**
-   * Optional icon beside the title, in a fixed leading column so every
-   * section's heading lands on the same rail as its content. It renders only
-   * with a title, on the card surface, like the description and actions.
+   * Optional icon beside the title, in a fixed leading column. It renders
+   * only with a title, on the card surface, like the description and
+   * actions; the heading lands on that rail, and the content follows it
+   * unless `contentAligned` is false.
    */
   readonly icon?: ReactNode
   /**
@@ -122,6 +129,12 @@ export type SectionCardProps = {
    * padding of its own, so the flag has no effect there.
    */
   readonly flushContent?: boolean
+  /**
+   * Aligns the content with the title's rail when the card carries an icon,
+   * skipping the icon column; defaults to true. A table-bearing card passes
+   * false so its table keeps the card's full content width.
+   */
+  readonly contentAligned?: boolean
   /** The section's content. */
   readonly children: ReactNode
   /** Extra styling applied to the card root. */
@@ -138,6 +151,7 @@ function SectionCardInner(
     actions,
     headingLevel = 'h2',
     flushContent = false,
+    contentAligned = true,
     children,
     sx,
     className,
@@ -246,8 +260,9 @@ function SectionCardInner(
                 p: 3,
                 // The content shares the title's rail: the icon column and
                 // the gap before the title are skipped, so every row starts
-                // where the section's own name starts.
-                ...(icon !== undefined && icon !== null
+                // where the section's own name starts. A table-bearing card
+                // opts out, keeping the full content width instead.
+                ...(icon !== undefined && icon !== null && contentAligned
                   ? {
                       pl: (theme: { spacing: (n: number) => string }) =>
                         `calc(2rem + ${theme.spacing(2)} + ${theme.spacing(3)})`,
