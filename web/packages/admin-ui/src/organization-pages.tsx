@@ -39,9 +39,10 @@ export function OrganizationInvitationsPage(): ReactElement {
 
 /** The organization's profile, scoped to the host's current tenant. A
  * landed save reaches the host's `onTenantUpdated`, which reloads the
- * caller tenant list the menu and the breadcrumb show; a landed transfer or
- * deletion reaches the host's departure action, which leaves the
- * organization and shows the confirmation where it lands. */
+ * caller tenant list the menu and the breadcrumb show; a landed deletion
+ * reaches the host's departure action, which leaves the organization and
+ * shows the confirmation where it lands. A transfer changes ownership only,
+ * so the caller stays and the confirmation stays in the ownership card. */
 export function OrganizationProfilePage(): ReactElement {
   const tenant = useOrganizationAdminTenant()
   const onTenantUpdated = useOrganizationAdminOnTenantUpdated()

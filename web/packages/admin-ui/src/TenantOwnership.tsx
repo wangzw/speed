@@ -24,7 +24,13 @@
  * type the tenant admin uses. The answer cannot separate those conflicts, so
  * they share one sentence; nothing is re-read to guess which one it was.
  *
- * A landed transfer or deletion ends the caller's membership. The host's
+ * A landed transfer changes ownership only: the previous owner stays an
+ * active member and keeps every binding it held, so the caller stays on the
+ * page and the confirmation stays in the card. The profile re-read that the
+ * write invalidates shows the new owner, and the controls withdraw because
+ * the caller no longer owns the organization.
+ *
+ * A landed deletion, by contrast, ends the caller's membership. The host's
  * departure action leaves the organization and shows the success message on
  * the destination, so the confirmation never renders inside a page the
  * server is about to refuse. A host that supplies no departure action gets
@@ -113,14 +119,14 @@ export interface TenantOwnershipProps {
   /** The organization's display name, falling back to its name, for the
    * dialog and notices. */
   readonly displayName: string
-  /** The host's action when no departure action is supplied: reload the
-   * caller tenant list the account menu and breadcrumb read. */
+  /** The host's action when a deletion and no departure action is supplied:
+   * reload the caller tenant list the account menu and breadcrumb read. */
   readonly onTenantUpdated?: () => void | Promise<unknown>
   /**
-   * The host's action after a write ends the caller's membership -- a
-   * transfer hands the organization on, a deletion ends it. The host leaves
-   * the organization, reloads the caller tenant list, and shows `message`
-   * on the destination, so the confirmation outlives this page.
+   * The host's action after a deletion ends the caller's membership. The
+   * host leaves the organization, reloads the caller tenant list, and shows
+   * `message` on the destination, so the confirmation outlives this page.
+   * A transfer changes ownership only and never departs.
    */
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }
@@ -141,9 +147,10 @@ export function TenantOwnership({
   const feedback = useWriteFeedback()
   const [transferOpen, setTransferOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  // A landed transfer or deletion ends the caller's membership. The local
-  // flag withdraws the controls even when the host supplies no departure
-  // action (the card then carries the confirmation alone).
+  // A landed deletion ends the caller's membership. The local flag withdraws
+  // the controls even when the host supplies no departure action (the card
+  // then carries the confirmation alone). A transfer does not set it: the
+  // previous owner stays an active member.
   const [departed, setDeparted] = useState(false)
 
   const currentAccount =
@@ -206,12 +213,12 @@ export function TenantOwnership({
     setDeleteOpen(true)
   }
 
-  // The caller has left: hand the confirmation to the host's departure
-  // action, which leaves the organization and shows it there. A host with no
-  // departure action gets the message in the card instead, after the
-  // fallback tenant-list reload; either way the controls are withdrawn. A
-  // departure action that refuses leaves the message here rather than
-  // dropping the confirmation with it.
+  // A deletion ends the caller's membership: hand the confirmation to the
+  // host's departure action, which leaves the organization and shows it
+  // there. A host with no departure action gets the message in the card
+  // instead, after the fallback tenant-list reload; either way the controls
+  // are withdrawn. A departure action that refuses leaves the message here
+  // rather than dropping the confirmation with it.
   const leave = async (message: string): Promise<string | null> => {
     setDeparted(true)
     if (onOrganizationLeft === undefined) {
@@ -233,12 +240,14 @@ export function TenantOwnership({
       } catch (error) {
         throw ownershipFailure(ownershipFailureCode(error))
       }
-      return leave(
-        t('tenantProfile.ownership.transfer.saved', {
-          name: displayName,
-          account: label,
-        }),
-      )
+      // A transfer changes ownership only: the previous owner keeps its
+      // membership and bindings, so the caller stays on the page and the
+      // confirmation stays in the card. The write's profile re-read shows the
+      // new owner and withdraws the controls.
+      return t('tenantProfile.ownership.transfer.saved', {
+        name: displayName,
+        account: label,
+      })
     })
   }
 

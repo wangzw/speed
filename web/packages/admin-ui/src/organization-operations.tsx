@@ -279,7 +279,7 @@ export interface OrganizationAdminOperations
 
   /** PUT .../tenants/{tenant}/owner -- hand the organization's ownership to
    * an active member. The server grants the target tenant-admin when it does
-   * not hold it and removes the caller from the organization. */
+   * not hold it; the previous owner keeps its membership and every binding. */
   readonly useTenantOwnerTransfer: () => UseMutationResult<
     void,
     unknown,
@@ -658,21 +658,12 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       mutationFn: (input: AdminTenantOwnerTransferInput) =>
         tenantAdminOwnerTransfer(input.tenant, { account: input.account }),
       onSuccess: (_answer, input) => {
-        // The caller is no longer a member, so re-reading the profile or the
-        // members would only be refused (403). The confirmed owner change is
-        // reflected into the cached read instead: a page that stays -- a host
-        // with no departure action -- shows the new owner and withdraws the
-        // controls, and the host's tenant switch evicts the departed
-        // tenant's subtree.
-        reflectTenantProfile(queryClient, input.tenant, (profile) => ({
-          ...profile,
-          ownerAccount: input.account,
-          // The new owner's names were not read here, and the old owner's are
-          // no longer true: the identifier is the only fact this write
-          // establishes, so the row falls back to its neutral label.
-          ownerDisplayName: '',
-          ownerUsername: '',
-        }))
+        // The transfer changes ownership only: the previous owner stays an
+        // active member, so both reads remain permitted. Re-read them instead
+        // of guessing over the cache -- the profile's owner column changed,
+        // and the member rows carry the target's new tenant-admin role.
+        invalidateTenantProfile(queryClient, input.tenant)
+        invalidateTenantMembers(queryClient, input.tenant)
       },
     })
   },
@@ -1014,11 +1005,11 @@ function invalidateTenantProfile(
 }
 
 /**
- * Reflects a confirmed write into the cached profile of a tenant the caller
- * has just left. The read cannot be refreshed -- the server now refuses it --
- * so the fact the write established is written over the cached answer; a
- * page that stays (a host with no departure action) renders it, and the
- * host's tenant switch discards the departed tenant's whole subtree.
+ * Reflects a confirmed deletion into the cached profile of a tenant the
+ * caller has just left. The read cannot be refreshed -- the server now
+ * refuses it -- so the fact the write established is written over the cached
+ * answer; a page that stays (a host with no departure action) renders it, and
+ * the host's tenant switch discards the departed tenant's whole subtree.
  */
 function reflectTenantProfile(
   queryClient: ReturnType<typeof useQueryClient>,

@@ -253,8 +253,9 @@ func (a *assembly) rosterRow(t *testing.T, id string) (tenant.Status, *time.Time
 	return tenant.Status(got.Status), got.DeletedAt
 }
 
-// A transfer gives the target tenant-admin, writes the owner, and removes the
-// previous owner's binding and membership, all in one transaction.
+// A transfer gives the target tenant-admin and writes the owner, all in one
+// transaction. Ownership is the only thing it changes: the previous owner stays
+// an active member holding the binding it had.
 func TestTransferOwnerHandsTheOrganizationOn(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -272,11 +273,14 @@ func TestTransferOwnerHandsTheOrganizationOn(t *testing.T) {
 			bindings[0].Role != authz.Role(authz.TenantAdminRole) {
 			t.Errorf("the new owner holds %+v, want tenant-admin", bindings)
 		}
-		if bindings := a.bindingsOf(t, "acme", owner); len(bindings) != 0 {
-			t.Errorf("the previous owner still holds %+v, want nothing", bindings)
+		if bindings := a.bindingsOf(t, "acme", owner); len(bindings) != 1 ||
+			bindings[0].Role != authz.Role(authz.TenantAdminRole) {
+			t.Errorf("the previous owner holds %+v after the transfer, want tenant-admin", bindings)
 		}
-		if _, found, err := a.memberships.Membership(t.Context(), "acme", owner.ID); err != nil || found {
-			t.Errorf("the previous owner is still a member: found=%t err=%v", found, err)
+		m, found, err := a.memberships.Membership(t.Context(), "acme", owner.ID)
+		if err != nil || !found || !m.Active {
+			t.Errorf("the previous owner's membership is %+v (found=%t err=%v), want the active one",
+				m, found, err)
 		}
 	})
 }
@@ -474,17 +478,17 @@ func TestDeleteOrganizationRollsBackAFailedStep(t *testing.T) {
 	})
 }
 
-// A failure after the binding and the owner were written rolls the transfer
-// back: the owner stays, the target gains no binding, and the previous owner
-// keeps its binding and membership.
+// A failure after the binding was written rolls the transfer back: the owner
+// stays, the target gains no binding, and the previous owner keeps its binding
+// and membership.
 func TestTransferOwnerRollsBackAFailedStep(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
 		target := a.user(t, "bob")
 		a.organization(t, "acme", "acme-org", owner)
 		a.join(t, "acme", target)
-		if err := a.handle.Exec(`CREATE TRIGGER refuse_membership_delete
-			BEFORE DELETE ON authn_memberships
+		if err := a.handle.Exec(`CREATE TRIGGER refuse_owner_write
+			BEFORE UPDATE ON tenants
 			BEGIN SELECT RAISE(ABORT, 'induced failure'); END`).Error; err != nil {
 			t.Fatalf("creating the trigger that refuses the last step: %v", err)
 		}

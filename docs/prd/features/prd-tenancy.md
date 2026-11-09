@@ -505,11 +505,11 @@
 
 ### REQ-tenancy-061
 
-业务组织的 owner 必须可以转移给该组织的 active 成员；目标尚未持有 tenant-admin 时，转移自动授予；转移完成后，原 owner 失去 tenant-admin 并被移出该组织。平台员工可以发起转移。
+业务组织的 owner 必须可以转移给该组织的 active 成员；目标尚未持有 tenant-admin 时，转移自动授予；转移只改变所有权，原 owner 仍是该组织的 active 成员并保留其全部角色绑定（含 tenant-admin），不被移除，其绑定不被清除。平台员工可以发起转移。
 
-- **验收**：owner 把所有权转给 active 成员成功，目标获得 tenant-admin；目标原本不是 tenant-admin 时自动获得；原 owner 不再持有 tenant-admin 且不再属于该组织；转给非成员被拒绝；平台员工可以发起同一转移。
+- **验收**：owner 把所有权转给 active 成员成功，目标获得 tenant-admin；目标原本不是 tenant-admin 时自动获得；原 owner 仍是该组织的 active 成员，仍持有 tenant-admin 及其余全部角色绑定；转给非成员被拒绝；平台员工可以发起同一转移。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner hands the organization to an active member and is removed`；`tenant-admin: a transfer whose target stopped being an active member is refused with the conflict copy`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`（平台员工发起转移）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner hands the organization to an active member and stays an administrator`；`tenant-admin: a transfer whose target stopped being an active member is refused with the conflict copy`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`（平台员工发起转移）
 
 ### REQ-tenancy-062
 

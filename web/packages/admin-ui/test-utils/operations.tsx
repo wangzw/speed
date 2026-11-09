@@ -1210,23 +1210,15 @@ export function createAdminOperations(
         mutationFn: (input: AdminTenantOwnerTransferInput) =>
           backend.transferOrganizationOwner(input),
         onSuccess: (_answer, input) => {
-          // Mirror the shipped bundle: the caller has left, so the profile is
-          // not re-read; the confirmed owner change is reflected into the
-          // cached profile.
-          client.setQueryData<AdminTenantProfile>(
-            tenantProfileKey(input.tenant),
-            (profile) =>
-              profile === undefined
-                ? profile
-                : {
-                    ...profile,
-                    ownerAccount: input.account,
-                    // The new owner's names were not read here, and the old
-                    // owner's are no longer true.
-                    ownerDisplayName: '',
-                    ownerUsername: '',
-                  },
-          )
+          // Mirror the shipped bundle: ownership changes only, so the caller
+          // keeps reading both the profile (whose owner column changed) and
+          // the member rows (which carry the target's new tenant-admin role).
+          void client.invalidateQueries({
+            queryKey: tenantProfileKey(input.tenant),
+          })
+          void client.invalidateQueries({
+            queryKey: membersKey(input.tenant),
+          })
         },
       })
     },

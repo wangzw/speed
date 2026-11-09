@@ -17,12 +17,12 @@ import (
 //
 // The target must be an active account and an active member of the tenant. The
 // transfer grants it the tenant-admin role whether or not it already holds the
-// binding, writes the roster's owner column, and then withdraws the previous
-// owner: every binding the previous owner held in the tenant is removed and its
-// membership is deleted. All of it runs in one transaction, under the tenant's
-// lock, so a concurrent deletion of the same organization either runs before
-// this call and leaves a tombstone this call refuses, or runs after it and sees
-// the new owner.
+// binding and writes the roster's owner column. It changes ownership only: the
+// previous owner stays an active member and keeps every binding it held,
+// tenant-admin included. The two writes run in one transaction, under the
+// tenant's lock, so a concurrent deletion of the same organization either runs
+// before this call and leaves a tombstone this call refuses, or runs after it
+// and sees the new owner.
 //
 // expectedOwner is the owner the caller observed, or empty for platform staff.
 // A non-empty value that no longer matches the row is ErrOwnerChanged: the
@@ -113,20 +113,6 @@ func (p *product) TransferOwner(ctx context.Context, id tenant.ID, target, expec
 		}
 		after = append(after, owner)
 
-		if previous == "" {
-			return nil
-		}
-		cleared, writeErr := p.txManager.ClearAccountBindingsTx(ctx, tx, string(id), previous)
-		if writeErr != nil {
-			return fmt.Errorf("removing the previous owner's bindings: %w", writeErr)
-		}
-		after = append(after, cleared)
-
-		removed, writeErr := p.membershipWriter.RemoveMembershipTx(ctx, tx, authn.AccountID(previous), string(id))
-		if writeErr != nil {
-			return fmt.Errorf("removing the previous owner's membership: %w", writeErr)
-		}
-		after = append(after, removed)
 		return nil
 	})
 	if err != nil {

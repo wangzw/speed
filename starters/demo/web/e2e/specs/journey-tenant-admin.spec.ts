@@ -3551,7 +3551,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     }
   })
 
-  test('tenant-admin: the owner hands the organization to an active member and is removed', async ({
+  test('tenant-admin: the owner hands the organization to an active member and stays an administrator', async ({
     demo,
     browser,
   }) => {
@@ -3630,26 +3630,43 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(again).toBeEnabled({ timeout: 5_000 })
       await again.click()
 
-      // A landed transfer ends the caller's membership: the host leaves the
-      // organization and the confirmation survives the move to the home page.
-      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
-      expect(new URL(page.url()).pathname).toBe('/')
-      // The home page's visible confirmation is not the standing live region;
-      // it is the alert that carries the dismiss control.
-      const confirmation = page
-        .getByRole('button', {
-          name: copy('demo', 'home.notice.dismiss'),
-          exact: true,
-        })
-        .locator('xpath=ancestor::div[contains(@class, "MuiAlert-root")][1]')
-      await expect(
-        confirmation.getByText(
-          copyPattern('adminUi', 'tenantProfile.ownership.transfer.saved', {
-            name: escapeRegExp(OWNED_DISPLAY_NAME),
-            account: '.+',
-          }),
-        ),
-      ).toBeVisible()
+      // A landed transfer changes ownership only: the caller stays on the
+      // organization's own page, and the confirmation stays in the ownership
+      // card.
+      expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
+      const confirmation = ownershipSection(page).getByText(
+        copyPattern('adminUi', 'tenantProfile.ownership.transfer.saved', {
+          name: escapeRegExp(OWNED_DISPLAY_NAME),
+          account: '.+',
+        }),
+      )
+      await expect(confirmation).toBeVisible({ timeout: 15_000 })
+
+      // The re-read profile names the target as the owner, and the controls
+      // withdraw from the previous owner because it no longer owns the
+      // organization -- not because it left it.
+      const owner = definitionValue(
+        page,
+        copy('adminUi', 'tenantProfile.field.owner'),
+      )
+      await expect(owner).toHaveText(
+        `${reviewInvitee.displayName} (${reviewInvitee.username})`,
+        { timeout: 15_000 },
+      )
+      await expect(transferOwnerButton(page)).toHaveCount(0)
+      await expect(deleteOrganizationButton(page)).toHaveCount(0)
+
+      // The previous owner is still a member and keeps its tenant-admin
+      // binding on the organization's own member list.
+      await openOrganizationPage(page, 'invitations')
+      const callerMembers = membersSection(page).getByRole('table')
+      const callerRoles = await columnIndex(
+        callerMembers,
+        copy('adminUi', 'members.column.roles'),
+      )
+      const retained = memberRow(page, reviewTenantAdmin.displayName)
+      await expect(retained).toHaveCount(1)
+      await expect(cell(retained, callerRoles)).toContainText('tenant-admin')
 
       // The target now holds the organization: its owner controls render for
       // that account, and its member row carries the tenant-admin binding.
@@ -3664,15 +3681,15 @@ test.describe('the organization profile page belongs to its owner', () => {
         timeout: 15_000,
       })
       await openOrganizationPage(invitee, 'profile')
-      const owner = definitionValue(
+      const promotedOwner = definitionValue(
         invitee,
         copy('adminUi', 'tenantProfile.field.owner'),
       )
-      await expect(owner).toBeVisible()
+      await expect(promotedOwner).toBeVisible()
       // The transfer's new owner is named by its display name and username,
       // read fresh from the account store rather than carried over from the
       // previous owner.
-      await expect(owner).toHaveText(
+      await expect(promotedOwner).toHaveText(
         `${reviewInvitee.displayName} (${reviewInvitee.username})`,
       )
       await expect(transferOwnerButton(invitee)).toBeVisible()
@@ -3687,30 +3704,32 @@ test.describe('the organization profile page belongs to its owner', () => {
       const promoted = memberRow(invitee, reviewInvitee.displayName)
       await expect(promoted).toHaveCount(1)
       await expect(cell(promoted, rolesColumn)).toContainText('tenant-admin')
-      // The previous owner is no longer a member of the organization.
-      await expect(
-        memberRow(invitee, reviewTenantAdmin.displayName),
-      ).toHaveCount(0)
+      // The previous owner is still a member of the organization and still
+      // carries tenant-admin.
+      const previous = memberRow(invitee, reviewTenantAdmin.displayName)
+      await expect(previous).toHaveCount(1)
+      await expect(cell(previous, rolesColumn)).toContainText('tenant-admin')
 
-      // The transfer removed the previous owner's membership, so the
-      // organization is no longer among the caller's tenants: the account
-      // menu keeps the departed tenant as the current row only through its
-      // recorded name, and the switcher's list offers the remaining
-      // membership (acme) while the departed organization is not offered as
-      // a destination. The target's member list above already proved the
-      // removal from the organization's own side.
+      // The organization is still among the previous owner's memberships: the
+      // switcher offers it from the other organization, and moving back lands
+      // on the organization home with its administration entry intact.
       const menu = await openAccountMenu(page)
-      await expect(organizationRow(page, OWNED_NAME)).toBeVisible({
-        timeout: 15_000,
-      })
-      await organizationRow(page, OWNED_NAME).click()
+      await menu.getByRole('menuitem').first().click()
       await expect(
         menu.getByRole('menuitem', { name: 'acme', exact: true }),
       ).toBeVisible({ timeout: 15_000 })
-      await expect(
-        menu.getByRole('menuitem', { name: OWNED_DISPLAY_NAME, exact: true }),
-      ).toHaveCount(0)
       await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
+      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+      await expectOrganizationEntryPresent(page)
+
+      const backMenu = await openAccountMenu(page)
+      await backMenu.getByRole('menuitem').first().click()
+      const destination = backMenu.getByRole('menuitem', {
+        name: OWNED_DISPLAY_NAME,
+        exact: true,
+      })
+      await expect(destination).toBeVisible({ timeout: 15_000 })
+      await destination.click()
       await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
       await expectOrganizationEntryPresent(page)
     } finally {
@@ -3727,7 +3746,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     const { page, server, accounts } = demo
     let inviteeContext: BrowserContext | undefined
     let otherContext: BrowserContext | undefined
-    let rejoinContext: BrowserContext | undefined
 
     try {
       await accounts.signIn({
@@ -3786,7 +3804,7 @@ test.describe('the organization profile page belongs to its owner', () => {
 
       // A second session of the same account hands the organization to the
       // colleague. The one write grants the target the tenant-admin role and
-      // removes the previous owner's membership.
+      // leaves the previous owner's membership and bindings in place.
       otherContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -3834,40 +3852,23 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       await expect(transferAgain).toBeEnabled({ timeout: 5_000 })
       await transferAgain.click()
-      await expect(homeHeading(other)).toBeVisible({ timeout: 15_000 })
 
-      // The target owns the organization now and can invite the account the
-      // transfer removed. A fresh sign-in re-reads the tenant-admin role the
-      // transfer granted it, which is what opens the organization page.
-      const inviteeAccounts = createAccounts({ page: invitee, server })
-      await inviteeAccounts.signOut()
-      await inviteeAccounts.signIn({
-        identifier: reviewInvitee.username,
-        password: reviewInvitee.password,
-      })
-      await expect(homeHeading(invitee)).toBeVisible()
-      const rejoinLink = await issueInvitation(
-        invitee,
-        server,
-        reviewTenantAdmin.identifier,
-      )
+      // The transfer changes ownership only: the second session stays on the
+      // organization's profile, and its confirmation stays in the ownership
+      // card.
+      await expect(
+        other.getByText(
+          copyPattern('adminUi', 'tenantProfile.ownership.transfer.saved', {
+            name: escapeRegExp(OWNED_DISPLAY_NAME),
+            account: '.+',
+          }),
+        ),
+      ).toBeVisible({ timeout: 15_000 })
 
-      // The removed account accepts the invitation in a session of its own.
-      // It is a member again -- which is what lets the write reach the owner
-      // decision at all -- but the organization's owner is the colleague, so
-      // the owner decision refuses it.
-      rejoinContext = await browser.newContext({
-        locale: 'en-US',
-        timezoneId: 'UTC',
-        viewport: page.viewportSize(),
-      })
-      const rejoin = await rejoinContext.newPage()
-      await acceptInvitationAsInvitee(rejoin, rejoinLink, reviewTenantAdmin)
-      await expect(homeHeading(rejoin)).toBeVisible({ timeout: 15_000 })
-
-      // The stale page's confirmation is still armed. The write it sends is
-      // admitted -- the caller is a member again -- and refused by the
-      // ownership decision, which the card states as the forbidden answer.
+      // The stale page's confirmation is still armed. The caller is still a
+      // member -- the transfer kept its membership and its bindings -- but the
+      // organization's owner is the colleague, so the owner decision refuses
+      // the write, which the card states as the forbidden answer.
       await expect(dialog).toBeVisible()
       await expect(again).toBeEnabled()
       await again.click()
@@ -3880,7 +3881,6 @@ test.describe('the organization profile page belongs to its owner', () => {
     } finally {
       await inviteeContext?.close().catch(() => undefined)
       await otherContext?.close().catch(() => undefined)
-      await rejoinContext?.close().catch(() => undefined)
     }
   })
 

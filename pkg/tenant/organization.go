@@ -26,19 +26,21 @@ var ErrOwnerChanged = errors.New("tenant: the caller is no longer the owner of t
 // policy store and the membership store: an owner transfer and an organization
 // deletion.
 //
-// The roster itself cannot carry these writes. A transfer changes the owner,
-// the new owner's tenant-admin binding and the previous owner's binding and
-// membership; a deletion writes the roster tombstone and removes the tenant's
-// memberships, bindings, roles and grants. Both have to be one transaction, and
-// only an assembly that holds every one of those stores can open it, which is
-// why this is a host seam rather than a Catalog method.
+// The roster itself cannot carry these writes. A transfer changes the owner
+// and the new owner's tenant-admin binding; the previous owner keeps its
+// membership and every binding it held. A deletion writes the roster tombstone
+// and removes the tenant's memberships, bindings, roles and grants. Both have
+// to be one transaction, and only an assembly that holds every one of those
+// stores can open it, which is why this is a host seam rather than a Catalog
+// method.
 type OrganizationWriter interface {
 	// TransferOwner makes target the tenant's owner. The target must be an
 	// active member of the tenant, and the transfer grants tenant-admin when the
 	// target does not hold it. The target's account must also be active: a
 	// suspended, disabled or deleted account is refused with ErrOwnerInactive.
-	// The previous owner loses every binding in the tenant and is removed from
-	// it, in the same transaction. expectedOwner is the owner the caller observed,
+	// Ownership is the only thing the transfer changes: the previous owner stays
+	// an active member and keeps every binding it held, tenant-admin included.
+	// expectedOwner is the owner the caller observed,
 	// or empty when the caller is platform staff; a non-empty value that no longer
 	// matches the row is refused with ErrOwnerChanged, so an owner whose read of
 	// the roster went stale cannot hand the organization on. A refusal names

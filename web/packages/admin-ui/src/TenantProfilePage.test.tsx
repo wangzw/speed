@@ -540,14 +540,20 @@ describe('TenantProfilePage owner row', () => {
 })
 
 describe('TenantProfilePage ownership', () => {
-  it('lets the current owner transfer the organization and hands the confirmation to the departure action', async () => {
+  it('lets the current owner transfer the organization and keeps the caller in it', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
     const transfers: unknown[] = []
     const onTenantUpdated = vi.fn()
     const onOrganizationLeft = vi.fn()
+    // The removal writes the old ownership flow would have sent. The new
+    // decision issues neither: the previous owner stays a member and keeps
+    // every binding.
+    const removeMember = vi.fn(() => Promise.resolve())
+    const unbindTenantRole = vi.fn(() => Promise.resolve())
+    let profile = ownerProfile()
     renderPage({
-      profile: ownerProfile(),
+      getTenantProfile: () => Promise.resolve(profile),
       onTenantUpdated,
       onOrganizationLeft,
       backend: {
@@ -558,8 +564,17 @@ describe('TenantProfilePage ownership', () => {
           }),
         transferOrganizationOwner: (input) => {
           transfers.push(input)
+          // Only the owner column changes: the previous owner is still an
+          // active member holding tenant-admin.
+          profile = ownerProfile({
+            ownerAccount: OTHER_ACCOUNT,
+            ownerDisplayName: 'Bob Stone',
+            ownerUsername: 'bob',
+          })
           return Promise.resolve()
         },
+        removeMember,
+        unbindTenantRole,
       },
     })
     await ready()
@@ -609,34 +624,43 @@ describe('TenantProfilePage ownership', () => {
     const message = zhCN.tenantProfile.ownership.transfer.saved
       .replace('{{name}}', ORG_NAME)
       .replace('{{account}}', 'Bob Stone (bob)')
-    // The caller is no longer a member: the confirmation goes to the host's
-    // departure action, which shows it where the viewer lands.
-    await waitFor(() => expect(onOrganizationLeft).toHaveBeenCalledWith(message))
+    // Ownership changes only: the caller stays on the page, so the
+    // confirmation stays in the card instead of going to a departure action.
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(onOrganizationLeft).not.toHaveBeenCalled()
     expect(onTenantUpdated).not.toHaveBeenCalled()
-    expect(screen.queryByText(message)).toBeNull()
-    // The landed write is reflected locally; the page issues no re-read the
-    // caller would be refused. The new owner's names were not read here, so
-    // the row falls back to the neutral label rather than a stale name.
-    expect(
-      await screen.findByText(zhCN.tenantProfile.owner.unnamed),
-    ).toBeInTheDocument()
+    expect(removeMember).not.toHaveBeenCalled()
+    expect(unbindTenantRole).not.toHaveBeenCalled()
+    // The profile re-read shows the new owner with its own names, not a
+    // neutral label and not a stale one.
+    expect(await screen.findByText('Bob Stone (bob)')).toBeInTheDocument()
+    // The controls are withdrawn because the caller no longer owns the
+    // organization, while the page it stays on remains fully rendered.
     expect(
       screen.queryByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,
       }),
     ).toBeNull()
+    expect(screen.getByText(zhCN.tenantProfile.identity.title)).toBeInTheDocument()
   })
 
-  it('keeps the confirmation in the card when the host supplies no departure action', async () => {
+  it('keeps the transfer confirmation in the card with no host action at all', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
-    const onTenantUpdated = vi.fn()
+    let profile = ownerProfile()
     renderPage({
-      profile: ownerProfile(),
-      onTenantUpdated,
+      getTenantProfile: () => Promise.resolve(profile),
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
+        transferOrganizationOwner: () => {
+          profile = ownerProfile({
+            ownerAccount: OTHER_ACCOUNT,
+            ownerDisplayName: 'Bob Stone',
+            ownerUsername: 'bob',
+          })
+          return Promise.resolve()
+        },
       },
     })
     await ready()
@@ -668,8 +692,9 @@ describe('TenantProfilePage ownership', () => {
           .replace('{{account}}', 'Bob Stone (bob)'),
       ),
     ).toBeInTheDocument()
-    expect(onTenantUpdated).toHaveBeenCalledTimes(1)
-    // The controls are withdrawn: the caller is no longer a member.
+    // The caller remains a member: the page still renders the organization,
+    // and only the owner-only controls are gone.
+    expect(screen.getByText(zhCN.tenantProfile.identity.title)).toBeInTheDocument()
     expect(
       screen.queryByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,

@@ -3,11 +3,12 @@
 // deletion.
 //
 // Neither write belongs to the roster alone. A transfer changes the roster's
-// owner column, the new owner's tenant-admin binding and the previous owner's
-// bindings and membership; a deletion writes the roster tombstone and removes
-// the tenant's memberships, bindings, roles and grants. Both must stand or fall
-// as one transaction, so they live in a module that holds the transaction-aware
-// surfaces of all three stores rather than in any one of them.
+// owner column and the new owner's tenant-admin binding; the previous owner
+// keeps its membership and every binding it held. A deletion writes the roster
+// tombstone and removes the tenant's memberships, bindings, roles and grants.
+// Both must stand or fall as one transaction, so they live in a module that
+// holds the transaction-aware surfaces of the stores involved rather than in
+// any one of them.
 //
 // The module mounts no route and delivers no configurable behavior. Both the
 // platform management surface and the organization's own tenant surface take

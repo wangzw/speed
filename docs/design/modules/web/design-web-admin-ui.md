@@ -196,9 +196,10 @@ interface OrganizationAdminProviderProps {
   // 组织资料保存落地后宿主的动作：重读账户菜单与面包屑所读的调用方租户表。
   // 缺席时资料页只重读自己的读。
   readonly onTenantUpdated?: () => void | Promise<unknown>
-  // 一次写使调用方不再属于这个组织（转移所有权交给别人、删除组织终结它）后
-  // 宿主的动作：离开组织、重读调用方租户表，并在落点展示传入的成功文案。
-  // 缺席时资料页退回 `onTenantUpdated`，把文案留在所有权卡内，不自行导航。
+  // 删除组织使调用方不再属于这个组织后宿主的动作：离开组织、重读调用方
+  // 租户表，并在落点展示传入的成功文案。转移所有权只改变所有权，调用方
+  // 仍是成员，不触发它。缺席时资料页退回 `onTenantUpdated`，把文案留在
+  // 所有权卡内，不自行导航。
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
   readonly children: ReactNode
 }
@@ -285,7 +286,7 @@ export function OrganizationProfilePage(): ReactElement
 - **角色与权限。** 组织角色与权限页是组织管理面自己的页面（`OrganizationRolesPage`），不是共享权限页的租户模式；它的分区、控件来源与只读规则见「组织管理面的角色与权限页」。平台 `PermissionsPage` 只服务平台域：角色、授权、目录、绑定与按账户查询都读 `/api/v1/system`，绑定与账户查询保留。
 - **组织资料。** 当前租户由上下文给出，资料页读写 `/api/v1/tenants/{tenant}/profile`，不读 `/api/v1/system` 下的租户资料。页面由一张只读的身份卡、一张可编辑的资料卡与（仅所有者可见的）一张组织所有权卡组成：身份卡陈列名称、所有者、状态与注册时间，不陈列内部标识；所有者按「显示名 (用户名)」指认，只有一个时写有值的那个，都没有时写中性的「组织所有者」，任何分支都不渲染账户标识；资料卡编辑显示名、描述、联系邮箱与网站，显示名可清空、清空后各处以名称代替。保存落地后页面调用 provider 的 `onTenantUpdated`，账户菜单与面包屑随即重读调用方的租户表；宿主不给回调时只重读资料页自己的读。读被拒与其他失败按「读的失败情形」分开呈现，写拒绝按白名单渲染。
 
-  **组织所有权卡的控件只在调用方正是该组织所有者、组织不是个人组织、且不是墓碑时渲染。** 一次拒绝把资料改写成另一种状态时，已落定的拒绝文案仍留在卡内。卡内是两个控件：转移所有权与删除组织。转移对话框以服务端的成员前缀搜索列出该组织的已启用成员（不含当前所有者），每次取前 100 条匹配，成员更多时以收窄搜索代替翻页；目标由服务端在尚未持有 tenant-admin 时授予。删除对话框要求输入组织名称。两个动作都经 ui-kit 的两步确认，删除另以名称输入作为前置。两者的拒绝只按写自身的应答解析：403 落「你不是所有者」，404 落「组织已不存在」，409 落「与组织当前状态冲突」（服务端对所有者已变、目标不再是成员与墓碑都只回同一种冲突类型，应答无法再细分），其余状态落回本地的未知文案；这些文案由资料页在本地的失败码集合解析，不进平台错误白名单。写落地后调用方已不属于该组织，资料读与成员读只会被拒，因此两者都不再重读：确认下来的所有者或墓碑状态写回缓存的资料读，页面据它收掉控件，离任租户的缓存由宿主逐出。页面随后调用 `onOrganizationLeft`，宿主离开组织、重读调用方租户表并在落点展示成功文案；宿主不给这个回调时退回 `onTenantUpdated`，文案留在卡内。非所有者、个人组织、墓碑与已经离开的调用方都不渲染这两个控件；服务端仍然是每一笔写的权威。
+  **组织所有权卡的控件只在调用方正是该组织所有者、组织不是个人组织、且不是墓碑时渲染。** 一次拒绝把资料改写成另一种状态时，已落定的拒绝文案仍留在卡内。卡内是两个控件：转移所有权与删除组织。转移对话框以服务端的成员前缀搜索列出该组织的已启用成员（不含当前所有者），每次取前 100 条匹配，成员更多时以收窄搜索代替翻页；目标由服务端在尚未持有 tenant-admin 时授予。删除对话框要求输入组织名称。两个动作都经 ui-kit 的两步确认，删除另以名称输入作为前置。两者的拒绝只按写自身的应答解析：403 落「你不是所有者」，404 落「组织已不存在」，409 落「与组织当前状态冲突」（服务端对所有者已变、目标不再是成员与墓碑都只回同一种冲突类型，应答无法再细分），其余状态落回本地的未知文案；这些文案由资料页在本地的失败码集合解析，不进平台错误白名单。转移落地后调用方仍是成员，页面留在原处，成功文案留在所有权卡内；写失效的资料读重读后显示新所有者，控件因调用方不再是所有者而收掉。删除落地后调用方已不属于该组织，资料读与成员读只会被拒，因此不再重读：墓碑状态写回缓存的资料读，页面据它收掉控件，离任租户的缓存由宿主逐出，并调用 `onOrganizationLeft`，宿主离开组织、重读调用方租户表并在落点展示成功文案；宿主不给这个回调时退回 `onTenantUpdated`，文案留在卡内。非所有者、个人组织、墓碑与已经离开的调用方都不渲染这两个控件；服务端仍然是每一笔写的权威。
 
 ### 平台管理面的页面声明
 
@@ -325,7 +326,7 @@ export function OrganizationProfilePage(): ReactElement
 
 **组织生命周期入口（名册行与详情页）。** 名册的每一行与租户详情页各提供转移所有者与删除组织两个入口，分别写 `PUT /api/v1/system/tenants/:name/owner` 与 `DELETE /api/v1/system/tenants/:name`。两个入口只在调用方的平台权限集持有 `tenant.manage` 时渲染——服务端仍是判定者，这一可见性只是不摆出对当前调用方必然失败、而删除又不可逆的控件。个人组织（租户视图的 `kind` 为 `personal`）与墓碑不渲染这两个入口：个人域不属于平台名册的管理范围，删除是终态。两个入口各以带名称的可及名区分同表的多行。
 
-**转移目标的两条路径。** 转移对话框按调用方在该租户的权限选择目标控件：租户权限集持有 `authn.membership.manage` 时用该组织的成员选择器（`GET /api/v1/tenants/{tenant}/members`，只列出活跃成员，停用的成员关系不进入选项）；否则用平台账户选择器。账户路径不声称所选账户已是成员，也不把成员校验从请求里拿掉：端点仍要求目标是活跃成员，非成员答 409，对话框就地把成员要求说明在所选目标旁。两条路径都经过共享的危险确认对话框的 `doubleConfirm` 两步守卫，确认文案点名目标与原所有者失去的内容；转移落地后失效名册读与详情读，失败时对话框保持打开并渲染可读文案（404 表示组织已不在，409 表示成员或状态不满足，其余经错误码白名单解析）。
+**转移目标的两条路径。** 转移对话框按调用方在该租户的权限选择目标控件：租户权限集持有 `authn.membership.manage` 时用该组织的成员选择器（`GET /api/v1/tenants/{tenant}/members`，只列出活跃成员，停用的成员关系不进入选项）；否则用平台账户选择器。账户路径不声称所选账户已是成员，也不把成员校验从请求里拿掉：端点仍要求目标是活跃成员，非成员答 409，对话框就地把成员要求说明在所选目标旁。两条路径都经过共享的危险确认对话框的 `doubleConfirm` 两步守卫，确认文案点名目标成为所有者并获得租户管理员，并说明原所有者保留成员关系与全部角色；转移落地后失效名册读与详情读，失败时对话框保持打开并渲染可读文案（404 表示组织已不在，409 表示成员或状态不满足，其余经错误码白名单解析）。
 
 **删除经两步确认。** 删除入口经共享的危险确认对话框的 `doubleConfirm` 两步守卫；确认文案写明影响：成员关系、绑定、角色与授予一并清除，名称与内部标识都不复用，且不可撤销。删除落地后失效名册读与详情读，名册行消失，详情读返回墓碑。失败落在控件组自己的结果区域：409 是墓碑（组织已经删除），渲染删除自己的文案而不是登记冲突文案；404 与 403 同样渲染各自的文案。成功确认落在页面级作用域，因为承载控件的行会在删除后离开表格或详情页转为墓碑。
 
@@ -838,7 +839,7 @@ graph TD
 | 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/admin-ui/src/operations.tsx` `adminOperations` |
 | 组织管理面的声明表 `organizationAdminRoutes`（邀请与成员、SSO、角色与权限、设置、组织资料）与五个包装页（`organization-routes.tsx`、`organization-pages.tsx`） | 已实现 | `web/packages/admin-ui/src/organization-routes.tsx` `organizationAdminRoutes`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationInvitationsPage`、`OrganizationSsoPage`、`OrganizationPermissionsPage`、`OrganizationSettingsPage`、`OrganizationProfilePage` |
 | 组织资料页（只读身份卡、可编辑资料卡、显示名清空后回退名称、保存落地后经 `onTenantUpdated` 重读调用方租户表） | 已实现 | `web/packages/admin-ui/src/TenantProfilePage.tsx` `TenantProfilePage`；`web/packages/admin-ui/src/TenantProfileFields.tsx` `TenantProfileFields`；`web/packages/admin-ui/src/TenantProfileForm.tsx` `TenantProfileForm`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationProfilePage` |
-| 组织所有权卡（所有者陈列、仅所有者可见的转移与删除、转移对话框的成员搜索与双击确认、删除对话框的名称输入与双击确认、按写自身应答的拒绝分类、落地后经 `onOrganizationLeft` 离开组织并在落点展示成功文案） | 已实现 | `web/packages/admin-ui/src/TenantOwnership.tsx` `TenantOwnership`、`TransferOwnershipDialog`、`DeleteOrganizationDialog`；`web/packages/admin-ui/src/TenantProfilePage.tsx` `TenantProfilePage`；`web/packages/admin-ui/src/organization-operations.tsx` `useTenantOwnerTransfer`、`useTenantOwnerDelete` |
+| 组织所有权卡（所有者陈列、仅所有者可见的转移与删除、转移对话框的成员搜索与双击确认、删除对话框的名称输入与双击确认、按写自身应答的拒绝分类、转移落地后留在页面并在卡内展示成功文案、删除落地后经 `onOrganizationLeft` 离开组织并在落点展示成功文案） | 已实现 | `web/packages/admin-ui/src/TenantOwnership.tsx` `TenantOwnership`、`TransferOwnershipDialog`、`DeleteOrganizationDialog`；`web/packages/admin-ui/src/TenantProfilePage.tsx` `TenantProfilePage`；`web/packages/admin-ui/src/organization-operations.tsx` `useTenantOwnerTransfer`、`useTenantOwnerDelete` |
 | 平台创建页与共享创建表单（`/tenants/new`，平台模式；客户端校验含标识域、显示名与网站界限） | 已实现 | `web/packages/admin-ui/src/TenantCreatePage.tsx` `TenantCreatePage`；`web/packages/admin-ui/src/routes.tsx` `tenantAdminRoutes`；`web/packages/org-create-ui/src/OrganizationCreateForm.tsx` `OrganizationCreateForm`；`web/packages/org-create-ui/src/validation.ts` `validateOrganizationCreateValues`、`isRejectedIdentifier` |
 | 组织管理面的上下文与面包屑提供者（`OrganizationAdminProvider.tsx` 的 `OrganizationAdminProvider`、`OrganizationAdminBreadcrumb.tsx` 的 `OrganizationAdminBreadcrumbProvider`） | 已实现 | `web/packages/admin-ui/src/OrganizationAdminProvider.tsx` `OrganizationAdminProvider`、`useOrganizationAdminTenant`、`useOrganizationAdminProtectedRoles`；`web/packages/admin-ui/src/OrganizationAdminBreadcrumb.tsx` `OrganizationAdminBreadcrumbProvider`、`useOrganizationAdminBreadcrumbs` |
 | 组织操作束（`organization-operations.tsx` 的 `OrganizationAdminOperations`、`organizationAdminOperations`）及其发布上下文 | 已实现 | `web/packages/admin-ui/src/organization-operations.tsx` `OrganizationAdminOperations`、`organizationAdminOperations`、`OrganizationAdminOperationsProvider`、`useOrganizationAdminOperations` |

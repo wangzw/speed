@@ -1111,9 +1111,9 @@ export const adminOperations: AdminOperations = {
           account: input.account,
         }),
       onSuccess: (_answer, input) => {
-        // The roster view carries the owner account, and the detail view
-        // carries it too (the previous owner also loses every binding in the
-        // organization), so both reads are stale after a transfer.
+        // The roster and detail views both carry the owner account, which a
+        // transfer rewrites; the membership and bindings of both accounts
+        // stay in place, so only the owner-carrying reads are stale.
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
         })

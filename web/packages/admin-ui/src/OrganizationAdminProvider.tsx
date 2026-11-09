@@ -50,11 +50,11 @@ export interface OrganizationAdminContextValue {
    */
   readonly onTenantUpdated?: () => void | Promise<unknown>
   /**
-   * The host's action after a write ends the caller's membership in the
-   * current organization (a transfer hands it on, a deletion ends it):
-   * leave the organization, reload the caller tenant list the account menu
-   * and the breadcrumb read, and show the message on the destination.
-   * Absent, the profile page falls back to `onTenantUpdated`.
+   * The host's action after a deletion ends the caller's membership in the
+   * current organization: leave the organization, reload the caller tenant
+   * list the account menu and the breadcrumb read, and show the message on
+   * the destination. Absent, the profile page falls back to
+   * `onTenantUpdated`. A transfer changes ownership only and never departs.
    */
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }
@@ -96,7 +96,7 @@ export function useOrganizationAdminOnTenantUpdated():
   return useOrganizationAdminContext().onTenantUpdated
 }
 
-/** The host's action after a write ends the caller's membership, when the
+/** The host's action after a deletion ends the caller's membership, when the
  * host supplied one. */
 export function useOrganizationAdminOnOrganizationLeft():
   | ((message: string) => void | Promise<unknown>)
@@ -138,9 +138,10 @@ export interface OrganizationAdminProviderProps {
    * list the account menu and the breadcrumb read. Absent, the profile page
    * only re-reads its own read. */
   readonly onTenantUpdated?: () => void | Promise<unknown>
-  /** The host's action after a write ends the caller's membership: leave the
-   * organization, reload the caller tenant list and show the message on the
-   * destination. Absent, the profile page falls back to `onTenantUpdated`. */
+  /** The host's action after a deletion ends the caller's membership: leave
+   * the organization, reload the caller tenant list and show the message on
+   * the destination. Absent, the profile page falls back to
+   * `onTenantUpdated`. A transfer changes ownership only and never departs. */
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
   readonly children: ReactNode
 }

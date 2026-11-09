@@ -63,12 +63,11 @@ export interface TenantProfilePageProps {
    */
   readonly onTenantUpdated?: () => void | Promise<unknown>
   /**
-   * The host's action after a write ends the caller's membership -- a
-   * transfer hands the organization on, a deletion ends it: leave the
-   * organization, reload the caller tenant list the account menu and the
+   * The host's action after a deletion ends the caller's membership: leave
+   * the organization, reload the caller tenant list the account menu and the
    * breadcrumb read, and show `message` on the destination. Absent, the page
    * falls back to `onTenantUpdated` and keeps the message in the ownership
-   * card.
+   * card. A transfer changes ownership only and never departs.
    */
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }

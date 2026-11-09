@@ -35,8 +35,32 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import type { ObservedCall } from '../test-utils/request-rig.js'
 import { profileFixture } from '../test-utils/operations.js'
+import type { AdminMember } from './operations.js'
 
 const TENANT = 'acme'
+
+/** The previous owner: an active member holding tenant-admin. A transfer
+ * changes the owner column only, so this row is still the server's answer
+ * after the write. */
+const PREVIOUS_OWNER: AdminMember = {
+  tenant: TENANT,
+  account: 'acc-1',
+  display_name: 'Ada Lovelace',
+  username: 'ada',
+  active: true,
+  joined_at: '2026-01-01T00:00:00Z',
+  roles: ['tenant-admin'],
+  source: 'admin',
+  sso_exempt: false,
+}
+
+/** The target: an active member that the transfer grants tenant-admin. */
+const NEW_OWNER: AdminMember = {
+  ...PREVIOUS_OWNER,
+  account: 'acc-2',
+  display_name: 'Bob Stone',
+  username: 'bob',
+}
 
 /** The generated operation bodies the read probe's requests answer with. */
 function readResponder(call: ObservedCall): unknown {
@@ -551,22 +575,33 @@ describe('the organization operations bundle', () => {
 })
 
 describe('the organization ownership writes', () => {
-  /** Every request the ownership probe makes, with a settled read pair. */
-  function ownershipResponder(call: ObservedCall): unknown {
-    if (call.path === `/api/v1/tenants/${TENANT}/profile`) {
-      return { profile: profileFixture() }
+  /** Every request the ownership probe makes, with a settled read pair. The
+   * transfer rewrites the owner column only: the member rows, including the
+   * previous owner's tenant-admin role, are unchanged. */
+  function ownershipResponder(): (call: ObservedCall) => unknown {
+    let ownerAccount = 'acc-1'
+    return (call) => {
+      if (call.path === `/api/v1/tenants/${TENANT}/profile`) {
+        return { profile: profileFixture({ ownerAccount }) }
+      }
+      if (call.path === `/api/v1/tenants/${TENANT}/members`) {
+        return { members: [PREVIOUS_OWNER, NEW_OWNER], next_cursor: '' }
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === `/api/v1/tenants/${TENANT}/owner`
+      ) {
+        ownerAccount = 'acc-2'
+        return undefined
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `/api/v1/tenants/${TENANT}`
+      ) {
+        return undefined
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
     }
-    if (call.path === `/api/v1/tenants/${TENANT}/members`) {
-      return { members: [], next_cursor: '' }
-    }
-    if (
-      (call.method === 'PUT' || call.method === 'DELETE') &&
-      (call.path === `/api/v1/tenants/${TENANT}/owner` ||
-        call.path === `/api/v1/tenants/${TENANT}`)
-    ) {
-      return undefined
-    }
-    throw new Error(`unexpected request: ${call.method} ${call.path}`)
   }
 
   function OwnershipProbe({ action }: { readonly action: 'transfer' | 'delete' }) {
@@ -578,6 +613,14 @@ describe('the organization ownership writes', () => {
     return (
       <div>
         <p>{profile.isSuccess && members.isSuccess ? 'settled' : 'loading'}</p>
+        <p data-testid="member-rows">
+          {(members.data?.members ?? [])
+            .map(
+              (member) =>
+                `${member.account}:${member.active ? 'active' : 'suspended'}:${member.roles.join('|')}`,
+            )
+            .join(',')}
+        </p>
         <button
           type="button"
           onClick={() => {
@@ -594,13 +637,18 @@ describe('the organization ownership writes', () => {
     )
   }
 
-  it('transfers at the tenant owner path and reflects the new owner without a refused re-read', async () => {
+  it('transfers at the tenant owner path and re-reads the profile and members without removing the previous owner', async () => {
     const user = userEvent.setup()
-    const calls = bindAdminRequest(ownershipResponder, { recordBody: true })
+    const calls = bindAdminRequest(ownershipResponder(), { recordBody: true })
     const { queryClient } = renderWithProviders(
       <OwnershipProbe action="transfer" />,
     )
     expect(await screen.findByText('settled')).toBeInTheDocument()
+    // The previous owner is an active member holding tenant-admin before the
+    // write, and the transfer changes only the owner column.
+    expect(screen.getByTestId('member-rows')).toHaveTextContent(
+      'acc-1:active:tenant-admin',
+    )
 
     const profileReads = () =>
       calls.filter((call) => call.path === `/api/v1/tenants/${TENANT}/profile`)
@@ -620,8 +668,11 @@ describe('the organization ownership writes', () => {
         body: { account: 'acc-2' },
       }),
     )
-    // The caller is no longer a member: a re-read would be refused, so the
-    // confirmed owner change is written over the cached profile instead.
+    // Ownership changes only, so both tenant-scoped reads stay permitted and
+    // are re-read: the profile's owner column changed, and the member rows
+    // carry the target's granted role.
+    await waitFor(() => expect(profileReads()).toBe(2))
+    await waitFor(() => expect(memberReads()).toBe(2))
     await waitFor(() =>
       expect(
         queryClient.getQueryData([
@@ -632,8 +683,12 @@ describe('the organization ownership writes', () => {
         profile: { ...profileFixture(), ownerAccount: 'acc-2' },
       }),
     )
-    expect(profileReads()).toBe(1)
-    expect(memberReads()).toBe(1)
+    // The previous owner still holds tenant-admin and remains a member: the
+    // transfer writes no membership or binding removal.
+    expect(screen.getByTestId('member-rows')).toHaveTextContent(
+      'acc-1:active:tenant-admin',
+    )
+    expect(calls.filter((call) => call.method === 'DELETE')).toEqual([])
     for (const call of calls) {
       expect(call.path.startsWith(`/api/v1/tenants/${TENANT}`)).toBe(true)
       expect(call.path.startsWith('/api/v1/system')).toBe(false)
@@ -642,7 +697,7 @@ describe('the organization ownership writes', () => {
 
   it('deletes at the tenant path and reflects the tombstone without a refused re-read', async () => {
     const user = userEvent.setup()
-    const calls = bindAdminRequest(ownershipResponder)
+    const calls = bindAdminRequest(ownershipResponder())
     const { queryClient } = renderWithProviders(
       <OwnershipProbe action="delete" />,
     )

@@ -1,13 +1,14 @@
 package ownership_test
 
-// The acceptance evidence for the organization lifecycle: the transfer's two
-// halves, the deletion's rollback at each cleanup step, and the account
-// protection's boundaries. Each case names one property the requirement owner
-// asked to see held on its own.
+// The acceptance evidence for the organization lifecycle: the transfer's
+// ownership change, the deletion's rollback at each cleanup step, and the
+// account protection's boundaries. Each case names one property the requirement
+// owner asked to see held on its own.
 
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
@@ -39,10 +40,9 @@ func TestTransferOwnerGrantsTenantAdminToAMemberThatDidNotHoldIt(t *testing.T) {
 	})
 }
 
-// The previous owner loses tenant-admin in this organization and is removed
-// from it. Both writes are asserted separately, so a transfer that only clears
-// one of them cannot pass.
-func TestTransferOwnerRemovesThePreviousOwnersTenantAdminAndMembership(t *testing.T) {
+// A transfer changes ownership only: the previous owner stays an active member
+// and keeps the tenant-admin binding it held.
+func TestTransferOwnerKeepsThePreviousOwnerAnActiveMemberHoldingTenantAdmin(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
 		target := a.user(t, "bob")
@@ -57,11 +57,52 @@ func TestTransferOwnerRemovesThePreviousOwnersTenantAdminAndMembership(t *testin
 		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
 			t.Fatalf("transferring the owner: %v", err)
 		}
-		if held := a.bindingsOf(t, "acme", owner); len(held) != 0 {
-			t.Errorf("the previous owner still holds %+v, want no binding", held)
+		held := a.bindingsOf(t, "acme", owner)
+		if len(held) != 1 || held[0].Role != authz.Role(authz.TenantAdminRole) {
+			t.Errorf("the previous owner holds %+v after the transfer, want tenant-admin", held)
 		}
-		if _, found, err := a.memberships.Membership(t.Context(), "acme", owner.ID); err != nil || found {
-			t.Errorf("the previous owner is still a member of acme: found=%t err=%v", found, err)
+		m, found, err := a.memberships.Membership(t.Context(), "acme", owner.ID)
+		if err != nil || !found || !m.Active {
+			t.Errorf("the previous owner's membership is %+v (found=%t err=%v), want the active one",
+				m, found, err)
+		}
+	})
+}
+
+// Every binding the previous owner held survives the transfer, not only the
+// tenant-admin binding the roster's owner column implies. The extra role is
+// created and bound before the transfer, so the assertion cannot pass on a
+// binding the transfer never had a chance to remove.
+func TestTransferOwnerKeepsThePreviousOwnersOtherBindings(t *testing.T) {
+	withAssembly(t, func(t *testing.T, a *assembly) {
+		owner := a.user(t, "alice")
+		target := a.user(t, "bob")
+		a.organization(t, "acme", "acme-org", owner)
+		a.join(t, "acme", target)
+
+		if err := a.manager.PutRole(t.Context(), authz.RoleRecord{
+			Tenant: "acme", Role: "auditor", CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("creating the auditor role: %v", err)
+		}
+		if err := a.manager.PutBinding(t.Context(), authz.Binding{
+			Tenant: "acme", Account: owner.ID.String(), Role: "auditor", GrantedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("binding the previous owner to auditor: %v", err)
+		}
+		if held := a.bindingsOf(t, "acme", owner); len(held) != 2 {
+			t.Fatalf("the previous owner holds %+v before the transfer, want tenant-admin and auditor", held)
+		}
+
+		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
+			t.Fatalf("transferring the owner: %v", err)
+		}
+		roles := make(map[authz.Role]bool)
+		for _, held := range a.bindingsOf(t, "acme", owner) {
+			roles[held.Role] = true
+		}
+		if len(roles) != 2 || !roles[authz.Role(authz.TenantAdminRole)] || !roles["auditor"] {
+			t.Errorf("the previous owner holds %+v after the transfer, want tenant-admin and auditor", roles)
 		}
 	})
 }

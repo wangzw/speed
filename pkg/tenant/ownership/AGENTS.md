@@ -24,8 +24,9 @@ and the membership store.
   `authn.Accounts` under the tenant lock. The roster is read before the
   membership, so a missing tenant is `tenant.ErrInvalidTenant` and a tombstone
   `tenant.ErrTenantDeleted`, never `tenant.ErrOwnerNotMember`. It then grants
-  `tenant-admin`, writes the roster owner, and clears the previous owner's
-  bindings and removes its membership. A transfer to the current owner is a
+  `tenant-admin` and writes the roster owner. The transfer changes ownership
+  only: the previous owner stays an active member and keeps every binding it
+  held, `tenant-admin` included. A transfer to the current owner is a
   no-op. The target's membership is read inside the transaction under the
   account's row lock (`provisioning.MembershipWriter.MembershipTx`), so a
   concurrent suspension either is seen by the check or waits for the transfer to
@@ -65,7 +66,8 @@ go -C pkg vet ./tenant/ownership/...
 ```
 
 `integration_test.go` drives the real account, roster, policy and personal
-modules over one SQLite database: the transfer hands the organization on, a
+modules over one SQLite database: the transfer hands the organization on while
+the previous owner stays an active member holding every binding it had, a
 non-member, an inactive account and a deleted account are refused, a transfer
 from an owner the row no longer carries is refused with `ErrOwnerChanged`, a
 missing tenant and a tombstone are reported before the membership, a deletion
