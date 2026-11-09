@@ -119,6 +119,24 @@ func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, 
 	return row, found, nil
 }
 
+// SetOwner writes the owner the seed names for a tenant whose row it found
+// without one. An absent row and a tombstone are refused as the roster refuses
+// them.
+func (r *fakeRoster) SetOwner(_ context.Context, id tenant.ID, owner string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row, found := r.rows[id]
+	if !found {
+		return fmt.Errorf("%w: identifier %q", tenant.ErrInvalidTenant, id)
+	}
+	if row.Status == tenant.StatusDeleted {
+		return fmt.Errorf("%w: identifier %q", tenant.ErrTenantDeleted, id)
+	}
+	row.OwnerAccount = owner
+	r.rows[id] = row
+	return nil
+}
+
 func (r *fakeRoster) Create(_ context.Context, t tenant.Tenant) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -1376,11 +1376,62 @@ func TestSeedRestoresARemovedTenantAdministratorsMembership(t *testing.T) {
 // refusal as "the tenant exists" skips the row the policy module requires and
 // fails the startup later, far from the cause; the seed reports the conflict
 // and names the tenant it was registering.
+// TestSeedTenantWritesTheConfiguredOwner pins the owner a seeded tenant carries:
+// the profile surface reads it from the roster row, so a row seeded without one
+// renders "the organization owner" in place of the administrator's name. A row
+// that predates the rule is repaired, and an owner already standing is left
+// alone.
+func TestSeedTenantWritesTheConfiguredOwner(t *testing.T) {
+	t.Parallel()
+
+	roster := newFakeRoster()
+	if err := seedTenant(t.Context(), roster, "acme", "acct-new"); err != nil {
+		t.Fatalf("seedTenant: %v", err)
+	}
+	created, found, err := roster.Get(t.Context(), "acme")
+	if err != nil || !found {
+		t.Fatalf("the seeded tenant is %+v, %v", created, err)
+	}
+	if created.OwnerAccount != "acct-new" {
+		t.Errorf("the seeded tenant's owner is %q, want acct-new", created.OwnerAccount)
+	}
+
+	legacy := newFakeRoster()
+	legacy.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
+	if err := seedTenant(t.Context(), legacy, "acme", "acct-repair"); err != nil {
+		t.Fatalf("seedTenant on the ownerless row: %v", err)
+	}
+	repaired, _, _ := legacy.Get(t.Context(), "acme")
+	if repaired.OwnerAccount != "acct-repair" {
+		t.Errorf("the ownerless row's owner is %q, want acct-repair", repaired.OwnerAccount)
+	}
+
+	held := newFakeRoster()
+	held.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-standing"}
+	if err := seedTenant(t.Context(), held, "acme", "acct-other"); err != nil {
+		t.Fatalf("seedTenant over a standing owner: %v", err)
+	}
+	kept, _, _ := held.Get(t.Context(), "acme")
+	if kept.OwnerAccount != "acct-standing" {
+		t.Errorf("the standing owner became %q, want it left alone", kept.OwnerAccount)
+	}
+
+	tombstone := newFakeRoster()
+	tombstone.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusDeleted}
+	if err := seedTenant(t.Context(), tombstone, "acme", "acct-any"); err != nil {
+		t.Fatalf("seedTenant on a tombstone: %v", err)
+	}
+	deleted, _, _ := tombstone.Get(t.Context(), "acme")
+	if deleted.OwnerAccount != "" {
+		t.Errorf("the tombstone's owner is %q, want it left without one", deleted.OwnerAccount)
+	}
+}
+
 func TestSeedFailsOnASystemNameConflict(t *testing.T) {
 	roster := newFakeRoster()
 	roster.createErr = fmt.Errorf("%w: name %q is held by tenant %q",
 		tenant.ErrNameConflict, string(authz.PlatformDomain), "legacy")
-	err := seedTenant(context.Background(), roster, string(authz.PlatformDomain))
+	err := seedTenant(context.Background(), roster, string(authz.PlatformDomain), "")
 	if err == nil {
 		t.Fatal("seedTenant accepted a name conflict as an existing tenant")
 	}

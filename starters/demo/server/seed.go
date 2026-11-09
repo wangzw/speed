@@ -554,7 +554,7 @@ func seedModule() core.Module {
 			if err != nil {
 				return err
 			}
-			return seedTenant(ctx, roster, string(authz.PlatformDomain))
+			return seedTenant(ctx, roster, string(authz.PlatformDomain), "")
 		},
 	}
 }
@@ -679,7 +679,7 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 
 	// The system tenant first, always: the platform policy domain is that
 	// tenant's domain, and the policy module refuses to start without it.
-	if err := seedTenant(ctx, roster, string(authz.PlatformDomain)); err != nil {
+	if err := seedTenant(ctx, roster, string(authz.PlatformDomain), ""); err != nil {
 		return err
 	}
 
@@ -718,7 +718,20 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	// the skip is the seed's own step, not the roster's.
 	deleted := make(map[string]bool, len(in.Tenants))
 	for _, t := range in.Tenants {
-		if err := seedTenant(ctx, roster, t.Name); err != nil {
+		// The tenant's first configured administrator is its owner: the
+		// profile surface names the owner from the roster row, and a seeded
+		// tenant that names no owner renders "the organization owner".
+		owner := ""
+		if len(t.Admins) > 0 {
+			_, adminName, err := seedLoginName(t.Admins[0])
+			if err != nil {
+				return fmt.Errorf("seed: the administrator %q of %s: %w", t.Admins[0], t.Name, err)
+			}
+			if id, ok := accountIDs[adminName]; ok {
+				owner = string(id)
+			}
+		}
+		if err := seedTenant(ctx, roster, t.Name, owner); err != nil {
 			return err
 		}
 		tombstone, err := tenantHoldsTombstone(ctx, roster, t.Name)
@@ -934,16 +947,27 @@ func seedSystemTenantAdmins(ctx context.Context, memberships authn.Memberships, 
 // identifier is free and another tenant holds the name, so the tenant is not
 // registered, and skipping it would let the startup fail later without naming
 // the cause.
-func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
-	_, found, err := roster.Get(ctx, tenant.ID(id))
+func seedTenant(ctx context.Context, roster tenant.Catalog, id, owner string) error {
+	got, found, err := roster.Get(ctx, tenant.ID(id))
 	if err != nil {
 		return fmt.Errorf("seed: reading the tenant %s: %w", id, err)
 	}
 	if found {
+		// A seeded tenant is created by the administrator the configuration
+		// names first, and the profile surface reads the owner from the roster
+		// row. A row that predates this rule carries no owner; it takes the
+		// configured one, which is a repair and not a transfer.
+		if owner != "" && got.OwnerAccount == "" && got.Status != tenant.StatusDeleted {
+			if err := roster.SetOwner(ctx, tenant.ID(id), owner); err != nil {
+				return fmt.Errorf("seed: setting the owner of %s: %w", id, err)
+			}
+			fmt.Printf("seeded: tenant %s owner %s\n", id, owner)
+			return nil
+		}
 		fmt.Printf("skipped: tenant %s (exists)\n", id)
 		return nil
 	}
-	record := tenant.Tenant{ID: tenant.ID(id), Name: id, Status: tenant.StatusActive}
+	record := tenant.Tenant{ID: tenant.ID(id), Name: id, OwnerAccount: owner, Status: tenant.StatusActive}
 	if err := roster.Create(ctx, record); err != nil {
 		if errors.Is(err, tenant.ErrTenantExists) {
 			// Another run took the identifier between the read and the write.
