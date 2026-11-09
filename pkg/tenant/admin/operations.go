@@ -347,7 +347,7 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 		"write the deleted state: deletion is the roster's terminal marker, written by the host that winds an "+
 		"account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, "+
 		"before the audit the route asks the host's write guard whether the tenant refuses the write: a "+
-		"protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An "+
+		"protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. A "+
 		"name the roster does not hold "+
 		"is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no "+
 		"status change revives it. A mandatory audit row lands before the write; if it cannot, the state is "+
