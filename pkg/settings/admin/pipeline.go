@@ -68,25 +68,25 @@ type selection struct {
 	// tenant is the tenant identifier a tenant layer is built on, empty for the
 	// global layer.
 	tenant string
-	// alias is the tenant's alias, the name a client reads, empty for the global
-	// layer. An assembly with no tenant roster cannot select a tenant layer, so
-	// this stays empty there.
-	alias string
+	// tenantName is the tenant's name, the only external name a tenant has and
+	// the name a client reads, empty for the global layer. An assembly with no
+	// tenant roster cannot select a tenant layer, so this stays empty there.
+	tenantName string
 }
 
 // selectionOf builds the selection of a request whose layer the route's
-// authorization step already validated: a tenant layer's alias was held to the
+// authorization step already validated: a tenant layer's name was held to the
 // tenant identifier's value domain and a global layer carried no tenant. It
 // validates nothing itself, which is why it is called only from the declared
 // handlers, behind that step.
-func selectionOf(layer, tenant, alias string) selection {
+func selectionOf(layer, tenant, tenantName string) selection {
 	if layer == layerTenant {
 		return selection{
-			layer:  settings.ForTenant(tenant),
-			domain: authz.Domain(tenant),
-			name:   layerTenant,
-			tenant: tenant,
-			alias:  alias,
+			layer:      settings.ForTenant(tenant),
+			domain:     authz.Domain(tenant),
+			name:       layerTenant,
+			tenant:     tenant,
+			tenantName: tenantName,
 		}
 	}
 	return selection{layer: settings.Global(), domain: authz.PlatformDomain, name: layerGlobal}
@@ -224,13 +224,13 @@ func quoteRealm(name string) string {
 // selectLayer settles the layer and the policy domain from the query string.
 //
 // The layer has no default: an absent or unreadable layer is a 400, and the
-// route returns before the guard is asked. The tenant is named by its alias,
+// route returns before the guard is asked. The tenant is named by its name,
 // the only external name a tenant has, and the layer keys by the identifier, so
-// the alias is resolved through the roster before a layer is built; an alias no
-// tenant carries is a 400. The alias is held to the tenant identifier's value
+// the name is resolved through the roster before a layer is built; a name no
+// tenant carries is a 400. The name is held to the tenant identifier's value
 // domain — settings.ForTenant panics on an identifier outside it, non-empty and
 // free of blanks and control characters — before it is resolved. An assembly
-// with no tenant roster has no aliases to resolve, so a tenant layer cannot be
+// with no tenant roster has no names to resolve, so a tenant layer cannot be
 // selected: the query is refused rather than read as an identifier, which is
 // internal. The domain follows the layer: the platform domain for the global
 // layer, the named tenant's for a tenant's.
@@ -252,8 +252,8 @@ func (p *product) selectLayer(c *gin.Context) (selection, bool) {
 			p.bad(c)
 			return selection{}, false
 		}
-		alias := values[0]
-		tenant, found, err := p.tenantIDOf(c.Request.Context(), alias)
+		tenantName := values[0]
+		tenant, found, err := p.tenantIDOf(c.Request.Context(), tenantName)
 		if err != nil {
 			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
 			return selection{}, false
@@ -262,7 +262,7 @@ func (p *product) selectLayer(c *gin.Context) (selection, bool) {
 			p.bad(c)
 			return selection{}, false
 		}
-		return selectionOf(layerTenant, tenant, alias), true
+		return selectionOf(layerTenant, tenant, tenantName), true
 	default:
 		p.bad(c)
 		return selection{}, false

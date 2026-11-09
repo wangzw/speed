@@ -43,24 +43,24 @@ func (p *product) handleIssue(ctx context.Context, in issueInput) (AuthnInviteIs
 	if in.ExpiresAt != nil {
 		deadline = *in.ExpiresAt
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return AuthnInviteIssued{}, p.cause("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return AuthnInviteIssued{}, p.cause("reading the tenant's name", nameErr)
 	}
 	actionID := newActionID()
-	if err = p.auditRequired(ctx, mandatory(actionIssue, tenantAlias,
-		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
+	if err = p.auditRequired(ctx, mandatory(actionIssue, tenantName,
+		map[string]string{detailActionID: actionID, detailTenant: tenantName})); err != nil {
 		return AuthnInviteIssued{}, err
 	}
 	issued, err := p.Issue(ctx, IssueInvite{Tenant: in.Tenant, Email: in.Email, ExpiresAt: deadline})
 	if err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionIssue, tenantAlias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionIssue, tenantName, actionID))
 		return AuthnInviteIssued{}, p.answer("issuing an invitation", err)
 	}
 	// The notice is best effort: the invitation is issued and its token is the
 	// one-time link whatever the delivery outcome, so the answer stays 201.
 	delivery := p.deliverInvite(ctx, issued, actionID)
-	return issuedViewOf(issued, delivery, tenantAlias), nil
+	return issuedViewOf(issued, delivery, tenantName), nil
 }
 
 // handleList answers GET /admin/tenants/:tenant/invitations: one page of the
@@ -93,13 +93,13 @@ func (p *product) handleList(ctx context.Context, in listInput) (AuthnInvitePage
 	if err != nil {
 		return AuthnInvitePage{}, p.answer("listing invitations", err)
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return AuthnInvitePage{}, p.cause("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return AuthnInvitePage{}, p.cause("reading the tenant's name", nameErr)
 	}
 	views := make([]AuthnInviteInvitation, len(invitations))
 	for i, inv := range invitations {
-		views[i] = invitationViewOf(inv, tenantAlias)
+		views[i] = invitationViewOf(inv, tenantName)
 	}
 	return AuthnInvitePage{Invitations: views, NextCursor: next}, nil
 }
@@ -126,13 +126,13 @@ func (p *product) handleRevoke(ctx context.Context, in revokeInput, _ *speedhttp
 	if in.ID == "" {
 		return nil, p.badRequest()
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return nil, p.cause("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return nil, p.cause("reading the tenant's name", nameErr)
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionRevoke, in.ID,
-		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantName})); err != nil {
 		return nil, err
 	}
 	if err := p.Revoke(ctx, in.Tenant, in.ID); err != nil {

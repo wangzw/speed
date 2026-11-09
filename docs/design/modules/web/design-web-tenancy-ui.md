@@ -8,7 +8,7 @@ tenancy-ui 是[租户](../../../glossary.md)切换控件，位于 ui-kit 与 i18
 
 租户是请求的路由事实：服务端的解析层按端从请求头、子域或路径解析当前租户，认证不携带租户（[authn 登录](../authn/design-authn-login.md)、[tenant 准入](../tenant/design-tenant-admission.md)）。切换租户因而是一次宿主的路由变更，不是会话上的一次操作——本控件只把用户的意图报给宿主，由宿主改变它的路由并更新它交给 [auth-core](design-web-auth-core.md) 的租户上下文。
 
-**列表的来源是宿主的本人租户读取接口。** 宿主经平台的一个读取接口（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是别名；个人租户那一行是宿主自己的组织文案。本控件不调用这个读取接口，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成组织文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
+**列表的来源是宿主的本人租户读取接口。** 宿主经平台的一个读取接口（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是名称；个人租户那一行是宿主自己的组织文案。本控件不调用这个读取接口，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成组织文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
 控件的结构：
 

@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// TestIsAliasHoldsTheSlugForm pins the alias domain the roster enforces and the
+// TestIsNameHoldsTheSlugForm pins the name domain the roster enforces and the
 // username rule mirrors: three to sixty-three lower-case letters, digits and
 // dashes, beginning with a letter or a digit.
-func TestIsAliasHoldsTheSlugForm(t *testing.T) {
+func TestIsNameHoldsTheSlugForm(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		in   string
@@ -21,7 +21,7 @@ func TestIsAliasHoldsTheSlugForm(t *testing.T) {
 		{"sixty-three characters", strings.Repeat("a", 63), true},
 		{"two characters", "ab", false},
 		{"one character", "a", false},
-		{"the empty alias", "", false},
+		{"the empty name", "", false},
 		{"an upper-case letter", "Abc", false},
 		{"an underscore", "a_b", false},
 		{"a dot", "a.b", false},
@@ -30,8 +30,8 @@ func TestIsAliasHoldsTheSlugForm(t *testing.T) {
 		{"a control character", "a\tb", false},
 		{"sixty-four characters", strings.Repeat("a", 64), false},
 	} {
-		if got := IsAlias(c.in); got != c.want {
-			t.Errorf("%s: IsAlias(%q) = %v, want %v", c.name, c.in, got, c.want)
+		if got := IsName(c.in); got != c.want {
+			t.Errorf("%s: IsName(%q) = %v, want %v", c.name, c.in, got, c.want)
 		}
 	}
 }

@@ -11,19 +11,19 @@ import (
 // added to a record later does not reach a client by being there.
 
 // TenantAdminTenant is one tenant as the management routes show it. It carries
-// the alias the request surface addresses it by, the kind, the account that
+// the name the request surface addresses it by, the kind, the account that
 // owns the organization, and its state, spelled the way tenant.Status spells
 // it: active, disabled or deleted. A disabled tenant also carries who disabled
 // it, spelled the way tenant.DisabledBy spells the source: operator or account.
 //
 // It carries no identifier: the identifier is internal, and a client addresses
-// the tenant by the alias alone.
+// the tenant by the name alone.
 type TenantAdminTenant struct {
-	_ struct{} `description:"One tenant as the management routes render it: the alias, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled."`
+	_ struct{} `description:"One tenant as the management routes render it: the name, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled."`
 
-	Alias        string `json:"alias" required:"true" description:"The alias the request surface addresses the tenant by, and the name every view and path uses."`
-	Kind         string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias."`
-	DisplayName  string `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the alias then."`
+	Name         string `json:"name" required:"true" description:"The name the request surface addresses the tenant by, and the one every view and path uses."`
+	Kind         string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name."`
+	DisplayName  string `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the name then."`
 	Description  string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
 	ContactEmail string `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
 	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
@@ -39,7 +39,7 @@ type TenantAdminTenant struct {
 }
 
 // tenantView is the name the handlers and their tests use for the view. It is an
-// alias, so the fragment publishes the component under the name the hand-written
+// name, so the fragment publishes the component under the name the hand-written
 // fragment used: TenantAdminTenant.
 type tenantView = TenantAdminTenant
 
@@ -54,7 +54,7 @@ type tenantView = TenantAdminTenant
 // and no reason, which is the contradiction the view exists to avoid.
 func tenantViewOf(t tenant.Tenant, kind tenant.Kind) TenantAdminTenant {
 	view := TenantAdminTenant{
-		Alias:        t.Alias,
+		Name:         t.Name,
 		Kind:         string(kind),
 		DisplayName:  t.Profile.DisplayName,
 		Description:  t.Profile.Description,

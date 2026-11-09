@@ -8,14 +8,14 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestTheAuditDetailNamesTheTenantAlias holds the write's mandatory row to the
-// alias: the path-tenant guard resolved the segment to the internal identifier
+// TestTheAuditDetailNamesTheTenantName holds the write's mandatory row to the
+// name: the path-tenant guard resolved the segment to the internal identifier
 // before the handler runs, and a tenant detail carrying that identifier would
 // put it in a table operators read.
-func TestTheAuditDetailNamesTheTenantAlias(t *testing.T) {
+func TestTheAuditDetailNamesTheTenantName(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = admissionDeclared()
-	r.p.aliases = aliasStub{byID: map[string]string{"t-acme": "acme"}}
+	r.p.names = nameStub{byID: map[string]string{"t-acme": "acme"}}
 	w := r.do(http.MethodPut, "/api/v1/tenants/t-acme/settings/tenant.admission/require-mfa",
 		map[string]any{"value": true}, authntest.WithAccount(authn.AccountID("carol")))
 	if w.Code != http.StatusNoContent {
@@ -26,6 +26,6 @@ func TestTheAuditDetailNamesTheTenantAlias(t *testing.T) {
 		t.Fatalf("the write wrote %d audit rows, want one mandatory row", len(rows))
 	}
 	if rows[0].Detail[detailTenant] != "acme" {
-		t.Errorf("the mandatory row names the tenant %q, want the alias acme", rows[0].Detail[detailTenant])
+		t.Errorf("the mandatory row names the tenant %q, want the name acme", rows[0].Detail[detailTenant])
 	}
 }

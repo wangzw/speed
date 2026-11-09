@@ -51,7 +51,7 @@ func awaitBlockedWriter(t *testing.T, r *roster, done <-chan error) {
 // against every write path that reads the row and then updates it by identifier.
 // A deletion commits between the two, and the write's own statement — which
 // carries the tombstone condition — must leave the row as the deletion wrote it:
-// the status stays deleted, the alias stays the deleted row's, and the caller is
+// the status stays deleted, the name stays the deleted row's, and the caller is
 // answered ErrTenantDeleted.
 func TestAConcurrentDeletionIsNotOverwrittenOnPostgres(t *testing.T) {
 	for name, write := range map[string]func(context.Context, *roster) error{
@@ -65,7 +65,7 @@ func TestAConcurrentDeletionIsNotOverwrittenOnPostgres(t *testing.T) {
 			return r.SetStatusByAccount(ctx, "t_acme", tenant.StatusDisabled)
 		},
 		"Put": func(ctx context.Context, r *roster) error {
-			return r.Put(ctx, tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive})
+			return r.Put(ctx, tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive})
 		},
 		"SetOwner": func(ctx context.Context, r *roster) error {
 			return r.SetOwner(ctx, "t_acme", "acct-2")
@@ -101,7 +101,7 @@ func TestAConcurrentDeletionIsNotOverwrittenOnPostgres(t *testing.T) {
 			if err := <-errs; !errors.Is(err, tenant.ErrTenantDeleted) {
 				t.Fatalf("%s over a deletion committed mid-write gave %v, want ErrTenantDeleted", name, err)
 			}
-			requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme", Status: int(tenant.StatusDeleted)})
+			requireRow(t, r, "t_acme", row{ID: "t_acme", Name: "acme", Status: int(tenant.StatusDeleted)})
 		})
 	}
 }

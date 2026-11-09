@@ -34,7 +34,7 @@ import (
 //
 // It is what the tenant column of a scoped table holds, and what the logs, the
 // startup account and error text name. The name that appears on the request
-// surface is an alias the roster maps to one of these — a public slug, supplied
+// surface is one the roster maps to an identifier of this kind — a public slug, supplied
 // when the tenant is created and never changed afterwards.
 //
 // An identifier is supplied by whoever creates the tenant, not generated here.
@@ -83,19 +83,19 @@ func IsIdentifier(s string) bool {
 	}) < 0
 }
 
-// aliasShape is the form an alias takes: a DNS-label-shaped slug of three to
+// nameShape is the form a name takes: a DNS-label-shaped slug of three to
 // sixty-three lower-case letters, digits and dashes, beginning with a letter or
 // a digit. It is the same form a username takes, because a personal tenant's
-// alias is its owner's username and the two share one unique namespace on the
-// roster's alias column.
-var aliasShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,62}$`)
+// name is its owner's username and the two share one unique namespace on the
+// roster's name column.
+var nameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,62}$`)
 
-// IsAlias reports whether s is a value the alias's domain admits. An alias is
-// the public name a request surface carries, so it is held to the slug form
+// IsName reports whether s is a value the name's domain admits. The name is
+// what a request surface carries, so it is held to the slug form
 // rather than to the identifier's looser one; a tenant's internal identifier is
 // not.
-func IsAlias(s string) bool {
-	return aliasShape.MatchString(s)
+func IsName(s string) bool {
+	return nameShape.MatchString(s)
 }
 
 // Status is a tenant's state. The set of values is closed: adding one changes
@@ -114,7 +114,7 @@ const (
 	// StatusActive is a tenant that is served.
 	StatusActive
 	// StatusDeleted is a tenant that has been deleted. The row, the identifier
-	// and the alias stay; the tenant is not served, and no write path changes
+	// and the name stay; the tenant is not served, and no write path changes
 	// its status again. A row in this state is a tombstone.
 	//
 	// It is a state of its own rather than a kind of disabled because the two
@@ -168,12 +168,12 @@ func (d DisabledBy) String() string {
 // profile columns existed reads as.
 //
 // The fields are descriptive and carry nothing the roster decides from: an
-// identifier, an alias and a status stay the facts a request is resolved by.
+// identifier, a name and a status stay the facts a request is resolved by.
 // A host may therefore change a profile without the roster's snapshot
 // changing which tenant a request reaches.
 type Profile struct {
 	// DisplayName is the name the organization is shown by. It is free text
-	// and may be empty, in which case a surface falls back to the alias.
+	// and may be empty, in which case a surface falls back to the name.
 	DisplayName string
 	// Description is a longer account of the organization.
 	Description string
@@ -259,11 +259,11 @@ func (p Profile) Validate() error {
 type Tenant struct {
 	// ID is the immutable identifier.
 	ID ID
-	// Alias is the name the request surface carries. It is a slug, unique
+	// Name is what the request surface carries. It is a slug, unique
 	// across the roster, chosen when the tenant is created and never changed.
 	// Nothing is decided by it: resolution replaces it with the identifier
 	// before anything reads a tenant.
-	Alias string
+	Name string
 	// Status says whether this tenant is served, and whether it has been
 	// deleted.
 	Status Status

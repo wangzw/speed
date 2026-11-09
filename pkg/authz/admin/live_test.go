@@ -357,21 +357,21 @@ type assembly struct {
 	manager  *managerStub
 	audit    *auditStub
 	// resolve, when set, puts the real tenant resolution layer on the chain, so
-	// the request's context carries the tenant its alias resolves to. It is how
+	// the request's context carries the tenant its name resolves to. It is how
 	// a case holds that a management decision is made in the platform domain and
 	// not in whatever tenant the request resolved to.
 	resolve bool
 }
 
-// rosterStub is the tenant roster the resolution layer reads: one alias maps to
-// an identifier distinct from the alias, so a query built from the alias and one
+// rosterStub is the tenant roster the resolution layer reads: one name maps to
+// an identifier distinct from the name, so a query built from the name and one
 // built from the identifier cannot be confused, and neither can be confused with
 // the platform domain.
 type rosterStub struct{ tenant.Catalog }
 
-func (rosterStub) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
-	if alias == "acme-alias" {
-		return tenant.Tenant{ID: "t-acme", Alias: "acme-alias", Status: tenant.StatusActive}, true, nil
+func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
+	if name == "acme-name" {
+		return tenant.Tenant{ID: "t-acme", Name: "acme-name", Status: tenant.StatusActive}, true, nil
 	}
 	return tenant.Tenant{}, false, nil
 }
@@ -623,10 +623,10 @@ func TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute(t *testing.T) {
 	})
 }
 
-// withTenant puts the tenant alias on the request, so the resolution layer
+// withTenant puts the tenant name on the request, so the resolution layer
 // resolves it and the request's context carries the identifier it maps to.
-func withTenant(alias string) func(*nethttp.Request) {
-	return func(r *nethttp.Request) { r.Header.Set("X-Tenant", alias) }
+func withTenant(name string) func(*nethttp.Request) {
+	return func(r *nethttp.Request) { r.Header.Set("X-Tenant", name) }
 }
 
 // TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant holds
@@ -636,13 +636,13 @@ func withTenant(alias string) func(*nethttp.Request) {
 // resolved to. Making it in the request's own tenant would let a caller
 // authorized in one tenant reach another's roles, grants and bindings by naming
 // that tenant in the path: the resolver puts a different tenant on the context —
-// the header alias maps to the identifier t-acme while the path names acme — and
+// the header name maps to the identifier t-acme while the path names acme — and
 // the engine is still asked in the platform domain alone.
 func TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
 	assembly{enforcer: enforcer, resolve: true}.serve(t, func(l *live) {
-		got := l.send(publicEndpoint, nethttp.MethodGet, rolesPath, "", asAlice, withTenant("acme-alias"))
+		got := l.send(publicEndpoint, nethttp.MethodGet, rolesPath, "", asAlice, withTenant("acme-name"))
 		if got.status != nethttp.StatusOK {
 			t.Fatalf("a management read on a tenant-resolving chain answered %d, want 200; the body was %q", got.status, got.body)
 		}

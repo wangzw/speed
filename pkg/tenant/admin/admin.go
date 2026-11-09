@@ -192,7 +192,7 @@ func Module() core.Module {
 			{Token: (*tenant.OrganizationWriter)(nil)},
 			{Token: (*speedhttp.TenantAdminRouteGuard)(nil)},
 			{Token: (*tenant.KindResolver)(nil), Optional: true},
-			{Token: (*tenant.AliasResolver)(nil), Optional: true},
+			{Token: (*tenant.NameResolver)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -273,10 +273,10 @@ type product struct {
 	// resolver. A nil resolver reads every tenant as tenant.KindBusiness, the
 	// same rule the caller's tenant read applies.
 	kind tenant.KindResolver
-	// aliases answers the alias an identifier is addressed by, nil when the
+	// names answers the name an identifier is addressed by, nil when the
 	// assembly supplies no resolver. A nil resolver names no tenant in an audit
 	// row rather than falling back to the internal identifier.
-	aliases tenant.AliasResolver
+	names tenant.NameResolver
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -334,7 +334,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, err
 	}
-	aliases, _, err := optional[tenant.AliasResolver](reg, "the tenant alias resolver")
+	names, _, err := optional[tenant.NameResolver](reg, "the tenant name resolver")
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 		organization: organization,
 		routeGuard:   routeGuard,
 		kind:         kind,
-		aliases:      aliases,
+		names:        names,
 		logger:       log.Default(),
 		cfg:          cfg,
 	}, nil

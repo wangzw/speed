@@ -173,13 +173,13 @@ export function watchSessionEnd(
 export function createQueryClient(): QueryClient
 ```
 
-**`SpeedAppDefinition` 的各项即本包定义的可变部分。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合），与 `providers` 一起只在启动恢复落定后挂载；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 转发 `projectTokens`、`defaultMode`（可取值 `light`、`dark`、`system`，见 [ui-kit](design-web-ui-kit.md)）、可切换的预设货架 `presets` 与起始预设 `defaultPreset`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作为租户头发出；`documentLanguage: false` 关闭 `<html lang>` 跟随。
+**`SpeedAppDefinition` 的各项即本包定义的可变部分。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合），与 `providers` 一起只在启动恢复落定后挂载；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 转发 `projectTokens`、`defaultMode`（可取值 `light`、`dark`、`system`，见 [ui-kit](design-web-ui-kit.md)）、可切换的预设货架 `presets` 与起始预设 `defaultPreset`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户名称，经客户端作为租户头发出；`documentLanguage: false` 关闭 `<html lang>` 跟随。
 
 **列出四个族命名空间之一即替换其出厂资源。** 装配自身组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell 自己的）自动注册；在 `namespaces` 里列出其中之一时，它替换该命名空间的出厂语言包而不是被注册两次——这是整体替换平台文案的途径。平台错误包不经此途径替换，只经 `resourceOverrides` 覆盖。
 
 **`baseUrl` 缺省是 `window.location.origin`，即假设同源部署**——页面与 API 由同一个源提供。**跨域部署要在运行期给出该源地址**：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它（按入口文档所在源下的根路径解析）、把其中的 origin 作为 `baseUrl` 传给本包；取不到时回退到同源。机制归 [design-web](design-web.md) 与 [ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)；本包只取用注入后的值，不自行发现源。
 
-**`tenantProvider` 返回的是租户别名，不是租户标识。** 该值是请求的租户头（缺省 `x-tenant`，`client.tenantHeader` 可改名）的取值，后端租户解析层按名将它映射为租户标识；它与 [auth-core](design-web-auth-core.md) 的 `TenantProvider` 所持、用于查询键分域的租户标识是两个事实。别名与标识不同的宿主在此返回别名，并把标识留给 `TenantProvider`。
+**`tenantProvider` 返回的是租户名称，不是租户标识。** 该值是请求的租户头（缺省 `x-tenant`，`client.tenantHeader` 可改名）的取值，后端租户解析层按名将它映射为租户标识；它与 [auth-core](design-web-auth-core.md) 的 `TenantProvider` 所持、用于查询键分域的租户标识是两个事实。名称与标识不同的宿主在此返回名称，并把标识留给 `TenantProvider`。
 
 **`createSpeedI18n` 与 `SpeedAppProviders` 是装配的两半。** 前者构造 `bootstrapSpeedApp` 所渲染的实例（`createI18n` 的选项、应用命名空间与覆盖资源、四个族命名空间注册、平台错误包注册、逐命名空间语言裁剪），后者渲染标准 provider 栈（StrictMode 包 `I18nextProvider` 包 `AppThemeProvider` 包 `QueryClientProvider`）；宿主自建的视图级测试台与生产共用这两处构造。二者与 `watchSessionEnd`、`createQueryClient` 都外导，供手工组装复用，而不是重建一份可能与本包漂移的副本。
 
@@ -316,7 +316,7 @@ stateDiagram-v2
 
 ## 扩展点
 
-- **定义即扩展点。** `namespaces` 追加应用自己的命名空间或替换某个族命名空间的出厂包，`resourceOverrides` 覆写装配所注册的命名空间（四个族命名空间、平台错误包与每个 `namespaces` 条目）的文案或补整种语言，`providers` 在标准栈与视图之间插入应用级 provider（收到装配后的 `session`、`api`、`queryClient`），`view` 换掉整个视图根，`sessionEnded` 覆盖会话结束动作（上下文里的 `evictAllQueries()` 供其组合），`baseUrl` 给出客户端基地址（跨域部署的运行期源地址），`client` 给出客户端选项，`theme` 给出项目级主题选项与可切换的预设货架，`i18n` 给出实例选项，`tenantProvider` 给出当前租户别名（接成请求的租户头），`documentLanguage: false` 关闭 `<html lang>` 跟随。运行期租户白标不是定义字段：在应用自己的租户 provider 内嵌套 `AppThemeProvider tenantOverrides`。
+- **定义即扩展点。** `namespaces` 追加应用自己的命名空间或替换某个族命名空间的出厂包，`resourceOverrides` 覆写装配所注册的命名空间（四个族命名空间、平台错误包与每个 `namespaces` 条目）的文案或补整种语言，`providers` 在标准栈与视图之间插入应用级 provider（收到装配后的 `session`、`api`、`queryClient`），`view` 换掉整个视图根，`sessionEnded` 覆盖会话结束动作（上下文里的 `evictAllQueries()` 供其组合），`baseUrl` 给出客户端基地址（跨域部署的运行期源地址），`client` 给出客户端选项，`theme` 给出项目级主题选项与可切换的预设货架，`i18n` 给出实例选项，`tenantProvider` 给出当前租户名称（接成请求的租户头），`documentLanguage: false` 关闭 `<html lang>` 跟随。运行期租户白标不是定义字段：在应用自己的租户 provider 内嵌套 `AppThemeProvider tenantOverrides`。
 - **槽即扩展点。** `signIn` 与 `sessionEnded` 是宿主的视图（`sessionEnded` 还可收 `returnToSignIn` 由宿主决定放置），`children` 是宿主的业务内容（路由与 `RouteGuard` 门在此组装）；框架 prop 透传给 `AppShell`，含 `navLabel`、`navHeader`、`navFooter`。
 - **手工组装经四个导出。** 不在 `bootstrapSpeedApp` 之下的宿主用 `createQueryClient`、`watchSessionEnd`、`createSpeedI18n` 与 `SpeedAppProviders` 复用同一策略、同一实例构造与同一 provider 栈。
 

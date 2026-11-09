@@ -60,9 +60,9 @@ func (p *product) reservedUsernames() map[string]bool {
 }
 
 // personalUsernamePrefix is reserved as a prefix, not as a literal name. A
-// personal tenant's alias is its owner's username, and the prefix is the one the
+// personal tenant's name is its owner's username, and the prefix is the one the
 // old personal identifiers carried; keeping it out of the username namespace
-// means no personal alias can read as one of those identifiers.
+// means no personal name can read as one of those identifiers.
 const personalUsernamePrefix = "personal-"
 
 // checkReservedUsername refuses a normalized username that is in the effective
@@ -82,7 +82,7 @@ func (p *product) checkReservedUsername(value string) error {
 // first, because the set the deployment appends is stored normalized, and then
 // answers whether the name is one of them or begins with the personal prefix.
 // The answer is the account module's set, so a surface that lets an account
-// choose a tenant alias refuses exactly what a username write refuses.
+// choose a tenant name refuses exactly what a username write refuses.
 func (p *product) ReservedUsername(_ context.Context, username string) (bool, error) {
 	normalized, err := NormalizeIdentifier(authn.IdentifierUsername, username)
 	if err != nil {

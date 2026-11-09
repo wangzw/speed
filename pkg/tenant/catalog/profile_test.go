@@ -98,7 +98,7 @@ func TestTheMigrationsDeclareTheOrganizationProfileForBothDialects(t *testing.T)
 			// being rejected: the migration does not backfill and does not make
 			// the profile mandatory.
 			if err := handle.Exec(
-				"INSERT INTO tenants (id, alias, status) VALUES ('t_old', 'old', 1)").Error; err != nil {
+				"INSERT INTO tenants (id, name, status) VALUES ('t_old', 'old', 1)").Error; err != nil {
 				t.Fatalf("writing a row without the profile columns: %v", err)
 			}
 			var got struct {
@@ -137,7 +137,7 @@ func TestCreatePersistsTheOrganizationProfile(t *testing.T) {
 		ContactEmail: "ops@acme.test",
 		Website:      "https://acme.test/about",
 	}
-	want := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive, Profile: profile}
+	want := tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive, Profile: profile}
 	if err := r.Create(context.Background(), want); err != nil {
 		t.Fatalf("creating a tenant with a profile: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestCreatePersistsTheOrganizationProfile(t *testing.T) {
 }
 
 // TestSetProfileWritesOnlyTheProfileColumns holds SetProfile to the four
-// profile columns: the alias, the status, the disable source and the creation
+// profile columns: the name, the status, the disable source and the creation
 // time are what other paths own, and a profile update must not write them back
 // from a value it read earlier.
 func TestSetProfileWritesOnlyTheProfileColumns(t *testing.T) {
@@ -177,7 +177,7 @@ func TestSetProfileWritesOnlyTheProfileColumns(t *testing.T) {
 	if err := r.SetStatus(ctx, "t_acme", tenant.StatusDisabled); err != nil {
 		t.Fatalf("disabling the tenant: %v", err)
 	}
-	if err := r.handle.Exec("UPDATE tenants SET alias = 'acme-renamed' WHERE id = 't_acme'").Error; err != nil {
+	if err := r.handle.Exec("UPDATE tenants SET name = 'acme-renamed' WHERE id = 't_acme'").Error; err != nil {
 		t.Fatalf("renaming the tenant around the roster: %v", err)
 	}
 	before, ok := rowOf(t, r, "t_acme")
@@ -214,7 +214,7 @@ func TestSetProfileWritesOnlyTheProfileColumns(t *testing.T) {
 		columns.ContactEmail != profile.ContactEmail || columns.Website != profile.Website {
 		t.Errorf("the profile columns read %+v, want %+v", columns, profile)
 	}
-	if after.Alias != before.Alias || after.Status != before.Status ||
+	if after.Name != before.Name || after.Status != before.Status ||
 		after.DisabledBy != before.DisabledBy || after.OwnerAccount != before.OwnerAccount ||
 		!after.CreatedAt.Equal(before.CreatedAt) || !sameTime(after.DeletedAt, before.DeletedAt) {
 		t.Errorf("SetProfile changed more than the profile: before %+v, after %+v", before, after)
@@ -253,7 +253,7 @@ func TestSetProfileRefusesWhatItCannotWrite(t *testing.T) {
 // what the table holds.
 func TestTheSnapshotCarriesTheOrganizationProfile(t *testing.T) {
 	r := rosterOver(t, "INSERT INTO tenants "+
-		"(id, alias, status, display_name, description, contact_email, website) VALUES "+
+		"(id, name, status, display_name, description, contact_email, website) VALUES "+
 		"('t_acme', 'acme', 1, 'Acme Corporation', 'A description.', 'ops@acme.test', 'https://acme.test')")
 	if err := r.read(context.Background()); err != nil {
 		t.Fatalf("reading the roster: %v", err)
@@ -296,7 +296,7 @@ func TestReadRefusesAnInvalidStoredProfile(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := rosterOver(t, "INSERT INTO tenants "+
-				"(id, alias, status, display_name, description, contact_email, website) VALUES "+
+				"(id, name, status, display_name, description, contact_email, website) VALUES "+
 				"('t_acme', 'acme', 1, "+tc.profile+")")
 			err := r.read(context.Background())
 			if !errors.Is(err, tenant.ErrInvalidProfile) {
@@ -325,7 +325,7 @@ func TestCreatedAtIsMandatoryForEveryRow(t *testing.T) {
 
 	before := time.Now().UTC().Add(-time.Minute)
 	if err = r.Create(context.Background(), tenant.Tenant{
-		ID: "t_new", Alias: "new", Status: tenant.StatusActive,
+		ID: "t_new", Name: "new", Status: tenant.StatusActive,
 	}); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
 		return time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("UTC+8", 8*60*60))
 	}
 	if err := r.Put(context.Background(), tenant.Tenant{
-		ID: "t_put", Alias: "put", Status: tenant.StatusActive,
+		ID: "t_put", Name: "put", Status: tenant.StatusActive,
 	}); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
 	}
 
 	if err := r.Put(context.Background(), tenant.Tenant{
-		ID: "t_put", Alias: "put", Status: tenant.StatusDisabled,
+		ID: "t_put", Name: "put", Status: tenant.StatusDisabled,
 	}); err != nil {
 		t.Fatalf("rewriting through Put: %v", err)
 	}

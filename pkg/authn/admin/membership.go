@@ -15,12 +15,12 @@ import (
 // memberViewOf builds one membership as the management routes show it,
 // carrying the account's display name and login username resolved outside the
 // membership store and the role names the policy side holds for the account.
-func memberViewOf(mem authn.Membership, displayName, username string, roles []string, tenantAlias string) AuthnAdminMember {
+func memberViewOf(mem authn.Membership, displayName, username string, roles []string, tenantName string) AuthnAdminMember {
 	return AuthnAdminMember{
 		Account:     string(mem.Account),
 		DisplayName: displayName,
 		Username:    username,
-		Tenant:      tenantAlias,
+		Tenant:      tenantName,
 		Active:      mem.Active,
 		SSOExempt:   mem.SSOExempt,
 		Source:      mem.Source,
@@ -84,9 +84,9 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 			return AuthnAdminMemberList{}, m.unavailable("filtering members by role", err)
 		}
 	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return AuthnAdminMemberList{}, m.unavailable("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := m.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return AuthnAdminMemberList{}, m.unavailable("reading the tenant's name", nameErr)
 	}
 	// One identifier read for the whole page, so the login username of every
 	// member is resolved in a single batch. The member read is the only
@@ -115,7 +115,7 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 		if err != nil {
 			return AuthnAdminMemberList{}, err
 		}
-		views[i] = memberViewOf(mem, name, usernameOf(identifiers[mem.Account]), roles[mem.Account], tenantAlias)
+		views[i] = memberViewOf(mem, name, usernameOf(identifiers[mem.Account]), roles[mem.Account], tenantName)
 	}
 	return AuthnAdminMemberList{Members: views, NextCursor: next}, nil
 }
@@ -294,13 +294,13 @@ func (m *product) handleMemberPut(ctx context.Context, in memberWriteInput, _ *s
 	if !in.Active && accountID == id.Account() {
 		return nil, m.answer(ctx, "refusing a self-suspension", authn.ErrCannotSuspendSelf)
 	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := m.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return nil, m.unavailable("reading the tenant's name", nameErr)
 	}
 	actionID := newActionID()
 	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, audit.AccountObject(string(accountID)),
-		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantName})); err != nil {
 		return nil, err
 	}
 	mem := authn.Membership{
@@ -334,13 +334,13 @@ func (m *product) handleMemberRemove(ctx context.Context, in memberAddressInput,
 	}); err != nil {
 		return nil, err
 	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := m.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return nil, m.unavailable("reading the tenant's name", nameErr)
 	}
 	actionID := newActionID()
 	if err := m.auditRequired(ctx, mandatory(actionMembershipRemove, audit.AccountObject(string(accountID)),
-		map[string]string{detailActionID: actionID, detailTenant: tenantAlias})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantName})); err != nil {
 		return nil, err
 	}
 	if err := m.memberships.Remove(ctx, accountID, in.Tenant); err != nil {
@@ -379,13 +379,13 @@ func (m *product) handleMemberSSOExempt(ctx context.Context, in memberExemptInpu
 	}); err != nil {
 		return nil, err
 	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return nil, m.unavailable("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := m.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return nil, m.unavailable("reading the tenant's name", nameErr)
 	}
 	actionID := newActionID()
 	if err := m.auditRequired(ctx, mandatory(actionMembershipSet, audit.AccountObject(string(accountID)),
-		map[string]string{detailActionID: actionID, detailTenant: tenantAlias, detailChange: "sso-exempt"})); err != nil {
+		map[string]string{detailActionID: actionID, detailTenant: tenantName, detailChange: "sso-exempt"})); err != nil {
 		return nil, err
 	}
 	mem.SSOExempt = in.SSOExempt

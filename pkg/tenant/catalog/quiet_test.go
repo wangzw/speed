@@ -82,7 +82,7 @@ func (r *statementRecorder) take() []string {
 	return taken
 }
 
-// The roster's own answers about a tenant — an alias another tenant holds, an
+// The roster's own answers about a tenant — a name another tenant holds, an
 // identifier already registered, an identifier no row carries — are what the
 // table was read to give, not a statement that failed: the database is not
 // asked afterwards whether the table is there, and the answer does not read as
@@ -97,11 +97,11 @@ func TestTheRostersOwnAnswersAskTheTableNothingFurther(t *testing.T) {
 		sentinel error
 		call     func() error
 	}{
-		{"an alias another tenant holds", tenant.ErrAliasConflict, func() error {
-			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "acme", Status: tenant.StatusActive})
+		{"a name another tenant holds", tenant.ErrNameConflict, func() error {
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Name: "acme", Status: tenant.StatusActive})
 		}},
 		{"an identifier already registered", tenant.ErrTenantExists, func() error {
-			return r.Create(ctx, tenant.Tenant{ID: "t_acme", Alias: "other", Status: tenant.StatusActive})
+			return r.Create(ctx, tenant.Tenant{ID: "t_acme", Name: "other", Status: tenant.StatusActive})
 		}},
 		{"an identifier no row carries", tenant.ErrInvalidTenant, func() error {
 			return r.SetStatus(ctx, "t_ghost", tenant.StatusDisabled)
@@ -125,7 +125,7 @@ func TestTheRostersOwnAnswersAskTheTableNothingFurther(t *testing.T) {
 }
 
 // The roster's lookups inside a write find nothing as a matter of course — a
-// new tenant holds no alias yet, and a status change may name a tenant that is
+// new tenant holds no name yet, and a status change may name a tenant that is
 // not there — and finding nothing is an answer, not a failed statement. Written
 // as a failed statement, it reaches GORM's logger as an error on every tenant a
 // command, an admin route or a seed creates.
@@ -135,16 +135,16 @@ func TestTheRostersWritesHandGORMNoFailedStatement(t *testing.T) {
 	r.handle = r.handle.Session(&gorm.Session{Logger: recorder})
 	ctx := context.Background()
 
-	if err := r.Put(ctx, tenant.Tenant{ID: "t_1", Alias: "acme", Status: tenant.StatusActive}); err != nil {
+	if err := r.Put(ctx, tenant.Tenant{ID: "t_1", Name: "acme", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("putting a new tenant: %v", err)
 	}
-	if err := r.Put(ctx, tenant.Tenant{ID: "t_1", Alias: "acme", Status: tenant.StatusDisabled}); err != nil {
+	if err := r.Put(ctx, tenant.Tenant{ID: "t_1", Name: "acme", Status: tenant.StatusDisabled}); err != nil {
 		t.Fatalf("rewriting a tenant: %v", err)
 	}
-	if err := r.Create(ctx, tenant.Tenant{ID: "t_2", Alias: "initech", Status: tenant.StatusActive}); err != nil {
+	if err := r.Create(ctx, tenant.Tenant{ID: "t_2", Name: "initech", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("creating a new tenant: %v", err)
 	}
-	if err := r.Create(ctx, tenant.Tenant{ID: "t_2", Alias: "hooli", Status: tenant.StatusActive}); !errors.Is(err, tenant.ErrTenantExists) {
+	if err := r.Create(ctx, tenant.Tenant{ID: "t_2", Name: "hooli", Status: tenant.StatusActive}); !errors.Is(err, tenant.ErrTenantExists) {
 		t.Fatalf("creating a tenant that is there gave %v, want ErrTenantExists", err)
 	}
 	if err := r.SetStatus(ctx, "t_1", tenant.StatusDisabled); err != nil {

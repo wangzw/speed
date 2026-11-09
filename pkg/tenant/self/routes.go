@@ -53,7 +53,7 @@ func realmOf(c *gin.Context) string {
 // When the assembly delivers the gateway's admission surface, each mounted
 // route is registered Impersonable. An impersonating identity is confined to
 // its grant's tenant; the read's answer is narrowed to that tenant in the
-// handler, so the registration hands the impersonator the one alias the grant
+// handler, so the registration hands the impersonator the one name the grant
 // already names and none of the impersonated account's other memberships. It is
 // what lets a host name the grant's tenant after a full page load, when the
 // roster cache it read before is gone.

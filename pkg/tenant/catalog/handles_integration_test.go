@@ -38,10 +38,10 @@ func TestAPermissionRefusedIsNotAMissingRosterOnPostgres(t *testing.T) {
 	for name, call := range map[string]func() error{
 		"a read of the whole roster": func() error { return r.read(ctx) },
 		"Put": func() error {
-			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"Create": func() error {
-			return r.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"SetStatus": func() error { return r.SetStatus(ctx, "t_acme", tenant.StatusDisabled) },
 		"Enter": func() error {
@@ -67,10 +67,10 @@ func rosterCalls(ctx context.Context, r *roster) map[string]func() error {
 	return map[string]func() error{
 		"a read of the whole roster": func() error { return r.read(ctx) },
 		"Put": func() error {
-			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"Create": func() error {
-			return r.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"SetStatus": func() error { return r.SetStatus(ctx, "t_acme", tenant.StatusDisabled) },
 		"Enter": func() error {
@@ -195,7 +195,7 @@ func TestALostConnectionIsNotAMissingRosterOnPostgres(t *testing.T) {
 	for name, call := range map[string]func() error{
 		"a read of the whole roster": func() error { return r.read(ctx) },
 		"Put": func() error {
-			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

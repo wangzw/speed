@@ -33,8 +33,8 @@ types and the sentinels in `pkg/tenant`.
 The platform routes are mounted under `/api/v1/system` on the endpoints
 `tenant.admin.endpoints` lists; the tenant-surface routes are mounted under
 `/api/v1/tenants` on the endpoints `tenant.admin.tenant-endpoints` lists. A route
-is addressed by the tenant's alias — the name a client reads — and an endpoint
-layer this module registers resolves it through `Catalog.ByAlias` under
+is addressed by the tenant's name, which a client reads, and an endpoint
+layer this module registers resolves it through `Catalog.ByName` under
 `/api/v1/system/tenants/`, rewriting the path parameter to the internal
 identifier before any module's handler runs. The identifier never appears in a
 path or a view. The surface is one
@@ -63,9 +63,9 @@ action is one roster call, one organization write or one profile write:
 
 | Route | Action |
 |---|---|
-| `GET /tenants` | `List`, every tenant, in the roster's order (by alias) |
+| `GET /tenants` | `List`, every tenant, in the roster's order (by name) |
 | `POST /tenants` | `Provisioner`, a tenant, its owner and its first tenant-admin |
-| `GET /tenants/:tenant` | `Get`, one tenant by the alias the path layer resolved |
+| `GET /tenants/:tenant` | `Get`, one tenant by the name the path layer resolved |
 | `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner` |
 | `DELETE /tenants/:tenant` | `OrganizationWriter.DeleteOrganization`; `WriteGuard` first |
 | `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner`, the same call |
@@ -101,8 +101,8 @@ key.
   `tenant.ErrTenantExists`, answered a 409, and nothing is written. This is
   where `Create` and `Put` divide: `Put` rewrites the row its identifier names,
   the status and the disable source together, which is a seed's action, while
-  `Create` only inserts. An alias is chosen at creation and never changes; the
-  roster has no alias-only write, and the management surface has no rename
+  `Create` only inserts. A name is chosen at creation and never changes; the
+  roster has no name-only write, and the management surface has no rename
   route. The request body carries no identifier: the server mints one through
   the shared organization-id generator, and a body that carries an `id` is a
   400. A registration starts the tenant `active` and makes the creator its
@@ -208,33 +208,33 @@ key.
   `surface=platform`; a transfer's and a deletion's rows carry the surface the
   request actually used (`platform` or `tenant`), so the two routes of one action
   are distinguishable.
-- **The platform tenant prefix carries the alias boundary.** `Init` registers an
+- **The platform tenant prefix carries the name boundary.** `Init` registers an
   endpoint layer, not a route wrapper, on every endpoint the platform routes are
   mounted on. A request under `/api/v1/system/tenants/` has its `tenant` path
-  parameter resolved through `Catalog.ByAlias` and replaced with the identifier
-  the handlers and the policy store key on; an alias no tenant carries — including
-  an identifier, which is not an alias — is the same bare 404 the resolution layer
+  parameter resolved through `Catalog.ByName` and replaced with the identifier
+  the handlers and the policy store key on; a name no tenant carries — including
+  an identifier, which is not a name — is the same bare 404 the resolution layer
   writes. Disabled tenants and tombstones resolve, because the platform surface
   manages them. It never touches `/api/v1/tenants/`, whose tenant segment the
   path guard resolves. Because the layer is on the endpoint, it precedes every
   module's handler under the prefix, the authorization and authentication
   management routes included.
-  **The system alias layer is assembled with `tenant.admin`, which is a host
+  **The system name layer is assembled with `tenant.admin`, which is a host
   constraint.** The layer is registered by this module's `Init`, so a command
-  that omits `tenant.admin` mounts no alias-addressed platform tenant surface:
+  that omits `tenant.admin` mounts no name-addressed platform tenant surface:
   the layer is not in that endpoint's chain, so a route another management
-  module mounts under `/api/v1/system/tenants/` reads the alias where it expects
-  the identifier. A host that wants those routes addressed by alias names this
+  module mounts under `/api/v1/system/tenants/` reads the name where it expects
+  the identifier. A host that wants those routes addressed by name names this
   module in the command; there is no separate layer module to add on its own.
-- **An audit row names the tenant by its alias.** The write handlers resolve the
-  identifier they were handed back to the alias through the optional
-  `tenant.AliasResolver`; an assembly with no resolver writes no tenant name
-  rather than the identifier. The registration route names the alias it was
-  given, and the roster's list order is by alias too.
-- **The refusal mapping is closed and fail-closed.** An alias the roster's
-  table already holds — as an alias or as an identifier, since the two share one
+- **An audit row names the tenant by its name.** The write handlers resolve the
+  identifier they were handed back to the name through the optional
+  `tenant.NameResolver`; an assembly with no resolver writes no tenant name
+  rather than the identifier. The registration route names the name it was
+  given, and the roster's list order is by name too.
+- **The refusal mapping is closed and fail-closed.** A name the roster's
+  table already holds — as a name or as an identifier, since the two share one
   namespace — is a 409; an identifier another tenant holds as an identifier or
-  as its alias is a 409; an alias no row carries is a 404; any other failure is a
+  as its name is a 409; a name no row carries is a 404; any other failure is a
   503 whose cause stays in the log and never reaches the caller. Identifiers are
   generated by the server at registration; a client never sends one, so the
   identifier half of that one namespace is a fact of the roster and not a value
@@ -249,16 +249,16 @@ key.
   roster write reached from a management route answers them, so one that arrives
   here falls to the same 503 an unknown failure gets.
 - **A shape refusal happens after the decision and before the action.** A
-  registration whose alias is outside the slug domain, a body the handler cannot
+  registration whose name is outside the slug domain, a body the handler cannot
   read, and a status outside the closed set
   `active`/`disabled` are 400s and reach neither the roster nor the audit. The
   registration's identifier is generated by the server and judged by the root
   package's `tenant.IsIdentifier` before the provisioner sees it, so an
   identifier outside its domain is this module's own startup-or-request failure
-  rather than a client value. The checks use `tenant.IsAlias` and
+  rather than a client value. The checks use `tenant.IsName` and
   `tenant.IsIdentifier`; this module re-judges no value, it only refuses one
   outside the role the root package defines. A read
-  runs no shape check of its own: whether an alias names a tenant is the
+  runs no shape check of its own: whether a name names a tenant is the
   roster's to answer, and one it does not hold is a 404.
 - **The module decides its own routes in a guard wrapper and declares them
   open.** The middleware lets a management request through to the wrapper, which
@@ -296,7 +296,7 @@ key.
 - **The answer is a view, built field by field.** Every route answers with a view
   assembled from a `tenant.Tenant` and never the record as it stands, so a field
   added to a record later does not reach a client by being there. The view carries
-  the tenant's alias, its kind (`business` or `personal`, from the optional
+  the tenant's name, its kind (`business` or `personal`, from the optional
   `tenant.KindResolver`, absent meaning `business`), the four profile fields, its state spelled
   the way `tenant.Status` spells it — `active` or `disabled` — the creation time
   and the owner account read from the roster row. The creation time is always

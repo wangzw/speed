@@ -236,11 +236,11 @@
 | [根包不登记模块，解析与名册各登记一个模块并各自排他交付](adr-tenant-packaging.md) |
 | [租户标识由请求侧解析得到，取法由配置选定，不从认证身份派生](adr-tenant-resolution.md) |
 | [租户解析以认证为锚点排在认证之内，未认证的请求不进入解析层](adr-tenant-ordering.md) |
-| [租户列存服务端生成的不可变标识，请求侧与界面只出现创建时确定、此后不可变的别名](adr-tenant-identifier.md) |
+| [租户列存服务端生成的不可变标识，请求侧与界面只出现创建时确定、此后不可变的名称](adr-tenant-identifier.md) |
 | [自助创建是公共模块，带上界与审计，不做人机验证](adr-tenant-self-service-creation.md) |
 | [租户名册由本模块自带表承载，状态是一个封闭集合，停用不删数据](adr-tenant-directory.md) |
 | [名册自己的语句经数据库模块的 Connection 取交付连接，取不到、表不在与其余失败分开作答](adr-tenant-directory-connection.md) |
-| [已删除的租户是名册上的终态行，标识与别名不再复用](adr-tenant-deletion.md) |
+| [已删除的租户是名册上的终态行，标识与名称不再复用](adr-tenant-deletion.md) |
 | [隔离落在共享表加租户列，过滤经 GORM 插件，模型按约定声明自己受约束](adr-tenant-isolation.md) |
 | [条件里以表名限定各列的整键元组按上下文填租户那一半，多对多关联的连接表按所连模型写进它的租户列判定](adr-tenant-isolation-joins.md) |
 | [上下文无租户时受约束模型的语句拒绝执行，跨租户必须在调用点字面写出](adr-tenant-scoping.md) |

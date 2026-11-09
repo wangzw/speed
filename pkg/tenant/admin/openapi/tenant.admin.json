@@ -32,12 +32,8 @@
         "type": "object"
       },
       "TenantAdminTenant": {
-        "description": "One tenant as the management routes render it: the alias, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.",
+        "description": "One tenant as the management routes render it: the name, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.",
         "properties": {
-          "alias": {
-            "description": "The alias the request surface addresses the tenant by, and the name every view and path uses.",
-            "type": "string"
-          },
           "contactEmail": {
             "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
             "type": "string"
@@ -60,15 +56,19 @@
             "type": "string"
           },
           "displayName": {
-            "description": "The organization's display name. Empty when its profile names none; a surface falls back to the alias then.",
+            "description": "The organization's display name. Empty when its profile names none; a surface falls back to the name then.",
             "type": "string"
           },
           "kind": {
-            "description": "The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias.",
+            "description": "The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name.",
             "enum": [
               "business",
               "personal"
             ],
+            "type": "string"
+          },
+          "name": {
+            "description": "The name the request surface addresses the tenant by, and the one every view and path uses.",
             "type": "string"
           },
           "ownerAccount": {
@@ -90,7 +90,7 @@
           }
         },
         "required": [
-          "alias",
+          "name",
           "kind",
           "displayName",
           "description",
@@ -127,7 +127,7 @@
             "type": "string"
           },
           "display_name": {
-            "description": "The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias.",
+            "description": "The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the name.",
             "type": "string"
           },
           "website": {
@@ -145,12 +145,8 @@
       },
       "TenantAdminTenantRegistration": {
         "additionalProperties": false,
-        "description": "The alias and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body.",
+        "description": "The name and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body.",
         "properties": {
-          "alias": {
-            "description": "The alias to give the tenant; the roster refuses one another tenant already holds.",
-            "type": "string"
-          },
           "contact_email": {
             "description": "The organization's contact address, one bare email address of at most 254 bytes.",
             "type": "string"
@@ -163,13 +159,17 @@
             "description": "The organization's display name, at most 100 runes. Empty when the registration names none.",
             "type": "string"
           },
+          "name": {
+            "description": "The name to give the tenant; the roster refuses one another tenant already holds.",
+            "type": "string"
+          },
           "website": {
             "description": "The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo.",
             "type": "string"
           }
         },
         "required": [
-          "alias"
+          "name"
         ],
         "type": "object"
       }
@@ -183,7 +183,7 @@
   "paths": {
     "/tenants": {
       "get": {
-        "description": "Reads every tenant in the roster, ordered by alias. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.",
+        "description": "Reads every tenant in the roster, ordered by name. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.",
         "operationId": "tenant.admin.tenants.list",
         "responses": {
           "200": {
@@ -193,7 +193,7 @@
                   "description": "The whole roster in one answer, because the listing is not paged.",
                   "properties": {
                     "tenants": {
-                      "description": "Every tenant the roster holds, ordered by alias.",
+                      "description": "Every tenant the roster holds, ordered by name.",
                       "items": {
                         "$ref": "#/components/schemas/TenantAdminTenant"
                       },
@@ -207,7 +207,7 @@
                 }
               }
             },
-            "description": "Every tenant, in the roster's order by alias"
+            "description": "Every tenant, in the roster's order by name"
           },
           "401": {
             "content": {
@@ -251,7 +251,7 @@
         "summary": "List every tenant the roster holds"
       },
       "post": {
-        "description": "Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the alias and optionally the profile's four descriptive fields; the identifier is generated by the server and never appears in a request or a view, and the new tenant starts active. A body that carries an identifier is refused as a bad request. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.",
+        "description": "Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the name and optionally the profile's four descriptive fields; the identifier is generated by the server and never appears in a request or a view, and the new tenant starts active. A body that carries an identifier is refused as a bad request. Registration never overwrites: an identifier or a name already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.",
         "operationId": "tenant.admin.tenants.create",
         "requestBody": {
           "content": {
@@ -261,7 +261,7 @@
               }
             }
           },
-          "description": "The registration: the alias the request surface will address the tenant by, and the optional profile fields. The identifier is generated, and the state is not part of it, because a registered tenant starts active.",
+          "description": "The registration: the name the request surface will address the tenant by, and the optional profile fields. The identifier is generated, and the state is not part of it, because a registered tenant starts active.",
           "required": true
         },
         "responses": {
@@ -293,7 +293,7 @@
                 }
               }
             },
-            "description": "The body carries an identifier, or the alias is outside the slug domain"
+            "description": "The body carries an identifier, or the name is outside the slug domain"
           },
           "401": {
             "content": {
@@ -323,7 +323,7 @@
                 }
               }
             },
-            "description": "The alias is already taken"
+            "description": "The name is already taken"
           },
           "413": {
             "content": {
@@ -359,11 +359,11 @@
     },
     "/tenants/{tenant}": {
       "delete": {
-        "description": "Deletes one tenant platform staff names. The write is a tombstone: the alias and the internal identifier stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.",
+        "description": "Deletes one tenant platform staff names. The write is a tombstone: the name and the internal identifier stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal. An organization's owner reaches the tenant surface, not this route.",
         "operationId": "tenant.admin.tenants.delete",
         "parameters": [
           {
-            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -384,7 +384,7 @@
                 }
               }
             },
-            "description": "The alias is outside the alias domain"
+            "description": "The name is outside the slug domain"
           },
           "401": {
             "content": {
@@ -407,7 +407,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
           },
           "404": {
-            "description": "No tenant carries the alias"
+            "description": "No tenant carries the name"
           },
           "409": {
             "content": {
@@ -441,11 +441,11 @@
         "summary": "Delete one tenant"
       },
       "get": {
-        "description": "Reads one tenant by its alias, the name the request surface addresses it by. An alias the roster does not hold is a 404. Reads write no audit row.",
+        "description": "Reads one tenant by its name, which the request surface addresses it by. A name the roster does not hold is a 404. Reads write no audit row.",
         "operationId": "tenant.admin.tenants.get",
         "parameters": [
           {
-            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -459,11 +459,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The tenant the alias named.",
+                  "description": "The tenant the name named.",
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its alias, kind, owner account and state."
+                      "description": "The tenant, with its name, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -496,7 +496,7 @@
             "description": "The caller holds no tenant.read in the platform domain"
           },
           "404": {
-            "description": "No tenant carries the alias"
+            "description": "No tenant carries the name"
           },
           "503": {
             "content": {
@@ -526,7 +526,7 @@
         "operationId": "tenant.admin.tenants.transferOwner",
         "parameters": [
           {
-            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -558,7 +558,7 @@
                 }
               }
             },
-            "description": "The alias is outside the alias domain, the request body is not one JSON object, or the account member is absent"
+            "description": "The name is outside the slug domain, the request body is not one JSON object, or the account member is absent"
           },
           "401": {
             "content": {
@@ -581,7 +581,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
-            "description": "No tenant carries the alias"
+            "description": "No tenant carries the name"
           },
           "409": {
             "content": {
@@ -627,11 +627,11 @@
     },
     "/tenants/{tenant}/profile": {
       "patch": {
-        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, alias, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.",
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The identifier, name, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. A profile outside the stated bounds is a 400, an unknown tenant a 404, and a tombstone a 409. A mandatory audit row lands before the roster write, with surface=platform in its detail; if it cannot, nothing is written and the request is answered 503.",
         "operationId": "tenant.admin.tenants.profile",
         "parameters": [
           {
-            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -656,11 +656,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "The tenant the alias named.",
+                  "description": "The tenant the name named.",
                   "properties": {
                     "tenant": {
                       "$ref": "#/components/schemas/TenantAdminTenant",
-                      "description": "The tenant, with its alias, kind, owner account and state."
+                      "description": "The tenant, with its name, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -680,7 +680,7 @@
                 }
               }
             },
-            "description": "The alias is outside the alias domain, the request body is not one JSON object, a member is absent, or the profile is outside the stated bounds"
+            "description": "The name is outside the slug domain, the request body is not one JSON object, a member is absent, or the profile is outside the stated bounds"
           },
           "401": {
             "content": {
@@ -703,7 +703,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
-            "description": "No tenant carries the alias"
+            "description": "No tenant carries the name"
           },
           "409": {
             "content": {
@@ -749,11 +749,11 @@
     },
     "/tenants/{tenant}/status": {
       "post": {
-        "description": "Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An alias the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
+        "description": "Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An name the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
         "operationId": "tenant.admin.tenants.setStatus",
         "parameters": [
           {
-            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -799,7 +799,7 @@
                 }
               }
             },
-            "description": "The alias is outside the alias domain or the status is outside the closed set active/disabled"
+            "description": "The name is outside the slug domain or the status is outside the closed set active/disabled"
           },
           "401": {
             "content": {
@@ -822,7 +822,7 @@
             "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the tenant is protected against disabling (urn:speed:tenant:protected)"
           },
           "404": {
-            "description": "No tenant carries the alias"
+            "description": "No tenant carries the name"
           },
           "409": {
             "content": {

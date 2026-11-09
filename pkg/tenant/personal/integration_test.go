@@ -200,8 +200,8 @@ func TestAnAccountAndItsPersonalTenantStandTogether(t *testing.T) {
 				if err != nil || !found {
 					t.Fatalf("reading the personal tenant: found=%t err=%v", found, err)
 				}
-				if held.Alias != "alice" {
-					t.Errorf("the personal tenant's alias is %q, want the username", held.Alias)
+				if held.Name != "alice" {
+					t.Errorf("the personal tenant's name is %q, want the username", held.Name)
 				}
 				if held.OwnerAccount != created.ID.String() {
 					t.Errorf("the personal tenant's owner is %q, want %q", held.OwnerAccount, created.ID)
@@ -259,23 +259,23 @@ func TestAFailedProvisioningLeavesNoAccount(t *testing.T) {
 	}
 }
 
-// An account whose username is already a business tenant's alias cannot own a
+// An account whose username is already a business tenant's name cannot own a
 // personal tenant addressed by it, and the whole creation rolls back. The
 // refusal reaches the account module's caller as ErrAccountExists, so a login
 // answers the name as taken rather than as an unavailable dependency.
-func TestAnAliasConflictLeavesNoAccount(t *testing.T) {
+func TestAnNameConflictLeavesNoAccount(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
-			ID: "business", Alias: "bob", Status: tenant.StatusActive,
+			ID: "business", Name: "bob", Status: tenant.StatusActive,
 		}); err != nil {
 			t.Fatalf("registering the business tenant: %v", err)
 		}
 		_, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "bob", Via: "admin"})
 		if err == nil {
-			t.Fatal("creating an account under a held alias succeeded")
+			t.Fatal("creating an account under a held name succeeded")
 		}
 		if !errors.Is(err, authn.ErrAccountExists) {
-			t.Errorf("the alias conflict gave %v, want the account module's ErrAccountExists", err)
+			t.Errorf("the name conflict gave %v, want the account module's ErrAccountExists", err)
 		}
 		if errors.Is(err, authn.ErrUnavailable) {
 			t.Errorf("the refusal = %v, want it not to read as an unavailable dependency", err)
@@ -283,7 +283,7 @@ func TestAnAliasConflictLeavesNoAccount(t *testing.T) {
 		if n := a.count(t, "authn_accounts", ""); n != 0 {
 			t.Errorf("the refused creation left %d account row(s), want none", n)
 		}
-		if n := a.count(t, "tenants", "alias = ?", "bob"); n != 1 {
+		if n := a.count(t, "tenants", "name = ?", "bob"); n != 1 {
 			t.Errorf("the refused creation changed the tenant rows carrying bob: %d", n)
 		}
 	})
@@ -325,9 +325,9 @@ func TestAServiceAccountOwnsNoPersonalTenant(t *testing.T) {
 	})
 }
 
-// A personal tenant keeps its alias when the account is deleted: the tombstone
+// A personal tenant keeps its name when the account is deleted: the tombstone
 // is what makes the username unreusable.
-func TestTheTombstoneKeepsTheAlias(t *testing.T) {
+func TestTheTombstoneKeepsTheName(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		created, err := a.admin.Create(t.Context(), authn.CreateAccount{Username: "dave", Via: "admin"})
 		if err != nil {
@@ -337,12 +337,12 @@ func TestTheTombstoneKeepsTheAlias(t *testing.T) {
 			t.Fatalf("deleting the account: %v", err)
 		}
 		personalID := personal.TenantID(created.ID)
-		var alias string
-		if err := a.handle.Table("tenants").Select("alias").Where("id = ?", string(personalID)).Scan(&alias).Error; err != nil {
-			t.Fatalf("reading the tombstone's alias: %v", err)
+		var name string
+		if err := a.handle.Table("tenants").Select("name").Where("id = ?", string(personalID)).Scan(&name).Error; err != nil {
+			t.Fatalf("reading the tombstone's name: %v", err)
 		}
-		if alias != "dave" {
-			t.Errorf("the tombstone's alias is %q, want the username", alias)
+		if name != "dave" {
+			t.Errorf("the tombstone's name is %q, want the username", name)
 		}
 	})
 }
@@ -357,7 +357,7 @@ func TestCreatingAnAccountWritesTheCreationAuditRow(t *testing.T) {
 		}
 		rows := entriesOfAction(a.audit.rows(), "org.personal.tenant.create")
 		if len(rows) != 1 || rows[0].Object != "erin" || rows[0].Outcome != "success" {
-			t.Errorf("the creation wrote the audit rows %+v, want one successful row on the alias %q", rows, "erin")
+			t.Errorf("the creation wrote the audit rows %+v, want one successful row on the name %q", rows, "erin")
 		}
 	})
 }

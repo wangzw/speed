@@ -221,11 +221,11 @@ type product struct {
 	// and the role usage read reports an empty display name and an unknown
 	// activity state. A reader that cannot answer is a 503, never an empty set.
 	identities authz.AccountIdentityReader
-	// aliases answers the alias a tenant identifier is addressed by, nil when
+	// names answers the name a tenant identifier is addressed by, nil when
 	// the assembly supplies no resolver. With none a view names no tenant and an
 	// audit detail carries no tenant, rather than exposing the internal
 	// identifier.
-	aliases authz.TenantAliasResolver
+	names authz.TenantNameResolver
 	// routeGuard is the tenant administration guard the tenant capability
 	// delivers under the pkg/http TenantAdminRouteGuard capability: the identity
 	// rule plus the refusal of the platform domain. Every route is wrapped with
@@ -337,10 +337,10 @@ func (p *product) wire(reg *core.Registry) error {
 	} else if found {
 		p.identities = identities
 	}
-	if aliases, found, err := optional[authz.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
+	if names, found, err := optional[authz.TenantNameResolver](reg, "the tenant name resolver"); err != nil {
 		return err
 	} else if found {
-		p.aliases = aliases
+		p.names = names
 	}
 	if routeGuard, found, err := optional[speedhttp.TenantAdminRouteGuard](reg, "the tenant administration guard"); err != nil {
 		return err

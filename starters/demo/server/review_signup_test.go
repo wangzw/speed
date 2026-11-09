@@ -171,9 +171,9 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	if personal.ID == "" || personal.Kind != string(tenant.KindPersonal) {
 		t.Errorf("the account's tenant is %+v, want the personal tenant its creation wrote", personal)
 	}
-	if personal.Alias != reviewSignupUsername {
-		t.Errorf("the personal tenant's alias is %q, want the account's username %q",
-			personal.Alias, reviewSignupUsername)
+	if personal.Name != reviewSignupUsername {
+		t.Errorf("the personal tenant's name is %q, want the account's username %q",
+			personal.Name, reviewSignupUsername)
 	}
 
 	// Adding the address sends the code; the review mail carrier writes it to the
@@ -210,16 +210,16 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	// The proved address lifts the registration limit; the organization the
 	// creation wrote is the same row.
 	again := readPersonalTenant(t, client, base, auth)
-	if again.ID != personal.ID || again.Alias != personal.Alias {
+	if again.ID != personal.ID || again.Name != personal.Name {
 		t.Errorf("the tenant after verification is %+v, want the existing one %+v", again, personal)
 	}
 }
 
 // personalTenantView is the personal row the caller tenant read answers.
 type personalTenantView struct {
-	ID    string
-	Alias string
-	Kind  string
+	ID   string
+	Name string
+	Kind string
 }
 
 // readPersonalTenant answers the caller's own personal tenant from the account's
@@ -234,9 +234,9 @@ func readPersonalTenant(t *testing.T, client *http.Client, base string,
 	}
 	var answer struct {
 		Tenants []struct {
-			ID    string `json:"id"`
-			Alias string `json:"alias"`
-			Kind  string `json:"kind"`
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Kind string `json:"kind"`
 		} `json:"tenants"`
 	}
 	if err := json.Unmarshal(read.body, &answer); err != nil {
@@ -244,7 +244,7 @@ func readPersonalTenant(t *testing.T, client *http.Client, base string,
 	}
 	for _, entry := range answer.Tenants {
 		if entry.Kind == string(tenant.KindPersonal) {
-			return personalTenantView{ID: entry.ID, Alias: entry.Alias, Kind: entry.Kind}
+			return personalTenantView{ID: entry.ID, Name: entry.Name, Kind: entry.Kind}
 		}
 	}
 	t.Fatalf("the caller's tenant list carries no personal tenant:\n%s", read.body)

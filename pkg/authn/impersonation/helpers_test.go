@@ -384,7 +384,7 @@ func (s *perSessionSessions) answer(id authn.SessionID) (authn.SessionStatus, er
 // the module over one store, for a case that races two of them.
 func (r *rig) replica() *product {
 	p := build(r.h, r.accounts, r.verification, r.memberships, r.mfa, r.sessions, r.audit, r.guard, r.mounter)
-	p.tenantAliases = identityAliases{}
+	p.tenantNames = identityNames{}
 	p.tenantDirectory = identityDirectory{}
 	p.logger = r.logs.logger()
 	p.settings = r.p.settings
@@ -633,7 +633,7 @@ func newRig(t *testing.T, h *gorm.DB) *rig {
 
 	verification := &fakeSignupVerification{}
 	p := build(h, accounts, verification, memberships, mfa, sessions, &recordingAudit{}, guard, mounter)
-	p.tenantAliases = identityAliases{}
+	p.tenantNames = identityNames{}
 	p.tenantDirectory = identityDirectory{}
 	r := &rig{
 		t: t, p: p, h: h,
@@ -927,22 +927,22 @@ func (v *fakeSignupVerification) readCount() int {
 	return v.reads
 }
 
-// identityAliases stands in for the roster's id-to-alias seam over an assembly
-// whose fixture identifiers double as their aliases.
-type identityAliases struct{}
+// identityNames stands in for the roster's id-to-name seam over an assembly
+// whose fixture identifiers double as their names.
+type identityNames struct{}
 
-func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }
 
-// identityDirectory stands in for the roster's alias-to-identifier seam over an
-// assembly whose fixture aliases double as their identifiers. A case that needs
+// identityDirectory stands in for the roster's name-to-identifier seam over an
+// assembly whose fixture names double as their identifiers. A case that needs
 // the two apart replaces it with a mapping of its own.
 type identityDirectory struct{}
 
-func (identityDirectory) TenantIDOf(_ context.Context, alias string) (string, bool, error) {
-	if alias == "" {
+func (identityDirectory) TenantIDOf(_ context.Context, name string) (string, bool, error) {
+	if name == "" {
 		return "", false, nil
 	}
-	return alias, true, nil
+	return name, true, nil
 }

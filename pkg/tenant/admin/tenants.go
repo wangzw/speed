@@ -12,7 +12,7 @@ import (
 )
 
 // handleTenantList answers GET /api/v1/system/tenants: every tenant the
-// roster holds, in the roster's own order — by alias. It is a read, so the
+// roster holds, in the roster's own order — by name. It is a read, so the
 // action is tenant.read. The roster is the set of tenants one deployment serves,
 // and it is not paged.
 //
@@ -42,8 +42,8 @@ func (p *product) handleTenantList(ctx context.Context, _ struct{}) (tenantListB
 // roster holds. It is a read, so the action is tenant.read.
 //
 // A read goes straight to the roster, with no shape check of its own: whether an
-// alias names a tenant is the alias layer's to answer, and a name no row
-// carries is a 404. The route is addressed by the alias, the name a client
+// name names a tenant is the name layer's to answer, and a name no row
+// carries is a 404. The route is addressed by the name a client
 // reads; the layer resolves it to the internal identifier before this handler
 // runs.
 func (p *product) handleTenantGet(ctx context.Context, in getTenantInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
@@ -70,17 +70,17 @@ func (p *product) handleTenantGet(ctx context.Context, in getTenantInput, _ *spe
 // row last; this route never calls Catalog.Create itself, because a tenant and
 // its first administrator have to come into being together. A refusal of the
 // roster's Create is reported by the provisioner with its sentinel intact: an
-// identifier the roster's table already holds is answered a 409, and an alias
+// identifier the roster's table already holds is answered a 409, and a name
 // another tenant holds is a 409. Both fields are checked against the identifier
 // domain before the provisioner is called; a registration starts the tenant
 // active, the mandatory audit row lands before the provisioner runs, and a
 // failure of the provisioner is closed with a linked failed row.
 func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenantCreatedBody, error) {
-	if !tenant.IsAlias(in.Alias) {
+	if !tenant.IsName(in.Name) {
 		return tenantCreatedBody{}, badRequest()
 	}
 	// The identifier is the server's to mint: a client names the tenant by its
-	// alias, and an identifier in the body is refused rather than honoured.
+	// name, and an identifier in the body is refused rather than honoured.
 	id := tenant.NewOrganizationID()
 	if !tenant.IsIdentifier(id) {
 		return tenantCreatedBody{}, p.failureOf("registering a tenant",
@@ -103,20 +103,20 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 		return tenantCreatedBody{}, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantCreate, in.Alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantCreate, in.Name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   in.Alias,
+		detailTenant:   in.Name,
 	})); err != nil {
 		return tenantCreatedBody{}, err
 	}
 	created := tenant.Tenant{
-		ID: tenant.ID(id), Alias: in.Alias, Status: tenant.StatusActive, Profile: profile,
+		ID: tenant.ID(id), Name: in.Name, Status: tenant.StatusActive, Profile: profile,
 		// The creator is the organization's first owner unless a transfer
 		// hands it on; the provisioner binds the same account as tenant-admin.
 		OwnerAccount: caller.Actor().String(),
 	}
 	if err := p.provisioner.Provision(ctx, created, caller.Actor().String()); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantCreate, in.Alias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantCreate, in.Name, actionID))
 		return tenantCreatedBody{}, p.failureOf("registering a tenant", err)
 	}
 	// The answer is the row as the roster holds it, not the value this call
@@ -167,20 +167,20 @@ func (p *product) handleTenantTransferOwner(ctx context.Context, in transferOwne
 		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	}
 
-	alias, aliasErr := p.aliasOf(ctx, tenant.ID(in.ID))
-	if aliasErr != nil {
-		return p.replyFailure("reading a tenant's alias", aliasErr)
+	name, nameErr := p.nameOf(ctx, tenant.ID(in.ID))
+	if nameErr != nil {
+		return p.replyFailure("reading a tenant's name", nameErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   alias,
+		detailTenant:   name,
 		detailSurface:  surfacePlatform,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.organization.TransferOwner(ctx, tenant.ID(in.ID), in.Account, ""); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, alias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, name, actionID))
 		return nil, p.failureOf("transferring a tenant's owner", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
@@ -224,20 +224,20 @@ func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *
 		return nil, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
 	}
 
-	alias, aliasErr := p.aliasOf(ctx, tenant.ID(in.ID))
-	if aliasErr != nil {
-		return p.replyFailure("reading a tenant's alias", aliasErr)
+	name, nameErr := p.nameOf(ctx, tenant.ID(in.ID))
+	if nameErr != nil {
+		return p.replyFailure("reading a tenant's name", nameErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   alias,
+		detailTenant:   name,
 		detailSurface:  surfacePlatform,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.organization.DeleteOrganization(ctx, tenant.ID(in.ID), ""); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, alias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, name, actionID))
 		return nil, p.failureOf("deleting a tenant", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
@@ -259,7 +259,7 @@ func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *
 // longer governs.
 //
 // The tenant is the identifier the request resolved to, never the path segment
-// as written, so an alias addresses the same tenant.
+// as written, so a name addresses the same tenant.
 func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransferInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	if _, err := authn.ParseAccountID(in.Account); err != nil {
 		return nil, badRequest()
@@ -283,20 +283,20 @@ func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransfe
 		return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
 
-	alias, aliasErr := p.aliasOf(ctx, tenantID)
-	if aliasErr != nil {
-		return p.replyFailure("reading a tenant's alias", aliasErr)
+	name, nameErr := p.nameOf(ctx, tenantID)
+	if nameErr != nil {
+		return p.replyFailure("reading a tenant's name", nameErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   alias,
+		detailTenant:   name,
 		detailSurface:  surfaceTenant,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.organization.TransferOwner(ctx, tenantID, in.Account, id.Actor().String()); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, alias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, name, actionID))
 		return nil, p.failureOf("transferring a tenant's owner", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
@@ -344,20 +344,20 @@ func (p *product) handleTenantOwnerDelete(ctx context.Context, in tenantDeleteIn
 	if !ok {
 		return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
-	alias, aliasErr := p.aliasOf(ctx, tenantID)
-	if aliasErr != nil {
-		return p.replyFailure("reading a tenant's alias", aliasErr)
+	name, nameErr := p.nameOf(ctx, tenantID)
+	if nameErr != nil {
+		return p.replyFailure("reading a tenant's name", nameErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   alias,
+		detailTenant:   name,
 		detailSurface:  surfaceTenant,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.organization.DeleteOrganization(ctx, tenantID, id.Actor().String()); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, alias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, name, actionID))
 		return nil, p.failureOf("deleting a tenant", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
@@ -396,20 +396,20 @@ func (p *product) handleTenantSetProfile(ctx context.Context, in setProfileInput
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 
-	alias, aliasErr := p.aliasOf(ctx, tenant.ID(in.ID))
-	if aliasErr != nil {
-		return p.replyFailure("reading a tenant's alias", aliasErr)
+	name, nameErr := p.nameOf(ctx, tenant.ID(in.ID))
+	if nameErr != nil {
+		return p.replyFailure("reading a tenant's name", nameErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantProfileUpdate, alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantProfileUpdate, name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   alias,
+		detailTenant:   name,
 		detailSurface:  surfacePlatform,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.catalog.SetProfile(ctx, tenant.ID(in.ID), profile); err != nil {
-		p.auditBestEffort(ctx, failedProfileAudit(actionTenantProfileUpdate, alias, actionID))
+		p.auditBestEffort(ctx, failedProfileAudit(actionTenantProfileUpdate, name, actionID))
 		return p.replyFailure("writing a tenant's profile", err)
 	}
 	got.Profile = profile
@@ -461,19 +461,19 @@ func (p *product) handleTenantSetStatus(ctx context.Context, in setStatusInput, 
 			return nil, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
 		}
 	}
-	alias, aliasErr := p.aliasOf(ctx, tenant.ID(in.ID))
-	if aliasErr != nil {
-		return p.replyFailure("reading a tenant's alias", aliasErr)
+	name, nameErr := p.nameOf(ctx, tenant.ID(in.ID))
+	if nameErr != nil {
+		return p.replyFailure("reading a tenant's name", nameErr)
 	}
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantStatus, alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantStatus, name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   alias,
+		detailTenant:   name,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.catalog.SetStatus(ctx, tenant.ID(in.ID), status); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantStatus, alias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantStatus, name, actionID))
 		return p.replyFailure("changing a tenant's status", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil

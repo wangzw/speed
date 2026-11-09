@@ -21,7 +21,7 @@
             "type": "boolean"
           },
           "tenant": {
-            "description": "The alias of the tenant the membership was written in.",
+            "description": "The name of the tenant the membership was written in.",
             "type": "string"
           }
         },
@@ -74,7 +74,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The alias of the tenant the invitation grants a membership in.",
+            "description": "The name of the tenant the invitation grants a membership in.",
             "type": "string"
           }
         },

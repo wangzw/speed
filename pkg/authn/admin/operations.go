@@ -156,7 +156,7 @@ type secretRevokeInput struct {
 
 // memberListInput is a tenant's member page.
 type memberListInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	Query  string `query:"query" description:"Narrows the page to the members whose account display name or login identifiers begin with this text; absent or empty selects every member. The display name is matched as a byte prefix of the stored value, and an identifier after the query is lower-cased, the form usernames and email addresses are stored in."`
 	Role   string `query:"role" description:"Narrows the page to the members holding this role name in the tenant, matched exactly; absent or empty selects every member. A name no role of the tenant uses selects no member and is still a 200, so the parameter does not reveal which role names exist. A role filter needs the policy module's member role reader; an assembly without one answers 503."`
 	Limit  int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
@@ -166,7 +166,7 @@ type memberListInput struct {
 // memberWriteInput writes one account's membership in one tenant.
 type memberWriteInput struct {
 	_         struct{} `description:"A membership write: whether the account is an active member of the tenant and whether the tenant's SSO requirement exempts it."`
-	Tenant    string   `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant    string   `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	Account   string   `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Active    bool     `json:"active" description:"True adds or resumes the membership; false suspends it, and a suspended membership reads as not a member."`
 	Source    string   `json:"source" description:"Absent records the change as an administrator's"`
@@ -175,29 +175,29 @@ type memberWriteInput struct {
 
 // memberAddressInput addresses one membership.
 type memberAddressInput struct {
-	Tenant  string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant  string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	Account string `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 }
 
 // memberExemptInput sets a member's SSO exemption.
 type memberExemptInput struct {
 	_         struct{} `description:"A member's exemption from the tenant's enforced SSO requirement."`
-	Tenant    string   `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant    string   `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	Account   string   `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	SSOExempt bool     `json:"sso_exempt" required:"true" description:"True exempts the member; false clears the exemption."`
 }
 
 // tenantInput addresses one tenant.
 type tenantInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 }
 
 // providerCreateInput creates a provider in a tenant. The path and the body must
 // agree on the tenant.
 type providerCreateInput struct {
 	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
-	Tenant            string                     `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
-	BodyTenant        string                     `json:"tenant" description:"The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused."`
+	Tenant            string                     `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
+	BodyTenant        string                     `json:"tenant" description:"The tenant's name; absent names the provider's own tenant, and a value naming another tenant is refused."`
 	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml. The set is closed."`
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           *bool                      `json:"enabled" description:"Absent leaves the enabled flag as it is (false on a create)"`
@@ -215,9 +215,9 @@ type providerCreateInput struct {
 // providerUpdateInput replaces a provider. The tenant is immutable.
 type providerUpdateInput struct {
 	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
-	Tenant            string                     `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant            string                     `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	ID                string                     `path:"id" description:"The provider's identifier."`
-	BodyTenant        string                     `json:"tenant" description:"The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused."`
+	BodyTenant        string                     `json:"tenant" description:"The tenant's name; absent names the provider's own tenant, and a value naming another tenant is refused."`
 	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml. The set is closed."`
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           *bool                      `json:"enabled" description:"Absent leaves the enabled flag as it is (false on a create)"`
@@ -234,21 +234,21 @@ type providerUpdateInput struct {
 
 // providerIDInput addresses one provider.
 type providerIDInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	ID     string `path:"id" description:"The provider's identifier."`
 }
 
 // domainClaimInput claims a domain for a provider.
 type domainClaimInput struct {
 	_      struct{} `description:"A domain to claim for one identity provider."`
-	Tenant string   `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant string   `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	ID     string   `path:"id" description:"The provider's identifier."`
 	Domain string   `json:"domain" required:"true" description:"The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored."`
 }
 
 // domainAddressInput addresses one claimed domain of one provider.
 type domainAddressInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404."`
 	ID     string `path:"id" description:"The provider's identifier."`
 	Domain string `path:"domain" description:"The claimed domain name."`
 }
@@ -262,14 +262,14 @@ type sessionRevokeInput struct {
 
 // impersonationListInput is a tenant's impersonation-record page.
 type impersonationListInput struct {
-	Tenant string `path:"tenant" description:"The tenant whose records the page holds, as the tenant alias; it scopes the read and fills the decision's tenant."`
+	Tenant string `path:"tenant" description:"The tenant whose records the page holds, as the tenant name; it scopes the read and fills the decision's tenant."`
 	Limit  int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
 	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page."`
 }
 
 // impersonationIDInput addresses one impersonation record.
 type impersonationIDInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 	ID     string `path:"id" description:"The impersonation record's identifier."`
 }
 
@@ -706,7 +706,7 @@ var memberListOperation = speedhttp.NewOperation[memberListInput, AuthnAdminMemb
 	http.MethodGet,
 	pathMembers,
 	"List a tenant's members",
-	"Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's alias: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.",
+	"Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's name: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.",
 	nil,
 	speedhttp.Failures(commonFailures(),
 		problemResponse(http.StatusBadRequest, mount.CodeBadRequest, "The page query could not be read"),

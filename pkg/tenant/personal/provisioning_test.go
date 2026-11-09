@@ -48,9 +48,9 @@ func TestProvisionAccountWritesTheFivePiecesOnTheAccountTransaction(t *testing.T
 		t.Fatalf("the seam wrote %d tenant row(s), want one", len(roster.created))
 	}
 	row := roster.created[0]
-	if row.ID != wantID || row.Alias != "alice" || row.Status != tenant.StatusActive ||
+	if row.ID != wantID || row.Name != "alice" || row.Status != tenant.StatusActive ||
 		row.OwnerAccount != facts.ID || row.Profile.DisplayName != facts.DisplayName {
-		t.Errorf("the personal tenant is %+v, want id %q, alias alice, owner %q and display name %q",
+		t.Errorf("the personal tenant is %+v, want id %q, name alice, owner %q and display name %q",
 			row, wantID, facts.ID, facts.DisplayName)
 	}
 	if len(writer.put) != 1 || writer.put[0].Account != authn.AccountID(facts.ID) ||
@@ -70,7 +70,7 @@ func TestProvisionAccountWritesTheFivePiecesOnTheAccountTransaction(t *testing.T
 }
 
 // A user account always carries a username, so the seam refuses an empty one
-// instead of deriving an alias from the identifier.
+// instead of deriving a name from the identifier.
 func TestProvisionAccountRefusesAUserAccountWithoutAUsername(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	facts := provisioning.AccountFacts{ID: "acc-1", Kind: string(authn.KindUser), Status: "active"}
@@ -118,22 +118,22 @@ func TestProvisionAccountReplaysOnAnExistingTenant(t *testing.T) {
 	}
 }
 
-// An alias another tenant holds is this module's exported refusal, and it wraps
+// A name another tenant holds is this module's exported refusal, and it wraps
 // the roster's own error so a caller may match either. It also carries
 // authn.ErrAccountExists, which is what the account module passes through: a
 // login therefore answers the name as taken rather than as an unavailable
 // dependency.
-func TestProvisionAccountAliasConflictReturnsTheSentinel(t *testing.T) {
+func TestProvisionAccountNameConflictReturnsTheSentinel(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
-	roster.createErr = tenant.ErrAliasConflict
+	roster.createErr = tenant.ErrNameConflict
 	facts := provisioning.AccountFacts{
 		ID: "acc-1", Kind: string(authn.KindUser), Status: "active", Username: "alice",
 	}
 	err := p.ProvisionAccount(context.Background(), &gorm.DB{}, facts)
-	if !errors.Is(err, ErrAliasConflict) {
-		t.Fatalf("provisioning under a held alias gave %v, want ErrAliasConflict", err)
+	if !errors.Is(err, ErrNameConflict) {
+		t.Fatalf("provisioning under a held name gave %v, want ErrNameConflict", err)
 	}
-	if !errors.Is(err, tenant.ErrAliasConflict) {
+	if !errors.Is(err, tenant.ErrNameConflict) {
 		t.Errorf("the refusal does not wrap the roster's error: %v", err)
 	}
 	if !errors.Is(err, authn.ErrAccountExists) {
@@ -211,7 +211,7 @@ func TestProvisionAccountWritesTheCreationAuditAfterTheCommit(t *testing.T) {
 	}
 	rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalCreateAction)
 	if len(rows) != 1 || rows[0].Object != facts.Username {
-		t.Errorf("the creation wrote the audit rows %+v, want one row on the alias %q", rows, facts.Username)
+		t.Errorf("the creation wrote the audit rows %+v, want one row on the name %q", rows, facts.Username)
 	}
 
 	roster.createErr = tenant.ErrTenantExists
@@ -261,7 +261,7 @@ func TestProvisionAccountDeletionWritesThroughTheAccountTransaction(t *testing.T
 	}
 	rows := entriesOfAction(p.audit.(*fakeAudit).rows(), personalDeleteAction)
 	if len(rows) != 1 || rows[0].Object != "alice" {
-		t.Errorf("the deletion wrote the audit rows %+v, want one row on the alias %q", rows, "alice")
+		t.Errorf("the deletion wrote the audit rows %+v, want one row on the name %q", rows, "alice")
 	}
 }
 

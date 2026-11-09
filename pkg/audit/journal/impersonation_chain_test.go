@@ -166,8 +166,8 @@ func TestTheTenantColumnOfAnImpersonationInATenantIsTheContextsTenant(t *testing
 			return errCaseFailed
 		}
 		for _, registered := range []tenant.Tenant{
-			{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-			{ID: "t_globex", Alias: "globex", Status: tenant.StatusActive},
+			{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
+			{ID: "t_globex", Name: "globex", Status: tenant.StatusActive},
 		} {
 			if putErr := roster.Put(ctx, registered); putErr != nil {
 				t.Errorf("registering %s: %v", registered.ID, putErr)

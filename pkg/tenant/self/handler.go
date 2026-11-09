@@ -44,7 +44,7 @@ func (p *product) requireIdentity(next gin.HandlerFunc) gin.HandlerFunc {
 // in the log, never an empty list.
 //
 // An impersonating caller is confined to the grant's tenant, so only that
-// membership enters its answer. The route is the alias source a host has after
+// membership enters its answer. The route is where a host gets tenant names after
 // a full page load, when the roster cache it read before is gone; the grant
 // already names the tenant, and the answer gives it the name without handing
 // over the impersonated account's memberships in other tenants. The gateway's
@@ -88,7 +88,7 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 			}
 		}
 		out = append(out, tenantSelfTenant{
-			Alias:       found.Alias,
+			Name:        found.Name,
 			DisplayName: found.Profile.DisplayName,
 			Kind:        string(kind),
 		})

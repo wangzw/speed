@@ -113,17 +113,17 @@ type noRules struct{}
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// rosterStub is the tenant roster: alias is identifier, both tenants served.
+// rosterStub is the tenant roster: name is identifier, both tenants served.
 type rosterStub struct{ tenant.Catalog }
 
-func (rosterStub) ByAlias(_ context.Context, name string) (tenant.Tenant, bool, error) {
+func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
 	return rosterStub{}.Get(context.Background(), tenant.ID(name))
 }
 
 func (rosterStub) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
 	switch string(id) {
 	case acme, globex:
-		return tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}, true, nil
+		return tenant.Tenant{ID: id, Name: string(id), Status: tenant.StatusActive}, true, nil
 	}
 	return tenant.Tenant{}, false, nil
 }

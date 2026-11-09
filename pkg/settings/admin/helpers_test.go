@@ -434,8 +434,8 @@ func newRig(t *testing.T) *rig {
 		audit:        r.audit,
 		verification: r.signup,
 		// The route cases name the fixture tenant "acme", so the stand-in roster
-		// carries that alias. A case that needs the alias and the identifier
-		// apart replaces it with a mapping of its own; a case that wants the
+		// carries that name. A case that needs the name and the identifier apart
+		// replaces it with a mapping of its own; a case that wants the
 		// absent roster sets it to nil.
 		directory: directoryStub{"acme": "acme"},
 		logger:    logs.logger(),

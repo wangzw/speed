@@ -79,7 +79,7 @@ func TestTheWriteOperationsAreDistinctAndTheZeroValueIsTheDestructiveOne(t *test
 func TestTheProvisionerTakesTheCreatorAsAPlainIdentifier(t *testing.T) {
 	var p Provisioner = &recordingProvisioner{}
 	creator := "operator-account"
-	if err := p.Provision(context.Background(), Tenant{ID: "acme", Alias: "acme"}, creator); err != nil {
+	if err := p.Provision(context.Background(), Tenant{ID: "acme", Name: "acme"}, creator); err != nil {
 		t.Fatalf("Provision returned %v", err)
 	}
 	if !p.(*recordingProvisioner).seen {

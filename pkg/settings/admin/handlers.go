@@ -213,13 +213,13 @@ func (p *product) declared(key string) (settings.DeclaredItem, bool) {
 }
 
 // detail builds a write's audit detail: the action identifier that links the
-// write's rows, the full key, the layer by name and the tenant it names by
-// alias. No value enters it.
+// write's rows, the full key, the layer name and the tenant name. No value
+// enters it.
 func detail(sel selection, key, actionID string) map[string]string {
 	return map[string]string{
 		detailActionID: actionID,
 		detailKey:      key,
 		detailLayer:    sel.name,
-		detailTenant:   sel.alias,
+		detailTenant:   sel.tenantName,
 	}
 }

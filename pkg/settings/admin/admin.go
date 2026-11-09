@@ -214,9 +214,9 @@ type product struct {
 	// that a guarded endpoint lets the request reach the handler, which makes the
 	// decision.
 	gate authz.Gate
-	// directory answers the identifier a tenant alias names, nil when the
+	// directory answers the identifier a tenant name addresses, nil when the
 	// assembly supplies no roster. With none a tenant layer cannot be selected:
-	// the query carries an alias, and the surface refuses rather than reading it
+	// the query carries a name, and the surface refuses rather than reading it
 	// as an identifier.
 	directory authn.TenantDirectory
 	logger    *slog.Logger

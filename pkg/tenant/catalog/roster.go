@@ -475,43 +475,43 @@ func (r *roster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, erro
 	return t, ok, nil
 }
 
-// ByAlias implements tenant.Catalog. It is the lookup the resolving layer makes
+// ByName implements tenant.Catalog. It is the lookup the resolving layer makes
 // on every request, and it touches no table.
-func (r *roster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
+func (r *roster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
 	s, err := r.current()
 	if err != nil {
 		return tenant.Tenant{}, false, err
 	}
-	t, ok := s.byAlias[alias]
+	t, ok := s.byName[name]
 	return t, ok, nil
 }
 
-// AliasOf implements tenant.AliasResolver. The answer comes from the snapshot,
+// NameOf implements tenant.NameResolver. The answer comes from the snapshot,
 // like every other read; an identifier no row carries answers empty.
-func (r *roster) AliasOf(_ context.Context, id tenant.ID) (string, error) {
+func (r *roster) NameOf(_ context.Context, id tenant.ID) (string, error) {
 	s, err := r.current()
 	if err != nil {
 		return "", err
 	}
 	if t, ok := s.byID[id]; ok {
-		return t.Alias, nil
+		return t.Name, nil
 	}
 	return "", nil
 }
 
-// TenantAliasOf implements authn.TenantAliasResolver. It is AliasOf for the
+// TenantNameOf implements authn.TenantNameResolver. It is NameOf for the
 // authentication directory, which does not import this capability's interface
 // package.
-func (r *roster) TenantAliasOf(ctx context.Context, id string) (string, error) {
-	return r.AliasOf(ctx, tenant.ID(id))
+func (r *roster) TenantNameOf(ctx context.Context, id string) (string, error) {
+	return r.NameOf(ctx, tenant.ID(id))
 }
 
-// TenantIDOf implements authn.TenantDirectory. It is ByAlias for the
+// TenantIDOf implements authn.TenantDirectory. It is ByName for the
 // authentication directory, which does not import this capability's interface
-// package: an alias no tenant carries answers false with no error, so a surface
+// package: a name no tenant carries answers false with no error, so a surface
 // can tell an unknown name from a roster that could not answer.
-func (r *roster) TenantIDOf(ctx context.Context, alias string) (string, bool, error) {
-	t, ok, err := r.ByAlias(ctx, alias)
+func (r *roster) TenantIDOf(ctx context.Context, name string) (string, bool, error) {
+	t, ok, err := r.ByName(ctx, name)
 	if err != nil || !ok {
 		return "", false, err
 	}
@@ -670,7 +670,7 @@ func agrees(s *snapshot, id tenant.ID, t tenant.Tenant, held bool) bool {
 // hold them: two reads of one row build two values, and a struct comparison
 // would take their addresses as the tenant's identity.
 func sameTenant(a, b tenant.Tenant) bool {
-	if a.ID != b.ID || a.Alias != b.Alias || a.Status != b.Status ||
+	if a.ID != b.ID || a.Name != b.Name || a.Status != b.Status ||
 		a.DisabledBy != b.DisabledBy || a.OwnerAccount != b.OwnerAccount ||
 		a.Profile != b.Profile || !a.CreatedAt.Equal(b.CreatedAt) {
 		return false
@@ -687,24 +687,24 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 // Put implements tenant.Catalog.
 //
 // The rewrite is by identifier, so registering a tenant twice is one row. An
-// alias is chosen when the row is written and is immutable afterwards: a
-// rewrite whose value carries another alias is refused with ErrInvalidTenant
-// and writes nothing, while one carrying the alias the row already has changes
+// name is chosen when the row is written and is immutable afterwards: a
+// rewrite whose value carries another name is refused with ErrInvalidTenant
+// and writes nothing, while one carrying the name the row already has changes
 // only the status and the disable source.
 //
-// An insert takes the alias, the owner and the creation time, and the alias is
+// An insert takes the name, the owner and the creation time, and the name is
 // checked inside the same transaction as the write: the column's unique index
 // would catch a collision too, but it would report it as a constraint violation
-// rather than as which tenant holds the name. The alias and the identifier are
-// one namespace — a slug may be a tenant's alias or its identifier, never both —
-// so an insert also refuses an alias another tenant carries as its identifier
-// and an identifier another tenant carries as its alias (checkNamespace).
+// rather than as which tenant holds the name. The name and the identifier are
+// one namespace — a slug may be a tenant's name or its identifier, never both —
+// so an insert also refuses a name another tenant carries as its identifier
+// and an identifier another tenant carries as its name (checkNamespace).
 //
-// The check does not close the race on its own. Two writes putting one alias
+// The check does not close the race on its own. Two writes putting one name
 // on two tenants at once can both find it free, and the later insert then
 // meets the unique index. That is the same conflict, and it is answered the
-// same way: a write that failed is read again against the table, and an alias
-// another tenant now holds is reported as ErrAliasConflict naming it, with the
+// same way: a write that failed is read again against the table, and a name
+// another tenant now holds is reported as ErrNameConflict naming it, with the
 // driver's error kept in the chain.
 //
 // A row that is a tombstone is refused with ErrTenantDeleted, and nothing is
@@ -718,9 +718,9 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 //
 // The write and the read that names a conflict run on one connection (write).
 //
-// The profile, owner and alias columns are not written by a rewrite. A rewrite
+// The profile, owner and name columns are not written by a rewrite. A rewrite
 // takes the status and the disable source, so it cannot put back a profile
-// another path changed, an owner another path transferred, or an alias the row
+// another path changed, an owner another path transferred, or a name the row
 // was not created with; an insert it performs takes the migration's profile
 // defaults and the value's owner. The
 // creation time is written on an insert and only on an insert: a registration
@@ -739,9 +739,9 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 		switch {
 		case len(held) > 0 && tenant.Status(held[0].Status) == tenant.StatusDeleted:
 			return tombstone(t.ID)
-		case len(held) > 0 && held[0].Alias != t.Alias:
-			return fmt.Errorf("%w: tenant %q already carries the alias %q, and an alias "+
-				"is chosen at creation and never changed", tenant.ErrInvalidTenant, t.ID, held[0].Alias)
+		case len(held) > 0 && held[0].Name != t.Name:
+			return fmt.Errorf("%w: tenant %q already carries the name %q, and a name "+
+				"is chosen at creation and never changed", tenant.ErrInvalidTenant, t.ID, held[0].Name)
 		case len(held) == 0:
 			if err := checkNamespace(tx, t); err != nil {
 				return err
@@ -749,8 +749,8 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 		}
 		written := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
-			// The alias is immutable: an existing row keeps the one it was
-			// written with, and the value's alias is read only by the insert
+			// The name is immutable: an existing row keeps the one it was
+			// written with, and the value's name is read only by the insert
 			// below.
 			DoUpdates: clause.AssignmentColumns([]string{"status", "disabled_by"}),
 			// The rewrite itself refuses a tombstone: the check above runs
@@ -761,7 +761,7 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 			}},
 		}).Create(&row{
 			ID:         string(t.ID),
-			Alias:      t.Alias,
+			Name:       t.Name,
 			Status:     int(t.Status),
 			DisabledBy: int(t.DisabledBy),
 
@@ -850,7 +850,7 @@ func (r *roster) writeResult(ctx context.Context, apply func(tx *gorm.DB) (bool,
 // row carries, a tombstone — which the table was read to give, rather than a
 // statement that failed.
 func answered(err error) bool {
-	return errors.Is(err, tenant.ErrAliasConflict) || errors.Is(err, tenant.ErrTenantExists) ||
+	return errors.Is(err, tenant.ErrNameConflict) || errors.Is(err, tenant.ErrTenantExists) ||
 		errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDeleted)
 }
 
@@ -879,30 +879,30 @@ func missingOrTombstone(tx *gorm.DB, id tenant.ID) error {
 	return nil
 }
 
-// failedPut names the conflict a failed Put ran into when the alias turns out
+// failedPut names the conflict a failed Put ran into when the name turns out
 // to be held by another tenant, and returns the failure as it stands otherwise.
 // The read runs on the write's session outside the failed transaction, which a
 // PostgreSQL transaction that met a constraint no longer accepts statements in.
 func failedPut(session *gorm.DB, t tenant.Tenant, err error) error {
-	return failedAlias(session, t.ID, t.Alias, err)
+	return failedName(session, t.ID, t.Name, err)
 }
 
-// failedAlias names the conflict a failed write on one tenant's alias ran into
-// — Put, and Create through failedCreate — when the alias turns out to be held
+// failedName names the conflict a failed write on one tenant's name ran into
+// — Put, and Create through failedCreate — when the name turns out to be held
 // by another tenant, and returns the failure as it stands otherwise. A write
-// that meets the alias column's unique index in a race reaches the same conflict
+// that meets the name column's unique index in a race reaches the same conflict
 // the check inside the write reports, and the caller is owed the same answer for
 // it.
-func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error {
-	if errors.Is(err, tenant.ErrAliasConflict) {
+func failedName(session *gorm.DB, id tenant.ID, name string, err error) error {
+	if errors.Is(err, tenant.ErrNameConflict) {
 		return err
 	}
-	held, lookErr := lookUp(session, "alias", alias)
+	held, lookErr := lookUp(session, "name", name)
 	if lookErr != nil || len(held) == 0 || held[0].ID == string(id) {
 		return err
 	}
-	return fmt.Errorf("%w: alias %q is held by tenant %q, which took it while this write was "+
-		"in flight: %w", tenant.ErrAliasConflict, alias, held[0].ID, err)
+	return fmt.Errorf("%w: name %q is held by tenant %q, which took it while this write was "+
+		"in flight: %w", tenant.ErrNameConflict, name, held[0].ID, err)
 }
 
 // Create implements tenant.Catalog.
@@ -911,11 +911,11 @@ func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error 
 // moment of the registration in UTC, never a value taken from the caller. A
 // registration date is a fact about the roster, and a caller that could choose
 // it could date a tenant before its account existed. The profile is judged by
-// checkWrite before any statement, as the identifier and the alias are.
+// checkWrite before any statement, as the identifier and the name are.
 //
 // A tombstone's identifier is taken as any existing identifier is: the creation
 // is refused with ErrTenantExists, so a deleted tenant is never registered
-// again, and its alias stays with the row. The value's own status and disable
+// again, and its name stays with the row. The value's own status and disable
 // source are judged before the write (checkWrite), as Put judges them.
 //
 // Whether the identifier is taken is asked of the table inside the write, not
@@ -925,9 +925,9 @@ func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error 
 // identifier is already there, and a write that inserted nothing is the
 // refusal — so two creations of one identifier at once end with one row and
 // one ErrTenantExists, the later one having waited on the earlier's row rather
-// than overwriting it. The alias and the identifier are one namespace, so an
-// insert also refuses an alias another tenant carries as its identifier and an
-// identifier another tenant carries as its alias (checkNamespace); the alias's
+// than overwriting it. The name and the identifier are one namespace, so an
+// insert also refuses a name another tenant carries as its identifier and an
+// identifier another tenant carries as its name (checkNamespace); the name's
 // race is answered as Put answers it, on the write's one connection (write).
 func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 	if err := checkWrite(t); err != nil {
@@ -959,7 +959,7 @@ func (r *roster) createIn(_ context.Context, tx *gorm.DB, t tenant.Tenant) (bool
 		DoNothing: true,
 	}).Create(&row{
 		ID:         string(t.ID),
-		Alias:      t.Alias,
+		Name:       t.Name,
 		Status:     int(t.Status),
 		DisabledBy: int(t.DisabledBy),
 
@@ -997,11 +997,11 @@ func tenantExists(id tenant.ID) error {
 
 // failedCreate names what a failed Create ran into: its own refusals as they
 // stand, and a driver failure as the conflict it turns out to be once the table
-// is read again — the identifier registered, or the alias taken, by a write
+// is read again — the identifier registered, or the name taken, by a write
 // that got there first. The reads run on the write's session, as failedPut's
 // does.
 func failedCreate(session *gorm.DB, t tenant.Tenant, err error) error {
-	if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrAliasConflict) {
+	if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrNameConflict) {
 		return err
 	}
 	held, lookErr := lookUp(session, "id", string(t.ID))
@@ -1123,8 +1123,8 @@ func (r *roster) SetStatusByAccount(ctx context.Context, id tenant.ID, s tenant.
 // state.
 //
 // It writes the status column and the deletion instant together: the row, the
-// identifier, the alias, the owner and the disable source stay, so a scoped
-// table's data still has a tenant to be found under and the alias cannot be
+// identifier, the name, the owner and the disable source stay, so a scoped
+// table's data still has a tenant to be found under and the name cannot be
 // registered again while the row carries it. The instant is recorded in UTC and
 // is the moment the terminal state was reached; the status stays the state a
 // request is resolved by. Deleting a tombstone again is a no-op that returns
@@ -1170,7 +1170,7 @@ func deletionTime() time.Time {
 
 // SetOwner implements tenant.Catalog, and is the transfer write.
 //
-// It writes the owner_account column and nothing else. The alias, the status,
+// It writes the owner_account column and nothing else. The name, the status,
 // the profile, the creation time and the deletion time are not named, so a
 // transfer cannot undo a disable or a profile update committed in the same
 // window. The owner must be an identifier: the empty string is refused because
@@ -1224,7 +1224,7 @@ func (r *roster) SetOwner(ctx context.Context, id tenant.ID, owner string) error
 // SetProfile implements tenant.Catalog, and writes the organization profile
 // alone.
 //
-// The four profile columns are the whole statement. The alias, the owner, the
+// The four profile columns are the whole statement. The name, the owner, the
 // status, the disable source and the creation time are not named, so a profile
 // update cannot put back a value this process read before another path changed
 // it: a disable or a deletion committed in the window stays. The tombstone
@@ -1277,7 +1277,7 @@ func (r *roster) SetProfile(ctx context.Context, id tenant.ID, profile tenant.Pr
 // Finding none is an answer, and it is read as one: an empty result rather than
 // the not-found failure GORM's First reports. That failure reaches GORM's
 // logger as a failed statement, which the database module's logger writes as an
-// error record — on every tenant a new alias is put for, and on every status
+// error record — on every tenant a new name is put for, and on every status
 // change naming a tenant that is not there.
 //
 // A read that fails is returned as the driver reported it. Its caller reports
@@ -1321,9 +1321,9 @@ func (r *roster) afterWrite(ctx context.Context) error {
 // checkTenant refuses a tenant this module will not act on.
 //
 // The identifier is judged by the shape this module can judge: not empty, and
-// free of blanks and control characters. The alias is judged by the slug form
+// free of blanks and control characters. The name is judged by the slug form
 // every request surface carries, which is also the username's form because a
-// personal tenant's alias is its owner's username. The owner is optional here:
+// personal tenant's name is its owner's username. The owner is optional here:
 // an empty value is "no owner yet", which the creation and transfer seams are
 // responsible for filling on a business organization, and a value that is
 // present is held to the identifier's own domain. How long an identifier may be
@@ -1336,7 +1336,7 @@ func checkTenant(t tenant.Tenant) error {
 	if err := checkField("identifier", string(t.ID)); err != nil {
 		return err
 	}
-	if err := checkAlias(t.Alias); err != nil {
+	if err := checkName(t.Name); err != nil {
 		return err
 	}
 	if t.OwnerAccount != "" && !tenant.IsIdentifier(t.OwnerAccount) {
@@ -1370,60 +1370,60 @@ func checkWrite(t tenant.Tenant) error {
 	return nil
 }
 
-// checkAlias refuses an alias outside the slug form the roster serves. The form
-// is stated once by tenant.IsAlias; the empty case is judged first because its
+// checkName refuses a name outside the slug form the roster serves. The form
+// is stated once by tenant.IsName; the empty case is judged first because its
 // fix is the caller's to choose a name rather than to correct one.
-func checkAlias(alias string) error {
-	if alias == "" {
-		return fmt.Errorf("%w: the alias is empty", tenant.ErrInvalidTenant)
+func checkName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: the name is empty", tenant.ErrInvalidTenant)
 	}
-	if !tenant.IsAlias(alias) {
-		return fmt.Errorf("%w: the alias is not a lower-case slug of 3 to 63 letters, digits and dashes",
+	if !tenant.IsName(name) {
+		return fmt.Errorf("%w: the name is not a lower-case slug of 3 to 63 letters, digits and dashes",
 			tenant.ErrInvalidTenant)
 	}
 	return nil
 }
 
-// checkNamespace holds an alias and an identifier to one namespace, for the
+// checkNamespace holds a name and an identifier to one namespace, for the
 // creation paths, inside the write's transaction.
 //
-// A slug is either a tenant's alias or a tenant's identifier, never both: a
+// A slug is either a tenant's name or a tenant's identifier, never both: a
 // request surface that carried one value would otherwise name two tenants, and
 // the path guard would refuse that segment on every route that takes a tenant.
-// The two lookups are separate because the columns are — alias is unique on its
+// The two lookups are separate because the columns are — name is unique on its
 // own and id is the primary key — and neither index spans the other column, so
 // the pair's disjointness is this check's to enforce.
 //
 // The row this call is about is not in the table yet: Create has already found
-// its identifier free, and Put reaches here only on its insert path. An alias
-// another tenant carries as its identifier is reported as ErrAliasConflict, the
-// alias being the value whose fix is the caller's; an identifier another tenant
-// carries as its alias is reported as ErrTenantExists, for the same reason. The
+// its identifier free, and Put reaches here only on its insert path. A name
+// another tenant carries as its identifier is reported as ErrNameConflict, the
+// name being the value whose fix is the caller's; an identifier another tenant
+// carries as its name is reported as ErrTenantExists, for the same reason. The
 // message names the holder and never a value the caller has not already
 // supplied.
 func checkNamespace(tx *gorm.DB, t tenant.Tenant) error {
-	held, err := lookUp(tx, "alias", t.Alias)
+	held, err := lookUp(tx, "name", t.Name)
 	if err != nil {
 		return err
 	}
 	if len(held) > 0 {
-		return fmt.Errorf("%w: alias %q is held by tenant %q",
-			tenant.ErrAliasConflict, t.Alias, held[0].ID)
+		return fmt.Errorf("%w: name %q is held by tenant %q",
+			tenant.ErrNameConflict, t.Name, held[0].ID)
 	}
-	held, err = lookUp(tx, "id", t.Alias)
+	held, err = lookUp(tx, "id", t.Name)
 	if err != nil {
 		return err
 	}
 	if len(held) > 0 {
-		return fmt.Errorf("%w: alias %q is the identifier of tenant %q",
-			tenant.ErrAliasConflict, t.Alias, held[0].ID)
+		return fmt.Errorf("%w: name %q is the identifier of tenant %q",
+			tenant.ErrNameConflict, t.Name, held[0].ID)
 	}
-	held, err = lookUp(tx, "alias", string(t.ID))
+	held, err = lookUp(tx, "name", string(t.ID))
 	if err != nil {
 		return err
 	}
 	if len(held) > 0 {
-		return fmt.Errorf("%w: identifier %q is the alias of tenant %q",
+		return fmt.Errorf("%w: identifier %q is the name of tenant %q",
 			tenant.ErrTenantExists, t.ID, held[0].ID)
 	}
 	return nil

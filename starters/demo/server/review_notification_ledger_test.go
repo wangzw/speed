@@ -101,7 +101,7 @@ func TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 	// them, and the control reads the tenant from the request context.
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
-		"X-Tenant":      personalTenantAlias(t, client, base, token),
+		"X-Tenant":      personalTenantName(t, client, base, token),
 	}
 
 	dsn := filepath.Join(filepath.Dir(configPath), "review.db")

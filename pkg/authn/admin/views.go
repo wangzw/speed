@@ -144,7 +144,7 @@ type AuthnAdminMember struct {
 	Account     string    `json:"account" required:"true" description:"The member account's identifier."`
 	DisplayName string    `json:"display_name" required:"true" description:"The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none."`
 	Username    string    `json:"username" required:"true" description:"The account's login username: unique, user-facing, and not an identifier of the account. The empty string when the account has none; it is never a fallback to another login identifier."`
-	Tenant      string    `json:"tenant" required:"true" description:"The tenant's alias."`
+	Tenant      string    `json:"tenant" required:"true" description:"The tenant's name."`
 	Active      bool      `json:"active" required:"true" description:"True when the membership is in force; false means suspended, which reads as not a member."`
 	SSOExempt   bool      `json:"sso_exempt" required:"true" description:"True when the member is exempt from the tenant's enforced SSO requirement."`
 	Source      string    `json:"source" required:"true" description:"How the membership came to exist: admin, initial, invite, import or jit:<provider identifier>."`
@@ -176,7 +176,7 @@ type AuthnAdminProvider struct {
 	_ struct{} `description:"One SSO provider. The encrypted client secret never appears, warnings names each setting that loosens a default, and domains lists every email domain the provider has claimed."`
 
 	ID                string                     `json:"id" required:"true" description:"The provider's identifier."`
-	Tenant            string                     `json:"tenant" required:"true" description:"The owning tenant's alias; immutable after creation."`
+	Tenant            string                     `json:"tenant" required:"true" description:"The owning tenant's name; immutable after creation."`
 	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml."`
 	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
 	Enabled           bool                       `json:"enabled" required:"true" description:"True when the provider may be used for sign-in."`
@@ -222,7 +222,7 @@ type AuthnAdminImpersonation struct {
 	ID        string    `json:"id" required:"true" description:"The record's identifier."`
 	Actor     string    `json:"actor" required:"true" description:"The identifier of the account that started the impersonation."`
 	Target    string    `json:"target" required:"true" description:"The identifier of the account being impersonated."`
-	Tenant    string    `json:"tenant" required:"true" description:"The alias of the tenant the impersonation is confined to."`
+	Tenant    string    `json:"tenant" required:"true" description:"The name of the tenant the impersonation is confined to."`
 	SessionID string    `json:"session_id" required:"true" description:"The identifier of the actor's session that carries the impersonation."`
 	StartedAt time.Time `json:"started_at" required:"true" description:"When the impersonation started, as an RFC 3339 instant in UTC."`
 	EndsAt    time.Time `json:"ends_at" required:"true" description:"When the impersonation lapses, as an RFC 3339 instant in UTC."`

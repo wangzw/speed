@@ -478,7 +478,7 @@ func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 		t.Fatalf("resolving the tenant roster: %v", err)
 	}
 	if putErr := cam.Put(t.Context(), tenant.Tenant{
-		ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive,
+		ID: tenant.ID(id), Name: id, Status: tenant.StatusActive,
 	}); putErr != nil {
 		t.Fatalf("registering the tenant %q: %v", id, putErr)
 	}

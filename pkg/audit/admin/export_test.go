@@ -179,31 +179,32 @@ func TestTheExportStreamsEveryPageAsNDJSON(t *testing.T) {
 	}
 }
 
-// aliasedName answers one identifier with an alias that differs from it, so a
+// namedTenant answers one identifier with a name that differs from it, so a
 // case can tell which of the two a surface carries.
-type aliasedName struct {
-	id    string
-	alias string
+type namedTenant struct {
+	id   string
+	name string
 }
 
-func (a aliasedName) AliasOf(_ context.Context, id tenant.ID) (string, error) {
+func (a namedTenant) NameOf(_ context.Context, id tenant.ID) (string, error) {
 	if string(id) == a.id {
-		return a.alias, nil
+		return a.name, nil
 	}
 	return "", nil
 }
 
-// TestTheExportNamesTheTenantByAliasNeverTheIdentifier holds the tenant column
+// TestTheExportNamesTheTenantByNameNeverTheIdentifier holds the tenant column
 // of an export file to the rule the list route follows: the row stores the
-// internal identifier, and the file a recipient downloads names the alias. The
-// fixture's values differ, so a file carrying either one is distinguishable.
-func TestTheExportNamesTheTenantByAliasNeverTheIdentifier(t *testing.T) {
+// internal identifier, and the file a recipient downloads names the tenant by
+// its name. The fixture's values differ, so a file carrying either one is
+// distinguishable.
+func TestTheExportNamesTheTenantByNameNeverTheIdentifier(t *testing.T) {
 	const (
 		internalID = "ACME-INTERNAL"
-		alias      = "acme-public"
+		name       = "acme-public"
 	)
 	r := newRig(t)
-	r.p.aliases = aliasedName{id: internalID, alias: alias}
+	r.p.names = namedTenant{id: internalID, name: name}
 	r.reader.script(stubPage{rows: []journal.Row{
 		{ID: 1, Tenant: internalID, Action: "a.update", Outcome: "ok"},
 	}})
@@ -216,8 +217,8 @@ func TestTheExportNamesTheTenantByAliasNeverTheIdentifier(t *testing.T) {
 	if strings.Contains(body, internalID) {
 		t.Errorf("the export carries the internal identifier: %s", body)
 	}
-	if !strings.Contains(body, alias) {
-		t.Errorf("the export does not carry the tenant alias: %s", body)
+	if !strings.Contains(body, name) {
+		t.Errorf("the export does not carry the tenant name: %s", body)
 	}
 }
 

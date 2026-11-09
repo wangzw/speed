@@ -265,16 +265,16 @@ func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, acc
 ) *product {
 	t.Helper()
 	p := &product{
-		handle:        handle,
-		accounts:      accounts,
-		accountAdm:    admin,
-		verification:  verification,
-		memberships:   memberships,
-		mounter:       mounttest.New(t),
-		audit:         &recordingAudit{},
-		decider:       &fakeDecider{allow: true},
-		tenantAliases: identityAliases{},
-		logger:        (&logBuffer{}).logger(),
+		handle:       handle,
+		accounts:     accounts,
+		accountAdm:   admin,
+		verification: verification,
+		memberships:  memberships,
+		mounter:      mounttest.New(t),
+		audit:        &recordingAudit{},
+		decider:      &fakeDecider{allow: true},
+		tenantNames:  identityNames{},
+		logger:       (&logBuffer{}).logger(),
 	}
 	p.now = newTestClock().read
 	return p

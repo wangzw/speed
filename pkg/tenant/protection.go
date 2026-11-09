@@ -59,7 +59,7 @@ const (
 type Provisioner interface {
 	// Provision creates t and binds creator as its first tenant-admin. Roster
 	// refusals stay readable through errors.Is: ErrTenantExists when the
-	// identifier is taken, and ErrAliasConflict when another tenant holds the
-	// alias.
+	// identifier is taken, and ErrNameConflict when another tenant holds the
+	// name.
 	Provision(ctx context.Context, t Tenant, creator string) error
 }

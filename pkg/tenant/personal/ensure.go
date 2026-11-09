@@ -4,7 +4,7 @@ package personal
 // transaction is the guarantee that the tenant exists; the lifecycle hook runs
 // this after the transaction commits to complete anything the seam left
 // unfinished. It never creates a tenant for an account whose username cannot be
-// read: the alias is always the account's username.
+// read: the name is always the account's username.
 //
 // The ensure writes the same five pieces the transaction seam writes, through
 // the context-taking surfaces, each idempotent. A membership row that exists is
@@ -74,7 +74,7 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	}
 
 	var record tenant.Tenant
-	alias := ""
+	name := ""
 	created := false
 	actionID := ""
 	createBegan := false
@@ -82,10 +82,10 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	if own {
 		record, err = p.registeredTenant(ctx, personalID)
 	} else {
-		// The alias is the account's username, and the audit row names the
+		// The name is the account's username, and the audit row names the
 		// tenant by it: it is read before the mandatory row so the row carries
 		// the name the surface uses.
-		alias, err = p.usernameOf(ctx, account)
+		name, err = p.usernameOf(ctx, account)
 		if err != nil {
 			return personalResult{}, err
 		}
@@ -94,26 +94,26 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 		// record of it.
 		actionID = newPersonalActionID()
 		createBegan = true
-		if auditErr := p.auditRequired(ctx, personalAudit(personalCreateAction, account, alias, actionID)); auditErr != nil {
+		if auditErr := p.auditRequired(ctx, personalAudit(personalCreateAction, account, name, actionID)); auditErr != nil {
 			return personalResult{}, auditErr
 		}
-		record, created, createRefused, err = p.createTenant(ctx, personalID, alias)
+		record, created, createRefused, err = p.createTenant(ctx, personalID, name)
 	}
 	if err != nil {
 		if createBegan {
-			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, alias, actionID))
+			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, name, actionID))
 		}
 		return personalResult{}, err
 	}
-	if record.Alias != "" {
-		alias = record.Alias
+	if record.Name != "" {
+		name = record.Name
 	}
 	// fail closes whatever is left of a create attempt with the failed row that
 	// links to its permitted one. A read-back attempt has no permitted row to
 	// close.
 	fail := func(err error) (personalResult, error) {
 		if createBegan {
-			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, alias, actionID))
+			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, name, actionID))
 		}
 		return personalResult{}, err
 	}
@@ -192,15 +192,15 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 	if createRefused {
 		// Another call won the race the deterministic identifier creates: this
 		// attempt's create was refused, and the row it read back is the answer.
-		p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, alias, actionID))
+		p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, name, actionID))
 	}
 	return personalResult{Tenant: record, Created: created}, nil
 }
 
 // usernameOf reads the account's username, which names its personal tenant's
-// alias. An assembly without the account read surface, an account the store no
+// name. An assembly without the account read surface, an account the store no
 // longer holds and an account with no username identifier are all refusals: the
-// alias is always the username, never a derived identifier.
+// name is always the username, never a derived identifier.
 func (p *product) usernameOf(ctx context.Context, account authn.AccountID) (string, error) {
 	if p.accounts == nil {
 		return "", fmt.Errorf("%w: the assembly has no account read surface", ErrUsernameMissing)
@@ -238,9 +238,9 @@ func (p *product) registeredTenant(ctx context.Context, id tenant.ID) (tenant.Te
 }
 
 // createTenant registers the personal tenant. A row the roster's table already
-// holds is read back instead. The alias is the account's username.
-func (p *product) createTenant(ctx context.Context, id tenant.ID, alias string) (tenant.Tenant, bool, bool, error) {
-	record := tenant.Tenant{ID: id, Alias: alias, Status: tenant.StatusActive}
+// holds is read back instead. The name is the account's username.
+func (p *product) createTenant(ctx context.Context, id tenant.ID, name string) (tenant.Tenant, bool, bool, error) {
+	record := tenant.Tenant{ID: id, Name: name, Status: tenant.StatusActive}
 	err := p.roster.Create(ctx, record)
 	switch {
 	case err == nil:
@@ -248,7 +248,7 @@ func (p *product) createTenant(ctx context.Context, id tenant.ID, alias string) 
 	case errors.Is(err, tenant.ErrTenantExists):
 		held, readErr := p.registeredTenant(ctx, id)
 		return held, false, true, readErr
-	case errors.Is(err, tenant.ErrAliasConflict):
+	case errors.Is(err, tenant.ErrNameConflict):
 		return tenant.Tenant{}, false, true, fmt.Errorf("%w: %w", ErrIdentifierUnavailable, err)
 	default:
 		return tenant.Tenant{}, false, true, fmt.Errorf("registering the personal tenant: %w", err)
@@ -293,27 +293,27 @@ func (p *product) convergeTenantAdminGrants(ctx context.Context, tenantID string
 }
 
 // personalAudit builds the mandatory row of a tenant-side write: the tenant's
-// alias is the object, and the detail names the action's two ends and the
+// name is the object, and the detail names the action's two ends and the
 // identifier that links the rows of one attempt. The internal identifier stays
 // out of the row.
-func personalAudit(action string, account authn.AccountID, alias, actionID string) audit.Entry {
+func personalAudit(action string, account authn.AccountID, name, actionID string) audit.Entry {
 	return audit.Entry{
 		Action:  action,
-		Object:  alias,
+		Object:  name,
 		Outcome: personalOutcomeSuccess,
 		Detail: map[string]string{
 			personalDetailActionID: actionID,
 			personalDetailAccount:  account.String(),
-			personalDetailTenant:   alias,
+			personalDetailTenant:   name,
 		},
 	}
 }
 
 // personalFailedAudit builds the row that closes a failed attempt.
-func personalFailedAudit(action, alias, actionID string) audit.Entry {
+func personalFailedAudit(action, name, actionID string) audit.Entry {
 	return audit.Entry{
 		Action:  action,
-		Object:  alias,
+		Object:  name,
 		Outcome: personalOutcomeFailed,
 		Detail:  map[string]string{personalDetailActionID: actionID},
 	}

@@ -22,7 +22,7 @@ import (
 func TestATombstoneReadsAndRefusesEveryWrite(t *testing.T) {
 	t.Run("read", func(t *testing.T) {
 		r := newRig(t)
-		r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted}
+		r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted}
 		r.catalog.found = true
 
 		w := r.do(http.MethodGet, pathTenants+"/t_acme", nil)
@@ -72,7 +72,7 @@ func TestATombstoneReadsAndRefusesEveryWrite(t *testing.T) {
 			// through, so the only refusal left is the tombstone.
 			r.guard.allow = !tc.inTenant
 			r.catalog.held = tenant.Tenant{
-				ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted,
+				ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted,
 				OwnerAccount: authntest.DefaultAccount.String(),
 			}
 			r.catalog.found = true
@@ -136,7 +136,7 @@ func TestTheDeleteIsDecidedByOwnerIdentityOnTheTenantSurface(t *testing.T) {
 		r := newRig(t)
 		r.guard.allow = false
 		r.catalog.held = tenant.Tenant{
-			ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+			ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 			OwnerAccount: authntest.DefaultAccount.String(),
 		}
 		r.catalog.found = true
@@ -154,7 +154,7 @@ func TestTheDeleteIsDecidedByOwnerIdentityOnTheTenantSurface(t *testing.T) {
 		r := newRig(t)
 		r.guard.allow = true
 		r.catalog.held = tenant.Tenant{
-			ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+			ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 			OwnerAccount: authntest.DefaultAccount.String(),
 		}
 		r.catalog.found = true

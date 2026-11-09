@@ -49,7 +49,7 @@ type Config struct {
 	// Provisioner is the host's hook before an account is created; nil means no
 	// hook.
 	Provisioner authn.Provisioner
-	// NormalizeUsername folds a claim value to the shared username and alias
+	// NormalizeUsername folds a claim value to the shared username and name
 	// form. The account module delivers the same rule; the engine hands it in so
 	// that this package imports neither the account module nor its library.
 	NormalizeUsername func(string) (string, bool)

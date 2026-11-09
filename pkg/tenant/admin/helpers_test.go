@@ -135,33 +135,33 @@ func (s *stubCatalog) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool,
 	return s.held, s.found, nil
 }
 
-func (s *stubCatalog) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
+func (s *stubCatalog) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.found && s.held.Alias == alias {
+	if s.found && s.held.Name == name {
 		return s.held, true, nil
 	}
 	for _, t := range s.list {
-		if t.Alias == alias {
+		if t.Name == name {
 			return t, true, nil
 		}
 	}
 	return tenant.Tenant{}, false, nil
 }
 
-// AliasOf implements tenant.AliasResolver over the rows a case set, so a view
-// or an audit row names the alias the fixture carries.
-func (s *stubCatalog) AliasOf(_ context.Context, id tenant.ID) (string, error) {
+// NameOf implements tenant.NameResolver over the rows a case set, so a view
+// or an audit row names the name the fixture carries.
+func (s *stubCatalog) NameOf(_ context.Context, id tenant.ID) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// A case drives a handler directly, so the path segment it passes is taken
-	// as the tenant in either spelling; the alias is the answer either way.
-	if s.found && (s.held.ID == id || tenant.ID(s.held.Alias) == id) {
-		return s.held.Alias, nil
+	// as the tenant in either spelling; the name is the answer either way.
+	if s.found && (s.held.ID == id || tenant.ID(s.held.Name) == id) {
+		return s.held.Name, nil
 	}
 	for _, t := range s.list {
-		if t.ID == id || tenant.ID(t.Alias) == id {
-			return t.Alias, nil
+		if t.ID == id || tenant.ID(t.Name) == id {
+			return t.Name, nil
 		}
 	}
 	return "", nil
@@ -499,7 +499,7 @@ func newRig(t *testing.T) *rig {
 		organization: r.organization,
 		guard:        r.guard,
 		routeGuard:   r.routeGuard,
-		aliases:      r.catalog,
+		names:        r.catalog,
 		audit:        r.audit,
 		verification: r.signup,
 		logger:       logs.logger(),

@@ -168,7 +168,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 		reviewNotifyUsername, reviewNotifyEmail, reviewNotifyPassword)
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
-		"X-Tenant":      personalTenantAlias(t, client, base, token),
+		"X-Tenant":      personalTenantName(t, client, base, token),
 	}
 
 	// The review-only tenant control is offered by the feature document: the
@@ -346,7 +346,7 @@ func TestReviewNotificationRendersInTheRecipientsLanguage(t *testing.T) {
 
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
-		"X-Tenant":      personalTenantAlias(t, client, base, token),
+		"X-Tenant":      personalTenantName(t, client, base, token),
 	}
 
 	// The worker's first window for this tenant renders the notice — and the
@@ -408,11 +408,11 @@ func registerReviewMember(t *testing.T, client *http.Client, base string, serve 
 	return token
 }
 
-// personalTenantAlias reads the caller's own personal tenant from the account's
-// tenant list and answers its alias, which the tenant-scoped routes read from
+// personalTenantName reads the caller's own personal tenant from the account's
+// tenant list and answers its name, which the tenant-scoped routes read from
 // the X-Tenant header. The account's creation transaction wrote the tenant; the
 // host has no backfill route.
-func personalTenantAlias(t *testing.T, client *http.Client, base, token string) string {
+func personalTenantName(t *testing.T, client *http.Client, base, token string) string {
 	t.Helper()
 	read := send(t, client, http.MethodGet, base+"/api/v1/auth/me/tenants", nil,
 		map[string]string{"Authorization": "Bearer " + token})
@@ -421,16 +421,16 @@ func personalTenantAlias(t *testing.T, client *http.Client, base, token string) 
 	}
 	var answer struct {
 		Tenants []struct {
-			Alias string `json:"alias"`
-			Kind  string `json:"kind"`
+			Name string `json:"name"`
+			Kind string `json:"kind"`
 		} `json:"tenants"`
 	}
 	if err := json.Unmarshal(read.body, &answer); err != nil {
 		t.Fatalf("the tenant list is not JSON: %v\n%s", err, read.body)
 	}
 	for _, entry := range answer.Tenants {
-		if entry.Kind == string(tenant.KindPersonal) && entry.Alias != "" {
-			return entry.Alias
+		if entry.Kind == string(tenant.KindPersonal) && entry.Name != "" {
+			return entry.Name
 		}
 	}
 	t.Fatalf("the caller's tenant list carries no personal tenant:\n%s", read.body)

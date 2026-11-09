@@ -167,10 +167,10 @@ func (p *product) mount(router speedhttp.Router) error {
 	}
 	for _, tgt := range platformTargets {
 		// The tenant every module's platform management route names is an
-		// alias on the request surface and an identifier behind it. The layer
+		// name on the request surface and an identifier behind it. The layer
 		// is on the endpoint so that it precedes every module's handler under
 		// the prefix, not only this module's routes.
-		tgt.endpoint.Use(p.tenantAliasLayer())
+		tgt.endpoint.Use(p.tenantNameLayer())
 		for _, r := range p.routes() {
 			tgt.endpoint.Route(r.method, r.path, withRealm(tgt.name, r.handler))
 		}

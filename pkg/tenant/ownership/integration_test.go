@@ -178,10 +178,10 @@ func (a *assembly) user(t *testing.T, username string) authn.Account {
 
 // organization creates a business tenant with owner at its head: the roster
 // row, its tenant-admin role, the owner's membership and the owner's binding.
-func (a *assembly) organization(t *testing.T, id, alias string, owner authn.Account) {
+func (a *assembly) organization(t *testing.T, id, name string, owner authn.Account) {
 	t.Helper()
 	if err := a.catalog.Create(t.Context(), tenant.Tenant{
-		ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive, OwnerAccount: owner.ID.String(),
+		ID: tenant.ID(id), Name: name, Status: tenant.StatusActive, OwnerAccount: owner.ID.String(),
 	}); err != nil {
 		t.Fatalf("registering the organization %q: %v", id, err)
 	}
@@ -400,7 +400,7 @@ func TestTransferOwnerRefusesADeletedAccount(t *testing.T) {
 }
 
 // A deletion writes the tombstone and removes the core relations; the
-// identifier and alias are not reusable afterwards.
+// identifier and name are not reusable afterwards.
 func TestDeleteOrganizationWritesTheTombstoneAndCleansTheCoreRelations(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -423,8 +423,8 @@ func TestDeleteOrganizationWritesTheTombstoneAndCleansTheCoreRelations(t *testin
 		if got.Status != tenant.StatusDeleted || got.DeletedAt == nil {
 			t.Errorf("the tenant is %+v, want a tombstone with a deletion instant", got)
 		}
-		if got.Alias != "acme-org" || got.ID != "acme" {
-			t.Errorf("the tombstone lost its identifier or alias: %+v", got)
+		if got.Name != "acme-org" || got.ID != "acme" {
+			t.Errorf("the tombstone lost its identifier or name: %+v", got)
 		}
 		if n := a.count(t, "authz_bindings", "tenant_id = ?", "acme"); n != 0 {
 			t.Errorf("the deleted tenant holds %d binding(s), want none", n)
@@ -440,14 +440,14 @@ func TestDeleteOrganizationWritesTheTombstoneAndCleansTheCoreRelations(t *testin
 		}
 
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
-			ID: "acme", Alias: "another", Status: tenant.StatusActive,
+			ID: "acme", Name: "another", Status: tenant.StatusActive,
 		}); !errors.Is(err, tenant.ErrTenantExists) {
 			t.Errorf("registering the deleted identifier gave %v, want ErrTenantExists", err)
 		}
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
-			ID: "other", Alias: "acme-org", Status: tenant.StatusActive,
-		}); !errors.Is(err, tenant.ErrAliasConflict) {
-			t.Errorf("registering the deleted alias gave %v, want ErrAliasConflict", err)
+			ID: "other", Name: "acme-org", Status: tenant.StatusActive,
+		}); !errors.Is(err, tenant.ErrNameConflict) {
+			t.Errorf("registering the deleted name gave %v, want ErrNameConflict", err)
 		}
 	})
 }

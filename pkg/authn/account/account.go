@@ -144,7 +144,7 @@ func Module() core.Module {
 			{Token: (*authn.Memberships)(nil), Exclusive: true},
 			{Token: (*authn.MembershipCleanup)(nil), Exclusive: true},
 			{Token: (*authn.Throttle)(nil), Exclusive: true},
-			// The reserved-username answer a surface choosing a tenant alias
+			// The reserved-username answer a surface choosing a tenant name
 			// asks, so the one namespace refuses the one set of names.
 			{Token: (*authn.UsernameReservation)(nil), Exclusive: true},
 			// The transaction-aware membership write a provisioning

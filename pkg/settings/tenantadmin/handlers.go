@@ -152,13 +152,13 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 	if denied {
 		return nil, p.protected()
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, tenant.tenant)
-	if aliasErr != nil {
-		return nil, p.unavailable("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, tenant.tenant)
+	if nameErr != nil {
+		return nil, p.unavailable("reading the tenant's name", nameErr)
 	}
 	caller, _ := authn.FromContext(ctx)
 	actionID := newActionID()
-	if err = p.auditRequired(ctx, mandatory(actionSet, key, detail(tenantAlias, key, actionID))); err != nil {
+	if err = p.auditRequired(ctx, mandatory(actionSet, key, detail(tenantName, key, actionID))); err != nil {
 		return nil, err
 	}
 	err = p.store.Set(ctx, settings.Write{
@@ -213,13 +213,13 @@ func (p *product) handleRemove(ctx context.Context, in removeInput, _ *speedhttp
 	if denied {
 		return nil, p.protected()
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, tenant.tenant)
-	if aliasErr != nil {
-		return nil, p.unavailable("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, tenant.tenant)
+	if nameErr != nil {
+		return nil, p.unavailable("reading the tenant's name", nameErr)
 	}
 	caller, _ := authn.FromContext(ctx)
 	actionID := newActionID()
-	if err = p.auditRequired(ctx, mandatory(actionDelete, key, detail(tenantAlias, key, actionID))); err != nil {
+	if err = p.auditRequired(ctx, mandatory(actionDelete, key, detail(tenantName, key, actionID))); err != nil {
 		return nil, err
 	}
 	if err = p.store.Delete(ctx, tenant.layer, key, caller.Key()); err != nil {

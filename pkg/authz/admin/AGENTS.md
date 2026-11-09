@@ -29,16 +29,16 @@ types in `pkg/authz`.
 ## Routes and the permissions they are held to
 
 Every route is mounted under the base path `/api/v1/system`, on the endpoints the
-module's configuration lists. A route is addressed by the tenant's alias and by
+module's configuration lists. A route is addressed by the tenant's name and by
 the natural keys of the rows — a role, a permission, an account. The platform
-alias layer the tenant management module registers resolves the alias to the
+name layer the tenant management module registers resolves the name to the
 internal identifier the policy store keys rows by before this module's handler
-runs; an alias no tenant carries is a bare 404, and an identifier in the path is
-not an alias. The tenant is the data the route acts on, not the scope the
+runs; a name no tenant carries is a bare 404, and an identifier in the path is
+not a name. The tenant is the data the route acts on, not the scope the
 decision is made in, which is the platform domain (see "Boundaries"): this
 module holds no tenant roster and does not look the tenant up. Every role,
-grant and binding view and every audit `detail.tenant` names the alias again
-through the optional `authz.TenantAliasResolver`, which the roster delivers; an
+grant and binding view and every audit `detail.tenant` names the name again
+through the optional `authz.TenantNameResolver`, which the roster delivers; an
 assembly with none names no tenant rather than exposing the identifier. The groups are the catalog, roles, grants and bindings,
 and every group is always mounted, because the manager and the catalog are
 required. This set is the module's whole route surface.

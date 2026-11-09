@@ -48,7 +48,7 @@ type OrganizationWriter interface {
 
 	// DeleteOrganization writes the tenant's tombstone and cleans the core
 	// relations in the same transaction: its memberships, bindings, roles and
-	// grants. The alias and the identifier stay with the tombstone and are never
+	// grants. The name and the identifier stay with the tombstone and are never
 	// reusable. expectedOwner is the owner the caller observed, or empty when the
 	// caller is platform staff; a non-empty value that no longer matches the row
 	// is refused with ErrOwnerChanged, so a transfer that won the race cannot be

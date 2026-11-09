@@ -3,7 +3,7 @@
 // capability of its own.
 //
 // The profile is the descriptive face of a tenant — its display name,
-// description, contact email, website — beside the identifier, alias and state
+// description, contact email, website — beside the identifier, name and state
 // the roster decides by. The routes read and write through the tenant.Catalog
 // seam; this module holds no table and no rule of its own.
 //

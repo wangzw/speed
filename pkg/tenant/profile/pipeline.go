@@ -72,7 +72,7 @@ func quoteRealm(name string) string {
 //
 // The decision is made in the tenant the request resolved to, not in the name
 // the path happens to carry: the path-tenant layer has already held the path to
-// that tenant, and its alias may differ from its identifier. A shortfall is
+// that tenant, and its name may differ from its identifier. A shortfall is
 // answered here and the declared handler is not called.
 func (p *product) guardRoute(method string, perm authz.Permission, next gin.HandlerFunc) gin.HandlerFunc {
 	write := method != http.MethodGet

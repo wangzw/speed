@@ -67,7 +67,7 @@ The API is the package's godoc, the seam in `pkg/authn` (`Decision`, `Action`,
 - **The subject is the actor's accountability key, and the domain is the tenant
   identifier.** The middleware puts `Identity.Key()` — the account whose hands
   are on the request, the actor under an impersonation — and `tenant.FromContext`'s
-  identifier, never the alias the request carried, or the platform domain when no
+  identifier, never the name the request carried, or the platform domain when no
   tenant resolved. `TestTheQueryNamesTheAccountsKeyAndThePlatformDomain`,
   `TestTheQueryNamesTheTenantIdentifierOnTheChain`.
 - **`Decide` refuses an action the resolved translation has no row for.** The

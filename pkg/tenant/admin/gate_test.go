@@ -16,7 +16,7 @@ import (
 // surface, and a copy would let the two drift silently.
 
 // gateWrites is every write route, with what a case sends to it. Each request is
-// one the roster accepts once it is reached: the identifier and alias are inside
+// one the roster accepts once it is reached: the identifier and name are inside
 // their domains and the status is in the closed set.
 var gateWrites = []struct {
 	name   string
@@ -26,7 +26,7 @@ var gateWrites = []struct {
 }{
 	{
 		"the registration", http.MethodPost, "/api/v1/system/tenants",
-		map[string]any{"alias": "acme"},
+		map[string]any{"name": "acme"},
 	},
 	{
 		"the profile update", http.MethodPatch, "/api/v1/system/tenants/acme/profile",
@@ -111,7 +111,7 @@ func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 			r.signup.answer(state, nil)
 
 			w := r.do(http.MethodPost, "/api/v1/system/tenants",
-				map[string]any{"alias": "acme"})
+				map[string]any{"name": "acme"})
 			if w.Code != http.StatusCreated {
 				t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 			}
@@ -133,7 +133,7 @@ func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 		r.signup.answer(authn.SignupPending, nil)
 
 		w := r.do(http.MethodPost, "/api/v1/system/tenants",
-			map[string]any{"alias": "acme"},
+			map[string]any{"name": "acme"},
 			authntest.WithMethods(authn.MethodClientSecret))
 		if w.Code != http.StatusCreated {
 			t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
@@ -148,7 +148,7 @@ func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 		r.signup.answer(authn.SignupPending, nil)
 
 		w := r.do(http.MethodPost, "/api/v1/system/tenants",
-			map[string]any{"alias": "acme"},
+			map[string]any{"name": "acme"},
 			authntest.WithAccount(authn.StaticPrefix+"ops"), authntest.WithBackend("static"))
 		if w.Code != http.StatusCreated {
 			t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
@@ -166,7 +166,7 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupNone, errors.New("the database is down"))
 
-	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"alias": "acme"})
+	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"name": "acme"})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", w.Code, w.Body.String())
 	}
@@ -194,7 +194,7 @@ func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 			script(r)
 
 			w := r.do(http.MethodPost, "/api/v1/system/tenants",
-				map[string]any{"alias": "acme"})
+				map[string]any{"name": "acme"})
 			if w.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, want 403 contact-required: %s", w.Code, w.Body.String())
 			}
@@ -216,7 +216,7 @@ func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupNone, authn.ErrAccountNotFound)
 
-	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"alias": "acme"})
+	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"name": "acme"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 	}
@@ -233,7 +233,7 @@ func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 func TestTheTenantReadIsNotGated(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupPending, nil)
-	r.catalog.held = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	r.catalog.held = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	r.catalog.found = true
 
 	w := r.do(http.MethodGet, "/api/v1/system/tenants/acme", nil)
@@ -277,7 +277,7 @@ func TestTheGateReadsTheActorNotTheImpersonationTarget(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupPending, nil)
 
-	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"alias": "acme"},
+	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"name": "acme"},
 		authntest.WithAccount("target-account"),
 		authntest.WithActor("operator-account"),
 		authntest.WithSession("session-1"),
@@ -304,7 +304,7 @@ func TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead(t *testing.
 	r := newRig(t)
 	r.signup.answer(authn.SignupNone, nil)
 
-	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"alias": "acme"})
+	w := r.do(http.MethodPost, "/api/v1/system/tenants", map[string]any{"name": "acme"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 	}

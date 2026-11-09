@@ -71,7 +71,7 @@ type selection struct {
 }
 
 // pathTenant settles the layer and the policy domain from the tenant in the
-// path. The path-tenant guard has already resolved the segment from an alias to
+// path. The path-tenant guard has already resolved the segment from a name to
 // the tenant's identifier and held it to the tenant the request resolved to, so
 // the value is the internal identifier; settings.ForTenant panics on one outside
 // the tenant identifier's domain — non-empty and free of blanks and control

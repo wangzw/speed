@@ -19,15 +19,15 @@ The tenant capability's personal-tenant module: it implements
   its transaction has committed.
 - **A service account owns no organization.** Both provisioning methods return
   nil for `kind=service` and write nothing.
-- **The alias is the username.** The personal tenant is addressed by the
+- **The name is the username.** The personal tenant is addressed by the
   account's username; its identifier remains `personal-<accountID>`. A user
   account always has a username: SSO JIT obtains one through `usernameStrategy`
   (a claim or user confirmation), a service account owns no personal tenant,
   and the write surface produces no username-less user account. The seam refuses
-  an empty username with `ErrUsernameMissing`; no derived alias exists.
+  an empty username with `ErrUsernameMissing`; no derived name exists.
 - **An existing tenant row is a replay, not a failure.**
   `tenant.ErrTenantExists` continues with the remaining steps.
-  `tenant.ErrAliasConflict` becomes this module's exported `ErrAliasConflict`,
+  `tenant.ErrNameConflict` becomes this module's exported `ErrNameConflict`,
   which wraps the roster's sentinel; it aborts the account's transaction.
 - **The lifecycle hooks are the retry path, not the authority.** After the
   account's transaction commits, `AccountCreated` completes anything the seam
@@ -65,14 +65,14 @@ go -C pkg vet ./tenant/personal/...
 ```
 
 `provisioning_test.go` pins the five transaction-aware writes, the service-account
-no-op, the replay, the empty-username refusal, the alias sentinel and the
+no-op, the replay, the empty-username refusal, the name sentinel and the
 after-commit collector. `lifecycle_test.go` pins the create, disable, enable and
 deletion hooks, their order and their idempotence. `ensure_test.go` pins the
 post-commit completion, the username refusal and the kind resolver.
 `events_test.go` pins the compensation. `integration_test.go` drives
 the real account, roster and policy modules over one SQLite database and pins
 the shared transaction: a failure after the tenant row is written leaves no
-account, an alias conflict leaves no account, a failed tombstone leaves the
+account, a name conflict leaves no account, a failed tombstone leaves the
 account in service, a committed creation leaves its audit row, and a deletion
 removes the other members of the personal tenant. `module_test.go` pins the
 descriptor.

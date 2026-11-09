@@ -5,7 +5,7 @@
 ## 职责
 
 - 把组织所有权从一个账户交给另一个账户：目标必须是该组织的活跃成员，且目标的账户必须活跃；账户不存在、停用或删除时拒绝。转移在目标尚未持有 tenant-admin 时授予它，写入名册的所有者列，并撤销原所有者在组织里的全部绑定与成员关系。
-- 删除一个组织：写名册的墓碑，并在同一条事务里清除该组织的成员关系、绑定、角色与授予；标识与别名留在墓碑上，永不复用。
+- 删除一个组织：写名册的墓碑，并在同一条事务里清除该组织的成员关系、绑定、角色与授予；标识与名称留在墓碑上，永不复用。
 - 在两条写路径上取同一个按租户的锁，使一次转移与一次删除不能交错。
 - 把跨模块事务的成功与失败如实交出：三个存储的任一步失败都回滚整条事务；提交之后才运行名册与策略的快照重读。
 
@@ -131,7 +131,7 @@ sequenceDiagram
 2. 行不存在报 `ErrInvalidTenant`；行是墓碑报 `ErrTenantDeleted`；`expectedOwner` 非空且与行上所有者不同报 `ErrOwnerChanged`。三种拒绝都在写入之前。
 3. `DeleteTx` 写状态与删除时刻；`DeleteTenantPolicyTx` 删除该租户的授予、绑定与角色；`RemoveTenantMembershipsTx` 删除该租户的全部成员关系。
 4. 提交；提交后重读名册与策略的快照。
-5. 标识与别名留在墓碑上：`Create` 对同一标识报 `ErrTenantExists`，对同一别名报 `ErrAliasConflict`。
+5. 标识与名称留在墓碑上：`Create` 对同一标识报 `ErrTenantExists`，对同一名称报 `ErrNameConflict`。
 
 ## 错误与失败语义
 
@@ -145,7 +145,7 @@ sequenceDiagram
 | 事务中任一步失败 | 整条事务回滚，原样交出该步的错误 |
 | 提交后的快照重读失败 | 写已落地；记 Warn，不改变成功结果 |
 
-名册与策略的哨兵不被改写：`ErrTenantExists`、`ErrAliasConflict`、`ErrBuiltinRole` 等失败按原样交出，由调用方映射。本模块不写 403，也不判定调用方。
+名册与策略的哨兵不被改写：`ErrTenantExists`、`ErrNameConflict`、`ErrBuiltinRole` 等失败按原样交出，由调用方映射。本模块不写 403，也不判定调用方。
 
 ## 并发与事务边界
 

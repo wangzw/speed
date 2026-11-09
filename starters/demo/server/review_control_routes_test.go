@@ -17,7 +17,7 @@ package main
 // product's own encrypted serializer, so the session is a real one rather than
 // a manufactured token. The notice route is tenant-scoped: the operator is not
 // a member of the seeded tenant by design (the impersonation fixture requires
-// that), so the case reads their personal tenant's alias from
+// that), so the case reads their personal tenant's name from
 // GET /api/v1/auth/me/tenants and posts under it.
 
 import (
@@ -57,7 +57,7 @@ func TestReviewOnlyControlRoutesAreMounted(t *testing.T) {
 	// The notice route reads the tenant from the request context and checks the
 	// caller's membership; the operator's personal tenant is the one the review
 	// build creates for them.
-	headers["X-Tenant"] = personalTenantAlias(t, client, base, token)
+	headers["X-Tenant"] = personalTenantName(t, client, base, token)
 	notice := send(t, client, http.MethodPost, base+reviewNotificationControlPath, nil, headers)
 	if notice.status < http.StatusOK || notice.status >= http.StatusMultipleChoices {
 		t.Fatalf("POST %s answered %d, want a 2xx:\n%s",

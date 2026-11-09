@@ -17,7 +17,7 @@
 //
 // The read crosses two capabilities: the account module's Memberships lists an
 // account's memberships across tenants, ordered by identifier, and the roster's
-// Catalog answers a tenant's status and alias from its snapshot. A membership is
+// Catalog answers a tenant's status and name from its snapshot. A membership is
 // answered only when it is itself active and its roster row is active; a
 // suspended membership, a disabled tenant and an identifier the snapshot does
 // not carry are all left out. A read that cannot answer is a 503 and never an
@@ -184,7 +184,7 @@ type product struct {
 	// admission is the gateway's route-admission surface, nil when the
 	// assembly delivers none. When it is there, Init registers the route as
 	// Impersonable: an impersonating identity reads the impersonated account's
-	// membership in the tenant its grant is confined to, which is the alias
+	// membership in the tenant its grant is confined to, which is the name
 	// source a host has after a full page load.
 	admission authn.Gate
 	logger    *slog.Logger

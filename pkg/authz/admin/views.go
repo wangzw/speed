@@ -74,9 +74,9 @@ type AuthzAdminRoleView struct {
 // roleViewOf builds one role's view. permissionCount is the role's grant count;
 // memberCount is nil when the assembly delivers no identity reader; canManage is
 // the caller's platform-domain role.manage.
-func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permissionCount int, memberCount *int, canManage bool, tenantAlias string) AuthzAdminRoleView {
+func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permissionCount int, memberCount *int, canManage bool, tenantName string) AuthzAdminRoleView {
 	return AuthzAdminRoleView{
-		Tenant:          tenantAlias,
+		Tenant:          tenantName,
 		Role:            string(r.Role),
 		Builtin:         r.Builtin,
 		Description:     p.roleDescription(ctx, r),
@@ -123,9 +123,9 @@ type AuthzAdminGrantView struct {
 // grantViewOf builds one grant's view. The permission is read back from the
 // catalog's reverse index; a pair no declared permission translates to leaves
 // the field empty and the pair itself on the view.
-func (p *product) grantViewOf(g authz.GrantRecord, tenantAlias string) AuthzAdminGrantView {
+func (p *product) grantViewOf(g authz.GrantRecord, tenantName string) AuthzAdminGrantView {
 	view := AuthzAdminGrantView{
-		Tenant:    tenantAlias,
+		Tenant:    tenantName,
 		Role:      string(g.Role),
 		Resource:  g.Resource,
 		Action:    g.Action,
@@ -147,9 +147,9 @@ type AuthzAdminBindingView struct {
 	GrantedAt time.Time `json:"granted_at" required:"true" description:"When the binding was written, as an RFC 3339 instant in UTC."`
 }
 
-func bindingViewOf(b authz.Binding, tenantAlias string) AuthzAdminBindingView {
+func bindingViewOf(b authz.Binding, tenantName string) AuthzAdminBindingView {
 	return AuthzAdminBindingView{
-		Tenant:    tenantAlias,
+		Tenant:    tenantName,
 		Account:   b.Account,
 		Role:      string(b.Role),
 		GrantedAt: b.GrantedAt.UTC(),

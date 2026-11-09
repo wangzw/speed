@@ -350,11 +350,11 @@ func newRig(t *testing.T) *rig {
 		logs:   logs,
 	}
 	r.p = &product{
-		reader:  r.reader,
-		guard:   r.guard,
-		aliases: identityAliases{},
-		logger:  logs.logger(),
-		cfg:     resolved{endpoints: []string{"public"}},
+		reader: r.reader,
+		guard:  r.guard,
+		names:  identityNames{},
+		logger: logs.logger(),
+		cfg:    resolved{endpoints: []string{"public"}},
 	}
 	r.engine = r.mount()
 	return r
@@ -420,10 +420,10 @@ func (r *rig) server(t *testing.T, opts ...authntest.Option) *httptest.Server {
 	return server
 }
 
-// identityAliases stands in for the roster's id-to-alias seam over an assembly
-// whose fixture identifiers double as their aliases.
-type identityAliases struct{}
+// identityNames stands in for the roster's id-to-name seam over an assembly
+// whose fixture identifiers double as their names.
+type identityNames struct{}
 
-func (identityAliases) AliasOf(_ context.Context, id tenant.ID) (string, error) {
+func (identityNames) NameOf(_ context.Context, id tenant.ID) (string, error) {
 	return string(id), nil
 }

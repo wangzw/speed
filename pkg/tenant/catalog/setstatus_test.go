@@ -24,7 +24,7 @@ func TestSetStatusRecordsTheOperatorDisableAndClearsItOnEnable(t *testing.T) {
 		t.Fatalf("disabling: %v", err)
 	}
 	requireRow(t, r, "t_acme", row{
-		ID: "t_acme", Alias: "acme",
+		ID: "t_acme", Name: "acme",
 		Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator),
 	})
 
@@ -32,7 +32,7 @@ func TestSetStatusRecordsTheOperatorDisableAndClearsItOnEnable(t *testing.T) {
 		t.Fatalf("enabling: %v", err)
 	}
 	requireRow(t, r, "t_acme", row{
-		ID: "t_acme", Alias: "acme",
+		ID: "t_acme", Name: "acme",
 		Status: int(tenant.StatusActive), DisabledBy: int(tenant.DisabledByOperator),
 	})
 }
@@ -51,7 +51,7 @@ func TestSetStatusRestatesTheOperatorSource(t *testing.T) {
 				t.Fatalf("disabling again: %v", err)
 			}
 			requireRow(t, r, "t_acme", row{
-				ID: "t_acme", Alias: "acme",
+				ID: "t_acme", Name: "acme",
 				Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator),
 			})
 		})
@@ -99,7 +99,7 @@ func TestSetStatusByAccountDisablesOnlyAnActiveTenant(t *testing.T) {
 			t.Fatalf("disabling: %v", err)
 		}
 		requireRow(t, r, "t_acme", row{
-			ID: "t_acme", Alias: "acme",
+			ID: "t_acme", Name: "acme",
 			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByAccount),
 		})
 	})
@@ -110,7 +110,7 @@ func TestSetStatusByAccountDisablesOnlyAnActiveTenant(t *testing.T) {
 			t.Fatalf("disabling an already disabled tenant gave %v, want nil", err)
 		}
 		requireRow(t, r, "t_acme", row{
-			ID: "t_acme", Alias: "acme",
+			ID: "t_acme", Name: "acme",
 			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator),
 		})
 		if got := reads.Load(); got != 0 {
@@ -129,7 +129,7 @@ func TestSetStatusByAccountOnlyRestoresAnAccountDisable(t *testing.T) {
 			t.Fatalf("enabling: %v", err)
 		}
 		requireRow(t, r, "t_acme", row{
-			ID: "t_acme", Alias: "acme",
+			ID: "t_acme", Name: "acme",
 			Status: int(tenant.StatusActive), DisabledBy: int(tenant.DisabledByOperator),
 		})
 	})
@@ -144,7 +144,7 @@ func TestSetStatusByAccountOnlyRestoresAnAccountDisable(t *testing.T) {
 				t.Fatalf("enabling gave %v, want nil", err)
 			}
 			requireRow(t, r, "t_acme", row{
-				ID: "t_acme", Alias: "acme",
+				ID: "t_acme", Name: "acme",
 				Status: int(tenant.StatusDisabled), DisabledBy: int(source),
 			})
 			if got := reads.Load(); got != 0 {
@@ -163,7 +163,7 @@ func TestSetStatusByAccountIgnoresWhatItDoesNotCause(t *testing.T) {
 		if err := r.SetStatusByAccount(context.Background(), "t_acme", tenant.StatusActive); err != nil {
 			t.Fatalf("enabling an active tenant gave %v, want nil", err)
 		}
-		requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme", Status: int(tenant.StatusActive)})
+		requireRow(t, r, "t_acme", row{ID: "t_acme", Name: "acme", Status: int(tenant.StatusActive)})
 	})
 	t.Run("disabling twice", func(t *testing.T) {
 		r := rosterOver(t, insert("t_acme", "acme"))
@@ -175,7 +175,7 @@ func TestSetStatusByAccountIgnoresWhatItDoesNotCause(t *testing.T) {
 			t.Fatalf("disabling again gave %v, want nil", err)
 		}
 		requireRow(t, r, "t_acme", row{
-			ID: "t_acme", Alias: "acme",
+			ID: "t_acme", Name: "acme",
 			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByAccount),
 		})
 	})
@@ -190,7 +190,7 @@ func TestSetStatusByAccountIgnoresWhatItDoesNotCause(t *testing.T) {
 		if err := r.SetStatusByAccount(context.Background(), "t_acme", tenant.StatusDeleted); !errors.Is(err, tenant.ErrInvalidTenant) {
 			t.Fatalf("setting the deleted state gave %v, want ErrInvalidTenant", err)
 		}
-		requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme", Status: int(tenant.StatusActive)})
+		requireRow(t, r, "t_acme", row{ID: "t_acme", Name: "acme", Status: int(tenant.StatusActive)})
 	})
 	t.Run("a tombstone", func(t *testing.T) {
 		r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDeleted, tenant.DisabledByOperator))
@@ -207,33 +207,33 @@ func TestPutAndCreateRefuseWhatOnlyAnotherRouteWrites(t *testing.T) {
 	for name, write := range map[string]func(*roster) error{
 		"Put an account disable": func(r *roster) error {
 			return r.Put(context.Background(), tenant.Tenant{
-				ID: "t_new", Alias: "new",
+				ID: "t_new", Name: "new",
 				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledByAccount,
 			})
 		},
 		"Create an account disable": func(r *roster) error {
 			return r.Create(context.Background(), tenant.Tenant{
-				ID: "t_new", Alias: "new",
+				ID: "t_new", Name: "new",
 				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledByAccount,
 			})
 		},
 		"Put a source this build does not know": func(r *roster) error {
 			return r.Put(context.Background(), tenant.Tenant{
-				ID: "t_new", Alias: "new",
+				ID: "t_new", Name: "new",
 				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
 			})
 		},
 		"Create a source this build does not know": func(r *roster) error {
 			return r.Create(context.Background(), tenant.Tenant{
-				ID: "t_new", Alias: "new",
+				ID: "t_new", Name: "new",
 				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
 			})
 		},
 		"Put the deleted state": func(r *roster) error {
-			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusDeleted})
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusDeleted})
 		},
 		"Create the deleted state": func(r *roster) error {
-			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusDeleted})
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusDeleted})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -304,13 +304,13 @@ func TestARefusedValueIsNamedByItsNumber(t *testing.T) {
 	for name, write := range map[string]func() error{
 		"Put": func() error {
 			return r.Put(ctx, tenant.Tenant{
-				ID: "t_new", Alias: "new",
+				ID: "t_new", Name: "new",
 				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
 			})
 		},
 		"Create": func() error {
 			return r.Create(ctx, tenant.Tenant{
-				ID: "t_new", Alias: "new",
+				ID: "t_new", Name: "new",
 				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
 			})
 		},

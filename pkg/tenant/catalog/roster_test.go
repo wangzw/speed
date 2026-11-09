@@ -120,8 +120,8 @@ func rosterOn(t *testing.T, handle *gorm.DB, dialect string, rows ...string) *ro
 }
 
 // insert is one roster row written as a statement.
-func insert(id, alias string) string {
-	return "INSERT INTO tenants (id, alias, status) VALUES ('" + id + "', '" + alias + "', 1)"
+func insert(id, name string) string {
+	return "INSERT INTO tenants (id, name, status) VALUES ('" + id + "', '" + name + "', 1)"
 }
 
 // TestReadRefusesARowOutsideTheIdentifierDomain is the read-path half of the
@@ -142,9 +142,9 @@ func TestReadRefusesARowOutsideTheIdentifierDomain(t *testing.T) {
 		{"a blank inside the identifier", insert("acme corp", "acme"), "identifier"},
 		{"a control character in the identifier", insert(`acme`+"\n"+`corp`, "acme"), "identifier"},
 		{"an empty identifier", insert("", "acme"), "identifier"},
-		{"a blank inside the alias", insert("acme", "ac me"), "alias"},
-		{"a control character in the alias", insert("acme", `ac`+"\t"+`me`), "alias"},
-		{"an empty alias", insert("acme", ""), "alias"},
+		{"a blank inside the name", insert("acme", "ac me"), "name"},
+		{"a control character in the name", insert("acme", `ac`+"\t"+`me`), "name"},
+		{"an empty name", insert("acme", ""), "name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := rosterOver(t, insert("globex", "globex"), tc.row)
@@ -190,10 +190,10 @@ func TestReadPublishesAConformingRoster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the read published nothing: %v", err)
 	}
-	if _, ok := s.byAlias["acme"]; !ok {
+	if _, ok := s.byName["acme"]; !ok {
 		t.Error("the snapshot does not hold the tenant the table carries")
 	}
-	if _, ok := s.byAlias["globex"]; !ok {
+	if _, ok := s.byName["globex"]; !ok {
 		t.Error("the snapshot does not hold the tenant with a long identifier, which this module " +
 			"has no reason to refuse")
 	}
@@ -213,7 +213,7 @@ func TestReadLeavesThePreviousSnapshotInPlaceWhenItRefuses(t *testing.T) {
 		t.Fatalf("the first read published nothing: %v", err)
 	}
 
-	if err = r.handle.Exec(`UPDATE tenants SET id = 'acme corp' WHERE alias = 'acme'`).Error; err != nil {
+	if err = r.handle.Exec(`UPDATE tenants SET id = 'acme corp' WHERE name = 'acme'`).Error; err != nil {
 		t.Fatalf("turning the row bad: %v", err)
 	}
 	if err = r.read(context.Background()); err == nil {
@@ -226,7 +226,7 @@ func TestReadLeavesThePreviousSnapshotInPlaceWhenItRefuses(t *testing.T) {
 	if after != before {
 		t.Error("the refused read replaced the snapshot instead of leaving the previous one in place")
 	}
-	if _, ok := after.byAlias["acme"]; !ok {
+	if _, ok := after.byName["acme"]; !ok {
 		t.Error("the previous snapshot no longer answers for the tenant it held")
 	}
 }
@@ -325,8 +325,8 @@ func TestAnUnreadRosterRefusesTheReads(t *testing.T) {
 	got, found, err := r.Get(ctx, "acme")
 	requireUnreadRefusal(t, "Get", got, found, err)
 
-	byAlias, found, err := r.ByAlias(ctx, "acme")
-	requireUnreadRefusal(t, "ByAlias", byAlias, found, err)
+	byName, found, err := r.ByName(ctx, "acme")
+	requireUnreadRefusal(t, "ByName", byName, found, err)
 
 	listed, err := r.List(ctx)
 	if err == nil {
@@ -342,33 +342,33 @@ func TestAnUnreadRosterRefusesTheReads(t *testing.T) {
 	}
 }
 
-// aliasesOf joins a listing's aliases in the order the listing returned them,
+// namesOf joins a listing's names in the order the listing returned them,
 // so that a case can state the order it wants as one value.
-func aliasesOf(list []tenant.Tenant) string {
-	aliases := make([]string, len(list))
+func namesOf(list []tenant.Tenant) string {
+	names := make([]string, len(list))
 	for i, entry := range list {
-		aliases[i] = entry.Alias
+		names[i] = entry.Name
 	}
-	return strings.Join(aliases, ",")
+	return strings.Join(names, ",")
 }
 
-// TestListIsOrderedByAliasAndIsACopy holds the two things List promises
+// TestListIsOrderedByNameAndIsACopy holds the two things List promises
 // about what it hands out.
 //
-// The order is the module's, not the table's: the snapshot is sorted by alias
+// The order is the module's, not the table's: the snapshot is sorted by name
 // as it is built, so a listing does not depend on the order the rows happen to
 // come back in, and it orders by the only name a client reads. The rows here are
 // written in an order of their own, and their identifiers sort in the opposite
-// order from their aliases, so a listing that echoed the table's order and one
-// sorted by identifier would both be told apart from the alias order that comes
-// out. What is read is the alias order, which is this promise's own expression:
+// order from their names, so a listing that echoed the table's order and one
+// sorted by identifier would both be told apart from the name order that comes
+// out. What is read is the name order, which is this promise's own expression:
 // it is what a caller that wants a stable enumeration relies on, and comparing
 // the tenants as a bag of values would hold nothing about it.
 //
 // The slice is a copy: a caller sorting or trimming what it was handed must not
 // disturb what the next caller sees. Mutating the returned slice and listing
 // again is what holds that half.
-func TestListIsOrderedByAliasAndIsACopy(t *testing.T) {
+func TestListIsOrderedByNameAndIsACopy(t *testing.T) {
 	r := rosterOver(t,
 		insert("t_3_carol", "alice"),
 		insert("t_1_alice", "carol"),
@@ -383,54 +383,54 @@ func TestListIsOrderedByAliasAndIsACopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listing the roster: %v", err)
 	}
-	if held := aliasesOf(got); held != "alice,bob,carol" {
-		t.Errorf("List returned the aliases %q, want them ordered by alias %q",
+	if held := namesOf(got); held != "alice,bob,carol" {
+		t.Errorf("List returned the names %q, want them ordered by name %q",
 			held, "alice,bob,carol")
 	}
 
 	// A caller is free to reorder or replace what it was handed.
 	if len(got) > 0 {
-		got[0] = tenant.Tenant{ID: "zzz", Alias: "zzz", Status: tenant.StatusActive}
+		got[0] = tenant.Tenant{ID: "zzz", Name: "zzz", Status: tenant.StatusActive}
 	}
 	again, err := r.List(ctx)
 	if err != nil {
 		t.Fatalf("listing the roster a second time: %v", err)
 	}
-	if held := aliasesOf(again); held != "alice,bob,carol" {
+	if held := namesOf(again); held != "alice,bob,carol" {
 		t.Errorf("a caller's change to the slice it was handed changed the next list: %q, want %q",
 			held, "alice,bob,carol")
 	}
 }
 
-// TestAliasOfAnswersTheAliasByIdentifier holds the id-to-alias seam: the roster
-// answers the alias a view or an audit row names, and an identifier no row
+// TestNameOfAnswersTheNameByIdentifier holds the id-to-name seam: the roster
+// answers the name a view or an audit row names, and an identifier no row
 // carries answers empty rather than failing.
-func TestAliasOfAnswersTheAliasByIdentifier(t *testing.T) {
+func TestNameOfAnswersTheNameByIdentifier(t *testing.T) {
 	r := rosterOver(t, insert("t_alice", "alice"))
 	ctx := context.Background()
 	if err := r.read(ctx); err != nil {
 		t.Fatalf("reading a conforming roster: %v", err)
 	}
-	alias, err := r.AliasOf(ctx, "t_alice")
+	name, err := r.NameOf(ctx, "t_alice")
 	if err != nil {
-		t.Fatalf("reading the alias: %v", err)
+		t.Fatalf("reading the name: %v", err)
 	}
-	if alias != "alice" {
-		t.Errorf("alias = %q, want alice", alias)
+	if name != "alice" {
+		t.Errorf("name = %q, want alice", name)
 	}
-	missing, err := r.AliasOf(ctx, "t_ghost")
+	missing, err := r.NameOf(ctx, "t_ghost")
 	if err != nil {
-		t.Fatalf("reading an unknown identifier's alias: %v", err)
+		t.Fatalf("reading an unknown identifier's name: %v", err)
 	}
 	if missing != "" {
-		t.Errorf("an unknown identifier answered %q, want the empty alias", missing)
+		t.Errorf("an unknown identifier answered %q, want the empty name", missing)
 	}
 }
 
-// TestTenantIDOfAnswersTheIdentifierByAlias holds the alias-to-id seam: the
+// TestTenantIDOfAnswersTheIdentifierByName holds the name-to-id seam: the
 // roster answers the identifier a request's tenant name resolves to, and an
-// alias no row carries answers false rather than an empty identifier.
-func TestTenantIDOfAnswersTheIdentifierByAlias(t *testing.T) {
+// name no row carries answers false rather than an empty identifier.
+func TestTenantIDOfAnswersTheIdentifierByName(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	ctx := context.Background()
 	if err := r.read(ctx); err != nil {
@@ -475,7 +475,7 @@ func TestListOnALoadedTableWithNoTenants(t *testing.T) {
 // no such tenant — and not a failure. A caller reads the two differently: a
 // failure says the roster has not looked, a miss says it looked and the tenant
 // is not there, and only the second is a fact about the table. Both lookups are
-// held, because the resolving layer makes the alias lookup on every request and
+// held, because the resolving layer makes the name lookup on every request and
 // a miss there is what answers a request for a tenant that does not exist.
 func TestLookupsMissByAnsweringRatherThanFailing(t *testing.T) {
 	r := rosterOver(t, insert("acme", "acme"))
@@ -489,7 +489,7 @@ func TestLookupsMissByAnsweringRatherThanFailing(t *testing.T) {
 		call func() (tenant.Tenant, bool, error)
 	}{
 		{"by identifier", func() (tenant.Tenant, bool, error) { return r.Get(ctx, "absent") }},
-		{"by alias", func() (tenant.Tenant, bool, error) { return r.ByAlias(ctx, "absent") }},
+		{"by name", func() (tenant.Tenant, bool, error) { return r.ByName(ctx, "absent") }},
 	} {
 		t.Run(lookup.name, func(t *testing.T) {
 			found, ok, err := lookup.call()
@@ -499,7 +499,7 @@ func TestLookupsMissByAnsweringRatherThanFailing(t *testing.T) {
 			if ok {
 				t.Error("the lookup reported a tenant for a name no row carries")
 			}
-			if found.ID != "" || found.Alias != "" {
+			if found.ID != "" || found.Name != "" {
 				t.Errorf("the lookup returned %+v for a name no row carries, want the zero tenant", found)
 			}
 		})
@@ -545,23 +545,23 @@ func rowOf(t *testing.T, r *roster, id string) (row, bool) {
 // caller retry with a corrected value instead of finding a row it did not want.
 func TestPutRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
+		label string
 		id    string
-		alias string
+		name  string
 		field string
 	}{
 		{"a blank inside the identifier", "acme corp", "acme", "identifier"},
 		{"a control character in the identifier", "acme\ncorp", "acme", "identifier"},
 		{"an empty identifier", "", "acme", "identifier"},
-		{"a blank inside the alias", "acme", "ac me", "alias"},
-		{"a control character in the alias", "acme", "ac\tme", "alias"},
-		{"an empty alias", "acme", "", "alias"},
+		{"a blank inside the name", "acme", "ac me", "name"},
+		{"a control character in the name", "acme", "ac\tme", "name"},
+		{"an empty name", "acme", "", "name"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.label, func(t *testing.T) {
 			r := rosterOver(t, insert("globex", "globex"))
 			err := r.Put(context.Background(), tenant.Tenant{
 				ID:     tenant.ID(tc.id),
-				Alias:  tc.alias,
+				Name:   tc.name,
 				Status: tenant.StatusActive,
 			})
 			if err == nil {
@@ -592,23 +592,23 @@ func TestPutRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 // untouched are different defects that a claim of "one row" alone would not
 // tell apart.
 //
-// The alias is resolved back through the roster rather than only read from the
+// The name is resolved back through the roster rather than only read from the
 // table: a rewrite whose result this process does not serve is one an operator
-// has to wait out a refresh period to see. The alias stays the one the row was
+// has to wait out a refresh period to see. The name stays the one the row was
 // written with, and the second write names it so that the rewrite is not
 // refused as a rename.
 func TestPutRewritesByIdentifier(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
 
-	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}); err != nil {
+	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("registering a tenant: %v", err)
 	}
 	if got := countRows(t, r); got != 1 {
 		t.Fatalf("the first write left %d rows, want 1", got)
 	}
 
-	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusDisabled}); err != nil {
+	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusDisabled}); err != nil {
 		t.Fatalf("rewriting the tenant: %v", err)
 	}
 	if got := countRows(t, r); got != 1 {
@@ -618,59 +618,59 @@ func TestPutRewritesByIdentifier(t *testing.T) {
 	if !ok {
 		t.Fatal("the identifier the row was written under is no longer in the table")
 	}
-	if held.Alias != "acme" {
-		t.Errorf("the row's alias is %q, want the %q it was written with", held.Alias, "acme")
+	if held.Name != "acme" {
+		t.Errorf("the row's name is %q, want the %q it was written with", held.Name, "acme")
 	}
 	if held.Status != int(tenant.StatusDisabled) {
 		t.Errorf("the row's status is %d, want the second write's %d", held.Status, int(tenant.StatusDisabled))
 	}
-	if written, ok, err := r.ByAlias(ctx, "acme"); err != nil || !ok || written.Status != tenant.StatusDisabled {
-		t.Errorf("the roster does not resolve the alias the row was written with: %+v (found=%v, err=%v)",
+	if written, ok, err := r.ByName(ctx, "acme"); err != nil || !ok || written.Status != tenant.StatusDisabled {
+		t.Errorf("the roster does not resolve the name the row was written with: %+v (found=%v, err=%v)",
 			written, ok, err)
 	}
 }
 
-// TestPutRefusesToChangeAnAlias holds the alias's immutability: an alias is
+// TestPutRefusesToChangeAName holds the name's immutability: a name is
 // chosen when the row is written and is never changed afterwards, so a rewrite
-// carrying another alias is refused and leaves the row as it was. Renaming
-// would otherwise reopen the ambiguity the namespace check closes — a new alias
+// carrying another name is refused and leaves the row as it was. Renaming
+// would otherwise reopen the ambiguity the namespace check closes — a new name
 // could equal another tenant's identifier without any creation path seeing it.
-func TestPutRefusesToChangeAnAlias(t *testing.T) {
+func TestPutRefusesToChangeAName(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	err := r.Put(context.Background(), tenant.Tenant{
-		ID: "t_acme", Alias: "renamed", Status: tenant.StatusDisabled,
+		ID: "t_acme", Name: "renamed", Status: tenant.StatusDisabled,
 	})
 	if !errors.Is(err, tenant.ErrInvalidTenant) {
-		t.Fatalf("rewriting a tenant under another alias gave %v, want ErrInvalidTenant", err)
+		t.Fatalf("rewriting a tenant under another name gave %v, want ErrInvalidTenant", err)
 	}
-	requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme", Status: int(tenant.StatusActive)})
+	requireRow(t, r, "t_acme", row{ID: "t_acme", Name: "acme", Status: int(tenant.StatusActive)})
 }
 
-// TestCreateRefusesAnAliasThatIsAnotherTenantsIdentifier and
-// TestCreateRefusesAnIdentifierThatIsAnotherTenantsAlias hold the two halves of
+// TestCreateRefusesANameThatIsAnotherTenantsIdentifier and
+// TestCreateRefusesAnIdentifierThatIsAnotherTenantsName hold the two halves of
 // one namespace: a slug addresses one tenant whichever way it is looked up, so
-// a creation cannot make one tenant's alias read as another tenant's
+// a creation cannot make one tenant's name read as another tenant's
 // identifier. Both refusals write nothing.
-func TestCreateRefusesAnAliasThatIsAnotherTenantsIdentifier(t *testing.T) {
+func TestCreateRefusesANameThatIsAnotherTenantsIdentifier(t *testing.T) {
 	r := rosterOver(t, insert("acme-one", "first"))
 	err := r.Create(context.Background(), tenant.Tenant{
-		ID: "second", Alias: "acme-one", Status: tenant.StatusActive,
+		ID: "second", Name: "acme-one", Status: tenant.StatusActive,
 	})
-	if !errors.Is(err, tenant.ErrAliasConflict) {
-		t.Fatalf("creating a tenant whose alias is another tenant's identifier gave %v, want ErrAliasConflict", err)
+	if !errors.Is(err, tenant.ErrNameConflict) {
+		t.Fatalf("creating a tenant whose name is another tenant's identifier gave %v, want ErrNameConflict", err)
 	}
 	if got := countRows(t, r); got != 1 {
 		t.Errorf("the refused creation left %d rows, want the 1 it started with", got)
 	}
 }
 
-func TestCreateRefusesAnIdentifierThatIsAnotherTenantsAlias(t *testing.T) {
-	r := rosterOver(t, insert("first", "second-alias"))
+func TestCreateRefusesAnIdentifierThatIsAnotherTenantsName(t *testing.T) {
+	r := rosterOver(t, insert("first", "second-name"))
 	err := r.Create(context.Background(), tenant.Tenant{
-		ID: "second-alias", Alias: "third-alias", Status: tenant.StatusActive,
+		ID: "second-name", Name: "third-name", Status: tenant.StatusActive,
 	})
 	if !errors.Is(err, tenant.ErrTenantExists) {
-		t.Fatalf("creating a tenant whose identifier is another tenant's alias gave %v, want ErrTenantExists", err)
+		t.Fatalf("creating a tenant whose identifier is another tenant's name gave %v, want ErrTenantExists", err)
 	}
 	if got := countRows(t, r); got != 1 {
 		t.Errorf("the refused creation left %d rows, want the 1 it started with", got)
@@ -688,15 +688,15 @@ func TestPutRefusesACrossNamespaceInsert(t *testing.T) {
 		sentinel error
 	}{
 		{
-			name:     "an alias that is another tenant's identifier",
-			first:    "INSERT INTO tenants (id, alias, status) VALUES ('acme-one', 'first', 1)",
-			second:   tenant.Tenant{ID: "second", Alias: "acme-one", Status: tenant.StatusActive},
-			sentinel: tenant.ErrAliasConflict,
+			name:     "a name that is another tenant's identifier",
+			first:    "INSERT INTO tenants (id, name, status) VALUES ('acme-one', 'first', 1)",
+			second:   tenant.Tenant{ID: "second", Name: "acme-one", Status: tenant.StatusActive},
+			sentinel: tenant.ErrNameConflict,
 		},
 		{
-			name:     "an identifier that is another tenant's alias",
-			first:    "INSERT INTO tenants (id, alias, status) VALUES ('first', 'second-alias', 1)",
-			second:   tenant.Tenant{ID: "second-alias", Alias: "third-alias", Status: tenant.StatusActive},
+			name:     "an identifier that is another tenant's name",
+			first:    "INSERT INTO tenants (id, name, status) VALUES ('first', 'second-name', 1)",
+			second:   tenant.Tenant{ID: "second-name", Name: "third-name", Status: tenant.StatusActive},
 			sentinel: tenant.ErrTenantExists,
 		},
 	}
@@ -714,29 +714,29 @@ func TestPutRefusesACrossNamespaceInsert(t *testing.T) {
 	}
 }
 
-// TestPutRefusesAnAliasAnotherTenantHolds is the uniqueness the snapshot's alias
+// TestPutRefusesANameAnotherTenantHolds is the uniqueness the snapshot's name
 // index cannot supply: the index is built by assignment, so two rows sharing an
-// alias would leave the roster quietly holding one of them.
+// name would leave the roster quietly holding one of them.
 //
 // The check sits inside the write's transaction so that the refusal can name
 // the tenant holding the name. The column's unique index reports the same
 // collision, but as a constraint violation, which is why the check is
 // load-bearing rather than redundant.
-func TestPutRefusesAnAliasAnotherTenantHolds(t *testing.T) {
+func TestPutRefusesANameAnotherTenantHolds(t *testing.T) {
 	r := rosterOver(t, insert("globex", "shared"))
 	err := r.Put(context.Background(), tenant.Tenant{
 		ID:     "acme",
-		Alias:  "shared",
+		Name:   "shared",
 		Status: tenant.StatusActive,
 	})
 	if err == nil {
-		t.Fatal("the write put one alias on two tenants")
+		t.Fatal("the write put one name on two tenants")
 	}
-	if !errors.Is(err, tenant.ErrAliasConflict) {
-		t.Fatalf("the failure is %v, want it to carry ErrAliasConflict", err)
+	if !errors.Is(err, tenant.ErrNameConflict) {
+		t.Fatalf("the failure is %v, want it to carry ErrNameConflict", err)
 	}
 	if text := err.Error(); !strings.Contains(text, "globex") {
-		t.Errorf("the failure does not name the tenant holding the alias: %v", err)
+		t.Errorf("the failure does not name the tenant holding the name: %v", err)
 	}
 	if got := countRows(t, r); got != 1 {
 		t.Errorf("the refused write left %d rows in the table, want the 1 it started with", got)
@@ -744,8 +744,8 @@ func TestPutRefusesAnAliasAnotherTenantHolds(t *testing.T) {
 	if held, ok := rowOf(t, r, "acme"); ok {
 		t.Errorf("the refused write registered the tenant anyway: %+v", held)
 	}
-	if held, ok := rowOf(t, r, "globex"); !ok || held.Alias != "shared" {
-		t.Errorf("the refused write disturbed the row holding the alias: %+v (found=%v)", held, ok)
+	if held, ok := rowOf(t, r, "globex"); !ok || held.Name != "shared" {
+		t.Errorf("the refused write disturbed the row holding the name: %+v (found=%v)", held, ok)
 	}
 }
 
@@ -835,50 +835,50 @@ func TestSetStatusDisabledIsServedToTheWriter(t *testing.T) {
 	if after.Status != tenant.StatusDisabled {
 		t.Errorf("the writer is still served the tenant as %s, want it disabled", after.Status)
 	}
-	byAlias, ok, err := r.ByAlias(ctx, "acme")
-	if err != nil || !ok || byAlias.Status != tenant.StatusDisabled {
-		t.Errorf("the alias still resolves to a served tenant: %+v (found=%v, err=%v)", byAlias, ok, err)
+	byName, ok, err := r.ByName(ctx, "acme")
+	if err != nil || !ok || byName.Status != tenant.StatusDisabled {
+		t.Errorf("the name still resolves to a served tenant: %+v (found=%v, err=%v)", byName, ok, err)
 	}
 }
 
-// TestPutAcceptsATenantUnderTheAliasItAlreadyHolds is Put's exemption for the
-// row that already carries the alias: the conflict check is for an alias held
-// by another tenant, so writing a tenant under the alias it already carries is
+// TestPutAcceptsATenantUnderTheNameItAlreadyHolds is Put's exemption for the
+// row that already carries the name: the conflict check is for a name held
+// by another tenant, so writing a tenant under the name it already carries is
 // not a collision.
 //
 // That is the shape a seed run a second time against an existing database takes
 // — the reference host's seed writes every tenant with its identifier as its
-// alias — and a write that only changes a status reaches the same check. Under
+// name — and a write that only changes a status reaches the same check. Under
 // a check that treated any holder as a conflict, both would come back
-// ErrAliasConflict and an operator could neither re-apply a seed nor flip a
+// ErrNameConflict and an operator could neither re-apply a seed nor flip a
 // status without clearing the table first.
 //
-// The alias is resolved back through the roster and not only read from the
+// The name is resolved back through the roster and not only read from the
 // table: what the write is for is the process serving its result.
-func TestPutAcceptsATenantUnderTheAliasItAlreadyHolds(t *testing.T) {
+func TestPutAcceptsATenantUnderTheNameItAlreadyHolds(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
-	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}); err != nil {
+	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("the first write: %v", err)
 	}
 
-	// The second write carries the same identifier and the same alias, changing
+	// The second write carries the same identifier and the same name, changing
 	// only the status, which is the smallest form the exemption has to admit.
-	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusDisabled}); err != nil {
-		t.Fatalf("re-registering the tenant under the alias it already carries: %v", err)
+	if err := r.Put(ctx, tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusDisabled}); err != nil {
+		t.Fatalf("re-registering the tenant under the name it already carries: %v", err)
 	}
 	if got := countRows(t, r); got != 1 {
 		t.Errorf("re-registering the tenant left %d rows, want the 1 the first write made", got)
 	}
-	served, ok, err := r.ByAlias(ctx, "acme")
+	served, ok, err := r.ByName(ctx, "acme")
 	if err != nil || !ok {
-		t.Fatalf("the alias no longer resolves to the tenant that carries it: found=%v err=%v", ok, err)
+		t.Fatalf("the name no longer resolves to the tenant that carries it: found=%v err=%v", ok, err)
 	}
 	if served.ID != "acme" {
-		t.Errorf("the alias resolves to tenant %q, want the %q it was written under", served.ID, "acme")
+		t.Errorf("the name resolves to tenant %q, want the %q it was written under", served.ID, "acme")
 	}
 	if served.Status != tenant.StatusDisabled {
-		t.Errorf("the alias resolves to the tenant as %s, want the second write's %s",
+		t.Errorf("the name resolves to the tenant as %s, want the second write's %s",
 			served.Status, tenant.StatusDisabled)
 	}
 }
@@ -898,7 +898,7 @@ func TestPutReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	r := rosterOver(t, insert("acme corp", "acme"))
 	err := r.Put(context.Background(), tenant.Tenant{
 		ID:     "globex",
-		Alias:  "globex",
+		Name:   "globex",
 		Status: tenant.StatusActive,
 	})
 	if err == nil {
@@ -959,23 +959,23 @@ func TestSetStatusReportsAWriteThatCouldNotBeReread(t *testing.T) {
 // the characters in one — so checkField judges the empty case first and the
 // message says which one the field carried.
 //
-// Both fields are judged, because the empty branch runs for either: an alias
+// Both fields are judged, because the empty branch runs for either: a name
 // is as able to arrive empty as an identifier.
 func TestPutTellsAnEmptyFieldApartFromABlankOne(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
+		label string
 		id    string
-		alias string
+		name  string
 		field string
 	}{
 		{"an empty identifier", "", "acme", "identifier"},
-		{"an empty alias", "acme", "", "alias"},
+		{"an empty name", "acme", "", "name"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.label, func(t *testing.T) {
 			r := rosterOver(t, insert("globex", "globex"))
 			err := r.Put(context.Background(), tenant.Tenant{
 				ID:     tenant.ID(tc.id),
-				Alias:  tc.alias,
+				Name:   tc.name,
 				Status: tenant.StatusActive,
 			})
 			if err == nil {
@@ -996,7 +996,7 @@ func TestPutTellsAnEmptyFieldApartFromABlankOne(t *testing.T) {
 	}
 }
 
-// TestTheTableRefusesTwoTenantsSharingOneAlias holds the half of the alias
+// TestTheTableRefusesTwoTenantsSharingOneName holds the half of the name
 // invariant that the table carries rather than the writing code.
 //
 // Uniqueness has to hold in two places: Put reports a collision as a failure
@@ -1004,7 +1004,7 @@ func TestPutTellsAnEmptyFieldApartFromABlankOne(t *testing.T) {
 // case that covers a collision goes through Put, so the column's half is left
 // unheld by it — and losing that half is quiet. A row written by any other
 // route (a statement run by hand, an import, a database this module shares) is
-// then accepted, the snapshot indexes aliases by assignment, and the alias
+// then accepted, the snapshot indexes names by assignment, and the name
 // resolves to whichever of the two tenants the index kept while the other
 // leaves the roster with nothing reporting it.
 //
@@ -1013,10 +1013,10 @@ func TestPutTellsAnEmptyFieldApartFromABlankOne(t *testing.T) {
 // integration cases, which build their roster through applyMigrations too; the
 // two dialects no longer ship the same text, so one dialect's statements cannot
 // be run through the other's engine.
-func TestTheTableRefusesTwoTenantsSharingOneAlias(t *testing.T) {
+func TestTheTableRefusesTwoTenantsSharingOneName(t *testing.T) {
 	r := rosterOverDialect(t, "sqlite", insert("acme", "acme"))
 
 	if err := r.handle.Exec(insert("globex", "acme")).Error; err == nil {
-		t.Fatal("the table took a second tenant under an alias it already holds")
+		t.Fatal("the table took a second tenant under a name it already holds")
 	}
 }

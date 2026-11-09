@@ -262,26 +262,26 @@ func (m *product) answer(ctx context.Context, op string, err error) error {
 	// organization whose only administrator the account still is.
 	var lastAdmin *authn.AccountLastTenantAdminError
 	if errors.As(err, &lastAdmin) {
-		alias, aliasErr := m.aliasOf(ctx, lastAdmin.Tenant)
-		if aliasErr != nil {
+		name, nameErr := m.nameOf(ctx, lastAdmin.Tenant)
+		if nameErr != nil {
 			return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 		}
 		return speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   typePrefix + mount.CodeAccountLastTenantAdmin,
-			Detail: alias,
+			Detail: name,
 		}
 	}
 	var owner *authn.AccountOwnsOrganizationError
 	if errors.As(err, &owner) {
-		alias, aliasErr := m.aliasOf(ctx, owner.Tenant)
-		if aliasErr != nil {
+		name, nameErr := m.nameOf(ctx, owner.Tenant)
+		if nameErr != nil {
 			return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 		}
 		return speedhttp.Fault{
 			Status: http.StatusConflict,
 			Type:   typePrefix + mount.CodeAccountOrganizationOwner,
-			Detail: alias,
+			Detail: name,
 		}
 	}
 	switch {

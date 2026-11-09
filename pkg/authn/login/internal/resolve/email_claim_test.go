@@ -7,7 +7,7 @@ package resolve
 //
 // The claim strategy's own checks are in jitusername_test.go over the store
 // fake; these two cases answer the other question, whether a legal local part
-// becomes the personal tenant's alias and whether a rejected one leaves the
+// becomes the personal tenant's name and whether a rejected one leaves the
 // database untouched.
 
 import (
@@ -125,7 +125,7 @@ func usernameOf(t *testing.T, accounts authn.Accounts, id authn.AccountID) strin
 	return username
 }
 
-// A legal email local part is the username and the personal tenant's alias: the
+// A legal email local part is the username and the personal tenant's name: the
 // account opens with it, owns the one tenant addressed by it, and the rows are
 // exactly the account, that tenant, the two memberships and the username.
 func TestEmailClaimWithALegalLocalPartOpensTheAccountAndItsPersonalTenant(t *testing.T) {
@@ -165,8 +165,8 @@ func TestEmailClaimWithALegalLocalPartOpensTheAccountAndItsPersonalTenant(t *tes
 		if err != nil || !found {
 			t.Fatalf("reading the personal tenant: found=%t err=%v", found, err)
 		}
-		if held.Alias != "annsmith" {
-			t.Errorf("the personal tenant's alias is %q, want the username", held.Alias)
+		if held.Name != "annsmith" {
+			t.Errorf("the personal tenant's name is %q, want the username", held.Name)
 		}
 
 		handle := database.DB()

@@ -225,7 +225,7 @@ func TestANameOffTheRosterAndADisabledTenantAnswerAlike(t *testing.T) {
 // not say whether a name ever existed, and deletion is one more state that
 // would leak it if it were answered differently: a caller could tell a tenant
 // that was deleted from a name that was never registered and time an attack on
-// the alias.
+// the name.
 func TestADeletedTenantAnswersLikeAnUnknownOne(t *testing.T) {
 	p := &probe{}
 	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
@@ -252,7 +252,7 @@ func TestAnUnreadableRosterIsAnInternalError(t *testing.T) {
 	p.requireNothingInside(t)
 }
 
-// An admitted request carries the identifier, not the alias, both in the
+// An admitted request carries the identifier, not the name, both in the
 // context and on the logger the handler writes through, beside what the layers
 // outside it bound.
 func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
@@ -285,7 +285,7 @@ func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
 }
 
 // A request that announces the tenant's identifier names no tenant: the
-// identifier is internal, and only the alias is a name the request surface
+// identifier is internal, and the name is the only thing the request surface
 // carries.
 func TestAnIdentifierNamesNoTenant(t *testing.T) {
 	p := &probe{}

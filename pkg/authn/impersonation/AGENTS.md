@@ -65,9 +65,9 @@ The API is the package's godoc.
   with `ErrNotMigrated` when it is absent, because `New` does not touch it.
   Rows carry no foreign key; every time in them is UTC, and a read
   normalises the zone. The record is never deleted.
-- **A tenant is named by its alias, never its identifier.** The record stores
-  the internal identifier; the grant view and the audit detail answer the alias
-  through the optional `authn.TenantAliasResolver`. An assembly with no resolver
+- **A tenant is named by its name, never its identifier.** The record stores
+  the internal identifier; the grant view and the audit detail answer the name
+  through the optional `authn.TenantNameResolver`. An assembly with no resolver
   names no tenant rather than exposing the identifier.
 - **The reason never leaves the record and the audit row.** It is not in an
   event payload, a log line or a response. The audit detail's key set is

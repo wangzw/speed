@@ -54,11 +54,11 @@
   "paths": {
     "/{tenant}": {
       "delete": {
-        "description": "Deletes one organization, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The write is a tombstone: the identifier and the alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction, under the same tenant lock the platform surface takes. A protected tenant is refused by the host's write guard. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal.",
+        "description": "Deletes one organization, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The write is a tombstone: the identifier and the name stay and are never reusable, and the organization's memberships, bindings, roles and grants are removed in the same transaction, under the same tenant lock the platform surface takes. A protected tenant is refused by the host's write guard. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. A tombstone is a 409: deletion is terminal.",
         "operationId": "tenant.admin.owner.delete",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -79,7 +79,7 @@
                 }
               }
             },
-            "description": "The alias is outside the alias domain"
+            "description": "The name is outside the slug domain"
           },
           "401": {
             "content": {
@@ -102,7 +102,7 @@
             "description": "The caller is not the organization's owner, the caller has not proved an email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"
           },
           "404": {
-            "description": "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain"
+            "description": "No tenant carries the name, or the path tenant is not the tenant the request resolved to or is the platform domain"
           },
           "409": {
             "content": {
@@ -142,7 +142,7 @@
         "operationId": "tenant.admin.owner.transfer",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -174,7 +174,7 @@
                 }
               }
             },
-            "description": "The alias is outside the alias domain, the request body is not one JSON object, or the account member is absent"
+            "description": "The name is outside the slug domain, the request body is not one JSON object, or the account member is absent"
           },
           "401": {
             "content": {
@@ -197,7 +197,7 @@
             "description": "The caller is not the organization's owner, or the caller has not proved an email address (contact-required)"
           },
           "404": {
-            "description": "No tenant carries the alias, or the path tenant is not the tenant the request resolved to or is the platform domain"
+            "description": "No tenant carries the name, or the path tenant is not the tenant the request resolved to or is the platform domain"
           },
           "409": {
             "content": {

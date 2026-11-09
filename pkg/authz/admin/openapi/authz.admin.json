@@ -275,7 +275,7 @@
         "operationId": "authz.admin.bindings.list",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -366,7 +366,7 @@
         "operationId": "authz.admin.bindings.of",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -466,7 +466,7 @@
         "operationId": "authz.admin.bindings.delete",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -553,7 +553,7 @@
         "operationId": "authz.admin.bindings.put",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -642,7 +642,7 @@
         "operationId": "authz.admin.roles.list",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -733,7 +733,7 @@
         "operationId": "authz.admin.roles.delete",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -821,7 +821,7 @@
         "operationId": "authz.admin.roles.put",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -932,7 +932,7 @@
         "operationId": "authz.admin.grants.list",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1032,7 +1032,7 @@
         "operationId": "authz.admin.grants.delete",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1129,7 +1129,7 @@
         "operationId": "authz.admin.grants.put",
         "parameters": [
           {
-            "description": "The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
+            "description": "The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain.",
             "in": "path",
             "name": "tenant",
             "required": true,

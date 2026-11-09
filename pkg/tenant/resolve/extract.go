@@ -39,8 +39,8 @@ func (e headerExtractor) Extract(r *nethttp.Request) (string, bool) {
 //
 // The label is handed over in lower case. A host name is case-insensitive, so
 // ACME.example.com and acme.example.com are one host and have to reach one
-// tenant; the roster matches an alias byte for byte, and folding here is what
-// makes the two spellings one name. An alias served through this extractor is
+// tenant; the roster matches a name byte for byte, and folding here is what
+// makes the two spellings one name. A name served through this extractor is
 // therefore registered in lower case.
 type subdomainExtractor struct{ index int }
 

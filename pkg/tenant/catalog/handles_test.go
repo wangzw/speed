@@ -30,7 +30,7 @@ func TestTheRosterWorksOverAHandleTheHostOpened(t *testing.T) {
 	if err := r.read(ctx); err != nil {
 		t.Fatalf("reading the roster over the host's handle: %v", err)
 	}
-	if err := r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive}); err != nil {
+	if err := r.Put(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("Put over the host's handle: %v", err)
 	}
 	if err := r.SetStatus(ctx, "t_new", tenant.StatusDisabled); err != nil {
@@ -39,7 +39,7 @@ func TestTheRosterWorksOverAHandleTheHostOpened(t *testing.T) {
 	if _, err := r.Enter(ctx, "t_new"); !errors.Is(err, tenant.ErrTenantDisabled) {
 		t.Fatalf("entering the tenant just disabled over the host's handle gave %v, want ErrTenantDisabled", err)
 	}
-	if got, ok, err := r.Get(ctx, "t_acme"); err != nil || !ok || got.Alias != "acme" {
+	if got, ok, err := r.Get(ctx, "t_acme"); err != nil || !ok || got.Name != "acme" {
 		t.Fatalf("Get over the host's handle gave %+v, %v, %v, want the tenant read", got, ok, err)
 	}
 }

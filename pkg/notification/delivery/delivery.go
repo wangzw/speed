@@ -189,7 +189,7 @@ func Module() core.Module {
 			{Token: (*mail.Sender)(nil), Optional: true},
 			{Token: (*sms.Registry)(nil), Optional: true},
 			{Token: (*sms.Sender)(nil), Optional: true},
-			{Token: (*authn.TenantAliasResolver)(nil), Optional: true},
+			{Token: (*authn.TenantNameResolver)(nil), Optional: true},
 		},
 		Provides: []core.Provision{{Token: (*notification.Dispatcher)(nil), Exclusive: true}},
 		Resources: []any{
@@ -318,11 +318,11 @@ type pipeline struct {
 	// when the assembly delivered none; it is never taken from the handler's
 	// context, which carries no injected logger (see Module).
 	logger *slog.Logger
-	// tenantAliases answers the alias a tenant identifier is addressed by, nil
+	// tenantNames answers the name a tenant identifier is addressed by, nil
 	// when the assembly supplies no resolver. Every text a recipient can read
-	// names the tenant by alias, never by the internal identifier, so a pipeline
+	// names the tenant by name, never by the internal identifier, so a pipeline
 	// with no resolver names no tenant rather than exposing the identifier.
-	tenantAliases authn.TenantAliasResolver
+	tenantNames authn.TenantNameResolver
 }
 
 // newPipeline takes up what the descriptor requires and assembles the product.
@@ -402,29 +402,29 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: creating the metric instruments: %w", ModuleName, err)
 	}
-	aliases, err := optional[authn.TenantAliasResolver](reg, "the tenant alias resolver")
+	names, err := optional[authn.TenantNameResolver](reg, "the tenant name resolver")
 	if err != nil {
 		return nil, err
 	}
 	return &pipeline{
-		queue:         queue,
-		handlers:      handlers,
-		prefs:         prefs,
-		inbox:         inbox,
-		localizer:     localizer,
-		accounts:      accounts,
-		counters:      counters,
-		ledger:        &ledger{handle: database.DB()},
-		taxonomy:      types,
-		seams:         channelSeams{mailer: mailer, registry: registry, sender: sender},
-		attempts:      attempts,
-		newLedger:     budget.New,
-		dialect:       database.Dialect(),
-		blindIndex:    database.BlindIndex,
-		settings:      newSettingReader(store, logger),
-		meters:        meters,
-		logger:        logger,
-		tenantAliases: aliases,
+		queue:       queue,
+		handlers:    handlers,
+		prefs:       prefs,
+		inbox:       inbox,
+		localizer:   localizer,
+		accounts:    accounts,
+		counters:    counters,
+		ledger:      &ledger{handle: database.DB()},
+		taxonomy:    types,
+		seams:       channelSeams{mailer: mailer, registry: registry, sender: sender},
+		attempts:    attempts,
+		newLedger:   budget.New,
+		dialect:     database.Dialect(),
+		blindIndex:  database.BlindIndex,
+		settings:    newSettingReader(store, logger),
+		meters:      meters,
+		logger:      logger,
+		tenantNames: names,
 	}, nil
 }
 

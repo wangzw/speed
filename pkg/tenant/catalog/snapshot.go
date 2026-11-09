@@ -21,13 +21,13 @@ const tableName = "tenants"
 // filter as any other global table, which is the path a model that embeds
 // nothing takes.
 //
-// The alias's `uniqueIndex` tag does not hold that column unique: this type is
+// The name's `uniqueIndex` tag does not hold that column unique: this type is
 // never migrated — the table comes from the module's declared migration — so
-// the constraint in that file is what enforces the alias, and the tag records
+// the constraint in that file is what enforces the name, and the tag records
 // the shape for a reader.
 type row struct {
 	ID         string `gorm:"column:id;primaryKey"`
-	Alias      string `gorm:"column:alias;not null;uniqueIndex"`
+	Name       string `gorm:"column:name;not null;uniqueIndex"`
 	Status     int    `gorm:"column:status;not null"`
 	DisabledBy int    `gorm:"column:disabled_by;not null"`
 
@@ -49,33 +49,33 @@ func (row) TableName() string { return tableName }
 // holds it — which is what makes two resolutions inside one request agree.
 type snapshot struct {
 	byID    map[tenant.ID]tenant.Tenant
-	byAlias map[string]tenant.Tenant
+	byName  map[string]tenant.Tenant
 	ordered []tenant.Tenant
 }
 
 // buildSnapshot indexes the rows two ways and keeps the order.
 //
-// The alias index is built by assignment rather than merged, which is why
-// uniqueness cannot be left to this step: two rows sharing an alias would
+// The name index is built by assignment rather than merged, which is why
+// uniqueness cannot be left to this step: two rows sharing a name would
 // overwrite one another here and the roster would quietly lose one of them.
 // The column's unique index and the check in Put are what keep that from
 // happening; this is the reason both are load-bearing.
 func buildSnapshot(rows []row) *snapshot {
 	s := &snapshot{
 		byID:    make(map[tenant.ID]tenant.Tenant, len(rows)),
-		byAlias: make(map[string]tenant.Tenant, len(rows)),
+		byName:  make(map[string]tenant.Tenant, len(rows)),
 		ordered: make([]tenant.Tenant, 0, len(rows)),
 	}
 	for _, r := range rows {
 		t := tenantOf(r)
 		s.byID[t.ID] = t
-		s.byAlias[t.Alias] = t
+		s.byName[t.Name] = t
 		s.ordered = append(s.ordered, t)
 	}
-	// The roster is ordered by the name a client reads: the alias. The
+	// The roster is ordered by the name a client reads. The
 	// identifier is internal and no view carries it, so sorting by it would
 	// give a client an order it cannot reproduce.
-	sort.Slice(s.ordered, func(i, j int) bool { return s.ordered[i].Alias < s.ordered[j].Alias })
+	sort.Slice(s.ordered, func(i, j int) bool { return s.ordered[i].Name < s.ordered[j].Name })
 	return s
 }
 
@@ -85,7 +85,7 @@ func buildSnapshot(rows []row) *snapshot {
 func tenantOf(r row) tenant.Tenant {
 	return tenant.Tenant{
 		ID:           tenant.ID(r.ID),
-		Alias:        r.Alias,
+		Name:         r.Name,
 		Status:       tenant.Status(r.Status),
 		DisabledBy:   disabledByOf(r.DisabledBy),
 		OwnerAccount: r.OwnerAccount,

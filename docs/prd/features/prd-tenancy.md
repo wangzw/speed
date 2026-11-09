@@ -6,7 +6,7 @@
 
 ## 范围
 
-租户的创建、别名与停用；租户名册的列出；成员关系的授予、停用、恢复与移除；邀请的签发、链接、通知投递、重发、撤销与接受；租户切换；个人租户；非成员访问租户资源的可见结果；冒充期间的租户选择与当前租户。
+租户的创建、名称与停用；租户名册的列出；成员关系的授予、停用、恢复与移除；邀请的签发、链接、通知投递、重发、撤销与接受；租户切换；个人租户；非成员访问租户资源的可见结果；冒充期间的租户选择与当前租户。
 
 ### 不在范围内
 
@@ -14,7 +14,7 @@
 
 ## 参与者
 
-- **平台运营者**：持有平台域的租户读取与租户管理权限，可登记租户、转移所有者、删除组织、停用与启用、列出名册；别名创建后不可改。发起者为未证明邮箱的账户时，其写动作被拒绝。
+- **平台运营者**：持有平台域的租户读取与租户管理权限，可登记租户、转移所有者、删除组织、停用与启用、列出名册；名称创建后不可改。发起者为未证明邮箱的账户时，其写动作被拒绝。
 - **成员管理员**：在某个租户内持有成员管理权，可在该租户内签发与撤销邀请、查看与增删成员。
 - **受邀人**：持有邀请链接的访问者，可以是已有账户，也可以在系统中尚无账户。接受邀请不需额外的租户权限。
 - **用户账户**：不论开户来源是自助注册、短信首登、社交或企业首登还是管理员创建，也不论邮箱是否已证明、是否已属于其他组织，每个用户账户在开户时都会获得个人租户，并在其中持有非内建 `tenant-admin` 角色。
@@ -25,25 +25,25 @@
 
 ### REQ-tenancy-001
 
-系统必须允许平台运营者登记一个新租户，为它给出别名、显示名与可选资料，新租户处于启用状态；登记者成为该组织的所有者，并成为首任 tenant-admin。内部标识由系统生成，运营者不填写，界面也不展示。
+系统必须允许平台运营者登记一个新租户，为它给出名称、显示名与可选资料，新租户处于启用状态；登记者成为该组织的所有者，并成为首任 tenant-admin。内部标识由系统生成，运营者不填写，界面也不展示。
 
-- **验收**：登记一个未被占用的别名与显示名成功，租户随即出现在名册读取结果中且状态为启用；登记者是该租户的所有者并持有 tenant-admin。别名已被别的租户占用时被拒绝，名册不新增任何租户。别名为空、含空白或控制字符时在写入之前被拒绝。界面没有填写或查看内部标识的入口。
+- **验收**：登记一个未被占用的名称与显示名成功，租户随即出现在名册读取结果中且状态为启用；登记者是该租户的所有者并持有 tenant-admin。名称已被别的租户占用时被拒绝，名册不新增任何租户。名称为空、含空白或控制字符时在写入之前被拒绝。界面没有填写或查看内部标识的入口。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖登记、别名冲突拒绝、启用状态；登记者即所有者与首任 tenant-admin 由后端用例覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖登记、名称冲突拒绝、启用状态；登记者即所有者与首任 tenant-admin 由后端用例覆盖）
 
 ### REQ-tenancy-002
 
-系统必须为每个租户保持唯一的别名；别名在创建后不可修改。
+系统必须为每个租户保持唯一的名称；名称在创建后不可修改。
 
-- **验收**：别名在全部租户中唯一；对已创建租户修改别名的请求被拒绝，别名与状态都不变；以另一个租户已用的别名登记被拒绝。内部标识不随别名变化，也不在界面上出现。
+- **验收**：名称在全部租户中唯一；对已创建租户修改名称的请求被拒绝，名称与状态都不变；以另一个租户已用的名称登记被拒绝。内部标识不随名称变化，也不在界面上出现。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖别名冲突拒绝与详情页无改名控件；改名请求被拒绝由后端用例覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖名称冲突拒绝与详情页无改名控件；改名请求被拒绝由后端用例覆盖）
 
 ### REQ-tenancy-003
 
-系统必须允许平台运营者停用与重新启用租户，停用不删除租户，别名不变。
+系统必须允许平台运营者停用与重新启用租户，停用不删除租户，名称不变。
 
-- **验收**：停用后名册中该租户状态为停用，仍可按别名读取到它，别名与停用前相同。重新启用后状态为启用。
+- **验收**：停用后名册中该租户状态为停用，仍可按名称读取到它，名称与停用前相同。重新启用后状态为启用。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -57,9 +57,9 @@
 
 ### REQ-tenancy-005
 
-系统必须允许平台运营者列出全部租户，结果按别名排序；一个租户也没有时给出空列表而不是错误。
+系统必须允许平台运营者列出全部租户，结果按名称排序；一个租户也没有时给出空列表而不是错误。
 
-- **验收**：名册中有若干租户时，列表包含全部租户且按别名排序。一个租户都没有时，读取成功且列表为空。
+- **验收**：名册中有若干租户时，列表包含全部租户且按名称排序。一个租户都没有时，读取成功且列表为空。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
@@ -243,7 +243,7 @@
 
 邮箱是否已证明不得成为建立个人租户的条件。
 
-- **验收**：邮箱尚未证明的账户在建立时即拥有个人租户，界面同时呈现验证提示；该账户仍被未验证状态限制：绑定外部身份被拒绝并提示先证明邮箱。证明邮箱后同一绑定可进行，个人租户的别名不变。
+- **验收**：邮箱尚未证明的账户在建立时即拥有个人租户，界面同时呈现验证提示；该账户仍被未验证状态限制：绑定外部身份被拒绝并提示先证明邮箱。证明邮箱后同一绑定可进行，个人租户的名称不变。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖未证明邮箱即拥有个人租户与验证提示；未验证状态下的绑定被拒绝不在该用例内驱动）
 
@@ -259,7 +259,7 @@
 
 系统不得提供按需创建或补齐个人租户的入口；个人租户被停用后，只能由运营者恢复，账户进入租户区不得重新启用它。
 
-- **验收**：系统没有按需创建或补齐个人租户的入口；运营者停用某个个人租户后，账户进入租户区得到租户不可用的结果，该租户保持停用，状态与别名都不变。
+- **验收**：系统没有按需创建或补齐个人租户的入口；运营者停用某个个人租户后，账户进入租户区得到租户不可用的结果，该租户保持停用，状态与名称都不变。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -281,9 +281,9 @@
 
 ### REQ-tenancy-046
 
-已删除租户的别名不得被重新使用；以曾被使用的别名登记新租户必须被拒绝。
+已删除租户的名称不得被重新使用；以曾被使用的名称登记新租户必须被拒绝。
 
-- **验收**：删除一个租户后，以同一别名登记新租户被拒绝，名册不新增租户；已删除的租户仍以已删除的状态存在，不被新租户取代。
+- **验收**：删除一个租户后，以同一名称登记新租户被拒绝，名册不新增租户；已删除的租户仍以已删除的状态存在，不被新租户取代。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -307,15 +307,15 @@
 
 账户删除时，其个人租户必须被标记为已删除；点名该租户的请求必须得到与租户不存在相同的结果。
 
-- **验收**：删除账户后，名册中该个人租户显示为已删除；按该租户别名发起的请求得到与租户不存在相同的结果。
+- **验收**：删除账户后，名册中该个人租户显示为已删除；按该租户名称发起的请求得到与租户不存在相同的结果。
 - **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-tenancy-050
 
-系统必须在账户菜单的组织行与可切换项中把个人租户显示为登录账户的显示名，账户没有显示名时显示「组织」文案，不得显示该租户的别名。
+系统必须在账户菜单的组织行与可切换项中把个人租户显示为登录账户的显示名，账户没有显示名时显示「组织」文案，不得显示该租户的名称。
 
-- **验收**：个人租户的那一项显示登录账户的显示名；账户没有显示名时显示「组织」文案；两种情况都不显示该租户的别名。
+- **验收**：个人租户的那一项显示登录账户的显示名；账户没有显示名时显示「组织」文案；两种情况都不显示该租户的名称。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -489,11 +489,11 @@
 
 ### REQ-tenancy-059
 
-个人租户的对外别名必须等于账户的用户名，用户不得单独修改；个人租户的内部标识不得出现在界面中，也不得作为用户可查询的标识。
+个人租户的对外名称必须等于账户的用户名，用户不得单独修改；个人租户的内部标识不得出现在界面中，也不得作为用户可查询的标识。
 
-- **验收**：个人租户在账户菜单、切换器与地址中使用由用户名派生的别名；界面没有查看或修改内部标识的入口；用户修改用户名时被拒绝，别名随之保持不变。
+- **验收**：个人租户在账户菜单、切换器与地址中使用由用户名派生的名称；界面没有查看或修改内部标识的入口；用户修改用户名时被拒绝，名称随之保持不变。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖账户菜单以用户名指称个人组织；地址中的别名与用户名修改被拒绝由后端用例覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖账户菜单以用户名指称个人组织；地址中的名称与用户名修改被拒绝由后端用例覆盖）
 
 ### REQ-tenancy-060
 
@@ -515,7 +515,7 @@
 
 只有业务组织的 owner 或平台员工可以删除该组织；删除必须经过明确的二次确认。
 
-- **验收**：owner 可以删除自己的组织；平台员工可以删除任意业务组织；非 owner 的 tenant-admin 不能删除；删除需要输入组织别名确认。
+- **验收**：owner 可以删除自己的组织；平台员工可以删除任意业务组织；非 owner 的 tenant-admin 不能删除；删除需要输入组织名称确认。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`（非 owner 的 tenant-admin 看不到删除入口）；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`
 
@@ -529,16 +529,16 @@
 
 ### REQ-tenancy-064
 
-业务组织删除必须采用标记删除；删除后组织不再提供服务，别名不得复用。业务不提供恢复入口，物理删除由后续合规处理。
+业务组织删除必须采用标记删除；删除后组织不再提供服务，名称不得复用。业务不提供恢复入口，物理删除由后续合规处理。
 
-- **验收**：删除后按该组织的别名发起请求得到与不存在相同的结果；重新创建相同别名被拒绝；界面没有恢复该组织的入口；数据在物理删除前保留。
+- **验收**：删除后按该组织的名称发起请求得到与不存在相同的结果；重新创建相同名称被拒绝；界面没有恢复该组织的入口；数据在物理删除前保留。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（覆盖删除与别名不可复用；删除后按别名的请求与无恢复入口不在用例内驱动）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（覆盖删除与名称不可复用；删除后按名称的请求与无恢复入口不在用例内驱动）
 
 ### REQ-tenancy-065
 
-已验证邮箱的已登录用户必须可以自助创建业务组织，只需提供对外别名、显示名与可选描述；创建者成为该组织的 owner 与首任 tenant-admin；创建成功后当前组织切换到新组织。内部标识由系统生成，用户不填写也看不到。
+已验证邮箱的已登录用户必须可以自助创建业务组织，只需提供对外名称、显示名与可选描述；创建者成为该组织的 owner 与首任 tenant-admin；创建成功后当前组织切换到新组织。内部标识由系统生成，用户不填写也看不到。
 
-- **验收**：邮箱已证明的账户在创建页提交未占用的别名、显示名与描述后，组织建立，创建者是 owner 且持有 tenant-admin，界面切到新组织；别名不合规、保留或已被占用时拒绝且不建组织；未证明邮箱的账户被拒绝；服务账户与冒充会话被拒绝；同一账户超出活跃组织上限或创建频率上限时被拒绝。
+- **验收**：邮箱已证明的账户在创建页提交未占用的名称、显示名与描述后，组织建立，创建者是 owner 且持有 tenant-admin，界面切到新组织；名称不合规、保留或已被占用时拒绝且不建组织；未证明邮箱的账户被拒绝；服务账户与冒充会话被拒绝；同一账户超出活跃组织上限或创建频率上限时被拒绝。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖创建、切换与落在资料页；拒绝分支由后端用例覆盖）

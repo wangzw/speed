@@ -69,7 +69,7 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 		return jobs.Result{}, fmt.Errorf("%s: resolving the effective channels of %q: %w", ModuleName, d.TypeKey, err)
 	}
 	// The text a channel renders is the outbound copy: a tenant-naming
-	// parameter is the alias there, while the idempotency key is derived from
+	// parameter is the name there, while the idempotency key is derived from
 	// the dispatch as submitted.
 	out := p.outbound(ctx, d)
 	// A charged sms attempt is refunded by the sms channel itself when the

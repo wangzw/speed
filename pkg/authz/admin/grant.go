@@ -15,13 +15,13 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 	if err != nil {
 		return grantListBody{}, p.failureOf("listing the grants", err)
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return grantListBody{}, p.failureOf("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return grantListBody{}, p.failureOf("reading the tenant's name", nameErr)
 	}
 	views := make([]AuthzAdminGrantView, len(grants))
 	for i, g := range grants {
-		views[i] = p.grantViewOf(g, tenantAlias)
+		views[i] = p.grantViewOf(g, tenantName)
 	}
 	return grantListBody{Grants: views}, nil
 }
@@ -49,14 +49,14 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteGrant); err != nil {
 		return struct{}{}, err
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's name", nameErr)
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionGrantPut, string(permission), map[string]string{
 		detailActionID:   actionID,
-		detailTenant:     tenantAlias,
+		detailTenant:     tenantName,
 		detailRole:       string(role),
 		detailPermission: string(permission),
 	})); err != nil {
@@ -88,14 +88,14 @@ func (p *product) handleGrantDelete(ctx context.Context, in grantInput) (struct{
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteGrant); err != nil {
 		return struct{}{}, err
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return struct{}{}, p.failureOf("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return struct{}{}, p.failureOf("reading the tenant's name", nameErr)
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionGrantDelete, string(permission), map[string]string{
 		detailActionID:   actionID,
-		detailTenant:     tenantAlias,
+		detailTenant:     tenantName,
 		detailRole:       string(role),
 		detailPermission: string(permission),
 	})); err != nil {

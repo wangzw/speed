@@ -80,4 +80,4 @@ flowchart TD
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`；`enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`（开户前确认策略）；`enterprise-sso-onboarding: a claim-strategy provider opens the account with the asserted username`（声明映射策略，含非法值与别名冲突拒绝）
+`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`；`enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`（开户前确认策略）；`enterprise-sso-onboarding: a claim-strategy provider opens the account with the asserted username`（声明映射策略，含非法值与名称冲突拒绝）

@@ -65,7 +65,7 @@
 
 **判定由本模块在 handler 内做出，不经请求中间件的声明判定。** 管理面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `RequirePermissionIn` 就这条路由的权限问一句，判定域是路径点名的那个租户。模块不给自己授予任何权限。
 
-**路径租户必须等于请求解析出的租户，且不能是平台域。** 覆盖全部 `ScopeTenants` 路由组的共同前置先做标识核对：请求一侧以标识或当前别名寻址，解析层把别名换成标识写进上下文，前置把路径里的 `{tenant}` 段经名册解析成唯一标识后与之比较，不相等时以裸 404 作答——路径段解析不到唯一租户，或解析到另一个租户，都答这个 404。本模块另用租户管理面的更严守卫包裹每条路由，在标识核对之后拒绝平台域，因此本管理面的路径租户核对还包括平台域的回绝；成员、邀请与 SSO 路由组没有这一档，它们管理的 `system` 租户本来就在平台域。本模块不重复实现核对逻辑，也不接受一个与解析结果不一致的路径租户。
+**路径租户必须等于请求解析出的租户，且不能是平台域。** 覆盖全部 `ScopeTenants` 路由组的共同前置先做标识核对：请求一侧以标识或当前名称寻址，解析层把名称换成标识写进上下文，前置把路径里的 `{tenant}` 段经名册解析成唯一标识后与之比较，不相等时以裸 404 作答——路径段解析不到唯一租户，或解析到另一个租户，都答这个 404。本模块另用租户管理面的更严守卫包裹每条路由，在标识核对之后拒绝平台域，因此本管理面的路径租户核对还包括平台域的回绝；成员、邀请与 SSO 路由组没有这一档，它们管理的 `system` 租户本来就在平台域。本模块不重复实现核对逻辑，也不接受一个与解析结果不一致的路径租户。
 
 **判定顺序固定，写与读在判定之后分开。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与平台管理面、准入层一致的 realm 质询，不询问 guard 即返回。写路由随后读发起者的注册验证状态：视为未验证（`SignupPending`）答 403 `contact-required`，读取失败答 503，动作不执行；服务账户与没有任何邮箱的账户（`SignupNone`）豁免。再向 guard 要本条路由的权限：不足即由 guard 写出它自己的 403 或 503。判定之后才分开：写解析正文、跑格式检查、查声明归属、拒绝遮蔽值、查平台下限、问宿主的 `WriteSettings`、落强制档审计、调 `settings.Store`；读按声明过滤后调 `settings.Store` 并应答。
 
@@ -145,7 +145,7 @@ sequenceDiagram
     participant S as settings.Store
 
     C->>T: PUT /api/v1/tenants/{tenant}/settings/{namespace}/{key}
-    alt 路径租户 ≠ 解析租户的别名，或目标是平台域
+    alt 路径租户 ≠ 解析租户的名称，或目标是平台域
         T-->>C: 裸 404
     else 同一租户
         T->>H: 放行
@@ -289,7 +289,7 @@ sequenceDiagram
 | 请求在格式上不可读（路径参数、正文），租户标识越出取值域，出现 `layer` 或 `tenant` 查询参数 | 400（`Problem.Type` 为 `urn:speed:settings:bad-request`），在调设置模块之前 |
 | 全键不在 `Declared()` 里，或 `TenantAccess` 为 `TenantNone` | 404，不带 `Problem.Type` |
 | `TenantAccess` 为 `TenantRead` 的项收到写或删 | 403（`urn:speed:settings:read-only`），动作不执行 |
-| 路径里的租户是平台域，或路径段不等于请求解析出的租户别名 | 裸 404，不带 `Problem.Type` |
+| 路径里的租户是平台域，或路径段不等于请求解析出的租户名称 | 裸 404，不带 `Problem.Type` |
 | 敏感项收到遮蔽串写回 | 422（`urn:speed:settings:masked-value`），动作不执行，审计行不落，`Store` 不被调用 |
 | 平台强制时写入关闭值 | 409（`urn:speed:settings:tenant-admission-enforced`），动作不执行，审计行不落，`Store` 不被调用 |
 | `WriteSettings` 答复拒绝 | 403（`urn:speed:settings:protected`），动作不执行，审计行不落 |

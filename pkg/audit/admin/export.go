@@ -101,11 +101,11 @@ func (p *product) writeExport(ctx context.Context, w io.Writer, readerCtx contex
 func (p *product) writeRecordViews(ctx context.Context, w io.Writer, rows []journal.Row) (int, error) {
 	encoder := json.NewEncoder(w)
 	for i, row := range rows {
-		alias, aliasErr := p.aliasOf(ctx, row.Tenant)
-		if aliasErr != nil {
-			return i, aliasErr
+		name, nameErr := p.nameOf(ctx, row.Tenant)
+		if nameErr != nil {
+			return i, nameErr
 		}
-		if err := encoder.Encode(recordViewOf(row, alias)); err != nil {
+		if err := encoder.Encode(recordViewOf(row, name)); err != nil {
 			return i, err
 		}
 	}

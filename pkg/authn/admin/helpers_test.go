@@ -961,16 +961,16 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 
 	logger := r.logs.logger()
 	p := &product{
-		mounter:       r.mounter,
-		accounts:      r.accounts,
-		accountAdm:    r.accountAdm,
-		verification:  r.verification,
-		passwords:     r.passwords,
-		memberships:   r.members,
-		audit:         r.audit,
-		tenantAliases: identityAliases{},
-		logger:        logger,
-		settings:      newReader(r.store, logger),
+		mounter:      r.mounter,
+		accounts:     r.accounts,
+		accountAdm:   r.accountAdm,
+		verification: r.verification,
+		passwords:    r.passwords,
+		memberships:  r.members,
+		audit:        r.audit,
+		tenantNames:  identityNames{},
+		logger:       logger,
+		settings:     newReader(r.store, logger),
 		// The rig stands in for a deployment that offers the SSO management
 		// surface: its subject is the groups and their capabilities, not the
 		// configuration gate, which the module-level cases drive.
@@ -1113,10 +1113,10 @@ func (v *fakeSignupVerification) readCount() int {
 	return v.reads
 }
 
-// identityAliases stands in for the roster's id-to-alias seam over an assembly
-// whose fixture identifiers double as their aliases.
-type identityAliases struct{}
+// identityNames stands in for the roster's id-to-name seam over an assembly
+// whose fixture identifiers double as their names.
+type identityNames struct{}
 
-func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }

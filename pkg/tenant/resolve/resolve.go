@@ -455,12 +455,12 @@ func (r *resolver) admit(c *gin.Context) (admitted bool) {
 
 // lookUp resolves the name the selected extractor read to the tenant it names.
 //
-// The name is an alias and only an alias. The identifier is internal and is
+// The name is the tenant's name and only that. The identifier is internal and is
 // never a name a request surface may carry: a request that sends one is a
 // request for a tenant no name reaches, and it is refused like any other
 // unknown name rather than resolved through a second lookup.
 func (r *resolver) lookUp(ctx context.Context, name string) (tenant.Tenant, bool, error) {
-	return r.roster.ByAlias(ctx, name)
+	return r.roster.ByName(ctx, name)
 }
 
 // refuse answers the one status this layer refuses with, and records why.

@@ -93,10 +93,10 @@ func Module() core.Module {
 		Provides: []core.Provision{
 			{Token: (*tenant.Catalog)(nil), Exclusive: true},
 			{Token: (*TxCatalog)(nil), Exclusive: true},
-			{Token: (*tenant.AliasResolver)(nil), Exclusive: true},
-			{Token: (*authn.TenantAliasResolver)(nil), Exclusive: true},
+			{Token: (*tenant.NameResolver)(nil), Exclusive: true},
+			{Token: (*authn.TenantNameResolver)(nil), Exclusive: true},
 			{Token: (*authn.TenantDirectory)(nil), Exclusive: true},
-			{Token: (*authz.TenantAliasResolver)(nil), Exclusive: true},
+			{Token: (*authz.TenantNameResolver)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newFilter()}},
 

@@ -190,10 +190,10 @@ type Dispatch struct {
 	//
 	// A parameter named tenant identifies the tenant the message is about by its
 	// internal identifier. The delivery pipeline resolves it to the tenant's
-	// alias before any channel renders or exposes it, so every text a recipient
+	// name before any channel renders or exposes it, so every text a recipient
 	// can read — an in-app title or body, an email subject or body, an sms
-	// template variable and the in-app payload's parameters — names the alias.
-	// An assembly with no alias resolver renders the empty name, never the
+	// template variable and the in-app payload's parameters — names the name.
+	// An assembly with no name resolver renders the empty name, never the
 	// identifier.
 	Params map[string]any
 	// OccurrenceID is the identity of one logical event. A resend of the same

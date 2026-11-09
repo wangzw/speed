@@ -94,14 +94,14 @@ type SettingsTenantAdminSetting struct {
 
 // listInput is the input of the all-items read: the tenant the path names.
 type listInput struct {
-	Tenant string `path:"tenant" required:"true" description:"The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the layer and the policy domain are both fixed to that tenant, and a \"layer\" or \"tenant\" query parameter is refused with 400."`
+	Tenant string `path:"tenant" required:"true" description:"The tenant's name in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the layer and the policy domain are both fixed to that tenant, and a \"layer\" or \"tenant\" query parameter is refused with 400."`
 }
 
 // setInput is the input of the write route: the tenant, the two path segments of
 // the full key, and the JSON body carrying the value. The body is bound by the
 // entry point, which refuses a member the declaration does not carry.
 type setInput struct {
-	Tenant    string `path:"tenant" required:"true" description:"The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the write lands on that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400."`
+	Tenant    string `path:"tenant" required:"true" description:"The tenant's name in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the write lands on that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400."`
 	Namespace string `path:"namespace" description:"The namespace of the item to write: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared with read-write tenant access."`
 	Key       string `path:"key" description:"The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared with read-write tenant access."`
 	Value     any    `json:"value" required:"true" description:"The value to store, in the JSON form the item's declared type is read from: a boolean for a switch. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. The mask string a sensitive item is shown as is refused with 422 masked-value before anything runs."`
@@ -110,7 +110,7 @@ type setInput struct {
 // removeInput is the input of the delete route: the tenant and the two path
 // segments of the full key.
 type removeInput struct {
-	Tenant    string `path:"tenant" required:"true" description:"The tenant's alias named in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the row is dropped from that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400."`
+	Tenant    string `path:"tenant" required:"true" description:"The tenant's name in the path. The path-tenant layer resolves it to the internal identifier before the handler runs; the row is dropped from that tenant's settings layer, and a \"layer\" or \"tenant\" query parameter is refused with 400."`
 	Namespace string `path:"namespace" description:"The namespace of the item whose row is dropped: the declaring module, which is the key's leading segment. Joined with \"key\" by a dot to form the full key, which must be declared with read-write tenant access."`
 	Key       string `path:"key" description:"The rest of the setting key under the namespace; dots are allowed. Joined with the namespace by a dot to form the full key, which must be declared with read-write tenant access."`
 }

@@ -20,28 +20,28 @@ import (
 )
 
 // TestTheSelfServiceCreationRouteRateLimits runs the default assembly: the
-// seeded tenant's alias is a 409, three creations are admitted, the fourth is
+// seeded tenant's name is a 409, three creations are admitted, the fourth is
 // the hourly refusal, and the feature document carries org.create.
 func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
 	base, token := seededServe(t, "")
 	client := &http.Client{Timeout: 10 * time.Second}
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
-	// The seeded business tenant already carries the alias, and the roster's one
+	// The seeded business tenant already carries the name, and the roster's one
 	// namespace answers identifier-unavailable.
 	held := send(t, client, http.MethodPost, base+"/api/v1/orgs",
-		map[string]string{"alias": "demo", "display_name": "Demo"}, headers)
+		map[string]string{"name": "demo", "display_name": "Demo"}, headers)
 	if held.status != http.StatusConflict {
-		t.Fatalf("the held alias answered %d, want 409:\n%s", held.status, held.body)
+		t.Fatalf("the held name answered %d, want 409:\n%s", held.status, held.body)
 	}
 	if !jsonContains(held.body, "identifier-unavailable") {
-		t.Errorf("the held alias does not carry identifier-unavailable:\n%s", held.body)
+		t.Errorf("the held name does not carry identifier-unavailable:\n%s", held.body)
 	}
 
 	for i := range 3 {
 		res := send(t, client, http.MethodPost, base+"/api/v1/orgs",
 			map[string]string{
-				"alias":        fmt.Sprintf("team-%d", i),
+				"name":         fmt.Sprintf("team-%d", i),
 				"display_name": fmt.Sprintf("Team %d", i),
 			}, headers)
 		if res.status != http.StatusCreated {
@@ -49,7 +49,7 @@ func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
 		}
 	}
 	limited := send(t, client, http.MethodPost, base+"/api/v1/orgs",
-		map[string]string{"alias": "team-four", "display_name": "Team Four"}, headers)
+		map[string]string{"name": "team-four", "display_name": "Team Four"}, headers)
 	if limited.status != http.StatusTooManyRequests {
 		t.Fatalf("the fourth creation answered %d, want 429:\n%s", limited.status, limited.body)
 	}
@@ -78,7 +78,7 @@ func TestTheSelfServiceCreationRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	absent := send(t, client, http.MethodPost, base+"/api/v1/orgs",
-		map[string]string{"alias": "team-one", "display_name": "Team One"}, headers)
+		map[string]string{"name": "team-one", "display_name": "Team One"}, headers)
 	if absent.status != http.StatusNotFound {
 		t.Fatalf("POST /api/v1/orgs with the switch off answered %d, want 404:\n%s", absent.status, absent.body)
 	}
@@ -119,10 +119,10 @@ func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
 	base, token, dsn := seededServeWithDatabase(t, "")
 	client := &http.Client{Timeout: 10 * time.Second}
 	headers := map[string]string{"Authorization": "Bearer " + token}
-	create := func(alias string) response {
+	create := func(name string) response {
 		t.Helper()
 		return send(t, client, http.MethodPost, base+"/api/v1/orgs",
-			map[string]string{"alias": alias, "display_name": alias}, headers)
+			map[string]string{"name": name, "display_name": name}, headers)
 	}
 
 	// The seeded hourly bound of three admits three creations.

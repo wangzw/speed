@@ -115,10 +115,10 @@ func TestDeleteOrganizationRollsBackAFailureAtEachCleanupStep(t *testing.T) {
 	}
 }
 
-// A tombstone keeps the identifier and the alias, and the roster refuses to
+// A tombstone keeps the identifier and the name, and the roster refuses to
 // register either again. A registration under new values proves the refusals
 // are specific to the tombstone rather than a roster that refuses every write.
-func TestADeletedTenantIsNotRecreatedWithItsIdentifierOrAlias(t *testing.T) {
+func TestADeletedTenantIsNotRecreatedWithItsIdentifierOrName(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
 		a.organization(t, "acme", "acme-org", owner)
@@ -127,19 +127,19 @@ func TestADeletedTenantIsNotRecreatedWithItsIdentifierOrAlias(t *testing.T) {
 		}
 
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
-			ID: "acme", Alias: "another", Status: tenant.StatusActive,
+			ID: "acme", Name: "another", Status: tenant.StatusActive,
 		}); !errors.Is(err, tenant.ErrTenantExists) {
 			t.Errorf("registering the deleted identifier gave %v, want ErrTenantExists", err)
 		}
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
-			ID: "other", Alias: "acme-org", Status: tenant.StatusActive,
-		}); !errors.Is(err, tenant.ErrAliasConflict) {
-			t.Errorf("registering the deleted alias gave %v, want ErrAliasConflict", err)
+			ID: "other", Name: "acme-org", Status: tenant.StatusActive,
+		}); !errors.Is(err, tenant.ErrNameConflict) {
+			t.Errorf("registering the deleted name gave %v, want ErrNameConflict", err)
 		}
 		if err := a.catalog.Create(t.Context(), tenant.Tenant{
-			ID: "fresh", Alias: "fresh-org", Status: tenant.StatusActive,
+			ID: "fresh", Name: "fresh-org", Status: tenant.StatusActive,
 		}); err != nil {
-			t.Errorf("registering an unused identifier and alias gave %v, want success", err)
+			t.Errorf("registering an unused identifier and name gave %v, want success", err)
 		}
 	})
 }

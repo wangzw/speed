@@ -37,13 +37,13 @@ func (p *product) deliverInvite(ctx context.Context, issued Issued, actionID str
 	if named, ok := i18n.FromContext(ctx); ok {
 		locale = string(named)
 	}
-	// The tenant the invitation names is the alias a recipient can read, never
+	// The tenant the invitation names is the name a recipient can read, never
 	// the internal identifier the row stores. With no resolver assembled, or one
 	// that cannot answer, the notice names no tenant: the identifier must not
-	// stand in for the alias.
-	tenantAlias, _ := p.aliasOf(ctx, issued.Invitation.Tenant)
+	// stand in for the name.
+	tenantName, _ := p.nameOf(ctx, issued.Invitation.Tenant)
 	notice := authn.InviteNotice{
-		Tenant:    tenantAlias,
+		Tenant:    tenantName,
 		Email:     issued.Invitation.Email,
 		Token:     issued.Token,
 		ExpiresAt: issued.Invitation.ExpiresAt,
@@ -63,11 +63,11 @@ func (p *product) deliverInvite(ctx context.Context, issued Issued, actionID str
 		cause = err.Error()
 	}
 	p.logger.Error(ModuleName+": the invitation notice was not delivered, so the acceptance link is only in the answer",
-		slog.String("tenant", tenantAlias),
+		slog.String("tenant", tenantName),
 		slog.String("invitation", issued.Invitation.ID),
 		slog.String("delivery", delivery.String()),
 		slog.String("cause", cause))
-	p.auditBestEffort(ctx, deliveryAudit(issued.Invitation.ID, tenantAlias, actionID))
+	p.auditBestEffort(ctx, deliveryAudit(issued.Invitation.ID, tenantName, actionID))
 	return authn.InviteFailed
 }
 

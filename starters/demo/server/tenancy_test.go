@@ -293,7 +293,7 @@ func TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding(t *testing.T) {
 	}
 	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
 
-	record := tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	record := tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	if err := product.Provision(context.Background(), record, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
 	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	if err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	member, err := memberships.IsMember(context.Background(), authn.AccountID("acct-1"), "acme")
@@ -371,7 +371,7 @@ func TestTheProvisionerWritesTheRosterRowBeforeTheCreatorRows(t *testing.T) {
 	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	if err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	want := []string{
@@ -403,7 +403,7 @@ func TestTheProvisionerRetriesTheBuiltinMarkOnce(t *testing.T) {
 	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	if err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	if manager.markBuiltinCalls != 2 {
@@ -442,7 +442,7 @@ func TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows(t *testing.T) 
 	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1")
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-1")
 	if err == nil {
 		t.Fatal("Provision reported success after the builtin mark failed twice")
 	}
@@ -472,7 +472,7 @@ func TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows(t *testing.T) 
 // administration in place rather than tearing the domain down.
 func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	roster := newFakeRoster()
-	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	roster.lagging["acme"] = true
 	memberships := newFakeMemberships()
 	grants := newFakeGrants()
@@ -488,7 +488,7 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-loser")
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-loser")
 	if !errors.Is(err, tenant.ErrTenantExists) {
 		t.Fatalf("Provision that lost the race = %v, want ErrTenantExists", err)
 	}
@@ -527,7 +527,7 @@ func TestTheProvisionerMarksTheTenantAdminRoleBuiltin(t *testing.T) {
 	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
 
 	if err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	roles, err := manager.Roles(context.Background(), "acme")
@@ -555,7 +555,7 @@ func TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen(t *testing.T) {
 
 	id := tenant.ID(tenantpersonal.IDPrefix + "acme")
 	if err := product.Provision(context.Background(),
-		tenant.Tenant{ID: id, Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		tenant.Tenant{ID: id, Name: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	roles, err := manager.Roles(context.Background(), string(id))
@@ -577,7 +577,7 @@ func TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen(t *testing.T) {
 // a builtin-role failure, and the winner's policy is untouched.
 func TestTheProvisionerAnswersATakenIdentifierWhenTheWinnerFrozeTheRole(t *testing.T) {
 	roster := newFakeRoster()
-	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	roster.lagging["acme"] = true
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
@@ -594,7 +594,7 @@ func TestTheProvisionerAnswersATakenIdentifierWhenTheWinnerFrozeTheRole(t *testi
 	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
 
 	err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-loser")
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-loser")
 	if !errors.Is(err, tenant.ErrTenantExists) {
 		t.Fatalf("Provision of an identifier whose role is already builtin = %v, want ErrTenantExists", err)
 	}
@@ -624,7 +624,7 @@ func TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses(t *testing.T) {
 	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1")
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-1")
 	if err == nil {
 		t.Fatal("Provision answered nil for a roster that refused the row")
 	}
@@ -876,7 +876,7 @@ func TestTheBaselineServesTheOrganizationProfile(t *testing.T) {
 // ErrTenantExists, and its policy rows are not touched.
 func TestTheProvisionerRefusesATakenIdentifierWithoutTouchingItsPolicy(t *testing.T) {
 	roster := newFakeRoster()
-	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	seeder := newFakeSeeder(grants)
@@ -886,7 +886,7 @@ func TestTheProvisionerRefusesATakenIdentifierWithoutTouchingItsPolicy(t *testin
 	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
 
 	err := product.Provision(context.Background(),
-		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1")
+		tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, "acct-1")
 	if !errors.Is(err, tenant.ErrTenantExists) {
 		t.Fatalf("Provision of a taken identifier = %v, want ErrTenantExists", err)
 	}

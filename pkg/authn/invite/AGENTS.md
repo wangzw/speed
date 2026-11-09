@@ -141,9 +141,9 @@ Without the variable the same test is the drift gate; `make check` runs it.
   `authn.invitation.deliver` audit row, and the issue is still answered 201 with
   its token. The module does not queue or retry, and it does not import the
   tenant module; a tenant identifier is a string here. Every view, audit row
-  and outbound notice names the tenant by its alias: the notice the notifier
-  renders carries the alias, never the identifier the path guard left in the
-  request. The optional `authn.TenantAliasResolver` answers it, the roster
+  and outbound notice names the tenant by its name: the notice the notifier
+  renders carries the name, never the identifier the path guard left in the
+  request. The optional `authn.TenantNameResolver` answers it, the roster
   delivers it, and an assembly with none names no tenant rather than exposing
   the identifier.
 - **The membership source is `invite`**, written into every membership row the

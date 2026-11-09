@@ -31,7 +31,7 @@ type AuthnImpersonationGrant struct {
 
 	ID        string     `json:"id" required:"true" description:"Identifier of the impersonation record, minted when the start was granted."`
 	Target    string     `json:"target" required:"true" description:"The impersonated account"`
-	Tenant    string     `json:"tenant" required:"true" description:"The alias of the tenant the impersonation is confined to"`
+	Tenant    string     `json:"tenant" required:"true" description:"The name of the tenant the impersonation is confined to"`
 	StartedAt *time.Time `json:"started_at,omitempty" description:"Absent on the answer to a start, present on a record in force"`
 	EndsAt    time.Time  `json:"ends_at" required:"true" description:"RFC 3339 instant at which the record stops being valid; never more than one hour after it began."`
 }
@@ -63,7 +63,7 @@ type startInput struct {
 	_ struct{} `description:"The parameters of a start. Only account is required by the schema; a missing or empty tenant or reason is refused with 403."`
 
 	Account    string `json:"account" required:"true" description:"Identifier of the account to impersonate: an enabled, non-protected user account other than the caller's own, and an active member of tenant."`
-	Tenant     string `json:"tenant" description:"The alias of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused, and an alias no tenant carries is refused as not a member."`
+	Tenant     string `json:"tenant" description:"The name of the tenant the impersonation is confined to; it may not be empty or contain whitespace or control characters, so omitting it is refused, and a name no tenant carries is refused as not a member."`
 	Reason     string `json:"reason" description:"Why the impersonation is started. It is trimmed, then must be one to 500 characters with no control characters; it is stored on the record and in the audit row and never appears in a response."`
 	TTLSeconds int64  `json:"ttl_seconds" description:"Requested lifetime in whole seconds. Zero or absent takes the max-ttl setting (30 minutes by default); the settled lifetime is the shortest of the request, that setting, the remaining lifetime of the caller's session and a hard ceiling of one hour."`
 }

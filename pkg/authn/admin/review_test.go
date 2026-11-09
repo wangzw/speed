@@ -960,7 +960,7 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 	}
 	// The row names the account as an account object: the type marker and the
 	// identifier, so a reader does not mistake it for the session or tenant
-	// alias another row of the table carries.
+	// name another row of the table carries.
 	if !auditNamesObject(t, mem, actionMembershipSet, audit.AccountObject(string(userID))) {
 		t.Errorf("the membership row does not name the account object %q: %+v",
 			audit.AccountObject(string(userID)), mem.audit.entries())

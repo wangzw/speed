@@ -60,24 +60,24 @@ func (h *harness) issueOverRoute(email string) issuedAnswer {
 	return answered
 }
 
-// fakeAliases stands in for the roster's id-to-alias seam with an alias that
+// fakeNames stands in for the roster's id-to-name seam with a name that
 // differs from the identifier, so a case can tell which of the two reached the
 // notice.
-type fakeAliases map[string]string
+type fakeNames map[string]string
 
-func (m fakeAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (m fakeNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return m[id], nil
 }
 
-// errAliasUnavailable is the failure a case scripts for the alias seam.
-var errAliasUnavailable = errors.New("the roster could not answer")
+// errNameUnavailable is the failure a case scripts for the name seam.
+var errNameUnavailable = errors.New("the roster could not answer")
 
-// failingAliases is the alias seam in its outage direction: no alias is known,
+// failingNames is the name seam in its outage direction: no name is known,
 // and the identifier must not stand in for one.
-type failingAliases struct{}
+type failingNames struct{}
 
-func (failingAliases) TenantAliasOf(context.Context, string) (string, error) {
-	return "", errAliasUnavailable
+func (failingNames) TenantNameOf(context.Context, string) (string, error) {
+	return "", errNameUnavailable
 }
 
 // fakeNotifier is the notifier seam a case scripts. It records every notice and
@@ -139,16 +139,16 @@ type auditEntryLike struct {
 }
 
 // TestASentNoticeReportsSentAndAuditsNothing holds the successful delivery:
-// the notice carries the invitation's tenant alias, normalized address and
+// the notice carries the invitation's tenant name, normalized address and
 // token, the answer reports sent, and a send is not a failure, so it writes no
 // delivery audit row.
 func TestASentNoticeReportsSentAndAuditsNothing(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
 	h.p.notifier = notifier
-	// The fixture's identifier and alias differ, so a notice that carried the
-	// identifier could not pass for one that carried the alias.
-	h.p.tenantAliases = fakeAliases{"tenant-a": "acme"}
+	// The fixture's identifier and name differ, so a notice that carried the
+	// identifier could not pass for one that carried the name.
+	h.p.tenantNames = fakeNames{"tenant-a": "acme"}
 
 	answered := h.issueOverRoute("Alice@Example.com")
 	if got := answered.EmailDelivery; got != authn.InviteSent.String() {
@@ -159,7 +159,7 @@ func TestASentNoticeReportsSentAndAuditsNothing(t *testing.T) {
 		t.Fatal("the notifier was not called")
 	}
 	if notice.Tenant != "acme" || notice.Email != "alice@example.com" {
-		t.Errorf("notice = %+v, want the tenant alias and the normalized address", notice)
+		t.Errorf("notice = %+v, want the tenant name and the normalized address", notice)
 	}
 	if notice.Tenant == "tenant-a" {
 		t.Error("the notice carries the internal tenant identifier")
@@ -191,7 +191,7 @@ func TestAFailedNoticeReportsFailedAndStillAnswers201(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteFailed, err: errors.New("the carrier refused the message")}
 	h.p.notifier = notifier
-	h.p.tenantAliases = fakeAliases{"tenant-a": "acme"}
+	h.p.tenantNames = fakeNames{"tenant-a": "acme"}
 
 	answered := h.issueOverRoute("alice@example.com")
 	if got := answered.EmailDelivery; got != authn.InviteFailed.String() {
@@ -211,7 +211,7 @@ func TestAFailedNoticeReportsFailedAndStillAnswers201(t *testing.T) {
 		t.Errorf("delivery audit row = %+v, want the invitation and a failed outcome", rows[0])
 	}
 	if rows[0].Detail[detailTenant] != "acme" {
-		t.Errorf("delivery audit tenant = %q, want the alias acme", rows[0].Detail[detailTenant])
+		t.Errorf("delivery audit tenant = %q, want the name acme", rows[0].Detail[detailTenant])
 	}
 	for _, value := range rows[0].Detail {
 		if value == answered.Token {
@@ -290,16 +290,16 @@ func TestARefusedIssueCallsNoNotifier(t *testing.T) {
 	}
 }
 
-// TestTheNoticeNamesTheTenantByAliasNeverTheIdentifier holds the outbound rule
-// on the invitation notice: the recipient reads the alias, and the internal
+// TestTheNoticeNamesTheTenantByNameNeverTheIdentifier holds the outbound rule
+// on the invitation notice: the recipient reads the name, and the internal
 // identifier the issue path was handed by its path guard never reaches the
 // notice. The fixture's two values differ, so a notice carrying either one is
 // distinguishable.
-func TestTheNoticeNamesTheTenantByAliasNeverTheIdentifier(t *testing.T) {
+func TestTheNoticeNamesTheTenantByNameNeverTheIdentifier(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
 	h.p.notifier = notifier
-	h.p.tenantAliases = fakeAliases{"tenant-a": "acme"}
+	h.p.tenantNames = fakeNames{"tenant-a": "acme"}
 
 	h.issueOverRoute("alice@example.com")
 	notice, ok := notifier.last()
@@ -307,7 +307,7 @@ func TestTheNoticeNamesTheTenantByAliasNeverTheIdentifier(t *testing.T) {
 		t.Fatal("the notifier was not called")
 	}
 	if notice.Tenant != "acme" {
-		t.Errorf("notice.Tenant = %q, want the alias acme", notice.Tenant)
+		t.Errorf("notice.Tenant = %q, want the name acme", notice.Tenant)
 	}
 	if strings.Contains(notice.Tenant, "tenant-a") {
 		t.Errorf("notice.Tenant = %q carries the internal identifier", notice.Tenant)
@@ -317,14 +317,14 @@ func TestTheNoticeNamesTheTenantByAliasNeverTheIdentifier(t *testing.T) {
 	}
 }
 
-// TestANoticeWithNoAliasResolverNamesNoTenant holds the absent seam: an
+// TestANoticeWithNoNameResolverNamesNoTenant holds the absent seam: an
 // assembly without the resolver renders no tenant rather than falling back to
 // the identifier, which is internal.
-func TestANoticeWithNoAliasResolverNamesNoTenant(t *testing.T) {
+func TestANoticeWithNoNameResolverNamesNoTenant(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
 	h.p.notifier = notifier
-	h.p.tenantAliases = nil
+	h.p.tenantNames = nil
 
 	h.issueOverRoute("alice@example.com")
 	notice, ok := notifier.last()
@@ -332,22 +332,22 @@ func TestANoticeWithNoAliasResolverNamesNoTenant(t *testing.T) {
 		t.Fatal("the notifier was not called")
 	}
 	if notice.Tenant != "" {
-		t.Errorf("notice.Tenant = %q, want empty when no alias resolver is assembled", notice.Tenant)
+		t.Errorf("notice.Tenant = %q, want empty when no name resolver is assembled", notice.Tenant)
 	}
 }
 
-// TestANoticeWithAFailingAliasResolverNamesNoTenant holds the resolver's outage
-// direction: an alias that cannot be read is no alias, and the identifier must
+// TestANoticeWithAFailingNameResolverNamesNoTenant holds the resolver's outage
+// direction: a name that cannot be read is no name, and the identifier must
 // not stand in for it.
-func TestANoticeWithAFailingAliasResolverNamesNoTenant(t *testing.T) {
+func TestANoticeWithAFailingNameResolverNamesNoTenant(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}
 	h.p.notifier = notifier
-	h.p.tenantAliases = failingAliases{}
+	h.p.tenantNames = failingNames{}
 
-	// The issue route resolves the alias for its own audit row too, so the
+	// The issue route resolves the name for its own audit row too, so the
 	// notice is driven directly: this case is about the notice's own answer to a
-	// seam that cannot read an alias.
+	// seam that cannot read a name.
 	issued := h.issue("tenant-a", "alice@example.com")
 	if got := h.p.deliverInvite(context.Background(), issued, newActionID()); got != authn.InviteSent {
 		t.Fatalf("delivery = %s, want sent", got)
@@ -357,7 +357,7 @@ func TestANoticeWithAFailingAliasResolverNamesNoTenant(t *testing.T) {
 		t.Fatal("the notifier was not called")
 	}
 	if notice.Tenant != "" {
-		t.Errorf("notice.Tenant = %q, want empty when the alias could not be read", notice.Tenant)
+		t.Errorf("notice.Tenant = %q, want empty when the name could not be read", notice.Tenant)
 	}
 }
 

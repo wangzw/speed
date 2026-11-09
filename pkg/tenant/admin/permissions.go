@@ -21,7 +21,7 @@ const (
 	// tenant, or read one back.
 	PermissionTenantRead authz.Permission = "tenant.read"
 	// PermissionTenantManage is what a caller needs to register a tenant, change
-	// one's alias, or change one's status.
+	// one's name, or change one's status.
 	PermissionTenantManage authz.Permission = "tenant.manage"
 )
 

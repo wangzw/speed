@@ -92,10 +92,10 @@ var (
 	ErrNoConnection = errors.New("tenant: the roster got no connection of the delivered database in time")
 
 	// ErrInvalidTenant reports a tenant this module will not act on: one
-	// whose own shape is wrong — an empty identifier or alias, an alias outside
+	// whose own shape is wrong — an empty identifier or name, a name outside
 	// the lower-case slug form, an identifier carrying blanks or control
 	// characters, an owner value that is neither empty nor an identifier, or a
-	// rewrite naming an alias other than the one the row was created with — or an
+	// rewrite naming a name other than the one the row was created with — or an
 	// identifier no row of the roster carries, which is what a caller asking to
 	// change the state of a tenant that is not there, or to enter one, is told.
 	//
@@ -139,7 +139,7 @@ var (
 	// ErrTenantDeleted reports a tenant the roster holds as a tombstone: a
 	// write path asked to change one — SetStatus, SetStatusByAccount, SetProfile,
 	// SetOwner or Put — or Enter asked to enter one. The row, the identifier and
-	// the alias stay, but the tenant is terminal: it is not served and no call
+	// the name stay, but the tenant is terminal: it is not served and no call
 	// serves it again.
 	//
 	// The fix is to drop the work the caller was doing for it. A deleted tenant
@@ -155,15 +155,15 @@ var (
 	// caller outside the process; this one goes to the process's own code.
 	ErrTenantDeleted = errors.New("tenant: the tenant has been deleted")
 
-	// ErrAliasConflict reports a write that would put one slug on two tenants:
-	// an alias another tenant already carries as its alias, or an alias that is
-	// another tenant's identifier. An alias and an identifier are one
-	// namespace, so the fix is the same either way — choose another alias. The
+	// ErrNameConflict reports a write that would put one slug on two tenants:
+	// a name another tenant already carries, or a name that is another tenant's
+	// identifier. A name and an identifier are one namespace, so the fix is the
+	// same either way — choose another name. The
 	// message names the tenant holding the value.
-	ErrAliasConflict = errors.New("tenant: two tenants would share one alias")
+	ErrNameConflict = errors.New("tenant: two tenants would share one name")
 
 	// ErrTenantExists reports a creation naming an identifier the roster's
-	// table already holds — as some tenant's identifier, or as its alias, since
+	// table already holds — as some tenant's identifier, or as its name, since
 	// the two share one namespace. Nothing was written. The fix depends on what
 	// the caller meant: a new tenant needs an identifier of its own, and a
 	// change to the one that exists goes through Put or SetStatus.

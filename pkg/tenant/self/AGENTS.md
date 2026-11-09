@@ -14,7 +14,7 @@ caller and not about one tenant.
 ## The answer
 
 ```json
-{ "tenants": [ { "alias": "Acme", "displayName": "", "kind": "business" }, { "alias": "alice", "displayName": "", "kind": "personal" } ] }
+{ "tenants": [ { "name": "Acme", "displayName": "", "kind": "business" }, { "name": "alice", "displayName": "", "kind": "personal" } ] }
 ```
 
 A membership enters the answer when it is itself active (`Membership.Active`) and
@@ -23,8 +23,8 @@ disabled tenant and an identifier the roster snapshot does not carry are all lef
 out. The list is ordered by the membership read's own order — `Memberships.Tenants`
 already lists by identifier, and the filter preserves that order rather than
 sorting again — and an empty result is `[]`, never `null`. The answer carries no
-identifier and no status: a client addresses the tenant by the alias, and a
-tenant's kind tells it whether the alias names an ordinary organization or the
+identifier and no status: a client addresses the tenant by the name, and a
+tenant's kind tells it whether the name names an ordinary organization or the
 account's own space.
 
 ## The kind
@@ -67,7 +67,7 @@ problem type, and the realm challenge
 
 The route is registered impersonatable. An impersonating caller is confined to
 its grant's tenant, and the handler narrows the answer to that one membership:
-the host needs the tenant's alias after a full page load, when the roster cache
+the host needs the tenant's name after a full page load, when the roster cache
 it read before is gone, while the impersonated account's memberships in other
 tenants stay outside the grant. An impersonating identity with no scope (the
 gateway's exit check never lets one through; only a direct handler call can
@@ -77,7 +77,7 @@ produce one) gets an empty list rather than the full one.
 
 - **The module holds no memberships and no roster.** It reads through
   `authn.Memberships.Tenants` and `tenant.Catalog.Get` and maps nothing: the
-  identifiers and aliases are the roster's, and the order is the membership
+  identifiers and names are the roster's, and the order is the membership
   read's.
 - **A read that cannot answer is a 503, never an empty list.** The cause goes to
   the log and never to the body. An empty list says the caller holds no active

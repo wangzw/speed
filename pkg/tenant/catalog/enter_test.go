@@ -29,7 +29,7 @@ func enteringRoster(t *testing.T) *roster {
 	r := rosterOver(t,
 		insert("t_acme", "acme"),
 		insert("t_globex", "globex"),
-		"INSERT INTO tenants (id, alias, status) VALUES ('t_paused', 'paused', 0)",
+		"INSERT INTO tenants (id, name, status) VALUES ('t_paused', 'paused', 0)",
 		insertRow("t_deleted", "deleted", tenant.StatusDeleted, tenant.DisabledByOperator))
 	if err := r.handle.Use(newFilter()); err != nil {
 		t.Fatalf("installing the filter: %v", err)
@@ -211,7 +211,7 @@ func TestEnterSeesADisableOnTheWritersReplica(t *testing.T) {
 func TestEnterAdmitsWhatAnotherReplicaWroteSinceTheLastRead(t *testing.T) {
 	for name, write := range map[string]func(ctx context.Context, other *roster) error{
 		"registered": func(ctx context.Context, other *roster) error {
-			return other.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return other.Create(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"served again": func(ctx context.Context, other *roster) error {
 			return other.SetStatus(ctx, "t_new", tenant.StatusActive)
@@ -221,7 +221,7 @@ func TestEnterAdmitsWhatAnotherReplicaWroteSinceTheLastRead(t *testing.T) {
 			r := enteringRoster(t)
 			if name == "served again" {
 				if err := r.handle.Exec(
-					"INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new', 0)").Error; err != nil {
+					"INSERT INTO tenants (id, name, status) VALUES ('t_new', 'new', 0)").Error; err != nil {
 					t.Fatalf("seeding: %v", err)
 				}
 				if err := r.read(context.Background()); err != nil {
@@ -239,7 +239,7 @@ func TestEnterAdmitsWhatAnotherReplicaWroteSinceTheLastRead(t *testing.T) {
 			if id, ok := tenant.FromContext(ctx); !ok || id != "t_new" {
 				t.Fatalf("the entered context reports tenant (%q, %v), want t_new", id, ok)
 			}
-			got, ok, err := r.ByAlias(context.Background(), "new")
+			got, ok, err := r.ByName(context.Background(), "new")
 			if err != nil || !ok || got.Status != tenant.StatusActive {
 				t.Fatalf("this replica's snapshot answers (%+v, %v, %v), want the tenant the table serves",
 					got, ok, err)
@@ -258,11 +258,11 @@ func TestEnterRefusesWhatTheTableRefuses(t *testing.T) {
 		want error
 	}{
 		{
-			"registered disabled", "INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new', 0)",
+			"registered disabled", "INSERT INTO tenants (id, name, status) VALUES ('t_new', 'new', 0)",
 			tenant.ErrTenantDisabled,
 		},
 		{
-			"outside the domain", "INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new alias', 1)",
+			"outside the domain", "INSERT INTO tenants (id, name, status) VALUES ('t_new', 'new name', 1)",
 			tenant.ErrInvalidTenant,
 		},
 	} {
@@ -320,10 +320,10 @@ func TestEnterOverADroppedTableGivesNoAnswer(t *testing.T) {
 func TestAWriteOverADroppedTableReportsTheRosterMissing(t *testing.T) {
 	for name, write := range map[string]func(r *roster) error{
 		"Put": func(r *roster) error {
-			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"Create": func(r *roster) error {
-			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"SetStatus": func(r *roster) error {
 			return r.SetStatus(context.Background(), "t_acme", tenant.StatusDisabled)
@@ -397,7 +397,7 @@ func rowReadsArriveTogether(t *testing.T, r *roster, n int) {
 func TestEntriesTogetherForATenantTheSnapshotLacksRereadTheRosterOnce(t *testing.T) {
 	r := enteringRoster(t)
 	if err := secondReplica(t, r).Create(context.Background(),
-		tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive}); err != nil {
+		tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("registering on the other replica: %v", err)
 	}
 	reads := countFullReads(t, r)
@@ -490,7 +490,7 @@ func TestEnterRegisteredRefusesAnIdentifierNoRowCarries(t *testing.T) {
 func TestEnterRegisteredAdmitsATenantAnotherReplicaRegistered(t *testing.T) {
 	r := enteringRoster(t)
 	if err := secondReplica(t, r).Create(context.Background(),
-		tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusDisabled}); err != nil {
+		tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusDisabled}); err != nil {
 		t.Fatalf("registering on the other replica: %v", err)
 	}
 	ctx, err := r.EnterRegistered(context.Background(), "t_new")

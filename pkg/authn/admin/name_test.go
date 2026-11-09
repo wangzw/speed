@@ -10,35 +10,35 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// TestTheTenantViewsNameTheAlias holds the value every management view answers
-// for a tenant: the alias the request surface uses, never the internal
+// TestTheTenantViewsNameTheTenantName holds the value every management view
+// answers for a tenant: the name the request surface uses, never the internal
 // identifier.
-func TestTheTenantViewsNameTheAlias(t *testing.T) {
+func TestTheTenantViewsNameTheTenantName(t *testing.T) {
 	member := memberViewOf(authn.Membership{Account: "acct-1", Tenant: "t1"}, "", "", nil, "acme")
 	if member.Tenant != "acme" {
-		t.Errorf("the member view names %q, want the alias acme", member.Tenant)
+		t.Errorf("the member view names %q, want the name acme", member.Tenant)
 	}
 	provider := providerViewOf(authn.SSOProvider{Tenant: "t1"}, nil, "acme")
 	if provider.Tenant != "acme" {
-		t.Errorf("the provider view names %q, want the alias acme", provider.Tenant)
+		t.Errorf("the provider view names %q, want the name acme", provider.Tenant)
 	}
 	grant := grantViewOf(authn.ImpersonationGrant{Tenant: "t1"}, "acme")
 	if grant.Tenant != "acme" {
-		t.Errorf("the impersonation view names %q, want the alias acme", grant.Tenant)
+		t.Errorf("the impersonation view names %q, want the name acme", grant.Tenant)
 	}
 }
 
-// mappingAliases answers one identifier's alias.
-type mappingAliases map[string]string
+// mappingNames answers one identifier's name.
+type mappingNames map[string]string
 
-func (m mappingAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (m mappingNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return m[id], nil
 }
 
-// TestTheProtectionDetailsNameTheAlias holds the 409 details of the account
-// floor and the organization-owner rule to the alias, never the identifier.
-func TestTheProtectionDetailsNameTheAlias(t *testing.T) {
-	p := &product{tenantAliases: mappingAliases{"t1": "acme"}}
+// TestTheProtectionDetailsNameTheName holds the 409 details of the account
+// floor and the organization-owner rule to the name, never the identifier.
+func TestTheProtectionDetailsNameTheName(t *testing.T) {
+	p := &product{tenantNames: mappingNames{"t1": "acme"}}
 	for name, err := range map[string]error{
 		"last administrator": &authn.AccountLastTenantAdminError{Tenant: "t1"},
 		"organization owner": &authn.AccountOwnsOrganizationError{Tenant: "t1"},
@@ -53,7 +53,7 @@ func TestTheProtectionDetailsNameTheAlias(t *testing.T) {
 				t.Fatalf("status = %d, want 409", fault.Status)
 			}
 			if fault.Detail != "acme" {
-				t.Errorf("detail = %q, want the alias acme", fault.Detail)
+				t.Errorf("detail = %q, want the name acme", fault.Detail)
 			}
 		})
 	}

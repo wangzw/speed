@@ -17,7 +17,7 @@ of its own.
   tenant the request resolved to, so a caller authorized in one tenant cannot
   reach another's profile by naming it, and it refuses the platform domain.
 - **The permission decision is made in the resolved tenant's identifier.** The
-  path may carry an alias; the policy domain never does. `tenant.profile.read`
+  path may carry a name; the policy domain never does. `tenant.profile.read`
   and `tenant.profile.write` are declared in the central catalog
   (`pkg/authz/policy`) and translated in `pkg/authz/internal/translation`; this
   module declares no permission spec of its own. Both codes are in the governed
@@ -28,12 +28,12 @@ of its own.
   The gate reads the request's actor, not its impersonation target, and a state
   that cannot be read is a 503, never a pass.
 - **The mandatory audit row lands before `SetProfile`.** The action is
-  `tenant.profile.update`; the detail carries `action_id`, the tenant's alias and
-  `surface: tenant`. The alias is the one the row the handler read carries; the
+  `tenant.profile.update`; the detail carries `action_id`, the tenant's name and
+  `surface: tenant`. The name is the one the row the handler read carries; the
   internal identifier never enters the row. A roster refusal closes the write
   with a linked failed row.
 - **The answer is not the platform view.** `TenantProfileView` carries the
-  alias, the four descriptive fields, the owner shown by display name and
+  name, the four descriptive fields, the owner shown by display name and
   username, the owner account, state and the creation time; it carries no
   tenant identifier. The creation time always exists — `created_at` is not
   null — so the view renders it as an RFC 3339 instant in UTC with no omission

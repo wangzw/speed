@@ -236,10 +236,10 @@ type product struct {
 	// the record routes need; it is nil when the delivered capability does not
 	// answer it.
 	records records
-	// tenantAliases answers the alias a tenant identifier is addressed by. It
+	// tenantNames answers the name a tenant identifier is addressed by. It
 	// is optional: without it a view or an audit row names no tenant rather than
 	// exposing the internal identifier.
-	tenantAliases authn.TenantAliasResolver
+	tenantNames authn.TenantNameResolver
 
 	settings *reader
 	logger   *slog.Logger
@@ -334,7 +334,7 @@ func (m *product) wire(reg *core.Registry) error {
 	}
 	m.settings = newReader(store, m.logger)
 
-	if m.tenantAliases, err = optional[authn.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
+	if m.tenantNames, err = optional[authn.TenantNameResolver](reg, "the tenant name resolver"); err != nil {
 		return err
 	}
 	if m.decider, err = optional[authn.Decider](reg, "the decision seam"); err != nil {

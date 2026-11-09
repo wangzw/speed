@@ -47,17 +47,17 @@ import (
 )
 
 // The endpoint names the assembly declares, and the tenant the roster maps the
-// request's alias to.
+// request's name to.
 const (
 	publicEndpoint   = "public"
 	internalEndpoint = "internal"
 	plainEndpoint    = "plain"
 
-	tenantAlias = "acme"
+	tenantName = "acme"
 
-	// tenantIdentifier is what the roster maps the alias to. It differs from the
-	// alias so that a query built from the identifier and one built from the
-	// alias cannot be confused.
+	// tenantIdentifier is what the roster maps the name to. It differs from the
+	// name so that a query built from the identifier and one built from the
+	// name cannot be confused.
 	tenantIdentifier = "t-acme"
 
 	// listeningMsg is the record the entry point writes once an endpoint's
@@ -156,14 +156,14 @@ func (credentials) Challenge(realm string, _ bool) []string {
 	return []string{`Bearer realm="` + realm + `"`, `Cookie realm="` + realm + `"`}
 }
 
-// roster is the tenant catalog: the one alias the cases send, mapped to a
-// distinct identifier, so that a query built from the alias and one built from
+// roster is the tenant catalog: the one name the cases send, mapped to a
+// distinct identifier, so that a query built from the name and one built from
 // the identifier cannot be confused.
 type roster struct{ tenant.Catalog }
 
-func (roster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
-	if alias == tenantAlias {
-		return tenant.Tenant{ID: tenant.ID(tenantIdentifier), Alias: tenantAlias, Status: tenant.StatusActive}, true, nil
+func (roster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
+	if name == tenantName {
+		return tenant.Tenant{ID: tenant.ID(tenantIdentifier), Name: tenantName, Status: tenant.StatusActive}, true, nil
 	}
 	return tenant.Tenant{}, false, nil
 }
@@ -386,9 +386,9 @@ func (l *live) outcomes() []string {
 // asAlice puts alice's bearer credential on a request.
 func asAlice(r *nethttp.Request) { r.Header.Set("Authorization", "Bearer alice") }
 
-// inAcme puts the tenant alias on a request, so the resolution layer resolves a
+// inAcme puts the tenant name on a request, so the resolution layer resolves a
 // tenant for it.
-func inAcme(r *nethttp.Request) { r.Header.Set("X-Tenant", tenantAlias) }
+func inAcme(r *nethttp.Request) { r.Header.Set("X-Tenant", tenantName) }
 
 // run builds the assembly with enforcer as the engine, drives it to Serve on
 // loopback ports the system picks, and hands use the running endpoints. The
@@ -560,7 +560,7 @@ func TestARequiredRouteWithNoIdentityIsTheGateways401Shape(t *testing.T) {
 // TestAnAllowedIdentityReachesTheHandlerOnTheChain holds the pass: an identity
 // the engine allows reaches the handler, and the query this module put to the
 // engine names the account whose credential the gateway verified and the tenant
-// identifier the resolution layer resolved — never the alias the request
+// identifier the resolution layer resolved — never the name the request
 // carried.
 func TestAnAllowedIdentityReachesTheHandlerOnTheChain(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
@@ -602,7 +602,7 @@ func TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone(t *testing.T) {
 
 // TestTheHandlerGuardDecidesInTheTenantsOwnDomain holds that the handler API
 // reads the tenant off the request the way the middleware does: its query names
-// the tenant identifier the roster resolved, never the alias and never the
+// the tenant identifier the roster resolved, never the name and never the
 // platform domain while a tenant is on the request. The route is declared open,
 // so the middleware asks the engine nothing and the handler's query is the only
 // one.

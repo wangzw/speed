@@ -45,7 +45,7 @@ func TestAccountCreatedSkipsAServiceAccount(t *testing.T) {
 func TestAccountCreatedLeavesATombstoneAlone(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusDeleted}
+	roster.rows[id] = tenant.Tenant{ID: id, Name: "unit-user", Status: tenant.StatusDeleted}
 	if err := p.AccountCreated(context.Background(), unitAccount); err != nil {
 		t.Fatalf("the creation hook: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestTheStatusHooksLeaveAMissingRowAndATombstoneAlone(t *testing.T) {
 	t.Run("a tombstone", func(t *testing.T) {
 		p, roster, _, _, _ := unitProduct()
 		id := TenantID(unitAccount)
-		roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusDeleted}
+		roster.rows[id] = tenant.Tenant{ID: id, Name: "unit-user", Status: tenant.StatusDeleted}
 		if err := p.AccountDisabled(context.Background(), unitAccount); err != nil {
 			t.Fatalf("the disable hook: %v", err)
 		}
@@ -187,7 +187,7 @@ func TestAccountDeletedIsIdempotentOnATombstone(t *testing.T) {
 func TestAccountDeletedClearsTheMembershipsOfATombstonedTenant(t *testing.T) {
 	p, roster, memberships, _, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusDeleted}
+	roster.rows[id] = tenant.Tenant{ID: id, Name: "unit-user", Status: tenant.StatusDeleted}
 	other := authn.AccountID("9other")
 	memberships.rows[other] = []authn.Membership{
 		{Account: other, Tenant: string(id), Active: true, Source: "admin"},

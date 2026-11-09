@@ -101,7 +101,7 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 		writeGuard:   r.writeGuard,
 		audit:        r.audit,
 		verification: r.signup,
-		aliases:      identityAliases{},
+		names:        identityNames{},
 		logger:       logs.logger(),
 		cfg:          resolved{endpoints: []string{"public"}},
 	}
@@ -223,10 +223,10 @@ func TestTheStubsStartEmpty(t *testing.T) {
 	}
 }
 
-// identityAliases stands in for the roster's id-to-alias seam over an assembly
-// whose fixture identifiers double as their aliases.
-type identityAliases struct{}
+// identityNames stands in for the roster's id-to-name seam over an assembly
+// whose fixture identifiers double as their names.
+type identityNames struct{}
 
-func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }

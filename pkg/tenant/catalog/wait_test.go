@@ -163,10 +163,10 @@ func TestARosterWriteInsideTheCallersTransactionOnOneConnectionEnds(t *testing.T
 	t.Parallel()
 	for name, write := range map[string]func(r *roster) error{
 		"Put": func(r *roster) error {
-			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"Create": func(r *roster) error {
-			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"SetStatus": func(r *roster) error {
 			return r.SetStatus(context.Background(), "t_paused", tenant.StatusActive)
@@ -219,7 +219,7 @@ func rosterOverALockedFile(t *testing.T, parameters string) *roster {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "locked.db")
 	r := rosterOn(t, openHandleAt(t, file+parameters), "sqlite",
-		insert("t_acme", "acme"), "INSERT INTO tenants (id, alias, status) VALUES ('t_paused', 'paused', 0)")
+		insert("t_acme", "acme"), "INSERT INTO tenants (id, name, status) VALUES ('t_paused', 'paused', 0)")
 	if err := r.read(context.Background()); err != nil {
 		t.Fatalf("reading the roster: %v", err)
 	}
@@ -266,10 +266,10 @@ func lockedCalls() map[string]struct {
 			return err
 		}, 2},
 		"Put": {func(r *roster) error {
-			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		}, 3},
 		"Create": {func(r *roster) error {
-			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		}, 4},
 		"SetStatus": {func(r *roster) error {
 			return r.SetStatus(context.Background(), "t_paused", tenant.StatusActive)
@@ -336,10 +336,10 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeo
 	t.Parallel()
 	for name, write := range map[string]func(r *roster) error{
 		"Put": func(r *roster) error {
-			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"Create": func(r *roster) error {
-			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"SetStatus": func(r *roster) error {
 			return r.SetStatus(context.Background(), "t_paused", tenant.StatusActive)
@@ -348,14 +348,14 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeo
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			r := rosterOn(t, openHandleAt(t, filepath.Join(t.TempDir(), "roster.db")+"?_pragma=busy_timeout(1000)"),
-				"sqlite", insert("t_acme", "acme"), "INSERT INTO tenants (id, alias, status) VALUES ('t_paused', 'paused', 0)")
+				"sqlite", insert("t_acme", "acme"), "INSERT INTO tenants (id, name, status) VALUES ('t_paused', 'paused', 0)")
 			if err := r.read(context.Background()); err != nil {
 				t.Fatalf("reading the roster: %v", err)
 			}
 			var took time.Duration
 			var entered error
 			err := r.handle.Transaction(func(tx *gorm.DB) error {
-				if err := tx.Exec("UPDATE tenants SET alias = 'acme2' WHERE id = 't_acme'").Error; err != nil {
+				if err := tx.Exec("UPDATE tenants SET name = 'acme2' WHERE id = 't_acme'").Error; err != nil {
 					return err
 				}
 				started := time.Now()

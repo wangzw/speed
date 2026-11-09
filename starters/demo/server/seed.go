@@ -161,8 +161,8 @@ type seedMember struct {
 // seedTenantEntry is one business tenant the seed writes: its name, the
 // accounts that administer it, and the settings that tenant starts with.
 type seedTenantEntry struct {
-	// Name is the tenant's identifier, which is also its alias: a request
-	// carrying the tenant's name on its surface resolves to it.
+	// Name is the tenant's identifier, and the name a request carries on its
+	// surface resolves to it.
 	Name string `config:"name"`
 	// Admins are the accounts that administer the tenant, each named by a login
 	// name under Accounts. Every one gets a membership and a tenant-admin binding
@@ -324,9 +324,9 @@ func checkTenants(in seedInput) error {
 			return fmt.Errorf("seed: a tenant under seed.%s names no name, and a tenant is "+
 				"registered by its name", tenantsItem)
 		}
-		if !tenant.IsAlias(name) {
+		if !tenant.IsName(name) {
 			return fmt.Errorf("seed: the tenant %q is not a lower-case slug of 3 to 63 letters, "+
-				"digits and dashes; the name is the tenant's alias", name)
+				"digits and dashes; the tenant's name is also its identifier", name)
 		}
 		if name == string(authz.PlatformDomain) {
 			return fmt.Errorf("seed: the tenant %q is the system tenant, which the command registers "+
@@ -923,15 +923,15 @@ func seedSystemTenantAdmins(ctx context.Context, memberships authn.Memberships, 
 }
 
 // seedTenant registers one tenant the configuration names unless the roster
-// already holds it. The alias is the identifier, so a request carrying the
+// already holds it. The name is the identifier, so a request carrying the
 // tenant's name on its surface resolves to it. The name is held to the slug
-// form by checkTenants, so both the identifier and the alias it stands in for
+// form by checkTenants, so both the identifier and the name it stands in for
 // are names the roster accepts.
 //
 // A repeated run reads the row and skips. A create that loses the identifier to
 // another run between the read and the write is the same answer: the tenant is
-// there, which is what this command is for. An alias conflict is not: the
-// identifier is free and another tenant holds the alias, so the tenant is not
+// there, which is what this command is for. A name conflict is not: the
+// identifier is free and another tenant holds the name, so the tenant is not
 // registered, and skipping it would let the startup fail later without naming
 // the cause.
 func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
@@ -943,7 +943,7 @@ func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
 		fmt.Printf("skipped: tenant %s (exists)\n", id)
 		return nil
 	}
-	record := tenant.Tenant{ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive}
+	record := tenant.Tenant{ID: tenant.ID(id), Name: id, Status: tenant.StatusActive}
 	if err := roster.Create(ctx, record); err != nil {
 		if errors.Is(err, tenant.ErrTenantExists) {
 			// Another run took the identifier between the read and the write.

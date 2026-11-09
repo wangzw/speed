@@ -795,21 +795,21 @@ func (v *fakeSignupVerification) lastAccount() authn.AccountID {
 	return v.lastID
 }
 
-// identityAliases stands in for the roster's id-to-alias seam over fixtures
-// whose identifiers double as their aliases.
-type identityAliases struct{}
+// identityNames stands in for the roster's id-to-name seam over fixtures
+// whose identifiers double as their names.
+type identityNames struct{}
 
-func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }
 
-// aliasStub answers the aliases a case maps and keeps the identifier as the
-// alias of every row the map does not name.
-type aliasStub struct{ byID map[string]string }
+// nameStub answers the names a case maps and keeps the identifier as the
+// name of every row the map does not name.
+type nameStub struct{ byID map[string]string }
 
-func (a aliasStub) TenantAliasOf(_ context.Context, id string) (string, error) {
-	if alias, ok := a.byID[id]; ok {
-		return alias, nil
+func (a nameStub) TenantNameOf(_ context.Context, id string) (string, error) {
+	if name, ok := a.byID[id]; ok {
+		return name, nil
 	}
 	return id, nil
 }

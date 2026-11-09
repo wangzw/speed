@@ -4,7 +4,7 @@
 //
 // The tenant is written inside the account's own transaction through
 // authn/provisioning.AccountProvisioning, so an account and the space it owns
-// either both come into being or neither does. The identity's alias is the
+// either both come into being or neither does. The identity's name is the
 // account's username, which is how a personal organization is addressed on the
 // request surface; a user account always has a username, and the seam refuses
 // one that carries none. The service account owns no organization and the seam
@@ -54,11 +54,11 @@ const FeatureName = ModuleName
 // IDPrefix is the fixed prefix of every personal tenant identifier. The rest
 // is the account identifier, so the string is deterministic and carries no
 // personal data. The prefix is reserved in the username namespace, so no
-// account's alias can read as one of these identifiers.
+// account's name can read as one of these identifiers.
 const IDPrefix = "personal-"
 
 // TenantID derives the personal tenant identifier from the account. The
-// identifier is internal and deterministic; the tenant's alias is the
+// identifier is internal and deterministic; the tenant's name is the
 // account's username and is written separately.
 func TenantID(account authn.AccountID) tenant.ID {
 	return tenant.ID(IDPrefix + string(account))
@@ -152,9 +152,9 @@ var (
 	// ErrTenantUnavailable refuses an account whose personal tenant row exists
 	// and is not enabled.
 	ErrTenantUnavailable = errors.New("the personal tenant exists and is not enabled")
-	// ErrIdentifierUnavailable refuses an identifier or alias the personal
+	// ErrIdentifierUnavailable refuses an identifier or name the personal
 	// tenant cannot take.
-	ErrIdentifierUnavailable = errors.New("the personal tenant's identifier or alias is unavailable")
+	ErrIdentifierUnavailable = errors.New("the personal tenant's identifier or name is unavailable")
 )
 
 // init registers this module with the process registry.
@@ -246,7 +246,7 @@ type product struct {
 	// accounts is the account read surface; nil in an assembly without one.
 	// The event compensation reads the account's current state through it, and
 	// the idempotent completion reads the account's username to name the
-	// tenant's alias.
+	// tenant's name.
 	accounts accountReader
 	// bus is where the compensation subscribes; nil leaves the synchronous
 	// hooks as the only route.

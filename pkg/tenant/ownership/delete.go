@@ -14,7 +14,7 @@ import (
 //
 // The roster row becomes a tombstone and the tenant's core relations are
 // removed in the same transaction: its memberships, its bindings, its roles and
-// their grants. The identifier and the alias stay with the tombstone, so the
+// their grants. The identifier and the name stay with the tombstone, so the
 // roster refuses to register either again. Data other modules hold for the
 // tenant is not touched here; those modules clean it up under the tombstone.
 //

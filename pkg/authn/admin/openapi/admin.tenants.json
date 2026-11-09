@@ -51,7 +51,7 @@
             "type": "boolean"
           },
           "tenant": {
-            "description": "The tenant's alias.",
+            "description": "The tenant's name.",
             "type": "string"
           },
           "username": {
@@ -172,7 +172,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The owning tenant's alias; immutable after creation.",
+            "description": "The owning tenant's name; immutable after creation.",
             "type": "string"
           },
           "trust_idp_mfa": {
@@ -306,7 +306,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The tenant's alias; absent names the provider's own tenant, and a value naming another tenant is refused.",
+            "description": "The tenant's name; absent names the provider's own tenant, and a value naming another tenant is refused.",
             "type": "string"
           },
           "trust_idp_mfa": {
@@ -382,7 +382,7 @@
   "paths": {
     "/{tenant}/members": {
       "get": {
-        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's alias: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.",
+        "description": "Lists one tenant's memberships, one page at a time, in ascending account-identifier order, and answers the cursor of the next page. Each member carries the roles the account holds in the tenant and the instant it joined. An optional role parameter narrows the page to the members bound to that role name, matched exactly, and combines with the text query; an unknown role name selects no member rather than failing. The path names the tenant's name: the path-tenant layer resolves it to the internal identifier before the handler runs, and the same identifier is the decision's tenant. Requires membership.manage.",
         "operationId": "authn.admin.members.list",
         "parameters": [
           {
@@ -418,7 +418,7 @@
             }
           },
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -504,7 +504,7 @@
         "operationId": "authn.admin.members.remove",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -603,7 +603,7 @@
         "operationId": "authn.admin.members.put",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -735,7 +735,7 @@
         "operationId": "authn.admin.members.ssoExempt",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -857,7 +857,7 @@
         "operationId": "authn.admin.sso.providers.list",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -931,7 +931,7 @@
         "operationId": "authn.admin.sso.providers.create",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1048,7 +1048,7 @@
         "operationId": "authn.admin.sso.providers.delete",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1127,7 +1127,7 @@
         "operationId": "authn.admin.sso.providers.get",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1213,7 +1213,7 @@
         "operationId": "authn.admin.sso.providers.update",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1342,7 +1342,7 @@
         "operationId": "authn.admin.sso.providers.claimDomain",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1481,7 +1481,7 @@
         "operationId": "authn.admin.sso.providers.removeDomain",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1571,7 +1571,7 @@
         "operationId": "authn.admin.sso.providers.verifyDomain",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1671,7 +1671,7 @@
         "operationId": "authn.admin.sso.providers.refreshMetadata",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -1769,7 +1769,7 @@
         "operationId": "authn.admin.sso.providers.reverifyDomains",
         "parameters": [
           {
-            "description": "The tenant's alias. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,

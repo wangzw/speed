@@ -86,14 +86,14 @@ func TestStartOverCookieAttachesTheSessionAndWritesTheCookie(t *testing.T) {
 	})
 }
 
-// TestStartResolvesTheRequestedAliasToTheTenantsIdentifier holds the request
-// surface's rule: the body names the tenant by alias, while the membership read
+// TestStartResolvesTheRequestedNameToTheTenantsIdentifier holds the request
+// surface's rule: the body names the tenant by name, while the membership read
 // and the record key by the identifier. A name no tenant carries is refused as
 // a target outside the tenant, and no record is written.
-func TestStartResolvesTheRequestedAliasToTheTenantsIdentifier(t *testing.T) {
+func TestStartResolvesTheRequestedNameToTheTenantsIdentifier(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
-		pair := aliasPair{alias: "team-alpha", id: tenantA}
-		r.p.tenantAliases = pair
+		pair := namePair{name: "team-alpha", id: tenantA}
+		r.p.tenantNames = pair
 		r.p.tenantDirectory = pair
 		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
 		r.p.mountRoutes()
@@ -109,7 +109,7 @@ func TestStartResolvesTheRequestedAliasToTheTenantsIdentifier(t *testing.T) {
 			t.Fatalf("the body %q is not the grant: %v", w.Body.String(), err)
 		}
 		if body.Grant.Tenant != "team-alpha" {
-			t.Errorf("the answer names the tenant %q, want the alias team-alpha", body.Grant.Tenant)
+			t.Errorf("the answer names the tenant %q, want the name team-alpha", body.Grant.Tenant)
 		}
 		if len(r.tokens.issued) != 1 || r.tokens.issued[0].Scope != tenantA {
 			t.Errorf("the token was issued for %+v, want the tenant's identifier %q", r.tokens.issued, tenantA)
@@ -120,13 +120,13 @@ func TestStartResolvesTheRequestedAliasToTheTenantsIdentifier(t *testing.T) {
 	})
 }
 
-// TestStartRefusesAnAliasNoTenantCarries holds the other half: a name the
+// TestStartRefusesANameNoTenantCarries holds the other half: a name the
 // directory does not know is refused as a target that is not a member, before
 // any record or audit row.
-func TestStartRefusesAnAliasNoTenantCarries(t *testing.T) {
+func TestStartRefusesANameNoTenantCarries(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
-		pair := aliasPair{alias: "team-alpha", id: tenantA}
-		r.p.tenantAliases = pair
+		pair := namePair{name: "team-alpha", id: tenantA}
+		r.p.tenantNames = pair
 		r.p.tenantDirectory = pair
 		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
 		r.p.mountRoutes()
@@ -145,20 +145,20 @@ func TestStartRefusesAnAliasNoTenantCarries(t *testing.T) {
 }
 
 // TestStartRefusesTheInternalIdentifierAsTheTenantName holds the request
-// surface's input domain: the body names a tenant by its alias, never by the
+// surface's input domain: the body names a tenant by its name, never by the
 // internal identifier the record and the membership store key by. The fixture's
 // two values differ, so a body carrying the identifier — the shape the surface
-// accepted before the alias rule — is refused, while the same pair's alias is
+// accepted before the name rule — is refused, while the same pair's name is
 // accepted.
 func TestStartRefusesTheInternalIdentifierAsTheTenantName(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
-		pair := aliasPair{alias: "team-alpha", id: tenantA}
-		r.p.tenantAliases = pair
+		pair := namePair{name: "team-alpha", id: tenantA}
+		r.p.tenantNames = pair
 		r.p.tenantDirectory = pair
 		r.mounter.As(adminOpts(authntest.WithBackend(tokenBackend))...)
 		r.p.mountRoutes()
 
-		// The identifier is not an alias of the pair, so the directory answers
+		// The identifier is not a name of the pair, so the directory answers
 		// unknown and the start is refused before any record or token.
 		w := r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"` + tenantA + `","reason":"a support call"}`))
 		if w.Code != http.StatusForbidden {
@@ -171,31 +171,31 @@ func TestStartRefusesTheInternalIdentifierAsTheTenantName(t *testing.T) {
 			t.Errorf("a token was issued: %+v", r.tokens.issued)
 		}
 
-		// The same fixture's alias is accepted, so the refusal above is the
+		// The same fixture's name is accepted, so the refusal above is the
 		// name's identity and not a rig that refuses every start.
 		w = r.mounter.Do(startRequest(`{"account":"acct-user","tenant":"team-alpha","reason":"a support call"}`))
 		if w.Code != http.StatusOK {
-			t.Fatalf("status = %d, want 200 for the alias team-alpha: %s", w.Code, w.Body.String())
+			t.Fatalf("status = %d, want 200 for the name team-alpha: %s", w.Code, w.Body.String())
 		}
 		if r.recordCount() != 1 {
-			t.Errorf("the table holds %d records, want one after the alias start", r.recordCount())
+			t.Errorf("the table holds %d records, want one after the name start", r.recordCount())
 		}
 	})
 }
 
-// aliasPair is one alias and the identifier it names, answering both directions
+// namePair is one name and the identifier it names, answering both directions
 // of the tenant seam over the same pair.
-type aliasPair struct{ alias, id string }
+type namePair struct{ name, id string }
 
-func (p aliasPair) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (p namePair) TenantNameOf(_ context.Context, id string) (string, error) {
 	if id == p.id {
-		return p.alias, nil
+		return p.name, nil
 	}
 	return "", nil
 }
 
-func (p aliasPair) TenantIDOf(_ context.Context, alias string) (string, bool, error) {
-	if alias == p.alias {
+func (p namePair) TenantIDOf(_ context.Context, name string) (string, bool, error) {
+	if name == p.name {
 		return p.id, true, nil
 	}
 	return "", false, nil

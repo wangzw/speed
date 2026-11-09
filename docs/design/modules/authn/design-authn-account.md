@@ -172,7 +172,7 @@ type UsernameReservation interface {
 }
 ```
 
-`ReservedUsername` 先把名字规范化，形状不合返回 `ErrInvalidIdentifier`；再回答它是否属于用户名写入所拒绝的集合：内置保留名、部署经 `authn.account.reserved-usernames` 追加的名字，以及 `personal-` 前缀。答案是同一个集合，不另立一份；调用方是 `tenant.selfcreate`，它据此拒绝与用户名冲突的业务组织别名。
+`ReservedUsername` 先把名字规范化，形状不合返回 `ErrInvalidIdentifier`；再回答它是否属于用户名写入所拒绝的集合：内置保留名、部署经 `authn.account.reserved-usernames` 追加的名字，以及 `personal-` 前缀。答案是同一个集合，不另立一份；调用方是 `tenant.selfcreate`，它据此拒绝与用户名冲突的业务组织名称。
 
 ### Passwords
 
@@ -273,7 +273,7 @@ type AccountProvisioning interface {
 }
 ```
 
-叶包 `pkg/authn/provisioning` 声明（根包不能 import `gorm`（[REF-gorm](../../../references.md)），而方法签名带 `*gorm.DB`），本模块在 `Requires` 里把它声明为必需依赖，并经 `core.Resolve` 取用单一实现；装配里没有实现时启动失败，而不是在第一次建户时留下半个账户。账户固有的数据——个人租户及其成员关系、租户管理员角色、授权与绑定——必须在账户存在的同一时刻存在，失败必须一并回滚；`AccountLifecycle` 在事务提交之后才运行，承担不了这件事。个人租户的现成实现是公共模块 [tenant.personal](../tenant/design-tenant-personal.md)，它把账户事务内的五步写入与别名取用户名写在同一处（[ADR-starters-personal-tenant](../../../adr/adr-starters-personal-tenant.md)）。
+叶包 `pkg/authn/provisioning` 声明（根包不能 import `gorm`（[REF-gorm](../../../references.md)），而方法签名带 `*gorm.DB`），本模块在 `Requires` 里把它声明为必需依赖，并经 `core.Resolve` 取用单一实现；装配里没有实现时启动失败，而不是在第一次建户时留下半个账户。账户固有的数据——个人租户及其成员关系、租户管理员角色、授权与绑定——必须在账户存在的同一时刻存在，失败必须一并回滚；`AccountLifecycle` 在事务提交之后才运行，承担不了这件事。个人租户的现成实现是公共模块 [tenant.personal](../tenant/design-tenant-personal.md)，它把账户事务内的五步写入与名称取用户名写在同一处（[ADR-starters-personal-tenant](../../../adr/adr-starters-personal-tenant.md)）。
 
 - **调用位置。** `Create` 与 `Signups.Register` 在账户行、标识与凭据写入之后、创建事件暂存之前调用 `ProvisionAccount`；`Delete` 与未验证账户清扫在 `eraseAccount` 之后、事务返回之前调用 `ProvisionAccountDeletion`。`SetStatus` 不调用二者：停用与启用不建立或结束账户固有的数据。
 - **facts 的取值。** `Kind` 与 `Status` 是账户行的原值；`Username` 是规范化后的用户名标识，服务账户为空；删除时 `Username` 与 `DisplayName` 在 `eraseAccount` 抹除之前读出，事实因此仍是账户被抹除前的内容。
@@ -334,7 +334,7 @@ type MembershipCleanup interface {
 
 - **`MembershipRemoved` 在一次显式的成员关系删除提交之后同步调用。** 删除已生效，实现不得读成员关系行；它幂等，账户在租户里已无数据时返回 nil。钩子失败使本次调用返回 `ErrCleanupIncomplete`，重试同一调用幂等地补完。`authn.membership.changed` 事件仍在，作为提交与钩子之间进程崩掉的补偿。账户删除不调用它：删除由 `AccountDeleted` 与逐租户的成员关系事件处理。
 - **`Lock` 与 `CheckMembershipRemoval` 是显式删除的两段。** 本模块先取每个守卫的租户删除锁（`Lock(ctx, tenant)`），再读成员关系行、问每个守卫的 `CheckMembershipRemoval`，并把这些检查与删除的提交一起放在同一把锁内，提交之后释放；所以同一租户上两次并发删除不会都通过检查后各自提交。锁按租户来自授权功能目录的 `authz.TenantLock`：宿主装配一个对象，`authz.Manager.DeleteBinding` 与每个 `MembershipGuard.Lock` 都取它；没装配时用授权模块的进程内默认实现，单实例即正确。多个守卫接同一个对象时经可选的 `SharedMembershipLock` 报告这个对象，本模块对每个不同对象只取一次——非重入的锁被同一次删除取第二次会等自己直到上下文结束。SQLite 上锁是进程内按租户的互斥量，PostgreSQL 上是数据库级会话锁，不共享数据库的副本之间不保证串行；数据库锁每个持有中的删除多占一条池化连接（见 [authn-admin](design-authn-admin.md) 与 [tenant](../tenant/design-tenant.md) 的非保证）。锁取不到是 503，既不问守卫也不删除，绝不按放行处理。
-- **所有者保护是另一条并存的判据。** 本模块在停用与删除之前可选地取用授权根包的 `TenantOwnerCounter`：账户拥有一个仍在服务的业务租户时以 `ErrAccountOwnsOrganization` 拒绝，错误 detail 点名那个组织的别名，表面据此要求先转移所有者或删除组织；别名解析不到时不点名，不回退成内部标识。个人租户由宿主的 `WriteGuard` 排除，因为它是账户固有的一部分，随账户一起结束。删除先问所有者、再问最后管理员：一个所有者通常也是唯一的管理员，先答所有权才能给出正确的下一步。停用与删除都在取完 `LockAccountAdministration` 的租户锁之后才问所有者，并把这些锁持有到事务提交，一次并发转移因而不可能落在检查与提交之间。没有装配这个 seam 时维持既有行为；seam 报错是 503，不按放行处理。
+- **所有者保护是另一条并存的判据。** 本模块在停用与删除之前可选地取用授权根包的 `TenantOwnerCounter`：账户拥有一个仍在服务的业务租户时以 `ErrAccountOwnsOrganization` 拒绝，错误 detail 点名那个组织的名称，表面据此要求先转移所有者或删除组织；名称解析不到时不点名，不回退成内部标识。个人租户由宿主的 `WriteGuard` 排除，因为它是账户固有的一部分，随账户一起结束。删除先问所有者、再问最后管理员：一个所有者通常也是唯一的管理员，先答所有权才能给出正确的下一步。停用与删除都在取完 `LockAccountAdministration` 的租户锁之后才问所有者，并把这些锁持有到事务提交，一次并发转移因而不可能落在检查与提交之间。没有装配这个 seam 时维持既有行为；seam 报错是 503，不按放行处理。
 - **`CheckMembershipRemoval` 在显式删除之前询问。** 删除会让租户不再有任何 `tenant-admin` 绑定时返回 `ErrLastTenantAdmin`，删除不执行；宿主自己的守卫返回它要拒绝的那一类。每个守卫都问一次，任何一个拒绝即拒绝，任何一个读不出即按检查不可用、按拒绝处理，不按放行。账户删除是明示的例外，不问这些守卫，因此一个租户的最后一名租户管理员被删除后可能没有管理员，直到有人写入一条新绑定。删除的收尾经 `RemoveMembershipForDeletion` 删除成员关系行：它不问守卫，也不调用 `MembershipRemoved`，与账户删除本身一样不经过显式删除的两段；这些行仍然发布 `authn.membership.changed`，事件订阅者照常收到。守卫在删除事务之前询问，因此它们的读不与成员关系存储共用事务。
 
 ### 对外接口

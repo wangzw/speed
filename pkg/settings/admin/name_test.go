@@ -12,19 +12,19 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// directoryStub answers the identifier each mapped alias names.
+// directoryStub answers the identifier each mapped name addresses.
 type directoryStub map[string]string
 
-func (d directoryStub) TenantIDOf(_ context.Context, alias string) (string, bool, error) {
-	id, ok := d[alias]
+func (d directoryStub) TenantIDOf(_ context.Context, name string) (string, bool, error) {
+	id, ok := d[name]
 	return id, ok, nil
 }
 
-// TestTheTenantLayerIsKeyedByIdentifierAndNamedByAlias holds the two names
-// apart: the query string names the tenant by alias, the layer and the policy
-// domain are keyed by the identifier it resolves to, and the audit detail
-// carries the alias a reader can recognise.
-func TestTheTenantLayerIsKeyedByIdentifierAndNamedByAlias(t *testing.T) {
+// TestTheTenantLayerIsKeyedByIdentifierAndCarriesTheName holds the two names
+// apart: the query string names the tenant by its name, the layer and the
+// policy domain are keyed by the identifier it resolves to, and the audit
+// detail carries the name a reader can recognise.
+func TestTheTenantLayerIsKeyedByIdentifierAndCarriesTheName(t *testing.T) {
 	r := newRig(t)
 	r.p.directory = directoryStub{"acme": "t-acme"}
 	r.store.declared = []settings.DeclaredItem{
@@ -55,14 +55,14 @@ func TestTheTenantLayerIsKeyedByIdentifierAndNamedByAlias(t *testing.T) {
 		t.Fatalf("the write wrote %d audit rows, want one mandatory row", len(rows))
 	}
 	if rows[0].Detail[detailTenant] != "acme" {
-		t.Errorf("the mandatory row names the tenant %q, want the alias acme", rows[0].Detail[detailTenant])
+		t.Errorf("the mandatory row names the tenant %q, want the name acme", rows[0].Detail[detailTenant])
 	}
 }
 
-// TestATenantAliasNoRosterCarriesIsA400 holds the unknown-name answer: the
+// TestATenantNameNoRosterCarriesIsA400 holds the unknown-name answer: the
 // directory knows no such tenant, so there is no layer to act on and nothing is
 // read or written.
-func TestATenantAliasNoRosterCarriesIsA400(t *testing.T) {
+func TestATenantNameNoRosterCarriesIsA400(t *testing.T) {
 	r := newRig(t)
 	r.p.directory = directoryStub{"acme": "t-acme"}
 	w := r.do(http.MethodGet, "/api/v1/system/settings?layer=tenant&tenant=ghost", nil)
@@ -75,7 +75,7 @@ func TestATenantAliasNoRosterCarriesIsA400(t *testing.T) {
 }
 
 // TestATenantLayerWithNoRosterIsRefused holds the assembly with no tenant
-// directory: the query carries an alias and there is nothing to resolve it
+// directory: the query carries a name and there is nothing to resolve it
 // with, so the surface refuses rather than reading the value as an identifier.
 // The global layer is untouched by the absence.
 func TestATenantLayerWithNoRosterIsRefused(t *testing.T) {

@@ -4,7 +4,7 @@
 
 名册归谁，此前没有出处。数据库模块的后果一节定的是隔离——「租户隔离由租户模块实现，它定义自己的模型约定并声明自己的插件」（[ADR-db-plugin-scope](adr-db-plugin-scope.md)）——没有一处说过租户本身记在哪里、由谁维护。
 
-名册要回答两件事：一个名字对应哪个租户，以及这个租户还在不在。两件事都在请求的关键路径上：解析层要把别名换成标识（[ADR-tenant-identifier](adr-tenant-identifier.md)），而语句过滤要知道这个租户是不是仍然被服务。
+名册要回答两件事：一个名字对应哪个租户，以及这个租户还在不在。两件事都在请求的关键路径上：解析层要把名称换成标识（[ADR-tenant-identifier](adr-tenant-identifier.md)），而语句过滤要知道这个租户是不是仍然被服务。
 
 不能把名册放进配置。配置是启动时的快照，进程起来之后不再变化，变更需重启；而命令行是配置的最外覆盖层（[ADR-config-source](adr-config-source.md)），做成输入项即意味着一条命令行参数能增删租户。租户的增删是运行期动作，与配置的生命周期不同（[ADR-config-lifecycle](adr-config-lifecycle.md)）。
 

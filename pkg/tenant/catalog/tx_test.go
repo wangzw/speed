@@ -22,7 +22,7 @@ func TestCreateTxWritesInTheCallersTransaction(t *testing.T) {
 	if err := r.read(context.Background()); err != nil {
 		t.Fatalf("reading: %v", err)
 	}
-	want := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	want := tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	rollback := errors.New("caller rolled back")
 	var after txAfter
 	err := r.handle.Transaction(func(tx *gorm.DB) error {
@@ -49,7 +49,7 @@ func TestCreateTxRereadsTheRosterOnlyAfterTheCallersCommit(t *testing.T) {
 	if err := r.read(context.Background()); err != nil {
 		t.Fatalf("reading: %v", err)
 	}
-	want := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	want := tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	var after txAfter
 	if err := r.handle.Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -65,7 +65,7 @@ func TestCreateTxRereadsTheRosterOnlyAfterTheCallersCommit(t *testing.T) {
 		t.Fatalf("running the after closure: %v", err)
 	}
 	got, ok, err := r.Get(context.Background(), "t_acme")
-	if err != nil || !ok || got.Alias != want.Alias || got.Status != want.Status {
+	if err != nil || !ok || got.Name != want.Name || got.Status != want.Status {
 		t.Fatalf("the roster serves (%+v, %v, %v) after the after closure, want the created tenant", got, ok, err)
 	}
 }
@@ -125,7 +125,7 @@ func TestTheTxVariantsKeepTheCtxVariantsRefusals(t *testing.T) {
 	}
 	if err := r.handle.Transaction(func(tx *gorm.DB) error {
 		if _, err := r.CreateTx(context.Background(), tx,
-			tenant.Tenant{ID: "t_acme", Alias: "other", Status: tenant.StatusActive}); !errors.Is(err, tenant.ErrTenantExists) {
+			tenant.Tenant{ID: "t_acme", Name: "other", Status: tenant.StatusActive}); !errors.Is(err, tenant.ErrTenantExists) {
 			t.Errorf("CreateTx of an identifier the table holds gave %v, want ErrTenantExists", err)
 		}
 		if _, err := r.DeleteTx(context.Background(), tx, "t_missing"); !errors.Is(err, tenant.ErrInvalidTenant) {
@@ -240,7 +240,7 @@ func TestSetOwnerTxRejectionBranches(t *testing.T) {
 
 // insertOwner is one roster row written as a statement with its owner column,
 // which insert does not carry.
-func insertOwner(id, alias, owner string) string {
-	return "INSERT INTO tenants (id, alias, status, owner_account) VALUES ('" +
-		id + "', '" + alias + "', 1, '" + owner + "')"
+func insertOwner(id, name, owner string) string {
+	return "INSERT INTO tenants (id, name, status, owner_account) VALUES ('" +
+		id + "', '" + name + "', 1, '" + owner + "')"
 }

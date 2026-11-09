@@ -77,11 +77,11 @@ func (p *product) handleRecordList(ctx context.Context, in RecordListInput) (Aud
 	}
 	entries := make([]AuditAdminRecord, len(rows))
 	for i, r := range rows {
-		alias, aliasErr := p.aliasOf(ctx, r.Tenant)
-		if aliasErr != nil {
-			return AuditAdminRecordPage{}, p.answerErr(ctx, "reading a tenant's alias", aliasErr)
+		name, nameErr := p.nameOf(ctx, r.Tenant)
+		if nameErr != nil {
+			return AuditAdminRecordPage{}, p.answerErr(ctx, "reading a tenant's name", nameErr)
 		}
-		entries[i] = recordViewOf(r, alias)
+		entries[i] = recordViewOf(r, name)
 	}
 	p.logRead(recordsPath, caller, len(rows))
 	return AuditAdminRecordPage{Entries: entries, Next: next}, nil
@@ -118,11 +118,11 @@ func (p *product) handleRecordGet(ctx context.Context, in RecordGetInput, _ *spe
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 	p.logRead(recordPath, caller, 1)
-	alias, aliasErr := p.aliasOf(ctx, rows[0].Tenant)
-	if aliasErr != nil {
-		return nil, p.answerErr(ctx, "reading a tenant's alias", aliasErr)
+	name, nameErr := p.nameOf(ctx, rows[0].Tenant)
+	if nameErr != nil {
+		return nil, p.answerErr(ctx, "reading a tenant's name", nameErr)
 	}
-	return speedhttp.JSONReply(http.StatusOK, recordViewOf(rows[0], alias)), nil
+	return speedhttp.JSONReply(http.StatusOK, recordViewOf(rows[0], name)), nil
 }
 
 // listQueryOf turns the list route's bound input into a read query. The filters

@@ -40,7 +40,7 @@ func fullProfile() profileWriteBody {
 func TestTheCreateCarriesTheProfile(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{
-		Alias:        "acme",
+		Name:         "acme",
 		DisplayName:  "  Acme  ",
 		Description:  "  The Acme corporation  ",
 		ContactEmail: "  ops@acme.test ",
@@ -79,7 +79,7 @@ func TestTheCreateCarriesTheProfile(t *testing.T) {
 func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{
-		Alias: "acme", Website: "javascript:alert(1)",
+		Name: "acme", Website: "javascript:alert(1)",
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body.String())
@@ -99,7 +99,7 @@ func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 	r := newRig(t)
 	created := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive, CreatedAt: created}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive, CreatedAt: created}
 	r.catalog.found = true
 
 	w := r.do(http.MethodPatch, pathTenants+"/t_acme/profile", fullProfile())
@@ -143,7 +143,7 @@ func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 // to the failed row a refusal writes.
 func TestTheProfileUpdateWritesTheMandatoryAuditFirst(t *testing.T) {
 	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	r.catalog.found = true
 	rowsAtSetProfile := -1
 	r.catalog.during = func() { rowsAtSetProfile = len(r.audit.entries()) }
@@ -272,7 +272,7 @@ func TestTheTenantViewCarriesTheProfileAndTheCreationTime(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		Profile: tenant.Profile{
 			DisplayName: "Acme", Description: "The Acme corporation",
 			ContactEmail: "ops@acme.test", Website: "https://acme.test",

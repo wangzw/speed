@@ -14,16 +14,16 @@ import (
 )
 
 // systemTenantPrefix is the path every platform route that names a tenant as
-// its data hangs under. The alias layer acts on requests below it and on
+// its data hangs under. The name layer acts on requests below it and on
 // nothing else: the tenant-domain surface under /api/v1/tenants/ resolves its
 // own tenant through the path guard.
 const systemTenantPrefix = "/api/v1/system/tenants/"
 
-// tenantAliasLayer resolves the tenant a platform path names and replaces the
+// tenantNameLayer resolves the tenant a platform path names and replaces the
 // path parameter with its internal identifier.
 //
-// The platform management surface is addressed by the alias — the name a client
-// reads — while every handler behind it keys its rows by the identifier. This
+// The platform management surface is addressed by the name a client reads,
+// while every handler behind it keys its rows by the identifier. This
 // layer is the boundary where the two meet, and it covers every module's routes
 // under the prefix, not only this module's: the authorization and authentication
 // management routes name the same tenant as data.
@@ -36,9 +36,9 @@ const systemTenantPrefix = "/api/v1/system/tenants/"
 // The layer runs on the endpoint rather than on this module's routes because the
 // other management modules mount their own routes on the same endpoint; it is
 // registered by this module because this module owns the roster-facing prefix.
-func (p *product) tenantAliasLayer() speedhttp.Middleware {
+func (p *product) tenantNameLayer() speedhttp.Middleware {
 	return speedhttp.Middleware{
-		Name:  ModuleName + ".tenant-alias",
+		Name:  ModuleName + ".tenant-name",
 		Stage: speedhttp.StageIdentify,
 		Handler: func(c *gin.Context) {
 			if !strings.HasPrefix(c.Request.URL.Path, systemTenantPrefix) {
@@ -50,7 +50,7 @@ func (p *product) tenantAliasLayer() speedhttp.Middleware {
 				c.Next()
 				return
 			}
-			found, ok, err := p.catalog.ByAlias(c.Request.Context(), segment)
+			found, ok, err := p.catalog.ByName(c.Request.Context(), segment)
 			if err != nil {
 				log.FromContext(c.Request.Context()).Error(ModuleName+
 					": the path tenant could not be resolved; the request was not carried out",
@@ -81,14 +81,14 @@ func replaceParam(c *gin.Context, name, value string) {
 	}
 }
 
-// aliasOf answers the alias a tenant identifier is addressed by. With no
+// nameOf answers the name a tenant identifier is addressed by. With no
 // resolver assembled it answers the empty string: the identifier is internal
-// and must not stand in for the alias.
-func (p *product) aliasOf(ctx context.Context, id tenant.ID) (string, error) {
-	if p.aliases == nil {
+// and must not stand in for the name.
+func (p *product) nameOf(ctx context.Context, id tenant.ID) (string, error) {
+	if p.names == nil {
 		return "", nil
 	}
-	return p.aliases.AliasOf(ctx, id)
+	return p.names.NameOf(ctx, id)
 }
 
 // kindOf answers one tenant's kind. With no resolver assembled every tenant is

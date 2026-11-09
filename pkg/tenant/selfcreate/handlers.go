@@ -31,9 +31,9 @@ const identifierRetries = 3
 // took it stops before releasing it.
 const lockTTL = 30 * time.Second
 
-// errIdentifierUnavailable reports an alias or generated identifier the roster
+// errIdentifierUnavailable reports a name or generated identifier the roster
 // already holds. Retrying does not succeed.
-var errIdentifierUnavailable = errors.New("the organization's alias or generated identifier is unavailable")
+var errIdentifierUnavailable = errors.New("the organization's name or generated identifier is unavailable")
 
 // handleCreate serves POST /api/v1/orgs. The order of the decisions is the
 // product's and each step reads only what it needs:
@@ -42,9 +42,9 @@ var errIdentifierUnavailable = errors.New("the organization's alias or generated
 //  2. an impersonating identity is refused before anything is read;
 //  3. a service account and a static subject are refused;
 //  4. the account's email address must not be pending (a read failure is 503);
-//  5. the profile and alias are normalized and held to their shape, the
+//  5. the profile and name are normalized and held to their shape, the
 //     reserved-name set included;
-//  6. the alias is checked against the roster's one namespace;
+//  6. the name is checked against the roster's one namespace;
 //  7. the per-account creation lock is taken;
 //  8. the active-business-organization cap is checked;
 //  9. the hourly count is checked;
@@ -88,18 +88,18 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 		}
 	}
 
-	alias := strings.TrimSpace(in.Alias)
+	name := strings.TrimSpace(in.Name)
 	profile := tenant.Profile{
 		DisplayName: in.DisplayName,
 		Description: in.Description,
 	}.Normalize()
-	if profile.DisplayName == "" || profile.Validate() != nil || !tenant.IsAlias(alias) {
+	if profile.DisplayName == "" || profile.Validate() != nil || !tenant.IsName(name) {
 		return OrganizationCreatedReply{}, speedhttp.Fault{Status: http.StatusBadRequest}
 	}
-	reserved, err := p.reservations.ReservedUsername(ctx, alias)
+	reserved, err := p.reservations.ReservedUsername(ctx, name)
 	switch {
 	case errors.Is(err, authn.ErrInvalidIdentifier):
-		// The alias is a legal tenant slug but not a name the username
+		// The name is a legal tenant slug but not a name the username
 		// namespace can normalize — a string in the shape of an account
 		// identifier, for one. The seam answers such a name as a bad name, not
 		// as an outage, and so does this surface rather than blaming a
@@ -114,10 +114,10 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 		return OrganizationCreatedReply{}, speedhttp.Fault{Status: http.StatusBadRequest}
 	}
 
-	available, aliasErr := p.aliasAvailable(ctx, alias)
-	if aliasErr != nil {
-		p.logger.Error(ModuleName+": the alias could not be checked against the roster",
-			"account", account.String(), "cause", aliasErr.Error())
+	available, nameErr := p.nameAvailable(ctx, name)
+	if nameErr != nil {
+		p.logger.Error(ModuleName+": the name could not be checked against the roster",
+			"account", account.String(), "cause", nameErr.Error())
 		return OrganizationCreatedReply{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
 	if !available {
@@ -176,7 +176,7 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 		}
 	}
 
-	record, err := p.newOrganization(ctx, alias, account, profile)
+	record, err := p.newOrganization(ctx, name, account, profile)
 	if err != nil {
 		if errors.Is(err, errIdentifierUnavailable) {
 			return OrganizationCreatedReply{}, speedhttp.Fault{
@@ -198,24 +198,24 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 	actionID := uuid.NewString()
 	if err := p.auditRequired(ctx, audit.Entry{
 		Action:  auditAction,
-		Object:  record.Alias,
+		Object:  record.Name,
 		Outcome: outcomeSuccess,
 		Detail: map[string]string{
 			detailActionID: actionID,
 			detailAccount:  account.String(),
-			detailTenant:   record.Alias,
+			detailTenant:   record.Name,
 		},
 	}); err != nil {
 		return OrganizationCreatedReply{}, err
 	}
 
 	if err := p.provisioner.Provision(ctx, record, account.String()); err != nil {
-		if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrAliasConflict) {
-			// Another replica won the alias or identifier between this call's
+		if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrNameConflict) {
+			// Another replica won the name or identifier between this call's
 			// pre-check and its provisioning. The domain belongs to the winner,
 			// and the mandatory row this request wrote already records the
 			// attempt, so no second row is written for the same request.
-			p.logger.Warn(ModuleName+": the alias or generated identifier was taken by another replica",
+			p.logger.Warn(ModuleName+": the name or generated identifier was taken by another replica",
 				"account", account.String(), "tenant", string(record.ID), "cause", err.Error())
 			return OrganizationCreatedReply{}, speedhttp.Fault{
 				Status: http.StatusConflict,
@@ -224,7 +224,7 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 		}
 		p.auditBestEffort(ctx, audit.Entry{
 			Action:  auditAction,
-			Object:  record.Alias,
+			Object:  record.Name,
 			Outcome: outcomeFailed,
 			Detail:  map[string]string{detailActionID: actionID},
 		})
@@ -235,7 +235,7 @@ func (p *product) handleCreate(ctx context.Context, in createInput) (Organizatio
 
 	return OrganizationCreatedReply{
 		Tenant: OrganizationCreatedTenant{
-			Alias:       record.Alias,
+			Name:        record.Name,
 			DisplayName: record.Profile.DisplayName,
 			Description: record.Profile.Description,
 			Status:      record.Status.String(),
@@ -328,19 +328,19 @@ func (p *product) retryAfter() int {
 	return seconds
 }
 
-// aliasAvailable reports whether no tenant holds the alias, either as its alias
-// or as its identifier. It also refuses an alias that reads as a personal
-// tenant's alias, which is how an existing username reserves the name: the
-// personal tenant carries the username's alias, so the roster lookup answers
+// nameAvailable reports whether no tenant holds the name, either as its name
+// or as its identifier. It also refuses a name that reads as a personal
+// tenant's name, which is how an existing username reserves the name: the
+// personal tenant carries the username as its name, so the roster lookup answers
 // for both namespaces at once.
-func (p *product) aliasAvailable(ctx context.Context, alias string) (bool, error) {
-	if _, found, err := p.roster.ByAlias(ctx, alias); err != nil {
-		return false, fmt.Errorf("reading the roster's alias %q: %w", alias, err)
+func (p *product) nameAvailable(ctx context.Context, name string) (bool, error) {
+	if _, found, err := p.roster.ByName(ctx, name); err != nil {
+		return false, fmt.Errorf("reading the roster's name %q: %w", name, err)
 	} else if found {
 		return false, nil
 	}
-	if _, found, err := p.roster.Get(ctx, tenant.ID(alias)); err != nil {
-		return false, fmt.Errorf("reading the roster for %q: %w", alias, err)
+	if _, found, err := p.roster.Get(ctx, tenant.ID(name)); err != nil {
+		return false, fmt.Errorf("reading the roster for %q: %w", name, err)
 	} else if found {
 		return false, nil
 	}
@@ -352,16 +352,16 @@ func (p *product) aliasAvailable(ctx context.Context, alias string) (bool, error
 // pre-check reads this replica's snapshot, so a row another replica wrote since
 // the snapshot is invisible here; the provisioner's own refusal is the arbiter
 // for that race.
-func (p *product) newOrganization(ctx context.Context, alias string, account authn.AccountID, profile tenant.Profile) (tenant.Tenant, error) {
+func (p *product) newOrganization(ctx context.Context, name string, account authn.AccountID, profile tenant.Profile) (tenant.Tenant, error) {
 	for attempt := 0; attempt <= identifierRetries; attempt++ {
 		identifier := p.newIdentifier()
 		if !tenant.IsIdentifier(identifier) {
 			return tenant.Tenant{}, fmt.Errorf("%w: the generated identifier is outside the roster's domain",
 				errIdentifierUnavailable)
 		}
-		// The identifier is one namespace with the aliases: a generated value
-		// equal to the alias would make one slug name the tenant twice.
-		if identifier == alias {
+		// The identifier is one namespace with the names: a generated value
+		// equal to the name would make one slug name the tenant twice.
+		if identifier == name {
 			continue
 		}
 		available, err := p.identifierAvailable(ctx, tenant.ID(identifier))
@@ -371,7 +371,7 @@ func (p *product) newOrganization(ctx context.Context, alias string, account aut
 		if available {
 			return tenant.Tenant{
 				ID:           tenant.ID(identifier),
-				Alias:        alias,
+				Name:         name,
 				Status:       tenant.StatusActive,
 				OwnerAccount: account.String(),
 				Profile:      profile,
@@ -381,18 +381,18 @@ func (p *product) newOrganization(ctx context.Context, alias string, account aut
 	return tenant.Tenant{}, errIdentifierUnavailable
 }
 
-// identifierAvailable reports whether neither the identifier nor the alias (the
+// identifierAvailable reports whether neither the identifier nor the name (the
 // same string) is held. Both lookups are made because the roster keeps the two
 // as separate unique columns: a row whose identifier is another string may hold
-// the alias.
+// the name.
 func (p *product) identifierAvailable(ctx context.Context, id tenant.ID) (bool, error) {
 	if _, found, err := p.roster.Get(ctx, id); err != nil {
 		return false, fmt.Errorf("reading the roster for %q: %w", id, err)
 	} else if found {
 		return false, nil
 	}
-	if _, found, err := p.roster.ByAlias(ctx, string(id)); err != nil {
-		return false, fmt.Errorf("reading the roster's alias %q: %w", id, err)
+	if _, found, err := p.roster.ByName(ctx, string(id)); err != nil {
+		return false, fmt.Errorf("reading the roster's name %q: %w", id, err)
 	} else if found {
 		return false, nil
 	}

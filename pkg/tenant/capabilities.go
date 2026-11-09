@@ -7,7 +7,7 @@ import (
 
 // Extractor reads a tenant name off the request surface.
 //
-// It sees the request and nothing else. The name it returns is an alias — the
+// It sees the request and nothing else. The name it returns is the tenant's name — the
 // roster is what turns one into an identifier, and an extractor does not know
 // the roster exists.
 //
@@ -103,7 +103,7 @@ type Admission interface {
 // COMMIT then waits for it to finish reading. On PostgreSQL, a write to
 // a row the caller's own transaction has written waits for that transaction,
 // until the caller's context ends or the session's lock_timeout or
-// statement_timeout does, and with none of them for good. Get, ByAlias and
+// statement_timeout does, and with none of them for good. Get, ByName and
 // List read the snapshot and nothing else.
 //
 // Enter and EnterRegistered are the methods that put a tenant into a context,
@@ -115,22 +115,22 @@ type Catalog interface {
 	// Get returns the tenant with this identifier. The second result is
 	// false when the roster has no such row.
 	Get(ctx context.Context, id ID) (Tenant, bool, error)
-	// ByAlias returns the tenant this alias belongs to. It is the only lookup
+	// ByName returns the tenant this name belongs to. It is the only lookup
 	// the resolving layer makes on every request: the identifier is internal
 	// and is never a name a request surface carries.
-	ByAlias(ctx context.Context, alias string) (Tenant, bool, error)
+	ByName(ctx context.Context, name string) (Tenant, bool, error)
 	// Put registers a tenant, or rewrites the row its identifier already
 	// has. The status and the disable source are taken from the value as
-	// given; the alias is not, because an alias is chosen at creation and is
+	// given; the name is not, because a name is chosen at creation and is
 	// never changed. The owner is written on an insert and left alone on a
 	// rewrite: Put is not the transfer path, SetOwner is.
 	//
-	// It is idempotent by identifier. A rewrite whose value carries an alias
+	// It is idempotent by identifier. A rewrite whose value carries a name
 	// other than the one the row already has is refused with ErrInvalidTenant,
-	// and nothing is written. An insert whose alias another tenant holds, or
-	// whose alias is another tenant's identifier, is refused as
-	// ErrAliasConflict; an insert whose identifier is another tenant's alias is
-	// refused as ErrTenantExists. An alias and an identifier are one namespace,
+	// and nothing is written. An insert whose name another tenant holds, or
+	// whose name is another tenant's identifier, is refused as
+	// ErrNameConflict; an insert whose identifier is another tenant's name is
+	// refused as ErrTenantExists. A name and an identifier are one namespace,
 	// so a slug addresses one tenant whichever way it is looked up. A row that
 	// is a tombstone is refused with ErrTenantDeleted, and nothing is written:
 	// a deleted tenant is terminal. So is a value whose status is StatusDeleted
@@ -142,9 +142,9 @@ type Catalog interface {
 	// whose identifier the roster's table already holds with ErrTenantExists,
 	// writing nothing — a tombstone's identifier included, so a deleted tenant
 	// is never registered a second time. The value's owner, profile and the
-	// moment of creation are written with the row. An alias another tenant holds
-	// is refused as Put refuses it, so is an alias another tenant carries as its
-	// identifier, and an identifier another tenant carries as its alias is
+	// moment of creation are written with the row. A name another tenant holds
+	// is refused as Put refuses it, so is a name another tenant carries as its
+	// identifier, and an identifier another tenant carries as its name is
 	// refused with ErrTenantExists; a value whose status is StatusDeleted or
 	// whose disable source is not the operator's is refused with
 	// ErrInvalidTenant, as Put refuses it.
@@ -155,7 +155,7 @@ type Catalog interface {
 	// and two creations of one identifier at once end with one tenant and
 	// one refusal. Checking with Get and then calling Put has neither
 	// property: a replica whose snapshot has not seen a tenant yet rewrites
-	// its alias and status — re-enabling it if it was disabled.
+	// its name and status — re-enabling it if it was disabled.
 	Create(ctx context.Context, t Tenant) error
 	// SetStatus is the operator's state transition. Disabling writes the
 	// source as the operator's, even on a row already disabled — the operator
@@ -172,14 +172,14 @@ type Catalog interface {
 	// with ErrInvalidTenant.
 	SetStatusByAccount(ctx context.Context, id ID, s Status) error
 	// Delete writes one tenant as deleted, the terminal state: the row, the
-	// identifier, the alias, the owner and the disable source stay, status
+	// identifier, the name, the owner and the disable source stay, status
 	// reads as deleted, and the moment is recorded in the deletion column. The
 	// tenant is never served again. Deleting a tombstone again writes nothing
 	// and returns nil. An identifier no row carries, or one outside the domain,
 	// is refused with ErrInvalidTenant.
 	Delete(ctx context.Context, id ID) error
 	// SetOwner writes one tenant's owner account and nothing else. It is the
-	// transfer path: the alias, the status, the profile and the creation time
+	// transfer path: the name, the status, the profile and the creation time
 	// are not named, so a transfer cannot undo a disable or a profile update
 	// committed in the same window. A business organization always has an owner,
 	// so the empty value is refused with ErrInvalidTenant, as is a value carrying
@@ -189,7 +189,7 @@ type Catalog interface {
 	SetOwner(ctx context.Context, id ID, owner string) error
 	// SetProfile rewrites one tenant's organization profile and nothing else:
 	// the display name, the description, the contact email and the website.
-	// The alias, the owner, the status, the disable source and the creation
+	// The name, the owner, the status, the disable source and the creation
 	// time are not
 	// written, so a profile update cannot undo a disable or a
 	// deletion another path committed in the same window. Put is not the route
@@ -201,7 +201,7 @@ type Catalog interface {
 	// refused with ErrInvalidTenant, and a tombstone with ErrTenantDeleted: a
 	// deleted tenant's profile is as terminal as the rest of its row.
 	SetProfile(ctx context.Context, id ID, profile Profile) error
-	// List returns every tenant the roster holds, ordered by alias, as a copy:
+	// List returns every tenant the roster holds, ordered by name, as a copy:
 	// a caller sorting or trimming what it was handed does not disturb what
 	// the next caller sees.
 	List(ctx context.Context) ([]Tenant, error)

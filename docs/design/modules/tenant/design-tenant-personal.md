@@ -8,7 +8,7 @@
 
 - 实现认证根包的事务内 seam `provisioning.AccountProvisioning`：在账户创建的同一事务里写租户行、创建者成员关系、`tenant-admin` 角色、角色在允许集内的授予与创建者绑定（允许集为空时不写授予行）；在账户删除的同一事务里清空账户的绑定、删除 `tenant-admin` 角色并把租户行写成墓碑。
 - 对服务账户什么也不写：服务账户由管理员授予租户访问，不拥有自己的组织。
-- 把个人租户的别名写成账户的用户名，使个人组织在请求侧以用户名寻址；用户账户总有用户名，账户没有用户名时拒绝写入，不以派生标识代替。
+- 把个人租户的名称写成账户的用户名，使个人组织在请求侧以用户名寻址；用户账户总有用户名，账户没有用户名时拒绝写入，不以派生标识代替。
 - 实现认证根包的 `authn.AccountLifecycle`：创建钩子补齐事务内 seam 未完成的部分，停用与启用钩子按账户的状态迁移租户，删除钩子收尾租户内其余账户的成员关系。清空被删除账户的绑定、删除角色、写删除审计行与写墓碑由事务内的删除完成。
 - 订阅账户的状态变更与删除事件，在事件投递时重跑同一组幂等钩子，作为进程在提交与钩子之间停止时的补偿。
 - 交付 `tenant.KindResolver`：调用方自己的个人租户读作 `personal`，其余读作 `business`。
@@ -55,7 +55,7 @@
 |---|---|
 | `ModuleName`、`FeatureName` | 命令树与特性文档里的名字；两者都是 `org.personal` |
 | `IDPrefix`、`TenantID`、`IsPersonalTenantID` | 派生与识别个人租户标识 |
-| `ErrAliasConflict` | 用户名被业务组织持有的别名冲突，包装 `tenant.ErrAliasConflict` 与账户模块的 `authn.ErrAccountExists` |
+| `ErrNameConflict` | 用户名被业务组织持有的名称冲突，包装 `tenant.ErrNameConflict` 与账户模块的 `authn.ErrAccountExists` |
 | `ErrUsernameMissing` | 用户账户没有用户名时的拒绝 |
 | `ErrTenantUnavailable`、`ErrIdentifierUnavailable` | 提交后补完的两类拒绝 |
 
@@ -109,12 +109,12 @@ sequenceDiagram
 
 本模块不声明表。它写四类行：
 
-- **租户行**：`ID` 是 `personal-` 加账户标识，`Alias` 是账户用户名，`Status` 是 `active`，`OwnerAccount` 是账户标识，`Profile.DisplayName` 是账户的显示名。
+- **租户行**：`ID` 是 `personal-` 加账户标识，`Name` 是账户用户名，`Status` 是 `active`，`OwnerAccount` 是账户标识，`Profile.DisplayName` 是账户的显示名。
 - **成员关系**：账户在个人租户里的有效成员关系，来源写 `personal`。
 - **授权行**：`tenant-admin` 角色（描述键 `authz.role.tenantAdmin`）与账户到该角色的绑定；角色在允许集内的授予只在允许集非空时写入。
 - **审计行**：创建与删除各一行，结果取 `success` 或 `failed`。
 
-删除把租户行写成墓碑：`Status` 变成 `deleted`，别名保留，标识因此不可复用。
+删除把租户行写成墓碑：`Status` 变成 `deleted`，名称保留，标识因此不可复用。
 
 ## 核心算法与流程
 
@@ -123,19 +123,19 @@ sequenceDiagram
 初始状态：账户表里没有 `alice`，名册里没有 `personal-<alice-id>`。
 
 1. 账户模块在一个事务里写账户行、用户名标识与凭据。
-2. 同一事务里调用 `ProvisionAccount`。本模块以 `ID=personal-<id>`、`Alias=alice`、`Status=active`、`OwnerAccount=<id>` 调 `CreateTx`；名册写入租户行并交回提交后的快照重读闭包。
+2. 同一事务里调用 `ProvisionAccount`。本模块以 `ID=personal-<id>`、`Name=alice`、`Status=active`、`OwnerAccount=<id>` 调 `CreateTx`；名册写入租户行并交回提交后的快照重读闭包。
 3. 本模块经 `PutMembershipTx` 写 `alice` 在个人租户里的有效成员关系，来源 `personal`。
 4. 本模块经 `PutRoleTx` 写 `tenant-admin` 角色，经 `SeedGrantsTx` 写允许集内的授予（允许集为空，这一步不写行），经 `PutBindingTx` 把 `alice` 绑到该角色。每次写入交回的闭包都交给上下文里的 `AfterCommit` 收集器。
 5. 账户模块提交。名册重读与授权的快照刷新、事件发布与创建的审计行按收集器的顺序运行。
 6. 账户模块调用 `AccountCreated`。本模块读到租户行已是 `active`，`ensure` 发现成员关系、角色与绑定都在，不写任何行。
 
-持久状态：账户行、`personal-<id>` 租户行（别名 `alice`）、创建者的一条成员关系、`tenant-admin` 角色、该角色的零条授予、账户到该角色的一条绑定与一条创建审计行。授予为零是因为允许集为空：本骨架的 `personalBusinessPermissions` 没有列出任何业务资源权限，而允许集只从这个代码内列出的集合取，不从进程目录推导，所以模块声明的权限不会自行加入；当前允许集是它与 `TenantGoverned` 相交、再减去成员关系管理与身份提供方管理两个排除项的结果，因此为空。新增业务能力时，把它的租户级权限加入这个集合，下一次提交后的补完就会写入相应授予（见[扩展点](#扩展点)）。
+持久状态：账户行、`personal-<id>` 租户行（名称 `alice`）、创建者的一条成员关系、`tenant-admin` 角色、该角色的零条授予、账户到该角色的一条绑定与一条创建审计行。授予为零是因为允许集为空：本骨架的 `personalBusinessPermissions` 没有列出任何业务资源权限，而允许集只从这个代码内列出的集合取，不从进程目录推导，所以模块声明的权限不会自行加入；当前允许集是它与 `TenantGoverned` 相交、再减去成员关系管理与身份提供方管理两个排除项的结果，因此为空。新增业务能力时，把它的租户级权限加入这个集合，下一次提交后的补完就会写入相应授予（见[扩展点](#扩展点)）。
 
 ### 事务内建立
 
-`ProvisionAccount` 只对 `kind=user` 生效。它为租户标识派生 `TenantID(account)`，把别名写作用户名；用户账户总有用户名，用户名为空时以 `ErrUsernameMissing` 拒绝，账户事务回滚。五次写入的次序是租户行、成员关系、角色、授予（允许集为空时这一步没有行）、绑定；每一步交回的提交后闭包都追加到 `provisioning.AfterCommitOf(ctx)`。租户行这次真正建立时，创建的审计行也作为一个提交后闭包写入；幂等重放不再记一行。
+`ProvisionAccount` 只对 `kind=user` 生效。它为租户标识派生 `TenantID(account)`，把名称写作用户名；用户账户总有用户名，用户名为空时以 `ErrUsernameMissing` 拒绝，账户事务回滚。五次写入的次序是租户行、成员关系、角色、授予（允许集为空时这一步没有行）、绑定；每一步交回的提交后闭包都追加到 `provisioning.AfterCommitOf(ctx)`。租户行这次真正建立时，创建的审计行也作为一个提交后闭包写入；幂等重放不再记一行。
 
-租户行返回 `tenant.ErrTenantExists` 是幂等重放：租户行已在，剩下的四步继续补完。返回 `tenant.ErrAliasConflict` 是本模块导出的 `ErrAliasConflict`，同时包装名册的哨兵与账户模块的 `authn.ErrAccountExists`，账户事务回滚；账户创建因此把“用户名被业务组织占用”答成与用户名已存在相同的冲突，而不是依赖不可用。其余失败原样返回，事务同样回滚。
+租户行返回 `tenant.ErrTenantExists` 是幂等重放：租户行已在，剩下的四步继续补完。返回 `tenant.ErrNameConflict` 是本模块导出的 `ErrNameConflict`，同时包装名册的哨兵与账户模块的 `authn.ErrAccountExists`，账户事务回滚；账户创建因此把“用户名被业务组织占用”答成与用户名已存在相同的冲突，而不是依赖不可用。其余失败原样返回，事务同样回滚。
 
 ### 事务内删除
 
@@ -149,7 +149,7 @@ sequenceDiagram
 
 ### 提交后的补完
 
-`ensure` 是创建钩子与事件补偿共用的幂等补完。它先读成员关系；已有则经 `EnterRegistered` 与 `Get` 读回租户行，没有则先写强制审计行，再读账户用户名作别名创建租户，然后补成员关系、角色、允许集内的授予与绑定（允许集为空时没有授予行），最后移除旧模型遗留的 `owner` 角色。用户名读不到时以 `ErrUsernameMissing` 拒绝且不创建租户；租户行不是 `active` 时在写任何行之前以 `ErrTenantUnavailable` 拒绝。
+`ensure` 是创建钩子与事件补偿共用的幂等补完。它先读成员关系；已有则经 `EnterRegistered` 与 `Get` 读回租户行，没有则先写强制审计行，再读账户用户名作名称创建租户，然后补成员关系、角色、允许集内的授予与绑定（允许集为空时没有授予行），最后移除旧模型遗留的 `owner` 角色。用户名读不到时以 `ErrUsernameMissing` 拒绝且不创建租户；租户行不是 `active` 时在写任何行之前以 `ErrTenantUnavailable` 拒绝。
 
 ### 种类解析
 
@@ -162,7 +162,7 @@ sequenceDiagram
 | 服务账户 | 建立与删除都什么也不写，返回 nil |
 | 用户账户没有用户名 | `ErrUsernameMissing`，账户事务回滚 |
 | 租户行已存在 | 幂等重放，剩余四步继续 |
-| 别名被业务组织持有 | `ErrAliasConflict`，同时匹配 `tenant.ErrAliasConflict` 与 `authn.ErrAccountExists`，账户事务回滚 |
+| 名称被业务组织持有 | `ErrNameConflict`，同时匹配 `tenant.ErrNameConflict` 与 `authn.ErrAccountExists`，账户事务回滚 |
 | 其他名册失败 | 原样传播，账户事务回滚 |
 | 删除时角色内置 | 容忍 `authz.ErrBuiltinRole`，继续写墓碑 |
 | 删除时租户行不存在 | 容忍 `tenant.ErrInvalidTenant`，没有要写的墓碑 |
@@ -179,7 +179,7 @@ seam 的失败一律使账户事务回滚：账户与它拥有的空间要么都
 
 **补完与钩子是幂等的。** 两次并发的 `ensure` 以确定性标识在名册的唯一约束上相撞，败者读回胜者的行；重复的删除事件找到墓碑后只重试成员关系的移除，其余步骤已完成。事件按标识去重，内存里保留一个有界的近期集合。
 
-**用户名与别名共用一个命名空间。** `tenants.alias` 的单列唯一约束仲裁并发：一个业务组织先占用了用户名，同一用户名的账户创建在租户行处失败并整体回滚；反过来，已存在的个人租户别名阻止业务组织使用同一别名。用户名空间保留 `personal-` 前缀，所以派生标识不会与用户名相撞。
+**用户名与名称共用一个命名空间。** `tenants.name` 的单列唯一约束仲裁并发：一个业务组织先占用了用户名，同一用户名的账户创建在租户行处失败并整体回滚；反过来，已存在的个人租户名称阻止业务组织使用同一名称。用户名空间保留 `personal-` 前缀，所以派生标识不会与用户名相撞。
 
 ## 扩展点
 

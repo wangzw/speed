@@ -19,8 +19,8 @@ import (
 func TestTheListAnswersEveryTenantInRosterOrder(t *testing.T) {
 	r := newRig(t)
 	r.catalog.list = []tenant.Tenant{
-		{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-		{ID: "t_globex", Alias: "globex", Status: tenant.StatusDisabled},
+		{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
+		{ID: "t_globex", Name: "globex", Status: tenant.StatusDisabled},
 	}
 
 	w := r.do(http.MethodGet, pathTenants, nil)
@@ -32,7 +32,7 @@ func TestTheListAnswersEveryTenantInRosterOrder(t *testing.T) {
 	}
 	decode(t, w, &got)
 	if len(got.Tenants) != 2 ||
-		got.Tenants[0].Alias != "acme" || got.Tenants[1].Alias != "globex" {
+		got.Tenants[0].Name != "acme" || got.Tenants[1].Name != "globex" {
 		t.Fatalf("tenants = %+v, want acme then globex, in the roster's order", got.Tenants)
 	}
 	if got.Tenants[0].Status != "active" || got.Tenants[1].Status != "disabled" {
@@ -42,7 +42,7 @@ func TestTheListAnswersEveryTenantInRosterOrder(t *testing.T) {
 
 func TestTheGetAnswersOneTenant(t *testing.T) {
 	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	r.catalog.found = true
 
 	w := r.do(http.MethodGet, pathTenants+"/t_acme", nil)
@@ -53,7 +53,7 @@ func TestTheGetAnswersOneTenant(t *testing.T) {
 		Tenant tenantView `json:"tenant"`
 	}
 	decode(t, w, &got)
-	if got.Tenant.Alias != "acme" || got.Tenant.Status != "active" || got.Tenant.Kind != "business" {
+	if got.Tenant.Name != "acme" || got.Tenant.Status != "active" || got.Tenant.Kind != "business" {
 		t.Errorf("tenant = %+v, want acme active and business", got.Tenant)
 	}
 	calls := r.catalog.recorded()
@@ -75,12 +75,12 @@ func TestTheGetOfAnUnknownTenantIs404(t *testing.T) {
 	}
 }
 
-// Aliases are immutable after creation and the alias-change route is gone: a
+// Names are immutable after creation and the name-change route is gone: a
 // PATCH on a tenant path reaches no handler, so the request is a bare 404 and
 // nothing reaches the roster or the audit.
-func TestTheAliasChangeRouteIsGone(t *testing.T) {
+func TestTheNameChangeRouteIsGone(t *testing.T) {
 	r := newRig(t)
-	w := r.do(http.MethodPatch, pathTenants+"/t_acme", map[string]string{"alias": "acme-labs"})
+	w := r.do(http.MethodPatch, pathTenants+"/t_acme", map[string]string{"name": "acme-labs"})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 (body %s)", w.Code, w.Body.String())
 	}
@@ -94,7 +94,7 @@ func TestTheAliasChangeRouteIsGone(t *testing.T) {
 
 func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	r := newRig(t)
-	w := r.do(http.MethodPost, pathTenants, createBody{Alias: "acme"})
+	w := r.do(http.MethodPost, pathTenants, createBody{Name: "acme"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (body %s)", w.Code, w.Body.String())
 	}
@@ -102,7 +102,7 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 		Tenant tenantView `json:"tenant"`
 	}
 	decode(t, w, &got)
-	if got.Tenant.Alias != "acme" || got.Tenant.Status != "active" {
+	if got.Tenant.Name != "acme" || got.Tenant.Status != "active" {
 		t.Errorf("tenant = %+v, want the registration, active", got.Tenant)
 	}
 	// The answer carries the creation instant the roster recorded, not the zero
@@ -115,12 +115,12 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 		t.Fatalf("the provisioner was asked %+v, want one registration", calls)
 	}
 	want := tenant.Tenant{
-		Alias: "acme", Status: tenant.StatusActive,
+		Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: authntest.DefaultAccount.String(),
 	}
-	if calls[0].tenant.Alias != want.Alias || calls[0].tenant.Status != want.Status ||
+	if calls[0].tenant.Name != want.Name || calls[0].tenant.Status != want.Status ||
 		calls[0].tenant.OwnerAccount != want.OwnerAccount {
-		t.Errorf("the row passed on = %+v, want alias, state and owner from %+v", calls[0].tenant, want)
+		t.Errorf("the row passed on = %+v, want name, state and owner from %+v", calls[0].tenant, want)
 	}
 	if !strings.HasPrefix(string(calls[0].tenant.ID), "org-") {
 		t.Errorf("the generated identifier is %q, want the org- prefix", calls[0].tenant.ID)
@@ -152,7 +152,7 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 	}{
 		"list":     {http.MethodGet, pathTenants, nil, PermissionTenantRead},
 		"get":      {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
-		"create":   {http.MethodPost, pathTenants, createBody{Alias: "abc"}, PermissionTenantManage},
+		"create":   {http.MethodPost, pathTenants, createBody{Name: "abc"}, PermissionTenantManage},
 		"transfer": {http.MethodPut, pathTenants + "/t/owner", map[string]any{"account": "acc-2"}, PermissionTenantManage},
 		"delete":   {http.MethodDelete, pathTenants + "/t", nil, PermissionTenantManage},
 		"status":   {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
@@ -194,7 +194,7 @@ func TestARequestWithNoIdentityIsA401(t *testing.T) {
 	}{
 		"list":   {http.MethodGet, pathTenants, nil},
 		"get":    {http.MethodGet, pathTenants + "/t", nil},
-		"create": {http.MethodPost, pathTenants, createBody{Alias: "abc"}},
+		"create": {http.MethodPost, pathTenants, createBody{Name: "abc"}},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -225,7 +225,7 @@ func TestAGuardRefusalReachesNoRoster(t *testing.T) {
 	t.Run("denial", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.allow = false
-		w := r.do(http.MethodPost, pathTenants, createBody{Alias: "abc"})
+		w := r.do(http.MethodPost, pathTenants, createBody{Name: "abc"})
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", w.Code)
 		}
@@ -236,7 +236,7 @@ func TestAGuardRefusalReachesNoRoster(t *testing.T) {
 	t.Run("outage", func(t *testing.T) {
 		r := newRig(t)
 		r.guard.err = errors.New("engine down")
-		w := r.do(http.MethodPost, pathTenants, createBody{Alias: "abc"})
+		w := r.do(http.MethodPost, pathTenants, createBody{Name: "abc"})
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("status = %d, want 503", w.Code)
 		}
@@ -255,7 +255,7 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 		target string
 		body   any
 	}{
-		"create": {http.MethodPost, pathTenants, createBody{Alias: "abc"}},
+		"create": {http.MethodPost, pathTenants, createBody{Name: "abc"}},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "disabled"}},
 	}
 	for name, tc := range writes {
@@ -287,7 +287,7 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	r := newRig(t)
 	r.provisioner.fail(tenant.ErrTenantExists)
-	w := r.do(http.MethodPost, pathTenants, createBody{Alias: "acme"})
+	w := r.do(http.MethodPost, pathTenants, createBody{Name: "acme"})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
 	}
@@ -306,7 +306,7 @@ func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 		t.Errorf("actions = %q, %q; want %q", rows[0].Action, rows[1].Action, actionTenantCreate)
 	}
 	if rows[0].Object != "acme" {
-		t.Errorf("object = %q, want the tenant alias acme", rows[0].Object)
+		t.Errorf("object = %q, want the tenant name acme", rows[0].Object)
 	}
 }
 
@@ -319,7 +319,7 @@ func TestEachWriteCarriesItsOwnAuditAction(t *testing.T) {
 		body   any
 		want   string
 	}{
-		"create": {http.MethodPost, pathTenants, createBody{Alias: "abc"}, actionTenantCreate},
+		"create": {http.MethodPost, pathTenants, createBody{Name: "abc"}, actionTenantCreate},
 		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "disabled"}, actionTenantStatus},
 	}
 	for name, tc := range cases {
@@ -359,13 +359,13 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 			typ    string
 		}{
 			"an identifier the table holds": {tenant.ErrTenantExists, http.StatusConflict, typePrefix + conflictCode},
-			"an alias another holds":        {tenant.ErrAliasConflict, http.StatusConflict, typePrefix + conflictCode},
+			"a name another holds":          {tenant.ErrNameConflict, http.StatusConflict, typePrefix + conflictCode},
 			"an unknown failure":            {errors.New("boom"), http.StatusServiceUnavailable, ""},
 		} {
 			t.Run(name, func(t *testing.T) {
 				r := newRig(t)
 				r.provisioner.fail(tc.err)
-				w := r.do(http.MethodPost, pathTenants, createBody{Alias: "abc"})
+				w := r.do(http.MethodPost, pathTenants, createBody{Name: "abc"})
 				if w.Code != tc.status {
 					t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.status, w.Body.String())
 				}
@@ -418,7 +418,7 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 }
 
 // A shape refusal happens after the decision and before the action: a blank
-// identifier or alias, a body that cannot be read, and a status outside the
+// identifier or name, a body that cannot be read, and a status outside the
 // closed set are 400s, and neither the roster nor the audit is reached.
 func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 	cases := map[string]struct {
@@ -426,10 +426,10 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 		target string
 		body   any
 	}{
-		"create carrying an identifier":     {http.MethodPost, pathTenants, map[string]any{"alias": "acme", "id": "t_acme"}},
-		"create with a blank alias":         {http.MethodPost, pathTenants, createBody{Alias: "a b"}},
-		"create with a short alias":         {http.MethodPost, pathTenants, createBody{Alias: "ab"}},
-		"create with an underscored alias":  {http.MethodPost, pathTenants, createBody{Alias: "a_b"}},
+		"create carrying an identifier":     {http.MethodPost, pathTenants, map[string]any{"name": "acme", "id": "t_acme"}},
+		"create with a blank name":          {http.MethodPost, pathTenants, createBody{Name: "a b"}},
+		"create with a short name":          {http.MethodPost, pathTenants, createBody{Name: "ab"}},
+		"create with an underscored name":   {http.MethodPost, pathTenants, createBody{Name: "a_b"}},
 		"create with a body it cannot read": {http.MethodPost, pathTenants, "not-an-object"},
 		"delete with a blank identifier":    {http.MethodDelete, pathTenants + "/t%20acme", nil},
 		"transfer with an invalid account":  {http.MethodPut, pathTenants + "/t_acme/owner", map[string]any{"account": "not an account"}},
@@ -477,7 +477,7 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 }
 
 // The view carries the fields the design names, per state, spelled the way
-// tenant.Status and tenant.DisabledBy spell them: the alias, the kind, the owner
+// tenant.Status and tenant.DisabledBy spell them: the name, the kind, the owner
 // account and the state's name on every row, and disabledBy only on a disabled
 // one. It carries no identifier. A field added to a record later does not reach a
 // client by being there, and a source never appears on a row whose state is not
@@ -492,57 +492,57 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 	}{
 		"active": {
 			row: tenant.Tenant{
-				ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+				ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 				OwnerAccount: "acct-owner", CreatedAt: createdAt,
 			},
 			wantStatus: "active",
 			wantKeys: []string{
-				"alias", "kind", "displayName", "description", "contactEmail", "website",
+				"name", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt",
 			},
 		},
 		"disabled by an operator": {
 			row: tenant.Tenant{
-				ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
+				ID: "t_acme", Name: "acme", Status: tenant.StatusDisabled,
 				OwnerAccount: "acct-owner", DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"alias", "kind", "displayName", "description", "contactEmail", "website",
+				"name", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
 		},
 		"disabled by an account": {
 			row: tenant.Tenant{
-				ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
+				ID: "t_acme", Name: "acme", Status: tenant.StatusDisabled,
 				OwnerAccount: "acct-owner", DisabledBy: tenant.DisabledByAccount,
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"alias", "kind", "displayName", "description", "contactEmail", "website",
+				"name", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "account",
 		},
 		"deleted": {
-			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted, OwnerAccount: "acct-owner"},
+			row:        tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted, OwnerAccount: "acct-owner"},
 			wantStatus: "deleted",
-			wantKeys:   []string{"alias", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
+			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
 		},
 		"a tenant with no owner": {
-			row:        tenant.Tenant{ID: "t_system", Alias: "system", Status: tenant.StatusActive},
+			row:        tenant.Tenant{ID: "t_system", Name: "system", Status: tenant.StatusActive},
 			wantStatus: "active",
-			wantKeys:   []string{"alias", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
+			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
 		},
 		"a status this build does not know": {
 			row: tenant.Tenant{
-				ID: "t_acme", Alias: "acme", Status: tenant.Status(7),
+				ID: "t_acme", Name: "acme", Status: tenant.Status(7),
 				OwnerAccount: "acct-owner", DisabledBy: tenant.DisabledByOperator,
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"alias", "kind", "displayName", "description", "contactEmail", "website",
+				"name", "kind", "displayName", "description", "contactEmail", "website",
 				"ownerAccount", "status", "createdAt", "disabledBy",
 			},
 			disabledBy: "operator",
@@ -595,7 +595,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 func TestThePlatformDetailCarriesTheOwner(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-owner",
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-owner",
 	}
 	r.catalog.found = true
 

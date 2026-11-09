@@ -20,12 +20,12 @@ type records interface {
 
 // grantViewOf builds one impersonation record as the management routes show it.
 // The reason never appears; it is in the record and the audit row alone.
-func grantViewOf(g authn.ImpersonationGrant, tenantAlias string) AuthnAdminImpersonation {
+func grantViewOf(g authn.ImpersonationGrant, tenantName string) AuthnAdminImpersonation {
 	v := AuthnAdminImpersonation{
 		ID:        g.ID,
 		Actor:     string(g.Actor),
 		Target:    string(g.Target),
-		Tenant:    tenantAlias,
+		Tenant:    tenantName,
 		SessionID: string(g.SessionID),
 		StartedAt: g.StartedAt.UTC(),
 		EndsAt:    g.EndsAt.UTC(),
@@ -64,13 +64,13 @@ func (m *product) handleImpersonationList(ctx context.Context, in impersonationL
 	}
 	// The tenant is the path segment and is passed to the store, so the page
 	// holds only that tenant's records and the cursor counts them.
-	tenantAlias, aliasErr := m.aliasOf(ctx, in.Tenant)
-	if aliasErr != nil {
-		return AuthnAdminImpersonationList{}, m.unavailable("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := m.nameOf(ctx, in.Tenant)
+	if nameErr != nil {
+		return AuthnAdminImpersonationList{}, m.unavailable("reading the tenant's name", nameErr)
 	}
 	views := make([]AuthnAdminImpersonation, 0, len(grants))
 	for _, g := range grants {
-		views = append(views, grantViewOf(g, tenantAlias))
+		views = append(views, grantViewOf(g, tenantName))
 	}
 	return AuthnAdminImpersonationList{Impersonations: views, NextCursor: next}, nil
 }

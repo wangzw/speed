@@ -347,16 +347,16 @@ func (m *product) mandatoryAudit(ctx context.Context, actor authn.Identity, r au
 	if m.audit == nil {
 		return authn.ErrAuditRequired
 	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, r.Tenant)
-	if aliasErr != nil {
-		return aliasErr
+	tenantName, nameErr := m.nameOf(ctx, r.Tenant)
+	if nameErr != nil {
+		return nameErr
 	}
 	err := m.audit.Record(ctx, audit.Entry{
 		Action:  actionStart,
 		Object:  audit.AccountObject(string(r.Target)),
 		Outcome: outcomeGranted,
 		Purpose: strings.TrimSpace(r.Reason),
-		Detail:  startDetail(actor, r, grantID, ttl, tenantAlias),
+		Detail:  startDetail(actor, r, grantID, ttl, tenantName),
 	})
 	if err != nil {
 		return authn.ErrAuditRequired
@@ -364,12 +364,12 @@ func (m *product) mandatoryAudit(ctx context.Context, actor authn.Identity, r au
 	return nil
 }
 
-// startDetail is the detail of a start's audit row: the tenant's alias, the
+// startDetail is the detail of a start's audit row: the tenant's name, the
 // settled lifetime, the actor's session and the action identifier. The session
 // is written as sid; the journal owns the name session on an impersonating row.
-func startDetail(actor authn.Identity, r authn.ImpersonationRequest, grantID string, ttl time.Duration, tenantAlias string) map[string]string {
+func startDetail(actor authn.Identity, r authn.ImpersonationRequest, grantID string, ttl time.Duration, tenantName string) map[string]string {
 	return map[string]string{
-		detailTenant:     tenantAlias,
+		detailTenant:     tenantName,
 		detailTTLSeconds: strconv.FormatInt(int64(ttl/time.Second), 10),
 		detailSID:        string(actor.Session()),
 		detailGrantID:    grantID,
@@ -380,13 +380,13 @@ func startDetail(actor authn.Identity, r authn.ImpersonationRequest, grantID str
 // transaction did not commit. It links to the granted row by the action
 // identifier. A failure to write it changes nothing: the record did not land.
 func (m *product) failedAudit(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, grantID string) {
-	tenantAlias, _ := m.aliasOf(ctx, r.Tenant)
+	tenantName, _ := m.nameOf(ctx, r.Tenant)
 	m.writeAudit(ctx, audit.Entry{
 		Action:  actionStart,
 		Object:  audit.AccountObject(string(r.Target)),
 		Outcome: outcomeFailed,
 		Purpose: strings.TrimSpace(r.Reason),
-		Detail:  map[string]string{detailGrantID: grantID, detailTenant: tenantAlias, detailSID: string(actor.Session())},
+		Detail:  map[string]string{detailGrantID: grantID, detailTenant: tenantName, detailSID: string(actor.Session())},
 	})
 }
 
@@ -396,13 +396,13 @@ func (m *product) failedAudit(ctx context.Context, actor authn.Identity, r authn
 // outcome.
 func (m *product) refuse(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, _ error) {
 	m.recordSession(ctx, outcomeDenied)
-	tenantAlias, _ := m.aliasOf(ctx, r.Tenant)
+	tenantName, _ := m.nameOf(ctx, r.Tenant)
 	m.writeAudit(ctx, audit.Entry{
 		Action:  actionStart,
 		Object:  audit.AccountObject(string(r.Target)),
 		Outcome: outcomeDenied,
 		Purpose: strings.TrimSpace(r.Reason),
-		Detail:  map[string]string{detailTenant: tenantAlias, detailSID: string(actor.Session())},
+		Detail:  map[string]string{detailTenant: tenantName, detailSID: string(actor.Session())},
 	})
 }
 

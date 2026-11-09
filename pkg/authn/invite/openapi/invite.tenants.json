@@ -41,7 +41,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The alias of the tenant the invitation grants a membership in.",
+            "description": "The name of the tenant the invitation grants a membership in.",
             "type": "string"
           }
         },
@@ -180,7 +180,7 @@
             }
           },
           {
-            "description": "The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
+            "description": "The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -264,7 +264,7 @@
         "operationId": "authn.invite.issue",
         "parameters": [
           {
-            "description": "The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
+            "description": "The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -397,7 +397,7 @@
         "operationId": "authn.invite.revoke",
         "parameters": [
           {
-            "description": "The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
+            "description": "The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,

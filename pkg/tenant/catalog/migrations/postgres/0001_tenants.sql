@@ -6,6 +6,6 @@
 -- direction a value nobody chose has to fall.
 CREATE TABLE tenants (
     id     TEXT    NOT NULL PRIMARY KEY,
-    alias  TEXT    NOT NULL UNIQUE,
+    name   TEXT    NOT NULL UNIQUE,
     status INTEGER NOT NULL DEFAULT 0
 );

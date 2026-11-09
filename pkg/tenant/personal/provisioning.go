@@ -14,17 +14,17 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ErrAliasConflict reports a personal tenant whose alias another tenant holds.
-// It wraps tenant.ErrAliasConflict and authn.ErrAccountExists, so a caller may
+// ErrNameConflict reports a personal tenant whose name another tenant holds.
+// It wraps tenant.ErrNameConflict and authn.ErrAccountExists, so a caller may
 // match any of the three: the roster's error names the conflict, and the authn
 // sentinel lets the account module and the login path tell a taken name from an
 // unavailable dependency. The exported sentinel exists so a caller and a test
 // can identify this module's refusal without depending on the roster's own
 // error text.
-var ErrAliasConflict = errors.New("personal: the personal tenant's alias is held by another tenant")
+var ErrNameConflict = errors.New("personal: the personal tenant's name is held by another tenant")
 
 // ErrUsernameMissing refuses a user account that carries no username. The
-// personal tenant's alias is always the account's username, so an account
+// personal tenant's name is always the account's username, so an account
 // without one is the write input's invariant broken rather than a case to
 // provision around: the seam writes nothing and the account's transaction
 // rolls back.
@@ -49,25 +49,25 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 		return err
 	}
 	personalID := TenantID(account)
-	// The alias is the account's username: it is how the personal organization
+	// The name is the account's username: it is how the personal organization
 	// is addressed on the request surface, and the username is already unique in
-	// the namespace the roster's alias column carries. A user account always has
+	// the namespace the roster's name column carries. A user account always has
 	// a username, so an empty one is refused rather than replaced by a derived
-	// alias.
-	alias := facts.Username
-	if alias == "" {
+	// name.
+	name := facts.Username
+	if name == "" {
 		return fmt.Errorf("%w: account %q", ErrUsernameMissing, facts.ID)
 	}
 	now := time.Now().UTC()
 
 	// 1. The tenant row. An identifier another call already registered is the
 	// idempotent replay of this write, not a failure: the rest of the steps
-	// complete the row it left. An alias another tenant holds is the account's
+	// complete the row it left. A name another tenant holds is the account's
 	// username being taken by a business organization, and the account cannot
 	// own a personal tenant addressed by it.
 	after, err := p.txRoster.CreateTx(ctx, tx, tenant.Tenant{
 		ID:           personalID,
-		Alias:        alias,
+		Name:         name,
 		Status:       tenant.StatusActive,
 		OwnerAccount: facts.ID,
 		Profile:      tenant.Profile{DisplayName: facts.DisplayName},
@@ -80,17 +80,17 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 		// records that creation rather than gating it. A replay that finds the
 		// row already there records nothing.
 		provisioning.AfterCommitOf(ctx).Add(func(ctx context.Context) error {
-			return p.audit.Record(ctx, personalAudit(personalCreateAction, account, alias, newPersonalActionID()))
+			return p.audit.Record(ctx, personalAudit(personalCreateAction, account, name, newPersonalActionID()))
 		})
 	case errors.Is(err, tenant.ErrTenantExists):
 		// The row is already there; the remaining steps are the replay.
-	case errors.Is(err, tenant.ErrAliasConflict):
-		// The alias is the account's username, so a business tenant holding it
+	case errors.Is(err, tenant.ErrNameConflict):
+		// The name is the account's username, so a business tenant holding it
 		// takes the name in the shared namespace. The error also carries
 		// authn.ErrAccountExists: the account module passes that through as a
 		// domain refusal rather than an unavailable dependency, and a login can
 		// then answer the name as taken instead of failing it as a fault.
-		return fmt.Errorf("%w: %w: %w", ErrAliasConflict, authn.ErrAccountExists, err)
+		return fmt.Errorf("%w: %w: %w", ErrNameConflict, authn.ErrAccountExists, err)
 	default:
 		return fmt.Errorf("registering the personal tenant in the account's transaction: %w", err)
 	}
@@ -141,7 +141,7 @@ func (p *product) ProvisionAccount(ctx context.Context, tx *gorm.DB, facts provi
 // transaction that erases the account. The account module has already deleted
 // the account's own rows, its membership included; what remains is the policy
 // the account held in its personal tenant and the tenant row itself, which is
-// written as a tombstone so its alias is never reused.
+// written as a tombstone so its name is never reused.
 func (p *product) ProvisionAccountDeletion(ctx context.Context, tx *gorm.DB, facts provisioning.AccountFacts) error {
 	if facts.Kind != string(authn.KindUser) {
 		return nil
@@ -173,15 +173,15 @@ func (p *product) ProvisionAccountDeletion(ctx context.Context, tx *gorm.DB, fac
 	// DeleteTx reports the missing identifier as ErrInvalidTenant. The
 	// identifier is derived from an account identifier, so it is inside the
 	// roster's domain; the only cause here is the absent row, which is no work.
-	// The row is read first for the alias the audit row names; an absent row
-	// leaves the alias empty and no audit row is written.
+	// The row is read first for the name the audit row names; an absent row
+	// leaves the name empty and no audit row is written.
 	held, found, readErr := p.txRoster.GetTx(ctx, tx, personalID)
 	if readErr != nil {
-		return fmt.Errorf("reading the personal tenant for its alias: %w", readErr)
+		return fmt.Errorf("reading the personal tenant for its name: %w", readErr)
 	}
-	alias := ""
+	name := ""
 	if found {
-		alias = held.Alias
+		name = held.Name
 	}
 	after, err := p.txRoster.DeleteTx(ctx, tx, personalID)
 	switch {
@@ -191,7 +191,7 @@ func (p *product) ProvisionAccountDeletion(ctx context.Context, tx *gorm.DB, fac
 		// longer be what stops it. It is written after the commit, at least
 		// once, like the deletion hook's own row would have been.
 		provisioning.AfterCommitOf(ctx).Add(func(ctx context.Context) error {
-			return p.audit.Record(ctx, personalAudit(personalDeleteAction, account, alias, newPersonalActionID()))
+			return p.audit.Record(ctx, personalAudit(personalDeleteAction, account, name, newPersonalActionID()))
 		})
 	case errors.Is(err, tenant.ErrInvalidTenant):
 		// No row: nothing to tombstone.

@@ -2,12 +2,12 @@
 // path names with the tenant the request itself resolved to.
 //
 // A tenant-scoped route is addressed under a tenant segment, /api/v1/tenants/
-// {tenant}/...; the request surface names a tenant by its alias, while the
+// {tenant}/...; the request surface names a tenant by its name, while the
 // resolving layer replaces that name with the tenant's identifier before
-// anything downstream reads it. The segment is an alias and only an alias: the
+// anything downstream reads it. The segment is the tenant's name and only that: the
 // identifier is internal and is not a name a path may carry.
 //
-// The layer therefore resolves the segment through the roster by alias,
+// The layer therefore resolves the segment through the roster by name,
 // compares the identifier it comes back with the resolved one, and rewrites the
 // path parameter to that identifier so every handler behind it acts on the
 // internal key rather than on the name as written. A segment that resolves to no
@@ -119,7 +119,7 @@ func (g *guard) wrap(next gin.HandlerFunc, refusePlatformDomain bool) gin.Handle
 			g.refuse(c, "the request carries no resolved tenant", segment)
 			return
 		}
-		named, found, err := g.roster.ByAlias(ctx, segment)
+		named, found, err := g.roster.ByName(ctx, segment)
 		if err != nil {
 			log.FromContext(ctx).Error("tenant: the path tenant could not be resolved",
 				"path", c.Request.URL.Path, "segment", segment, "error", err)
@@ -139,7 +139,7 @@ func (g *guard) wrap(next gin.HandlerFunc, refusePlatformDomain bool) gin.Handle
 			return
 		}
 		// Hand the internal identifier on: everything behind this layer keys its
-		// rows by it, and the alias is the external name alone.
+		// rows by it, and the name is the only external handle.
 		replaceParam(c, "tenant", string(named.ID))
 		next(c)
 	}

@@ -125,8 +125,8 @@ const httpDirectoryModule = "http-tenant-directory"
 // identifier, because the harness has no roster.
 type httpDirectory struct{}
 
-func (httpDirectory) TenantIDOf(_ context.Context, alias string) (string, bool, error) {
-	return alias, true, nil
+func (httpDirectory) TenantIDOf(_ context.Context, name string) (string, bool, error) {
+	return name, true, nil
 }
 
 // httpReply is what a client got back.

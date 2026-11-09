@@ -364,17 +364,17 @@ default is the `i18n.default-locale` configuration item. How a module delivers a
 seam and how a consumer takes it are stated in the module's own `AGENTS.md`, not
 here.
 
-**`TenantAliasResolver` is the id-to-alias seam.** A tenant's identifier is
-internal; the alias is the name every view and audit row answers. The roster
-module implements it beside the tenant capability's `AliasResolver`, and the
+**`TenantNameResolver` is the id-to-name seam.** A tenant's identifier is
+internal; the name is what every view and audit row answers. The roster
+module implements it beside the tenant capability's `NameResolver`, and the
 management views, the invitation views and the impersonation records take it up
 optionally. An assembly with no resolver names no tenant rather than falling back
 to the identifier. It is declared here because no package of this directory
 imports `pkg/tenant`.
 
-**`TenantDirectory` is the alias-to-id seam.** A request body or query string
-names a tenant by its alias; the stores key by the identifier. The roster module
-implements it beside `TenantAliasResolver`, and the impersonation start and the
+**`TenantDirectory` is the name-to-id seam.** A request body or query string
+names a tenant by its name; the stores key by the identifier. The roster module
+implements it beside `TenantNameResolver`, and the impersonation start and the
 platform settings layer take it up optionally. A surface with no directory
 cannot resolve a name and refuses it; the name is never read as an identifier.
 

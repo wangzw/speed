@@ -385,7 +385,7 @@ func (r rosterStub) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, e
 	return tenant.Tenant{ID: id}, r.ids[id], nil
 }
 
-func (rosterStub) ByAlias(context.Context, string) (tenant.Tenant, bool, error) {
+func (rosterStub) ByName(context.Context, string) (tenant.Tenant, bool, error) {
 	return tenant.Tenant{}, false, nil
 }
 func (rosterStub) Put(context.Context, tenant.Tenant) error    { return nil }

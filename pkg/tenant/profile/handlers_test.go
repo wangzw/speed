@@ -492,8 +492,8 @@ func TestTheViewAlwaysCarriesTheCreationTime(t *testing.T) {
 }
 
 // TestTheReadCarriesTheTenantKind holds the value a client branches on: the
-// kind comes from the host's resolver, not from the alias, so a personal
-// tenant whose alias is an ordinary username still reads as personal.
+// kind comes from the host's resolver, not from the name, so a personal
+// tenant whose name is an ordinary username still reads as personal.
 func TestTheReadCarriesTheTenantKind(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()

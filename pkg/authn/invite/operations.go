@@ -32,7 +32,7 @@ type AuthnInviteInvitation struct {
 	_ struct{} `description:"One invitation as the management face shows it. It never carries the acceptance token."`
 
 	ID         string    `json:"id" required:"true" description:"The invitation's opaque identifier, used to revoke it."`
-	Tenant     string    `json:"tenant" required:"true" description:"The alias of the tenant the invitation grants a membership in."`
+	Tenant     string    `json:"tenant" required:"true" description:"The name of the tenant the invitation grants a membership in."`
 	Email      string    `json:"email" required:"true" description:"The normalized address"`
 	Status     string    `json:"status" required:"true" enum:"pending,accepted,revoked" description:"The stored state. Expiry is not stored: an expired pending invitation still reads pending."`
 	InvitedBy  string    `json:"invited_by" required:"true" description:"The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity."`
@@ -73,7 +73,7 @@ type AuthnInviteAccept struct {
 	_ struct{} `description:"The membership an acceptance wrote."`
 
 	Account   string `json:"account" required:"true" description:"Identifier of the account the membership belongs to: an existing account or one created by this acceptance."`
-	Tenant    string `json:"tenant" required:"true" description:"The alias of the tenant the membership was written in."`
+	Tenant    string `json:"tenant" required:"true" description:"The name of the tenant the membership was written in."`
 	Active    bool   `json:"active" required:"true" description:"Whether the membership is active; an acceptance always writes an active one."`
 	Source    string `json:"source" required:"true" description:"The membership's source; an acceptance always writes invite."`
 	SSOExempt bool   `json:"sso_exempt" required:"true" description:"Whether the membership is exempt from SSO enforcement; an acceptance writes false."`
@@ -86,7 +86,7 @@ type AuthnInviteAccept struct {
 type issueInput struct {
 	_ struct{} `description:"The issue request: the invited address, which is normalized before it is stored, and an optional deadline."`
 
-	Tenant    string     `path:"tenant" description:"The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
+	Tenant    string     `path:"tenant" description:"The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
 	Email     string     `json:"email" required:"true" description:"The invited address as given; it is trimmed, lower-cased and must be printable ASCII with exactly one @, at most 254 bytes."`
 	ExpiresAt *time.Time `json:"expires_at" description:"Absolute deadline in RFC 3339. Omitted or the zero instant takes the configured lifetime; a value not later than the current time is refused with 400."`
 }
@@ -94,7 +94,7 @@ type issueInput struct {
 // listInput is the request of a page read: the tenant from the path and the
 // cursor, page cap and status from the query.
 type listInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
+	Tenant string `path:"tenant" description:"The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
 	Limit  int    `query:"limit" description:"Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400."`
 	After  string `query:"after" description:"Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page."`
 	Status string `query:"status" enum:"pending,expired,accepted,revoked" description:"Narrow the page to one view: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states. Omitted lists every state. A value outside this set is refused with 400. Expiry is derived from the deadline, not stored."`
@@ -103,7 +103,7 @@ type listInput struct {
 // revokeInput is the request of a revocation: the tenant and the invitation's
 // identifier, both path parameters.
 type revokeInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
+	Tenant string `path:"tenant" description:"The tenant's name the invitation belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs and holds it to the tenant the request resolved to; the authn.membership.manage decision is made in that tenant."`
 	ID     string `path:"id" description:"The invitation's opaque identifier, which also serves as the decision's target."`
 }
 

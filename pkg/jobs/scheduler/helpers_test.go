@@ -106,11 +106,11 @@ type fakeCatalog struct {
 func newCatalog(tenants ...tenant.Tenant) *fakeCatalog { return &fakeCatalog{tenants: tenants} }
 
 func active(id tenant.ID) tenant.Tenant {
-	return tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+	return tenant.Tenant{ID: id, Name: string(id), Status: tenant.StatusActive}
 }
 
 func disabled(id tenant.ID) tenant.Tenant {
-	return tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDisabled}
+	return tenant.Tenant{ID: id, Name: string(id), Status: tenant.StatusDisabled}
 }
 
 func (c *fakeCatalog) List(context.Context) ([]tenant.Tenant, error) {
@@ -137,7 +137,7 @@ func (c *fakeCatalog) Get(context.Context, tenant.ID) (tenant.Tenant, bool, erro
 	return tenant.Tenant{}, false, nil
 }
 
-func (c *fakeCatalog) ByAlias(context.Context, string) (tenant.Tenant, bool, error) {
+func (c *fakeCatalog) ByName(context.Context, string) (tenant.Tenant, bool, error) {
 	return tenant.Tenant{}, false, nil
 }
 

@@ -16,11 +16,11 @@ func (p *product) handleAcceptView(ctx context.Context, in acceptViewInput, _ *s
 	if err != nil {
 		return p.acceptAnswerReply("reading an invitation", err)
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, inv.Tenant)
-	if aliasErr != nil {
-		return p.acceptAnswerReply("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, inv.Tenant)
+	if nameErr != nil {
+		return p.acceptAnswerReply("reading the tenant's name", nameErr)
 	}
-	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{Invitation: invitationViewOf(inv, tenantAlias)}), nil
+	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{Invitation: invitationViewOf(inv, tenantName)}), nil
 }
 
 // handleAccept answers POST /invitations/:token: it redeems the invitation,
@@ -45,11 +45,11 @@ func (p *product) handleAccept(ctx context.Context, in acceptInput, meta *speedh
 	if err != nil {
 		return p.acceptAnswerReply("accepting an invitation", err)
 	}
-	tenantAlias, aliasErr := p.aliasOf(ctx, mem.Tenant)
-	if aliasErr != nil {
-		return p.acceptAnswerReply("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := p.nameOf(ctx, mem.Tenant)
+	if nameErr != nil {
+		return p.acceptAnswerReply("reading the tenant's name", nameErr)
 	}
-	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(mem, tenantAlias)), nil
+	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(mem, tenantName)), nil
 }
 
 // viewToken reads the invitation a token points to. It is the read side of the

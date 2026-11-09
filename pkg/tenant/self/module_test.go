@@ -77,11 +77,11 @@ func (a *recordingAdmission) Impersonable(endpoint, method, path string) {
 	a.impersonable = append(a.impersonable, [3]string{endpoint, method, path})
 }
 
-// TestWireRegistersTheRouteImpersonable holds the host's alias source after a
+// TestWireRegistersTheRouteImpersonable holds the host's source of tenant names after a
 // full page load: an impersonating identity reaches the caller tenant read,
 // whose answer is narrowed to the grant tenant. Without the registration the
 // gateway refuses the read before the handler and a reloaded tenant area
-// announces no alias, so every tenant-scoped read is refused 404.
+// announces no name, so every tenant-scoped read is refused 404.
 func TestWireRegistersTheRouteImpersonable(t *testing.T) {
 	admission := &recordingAdmission{}
 	router := routecontract.NewRouter("account")

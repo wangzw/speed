@@ -62,7 +62,7 @@ the owner first so an owner who is also the only administrator gets the
 refusal that names the actual obstacle. `TenantOwnerCounter` is optional where
 the account module takes it up, and an error is unavailable, never permission.
 
-`TenantAliasResolver` is the id-to-alias seam the management views and audit
+`TenantNameResolver` is the id-to-name seam the management views and audit
 rows take up; the roster implements it, and this package declares it because the
 authorization management module imports no tenant package. `TenantAdminCounter`
 is the root package's other seam over the floor, and the

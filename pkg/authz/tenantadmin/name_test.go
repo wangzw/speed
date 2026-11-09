@@ -7,13 +7,13 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheViewsNameTheTenantAlias holds the tenant management views to the alias:
+// TestTheViewsNameTheTenantName holds the tenant management views to the name:
 // the policy store keys every row by the internal identifier, and a client reads
-// the alias. The fixture maps one identifier to an alias unlike it, so a view
+// the name. The fixture maps one identifier to a name unlike it, so a view
 // that echoed the row's tenant would be told apart.
-func TestTheViewsNameTheTenantAlias(t *testing.T) {
+func TestTheViewsNameTheTenantName(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
-	r.withAliases(map[string]string{"t1": "acme"})
+	r.withNames(map[string]string{"t1": "acme"})
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
 	r.manager.grants = []authz.GrantRecord{{Tenant: "t1", Role: "editor", Resource: "tenant_role", Action: "read"}}
 	r.manager.bindings = []authz.Binding{{Tenant: "t1", Account: "acct-1", Role: "editor"}}
@@ -28,7 +28,7 @@ func TestTheViewsNameTheTenantAlias(t *testing.T) {
 	}
 	decodeInto(t, roles.Body.String(), &roleBody)
 	if len(roleBody.Roles) != 1 || roleBody.Roles[0].Tenant != "acme" {
-		t.Errorf("the role view names %q, want the alias acme", roleBody.Roles[0].Tenant)
+		t.Errorf("the role view names %q, want the name acme", roleBody.Roles[0].Tenant)
 	}
 
 	grants := r.serve(readRoute(r.p, grantListOperation.Handle(r.p.handleGrantList)), http.MethodGet,
@@ -41,7 +41,7 @@ func TestTheViewsNameTheTenantAlias(t *testing.T) {
 	}
 	decodeInto(t, grants.Body.String(), &grantBody)
 	if len(grantBody.Grants) != 1 || grantBody.Grants[0].Tenant != "acme" {
-		t.Errorf("the grant view names %q, want the alias acme", grantBody.Grants[0].Tenant)
+		t.Errorf("the grant view names %q, want the name acme", grantBody.Grants[0].Tenant)
 	}
 
 	bindings := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet,
@@ -54,17 +54,17 @@ func TestTheViewsNameTheTenantAlias(t *testing.T) {
 	}
 	decodeInto(t, bindings.Body.String(), &bindingBody)
 	if len(bindingBody.Bindings) != 1 || bindingBody.Bindings[0].Tenant != "acme" {
-		t.Errorf("the binding view names %q, want the alias acme", bindingBody.Bindings[0].Tenant)
+		t.Errorf("the binding view names %q, want the name acme", bindingBody.Bindings[0].Tenant)
 	}
 }
 
-// TestTheAuditDetailNamesTheTenantAlias holds the writes' mandatory audit row to
-// the alias: the path resolved to the internal identifier before the handler
+// TestTheAuditDetailNamesTheTenantName holds the writes' mandatory audit row to
+// the name: the path resolved to the internal identifier before the handler
 // runs, and a tenant detail carrying that identifier would put it in a table
 // operators read.
-func TestTheAuditDetailNamesTheTenantAlias(t *testing.T) {
+func TestTheAuditDetailNamesTheTenantName(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleManage)
-	r.withAliases(map[string]string{"t1": "acme"})
+	r.withNames(map[string]string{"t1": "acme"})
 	w := r.serve(rolePutRoute(r.p), http.MethodPut,
 		"/api/v1/tenants/t1/roles/editor", params("tenant", "t1", "role", "editor"), roleBody{})
 	if w.Code != http.StatusNoContent {
@@ -75,6 +75,6 @@ func TestTheAuditDetailNamesTheTenantAlias(t *testing.T) {
 		t.Fatalf("the audit rows = %+v, want one mandatory row", rows)
 	}
 	if rows[0].Detail[detailTenant] != "acme" {
-		t.Errorf("the audit detail names the tenant %q, want the alias acme", rows[0].Detail[detailTenant])
+		t.Errorf("the audit detail names the tenant %q, want the name acme", rows[0].Detail[detailTenant])
 	}
 }

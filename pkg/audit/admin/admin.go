@@ -197,11 +197,11 @@ type product struct {
 	// a guarded endpoint lets the request reach the handler, which makes the
 	// decision.
 	gate authz.Gate
-	// aliases answers the alias a tenant identifier is addressed by, nil when
+	// names answers the name a tenant identifier is addressed by, nil when
 	// the assembly supplies no resolver. With none a record names no tenant
 	// rather than exposing the internal identifier.
-	aliases tenant.AliasResolver
-	logger  *slog.Logger
+	names  tenant.NameResolver
+	logger *slog.Logger
 
 	cfg resolved
 }
@@ -268,10 +268,10 @@ func (p *product) wire(reg *core.Registry) error {
 	} else if found {
 		p.gate = gate
 	}
-	if aliases, found, err := optional[tenant.AliasResolver](reg, "the tenant alias resolver"); err != nil {
+	if names, found, err := optional[tenant.NameResolver](reg, "the tenant name resolver"); err != nil {
 		return err
 	} else if found {
-		p.aliases = aliases
+		p.names = names
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

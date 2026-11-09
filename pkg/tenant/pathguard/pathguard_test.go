@@ -19,21 +19,21 @@ import (
 // is refused, so a guard that reaches for another method fails the case instead
 // of silently reading nothing.
 type roster struct {
-	byAlias map[string]tenant.Tenant
-	byID    map[tenant.ID]tenant.Tenant
+	byName map[string]tenant.Tenant
+	byID   map[tenant.ID]tenant.Tenant
 }
 
 func newRoster(tenants ...tenant.Tenant) *roster {
-	r := &roster{byAlias: map[string]tenant.Tenant{}, byID: map[tenant.ID]tenant.Tenant{}}
+	r := &roster{byName: map[string]tenant.Tenant{}, byID: map[tenant.ID]tenant.Tenant{}}
 	for _, t := range tenants {
-		r.byAlias[t.Alias] = t
+		r.byName[t.Name] = t
 		r.byID[t.ID] = t
 	}
 	return r
 }
 
-func (r *roster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
-	t, ok := r.byAlias[alias]
+func (r *roster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
+	t, ok := r.byName[name]
 	return t, ok, nil
 }
 
@@ -71,14 +71,14 @@ type errUnusedError struct{}
 
 func (errUnusedError) Error() string { return "the guard called a roster method it does not use" }
 
-// standardRoster names every tenant so that its alias differs from its
-// identifier: the request surface carries the alias, and a segment holding the
+// standardRoster names every tenant so that its name differs from its
+// identifier: the request surface carries the name, and a segment holding the
 // identifier is not a name any tenant is addressed by.
 func standardRoster() *roster {
 	return newRoster(
-		tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-		tenant.Tenant{ID: "t_beta", Alias: "beta", Status: tenant.StatusActive},
-		tenant.Tenant{ID: "system", Alias: "platform", Status: tenant.StatusActive},
+		tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
+		tenant.Tenant{ID: "t_beta", Name: "beta", Status: tenant.StatusActive},
+		tenant.Tenant{ID: "system", Name: "platform", Status: tenant.StatusActive},
 	)
 }
 
@@ -126,7 +126,7 @@ func send(e *gin.Engine, path string) *httptest.ResponseRecorder {
 // TestTheSharedGuardComparesTenantIdentifiers holds the shared rule the mounter
 // applies to every tenant-scoped group: the path segment is resolved through
 // the roster and compared by identifier, so the segment may carry the
-// identifier or the current alias, and any other outcome is the bare 404.
+// identifier or the current name, and any other outcome is the bare 404.
 func TestTheSharedGuardComparesTenantIdentifiers(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -134,8 +134,8 @@ func TestTheSharedGuardComparesTenantIdentifiers(t *testing.T) {
 		path     string
 		status   int
 	}{
-		{"the path carries the current alias", "t_acme", "/tenants/acme/members", nethttp.StatusOK},
-		{"the path alias belongs to another tenant", "t_acme", "/tenants/beta/members", nethttp.StatusNotFound},
+		{"the path carries the current name", "t_acme", "/tenants/acme/members", nethttp.StatusOK},
+		{"the path name belongs to another tenant", "t_acme", "/tenants/beta/members", nethttp.StatusNotFound},
 		{"the path carries the tenant identifier", "t_acme", "/tenants/t_acme/members", nethttp.StatusNotFound},
 		{"the path names another tenant by identifier", "t_acme", "/tenants/t_beta/members", nethttp.StatusNotFound},
 		{"the segment names no tenant", "t_acme", "/tenants/ghost/members", nethttp.StatusNotFound},
@@ -170,7 +170,7 @@ func TestTheSharedGuardDoesNotClaimTheTenantAdminCapability(t *testing.T) {
 // groups manage the system tenant itself, so a request resolved to the platform
 // domain and addressed by it is legitimate there.
 func TestTheSharedGuardAdmitsTheSystemTenant(t *testing.T) {
-	// The route is addressed by the alias; the identifier is not a path name.
+	// The route is addressed by the name; the identifier is not a path name.
 	for path, want := range map[string]int{
 		"/tenants/system/members":   nethttp.StatusNotFound,
 		"/tenants/platform/members": nethttp.StatusOK,
@@ -187,7 +187,7 @@ func TestTheSharedGuardAdmitsTheSystemTenant(t *testing.T) {
 // TestTheTenantAdminGuardRefusesTheSystemTenant holds the tenant management
 // surfaces' additional rule: administration acts on a tenant, and the platform
 // domain is not one, so the same request the shared guard admits is refused
-// with the same bare 404, by identifier or by alias.
+// with the same bare 404, by identifier or by name.
 func TestTheTenantAdminGuardRefusesTheSystemTenant(t *testing.T) {
 	for _, path := range []string{"/tenants/system/members", "/tenants/platform/members"} {
 		t.Run(path, func(t *testing.T) {
@@ -202,7 +202,7 @@ func TestTheTenantAdminGuardRefusesTheSystemTenant(t *testing.T) {
 
 // TestTheTenantAdminGuardKeepsTheIdentityRule holds that the stricter guard
 // still answers the identity mismatch, and admits a tenant it does administer
-// by identifier or alias.
+// by identifier or name.
 func TestTheTenantAdminGuardKeepsTheIdentityRule(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -211,7 +211,7 @@ func TestTheTenantAdminGuardKeepsTheIdentityRule(t *testing.T) {
 		status   int
 	}{
 		{"a managed tenant by identifier", "t_acme", "/tenants/t_acme/members", nethttp.StatusNotFound},
-		{"a managed tenant by alias", "t_acme", "/tenants/acme/members", nethttp.StatusOK},
+		{"a managed tenant by name", "t_acme", "/tenants/acme/members", nethttp.StatusOK},
 		{"another tenant named in the path", "t_acme", "/tenants/beta/members", nethttp.StatusNotFound},
 		{"the platform domain named against another tenant", "t_acme", "/tenants/system/members", nethttp.StatusNotFound},
 		{"the path names no tenant", "t_acme", "/tenants/ghost/members", nethttp.StatusNotFound},
@@ -249,8 +249,8 @@ func TestAnUnresolvedRequestIsRefusedOnATenantAddressedRoute(t *testing.T) {
 }
 
 // TestTheSharedGuardHandsOnTheInternalIdentifier holds the other half of the
-// alias boundary: a handler behind the guard binds the tenant's identifier, not
-// the alias the request carried.
+// name boundary: a handler behind the guard binds the tenant's identifier, not
+// the name the request carried.
 func TestTheSharedGuardHandsOnTheInternalIdentifier(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()

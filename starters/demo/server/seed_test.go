@@ -470,7 +470,7 @@ func createTenantInRoster(t *testing.T, dsn, id string) {
 				return err
 			}
 			return roster.Create(ctx, tenant.Tenant{
-				ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive,
+				ID: tenant.ID(id), Name: id, Status: tenant.StatusActive,
 			})
 		},
 	})
@@ -1057,9 +1057,10 @@ func TestSeedRefusesATenantWithoutAnAdministrator(t *testing.T) {
 	}
 }
 
-// A configured tenant's name becomes its identifier and its alias, so it has to
-// be a slug: a name the old identifier domain admitted would pass configuration
-// and then fail at the roster, after the command had started writing.
+// A configured tenant's name becomes its identifier and the name URLs address
+// it by, so it has to be a slug: a name the old identifier domain admitted
+// would pass configuration and then fail at the roster, after the command had
+// started writing.
 func TestSeedRefusesATenantNameOutsideTheSlugForm(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"Acme_Corp", "a.b", "ab"} {
@@ -1369,25 +1370,25 @@ func TestSeedRestoresARemovedTenantAdministratorsMembership(t *testing.T) {
 	})
 }
 
-// TestSeedFailsOnASystemAliasConflict holds the upgrade case where a business
-// tenant already holds the alias "system": the system tenant's identifier is
-// free, so the read finds nothing, and Create refuses the alias. Treating that
+// TestSeedFailsOnASystemNameConflict holds the upgrade case where a business
+// tenant already holds the name "system": the system tenant's identifier is
+// free, so the read finds nothing, and Create refuses the name. Treating that
 // refusal as "the tenant exists" skips the row the policy module requires and
 // fails the startup later, far from the cause; the seed reports the conflict
 // and names the tenant it was registering.
-func TestSeedFailsOnASystemAliasConflict(t *testing.T) {
+func TestSeedFailsOnASystemNameConflict(t *testing.T) {
 	roster := newFakeRoster()
-	roster.createErr = fmt.Errorf("%w: alias %q is held by tenant %q",
-		tenant.ErrAliasConflict, string(authz.PlatformDomain), "legacy")
+	roster.createErr = fmt.Errorf("%w: name %q is held by tenant %q",
+		tenant.ErrNameConflict, string(authz.PlatformDomain), "legacy")
 	err := seedTenant(context.Background(), roster, string(authz.PlatformDomain))
 	if err == nil {
-		t.Fatal("seedTenant accepted an alias conflict as an existing tenant")
+		t.Fatal("seedTenant accepted a name conflict as an existing tenant")
 	}
-	if !errors.Is(err, tenant.ErrAliasConflict) {
-		t.Errorf("the refusal = %v, want it to carry ErrAliasConflict", err)
+	if !errors.Is(err, tenant.ErrNameConflict) {
+		t.Errorf("the refusal = %v, want it to carry ErrNameConflict", err)
 	}
 	if !strings.Contains(err.Error(), string(authz.PlatformDomain)) {
-		t.Errorf("the refusal = %q, want it to name the tenant whose alias conflicts", err)
+		t.Errorf("the refusal = %q, want it to name the tenant whose name conflicts", err)
 	}
 }
 
@@ -1504,14 +1505,14 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	for _, id := range domains {
-		alias := id
+		name := id
 		if id == personal {
-			// A personal tenant's alias is the account's username, never the
+			// A personal tenant's name is the account's username, never the
 			// derived identifier.
-			alias = "alice"
+			name = "alice"
 		}
 		roster.rows[tenant.ID(id)] = tenant.Tenant{
-			ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive,
+			ID: tenant.ID(id), Name: name, Status: tenant.StatusActive,
 		}
 		manager.roles[id] = []authz.RoleRecord{{Tenant: id, Role: tenantAdminRole}}
 	}
@@ -1558,8 +1559,8 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 func TestSeedLeavesADeletedTenantAlone(t *testing.T) {
 	t.Parallel()
 	roster := newFakeRoster()
-	roster.rows["gone"] = tenant.Tenant{ID: "gone", Alias: "gone", Status: tenant.StatusDeleted}
-	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	roster.rows["gone"] = tenant.Tenant{ID: "gone", Name: "gone", Status: tenant.StatusDeleted}
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	manager.roles["acme"] = []authz.RoleRecord{{Tenant: "acme", Role: tenantAdminRole}}
@@ -1601,7 +1602,7 @@ func TestSeedLeavesADeletedTenantAlone(t *testing.T) {
 func TestSeedConvergesAnExistingTenantToTheGovernedSet(t *testing.T) {
 	t.Parallel()
 	roster := newFakeRoster()
-	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	manager.roles["acme"] = []authz.RoleRecord{

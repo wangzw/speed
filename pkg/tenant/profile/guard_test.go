@@ -9,15 +9,15 @@ import (
 )
 
 // guardRig builds the module with the real tenant administration guard over a
-// roster carrying three tenants: acme under the alias acme-alias, other, and
+// roster carrying three tenants: acme under the name acme-name, other, and
 // the platform domain. The request's resolved tenant is the one named.
 func guardRig(t *testing.T, resolved string) *rig {
 	t.Helper()
 	r := newRig(t)
 	r.catalog.rows = []tenant.Tenant{
-		{ID: "acme", Alias: "acme-alias", Status: tenant.StatusActive, Profile: sampleTenant().Profile},
-		{ID: "other", Alias: "other", Status: tenant.StatusActive},
-		{ID: "system", Alias: "system", Status: tenant.StatusActive},
+		{ID: "acme", Name: "acme-name", Status: tenant.StatusActive, Profile: sampleTenant().Profile},
+		{ID: "other", Name: "other", Status: tenant.StatusActive},
+		{ID: "system", Name: "system", Status: tenant.StatusActive},
 	}
 	r.tenantID = resolved
 	r.p.routeGuard = pathguard.NewTenantAdmin(r.catalog)
@@ -55,13 +55,13 @@ func TestAPathNamingThePlatformDomainIsNotFound(t *testing.T) {
 	}
 }
 
-// TestAnAliasPathAddressesTheResolvedTenant holds that the policy decision is
+// TestAnNamePathAddressesTheResolvedTenant holds that the policy decision is
 // made in the resolved tenant's identifier, not in whatever name the path
-// carried: a renamed alias still reaches the same tenant's grants.
-func TestAnAliasPathAddressesTheResolvedTenant(t *testing.T) {
+// carried: a renamed name still reaches the same tenant's grants.
+func TestAnNamePathAddressesTheResolvedTenant(t *testing.T) {
 	r := guardRig(t, "acme")
 
-	w := r.do(http.MethodGet, "/api/v1/tenants/acme-alias/profile", nil)
+	w := r.do(http.MethodGet, "/api/v1/tenants/acme-name/profile", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body %q", w.Code, w.Body.String())
 	}

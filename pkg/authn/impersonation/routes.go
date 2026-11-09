@@ -81,15 +81,15 @@ func mountRel(declared string) string {
 
 // postedGrant is the view of a freshly started record: what the design's start
 // answer carries, without the start instant.
-func postedGrant(g authn.ImpersonationGrant, tenantAlias string) AuthnImpersonationGrant {
-	return AuthnImpersonationGrant{ID: g.ID, Target: string(g.Target), Tenant: tenantAlias, EndsAt: g.EndsAt.UTC()}
+func postedGrant(g authn.ImpersonationGrant, tenantName string) AuthnImpersonationGrant {
+	return AuthnImpersonationGrant{ID: g.ID, Target: string(g.Target), Tenant: tenantName, EndsAt: g.EndsAt.UTC()}
 }
 
 // currentGrant is the view of a record in force, with the instant it began.
-func currentGrant(g authn.ImpersonationGrant, tenantAlias string) AuthnImpersonationGrant {
+func currentGrant(g authn.ImpersonationGrant, tenantName string) AuthnImpersonationGrant {
 	started := g.StartedAt.UTC()
 	return AuthnImpersonationGrant{
-		ID: g.ID, Target: string(g.Target), Tenant: tenantAlias, StartedAt: &started, EndsAt: g.EndsAt.UTC(),
+		ID: g.ID, Target: string(g.Target), Tenant: tenantName, StartedAt: &started, EndsAt: g.EndsAt.UTC(),
 	}
 }
 
@@ -113,7 +113,7 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 		return nil, authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 	}
 
-	// The request names the tenant by its alias; the membership read and the
+	// The request names the tenant by its name; the membership read and the
 	// record key by the identifier. A name no tenant carries is the same
 	// restricted refusal a target outside the tenant gets, and a directory that
 	// cannot answer is a 503 rather than an empty membership.
@@ -135,9 +135,9 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 	if err != nil {
 		return nil, m.startFailure(id, err)
 	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, grant.Tenant)
-	if aliasErr != nil {
-		m.compensate(ctx, grant, aliasErr)
+	tenantName, nameErr := m.nameOf(ctx, grant.Tenant)
+	if nameErr != nil {
+		m.compensate(ctx, grant, nameErr)
 		return nil, authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 	}
 
@@ -150,7 +150,7 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 		}
 		m.publishStarted(ctx, grant)
 		mount.AddResponseHeader(ctx, "Cache-Control", cacheControlSetCookie)
-		reply := speedhttp.JSONReply(http.StatusOK, AuthnImpersonationStart{Grant: postedGrant(grant, tenantAlias)})
+		reply := speedhttp.JSONReply(http.StatusOK, AuthnImpersonationStart{Grant: postedGrant(grant, tenantName)})
 		if c := m.issuedCookie(issued); c != nil {
 			reply = speedhttp.WithCookies(reply, c)
 		}
@@ -165,7 +165,7 @@ func (m *product) handleStart(ctx context.Context, in startInput, _ *speedhttp.M
 	m.publishStarted(ctx, grant)
 	expires := int64(token.ExpiresAt.Sub(m.clock.Now()) / time.Second)
 	return speedhttp.JSONReply(http.StatusOK, AuthnImpersonationStart{
-		Grant:       postedGrant(grant, tenantAlias),
+		Grant:       postedGrant(grant, tenantName),
 		AccessToken: token.Value,
 		TokenType:   "Bearer",
 		ExpiresIn:   &expires,
@@ -196,11 +196,11 @@ func (m *product) handleStatus(ctx context.Context, _ struct{}, _ *speedhttp.Met
 	if !active {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
-	tenantAlias, aliasErr := m.aliasOf(ctx, g.Tenant)
-	if aliasErr != nil {
-		return nil, m.routeFailure("reading the tenant's alias", aliasErr)
+	tenantName, nameErr := m.nameOf(ctx, g.Tenant)
+	if nameErr != nil {
+		return nil, m.routeFailure("reading the tenant's name", nameErr)
 	}
-	return speedhttp.JSONReply(http.StatusOK, AuthnImpersonationGrantEnvelope{Grant: currentGrant(g, tenantAlias)}), nil
+	return speedhttp.JSONReply(http.StatusOK, AuthnImpersonationGrantEnvelope{Grant: currentGrant(g, tenantName)}), nil
 }
 
 // handleEnd answers DELETE /impersonation: it ends the record on the caller's
@@ -263,13 +263,13 @@ func (m *product) compensate(ctx context.Context, g authn.ImpersonationGrant, ca
 		m.logger.Error(ModuleName+": compensating a failed start failed",
 			slog.String("grant", g.ID), slog.String("cause", err.Error()))
 	}
-	tenantAlias, _ := m.aliasOf(ctx, g.Tenant)
+	tenantName, _ := m.nameOf(ctx, g.Tenant)
 	m.writeAudit(ctx, audit.Entry{
 		Action:  actionStart,
 		Object:  audit.AccountObject(string(g.Target)),
 		Outcome: outcomeFailed,
 		Purpose: g.Reason,
-		Detail:  map[string]string{detailGrantID: g.ID, detailTenant: tenantAlias, detailSID: string(g.SessionID)},
+		Detail:  map[string]string{detailGrantID: g.ID, detailTenant: tenantName, detailSID: string(g.SessionID)},
 	})
 }
 

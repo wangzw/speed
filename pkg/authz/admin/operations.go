@@ -30,19 +30,19 @@ const (
 
 // tenantInput is the request of a route that acts on one tenant's policy data.
 type tenantInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
+	Tenant string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 }
 
 // roleInput is the request of a route that acts on one role of a tenant.
 type roleInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
+	Tenant string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 }
 
 // grantInput is the request of a route that acts on one grant: a role and the
 // permission it holds.
 type grantInput struct {
-	Tenant     string `path:"tenant" description:"The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
+	Tenant     string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Role       string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 	Permission string `path:"permission" description:"The permission name as the catalog declares it, for example authz.role.read. It is translated to its (resource, action) pair before the write."`
 }
@@ -50,14 +50,14 @@ type grantInput struct {
 // tenantAccountInput is the request of the read that lists one account's
 // bindings within a tenant.
 type tenantAccountInput struct {
-	Tenant  string `path:"tenant" description:"The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
+	Tenant  string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Account string `path:"account" description:"The account identifier the binding is addressed by."`
 }
 
 // bindingInput is the request of a route that acts on one binding: an account
 // holding a role within a tenant.
 type bindingInput struct {
-	Tenant  string `path:"tenant" description:"The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
+	Tenant  string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Account string `path:"account" description:"The account identifier the binding is addressed by."`
 	Role    string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 }
@@ -78,7 +78,7 @@ type bindingInput struct {
 type roleWriteInput struct {
 	_ struct{} `additionalProperties:"true" description:"The body of a role write: the role's description. The builtin mark is not part of the body; a member sent under that name reaches nothing."`
 
-	Tenant string `path:"tenant" description:"The tenant's alias whose policy data the route acts on. The platform alias layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
+	Tenant string `path:"tenant" description:"The tenant's name whose policy data the route acts on. The platform name layer resolves it to the internal identifier before the handler runs; it names the rows, not the domain the access decision is made in, which is the platform domain."`
 	Role   string `path:"role" description:"The role name within the tenant. Roles are addressed by this natural key; no opaque row identifier is exposed."`
 
 	Description *string `json:"description" description:"The role's free-text description, at most 500 characters. Absent leaves the stored text as it is; an explicit empty string clears it; an over-long value is a 400."`

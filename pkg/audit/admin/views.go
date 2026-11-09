@@ -39,10 +39,10 @@ type AuditAdminRecordPage struct {
 	Next    string             `json:"next" required:"true" description:"The cursor of the next page, empty on the last page"`
 }
 
-// recordViewOf builds one record's view from a read row and the alias of the
+// recordViewOf builds one record's view from a read row and the name of the
 // tenant it belongs to. The row stores the tenant's internal identifier; the
-// view names the alias, the name a reader can act on.
-func recordViewOf(r journal.Row, tenantAlias string) AuditAdminRecord {
+// view names the tenant by its name, the label a reader can act on.
+func recordViewOf(r journal.Row, tenantName string) AuditAdminRecord {
 	detail := r.Detail
 	if detail == nil {
 		// A record with no detail answers an empty object rather than a null, so
@@ -51,7 +51,7 @@ func recordViewOf(r journal.Row, tenantAlias string) AuditAdminRecord {
 	}
 	return AuditAdminRecord{
 		ID:         strconv.FormatUint(r.ID, 10),
-		Tenant:     tenantAlias,
+		Tenant:     tenantName,
 		OccurredAt: r.OccurredAt.UTC(),
 		Actor:      r.Actor,
 		Source:     r.Source,

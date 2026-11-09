@@ -221,7 +221,7 @@ func newFakeReservation() *fakeReservation {
 	}}
 }
 
-// fakeRoster is the tenant.Catalog the unit cases use. Get, ByAlias and List are
+// fakeRoster is the tenant.Catalog the unit cases use. Get, ByName and List are
 // the three the module reads.
 type fakeRoster struct {
 	tenant.Catalog
@@ -241,11 +241,11 @@ func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, 
 	return row, found, nil
 }
 
-func (r *fakeRoster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
+func (r *fakeRoster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, row := range r.rows {
-		if row.Alias == alias {
+		if row.Name == name {
 			return row, true, nil
 		}
 	}
@@ -394,10 +394,10 @@ func (r *rig) ctx(t *testing.T, options ...authntest.Option) context.Context {
 	return authntest.Context(t, context.Background(), options...)
 }
 
-func (r *rig) create(t *testing.T, ctx context.Context, alias, displayName string) (OrganizationCreatedReply, error) {
+func (r *rig) create(t *testing.T, ctx context.Context, name, displayName string) (OrganizationCreatedReply, error) {
 	t.Helper()
 	return r.product.handleCreate(ctx, createInput{
-		Alias:       alias,
+		Name:        name,
 		DisplayName: displayName,
 		Description: "a description",
 	})
@@ -536,25 +536,25 @@ func TestCreateChecksTheEmailBeforeTheShape(t *testing.T) {
 	}
 }
 
-// TestCreateValidatesTheAliasAndProfileShape holds the fifth step: the alias is
+// TestCreateValidatesTheNameAndProfileShape holds the fifth step: the name is
 // a slug, the display name is required, both fields are held to their bounds,
 // and the reserved set is the account module's answer.
-func TestCreateValidatesTheAliasAndProfileShape(t *testing.T) {
+func TestCreateValidatesTheNameAndProfileShape(t *testing.T) {
 	cases := map[string]createInput{
-		"a blank display name": {Alias: "acme-inc", DisplayName: "   "},
+		"a blank display name": {Name: "acme-inc", DisplayName: "   "},
 		"a display name too long": {
-			Alias: "acme-inc", DisplayName: strings.Repeat("a", tenant.DisplayNameMaxRunes+1),
+			Name: "acme-inc", DisplayName: strings.Repeat("a", tenant.DisplayNameMaxRunes+1),
 		},
 		"a description too long": {
-			Alias: "acme-inc", DisplayName: "Acme",
+			Name: "acme-inc", DisplayName: "Acme",
 			Description: strings.Repeat("a", tenant.DescriptionMaxRunes+1),
 		},
-		"an empty alias":           {DisplayName: "Acme"},
-		"a two-character alias":    {Alias: "ab", DisplayName: "Acme"},
-		"an upper-case alias":      {Alias: "Acme", DisplayName: "Acme"},
-		"an underscore":            {Alias: "acme_inc", DisplayName: "Acme"},
-		"a leading dash":           {Alias: "-acme", DisplayName: "Acme"},
-		"a built-in reserved name": {Alias: "api", DisplayName: "Acme"},
+		"an empty name":            {DisplayName: "Acme"},
+		"a two-character name":     {Name: "ab", DisplayName: "Acme"},
+		"an upper-case name":       {Name: "Acme", DisplayName: "Acme"},
+		"an underscore":            {Name: "acme_inc", DisplayName: "Acme"},
+		"a leading dash":           {Name: "-acme", DisplayName: "Acme"},
+		"a built-in reserved name": {Name: "api", DisplayName: "Acme"},
 	}
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -571,7 +571,7 @@ func TestCreateValidatesTheAliasAndProfileShape(t *testing.T) {
 }
 
 // TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix holds the reserved
-// seam: the alias is asked of the account module's set, and a name under the
+// seam: the name is asked of the account module's set, and a name under the
 // personal prefix is one of the answers it refuses.
 func TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix(t *testing.T) {
 	rig := newRig()
@@ -581,10 +581,10 @@ func TestCreateAsksTheReservedAnswerAndRefusesAPersonalPrefix(t *testing.T) {
 		t.Errorf("status = %d, want 400", fault.Status)
 	}
 	if len(rig.reservation.asked) != 1 || rig.reservation.asked[0] != "personal-alice" {
-		t.Errorf("the reserved answer was asked %v, want the alias", rig.reservation.asked)
+		t.Errorf("the reserved answer was asked %v, want the name", rig.reservation.asked)
 	}
 	if len(rig.provisioner.recorded()) != 0 {
-		t.Error("a reserved alias reached the provisioner")
+		t.Error("a reserved name reached the provisioner")
 	}
 }
 
@@ -604,7 +604,7 @@ func TestCreateReadsTheReservedAnswerFailure(t *testing.T) {
 
 // TestCreateAnswersANameTheReservationCannotNormalize holds the seam's other
 // refusal: a name outside the username shape is a bad name rather than an
-// outage. A UUID-shaped string is a legal tenant slug, so it passes IsAlias and
+// outage. A UUID-shaped string is a legal tenant slug, so it passes IsName and
 // reaches the seam, but the account module cannot normalize it and answers
 // authn.ErrInvalidIdentifier; the surface must answer 400, not 503.
 func TestCreateAnswersANameTheReservationCannotNormalize(t *testing.T) {
@@ -615,23 +615,23 @@ func TestCreateAnswersANameTheReservationCannotNormalize(t *testing.T) {
 		t.Errorf("status = %d, want 400", fault.Status)
 	}
 	if len(rig.reservation.asked) != 1 || rig.reservation.asked[0] != "0f8fad5b-d9cb-469f-a165-70867728950e" {
-		t.Errorf("the reserved answer was asked %v, want the alias", rig.reservation.asked)
+		t.Errorf("the reserved answer was asked %v, want the name", rig.reservation.asked)
 	}
 	if len(rig.provisioner.recorded()) != 0 {
-		t.Error("an unnameable alias reached the provisioner")
+		t.Error("an unnameable name reached the provisioner")
 	}
 }
 
-// TestCreateRefusesAnAliasTheRosterHolds holds the sixth step: one namespace for
-// aliases, identifiers and usernames. A slug another tenant carries as its
-// alias or its identifier, and a slug a personal tenant carries as its
+// TestCreateRefusesAnNameTheRosterHolds holds the sixth step: one namespace for
+// names, identifiers and usernames. A slug another tenant carries as its
+// name or its identifier, and a slug a personal tenant carries as its
 // username, are the same identifier-unavailable refusal.
-func TestCreateRefusesAnAliasTheRosterHolds(t *testing.T) {
+func TestCreateRefusesAnNameTheRosterHolds(t *testing.T) {
 	cases := map[string]tenant.Tenant{
-		"an alias":      {ID: "tenant-1", Alias: "acme-inc", Status: tenant.StatusActive},
-		"an identifier": {ID: "acme-inc", Alias: "another", Status: tenant.StatusActive},
-		"a username":    {ID: tenantpersonal.TenantID(authn.AccountID("alice")), Alias: "acme-inc", Status: tenant.StatusActive},
-		"a tombstone":   {ID: "tenant-2", Alias: "acme-inc", Status: tenant.StatusDeleted},
+		"a name":        {ID: "tenant-1", Name: "acme-inc", Status: tenant.StatusActive},
+		"an identifier": {ID: "acme-inc", Name: "another", Status: tenant.StatusActive},
+		"a username":    {ID: tenantpersonal.TenantID(authn.AccountID("alice")), Name: "acme-inc", Status: tenant.StatusActive},
+		"a tombstone":   {ID: "tenant-2", Name: "acme-inc", Status: tenant.StatusDeleted},
 	}
 	for name, row := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -644,10 +644,10 @@ func TestCreateRefusesAnAliasTheRosterHolds(t *testing.T) {
 					problemPrefix+identifierUnavailable)
 			}
 			if len(rig.provisioner.recorded()) != 0 {
-				t.Error("a held alias reached the provisioner")
+				t.Error("a held name reached the provisioner")
 			}
 			if got := rig.attempts(t); got != 0 {
-				t.Errorf("a held alias counted %d attempt(s), want none", got)
+				t.Errorf("a held name counted %d attempt(s), want none", got)
 			}
 		})
 	}
@@ -660,7 +660,7 @@ func TestCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
 	rig := newRig()
 	rig.settings.values[maxOrganizationsPath] = 4
 	addBusiness := func(name string, status tenant.Status) {
-		rig.roster.put(tenant.Tenant{ID: tenant.ID(name), Alias: name, Status: status})
+		rig.roster.put(tenant.Tenant{ID: tenant.ID(name), Name: name, Status: status})
 		rig.memberships.rows[unitAccount] = append(rig.memberships.rows[unitAccount],
 			authn.Membership{Account: unitAccount, Tenant: name, Active: true, Source: "admin"})
 	}
@@ -669,7 +669,7 @@ func TestCreateCountsOnlyActiveBusinessMemberships(t *testing.T) {
 	}
 	addBusiness("biz-disabled", tenant.StatusDisabled)
 	personal := string(tenantpersonal.TenantID(unitAccount))
-	rig.roster.put(tenant.Tenant{ID: tenant.ID(personal), Alias: "unit-user", Status: tenant.StatusActive})
+	rig.roster.put(tenant.Tenant{ID: tenant.ID(personal), Name: "unit-user", Status: tenant.StatusActive})
 	rig.memberships.rows[unitAccount] = append(rig.memberships.rows[unitAccount],
 		authn.Membership{Account: unitAccount, Tenant: personal, Active: true, Source: "personal"})
 	rig.memberships.rows[unitAccount] = append(rig.memberships.rows[unitAccount],
@@ -727,7 +727,7 @@ func TestCreateLimitsTheHourlyCount(t *testing.T) {
 
 // TestCreateDoesNotCountRefusalsBeforeTheCount holds the first half of the
 // counting rule: a request refused at a pre-check consumes no place. The shape
-// refusal, the alias refusal and the organization cap stand for every refusal
+// refusal, the name refusal and the organization cap stand for every refusal
 // in steps 1-10, all of which return before recordAttempt.
 func TestCreateDoesNotCountRefusalsBeforeTheCount(t *testing.T) {
 	rig := newRig()
@@ -740,7 +740,7 @@ func TestCreateDoesNotCountRefusalsBeforeTheCount(t *testing.T) {
 	}
 
 	rig.settings.values[maxOrganizationsPath] = 1
-	rig.roster.put(tenant.Tenant{ID: "biz", Alias: "biz", Status: tenant.StatusActive})
+	rig.roster.put(tenant.Tenant{ID: "biz", Name: "biz", Status: tenant.StatusActive})
 	rig.memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: "biz", Active: true, Source: "admin"},
 	}
@@ -856,7 +856,7 @@ func TestCreateHoldsTheLockAgainstConcurrentRequests(t *testing.T) {
 		go func(i int) {
 			defer wait.Done()
 			_, err := rig.product.handleCreate(ctx, createInput{
-				Alias:       fmt.Sprintf("acme-%d", i),
+				Name:        fmt.Sprintf("acme-%d", i),
 				DisplayName: fmt.Sprintf("Acme %d", i),
 			})
 			if err == nil {
@@ -906,7 +906,7 @@ func TestCreateHoldsTheLockAgainstConcurrentRequests(t *testing.T) {
 }
 
 // TestCreateWritesTheMandatoryAuditRow holds the audit step: the mandatory row
-// lands before the provisioner, and a cross-replica identifier or alias race is
+// lands before the provisioner, and a cross-replica identifier or name race is
 // a 409 that does not add a second row for the same request.
 func TestCreateWritesTheMandatoryAuditRow(t *testing.T) {
 	rig := newRig()
@@ -922,11 +922,11 @@ func TestCreateWritesTheMandatoryAuditRow(t *testing.T) {
 	if row.Action != auditAction || row.Outcome != outcomeSuccess {
 		t.Errorf("audit row = %+v, want action %q and outcome success", row, auditAction)
 	}
-	if row.Object != reply.Tenant.Alias {
-		t.Errorf("audit object = %q, want the new tenant's alias %q", row.Object, reply.Tenant.Alias)
+	if row.Object != reply.Tenant.Name {
+		t.Errorf("audit object = %q, want the new tenant's name %q", row.Object, reply.Tenant.Name)
 	}
-	if row.Detail[detailAccount] != string(unitAccount) || row.Detail[detailTenant] != reply.Tenant.Alias {
-		t.Errorf("audit detail = %+v, want the account and the tenant's alias", row.Detail)
+	if row.Detail[detailAccount] != string(unitAccount) || row.Detail[detailTenant] != reply.Tenant.Name {
+		t.Errorf("audit detail = %+v, want the account and the tenant's name", row.Detail)
 	}
 	if row.Detail[detailActionID] == "" {
 		t.Error("the audit detail carries no action_id")
@@ -934,7 +934,7 @@ func TestCreateWritesTheMandatoryAuditRow(t *testing.T) {
 
 	for name, cause := range map[string]error{
 		"identifier taken": fmt.Errorf("%w: identifier taken", tenant.ErrTenantExists),
-		"alias taken":      fmt.Errorf("%w: alias taken", tenant.ErrAliasConflict),
+		"name taken":       fmt.Errorf("%w: name taken", tenant.ErrNameConflict),
 	} {
 		t.Run(name, func(t *testing.T) {
 			rig := newRig()
@@ -971,7 +971,7 @@ func TestCreateClosesAFailedProvisionWithAFailedRow(t *testing.T) {
 }
 
 // TestCreateGeneratesTheIdentifier holds the identifier rule: one org-<uuid>
-// string with the caller's alias and profile, the active state and the creator
+// string with the caller's name and profile, the active state and the creator
 // as owner, and the creator handed to the provisioner.
 func TestCreateGeneratesTheIdentifier(t *testing.T) {
 	rig := newRig()
@@ -979,8 +979,8 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the creation failed: %v", err)
 	}
-	if reply.Tenant.Alias != "acme-inc" {
-		t.Errorf("alias = %q, want the trimmed alias", reply.Tenant.Alias)
+	if reply.Tenant.Name != "acme-inc" {
+		t.Errorf("name = %q, want the trimmed name", reply.Tenant.Name)
 	}
 	provisioned := rig.provisioner.recorded()
 	if len(provisioned) != 1 {
@@ -993,8 +993,8 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 	if _, err := uuid.Parse(strings.TrimPrefix(generated, "org-")); err != nil {
 		t.Errorf("the identifier's tail is not a UUID: %v", err)
 	}
-	if generated == reply.Tenant.Alias {
-		t.Error("the generated identifier equals the caller's alias")
+	if generated == reply.Tenant.Name {
+		t.Error("the generated identifier equals the caller's name")
 	}
 	if reply.Tenant.DisplayName != "Acme" {
 		t.Errorf("displayName = %q, want the trimmed value", reply.Tenant.DisplayName)
@@ -1007,8 +1007,8 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 		t.Fatalf("the provisioner was asked %d time(s), want once", len(calls))
 	}
 	got := calls[0].tenant
-	if got.Alias != reply.Tenant.Alias {
-		t.Errorf("the provisioned tenant is %q, want the answered alias %q", got.Alias, reply.Tenant.Alias)
+	if got.Name != reply.Tenant.Name {
+		t.Errorf("the provisioned tenant is %q, want the answered name %q", got.Name, reply.Tenant.Name)
 	}
 	if got.Profile.DisplayName != "Acme" || got.Status != tenant.StatusActive {
 		t.Errorf("the provisioned tenant carries %+v, want the profile and the active state", got)
@@ -1027,7 +1027,7 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 func TestCreateRetriesAConflictingIdentifier(t *testing.T) {
 	rig := newRig()
 	for _, taken := range []string{"org-taken-1", "org-taken-2", "org-taken-3"} {
-		rig.roster.put(tenant.Tenant{ID: tenant.ID(taken), Alias: taken, Status: tenant.StatusActive})
+		rig.roster.put(tenant.Tenant{ID: tenant.ID(taken), Name: taken, Status: tenant.StatusActive})
 	}
 	sequence := []string{"org-taken-1", "org-taken-2", "org-taken-3", "org-free"}
 	next := 0
@@ -1044,14 +1044,14 @@ func TestCreateRetriesAConflictingIdentifier(t *testing.T) {
 	if len(provisioned) != 1 || string(provisioned[0].tenant.ID) != "org-free" {
 		t.Errorf("the provisioned tenant = %+v, want the free identifier", provisioned)
 	}
-	if reply.Tenant.Alias != "acme-inc" {
-		t.Errorf("the answer names %q, want the caller's alias", reply.Tenant.Alias)
+	if reply.Tenant.Name != "acme-inc" {
+		t.Errorf("the answer names %q, want the caller's name", reply.Tenant.Name)
 	}
 
 	rig = newRig()
 	for i := range identifierRetries + 1 {
 		taken := fmt.Sprintf("org-taken-%d", i)
-		rig.roster.put(tenant.Tenant{ID: tenant.ID(taken), Alias: taken, Status: tenant.StatusActive})
+		rig.roster.put(tenant.Tenant{ID: tenant.ID(taken), Name: taken, Status: tenant.StatusActive})
 	}
 	next = 0
 	rig.product.newIdentifier = func() string {
@@ -1070,10 +1070,10 @@ func TestCreateRetriesAConflictingIdentifier(t *testing.T) {
 	}
 }
 
-// TestCreateNeverTakesTheAliasAsItsIdentifier holds the one namespace: a
-// generator that happens to mint the caller's alias is retried like any other
+// TestCreateNeverTakesTheNameAsItsIdentifier holds the one namespace: a
+// generator that happens to mint the caller's name is retried like any other
 // taken value.
-func TestCreateNeverTakesTheAliasAsItsIdentifier(t *testing.T) {
+func TestCreateNeverTakesTheNameAsItsIdentifier(t *testing.T) {
 	rig := newRig()
 	next := 0
 	rig.product.newIdentifier = func() string {
@@ -1089,7 +1089,7 @@ func TestCreateNeverTakesTheAliasAsItsIdentifier(t *testing.T) {
 	}
 	provisioned := rig.provisioner.recorded()
 	if len(provisioned) != 1 || string(provisioned[0].tenant.ID) != "org-free" ||
-		reply.Tenant.Alias != "acme-inc" {
+		reply.Tenant.Name != "acme-inc" {
 		t.Errorf("the provisioned tenant is %+v, want org-free/acme-inc", provisioned)
 	}
 }
@@ -1100,7 +1100,7 @@ func TestCreateNeverTakesTheAliasAsItsIdentifier(t *testing.T) {
 func TestCreateReadsTheLimitsAtRequestTime(t *testing.T) {
 	rig := newRig()
 	rig.settings.values[maxOrganizationsPath] = 1
-	rig.roster.put(tenant.Tenant{ID: "biz", Alias: "biz", Status: tenant.StatusActive})
+	rig.roster.put(tenant.Tenant{ID: "biz", Name: "biz", Status: tenant.StatusActive})
 	rig.memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: "biz", Active: true, Source: "admin"},
 	}

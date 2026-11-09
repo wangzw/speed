@@ -31,7 +31,7 @@ func TestCreateRegistersATenantTheWriterSeesAtOnce(t *testing.T) {
 	if err := r.read(context.Background()); err != nil {
 		t.Fatalf("reading: %v", err)
 	}
-	want := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	want := tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	if err := r.Create(context.Background(), want); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestCreateRegistersATenantTheWriterSeesAtOnce(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("the writer reads (%+v, %v, %v) back, want the tenant", got, ok, err)
 	}
-	if got.ID != want.ID || got.Alias != want.Alias || got.Status != want.Status ||
+	if got.ID != want.ID || got.Name != want.Name || got.Status != want.Status ||
 		got.DisabledBy != want.DisabledBy || got.Profile != want.Profile {
 		t.Fatalf("the writer reads (%+v, %v, %v) back, want %+v", got, ok, err, want)
 	}
@@ -50,7 +50,7 @@ func TestCreateRegistersATenantTheWriterSeesAtOnce(t *testing.T) {
 
 // A replica whose snapshot predates another replica's registration is asked
 // to register the same identifier. The table holds it, so the creation is
-// refused and the tenant keeps the alias and the status it has — a disabled
+// refused and the tenant keeps the name and the status it has — a disabled
 // tenant stays disabled, which is what a registration by Put would undo.
 func TestCreateRefusesAnIdentifierTheTableHoldsWhateverTheSnapshotSays(t *testing.T) {
 	first := rosterOver(t)
@@ -60,7 +60,7 @@ func TestCreateRefusesAnIdentifierTheTableHoldsWhateverTheSnapshotSays(t *testin
 	stale := secondReplica(t, first)
 
 	ctx := context.Background()
-	if err := first.Create(ctx, tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}); err != nil {
+	if err := first.Create(ctx, tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}); err != nil {
 		t.Fatalf("creating on the first replica: %v", err)
 	}
 	if err := first.SetStatus(ctx, "t_acme", tenant.StatusDisabled); err != nil {
@@ -70,22 +70,22 @@ func TestCreateRefusesAnIdentifierTheTableHoldsWhateverTheSnapshotSays(t *testin
 		t.Fatal("the second replica's snapshot already holds the tenant; the case needs one that does not")
 	}
 
-	err := stale.Create(ctx, tenant.Tenant{ID: "t_acme", Alias: "acme-again", Status: tenant.StatusActive})
+	err := stale.Create(ctx, tenant.Tenant{ID: "t_acme", Name: "acme-again", Status: tenant.StatusActive})
 	if !errors.Is(err, tenant.ErrTenantExists) {
 		t.Fatalf("creating an identifier the table holds gave %v, want ErrTenantExists", err)
 	}
 	held, ok := rowOf(t, first, "t_acme")
-	if !ok || held.Alias != "acme" || held.Status != int(tenant.StatusDisabled) {
-		t.Fatalf("the refused creation left the row as %+v, want alias acme and disabled", held)
+	if !ok || held.Name != "acme" || held.Status != int(tenant.StatusDisabled) {
+		t.Fatalf("the refused creation left the row as %+v, want name acme and disabled", held)
 	}
 }
 
-// The alias is refused as Put refuses it, and nothing is written.
-func TestCreateRefusesAnAliasAnotherTenantHolds(t *testing.T) {
+// The name is refused as Put refuses it, and nothing is written.
+func TestCreateRefusesANameAnotherTenantHolds(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
-	err := r.Create(context.Background(), tenant.Tenant{ID: "t_other", Alias: "acme", Status: tenant.StatusActive})
-	if !errors.Is(err, tenant.ErrAliasConflict) {
-		t.Fatalf("creating under an alias another tenant holds gave %v, want ErrAliasConflict", err)
+	err := r.Create(context.Background(), tenant.Tenant{ID: "t_other", Name: "acme", Status: tenant.StatusActive})
+	if !errors.Is(err, tenant.ErrNameConflict) {
+		t.Fatalf("creating under a name another tenant holds gave %v, want ErrNameConflict", err)
 	}
 	if _, ok := rowOf(t, r, "t_other"); ok {
 		t.Fatal("the refused creation wrote a row")
@@ -97,7 +97,7 @@ func TestCreateRefusesAnAliasAnotherTenantHolds(t *testing.T) {
 // tell a retry from a second registrant, and says which it met.
 func TestCreateRefusesTheSameTenantTwice(t *testing.T) {
 	r := rosterOver(t)
-	same := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	same := tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	if err := r.Create(context.Background(), same); err != nil {
 		t.Fatalf("creating: %v", err)
 	}
@@ -109,9 +109,9 @@ func TestCreateRefusesTheSameTenantTwice(t *testing.T) {
 func TestCreateRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 	r := rosterOver(t)
 	for _, bad := range []tenant.Tenant{
-		{ID: "", Alias: "acme", Status: tenant.StatusActive},
-		{ID: "t acme", Alias: "acme", Status: tenant.StatusActive},
-		{ID: "t_acme", Alias: "", Status: tenant.StatusActive},
+		{ID: "", Name: "acme", Status: tenant.StatusActive},
+		{ID: "t acme", Name: "acme", Status: tenant.StatusActive},
+		{ID: "t_acme", Name: "", Status: tenant.StatusActive},
 	} {
 		if err := r.Create(context.Background(), bad); !errors.Is(err, tenant.ErrInvalidTenant) {
 			t.Fatalf("creating %+v gave %v, want ErrInvalidTenant", bad, err)
@@ -141,19 +141,19 @@ func cancelOnReread(t *testing.T, r *roster, cancel context.CancelFunc) {
 func TestAWriteIsServedWhenItsCallerGoesAwayAfterTheCommit(t *testing.T) {
 	for name, write := range map[string]func(ctx context.Context, r *roster) error{
 		"Put": func(ctx context.Context, r *roster) error {
-			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"Create": func(ctx context.Context, r *roster) error {
-			return r.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"SetStatus": func(ctx context.Context, r *roster) error {
 			return r.SetStatus(ctx, "t_new", tenant.StatusActive)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			r := rosterOver(t, "INSERT INTO tenants (id, alias, status) VALUES ('t_old', 'old', 1)")
+			r := rosterOver(t, "INSERT INTO tenants (id, name, status) VALUES ('t_old', 'old', 1)")
 			if name == "SetStatus" {
-				if err := r.handle.Exec("INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new', 0)").
+				if err := r.handle.Exec("INSERT INTO tenants (id, name, status) VALUES ('t_new', 'new', 0)").
 					Error; err != nil {
 					t.Fatalf("seeding: %v", err)
 				}
@@ -219,7 +219,7 @@ func TestARefreshThatReadBeforeAWriteDoesNotUndoIt(t *testing.T) {
 
 	written := make(chan error, 1)
 	go func() {
-		written <- r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		written <- r.Create(context.Background(), tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 	}()
 	var err error
 	done := false

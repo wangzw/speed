@@ -155,7 +155,7 @@ const (
 `authn.invitemail` 是仓库提供的通知实现：它把一次 `InviteNotice` 渲染成邮件并交给 `pkg/mail.Sender` 的载体，排他交付 `InviteNotifier`。一条命令可以点名它，也可以换成宿主自己的实现；两个实现同时在场在消解阶段失败。
 
 - **配置项 `authn.invitemail.accept-base-url` 给出接受页所在的绝对来源。** 取值须是绝对 http/https URL、带主机、无查询与片段；末尾的 `/` 归一化掉。通知的链接是 `<accept-base-url>/invitations/<令牌>`，路径由模块拼接、令牌按单个路径段转义，配置改不了接受路由的形状。值不合法时在 `Prepare` 阶段终止启动，点名输入项且不回显取值。
-- **通知里的租户名取别名。** `InviteNotice` 携带租户的内部标识，渲染前经可选的 `authn.TenantAliasResolver` 换成别名；主题与正文都写别名，接缝缺席、解析失败或解析不到时写空串，不回退成内部标识。
+- **通知里的租户名取名称。** `InviteNotice` 携带租户的内部标识，渲染前经可选的 `authn.TenantNameResolver` 换成名称；主题与正文都写名称，接缝缺席、解析失败或解析不到时写空串，不回退成内部标识。
 
 **空值是合法的未配置部署。** 模块保持启用，不触达载体，答 `InviteNotConfigured` 与 nil 错误。选 `mail.carrier: none` 的运行里没有任何发送载体，模块随邮件能力一并 `StateDisabled`，不因一个缺席的依赖让整个装配起不来；这样的运行不校验接受来源。
 - **语言取自请求，缺目录时回退。** 通知按 `InviteNotice.Locale` 选择消息：先按原标签，再按主语言子标签，最后英文。模板在模块的 `locales/zh-CN.json` 与 `locales/en-US.json`，包含主题、纯文本与 HTML；`New` 在启动时渲染每个目录的每条消息，缺键即启动失败，不等到第一次发送才发出一条只有键的消息。

@@ -55,12 +55,12 @@ var spec = speedhttp.Spec{
 var RoutePath = spec.ResolvePath(pathFragment)
 
 // createInput is the request body of the self-service creation. The caller
-// chooses the alias and gives a display name and a description; the identifier
+// chooses the name and gives a display name and a description; the identifier
 // is generated, so no technical name reaches a person filling the form.
 type createInput struct {
-	_ struct{} `description:"The alias, display name and description of the organization to create. The identifier is generated."`
+	_ struct{} `description:"The name, display name and description of the organization to create. The identifier is generated."`
 
-	Alias       string `json:"alias" required:"true" description:"The organization's public alias: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation."`
+	Name        string `json:"name" required:"true" description:"The organization's public name: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation."`
 	DisplayName string `json:"display_name" required:"true" description:"The organization's display name; 1 to 100 runes after trimming, and the surface requires it non-empty."`
 	Description string `json:"description" description:"The organization's description; at most 500 runes after trimming."`
 }
@@ -73,12 +73,12 @@ type OrganizationCreatedReply struct {
 }
 
 // OrganizationCreatedTenant is the created organization as the answer renders
-// it. The identifier is generated and stays internal; the alias is the one the
+// it. The identifier is generated and stays internal; the name is the one the
 // caller chose.
 type OrganizationCreatedTenant struct {
-	_ struct{} `description:"The created organization: the caller's alias and profile, and the active state. The generated identifier is internal and never appears."`
+	_ struct{} `description:"The created organization: the caller's name and profile, and the active state. The generated identifier is internal and never appears."`
 
-	Alias       string `json:"alias" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
+	Name        string `json:"name" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
 	DisplayName string `json:"displayName" required:"true" description:"The organization's display name, trimmed."`
 	Description string `json:"description" required:"true" description:"The organization's description, trimmed."`
 	Status      string `json:"status" required:"true" enum:"active" description:"The organization's state; a self-service organization starts active."`
@@ -107,15 +107,15 @@ var createOperation = speedhttp.NewOperation[createInput, OrganizationCreatedRep
 	"Create a business organization",
 	"Creates one active business organization for the calling account through the provisioning seam: the "+
 		"caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed "+
-		"permission set. The caller chooses the alias; the identifier is generated and stays internal. A pending "+
+		"permission set. The caller chooses the name; the identifier is generated and stays internal. A pending "+
 		"email address is refused (contact-required); an impersonating caller, a service account and a static "+
-		"subject are refused. The alias is held to the roster's slug form, the reserved-name set and one "+
+		"subject are refused. The name is held to the roster's slug form, the reserved-name set and one "+
 		"namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization "+
 		"cap and the hourly creation limit bound the call, and a mandatory audit row must land before the "+
 		"provisioner runs.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The alias, display name and description of the organization; the identifier is generated.",
+		Description: "The name, display name and description of the organization; the identifier is generated.",
 		Required:    true,
 		Name:        "OrganizationCreateRequest",
 	},
@@ -126,7 +126,7 @@ var createOperation = speedhttp.NewOperation[createInput, OrganizationCreatedRep
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The alias or display name is missing or outside its bounds, or the alias is reserved"),
+			"The name or display name is missing or outside its bounds, or the name is reserved"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized,
 			"The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
@@ -134,7 +134,7 @@ var createOperation = speedhttp.NewOperation[createInput, OrganizationCreatedRep
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The caller cannot create an organization now: a creation is already in progress "+
 				"(creation-in-progress), the account holds the maximum number of active business "+
-				"organizations (organization-limit), or the alias or generated identifier is unavailable "+
+				"organizations (organization-limit), or the name or generated identifier is unavailable "+
 				"(identifier-unavailable). The type field names which"),
 		rateLimitedResponse(),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,

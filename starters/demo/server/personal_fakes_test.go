@@ -86,7 +86,7 @@ func (r *fakeRoster) SetStatusByAccount(_ context.Context, id tenant.ID, s tenan
 }
 
 // Delete writes the tombstone. An identifier no row carries is ErrInvalidTenant,
-// a tombstone is no work, and the alias and the disable source are left as they
+// a tombstone is no work, and the name and the disable source are left as they
 // are.
 func (r *fakeRoster) Delete(_ context.Context, id tenant.ID) error {
 	r.mu.Lock()

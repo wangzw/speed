@@ -899,15 +899,15 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 
 // tenantCtx registers a tenant in the roster and returns a context that belongs
 // to it. The identifier stays the caller's — rows are read back by it — while
-// the alias, which the roster holds to a three-character slug, is derived from
+// the name, which the roster holds to a three-character slug, is derived from
 // it so a short identifier such as "t1" stays usable.
 func (r *rig) tenantCtx(id string) context.Context {
 	r.t.Helper()
-	alias := id
-	if !tenant.IsAlias(alias) {
-		alias = "tenant-" + id
+	name := id
+	if !tenant.IsName(name) {
+		name = "tenant-" + id
 	}
-	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive}); err != nil {
+	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Name: name, Status: tenant.StatusActive}); err != nil {
 		r.t.Fatalf("registering the tenant %q: %v", id, err)
 	}
 	ctx, err := r.catalog.Enter(r.t.Context(), tenant.ID(id))
@@ -917,13 +917,13 @@ func (r *rig) tenantCtx(id string) context.Context {
 	return ctx
 }
 
-// tenantCtxAs registers a tenant whose identifier and alias differ and returns
-// a context that belongs to it. A case uses it to tell the alias from the
+// tenantCtxAs registers a tenant whose identifier and name differ and returns
+// a context that belongs to it. A case uses it to tell the name from the
 // identifier on every text a recipient can read.
-func (r *rig) tenantCtxAs(id, alias string) context.Context {
+func (r *rig) tenantCtxAs(id, name string) context.Context {
 	r.t.Helper()
-	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive}); err != nil {
-		r.t.Fatalf("registering the tenant %q as %q: %v", id, alias, err)
+	if err := r.catalog.Put(r.t.Context(), tenant.Tenant{ID: tenant.ID(id), Name: name, Status: tenant.StatusActive}); err != nil {
+		r.t.Fatalf("registering the tenant %q as %q: %v", id, name, err)
 	}
 	ctx, err := r.catalog.Enter(r.t.Context(), tenant.ID(id))
 	if err != nil {

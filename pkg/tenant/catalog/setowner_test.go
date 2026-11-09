@@ -14,12 +14,12 @@ import (
 // table, and Put is not a transfer path.
 
 // TestSetOwnerWritesOnlyTheOwnerColumn holds the statement to one column. The
-// alias, the state, the disable source, the profile and both instants are what
+// name, the state, the disable source, the profile and both instants are what
 // other paths own, and a transfer must not write them back from a value it read
 // earlier.
 func TestSetOwnerWritesOnlyTheOwnerColumn(t *testing.T) {
 	r := rosterOver(t, "INSERT INTO tenants "+
-		"(id, alias, status, disabled_by, owner_account, display_name, description) VALUES "+
+		"(id, name, status, disabled_by, owner_account, display_name, description) VALUES "+
 		"('t_acme', 'acme', 0, 1, 'acct-1', 'Acme', 'A description.')")
 	ctx := context.Background()
 	before, ok := rowOf(t, r, "t_acme")
@@ -38,7 +38,7 @@ func TestSetOwnerWritesOnlyTheOwnerColumn(t *testing.T) {
 	if after.OwnerAccount != "acct-2" {
 		t.Errorf("the owner reads %q, want acct-2", after.OwnerAccount)
 	}
-	if after.ID != before.ID || after.Alias != before.Alias || after.Status != before.Status ||
+	if after.ID != before.ID || after.Name != before.Name || after.Status != before.Status ||
 		after.DisabledBy != before.DisabledBy || after.DisplayName != before.DisplayName ||
 		after.Description != before.Description || !after.CreatedAt.Equal(before.CreatedAt) ||
 		!sameTime(after.DeletedAt, before.DeletedAt) {
@@ -105,7 +105,7 @@ func TestSetOwnerRefusesAnOwnerOutsideTheDomain(t *testing.T) {
 // TestSetOwnerIsIdempotent holds the repeated transfer: writing the owner a row
 // already carries returns nil and pays for no reread.
 func TestSetOwnerIsIdempotent(t *testing.T) {
-	r := rosterOver(t, "INSERT INTO tenants (id, alias, status, owner_account) VALUES "+
+	r := rosterOver(t, "INSERT INTO tenants (id, name, status, owner_account) VALUES "+
 		"('t_acme', 'acme', 1, 'acct-1')")
 	reads := countFullReads(t, r)
 
@@ -120,13 +120,13 @@ func TestSetOwnerIsIdempotent(t *testing.T) {
 // TestCreateWritesTheOwnerAndPutLeavesItAlone holds the creation path and the
 // rewrite path apart: Create writes the value's owner, and a rewrite through Put
 // changes the state and the disable source without transferring the organization
-// or changing the alias.
+// or changing the name.
 func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 	r := rosterOver(t)
 	ctx := context.Background()
 
 	if err := r.Create(ctx, tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-1",
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-1",
 	}); err != nil {
 		t.Fatalf("creating a tenant with an owner: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 	}
 
 	if err = r.Put(ctx, tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled, OwnerAccount: "acct-2",
+		ID: "t_acme", Name: "acme", Status: tenant.StatusDisabled, OwnerAccount: "acct-2",
 	}); err != nil {
 		t.Fatalf("rewriting the tenant: %v", err)
 	}
@@ -150,8 +150,8 @@ func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 	if rewritten.OwnerAccount != "acct-1" {
 		t.Errorf("Put transferred the owner to %q, want acct-1 left as Create wrote it", rewritten.OwnerAccount)
 	}
-	if rewritten.Alias != "acme" || rewritten.Status != tenant.StatusDisabled {
-		t.Errorf("the rewrite left %+v, want the alias it was created with and the new state", rewritten)
+	if rewritten.Name != "acme" || rewritten.Status != tenant.StatusDisabled {
+		t.Errorf("the rewrite left %+v, want the name it was created with and the new state", rewritten)
 	}
 }
 
@@ -160,7 +160,7 @@ func TestCreateWritesTheOwnerAndPutLeavesItAlone(t *testing.T) {
 // caller. The empty value is the one the column's default holds and is no
 // failure.
 func TestReadRefusesAStoredOwnerOutsideTheDomain(t *testing.T) {
-	r := rosterOver(t, "INSERT INTO tenants (id, alias, status, owner_account) VALUES "+
+	r := rosterOver(t, "INSERT INTO tenants (id, name, status, owner_account) VALUES "+
 		"('t_acme', 'acme', 1, 'acct 1')")
 	if err := r.read(context.Background()); !errors.Is(err, tenant.ErrInvalidTenant) {
 		t.Fatalf("reading a row with an owner outside the domain gave %v, want ErrInvalidTenant", err)

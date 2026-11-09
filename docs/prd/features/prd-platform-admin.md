@@ -215,25 +215,25 @@
 
 ### REQ-platform-admin-010
 
-系统必须在租户名册中列出每个租户的显示名、别名与状态；内部标识不出现。
+系统必须在租户名册中列出每个租户的显示名、名称与状态；内部标识不出现。
 
-- **验收**：名册有租户时，每一行显示该租户的显示名、别名与状态；名册没有内部标识列。
+- **验收**：名册有租户时，每一行显示该租户的显示名、名称与状态；名册没有内部标识列。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-platform-admin-050
 
-系统必须允许运营者登记新租户，填写别名、显示名与可选描述、联系邮箱、网站；内部标识由系统生成，运营者不填写。
+系统必须允许运营者登记新租户，填写名称、显示名与可选描述、联系邮箱、网站；内部标识由系统生成，运营者不填写。
 
-- **验收**：登记一个未被占用的别名与显示名成功后，名册出现该租户且表单被清空；显示名为空时提交被拒绝；表单没有内部标识字段。
+- **验收**：登记一个未被占用的名称与显示名成功后，名册出现该租户且表单被清空；显示名为空时提交被拒绝；表单没有内部标识字段。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-platform-admin-051
 
-系统必须在平台租户名册中提供所有者转移与组织删除的入口；名册不提供别名改名。
+系统必须在平台租户名册中提供所有者转移与组织删除的入口；名册不提供名称改名。
 
-- **验收**：租户行提供转移所有者与删除组织操作；没有别名改名控件；转移成功后出现点名新所有者的确认；删除后该行以墓碑呈现。
+- **验收**：租户行提供转移所有者与删除组织操作；没有名称改名控件；转移成功后出现点名新所有者的确认；删除后该行以墓碑呈现。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`；`operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`
 
@@ -247,17 +247,17 @@
 
 ### REQ-platform-admin-053
 
-别名含空白字符时，提交必须被禁用且不发出请求。
+名称含空白字符时，提交必须被禁用且不发出请求。
 
-- **验收**：在别名中输入空白字符，提交动作被禁用，且没有写请求发出。
+- **验收**：在名称中输入空白字符，提交动作被禁用，且没有写请求发出。
 - **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-platform-admin-054
 
-别名已被占用时必须给出冲突说明。
+名称已被占用时必须给出冲突说明。
 
-- **验收**：登记一个已被占用的别名，得到冲突说明，表单保留输入。
+- **验收**：登记一个已被占用的名称，得到冲突说明，表单保留输入。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -287,17 +287,17 @@
 
 ### REQ-platform-admin-011
 
-系统必须提供单个租户的详情页，展示该租户的显示名、别名、描述、联系邮箱、网站、创建时间与状态；所有者由组织资料页展示，平台详情页不重复展示，内部标识也不出现。
+系统必须提供单个租户的详情页，展示该租户的显示名、名称、描述、联系邮箱、网站、创建时间与状态；所有者由组织资料页展示，平台详情页不重复展示，内部标识也不出现。
 
-- **验收**：从名册行进入详情页，看到该租户的显示名、别名、描述、联系邮箱、网站、创建时间与状态；页面没有内部标识；地址按别名寻址。
+- **验收**：从名册行进入详情页，看到该租户的显示名、名称、描述、联系邮箱、网站、创建时间与状态；页面没有内部标识；地址按名称寻址。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖显示名、别名与状态；描述、联系邮箱、网站与创建时间由 `web/packages/admin-ui/src/TenantDetailPage.test.tsx` `shows the profile fields and creation time in the summary` 覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖显示名、名称与状态；描述、联系邮箱、网站与创建时间由 `web/packages/admin-ui/src/TenantDetailPage.test.tsx` `shows the profile fields and creation time in the summary` 覆盖）
 
 ### REQ-platform-admin-058
 
-系统必须在租户详情页提供所有者转移与组织删除；详情页不提供别名改名。
+系统必须在租户详情页提供所有者转移与组织删除；详情页不提供名称改名。
 
-- **验收**：详情页提供转移所有者与删除组织操作；没有别名编辑控件；转移成功后出现点名新所有者的确认；删除后详情以墓碑呈现。
+- **验收**：详情页提供转移所有者与删除组织操作；没有名称编辑控件；转移成功后出现点名新所有者的确认；删除后详情以墓碑呈现。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -337,7 +337,7 @@
 
 租户不存在时，详情页必须显示可重试的占位。
 
-- **验收**：打开不存在的租户别名，页面显示带重试的“记录不存在或暂不可用”占位。
+- **验收**：打开不存在的租户名称，页面显示带重试的“记录不存在或暂不可用”占位。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -927,9 +927,9 @@
 
 ### REQ-platform-admin-117
 
-平台管理面的租户详情必须展示并可编辑该租户的显示名、描述、联系邮箱、网站与创建时间；别名只读，平台不提供别名改名，内部标识不出现。
+平台管理面的租户详情必须展示并可编辑该租户的显示名、描述、联系邮箱、网站与创建时间；名称只读，平台不提供名称改名，内部标识不出现。
 
-- **验收**：详情页显示资料字段与创建时间；保存资料后详情页显示新值；别名没有编辑控件；对别名发起改名得到「别名创建后不可变」的拒绝；创建时间只读；页面没有内部标识。
+- **验收**：详情页显示资料字段与创建时间；保存资料后详情页显示新值；名称没有编辑控件；对名称发起改名得到「名称创建后不可变」的拒绝；创建时间只读；页面没有内部标识。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -939,4 +939,4 @@
 
 - **验收**：读取已删除租户的详情返回 200 并显示墓碑；对墓碑发起资料写入、所有者转移或状态变更得到 409；平台没有新增的租户删除权限码，删除操作按租户管理权限判定。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（覆盖墓碑行与别名、标识不可复用；墓碑详情读取与写入拒绝由后端测试覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（覆盖墓碑行与名称、标识不可复用；墓碑详情读取与写入拒绝由后端测试覆盖）

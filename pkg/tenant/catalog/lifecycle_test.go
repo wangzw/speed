@@ -282,7 +282,7 @@ func TestRefreshOnceKeepsTheSnapshotAndSaysSo(t *testing.T) {
 	if after != before {
 		t.Error("the refused refresh replaced the snapshot instead of leaving the previous one in place")
 	}
-	if _, ok := after.byAlias["acme"]; !ok {
+	if _, ok := after.byName["acme"]; !ok {
 		t.Error("the previous snapshot no longer answers for the tenant it held")
 	}
 
@@ -311,7 +311,7 @@ func TestRefreshOncePublishesAChangedTable(t *testing.T) {
 	if err := r.read(ctx); err != nil {
 		t.Fatalf("the first read: %v", err)
 	}
-	if _, ok, err := r.ByAlias(ctx, "globex"); err != nil || ok {
+	if _, ok, err := r.ByName(ctx, "globex"); err != nil || ok {
 		t.Fatalf("the roster resolves a tenant the table does not hold: found=%v err=%v", ok, err)
 	}
 
@@ -320,7 +320,7 @@ func TestRefreshOncePublishesAChangedTable(t *testing.T) {
 	}
 	r.refreshOnce(ctx)
 
-	served, ok, err := r.ByAlias(ctx, "globex")
+	served, ok, err := r.ByName(ctx, "globex")
 	if err != nil {
 		t.Fatalf("resolving the tenant that was written: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestRefreshOncePublishesAChangedTable(t *testing.T) {
 			"until a restart")
 	}
 	if served.ID != "globex" {
-		t.Errorf("the alias resolves to tenant %q, want the %q the table carries", served.ID, "globex")
+		t.Errorf("the name resolves to tenant %q, want the %q the table carries", served.ID, "globex")
 	}
 }
 
@@ -382,7 +382,7 @@ func TestAZeroPeriodStartsNoRefresher(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if _, ok, err := r.ByAlias(ctx, "globex"); err != nil {
+		if _, ok, err := r.ByName(ctx, "globex"); err != nil {
 			t.Fatalf("resolving the tenant that was written: %v", err)
 		} else if ok {
 			t.Fatal("a zero refresh period reread the table: the tenant written after the load became " +
@@ -417,7 +417,7 @@ func TestAPeriodAboveZeroRereadsTheTable(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if _, ok, err := r.ByAlias(ctx, "globex"); err != nil {
+		if _, ok, err := r.ByName(ctx, "globex"); err != nil {
 			t.Fatalf("resolving the tenant that was written: %v", err)
 		} else if ok {
 			return
@@ -463,7 +463,7 @@ func TestStopEndsTheRefresher(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if _, ok, err := r.ByAlias(ctx, "globex"); err != nil {
+		if _, ok, err := r.ByName(ctx, "globex"); err != nil {
 			t.Fatalf("resolving the tenant that was written: %v", err)
 		} else if ok {
 			break
@@ -488,7 +488,7 @@ func TestStopEndsTheRefresher(t *testing.T) {
 	}
 	deadline = time.Now().Add(5 * time.Second)
 	for {
-		if _, ok, err := r.ByAlias(ctx, "initech"); err != nil {
+		if _, ok, err := r.ByName(ctx, "initech"); err != nil {
 			t.Fatalf("resolving the tenant written after the stop: %v", err)
 		} else if ok {
 			t.Fatal("the roster reread the table after it was stopped: a tenant written after the " +

@@ -338,16 +338,16 @@ func newHarness(t *testing.T) *harness {
 		logs:         &logBuffer{},
 	}
 	p := &product{
-		handle:        handle,
-		accounts:      h.accounts,
-		verification:  h.verification,
-		accountAdm:    h.admin,
-		memberships:   h.members,
-		mounter:       h.mounter,
-		audit:         h.audit,
-		decider:       h.decider,
-		tenantAliases: identityAliases{},
-		logger:        h.logs.logger(),
+		handle:       handle,
+		accounts:     h.accounts,
+		verification: h.verification,
+		accountAdm:   h.admin,
+		memberships:  h.members,
+		mounter:      h.mounter,
+		audit:        h.audit,
+		decider:      h.decider,
+		tenantNames:  identityNames{},
+		logger:       h.logs.logger(),
 	}
 	p.now = h.clock.read
 	h.p = p
@@ -428,10 +428,10 @@ func (v *fakeSignupVerification) PendingAccountByContact(_ context.Context, _ st
 	return v.owner, v.pending, v.pendingErr
 }
 
-// identityAliases stands in for the roster's id-to-alias seam over an assembly
-// whose fixture identifiers double as their aliases.
-type identityAliases struct{}
+// identityNames stands in for the roster's id-to-name seam over an assembly
+// whose fixture identifiers double as their names.
+type identityNames struct{}
 
-func (identityAliases) TenantAliasOf(_ context.Context, id string) (string, error) {
+func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }

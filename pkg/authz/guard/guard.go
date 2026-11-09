@@ -390,7 +390,7 @@ func (p *product) handle(c *gin.Context, realm string) {
 // the two cases apart: a route that is open or optional lets the anonymous
 // request through, and one that requires identity is answered 401. With an
 // identity, the query names the subject's accountability key and the tenant the
-// request resolved to — the identifier, not the alias — or the platform domain
+// request resolved to — the identifier, not the name — or the platform domain
 // when no tenant was resolved. The engine's answer is read as it stands: an
 // error is an outage (503), a false is a denial (403), a true passes.
 func (p *product) enforce(c *gin.Context, perm authz.Permission, realm string) {

@@ -5,9 +5,9 @@ import "context"
 // UsernameReservation answers whether a username is one the system keeps for
 // itself.
 //
-// A username and a tenant alias share one namespace: a personal tenant's alias
-// is its owner's username, and both live under the roster's alias column. A
-// surface that lets an account choose an alias therefore has to refuse the
+// A username and a tenant name share one namespace: a personal tenant's name
+// is its owner's username, and both live under the roster's name column. A
+// surface that lets an account choose a name therefore has to refuse the
 // names a username write refuses, and the reserved set is the account module's
 // — the built-in list plus whatever the deployment appended — so it is asked
 // through this seam rather than restated by the caller.

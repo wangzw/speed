@@ -3,12 +3,8 @@
     "schemas": {
       "OrganizationCreateRequest": {
         "additionalProperties": false,
-        "description": "The alias, display name and description of the organization to create. The identifier is generated.",
+        "description": "The name, display name and description of the organization to create. The identifier is generated.",
         "properties": {
-          "alias": {
-            "description": "The organization's public alias: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation.",
-            "type": "string"
-          },
           "description": {
             "description": "The organization's description; at most 500 runes after trimming.",
             "type": "string"
@@ -16,10 +12,14 @@
           "display_name": {
             "description": "The organization's display name; 1 to 100 runes after trimming, and the surface requires it non-empty.",
             "type": "string"
+          },
+          "name": {
+            "description": "The organization's public name: a lower-case slug of 3 to 63 letters, digits and dashes, beginning with a letter or a digit. It is unique across the roster and cannot be changed after creation.",
+            "type": "string"
           }
         },
         "required": [
-          "alias",
+          "name",
           "display_name"
         ],
         "type": "object"
@@ -37,18 +37,18 @@
         "type": "object"
       },
       "OrganizationCreatedTenant": {
-        "description": "The created organization: the caller's alias and profile, and the active state. The generated identifier is internal and never appears.",
+        "description": "The created organization: the caller's name and profile, and the active state. The generated identifier is internal and never appears.",
         "properties": {
-          "alias": {
-            "description": "The request-surface name the caller chose; unique across the roster and immutable after creation.",
-            "type": "string"
-          },
           "description": {
             "description": "The organization's description, trimmed.",
             "type": "string"
           },
           "displayName": {
             "description": "The organization's display name, trimmed.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The request-surface name the caller chose; unique across the roster and immutable after creation.",
             "type": "string"
           },
           "status": {
@@ -60,7 +60,7 @@
           }
         },
         "required": [
-          "alias",
+          "name",
           "displayName",
           "description",
           "status"
@@ -107,7 +107,7 @@
   "paths": {
     "/orgs": {
       "post": {
-        "description": "Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the alias; the identifier is generated and stays internal. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The alias is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.",
+        "description": "Creates one active business organization for the calling account through the provisioning seam: the caller becomes its first tenant-admin, the tenant-admin role is marked builtin and carries the governed permission set. The caller chooses the name; the identifier is generated and stays internal. A pending email address is refused (contact-required); an impersonating caller, a service account and a static subject are refused. The name is held to the roster's slug form, the reserved-name set and one namespace with usernames and tenant identifiers. A per-account lock, the active-business-organization cap and the hourly creation limit bound the call, and a mandatory audit row must land before the provisioner runs.",
         "operationId": "org.create.create",
         "requestBody": {
           "content": {
@@ -117,7 +117,7 @@
               }
             }
           },
-          "description": "The alias, display name and description of the organization; the identifier is generated.",
+          "description": "The name, display name and description of the organization; the identifier is generated.",
           "required": true
         },
         "responses": {
@@ -139,7 +139,7 @@
                 }
               }
             },
-            "description": "The alias or display name is missing or outside its bounds, or the alias is reserved"
+            "description": "The name or display name is missing or outside its bounds, or the name is reserved"
           },
           "401": {
             "content": {
@@ -169,7 +169,7 @@
                 }
               }
             },
-            "description": "The caller cannot create an organization now: a creation is already in progress (creation-in-progress), the account holds the maximum number of active business organizations (organization-limit), or the alias or generated identifier is unavailable (identifier-unavailable). The type field names which"
+            "description": "The caller cannot create an organization now: a creation is already in progress (creation-in-progress), the account holds the maximum number of active business organizations (organization-limit), or the name or generated identifier is unavailable (identifier-unavailable). The type field names which"
           },
           "413": {
             "content": {

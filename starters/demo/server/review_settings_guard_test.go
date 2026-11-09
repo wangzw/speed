@@ -36,8 +36,8 @@ import (
 )
 
 // protectedReviewTenant is the protected- prefixed business tenant this case
-// assembles. Its identifier is also its alias, so the tenant in the path and the
-// X-Tenant header name the same domain.
+// assembles. Its identifier is also the name it is addressed by, so the tenant
+// in the path and the X-Tenant header name the same domain.
 const protectedReviewTenant = "protected-acme"
 
 const (

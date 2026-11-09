@@ -1080,14 +1080,14 @@ const liveBody = `{
 	"authz": {"guard": {"endpoints": ["public"]}}
 }`
 
-// rosterStub is the tenant roster, with the alias a request carries mapped to a
-// distinct identifier, so that a query built from the alias and one built from
+// rosterStub is the tenant roster, with the name a request carries mapped to a
+// distinct identifier, so that a query built from the name and one built from
 // the identifier cannot be confused.
 type rosterStub struct{ tenant.Catalog }
 
-func (rosterStub) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
-	if alias == "acme-alias" {
-		return tenant.Tenant{ID: "t-acme", Alias: "acme-alias", Status: tenant.StatusActive}, true, nil
+func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
+	if name == "acme-name" {
+		return tenant.Tenant{ID: "t-acme", Name: "acme-name", Status: tenant.StatusActive}, true, nil
 	}
 	return tenant.Tenant{}, false, nil
 }
@@ -1159,7 +1159,7 @@ var liveRegistrant = core.Module{
 // The live case runs the real entry point on a loopback port with the real
 // tenant resolution layer and this module on the chain, and reads one request's
 // decision end to end: the query this module puts to the engine names the tenant
-// identifier the roster maps the request's alias to — never the alias — and the
+// identifier the roster maps the request's name to — never the name — and the
 // account whose hands are on the request.
 func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
@@ -1253,7 +1253,7 @@ func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building the request: %v", err)
 	}
-	req.Header.Set("X-Tenant", "acme-alias")
+	req.Header.Set("X-Tenant", "acme-name")
 	client := &nethttp.Client{Timeout: waitLimit, Transport: &nethttp.Transport{DisableKeepAlives: true}}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1270,6 +1270,6 @@ func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 	want := authz.Query{Subject: "alice", Domain: "t-acme", Object: "account", Action: "read"}
 	got := enforcer.Asked()
 	if len(got) != 1 || got[0] != want {
-		t.Fatalf("the engine was asked %v, want exactly %v: the tenant identifier and not its alias", got, want)
+		t.Fatalf("the engine was asked %v, want exactly %v: the tenant identifier and not its name", got, want)
 	}
 }

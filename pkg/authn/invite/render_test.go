@@ -66,17 +66,17 @@ func renderingNotifier(t *testing.T, sender mail.Sender) authn.InviteNotifier {
 	return notifier
 }
 
-// TestTheRenderedInvitationEmailCarriesTheAliasNeverTheIdentifier holds the
+// TestTheRenderedInvitationEmailCarriesTheNameNeverTheIdentifier holds the
 // outbound rule at the rendering level: the body the recipient actually reads
-// names the tenant by its alias, and the internal identifier the path guard
+// names the tenant by its name, and the internal identifier the path guard
 // left in the issue request reaches neither the subject nor either body. The
-// fixture's identifier and alias differ, so a rendered message carrying either
+// fixture's identifier and name differ, so a rendered message carrying either
 // one is distinguishable.
-func TestTheRenderedInvitationEmailCarriesTheAliasNeverTheIdentifier(t *testing.T) {
+func TestTheRenderedInvitationEmailCarriesTheNameNeverTheIdentifier(t *testing.T) {
 	h := newHarness(t)
 	sender := &renderedMail{}
 	h.p.notifier = renderingNotifier(t, sender)
-	h.p.tenantAliases = fakeAliases{"tenant-a": "acme"}
+	h.p.tenantNames = fakeNames{"tenant-a": "acme"}
 
 	answered := h.issueOverRoute("alice@example.com")
 	if got := answered.EmailDelivery; got != authn.InviteSent.String() {
@@ -92,7 +92,7 @@ func TestTheRenderedInvitationEmailCarriesTheAliasNeverTheIdentifier(t *testing.
 		"html":    message.HTML,
 	} {
 		if !strings.Contains(body, "acme") {
-			t.Errorf("the %s does not name the alias acme: %s", name, body)
+			t.Errorf("the %s does not carry the name acme: %s", name, body)
 		}
 		if strings.Contains(body, "tenant-a") {
 			t.Errorf("the %s carries the internal identifier: %s", name, body)

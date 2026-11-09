@@ -53,10 +53,10 @@ func TestADroppedTableIsReportedMissingOnPostgres(t *testing.T) {
 	ctx := context.Background()
 	for name, call := range map[string]func() error{
 		"Put": func() error {
-			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"Create": func() error {
-			return r.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+			return r.Create(ctx, tenant.Tenant{ID: "t_new", Name: "new", Status: tenant.StatusActive})
 		},
 		"SetStatus": func() error { return r.SetStatus(ctx, "t_acme", tenant.StatusDisabled) },
 		"Enter": func() error {
@@ -71,11 +71,11 @@ func TestADroppedTableIsReportedMissingOnPostgres(t *testing.T) {
 	}
 }
 
-// Two tenants put under one alias at once both find it free, and the second
+// Two tenants put under one name at once both find it free, and the second
 // insert meets the column's unique index. That is the same conflict the check
 // inside the write reports, and the caller is owed the same answer for it:
-// ErrAliasConflict naming the holder, not the driver's constraint violation.
-func TestAConcurrentAliasConflictIsReportedAsOne(t *testing.T) {
+// ErrNameConflict naming the holder, not the driver's constraint violation.
+func TestAConcurrentNameConflictIsReportedAsOne(t *testing.T) {
 	r := rosterOverPostgres(t)
 	ctx := context.Background()
 
@@ -89,7 +89,7 @@ func TestAConcurrentAliasConflictIsReportedAsOne(t *testing.T) {
 				defer wg.Done()
 				errs[i][side] = r.Put(ctx, tenant.Tenant{
 					ID:     tenant.ID(fmt.Sprintf("%s_%d", prefix, i)),
-					Alias:  fmt.Sprintf("alias-%d", i),
+					Name:   fmt.Sprintf("name-%d", i),
 					Status: tenant.StatusActive,
 				})
 			}(i, side, prefix)
@@ -103,7 +103,7 @@ func TestAConcurrentAliasConflictIsReportedAsOne(t *testing.T) {
 		for _, err := range pair {
 			switch {
 			case err == nil:
-			case errors.Is(err, tenant.ErrAliasConflict):
+			case errors.Is(err, tenant.ErrNameConflict):
 				failed++
 			default:
 				failed++
@@ -111,11 +111,11 @@ func TestAConcurrentAliasConflictIsReportedAsOne(t *testing.T) {
 			}
 		}
 		if failed != 1 {
-			t.Fatalf("pair %d under one alias ended %v, want exactly one refused", i, pair)
+			t.Fatalf("pair %d under one name ended %v, want exactly one refused", i, pair)
 		}
 	}
 	if len(other) > 0 {
-		t.Fatalf("%d of %d concurrent conflicts were not reported as ErrAliasConflict; the first: %v",
+		t.Fatalf("%d of %d concurrent conflicts were not reported as ErrNameConflict; the first: %v",
 			len(other), pairs, other[0])
 	}
 }

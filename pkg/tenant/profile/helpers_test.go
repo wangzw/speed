@@ -113,8 +113,8 @@ func (s *stubCatalog) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool,
 	return held, found, nil
 }
 
-func (s *stubCatalog) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
-	s.record(catalogCall{op: "ByAlias"})
+func (s *stubCatalog) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
+	s.record(catalogCall{op: "ByName"})
 	if err := s.errNow(); err != nil {
 		return tenant.Tenant{}, false, err
 	}
@@ -122,7 +122,7 @@ func (s *stubCatalog) ByAlias(_ context.Context, alias string) (tenant.Tenant, b
 	rows := append([]tenant.Tenant(nil), s.rows...)
 	s.mu.Unlock()
 	for _, row := range rows {
-		if row.Alias == alias {
+		if row.Name == name {
 			return row, true, nil
 		}
 	}
@@ -473,7 +473,7 @@ func newRig(t *testing.T) *rig {
 	logs := &logBuffer{}
 	r := &rig{
 		t:        t,
-		catalog:  &stubCatalog{found: true, held: tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, order: order},
+		catalog:  &stubCatalog{found: true, held: tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}, order: order},
 		guard:    &stubGuard{allow: true},
 		audit:    &recordingAudit{order: order},
 		logs:     logs,
@@ -564,7 +564,7 @@ var sampleCreatedAt = time.Date(2026, time.November, 5, 9, 30, 0, 0, time.UTC)
 func sampleTenant() tenant.Tenant {
 	return tenant.Tenant{
 		ID:           "acme",
-		Alias:        "acme",
+		Name:         "acme",
 		Status:       tenant.StatusActive,
 		OwnerAccount: "acct-owner",
 		Profile: tenant.Profile{

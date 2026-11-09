@@ -20,7 +20,7 @@ const (
 
 // The detail keys this module writes, a closed set: the action identifier that
 // links a write's rows, the tenant the write is on, and the surface the write
-// came through. A tenant is named by its alias, the name a reader of the trail
+// came through. A tenant is named by its name, which a reader of the trail
 // can act on; the internal identifier stays out of the row.
 const (
 	detailActionID = "action_id"

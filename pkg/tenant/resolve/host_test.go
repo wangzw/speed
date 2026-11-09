@@ -345,20 +345,20 @@ type noRedaction struct{}
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// fakeRoster answers ByAlias and Get from fixed tables, or with a fixed error.
-// The resolution layer tries ByAlias and then Get, and the path guard calls
+// fakeRoster answers ByName and Get from fixed tables, or with a fixed error.
+// The resolution layer tries ByName and then Get, and the path guard calls
 // both.
 type fakeRoster struct {
-	byAlias map[string]tenant.Tenant
-	byID    map[tenant.ID]tenant.Tenant
-	err     error
+	byName map[string]tenant.Tenant
+	byID   map[tenant.ID]tenant.Tenant
+	err    error
 }
 
-func (f fakeRoster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
+func (f fakeRoster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
 	if f.err != nil {
 		return tenant.Tenant{}, false, f.err
 	}
-	t, ok := f.byAlias[alias]
+	t, ok := f.byName[name]
 	return t, ok, nil
 }
 
@@ -412,16 +412,16 @@ func (fakeRoster) EnterRegistered(ctx context.Context, _ tenant.ID) (context.Con
 
 func standardRoster() fakeRoster {
 	tenants := []tenant.Tenant{
-		{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-		{ID: "t_paused", Alias: "paused", Status: tenant.StatusDisabled},
-		{ID: "t_deleted", Alias: "deleted", Status: tenant.StatusDeleted},
-		{ID: "system", Alias: "platform", Status: tenant.StatusActive},
+		{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
+		{ID: "t_paused", Name: "paused", Status: tenant.StatusDisabled},
+		{ID: "t_deleted", Name: "deleted", Status: tenant.StatusDeleted},
+		{ID: "system", Name: "platform", Status: tenant.StatusActive},
 	}
-	byAlias := make(map[string]tenant.Tenant, len(tenants))
+	byName := make(map[string]tenant.Tenant, len(tenants))
 	byID := make(map[tenant.ID]tenant.Tenant, len(tenants))
 	for _, t := range tenants {
-		byAlias[t.Alias] = t
+		byName[t.Name] = t
 		byID[t.ID] = t
 	}
-	return fakeRoster{byAlias: byAlias, byID: byID}
+	return fakeRoster{byName: byName, byID: byID}
 }

@@ -43,8 +43,8 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	}
 }
 
-// The ensure names the tenant's alias after the account's username.
-func TestEnsureNamesTheAliasAfterTheUsername(t *testing.T) {
+// The ensure names the tenant's name after the account's username.
+func TestEnsureNamesTheNameAfterTheUsername(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	p.accounts = &fakeAccounts{identifiers: []authn.Identifier{
 		{Kind: authn.IdentifierEmail, Value: "alice@example.com"},
@@ -54,13 +54,13 @@ func TestEnsureNamesTheAliasAfterTheUsername(t *testing.T) {
 		t.Fatalf("the ensure: %v", err)
 	}
 	row := roster.rows[TenantID(unitAccount)]
-	if row.Alias != "alice" {
-		t.Errorf("the alias is %q, want the account's username", row.Alias)
+	if row.Name != "alice" {
+		t.Errorf("the name is %q, want the account's username", row.Name)
 	}
 }
 
-// A username the ensure cannot read is a refusal, not a derived alias: the
-// personal tenant's alias is always the account's username.
+// A username the ensure cannot read is a refusal, not a derived name: the
+// personal tenant's name is always the account's username.
 func TestEnsureRefusesWhenTheUsernameCannotBeRead(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -89,11 +89,11 @@ func TestEnsureRefusesWhenTheUsernameCannotBeRead(t *testing.T) {
 	}
 }
 
-// An alias another tenant holds is the identifier-unavailable refusal.
-func TestEnsureReportsAHeldAlias(t *testing.T) {
+// A name another tenant holds is the identifier-unavailable refusal.
+func TestEnsureReportsAHeldName(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	p.accounts = &fakeAccounts{identifiers: []authn.Identifier{{Kind: authn.IdentifierUsername, Value: "alice"}}}
-	roster.createErr = tenant.ErrAliasConflict
+	roster.createErr = tenant.ErrNameConflict
 	_, err := p.ensure(context.Background(), unitAccount)
 	if !errors.Is(err, ErrIdentifierUnavailable) {
 		t.Fatalf("the ensure gave %v, want ErrIdentifierUnavailable", err)
@@ -104,7 +104,7 @@ func TestEnsureReportsAHeldAlias(t *testing.T) {
 func TestEnsureRefusesADisabledTenant(t *testing.T) {
 	p, roster, memberships, manager, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusDisabled}
+	roster.rows[id] = tenant.Tenant{ID: id, Name: "unit-user", Status: tenant.StatusDisabled}
 	memberships.rows[unitAccount] = []authn.Membership{{Account: unitAccount, Tenant: string(id), Active: true}}
 	before := len(manager.bindings[string(id)])
 	_, err := p.ensure(context.Background(), unitAccount)
@@ -121,7 +121,7 @@ func TestEnsureRefusesADisabledTenant(t *testing.T) {
 func TestEnsureClosesALostRaceWithAFailedAuditRow(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusActive}
+	roster.rows[id] = tenant.Tenant{ID: id, Name: "unit-user", Status: tenant.StatusActive}
 	roster.creates = 0
 	roster.createErr = tenant.ErrTenantExists
 	result, err := p.ensure(context.Background(), unitAccount)
@@ -209,7 +209,7 @@ func TestEnsureCreatesOneTenantUnderConcurrentCalls(t *testing.T) {
 func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
 	p, roster, _, _, _ := unitProduct()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusActive}
+	roster.rows[id] = tenant.Tenant{ID: id, Name: "unit-user", Status: tenant.StatusActive}
 	roster.lagging[id] = true
 
 	result, err := p.ensure(context.Background(), unitAccount)
@@ -263,7 +263,7 @@ func TestEnsureMigratesTheLegacyOwnerRole(t *testing.T) {
 	p, roster, memberships, manager, seeder := unitProduct()
 	ctx := context.Background()
 	id := TenantID(unitAccount)
-	roster.rows[id] = tenant.Tenant{ID: id, Alias: "unit-user", Status: tenant.StatusActive}
+	roster.rows[id] = tenant.Tenant{ID: id, Name: "unit-user", Status: tenant.StatusActive}
 	memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: string(id), Active: true, Source: personalMemberSource},
 	}

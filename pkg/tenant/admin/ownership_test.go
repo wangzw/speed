@@ -14,7 +14,7 @@ import (
 func TestTheOwnerTransferGoesThroughTheOrganizationWriter(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: "acc-owner",
 	}
 	r.catalog.found = true
@@ -36,7 +36,7 @@ func TestTheOwnerTransferGoesThroughTheOrganizationWriter(t *testing.T) {
 // The transfer's mandatory audit row lands before the writer is reached.
 func TestTheOwnerTransferAuditsBeforeTheWrite(t *testing.T) {
 	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	r.catalog.found = true
 	atWrite := -1
 	r.organization.during = func() { atWrite = len(r.audit.entries()) }
@@ -56,7 +56,7 @@ func TestTheOwnerTransferRefusalIsAConflict(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
-			r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+			r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 			r.catalog.found = true
 			r.organization.fail(refusal)
 
@@ -80,7 +80,7 @@ func TestTheOwnerTransferRefusalIsAConflict(t *testing.T) {
 func TestPlatformStaffDeleteWithoutAnOwnerExpectation(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: "acc-owner",
 	}
 	r.catalog.found = true
@@ -105,7 +105,7 @@ func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: authntest.DefaultAccount.String(),
 	}
 	r.catalog.found = true
@@ -131,7 +131,7 @@ func TestTheOwnerCannotDeleteThroughThePlatformSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: authntest.DefaultAccount.String(),
 	}
 	r.catalog.found = true
@@ -152,7 +152,7 @@ func TestTheOwnerCannotTransferThroughThePlatformSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: authntest.DefaultAccount.String(),
 	}
 	r.catalog.found = true
@@ -173,7 +173,7 @@ func TestTheOwnerTransfersThroughTheTenantSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: authntest.DefaultAccount.String(),
 	}
 	r.catalog.found = true
@@ -209,7 +209,7 @@ func TestPlatformStaffCannotUseTheTenantSurfaceWithoutBeingTheOwner(t *testing.T
 			r := newRig(t)
 			r.guard.allow = true
 			r.catalog.held = tenant.Tenant{
-				ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+				ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 				OwnerAccount: "acc-owner",
 			}
 			r.catalog.found = true
@@ -234,7 +234,7 @@ func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
 	r.guard.allow = false
 	owner := authntest.DefaultAccount
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: owner.String(),
 	}
 	r.catalog.found = true
@@ -263,7 +263,7 @@ func TestANonOwnerTenantAdministratorCannotDelete(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
 	r.catalog.held = tenant.Tenant{
-		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		ID: "t_acme", Name: "acme", Status: tenant.StatusActive,
 		OwnerAccount: "acc-owner",
 	}
 	r.catalog.found = true
@@ -285,7 +285,7 @@ func TestANonOwnerTenantAdministratorCannotDelete(t *testing.T) {
 func TestTheDeleteRefusesATombstoneAndAProtectedTenant(t *testing.T) {
 	t.Run("a tombstone", func(t *testing.T) {
 		r := newRig(t)
-		r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted}
+		r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted}
 		r.catalog.found = true
 		w := r.do(http.MethodDelete, pathTenants+"/t_acme", nil)
 		if w.Code != http.StatusConflict {
@@ -298,7 +298,7 @@ func TestTheDeleteRefusesATombstoneAndAProtectedTenant(t *testing.T) {
 
 	t.Run("a protected tenant", func(t *testing.T) {
 		r := newRig(t)
-		r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+		r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 		r.catalog.found = true
 		r.writeGuard.denied = true
 		w := r.do(http.MethodDelete, pathTenants+"/t_acme", nil)
@@ -318,7 +318,7 @@ func TestTheDeleteRefusesATombstoneAndAProtectedTenant(t *testing.T) {
 // closed with a failed audit row.
 func TestTheDeleteRefusesAnOwnerThatChanged(t *testing.T) {
 	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	r.catalog.found = true
 	r.organization.fail(tenant.ErrOwnerChanged)
 
@@ -338,7 +338,7 @@ func TestTheDeleteRefusesAnOwnerThatChanged(t *testing.T) {
 // The deletion's mandatory audit row lands before the writer is reached.
 func TestTheDeleteAuditsBeforeTheWrite(t *testing.T) {
 	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 	r.catalog.found = true
 	atWrite := -1
 	r.organization.during = func() { atWrite = len(r.audit.entries()) }
@@ -352,7 +352,7 @@ func TestTheDeleteAuditsBeforeTheWrite(t *testing.T) {
 // and a surface renders it read-only.
 func TestTheTombstoneReadCarriesTheDeletedState(t *testing.T) {
 	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted}
+	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted}
 	r.catalog.found = true
 	w := r.do(http.MethodGet, pathTenants+"/t_acme", nil)
 	if w.Code != http.StatusOK {

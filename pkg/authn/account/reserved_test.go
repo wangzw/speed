@@ -53,9 +53,9 @@ func TestABuiltInReservedUsernameIsRefusedAtEveryWriteSurface(t *testing.T) {
 }
 
 // TestAPersonalPrefixedUsernameIsReserved holds the one prefix the reserved set
-// keeps besides its literal names. A personal tenant's alias is its owner's
+// keeps besides its literal names. A personal tenant's name is its owner's
 // username, and a name beginning with the prefix the old personal identifiers
-// used may not be taken, so no personal alias can read as such an identifier.
+// used may not be taken, so no personal name can read as such an identifier.
 func TestAPersonalPrefixedUsernameIsReserved(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -318,7 +318,7 @@ func TestRemovingAnAppendedReservedUsernameIsARelaxation(t *testing.T) {
 }
 
 // TestTheReservedAnswerSeamReportsTheEffectiveSet holds the read a surface
-// choosing a tenant alias makes: the built-in names, the deployment's appended
+// choosing a tenant name makes: the built-in names, the deployment's appended
 // names and the personal prefix are answers about the set, a free name is not,
 // and a value outside the username shape is the normalizer's refusal rather
 // than a verdict on the set.

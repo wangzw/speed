@@ -328,7 +328,7 @@ func (c *fakeTxCatalog) GetTx(_ context.Context, tx *gorm.DB, id tenant.ID) (ten
 	if c.getErr != nil {
 		return tenant.Tenant{}, false, c.getErr
 	}
-	return tenant.Tenant{ID: id, Alias: "alice", Status: tenant.StatusActive}, true, nil
+	return tenant.Tenant{ID: id, Name: "alice", Status: tenant.StatusActive}, true, nil
 }
 
 func (c *fakeTxCatalog) CreateTx(_ context.Context, tx *gorm.DB, t tenant.Tenant) (func(context.Context) error, error) {
@@ -827,7 +827,7 @@ func unitProduct() (*product, *fakeRoster, *fakeMemberships, *fakeManager, *fake
 		logger:            log.Default(),
 		seen:              newSeenEvents(seenEventsCapacity),
 		// A user account always carries a username, and the unit product models
-		// one so the ensure and the creation hook can name the alias.
+		// one so the ensure and the creation hook can name the tenant.
 		accounts: &fakeAccounts{
 			kind:        authn.KindUser,
 			status:      authn.StatusActive,

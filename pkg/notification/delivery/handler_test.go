@@ -716,15 +716,15 @@ func TestTheExternalSendLogsToTheModuleLogger(t *testing.T) {
 	}
 }
 
-// TestTheTenantParameterIsTheAliasOnEveryChannel holds the outbound-text rule:
+// TestTheTenantParameterIsTheNameOnEveryChannel holds the outbound-text rule:
 // a dispatch that names the tenant by its internal identifier reaches every
 // text a recipient can read — the in-app title, body and payload, the email
-// subject and body, and the sms template variables — as the alias instead. The
-// fixture's identifier and alias differ, so either one is distinguishable.
-func TestTheTenantParameterIsTheAliasOnEveryChannel(t *testing.T) {
+// subject and body, and the sms template variables — as the name instead. The
+// fixture's identifier and name differ, so either one is distinguishable.
+func TestTheTenantParameterIsTheNameOnEveryChannel(t *testing.T) {
 	const (
 		internalID = "ACME-INTERNAL"
-		alias      = "acme-public"
+		tenantName = "acme-public"
 	)
 	r := newRig(t, func(h *host) {
 		h.mail = true
@@ -737,7 +737,7 @@ func TestTheTenantParameterIsTheAliasOnEveryChannel(t *testing.T) {
 			RecipientVisibleParams: []string{"to", "tenant"},
 		}}
 	})
-	ctx := r.tenantCtxAs(internalID, alias)
+	ctx := r.tenantCtxAs(internalID, tenantName)
 	r.setChannels(notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS)
 	r.local.set(typeName+".in_app.title", "notice")
 	r.local.set(typeName+".in_app.body", "body")
@@ -751,10 +751,10 @@ func TestTheTenantParameterIsTheAliasOnEveryChannel(t *testing.T) {
 		t.Fatalf("the delivery failed: %v", err)
 	}
 
-	// The in-app payload carries the alias, not the identifier.
+	// The in-app payload carries the name, not the identifier.
 	msg := r.inbox.last()
-	if got := msg.Params["tenant"]; got != alias {
-		t.Errorf("the in-app payload names the tenant %v, want the alias %q", got, alias)
+	if got := msg.Params["tenant"]; got != tenantName {
+		t.Errorf("the in-app payload names the tenant %v, want the name %q", got, tenantName)
 	}
 	for _, key := range []string{
 		typeName + ".in_app.title",
@@ -766,17 +766,17 @@ func TestTheTenantParameterIsTheAliasOnEveryChannel(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q was not rendered", key)
 		}
-		if got := i18n.StringOf(args["tenant"]); got != alias {
-			t.Errorf("%s rendered the tenant as %q, want the alias %q", key, got, alias)
+		if got := i18n.StringOf(args["tenant"]); got != tenantName {
+			t.Errorf("%s rendered the tenant as %q, want the name %q", key, got, tenantName)
 		}
 	}
-	// The sms template variables carry the alias too.
+	// The sms template variables carry the name too.
 	resolved, ok := r.smsRegistry.lastResolve()
 	if !ok {
 		t.Fatal("the sms channel resolved no message")
 	}
-	if got := resolved.Params["tenant"]; got != alias {
-		t.Errorf("the sms template variable tenant = %q, want the alias %q", got, alias)
+	if got := resolved.Params["tenant"]; got != tenantName {
+		t.Errorf("the sms template variable tenant = %q, want the name %q", got, tenantName)
 	}
 
 	// The internal identifier must appear in no text a recipient reads.
@@ -801,10 +801,10 @@ func TestTheTenantParameterIsTheAliasOnEveryChannel(t *testing.T) {
 	}
 }
 
-// TestTheTenantParameterWithoutAnAliasResolverNamesNobody holds the absent
+// TestTheTenantParameterWithoutANameResolverNamesNobody holds the absent
 // seam: a dispatch that names the tenant renders no tenant rather than falling
 // back to the identifier, which is internal.
-func TestTheTenantParameterWithoutAnAliasResolverNamesNobody(t *testing.T) {
+func TestTheTenantParameterWithoutANameResolverNamesNobody(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.specs = map[string]notification.TypeSpec{"test.declarer": {
 			Key:                    typeName,
@@ -817,7 +817,7 @@ func TestTheTenantParameterWithoutAnAliasResolverNamesNobody(t *testing.T) {
 	ctx := r.tenantCtx("t1")
 	// The rig delivers the roster's resolver; take it away to hold the absent
 	// seam.
-	r.p.tenantAliases = nil
+	r.p.tenantNames = nil
 	r.setChannels(notification.ChannelInApp)
 	r.local.set(typeName+".in_app.title", "notice")
 	r.local.set(typeName+".in_app.body", "body")

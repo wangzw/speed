@@ -22,16 +22,16 @@ const pathProfileFragment = "/:tenant/profile"
 
 // profileInput is the request of the read: the tenant named in the path.
 type profileInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's name the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 }
 
 // profileWriteInput is the request of the write: the tenant named in the path
 // and the four descriptive fields in the body, each of which must be present. A
 // field the body carries empty clears the stored value.
 type profileWriteInput struct {
-	Tenant string `path:"tenant" description:"The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404."`
+	Tenant string `path:"tenant" description:"The tenant's name the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 
-	DisplayName  string `json:"display_name" required:"true" description:"The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias."`
+	DisplayName  string `json:"display_name" required:"true" description:"The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the name."`
 	Description  string `json:"description" required:"true" description:"A longer account of the organization, at most 500 runes. Empty clears it."`
 	ContactEmail string `json:"contact_email" required:"true" description:"The organization's contact address, one bare email address of at most 254 bytes. Empty clears it."`
 	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it."`
@@ -47,7 +47,7 @@ var profileWriteFields = []string{"display_name", "description", "contact_email"
 type profileBody = struct {
 	_ struct{} `description:"The organization profile of one tenant."`
 
-	Profile TenantProfileView `json:"profile" required:"true" description:"The tenant's organization profile, with its alias, kind, owner account and state."`
+	Profile TenantProfileView `json:"profile" required:"true" description:"The tenant's organization profile, with its name, kind, owner account and state."`
 }
 
 // getOperation declares GET /:tenant/profile: the organization profile of one
@@ -58,10 +58,10 @@ var getOperation = speedhttp.NewReplyOperation[profileInput](
 	http.MethodGet,
 	pathProfileFragment,
 	"Read a tenant's organization profile",
-	"Reads one tenant's organization profile: its alias, kind, display name, description, contact email, "+
+	"Reads one tenant's organization profile: its name, kind, display name, description, contact email, "+
 		"website, state and owner account, plus the time it was registered when that is known. It carries no disable source; "+
 		"the platform management surface is where a disabled tenant's source is read. The caller needs "+
-		"tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An alias "+
+		"tenant.profile.read in the tenant's policy domain, and the platform domain is refused. A name "+
 		"the roster does not hold is a 404. Reads write no audit row.",
 	nil,
 	[]speedhttp.Response{
@@ -91,7 +91,7 @@ var setOperation = speedhttp.NewReplyOperation[profileWriteInput](
 	pathProfileFragment,
 	"Write a tenant's organization profile",
 	"Writes one tenant's organization profile and nothing else: the display name, description, contact email "+
-		"and website. The alias, kind, state and creation time are not written, so a profile update cannot "+
+		"and website. The name, kind, state and creation time are not written, so a profile update cannot "+
 		"undo a disable or a deletion another path committed. The body carries all four fields; an empty "+
 		"value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the "+
 		"caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a "+

@@ -12,21 +12,21 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// TestTheAliasLayerResolvesThePathTenant holds the platform boundary: a request
-// under /api/v1/system/tenants/ carries the tenant's alias, the layer replaces
-// it with the internal identifier, and an unknown alias or the old identifier
+// TestTheNameLayerResolvesThePathTenant holds the platform boundary: a request
+// under /api/v1/system/tenants/ carries the tenant's name, the layer replaces
+// it with the internal identifier, and an unknown name or the old identifier
 // is the bare 404. A tombstone resolves, because the platform surface manages
 // it.
-func TestTheAliasLayerResolvesThePathTenant(t *testing.T) {
+func TestTheNameLayerResolvesThePathTenant(t *testing.T) {
 	r := newRig(t)
 	r.catalog.list = []tenant.Tenant{
-		{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-		{ID: "t_gone", Alias: "gone", Status: tenant.StatusDeleted},
+		{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
+		{ID: "t_gone", Name: "gone", Status: tenant.StatusDeleted},
 	}
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.Use(r.p.tenantAliasLayer().Handler)
+	engine.Use(r.p.tenantNameLayer().Handler)
 	var bound string
 	serve := func(c *gin.Context) {
 		bound = c.Param("tenant")
@@ -40,10 +40,10 @@ func TestTheAliasLayerResolvesThePathTenant(t *testing.T) {
 		status int
 		bound  string
 	}{
-		"an alias resolves and is replaced by the identifier": {"/api/v1/system/tenants/acme", http.StatusOK, "t_acme"},
-		"a tombstone's alias resolves":                        {"/api/v1/system/tenants/gone", http.StatusOK, "t_gone"},
-		"an unknown alias is a 404":                           {"/api/v1/system/tenants/ghost", http.StatusNotFound, ""},
-		"the old identifier is a 404":                         {"/api/v1/system/tenants/t_acme", http.StatusNotFound, ""},
+		"a name resolves and is replaced by the identifier": {"/api/v1/system/tenants/acme", http.StatusOK, "t_acme"},
+		"a tombstone's name resolves":                       {"/api/v1/system/tenants/gone", http.StatusOK, "t_gone"},
+		"an unknown name is a 404":                          {"/api/v1/system/tenants/ghost", http.StatusNotFound, ""},
+		"the old identifier is a 404":                       {"/api/v1/system/tenants/t_acme", http.StatusNotFound, ""},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -96,10 +96,10 @@ func (s stubKind) KindOf(_ context.Context, id tenant.ID) (tenant.Kind, error) {
 // reads business when the assembly supplies none.
 func TestTheViewCarriesTheTenantKind(t *testing.T) {
 	r := newRig(t)
-	// The roster orders by alias, so the fixture is handed over in that order.
+	// The roster orders by name, so the fixture is handed over in that order.
 	r.catalog.list = []tenant.Tenant{
-		{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-		{ID: "personal-acc-1", Alias: "alice", Status: tenant.StatusActive},
+		{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
+		{ID: "personal-acc-1", Name: "alice", Status: tenant.StatusActive},
 	}
 	r.p.kind = stubKind{
 		"personal-acc-1": tenant.KindPersonal,
@@ -117,7 +117,7 @@ func TestTheViewCarriesTheTenantKind(t *testing.T) {
 	if len(got.Tenants) != 2 || got.Tenants[0].Kind != "business" || got.Tenants[1].Kind != "personal" {
 		t.Fatalf("tenants = %+v, want business (acme) then personal (alice)", got.Tenants)
 	}
-	if got.Tenants[0].Alias != "acme" || got.Tenants[1].Alias != "alice" {
-		t.Errorf("aliases = %q, %q; want the roster's order", got.Tenants[0].Alias, got.Tenants[1].Alias)
+	if got.Tenants[0].Name != "acme" || got.Tenants[1].Name != "alice" {
+		t.Errorf("names = %q, %q; want the roster's order", got.Tenants[0].Name, got.Tenants[1].Name)
 	}
 }

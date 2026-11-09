@@ -99,14 +99,14 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	}
 	var answer struct {
 		Tenants []struct {
-			Alias string `json:"alias"`
-			Kind  string `json:"kind"`
+			Name string `json:"name"`
+			Kind string `json:"kind"`
 		} `json:"tenants"`
 	}
 	if err := json.Unmarshal(read.body, &answer); err != nil {
 		t.Fatalf("the answer is not JSON: %v\n%s", err, read.body)
 	}
-	if len(answer.Tenants) != 1 || answer.Tenants[0].Alias == "" {
+	if len(answer.Tenants) != 1 || answer.Tenants[0].Name == "" {
 		t.Errorf("the seeded account answered %d tenant(s), want its one personal tenant:\n%s",
 			len(answer.Tenants), read.body)
 	}

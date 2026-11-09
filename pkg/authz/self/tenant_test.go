@@ -40,11 +40,11 @@ func tenantContext(t *testing.T, id tenant.ID) context.Context {
 	handle := database.DB()
 	if err := handle.Exec(`CREATE TABLE tenants (
 		id     TEXT    NOT NULL PRIMARY KEY,
-		alias  TEXT    NOT NULL UNIQUE,
+		name   TEXT    NOT NULL UNIQUE,
 		status INTEGER NOT NULL DEFAULT 0)`).Error; err != nil {
 		t.Fatalf("creating the tenants table: %v", err)
 	}
-	if err := handle.Exec(`INSERT INTO tenants (id, alias, status) VALUES (?, ?, 1)`,
+	if err := handle.Exec(`INSERT INTO tenants (id, name, status) VALUES (?, ?, 1)`,
 		string(id), string(id)).Error; err != nil {
 		t.Fatalf("registering the tenant %q: %v", id, err)
 	}

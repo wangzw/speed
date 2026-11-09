@@ -14,7 +14,7 @@ import (
 // path named to the manager as the policy domain's identifier and answers 200.
 //
 // The tenant the manager is called with is read off the path parameter and not
-// off any alias: the case addresses tenant "t1" and holds that "t1" — the
+// off any name: the case addresses tenant "t1" and holds that "t1" — the
 // identifier itself — is what reached the manager, so an implementation that
 // replaced it with a looked-up name would fail here.
 func TestListingRolesRequiresRoleRead(t *testing.T) {
@@ -129,7 +129,7 @@ func TestAnUnknownRoleIsRefused(t *testing.T) {
 // tenant columns and checks — that refuses an empty tenant with ErrTenantMismatch,
 // which the handler maps to a 400. The case holds that the empty tenant reaches
 // the manager as the empty string, so an implementation that substituted a
-// tenant of its own (the reserved platform domain, or an alias) would fail here.
+// tenant of its own (the reserved platform domain, or a name) would fail here.
 func TestAnEmptyTenantIsForwardedAndItsRefusalIsABadRequest(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrTenantMismatch)

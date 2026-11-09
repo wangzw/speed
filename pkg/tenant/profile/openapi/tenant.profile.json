@@ -32,12 +32,8 @@
         "type": "object"
       },
       "TenantProfileView": {
-        "description": "One tenant's organization profile: the read-only alias, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read.",
+        "description": "One tenant's organization profile: the read-only name, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read.",
         "properties": {
-          "alias": {
-            "description": "The alias the request surface addresses the tenant by.",
-            "type": "string"
-          },
           "contactEmail": {
             "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
             "type": "string"
@@ -52,15 +48,19 @@
             "type": "string"
           },
           "displayName": {
-            "description": "The organization's display name. Empty when its profile names none; a surface falls back to the alias then.",
+            "description": "The organization's display name. Empty when its profile names none; a surface falls back to the name then.",
             "type": "string"
           },
           "kind": {
-            "description": "The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the alias.",
+            "description": "The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name.",
             "enum": [
               "business",
               "personal"
             ],
+            "type": "string"
+          },
+          "name": {
+            "description": "The name the request surface addresses the tenant by.",
             "type": "string"
           },
           "ownerAccount": {
@@ -90,7 +90,7 @@
           }
         },
         "required": [
-          "alias",
+          "name",
           "kind",
           "displayName",
           "description",
@@ -116,7 +116,7 @@
             "type": "string"
           },
           "display_name": {
-            "description": "The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the alias.",
+            "description": "The organization's display name, at most 100 runes. Empty clears it; a surface then falls back to the name.",
             "type": "string"
           },
           "website": {
@@ -142,11 +142,11 @@
   "paths": {
     "/{tenant}/profile": {
       "get": {
-        "description": "Reads one tenant's organization profile: its alias, kind, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. An alias the roster does not hold is a 404. Reads write no audit row.",
+        "description": "Reads one tenant's organization profile: its name, kind, display name, description, contact email, website, state and owner account, plus the time it was registered when that is known. It carries no disable source; the platform management surface is where a disabled tenant's source is read. The caller needs tenant.profile.read in the tenant's policy domain, and the platform domain is refused. A name the roster does not hold is a 404. Reads write no audit row.",
         "operationId": "tenant.profile.get",
         "parameters": [
           {
-            "description": "The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
+            "description": "The tenant's name the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -164,7 +164,7 @@
                   "properties": {
                     "profile": {
                       "$ref": "#/components/schemas/TenantProfileView",
-                      "description": "The tenant's organization profile, with its alias, kind, owner account and state."
+                      "description": "The tenant's organization profile, with its name, kind, owner account and state."
                     }
                   },
                   "required": [
@@ -221,11 +221,11 @@
         "summary": "Read a tenant's organization profile"
       },
       "patch": {
-        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The alias, kind, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.",
+        "description": "Writes one tenant's organization profile and nothing else: the display name, description, contact email and website. The name, kind, state and creation time are not written, so a profile update cannot undo a disable or a deletion another path committed. The body carries all four fields; an empty value clears the stored one. The acting account must have proved an email address (contact-required otherwise), and the caller needs tenant.profile.write in the tenant's policy domain. A profile outside the stated bounds is a 400, an unknown tenant a 404, a tombstone a 409, and the platform domain is refused. A mandatory audit row lands before the roster write; if it cannot, nothing is written and the request is answered 503.",
         "operationId": "tenant.profile.update",
         "parameters": [
           {
-            "description": "The tenant's alias the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; an alias no tenant carries is a 404.",
+            "description": "The tenant's name the organization profile belongs to. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -254,7 +254,7 @@
                   "properties": {
                     "profile": {
                       "$ref": "#/components/schemas/TenantProfileView",
-                      "description": "The tenant's organization profile, with its alias, kind, owner account and state."
+                      "description": "The tenant's organization profile, with its name, kind, owner account and state."
                     }
                   },
                   "required": [

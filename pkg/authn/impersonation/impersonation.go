@@ -193,14 +193,14 @@ type product struct {
 
 	// What Init takes up. decider and tokens are nil when absent, which the
 	// behaviour of each states.
-	decider       authn.Decider
-	tokens        authn.Tokens
-	bus           event.Bus
-	meters        *meters
-	settings      *reader
-	tenantAliases authn.TenantAliasResolver
-	// tenantDirectory answers the identifier an alias names, nil when the
-	// assembly supplies no roster. The start request names its tenant by alias
+	decider     authn.Decider
+	tokens      authn.Tokens
+	bus         event.Bus
+	meters      *meters
+	settings    *reader
+	tenantNames authn.TenantNameResolver
+	// tenantDirectory answers the identifier a name names, nil when the
+	// assembly supplies no roster. The start request names its tenant by name
 	// and the membership read keys by identifier, so a start without this seam
 	// cannot tell which tenant the request names and is refused.
 	tenantDirectory authn.TenantDirectory
@@ -294,7 +294,7 @@ func (m *product) wire(reg *core.Registry) error {
 	if m.bus, err = optional[event.Bus](reg, "the event bus"); err != nil {
 		return err
 	}
-	if m.tenantAliases, err = optional[authn.TenantAliasResolver](reg, "the tenant alias resolver"); err != nil {
+	if m.tenantNames, err = optional[authn.TenantNameResolver](reg, "the tenant name resolver"); err != nil {
 		return err
 	}
 	if m.tenantDirectory, err = optional[authn.TenantDirectory](reg, "the tenant directory"); err != nil {

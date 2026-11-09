@@ -115,13 +115,13 @@ func decode(t *testing.T, w *httptest.ResponseRecorder) tenantsBody {
 }
 
 // activeTenant is one roster row in the state the read lists.
-func activeTenant(id, alias string) tenant.Tenant {
-	return tenant.Tenant{ID: tenant.ID(id), Alias: alias, Status: tenant.StatusActive}
+func activeTenant(id, name string) tenant.Tenant {
+	return tenant.Tenant{ID: tenant.ID(id), Name: name, Status: tenant.StatusActive}
 }
 
 // TestTheReadListsActiveMembershipsOfActiveTenants holds the answer: every
 // membership that is active and whose roster row is active, carrying the
-// identifier and the alias and nothing else.
+// identifier and the name and nothing else.
 func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -144,18 +144,18 @@ func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 	if len(body.Tenants) != 2 {
 		t.Fatalf("tenants = %v, want both active memberships", body.Tenants)
 	}
-	if body.Tenants[0].Alias != "Acme" {
+	if body.Tenants[0].Name != "Acme" {
 		t.Errorf("the first tenant is %+v, want Acme", body.Tenants[0])
 	}
-	if body.Tenants[1].Alias != "Globex" {
+	if body.Tenants[1].Name != "Globex" {
 		t.Errorf("the second tenant is %+v, want Globex", body.Tenants[1])
 	}
 }
 
 // TestTheReadCarriesTheOrganizationDisplayName holds the host's display-name
-// source: the entry carries the roster's display name beside the alias, and a
+// source: the entry carries the roster's display name beside the name, and a
 // tenant whose profile names none carries an empty one rather than omitting the
-// field, so a host can fall back to the alias without a missing-property branch.
+// field, so a host can fall back to the name without a missing-property branch.
 func TestTheReadCarriesTheOrganizationDisplayName(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {
@@ -166,7 +166,7 @@ func TestTheReadCarriesTheOrganizationDisplayName(t *testing.T) {
 	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
 		"acme": {
 			ID:      "acme",
-			Alias:   "acme",
+			Name:    "acme",
 			Status:  tenant.StatusActive,
 			Profile: tenant.Profile{DisplayName: "Acme Corporation"},
 		},
@@ -295,7 +295,7 @@ func TestTheReadKeepsTheMembershipsOrder(t *testing.T) {
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 2 || body.Tenants[0].Alias != "Zeta" || body.Tenants[1].Alias != "Alpha" {
+	if len(body.Tenants) != 2 || body.Tenants[0].Name != "Zeta" || body.Tenants[1].Name != "Alpha" {
 		t.Errorf("tenants = %v, want the membership read's order zeta then alpha", body.Tenants)
 	}
 }
@@ -318,7 +318,7 @@ func TestASuspendedMembershipIsLeftOut(t *testing.T) {
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 1 || body.Tenants[0].Alias != "Acme" {
+	if len(body.Tenants) != 1 || body.Tenants[0].Name != "Acme" {
 		t.Errorf("tenants = %v, want only acme", body.Tenants)
 	}
 	for _, id := range catalog.asked {
@@ -339,13 +339,13 @@ func TestATenantThatIsNotServedIsLeftOut(t *testing.T) {
 	}}
 	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
 		"acme":   activeTenant("acme", "Acme"),
-		"globex": {ID: "globex", Alias: "Globex", Status: tenant.StatusDisabled},
+		"globex": {ID: "globex", Name: "Globex", Status: tenant.StatusDisabled},
 	}}
 	p := newRig(memberships, catalog)
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 1 || body.Tenants[0].Alias != "Acme" {
+	if len(body.Tenants) != 1 || body.Tenants[0].Name != "Acme" {
 		t.Errorf("tenants = %v, want only the served tenant acme", body.Tenants)
 	}
 }
@@ -367,7 +367,7 @@ func TestAMembershipWithoutARosterRowIsLeftOut(t *testing.T) {
 	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
 
 	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
-	if len(body.Tenants) != 1 || body.Tenants[0].Alias != "Acme" {
+	if len(body.Tenants) != 1 || body.Tenants[0].Name != "Acme" {
 		t.Errorf("tenants = %v, want only the roster's tenant acme", body.Tenants)
 	}
 }
@@ -459,7 +459,7 @@ func TestAMissingRosterIsA503(t *testing.T) {
 }
 
 // TestAnImpersonatingCallerReadsOnlyTheGrantTenant holds the narrowed answer
-// an impersonating caller receives: the host needs the grant tenant's alias
+// an impersonating caller receives: the host needs the grant tenant's name
 // after a full page load, when no roster cache survives, and the impersonated
 // account's memberships in other tenants are outside the grant and are not
 // handed over.
@@ -490,7 +490,7 @@ func TestAnImpersonatingCallerReadsOnlyTheGrantTenant(t *testing.T) {
 	if len(body.Tenants) != 1 {
 		t.Fatalf("tenants = %+v, want only the grant tenant", body.Tenants)
 	}
-	if body.Tenants[0].Alias != "Acme" {
+	if body.Tenants[0].Name != "Acme" {
 		t.Errorf("the tenant is %+v, want acme/Acme", body.Tenants[0])
 	}
 }

@@ -36,7 +36,7 @@ and the membership store.
   writes the roster tombstone, deletes the tenant's grants, bindings and roles,
   and deletes its memberships, all in that one transaction. It never writes
   another module's scoped table; those modules clean their data under the
-  tombstone. The identifier and the alias stay on the tombstone and are never
+  tombstone. The identifier and the name stay on the tombstone and are never
   reusable.
 - **`expectedOwner` is the optimistic check that makes a race one-sided.** Both
   writes take it: the management surface passes the owner it observed for an
@@ -70,7 +70,7 @@ non-member, an inactive account and a deleted account are refused, a transfer
 from an owner the row no longer carries is refused with `ErrOwnerChanged`, a
 missing tenant and a tombstone are reported before the membership, a deletion
 cleans the core relations including a seeded grant and leaves the identifier and
-alias unusable, a failed step rolls the whole deletion back, a transfer against
+name unusable, a failed step rolls the whole deletion back, a transfer against
 the old owner's deletion leaves exactly one winner, an account owning an active
 organization cannot be deleted or suspended, the account-administration lock
 covers a member-only account so a transfer to it blocks, and the previous owner

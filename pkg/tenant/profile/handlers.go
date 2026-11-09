@@ -13,7 +13,7 @@ import (
 //
 // The tenant is the identifier the request resolved to, never the path segment
 // as written: the path-tenant layer has already held the segment to that
-// tenant, and the alias it carries may differ from the identifier. An
+// tenant, and the name it carries may differ from the identifier. An
 // identifier the roster does not carry is a bare 404.
 func (p *product) handleGet(ctx context.Context, _ profileInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := tenant.FromContext(ctx)
@@ -72,15 +72,15 @@ func (p *product) handleSet(ctx context.Context, in profileWriteInput, _ *speedh
 	}
 
 	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantProfileUpdate, got.Alias, map[string]string{
+	if err := p.auditRequired(ctx, mandatory(actionTenantProfileUpdate, got.Name, map[string]string{
 		detailActionID: actionID,
-		detailTenant:   got.Alias,
+		detailTenant:   got.Name,
 		detailSurface:  surfaceTenant,
 	})); err != nil {
 		return nil, err
 	}
 	if err := p.catalog.SetProfile(ctx, id, profile); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantProfileUpdate, got.Alias, actionID))
+		p.auditBestEffort(ctx, failedAudit(actionTenantProfileUpdate, got.Name, actionID))
 		return p.replyFailure("writing a tenant's profile", err)
 	}
 

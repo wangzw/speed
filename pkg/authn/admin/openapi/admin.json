@@ -372,7 +372,7 @@
             "type": "string"
           },
           "tenant": {
-            "description": "The alias of the tenant the impersonation is confined to.",
+            "description": "The name of the tenant the impersonation is confined to.",
             "type": "string"
           }
         },
@@ -2471,7 +2471,7 @@
             }
           },
           {
-            "description": "The tenant whose records the page holds, as the tenant alias; it scopes the read and fills the decision's tenant.",
+            "description": "The tenant whose records the page holds, as the tenant name; it scopes the read and fills the decision's tenant.",
             "in": "path",
             "name": "tenant",
             "required": true,
@@ -2557,7 +2557,7 @@
         "operationId": "authn.admin.impersonations.revoke",
         "parameters": [
           {
-            "description": "The tenant's alias. The platform alias layer resolves it to the internal identifier before the handler runs; an alias no tenant carries is a 404.",
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
             "in": "path",
             "name": "tenant",
             "required": true,

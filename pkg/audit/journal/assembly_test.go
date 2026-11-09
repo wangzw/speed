@@ -509,8 +509,8 @@ func TestATenantsTrailIsReadThroughTheTenantFilter(t *testing.T) {
 			return errCaseFailed
 		}
 		for _, registered := range []tenant.Tenant{
-			{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-			{ID: "t_globex", Alias: "globex", Status: tenant.StatusActive},
+			{ID: "t_acme", Name: "acme", Status: tenant.StatusActive},
+			{ID: "t_globex", Name: "globex", Status: tenant.StatusActive},
 		} {
 			if putErr := roster.Put(ctx, registered); putErr != nil {
 				t.Errorf("registering %s: %v", registered.ID, putErr)
@@ -617,7 +617,7 @@ func TestAWriteAcrossTenantsFromATenantsContextHasNoTenant(t *testing.T) {
 			t.Errorf("resolving the tenant roster: %v", err)
 			return errCaseFailed
 		}
-		registered := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+		registered := tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
 		if putErr := roster.Put(ctx, registered); putErr != nil {
 			t.Errorf("registering the tenant: %v", putErr)
 			return errCaseFailed

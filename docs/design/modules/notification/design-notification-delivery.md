@@ -30,9 +30,9 @@
 
 | 登记单元 | 模块名 | 交付 | 构造期依赖 |
 |---|---|---|---|
-| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)`、`(*authn.TenantAliasResolver)(nil)` |
+| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)`、`(*authn.TenantNameResolver)(nil)` |
 
-`budget.Store` 是共享短信台账，是硬依赖：没有它就无法在入队前核对并占用短信预算，而不能计数的预算会放行每一条短信，方向与要求相反。`kv.KV` 是邮件固定窗口计数器的存储，同样是硬依赖：没有它就无法在入队前核对并占用邮件预算，而不能计数的预算会放行每一封邮件，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取接口，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`db.Database` 还须带根密钥：收件人在台账的 `destination_mac` 与邮件计数器键上都经 `Database.BlindIndex` 折成带密钥摘要，`Start` 对没有根密钥的数据库以 `authn.ErrNoEncryptionKey` 终止启动，不写一个任何人可还原的无密钥摘要。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`observability.MeterProvider` 缺席则预算利用率仪表不上报；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）；`authn.TenantAliasResolver` 缺席时，参数里点名的租户渲染成空串，不回退成内部标识。**提交接口 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
+`budget.Store` 是共享短信台账，是硬依赖：没有它就无法在入队前核对并占用短信预算，而不能计数的预算会放行每一条短信，方向与要求相反。`kv.KV` 是邮件固定窗口计数器的存储，同样是硬依赖：没有它就无法在入队前核对并占用邮件预算，而不能计数的预算会放行每一封邮件，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取接口，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`db.Database` 还须带根密钥：收件人在台账的 `destination_mac` 与邮件计数器键上都经 `Database.BlindIndex` 折成带密钥摘要，`Start` 对没有根密钥的数据库以 `authn.ErrNoEncryptionKey` 终止启动，不写一个任何人可还原的无密钥摘要。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`observability.MeterProvider` 缺席则预算利用率仪表不上报；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）；`authn.TenantNameResolver` 缺席时，参数里点名的租户渲染成空串，不回退成内部标识。**提交接口 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
 
 ### 交付的功能
 
@@ -144,7 +144,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 消息的文本由本模块在后端渲染，不交给客户端：一条 `notification.Message` 的 `Title` 与 `Body`、一封邮件的主题与正文、一条短信的参数，都按**收件人的语言**（`Dispatch.Locale`）与该**类型的声明**（`TypeSpec` 的键与 `RecipientVisibleParams`）渲染而成。渲染经 i18n 引擎（`i18n.Localizer`），目录键按通知命名空间与类型键拼出；`RecipientVisibleParams` 白名单之外的参数进不了渲染上下文，也进不了载荷（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。渲染是纯读取，不触达厂商。
 
-**点名的租户按别名渲染。** 派发参数里名为 `tenant` 的值是租户的内部标识，渲染之前经可选的 `authn.TenantAliasResolver` 换成别名：站内信的标题与正文、邮件的主题、纯文本与 HTML 正文、短信的模板变量都取别名。接缝缺席、解析失败或解析不到时该参数渲染成空串，**绝不回退成内部标识**；解析失败另记 Error，不使这次投递失败。去重键与幂等落账不参与这次替换，它们按原值计算。
+**点名的租户按名称渲染。** 派发参数里名为 `tenant` 的值是租户的内部标识，渲染之前经可选的 `authn.TenantNameResolver` 换成名称：站内信的标题与正文、邮件的主题、纯文本与 HTML 正文、短信的模板变量都取名称。接缝缺席、解析失败或解析不到时该参数渲染成空串，**绝不回退成内部标识**；解析失败另记 Error，不使这次投递失败。去重键与幂等落账不参与这次替换，它们按原值计算。
 
 **两个部件只在目录里有条目时才写。** 站内信的 `link` 与邮件的 `body_html` 是客户端会直接呈现的字段，目录里没有对应条目时留空，不把键串写进一个客户端当作链接或标记来处理的字段；其余部件按引擎的回退照常渲染——键串是文本，缺一条目录条目不是本模块可拒的事。
 
@@ -166,7 +166,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/kv` | 邮件的固定窗口计数器：`kv.KV` 是必需依赖 |
 | `pkg/settings` | 预算上限的声明与读取；`settings.Store` 是可选依赖，缺席时读声明默认值 |
 | `pkg/observability` | 可选：预算利用率仪表的 meter provider；缺席时不上报 |
-| `pkg/authn` | 用其 `ThrottledError`（视为 `ErrThrottled`，携带 `RetryAfter`）与 `ErrUnavailable` 表达可重试的拒绝；并经 `Accounts` 的 `Identifiers` 与 `Lookup` 读收件人的标识符、判定派发携带的目的地是否属于收件人；可选经 `TenantAliasResolver` 把参数里点名的租户换成别名。不使用其身份或任何实现 |
+| `pkg/authn` | 用其 `ThrottledError`（视为 `ErrThrottled`，携带 `RetryAfter`）与 `ErrUnavailable` 表达可重试的拒绝；并经 `Accounts` 的 `Identifiers` 与 `Lookup` 读收件人的标识符、判定派发携带的目的地是否属于收件人；可选经 `TenantNameResolver` 把参数里点名的租户换成名称。不使用其身份或任何实现 |
 | `pkg/notification` | 根包的类型、哨兵与接口（`Dispatcher`、`Dispatch`、`Preferences`、`Inbox`、`Channel`） |
 | `pkg/mail` | 可选：`email` 渠道的发送接口 `mail.Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本模块只引用这个接口，不设计它的内部 |
 | `pkg/sms` | 可选：`sms` 渠道的 `sms.Registry`（解模板）与 `sms.Sender`（发送） |
@@ -176,7 +176,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 **偏好、收件箱、渲染、计数器与台账都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接口、`core.Resolve[notification.Inbox](reg)` 取收件箱接口、`core.Resolve[i18n.Localizer](reg)` 取渲染接口、`core.Resolve[kv.KV](reg)` 取邮件预算的计数器、`core.Resolve[budget.Store](reg)` 取共享短信台账；这些依赖都是必需依赖，列在「登记单元与名字」的依赖列里。
 
-**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/log`、`pkg/kv`、`pkg/sms/budget`、`pkg/settings`、`pkg/observability` 根包、`pkg/feature` 根包、`pkg/notification` 根包，并经 `pkg/authn` 根包取投递预算可重试拒绝的 `ThrottledError` 与 `ErrUnavailable`、目的地归属校验的 `Accounts`，以及租户参数渲染的 `TenantAliasResolver`；也可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，不 import 认证能力目录内的任何实现子包（归属校验只经 `pkg/authn` 根包的 `Accounts` 接口），也不 import `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/log`、`pkg/kv`、`pkg/sms/budget`、`pkg/settings`、`pkg/observability` 根包、`pkg/feature` 根包、`pkg/notification` 根包，并经 `pkg/authn` 根包取投递预算可重试拒绝的 `ThrottledError` 与 `ErrUnavailable`、目的地归属校验的 `Accounts`，以及租户参数渲染的 `TenantNameResolver`；也可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，不 import 认证能力目录内的任何实现子包（归属校验只经 `pkg/authn` 根包的 `Accounts` 接口），也不 import `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
 
 **本模块不声明配置命名空间，不读任何输入项；它声明 settings。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置。运行期可调的只有「投递预算」一节的各上限，它们挂在 settings 的 `notification.delivery` 命名空间下；跨渠道上界 `sms.ceiling-hourly` 由 `sms.budget` 在 `sms` 命名空间下声明，本模块只读。
 

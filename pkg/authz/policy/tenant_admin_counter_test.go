@@ -55,7 +55,7 @@ func bindTenantAdmin(t *testing.T, p *product, tenantID, account string) {
 func activeTenants(ids ...string) []tenant.Tenant {
 	out := make([]tenant.Tenant, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, tenant.Tenant{ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive})
+		out = append(out, tenant.Tenant{ID: tenant.ID(id), Name: id, Status: tenant.StatusActive})
 	}
 	return out
 }
@@ -104,7 +104,7 @@ func TestAPersonalTenantIsNotCounted(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "personal-acc1", "acc1")
 	p.roster = counterRoster{tenants: []tenant.Tenant{
-		{ID: "personal-acc1", Alias: "acc1", Status: tenant.StatusActive},
+		{ID: "personal-acc1", Name: "acc1", Status: tenant.StatusActive},
 	}}
 	p.writeGuard = counterWriteGuard{denied: map[string]bool{"personal-acc1": true}}
 
@@ -123,7 +123,7 @@ func TestADisabledTenantIsNotCounted(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
 	p.roster = counterRoster{tenants: []tenant.Tenant{
-		{ID: "acme", Alias: "acme", Status: tenant.StatusDisabled},
+		{ID: "acme", Name: "acme", Status: tenant.StatusDisabled},
 	}}
 
 	id, sole, err := p.SoleTenantAdminTenant(t.Context(), "acc1")
@@ -195,7 +195,7 @@ func TestWithoutAWriteGuardEveryActiveTenantCounts(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "personal-acc1", "acc1")
 	p.roster = counterRoster{tenants: []tenant.Tenant{
-		{ID: "personal-acc1", Alias: "acc1", Status: tenant.StatusActive},
+		{ID: "personal-acc1", Name: "acc1", Status: tenant.StatusActive},
 	}}
 
 	id, sole, err := p.SoleTenantAdminTenant(t.Context(), "acc1")
