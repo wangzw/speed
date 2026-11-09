@@ -131,7 +131,7 @@ describe('SmsPage', () => {
     expect(
       screen.getByText(`zh-CN: ${zhCN.sms.approval.approved}`),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) })).toBeInTheDocument()
   })
 
   it('caps the primary name column at the shared primary-column width', async () => {
@@ -154,7 +154,7 @@ describe('SmsPage', () => {
     const operations = withTemplates()
     renderWithProviders(<SmsPage />, { operations })
     const row = (
-      await screen.findByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) })
+      await screen.findByRole('switch', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) })
     ).closest('tr') as HTMLElement
     const enabled = within(row).getByText(zhCN.sms.enabledYes).closest('td') as HTMLElement
     const declarations = containerDeclarationsOf(enabled)
@@ -209,7 +209,7 @@ describe('SmsPage', () => {
       setSmsTemplateEnabled: () => pending.promise,
     })
     renderWithProviders(<SmsPage />, { operations })
-    const toggle = await screen.findByRole('button', {
+    const toggle = await screen.findByRole('switch', {
       name: text(zhCN.sms.disableAria, { name: 'login-code' }),
     })
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
@@ -224,14 +224,18 @@ describe('SmsPage', () => {
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const operations = withTemplates()
     renderWithProviders(<SmsPage />, { operations })
-    const toggle = await screen.findByRole('button', {
+    const toggle = await screen.findByRole('switch', {
       name: text(zhCN.sms.disableAria, { name: 'login-code' }),
     })
+    // The coarse floor is the theme's rule on the switch root, not the
+    // visually hidden input the role sits on.
+    const toggleRoot = toggle.closest('.MuiSwitch-root')
+    expect(toggleRoot).not.toBeNull()
     const remove = screen.getByRole('button', {
       name: text(zhCN.sms.removeAria, { name: 'login-code' }),
     })
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    for (const control of [toggle, remove, refresh]) {
+    for (const control of [toggleRoot as Element, remove, refresh]) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
   })
@@ -423,7 +427,7 @@ describe('SmsPage', () => {
     })
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
-    await user.click(screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }))
+    await user.click(screen.getByRole('switch', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }))
     await user.click(screen.getByRole('button', { name: text(zhCN.sms.removeAria, { name: 'login-code' }) }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
@@ -550,7 +554,7 @@ describe('SmsPage', () => {
     // The table's row action lands in the table's scope, not the form's
     // and not the offer form's.
     await user.click(
-      screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
+      screen.getByRole('switch', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
     )
     // The table's own region carries the refusal, and its row marker
     // repeats the one message.
@@ -576,7 +580,7 @@ describe('SmsPage', () => {
       setSmsTemplateEnabled: () => Promise.reject({ code: 'sms.conflict' }),
     })
     renderWithProviders(<SmsPage />, { operations })
-    const toggle = await screen.findByRole('button', {
+    const toggle = await screen.findByRole('switch', {
       name: text(zhCN.sms.disableAria, { name: 'login-code' }),
     })
     const remove = screen.getByRole('button', { name: text(zhCN.sms.removeAria, { name: 'login-code' }) })
@@ -624,7 +628,7 @@ describe('SmsPage', () => {
 
     // The toggle names the template and the state it now has.
     await user.click(
-      screen.getByRole('button', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
+      screen.getByRole('switch', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
     )
     expect(
       await screen.findByText(text(zhCN.sms.disabledToast, { name: 'login-code' })),
@@ -663,7 +667,7 @@ describe('SmsPage', () => {
     expect(await screen.findByText(offered)).toBeInTheDocument()
 
     await user.click(
-      screen.getByRole('button', {
+      screen.getByRole('switch', {
         name: text(zhCN.sms.disableAria, { name: 'login-code' }),
       }),
     )
@@ -671,7 +675,7 @@ describe('SmsPage', () => {
       zhCN.errors.sms.conflict,
     )
     const toggleName = text(zhCN.sms.disableAria, { name: 'login-code' })
-    expect(screen.getByRole('button', { name: toggleName })).toHaveAttribute(
+    expect(screen.getByRole('switch', { name: toggleName })).toHaveAttribute(
       'aria-invalid',
       'true',
     )
@@ -683,7 +687,7 @@ describe('SmsPage', () => {
     expect(screen.queryByText(offered)).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(
-      screen.getByRole('button', { name: toggleName }),
+      screen.getByRole('switch', { name: toggleName }),
     ).toHaveAttribute('aria-invalid', 'false')
   })
 

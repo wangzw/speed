@@ -54,8 +54,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
+import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import { usePermission } from '@speed/auth-core'
 import { formatInstant } from '@speed/i18n'
@@ -339,12 +339,17 @@ export function TenantDetailPage({
               rowGap: 1,
             }}
           >
-            <Button
-              type="button"
-              variant="outlined"
+            <Switch
+              checked={!disabled}
               disabled={statusFeedback.pending}
-              loading={statusFeedback.pending}
-              onClick={() => {
+              slotProps={{
+                input: {
+                  'aria-label': disabled
+                    ? t('tenantDetail.actions.enable')
+                    : t('tenantDetail.actions.disable'),
+                },
+              }}
+              onChange={() => {
                 void statusFeedback.run(async () => {
                   await setStatus.mutateAsync({
                     alias: settled.alias,
@@ -358,11 +363,7 @@ export function TenantDetailPage({
                   )
                 })
               }}
-            >
-              {disabled
-                ? t('tenantDetail.actions.enable')
-                : t('tenantDetail.actions.disable')}
-            </Button>
+            />
           </Box>
           {/* The actions section's one region, directly under the control
               whose write reports through it. */}

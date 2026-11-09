@@ -19,6 +19,7 @@ import {
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import type { AdminTenantRole } from '../../organization-operations.js'
+import { RowActionMenu } from '../row-action-menu.js'
 import { useAdminUiTranslation } from '../translation.js'
 
 export interface RoleTableProps {
@@ -139,47 +140,31 @@ export function RoleTable({
               }}
             >
               {locked === null ? (
-                <>
-                  <Button
-                    type="button"
-                    size="small"
-                    variant="outlined"
-                    aria-label={t('permissions.roles.manageGrantsAria', {
-                      role: role.role,
-                    })}
-                    aria-pressed={selected}
-                    onClick={() => onSelect(role.role)}
-                  >
-                    {t('permissions.roles.manageGrants')}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="small"
-                    variant="outlined"
-                    aria-label={t('permissions.roles.editDescriptionAria', {
-                      role: role.role,
-                    })}
-                    onClick={() => onEditDescription(role)}
-                  >
-                    {t('permissions.roles.editDescription')}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="small"
-                    variant="outlined"
-                    color="error"
-                    aria-label={t('permissions.roles.removeAria', {
-                      role: role.role,
-                    })}
-                    aria-invalid={failed}
-                    aria-describedby={failed ? errorId : undefined}
-                    disabled={busy}
-                    loading={busy}
-                    onClick={() => onRemove(role)}
-                  >
-                    {t('permissions.roles.remove')}
-                  </Button>
-                </>
+                <RowActionMenu
+                  label={t('permissions.roles.actionsAria', {
+                    role: role.role,
+                  })}
+                  disabled={busy}
+                  invalid={failed}
+                  describedBy={failed ? errorId : undefined}
+                  actions={[
+                    {
+                      key: 'manage',
+                      label: t('permissions.roles.manageGrants'),
+                      onSelect: () => onSelect(role.role),
+                    },
+                    {
+                      key: 'description',
+                      label: t('permissions.roles.editDescription'),
+                      onSelect: () => onEditDescription(role),
+                    },
+                    {
+                      key: 'remove',
+                      label: t('permissions.roles.remove'),
+                      onSelect: () => onRemove(role),
+                    },
+                  ]}
+                />
               ) : (
                 <>
                   <Button

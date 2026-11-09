@@ -370,18 +370,18 @@ describe('the inherited invitation, member and SSO reads key by tenant', () => {
 describe('the organization declarations for roles, settings and profile', () => {
   it('carries the tenant-domain permission and feature codes', () => {
     expect(organizationAdminRoutes.map((route) => route.id)).toEqual([
+      'organization-profile',
       'organization-invitations',
       'organization-sso',
       'organization-roles',
       'organization-settings',
-      'organization-profile',
     ])
     expect(organizationAdminRoutes.map((route) => route.path)).toEqual([
+      '/profile',
       '/invitations',
       '/sso',
       '/roles',
       '/settings',
-      '/profile',
     ])
     const roles = organizationAdminRoutes.find(
       (route) => route.id === 'organization-roles',

@@ -94,12 +94,12 @@ describe('TenantRosterPage', () => {
     expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
     // A tombstone is terminal: the row carries no enable/disable toggle.
     expect(
-      screen.queryByRole('button', {
+      screen.queryByRole('switch', {
         name: text(zhCN.tenants.enableAria, { alias: 'gone' }),
       }),
     ).toBeNull()
     expect(
-      screen.queryByRole('button', {
+      screen.queryByRole('switch', {
         name: text(zhCN.tenants.disableAria, { alias: 'gone' }),
       }),
     ).toBeNull()
@@ -133,10 +133,22 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
+    const acmeToggle = screen.getByRole('switch', {
+      name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
+    })
+    const oldToggle = screen.getByRole('switch', {
+      name: text(zhCN.tenants.enableAria, { alias: 'old' }),
+    })
+    // The coarse floor is the theme's rule on the switch root, not the
+    // visually hidden input the role sits on.
+    const acmeRoot = acmeToggle.closest('.MuiSwitch-root')
+    const oldRoot = oldToggle.closest('.MuiSwitch-root')
+    expect(acmeRoot).not.toBeNull()
+    expect(oldRoot).not.toBeNull()
     const gated = [
       screen.getByRole('button', { name: zhCN.common.refresh }),
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
-      screen.getByRole('button', { name: text(zhCN.tenants.enableAria, { alias: 'old' }) }),
+      acmeRoot as Element,
+      oldRoot as Element,
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -189,7 +201,7 @@ describe('TenantRosterPage', () => {
     // The row's enable/disable control names its own tenant, so it is not
     // confusable with another row's toggle.
     await user.click(
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
+      screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
     )
     expect(calls).toEqual(['acme:disabled'])
   })
@@ -207,12 +219,12 @@ describe('TenantRosterPage', () => {
 
     // The two rows carry the same control distinguished only by the alias
     // baked into each accessible name -- never two identical "Disable"
-    // buttons.
+    // switches.
     expect(
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
+      screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'globex' }) }),
+      screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { alias: 'globex' }) }),
     ).toBeInTheDocument()
   })
 
@@ -232,7 +244,7 @@ describe('TenantRosterPage', () => {
 
     // The success notice is a standing status region: mounted clipped until a
     // write lands, then filled with the confirmation.
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
+    await user.click(screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
     expect(
       await screen.findByText(text(zhCN.tenants.disabledToast, { alias: 'acme' })),
     ).toBeInTheDocument()
@@ -283,7 +295,7 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
     expect(reads).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
+    await user.click(screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
 
     // The row's scope is in flight, so the page-level refresh is
     // natively disabled. The scope is chosen, so the disabled control
@@ -329,7 +341,7 @@ describe('TenantRosterPage', () => {
     expect(reads).toHaveLength(1)
 
     await user.click(
-      screen.getByRole('button', {
+      screen.getByRole('switch', {
         name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
       }),
     )
@@ -514,7 +526,7 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const acmeToggle = screen.getByRole('button', {
+    const acmeToggle = screen.getByRole('switch', {
       name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
     })
     await user.click(acmeToggle)
@@ -523,7 +535,7 @@ describe('TenantRosterPage', () => {
       await screen.findAllByText(zhCN.errors.tenant.conflict),
     ).toHaveLength(2)
 
-    const globexToggle = screen.getByRole('button', {
+    const globexToggle = screen.getByRole('switch', {
       name: text(zhCN.tenants.disableAria, { alias: 'globex' }),
     })
     await user.click(globexToggle)
@@ -557,7 +569,7 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    const toggle = screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) })
+    const toggle = screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) })
     await user.click(toggle)
 
     const alert = await screen.findByRole('alert')
@@ -588,7 +600,7 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Acme')
 
     // The row's status change names its tenant and the new state.
-    await user.click(screen.getByRole('button', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
+    await user.click(screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { alias: 'acme' }) }))
     expect(
       await screen.findByText(text(zhCN.tenants.disabledToast, { alias: 'acme' })),
     ).toBeInTheDocument()
@@ -606,7 +618,7 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    const toggle = screen.getByRole('button', {
+    const toggle = screen.getByRole('switch', {
       name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
     })
     await user.click(toggle)
@@ -638,7 +650,7 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
     await user.click(
-      screen.getByRole('button', {
+      screen.getByRole('switch', {
         name: text(zhCN.tenants.disableAria, { alias: 'acme' }),
       }),
     )

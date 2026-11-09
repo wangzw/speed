@@ -76,13 +76,49 @@ async function pickProvider(user: ReturnType<typeof userEvent.setup>): Promise<v
   await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
 }
 
+/** Opens one provider row's action menu. */
+async function openProviderActions(
+  user: ReturnType<typeof userEvent.setup>,
+  name = 'Acme IdP',
+): Promise<void> {
+  await user.click(
+    screen.getByRole('button', {
+      name: text(zhCN.sso.actionsAria, { name }),
+    }),
+  )
+}
+
+/** Picks one item from an open provider row action menu. */
+async function chooseProviderAction(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  name = 'Acme IdP',
+): Promise<void> {
+  await openProviderActions(user, name)
+  await user.click(await screen.findByRole('menuitem', { name: label }))
+}
+
+/** Picks one item from a declared domain row's action menu. */
+async function chooseDomainAction(
+  user: ReturnType<typeof userEvent.setup>,
+  domain: string,
+  label: string,
+): Promise<void> {
+  await user.click(
+    screen.getByRole('button', {
+      name: text(zhCN.sso.domains.actionsAria, { domain }),
+    }),
+  )
+  await user.click(await screen.findByRole('menuitem', { name: label }))
+}
+
 /** The copy the refresh-distinguishability test reads from either bundle. */
 interface RefreshLocaleBundle {
   readonly common: { readonly tenant: string; readonly refresh: string }
   readonly sso: {
     readonly refreshProviderListAria: string
     readonly refreshMetadata: string
-    readonly refreshMetadataAria: string
+    readonly actionsAria: string
   }
 }
 
@@ -105,14 +141,17 @@ async function expectDistinguishableRefreshControls(
   await screen.findByText('Acme IdP')
 
   const rowProviderName = 'Acme IdP'
-  const rowAria = bundle.sso.refreshMetadataAria.replace(
-    '{{name}}',
-    rowProviderName,
-  )
   const pageRefresh = screen.getByRole('button', {
     name: bundle.sso.refreshProviderListAria,
   })
-  const rowRefresh = screen.getByRole('button', { name: rowAria })
+  await user.click(
+    screen.getByRole('button', {
+      name: bundle.sso.actionsAria.replace('{{name}}', rowProviderName),
+    }),
+  )
+  const rowRefresh = await screen.findByRole('menuitem', {
+    name: bundle.sso.refreshMetadata,
+  })
 
   // The two visible texts differ: the row action is never the bare word
   // the page action shows.
@@ -120,14 +159,11 @@ async function expectDistinguishableRefreshControls(
   expect(rowRefresh).toHaveTextContent(bundle.sso.refreshMetadata)
   expect(bundle.sso.refreshMetadata).not.toBe(bundle.common.refresh)
 
-  // Each accessible name begins with its own visible text.
+  // Each control's accessible name is its own, so the two never collide.
   expect(pageRefresh).toHaveAccessibleName(bundle.sso.refreshProviderListAria)
-  expect(rowRefresh).toHaveAccessibleName(rowAria)
+  expect(rowRefresh).toHaveAccessibleName(bundle.sso.refreshMetadata)
   expect(
     bundle.sso.refreshProviderListAria.startsWith(bundle.common.refresh),
-  ).toBe(true)
-  expect(
-    bundle.sso.refreshMetadataAria.startsWith(bundle.sso.refreshMetadata),
   ).toBe(true)
 }
 
@@ -356,9 +392,7 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     const reads = listSsoProviders.mock.calls.length
 
-    await user.click(
-      screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }),
-    )
+    await chooseProviderAction(user, zhCN.sso.refreshMetadata)
     await expectRefreshInert(listSsoProviders, reads)
 
     await act(async () => {
@@ -510,12 +544,18 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     const gated = [
       screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }),
-      screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }),
-      screen.getByRole('button', { name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }) }),
-      screen.getByRole('button', { name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }) }),
+      screen.getByRole('button', {
+        name: text(zhCN.sso.actionsAria, { name: 'Acme IdP' }),
+      }),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
+    }
+    // The row's three writes now live in the menu; each item is still a
+    // coarse-pointer touch target.
+    await openProviderActions(user)
+    for (const item of await screen.findAllByRole('menuitem')) {
+      expect(hasCoarsePointerTouchTarget(item)).toBe(true)
     }
   })
 
@@ -531,7 +571,7 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }) }))
+    await chooseProviderAction(user, zhCN.sso.delete)
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     await vi.waitFor(() => {
@@ -556,8 +596,8 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }) }))
+    await chooseProviderAction(user, zhCN.sso.refreshMetadata)
+    await chooseProviderAction(user, zhCN.sso.reverifyDomains)
     await vi.waitFor(() => {
       expect(refreshed).toEqual(['idp-1'])
       expect(reverified).toEqual(['idp-1'])
@@ -597,21 +637,31 @@ describe('SsoPage', () => {
 
     // Only an unverified domain offers verification; every declared domain
     // offers removal.
-    expect(
+    await user.click(
       within(list).getByRole('button', {
-        name: text(zhCN.sso.domains.verifyAria, { domain: 'beta.example' }),
+        name: text(zhCN.sso.domains.actionsAria, { domain: 'beta.example' }),
       }),
+    )
+    expect(
+      await screen.findByRole('menuitem', { name: zhCN.sso.domains.verify }),
     ).toBeInTheDocument()
     expect(
-      within(list).queryByRole('button', {
-        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.example' }),
+      screen.getByRole('menuitem', { name: zhCN.sso.domains.remove }),
+    ).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await vi.waitFor(() => expect(screen.queryByRole('menuitem')).toBeNull())
+
+    await user.click(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.actionsAria, { domain: 'acme.example' }),
       }),
+    )
+    expect(
+      await screen.findByRole('menuitem', { name: zhCN.sso.domains.remove }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('menuitem', { name: zhCN.sso.domains.verify }),
     ).toBeNull()
-    expect(
-      within(list).getByRole('button', {
-        name: text(zhCN.sso.domains.removeAria, { domain: 'acme.example' }),
-      }),
-    ).toBeInTheDocument()
   })
 
   it('marks a declared domain verified in place after a successful verify', async () => {
@@ -644,11 +694,7 @@ describe('SsoPage', () => {
       within(before).getByText(zhCN.sso.domains.state.unverified),
     ).toBeInTheDocument()
 
-    await user.click(
-      within(before).getByRole('button', {
-        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.example' }),
-      }),
-    )
+    await chooseDomainAction(user, 'acme.example', zhCN.sso.domains.verify)
 
     // The write re-reads the provider list, so the same row turns verified
     // without a new one appearing.
@@ -688,14 +734,10 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await pickProvider(user)
 
-    const list = await screen.findByRole('list', {
+    await screen.findByRole('list', {
       name: zhCN.sso.domains.listLabel,
     })
-    await user.click(
-      within(list).getByRole('button', {
-        name: text(zhCN.sso.domains.removeAria, { domain: 'acme.example' }),
-      }),
-    )
+    await chooseDomainAction(user, 'acme.example', zhCN.sso.domains.remove)
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     await vi.waitFor(() => {
@@ -1278,21 +1320,21 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
+    await chooseProviderAction(user, zhCN.sso.refreshMetadata)
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
     // The result lands under the provider list, not under the write form or
     // the domain bar.
     expect(alert.closest('section')).toContainElement(screen.getByRole('table'))
-    // The refused row control carries the same resolved text the region shows.
-    const button = screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) })
-    expect(button).toHaveAttribute('aria-invalid', 'true')
-    const describedBy = button.getAttribute('aria-describedby')
-    expect(describedBy).not.toBeNull()
-    expect(document.getElementById(describedBy ?? '')).toHaveTextContent(
-      zhCN.errors.authn.forbidden,
+    // The refused row carries the same resolved text the region shows.
+    const row = screen.getByText('Acme IdP').closest('tr')
+    expect(row).not.toBeNull()
+    const marker = (row as HTMLElement).querySelector(
+      '[id^="sso-provider-error-"]',
     )
+    expect(marker).not.toBeNull()
+    expect(marker).toHaveTextContent(zhCN.errors.authn.forbidden)
   })
 
   it('offers the enterprise re-login exit for an SSO refusal on a provider-list write', async () => {
@@ -1306,11 +1348,7 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations, session })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(
-      screen.getByRole('button', {
-        name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }),
-      }),
-    )
+    await chooseProviderAction(user, zhCN.sso.refreshMetadata)
 
     // The tenant admission layer's refusal names the enterprise sign-in and
     // offers the re-login exit in the list region. No local factor dialog
@@ -1399,17 +1437,17 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
 
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
+    await chooseProviderAction(user, zhCN.sso.refreshMetadata)
     expect(
       await screen.findByText(text(zhCN.sso.refreshMetadataSaved, { name: 'Acme IdP' })),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }) }))
+    await chooseProviderAction(user, zhCN.sso.reverifyDomains)
     expect(
       await screen.findByText(text(zhCN.sso.reverifyDomainsSaved, { name: 'Acme IdP' })),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }) }))
+    await chooseProviderAction(user, zhCN.sso.delete)
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     expect(await screen.findByText(text(zhCN.sso.deleted, { name: 'Acme IdP' }))).toBeInTheDocument()
@@ -1424,7 +1462,7 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    await user.click(screen.getByRole('button', { name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }) }))
+    await chooseProviderAction(user, zhCN.sso.refreshMetadata)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
     expect(alert).not.toHaveTextContent('HTTP 403')
@@ -1502,14 +1540,10 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await pickProvider(user)
 
-    const list = await screen.findByRole('list', {
+    await screen.findByRole('list', {
       name: zhCN.sso.domains.listLabel,
     })
-    await user.click(
-      within(list).getByRole('button', {
-        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.com' }),
-      }),
-    )
+    await chooseDomainAction(user, 'acme.com', zhCN.sso.domains.verify)
     expect(
       await screen.findByText(text(zhCN.sso.domains.verified, { name: 'Acme IdP', domain: 'acme.com' })),
     ).toBeInTheDocument()
@@ -1523,11 +1557,7 @@ describe('SsoPage', () => {
       await screen.findByText(text(zhCN.sso.domains.claimed, { name: 'Acme IdP', domain: 'acme.com' })),
     ).toBeInTheDocument()
 
-    await user.click(
-      within(list).getByRole('button', {
-        name: text(zhCN.sso.domains.removeAria, { domain: 'acme.com' }),
-      }),
-    )
+    await chooseDomainAction(user, 'acme.com', zhCN.sso.domains.remove)
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     expect(
@@ -1556,11 +1586,7 @@ describe('SsoPage', () => {
     const list = await screen.findByRole('list', {
       name: zhCN.sso.domains.listLabel,
     })
-    await user.click(
-      within(list).getByRole('button', {
-        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.com' }),
-      }),
-    )
+    await chooseDomainAction(user, 'acme.com', zhCN.sso.domains.verify)
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
@@ -1599,12 +1625,7 @@ describe('SsoPage', () => {
 
     // A second attempt in the domain scope resets its slot and settles as a
     // failure; the token is page state, not slot state, and stays.
-    const list = screen.getByRole('list', { name: zhCN.sso.domains.listLabel })
-    await user.click(
-      within(list).getByRole('button', {
-        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.com' }),
-      }),
-    )
+    await chooseDomainAction(user, 'acme.com', zhCN.sso.domains.verify)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
@@ -1803,20 +1824,15 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
 
+    await openProviderActions(user)
     expect(
-      screen.queryByRole('button', {
-        name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }),
-      }),
+      screen.queryByRole('menuitem', { name: zhCN.sso.refreshMetadata }),
     ).toBeNull()
     expect(
-      screen.getByRole('button', {
-        name: text(zhCN.sso.reverifyDomainsAria, { name: 'Acme IdP' }),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.sso.reverifyDomains }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', {
-        name: text(zhCN.sso.deleteAria, { name: 'Acme IdP' }),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.sso.delete }),
     ).toBeInTheDocument()
   })
 

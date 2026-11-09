@@ -100,6 +100,7 @@ import {
 import { useAdminOperations } from './operations.js'
 import type { AdminSsoProvider } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
+import { RowActionMenu } from './internal/row-action-menu.js'
 
 /**
  * The id of the page's own "choose a tenant first" text. The disabled
@@ -187,10 +188,6 @@ export function SsoPage({
     readonly id: string
     readonly action: ProviderAction
   } | null>(null)
-  const [busyProvider, setBusyProvider] = useState<{
-    readonly id: string
-    readonly action: ProviderAction
-  } | null>(null)
   const [busyDomainAction, setBusyDomainAction] = useState<{
     readonly action: DomainAction
     readonly domain?: string
@@ -227,7 +224,6 @@ export function SsoPage({
   // it was claimed under.
   useEffect(() => {
     resetPageFeedback()
-    setBusyProvider(null)
     setBusyDomainAction(null)
     setEditProvider('')
     setDomainProvider('')
@@ -265,15 +261,12 @@ export function SsoPage({
     attempt: () => Promise<string>,
   ) => {
     setFailedProvider(null)
-    setBusyProvider({ id: provider.id, action })
     void listFeedback.run(async () => {
       try {
         return await attempt()
       } catch (error) {
         setFailedProvider({ id: provider.id, action })
         throw error
-      } finally {
-        setBusyProvider(null)
       }
     })
   }
@@ -425,55 +418,36 @@ export function SsoPage({
       cell: (provider) => {
         const failed =
           failedProvider?.id === provider.id ? failedProvider.action : null
-        const busy =
-          busyProvider?.id === provider.id ? busyProvider.action : null
         const errorId = `sso-provider-error-${encodeURIComponent(provider.id)}`
         return (
           <Box>
-            <Box sx={{ display: 'flex', columnGap: 1 }}>
-              {metadataRefresh && (
-                <Button
-                  type="button"
-                  size="small"
-                  variant="outlined"
-                  aria-label={t('sso.refreshMetadataAria', { name: provider.name })}
-                  aria-invalid={failed === 'refresh'}
-                  aria-describedby={failed === 'refresh' ? errorId : undefined}
-                  disabled={listFeedback.pending}
-                  loading={busy === 'refresh'}
-                  onClick={() => requestRefreshMetadata(provider)}
-                >
-                  {t('sso.refreshMetadata')}
-                </Button>
-              )}
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                aria-label={t('sso.reverifyDomainsAria', { name: provider.name })}
-                aria-invalid={failed === 'reverify'}
-                aria-describedby={failed === 'reverify' ? errorId : undefined}
-                disabled={listFeedback.pending}
-                loading={busy === 'reverify'}
-                onClick={() => requestReverifyDomains(provider)}
-              >
-                {t('sso.reverifyDomains')}
-              </Button>
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                color="error"
-                aria-label={t('sso.deleteAria', { name: provider.name })}
-                aria-invalid={failed === 'delete'}
-                aria-describedby={failed === 'delete' ? errorId : undefined}
-                disabled={listFeedback.pending}
-                loading={busy === 'delete'}
-                onClick={() => requestDelete(provider)}
-              >
-                {t('sso.delete')}
-              </Button>
-            </Box>
+            <RowActionMenu
+              label={t('sso.actionsAria', { name: provider.name })}
+              disabled={listFeedback.pending}
+              invalid={failed !== null}
+              describedBy={failed !== null ? errorId : undefined}
+              actions={[
+                ...(metadataRefresh
+                  ? [
+                      {
+                        key: 'refresh',
+                        label: t('sso.refreshMetadata'),
+                        onSelect: () => requestRefreshMetadata(provider),
+                      },
+                    ]
+                  : []),
+                {
+                  key: 'reverify',
+                  label: t('sso.reverifyDomains'),
+                  onSelect: () => requestReverifyDomains(provider),
+                },
+                {
+                  key: 'delete',
+                  label: t('sso.delete'),
+                  onSelect: () => requestDelete(provider),
+                },
+              ]}
+            />
             {failed !== null && listFailureText !== null && (
               <Typography
                 id={errorId}
@@ -724,41 +698,30 @@ export function SsoPage({
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', columnGap: 1, flexShrink: 0 }}>
-                        {!declared.verified && (
-                          <Button
-                            type="button"
-                            size="small"
-                            variant="outlined"
-                            aria-label={t('sso.domains.verifyAria', {
-                              domain: declared.domain,
-                            })}
-                            disabled={domainsFeedback.pending}
-                            loading={
-                              busyDomainAction?.action === 'verify' &&
-                              busyDomainAction.domain === declared.domain
-                            }
-                            onClick={() => requestVerifyDomain(declared.domain)}
-                          >
-                            {t('sso.domains.verify')}
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          size="small"
-                          variant="outlined"
-                          color="error"
-                          aria-label={t('sso.domains.removeAria', {
+                        <RowActionMenu
+                          label={t('sso.domains.actionsAria', {
                             domain: declared.domain,
                           })}
                           disabled={domainsFeedback.pending}
-                          loading={
-                            busyDomainAction?.action === 'remove' &&
-                            busyDomainAction.domain === declared.domain
-                          }
-                          onClick={() => requestRemoveDomain(declared.domain)}
-                        >
-                          {t('sso.domains.remove')}
-                        </Button>
+                          actions={[
+                            ...(declared.verified
+                              ? []
+                              : [
+                                  {
+                                    key: 'verify',
+                                    label: t('sso.domains.verify'),
+                                    onSelect: () =>
+                                      requestVerifyDomain(declared.domain),
+                                  },
+                                ]),
+                            {
+                              key: 'remove',
+                              label: t('sso.domains.remove'),
+                              onSelect: () =>
+                                requestRemoveDomain(declared.domain),
+                            },
+                          ]}
+                        />
                       </Box>
                     </Box>
                   ))

@@ -42,8 +42,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
+import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import {
   DataTable,
@@ -191,23 +191,20 @@ function TenantRowActions({
         rowGap: 1,
       }}
     >
-      <Button
-        type="button"
-        size="small"
-        variant="outlined"
-        aria-label={
-          disabled
-            ? t('tenants.enableAria', { alias: tenant.alias })
-            : t('tenants.disableAria', { alias: tenant.alias })
-        }
-        aria-invalid={failed}
-        aria-describedby={failed ? statusErrorId : undefined}
+      <Switch
+        checked={!disabled}
         disabled={feedback.pending}
-        loading={feedback.pending}
-        onClick={toggleStatus}
-      >
-        {disabled ? t('tenants.enable') : t('tenants.disable')}
-      </Button>
+        slotProps={{
+          input: {
+            'aria-label': disabled
+              ? t('tenants.enableAria', { alias: tenant.alias })
+              : t('tenants.disableAria', { alias: tenant.alias }),
+            'aria-invalid': failed,
+            'aria-describedby': failed ? statusErrorId : undefined,
+          },
+        }}
+        onChange={toggleStatus}
+      />
       {failed && failureText !== null && (
         <Typography
           id={statusErrorId}

@@ -459,7 +459,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
       )
     }
     await configRow
-      .getByRole('button', {
+      .getByRole('switch', {
         name: copy('adminUi', 'sms.disableAria', { name: CONFIG_TEMPLATE }),
         exact: true,
       })
@@ -522,7 +522,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
   await test.step('disabling the template leaves both review states pending', async () => {
     const row = templateRow(page, TEMPLATE)
     await row
-      .getByRole('button', {
+      .getByRole('switch', {
         name: copy('adminUi', 'sms.disableAria', { name: TEMPLATE }),
         exact: true,
       })
@@ -589,7 +589,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
   await test.step('enabling the template sends and leaves the review states unchanged', async () => {
     const row = templateRow(page, TEMPLATE)
     await row
-      .getByRole('button', {
+      .getByRole('switch', {
         name: copy('adminUi', 'sms.enableAria', { name: TEMPLATE }),
         exact: true,
       })
@@ -663,7 +663,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await openSmsPage(page)
     const row = templateRow(page, TEMPLATE)
     await row
-      .getByRole('button', {
+      .getByRole('switch', {
         name: copy('adminUi', 'sms.disableAria', { name: TEMPLATE }),
         exact: true,
       })

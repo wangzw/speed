@@ -66,6 +66,7 @@ import {
   type InvitationStatusFilter,
 } from './internal/invitation-status.js'
 import { MemberPanel } from './internal/member-panel.js'
+import { RowActionMenu } from './internal/row-action-menu.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { ADMIN_UI_NAMESPACE } from './resources.js'
@@ -846,29 +847,27 @@ export function OrganizationMembersPage({
                 rowGap: 0.5,
               }}
             >
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                aria-invalid={failed}
-                aria-describedby={failed ? errorId : undefined}
-                disabled={pending}
-                onClick={() => requestResend(invitation)}
-              >
-                {t('invitations.resend')}
-              </Button>
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                color="error"
-                aria-invalid={failed}
-                aria-describedby={failed ? errorId : undefined}
-                disabled={invitation.status !== 'pending' || pending}
-                onClick={() => requestRevoke(invitation)}
-              >
-                {t('invitations.revoke')}
-              </Button>
+              <RowActionMenu
+                label={t('invitations.actionsAria', {
+                  email: invitation.email,
+                })}
+                invalid={failed}
+                describedBy={failed ? errorId : undefined}
+                actions={[
+                  {
+                    key: 'resend',
+                    label: t('invitations.resend'),
+                    onSelect: () => requestResend(invitation),
+                    disabled: pending,
+                  },
+                  {
+                    key: 'revoke',
+                    label: t('invitations.revoke'),
+                    onSelect: () => requestRevoke(invitation),
+                    disabled: invitation.status !== 'pending' || pending,
+                  },
+                ]}
+              />
               {/* The acceptance token is handed out once: only the item just
                   issued or resent has a value to copy. */}
               {current && (

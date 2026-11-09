@@ -418,19 +418,27 @@ function manageButton(member: AdminMember): HTMLElement {
   })
 }
 
+/** Opens one invitation row's action menu and picks one item. */
+async function chooseInvitationAction(
+  user: ReturnType<typeof userEvent.setup>,
+  email: string,
+  label: string,
+): Promise<void> {
+  const row = rowOf(email)
+  await user.click(
+    within(row).getByRole('button', {
+      name: zhCN.invitations.actionsAria.replace('{{email}}', email),
+    }),
+  )
+  await user.click(await screen.findByRole('menuitem', { name: label }))
+}
+
 /**
- * Waits for the row holding `target` and its resend action.
- *
- * A resend's confirmation closes with a transition, and until it unmounts
- * the page beside it is `aria-hidden`, so a role query made too early sees
- * no button. The row is re-queried on every attempt so a re-render cannot
- * leave the lookup pointing at a detached node.
+ * The failure caption rendered in one invitation row, or null when the row
+ * carries no marker.
  */
-async function findResendButtonOf(target: string): Promise<HTMLElement> {
-  return waitFor(() => {
-    const row = rowOf(target)
-    return within(row).getByRole('button', { name: zhCN.invitations.resend })
-  })
+function invitationErrorOf(email: string): HTMLElement | null {
+  return rowOf(email).querySelector<HTMLElement>('[id^="invitation-error-"]')
 }
 
 async function openPanel(
@@ -1367,22 +1375,17 @@ describe('the member management panel', () => {
     ).toBeInTheDocument()
   })
 
-  it('warns that removing yourself can be refused by the last-admin guard', async () => {
+  it('refuses to remove your own membership and says why', async () => {
     attachTenantPermissions(FULL_TENANT_PERMISSIONS, SELF)
     const user = userEvent.setup()
     const { backend } = scripted()
     renderPage(backend)
     const panel = await openPanel(user, ADA)
-    await user.click(
-      within(panel).getByRole('button', { name: zhCN.members.remove }),
-    )
-    const dialog = await screen.findByRole('dialog', {
-      name: zhCN.members.removeTitle,
-    })
     expect(
-      within(dialog).getByText(
-        required(zhCN.members.removeSelfNote),
-      ),
+      within(panel).getByRole('button', { name: zhCN.members.remove }),
+    ).toBeDisabled()
+    expect(
+      within(panel).getByText(zhCN.members.panel.cannotSuspendSelf),
     ).toBeInTheDocument()
   })
 })
@@ -1740,9 +1743,11 @@ describe('the invitation section', () => {
       },
     })
     renderPage(backend)
-    const row = rowOf(await screen.findByText(PENDING_INVITATION.email))
-    await user.click(
-      within(row).getByRole('button', { name: zhCN.invitations.resend }),
+    await screen.findByText(PENDING_INVITATION.email)
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.resend,
     )
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
@@ -1791,10 +1796,10 @@ describe('the invitation section', () => {
         }),
       )
       await user.click(screen.getByRole('option', { name: choice }))
-      await user.click(
-        within(rowOf(PENDING_INVITATION.email)).getByRole('button', {
-          name: zhCN.invitations.resend,
-        }),
+      await chooseInvitationAction(
+        user,
+        PENDING_INVITATION.email,
+        zhCN.invitations.resend,
       )
       const dialog = await screen.findByRole('dialog', {
         name: zhCN.invitations.resendTitle,
@@ -1820,21 +1825,24 @@ describe('the invitation section', () => {
           : Promise.resolve(issuedFixture(input.email)),
     })
     renderPage(backend)
-    const row = rowOf(await screen.findByText(PENDING_INVITATION.email))
-    await user.click(
-      within(row).getByRole('button', { name: zhCN.invitations.resend }),
+    await screen.findByText(PENDING_INVITATION.email)
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.resend,
     )
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    const failedResend = await findResendButtonOf(PENDING_INVITATION.email)
-    await waitFor(() =>
-      expect(failedResend).toHaveAttribute('aria-invalid', 'true'),
-    )
-    expect(failedResend).toHaveAttribute('aria-describedby')
+    const failedMarker = await waitFor(() => {
+      const marker = invitationErrorOf(PENDING_INVITATION.email)
+      expect(marker).not.toBeNull()
+      return marker as HTMLElement
+    })
+    expect(failedMarker.textContent ?? '').not.toBe('')
 
     // A later issue replaces the failure in the scope. The old row must stop
-    // pointing at the error text that is no longer rendered.
+    // showing the error text that is no longer rendered.
     await user.type(
       screen.getByLabelText(zhCN.invitations.issue.emailLabel),
       'fresh@example.com',
@@ -1845,11 +1853,7 @@ describe('the invitation section', () => {
     await screen.findByText(
       `${window.location.origin}/invitations/spd_inv_new_token`,
     )
-    const settledResend = within(
-      rowOf(PENDING_INVITATION.email),
-    ).getByRole('button', { name: zhCN.invitations.resend })
-    expect(settledResend).not.toHaveAttribute('aria-invalid', 'true')
-    expect(settledResend).not.toHaveAttribute('aria-describedby')
+    expect(invitationErrorOf(PENDING_INVITATION.email)).toBeNull()
   })
 
   it('clears the invitation scope and row marker when the status filter changes', async () => {
@@ -1859,19 +1863,21 @@ describe('the invitation section', () => {
         Promise.reject(new Error('invite write refused')),
     })
     renderPage(backend)
-    const row = rowOf(await screen.findByText(PENDING_INVITATION.email))
-    await user.click(
-      within(row).getByRole('button', { name: zhCN.invitations.resend }),
+    await screen.findByText(PENDING_INVITATION.email)
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.resend,
     )
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    const failedResend = await findResendButtonOf(PENDING_INVITATION.email)
-    await waitFor(() =>
-      expect(failedResend).toHaveAttribute('aria-invalid', 'true'),
-    )
-    const errorId = failedResend.getAttribute('aria-describedby') ?? ''
-    const failureText = document.getElementById(errorId)?.textContent ?? ''
+    const failedMarker = await waitFor(() => {
+      const marker = invitationErrorOf(PENDING_INVITATION.email)
+      expect(marker).not.toBeNull()
+      return marker as HTMLElement
+    })
+    const failureText = failedMarker.textContent ?? ''
     expect(failureText).not.toBe('')
 
     // The filter change is a new scope, like the member filter: the failure
@@ -1883,11 +1889,8 @@ describe('the invitation section', () => {
     await user.click(
       screen.getByRole('option', { name: zhCN.invitations.status.pending }),
     )
-    const settled = within(
-      rowOf(await screen.findByText(PENDING_INVITATION.email)),
-    ).getByRole('button', { name: zhCN.invitations.resend })
-    expect(settled).not.toHaveAttribute('aria-invalid', 'true')
-    expect(settled).not.toHaveAttribute('aria-describedby')
+    await screen.findByText(PENDING_INVITATION.email)
+    expect(invitationErrorOf(PENDING_INVITATION.email)).toBeNull()
     expect(screen.queryByText(failureText)).toBeNull()
   })
 
@@ -1895,9 +1898,11 @@ describe('the invitation section', () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()
     renderPage(backend)
-    const row = rowOf(await screen.findByText(PENDING_INVITATION.email))
-    await user.click(
-      within(row).getByRole('button', { name: zhCN.invitations.revoke }),
+    await screen.findByText(PENDING_INVITATION.email)
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.revoke,
     )
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),

@@ -720,13 +720,13 @@ export function MemberPanel({
           aria-describedby={
             failed?.kind === 'remove' ? 'member-remove-error' : undefined
           }
-          disabled={feedback.pending}
+          disabled={feedback.pending || isSelf}
           onClick={requestRemove}
         >
           {t('members.remove')}
         </Button>
       </Box>
-      {isSelf && member.active && (
+      {isSelf && (
         <Typography
           variant="body2"
           color="text.secondary"

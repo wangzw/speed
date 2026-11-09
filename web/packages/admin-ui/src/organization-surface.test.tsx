@@ -93,32 +93,32 @@ const fullOrganizationBundle = {
 describe('organizationAdminRoutes', () => {
   it('declares the tenant-scoped pages with tenant-domain codes and features', () => {
     expect(organizationAdminRoutes.map((route) => route.id)).toEqual([
+      'organization-profile',
       'organization-invitations',
       'organization-sso',
       'organization-roles',
       'organization-settings',
-      'organization-profile',
     ])
     expect(organizationAdminRoutes.map((route) => route.path)).toEqual([
+      '/profile',
       '/invitations',
       '/sso',
       '/roles',
       '/settings',
-      '/profile',
     ])
     expect(organizationAdminRoutes.map((route) => route.permission)).toEqual([
+      'tenant.profile.read',
       'authn.membership.manage',
       'authn.idp.manage',
       'authz.tenant.role.read',
       'settings.tenant.read',
-      'tenant.profile.read',
     ])
     expect(organizationAdminRoutes.map((route) => route.requires)).toEqual([
+      ['tenant.profile'],
       ['authn.admin', 'authn.invitations'],
       ['authn.admin', 'authn.admin.sso'],
       ['authz.tenantadmin', 'authn.admin'],
       ['settings.tenantadmin'],
-      ['tenant.profile'],
     ])
     // The organization declarations never name the platform roster feature: the
     // surface reads no roster and holds no tenant selector.

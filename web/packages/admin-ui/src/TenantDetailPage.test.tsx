@@ -293,7 +293,7 @@ describe('TenantDetailPage', () => {
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
-      screen.getByRole('button', { name: zhCN.tenantDetail.actions.disable }),
+      screen.getByRole('switch', { name: zhCN.tenantDetail.actions.disable }),
     )
     expect(calls).toEqual(['acme:disabled'])
   })
@@ -317,12 +317,12 @@ describe('TenantDetailPage', () => {
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
-      screen.getByRole('button', { name: zhCN.tenantDetail.actions.disable }),
+      screen.getByRole('switch', { name: zhCN.tenantDetail.actions.disable }),
     )
     // The write invalidates the detail read, so it refetches and the
     // control relabels from the settled status (disable -> enable).
     expect(
-      await screen.findByRole('button', {
+      await screen.findByRole('switch', {
         name: zhCN.tenantDetail.actions.enable,
       }),
     ).toBeInTheDocument()
@@ -345,7 +345,7 @@ describe('TenantDetailPage', () => {
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
-      screen.getByRole('button', {
+      screen.getByRole('switch', {
         name: zhCN.tenantDetail.actions.disable,
       }),
     )
@@ -357,7 +357,7 @@ describe('TenantDetailPage', () => {
     // The write invalidates the detail read and it re-settles with the new
     // status; the confirmation stays until the refresh.
     expect(
-      await screen.findByRole('button', {
+      await screen.findByRole('switch', {
         name: zhCN.tenantDetail.actions.enable,
       }),
     ).toBeInTheDocument()
@@ -383,7 +383,7 @@ describe('TenantDetailPage', () => {
     await screen.findByText(zhCN.tenants.status.active)
 
     await user.click(
-      screen.getByRole('button', {
+      screen.getByRole('switch', {
         name: zhCN.tenantDetail.actions.disable,
       }),
     )
@@ -420,7 +420,7 @@ describe('TenantDetailPage', () => {
     const refresh = () => screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh()).toBeEnabled()
 
-    await user.click(screen.getByRole('button', { name: zhCN.tenantDetail.actions.disable }))
+    await user.click(screen.getByRole('switch', { name: zhCN.tenantDetail.actions.disable }))
     expect(refresh()).toBeDisabled()
     // A write-pending disable carries no "choose a scope first" description.
     expect(refresh()).not.toHaveAttribute('aria-describedby')

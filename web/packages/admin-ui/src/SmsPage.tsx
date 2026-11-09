@@ -36,6 +36,7 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
@@ -305,22 +306,21 @@ export function SmsPage() {
         return (
           <Box>
             <Box sx={{ display: 'flex', columnGap: 1 }}>
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                aria-label={t(
-                  template.enabled ? 'sms.disableAria' : 'sms.enableAria',
-                  { name: template.name },
-                )}
-                aria-invalid={toggleFailed}
-                aria-describedby={toggleFailed ? errorId : undefined}
+              <Switch
+                checked={template.enabled}
                 disabled={tableFeedback.pending}
-                loading={tableFeedback.pending}
-                onClick={() => toggleEnabled(template)}
-              >
-                {template.enabled ? t('sms.disable') : t('sms.enable')}
-              </Button>
+                slotProps={{
+                  input: {
+                    'aria-label': t(
+                      template.enabled ? 'sms.disableAria' : 'sms.enableAria',
+                      { name: template.name },
+                    ),
+                    'aria-invalid': toggleFailed,
+                    'aria-describedby': toggleFailed ? errorId : undefined,
+                  },
+                }}
+                onChange={() => toggleEnabled(template)}
+              />
               <Button
                 type="button"
                 size="small"

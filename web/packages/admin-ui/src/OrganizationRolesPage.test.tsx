@@ -318,12 +318,30 @@ async function waitForArmedConfirm(): Promise<void> {
   })
 }
 
-async function selectRole(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+/** Opens one role row's action menu. */
+async function openRowActions(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<void> {
   await user.click(
     await screen.findByRole('button', {
-      name: text(zhCN.permissions.roles.manageGrantsAria, { role: name }),
+      name: text(zhCN.permissions.roles.actionsAria, { role: name }),
     }),
   )
+}
+
+/** Picks one item from the open row action menu. */
+async function chooseRowAction(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  label: string,
+): Promise<void> {
+  await openRowActions(user, name)
+  await user.click(await screen.findByRole('menuitem', { name: label }))
+}
+
+async function selectRole(user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> {
+  await chooseRowAction(user, name, zhCN.permissions.roles.manageGrants)
 }
 
 describe('the role catalog', () => {
@@ -439,12 +457,10 @@ describe('the role catalog', () => {
     renderRolesPage(backend)
     await screen.findByText(ROLE_AUDITOR.role)
 
-    await user.click(
-      screen.getByRole('button', {
-        name: text(zhCN.permissions.roles.editDescriptionAria, {
-          role: ROLE_AUDITOR.role,
-        }),
-      }),
+    await chooseRowAction(
+      user,
+      ROLE_AUDITOR.role,
+      zhCN.permissions.roles.editDescription,
     )
     const panel = await screen.findByRole('dialog')
     expect(
@@ -499,12 +515,10 @@ describe('the role catalog', () => {
     renderRolesPage(backend)
     await screen.findByText(ROLE_AUDITOR.role)
 
-    await user.click(
-      screen.getByRole('button', {
-        name: text(zhCN.permissions.roles.removeAria, {
-          role: ROLE_AUDITOR.role,
-        }),
-      }),
+    await chooseRowAction(
+      user,
+      ROLE_AUDITOR.role,
+      zhCN.permissions.roles.remove,
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(
@@ -537,14 +551,7 @@ describe('the role catalog', () => {
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('button', {
-        name: text(zhCN.permissions.roles.editDescriptionAria, {
-          role: ROLE_BUILTIN.role,
-        }),
-      }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', {
-        name: text(zhCN.permissions.roles.removeAria, {
+        name: text(zhCN.permissions.roles.actionsAria, {
           role: ROLE_BUILTIN.role,
         }),
       }),
@@ -635,19 +642,7 @@ describe('the role catalog', () => {
     ).toBeNull()
     expect(
       screen.queryByRole('button', {
-        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'viewer' }),
-      }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', {
-        name: text(zhCN.permissions.roles.editDescriptionAria, {
-          role: 'viewer',
-        }),
-      }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', {
-        name: text(zhCN.permissions.roles.removeAria, { role: 'viewer' }),
+        name: text(zhCN.permissions.roles.actionsAria, { role: 'viewer' }),
       }),
     ).toBeNull()
     expect(
@@ -982,13 +977,7 @@ describe('the role usage section', () => {
       listTenantRoles: () => Promise.resolve([role({ role: 'audit team' })]),
     })
     renderRolesPage(backend, { routes: [INVITATIONS_ROUTE] })
-    await user.click(
-      await screen.findByRole('button', {
-        name: text(zhCN.permissions.roles.manageGrantsAria, {
-          role: 'audit team',
-        }),
-      }),
-    )
+    await selectRole(user, 'audit team')
 
     const link = await screen.findByRole('link', {
       name: zhCN.permissions.usage.viewInMembers,

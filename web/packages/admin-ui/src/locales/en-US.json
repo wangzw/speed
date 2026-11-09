@@ -55,13 +55,13 @@
     },
     "org": {
       "creation_in_progress": "Another organization creation is already in progress. Wait for it to finish and try again.",
-      "identifier_unavailable": "Another organization already uses this alias. Choose another one.",
+      "identifier_unavailable": "Another organization already uses this name. Choose another one.",
       "organization_limit": "Your account has reached the maximum number of active business organizations and cannot create another.",
       "rate_limited": "You are creating organizations too quickly. Try again later."
     },
     "tenant": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-      "conflict": "That alias is already taken by another organization.",
+      "conflict": "That name is already taken by another organization.",
       "protected": "This organization is protected and cannot be deleted or disabled."
     },
     "settings": {
@@ -162,6 +162,7 @@
     }
   },
   "common": {
+    "actions": "Actions",
     "refresh": "Refresh",
     "updatedAt": "Updated {{time}}",
     "refreshed": "Data refreshed",
@@ -252,7 +253,7 @@
     "retry": "Retry",
     "register": "Register an organization",
     "column": {
-      "alias": "Alias",
+      "alias": "Name",
       "status": "Status",
       "actions": "Actions"
     },
@@ -271,9 +272,9 @@
       "submit": "Register"
     },
     "rename": {
-      "label": "New alias",
+      "label": "New name",
       "submit": "Rename",
-      "ariaWithAlias": "New alias for organization {{alias}}",
+      "ariaWithAlias": "New name for organization {{alias}}",
       "submitAria": "Rename organization {{alias}}"
     },
     "enable": "Enable",
@@ -281,7 +282,7 @@
     "enableAria": "Enable organization {{alias}}",
     "disableAria": "Disable organization {{alias}}",
     "created": "Organization \"{{alias}}\" registered",
-    "renamed": "Alias of organization \"{{alias}}\" updated",
+    "renamed": "Name of organization \"{{alias}}\" updated",
     "enabledToast": "Organization \"{{alias}}\" enabled",
     "disabledToast": "Organization \"{{alias}}\" disabled"
   },
@@ -368,8 +369,8 @@
     },
     "deleteConfirm": {
       "title": "Delete organization \"{{name}}\"?",
-      "message": "This permanently deletes the organization. Its members, roles, role assignments and permissions are removed, and its alias can never be reused. This cannot be undone.",
-      "aliasLabel": "Type the organization alias to confirm",
+      "message": "This permanently deletes the organization. Its members, roles, role assignments and permissions are removed, and its name can never be reused. This cannot be undone.",
+      "aliasLabel": "Type the organization name to confirm",
       "aliasHint": "Type {{alias}}.",
       "confirmLabel": "Delete organization",
       "failedConflict": "This organization was already deleted. Deletion is final.",
@@ -388,17 +389,17 @@
     "retry": "Retry",
     "summary": "Summary",
     "field": {
-      "alias": "Alias",
+      "alias": "Name",
       "status": "Status",
       "disabledBy": "Disabled by"
     },
     "actions": {
       "title": "Actions",
-      "renameLabel": "New alias",
+      "renameLabel": "New name",
       "renameSubmit": "Rename",
       "enable": "Enable",
       "disable": "Disable",
-      "renamed": "Alias of organization \"{{alias}}\" updated",
+      "renamed": "Name of organization \"{{alias}}\" updated",
       "enabled": "Organization \"{{alias}}\" enabled",
       "disabled": "Organization \"{{alias}}\" disabled"
     },
@@ -420,13 +421,13 @@
     "identity": {
       "title": "Identity",
       "description": "These details identify the organization and cannot be changed here.",
-      "aliasHint": "The alias is fixed after the organization is created. It is the name links use to address the organization."
+      "aliasHint": "The name is fixed after the organization is created. It is what links use to address the organization."
     },
     "owner": {
       "unnamed": "Organization owner"
     },
     "field": {
-      "alias": "Alias",
+      "alias": "Name",
       "owner": "Owner",
       "status": "Status",
       "createdAt": "Created",
@@ -438,7 +439,7 @@
     "form": {
       "title": "Profile",
       "description": "How this organization is named and described to the people who administer it.",
-      "displayNameHint": "Leave empty to show the alias instead.",
+      "displayNameHint": "Leave empty to use the name.",
       "save": "Save profile",
       "savedNamed": "Profile of organization \"{{name}}\" saved",
       "invalid": {
@@ -469,8 +470,8 @@
       "delete": {
         "button": "Delete organization",
         "title": "Delete {{name}}",
-        "message": "Deleting marks the organization and its memberships as deleted and stops serving it. Its alias can never be used again, and there is no way to restore it.",
-        "aliasLabel": "Type the organization alias to confirm",
+        "message": "Deleting marks the organization and its memberships as deleted and stops serving it. Its name can never be used again, and there is no way to restore it.",
+        "aliasLabel": "Type the organization name to confirm",
         "aliasHint": "Type {{alias}}.",
         "confirmLabel": "Confirm deletion",
         "saved": "The organization {{name}} was deleted."
@@ -641,6 +642,7 @@
         "submit": "Create role",
         "duplicate": "This role already exists; edit its description instead."
       },
+      "actionsAria": "Actions for role {{role}}",
       "editDescription": "Edit description",
       "editDescriptionAria": "Edit description (role {{role}})",
       "description": {
@@ -1226,6 +1228,7 @@
     "revokeTitle": "Revoke invitation",
     "revokeMessage": "Revoke the invitation sent to \"{{email}}\". Its link stops working immediately.",
     "revoked": "Invitation to \"{{email}}\" revoked",
+    "actionsAria": "Actions for invitation {{email}}",
     "resend": "Resend",
     "resendTitle": "Resend invitation",
     "resendMessage": "Resending immediately invalidates the previous link sent to \"{{email}}\" and sends a new invitation with a {{days}}-day validity.",
@@ -1342,7 +1345,7 @@
       "escalationUnconfirmed": "A grant of this role carries no permission code, so its permissions cannot be confirmed and it cannot be bound.",
       "escalationFailed": "The role's permissions could not be checked, so it cannot be bound right now.",
       "escalationRetry": "Retry",
-      "cannotSuspendSelf": "You cannot suspend your own membership.",
+      "cannotSuspendSelf": "You cannot suspend or remove your own membership. Ask another administrator to do it.",
       "suspend": "Suspend",
       "resume": "Resume"
     },
@@ -1421,6 +1424,7 @@
     "refreshProviderListAria": "Refresh the provider list",
     "refreshMetadata": "Refresh metadata",
     "refreshMetadataAria": "Refresh metadata ({{name}})",
+    "actionsAria": "Actions for SSO provider {{name}}",
     "reverifyDomains": "Re-verify",
     "reverifyDomainsAria": "Re-verify domains ({{name}})",
     "delete": "Delete",
@@ -1442,6 +1446,7 @@
         "verified": "Verified",
         "unverified": "Unverified"
       },
+      "actionsAria": "Actions for domain {{domain}}",
       "verify": "Verify",
       "verifyAria": "Verify domain {{domain}}",
       "claim": "Claim",
