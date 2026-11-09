@@ -81,17 +81,13 @@ import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
 import type { AuthnAdminProviderWrite } from '@speed/api-sdk'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
+import { SsoIcon } from './internal/icons.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { useAdminHasFeature } from './internal/features.js'
-import { RefreshButton } from '@speed/ui-kit'
 import { ADMIN_UI_NAMESPACE } from './resources.js'
 import { useAdminSession } from './internal/session.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useAdminUiTranslation } from './internal/translation.js'
-import {
-  pageRefreshRead,
-  usePageRefresh,
-} from '@speed/ui-kit'
 import {
   failureTextOf,
   useFailureScroll,
@@ -209,14 +205,6 @@ export function SsoPage({
     domainsFeedback.reset()
     setFailedProvider(null)
   }, [listFeedback.reset, formFeedback.reset, domainsFeedback.reset])
-  // The refresh action re-reads the provider list -- the one body read; the
-  // form's provider read belongs to the selected edit target and re-reads
-  // with its key. The provider selections and the one-time token panel stay.
-  const pageRefresh = usePageRefresh(
-    [pageRefreshRead('sso-providers', providers)],
-    resetPageFeedback,
-  )
-
   // The tenant is an argument of every write here: a change clears all
   // three slots and every row marker, and drops the provider selections
   // whose ids no longer name this tenant's providers. The one-time token
@@ -413,6 +401,7 @@ export function SsoPage({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('sso.column.actions'),
       cellWrap: 'nowrap',
       cell: (provider) => {
@@ -484,38 +473,15 @@ export function SsoPage({
         sx={{ mb: 2 }}
       />
 
-      <SectionCard sx={{ mb: 3 }}>
-        {tenantControlled ? (
-          <RefreshButton
-            busy={pageRefresh.busy}
-            ariaLabel={t('sso.refreshProviderListAria')}
-            disabled={tenant === ''}
-            writePending={anyPending}
-            describedBy={TENANT_HINT_ID}
-            disabledReason={t('sso.needTenant.description')}
-            label={t('common.refresh')}
-            onClick={pageRefresh.refresh}
-          />
-        ) : (
+      {tenantControlled ? null : (
+        <SectionCard sx={{ mb: 3 }}>
           <TenantScope
             value={tenant}
             onSelect={changeTenant}
             disabled={anyPending}
-            trailing={
-              <RefreshButton
-                busy={pageRefresh.busy}
-                ariaLabel={t('sso.refreshProviderListAria')}
-                disabled={tenant === ''}
-                writePending={anyPending}
-                describedBy={TENANT_HINT_ID}
-                disabledReason={t('sso.needTenant.description')}
-                label={t('common.refresh')}
-                onClick={pageRefresh.refresh}
-              />
-            }
           />
-        )}
-      </SectionCard>
+        </SectionCard>
+      )}
 
       {tenant === '' ? (
         <EmptyState
@@ -556,6 +522,7 @@ export function SsoPage({
                 title: t('sso.empty.title'),
                 description: t('sso.empty.description'),
               }}
+              mfaRelogin={session === null ? undefined : relogin}
             >
               {(settled) => (
                 <DataTable
@@ -573,7 +540,11 @@ export function SsoPage({
             </Box>
           </SectionCard>
 
-          <SectionCard title={t('sso.provider.title')} sx={{ mb: 3 }}>
+          <SectionCard
+            title={t('sso.provider.title')}
+            icon={<SsoIcon size={24} />}
+            sx={{ mb: 3 }}
+          >
             <TextField
               select
               size="small"
@@ -604,7 +575,11 @@ export function SsoPage({
             </Box>
           </SectionCard>
 
-          <SectionCard title={t('sso.domains.title')} sx={{ mb: 3 }}>
+          <SectionCard
+            title={t('sso.domains.title')}
+            icon={<SsoIcon size={24} />}
+            sx={{ mb: 3 }}
+          >
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {t('sso.domains.note')}
             </Typography>

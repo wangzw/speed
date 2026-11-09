@@ -54,9 +54,11 @@ describe('isForbidden', () => {
 function Probe({
   error,
   notFoundStatuses,
+  mfaRelogin,
 }: {
   readonly error: unknown
   readonly notFoundStatuses?: readonly number[]
+  readonly mfaRelogin?: () => void
 }) {
   return (
     <AdminAsyncSection
@@ -79,6 +81,7 @@ function Probe({
         onRetry: () => {},
       }}
       notFoundStatuses={notFoundStatuses}
+      mfaRelogin={mfaRelogin}
     >
       {() => <p>content</p>}
     </AdminAsyncSection>
@@ -106,6 +109,56 @@ describe('AdminAsyncSection', () => {
     renderWithProviders(
       <Probe error={{ status: 0, code: 'client.network' }} />,
     )
+    expect(screen.getByRole('button', { name: RETRY })).toBeInTheDocument()
+  })
+
+  it('renders the sign-in exit for a multi-factor refusal, with no retry', async () => {
+    const mfaRelogin = vi.fn()
+    renderWithProviders(
+      <Probe
+        error={{
+          status: 401,
+          code: 'authn.insufficient_user_authentication',
+        }}
+        mfaRelogin={mfaRelogin}
+      />,
+    )
+    // The organization's requirement is named through the console resolver,
+    // and a fresh sign-in clears it: retrying the same request cannot.
+    expect(
+      screen.getByText(zhCN.errors.authn.insufficient_user_authentication),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: RETRY })).toBeNull()
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.stepUp.relogin }),
+    )
+    expect(mfaRelogin).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a generic 401 on the retryable placeholder', () => {
+    renderWithProviders(
+      <Probe
+        error={{ status: 401, code: 'client.http.401' }}
+        mfaRelogin={() => {}}
+      />,
+    )
+    expect(screen.getByText('error-title')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: RETRY })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.stepUp.relogin }),
+    ).toBeNull()
+  })
+
+  it('keeps a multi-factor refusal retryable when the caller offers no sign-in exit', () => {
+    renderWithProviders(
+      <Probe
+        error={{
+          status: 401,
+          code: 'authn.insufficient_user_authentication',
+        }}
+      />,
+    )
+    expect(screen.getByText('error-title')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: RETRY })).toBeInTheDocument()
   })
 

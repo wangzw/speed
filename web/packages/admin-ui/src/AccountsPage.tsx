@@ -734,6 +734,7 @@ export function AccountsPage({
     ...(extraColumns ?? []),
     {
       id: 'actions',
+      align: 'right',
       header: t('accounts.column.actions'),
       cellWrap: 'nowrap',
       cell: (row) => (
@@ -845,6 +846,7 @@ export function AccountsPage({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('accounts.sessions.column.actions'),
       cellWrap: 'nowrap',
       cell: (row) => (
@@ -1549,6 +1551,7 @@ function AccountSecretsSection({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('accounts.secrets.column.actions'),
       cellWrap: 'nowrap',
       cell: (row) => (

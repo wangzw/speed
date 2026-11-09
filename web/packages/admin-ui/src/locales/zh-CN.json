@@ -31,6 +31,7 @@
       "unavailable": "服务暂时不可用，请稍后重试。",
       "human_verification_required": "请先完成人机验证，然后重试。",
       "sso_required": "本次操作要求通过企业单点登录重新认证，请重新登录。",
+      "insufficient_user_authentication": "本组织要求多因素认证，请重新登录完成验证。",
       "cannot_suspend_self": "不能停用自己的成员身份。请让另一位管理员操作。"
     },
     "authz": {
@@ -113,6 +114,7 @@
       "sso": {
         "title": "要求企业单点登录",
         "description": "成员必须通过本组织自己的身份提供方登录。",
+        "noProvider": "先在本组织登记并启用至少一个 SSO 提供方，才能要求成员用它登录；否则本组织将无法访问。",
         "impact": "成员将不再被要求通过组织自己的身份提供方登录。"
       },
       "status": {
@@ -126,7 +128,8 @@
         "line": "{{label}}：{{value}}"
       },
       "effect": {
-        "immediate": "本组织全体成员，保存后立即生效"
+        "immediate": "本组织全体成员，保存后立即生效",
+        "nextSignIn": "本组织全体成员，自下次登录起生效"
       },
       "impact": {
         "generic": "关闭后，本组织的成员将不再受该策略约束。"
@@ -148,7 +151,6 @@
           "description": "目前无法确认更改能否保存，因此这些策略暂时为只读。重新读取后可以再试。"
         }
       },
-      "auditNote": "这些变更会写入审计记录。",
       "loading": "正在加载安全策略",
       "empty": {
         "title": "没有可设置的安全策略",

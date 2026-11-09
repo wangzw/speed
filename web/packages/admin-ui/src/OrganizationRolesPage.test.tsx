@@ -7,8 +7,7 @@
  * permission driving revoke, the grantable filter and the high-risk
  * confirmation, the read-only usage section with its cursor paging and its
  * permission-gated members-page entry, the collapsed permission reference
- * with grouping and search, the page-level refresh, the cleared selection
- * and both color modes' shared page shape.
+ * with grouping and search, and both color modes' shared page shape.
  *
  * The operations bundle is the scripted admin-ui backend, so the tests
  * observe the parameters the reads carry and the exact write inputs rather
@@ -1196,59 +1195,7 @@ describe('the profile permission group', () => {
   })
 })
 
-describe('the page-level refresh and selection', () => {
-  it('puts the refresh action in the title row and re-reads every body read', async () => {
-    const user = userEvent.setup()
-    const { backend, recorder } = scripted()
-    renderRolesPage(backend)
-    await screen.findByText(ROLE_AUDITOR.role)
-    await selectRole(user, ROLE_AUDITOR.role)
-    await screen.findByText('Ada Lovelace')
-
-    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    expect(refresh.closest('header')).not.toBeNull()
-
-    const before = {
-      roles: recorder.roleReads,
-      permissions: recorder.permissionReads,
-      grants: recorder.grantReads,
-      bindings: recorder.bindingReads.length,
-    }
-    await user.click(refresh)
-    await waitFor(() => {
-      expect(recorder.roleReads).toBeGreaterThan(before.roles)
-      expect(recorder.permissionReads).toBeGreaterThan(before.permissions)
-      expect(recorder.grantReads).toBeGreaterThan(before.grants)
-      expect(recorder.bindingReads.length).toBeGreaterThan(before.bindings)
-    })
-  })
-
-  it('clears the selection when a refresh no longer lists the selected role', async () => {
-    const user = userEvent.setup()
-    let reads = 0
-    const { backend } = scripted({
-      listTenantRoles: () => {
-        reads += 1
-        return Promise.resolve(reads === 1 ? [ROLE_AUDITOR] : [])
-      },
-    })
-    renderRolesPage(backend)
-    await selectRole(user, ROLE_AUDITOR.role)
-    await screen.findByText(
-      text(zhCN.permissions.grants.forRole, { role: ROLE_AUDITOR.role }),
-    )
-
-    await user.click(
-      screen.getByRole('button', { name: zhCN.common.refresh }),
-    )
-    expect(
-      await screen.findByText(zhCN.permissions.grants.pickRole),
-    ).toBeInTheDocument()
-    expect(
-      await screen.findByText(zhCN.permissions.roles.selectionCleared),
-    ).toBeInTheDocument()
-  })
-
+describe('the page-level writes and accessibility', () => {
   it('reports a refused role write through the role scope', async () => {
     const user = userEvent.setup()
     const { backend } = scripted({

@@ -511,6 +511,7 @@ function SettingsPageBody({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('settings.column.actions'),
       cellWrap: 'nowrap',
       // A declared default has no row to take back: the remove control is

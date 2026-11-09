@@ -1958,7 +1958,7 @@ export interface SettingsTenantAdminSetting {
   danger: string;
   /** The item's description, rendered in the request's language from the declaration's key, falling back to the declared English text when no localizer is assembled. */
   description: string;
-  /** When a change to the item takes effect: "immediate" when it applies as soon as it is saved, empty when the declaration names none. */
+  /** When a change to the item takes effect: "immediate" when it applies as soon as it is saved, "next-sign-in" when it applies to a member at the next sign-in, empty when the declaration names none. */
   effect: string;
   /** The text the item resolves to: the platform policy OR the tenant policy, in the declared type's text form. The mask string for a sensitive item. */
   effective_value: string;

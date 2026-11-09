@@ -20,6 +20,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import { useTranslation } from '@speed/i18n'
+import { FORM_MAX_WIDTH } from '@speed/ui-kit'
 import { ORG_CREATE_UI_NAMESPACE } from './resources.js'
 import type {
   OrganizationCreateField,
@@ -47,9 +48,6 @@ export interface OrganizationCreateFormProps {
   readonly onSubmit: () => void
 }
 
-/** The grid cell a field occupies: full width below `sm`, one track above. */
-const FULL_WIDTH_SX = { gridColumn: { xs: 'auto', sm: '1 / -1' } } as const
-
 export function OrganizationCreateForm({
   mode,
   values,
@@ -75,7 +73,6 @@ export function OrganizationCreateForm({
     labelKey: string,
     options: {
       readonly hintKey?: string
-      readonly fullWidth?: boolean
       readonly multiline?: boolean
     } = {},
   ) => {
@@ -97,7 +94,6 @@ export function OrganizationCreateForm({
         )}
         disabled={disabled}
         autoComplete="off"
-        sx={options.fullWidth === true ? FULL_WIDTH_SX : undefined}
       />
     )
   }
@@ -115,17 +111,18 @@ export function OrganizationCreateForm({
     >
       <Box
         sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-          columnGap: 2,
-          rowGap: 2,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 2,
+          maxWidth: FORM_MAX_WIDTH,
+          '& .MuiOutlinedInput-root': { borderRadius: 1 },
         }}
       >
         {field('name', 'fields.name', { hintKey: 'helpers.name' })}
-        {field('displayName', 'fields.displayName', { fullWidth: true })}
+        {field('displayName', 'fields.displayName')}
         {field('description', 'fields.description', {
           hintKey: 'helpers.description',
-          fullWidth: true,
           multiline: true,
         })}
         {platform && field('contactEmail', 'fields.contactEmail', {

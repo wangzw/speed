@@ -114,6 +114,7 @@ export function RoleGrantsSection({
 
   const actionsColumn: DataTableColumn<AdminTenantGrant> = {
     id: 'actions',
+    align: 'right',
     header: t('permissions.grants.column.actions'),
     cellWrap: 'nowrap',
     cell: (grant) => {

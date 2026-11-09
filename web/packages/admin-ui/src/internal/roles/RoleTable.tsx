@@ -80,7 +80,27 @@ export function RoleTable({
       cellWrap: 'nowrap',
       cellFullValue: (role) => role.role,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      cell: (role) => <Typography variant="body2">{role.role}</Typography>,
+      cell: (role) => {
+        const locked = lockedReason(role, protectedRoles)
+        return (
+          <Box>
+            <Typography variant="body2">{role.role}</Typography>
+            {locked !== null && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block' }}
+              >
+                {locked === 'builtin'
+                  ? t('permissions.roles.builtinLocked')
+                  : locked === 'protected'
+                    ? t('permissions.roles.protectedReadOnly')
+                    : t('permissions.roles.noManageReadOnly')}
+              </Typography>
+            )}
+          </Box>
+        )
+      },
     },
     {
       id: 'description',
@@ -121,6 +141,7 @@ export function RoleTable({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('permissions.roles.column.actions'),
       cellWrap: 'nowrap',
       cell: (role) => {
@@ -166,27 +187,18 @@ export function RoleTable({
                   ]}
                 />
               ) : (
-                <>
-                  <Button
-                    type="button"
-                    size="small"
-                    variant="outlined"
-                    aria-label={t('permissions.roles.viewGrantsAria', {
-                      role: role.role,
-                    })}
-                    aria-pressed={selected}
-                    onClick={() => onSelect(role.role)}
-                  >
-                    {t('permissions.roles.viewGrants')}
-                  </Button>
-                  <Typography variant="body2" color="text.secondary">
-                    {locked === 'builtin'
-                      ? t('permissions.roles.builtinLocked')
-                      : locked === 'protected'
-                        ? t('permissions.roles.protectedReadOnly')
-                        : t('permissions.roles.noManageReadOnly')}
-                  </Typography>
-                </>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  aria-label={t('permissions.roles.viewGrantsAria', {
+                    role: role.role,
+                  })}
+                  aria-pressed={selected}
+                  onClick={() => onSelect(role.role)}
+                >
+                  {t('permissions.roles.viewGrants')}
+                </Button>
               )}
             </Box>
             {failed && failureText !== null && (

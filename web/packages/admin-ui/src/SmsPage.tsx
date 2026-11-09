@@ -293,6 +293,7 @@ export function SmsPage() {
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('sms.column.actions'),
       cellWrap: 'nowrap',
       cell: (template) => {

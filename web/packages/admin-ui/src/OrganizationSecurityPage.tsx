@@ -7,7 +7,9 @@
  * renders them as two switches in one "sign-in policies" section, never as
  * a key/value table: the declarations, their titles and descriptions come
  * from the server, and the page adds the status, the effect and the cost of
- * turning each policy off.
+ * turning each policy off. The effect is the policy's real moment, not the
+ * server's declared one: both policies apply from each member's next
+ * sign-in, so a change never breaks the session that made it.
  *
  * A policy the platform holds on is read-only and drawn as an enabled,
  * disabled switch: the platform value OR the tenant value decides the
@@ -35,7 +37,7 @@
  * the page builds no client and writes no query key.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -46,7 +48,6 @@ import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import {
   ListSkeleton,
-  RefreshButton,
   SectionCard,
   errorCodeOf,
   pageRefreshRead,
@@ -54,8 +55,11 @@ import {
 } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
+import { SettingsIcon } from './internal/icons.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { AdminPageHeader } from './internal/page-header.js'
+import { useAdminHasFeature } from './internal/features.js'
+import { useAdminSession } from './internal/session.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import {
   useOrganizationAdminOperations,
@@ -112,6 +116,30 @@ function itemDescription({
   return ''
 }
 
+/**
+ * The sentence the effect field carries. The two tenant admission policies
+ * apply from each member's next sign-in, a moment their declarations name as
+ * the effect; the surface keeps mapping it by key so the sentence is
+ * localized instead of echoing the raw value.
+ */
+function itemEffect({
+  setting,
+  t,
+}: {
+  readonly setting: AdminTenantSetting
+  readonly t: (key: string) => string
+}): string {
+  if (
+    setting.key.endsWith('.require-mfa') ||
+    setting.key.endsWith('.require-sso')
+  ) {
+    return t('organization.security.effect.nextSignIn')
+  }
+  return setting.effect === 'immediate'
+    ? t('organization.security.effect.immediate')
+    : setting.effect
+}
+
 /** The sentence this policy's own loss means when it is turned off. */
 function itemImpact({
   setting,
@@ -154,6 +182,8 @@ interface SettingSwitchRowProps {
   readonly saving: boolean
   readonly readOnly: boolean
   readonly feedback: RowFeedback | null
+  /** Why this policy cannot be turned on now, or undefined when it can. */
+  readonly blockedReason?: string
   readonly onToggle: (next: boolean) => void
 }
 
@@ -164,6 +194,7 @@ function SettingSwitchRow({
   saving,
   readOnly,
   feedback,
+  blockedReason,
   onToggle,
 }: SettingSwitchRowProps) {
   const { t } = useAdminUiTranslation()
@@ -178,10 +209,7 @@ function SettingSwitchRow({
     : checked
       ? 'success'
       : 'default'
-  const effect =
-    setting.effect === 'immediate'
-      ? t('organization.security.effect.immediate')
-      : setting.effect
+  const effect = itemEffect({ setting, t })
 
   return (
     <Box
@@ -240,6 +268,11 @@ function SettingSwitchRow({
             {t('organization.security.platformLocked')}
           </Typography>
         )}
+        {blockedReason !== undefined && (
+          <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+            {blockedReason}
+          </Typography>
+        )}
       </Box>
       <Box
         sx={{
@@ -253,7 +286,11 @@ function SettingSwitchRow({
         {readOnly ? null : (
           <Switch
             checked={checked}
-            disabled={saving || setting.locked_by_platform}
+            disabled={
+              saving ||
+              setting.locked_by_platform ||
+              blockedReason !== undefined
+            }
             slotProps={{
               input: {
                 'aria-label': t('organization.security.switchAria', { title }),
@@ -298,6 +335,28 @@ export function OrganizationSecurityPage({
   const settings = operations.useTenantSettingsList(tenant)
   const write = operations.useTenantSettingsWrite()
   const confirm = usePendingConfirm()
+  const session = useAdminSession()
+  // The tenant admission layer's multi-factor refusal cannot be cleared by
+  // any retry: the organization requires a fresh sign-in. The exit ends the
+  // session so the host's session gate returns to its sign-in surface.
+  // Without a session there is no exit to offer.
+  const relogin = useCallback(() => {
+    void session?.logout().catch(() => undefined)
+  }, [session])
+  // Requiring SSO in an organization with no enabled provider locks every
+  // member out with no local factor able to clear the refusal, so the switch
+  // stays off until a provider exists. A policy already on is never blocked:
+  // it must stay possible to turn it off. A deployment that serves no SSO
+  // surface cannot be asked to enforce it either.
+  const hasFeature = useAdminHasFeature()
+  const ssoServed = hasFeature('authn.admin.sso')
+  const ssoProviders = operations.useSsoProviders(tenant)
+  const ssoProviderState: 'pending' | 'ready' | 'none' = ssoProviders.isPending
+    ? 'pending'
+    : ssoProviders.isSuccess &&
+        (ssoProviders.data ?? []).some((provider) => provider.enabled)
+      ? 'ready'
+      : 'none'
 
   // The switch value a write put on screen before the server answered. The
   // entry is dropped when the settled read reports the same value, or when
@@ -483,14 +542,6 @@ export function OrganizationSecurityPage({
           { label: t('shell.title') },
           { label: t('organization.nav.settings') },
         ]}
-        actions={
-          <RefreshButton
-            busy={refresh.busy}
-            writePending={savingKeys.size > 0}
-            label={t('common.refresh')}
-            onClick={refresh.refresh}
-          />
-        }
         sx={{ mb: 2 }}
       />
 
@@ -547,20 +598,33 @@ export function OrganizationSecurityPage({
           title: t('organization.security.empty.title'),
           description: t('organization.security.empty.description'),
         }}
+        mfaRelogin={session === null ? undefined : relogin}
       >
         {(settled) => (
           <>
             <SectionCard
               title={t('organization.security.section.title')}
+              icon={<SettingsIcon size={24} />}
               description={t('organization.security.section.description')}
             >
-              {settled.settings.map((setting, index) => {
-                const checked =
-                  optimistic[setting.key] ??
-                  setting.effective_value === 'true'
-                const readOnly =
-                  !settled.writable ||
-                  setting.tenant_access !== 'read-write'
+              {settled.settings
+                .filter(
+                  (setting) =>
+                    ssoServed || !setting.key.endsWith('.require-sso'),
+                )
+                .map((setting, index) => {
+                  const checked =
+                    optimistic[setting.key] ??
+                    setting.effective_value === 'true'
+                  const readOnly =
+                    !settled.writable ||
+                    setting.tenant_access !== 'read-write'
+                  const ssoBlocked =
+                    setting.key.endsWith('.require-sso') && !checked
+                  const ssoBlockedReason =
+                    ssoBlocked && ssoProviderState === 'none'
+                      ? t('organization.security.sso.noProvider')
+                      : undefined
                 return (
                   <Box key={setting.key}>
                     {index > 0 && <Divider />}
@@ -570,19 +634,13 @@ export function OrganizationSecurityPage({
                       saving={savingKeys.has(setting.key)}
                       readOnly={readOnly}
                       feedback={feedback[setting.key] ?? null}
+                      blockedReason={ssoBlockedReason}
                       onToggle={(next) => toggle(setting, next)}
                     />
                   </Box>
                 )
               })}
             </SectionCard>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mt: 2 }}
-            >
-              {t('organization.security.auditNote')}
-            </Typography>
           </>
         )}
       </AdminAsyncSection>

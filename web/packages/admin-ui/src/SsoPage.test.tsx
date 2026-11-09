@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SsoPage, ssoProviderWriteBody } from './SsoPage.js'
 import type { SsoProviderWriteDraft } from './SsoPage.js'
@@ -35,7 +35,6 @@ import {
 import { createStepUpSession } from '../test-utils/session.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
-import enUS from './locales/en-US.json' with { type: 'json' }
 
 const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
 
@@ -110,91 +109,6 @@ async function chooseDomainAction(
     }),
   )
   await user.click(await screen.findByRole('menuitem', { name: label }))
-}
-
-/** The copy the refresh-distinguishability test reads from either bundle. */
-interface RefreshLocaleBundle {
-  readonly common: { readonly tenant: string; readonly refresh: string }
-  readonly sso: {
-    readonly refreshProviderListAria: string
-    readonly refreshMetadata: string
-    readonly actionsAria: string
-  }
-}
-
-/**
- * Asserts the page's refresh action and a row's metadata refresh differ in
- * both their visible text and their accessible name, in the given
- * language, and that each accessible name begins with its own visible
- * text. The tenant is selected through bundle copy, so the steps hold in
- * either language.
- */
-async function expectDistinguishableRefreshControls(
-  language: string,
-  bundle: RefreshLocaleBundle,
-): Promise<void> {
-  const user = userEvent.setup()
-  const operations = withProviders()
-  renderWithProviders(<SsoPage />, { operations, language })
-  await user.click(screen.getByLabelText(bundle.common.tenant))
-  await user.click(await screen.findByRole('option', { name: 'Acme' }))
-  await screen.findByText('Acme IdP')
-
-  const rowProviderName = 'Acme IdP'
-  const pageRefresh = screen.getByRole('button', {
-    name: bundle.sso.refreshProviderListAria,
-  })
-  await user.click(
-    screen.getByRole('button', {
-      name: bundle.sso.actionsAria.replace('{{name}}', rowProviderName),
-    }),
-  )
-  const rowRefresh = await screen.findByRole('menuitem', {
-    name: bundle.sso.refreshMetadata,
-  })
-
-  // The two visible texts differ: the row action is never the bare word
-  // the page action shows.
-  expect(pageRefresh).toHaveTextContent(bundle.common.refresh)
-  expect(rowRefresh).toHaveTextContent(bundle.sso.refreshMetadata)
-  expect(bundle.sso.refreshMetadata).not.toBe(bundle.common.refresh)
-
-  // Each control's accessible name is its own, so the two never collide.
-  expect(pageRefresh).toHaveAccessibleName(bundle.sso.refreshProviderListAria)
-  expect(rowRefresh).toHaveAccessibleName(bundle.sso.refreshMetadata)
-  expect(
-    bundle.sso.refreshProviderListAria.startsWith(bundle.common.refresh),
-  ).toBe(true)
-}
-
-/** A promise the test settles by hand, for observing an in-flight write. */
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((settle) => {
-    resolve = settle
-  })
-  return { promise, resolve }
-}
-
-/**
- * Asserts the header refresh is inert while a write is in flight: disabled
- * without the empty-scope explanation, and a forced activation issues no
- * provider read.
- */
-async function expectRefreshInert(
-  listSsoProviders: ReturnType<typeof vi.fn>,
-  readsBefore: number,
-): Promise<void> {
-  const refresh = screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria })
-  await vi.waitFor(() => {
-    expect(refresh).toBeDisabled()
-  })
-  expect(refresh).not.toHaveAttribute('aria-describedby')
-  fireEvent.click(refresh)
-  await act(async () => {
-    await Promise.resolve()
-  })
-  expect(listSsoProviders).toHaveBeenCalledTimes(readsBefore)
 }
 
 /** A provider write draft, with every value at the form's initial state. */
@@ -352,105 +266,17 @@ describe('SsoPage', () => {
     expect(screen.getByText(zhCN.sso.needTenant.title)).toBeInTheDocument()
   })
 
-  it('does not read an empty tenant scope on refresh', async () => {
+  it('does not read an empty tenant scope', async () => {
     const listSsoProviders = vi.fn(() => Promise.resolve([]))
     const operations = withProviders({ listSsoProviders })
     renderWithProviders(<SsoPage />, { operations })
 
-    // The providers read is disabled while no tenant is chosen; the refresh
-    // control follows it instead of issuing the read with an empty tenant.
-    const refresh = screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria })
-    expect(refresh).toBeDisabled()
-    // The disabled control is described by the page's own "choose a tenant
-    // first" text.
-    const describedBy = refresh.getAttribute('aria-describedby')
-    expect(describedBy).not.toBeNull()
-    expect(document.getElementById(describedBy as string)).toHaveTextContent(
-      zhCN.sso.needTenant.description,
-    )
-    // A programmatic click, because user-event refuses a disabled target:
-    // the control must stay inert even when reached from a script.
-    fireEvent.click(refresh)
+    // No tenant means no provider read: the page prompts for one instead of
+    // issuing the read with an empty scope.
     await act(async () => {
       await Promise.resolve()
     })
     expect(listSsoProviders).not.toHaveBeenCalled()
-  })
-
-  it('disables the refresh while the list scope is in flight', async () => {
-    const user = userEvent.setup()
-    const pending = deferred<void>()
-    const listSsoProviders = vi.fn(() =>
-      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
-    )
-    const operations = withProviders({
-      listSsoProviders,
-      refreshSsoMetadata: () => pending.promise,
-    })
-    renderWithProviders(<SsoPage />, { operations })
-    await pickTenant(user)
-    await screen.findByText('Acme IdP')
-    const reads = listSsoProviders.mock.calls.length
-
-    await chooseProviderAction(user, zhCN.sso.refreshMetadata)
-    await expectRefreshInert(listSsoProviders, reads)
-
-    await act(async () => {
-      pending.resolve()
-    })
-  })
-
-  it('disables the refresh while the provider form scope is in flight', async () => {
-    const user = userEvent.setup()
-    const pending = deferred<void>()
-    const listSsoProviders = vi.fn(() =>
-      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
-    )
-    const operations = withProviders({
-      listSsoProviders,
-      createSsoProvider: () =>
-        pending.promise.then(() => providerFixture({ name: 'New IdP' })),
-    })
-    renderWithProviders(<SsoPage />, { operations })
-    await pickTenant(user)
-    await screen.findByText('Acme IdP')
-    const reads = listSsoProviders.mock.calls.length
-
-    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
-    await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
-    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
-    await expectRefreshInert(listSsoProviders, reads)
-
-    await act(async () => {
-      pending.resolve()
-    })
-  })
-
-  it('disables the refresh while the domain scope is in flight', async () => {
-    const user = userEvent.setup()
-    const pending = deferred<void>()
-    const listSsoProviders = vi.fn(() =>
-      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
-    )
-    const operations = withProviders({
-      listSsoProviders,
-      claimSsoDomain: () =>
-        pending.promise.then(() => ({ verify_token: 'tok-1' })),
-    })
-    renderWithProviders(<SsoPage />, { operations })
-    await pickTenant(user)
-    await screen.findByText('Acme IdP')
-    const reads = listSsoProviders.mock.calls.length
-
-    await pickProvider(user)
-    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
-    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
-    await expectRefreshInert(listSsoProviders, reads)
-
-    await act(async () => {
-      pending.resolve()
-    })
   })
 
   it('opens on the tenant named by the query string', async () => {
@@ -543,7 +369,6 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     const gated = [
-      screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }),
       screen.getByRole('button', {
         name: text(zhCN.sso.actionsAria, { name: 'Acme IdP' }),
       }),
@@ -1687,74 +1512,6 @@ describe('SsoPage', () => {
       'aria-disabled',
       'true',
     )
-  })
-
-  it('marks the refresh control busy while the provider read is in flight', async () => {
-    const user = userEvent.setup()
-    let calls = 0
-    let finishRefresh!: (providers: readonly AdminSsoProvider[]) => void
-    const operations = withProviders({
-      listSsoProviders: () => {
-        calls += 1
-        if (calls === 1) {
-          return Promise.resolve([providerFixture({ name: 'Acme IdP' })])
-        }
-        return new Promise<readonly AdminSsoProvider[]>((resolve) => {
-          finishRefresh = resolve
-        })
-      },
-    })
-    renderWithProviders(<SsoPage />, { operations })
-    await pickTenant(user)
-    await screen.findByText('Acme IdP')
-
-    await user.click(screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }))
-    const refresh = screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria })
-    await vi.waitFor(() => {
-      expect(refresh).toHaveAttribute('aria-busy', 'true')
-    })
-    // A busy refresh stays enabled and keeps keyboard focus: MUI's
-    // `loading` would set the native disabled state, which drops focus to
-    // the document body until the read settles.
-    expect(refresh).not.toBeDisabled()
-    expect(refresh).toBe(document.activeElement)
-    expect(within(refresh).getByRole('progressbar')).toBeInTheDocument()
-
-    await act(async () => {
-      finishRefresh([providerFixture({ name: 'Acme IdP' })])
-    })
-    await vi.waitFor(() => {
-      expect(refresh).not.toHaveAttribute('aria-busy')
-    })
-    expect(refresh).not.toBeDisabled()
-    expect(refresh).toBe(document.activeElement)
-  })
-
-  it('re-reads the provider list on refresh', async () => {
-    const user = userEvent.setup()
-    const listSsoProviders = vi.fn(() =>
-      Promise.resolve([providerFixture({ name: 'Acme IdP' })]),
-    )
-    const operations = withProviders({ listSsoProviders })
-    renderWithProviders(<SsoPage />, { operations })
-    await pickTenant(user)
-    await screen.findByText('Acme IdP')
-
-    const before = listSsoProviders.mock.calls.length
-    await user.click(
-      screen.getByRole('button', { name: zhCN.sso.refreshProviderListAria }),
-    )
-    await vi.waitFor(() =>
-      expect(listSsoProviders.mock.calls.length).toBe(before + 1),
-    )
-  })
-
-  it('keeps the two refresh controls distinguishable in zh-CN', async () => {
-    await expectDistinguishableRefreshControls('zh-CN', zhCN)
-  })
-
-  it('keeps the two refresh controls distinguishable in en-US', async () => {
-    await expectDistinguishableRefreshControls('en-US', enUS)
   })
 
   it('locks the scope to a controlled tenant and hides the selector', async () => {

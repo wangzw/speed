@@ -252,6 +252,21 @@ export type DataTableColumnContentMaxWidth =
     }
 
 /** One column definition: header plus a per-row cell renderer. */
+/** A right-aligned column puts its cell content on the trailing edge: the
+ * table cell's text alignment moves inline text but not an inline-flex or
+ * flex child, so the content is wrapped in a row that justifies it. */
+function alignCellContent(
+  column: { readonly align?: 'left' | 'center' | 'right' },
+  content: ReactNode,
+): ReactNode {
+  if (column.align !== 'right') {
+    return content
+  }
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>{content}</Box>
+  )
+}
+
 export interface DataTableColumn<T> {
   /** Stable column identity; also the sort-state columnId. */
   readonly id: string
@@ -989,7 +1004,7 @@ export function DataTable<T>({
                           ...pinnedColumnSx(isPinnedColumn(column), false),
                         }}
                       >
-                        {fullValue === undefined ? (
+                        {alignCellContent(column, fullValue === undefined ? (
                           capped ? (
                             <Box
                               sx={{
@@ -1041,7 +1056,7 @@ export function DataTable<T>({
                               })}
                             />
                           </Box>
-                        )}
+                        ))}
                       </TableCell>
                     )
                   })}

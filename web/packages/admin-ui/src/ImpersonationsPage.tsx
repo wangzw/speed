@@ -515,6 +515,7 @@ export function ImpersonationsPage({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('impersonations.column.actions'),
       cellWrap: 'nowrap',
       cell: (record) => (

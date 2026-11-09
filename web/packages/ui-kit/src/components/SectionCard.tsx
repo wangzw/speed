@@ -96,6 +96,12 @@ export type SectionCardProps = {
    */
   readonly title?: ReactNode
   /**
+   * Optional icon beside the title, in a fixed leading column so every
+   * section's heading lands on the same rail as its content. It renders only
+   * with a title, on the card surface, like the description and actions.
+   */
+  readonly icon?: ReactNode
+  /**
    * Optional supporting paragraph under the title; a plain surface renders
    * nothing for it.
    */
@@ -127,6 +133,7 @@ export type SectionCardProps = {
 function SectionCardInner(
   {
     title,
+    icon,
     description,
     actions,
     headingLevel = 'h2',
@@ -177,11 +184,19 @@ function SectionCardInner(
       {hasTitle && (
         <Box
           sx={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 2,
-            flexWrap: 'wrap',
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: (icon !== undefined && icon !== null
+                ? '2rem '
+                : '') + 'minmax(0, 1fr)',
+              sm:
+                (icon !== undefined && icon !== null ? '2rem ' : '') +
+                'minmax(0, 1fr)' +
+                (actions !== undefined && actions !== null ? ' auto' : ''),
+            },
+            alignItems: 'center',
+            columnGap: 2,
+            rowGap: 2,
             px: 3,
             pt: 3,
             // A flush child starts at the card's edge, so the heading block
@@ -192,6 +207,18 @@ function SectionCardInner(
             ...(flushContent ? { pb: 3 } : {}),
           }}
         >
+          {icon !== undefined && icon !== null && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'text.secondary',
+              }}
+            >
+              {icon}
+            </Box>
+          )}
           <Box sx={{ minWidth: 0 }}>
             <Typography id={titleId} component={headingLevel} variant="h5">
               {title}
@@ -203,11 +230,34 @@ function SectionCardInner(
             )}
           </Box>
           {actions !== undefined && actions !== null && (
-            <ActionRow sx={{ flexShrink: 0 }}>{actions}</ActionRow>
+            <ActionRow
+              sx={{ flexShrink: 0, gridColumn: { xs: '1 / -1', sm: 'auto' } }}
+            >
+              {actions}
+            </ActionRow>
           )}
         </Box>
       )}
-      <Box sx={flushContent ? undefined : { p: 3 }}>{children}</Box>
+      <Box
+        sx={
+          flushContent
+            ? undefined
+            : {
+                p: 3,
+                // The content shares the title's rail: the icon column and
+                // the gap before the title are skipped, so every row starts
+                // where the section's own name starts.
+                ...(icon !== undefined && icon !== null
+                  ? {
+                      pl: (theme: { spacing: (n: number) => string }) =>
+                        `calc(2rem + ${theme.spacing(2)} + ${theme.spacing(3)})`,
+                    }
+                  : {}),
+              }
+        }
+      >
+        {children}
+      </Box>
     </Card>
   )
 }

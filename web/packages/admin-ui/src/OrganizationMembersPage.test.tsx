@@ -6,8 +6,8 @@
  * paging on both lists; the member panel and its four write groups; the
  * three role-permission tiers and the escalation check before a bind; the
  * invitation status derivation, filter, resend/revoke/copy-link actions;
- * the one-time panel's close confirmation and three delivery outcomes; the
- * refresh action in the title row; and both color modes.
+ * the one-time panel's close confirmation and three delivery outcomes; and
+ * both color modes.
  *
  * The operations bundle is the scripted admin-ui backend, so the tests
  * observe the parameters the reads actually carry (`query`, `after`,
@@ -505,21 +505,6 @@ describe('the page structure', () => {
     expect(
       screen.getByRole('columnheader', { name: zhCN.members.column.joinedAt }),
     ).toBeInTheDocument()
-  })
-
-  it('keeps the refresh action in the title row', async () => {
-    const { backend, recorder } = scripted()
-    renderPage(backend)
-    await screen.findByText(ADA.display_name)
-    const before = recorder.memberParams.length
-    const header = screen.getByRole('banner')
-    const refresh = within(header).getByRole('button', {
-      name: zhCN.common.refresh,
-    })
-    await userEvent.setup().click(refresh)
-    await waitFor(() =>
-      expect(recorder.memberParams.length).toBeGreaterThan(before),
-    )
   })
 
   it.each(['light', 'dark'] as const)(

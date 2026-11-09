@@ -16,11 +16,11 @@ import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { DataTable, ListSkeleton } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import { CopyButton, FORM_MAX_WIDTH, ListSkeleton } from '@speed/ui-kit'
 import { SectionCard } from '@speed/ui-kit'
 import type { AdminTenantPermission } from '../../organization-operations.js'
 import { AdminAsyncSection } from '../async-section.js'
+import { PermissionsIcon } from '../icons.js'
 import {
   PERMISSION_GROUPS,
   PermissionName,
@@ -86,36 +86,10 @@ export function PermissionCatalogReference({
   )
   const noMatches = (catalog.data?.length ?? 0) > 0 && groups.length === 0
 
-  const columns: DataTableColumn<AdminTenantPermission>[] = [
-    {
-      id: 'permission',
-      header: t('permissions.catalog.column.permission'),
-      cellWrap: 'wrap',
-      cellFullValue: (entry) => entry.permission,
-      cell: (entry) => (
-        <Box>
-          <PermissionName
-            code={entry.permission}
-            description={entry.description}
-            dangerous={entry.dangerous}
-          />
-          {!entry.grantable && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: 'block' }}
-            >
-              {t('permissions.catalog.notGrantable')}
-            </Typography>
-          )}
-        </Box>
-      ),
-    },
-  ]
-
   return (
     <SectionCard
       title={t('permissions.catalog.title')}
+      icon={<PermissionsIcon size={24} />}
       actions={
         <Button
           type="button"
@@ -138,7 +112,7 @@ export function PermissionCatalogReference({
           onChange={(event) => setSearch(event.target.value)}
           label={t('permissions.catalog.search.label')}
           placeholder={t('permissions.catalog.search.placeholder')}
-          sx={{ minWidth: 280, mb: 2 }}
+          sx={{ width: '100%', maxWidth: FORM_MAX_WIDTH, mb: 2 }}
         />
         <AdminAsyncSection
           pending={catalog.isPending && catalog.data === undefined}
@@ -175,11 +149,41 @@ export function PermissionCatalogReference({
                   <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
                     {t(permissionGroupKey(group.group))}
                   </Typography>
-                  <DataTable
-                    rows={group.entries}
-                    columns={columns}
-                    rowKey={(entry) => entry.permission}
-                  />
+                  <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+                    {group.entries.map((entry, index) => (
+                      <Box
+                        component="li"
+                        key={entry.permission}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 2,
+                          py: 1.5,
+                          ...(index > 0
+                            ? { borderTop: 1, borderColor: 'divider' }
+                            : {}),
+                        }}
+                      >
+                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                          <PermissionName
+                            code={entry.permission}
+                            description={entry.description}
+                            dangerous={entry.dangerous}
+                          />
+                          {!entry.grantable && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: 'block' }}
+                            >
+                              {t('permissions.catalog.notGrantable')}
+                            </Typography>
+                          )}
+                        </Box>
+                        <CopyButton value={entry.permission} />
+                      </Box>
+                    ))}
+                  </Box>
                 </Box>
               ))
             )

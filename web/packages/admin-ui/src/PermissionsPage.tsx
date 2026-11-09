@@ -803,6 +803,7 @@ function PermissionsPageBody({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('permissions.roles.column.actions'),
       cellWrap: 'nowrap',
       // A builtin role's grants and existence are fixed: the server refuses
@@ -936,6 +937,7 @@ function PermissionsPageBody({
   // its table, and the grant form above it is withheld as well.
   const grantRevokeColumn: DataTableColumn<AdminGrant> = {
     id: 'actions',
+    align: 'right',
     header: t('permissions.grants.column.actions'),
     cellWrap: 'nowrap',
     cell: (grant) => {
@@ -1062,6 +1064,7 @@ function PermissionsPageBody({
       },
       {
         id: 'actions',
+        align: 'right',
         header: t('permissions.bindings.column.actions'),
         cellWrap: 'nowrap',
         cell: (binding) => {

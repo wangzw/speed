@@ -357,6 +357,7 @@ export function TenantRosterPage({
     ...(extraColumns ?? []),
     {
       id: 'actions',
+      align: 'right',
       header: t('tenants.column.actions'),
       // A tombstone is read-only: deletion is terminal, so the status route
       // cannot change it. The cell is empty and the row's write scope is

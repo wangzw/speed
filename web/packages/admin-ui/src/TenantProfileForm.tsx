@@ -19,6 +19,7 @@ import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
+import { FORM_MAX_WIDTH } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './internal/translation.js'
 import {
   hasTenantProfileFieldErrors,
@@ -111,11 +112,12 @@ export function TenantProfileForm({
         submit()
       }}
       sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-        columnGap: 2,
-        rowGap: 2,
-        alignItems: 'start',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 2,
+        maxWidth: FORM_MAX_WIDTH,
+        '& .MuiOutlinedInput-root': { borderRadius: 1 },
       }}
     >
       <TextField
@@ -152,7 +154,6 @@ export function TenantProfileForm({
         label={t('tenantProfile.field.description')}
         error={errors.description !== undefined}
         helperText={helperOf('description')}
-        sx={{ gridColumn: { sm: '1 / -1' } }}
       />
       <TextField
         size="small"
@@ -164,9 +165,8 @@ export function TenantProfileForm({
         inputMode="url"
         error={errors.website !== undefined}
         helperText={helperOf('website')}
-        sx={{ gridColumn: { sm: '1 / -1' } }}
       />
-      <Box sx={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
         <Button
           type="submit"
           variant="contained"

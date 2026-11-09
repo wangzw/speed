@@ -294,7 +294,6 @@ function AppFrame({
   readonly presence: RoutePresence
   readonly shellLayout?: AppShellShellLayout
 }): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
   const { path: pathname } = useLocationPath()
   // The declaration the current URL matches exactly on the narrowed surface:
   // used to tell a live invitation landing from a path that merely looks like
@@ -457,13 +456,11 @@ function AppFrame({
     // organization surface has no root page of its own, so a link here could
     // only go to the tenant home while wearing the organization's name. The
     // crumb states which organization these pages belong to; leaving it is
-    // the sidebar's and the account menu's business.
+    // the sidebar's and the account menu's business. The page follows it
+    // directly: there is no middle grouping step to name, because the
+    // organization admin surface is these pages themselves.
     const breadcrumbs = [
       { label: organizationName },
-      // The organization surface's middle step: the trail reads
-      // organization > organization admin > the page, so the page is not
-      // presented as hanging directly off the organization.
-      { label: t('nav.organizationAdmin') },
       ...(matchedLabel === undefined ? [] : [{ label: matchedLabel }]),
     ]
     return (

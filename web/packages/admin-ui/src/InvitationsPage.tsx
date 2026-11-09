@@ -560,6 +560,7 @@ export function InvitationsPage({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('invitations.column.actions'),
       cellWrap: 'nowrap',
       cell: (invitation) => {
@@ -671,6 +672,7 @@ export function InvitationsPage({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('members.column.actions'),
       cellWrap: 'nowrap',
       cell: (member) => (
@@ -869,6 +871,7 @@ export function InvitationsPage({
                 description: t('invitations.empty.description'),
               }}
               ssoRelogin={session === null ? undefined : relogin}
+              mfaRelogin={session === null ? undefined : relogin}
             >
               {(settled) => (
                 <DataTable
@@ -917,6 +920,7 @@ export function InvitationsPage({
                 title: t('members.empty.title'),
                 description: t('members.empty.description'),
               }}
+              mfaRelogin={session === null ? undefined : relogin}
             >
               {(settled) => (
                 <DataTable

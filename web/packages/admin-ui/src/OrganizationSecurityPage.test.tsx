@@ -11,7 +11,7 @@
 
 import { act, cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { OrganizationSecurityPage } from './OrganizationSecurityPage.js'
 import {
   OrganizationAdminOperationsProvider,
@@ -19,6 +19,7 @@ import {
   type AdminTenantSetting,
   type AdminTenantSettings,
 } from './organization-operations.js'
+import type { AdminSsoProvider } from './operations.js'
 import {
   CONFIRM_ARM_LOCKOUT_MS,
   uiKitResources,
@@ -27,7 +28,9 @@ import { renderWithProviders } from '../test-utils/render.js'
 import {
   createAdminOperations,
   makeAdminBackend,
+  providerFixture,
 } from '../test-utils/operations.js'
+import { createStepUpSession } from '../test-utils/session.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -84,6 +87,8 @@ function renderPage({
   settings = envelope([MFA, SSO]),
   listTenantSettings,
   writeTenantSetting,
+  ssoProviders = [],
+  session,
   language = 'zh-CN',
 }: {
   readonly settings?: AdminTenantSettings
@@ -94,6 +99,10 @@ function renderPage({
   readonly writeTenantSetting?: (
     input: AdminTenantSetSettingInput,
   ) => Promise<void>
+  /** The organization's SSO providers; the guard reads them. */
+  readonly ssoProviders?: readonly AdminSsoProvider[]
+  /** The session the page offers a sign-in exit through. */
+  readonly session?: ReturnType<typeof createStepUpSession>
   readonly language?: string
 } = {}) {
   const operations = createAdminOperations(
@@ -102,6 +111,7 @@ function renderPage({
         listTenantSettings === undefined
           ? Promise.resolve(settings)
           : listTenantSettings(settings),
+      listSsoProviders: () => Promise.resolve(ssoProviders),
       ...(writeTenantSetting === undefined ? {} : { writeTenantSetting }),
     }),
   )
@@ -109,7 +119,7 @@ function renderPage({
     <OrganizationAdminOperationsProvider operations={operations}>
       <OrganizationSecurityPage tenant={TENANT} />
     </OrganizationAdminOperationsProvider>,
-    { language },
+    { language, ...(session === undefined ? {} : { session }) },
   )
 }
 
@@ -137,9 +147,17 @@ describe('OrganizationSecurityPage', () => {
     // The internal keys never reach the page.
     expect(screen.queryByText(MFA.key)).toBeNull()
     expect(screen.queryByText(SSO.key)).toBeNull()
+    // Both admission policies apply from each member's next sign-in.
     expect(
-      screen.getByText(zhCN.organization.security.auditNote),
-    ).toBeInTheDocument()
+      screen.getAllByText(
+        new RegExp(zhCN.organization.security.effect.nextSignIn),
+      ),
+    ).toHaveLength(2)
+    expect(
+      screen.queryByText(
+        new RegExp(zhCN.organization.security.effect.immediate),
+      ),
+    ).toBeNull()
   })
 
   it('draws a platform-enforced policy as an enabled switch the tenant cannot move', async () => {
@@ -367,51 +385,126 @@ describe('OrganizationSecurityPage', () => {
   it('keeps an in-flight row disabled while another row saves', async () => {
     const user = userEvent.setup()
     const resolvers = new Map<string, () => void>()
+    // The SSO row is first and operable only because an enabled provider
+    // exists; the second row is the MFA policy, which needs no provider.
     renderPage({
-      settings: envelope([MFA, SSO]),
+      settings: envelope([SSO, MFA]),
+      ssoProviders: [providerFixture()],
       writeTenantSetting: (input) =>
         new Promise<void>((resolve) => {
           resolvers.set(`${input.namespace}.${input.key}`, resolve)
         }),
     })
 
-    const mfaSwitch = await screen.findByRole('switch', {
+    const ssoSwitch = await screen.findByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        SSO.title,
+      ),
+    })
+    const mfaSwitch = screen.getByRole('switch', {
       name: zhCN.organization.security.switchAria.replace(
         '{{title}}',
         MFA.title,
       ),
     })
+
+    await user.click(ssoSwitch)
+    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
+
+    // The second row saves on its own while the first write is still in
+    // flight.
+    await user.click(mfaSwitch)
+    expect(mfaSwitch).toBeDisabled()
+    expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
+    // The first row stays inert: its request has not settled, and accepting
+    // another click would put two writes of one key in flight.
+    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => {
+      resolvers.get('tenant.admission.require-sso')?.()
+      resolvers.get('tenant.admission.require-mfa')?.()
+    })
+    await waitFor(() => expect(ssoSwitch).toBeEnabled())
+    expect(mfaSwitch).toBeEnabled()
+  })
+
+  it('blocks enabling require-sso until an enabled provider exists', async () => {
+    renderPage()
+
+    // The provider read settles to "no enabled provider", which is what the
+    // notice states and what disables the switch.
+    expect(
+      await screen.findByText(zhCN.organization.security.sso.noProvider),
+    ).toBeInTheDocument()
     const ssoSwitch = screen.getByRole('switch', {
       name: zhCN.organization.security.switchAria.replace(
         '{{title}}',
         SSO.title,
       ),
     })
-
-    await user.click(mfaSwitch)
-    expect(mfaSwitch).toBeDisabled()
-    expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
-
-    // The second row saves on its own while the first write is still in
-    // flight.
-    await user.click(ssoSwitch)
+    expect(ssoSwitch).not.toBeChecked()
     expect(ssoSwitch).toBeDisabled()
-    expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
-    // The first row stays inert: its request has not settled, and accepting
-    // another click would put two writes of one key in flight.
-    expect(mfaSwitch).toBeDisabled()
-    expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
+  })
 
-    await act(async () => {
-      resolvers.get('tenant.admission.require-mfa')?.()
-      resolvers.get('tenant.admission.require-sso')?.()
+  it('does not block a policy that is already enabled', async () => {
+    renderPage({
+      settings: envelope([
+        MFA,
+        {
+          ...SSO,
+          effective_value: 'true',
+          tenant_value: 'true',
+          has_row: true,
+          source: 'tenant',
+        },
+      ]),
     })
-    await waitFor(() => expect(mfaSwitch).toBeEnabled())
+
+    const ssoSwitch = await screen.findByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        SSO.title,
+      ),
+    })
+    // The policy is on, so it stays possible to turn it off even though the
+    // organization has no provider.
+    expect(ssoSwitch).toBeChecked()
     expect(ssoSwitch).toBeEnabled()
+    expect(
+      screen.queryByText(zhCN.organization.security.sso.noProvider),
+    ).toBeNull()
+  })
+
+  it('offers the sign-in exit when the organization requires MFA', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const logout = vi.spyOn(session, 'logout').mockResolvedValue(undefined)
+    renderPage({
+      listTenantSettings: () =>
+        Promise.reject({
+          status: 401,
+          code: 'authn.insufficient_user_authentication',
+        }),
+      session,
+    })
+
+    // No retry clears the requirement; the exit names the fresh sign-in.
+    expect(
+      await screen.findByText(
+        zhCN.errors.authn.insufficient_user_authentication,
+      ),
+    ).toBeInTheDocument()
+    const relogin = screen.getByRole('button', {
+      name: zhCN.stepUp.relogin,
+    })
+    await user.click(relogin)
+    expect(logout).toHaveBeenCalledTimes(1)
   })
 
   it('renders a protected tenant read-only with no switches', async () => {
-    const user = userEvent.setup()
     renderPage({ settings: envelope([MFA, SSO], false) })
 
     expect(
@@ -431,18 +524,10 @@ describe('OrganizationSecurityPage', () => {
       ),
     ).toBeNull()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
-    // The rows and the audit note still render.
+    // The rows still render.
     expect(
       screen.getByRole('heading', { level: 3, name: MFA.title }),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText(zhCN.organization.security.auditNote),
-    ).toBeInTheDocument()
-    // Reading is still allowed, so refresh stays available.
-    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    expect(refresh).toBeEnabled()
-    await user.click(refresh)
-    expect(refresh).toBeInTheDocument()
   })
 
   it('names an unanswerable write seam as temporarily read-only and re-reads on retry', async () => {
@@ -532,9 +617,6 @@ describe('OrganizationSecurityPage', () => {
     expect(
       screen.getAllByText(enUS.organization.security.status.disabled),
     ).toHaveLength(2)
-    expect(
-      screen.getByText(enUS.organization.security.auditNote),
-    ).toBeInTheDocument()
   })
 
   it('has no axe violations', async () => {

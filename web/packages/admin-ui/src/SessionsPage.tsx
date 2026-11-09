@@ -205,6 +205,7 @@ export function SessionsPage() {
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('sessions.column.actions'),
       cellWrap: 'nowrap',
       cell: (session) => (

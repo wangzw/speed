@@ -42,16 +42,14 @@ import {
   LONG_TEXT_COLUMN_MAX_WIDTH,
   OneTimeValuePanel,
   PRIMARY_COLUMN_MAX_WIDTH,
-  RefreshButton,
   SectionCard,
-  pageRefreshRead,
-  usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { formatInstant } from '@speed/i18n'
 import { AdminPageHeader } from './internal/page-header.js'
 import { AdminAsyncSection } from './internal/async-section.js'
+import { AccountsIcon, InvitationsIcon } from './internal/icons.js'
 import {
   identityLabel,
   TenantAccountIdentity,
@@ -68,6 +66,7 @@ import {
 import { MemberPanel } from './internal/member-panel.js'
 import { RowActionMenu } from './internal/row-action-menu.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
+import { useAdminSession } from './internal/session.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { ADMIN_UI_NAMESPACE } from './resources.js'
 import { useDebouncedValue } from './internal/use-debounced-value.js'
@@ -261,6 +260,14 @@ export function OrganizationMembersPage({
   const operations = useOrganizationAdminOperations()
   const invitationLink = useAdminInvitationLink()
   const resolveErrorText = useAdminUiErrorText()
+  const session = useAdminSession()
+  // The tenant admission layer's multi-factor refusal cannot be cleared by
+  // any retry: the organization requires a fresh sign-in. The exit ends the
+  // session so the host's session gate returns to its sign-in surface.
+  // Without a session there is no exit to offer.
+  const relogin = useCallback(() => {
+    void session?.logout().catch(() => undefined)
+  }, [session])
 
   // --- Members ----------------------------------------------------------
 
@@ -495,14 +502,6 @@ export function OrganizationMembersPage({
   useEffect(() => {
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
-
-  const pageRefresh = usePageRefresh(
-    [
-      pageRefreshRead('members', members),
-      pageRefreshRead('invitations', invitations),
-    ],
-    resetPageFeedback,
-  )
 
   const issuedValue =
     issued === null
@@ -743,6 +742,7 @@ export function OrganizationMembersPage({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('members.column.actions'),
       cellWrap: 'nowrap',
       cell: (member) => (
@@ -829,6 +829,7 @@ export function OrganizationMembersPage({
     },
     {
       id: 'actions',
+      align: 'right',
       header: t('invitations.column.actions'),
       cellWrap: 'nowrap',
       cell: (invitation) => {
@@ -908,20 +909,14 @@ export function OrganizationMembersPage({
           { label: t('shell.title') },
           { label: t('invitations.title') },
         ]}
-        actions={
-          <RefreshButton
-            busy={pageRefresh.busy}
-            writePending={
-              membersFeedback.pending || invitationFeedback.pending
-            }
-            label={t('common.refresh')}
-            onClick={pageRefresh.refresh}
-          />
-        }
         sx={{ mb: 2 }}
       />
 
-      <SectionCard title={t('members.title')} sx={{ mb: 3 }}>
+      <SectionCard
+        title={t('members.title')}
+        icon={<AccountsIcon size={24} />}
+        sx={{ mb: 3 }}
+      >
         {/* The toolbar stays outside the async section: a loading, empty or
             failed list must not swallow the controls that change it. */}
         <Box
@@ -1038,6 +1033,7 @@ export function OrganizationMembersPage({
                   })
                 : t('members.empty.description'),
           }}
+          mfaRelogin={session === null ? undefined : relogin}
         >
           {(settled) => (
             <DataTable
@@ -1063,7 +1059,11 @@ export function OrganizationMembersPage({
         </Box>
       </SectionCard>
 
-      <SectionCard title={t('invitations.section.title')} sx={{ mb: 3 }}>
+      <SectionCard
+        title={t('invitations.section.title')}
+        icon={<InvitationsIcon size={24} />}
+        sx={{ mb: 3 }}
+      >
         <Box
           sx={{
             display: 'flex',
@@ -1243,6 +1243,7 @@ export function OrganizationMembersPage({
                     status: statusLabel(statusFilter, t),
                   }),
           }}
+          mfaRelogin={session === null ? undefined : relogin}
         >
           {(settled) => (
             <DataTable

@@ -46,6 +46,7 @@ import {
   WriteFeedbackRegion,
 } from '@speed/ui-kit'
 import { identityLabel } from './internal/account-identity.js'
+import { PermissionsIcon } from './internal/icons.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { useOrganizationAdminOperations } from './organization-operations.js'
 import type { AdminTenantProfile } from './organization-operations.js'
@@ -186,6 +187,7 @@ export function TenantOwnership({
     return feedback.outcome === null ? null : (
       <SectionCard
         title={t('tenantProfile.ownership.title')}
+        icon={<PermissionsIcon size={24} />}
         description={t('tenantProfile.ownership.description')}
         sx={{ mb: 3 }}
       >
@@ -256,6 +258,7 @@ export function TenantOwnership({
   return (
     <SectionCard
       title={t('tenantProfile.ownership.title')}
+      icon={<PermissionsIcon size={24} />}
       description={t('tenantProfile.ownership.description')}
       sx={{ mb: 3 }}
     >

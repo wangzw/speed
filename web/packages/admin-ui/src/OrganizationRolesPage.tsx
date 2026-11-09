@@ -36,16 +36,13 @@ import Skeleton from '@mui/material/Skeleton'
 import { usePermission } from '@speed/auth-core'
 import {
   ListSkeleton,
-  RefreshButton,
   SectionCard,
   errorCodeOf,
-  pageRefreshRead,
-  usePageRefresh,
   useWriteFeedback,
-  visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { AdminPageHeader } from './internal/page-header.js'
 import { AdminAsyncSection } from './internal/async-section.js'
+import { AccountsIcon, PermissionsIcon } from './internal/icons.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { adminRouteById, useAdminRouteTable } from './internal/route-table.js'
@@ -135,7 +132,6 @@ export function OrganizationRolesPage({
   const [catalogExpanded, setCatalogExpanded] = useState(false)
   const [failedRole, setFailedRole] = useState<string | null>(null)
   const [failedGrant, setFailedGrant] = useState<string | null>(null)
-  const [roleGone, setRoleGone] = useState(false)
   const [usageFrame, setUsageFrame] = useState<UsagePageFrame>(() =>
     firstUsagePage(tenant, ''),
   )
@@ -189,8 +185,6 @@ export function OrganizationRolesPage({
     grantsFeedback.outcome,
     resolveErrorText,
   )
-  const anyPending = roleFeedback.pending || grantsFeedback.pending
-
   const roleRows = roles.data
   // Creating the first role of a tenant has no row to read `can_manage`
   // from, so the session's tenant set covers that one case; every other
@@ -217,7 +211,6 @@ export function OrganizationRolesPage({
     setFailedRole(null)
     setFailedGrant(null)
     setDescriptionFailed(null)
-    setRoleGone(false)
   }, [roleFeedback.reset, grantsFeedback.reset])
 
   // A controlled tenant arrives as a prop: every selection, draft and
@@ -231,45 +224,11 @@ export function OrganizationRolesPage({
 
   const selectRole = (role: string) => {
     setSelectedRole(role)
-    setRoleGone(false)
     grantsFeedback.reset()
     setFailedGrant(null)
     setDescriptionFailed(null)
     setUsageFrame(firstUsagePage(tenant, role))
   }
-
-  const pageRefresh = usePageRefresh(
-    [
-      pageRefreshRead('roles', roles, {
-        // A successful re-read that no longer lists the selected role
-        // clears the selection and announces it; a failed read keeps it,
-        // with the stale marker telling the story.
-        onSettled: (settled) => {
-          if (settled.status !== 'success' || settled.data === undefined) {
-            return
-          }
-          const selected = selectedRoleRef.current
-          if (
-            selected === '' ||
-            settled.data.some((role) => role.role === selected)
-          ) {
-            return
-          }
-          setSelectedRole('')
-          grantsFeedback.reset()
-          setFailedGrant(null)
-          setUsageFrame(firstUsagePage(tenant, ''))
-          setRoleGone(true)
-        },
-      }),
-      pageRefreshRead('permissions', catalog, {
-        enabled: tenant !== '' && catalog.isEnabled,
-      }),
-      pageRefreshRead('grants', grants),
-      pageRefreshRead('role-bindings', roleBindings),
-    ],
-    resetPageFeedback,
-  )
 
   const createRole = async (draft: RoleCreateDraft): Promise<boolean> => {
     let landed = false
@@ -427,24 +386,14 @@ export function OrganizationRolesPage({
           { label: t('shell.title') },
           { label: t('organization.nav.roles') },
         ]}
-        actions={
-          <RefreshButton
-            busy={pageRefresh.busy}
-            writePending={anyPending}
-            label={t('common.refresh')}
-            onClick={pageRefresh.refresh}
-          />
-        }
         sx={{ mb: 2 }}
       />
 
-      {/* The standing role-disappeared announcement: mounted with the page,
-          filled only when a refresh's roles read drops the selection. */}
-      <Box component="p" role="status" sx={visuallyHiddenSx}>
-        {roleGone ? t('permissions.roles.selectionCleared') : ''}
-      </Box>
-
-      <SectionCard title={t('permissions.roles.title')} sx={{ mb: 3 }}>
+      <SectionCard
+        title={t('permissions.roles.title')}
+        icon={<PermissionsIcon size={24} />}
+        sx={{ mb: 3 }}
+      >
         {canManage && (
           <RoleCreateForm
             roles={roleRows ?? []}
@@ -498,7 +447,11 @@ export function OrganizationRolesPage({
         </Box>
       </SectionCard>
 
-      <SectionCard title={t('permissions.grants.title')} sx={{ mb: 3 }}>
+      <SectionCard
+        title={t('permissions.grants.title')}
+        icon={<PermissionsIcon size={24} />}
+        sx={{ mb: 3 }}
+      >
         <RoleGrantsSection
           grants={grants}
           catalog={catalog.data ?? []}
@@ -514,7 +467,11 @@ export function OrganizationRolesPage({
         />
       </SectionCard>
 
-      <SectionCard title={t('permissions.usage.title')} sx={{ mb: 3 }}>
+      <SectionCard
+        title={t('permissions.usage.title')}
+        icon={<AccountsIcon size={24} />}
+        sx={{ mb: 3 }}
+      >
         <RoleUsageSection
           role={selectedRoleRow}
           bindings={roleBindings}

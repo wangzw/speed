@@ -31,6 +31,7 @@
       "unavailable": "The service is temporarily unavailable. Try again later.",
       "human_verification_required": "Please confirm you are human, then try again.",
       "sso_required": "This action requires re-authentication through enterprise single sign-on. Sign in again.",
+      "insufficient_user_authentication": "This organization requires multi-factor authentication. Sign in again to complete it.",
       "cannot_suspend_self": "You cannot suspend your own membership. Ask another administrator to do it."
     },
     "authz": {
@@ -113,6 +114,7 @@
       "sso": {
         "title": "Require enterprise single sign-on",
         "description": "Members must sign in through one of this organization's own identity providers.",
+        "noProvider": "Register and enable at least one SSO provider in this organization before requiring members to sign in through it; otherwise the organization becomes unreachable.",
         "impact": "Members will no longer be required to sign in through the organization's own identity provider."
       },
       "status": {
@@ -126,7 +128,8 @@
         "line": "{{label}}: {{value}}"
       },
       "effect": {
-        "immediate": "All members as soon as it is saved"
+        "immediate": "All members as soon as it is saved",
+        "nextSignIn": "All members, from their next sign-in"
       },
       "impact": {
         "generic": "Members of this organization will no longer be bound by this policy."
@@ -148,7 +151,6 @@
           "description": "This deployment cannot confirm right now whether changes can be saved, so these policies are read-only for the moment. Read them again and retry."
         }
       },
-      "auditNote": "These changes are written to the audit record.",
       "loading": "Loading security policies",
       "empty": {
         "title": "No security policies to configure",

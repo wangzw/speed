@@ -24,19 +24,18 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { formatInstant } from '@speed/i18n'
 import {
+  FORM_MAX_WIDTH,
   ListSkeleton,
-  RefreshButton,
   SectionCard,
-  pageRefreshRead,
-  usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
-import { DefinitionRow } from './internal/layout.js'
+import { ProfileIcon, SettingsIcon } from './internal/icons.js'
 import { AdminPageHeader } from './internal/page-header.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import {
@@ -110,6 +109,48 @@ function statusLabel(status: string, t: (key: string) => string): string {
     : t('tenants.status.other')
 }
 
+/** The chip colour a roster state carries: served, paused, or gone. */
+function statusColorOf(
+  status: string,
+): 'success' | 'warning' | 'error' | 'default' {
+  switch (status) {
+    case 'active':
+      return 'success'
+    case 'disabled':
+      return 'warning'
+    case 'deleted':
+      return 'error'
+    default:
+      return 'default'
+  }
+}
+
+/** One identity field: its label above its value, the way the account pages
+ * stack theirs, rather than a two-column definition row. */
+function ProfileField({
+  label,
+  value,
+}: {
+  readonly label: string
+  readonly value: string
+}) {
+  return (
+    <Box>
+      <Typography variant="body1" component="dt" sx={{ fontWeight: 600 }}>
+        {label}
+      </Typography>
+      <Typography
+        variant="body2"
+        component="dd"
+        sx={{ margin: 0, mt: 0.5, wordBreak: 'break-all' }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  )
+}
+
+
 /** The profile's four values as a stable signature, so a refetch that
  * answered the same values does not overwrite an operator's draft. */
 function profileSignature(profile: AdminTenantProfile): string {
@@ -133,7 +174,7 @@ export function TenantProfilePage({
   const [draft, setDraft] = useState<TenantProfileFields | null>(null)
   // A page refresh remounts the ownership card, withdrawing its dialog,
   // draft and feedback together with the re-read.
-  const [ownershipEpoch, setOwnershipEpoch] = useState(0)
+  const [ownershipEpoch] = useState(0)
   // The values the draft was last built from. A settled read whose values
   // actually changed (a landed save, a refresh) replaces the draft; a
   // background refetch with the same values leaves an edit in place.
@@ -149,18 +190,6 @@ export function TenantProfilePage({
     appliedSignature.current = signature
     setDraft(profileFieldsOf(settled))
   }, [settled])
-
-  // The read is the page's one body read; the refresh re-reads it and
-  // withdraws the draft and any result that described the previous answer.
-  const refresh = usePageRefresh(
-    [pageRefreshRead('tenant-profile', profile)],
-    () => {
-      setDraft(null)
-      appliedSignature.current = ''
-      feedback.reset()
-      setOwnershipEpoch((epoch) => epoch + 1)
-    },
-  )
 
   const fields: TenantProfileFields =
     draft ??
@@ -197,14 +226,6 @@ export function TenantProfilePage({
           { label: t('shell.title') },
           { label: t('organization.nav.profile') },
         ]}
-        actions={
-          <RefreshButton
-            busy={refresh.busy}
-            writePending={feedback.pending}
-            label={t('common.refresh')}
-            onClick={refresh.refresh}
-          />
-        }
         sx={{ mb: 2 }}
       />
 
@@ -244,15 +265,53 @@ export function TenantProfilePage({
             <>
               <SectionCard
                 title={t('tenantProfile.identity.title')}
+                icon={<ProfileIcon size={24} />}
                 description={t('tenantProfile.identity.description')}
                 sx={{ mb: 3 }}
               >
-                <Box component="dl" sx={{ margin: 0 }}>
-                  <DefinitionRow
-                    label={t('tenantProfile.field.name')}
-                    value={settledProfile.name}
-                  />
-                  <DefinitionRow
+                <Box
+                  component="dl"
+                  sx={{
+                    margin: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                    maxWidth: FORM_MAX_WIDTH,
+                  }}
+                >
+                  <Box>
+                    <Typography
+                      variant="body1"
+                      component="dt"
+                      sx={{ fontWeight: 600 }}
+                    >
+                      {t('tenantProfile.field.name')}
+                    </Typography>
+                    <Box
+                      component="dd"
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        margin: 0,
+                        mt: 0.5,
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        sx={{ wordBreak: 'break-all' }}
+                      >
+                        {settledProfile.name}
+                      </Typography>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={statusColorOf(settledProfile.status)}
+                        label={statusLabel(settledProfile.status, t)}
+                      />
+                    </Box>
+                  </Box>
+                  <ProfileField
                     label={t('tenantProfile.field.owner')}
                     value={ownerLabelOf(
                       settledProfile.ownerDisplayName,
@@ -260,46 +319,52 @@ export function TenantProfilePage({
                       t('tenantProfile.owner.unnamed'),
                     )}
                   />
-                  <DefinitionRow
-                    label={t('tenantProfile.field.status')}
-                    value={statusLabel(settledProfile.status, t)}
-                  />
-                  <DefinitionRow
+                  <ProfileField
                     label={t('tenantProfile.field.createdAt')}
                     value={formatInstant(settledProfile.createdAt, i18n.language, {
                       timeZone: 'UTC',
                     })}
                   />
                 </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
                   {t('tenantProfile.identity.nameHint')}
                 </Typography>
               </SectionCard>
 
               <SectionCard
                 title={t('tenantProfile.form.title')}
+                icon={<SettingsIcon size={24} />}
                 description={t('tenantProfile.form.description')}
               >
                 {deleted ? (
                   // A tombstone is read-only: the profile can no longer be
                   // written, so the page shows the stored values and no form.
-                  <Box component="dl" sx={{ margin: 0 }}>
-                    <DefinitionRow
+                  <Box
+                    component="dl"
+                    sx={{
+                      margin: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                      maxWidth: FORM_MAX_WIDTH,
+                    }}
+                  >
+                    <ProfileField
                       label={t('tenantProfile.field.displayName')}
                       value={displayNameOf(
                         settledProfile.displayName,
                         settledProfile.name,
                       )}
                     />
-                    <DefinitionRow
+                    <ProfileField
                       label={t('tenantProfile.field.description')}
                       value={settledProfile.description || t('common.emptyValue')}
                     />
-                    <DefinitionRow
+                    <ProfileField
                       label={t('tenantProfile.field.contactEmail')}
                       value={settledProfile.contactEmail || t('common.emptyValue')}
                     />
-                    <DefinitionRow
+                    <ProfileField
                       label={t('tenantProfile.field.website')}
                       value={settledProfile.website || t('common.emptyValue')}
                     />

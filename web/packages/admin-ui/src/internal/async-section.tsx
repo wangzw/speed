@@ -39,8 +39,13 @@
  * same request is refused again while the session is a local one. A caller
  * that offers a sign-in exit passes `ssoRelogin`; the section then names
  * the refusal through the console's resolver and offers that exit in place
- * of the retryable placeholder. Every other failure, and a caller that
- * passes no exit, keeps the branches above.
+ * of the retryable placeholder. The layer's `401
+ * authn.insufficient_user_authentication` refusal is the same shape of
+ * answer for a tenant that requires multi-factor authentication: no retry
+ * raises the session's strength, and a fresh sign-in does. A caller that
+ * offers the sign-in exit passes `mfaRelogin`, and the section renders it
+ * the same way. Every other failure, and a caller that passes no exit,
+ * keeps the branches above.
  */
 
 import type { ReactNode } from 'react'
@@ -139,6 +144,16 @@ export interface AdminAsyncSectionProps<Payload> {
    * other failure, and a caller that omits it, keeps the branches above.
    */
   readonly ssoRelogin?: () => void
+  /**
+   * The re-login exit for the tenant admission layer's multi-factor
+   * refusal. When the read settles
+   * `authn.insufficient_user_authentication`, the section names the
+   * refusal and renders this action instead of the retryable placeholder:
+   * a new sign-in is what satisfies the organization's requirement, while
+   * a retry of the same request is refused again. Every other failure, and
+   * a caller that omits it, keeps the branches above.
+   */
+  readonly mfaRelogin?: () => void
 }
 
 /** The console async section: an AsyncSection whose failure branch splits a 403 out. */
@@ -150,6 +165,7 @@ export function AdminAsyncSection<Payload>({
   headingLevel = 'h2',
   refreshing,
   ssoRelogin,
+  mfaRelogin,
   ...rest
 }: AdminAsyncSectionProps<Payload>) {
   const { t } = useAdminUiTranslation()
@@ -184,6 +200,25 @@ export function AdminAsyncSection<Payload>({
         action={
           <Button onClick={ssoRelogin}>{t('stepUp.relogin')}</Button>
         }
+        headingLevel={headingLevel}
+      />
+    )
+  }
+  // The tenant admission layer's multi-factor refusal is answered the same
+  // way: no retry of the same request raises the session's strength, while
+  // a new sign-in does. Only a surface that offers the sign-in exit takes
+  // this branch.
+  if (
+    !rest.pending &&
+    mfaRelogin !== undefined &&
+    stepUpReasonOf(failureCode) === 'mfa'
+  ) {
+    return (
+      <EmptyState
+        variant="error"
+        title={errorState.title}
+        description={resolve(failureCode)}
+        action={<Button onClick={mfaRelogin}>{t('stepUp.relogin')}</Button>}
         headingLevel={headingLevel}
       />
     )
