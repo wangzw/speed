@@ -1051,15 +1051,15 @@ names the fixed part of that wiring, and no configuration file repeats it:
   and identity-provider management — the set is empty here because
   neither the notification surface nor the object store declares a permission
   point), and the account's binding. The tenant's identifier is
-  `personal-<account-id>`; its alias is the account's username. A user account
+  `personal-<account-id>`; its name is the account's username. A user account
   always has a username; the seam refuses an empty one with
-  `ErrUsernameMissing` and no derived alias exists. A service account writes
+  `ErrUsernameMissing` and no derived name exists. A service account writes
   nothing. The status and deletion hooks
   follow the account after its commit, and the deletion hook winds the tenant
   down when the transaction's own tombstone has not already done so.
   `ProvisionAccountDeletion` clears the account's bindings, deletes the
   tenant-admin role and writes the tombstone in the account's transaction, so
-  the alias is retained and the username is never reused.
+  the name is retained and the username is never reused.
 
   The same module delivers `tenant.KindResolver`. It compares a row's
   identifier with the caller's own derived `personal-<account-id>` exactly, so
@@ -1091,7 +1091,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   declares the conditional feature `org.create`; the switch is
   `org.create.enabled` in the defaults document, and a deployment that turns it
   off gets the account endpoint's own 404 on that path. The host writes no
-  creation logic: the module owns the eligibility checks, the alias and profile
+  creation logic: the module owns the eligibility checks, the name and profile
   shape, the two account bounds, the thirty-second creation lock and the audit
   row. The host's `tenant.Provisioner` writes the tenant, its `tenant-admin`
   role and the creator's membership and binding; the membership source is

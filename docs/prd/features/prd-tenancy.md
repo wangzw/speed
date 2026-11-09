@@ -517,7 +517,7 @@
 
 - **验收**：owner 可以删除自己的组织；平台员工可以删除任意业务组织；非 owner 的 tenant-admin 不能删除；删除需要输入组织名称确认。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`（非 owner 的 tenant-admin 看不到删除入口）；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the name, deletes the organization, and the name stays taken`；`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls`（非 owner 的 tenant-admin 看不到删除入口）；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`
 
 ### REQ-tenancy-063
 
@@ -533,7 +533,7 @@
 
 - **验收**：删除后按该组织的名称发起请求得到与不存在相同的结果；重新创建相同名称被拒绝；界面没有恢复该组织的入口；数据在物理删除前保留。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the alias, deletes the organization, and the alias stays taken`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（覆盖删除与名称不可复用；删除后按名称的请求与无恢复入口不在用例内驱动）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the owner types the name, deletes the organization, and the name stays taken`；`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（覆盖删除与名称不可复用；删除后按名称的请求与无恢复入口不在用例内驱动）
 
 ### REQ-tenancy-065
 

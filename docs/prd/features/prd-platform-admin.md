@@ -235,7 +235,7 @@
 
 - **验收**：租户行提供转移所有者与删除组织操作；没有名称改名控件；转移成功后出现点名新所有者的确认；删除后该行以墓碑呈现。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`；`operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`；`operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`
 
 ### REQ-platform-admin-052
 
@@ -267,7 +267,7 @@
 
 - **验收**：转移所有者、删除组织或启停成功后，出现点名该租户的确认。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`；`operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（启停的确认由 admin-ui 单测覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`；`operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（启停的确认由 admin-ui 单测覆盖）
 
 ### REQ-platform-admin-056
 
@@ -939,4 +939,4 @@
 
 - **验收**：读取已删除租户的详情返回 200 并显示墓碑；对墓碑发起资料写入、所有者转移或状态变更得到 409；平台没有新增的租户删除权限码，删除操作按租户管理权限判定。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its alias cannot be reused`（覆盖墓碑行与名称、标识不可复用；墓碑详情读取与写入拒绝由后端测试覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（覆盖墓碑行与名称、标识不可复用；墓碑详情读取与写入拒绝由后端测试覆盖）
