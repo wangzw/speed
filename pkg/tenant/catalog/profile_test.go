@@ -372,6 +372,52 @@ func readCreatedAt(t *testing.T, r *roster, id string) time.Time {
 // The case forces the handle's auto-create clock into a non-UTC zone. A value
 // left to gorm would be taken from that clock and land with the offset; only an
 // explicit UTC value can pass.
+// TestTheSQLiteProfileMigrationCarriesATableHoldingRows holds the migration to
+// the database it actually meets. SQLite refuses an ADD COLUMN whose default is
+// not a constant once the table holds a row, so a deployment upgrading a
+// populated roster is the case that fails, not an empty one.
+func TestTheSQLiteProfileMigrationCarriesATableHoldingRows(t *testing.T) {
+	handle := openHandle(t)
+	for _, name := range []string{"0001_tenants.sql", "0002_tenants_disabled_by.sql"} {
+		ddl, err := fs.ReadFile(migrationsFS, "sqlite/"+name)
+		if err != nil {
+			t.Fatalf("reading sqlite/%s: %v", name, err)
+		}
+		if err := handle.Exec(string(ddl)).Error; err != nil {
+			t.Fatalf("applying sqlite/%s: %v", name, err)
+		}
+	}
+	if err := handle.Exec(
+		"INSERT INTO tenants (id, name, status, disabled_by) VALUES ('t_system', 'system', 1, 0)").Error; err != nil {
+		t.Fatalf("writing the row the migration has to carry: %v", err)
+	}
+
+	ddl, err := fs.ReadFile(migrationsFS, "sqlite/0003_tenants_profile.sql")
+	if err != nil {
+		t.Fatalf("reading sqlite/0003_tenants_profile.sql: %v", err)
+	}
+	if err := handle.Exec(string(ddl)).Error; err != nil {
+		t.Fatalf("applying the SQLite profile migration over a table holding a row: %v", err)
+	}
+
+	var carried struct {
+		ID        string
+		Name      string
+		Status    int
+		CreatedAt sql.NullString
+	}
+	if err := handle.Raw(
+		"SELECT id, name, status, created_at FROM tenants WHERE id = 't_system'").Scan(&carried).Error; err != nil {
+		t.Fatalf("reading the carried row: %v", err)
+	}
+	if carried.ID != "t_system" || carried.Name != "system" || carried.Status != 1 {
+		t.Errorf("the migration carried the row as %+v, want it unchanged", carried)
+	}
+	if !carried.CreatedAt.Valid || carried.CreatedAt.String == "" {
+		t.Errorf("the carried row reads no creation time, want the migration's default instant")
+	}
+}
+
 func TestPutRecordsTheCreationTimeInUTC(t *testing.T) {
 	r := rosterOver(t, "")
 	r.handle.NowFunc = func() time.Time {
