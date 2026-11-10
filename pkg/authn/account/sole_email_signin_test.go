@@ -110,7 +110,8 @@ func TestAnImportKeepsTheSignInAxisOfItsSourceRecord(t *testing.T) {
 
 // TestCreateChoosesASoleProvedEmailAsALoginWay holds the channels that prove an
 // address at creation: each makes the account's only address a login way, while
-// the unproved channels leave both axes for the holder.
+// the unproved channels, an invitation's included, leave both axes for the
+// holder.
 func TestCreateChoosesASoleProvedEmailAsALoginWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -121,7 +122,7 @@ func TestCreateChoosesASoleProvedEmailAsALoginWay(t *testing.T) {
 		}{
 			{"by-idp", authn.VerifiedViaIDPPrefix + "google", true},
 			{"by-code", authn.VerifiedViaEmailCode, true},
-			{"by-invite", authn.VerifiedViaInvite, true},
+			{"by-invite", authn.VerifiedViaInvite, false},
 			{"by-admin", authn.VerifiedViaAdmin, false},
 			{"by-self", authn.VerifiedViaSelf, false},
 			{"by-import-unverified", authn.VerifiedViaImportUnverified, false},

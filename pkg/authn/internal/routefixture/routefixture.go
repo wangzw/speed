@@ -51,6 +51,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/mount"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/routecontract"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -99,6 +100,7 @@ type (
 	humanVerifier    struct{ authn.HumanVerifier }
 	auditCap         struct{ audit.Audit }
 	settingsStore    struct{ settings.Store }
+	keyValue         struct{ kv.KV }
 )
 
 // impersonation carries the read the administration module asserts an
@@ -204,6 +206,7 @@ var standIns = map[core.Token]func() core.Module{
 	},
 	(*audit.Audit)(nil):    func() core.Module { return standIn("audit", &auditCap{}, (*audit.Audit)(nil)) },
 	(*settings.Store)(nil): func() core.Module { return standIn("settings-store", &settingsStore{}, (*settings.Store)(nil)) },
+	(*kv.KV)(nil):          func() core.Module { return standIn("key-value", &keyValue{}, (*kv.KV)(nil)) },
 }
 
 // Seams is the stand-in set for exactly the capabilities named, which are the

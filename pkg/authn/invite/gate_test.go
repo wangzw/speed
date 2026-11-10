@@ -1,7 +1,6 @@
 package invite
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -190,80 +189,31 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	}
 }
 
-// TestAcceptingAnInvitationVerifiesThePendingOwner holds the acceptance merge: an
-// address that is nobody's identifier but is the pending contact of one account
-// gets that account the membership and the address as an invite-proved
-// identifier, and no second account is created.
-func TestAcceptingAnInvitationVerifiesThePendingOwner(t *testing.T) {
+// TestAcceptDoesNotCreateOrProveAnAccount holds the removed paths: an acceptance
+// never opens an account for an address that has none, never reads the pending
+// contact of a self-registration, and never writes an identifier. A caller
+// without a proven address is refused and the invitation stays pending.
+func TestAcceptDoesNotCreateOrProveAnAccount(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
 	h.verification.owner = "acct-pending"
 	h.verification.pending = true
+	caller := h.acceptCtx("acct-caller", "caller@example.com")
 
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
-	if err != nil {
-		t.Fatalf("accepting: %v", err)
-	}
-	if mem.Account != "acct-pending" {
-		t.Errorf("the membership names %q, want the pending owner", mem.Account)
+	if _, err := h.p.Accept(caller, AcceptInvite{Token: issued.Token, Username: "alice"}); !errors.Is(err, ErrInvitationEmailUnproved) {
+		t.Fatalf("Accept = %v, want ErrInvitationEmailUnproved", err)
 	}
 	if h.admin.creates != 0 {
 		t.Errorf("the acceptance created %d account(s), want none", h.admin.creates)
 	}
-	if len(h.admin.added) != 1 {
-		t.Fatalf("the acceptance wrote %d identifier(s), want one", len(h.admin.added))
-	}
-	added := h.admin.added[0]
-	if added.Account != "acct-pending" || added.Kind != authn.IdentifierEmail ||
-		added.Value != "alice@example.com" || added.Via.Via != VerifiedViaInvite {
-		t.Errorf("the identifier written is %+v, want alice@example.com through invite on the pending owner", added)
-	}
-	if len(h.members.puts) != 1 || h.members.puts[0].Account != "acct-pending" ||
-		h.members.puts[0].Tenant != "tenant-a" || h.members.puts[0].Source != SourceInvite {
-		t.Errorf("memberships written = %+v, want one invite membership for the pending owner", h.members.puts)
-	}
-	if h.verification.contactReads != 1 {
-		t.Errorf("the reverse lookup ran %d times, want once", h.verification.contactReads)
-	}
-}
-
-// TestAcceptingAnInvitationWithNoPendingOwnerCreatesAnAccount holds the
-// unchanged path: a reverse lookup that misses leaves the old behaviour, which
-// creates the account.
-func TestAcceptingAnInvitationWithNoPendingOwnerCreatesAnAccount(t *testing.T) {
-	h := newHarness(t)
-	issued := h.issue("tenant-a", "alice@example.com")
-
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "alice"})
-	if err != nil {
-		t.Fatalf("accepting: %v", err)
-	}
-	if h.admin.creates != 1 {
-		t.Errorf("the acceptance created %d account(s), want one", h.admin.creates)
-	}
 	if len(h.admin.added) != 0 {
-		t.Errorf("the acceptance wrote %d identifier(s) on an existing account, want none", len(h.admin.added))
+		t.Errorf("the acceptance wrote %d identifier(s), want none", len(h.admin.added))
 	}
-	if mem.Account != "acct-created" {
-		t.Errorf("the membership names %q, want the created account", mem.Account)
+	if h.verification.contactReads != 0 {
+		t.Errorf("the acceptance read the pending-contact table %d time(s), want none", h.verification.contactReads)
 	}
-}
-
-// TestAnUnreadablePendingOwnerKeepsTheInvitationPending holds the failure
-// settlement: the reverse lookup failing is neither a hit nor a miss, so the
-// redemption fails, the invitation returns to pending for a retry, and no
-// account is created.
-func TestAnUnreadablePendingOwnerKeepsTheInvitationPending(t *testing.T) {
-	h := newHarness(t)
-	issued := h.issue("tenant-a", "alice@example.com")
-	h.verification.pendingErr = authn.ErrUnavailable
-
-	_, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
-	if !errors.Is(err, authn.ErrUnavailable) {
-		t.Fatalf("Accept = %v, want ErrUnavailable", err)
-	}
-	if h.admin.creates != 0 {
-		t.Errorf("a failed reverse lookup created %d account(s), want none", h.admin.creates)
+	if h.members.count != 0 {
+		t.Errorf("the acceptance wrote %d membership(s), want none", h.members.count)
 	}
 	if got := h.row(issued.Invitation.ID); got.Status != statusPending {
 		t.Errorf("the invitation is %d, want pending so a retry is possible", got.Status)

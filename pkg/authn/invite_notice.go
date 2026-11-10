@@ -22,9 +22,10 @@ type InviteNotifier interface {
 	// with the cause of a failure: InviteSent with a nil error when the carrier
 	// accepted the message, InviteFailed with the carrier's error when it did
 	// not or its outcome is unknown, and InviteNotConfigured with a nil error
-	// when the deployment chose to send no mail. A failed delivery does not undo
-	// the invitation: the caller logs it and still answers the issue with the
-	// one-time link.
+	// when the deployment sends no mail to the recipient — no channel
+	// configured, or only a carrier that reaches no recipient. A failed
+	// delivery does not undo the invitation: the caller logs it and still
+	// answers the issue with the one-time link.
 	Notify(ctx context.Context, notice InviteNotice) (InviteDelivery, error)
 }
 
@@ -60,7 +61,7 @@ type InviteDelivery uint8
 
 // The delivery outcomes of an invitation notice.
 const (
-	InviteNotConfigured InviteDelivery = iota // no channel was configured; nothing was sent
+	InviteNotConfigured InviteDelivery = iota // no channel reaching the recipient was configured; nothing was sent
 	InviteSent                                // the carrier accepted the message
 	InviteFailed                              // the carrier refused it or left the outcome unknown
 )

@@ -73,6 +73,14 @@ export const test = base.extend<{
    */
   seedInvitee: boolean
   /**
+   * Send invitation notices through the review mail carrier. A journey that
+   * has to open the acceptance link itself turns it off, so the issue answer
+   * carries the token (`not_configured`): the process log masks an `spd_inv_`
+   * token, and a sent notice withholds the token from the answer. Every other
+   * spec keeps the template's carrier.
+   */
+  invitationMail: boolean
+  /**
    * Seed the social journey's account that already holds the identity
    * provider's address. A spec sets `test.use({ seedSocialAccount: true })` for
    * the branch where the provider's verified address belongs to an account;
@@ -174,6 +182,7 @@ export const test = base.extend<{
   seedMember: [false, { option: true }],
   seedImpersonation: [false, { option: true }],
   seedInvitee: [false, { option: true }],
+  invitationMail: [true, { option: true }],
   seedSocialAccount: [false, { option: true }],
   socialIdentityProvider: [false, { option: true }],
   enterpriseSSO: [false, { option: true }],
@@ -194,6 +203,7 @@ export const test = base.extend<{
       seedMember,
       seedImpersonation,
       seedInvitee,
+      invitationMail,
       seedSocialAccount,
       socialIdentityProvider,
       enterpriseSSO,
@@ -217,6 +227,7 @@ export const test = base.extend<{
       seedMember,
       seedImpersonation,
       seedInvitee,
+      invitationMail,
       seedSocialAccount,
       socialIdentityProvider,
       enterpriseSSO,

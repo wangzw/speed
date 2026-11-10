@@ -734,13 +734,17 @@ export function InvitationsPage({
   }
 
   // The value the issued block hands over: the host's absolute acceptance
-  // link when it supplies a builder, the bare token otherwise.
+  // link when it supplies a builder, the bare token otherwise. A notice whose
+  // delivery succeeded carries no token -- the recipient already holds the
+  // link -- so there is nothing to hand over and no control that would copy
+  // an empty value.
+  const issuedToken = issued?.token
   const issuedValue =
-    issued === null
+    issuedToken === undefined
       ? ''
       : invitationLink === undefined
-        ? issued.token
-        : acceptanceUrl(invitationLink(issued.token))
+        ? issuedToken
+        : acceptanceUrl(invitationLink(issuedToken))
 
   return (
     <Box>
@@ -840,7 +844,7 @@ export function InvitationsPage({
             </Box>
             {issued != null && (
               <InvitationLinkNotice
-                key={issuedValue}
+                key={issuedValue === '' ? issued.invitation.id : issuedValue}
                 notice={issued}
                 value={issuedValue}
                 hasBuilder={invitationLink !== undefined}
@@ -1081,6 +1085,11 @@ function acceptanceUrl(link: string): string {
  * it. The panel is one polite live region with an explicit close control
  * whose accessible name names the tenant and the invitee, and its copy
  * control hands over the complete value.
+ *
+ * A notice whose delivery succeeded carries no token: the recipient already
+ * holds the link, so the panel says the invitation was emailed and offers no
+ * copy control. A failed or unconfigured carrier leaves the token on the
+ * answer, and the panel hands it over as before.
  */
 function InvitationLinkNotice({
   notice,
@@ -1094,34 +1103,49 @@ function InvitationLinkNotice({
   readonly onClose: () => void
 }) {
   const { t } = useAdminUiTranslation()
+  const emailed = notice.token === undefined
   return (
     <OneTimeValuePanel
       message={
-        <>
-          {hasBuilder
-            ? t('invitations.issued.link', { email: notice.invitation.email })
-            : t('invitations.issued.token', { email: notice.invitation.email })}
-          {/* The notice's delivery outcome sits beside the one-time value: a
-              failed or unconfigured carrier is why the operator still has to
-              hand the link over themselves. */}
-          <Typography
-            component="span"
-            variant="body2"
-            color={
-              notice.email_delivery === 'failed' ? 'error' : 'text.secondary'
-            }
-            sx={{ display: 'block', mt: 0.5 }}
-          >
-            {t(`invitations.issued.delivery.${notice.email_delivery}`)}
-          </Typography>
-        </>
+        emailed ? (
+          // The notice reached the address, so the invitation is the email's
+          // business: there is no link for the operator to hand over.
+          t('invitations.issued.emailed', {
+            email: notice.invitation.email,
+          })
+        ) : (
+          <>
+            {hasBuilder
+              ? t('invitations.issued.link', {
+                  email: notice.invitation.email,
+                })
+              : t('invitations.issued.token', {
+                  email: notice.invitation.email,
+                })}
+            {/* The notice's delivery outcome sits beside the one-time value: a
+                failed or unconfigured carrier is why the operator still has to
+                hand the link over themselves. */}
+            <Typography
+              component="span"
+              variant="body2"
+              color={
+                notice.email_delivery === 'failed' ? 'error' : 'text.secondary'
+              }
+              sx={{ display: 'block', mt: 0.5 }}
+            >
+              {t(`invitations.issued.delivery.${notice.email_delivery}`)}
+            </Typography>
+          </>
+        )
       }
-      value={value}
-      copyLabel={
-        hasBuilder
-          ? t('invitations.issued.copyLink')
-          : t('invitations.issued.copyToken')
-      }
+      {...(emailed
+        ? {}
+        : {
+            value,
+            copyLabel: hasBuilder
+              ? t('invitations.issued.copyLink')
+              : t('invitations.issued.copyToken'),
+          })}
       closeLabel={t('invitations.issued.close')}
       closeAriaLabel={t('invitations.issued.closeAria', {
         tenant: notice.tenant,

@@ -82,6 +82,16 @@ export interface ReviewConfigInput {
    */
   readonly seedInvitee?: boolean
   /**
+   * Send invitation notices through the review mail carrier. On by default,
+   * because that is the template's deployment shape. Off clears the notice's
+   * acceptance origin, so the module answers the issue as `not_configured`
+   * and the issue answer carries the one-time token: the process log masks an
+   * `spd_inv_` token wherever it appears, so a journey that has to open the
+   * link itself cannot read it out of the notice, and only an unsent notice
+   * leaves the link in the answer and in the one-time panel.
+   */
+  readonly invitationMail?: boolean
+  /**
    * Seed an enabled account whose email login name is the fixed identity
    * provider user's address. Off by default: only the social journey's branch
    * where the provider-verified address already belongs to an account turns it
@@ -517,12 +527,20 @@ function seedSocialAccount(): string {
       display-name: ${quoted(reviewSocialAccount.displayName)}`
 }
 
-/** The invitee's `seed.accounts` entry, indented for the list it joins. */
+/**
+ * The invitee's `seed.accounts` entry, indented for the list it joins. The
+ * address is the account's identifier and is marked proved: accepting an
+ * invitation requires a signed-in account that holds the invited address as a
+ * proved email, and these journeys use the invitation as the way a colleague
+ * joins, not as a branch of the proof flow (journey-invitation-to-tenant
+ * drives that branch).
+ */
 function seedInviteeAccount(): string {
   return `    - identifier: ${quoted(reviewInvitee.identifier)}
       username: ${quoted(reviewInvitee.username)}
       password: ${quoted(reviewInvitee.password)}
-      display-name: ${quoted(reviewInvitee.displayName)}`
+      display-name: ${quoted(reviewInvitee.displayName)}
+      proved-email: true`
 }
 
 /**
@@ -776,6 +794,18 @@ export async function writeReviewConfig(
     4,
     'public origin',
   )
+  if (input.invitationMail === false) {
+    // An empty origin is the module's not-configured state: the invitation is
+    // still issued and the answer carries the token, because no notice was
+    // sent to the invited address. This runs after the origin replacement so
+    // the template's four public origins are still counted.
+    body = replaceOnce(
+      body,
+      `accept-base-url: ${quoted(origin)}`,
+      'accept-base-url: ""',
+      'invitation mail origin',
+    )
+  }
   // The social journey drives a real round trip through a provider the harness
   // starts on loopback. The Google block's client items are the template's
   // fake review credentials, and its endpoint items are the method's public

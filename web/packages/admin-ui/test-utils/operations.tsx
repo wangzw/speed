@@ -499,11 +499,12 @@ export function providerFixture(
 }
 
 /** The issued invitation an issue answers with: the pending row plus the
- * one-time token. */
+ * one-time token. The default delivery is `not_configured`, the outcome that
+ * still hands the token over; a `sent` answer carries none. */
 export function issuedInvitationFixture(
   overrides: Partial<AdminIssuedInvitation> = {},
 ): AdminIssuedInvitation {
-  return {
+  const fixture: AdminIssuedInvitation = {
     invitation: {
       id: 'inv-1',
       tenant: 'acme',
@@ -515,9 +516,17 @@ export function issuedInvitationFixture(
       created_at: '2026-10-15T12:00:00Z',
     },
     token: 'spd_inv_test_token',
-    email_delivery: 'sent',
+    email_delivery: 'not_configured',
     ...overrides,
   }
+  // A sent notice carries no token. Unless the case names a token itself, the
+  // fixture follows the contract so a `sent` answer cannot look copyable.
+  if (fixture.email_delivery === 'sent' && !('token' in overrides)) {
+    const sent: AdminIssuedInvitation = { ...fixture }
+    delete sent.token
+    return sent
+  }
+  return fixture
 }
 
 const TENANTS_KEY = ['console-test', 'tenants'] as const

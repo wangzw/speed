@@ -185,7 +185,7 @@ func (p *product) sweepSecrets(ctx context.Context) (int64, error) {
 // sweepUnverified deletes self-registered accounts that never proved an email
 // address, a batch of accounts at a time. A candidate is an account whose
 // signup_state is pending, whose signup_verified_at is empty, that holds no email
-// identifier written through a proving channel, and that has neither logged in
+// identifier written through a proving channel (invite is not one), and that has neither logged in
 // nor been created within unverified-ttl; the conditions are read once to pick
 // the batch and again inside each deletion, so an account that proved an address
 // or logged in in between is skipped rather than deleted. An account that is not
@@ -207,9 +207,9 @@ func (p *product) sweepUnverified(ctx context.Context) (int64, error) {
 		err := p.conn(ctx).Raw("SELECT a.id FROM "+tableAccounts+" a WHERE a.signup_state = ?"+
 			" AND a.signup_verified_at IS NULL AND a.status <> ? AND COALESCE(a.last_login_at, a.created_at) < ?"+
 			" AND NOT EXISTS (SELECT 1 FROM "+tableIdentifiers+" i WHERE i.account_id = a.id AND i.kind = ?"+
-			" AND (i.verified_via IN (?, ?, ?) OR i.verified_via LIKE ?)) LIMIT ?",
+			" AND (i.verified_via IN (?, ?) OR i.verified_via LIKE ?)) LIMIT ?",
 			signupPending, statusDeleted, horizon, string(authn.IdentifierEmail),
-			authn.VerifiedViaSMSCode, authn.VerifiedViaEmailCode, authn.VerifiedViaInvite,
+			authn.VerifiedViaSMSCode, authn.VerifiedViaEmailCode,
 			authn.VerifiedViaIDPPrefix+"%", sweepBatch).Scan(&ids).Error
 		if err != nil {
 			return total, err

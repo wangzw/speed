@@ -53,6 +53,17 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
+/** Fills a locale template's placeholders with the values under test. */
+function fill(
+  template: string,
+  values: Readonly<Record<string, string>>,
+): string {
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replace(`{{${name}}}`, value),
+    template,
+  )
+}
+
 const TENANT = 'acme'
 const SELF = 'acc-1'
 
@@ -348,12 +359,14 @@ function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
   return { backend, recorder }
 }
 
-/** The issue answer for `email`, carrying a fresh pending invitation. */
+/** The issue answer for `email`, carrying a fresh pending invitation. The
+ * default delivery is `not_configured`, the outcome that hands the token
+ * over; a `sent` answer carries none. */
 function issuedFixture(
   email: string,
-  delivery: AdminIssuedInvitation['email_delivery'] = 'sent',
+  delivery: AdminIssuedInvitation['email_delivery'] = 'not_configured',
 ): AdminIssuedInvitation {
-  return {
+  const answer: AdminIssuedInvitation = {
     email_delivery: delivery,
     invitation: {
       ...PENDING_INVITATION,
@@ -364,6 +377,10 @@ function issuedFixture(
     },
     token: 'spd_inv_new_token',
   }
+  if (delivery === 'sent') {
+    delete answer.token
+  }
+  return answer
 }
 
 function renderPage(
@@ -1952,8 +1969,8 @@ describe('the invitation section', () => {
     )
   })
 
-  it.each(['sent', 'failed', 'not_configured'] as const)(
-    'renders the %s delivery outcome',
+  it.each(['failed', 'not_configured'] as const)(
+    'renders the %s delivery outcome beside the one-time value',
     async (delivery) => {
       const user = userEvent.setup()
       const { backend } = scripted({
@@ -1974,8 +1991,47 @@ describe('the invitation section', () => {
           zhCN.invitations.issued.delivery[delivery],
         ),
       ).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          `${window.location.origin}/invitations/spd_inv_new_token`,
+        ),
+      ).toBeInTheDocument()
     },
   )
+
+  it('says the invitation was emailed and offers no copy when the answer carries no token', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      issueInvitation: (input) =>
+        Promise.resolve(issuedFixture(input.email, 'sent')),
+    })
+    renderPage(backend)
+    await screen.findByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'delivery@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    const emailed = await screen.findByText(
+      fill(zhCN.invitations.issued.emailed, {
+        email: 'delivery@example.com',
+      }),
+    )
+    const panel = emailed.closest('[role="status"]') as HTMLElement
+    expect(within(panel).queryByText('spd_inv_new_token')).toBeNull()
+    expect(
+      within(panel).queryByRole('button', {
+        name: zhCN.invitations.issued.copyLink,
+      }),
+    ).toBeNull()
+    expect(
+      within(panel).queryByRole('button', {
+        name: zhCN.invitations.issued.copyToken,
+      }),
+    ).toBeNull()
+  })
 
   it('pages the invitation list by the server cursor', async () => {
     const user = userEvent.setup()

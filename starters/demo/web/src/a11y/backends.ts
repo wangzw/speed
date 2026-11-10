@@ -404,6 +404,7 @@ const IMPERSONATION_GRANT: AuthnImpersonationGrantEnvelope = {
  * "still redeemable".
  */
 const INVITATION: AuthnInviteView = {
+  state: 'pending',
   invitation: {
     id: 'invite-1',
     tenant: 'acme',

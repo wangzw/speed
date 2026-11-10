@@ -41,6 +41,7 @@ const (
 	CodeHumanVerificationRequired      = "human-verification-required"      // 403
 	CodePasswordResetClosed            = "password-reset-closed"            // 403
 	CodePasswordResetUnavailable       = "password-reset-unavailable"       // 403
+	CodeInvitationEmailUnproved        = "invitation-email-unproved"        // 403
 	CodeFactorNotFound                 = "factor-not-found"                 // 404
 	CodeConflict                       = "conflict"                         // 409
 	CodeAccountLastTenantAdmin         = "account-last-tenant-admin"        // 409
@@ -50,6 +51,7 @@ const (
 	CodeUsernameImmutable              = "username-immutable"               // 409
 	CodeUsernameTaken                  = "username-taken"                   // 409
 	CodeEmailTaken                     = "email-taken"                      // 409
+	CodeMembershipInactive             = "membership-inactive"              // 409
 	CodeUnsupportedMediaType           = "unsupported-media-type"           // 415
 	CodeThrottled                      = "throttled"                        // 429
 	CodeUnavailable                    = "unavailable"                      // 503
@@ -75,6 +77,7 @@ var statusOf = map[string]int{
 	CodeHumanVerificationRequired:      http.StatusForbidden,
 	CodePasswordResetClosed:            http.StatusForbidden,
 	CodePasswordResetUnavailable:       http.StatusForbidden,
+	CodeInvitationEmailUnproved:        http.StatusForbidden,
 	CodeFactorNotFound:                 http.StatusNotFound,
 	CodeConflict:                       http.StatusConflict,
 	CodeAccountLastTenantAdmin:         http.StatusConflict,
@@ -84,6 +87,7 @@ var statusOf = map[string]int{
 	CodeUsernameImmutable:              http.StatusConflict,
 	CodeUsernameTaken:                  http.StatusConflict,
 	CodeEmailTaken:                     http.StatusConflict,
+	CodeMembershipInactive:             http.StatusConflict,
 	CodeUnsupportedMediaType:           http.StatusUnsupportedMediaType,
 	CodeThrottled:                      http.StatusTooManyRequests,
 	CodeUnavailable:                    http.StatusServiceUnavailable,
@@ -206,7 +210,8 @@ func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 // Forbidden writes a 403. code is method-disabled, account-unavailable,
 // impersonation-restricted, factor-not-seasoned, forbidden, signup-closed,
 // contact-required, phone-required, human-verification-required,
-// password-reset-closed or password-reset-unavailable, the eleven that this
+// password-reset-closed, password-reset-unavailable or invitation-email-unproved,
+// the twelve that this
 // capability's own handlers may answer: the gateway and the admission layer
 // never write a 403. Any other code panics.
 func Forbidden(c *gin.Context, code string) {

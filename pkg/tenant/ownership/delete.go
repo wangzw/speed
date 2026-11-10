@@ -65,6 +65,16 @@ func (p *product) DeleteOrganization(ctx context.Context, id tenant.ID, expected
 			return fmt.Errorf("removing the organization's memberships: %w", writeErr)
 		}
 		after = append(after, memberships)
+
+		// A deleted organization has no grant left to hand out. The invitation
+		// module owns its rows, so it is asked to withdraw the pending ones once
+		// the deletion has committed; a failure is a warning and acceptance still
+		// refuses the tenant because it is gone.
+		if p.invitations != nil {
+			after = append(after, func(ctx context.Context) error {
+				return p.invitations.RevokeTenantInvitations(ctx, string(id))
+			})
+		}
 		return nil
 	})
 	if err != nil {

@@ -24,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -139,6 +140,7 @@ func newSettingsAssembly(t *testing.T) *settingsAssembly {
 	reg.Supply(&capturedLogger{logger: h.logs.logger()}, log.ModuleName)
 	supplyModule(t, reg, "test.database", (*db.Database)(nil), database)
 	supplyModule(t, reg, "test.mounter", (*mount.Mounter)(nil), mounttest.New(t))
+	supplyModule(t, reg, "test.kv", (*kv.KV)(nil), newFakeKV())
 	supplyModule(t, reg, "test.accounts", (*authn.Accounts)(nil), newAccounts())
 	supplyModule(t, reg, "test.account-admin", (*authn.AccountAdmin)(nil), &fakeAccountAdmin{})
 	supplyModule(t, reg, "test.signup-state", (*authn.SignupVerification)(nil), &fakeSignupVerification{})

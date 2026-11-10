@@ -1,6 +1,8 @@
 package otel
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,6 +18,46 @@ import (
 // upstream instrumentation does not: the endpoint name the configuration lists,
 // the only place the span records which endpoint a request arrived on.
 var attrEndpointName = attribute.Key("speed.endpoint.name")
+
+// attrURLPath is the attribute the upstream instrumentation writes the request's
+// path under. This module rewrites it when the path carries a credential.
+var attrURLPath = attribute.Key("url.path")
+
+// credentialSegmentPrefix begins every opaque credential the authentication
+// capability issues: a refresh token, a service secret and an invitation's
+// acceptance token. The log redactor recognises them by this prefix too, so the
+// two readers of a credential share one marker. A path segment that begins with
+// it is a credential wherever it appears, which is what makes redaction here
+// independent of which route matched: the invitation acceptance route and the
+// page its link lands on carry the token in the path, and neither is the only
+// future route that could.
+const credentialSegmentPrefix = "spd_"
+
+// redactedSegment is what a credential path segment is replaced with. The rest of
+// the path is left as it was, so a span still names the route shape without the
+// credential.
+const redactedSegment = "[REDACTED]"
+
+// redactPath replaces each path segment that begins with the credential marker,
+// leaving every other segment intact. A path with no such segment is returned
+// unchanged, so the instrumentation's own attribute is not rewritten needlessly.
+func redactPath(path string) string {
+	if !strings.Contains(path, credentialSegmentPrefix) {
+		return path
+	}
+	segments := strings.Split(path, "/")
+	changed := false
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, credentialSegmentPrefix) {
+			segments[i] = redactedSegment
+			changed = true
+		}
+	}
+	if !changed {
+		return path
+	}
+	return strings.Join(segments, "/")
+}
 
 // layers describes the two layers this module registers for one endpoint, in the
 // order they are registered: the instrumentation, then the guard inside it.
@@ -91,6 +133,15 @@ func (p *providers) instrumentation() http.Middleware {
 // endpoint at a time, and nothing downstream can recover which one a request
 // arrived on.
 //
+// It rewrites the span's url.path when the request's path carries a credential.
+// The upstream instrumentation writes the path as the caller sent it, before any
+// route is matched, so an invitation's acceptance token in the path would reach
+// every span backend as plaintext. The rewrite is by segment and by the shared
+// credential marker, so it covers the acceptance route and the page its link
+// lands on alike, and leaves the rest of the path readable. The attribute is set
+// again rather than added beside the old one: the SDK keeps the last value of a
+// key, so the export carries the placeholder and not the token.
+//
 // It does not touch a panic, and a recover here would be wrong twice over. The
 // entry module's own recovery runs inside this layer and inside every other
 // observing layer, so a handler's panic is caught there and never reaches the
@@ -113,6 +164,11 @@ func (p *providers) guard(endpoint string) http.Middleware {
 			ctx := c.Request.Context()
 			span := trace.SpanFromContext(ctx)
 			span.SetAttributes(attrEndpointName.String(endpoint))
+			if path := c.Request.URL.Path; path != "" {
+				if redacted := redactPath(path); redacted != path {
+					span.SetAttributes(attrURLPath.String(redacted))
+				}
+			}
 			ctx = log.WithAttrs(ctx,
 				observability.TraceIDKey, span.SpanContext().TraceID().String(),
 				observability.SpanIDKey, span.SpanContext().SpanID().String(),

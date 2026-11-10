@@ -34,6 +34,15 @@ type Memberships interface {
 	// deleted one included, is ErrAccountNotFound, because the tables have no
 	// foreign key and this method is what checks.
 	Put(ctx context.Context, m Membership) error
+	// PutJoining writes a membership for an account joining a tenant. It is a
+	// conditional write: the account ends as an active member only when it had
+	// no membership or its membership is still active. A membership another
+	// path suspended is never resumed by a join, and a membership the caller
+	// read as active but that was removed is not written again; both answer
+	// false and change nothing. The second result reports whether the account
+	// is an active member after the call. An account that does not exist is
+	// ErrAccountNotFound, as with Put.
+	PutJoining(ctx context.Context, m Membership, wasActive bool) (joined bool, err error)
 	// Remove deletes one membership.
 	Remove(ctx context.Context, id AccountID, tenant string) error
 }

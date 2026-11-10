@@ -28,14 +28,17 @@ func checkTenant(tenant string) error {
 }
 
 // Issue issues one invitation. The address is normalized first, and an address
-// that is not well formed is refused before any row is written. In one
+// that is not well formed is refused before any row is written. The three send
+// budgets are then charged — the invited address, the issuing account and the
+// deployment — and an issuance past any of them is throttled before a row is
+// written; a resend is another issuance and spends the same budgets. In one
 // transaction a pending invitation for the same tenant and address is
 // superseded and the new row is inserted; the partial unique index arbitrates a
 // concurrent issuance of the same pair, which is ErrInvitationPending.
 //
 // The issuer is read from the request's identity, when there is one: a host's
-// own command issuing an invitation has no HTTP identity, and the issuer is then
-// empty.
+// own command issuing an invitation has no HTTP identity, and the issuer budget
+// is then skipped while the address and deployment budgets still apply.
 func (p *product) Issue(ctx context.Context, in IssueInvite) (Issued, error) {
 	if err := checkTenant(in.Tenant); err != nil {
 		return Issued{}, err
@@ -45,6 +48,12 @@ func (p *product) Issue(ctx context.Context, in IssueInvite) (Issued, error) {
 		return Issued{}, err
 	}
 	now := p.at()
+	// The send budgets are charged before anything is written: the address
+	// budget, the issuing account's budget and the deployment's. A resend is
+	// another issuance and spends the same three.
+	if budgetErr := p.chargeIssue(ctx, email, now); budgetErr != nil {
+		return Issued{}, budgetErr
+	}
 	deadline := in.ExpiresAt
 	if deadline.IsZero() {
 		deadline = now.Add(p.ttl())

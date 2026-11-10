@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
@@ -21,6 +23,30 @@ const typePrefix = "urn:speed:authn:"
 // point writes it as a problem document of the code's status and type.
 func inviteFailure(status int, code string) error {
 	return speedhttp.Fault{Status: status, Type: typePrefix + code}
+}
+
+// throttledFailure is the platform-standard 429 of a spent send or probe
+// budget: the problem type the rate-limit layer writes, and a Retry-After that
+// names the whole seconds until the window opens again. The header is declared
+// on every response that can carry it, so the entry point accepts it here.
+func (p *product) throttledFailure(err error) error {
+	retry := time.Second
+	var throttled *authn.ThrottledError
+	if errors.As(err, &throttled) && throttled.RetryAfter > 0 {
+		retry = throttled.RetryAfter
+	}
+	seconds := int64((retry + time.Second - 1) / time.Second)
+	if seconds < 1 {
+		seconds = 1
+	}
+	return speedhttp.Fault{
+		Status: http.StatusTooManyRequests,
+		Type:   typePrefix + mount.CodeThrottled,
+		Headers: []speedhttp.HeaderValue{{
+			Name:  "Retry-After",
+			Value: strconv.FormatInt(seconds, 10),
+		}},
+	}
 }
 
 // badRequest is a request this module refuses on shape alone: a path parameter
@@ -42,9 +68,9 @@ func (p *product) invalidUsername() error {
 }
 
 // caller reads the identity the gateway put on the request. The management
-// routes are guarded, so a request that reaches a handler carries one; an absent
-// identity is answered with the gateway's own 401 rather than read as a caller.
-// The challenge is the fault's declared header, so a handler reached without the
+// routes are guarded and the acceptance write is optional, so a handler reached
+// without one refuses rather than reading an anonymous request as a caller. The
+// challenge is the fault's declared header, so a handler reached without the
 // gateway answers the same 401 the gateway would.
 func (p *product) caller(ctx context.Context) (authn.Identity, error) {
 	id, ok := authn.FromContext(ctx)
@@ -170,6 +196,8 @@ func (p *product) cause(op string, err error) error {
 // declare one.
 func (p *product) answer(op string, err error) error {
 	switch {
+	case errors.Is(err, authn.ErrThrottled):
+		return p.throttledFailure(err)
 	case authn.IsUsernameShape(err):
 		return p.invalidUsername()
 	case errors.Is(err, ErrInvalidEmail), errors.Is(err, authn.ErrInvalidArgument),
@@ -196,15 +224,34 @@ func (p *product) answerReply(op string, err error) (speedhttp.Reply, error) {
 }
 
 // acceptAnswerReply maps a failure of the acceptance face. A token that points
-// at no invitation is the declared bare 404, one that can no longer be redeemed
-// — expired, revoked or already accepted — is a 409, a bad argument is a 400,
-// and any other failure is a 503 whose cause stays in the log. The acceptance
-// face tells those terminal states apart from the management face, which only
-// meets an accepted invitation when it revokes one.
+// at no invitation is the declared bare 404, a request with no caller is a 401
+// with the capability's challenge, a caller who has not proved the invited
+// address is a 403 of its own, a suspended member is a 409 of its own, one that
+// can no longer be redeemed — expired, revoked or already accepted — is the
+// generic 409, a bad argument is a 400, and any other failure is a 503 whose
+// cause stays in the log. The acceptance face tells those terminal states apart
+// from the management face, which only meets an accepted invitation when it
+// revokes one.
 func (p *product) acceptAnswerReply(op string, err error) (speedhttp.Reply, error) {
 	switch {
 	case errors.Is(err, ErrInvitationNotFound):
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	case errors.Is(err, ErrInvitationUnauthenticated):
+		return nil, speedhttp.Fault{
+			Status: http.StatusUnauthorized,
+			Headers: []speedhttp.HeaderValue{{
+				Name:  "WWW-Authenticate",
+				Value: mount.UnauthorizedChallenge(p.mounter.Endpoint()),
+			}},
+		}
+	case errors.Is(err, ErrInvitationEmailUnproved):
+		return nil, inviteFailure(http.StatusForbidden, mount.CodeInvitationEmailUnproved)
+	case errors.Is(err, ErrInvitationMembershipInactive):
+		return nil, inviteFailure(http.StatusConflict, mount.CodeMembershipInactive)
+	case errors.Is(err, ErrInvitationTenantInactive):
+		return nil, inviteFailure(http.StatusConflict, mount.CodeConflict)
+	case errors.Is(err, authn.ErrThrottled):
+		return nil, p.throttledFailure(err)
 	case errors.Is(err, ErrInvitationExpired), errors.Is(err, ErrInvitationRevoked),
 		errors.Is(err, ErrInvitationAlreadyAccepted):
 		return nil, inviteFailure(http.StatusConflict, mount.CodeConflict)

@@ -77,12 +77,10 @@
  * state above each one carries the journey.
  *
  * Expected copy is read from the shipped en-US bundles through
- * helpers/i18n.ts; the invitation notice's subject is read from the backend
- * module's own catalog, because that is the string the mail carrier renders.
- * The only non-UI reads are the email verification code and the impersonation
- * step-up SMS code from the review process log, the invitation mail line the
- * review carrier writes when a notice is delivered, and the responses the
- * pages themselves receive: the organization profile read, whose owner
+ * helpers/i18n.ts. The only non-UI reads are the email verification code and
+ * the impersonation step-up SMS code from the review process log, and the
+ * responses the pages themselves receive: the organization profile read, whose
+ * owner
  * account identifier never appears on the page, and the tenant's member and
  * invitation reads, whose account identifiers the identity surfaces must
  * likewise never render. Those tests learn the values from the response the
@@ -219,18 +217,6 @@ async function invitationStatus(page: Page, email: string): Promise<string> {
 function invitationLinkPanel(page: Page, email: string): Locator {
   return page.getByRole('status').filter({
     hasText: copy('adminUi', 'invitations.issued.link', { email }),
-  })
-}
-
-/**
- * The subject the invitation notice carries in en-US: the mail template as the
- * request's language rendered it. The mail carrier writes no template key or
- * language, so this is what selects that one notice among the process log's
- * mail lines.
- */
-function invitationSubject(): string {
-  return copyKey('invitemail', 'authn.invitemail.subject', 'en-US', {
-    tenant: TENANT,
   })
 }
 
@@ -668,9 +654,6 @@ test.describe('the tenant administrator manages the organization', () => {
       })
 
       await test.step('step 6: the administrator issues an invitation, the panel shows its delivery and close is confirmed', async () => {
-        // The delivery line is written before the issue answers, so the cursor
-        // is taken before the submit and only this notice may answer the wait.
-        const mailMark = server.log.mark()
         await page
           .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
             exact: true,
@@ -729,30 +712,19 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
-        // REQ-tenant-admin-061: this deployment configures a mail carrier, so
-        // the panel reports the notice as sent.
+        // REQ-tenant-admin-061: this deployment's mail carrier is the log
+        // carrier, which reaches no recipient, so the invitation channel
+        // reports not_configured and the panel hands out the link instead of
+        // reporting an email as sent.
         await expect(
-          panel.getByText(copy('adminUi', 'invitations.issued.delivery.sent'), {
-            exact: true,
-          }),
+          panel.getByText(
+            copy('adminUi', 'invitations.issued.delivery.not_configured'),
+            { exact: true },
+          ),
         ).toBeVisible()
-
-        // The review mail carrier wrote the notice to the process log: the
-        // destination, the en-US subject the module's catalog renders, and the
-        // acceptance landing the panel's link also names. The logging layer
-        // masks the `spd_inv_` token wherever it appears (the token prefix is
-        // a registered sensitive key name), so the body names the landing with
-        // the token redacted; the panel's link is the unredacted form of the
-        // same address.
-        const mail = await server.waitForCarrierMessage({
-          to: reviewInvitee.identifier,
-          subject: invitationSubject(),
-          after: mailMark,
-        })
-        const landing = `${server.url}/invitations/`
-        expect(mail.text).toContain(landing)
-        expect(acceptanceLink.startsWith(landing)).toBe(true)
-        expect(mail.text).toContain(TENANT)
+        expect(acceptanceLink.startsWith(`${server.url}/invitations/`)).toBe(
+          true,
+        )
 
         // Closing is the only moment the sole copy is dropped, so it asks
         // first; keeping it leaves the panel in place.
@@ -1670,8 +1642,8 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(firstPanel).toHaveCount(0)
 
         // Resend asks first, states the new validity, and replaces the
-        // one-time link; the mail carrier writes the new link too.
-        const mailMark = server.log.mark()
+        // one-time link; the log carrier delivers nothing, so the panel is
+        // the only place the new link appears.
         const resentRow = invitationRow(page, RESENT_INVITEE)
         await resentRow
           .getByRole('button', {
@@ -1721,16 +1693,7 @@ test.describe('the tenant administrator manages the organization', () => {
             .textContent()) ?? ''
         ).trim()
         expect(secondLink).not.toBe(firstLink)
-        const resentMail = await server.waitForCarrierMessage({
-          to: RESENT_INVITEE,
-          subject: invitationSubject(),
-          after: mailMark,
-        })
-        // The token is redacted in the process log; the landing and tenant are
-        // the observable parts of the same notice the panel hands out.
-        expect(resentMail.text).toContain(`${server.url}/invitations/`)
         expect(secondLink.startsWith(`${server.url}/invitations/`)).toBe(true)
-        expect(resentMail.text).toContain(TENANT)
 
         await secondPanel
           .getByRole('button', {

@@ -9,7 +9,7 @@
 `pkg/observability` 承载运行期的遥测：追踪与指标两种信号。产品是上游遥测 SDK 的 provider，加上请求路径的采集与一个出站注入工具。
 
 - **交付上游 SDK 的 provider**，追踪与指标各是一个功能，两者由同一个装配器模块排他交付。
-- **请求路径的采集**：以上游 gin（[REF-gin](../../references.md)）采集库为基座，由它提取父跨度上下文、开始与结束服务端跨度、记请求计量；本模块只补它没有的日志关联字段与端名属性（[ADR-observability-request-layer](../../adr/adr-observability-request-layer.md)、[ADR-observability-instruments](../../adr/adr-observability-instruments.md)）。
+- **请求路径的采集**：以上游 gin（[REF-gin](../../references.md)）采集库为基座，由它提取父跨度上下文、开始与结束服务端跨度、记请求计量；本模块只补它没有的日志关联字段与端名属性，并在路径的某一段携带凭据时把跨度里的 `url.path` 改写为脱敏形态（[ADR-observability-request-layer](../../adr/adr-observability-request-layer.md)、[ADR-observability-instruments](../../adr/adr-observability-instruments.md)）。
 - **出站注入**：把当前跨度上下文按上游的传播格式写进 `net/http` 客户端的出站头部（[ADR-observability-propagation](../../adr/adr-observability-propagation.md)）。
 - **把导出目的地开放为扩展点**：一个导出目的地登记为一个模块，交付一个导出器功能（[ADR-observability-packaging](../../adr/adr-observability-packaging.md)）。
 
@@ -26,7 +26,7 @@
 - **不提供查询接口、看板与告警。** 本模块只产生信号。
 - **不定义信号的语义本体。** 跨度、属性、仪器、采样器与传播格式由上游库定义，本模块不包装、不另造等价抽象（[ADR-observability-library](../../adr/adr-observability-library.md)）。
 - **不提供指标目录与命名词表。** 业务指标归产生该信号的模块自己上报；请求计量的仪器与属性由上游采集库定义，本模块不持有一份自己的。
-- **不为自己的信号属性登记脱敏规则。** 请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`，不含查询串与其余请求头；请求带有错误时跨度状态描述是错误列表的文本。跨度与指标属性都不经日志的处理链，本来就在脱敏层的判定范围之外。**导出后端持有的凭据不在此列**：`observability.otlp` 的 `headers` 承载导出后端的凭据，由它在自己的 `New` 里登记为日志的字面量匹配器（见[核心数据结构](#核心数据结构)里导出后端的配置）。
+- **不为自己的信号属性登记日志脱敏规则，只改写跨度的 `url.path`。** 请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`，不含查询串与其余请求头；请求带有错误时跨度状态描述是错误列表的文本。跨度与指标属性都不经日志的处理链，本来就在脱敏层的判定范围之外；本模块只对跨度的 `url.path` 做一处改写：路径里以 `spd_` 起头的段是认证能力签发的凭据（刷新令牌、服务密钥、邀请接受令牌），被替换为 `[REDACTED]`，其余段原样保留。指标不带路径属性，因此不需要这处改写。**导出后端持有的凭据不在此列**：`observability.otlp` 的 `headers` 承载导出后端的凭据，由它在自己的 `New` 里登记为日志的字面量匹配器（见[核心数据结构](#核心数据结构)里导出后端的配置）。
 - **不提供数据库语句级跨度。**
 - **不订阅事件总线。** 本模块不把领域事件转成跨度，不取总线的功能；订阅者是否收到并处理了一条事件由[事件模块](event/design-event.md)在分发层记下，不由本模块回答（[ADR-observability-events](../../adr/adr-observability-events.md)、[ADR-event-tracing](../../adr/adr-event-tracing.md)）。
 
@@ -386,13 +386,13 @@ type Config struct {
 | `http.response.status_code` | 写出者持有的状态码 |
 | `http.response.body.size` | 写出的字节数；没有写出响应体时不带 |
 | `http.route` | 已匹配的路由模板；没有匹配的路由时为空串 |
-| `url.path` | 请求的路径，调用方写下的值 |
+| `url.path` | 请求的路径；以 `spd_` 起头的段被替换为 `[REDACTED]`，其余段是调用方写下的值 |
 | `url.scheme`、`server.address`、`server.port` | 请求的 scheme，`Host` 头给出的主机，以及 `Host` 头给出的端口（scheme 的默认端口不带） |
 | `client.address`、`network.peer.address`、`network.peer.port`、`user_agent.original`、`network.protocol.version` | 客户端地址、对端地址与端口、`User-Agent` 头、协议版本 |
 | `error.type` | 请求带有错误，或请求的原上下文已被取消时 |
 | `speed.endpoint.name` | 请求到达的端的端名，守护层写入 |
 
-**跨度名取上游采集库的形式，端名记在属性里，不在名称里。** `c.FullPath()` 非空时名称为「方法 路由模板」（如 `GET /orders/:id`）；为空时（没有匹配的路由，含 `404` 与 `405`）名称只取方法，`http.route` 为空串，`url.path` 是调用方写下的路径，路径不进名称。名称在跨度开始时定下，已匹配的路由在链上已经可读。方法不在标准方法（`GET`、`HEAD`、`POST`、`PUT`、`PATCH`、`DELETE`、`CONNECT`、`OPTIONS`、`TRACE`）之内时，名称里写作 `HTTP`，而 `http.request.method` 属性写作 `_OTHER`；上游语义约定列为开发中取值的 `QUERY` 同样如此。请求到达哪个端由 `speed.endpoint.name` 承载；同一路由模板登记在两个端上时，两端的跨度同名，靠它分开（[ADR-observability-instruments](../../adr/adr-observability-instruments.md)）。路由进跨度名而不是端名，理由见该记录。
+**跨度名取上游采集库的形式，端名记在属性里，不在名称里。** `c.FullPath()` 非空时名称为「方法 路由模板」（如 `GET /orders/:id`）；为空时（没有匹配的路由，含 `404` 与 `405`）名称只取方法，`http.route` 为空串，`url.path` 是调用方写下的路径（以 `spd_` 起头的凭据段已被替换），路径不进名称。名称在跨度开始时定下，已匹配的路由在链上已经可读。方法不在标准方法（`GET`、`HEAD`、`POST`、`PUT`、`PATCH`、`DELETE`、`CONNECT`、`OPTIONS`、`TRACE`）之内时，名称里写作 `HTTP`，而 `http.request.method` 属性写作 `_OTHER`；上游语义约定列为开发中取值的 `QUERY` 同样如此。请求到达哪个端由 `speed.endpoint.name` 承载；同一路由模板登记在两个端上时，两端的跨度同名，靠它分开（[ADR-observability-instruments](../../adr/adr-observability-instruments.md)）。路由进跨度名而不是端名，理由见该记录。
 
 **采样跟随父跨度。** 采样器以父跨度的决定为先，没有父跨度时才按 `sample-ratio` 判定：带着父跨度的请求照入站头部里的采样标志走，两个方向都是——调用方标记已采样的，采样率为零也记录；标记未采样的，采样率为一也不记录。各进程各按自己的采样率判定，同一条追踪就会在一部分节点上有跨度、另一部分没有，从哪一侧看都是断的。代价落在信任上：本层包在认证之外，入站头部可以由任何调用方写下，调用方因而能让自己的请求被记录或不被记录；`sample-ratio` 约束的只是本进程开始的追踪。
 
@@ -529,7 +529,7 @@ type Config struct {
 - **被忽略的标准变量。** 察觉途径只有装配器与 OTLP 导出后端各自在 `New` 里写的那一行告警，它在下列情形缺席：OTLP 导出后端取不到 logger；日志模块的链被配置成不输出告警级的记录；上游升级后新读的变量还不在清单里——在钉住测试读取的上游文件（两个包各自的 `upstreamSources`）里新读的，由 `pkg/observability/otel/upstream_variables_test.go` 与 `pkg/observability/otlp/upstream_variables_test.go` 各自的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 在升级时判出，不在运行期判，在这些文件之外新读的判不出；`OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 给出的属性被本模块给出的同名属性覆盖。仍然起作用的上游变量不告警，它们对本模块留给上游的设置有效（见[provider 的构造次序](#provider-的构造次序)与[核心数据结构](#核心数据结构)）。宿主没有声明前缀时，不带前缀的写法（`OBSERVABILITY__OTEL__SERVICE_NAME` 这类）既不被读取，也没有任何一行提示（见[核心数据结构](#核心数据结构)里环境变量来源一段）。
 - **停机。** 刷出排在全部 `Stop` 之后，覆盖不到的是更晚的记录：在本模块之后关闭的模块在自己的 `Close` 里记下的跨度与指标，入口排空超时之后仍在运行的处理函数此后产生的跨度，以及宿主为入口模块预置的、不是它的产物的实例放进来的请求在刷出之后产生的跨度，都不被导出。刷出的上界是两个 provider 与它们各自的导出器共用的一份，一个目的地刷得慢就让其余几个的末批数据一并被取消；采集端不可达时，关停对导出的等待至多到截断点，截断点上仍未送达的跨度与指标被丢弃；导出器无视上下文时，截断够不着它：跨度一侧 `Close` 以超时错误返回，指标一侧关停等到那次导出返回，排在它后面的读数器以超时错误返回，见[关停时的刷出](#关停时的刷出)。
 - **出站传播。** `Transport` 不被任何一层自动接管，未使用它的调用点会让跨进程的链路从客户端一侧断开，不产生信号。
-- **属性不在脱敏覆盖内。** 跨度与指标属性不经日志的处理链；请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`；请求带有错误时跨度状态描述是错误列表的文本。panic 的值与堆栈只进兜底层的日志记录，不进跨度。
+- **属性不在脱敏覆盖内，`url.path` 的凭据段是唯一例外。** 跨度与指标属性不经日志的处理链；请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`；请求带有错误时跨度状态描述是错误列表的文本。本模块只改写跨度的 `url.path`：以 `spd_` 起头的段被替换为 `[REDACTED]`，其余段原样保留；这一改写按段与前缀，不识别以其他形态出现或落在路径之外的凭据。panic 的值与堆栈只进兜底层的日志记录，不进跨度。
 - **handler 调用 `runtime.Goexit` 的请求不在任何直方图里，跨度以未标记结束。** `Goexit` 的展开越过采集层而不回到上游采集库，上游采集库只结束跨度，不记录响应与计量；跨度不带本模块设的状态、不带 `http.response.status_code`，连接被丢弃，兜底层记一行说明。这是一条真缺陷，跨度不显示它。察觉途径是兜底层的那一行记录；计量侧没有。
 - **panic 请求的状态码取兜底层应答的状态。** 兜底层在响应尚未写出时以状态码 `500` 应答，上游采集库按写出者的状态记 `500`；响应已经写出时，记的是已提交的状态码，兜底层不改动它。交付了 `ErrorResponder` 的模块须按 `Problem.Status` 写出状态码（见 [http](http/design-http.md) 的错误响应），交付者写出了别的状态码时，计量与跨度里是写出者实际持有的值，与兜底层应答的不一致，且这一档没有察觉途径。
 - **handler 有意放弃的连接不被记成一次缺陷。** handler 用 `net/http` 的 `ErrAbortHandler` 放弃连接时，兜底层认得那个值、原样放行，既不写响应也不记一行（见 [http](http/design-http.md) 的兜底层）；展开越过采集层而不回到上游采集库，跨度以未标记结束、该请求不在任何直方图里，与 handler 调用 `runtime.Goexit` 的那一档相同。客户端主动断开时如此是应当的。
@@ -562,7 +562,7 @@ type Config struct {
 | provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newResource`、`layered`、`newInstanceID`、`queueSize`、`releaseExporters`、`releaseTimeout`、`exportCutoff`、`cutoffMarginDivisor` |
 | 被忽略的标准变量的告警 | 已实现 | `pkg/observability/otel/variables.go` `overriddenVariables`、`ignoredVariables`、`warnIgnoredVariables`、`pkg/observability/otlp/variables.go` `overriddenVariables`、`ignoredVariables`、`warnIgnoredVariables` |
 | 转发包装、导出失败的上报、停机时的截断与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`cutoff`、`notifier` |
-| 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layers`、`attach`、`instrumentation`、`guard`、`attrEndpointName` |
+| 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layers`、`attach`、`instrumentation`、`guard`、`attrEndpointName`、`attrURLPath`、`redactPath`、`credentialSegmentPrefix` |
 | 请求计量 | 已实现 | 由上游采集库产出，`pkg/observability/otel/layer.go` `(*providers).instrumentation` 交给它 tracer provider、meter provider 与传播器；名称、单位与桶边界的钉住见 `pkg/observability/otel/layer_test.go` `TestTheRequestDurationBucketsAreInSeconds`、`TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds` |
 | 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`read`、`validateEndpoint`、`headerMap`、`loadTLS`、`tlsMaterial`、`pkg/observability/stdout/stdout.go` `Config` |
 | OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`warnPlaintextHeaders`、`loopbackHost`、`build`、`clientTLS`、`probe`、`dialAddress` |

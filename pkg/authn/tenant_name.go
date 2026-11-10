@@ -36,3 +36,32 @@ type TenantDirectory interface {
 	// identifier is never a tenant.
 	TenantIDOf(ctx context.Context, name string) (string, bool, error)
 }
+
+// TenantState is how a tenant stands towards being served, as the
+// authentication directory can read it. It is the roster's status reduced to
+// what an authentication path has to judge: a tenant is served, or it is
+// disabled and may be served again, or it is deleted and never will be.
+type TenantState uint8
+
+const (
+	// TenantServing is a tenant whose requests are served.
+	TenantServing TenantState = iota
+	// TenantDisabled is a tenant that exists but is not served. Its data stays
+	// and enabling it makes it served again.
+	TenantDisabled
+	// TenantDeleted is a tenant that has been deleted. It is terminal.
+	TenantDeleted
+)
+
+// TenantStateResolver answers how a tenant stands, for authentication paths
+// that must not admit a tenant which is not served. It carries the same facts
+// as the tenant capability's status, declared here because no package of this
+// directory imports the tenant directory.
+//
+// The seam is optional where it is taken up: an assembly whose roster supplies
+// none has no tenant state to consult. An identifier no tenant carries answers
+// TenantDeleted: a tenant that is not there is not served.
+type TenantStateResolver interface {
+	// TenantStateOf answers the state of the tenant with this identifier.
+	TenantStateOf(ctx context.Context, id string) (TenantState, error)
+}

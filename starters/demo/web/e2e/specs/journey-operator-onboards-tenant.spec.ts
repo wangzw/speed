@@ -53,8 +53,8 @@
  * issue for the same address voids the first) is not a step of this journey.
  * REQ-tenancy-017's unrelated-session clause, REQ-tenancy-018 (an address with
  * no account) and REQ-tenancy-019 (an unproved reservation) are alternate
- * branches: the invitee here holds the invited address's own account, so the
- * acceptance binds the membership to that account. REQ-tenancy-023 is not
+ * branches: the seeded invitee holds the invited address as a proved email on
+ * its own account, so the acceptance binds the membership to that account. REQ-tenancy-023 is not
  * claimed: the invitee's account owns a personal tenant as well, so the
  * organization list has a second row available, but this spec only observes the
  * current row and leaves the switch to the journeys that drive it. REQ-tenancy-005 is

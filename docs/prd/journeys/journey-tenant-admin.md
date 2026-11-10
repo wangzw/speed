@@ -16,7 +16,7 @@
 - 租户管理员的邮箱已证明。
 - 租户管理员在该业务租户持有成员与邀请、租户设置与租户角色相关的治理权限。
 - 该业务租户当前只有租户管理员一条 `tenant-admin` 绑定。
-- 本部署配置了邀请通知邮件，邮件内容可从测试日志读取。
+- 本部署没有把邀请邮件交给收件人的通道（日志载体按未投递处理），接受链接由签发应答与一次性面板交出。
 - 受邀同事的邮箱可由租户管理员取得；该同事尚未成为该业务租户的成员。
 - 该业务租户另有一名普通成员，不持有任何覆盖组织管理页面的权限。
 - 本部署装配了企业身份提供方页面，且该业务租户可登记一个 OIDC 提供方。
@@ -76,8 +76,9 @@
 
 ## 备选路径
 
-- **受邀同事已有账户**：接受邀请后，成员关系挂到该邮箱对应的账户，不建立第二个账户。
-- **受邀同事尚无账户**：接受页要求填写显示名与口令，接受后建立账户并把它加入业务租户，该邮箱成为新账户的已验证邮箱。
+- **受邀同事的账户已证明被邀请地址**：接受邀请后，成员关系挂到该登录账户。
+- **受邀同事的账户未证明被邀请地址**：接受被拒绝，页面给出证明指引，邀请保持待接受；当事人用发往该地址的验证码证明后，回到链接接受。
+- **受邀同事尚无账户**：接受不建立账户；当事人先注册或登录、证明该地址，再回到链接接受。
 - **邀请被撤销**：租户管理员在邀请列表中撤销一条待接受的邀请后，该链接不能再被接受；受邀同事再次打开链接得到邀请已失效的结果，不产生成员关系。
 - **邀请邮件投递失败**：签发仍成功，一次性面板显示投递失败并保留接受链接；租户管理员改用复制链接转交，受邀人仍可接受。
 - **重发邀请**：租户管理员对一条待接受或已过期的邀请重发后，旧链接不能再被接受，新链接同时出现在一次性面板与通知邮件中；已接受与已撤销的邀请重发只新增一条待接受邀请，不改变原邀请的终态。
@@ -217,4 +218,4 @@ flowchart TD
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 覆盖账户菜单分组与首页卡片、成员搜索与角色筛选、邀请签发/筛选/重发/撤销与一次性面板、角色创建（含描述）、治理权限的授予与撤销、高危授予的二次确认、权限目录的展开与治理集、内建角色的只读使用情况、成员管理区的绑定与解绑、停用与恢复、停用自己与解绑自己 `tenant-admin` 绑定的控件在请求前禁用并说明原因、移除、设置与租户切换；角色页的描述改写、不可映射授权、「在成员页查看」入口与绑定后回到角色页核对同一角色成员数未由 e2e 驱动，由 `web/packages/admin-ui/src/OrganizationRolesPage.test.tsx` 覆盖；邀请通知邮件的落点与租户从邮件日志读取，并与一次性面板的接受链接比对落点；停用后业务请求不可访问与绕过界面的自停用拒绝不在 e2e 内驱动，由后端用例覆盖；`tenant-admin: the organization registers, verifies, disables and removes an SSO provider` 覆盖企业身份提供方的登记、域验证、启停与删除；`tenant-admin: the system tenant shows no entry and every direct visit returns home` 覆盖 `system` 租户不出现入口且直达管理地址回到租户首页；`tenant-admin: impersonating the administrator renders no organization surface` 覆盖冒充期间管理面不渲染；`tenant-admin: the unproved administrator is refused, proves the address and retries` 覆盖邮箱未证明时写入被拒绝、证明后同一写入成功；`tenant-admin: the owner reads the profile and saves its four descriptive fields` 覆盖资料页的只读身份、四项可编辑资料与保存后的组织菜单更新，`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls` 覆盖非所有者看不到转移与删除入口，`tenant-admin: the owner hands the organization to an active member and stays an administrator` 覆盖所有权转移后原所有者保留成员关系与 `tenant-admin` 绑定，`tenant-admin: a transfer whose target stopped being an active member is refused with the conflict copy` 覆盖目标不再是 active 成员时的冲突拒绝，`tenant-admin: an owner handed the organization on is refused the write its stale page still offers` 覆盖失去所有权后过期页面的写入被拒绝，`tenant-admin: the owner types the name, deletes the organization, and the name stays taken` 覆盖输入名称删除组织与名称不可复用，`tenant-admin: a stale owner whose organization was already ended is told it no longer exists` 覆盖组织已被删除后过期页面的写入得到组织不存在的结果。
+`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` `tenant-admin: the administrator invites, governs and switches the organization` 覆盖账户菜单分组与首页卡片、成员搜索与角色筛选、邀请签发/筛选/重发/撤销与一次性面板、角色创建（含描述）、治理权限的授予与撤销、高危授予的二次确认、权限目录的展开与治理集、内建角色的只读使用情况、成员管理区的绑定与解绑、停用与恢复、停用自己与解绑自己 `tenant-admin` 绑定的控件在请求前禁用并说明原因、移除、设置与租户切换；角色页的描述改写、不可映射授权、「在成员页查看」入口与绑定后回到角色页核对同一角色成员数未由 e2e 驱动，由 `web/packages/admin-ui/src/OrganizationRolesPage.test.tsx` 覆盖；邀请链接由一次性面板交出，日志载体不投递邀请；停用后业务请求不可访问与绕过界面的自停用拒绝不在 e2e 内驱动，由后端用例覆盖；`tenant-admin: the organization registers, verifies, disables and removes an SSO provider` 覆盖企业身份提供方的登记、域验证、启停与删除；`tenant-admin: the system tenant shows no entry and every direct visit returns home` 覆盖 `system` 租户不出现入口且直达管理地址回到租户首页；`tenant-admin: impersonating the administrator renders no organization surface` 覆盖冒充期间管理面不渲染；`tenant-admin: the unproved administrator is refused, proves the address and retries` 覆盖邮箱未证明时写入被拒绝、证明后同一写入成功；`tenant-admin: the owner reads the profile and saves its four descriptive fields` 覆盖资料页的只读身份、四项可编辑资料与保存后的组织菜单更新，`tenant-admin: a non-owner administrator reads the profile but sees no ownership controls` 覆盖非所有者看不到转移与删除入口，`tenant-admin: the owner hands the organization to an active member and stays an administrator` 覆盖所有权转移后原所有者保留成员关系与 `tenant-admin` 绑定，`tenant-admin: a transfer whose target stopped being an active member is refused with the conflict copy` 覆盖目标不再是 active 成员时的冲突拒绝，`tenant-admin: an owner handed the organization on is refused the write its stale page still offers` 覆盖失去所有权后过期页面的写入被拒绝，`tenant-admin: the owner types the name, deletes the organization, and the name stays taken` 覆盖输入名称删除组织与名称不可复用，`tenant-admin: a stale owner whose organization was already ended is told it no longer exists` 覆盖组织已被删除后过期页面的写入得到组织不存在的结果。

@@ -128,6 +128,29 @@ describe('OneTimeValuePanel', () => {
     )
   })
 
+  it('renders a notice with no value and no copy control when nothing is handed out', async () => {
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    const { container } = renderWithProviders(
+      <OneTimeValuePanel
+        message={MESSAGE}
+        closeLabel={CLOSE_LABEL}
+        closeAriaLabel={CLOSE_ARIA}
+        onClose={onClose}
+      />,
+    )
+    // The message is the whole hand-off; there is no empty value line and no
+    // control that would copy nothing.
+    expect(container.querySelector(':scope > [role="status"]')).toHaveTextContent(
+      MESSAGE,
+    )
+    expect(screen.queryByRole('button', { name: COPY_LABEL })).toBeNull()
+    expect(screen.queryByText(VALUE)).toBeNull()
+    // The close control remains.
+    await user.click(screen.getByRole('button', { name: CLOSE_ARIA }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('reports the close control by its accessible name and visible text', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

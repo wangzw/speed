@@ -210,14 +210,12 @@
     "error": {
       "title": "邀请读取失败"
     },
-    "usernameLabel": "用户名",
-    "displayNameLabel": "显示名",
-    "passwordLabel": "密码",
-    "usernameRequired": "请为新账户填写用户名。",
-    "usernameTaken": "该用户名已被占用，请换一个。",
-    "usernameReserved": "该用户名是系统保留的名称，请换一个。",
-    "usernameInvalid": "该用户名不符合规则，请按提示修改。",
-    "newAccountHint": "如果被邀请的邮箱还没有账户，请选择用户名，并可填写显示名与密码；如果已有账户，这些内容会被忽略。"
+    "unproved": {
+      "title": "需要先证明受邀邮箱",
+      "description": "接受邀请需要当前登录的账户先证明「{{email}}」属于你。请前往账户设置添加并验证这个邮箱，然后回到这里重新接受。这只是确认你的受邀身份，不会把这个邮箱设为登录方式。",
+      "manageAccount": "前往账户设置",
+      "retry": "验证完成后重新接受"
+    }
   },
   "impersonation": {
     "regionLabel": "冒充提示",
@@ -256,7 +254,9 @@
       "username_invalid": "该用户名不符合规则，请按提示修改。",
       "throttled": "尝试次数过多，请稍后再试。",
       "unavailable": "服务暂时不可用，请稍后重试。",
-      "human_verification_required": "请先完成人机验证，然后重试。"
+      "human_verification_required": "请先完成人机验证，然后重试。",
+      "invitation_email_unproved": "接受邀请前，请先在账户设置中证明被邀请的邮箱地址属于你。",
+      "membership_inactive": "你在这个组织中的成员身份已停用，无法接受邀请。请联系组织管理员。"
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",

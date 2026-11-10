@@ -53,6 +53,13 @@ export const ERROR_TEXT_CODES = [
   'authn.unsupported_region',
   'authn.bad_request',
   'authn.human_verification_required',
+  // The invitation acceptance face's own two refusals (pkg/authn/invite): the
+  // signed-in account has not proved the invited address (the screen opens its
+  // proof step instead of the banner, so the text is for any other surface that
+  // renders the code), and the caller's membership is suspended, where the code
+  // is the whole banner.
+  'authn.invitation_email_unproved',
+  'authn.membership_inactive',
   // Transport-level failures of the api-client contract.
   'client.network',
   'client.timeout',

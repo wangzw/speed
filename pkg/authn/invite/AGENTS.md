@@ -10,11 +10,12 @@ the module is in force; the frontend gates the invitation faces on it.
 
 An invitation is a pending grant of a membership: it names an address and a
 tenant and, until it is accepted, no account and no membership row exists. One
-module owns the whole of it — the table, the token and both route faces. It does
-not keep accounts, memberships or passwords: acceptance creates an account
-through `AccountAdmin` and writes the membership through `Memberships`, with
-`invite` as the membership's source, and those rules stay with the account
-module.
+module owns the whole of it — the table, the token and both route faces. The
+token grants joining; it does not prove the invited address. Acceptance needs a
+signed-in account whose own identifiers prove that address, and it writes the
+membership through `Memberships`, with `invite` as the membership's source when
+the membership is new. It never creates an account; the account rules stay with
+the account module.
 
 The API is the package's godoc, plus `Invites`, `Invitation`,
 `InvitationStatus`, `Issued`, `IssueInvite`, `AcceptInvite` and the sentinels
@@ -34,24 +35,28 @@ flip only makes an already unredeemable invitation look redeemable, and
 acceptance itself refuses it, so no sweeper is needed.
 
 - **Issue** normalizes the address, draws a 256-bit token under the `spd_inv_`
-  prefix, and keeps only its SHA-256. In one transaction it revokes a pending
-  invitation for the same tenant and address and inserts the new row. The token
-  is handed out once, in the result. The issuer is read from the request's
-  identity when there is one.
-- **Accept** finds the row by the token's digest, reports a terminal state, and
-  wins the row with a conditional write (`status` still pending and not
-  expired). Two concurrent acceptances leave at most one winner. The winner
-  looks the address up: when no identifier names it, it asks
-  `SignupVerification.PendingAccountByContact` whether the address is the
-  pending contact of one self-registered account; a hit writes the address
-  through `AccountAdmin.AddIdentifier` with `via = invite` and hangs the
-  membership on that account, a miss creates an account, and a read failure
-  fails the redemption so the row returns to pending. A failure after the win is
-  settled by a second conditional write: a transient failure, and a username the
-  accepting party can correct (taken, reserved or malformed), returns the row to
-  pending, so the same token redeems once a valid name is given; only a failure
-  no retry can complete — an address reserved by another account, a binding
-  another account holds — revokes it.
+  prefix, and keeps only its SHA-256. It charges the three send budgets — the
+  invited address, the issuing account and the deployment — and refuses an
+  issuance past any of them before writing a row. In one transaction it revokes
+  a pending invitation for the same tenant and address and inserts the new row.
+  The token is handed out once, in the result, and the issue answer carries it
+  only when the notice was not sent: a sent notice means the recipient holds the
+  link already, and a failed or unconfigured one leaves the inviter to hand it
+  over. The issuer is read from the request's identity when there is one; a host
+  command with none skips only the issuer budget.
+- **Accept** requires an authenticated caller. It finds the row by the token's
+  digest, refuses a terminal state, requires the caller's account to hold the
+  invited address as a proven email identifier — the address need not be chosen
+  as a sign-in way — and then wins the row with a conditional write (`status`
+  still pending and not expired). Two concurrent acceptances leave at most one
+  winner. The winner writes the membership on the caller's account; an existing
+  membership keeps its source and SSO exemption, and a suspended one is a
+  conflict whose invitation is revoked. A caller who has not proved the address
+  is refused and the row stays pending. A failure after the win is settled by a
+  second conditional write: a transient failure returns the row to pending, and
+  only a failure no retry can complete revokes it. The token is never treated as
+  proof of the address, so the inviter holding it cannot accept on the invitee's
+  behalf.
 - **Revoke** flips a pending invitation to revoked. Revoking one that was
   already accepted is `ErrInvitationAlreadyAccepted`; revoking one that was
   already revoked is an idempotent success.
@@ -77,8 +82,10 @@ acting operator's user account whose self-registration is still pending
 (`signup_state=1`) gets `403 contact-required`, asks no `Decider` and writes no
 row or audit row. The
 list is a read and is not gated; a service account and an account that never
-self-registered are exempt. The acceptance routes are registered public: the
-token is the whole credential and there is no identity to read.
+self-registered are exempt. The acceptance read is registered public: it shows
+what a token points to. The acceptance write is registered optional: it needs a
+signed-in caller, and the handler refuses one without an identity, because the
+token alone grants a membership no more.
 
 | Face | Method and path | Registration | Authorization |
 |---|---|---|---|
@@ -86,7 +93,7 @@ token is the whole credential and there is no identity to read.
 | Management | `GET B/admin/tenants/:tenant/invitations` | Guarded, Impersonable | decision for the read; no audit |
 | Management | `DELETE B/admin/tenants/:tenant/invitations/:id` | Guarded, Impersonable | decision + mandatory audit |
 | Acceptance | `GET B/invitations/:token` | Public | the token |
-| Acceptance | `POST B/invitations/:token` | Public | the token |
+| Acceptance | `POST B/invitations/:token` | Optional | a signed-in account that proves the invited address; the token |
 
 `B` is the capability's base path, read through the route mounter. A
 management route asks the `Decider`; a request with no identity is the
@@ -118,14 +125,16 @@ Without the variable the same test is the drift gate; `make check` runs it.
 
 ## Boundaries
 
-- **The token is the only credential of acceptance.** It is handed out once, at
-  issue, and only its digest is stored. Revoking is a change of state, not the
-  revocation of a signature. The token plaintext must not reach a log, an event
-  or a trace attribute; the `spd_inv_` prefix is what a log redactor recognises
-  it by.
+- **The token grants joining; it is not proof of the invited address.** It is
+  handed out once, at issue, and only its digest is stored. Revoking is a change
+  of state, not the revocation of a signature. The token plaintext must not reach
+  a log, an event or a trace attribute; the `spd_inv_` prefix is what a log
+  redactor recognises it by. Acceptance requires a signed-in account whose own
+  identifiers prove the address, so the inviter, who also holds the token,
+  cannot accept on the invitee's behalf.
 - **Acceptance reconciles across modules, not one transaction.** The invitation
-  row is this module's; the account and the membership are the account module's,
-  in its own transaction. A failure after the win is settled by a second
+  row is this module's; the membership is the account module's, in its own
+  transaction. A failure after the win is settled by a second
   conditional write, never an unconditional one; the settlement's own failure is
   an `Error` line and changes nothing about the error handed back. The
   correctness floor is the conditional write and the state checks, not the
@@ -148,17 +157,43 @@ Without the variable the same test is the drift gate; `make check` runs it.
   the identifier.
 - **The membership source is `invite`**, written into every membership row the
   module creates, so a subscriber of `authn.membership.changed` can tell an
-  invitation join from an administrator's direct add.
-- **An accepted invitation may prove an address of an account that already
-  exists.** `SignupVerification.PendingAccountByContact` is this module's only
-  use of that seam beyond the write gate. It reports an owner only when exactly
-  one live pending account lists the address; a miss, or more than one owner,
-  is not a guess, and the acceptance creates an account as before. The
-  reverse lookup is a read of the pending-contact table; a failure is neither a
-  hit nor a miss and never creates an account.
+  invitation join from an administrator's direct add. An existing membership is
+  not rewritten: an acceptance that finds one keeps its source and SSO
+  exemption.
+- **A withdrawn member loses the pending invitations addressed to them.** The
+  module subscribes to `authn.membership.changed`; on `suspended` or `removed` it
+  revokes the pending invitations for the account's email identifiers in that
+  tenant, conditional on `status = pending`, so an accepted or already revoked
+  row is untouched and a redelivery changes nothing. An acceptance that meets a
+  suspended membership revokes its pending row too, so a token the event missed
+  cannot be reused.
+- **A deleted tenant loses every pending invitation; a disabled one refuses
+  acceptance and keeps them.** The module delivers `authn.InvitationRevoker`,
+  and the tenant ownership module calls it after a deletion has committed; the
+  write is conditional on `status = pending`. Acceptance reads the optional
+  `authn.TenantStateResolver`: a deleted tenant answers 404 and its row is
+  revoked, a disabled tenant answers 409 `conflict` with `ErrInvitationTenantInactive`
+  and the row stays pending, so enabling the tenant makes the same token
+  redeemable again. An assembly with no resolver accepts, having no tenant state
+  to judge.
+- **The membership write is conditional.** Acceptance writes through
+  `Memberships.PutJoining`, which leaves the account an active member only when
+  it had no membership or its membership is still active. A membership
+  suspended or removed between the acceptance's read and its write is not
+  resumed: the acceptance answers 409 `membership-inactive` and the invitation
+  is revoked.
+- **Settling a failed acceptance back to pending never collides with a resend.**
+  A resend issued while the acceptance held the old row has already written a
+  new pending invitation; the settlement detects it (or a unique-constraint
+  collision) and revokes the old row instead of returning it to pending.
+- **The key-value store is required.** The send and probe budgets count through
+  `kv.KV`; the descriptor declares it in `Requires` and `newProduct` resolves
+  it, so an assembly that names this module also names a counter backend. A
+  budget that silently disappeared with its dependency would leave the
+  invitation faces unbounded.
 - **`SignupVerification` is required.** The descriptor declares it in
-  `Requires` and `newProduct` resolves it, so an assembly that names this
-  module also names the account module that delivers it.
+  `Requires` and `newProduct` resolves it. The management write gate reads
+  `SignupStateOf`; acceptance itself reads no pending-contact row.
 
 ## Configuration
 
@@ -172,6 +207,30 @@ Without the variable the same test is the drift gate; `make check` runs it.
   `authn.settings.relaxed` audit row with direction `increase`, naming the key
   and never the value. The config schema no longer carries the item: a config
   file naming it fails startup as an unknown key.
+- **The send budgets are settings.** `authn.invite.issue-window` is the fixed
+  window (default `1h`), and `authn.invite.issue-address-limit`,
+  `authn.invite.issue-issuer-limit` and `authn.invite.issue-global-limit` are
+  the invitations one invited address, one issuing account and the whole
+  deployment may send in one window (defaults `5`, `50`, `500`). A resend is
+  another issuance and spends the same budgets. The address is counted in its
+  canonical inbox form, so a plus suffix or a Gmail dot cannot multiply the
+  allowance.
+- **The acceptance probe budgets are settings.**
+  `authn.invite.probe-window` is the fixed window (default `1m`), and
+  `authn.invite.probe-token-limit` and `authn.invite.probe-client-limit` are
+  the probes one token and one client address may make in it (defaults `10`,
+  `30`). The token key is the token's digest, never the plaintext; an IPv6
+  client counts by its /64. The probe is charged before the token is looked up,
+  so a spent budget answers the same 429 whether or not the token exists.
+- **A spent budget is the platform-standard 429.** The handler answers the
+  entry point's throttled problem (`urn:speed:authn:throttled`) with
+  `Retry-After` in whole seconds; the response is declared on every route that
+  can throttle. A counter backend that cannot be read is a 503
+  (`authn.ErrUnavailable`), never a silent pass.
+- **Every budget read falls back to its declared default.** With no settings
+  store, a failed read or a value outside the domain (a window from `1s` to the
+  longest whose double fits a `time.Duration`; a limit of at least `1`), the
+  declared default applies and one `Error` names the key.
 
 ## Running it
 

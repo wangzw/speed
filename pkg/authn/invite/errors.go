@@ -18,6 +18,10 @@ var domainErrors = []error{
 	ErrInvitationRevoked,
 	ErrInvitationAlreadyAccepted,
 	ErrInvitationPending,
+	ErrInvitationUnauthenticated,
+	ErrInvitationEmailUnproved,
+	ErrInvitationMembershipInactive,
+	ErrInvitationTenantInactive,
 	ErrInvalidEmail,
 	ErrInvite,
 	authn.ErrAccountNotFound,
@@ -28,6 +32,7 @@ var domainErrors = []error{
 	authn.ErrUsernameReserved,
 	authn.ErrBindingConflict,
 	authn.ErrCleanupIncomplete,
+	authn.ErrThrottled,
 	authn.ErrUnavailable,
 }
 

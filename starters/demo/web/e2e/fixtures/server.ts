@@ -730,8 +730,8 @@ export interface ReviewServer {
  * the port in that window -- so it is retried with a fresh port, bounded by
  * MAX_BIND_ATTEMPTS.
  *
- * `seedMember`, `seedImpersonation`, `seedInvitee`, `seedSocialAccount`,
- * `seedTenantAdmin`, `seedUnprovedTenantAdmin`, `seedSystemTenantAdmin`,
+ * `seedMember`, `seedImpersonation`, `seedInvitee`, `invitationMail`,
+ * `seedSocialAccount`, `seedTenantAdmin`, `seedUnprovedTenantAdmin`, `seedSystemTenantAdmin`,
  * `seedProtectedTenant`, `platformRequireMFA`, `tenantAdmins` and
  * `recentWindow` are passed through to the configuration the binary seeds; a
  * spec that needs none leaves them off, so the template's own seed stays the
@@ -771,6 +771,7 @@ export async function startReviewServer(
     readonly seedMember?: boolean
     readonly seedImpersonation?: boolean
     readonly seedInvitee?: boolean
+    readonly invitationMail?: boolean
     readonly seedSocialAccount?: boolean
     readonly socialIdentityProvider?: boolean
     readonly enterpriseSSO?: boolean
@@ -877,6 +878,7 @@ export async function startReviewServer(
       seedMember: options.seedMember,
       seedImpersonation: options.seedImpersonation,
       seedInvitee: options.seedInvitee,
+      invitationMail: options.invitationMail,
       seedSocialAccount: options.seedSocialAccount,
       tenantSSO: options.tenantSSO,
       seedTenantAdmin: options.seedTenantAdmin,
@@ -914,6 +916,7 @@ export async function startReviewServer(
         seedMember: options.seedMember,
         seedImpersonation: options.seedImpersonation,
         seedInvitee: options.seedInvitee,
+        invitationMail: options.invitationMail,
         seedSocialAccount: options.seedSocialAccount,
         tenantSSO: options.tenantSSO,
         seedTenantAdmin: options.seedTenantAdmin,

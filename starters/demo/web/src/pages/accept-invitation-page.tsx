@@ -3,22 +3,24 @@
  *
  * An administrator issues an invitation from the admin, which hands the
  * invitee a link to /invitations/:token. This page is that link's landing.
- * The accept surface is public and the token is the whole credential: the
- * membership lands on the invited address's account, not on whoever happens
- * to be signed in (pkg/authn/invite binds it by the invited address). The
- * host nevertheless gates the landing on a session the way the admin area
- * does -- an anonymous viewer meets the host's sign-in / register surface
- * (and re-renders onto the accept screen the moment the session flips), so
- * the invitee arrives with an identity of their own -- but that gate is a
- * composition choice, not what authorizes or binds the acceptance. A
- * signed-in viewer meets auth-ui's AcceptInvitationScreen, whose two
- * invitation operations this page binds to the app's generated SDK surface
- * (src/app-api, the platform document's operations). On acceptance the page
- * announces the new membership to the tenant home, resolves the invited
- * tenant's name from the caller tenant read, records that tenant as the
- * current one, and navigates there (src/app-notice.tsx): the
- * home page shows the confirmation the journey asks for, which the
- * acceptance's own page cannot keep because the navigation unmounts it.
+ * The token grants joining the organization but does not prove the invited
+ * address: the inviter holds the link too. The host therefore gates the
+ * landing on a session the way the admin area does -- an anonymous viewer
+ * meets the host's sign-in / register surface (and re-renders onto the
+ * accept screen the moment the session flips) -- and the acceptance binds
+ * to that signed-in account only when it holds the invited address as a
+ * proven email (pkg/authn/invite judges that). A signed-in viewer meets
+ * auth-ui's AcceptInvitationScreen, whose two invitation operations this
+ * page binds to the app's generated SDK surface (src/app-api, the platform
+ * document's operations). When the account has not proved the address the
+ * screen shows its proof step and sends the viewer to the account page's
+ * add-email form; the invitation stays pending, so the link they started
+ * from accepts after the proof. On acceptance the page announces the new
+ * membership to the tenant home, resolves the invited tenant's name from the
+ * caller tenant read, records that tenant as the current one, and navigates
+ * there (src/app-notice.tsx): the home page shows the confirmation the
+ * journey asks for, which the acceptance's own page cannot keep because the
+ * navigation unmounts it.
  *
  * The accept answer names the written membership's tenant by identifier only,
  * so the name the request surface must carry is not in it. The page reads
@@ -49,6 +51,7 @@ import {
   getCurrentTenant,
   setCurrentTenant,
   } from '../chrome.js'
+import { ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 import { loadSelfTenants } from '../tenant-self.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
@@ -81,16 +84,10 @@ export function AcceptInvitationPage({
   const invitations = useMemo<InvitationOperations>(
     () => ({
       readInvitation: (value) => authnInviteAcceptView(value).then(toSummary),
-      acceptInvitation: (value, input) =>
-        authnInviteAccept(value, {
-          ...(input.username === undefined
-            ? {}
-            : { username: input.username }),
-          ...(input.displayName === undefined
-            ? {}
-            : { display_name: input.displayName }),
-          ...(input.password === undefined ? {} : { password: input.password }),
-        }).then((answer) => {
+      // The caller is the request's signed-in identity; the route segment is
+      // the token and the body carries nothing the acceptance reads.
+      acceptInvitation: (value) =>
+        authnInviteAccept(value, {}).then((answer) => {
           acceptedTenantName.current = answer.tenant
           return undefined
         }),
@@ -155,16 +152,12 @@ export function AcceptInvitationPage({
           token={token}
           invitations={invitations}
           onAccepted={landInInvitedTenant}
-          // This landing sits behind the host's session gate, so the viewer
-          // already has the account the invitation binds to. The screen's
-          // new-account inputs only matter for an address with no account,
-          // which cannot reach this surface; leaving them on would ask for a
-          // username the server ignores.
-          newAccountFields={{
-            username: false,
-            displayName: false,
-            password: false,
-          }}
+          // The account page hosts the email add-and-verify surface. The
+          // change-email entry opens the add form directly, which is where
+          // an account without the invited address proves it; the invitation
+          // stays pending, so the visitor comes back to this link and
+          // accepts.
+          onProveEmail={() => navigate(`${ACCOUNT_PATH}?change=email`)}
         />
       </Card>
     </Box>
@@ -197,9 +190,9 @@ async function resolveInvitedTenant(
 /** Narrows the generated acceptView answer to the screen's own summary. */
 function toSummary(view: AuthnInviteView) {
   return {
-    tenant: view.invitation.tenant,
-    email: view.invitation.email,
-    status: view.invitation.status,
-    expiresAt: view.invitation.expires_at,
+    tenant: view.invitation?.tenant ?? '',
+    email: view.invitation?.email ?? '',
+    status: view.state,
+    expiresAt: view.invitation?.expires_at ?? '',
   }
 }

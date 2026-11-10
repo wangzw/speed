@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
@@ -178,7 +179,7 @@ func TestListAndRevokeRoutes(t *testing.T) {
 func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "alice"}); err != nil {
+	if _, err := h.p.Accept(h.acceptCtx("acct-alice", "alice@example.com"), AcceptInvite{Token: issued.Token}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 	h.asAdmin()
@@ -188,9 +189,8 @@ func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 	}
 }
 
-func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
+func TestAcceptFaceReadIsPublicAndWriteNeedsAnIdentity(t *testing.T) {
 	h := newHarness(t)
-	h.accounts.put("alice@example.com", "acct-alice")
 	issued := h.issue("tenant-a", "alice@example.com")
 
 	// The GET carries no identity: the route is public.
@@ -200,8 +200,18 @@ func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
 		t.Fatalf("accept view status = %d, want 200: %s", w.Code, w.Body.String())
 	}
 
-	// The POST redeems with no identity too.
-	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{"display_name": "Alice"})
+	// The POST does not: the token alone is no credential.
+	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous accept status = %d, want 401: %s", w.Code, w.Body.String())
+	}
+	if h.members.count != 0 {
+		t.Errorf("an anonymous acceptance wrote %d membership(s)", h.members.count)
+	}
+
+	// A signed-in holder of the invited address redeems it.
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
+	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("accept status = %d, want 201: %s", w.Code, w.Body.String())
 	}
@@ -209,70 +219,134 @@ func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
 		t.Errorf("memberships written = %d, want one", h.members.count)
 	}
 	// A second acceptance of the same token is refused.
-	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{"display_name": "Alice"})
+	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("second accept status = %d, want 409", w.Code)
 	}
 }
 
-// TestAnIncompleteCleanupOnAcceptanceAnswers503 holds the acceptance face's
-// mapping of the propagated cleanup failure: the account exists and the
-// invitation is back to pending, and the caller is told the dependency could
-// not finish rather than that the token is a conflict.
-func TestAnIncompleteCleanupOnAcceptanceAnswers503(t *testing.T) {
+// TestTheAcceptViewAnswersOnlyTheStateOnceTheTokenIsDead holds that a token
+// past its deadline, revoked or already accepted answers its state alone: the
+// invited address, the tenant's name and the deadline are not disclosed by a
+// link that grants nothing.
+func TestTheAcceptViewAnswersOnlyTheStateOnceTheTokenIsDead(t *testing.T) {
 	h := newHarness(t)
 	h.mounter.AsAnonymous()
-	h.admin.err = authn.ErrCleanupIncomplete
-	issued := h.issue("tenant-a", "zoe@example.com")
 
-	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
-		map[string]string{"username": "zoe", "display_name": "Zoe"})
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("accept status = %d, want 503: %s", w.Code, w.Body.String())
+	pending := h.issue("tenant-a", "alice@example.com")
+	w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+pending.Token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("pending view status = %d, want 200: %s", w.Code, w.Body.String())
 	}
-	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
-		t.Errorf("status after the 503 = %d, want back to pending", got)
+	var live map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &live); err != nil {
+		t.Fatalf("the pending body %q is not JSON: %v", w.Body.String(), err)
+	}
+	if got, _ := live["state"].(string); got != viewStatePending {
+		t.Fatalf("pending state = %q, want %q", got, viewStatePending)
+	}
+	if _, ok := live["invitation"]; !ok {
+		t.Fatal("a redeemable invitation carries no summary")
+	}
+
+	for _, held := range []struct {
+		name  string
+		setup func(Issued)
+	}{
+		{
+			name: "accepted",
+			setup: func(issued Issued) {
+				h.acceptAsHTTP("acct-accepted", "accepted@example.com")
+				if accepted := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
+					map[string]string{}); accepted.Code != http.StatusCreated {
+					t.Fatalf("accepting: %d: %s", accepted.Code, accepted.Body.String())
+				}
+			},
+		},
+		{
+			name: "revoked",
+			setup: func(issued Issued) {
+				h.asAdmin()
+				if revoked := h.request(http.MethodDelete,
+					"/api/v1/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil); revoked.Code != http.StatusNoContent {
+					t.Fatalf("revoking: %d: %s", revoked.Code, revoked.Body.String())
+				}
+				h.mounter.AsAnonymous()
+			},
+		},
+		{
+			name: "expired",
+			setup: func(Issued) {
+				h.clock.advance(DefaultTTL + time.Hour)
+			},
+		},
+	} {
+		t.Run(held.name, func(t *testing.T) {
+			issued := h.issue("tenant-a", held.name+"@example.com")
+			h.mounter.AsAnonymous()
+			held.setup(issued)
+
+			w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+issued.Token, nil)
+			if w.Code != http.StatusOK {
+				t.Fatalf("view status = %d, want 200: %s", w.Code, w.Body.String())
+			}
+			var body map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
+			}
+			if got, _ := body["state"].(string); got != held.name {
+				t.Errorf("state = %q, want %q", got, held.name)
+			}
+			if _, ok := body["invitation"]; ok {
+				t.Error("a dead token's answer carries an invitation summary")
+			}
+			for _, member := range []string{"email", "tenant", "expires_at", "accepted_at", "created_at"} {
+				if strings.Contains(w.Body.String(), member) {
+					t.Errorf("a dead token's answer carries %q: %s", member, w.Body.String())
+				}
+			}
+		})
 	}
 }
 
-// TestAMalformedUsernameOnAcceptanceAnswers400OfItsOwn holds that a username
-// that does not normalize is told apart from the rest of the body: the caller
-// learns which value to change, and the invitation is still redeemable.
-func TestAMalformedUsernameOnAcceptanceAnswers400OfItsOwn(t *testing.T) {
+// TestAnUnprovedCallerOnAcceptanceAnswers403OfItsOwn holds the answer the client
+// turns into the proof step: a caller with another proven address is told the
+// invited address is unproved, the invitation stays pending, and no membership
+// is written.
+func TestAnUnprovedCallerOnAcceptanceAnswers403OfItsOwn(t *testing.T) {
 	h := newHarness(t)
-	h.mounter.AsAnonymous()
-	h.admin.err = authn.UsernameShape(authn.ErrInvalidIdentifier)
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	issued := h.issue("tenant-a", "zoe@example.com")
 
-	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
-		map[string]string{"username": "ab", "display_name": "Zoe"})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("accept status = %d, want 400: %s", w.Code, w.Body.String())
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("accept status = %d, want 403: %s", w.Code, w.Body.String())
 	}
 	var body map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
 	}
-	if got, _ := body["type"].(string); got != "urn:speed:authn:username-invalid" {
-		t.Errorf("problem type = %q, want urn:speed:authn:username-invalid", got)
+	if got, _ := body["type"].(string); got != "urn:speed:authn:invitation-email-unproved" {
+		t.Errorf("problem type = %q, want urn:speed:authn:invitation-email-unproved", got)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
-		t.Errorf("status after the 400 = %d, want back to pending", got)
+		t.Errorf("status after the 403 = %d, want pending so the proof step can be shown", got)
+	}
+	if h.members.count != 0 {
+		t.Errorf("the refused acceptance wrote %d membership(s)", h.members.count)
 	}
 }
 
-// TestATakenUsernameOnAcceptanceAnswers409 holds that the acceptance face
-// reports a username another account already holds as the conflict it is,
-// rather than as an unavailable dependency, and that the refusal does not spend
-// the token: the same token redeems once a free name is given.
-func TestATakenUsernameOnAcceptanceAnswers409(t *testing.T) {
+// TestASuspendedMemberOnAcceptanceAnswers409OfItsOwn holds that a suspended
+// membership is not silently reactivated: the acceptance answers the dedicated
+// conflict, writes nothing, and revokes the invitation.
+func TestASuspendedMemberOnAcceptanceAnswers409OfItsOwn(t *testing.T) {
 	h := newHarness(t)
-	h.mounter.AsAnonymous()
-	h.admin.err = authn.ErrAccountExists
-	issued := h.issue("tenant-a", "zoe@example.com")
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
+	h.members.hold(authn.Membership{Account: "acct-alice", Tenant: "tenant-a", Active: false})
+	issued := h.issue("tenant-a", "alice@example.com")
 
-	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
-		map[string]string{"username": "taken-one", "display_name": "Zoe"})
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("accept status = %d, want 409: %s", w.Code, w.Body.String())
 	}
@@ -280,21 +354,33 @@ func TestATakenUsernameOnAcceptanceAnswers409(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
 	}
-	if got, _ := body["type"].(string); got != "urn:speed:authn:username-taken" {
-		t.Errorf("problem type = %q, want urn:speed:authn:username-taken", got)
+	if got, _ := body["type"].(string); got != "urn:speed:authn:membership-inactive" {
+		t.Errorf("problem type = %q, want urn:speed:authn:membership-inactive", got)
+	}
+	if h.members.count != 0 {
+		t.Errorf("the refused acceptance wrote %d membership(s)", h.members.count)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("status after the 409 = %d, want revoked", got)
+	}
+}
+
+// TestAFailingMembershipStoreOnAcceptanceAnswers503 holds the acceptance face's
+// mapping of a dependency failure: the invitation is back to pending and the
+// caller is told the dependency could not answer rather than that the token is
+// a conflict.
+func TestAFailingMembershipStoreOnAcceptanceAnswers503(t *testing.T) {
+	h := newHarness(t)
+	h.acceptAsHTTP("acct-zoe", "zoe@example.com")
+	h.members.err = errors.New("the membership store is down")
+	issued := h.issue("tenant-a", "zoe@example.com")
+
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("accept status = %d, want 503: %s", w.Code, w.Body.String())
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
-		t.Fatalf("status after the 409 = %d, want back to pending: the name is the invitee's to change", got)
-	}
-
-	h.admin.err = nil
-	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
-		map[string]string{"username": "zoe-free", "display_name": "Zoe"})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("accept with a free name answered %d, want 201: %s", w.Code, w.Body.String())
-	}
-	if got := h.row(issued.Invitation.ID).Status; got != statusAccepted {
-		t.Errorf("status after the corrected acceptance = %d, want accepted", got)
+		t.Errorf("status after the 503 = %d, want back to pending", got)
 	}
 }
 
@@ -346,10 +432,9 @@ func TestABodyOfAnotherMediaTypeIs415(t *testing.T) {
 // request that carries none.
 func TestAcceptRefusesAnEmptyBody(t *testing.T) {
 	h := newHarness(t)
-	h.accounts.put("alice@example.com", "acct-alice")
 	issued := h.issue("tenant-a", "alice@example.com")
 
-	h.mounter.AsAnonymous()
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, nil)
 	req.Header.Set("Content-Type", "application/json")
 	w := h.mounter.Do(req)
@@ -367,10 +452,9 @@ func TestAcceptRefusesAnEmptyBody(t *testing.T) {
 // binder reads it like any other body.
 func TestAcceptBindsAnUnknownLengthBody(t *testing.T) {
 	h := newHarness(t)
-	h.accounts.put("alice@example.com", "acct-alice")
 	issued := h.issue("tenant-a", "alice@example.com")
 
-	h.mounter.AsAnonymous()
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
 		strings.NewReader(`{"display_name":"Alice"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -424,10 +508,9 @@ func TestRoutesMountUnderAConfiguredBasePath(t *testing.T) {
 // accepted, as it has always been.
 func TestAcceptTakesADeclaredLengthEmptyObjectBody(t *testing.T) {
 	h := newHarness(t)
-	h.accounts.put("alice@example.com", "acct-alice")
 	issued := h.issue("tenant-a", "alice@example.com")
 
-	h.mounter.AsAnonymous()
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 for a declared-length {} body: %s", w.Code, w.Body.String())

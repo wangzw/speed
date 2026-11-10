@@ -21,189 +21,13 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestAcceptCreatesAnAccountThroughTheRealAccountModule holds the whole of a
-// redemption against the account module's own Create, over one SQLite database
-// both migration sets are applied to: an invitation for an address with no
-// account is accepted, an enabled account is created with that address as its
-// email, and a membership with source invite stands beside it.
-//
-// The account product is the real one, taken from a registry, because Create is
-// where CreateAccount.EmailVerifiedVia is judged against the Verification closed
-// set. The invitation module's own cases inject a fake AccountAdmin and so never
-// reach that judgement; the address-verified-through-invitation channel is what
-// this case exists to hold.
-func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
-	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
-		verification authn.SignupVerification, memberships authn.Memberships,
-	) {
-		// This module's own migrations go onto the same handle the account module
-		// built its tables on.
-		applyMigrations(t, handle)
-
-		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
-
-		ctx := context.Background()
-		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
-		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "Newcomer@Example.com"})
-		if err != nil {
-			t.Fatalf("issuing an invitation: %v", err)
-		}
-
-		mem, err := p.Accept(ctx, AcceptInvite{
-			Token: issued.Token, Username: "newcomer", DisplayName: "Newcomer",
-			Password: "correct horse battery staple",
-		})
-		if err != nil {
-			t.Fatalf("accepting an invitation for an address with no account: %v", err)
-		}
-
-		// The account was created: the address now names one, and it is the
-		// account the accepted membership points at.
-		id, err := accounts.Lookup(ctx, authn.IdentifierEmail, "newcomer@example.com")
-		if err != nil {
-			t.Fatalf("looking the new account up by its address: %v", err)
-		}
-		if id != mem.Account {
-			t.Errorf("the accepted membership names account %q, but the address names %q", mem.Account, id)
-		}
-
-		// The username is the account's login way.
-		identifiers, err := accounts.Identifiers(ctx, id)
-		if err != nil {
-			t.Fatalf("listing the new account's identifiers: %v", err)
-		}
-		var username *authn.Identifier
-		for i := range identifiers {
-			if identifiers[i].Kind == authn.IdentifierUsername {
-				username = &identifiers[i]
-			}
-		}
-		if username == nil || username.Value != "newcomer" || !username.SignIn || username.Contact {
-			t.Errorf("the new account's username is %+v, want newcomer as a login way and not a contact", username)
-		}
-
-		// The membership was written, with source invite.
-		got, ok, err := memberships.Membership(ctx, tenant, id)
-		if err != nil {
-			t.Fatalf("reading the membership back: %v", err)
-		}
-		if !ok {
-			t.Fatal("no membership row was written for the account the accepted invitation created")
-		}
-		if !got.Active || got.Source != SourceInvite {
-			t.Errorf("membership = %+v, want active with source %q", got, SourceInvite)
-		}
-	})
-}
-
-// TestAcceptRefusesANewAccountWithNoUsername holds that an acceptance that would
-// open an account refuses without a username and creates nothing, and that the
-// invitation stays redeemable with one. An address that already belongs to an
-// account is not held to it.
-func TestAcceptRefusesANewAccountWithNoUsername(t *testing.T) {
-	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
-		verification authn.SignupVerification, memberships authn.Memberships,
-	) {
-		applyMigrations(t, handle)
-
-		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
-
-		ctx := context.Background()
-		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
-		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "needname@example.com"})
-		if err != nil {
-			t.Fatalf("issuing an invitation: %v", err)
-		}
-
-		if _, err = p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrInvalidArgument) {
-			t.Fatalf("accepting with no username gave %v, want ErrInvalidArgument", err)
-		}
-		if _, lookupErr := accounts.Lookup(ctx, authn.IdentifierEmail, "needname@example.com"); !errors.Is(lookupErr, authn.ErrAccountNotFound) {
-			t.Errorf("the refused acceptance left the address held: %v", lookupErr)
-		}
-
-		// The refusal is transient: the token is redeemable with a username.
-		if _, err = p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: "needname"}); err != nil {
-			t.Fatalf("accepting with a username after the refusal: %v", err)
-		}
-	})
-}
-
-// TestAUsernameRefusalLeavesTheInvitationRedeemable holds the three username
-// refusals against the account module's own checks — taken, reserved and
-// malformed — as values the person accepting the invitation controls: the
-// acceptance fails with that refusal, no account is opened, and the same token
-// redeems once a valid name is given.
-func TestAUsernameRefusalLeavesTheInvitationRedeemable(t *testing.T) {
-	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
-		verification authn.SignupVerification, memberships authn.Memberships,
-	) {
-		applyMigrations(t, handle)
-		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
-		ctx := context.Background()
-
-		if _, err := admin.Create(ctx, authn.CreateAccount{Username: "occupied"}); err != nil {
-			t.Fatalf("seeding an account that holds a username: %v", err)
-		}
-
-		cases := []struct {
-			name     string
-			username string
-			want     error
-			shape    bool
-		}{
-			{"taken", "occupied", authn.ErrAccountExists, false},
-			{"reserved", "admin", authn.ErrUsernameReserved, false},
-			{"malformed", "ab", authn.ErrInvalidIdentifier, true},
-		}
-		for _, c := range cases {
-			t.Run(c.name, func(t *testing.T) {
-				address := c.name + "@example.com"
-				issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
-				issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: address})
-				if err != nil {
-					t.Fatalf("issuing an invitation: %v", err)
-				}
-
-				_, err = p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: c.username, DisplayName: c.name})
-				if !errors.Is(err, c.want) {
-					t.Fatalf("accepting with the %s name gave %v, want %v", c.name, err, c.want)
-				}
-				if c.shape && !authn.IsUsernameShape(err) {
-					t.Errorf("the malformed refusal %v does not read as a username shape", err)
-				}
-				if _, lookupErr := accounts.Lookup(ctx, authn.IdentifierEmail, address); !errors.Is(lookupErr, authn.ErrAccountNotFound) {
-					t.Errorf("the refused acceptance left %s held: %v", address, lookupErr)
-				}
-
-				mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: "accepted-" + c.name, DisplayName: c.name})
-				if err != nil {
-					t.Fatalf("retrying the same token with a valid name: %v", err)
-				}
-				id, err := accounts.Lookup(ctx, authn.IdentifierEmail, address)
-				if err != nil {
-					t.Fatalf("looking the accepted account up: %v", err)
-				}
-				if id != mem.Account {
-					t.Errorf("the retried membership names %q, but the address names %q", mem.Account, id)
-				}
-				got, ok, err := memberships.Membership(ctx, tenant, id)
-				if err != nil || !ok {
-					t.Fatalf("reading the membership back: ok=%t, err=%v", ok, err)
-				}
-				if !got.Active || got.Source != SourceInvite {
-					t.Errorf("membership = %+v, want active with source %q", got, SourceInvite)
-				}
-			})
-		}
-	})
-}
-
-// TestAcceptProvesAnAdministratorAssertedAddress holds that an invitation is a
-// proof for an address an administrator wrote without proof: accepting the
-// token brings the existing identifier up to invite, and the account stops
-// reading pending.
-func TestAcceptProvesAnAdministratorAssertedAddress(t *testing.T) {
+// TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule holds
+// the whole of a redemption against the account module's own reads and writes
+// over one SQLite database both migration sets are applied to: an authenticated
+// caller who holds the invited address as a proven email identifier gets the
+// membership, and the acceptance writes neither an account nor an identifier,
+// so the address keeps the channel it was proved through and its sign-in axis.
+func TestAcceptAddsAMembershipForAProvenAccountThroughTheRealAccountModule(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
 		verification authn.SignupVerification, memberships authn.Memberships,
 	) {
@@ -212,49 +36,330 @@ func TestAcceptProvesAnAdministratorAssertedAddress(t *testing.T) {
 
 		ctx := context.Background()
 		created, err := admin.Create(ctx, authn.CreateAccount{
-			Kind:             authn.KindUser,
-			Username:         "preprovisioned",
-			Email:            "Preprovisioned@Example.com",
-			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
-			Via:              authn.ReasonAdmin,
+			Kind: authn.KindUser, Username: "newcomer", DisplayName: "Newcomer",
+			Email: "login@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
+			Via: authn.ReasonAdmin,
 		})
 		if err != nil {
-			t.Fatalf("creating a provisioned account: %v", err)
+			t.Fatalf("creating the account: %v", err)
 		}
-		status, err := verification.SignupStateOf(ctx, created.ID)
-		if err != nil {
-			t.Fatalf("reading the provisioned account's state: %v", err)
-		}
-		if status.State != authn.SignupPending {
-			t.Fatalf("the provisioned account reads %v, want pending until its email is proved", status.State)
+		// The invited address is proved through the ordinary email-code channel
+		// and is the account's second address, so proving it does not make it a
+		// sign-in way.
+		if addErr := admin.AddIdentifier(ctx, created.ID, authn.IdentifierEmail, "newcomer@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); addErr != nil {
+			t.Fatalf("proving the invited address: %v", addErr)
 		}
 
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
-		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "preprovisioned@example.com"})
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "Newcomer@Example.com"})
 		if err != nil {
-			t.Fatalf("issuing an invitation for the provisioned address: %v", err)
-		}
-		if _, err = p.Accept(ctx, AcceptInvite{Token: issued.Token}); err != nil {
-			t.Fatalf("accepting the invitation: %v", err)
+			t.Fatalf("issuing an invitation: %v", err)
 		}
 
-		status, err = verification.SignupStateOf(ctx, created.ID)
+		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
+		mem, err := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token})
 		if err != nil {
-			t.Fatalf("reading the account's state after acceptance: %v", err)
+			t.Fatalf("accepting the invitation: %v", err)
 		}
-		if status.State != authn.SignupVerified {
-			t.Errorf("the account reads %v after the invitation proved its address, want verified", status.State)
+		if mem.Account != created.ID || !mem.Active || mem.Source != SourceInvite {
+			t.Errorf("membership = %+v, want the proven account active with source %q", mem, SourceInvite)
 		}
-		identifiers, err := accounts.Identifiers(ctx, created.ID)
+
+		got, ok, err := memberships.Membership(ctx, tenant, created.ID)
+		if err != nil || !ok {
+			t.Fatalf("reading the membership back: ok=%t, err=%v", ok, err)
+		}
+		if !got.Active || got.Source != SourceInvite {
+			t.Errorf("membership = %+v, want active with source %q", got, SourceInvite)
+		}
+
+		// Acceptance wrote no identifier: the invited address is still a single
+		// email-code identifier, and it is not a sign-in way.
+		identifier := emailIdentifier(t, ctx, accounts, created.ID, "newcomer@example.com")
+		if identifier.VerifiedVia != authn.VerifiedViaEmailCode {
+			t.Errorf("the invited address reads via %q, want the email-code proof it already had", identifier.VerifiedVia)
+		}
+		if identifier.SignIn {
+			t.Error("the acceptance made the invited address a sign-in identifier")
+		}
+		if n := identifierCount(t, handle, created.ID, "newcomer@example.com"); n != 1 {
+			t.Errorf("the invited address holds %d identifier rows, want the one it had", n)
+		}
+	})
+}
+
+// TestAcceptRefusesAnAccountWithoutTheInvitedAddressThroughTheRealAccountModule
+// holds the refusal for a caller whose proven address is another one: the
+// invitation stays pending, no membership is written, and no account is opened
+// for the invited address.
+func TestAcceptRefusesAnAccountWithoutTheInvitedAddressThroughTheRealAccountModule(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+
+		ctx := context.Background()
+		created, err := admin.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindUser, Username: "newcomer", Email: "login@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode}, Via: authn.ReasonAdmin,
+		})
 		if err != nil {
-			t.Fatalf("reading the account's identifiers: %v", err)
+			t.Fatalf("creating the account: %v", err)
 		}
-		for _, identifier := range identifiers {
-			if identifier.Kind == authn.IdentifierEmail && identifier.Value == "preprovisioned@example.com" {
-				if identifier.VerifiedVia != VerifiedViaInvite {
-					t.Errorf("the address reads via %q, want %q", identifier.VerifiedVia, VerifiedViaInvite)
-				}
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation: %v", err)
+		}
+
+		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
+		if _, err := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationEmailUnproved) {
+			t.Fatalf("accepting without the invited address gave %v, want ErrInvitationEmailUnproved", err)
+		}
+		if _, ok, err := memberships.Membership(ctx, tenant, created.ID); err != nil || ok {
+			t.Errorf("a membership was written: ok=%t, err=%v", ok, err)
+		}
+		if got := rowOf(t, handle, issued.Invitation.ID).Status; got != statusPending {
+			t.Errorf("the invitation is %d, want pending", got)
+		}
+		if n := accountCount(t, handle); n != 1 {
+			t.Errorf("the database holds %d accounts, want the one caller alone", n)
+		}
+	})
+}
+
+// TestAFreshlyRegisteredAccountCannotAcceptUntilItProvesTheInvitedAddress holds
+// the whole flow the product requires: registration leaves the address pending;
+// acceptance is refused with the proof step's error while it is unproved; the
+// ordinary email-code proof moves it to verified; and the same token then
+// redeems, with no second account and with the address proved by the code and
+// not by the invitation.
+func TestAFreshlyRegisteredAccountCannotAcceptUntilItProvesTheInvitedAddress(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, signups authn.Signups, admin authn.AccountAdmin,
+		accounts authn.Accounts, verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+
+		ctx := context.Background()
+		registered, err := signups.Register(ctx, authn.RegisterAccount{
+			Username: "newcomer", Email: "Newcomer@Example.com", Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("registering the account: %v", err)
+		}
+		if status, sErr := verification.SignupStateOf(ctx, registered.ID); sErr != nil || status.State != authn.SignupPending {
+			t.Fatalf("the registered account is %+v (%v), want a pending registration", status, sErr)
+		}
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation: %v", err)
+		}
+
+		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(registered.ID))
+		if _, acceptErr := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token}); !errors.Is(acceptErr, ErrInvitationEmailUnproved) {
+			t.Fatalf("accepting before the proof gave %v, want ErrInvitationEmailUnproved", acceptErr)
+		}
+		if _, ok, readErr := memberships.Membership(ctx, tenant, registered.ID); readErr != nil || ok {
+			t.Errorf("a membership was written before the proof: ok=%t, err=%v", ok, readErr)
+		}
+
+		// The ordinary email-code proof is what moves the address to verified.
+		if addErr := admin.AddIdentifier(ctx, registered.ID, authn.IdentifierEmail, "newcomer@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); addErr != nil {
+			t.Fatalf("proving the address: %v", addErr)
+		}
+		status, err := verification.SignupStateOf(ctx, registered.ID)
+		if err != nil || status.State != authn.SignupVerified {
+			t.Fatalf("the account reads %+v (%v), want verified", status, err)
+		}
+
+		mem, err := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token})
+		if err != nil {
+			t.Fatalf("accepting after the proof: %v", err)
+		}
+		if mem.Account != registered.ID {
+			t.Errorf("the membership names %q, want the registered account %q", mem.Account, registered.ID)
+		}
+		got, ok, err := memberships.Membership(ctx, tenant, registered.ID)
+		if err != nil || !ok || !got.Active || got.Source != SourceInvite {
+			t.Errorf("membership = %+v (%v, %v), want an active invite membership", got, ok, err)
+		}
+		if n := accountCount(t, handle); n != 1 {
+			t.Errorf("the database holds %d accounts, want the one registration alone", n)
+		}
+		identifier := emailIdentifier(t, ctx, accounts, registered.ID, "newcomer@example.com")
+		if identifier.VerifiedVia != authn.VerifiedViaEmailCode {
+			t.Errorf("the address reads via %q, want the email-code proof", identifier.VerifiedVia)
+		}
+	})
+}
+
+// TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule holds that a
+// suspended member is not reactivated: the acceptance answers the dedicated
+// error, the stored membership stays suspended, and the invitation is revoked.
+func TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+
+		ctx := context.Background()
+		created, err := admin.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindUser, Username: "newcomer", Email: "newcomer@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode}, Via: authn.ReasonAdmin,
+		})
+		if err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		if putErr := memberships.Put(ctx, authn.Membership{
+			Account: created.ID, Tenant: tenant, Active: false, Source: "admin",
+		}); putErr != nil {
+			t.Fatalf("suspending the membership: %v", putErr)
+		}
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation: %v", err)
+		}
+
+		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
+		if _, acceptErr := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token}); !errors.Is(acceptErr, ErrInvitationMembershipInactive) {
+			t.Fatalf("accepting over a suspended membership gave %v, want ErrInvitationMembershipInactive", acceptErr)
+		}
+		got, ok, err := memberships.Membership(ctx, tenant, created.ID)
+		if err != nil || !ok {
+			t.Fatalf("reading the membership back: ok=%t, err=%v", ok, err)
+		}
+		if got.Active {
+			t.Error("the acceptance reactivated the suspended membership")
+		}
+		if got.Source != "admin" {
+			t.Errorf("the membership source = %q, want admin", got.Source)
+		}
+		if status := rowOf(t, handle, issued.Invitation.ID).Status; status != statusRevoked {
+			t.Errorf("the invitation is %d, want revoked", status)
+		}
+	})
+}
+
+// suspendBeforeJoin stands in for a suspension that commits between the
+// acceptance's membership read and its conditional write.
+type suspendBeforeJoin struct {
+	authn.Memberships
+	suspend func()
+}
+
+func (s *suspendBeforeJoin) PutJoining(ctx context.Context, m authn.Membership, wasActive bool) (bool, error) {
+	s.suspend()
+	return s.Memberships.PutJoining(ctx, m, wasActive)
+}
+
+// TestAcceptDoesNotResurrectAMembershipSuspendedBetweenTheReadAndTheWrite holds
+// the real store's conditional write: the acceptance read an active membership,
+// a suspension commits, and the join is refused rather than resuming the row.
+func TestAcceptDoesNotResurrectAMembershipSuspendedBetweenTheReadAndTheWrite(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+
+		ctx := context.Background()
+		created, err := admin.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindUser, Username: "newcomer", Email: "newcomer@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode}, Via: authn.ReasonAdmin,
+		})
+		if err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		if putErr := memberships.Put(ctx, authn.Membership{
+			Account: created.ID, Tenant: tenant, Active: true, Source: "admin",
+		}); putErr != nil {
+			t.Fatalf("seeding the membership: %v", putErr)
+		}
+
+		wrapped := &suspendBeforeJoin{Memberships: memberships, suspend: func() {
+			if putErr := memberships.Put(ctx, authn.Membership{
+				Account: created.ID, Tenant: tenant, Active: false, Source: "admin",
+			}); putErr != nil {
+				t.Fatalf("suspending between the read and the write: %v", putErr)
 			}
+		}}
+		p := newRealProduct(t, handle, admin, accounts, verification, wrapped)
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation: %v", err)
+		}
+
+		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
+		if _, acceptErr := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token}); !errors.Is(acceptErr, ErrInvitationMembershipInactive) {
+			t.Fatalf("accepting over a mid-flight suspension gave %v, want ErrInvitationMembershipInactive", acceptErr)
+		}
+		got, ok, err := memberships.Membership(ctx, tenant, created.ID)
+		if err != nil || !ok {
+			t.Fatalf("reading the membership back: ok=%t, err=%v", ok, err)
+		}
+		if got.Active {
+			t.Error("the acceptance resumed the membership suspended mid-write")
+		}
+		if got.Source != "admin" {
+			t.Errorf("the membership source = %q, want admin", got.Source)
+		}
+		if status := rowOf(t, handle, issued.Invitation.ID).Status; status != statusRevoked {
+			t.Errorf("the invitation is %d, want revoked", status)
+		}
+	})
+}
+
+// TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAccountModule
+// holds the write's values against the real membership store: an active
+// membership that already exists keeps its source and its SSO exemption.
+func TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAccountModule(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+
+		ctx := context.Background()
+		created, err := admin.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindUser, Username: "newcomer", Email: "newcomer@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode}, Via: authn.ReasonAdmin,
+		})
+		if err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		if putErr := memberships.Put(ctx, authn.Membership{
+			Account: created.ID, Tenant: tenant, Active: true, Source: "admin", SSOExempt: true,
+		}); putErr != nil {
+			t.Fatalf("seeding the membership: %v", putErr)
+		}
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation: %v", err)
+		}
+
+		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
+		if _, acceptErr := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token}); acceptErr != nil {
+			t.Fatalf("accepting with an active membership: %v", acceptErr)
+		}
+		got, ok, err := memberships.Membership(ctx, tenant, created.ID)
+		if err != nil || !ok {
+			t.Fatalf("reading the membership back: ok=%t, err=%v", ok, err)
+		}
+		if got.Source != "admin" || !got.SSOExempt || !got.Active {
+			t.Errorf("membership = %+v, want admin, SSO-exempt and active", got)
 		}
 	})
 }
@@ -268,17 +373,70 @@ func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, acc
 	p := &product{
 		handle:       handle,
 		accounts:     accounts,
-		accountAdm:   admin,
 		verification: verification,
 		memberships:  memberships,
 		mounter:      mounttest.New(t),
 		audit:        &recordingAudit{},
+		kv:           newFakeKV(),
 		decider:      &fakeDecider{allow: true},
 		tenantNames:  identityNames{},
 		logger:       (&logBuffer{}).logger(),
 	}
 	p.now = newTestClock().read
 	return p
+}
+
+// rowOf reads one invitation row straight from the table.
+func rowOf(t *testing.T, handle *gorm.DB, id string) invitationRow {
+	t.Helper()
+	var rows []invitationRow
+	if err := handle.Where("id = ?", id).Find(&rows).Error; err != nil {
+		t.Fatalf("reading %s: %v", id, err)
+	}
+	if len(rows) == 0 {
+		t.Fatalf("no row %s", id)
+	}
+	return rows[0]
+}
+
+// emailIdentifier reads the one email identifier an account holds for a value.
+func emailIdentifier(t *testing.T, ctx context.Context, accounts authn.Accounts, id authn.AccountID, value string) authn.Identifier {
+	t.Helper()
+	identifiers, err := accounts.Identifiers(ctx, id)
+	if err != nil {
+		t.Fatalf("reading the identifiers of %q: %v", id, err)
+	}
+	var found []authn.Identifier
+	for _, identifier := range identifiers {
+		if identifier.Kind == authn.IdentifierEmail && identifier.Value == value {
+			found = append(found, identifier)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("the account holds %d email identifier(s) for %s, want one", len(found), value)
+	}
+	return found[0]
+}
+
+// identifierCount counts the identifier rows an account holds for one value.
+func identifierCount(t *testing.T, handle *gorm.DB, id authn.AccountID, value string) int64 {
+	t.Helper()
+	var n int64
+	if err := handle.Raw("SELECT count(*) FROM authn_identifiers WHERE account_id = ? AND value = ?",
+		id.String(), value).Scan(&n).Error; err != nil {
+		t.Fatalf("counting the identifiers of %q: %v", id, err)
+	}
+	return n
+}
+
+// accountCount reads how many account rows the database holds.
+func accountCount(t *testing.T, handle *gorm.DB) int64 {
+	t.Helper()
+	var n int64
+	if err := handle.Raw("SELECT count(*) FROM authn_accounts").Scan(&n).Error; err != nil {
+		t.Fatalf("counting the accounts: %v", err)
+	}
+	return n
 }
 
 // openPasswordSignupKey is the setting the account module's registration reads
@@ -321,10 +479,10 @@ func (openPasswordSignup) WrittenAt(settings.Layer, string) (time.Time, bool, er
 	return time.Time{}, false, nil
 }
 
-func (s openPasswordSignup) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
+func (openPasswordSignup) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
 	results := make([]settings.LayerReadResult, len(reads))
 	for i, read := range reads {
-		if err := s.Get(read.Layer, key, read.Target); err != nil {
+		if err := (openPasswordSignup{}).Get(read.Layer, key, read.Target); err != nil {
 			return nil, err
 		}
 		results[i] = settings.LayerReadResult{}
@@ -343,10 +501,10 @@ func provideSettings() core.Module {
 }
 
 // withRealAccountProduct brings the real account module up over a SQLite file of
-// this test's own, so that its Create runs its own checks, and runs use inside
-// the drive with the handle and the capabilities the invitation module takes up.
-// use runs before the drive closes the pool, which is why it is a callback
-// rather than a set of return values.
+// this test's own, so that its reads and writes run their own checks, and runs
+// use inside the drive with the handle and the capabilities the invitation
+// module takes up. use runs before the drive closes the pool, which is why it is
+// a callback rather than a set of return values.
 func withRealAccountProduct(t *testing.T,
 	use func(*gorm.DB, authn.Signups, authn.AccountAdmin, authn.Accounts, authn.SignupVerification, authn.Memberships),
 ) {
@@ -400,179 +558,4 @@ func withRealAccountProduct(t *testing.T,
 	if err != nil {
 		t.Fatalf("driving the account module: %v", err)
 	}
-}
-
-// TestAcceptMergesIntoThePendingAccountThroughTheRealAccountModule holds the
-// acceptance's merge branch against the account module's own writes over one
-// database: an address that is nobody's identifier but is the pending contact of
-// a self-registration is proved by the invitation's token, so the identifier is
-// written on that account through invite, the pending contact with the same
-// value is consumed, the account's signup state moves from pending to verified,
-// the membership hangs on the same account and no second account is opened.
-func TestAcceptMergesIntoThePendingAccountThroughTheRealAccountModule(t *testing.T) {
-	withRealAccountProduct(t, func(handle *gorm.DB, signups authn.Signups, admin authn.AccountAdmin,
-		accounts authn.Accounts, verification authn.SignupVerification, memberships authn.Memberships,
-	) {
-		applyMigrations(t, handle)
-		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
-		ctx := context.Background()
-
-		registered, err := signups.Register(ctx, authn.RegisterAccount{
-			Username: "newcomer", Email: "Newcomer@Example.com", Password: "password123",
-		})
-		if err != nil {
-			t.Fatalf("registering the pending account: %v", err)
-		}
-		if status, sErr := verification.SignupStateOf(ctx, registered.ID); sErr != nil || status.State != authn.SignupPending {
-			t.Fatalf("the registered account is %+v (%v), want a pending registration", status, sErr)
-		}
-
-		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
-		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
-		if err != nil {
-			t.Fatalf("issuing an invitation for the pending address: %v", err)
-		}
-
-		mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token})
-		if err != nil {
-			t.Fatalf("accepting an invitation for a pending contact: %v", err)
-		}
-
-		// The membership hangs on the account that was already there.
-		if mem.Account != registered.ID {
-			t.Fatalf("the accepted membership names account %q, want the pending account %q", mem.Account, registered.ID)
-		}
-		got, ok, err := memberships.Membership(ctx, tenant, registered.ID)
-		if err != nil {
-			t.Fatalf("reading the membership back: %v", err)
-		}
-		if !ok || !got.Active || got.Source != SourceInvite {
-			t.Errorf("membership = %+v (present %v), want an active invite membership on the pending account", got, ok)
-		}
-
-		// The invitation's address verified the registration.
-		status, err := verification.SignupStateOf(ctx, registered.ID)
-		if err != nil {
-			t.Fatalf("reading the signup state back: %v", err)
-		}
-		if status.State != authn.SignupVerified {
-			t.Errorf("the account's signup state is %d, want verified", status.State)
-		}
-		if status.Email != "newcomer@example.com" {
-			t.Errorf("the verified address is %q, want newcomer@example.com", status.Email)
-		}
-		if status.Since.IsZero() {
-			t.Error("the instant the account reached verified was not recorded")
-		}
-		if n := pendingContacts(t, handle, registered.ID); n != 1 {
-			t.Errorf("the account lists %d contact(s), want the proved address's reservation kept", n)
-		}
-		if n := provedContacts(t, handle, registered.ID); n != 1 {
-			t.Errorf("the account has %d proved reservation(s), want the invited address stamped", n)
-		}
-		if vias := identifierVias(t, handle, registered.ID, "newcomer@example.com"); len(vias) != 1 || vias[0] != VerifiedViaInvite {
-			t.Errorf("the email identifier was written through %v, want exactly [%q]", vias, VerifiedViaInvite)
-		}
-		if n := accountCount(t, handle); n != 1 {
-			t.Errorf("the database holds %d accounts, want the one pending account alone", n)
-		}
-	})
-}
-
-// TestASecondPendingOwnerCannotExist holds the reservation's arbitration: a
-// second registration of one address is ErrContactTaken, so the reverse lookup
-// has one owner and the acceptance merges into it rather than creating a third
-// account.
-func TestASecondPendingOwnerCannotExist(t *testing.T) {
-	withRealAccountProduct(t, func(handle *gorm.DB, signups authn.Signups, admin authn.AccountAdmin,
-		accounts authn.Accounts, verification authn.SignupVerification, memberships authn.Memberships,
-	) {
-		applyMigrations(t, handle)
-		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
-		ctx := context.Background()
-
-		first, err := signups.Register(ctx, authn.RegisterAccount{
-			Username: "first", Email: "clash@example.com", Password: "password123",
-		})
-		if err != nil {
-			t.Fatalf("registering the first pending account: %v", err)
-		}
-		if _, err = signups.Register(ctx, authn.RegisterAccount{
-			Username: "second", Email: "Clash@Example.com", Password: "password123",
-		}); !errors.Is(err, authn.ErrContactTaken) {
-			t.Fatalf("a second registration of the address gave %v, want ErrContactTaken", err)
-		}
-		owner, ok, err := verification.PendingAccountByContact(ctx, string(authn.IdentifierEmail), "clash@example.com")
-		if err != nil || !ok || owner != first.ID.String() {
-			t.Fatalf("PendingAccountByContact = (%q, %v, %v), want the one owner", owner, ok, err)
-		}
-
-		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
-		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "clash@example.com"})
-		if err != nil {
-			t.Fatalf("issuing an invitation for the reserved address: %v", err)
-		}
-		mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token})
-		if err != nil {
-			t.Fatalf("accepting an invitation for the reserved address: %v", err)
-		}
-
-		if mem.Account != first.ID {
-			t.Fatalf("the accepted membership names account %q, want the owner %q", mem.Account, first.ID)
-		}
-		if n := accountCount(t, handle); n != 1 {
-			t.Errorf("the database holds %d accounts, want the one pending owner", n)
-		}
-		status, err := verification.SignupStateOf(ctx, first.ID)
-		if err != nil || status.State != authn.SignupVerified {
-			t.Errorf("the owner reads %+v (%v), want verified by the invitation", status, err)
-		}
-		if n := provedContacts(t, handle, first.ID); n != 1 {
-			t.Errorf("the owner has %d proved reservation(s), want its address kept and stamped", n)
-		}
-	})
-}
-
-// pendingContacts counts the contact reservations an account lists.
-func pendingContacts(t *testing.T, handle *gorm.DB, id authn.AccountID) int64 {
-	t.Helper()
-	var n int64
-	if err := handle.Raw("SELECT count(*) FROM authn_pending_contacts WHERE account_id = ?", id.String()).Scan(&n).Error; err != nil {
-		t.Fatalf("counting the pending contacts of %q: %v", id, err)
-	}
-	return n
-}
-
-// provedContacts counts the contact reservations an account lists with a proof
-// instant.
-func provedContacts(t *testing.T, handle *gorm.DB, id authn.AccountID) int64 {
-	t.Helper()
-	var n int64
-	if err := handle.Raw("SELECT count(*) FROM authn_pending_contacts WHERE account_id = ? AND verified_at IS NOT NULL",
-		id.String()).Scan(&n).Error; err != nil {
-		t.Fatalf("counting the proved contacts of %q: %v", id, err)
-	}
-	return n
-}
-
-// identifierVias reads how the account's identifiers with one email value were
-// verified, so that a case can tell the channel they were written through.
-func identifierVias(t *testing.T, handle *gorm.DB, id authn.AccountID, value string) []string {
-	t.Helper()
-	var vias []string
-	if err := handle.Raw("SELECT verified_via FROM authn_identifiers WHERE account_id = ? AND kind = ? AND value = ?",
-		id.String(), string(authn.IdentifierEmail), value).Scan(&vias).Error; err != nil {
-		t.Fatalf("reading the identifiers of %q: %v", id, err)
-	}
-	return vias
-}
-
-// accountCount reads how many account rows the database holds.
-func accountCount(t *testing.T, handle *gorm.DB) int64 {
-	t.Helper()
-	var n int64
-	if err := handle.Raw("SELECT count(*) FROM authn_accounts").Scan(&n).Error; err != nil {
-		t.Fatalf("counting the accounts: %v", err)
-	}
-	return n
 }

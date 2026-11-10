@@ -250,15 +250,19 @@ type Account = model.Account
 
 // Verification says how the ownership of an identifier given at creation was
 // established. Its zero value names no way and is not Valid. Valid is the closed
-// set of forms VerifiedVia may take, and Proves is true for the two that prove
-// ownership.
+// set of forms VerifiedVia may take, and Proves is true for the three that prove
+// ownership: a code sent to the address or number, and an identity provider's
+// declaration.
 type Verification = model.Verification
 
 // The ways an identifier's ownership was established. VerifiedViaSMSCode,
-// VerifiedViaEmailCode, VerifiedViaInvite and VerifiedViaIDPPrefix followed by a
-// provider identifier are proofs; the other three only record a fact an
-// administrator, an import or the account's own holder asserted, and are never
-// grounds for automatic linking or an enterprise merge.
+// VerifiedViaEmailCode and VerifiedViaIDPPrefix followed by a provider
+// identifier are proofs; VerifiedViaInvite, VerifiedViaAdmin,
+// VerifiedViaImportUnverified and VerifiedViaSelf only record a fact an
+// invitation's link was delivered and presented, an administrator, an import or
+// the account's own holder asserted, and are never grounds for automatic linking
+// or an enterprise merge. Holding an invitation token grants the membership the
+// invitation names and proves nothing about who owns the invited address.
 const (
 	VerifiedViaSMSCode          = model.VerifiedViaSMSCode
 	VerifiedViaEmailCode        = model.VerifiedViaEmailCode

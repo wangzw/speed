@@ -274,8 +274,8 @@ func TestGetPendingContactIsNotAnIdentifier(t *testing.T) {
 }
 
 // TestGetIdentifierProvenFollowsTheVerificationChannel holds the derivation of
-// proven over the closed set of channels: the four proofs read true and the
-// three assertions read false.
+// proven over the closed set of channels: the three proofs read true and the
+// four assertions, an invitation's included, read false.
 func TestGetIdentifierProvenFollowsTheVerificationChannel(t *testing.T) {
 	channels := []struct {
 		via    string
@@ -283,8 +283,8 @@ func TestGetIdentifierProvenFollowsTheVerificationChannel(t *testing.T) {
 	}{
 		{authn.VerifiedViaSMSCode, true},
 		{authn.VerifiedViaEmailCode, true},
-		{authn.VerifiedViaInvite, true},
 		{authn.VerifiedViaIDPPrefix + "0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0d", true},
+		{authn.VerifiedViaInvite, false},
 		{authn.VerifiedViaAdmin, false},
 		{authn.VerifiedViaImportUnverified, false},
 		{authn.VerifiedViaSelf, false},

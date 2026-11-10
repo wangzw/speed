@@ -58,7 +58,28 @@ type assembly struct {
 	seeder      authz.Seeder
 	counter     authz.TenantAdminCounter
 	writer      tenant.OrganizationWriter
+	invitations *recordingInvitationRevoker
 	handle      *gorm.DB
+}
+
+// recordingInvitationRevoker records the tenants whose pending invitations the
+// deletion asked it to withdraw.
+type recordingInvitationRevoker struct {
+	mu      sync.Mutex
+	tenants []string
+}
+
+func (r *recordingInvitationRevoker) RevokeTenantInvitations(_ context.Context, tenant string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tenants = append(r.tenants, tenant)
+	return nil
+}
+
+func (r *recordingInvitationRevoker) revoked() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.tenants...)
 }
 
 func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
@@ -75,6 +96,7 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 		ownership.Module(),
 		standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)),
 		standIn("stand-in.write-guard", personalWriteGuard{}, (*authz.WriteGuard)(nil)),
+		standIn("stand-in.invitations", &recordingInvitationRevoker{}, (*authn.InvitationRevoker)(nil)),
 		// The shared tenant lock every path that judges a tenant's ownership or
 		// administrator floor takes. The policy module and the ownership module
 		// both take it up, so the account-administration lock and a transfer
@@ -142,6 +164,14 @@ func resolve(t *testing.T, reg *core.Registry) *assembly {
 	if err != nil {
 		t.Fatalf("taking up the policy seeder: %v", err)
 	}
+	revoker, err := core.Resolve[authn.InvitationRevoker](reg)
+	if err != nil {
+		t.Fatalf("taking up the invitation revoker: %v", err)
+	}
+	recorded, ok := revoker.(*recordingInvitationRevoker)
+	if !ok {
+		t.Fatalf("the invitation revoker is %T, want the recording stand-in", revoker)
+	}
 	return &assembly{
 		admin:       admin,
 		accounts:    accounts,
@@ -151,6 +181,7 @@ func resolve(t *testing.T, reg *core.Registry) *assembly {
 		seeder:      seeder,
 		counter:     counter,
 		writer:      writer,
+		invitations: recorded,
 		handle:      database.DB(),
 	}
 }
@@ -453,6 +484,12 @@ func TestDeleteOrganizationWritesTheTombstoneAndCleansTheCoreRelations(t *testin
 		}); !errors.Is(err, tenant.ErrNameConflict) {
 			t.Errorf("registering the deleted name gave %v, want ErrNameConflict", err)
 		}
+		// The deletion withdraws the tenant's pending invitations once it has
+		// committed: the invitation module owns those rows and is asked by
+		// tenant identifier.
+		if got := a.invitations.revoked(); len(got) != 1 || got[0] != "acme" {
+			t.Errorf("the invitation revoker was asked for %v, want [acme]", got)
+		}
 	})
 }
 
@@ -474,6 +511,9 @@ func TestDeleteOrganizationRollsBackAFailedStep(t *testing.T) {
 		}
 		if n := a.count(t, "authz_bindings", "tenant_id = ?", "acme"); n != 1 {
 			t.Errorf("the rollback left %d binding(s), want the one binding", n)
+		}
+		if got := a.invitations.revoked(); len(got) != 0 {
+			t.Errorf("a rolled-back deletion asked for the invitations of %v, want none", got)
 		}
 	})
 }

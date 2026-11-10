@@ -38,7 +38,10 @@ and the membership store.
   and deletes its memberships, all in that one transaction. It never writes
   another module's scoped table; those modules clean their data under the
   tombstone. The identifier and the name stay on the tombstone and are never
-  reusable.
+  reusable. The optional `authn.InvitationRevoker` is asked once the deletion
+  has committed to withdraw the tenant's pending invitations; the invitation
+  module owns those rows, and a failure is a warning rather than a failed
+  deletion.
 - **`expectedOwner` is the optimistic check that makes a race one-sided.** Both
   writes take it: the management surface passes the owner it observed for an
   owner-initiated transfer or deletion, and the empty string for platform staff.

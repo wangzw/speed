@@ -9,31 +9,30 @@
  * invitation operations, the same host-supplied-operations shape every
  * auth-ui component drives.
  *
- * The acceptance is public: the accept endpoint needs no credential of its
- * own -- the token is the whole credential -- and the membership lands on the
- * invited address's account, not on whoever is signed in. A host may render
- * its own sign-in / register surface ahead of the screen (the demo host does
- * so, src/pages/accept-invitation-page.tsx); that is a composition choice,
- * not what authorizes or binds the acceptance. The screen itself reads
- * nothing from storage and consumes no auth-core hook.
+ * The token grants joining the organization; it does not prove ownership of
+ * the invited address. The inviter holds the token too, so acceptance needs
+ * a signed-in account that holds the invited address as a proven email. The
+ * address does not have to be one the account signs in with. An account that
+ * has not proved it is refused with `authn.invitation_email_unproved`, and
+ * the screen answers with a proof step: it names the address that must be
+ * proved, points at the host's account surface when the host supplies
+ * `onProveEmail`, and offers to accept again once the proof is in place. It
+ * never says the address becomes a sign-in identifier, because proving an
+ * address does not choose it as one. Acceptance never creates an account, so
+ * the screen asks for no username, display name or password.
  *
- * When the invited address has no account yet the acceptance creates one, so
- * the screen requires a username and offers an optional display name and
- * password for that case (the accept body's username, display_name and
- * password); all three are ignored when the address already has an account.
- * The acceptView answer carries no signal of whether the invited address
- * already has an account, so the screen offers the inputs whenever the host
- * keeps them and the server ignores them on the existing-account path.
- * A new account is opened with a login name, so a submit with the field blank
- * is refused here rather than sent, and the server answers the same refusal
- * as a 400 when a request reaches it without one. A host that binds the
- * account creation itself restricts the inputs through `newAccountFields`;
- * hiding all of them also hides the hint that would describe fields that are
- * not there. The screen's titles render as `headingLevel`
- * (default h1, the screen normally being the page) and the accepted
- * confirmation takes the level one below. The expiry renders in the host's
- * display time zone when one is provided (ui-kit's display-time-zone
- * context), else the device zone.
+ * The invitation read stays public: the token is the whole credential for
+ * showing what the link points to, and the screen renders the invitation it
+ * names before it asks for anything else. A host normally renders its own
+ * sign-in surface ahead of the screen so the viewer arrives with an account
+ * (the demo host does so, src/pages/accept-invitation-page.tsx); that is a
+ * composition choice, and the screen itself reads no session state.
+ *
+ * The screen's titles render as `headingLevel` (default h1, the screen
+ * normally being the page), and the accepted confirmation and the proof step
+ * take the level one below. The expiry renders in the host's display time
+ * zone when one is provided (ui-kit's display-time-zone context), else the
+ * device zone.
  *
  * The read's view is judged before it is shown: the acceptView contract
  * returns the stored state even when the link can no longer be redeemed, so a
@@ -43,21 +42,17 @@
  * 404 ("no such invitation") and a 409 ("expired, revoked or already
  * accepted"); any other failure renders the answer's code through the
  * family's error banner with a retry. A refused acceptance renders its code
- * the same way and leaves the accept action ready for another try, except a
- * refusal of the login name it would open the account with -- taken,
- * reserved, or a shape the server cannot normalize -- which the username
- * field states. Every attempt begins from a clean result: editing the name
- * and a submit the client refuses before sending both drop the previous
- * attempt's server refusal. Host
- * callbacks (onAccepted) fire after the operation settles and are contained
- * -- a throwing callback is never a failure of the acceptance.
+ * the same way and leaves the accept action ready for another try, except the
+ * unproved-email refusal, which opens the proof step. A later attempt starts
+ * from a clean result. Host callbacks (onAccepted) fire after the operation
+ * settles and are contained -- a throwing callback is never a failure of the
+ * acceptance.
  */
 
 import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { formatInstant } from '@speed/i18n'
 import { errorCodeOf, useDisplayTimeZone, visuallyHiddenSx } from '@speed/ui-kit'
@@ -66,6 +61,7 @@ import { InlineError } from './internal/inline-error.js'
 import { RetryAction } from './internal/retry-action.js'
 import { nextHeadingLevel } from './internal/heading.js'
 import type { HeadingLevel } from './internal/heading.js'
+import { useStepFocus } from './internal/step-focus.js'
 
 /** The invitation as the screen renders it: the acceptView fields the
  * recipient needs (the host adapts the generated view to this shape). */
@@ -76,14 +72,6 @@ export interface InvitationSummary {
   readonly expiresAt: string
 }
 
-/** The body an acceptance may carry (the username, display name and initial
- * password for an address that has no account yet). */
-export interface AcceptInvitationInput {
-  readonly username?: string
-  readonly displayName?: string
-  readonly password?: string
-}
-
 /**
  * The invitation operations the screen drives. The host binds these to the
  * generated @speed/api-sdk invitation operations; auth-ui ships no HTTP of
@@ -92,11 +80,13 @@ export interface AcceptInvitationInput {
 export interface InvitationOperations {
   /** Reads the invitation a token points to (GET /api/v1/auth/invitations/:token). */
   readonly readInvitation: (token: string) => Promise<InvitationSummary>
-  /** Redeems the invitation (POST /api/v1/auth/invitations/:token). */
-  readonly acceptInvitation: (
-    token: string,
-    input: AcceptInvitationInput,
-  ) => Promise<void>
+  /**
+   * Redeems the invitation for the signed-in account
+   * (POST /api/v1/auth/invitations/:token). The token is the route segment;
+   * the caller is the request's identity, so the operation takes nothing
+   * else.
+   */
+  readonly acceptInvitation: (token: string) => Promise<void>
 }
 
 export interface AcceptInvitationScreenProps {
@@ -107,21 +97,16 @@ export interface AcceptInvitationScreenProps {
   /** Fired once after the acceptance lands; the host navigates. */
   readonly onAccepted?: () => void
   /**
-   * Which of the new-account inputs to offer (all by default). The username,
-   * display name and password only matter when the invited address has no
-   * account yet; a host that binds that flow itself hides one or more.
-   * Hiding all of them also hides the explanatory hint, which would
-   * otherwise describe fields that are not there.
+   * Navigates to the host's account surface, where the signed-in account
+   * adds and verifies an email address. The proof step renders its action
+   * when this is supplied; without it the step only explains what to do and
+   * offers to accept again.
    */
-  readonly newAccountFields?: {
-    readonly username?: boolean
-    readonly displayName?: boolean
-    readonly password?: boolean
-  }
+  readonly onProveEmail?: () => void
   /**
    * The heading element the screen's titles render as; `'h1'` by default
-   * (the screen is normally the page). The accepted confirmation renders
-   * one level below it.
+   * (the screen is normally the page). The accepted confirmation and the
+   * proof step render one level below it.
    */
   readonly headingLevel?: HeadingLevel
 }
@@ -132,6 +117,14 @@ type ReadFailure =
   | { readonly kind: 'missing' }
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'error'; readonly code: string }
+
+/**
+ * The problem code the backend answers when the caller's account does not
+ * hold the invited address as a proven email. It opens the proof step rather
+ * than the whole-attempt banner, because telling the viewer to prove the
+ * address is the action the refusal asks for.
+ */
+const UNPROVED_EMAIL_CODE = 'authn.invitation_email_unproved'
 
 /**
  * Whether the read's view can still be redeemed: the stored state must be
@@ -145,21 +138,6 @@ function isRedeemable(invitation: InvitationSummary): boolean {
   }
   const expiresAt = Date.parse(invitation.expiresAt)
   return Number.isNaN(expiresAt) || expiresAt > Date.now()
-}
-
-/** The bundle key a refused login name renders under, or null for a failure
- * the whole-attempt banner owns. */
-function usernameRejectionKey(code: string): string | null {
-  switch (code) {
-    case 'authn.username_taken':
-      return 'acceptInvitation.usernameTaken'
-    case 'authn.username_reserved':
-      return 'acceptInvitation.usernameReserved'
-    case 'authn.username_invalid':
-      return 'acceptInvitation.usernameInvalid'
-    default:
-      return null
-  }
 }
 
 /** Whether a failed read is a bare 404 (no such invitation) or a 409 (expired,
@@ -187,35 +165,25 @@ export function AcceptInvitationScreen({
   token,
   invitations,
   onAccepted,
-  newAccountFields,
+  onProveEmail,
   headingLevel = 'h1',
 }: AcceptInvitationScreenProps) {
   const { t, i18n } = useAuthUiTranslation()
   // The host's display time zone when one is provided; absent, the device
   // zone (the same rendering as before the provider existed).
   const timeZone = useDisplayTimeZone()
-  const showUsername = newAccountFields?.username !== false
-  const showDisplayName = newAccountFields?.displayName !== false
-  const showPassword = newAccountFields?.password !== false
-  const showNewAccountFields = showUsername || showDisplayName || showPassword
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<ScreenState>({ status: 'loading' })
   const [accepting, setAccepting] = useState(false)
   const [acceptError, setAcceptError] = useState<string | null>(null)
-  // The username, display name and password for an address that has no
-  // account yet; the username is required then and the other two are
-  // optional. All three are ignored by the backend when the address already
-  // has an account. usernameMissing marks a submit with the required field
-  // blank, which never reaches the server; usernameRejection holds the
-  // server's own refusal of the name (taken, reserved, or a shape it cannot
-  // normalize), which the field states rather than the banner.
-  const [username, setUsername] = useState('')
-  const [usernameMissing, setUsernameMissing] = useState(false)
-  const [usernameRejection, setUsernameRejection] = useState<string | null>(
-    null,
-  )
-  const [displayName, setDisplayName] = useState('')
-  const [password, setPassword] = useState('')
+  // Whether the last acceptance was refused because the signed-in account
+  // has not proved the invited address. The proof step replaces the accept
+  // action until a later attempt starts; a retry that is refused the same way
+  // reopens it.
+  const [unproved, setUnproved] = useState(false)
+  // The proof step replaces the surface the viewer was working in, so its
+  // first control takes focus after the commit (the accept action unmounts).
+  const proofRef = useStepFocus(unproved ? 'email-unproved' : null)
 
   // One read per attempt; a cancelled closure (unmount, or a retry while a
   // read is in flight) never writes state.
@@ -244,27 +212,12 @@ export function AcceptInvitationScreen({
   }, [token, attempt, invitations])
 
   const accept = (): void => {
-    const name = username.trim()
-    // Every attempt starts from a clean result, including one the client
-    // refuses before sending: the previous attempt's server refusal does
-    // not stand beside this attempt's field error.
+    // Every attempt starts from a clean result: the previous attempt's
+    // refusal or proof step does not stand beside this attempt.
     setAcceptError(null)
-    setUsernameRejection(null)
-    if (showUsername && name === '') {
-      // An account is opened with a login name: a submit without one can only
-      // make a round trip that answers 400, so it is refused here and the
-      // field carries the reason.
-      setUsernameMissing(true)
-      return
-    }
-    setUsernameMissing(false)
+    setUnproved(false)
     setAccepting(true)
-    const input: AcceptInvitationInput = {
-      ...(name === '' ? {} : { username: name }),
-      ...(displayName.trim() === '' ? {} : { displayName: displayName.trim() }),
-      ...(password === '' ? {} : { password }),
-    }
-    invitations.acceptInvitation(token, input).then(
+    invitations.acceptInvitation(token).then(
       () => {
         setAccepting(false)
         setState((prev) =>
@@ -282,12 +235,11 @@ export function AcceptInvitationScreen({
       (error: unknown) => {
         setAccepting(false)
         const code = errorCodeOf(error)
-        const rejection = usernameRejectionKey(code)
-        if (rejection !== null && showUsername) {
-          // The server refused the login name the acceptance would open the
-          // account with: the name is the value this screen can change, so
-          // the field states it instead of the whole-attempt banner.
-          setUsernameRejection(rejection)
+        if (code === UNPROVED_EMAIL_CODE) {
+          // The caller has not proved the invited address: show what to do
+          // instead of a bare error. The invitation stays pending, so the
+          // same action can be retried once the proof is in place.
+          setUnproved(true)
           return
         }
         setAcceptError(code)
@@ -339,8 +291,8 @@ export function AcceptInvitationScreen({
     )
   }
 
-  // ready or accepted: the invitation summary and either the accept action or
-  // the acceptance confirmation.
+  // ready or accepted: the invitation summary and either the accept action,
+  // the proof step or the acceptance confirmation.
   const { invitation } = state
   const accepted = state.status === 'accepted'
   const expiry = formatInstant(invitation.expiresAt, i18n.language, {
@@ -369,10 +321,11 @@ export function AcceptInvitationScreen({
 
       {/* The acceptance confirmation's status region stands for the whole
           ready and accepted life, born empty (and visually silent) while
-          the form is up: a live region announces only content changes
-          that follow its own insertion, so a confirmation born together
-          with its region would be silent. The acceptance fills the text
-          into a region the screen reader already knows. */}
+          the accept action or the proof step is up: a live region announces
+          only content changes that follow its own insertion, so a
+          confirmation born together with its region would be silent. The
+          acceptance fills the text into a region the screen reader already
+          knows. */}
       <Box
         role="status"
         sx={
@@ -392,65 +345,44 @@ export function AcceptInvitationScreen({
           </>
         ) : null}
       </Box>
-      {accepted ? null : (
+      {unproved && !accepted ? (
+        <Box
+          ref={proofRef}
+          sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+        >
+          <Typography component={nextHeadingLevel(headingLevel)} variant="h6">
+            {t('acceptInvitation.unproved.title')}
+          </Typography>
+          <Typography color="text.secondary">
+            {t('acceptInvitation.unproved.description', {
+              email: invitation.email,
+            })}
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {onProveEmail !== undefined ? (
+              <Button
+                type="button"
+                variant="outlined"
+                disabled={accepting}
+                onClick={onProveEmail}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                {t('acceptInvitation.unproved.manageAccount')}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="contained"
+              disabled={accepting}
+              onClick={accept}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              {t('acceptInvitation.unproved.retry')}
+            </Button>
+          </Box>
+        </Box>
+      ) : accepted ? null : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {showUsername ? (
-            <TextField
-              size="small"
-              required
-              autoComplete="username"
-              value={username}
-              error={usernameMissing || usernameRejection !== null}
-              helperText={
-                usernameMissing
-                  ? t('acceptInvitation.usernameRequired')
-                  : usernameRejection === null
-                    ? undefined
-                    : t(usernameRejection)
-              }
-              slotProps={{
-                htmlInput: {
-                  'aria-invalid': usernameMissing || usernameRejection !== null,
-                },
-              }}
-              onChange={(event) => {
-                setUsername(event.target.value)
-                if (usernameMissing) {
-                  setUsernameMissing(false)
-                }
-                if (usernameRejection !== null) {
-                  setUsernameRejection(null)
-                }
-                // Editing the name starts a new attempt: the previous
-                // attempt's server refusal does not stand beside the edited
-                // input.
-                setAcceptError(null)
-              }}
-              label={t('acceptInvitation.usernameLabel')}
-            />
-          ) : null}
-          {showDisplayName ? (
-            <TextField
-              size="small"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              label={t('acceptInvitation.displayNameLabel')}
-            />
-          ) : null}
-          {showPassword ? (
-            <TextField
-              size="small"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              label={t('acceptInvitation.passwordLabel')}
-            />
-          ) : null}
-          {showNewAccountFields ? (
-            <Typography variant="caption" color="text.secondary">
-              {t('acceptInvitation.newAccountHint')}
-            </Typography>
-          ) : null}
           <Button
             variant="contained"
             disabled={accepting}

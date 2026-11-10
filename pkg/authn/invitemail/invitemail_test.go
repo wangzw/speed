@@ -39,16 +39,23 @@ const (
 var expiresAt = time.Date(2026, 11, 12, 17, 30, 0, 0, time.UTC)
 
 // recordingSender is a mail.Sender that keeps what it was handed and fails on
-// demand.
+// demand. An empty name answers "recording"; a case that needs a carrier with a
+// different selection name (the log carrier) sets it.
 type recordingSender struct {
 	mu       sync.Mutex
 	messages []mail.Message
 	err      error
+	name     string
 }
 
 var _ mail.Sender = (*recordingSender)(nil)
 
-func (s *recordingSender) Name() string { return "recording" }
+func (s *recordingSender) Name() string {
+	if s.name == "" {
+		return "recording"
+	}
+	return s.name
+}
 
 func (s *recordingSender) Send(_ context.Context, m mail.Message) (mail.Receipt, error) {
 	s.mu.Lock()
@@ -166,6 +173,31 @@ func TestAnEmptyBaseURLReportsNotConfigured(t *testing.T) {
 	}
 	if got := sender.sent(); len(got) != 0 {
 		t.Errorf("the carrier received %d message(s), want none", len(got))
+	}
+}
+
+// TestTheLogCarrierIsNotAnInvitationDelivery holds the carrier that reaches no
+// recipient: a notice handed to the log carrier would only be written to the
+// process log, so the issue answer must report not_configured and carry the
+// token for the issuer to pass on. The notice is not rendered at all, so the
+// link never enters the log.
+func TestTheLogCarrierIsNotAnInvitationDelivery(t *testing.T) {
+	sender := &recordingSender{name: maillog.CarrierName}
+	notifier, err := driveInviteMail(t, configuredBody, sender)
+	if err != nil {
+		t.Fatalf("assembling the module: %v", err)
+	}
+	delivery, err := notifier.Notify(t.Context(), authn.InviteNotice{
+		Tenant: tenant, Email: address, Token: testToken, ExpiresAt: expiresAt, Locale: "en-US",
+	})
+	if err != nil {
+		t.Fatalf("Notify over the log carrier: %v", err)
+	}
+	if delivery != authn.InviteNotConfigured {
+		t.Errorf("Notify = %v, want InviteNotConfigured for the log carrier", delivery)
+	}
+	if got := sender.sent(); len(got) != 0 {
+		t.Errorf("the log carrier was handed %d message(s), want none", len(got))
 	}
 }
 

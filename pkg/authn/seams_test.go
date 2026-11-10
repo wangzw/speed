@@ -84,6 +84,9 @@ var seamSignatures = map[string][]string{
 	"TenantDirectory": {
 		"TenantIDOf(ctx context.Context, name string) (string, bool, error)",
 	},
+	"TenantStateResolver": {
+		"TenantStateOf(ctx context.Context, id string) (TenantState, error)",
+	},
 	"TenantMFARequirement": {
 		"RequiresMFA(ctx context.Context, id AccountID) (bool, error)",
 	},
@@ -93,6 +96,7 @@ var seamSignatures = map[string][]string{
 		"Tenants(ctx context.Context, id AccountID) ([]Membership, error)",
 		"Members(ctx context.Context, tenant string, query MemberQuery) ([]Membership, error)",
 		"Put(ctx context.Context, m Membership) error",
+		"PutJoining(ctx context.Context, m Membership, wasActive bool) (joined bool, err error)",
 		"Remove(ctx context.Context, id AccountID, tenant string) error",
 	},
 	"Throttle": {
@@ -131,6 +135,9 @@ var seamSignatures = map[string][]string{
 	},
 	"InviteNotifier": {
 		"Notify(ctx context.Context, notice InviteNotice) (InviteDelivery, error)",
+	},
+	"InvitationRevoker": {
+		"RevokeTenantInvitations(ctx context.Context, tenant string) error",
 	},
 	"HumanVerifier": {
 		"Required(scope HumanScope) bool",

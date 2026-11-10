@@ -9,6 +9,11 @@
  * `copyLabel`, and an explicit close control whose accessible name is
  * `closeAriaLabel` (the visible text `closeLabel` may be shorter).
  *
+ * A hand-off that carries no value -- a notice that something was sent and
+ * there is nothing to copy -- omits `value` (and `copyLabel`): the panel
+ * then renders the message and the close control alone, with no empty value
+ * line and no copy control.
+ *
  * `details` carries further labelled values the same hand-off needs
  * beside the primary one -- a DNS record's name and the value to publish,
  * for example. Each renders under the primary value with its own label,
@@ -48,10 +53,12 @@ export interface OneTimeValuePanelDetail {
 export interface OneTimeValuePanelProps extends RootStyleProps {
   /** The line describing what was handed out and to whom. */
   readonly message: ReactNode
-  /** The one-time value itself (a link, a token, a secret). */
-  readonly value: string
-  /** The copy control's visible label and accessible name. */
-  readonly copyLabel: string
+  /** The one-time value itself (a link, a token, a secret). Omitted when
+   * nothing is handed out and there is nothing to copy. */
+  readonly value?: string
+  /** The copy control's visible label and accessible name. Required with
+   * `value`, and unused without it. */
+  readonly copyLabel?: string
   /** Further labelled values handed out beside `value`, each with its own copy control. */
   readonly details?: readonly OneTimeValuePanelDetail[]
   /** The close control's visible text. */
@@ -98,31 +105,33 @@ function OneTimeValuePanelInner(
     >
       <Box sx={{ flex: 1 }}>
         <Typography variant="body2">{message}</Typography>
-        <Box
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            columnGap: 1,
-            rowGap: 0.5,
-          }}
-        >
-          <Typography
-            variant="body2"
-            sx={(theme) => ({
-              wordBreak: 'break-all',
-              fontFamily: theme.typography.fontFamilyMono,
-            })}
+        {value !== undefined ? (
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              columnGap: 1,
+              rowGap: 0.5,
+            }}
           >
-            {value}
-          </Typography>
-          <CopyButton
-            value={value}
-            label={copyLabel}
-            visibleLabel={copyLabel}
-            copiedLabel={t('oneTimeValuePanel.copied')}
-          />
-        </Box>
+            <Typography
+              variant="body2"
+              sx={(theme) => ({
+                wordBreak: 'break-all',
+                fontFamily: theme.typography.fontFamilyMono,
+              })}
+            >
+              {value}
+            </Typography>
+            <CopyButton
+              value={value}
+              label={copyLabel ?? ''}
+              visibleLabel={copyLabel ?? ''}
+              copiedLabel={t('oneTimeValuePanel.copied')}
+            />
+          </Box>
+        ) : null}
         {details?.map((detail, index) => (
           <Box key={`${detail.label}-${index}`} sx={{ mt: 1 }}>
             <Typography

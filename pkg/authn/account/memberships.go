@@ -205,6 +205,128 @@ func (p *product) PutMembershipTx(ctx context.Context, tx *gorm.DB, m authn.Memb
 	}, nil
 }
 
+// PutJoining writes a membership for an account joining a tenant, conditional
+// on the membership not having been withdrawn since the caller read it.
+//
+// wasActive says the caller read an active membership. When it is false the
+// call writes only into a tenant the account has no membership in; when it is
+// true it writes only over a membership that is still active. A suspended
+// membership is never resumed, and a membership the caller read as active but
+// that has been removed is not written again: both answer false and change
+// nothing. The row and the account are taken in one transaction, so a
+// concurrent suspension either is seen by the check or waits for this write.
+func (p *product) PutJoining(ctx context.Context, m authn.Membership, wasActive bool) (bool, error) {
+	status, err := checkMembership(m)
+	if err != nil {
+		return false, err
+	}
+	if status != membershipActive {
+		return false, invalid("a joining membership must be active")
+	}
+	b := &batch{}
+	joined := false
+	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		var inErr error
+		joined, inErr = p.putJoiningIn(ctx, tx, m, status, wasActive, b)
+		return inErr
+	})
+	if err != nil {
+		return false, failed("writing a joining membership", err)
+	}
+	p.publish(ctx, b)
+	return joined, nil
+}
+
+// putJoiningIn writes a joining membership inside the transaction it is handed
+// and reports whether the account is an active member after the call.
+//
+// The write is conditional on the stored state, not only on the read: a
+// removal takes no account row lock, so the row the read found can be gone by
+// the time the update runs. The update names `status = active` and its affected
+// row count decides; zero means the removal or suspension won the race and the
+// join did not happen.
+func (p *product) putJoiningIn(ctx context.Context, tx *gorm.DB, m authn.Membership, status int16, wasActive bool, b *batch) (bool, error) {
+	if _, err := p.lock(tx, m.Account); err != nil {
+		return false, err
+	}
+	held, err := p.heldMembership(tx, m)
+	if err != nil {
+		return false, err
+	}
+	now := p.at()
+	if len(held) == 0 {
+		// A membership the caller read as active is gone: the removal won the
+		// race, and a join must not write the row again.
+		if wasActive {
+			return false, nil
+		}
+		row := membershipRow{
+			TenantID: m.Tenant, AccountID: m.Account.String(), Status: status, Source: m.Source,
+			SSOExempt: m.SSOExempt, CreatedAt: now, UpdatedAt: now,
+		}
+		if err = tx.Create(&row).Error; err != nil {
+			// Another path joined the account between the read and the insert:
+			// the join already holds, and this call wrote nothing.
+			if duplicate(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		if err = p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeAdded, m.Source), true); err != nil {
+			return false, err
+		}
+		if m.SSOExempt {
+			return true, p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeSSOExemptSet, m.Source), true)
+		}
+		return true, nil
+	}
+	old := held[0]
+	if old.Status != membershipActive {
+		return false, nil
+	}
+	if !wasActive {
+		// An active membership appeared while the caller read none. Confirm it
+		// still exists without rewriting the source or exemption it carries.
+		res := tx.Model(&membershipRow{}).
+			Where("tenant_id = ? AND account_id = ? AND status = ?", m.Tenant, m.Account.String(), membershipActive).
+			Update("updated_at", now)
+		if res.Error != nil {
+			return false, res.Error
+		}
+		return res.RowsAffected == 1, nil
+	}
+	res := tx.Model(&membershipRow{}).
+		Where("tenant_id = ? AND account_id = ? AND status = ?", m.Tenant, m.Account.String(), membershipActive).
+		Updates(map[string]any{"status": status, "source": m.Source, "sso_exempt": m.SSOExempt, "updated_at": now})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	// Zero means the removal or suspension committed after the read, so the
+	// membership the caller saw is not the one this call would leave behind.
+	if res.RowsAffected != 1 {
+		return false, nil
+	}
+	var changes []string
+	switch {
+	case old.Status != status && status == membershipActive:
+		changes = append(changes, changeResumed)
+	case old.Status != status:
+		changes = append(changes, changeSuspended)
+	}
+	switch {
+	case !old.SSOExempt && m.SSOExempt:
+		changes = append(changes, changeSSOExemptSet)
+	case old.SSOExempt && !m.SSOExempt:
+		changes = append(changes, changeSSOExemptCleared)
+	}
+	for _, change := range changes {
+		if err = p.emit(tx, b, membershipChanged(m.Account, m.Tenant, change, m.Source), true); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // checkMembership judges a membership write's arguments and answers the stored
 // status the Membership's Active maps to.
 func checkMembership(m authn.Membership) (int16, error) {
@@ -223,27 +345,40 @@ func checkMembership(m authn.Membership) (int16, error) {
 	return membershipSuspended, nil
 }
 
+// heldMembership reads the account's membership of the tenant inside tx.
+func (p *product) heldMembership(tx *gorm.DB, m authn.Membership) ([]membershipRow, error) {
+	var held []membershipRow
+	err := tx.Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).Find(&held).Error
+	return held, err
+}
+
 // putMembershipIn writes a membership inside the transaction it is handed. It
 // reports whether the call changed anything.
 func (p *product) putMembershipIn(ctx context.Context, tx *gorm.DB, m authn.Membership, status int16, b *batch) (bool, error) {
 	if _, err := p.lock(tx, m.Account); err != nil {
 		return false, err
 	}
-	now := p.at()
-	var held []membershipRow
-	err := tx.Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).Find(&held).Error
+	held, err := p.heldMembership(tx, m)
 	if err != nil {
 		return false, err
 	}
+	return p.writeMembershipIn(tx, m, status, b, held)
+}
+
+// writeMembershipIn writes m over the membership rows held, which the caller
+// read under the account's row lock. It reports whether the call changed
+// anything.
+func (p *product) writeMembershipIn(tx *gorm.DB, m authn.Membership, status int16, b *batch, held []membershipRow) (bool, error) {
+	now := p.at()
 	if len(held) == 0 {
 		row := membershipRow{
 			TenantID: m.Tenant, AccountID: m.Account.String(), Status: status, Source: m.Source,
 			SSOExempt: m.SSOExempt, CreatedAt: now, UpdatedAt: now,
 		}
-		if err = tx.Create(&row).Error; err != nil {
+		if err := tx.Create(&row).Error; err != nil {
 			return false, err
 		}
-		if err = p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeAdded, m.Source), true); err != nil {
+		if err := p.emit(tx, b, membershipChanged(m.Account, m.Tenant, changeAdded, m.Source), true); err != nil {
 			return false, err
 		}
 		if m.SSOExempt {
@@ -255,7 +390,7 @@ func (p *product) putMembershipIn(ctx context.Context, tx *gorm.DB, m authn.Memb
 	if old.Status == status && old.Source == m.Source && old.SSOExempt == m.SSOExempt {
 		return false, nil
 	}
-	err = tx.Model(&membershipRow{}).Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).
+	err := tx.Model(&membershipRow{}).Where("tenant_id = ? AND account_id = ?", m.Tenant, m.Account.String()).
 		Updates(map[string]any{"status": status, "source": m.Source, "sso_exempt": m.SSOExempt, "updated_at": now}).Error
 	if err != nil {
 		return false, err

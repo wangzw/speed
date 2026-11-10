@@ -116,8 +116,9 @@ func TestTheKindsAreClosedSets(t *testing.T) {
 
 // TestVerificationAcceptsTheClosedSetOfWays holds the forms the design lists for
 // verified_via and which of them prove ownership: a code sent to the phone, a
-// delivered invitation and an IdP's declaration do, an administrator's word and
-// an unverified import do not, and a value outside the set is neither.
+// code sent to the address and an IdP's declaration do; an invitation, an
+// administrator's word, an account holder's assertion and an unverified import do
+// not; and a value outside the set is neither.
 func TestVerificationAcceptsTheClosedSetOfWays(t *testing.T) {
 	for _, c := range []struct {
 		via    string
@@ -126,7 +127,7 @@ func TestVerificationAcceptsTheClosedSetOfWays(t *testing.T) {
 	}{
 		{"sms-code", true, true},
 		{"email-code", true, true},
-		{"invite", true, true},
+		{"invite", true, false},
 		{"idp:0198f0aa-0000-7000-8000-000000000001", true, true},
 		{"idp:google", true, true},
 		{"admin", true, false},

@@ -19,7 +19,7 @@ type Identifier struct {
 	Kind           IdentifierKind
 	Value          string    // normalized
 	VerifiedAt     time.Time // non-zero
-	VerifiedVia    string    // sms-code, email-code, invite, idp:<provider id> (proofs); admin, import-unverified, self (assertions, never grounds for merging)
+	VerifiedVia    string    // sms-code, email-code, idp:<provider id> (proofs); invite, admin, import-unverified, self (assertions, never grounds for merging)
 	SignIn         bool      // the handle may be used to sign in
 	Contact        bool      // the handle is a contact of the account
 	DefaultContact bool      // the proved email address notifications go to

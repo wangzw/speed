@@ -5,9 +5,9 @@
  * The host gates the landing on a session: an anonymous viewer meets the
  * host's sign-in surface, and a signed-in viewer meets the accept screen,
  * whose two invitation operations reach the backend through the app's
- * generated SDK surface (src/app-api). The accept surface itself is public
- * -- the token is the whole credential -- so that gate is the host's
- * composition, not what binds the acceptance. The suite binds a scripted
+ * generated SDK surface (src/app-api). The token read is public, but the
+ * acceptance needs the signed-in account to hold the invited address as a
+ * proven email. The suite binds a scripted
  * request function over the api-sdk runtime seam so the real generated
  * operations run against responses it controls; accepting then navigates
  * the viewer home.
@@ -54,9 +54,6 @@ const authEn = authUiResources['en-US'] as unknown as {
   readonly acceptInvitation: {
     readonly title: string
     readonly accept: string
-    readonly usernameLabel: string
-    readonly displayNameLabel: string
-    readonly passwordLabel: string
   }
   readonly mode: {
     readonly registerEntry: string
@@ -100,6 +97,7 @@ const INVITED_TENANT_NAME = 'acme-renamed'
  * relative to the run because a fixed instant would one day pass and turn the
  * landing into its invalid state. */
 const VIEW = {
+  state: 'pending',
   invitation: {
     id: 'inv-1',
     tenant: 'Acme',
@@ -210,31 +208,6 @@ describe('the invitation landing', () => {
         name: demoEnUS.home.heading,
       }),
     ).toBeInTheDocument()
-  })
-
-  it('does not offer the new-account fields to a signed-in viewer', async () => {
-    // The landing sits behind the session gate, so the viewer already has the
-    // account the invitation binds to; the fields that open a new account
-    // would ask for a username the acceptance ignores.
-    const backend = makeInvitationBackend()
-    bindRequestFn(backend.fn)
-    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
-
-    expect(
-      await screen.findByRole('heading', {
-        level: 1,
-        name: authEn.acceptInvitation.title,
-      }),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(authEn.acceptInvitation.usernameLabel),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(authEn.acceptInvitation.displayNameLabel),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(authEn.acceptInvitation.passwordLabel),
-    ).not.toBeInTheDocument()
   })
 
   it('lands in the invited tenant and resolves its name from the caller tenant read', async () => {

@@ -96,6 +96,7 @@ func Module() core.Module {
 			{Token: (*tenant.NameResolver)(nil), Exclusive: true},
 			{Token: (*authn.TenantNameResolver)(nil), Exclusive: true},
 			{Token: (*authn.TenantDirectory)(nil), Exclusive: true},
+			{Token: (*authn.TenantStateResolver)(nil), Exclusive: true},
 			{Token: (*authz.TenantNameResolver)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newFilter()}},

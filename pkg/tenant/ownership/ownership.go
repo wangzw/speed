@@ -59,6 +59,7 @@ func Module() core.Module {
 			{Token: (*authzpolicy.TxManager)(nil)},
 			{Token: (*provisioning.MembershipWriter)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*authn.InvitationRevoker)(nil), Optional: true},
 			{Token: (*authz.TenantLock)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
@@ -88,6 +89,7 @@ type product struct {
 	txManager        authzpolicy.TxManager
 	membershipWriter provisioning.MembershipWriter
 	accounts         authn.Accounts
+	invitations      authn.InvitationRevoker
 	lock             authz.TenantLock
 	logger           *slog.Logger
 }
@@ -143,6 +145,13 @@ func (p *product) wire(reg *core.Registry) error {
 	}
 	if found {
 		p.lock = lock
+	}
+	revoker, found, err := optional[authn.InvitationRevoker](reg, "the invitation revoker")
+	if err != nil {
+		return err
+	}
+	if found {
+		p.invitations = revoker
 	}
 	return nil
 }

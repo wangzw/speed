@@ -1,7 +1,8 @@
 /**
  * AcceptInvitationScreen behaviour: the screen reads the invitation a token
- * points to through the host-bound operations, accepts it, and gives the
- * contract's two read failures -- a bare 404 and a 409 -- their own text.
+ * points to through the host-bound operations, accepts it for the signed-in
+ * account, gives the contract's two read failures -- a bare 404 and a 409 --
+ * their own text, and turns the unproved-email refusal into the proof step.
  * Text expectations read the bundle values, never inline language.
  */
 
@@ -25,6 +26,11 @@ const INVITATION = {
   expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
 }
 
+const UNPROVED = {
+  status: 403,
+  code: 'authn.invitation_email_unproved',
+}
+
 function operations(
   overrides: Partial<InvitationOperations> = {},
 ): InvitationOperations {
@@ -36,7 +42,9 @@ function operations(
 }
 
 describe('AcceptInvitationScreen', () => {
-  it('renders the invitation and an accept action', async () => {
+  it('renders the invitation and an accept action from the public token read', async () => {
+    // The token read is public: the screen shows what the link points to
+    // without any session of its own. Acceptance is what needs the account.
     renderWithProviders(
       <AcceptInvitationScreen token="tok-1" invitations={operations()} />,
     )
@@ -125,6 +133,26 @@ describe('AcceptInvitationScreen', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('renders the unavailable state from a state-only read', async () => {
+    // A terminal or expired read answers the state alone: the screen must not
+    // need the tenant, the address or the deadline to render it.
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({
+          readInvitation: () =>
+            Promise.resolve({ tenant: '', email: '', status: 'expired', expiresAt: '' }),
+        })}
+      />,
+    )
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.unavailable.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.acceptInvitation.accept }),
+    ).not.toBeInTheDocument()
+  })
+
   it('still offers the accept action for a pending invitation whose expiry has not passed', async () => {
     const unexpired = new Date(Date.now() + 60 * 1000).toISOString()
     renderWithProviders(
@@ -155,56 +183,21 @@ describe('AcceptInvitationScreen', () => {
         onAccepted={onAccepted}
       />,
     )
-    await user.type(
-      await screen.findByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-      'ada',
-    )
     await user.click(
-      screen.getByRole('button', {
+      await screen.findByRole('button', {
         name: zhCN.acceptInvitation.accept,
       }),
     )
-    expect(acceptInvitation).toHaveBeenCalledWith('tok-1', { username: 'ada' })
+    // The operation takes the token alone: the caller is the request's
+    // signed-in identity, and acceptance never opens an account.
+    expect(acceptInvitation).toHaveBeenCalledWith('tok-1')
     expect(
       await screen.findByText(zhCN.acceptInvitation.accepted.title),
     ).toBeInTheDocument()
     expect(onAccepted).toHaveBeenCalledTimes(1)
   })
 
-  it('refuses a submit without the required username and sends nothing', async () => {
-    const acceptInvitation = vi.fn(() => Promise.resolve())
-    const user = userEvent.setup()
-    renderWithProviders(
-      <AcceptInvitationScreen
-        token="tok-1"
-        invitations={operations({ acceptInvitation })}
-      />,
-    )
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.acceptInvitation.accept,
-      }),
-    )
-    // A new account is opened with a login name: a request without one can
-    // only answer 400, so it never leaves the screen.
-    expect(acceptInvitation).not.toHaveBeenCalled()
-    expect(
-      screen.getByText(zhCN.acceptInvitation.usernameRequired),
-    ).toBeInTheDocument()
-    await user.type(
-      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-      'ada',
-    )
-    expect(
-      screen.queryByText(zhCN.acceptInvitation.usernameRequired),
-    ).not.toBeInTheDocument()
-    await user.click(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-    )
-    expect(acceptInvitation).toHaveBeenCalledWith('tok-1', { username: 'ada' })
-  })
-
-  it('fill a status region that stood empty with the acceptance confirmation', async () => {
+  it('fills a status region that stood empty with the acceptance confirmation', async () => {
     // The confirmation's role="status" region must already exist and be
     // empty when the acceptance lands: a live region announces only
     // content changes that follow its own insertion, so a confirmation
@@ -219,10 +212,6 @@ describe('AcceptInvitationScreen', () => {
       />,
     )
     await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
-    await user.type(
-      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-      'ada',
-    )
     const region = screen.getByRole('status')
     expect(region).toBeEmptyDOMElement()
     await user.click(
@@ -239,37 +228,6 @@ describe('AcceptInvitationScreen', () => {
     expect(screen.getByRole('status')).toBe(region)
   })
 
-  it('passes the username, display name and password for an address with no account yet', async () => {
-    const acceptInvitation = vi.fn(() => Promise.resolve())
-    const user = userEvent.setup()
-    renderWithProviders(
-      <AcceptInvitationScreen
-        token="tok-1"
-        invitations={operations({ acceptInvitation })}
-      />,
-    )
-    await user.type(
-      await screen.findByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-      'ada',
-    )
-    await user.type(
-      screen.getByLabelText(zhCN.acceptInvitation.displayNameLabel),
-      'Ada Lovelace',
-    )
-    await user.type(
-      screen.getByLabelText(zhCN.acceptInvitation.passwordLabel),
-      's3cret-pass',
-    )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-    )
-    expect(acceptInvitation).toHaveBeenCalledWith('tok-1', {
-      username: 'ada',
-      displayName: 'Ada Lovelace',
-      password: 's3cret-pass',
-    })
-  })
-
   it('reports a refused acceptance with the answer code and stays retryable', async () => {
     const acceptInvitation = vi.fn(() =>
       Promise.reject({ status: 409, code: 'authn.conflict' }),
@@ -281,12 +239,8 @@ describe('AcceptInvitationScreen', () => {
         invitations={operations({ acceptInvitation })}
       />,
     )
-    await user.type(
-      await screen.findByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-      'ada',
-    )
     await user.click(
-      screen.getByRole('button', {
+      await screen.findByRole('button', {
         name: zhCN.acceptInvitation.accept,
       }),
     )
@@ -300,50 +254,8 @@ describe('AcceptInvitationScreen', () => {
     ).toBeEnabled()
   })
 
-  it.each([
-    ['authn.username_taken', 409, zhCN.acceptInvitation.usernameTaken],
-    ['authn.username_reserved', 400, zhCN.acceptInvitation.usernameReserved],
-    ['authn.username_invalid', 400, zhCN.acceptInvitation.usernameInvalid],
-  ])(
-    'states %s on the username field rather than the banner',
-    async (code, status, text) => {
-      // The acceptance opens the account with the login name, so a refusal
-      // of that name is the field's: taken, reserved, or a shape it cannot
-      // normalize.
-      const acceptInvitation = vi.fn(() =>
-        Promise.reject({ status, code }),
-      )
-      const user = userEvent.setup()
-      const { unmount } = renderWithProviders(
-        <AcceptInvitationScreen
-          token="tok-1"
-          invitations={operations({ acceptInvitation })}
-        />,
-      )
-      const username = await screen.findByLabelText(
-        zhCN.acceptInvitation.usernameLabel,
-        { exact: false },
-      )
-      await user.type(username, 'ada')
-      await user.click(
-        screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-      )
-      expect(await screen.findByText(text)).toBeInTheDocument()
-      expect(username).toHaveAttribute('aria-invalid', 'true')
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      // Editing the name clears the message for the next attempt.
-      await user.type(username, '2')
-      expect(screen.queryByText(text)).not.toBeInTheDocument()
-      unmount()
-    },
-  )
-
-  it('leaves a bad-request refusal to the banner', async () => {
-    // authn.bad_request is not the username's own shape answer (that is
-    // authn.username_invalid), so the field stays clean.
-    const acceptInvitation = vi.fn(() =>
-      Promise.reject({ status: 400, code: 'authn.bad_request' }),
-    )
+  it('shows the proof step when the caller has not proved the invited email', async () => {
+    const acceptInvitation = vi.fn(() => Promise.reject(UNPROVED))
     const user = userEvent.setup()
     renderWithProviders(
       <AcceptInvitationScreen
@@ -351,66 +263,102 @@ describe('AcceptInvitationScreen', () => {
         invitations={operations({ acceptInvitation })}
       />,
     )
-    const username = await screen.findByLabelText(
-      zhCN.acceptInvitation.usernameLabel,
-      { exact: false },
-    )
-    await user.type(username, 'ada')
     await user.click(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
     )
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      zhCN.errors.authn.bad_request,
-    )
-    expect(username).not.toHaveAttribute('aria-invalid', 'true')
+    // The refusal is the action's own: the screen explains that the invited
+    // address has to be proved, naming the address, and offers a new
+    // acceptance for after the proof.
     expect(
-      screen.queryByText(zhCN.acceptInvitation.usernameInvalid),
-    ).not.toBeInTheDocument()
-  })
-
-  it('drops the previous refusal when a submit is refused before sending', async () => {
-    // A submit the client refuses before sending is still an attempt: the
-    // earlier server refusal does not stand beside the empty name's field
-    // error.
-    const acceptInvitation = vi.fn(() =>
-      Promise.reject({ status: 400, code: 'authn.bad_request' }),
-    )
-    const user = userEvent.setup()
-    renderWithProviders(
-      <AcceptInvitationScreen
-        token="tok-1"
-        invitations={operations({ acceptInvitation })}
-      />,
-    )
-    const username = await screen.findByLabelText(
-      zhCN.acceptInvitation.usernameLabel,
-      { exact: false },
-    )
-    await user.type(username, 'ada')
-    await user.click(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-    )
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      zhCN.errors.authn.bad_request,
-    )
-
-    // Empty the required field and submit again: the attempt stops at the
-    // client check and the old refusal goes with it.
-    await user.clear(username)
-    await user.click(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-    )
-    expect(
-      await screen.findByText(zhCN.acceptInvitation.usernameRequired),
+      await screen.findByText(zhCN.acceptInvitation.unproved.title),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(
+      screen.getByText(
+        zhCN.acceptInvitation.unproved.description.replace(
+          '{{email}}',
+          INVITATION.email,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.acceptInvitation.unproved.retry,
+      }),
+    ).toBeInTheDocument()
+    // The plain accept action is replaced, not stacked beside the step.
+    expect(
+      screen.queryByRole('button', { name: zhCN.acceptInvitation.accept }),
+    ).not.toBeInTheDocument()
+    // The refusal is not a whole-attempt error banner.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // The invitation stays readable: the same token can be tried again.
+    expect(
+      screen.getByText(
+        zhCN.acceptInvitation.email.replace('{{email}}', INVITATION.email),
+      ),
+    ).toBeInTheDocument()
   })
 
-  it('drops the server refusal when the name is edited', async () => {
-    // Editing an input starts a new attempt, so the previous attempt's
-    // whole-attempt refusal does not stand beside the changed input.
+  it('points at the host account surface from the proof step', async () => {
+    const acceptInvitation = vi.fn(() => Promise.reject(UNPROVED))
+    const onProveEmail = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+        onProveEmail={onProveEmail}
+      />,
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.unproved.manageAccount,
+      }),
+    )
+    expect(onProveEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('accepts again after the address is proved', async () => {
+    const acceptInvitation = vi
+      .fn()
+      .mockRejectedValueOnce(UNPROVED)
+      .mockResolvedValueOnce(undefined)
+    const onAccepted = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+        onAccepted={onAccepted}
+      />,
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.unproved.retry,
+      }),
+    )
+    expect(acceptInvitation).toHaveBeenCalledTimes(2)
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.accepted.title),
+    ).toBeInTheDocument()
+    expect(onAccepted).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a refusal that is not the unproved email to the banner', async () => {
     const acceptInvitation = vi.fn(() =>
-      Promise.reject({ status: 400, code: 'authn.bad_request' }),
+      Promise.reject({ status: 409, code: 'authn.conflict' }),
     )
     const user = userEvent.setup()
     renderWithProviders(
@@ -419,20 +367,17 @@ describe('AcceptInvitationScreen', () => {
         invitations={operations({ acceptInvitation })}
       />,
     )
-    const username = await screen.findByLabelText(
-      zhCN.acceptInvitation.usernameLabel,
-      { exact: false },
-    )
-    await user.type(username, 'ada')
     await user.click(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
     )
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      zhCN.errors.authn.bad_request,
+      zhCN.errors.authn.conflict,
     )
-
-    await user.type(username, '2')
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(
+      screen.queryByText(zhCN.acceptInvitation.unproved.title),
+    ).not.toBeInTheDocument()
   })
 
   it('renders the not-found text for a bare 404 read answer', async () => {
@@ -518,53 +463,26 @@ describe('AcceptInvitationScreen', () => {
     await expectNoAxeViolations()
   })
 
-  it('render only the new-account inputs the host keeps', async () => {
+  it('has no axe violations in the proof step', async () => {
+    const acceptInvitation = vi.fn(() => Promise.reject(UNPROVED))
+    const user = userEvent.setup()
     renderWithProviders(
       <AcceptInvitationScreen
         token="tok-1"
-        invitations={operations()}
-        newAccountFields={{ displayName: false }}
+        invitations={operations({ acceptInvitation })}
+        onProveEmail={() => undefined}
       />,
     )
-    // The username, password and hint remain; the display name does not.
-    await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
-    expect(
-      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(zhCN.acceptInvitation.displayNameLabel),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.getByLabelText(zhCN.acceptInvitation.passwordLabel),
-    ).toBeInTheDocument()
-    expect(screen.getByText(zhCN.acceptInvitation.newAccountHint)).toBeInTheDocument()
-  })
-
-  it('hide the hint when every new-account input is hidden', async () => {
-    renderWithProviders(
-      <AcceptInvitationScreen
-        token="tok-1"
-        invitations={operations()}
-        newAccountFields={{ username: false, displayName: false, password: false }}
-      />,
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
     )
-    await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
-    expect(
-      screen.queryByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(zhCN.acceptInvitation.displayNameLabel),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByLabelText(zhCN.acceptInvitation.passwordLabel),
-    ).not.toBeInTheDocument()
-    // A hint describing fields that are not there is not rendered.
-    expect(
-      screen.queryByText(zhCN.acceptInvitation.newAccountHint),
-    ).not.toBeInTheDocument()
+    await screen.findByText(zhCN.acceptInvitation.unproved.title)
+    await expectNoAxeViolations()
   })
 
-  it('render the titles at the host’s heading level, the confirmation one below', async () => {
+  it('renders the titles at the host’s heading level, the confirmation one below', async () => {
     const user = userEvent.setup()
     renderWithProviders(
       <AcceptInvitationScreen
@@ -579,10 +497,6 @@ describe('AcceptInvitationScreen', () => {
         name: zhCN.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
-    await user.type(
-      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-      'ada',
-    )
     await user.click(
       screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
     )
@@ -595,7 +509,30 @@ describe('AcceptInvitationScreen', () => {
     ).toBeInTheDocument()
   })
 
-  it('render the expiry in the host’s display time zone', async () => {
+  it('renders the proof step one heading level below the screen title', async () => {
+    const acceptInvitation = vi.fn(() => Promise.reject(UNPROVED))
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+        headingLevel="h2"
+      />,
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', {
+        level: 3,
+        name: zhCN.acceptInvitation.unproved.title,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the expiry in the host’s display time zone', async () => {
     renderWithProviders(
       <DisplayTimeZoneProvider timeZone="Asia/Shanghai">
         <AcceptInvitationScreen token="tok-1" invitations={operations()} />

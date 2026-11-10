@@ -89,9 +89,11 @@ func (r *Resolver) occupant(ctx context.Context, email string) (id authn.Account
 }
 
 // preprovisioned binds the identity to the account an administrator prepared
-// for the address: an account that holds it as an identifier whose channel is not
-// an import's unproven record. The administrator's own assertion counts here,
-// because the account was made for this person, and that is the one place it does.
+// for the address: an account that holds it as an identifier whose channel
+// proves ownership, or that an administrator asserted. The administrator's own
+// assertion counts here, because the account was made for this person, and that
+// is the one place it does. An invitation is not a proof of the invited address,
+// so it never matches this path.
 func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext *authn.External) (Result, error) {
 	id, found, err := r.occupant(ctx, ext.Email)
 	if err != nil {
@@ -106,7 +108,7 @@ func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext
 	}
 	prepared := slices.ContainsFunc(identifiers, func(i authn.Identifier) bool {
 		return i.Kind == authn.IdentifierEmail && strings.EqualFold(i.Value, ext.Email) &&
-			authn.Verification{Via: i.VerifiedVia}.Valid() && i.VerifiedVia != authn.VerifiedViaImportUnverified
+			(authn.Verification{Via: i.VerifiedVia}.Proves() || i.VerifiedVia == authn.VerifiedViaAdmin)
 	})
 	if !prepared {
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrNotProvisioned)

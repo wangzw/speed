@@ -699,13 +699,13 @@ export interface AuthnImpersonationStart {
  * The membership an acceptance wrote.
  */
 export interface AuthnInviteAccept {
-  /** Identifier of the account the membership belongs to: an existing account or one created by this acceptance. */
+  /** Identifier of the authenticated account the membership belongs to. */
   account: string;
-  /** Whether the membership is active; an acceptance always writes an active one. */
+  /** Whether the membership is active; a suspended membership is refused rather than reactivated. */
   active: boolean;
-  /** The membership's source; an acceptance always writes invite. */
+  /** The membership's source: invite when this acceptance created it, the source it already had when it was there. */
   source: string;
-  /** Whether the membership is exempt from SSO enforcement; an acceptance writes false. */
+  /** Whether the membership is exempt from SSO enforcement; an existing exemption is preserved. */
   sso_exempt: boolean;
   /** The name of the tenant the membership was written in. */
   tenant: string;
@@ -746,7 +746,7 @@ export interface AuthnInviteInvitation {
 }
 
 /**
- * How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link.
+ * How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link; a sent notice carries no token in this answer.
  */
 export type AuthnInviteIssuedEmailDelivery = typeof AuthnInviteIssuedEmailDelivery[keyof typeof AuthnInviteIssuedEmailDelivery];
 
@@ -758,15 +758,15 @@ export const AuthnInviteIssuedEmailDelivery = {
 } as const;
 
 /**
- * The answer of an issue: the invitation's view together with its one-time acceptance token and the outcome of the notice.
+ * The answer of an issue: the invitation's view, the outcome of the notice, and the one-time acceptance token only when the notice did not reach the address.
  */
 export interface AuthnInviteIssued {
-  /** How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link. */
+  /** How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link; a sent notice carries no token in this answer. */
   email_delivery: AuthnInviteIssuedEmailDelivery;
-  /** The issued invitation; the token is delivered beside it, not inside it. */
+  /** The issued invitation; a token is delivered beside it only when the notice did not reach the address. */
   invitation: AuthnInviteInvitation;
-  /** The acceptance token, handed out once */
-  token: string;
+  /** The acceptance token, present only when email_delivery is failed or not_configured: the inviter has to hand the link over. Absent when the notice was sent, because the recipient already holds it. */
+  token?: string;
 }
 
 /**
@@ -780,11 +780,26 @@ export interface AuthnInvitePage {
 }
 
 /**
- * The answer of the acceptance read: the invitation a token points to.
+ * The state the read judges. Only pending carries the invitation summary: expired, accepted and revoked answer the state alone, without the invited address, the tenant's name or the deadline.
+ */
+export type AuthnInviteViewState = typeof AuthnInviteViewState[keyof typeof AuthnInviteViewState];
+
+
+export const AuthnInviteViewState = {
+  pending: 'pending',
+  expired: 'expired',
+  accepted: 'accepted',
+  revoked: 'revoked',
+} as const;
+
+/**
+ * The answer of the acceptance read: the invitation's state, and its summary only while it can still be redeemed.
  */
 export interface AuthnInviteView {
-  /** The invitation the token points to, without its token. */
-  invitation: AuthnInviteInvitation;
+  /** The invitation summary, present only for a pending invitation that can still be redeemed. */
+  invitation?: AuthnInviteInvitation;
+  /** The state the read judges. Only pending carries the invitation summary: expired, accepted and revoked answer the state alone, without the invited address, the tenant's name or the deadline. */
+  state: AuthnInviteViewState;
 }
 
 /**
@@ -2502,14 +2517,14 @@ export type AuthnImpersonationStartBody = {
 };
 
 /**
- * The acceptance request; the body fields are read only when the invited address has no account.
+ * The acceptance request; only the token is read.
  */
 export type AuthnInviteAcceptBody = {
-  /** Display name of the account created when the invited address has no account; ignored when the address already belongs to one. */
+  /** Ignored: acceptance never opens an account. Kept so an older client keeps working. */
   display_name?: string;
-  /** Initial password of the account created when the invited address has no account; ignored when the address already belongs to one. */
+  /** Ignored: acceptance never opens an account. Kept so an older client keeps working. */
   password?: string;
-  /** Login name of the account created when the invited address has no account; required then, and ignored when the address already belongs to one. */
+  /** Ignored: acceptance never opens an account. Kept so an older client keeps working. */
   username?: string;
 };
 
@@ -4649,8 +4664,8 @@ export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authn
 
 
 /**
- * Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and username, display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation and the username as its login name. A request that creates an account without a username is 400. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.
- * @summary Redeem an invitation, creating the account when the address has none
+ * Redeems the invitation and writes a membership for the authenticated caller. The caller must hold the invited address as a proven email identifier; holding the link is not enough, because the inviter holds it too. When the caller has not proved it, the answer is 403 invitation-email-unproved and the client shows the proof step; the invitation stays pending. Acceptance never creates an account and never makes the invited address a sign-in identifier. A membership that already exists keeps its source and its SSO exemption; a suspended one is refused with 409 membership-inactive and the invitation is revoked. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.
+ * @summary Redeem an invitation for the signed-in account that proves the invited address
  */
 export const authnInviteAccept = (
     token: string,
@@ -4701,7 +4716,7 @@ const {mutation: mutationOptions} = options ?
     export type AuthnInviteAcceptMutationError = Problem | void
 
     /**
- * @summary Redeem an invitation, creating the account when the address has none
+ * @summary Redeem an invitation for the signed-in account that proves the invited address
  */
 export const useAuthnInviteAccept = <TError = Problem | void,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteAccept>>, TError,{token: string;data: AuthnInviteAcceptBody}, TContext>, }
@@ -11853,7 +11868,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
 
 
 /**
- * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201 with its one-time token. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
+ * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201, with its one-time token only when the notice was not sent. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
  * @summary Issue an invitation to an address in a tenant
  */
 export const authnInviteIssue = (

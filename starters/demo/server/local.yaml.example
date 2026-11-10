@@ -51,17 +51,20 @@ authn:
   # <accept-base-url>/invitations/<token>, and the local loop serves the
   # frontend at http://localhost:8080. An empty value leaves the notice unsent;
   # the issue answer still reports not_configured and hands back the link.
-  # The review config (server/review/sqlite.yaml, which the e2e run copies)
-  # already states this value and the log mail carrier below; the local
-  # template repeats them so `make dev` matches that behavior.
+  # The log mail carrier below is not a delivery channel for an invitation, so
+  # with it every issue also reports not_configured and the console's one-time
+  # panel hands out the link. The review config (server/review/sqlite.yaml,
+  # which the e2e run copies) already states this value; the local template
+  # repeats it so `make dev` matches that behavior.
   invitemail:
     accept-base-url: "http://localhost:8080"
 
 # The mail channel's carrier. `authn.emailcode` renders verification codes and
-# `authn.invitemail` renders invitation notices; the log carrier writes each
-# rendered message to the process output instead of reaching a relay. The
+# writes each rendered message to the process output instead of reaching a
+# relay; `authn.invitemail` treats this carrier as not configured, because it
+# reaches no recipient, and reports not_configured for every invitation. The
 # review config and the e2e run already carry the same carrier; the local
-# template states it so `make dev` writes every rendered message to its output.
+# template states it so `make dev` matches that behavior.
 mail:
   carrier: log
 

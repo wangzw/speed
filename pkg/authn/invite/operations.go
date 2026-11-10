@@ -41,22 +41,25 @@ type AuthnInviteInvitation struct {
 	CreatedAt  time.Time `json:"created_at" required:"true" description:"RFC 3339 timestamp in UTC of issuance."`
 }
 
-// AuthnInviteIssued is the answer of an issue: the invitation's view together
-// with its one-time acceptance token and the outcome of the notice.
+// AuthnInviteIssued is the answer of an issue: the invitation's view, the
+// outcome of the notice, and the one-time acceptance token only when the notice
+// did not reach the address.
 type AuthnInviteIssued struct {
-	_ struct{} `description:"The answer of an issue: the invitation's view together with its one-time acceptance token and the outcome of the notice."`
+	_ struct{} `description:"The answer of an issue: the invitation's view, the outcome of the notice, and the one-time acceptance token only when the notice did not reach the address."`
 
-	Invitation    AuthnInviteInvitation `json:"invitation" required:"true" description:"The issued invitation; the token is delivered beside it, not inside it."`
-	Token         string                `json:"token" required:"true" description:"The acceptance token, handed out once"`
-	EmailDelivery string                `json:"email_delivery" required:"true" enum:"sent,failed,not_configured" description:"How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link."`
+	Invitation    AuthnInviteInvitation `json:"invitation" required:"true" description:"The issued invitation; a token is delivered beside it only when the notice did not reach the address."`
+	Token         string                `json:"token,omitempty" description:"The acceptance token, present only when email_delivery is failed or not_configured: the inviter has to hand the link over. Absent when the notice was sent, because the recipient already holds it."`
+	EmailDelivery string                `json:"email_delivery" required:"true" enum:"sent,failed,not_configured" description:"How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link; a sent notice carries no token in this answer."`
 }
 
-// AuthnInviteView is the answer of the acceptance read: the invitation a token
-// points to.
+// AuthnInviteView is the answer of the acceptance read. A redeemable invitation
+// carries its summary; one that is expired, accepted or revoked carries the
+// state alone, without the invited address, the tenant's name or the deadline.
 type AuthnInviteView struct {
-	_ struct{} `description:"The answer of the acceptance read: the invitation a token points to."`
+	_ struct{} `description:"The answer of the acceptance read: the invitation's state, and its summary only while it can still be redeemed."`
 
-	Invitation AuthnInviteInvitation `json:"invitation" required:"true" description:"The invitation the token points to, without its token."`
+	State      string                 `json:"state" required:"true" enum:"pending,expired,accepted,revoked" description:"The state the read judges. Only pending carries the invitation summary: expired, accepted and revoked answer the state alone, without the invited address, the tenant's name or the deadline."`
+	Invitation *AuthnInviteInvitation `json:"invitation,omitempty" description:"The invitation summary, present only for a pending invitation that can still be redeemed."`
 }
 
 // AuthnInvitePage is one page of a tenant's invitations together with the cursor
@@ -72,11 +75,11 @@ type AuthnInvitePage struct {
 type AuthnInviteAccept struct {
 	_ struct{} `description:"The membership an acceptance wrote."`
 
-	Account   string `json:"account" required:"true" description:"Identifier of the account the membership belongs to: an existing account or one created by this acceptance."`
+	Account   string `json:"account" required:"true" description:"Identifier of the authenticated account the membership belongs to."`
 	Tenant    string `json:"tenant" required:"true" description:"The name of the tenant the membership was written in."`
-	Active    bool   `json:"active" required:"true" description:"Whether the membership is active; an acceptance always writes an active one."`
-	Source    string `json:"source" required:"true" description:"The membership's source; an acceptance always writes invite."`
-	SSOExempt bool   `json:"sso_exempt" required:"true" description:"Whether the membership is exempt from SSO enforcement; an acceptance writes false."`
+	Active    bool   `json:"active" required:"true" description:"Whether the membership is active; a suspended membership is refused rather than reactivated."`
+	Source    string `json:"source" required:"true" description:"The membership's source: invite when this acceptance created it, the source it already had when it was there."`
+	SSOExempt bool   `json:"sso_exempt" required:"true" description:"Whether the membership is exempt from SSO enforcement; an existing exemption is preserved."`
 }
 
 // issueInput is the request of an issuance: the tenant from the path and the
@@ -113,17 +116,17 @@ type acceptViewInput struct {
 	Token string `path:"token" description:"The acceptance token, prefixed spd_inv_, which identifies the invitation and is the whole credential on this public route."`
 }
 
-// acceptInput is the request of an acceptance: the token from the path and the
-// username, display name and password from the JSON body. The body members are
-// read only when the invited address has no account; the username is required
-// then, because an account is opened with a login name.
+// acceptInput is the request of an acceptance: the token from the path and a
+// body the acceptance no longer reads. The account-opening fields stay in the
+// shape so an older client keeps working; acceptance writes a membership for the
+// authenticated caller and never opens an account.
 type acceptInput struct {
-	_ struct{} `description:"The acceptance request; the body fields are read only when the invited address has no account."`
+	_ struct{} `description:"The acceptance request; only the token is read."`
 
-	Token       string `path:"token" description:"The acceptance token, prefixed spd_inv_, which identifies the invitation and is the whole credential on this public route."`
-	Username    string `json:"username" description:"Login name of the account created when the invited address has no account; required then, and ignored when the address already belongs to one."`
-	DisplayName string `json:"display_name" description:"Display name of the account created when the invited address has no account; ignored when the address already belongs to one."`
-	Password    string `json:"password" description:"Initial password of the account created when the invited address has no account; ignored when the address already belongs to one."`
+	Token       string `path:"token" description:"The acceptance token, prefixed spd_inv_, which identifies the invitation. It grants a membership only together with an authenticated caller who proves the invited address."`
+	Username    string `json:"username" description:"Ignored: acceptance never opens an account. Kept so an older client keeps working."`
+	DisplayName string `json:"display_name" description:"Ignored: acceptance never opens an account. Kept so an older client keeps working."`
+	Password    string `json:"password" description:"Ignored: acceptance never opens an account. Kept so an older client keeps working."`
 }
 
 // challengeHeader declares the header every 401 on a management route carries:
@@ -139,6 +142,21 @@ var challengeHeader = speedhttp.Header{
 func unauthorized(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{challengeHeader}
+	return response
+}
+
+// throttledResponse is the platform-standard 429 of a spent send or probe
+// budget. The handler's fault supplies the value; the declaration publishes the
+// header on the contract, and the entry point refuses a header it did not
+// declare.
+func throttledResponse() speedhttp.Response {
+	response := speedhttp.ProblemResponse(http.StatusTooManyRequests,
+		"A send or acceptance-probe budget is spent; Retry-After names the seconds until the window opens again")
+	response.Headers = []speedhttp.Header{{
+		Name:        "Retry-After",
+		Description: "The number of seconds until the counting window opens again",
+		Value:       "1",
+	}}
 	return response
 }
 
@@ -170,7 +188,8 @@ var issueOperation = speedhttp.NewOperation[issueInput, AuthnInviteIssued](
 		"a deadline not later than the current time is refused. When the assembly has an invitation "+
 		"notifier, the acceptance notice is delivered to the address and email_delivery reports "+
 		"sent, failed or not_configured; a failed notice does not undo the invitation, which is still "+
-		"answered 201 with its one-time token. Requires the authn.membership.manage decision in the "+
+		"answered 201, with its one-time token only when the notice was not sent. Requires the "+
+		"authn.membership.manage decision in the "+
 		"tenant; failure to write the mandatory audit row answers 503 without issuing.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
@@ -182,10 +201,11 @@ var issueOperation = speedhttp.NewOperation[issueInput, AuthnInviteIssued](
 			"The body could not be read, or the address is malformed", typePrefix+"bad-request"),
 		speedhttp.ProblemResponseOf(http.StatusUnsupportedMediaType, descriptionNotJSON, typePrefix+"unsupported-media-type"),
 		speedhttp.ProblemResponse(http.StatusForbidden, descriptionForbiddenTenant),
+		throttledResponse(),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, descriptionUnavailable),
 		speedhttp.Response{
 			Status:      http.StatusCreated,
-			Description: "The invitation view together with its one-time token",
+			Description: "The invitation view and the notice outcome; the one-time token only when the notice was not sent",
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 	),
@@ -274,28 +294,34 @@ var acceptViewOperation = speedhttp.NewReplyOperation[acceptViewInput](
 			Status:      http.StatusNotFound,
 			Description: "No such invitation",
 		},
+		throttledResponse(),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, descriptionUnavailable),
 	},
 	speedhttp.Public(),
 )
 
 // acceptOperation declares the route that redeems an invitation. The route is
-// public and the token is the whole credential; an unknown token is a bare 404,
-// so the handler builds its answer.
+// optional: a request with no credential reaches the handler with no identity
+// and is refused with 401. The token is not proof of the invited address, so a
+// caller who has not proved it is 403 and is shown the proof step; the route
+// never opens an account. An unknown token is a bare 404, so the handler builds
+// its answer.
 var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 	"authn.invite.accept",
 	http.MethodPost,
 	acceptPath,
-	"Redeem an invitation, creating the account when the address has none",
-	"Redeems the invitation and writes a membership whose source is invite. When the invited address "+
-		"already belongs to an account, the membership is added to it and username, display_name and "+
-		"password are ignored; otherwise an enabled user account is created first, with the address "+
-		"verified through the invitation and the username as its login name. A request that creates an "+
-		"account without a username is 400. Two concurrent redemptions of one token leave at most one "+
-		"winner. A token that is expired, revoked or already accepted is 409.",
+	"Redeem an invitation for the signed-in account that proves the invited address",
+	"Redeems the invitation and writes a membership for the authenticated caller. The caller must "+
+		"hold the invited address as a proven email identifier; holding the link is not enough, because "+
+		"the inviter holds it too. When the caller has not proved it, the answer is 403 "+
+		"invitation-email-unproved and the client shows the proof step; the invitation stays pending. "+
+		"Acceptance never creates an account and never makes the invited address a sign-in identifier. "+
+		"A membership that already exists keeps its source and its SSO exemption; a suspended one is "+
+		"refused with 409 membership-inactive and the invitation is revoked. Two concurrent redemptions "+
+		"of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The username, display name and initial password used only when the invited address has no account yet.",
+		Description: "The body is required but its account-opening fields are ignored; only the token is read.",
 		Required:    true,
 	},
 	[]speedhttp.Response{
@@ -304,10 +330,12 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 			Description: "The membership the acceptance wrote",
 			Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(AuthnInviteAccept{})},
 		},
+		unauthorized("No authenticated caller"),
 		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The body or an argument is malformed", typePrefix+"bad-request"),
-		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The username is one the system keeps for itself", typePrefix+"username-reserved"),
-		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The username does not normalize", typePrefix+"username-invalid"),
 		speedhttp.ProblemResponseOf(http.StatusUnsupportedMediaType, descriptionNotJSON, typePrefix+"unsupported-media-type"),
+		speedhttp.ProblemResponseOf(http.StatusForbidden,
+			"The caller does not hold the invited address as a proven email identifier",
+			typePrefix+"invitation-email-unproved"),
 		{
 			Status:      http.StatusNotFound,
 			Description: "No such invitation",
@@ -315,10 +343,11 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The invitation is expired, revoked or already accepted"),
 		speedhttp.ProblemResponseOf(http.StatusConflict,
-			"The username the acceptance would open the account with is already taken", typePrefix+"username-taken"),
+			"The caller's membership in the tenant is suspended", typePrefix+"membership-inactive"),
+		throttledResponse(),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, descriptionUnavailable),
 	},
-	speedhttp.Public(),
+	speedhttp.Optional(),
 )
 
 // operations is this module's declaration of the API it serves. The fragment is
@@ -331,8 +360,8 @@ var tenantOperations = speedhttp.Operations{
 	revokeOperation,
 }
 
-// publicOperations is the acceptance surface: the token is the whole credential
-// and there is no identity to decide on.
+// publicOperations is the acceptance surface: the read is public and the write
+// is optional, because it needs an identity but carries no decision to make.
 var publicOperations = speedhttp.Operations{
 	acceptViewOperation,
 	acceptOperation,

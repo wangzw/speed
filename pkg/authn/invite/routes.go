@@ -16,9 +16,10 @@ import (
 //
 // The management routes are registered guarded and Impersonable: their action is
 // decided in the path's tenant, so an impersonating identity is admitted and
-// decided by the effective account's permissions there. The acceptance routes
-// are registered public: the token is the whole credential and there is no
-// identity to read.
+// decided by the effective account's permissions there. The acceptance read is
+// public: it only shows what a token points to. The acceptance write is
+// optional: it needs a signed-in caller, and the handler refuses one without an
+// identity because the token alone grants a membership no more.
 func (p *product) mountRoutes() {
 	g := func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
 		mount.Declared(p.mounter, operation, rel, h, append(opts, mount.InScope(speedhttp.ScopeTenants), mount.Impersonable())...)

@@ -1244,6 +1244,7 @@
       "confirm": "Invitation sent to \"{{email}}\"",
       "link": "Hand this acceptance link to {{email}}:",
       "token": "Hand this acceptance token to {{email}} (the application using this platform builds the link):",
+      "emailed": "The invitation email was sent to \"{{email}}\"; there is no link to pass on.",
       "copy": "Copy",
       "copyLink": "Copy acceptance link",
       "copyToken": "Copy acceptance token",

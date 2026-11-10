@@ -37,6 +37,14 @@ what the seam does.
   error. A deployment that sends no mail should leave the item empty rather than
   omit the module: the invitation module treats an absent notifier as the same
   outcome.
+- **The log carrier is not a delivery channel for an invitation.** When the
+  mail capability's sender answers `mail.log`'s carrier name, `Notify` reports
+  `InviteNotConfigured` without rendering or handing over a message. The log
+  carrier writes to the process log and reaches no recipient, so treating it as
+  a send would withhold the acceptance link behind a line only the deployment
+  can read. The invitation answer must instead carry the token for the issuer to
+  pass on. Verification codes and every other message keep the log carrier's
+  own behaviour; the rule lives here, in the invitation channel, alone.
 - **A run that switches the mail capability off stands this module down.**
   `Prepare` reads `mail.carrier` through `mail.OffBySelection` before it reads
   this module's own section: with `mail.carrier: none` no sending provider
@@ -80,9 +88,11 @@ what the seam does.
 `starters/demo/server/capabilities.go` compiles this module into every build and
 names it for `serve`. The review configuration sets
 `authn.invitemail.accept-base-url` to `http://localhost:8080` and selects
-`mail.carrier: log`, so the walkthrough reads the rendered notice, link
-included, out of the process log. `starters/demo/server/local.yaml.example`
-carries the same two values for the local loop.
+`mail.carrier: log`. Because the log carrier is not a delivery channel for an
+invitation, every issue in that assembly reports `not_configured` and the
+console's one-time panel hands out the acceptance link; no notice is written to
+the process log. `starters/demo/server/local.yaml.example` carries the same two
+values for the local loop.
 
 ## Tests
 

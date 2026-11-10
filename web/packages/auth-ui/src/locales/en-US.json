@@ -210,14 +210,12 @@
     "error": {
       "title": "The invitation could not be loaded"
     },
-    "usernameLabel": "Username",
-    "displayNameLabel": "Display name",
-    "passwordLabel": "Password",
-    "usernameRequired": "Enter a username for the new account.",
-    "usernameTaken": "That username is already taken. Choose another.",
-    "usernameReserved": "That username is reserved by the system. Choose another.",
-    "usernameInvalid": "That username doesn't meet the rules shown here.",
-    "newAccountHint": "If the invited email address has no account yet, choose a username and optionally a display name and password. If it already has one, these are ignored."
+    "unproved": {
+      "title": "Prove the invited email first",
+      "description": "Accepting requires the signed-in account to prove that \"{{email}}\" belongs to you. Add and verify this email in your account settings, then come back here to accept again. This only confirms you are the invited person; it does not make the address a way to sign in.",
+      "manageAccount": "Go to account settings",
+      "retry": "Accept again after verifying"
+    }
   },
   "impersonation": {
     "regionLabel": "Impersonation notice",
@@ -256,7 +254,9 @@
       "username_invalid": "That username doesn't meet the rules shown here.",
       "throttled": "Too many attempts. Please try again later.",
       "unavailable": "The service is temporarily unavailable. Please try again later.",
-      "human_verification_required": "Please confirm you are human, then try again."
+      "human_verification_required": "Please confirm you are human, then try again.",
+      "invitation_email_unproved": "Prove that the invited email address belongs to you in your account settings before accepting the invitation.",
+      "membership_inactive": "Your membership in this organization is suspended, so you cannot accept the invitation. Contact an organization administrator."
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",

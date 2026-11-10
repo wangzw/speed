@@ -6,15 +6,17 @@
 // tenant and, until it is accepted, no account and no membership row exists.
 // One module owns the whole of it — the table, the token, and both faces of the
 // routes — and delivers the Invites capability exclusively. It does not keep
-// accounts, memberships or passwords: acceptance creates an account through
-// AccountAdmin and writes the membership through Memberships, with invite as the
-// membership's source, and those rules stay with the account module.
+// accounts, memberships or passwords: acceptance reads the caller's identifiers
+// through Accounts, requires the invited address among the proven ones, and
+// writes the membership through Memberships with invite as the source of a new
+// one. Those rules stay with the account module.
 //
 // The issuance face, under the base path's /admin tree, is decided in the
 // handler by the Decider seam, with the action authn.membership.manage, and a
-// write lands its mandatory audit row before the action. The acceptance face,
-// under the base path's /invitations, is public: the token is the whole
-// credential, and there is no identity to read.
+// write lands its mandatory audit row before the action. The acceptance read,
+// under the base path's /invitations, is public: it only shows what a token
+// points to. The acceptance write is optional: it needs a signed-in caller who
+// proves the invited address, and a request without an identity is refused.
 //
 // The module renders no message and runs no retry loop. After a successful
 // management issue it asks the optional InviteNotifier seam, bounded to five
@@ -44,6 +46,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -116,6 +119,10 @@ var migrationsFS = func() fs.FS {
 // product must satisfy the capability it delivers.
 var _ Invites = (*product)(nil)
 
+// product also withdraws a deleted tenant's pending invitations for the tenant
+// ownership module's deletion path.
+var _ authn.InvitationRevoker = (*product)(nil)
+
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command mount the invitation
 // routes" a question the host answers by importing this package and writing
@@ -124,18 +131,21 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The database, the route mounter, the account read and write surfaces, the
-// signup verification reads, the membership writes and the audit capability are
-// required, and each is
+// The database, the route mounter, the key-value store, the account read and
+// write surfaces, the signup verification reads, the membership writes and the
+// audit capability are required, and each is
 // delivered exclusively by another module, so the closure of a command that
 // takes this one in does not pull them in: the host writes them down. The audit
 // capability being required is what makes an assembly without one fail before
-// any instance is built, rather than at the first write. The decision seam, the
-// settings store, the event bus, the invitation notifier and the logger are
+// any instance is built, rather than at the first write; the key-value store is
+// required because the issuance and acceptance-probe budgets count through it,
+// and a budget that silently disappeared with its dependency would leave the
+// invitation faces unbounded. The decision seam, the settings store, the event
+// bus, the invitation notifier and the logger are
 // taken up in Init and none is required: the absence of a Decider is a legal
 // assembly in which every management request is refused, without the settings
-// the lifetime reads as its declared default, and without a notifier the issue
-// answer reports the notice as not_configured.
+// the lifetime and the budget limits read as their declared defaults, and
+// without a notifier the issue answer reports the notice as not_configured.
 //
 // The stance is StateEnabled and never StateAuto: whether to mount the
 // invitation routes is a decision on the command tree, not a conclusion a
@@ -146,14 +156,17 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*db.Database)(nil)},
 			{Token: (*mount.Mounter)(nil)},
+			{Token: (*kv.KV)(nil)},
 			{Token: (*authn.Accounts)(nil)},
-			{Token: (*authn.AccountAdmin)(nil)},
 			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Provides: []core.Provision{{Token: (*Invites)(nil), Exclusive: true}},
+		Provides: []core.Provision{
+			{Token: (*Invites)(nil), Exclusive: true},
+			{Token: (*authn.InvitationRevoker)(nil), Exclusive: true},
+		},
 		Resources: []any{
 			configSchema(),
 			settingsSchema(),
@@ -216,12 +229,16 @@ type product struct {
 	now clock.Source
 
 	accounts     authn.Accounts
-	accountAdm   authn.AccountAdmin
 	verification authn.SignupVerification
 	memberships  authn.Memberships
 
 	mounter mount.Mounter
 	audit   audit.Audit
+
+	// kv is the counter store the send and probe budgets count through. It is
+	// required: a security budget that silently disappeared with its dependency
+	// would leave the invitation faces unbounded.
+	kv kv.KV
 
 	// The optional capabilities. Each is nil when absent: a missing Decider
 	// refuses every management request, without the settings the lifetime reads
@@ -232,6 +249,7 @@ type product struct {
 	decider     authn.Decider
 	notifier    authn.InviteNotifier
 	tenantNames authn.TenantNameResolver
+	tenantState authn.TenantStateResolver
 	logger      *slog.Logger
 
 	// mu guards reported, which holds for each fault the one last written, so
@@ -250,13 +268,13 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the route mounter: %w", ModuleName, err)
 	}
+	counters, err := core.Resolve[kv.KV](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the key-value store: %w", ModuleName, err)
+	}
 	accounts, err := core.Resolve[authn.Accounts](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the account reads: %w", ModuleName, err)
-	}
-	accountAdm, err := core.Resolve[authn.AccountAdmin](reg)
-	if err != nil {
-		return nil, fmt.Errorf("%s: taking up the account writes: %w", ModuleName, err)
 	}
 	verification, err := core.Resolve[authn.SignupVerification](reg)
 	if err != nil {
@@ -273,11 +291,11 @@ func newProduct(reg *core.Registry) (*product, error) {
 	return &product{
 		handle:       database.DB(),
 		accounts:     accounts,
-		accountAdm:   accountAdm,
 		verification: verification,
 		memberships:  memberships,
 		mounter:      mounter,
 		audit:        auditor,
+		kv:           counters,
 		logger:       log.Default(),
 		reported:     make(map[string]string),
 	}, nil
@@ -321,8 +339,19 @@ func (p *product) wire(reg *core.Registry) error {
 	if p.tenantNames, err = optional[authn.TenantNameResolver](reg, "the tenant name resolver"); err != nil {
 		return err
 	}
+	if p.tenantState, err = optional[authn.TenantStateResolver](reg, "the tenant state resolver"); err != nil {
+		return err
+	}
 	if p.bus != nil && p.store != nil {
 		p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
+	}
+	if p.bus != nil {
+		// A member who is suspended or removed loses the invitations addressed to
+		// them in that tenant: the grant a pending invitation stands for belongs
+		// to a member, and a membership that is gone cannot be granted again. The
+		// invitation's own row is still the authority; the event is the hint that
+		// sends this module to it.
+		p.bus.Subscribe(authn.EventMembershipChanged, ModuleName, p.onMembershipChanged)
 	}
 	p.mountRoutes()
 	return nil

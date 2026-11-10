@@ -87,11 +87,11 @@ func TestEnterpriseDomainIsRefusedByDefaultWhenTheRegisterFails(t *testing.T) {
 }
 
 // A preprovisioned provider matches an account an administrator prepared for the
-// address, whatever channel the address carries except an import's unproven
-// record: an administrator's assertion, a provider's, and an invitation's all
-// count.
+// address: an administrator's own assertion and a provider's proof count, while
+// an import's unproven record and an invitation do not, because an invitation
+// proves no address.
 func TestEnterprisePreprovisionedMatchesAnAdministratorsAccount(t *testing.T) {
-	for _, via := range []string{authn.VerifiedViaAdmin, authn.VerifiedViaInvite, "idp:google"} {
+	for _, via := range []string{authn.VerifiedViaAdmin, "idp:google"} {
 		t.Run(via, func(t *testing.T) {
 			e := newEnv(t, withProvider(authn.ProvisioningPreprovisioned, false))
 			id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: via, password: true, tenants: []string{tenantAcme}})
@@ -118,6 +118,7 @@ func TestEnterprisePreprovisionedRefusals(t *testing.T) {
 	}{
 		{"no account", nil, false, authn.ErrNotProvisioned},
 		{"address from an import", &seed{email: "ann@acme.com", emailVia: authn.VerifiedViaImportUnverified}, false, authn.ErrNotProvisioned},
+		{"address from an invitation", &seed{email: "ann@acme.com", emailVia: authn.VerifiedViaInvite}, false, authn.ErrNotProvisioned},
 		{"address under no channel", &seed{email: "ann@acme.com", emailVia: ""}, false, authn.ErrNotProvisioned},
 		{"account disabled", &seed{email: "ann@acme.com", emailVia: authn.VerifiedViaAdmin}, true, authn.ErrAccountUnavailable},
 	} {

@@ -27,7 +27,7 @@ auth-ui 是登录组件族，位于 ui-kit 与 auth-core 之上，由[宿主](..
 ### 非职责
 
 - **不拥有会话状态机。** 流程的推进、会话的建立与撤销归 `@speed/auth-core`（[authn 登录](../authn/design-authn-login.md)）；本包渲染的会话契约的每一项都是 auth-core 交付的操作。要在本包见不到的操作里做点别的，那是 auth-core 契约该长的地方，不是本包里的第二次 HTTP。
-- **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不自行判定令牌是否存在或能否兑现——不存在由读取的 404 给出，不可兑现由读取应答体的 `status` 与 `expires_at` 给出；受理时不可兑现才是 409。受理页只按读取应答携带的 `status` 与 `expires_at` 决定是否提供受理动作，不据此写入任何东西。接受是公开的、令牌即凭据：成员关系落到**被邀请地址**的账户上，而非登录账号（REQ-tenancy-017）。宿主可在受理页前渲染它自己的登录页（先登录或注册再受理是宿主的组合），本包不内建这道门禁，那道门禁也不约束成员关系落到哪个账户。
+- **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不自行判定令牌是否存在或能否兑现——不存在由读取的 404 给出，不可兑现由读取应答体的 `status` 与 `expires_at` 给出；受理时不可兑现才是 409。受理页只按读取应答携带的 `status` 与 `expires_at` 决定是否提供受理动作，不据此写入任何东西。令牌授予加入，不是全部凭据：受理请求由已登录账户发出，成员关系落到该账户，前提是该账户持有被邀请地址的已证明邮箱（REQ-tenancy-017）；地址不必是该账户的登录方式。未证明时后端以 `authn.invitation_email_unproved` 拒绝，屏幕展示证明步骤并给出宿主 `onProveEmail` 的入口，邀请保持待接受。宿主可在受理页前渲染它自己的登录页（先登录或注册再受理是宿主的组合），本包不内建这道门禁。
 - **不拥有匿名口令重置状态机。** 重置的发送、验证码核验与口令写入由服务端完成，宿主把生成的 SDK 操作绑定成 `PasswordResetOperations` 交给 `PasswordResetScreen`；本包不发重置的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不判定某账户是否具备重置条件——宿主按发现文档的 `password_reset.methods` 取得渠道，经 `channels` 交给屏幕；合格与不合格目标的服务端应答一致。
 - **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。屏幕不主动改写 URL：宿主在需要保留当前页时把登录页挂在原 URL 上，登录完成的会话翻转由宿主重新渲染该页——加强认证要求重新登录时，当事人因而回到发起那一页（[account-ui](design-web-account-ui.md) 的加强认证恢复记录负责续做待办操作）。
 - **不拥有注册状态机，但内建注册表单。** 自助注册是 `@speed/auth-core` 的 `session.register` 操作，一次请求建号，不建立会话、不发送邮件（[authn-account](../authn/design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。本包渲染 `PasswordRegisterForm` 并驱动该操作；字段规范化、口令策略、用户名占用与邮箱预留的写入都在服务端。注册成功后的会话仍由既有口令登录流程建立，本包不自行铸造会话；建号与自动登录都经 auth-core 的会话操作，本包不在它之外发请求。`SignInScreen` 在部署开放口令注册时给出这个渠道，开户仍由服务端完成。
@@ -38,7 +38,7 @@ auth-ui 是登录组件族，位于 ui-kit 与 auth-core 之上，由[宿主](..
 
 ## 外部接口契约
 
-`@speed/auth-ui` 的公开接口是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`PasswordRegisterForm` 连同 `PasswordRegisterFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`、`AcceptInvitationInput`）、`PasswordResetScreen`（连同 `PasswordResetScreenProps`、`PasswordResetOperations`、`PasswordResetRequest`、`PasswordResetChannel`（从 `@speed/auth-core` 再导出）、`PasswordResetSent`、`PasswordResetVerified`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的辅助模块（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)。
+`@speed/auth-ui` 的公开接口是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`PasswordRegisterForm` 连同 `PasswordRegisterFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`）、`PasswordResetScreen`（连同 `PasswordResetScreenProps`、`PasswordResetOperations`、`PasswordResetRequest`、`PasswordResetChannel`（从 `@speed/auth-core` 再导出）、`PasswordResetSent`、`PasswordResetVerified`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的辅助模块（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)。
 
 ### 受控组件的结构
 
@@ -158,19 +158,13 @@ interface AcceptInvitationScreenProps {
   readonly token: string
   readonly invitations: InvitationOperations
   readonly onAccepted?: () => void
-  readonly newAccountFields?: {            // 新账户输入项；两项皆默认 true
-    readonly displayName?: boolean
-    readonly password?: boolean
-  }
-  readonly headingLevel?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' // 标题元素，缺省 h1；受理成功的小标题取下一级
+  readonly onProveEmail?: () => void // 打开宿主的账户页证明被邀请地址；缺席时证明步骤只说明做法
+  readonly headingLevel?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' // 标题元素，缺省 h1；受理成功与证明步骤的小标题取下一级
 }
 
 interface InvitationOperations {
   readonly readInvitation: (token: string) => Promise<InvitationSummary>
-  readonly acceptInvitation: (
-    token: string,
-    input: AcceptInvitationInput,
-  ) => Promise<void>
+  readonly acceptInvitation: (token: string) => Promise<void>
 }
 
 // SignOutMenuItem：账户菜单里的登出项。先调 onActivate，再驱动 logout，吞掉拒绝。
@@ -354,7 +348,7 @@ sequenceDiagram
 | 首登开户步 | 流程的 `challenge` 步 | 服务端在 `next` 里给出字段与可选的 `provided_email`：社交首登是完整的开户界面（居中的身份句与要求句、用户名、只读邮箱、口令与确认口令；用户名与两道口令必填，`provided_email` 缺省时不渲染邮箱字段），短信首登是用户名、可选的显示名、口令与确认口令，企业即时开通只有用户名。标签取本族字段词表；确认口令只在本地比较；答复经 `session.answerFlow` 发出，服务端在建号前判定格式、保留字、唯一性与口令策略 |
 | 邀请视图 | `InvitationSummary` | 受理页渲染的邀请字段：租户、地址、状态、期限 |
 | 邀请操作 | `InvitationOperations` | 宿主绑定的两个邀请操作：读取与受理 |
-| 受理入参 | `AcceptInvitationInput` | 受理可带的显示名与初始口令（地址尚无账户时用） |
+| 受理入参 | 令牌 | 受理只带令牌：接受不建账户，也不读显示名或口令，被邀请地址的证明由账户自己的验证路径完成 |
 | 命名空间 | `authUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同；注册表单的文案在顶层 `register` 节，匿名口令重置的文案在顶层 `passwordReset` 节 |
 
 ## 核心算法与流程
@@ -435,7 +429,7 @@ sequenceDiagram
 ### 邀请受理
 
 1. 挂载时经 `invitations.readInvitation(token)` 读一次令牌指向的邀请。读取中渲染一条 `role="status"` 通知；读取失败按失败形态分支（无此邀请 404 渲染「邀请不存在」文案、已失效 409 渲染「邀请已失效」文案、其余渲染该错误码的横幅加一个重试按钮，重试再读一次）。读取成功时先按应答的 `status` 与 `expires_at` 判定链接是否仍可兑现：状态不是 `pending`，或 `pending` 但期限已到（契约规定到点即不可受理），渲染与 409 相同的「邀请已失效」标题与说明，不展示邀请摘要与受理动作；仍可兑现时渲染邀请的租户、地址与期限与受理动作。
-2. 查看者以 `invitations.acceptInvitation(token, input)` 受理，`input` 带可选显示名与口令（`AcceptInvitationInput`）：被邀请地址尚无账户时受理会建一个账户，故受理页为这一支提供显示名与口令两个可留空的输入，填了即随受理发出、留空即不带；地址已有账户时服务端忽略它们。`newAccountFields` 让宿主收窄这两项（两项皆默认提供）；两项都隐藏时不渲染那条说明——它描述的是页面上不存在的输入。被拒时渲染应答的错误码文本，受理动作保持可重试；受理落地后渲染受理成功文案并触发一次 `onAccepted`（抛出的宿主回调被包住，不改变受理已落定的事实）。页内标题按 `headingLevel` 渲染（缺省 `h1`，受理页通常就是整页），受理成功的小标题取它的下一级。期限按宿主提供的显示时区渲染（ui-kit 的显示时区上下文），缺席时用设备时区。
+2. 查看者以 `invitations.acceptInvitation(token)` 受理，受理不携带用户名、显示名或口令：接受不建账户，服务端也不读这些字段。被拒时按错误码分支：`authn.invitation_email_unproved` 打开证明步骤，说明要先证明被邀请地址，给出宿主 `onProveEmail` 的入口与一个再次受理的动作；其余错误渲染应答的错误码文本，受理动作保持可重试。受理落地后渲染受理成功文案并触发一次 `onAccepted`（抛出的宿主回调被包住，不改变受理已落定的事实）。页内标题按 `headingLevel` 渲染（缺省 `h1`，受理页通常就是整页），受理成功的小标题取它的下一级。期限按宿主提供的显示时区渲染（ui-kit 的显示时区上下文），缺席时用设备时区。
 
 ### 冒充横幅
 
@@ -531,7 +525,7 @@ sequenceDiagram
 | 登录屏的装配接口：组次序与首组文案、宿主内容位、提供方图标、标题层级、受控模式、起手门 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`、`SignInScreenProps`、`SignInStartContext`；`web/packages/auth-ui/src/internal/start-gate.ts`；`web/packages/auth-ui/src/internal/group-heading.ts` |
 | 会话结束屏的文案对主动退出与会话失效都成立，不陈述成因 | 已实现 | `web/packages/auth-ui/src/SessionEndedScreen.tsx`；`web/packages/auth-ui/src/locales/en-US.json`、`web/packages/auth-ui/src/locales/zh-CN.json` 的 `sessionEnded.description` |
 | 邀请受理页 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
-| 邀请受理的新账户输入项取舍、标题层级与显示时区 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps` |
+| 邀请受理的证明步骤、标题层级与显示时区 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps` |
 | 短信通道读取手机号缺省国家/地区 | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm` |
 | 短信渠道的人机验证块与 `human_proof`（首次发送、重发与短信第二因素） | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`、`SMSSignInFormProps`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
 | 各渠道表单停留步骤的人机验证块与 `human_proof`（短信第二因素、声明手机号的挑战） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `HumanGatedFlowStep`；`web/packages/auth-ui/src/internal/flow.ts` `answerSends`、`stepMaySend`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver` |

@@ -3,13 +3,13 @@ package invite
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
 const tenant = "tenant-a"
@@ -71,17 +71,18 @@ func TestIssueSupersedesAPendingInvitation(t *testing.T) {
 	if got := h.row(second.Invitation.ID).Status; got != statusPending {
 		t.Errorf("the new row's status = %d, want pending", got)
 	}
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: first.Token, DisplayName: "Alice"}); !errors.Is(err, ErrInvitationRevoked) {
+	ctx := h.acceptCtx("acct-alice", "alice@example.com")
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: first.Token, DisplayName: "Alice"}); !errors.Is(err, ErrInvitationRevoked) {
 		t.Errorf("accepting the superseded token gave %v, want ErrInvitationRevoked", err)
 	}
 }
 
 func TestAcceptWithAnExistingAccountAddsAMembershipOnly(t *testing.T) {
 	h := newHarness(t)
-	h.accounts.put("alice@example.com", "acct-alice")
 	issued := h.issue(tenant, "alice@example.com")
+	ctx := h.acceptCtx("acct-alice", "alice@example.com")
 
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, DisplayName: "ignored"})
+	mem, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token, DisplayName: "ignored"})
 	if err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
@@ -96,60 +97,134 @@ func TestAcceptWithAnExistingAccountAddsAMembershipOnly(t *testing.T) {
 	}
 }
 
-// TestAcceptProvesAnExistingUnprovedAddress holds that the token proves the
-// address it was delivered to: an account that holds it without proof is
-// brought up to invite, and the membership follows.
-func TestAcceptProvesAnExistingUnprovedAddress(t *testing.T) {
+// TestAcceptRefusesAnUnprovedInvitedAddress holds that holding the token is not
+// proof: an account that holds the invited address only through an unproved
+// channel is refused with the proof step's own error, and the invitation stays
+// pending for the retry after the address is proved.
+func TestAcceptRefusesAnUnprovedInvitedAddress(t *testing.T) {
 	h := newHarness(t)
-	h.accounts.put("alice@example.com", "acct-alice")
 	h.accounts.via = authn.VerifiedViaAdmin
 	issued := h.issue(tenant, "alice@example.com")
+	ctx := h.acceptCtx("acct-alice", "alice@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); err != nil {
-		t.Fatalf("accepting: %v", err)
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationEmailUnproved) {
+		t.Fatalf("accepting without a proof gave %v, want ErrInvitationEmailUnproved", err)
 	}
-	if h.admin.creates != 0 {
-		t.Errorf("an account was created for an address that has one (%d creates)", h.admin.creates)
+	if h.members.count != 0 {
+		t.Errorf("a membership was written without a proof")
 	}
-	if len(h.admin.added) != 1 {
-		t.Fatalf("AddIdentifier was called %d times, want once", len(h.admin.added))
-	}
-	got := h.admin.added[0]
-	if got.Account != "acct-alice" || got.Kind != authn.IdentifierEmail ||
-		got.Value != "alice@example.com" || got.Via.Via != VerifiedViaInvite {
-		t.Errorf("AddIdentifier(%+v), want the address proved through invite", got)
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("row status = %d, want pending so the caller can prove the address and retry", got)
 	}
 }
 
-func TestAcceptCreatesAnAccountWhenTheAddressHasNone(t *testing.T) {
+// TestAcceptRefusesAnAccountThatDoesNotHoldTheInvitedAddress holds the other
+// side: a caller with a different proven address cannot redeem the invitation,
+// and no account is created for the invited one.
+func TestAcceptRefusesAnAccountThatDoesNotHoldTheInvitedAddress(t *testing.T) {
 	h := newHarness(t)
-	h.admin.newID = "acct-new"
-	issued := h.issue(tenant, "Bob@Example.com")
+	issued := h.issue(tenant, "bob@example.com")
+	ctx := h.acceptCtx("acct-alice", "alice@example.com")
 
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "bob", DisplayName: "Bob", Password: "correct horse"})
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationEmailUnproved) {
+		t.Fatalf("accepting with another address gave %v, want ErrInvitationEmailUnproved", err)
+	}
+	if h.admin.creates != 0 {
+		t.Errorf("the acceptance created %d account(s), want none", h.admin.creates)
+	}
+	if h.members.count != 0 {
+		t.Errorf("a membership was written for an account that does not hold the address")
+	}
+}
+
+// TestAcceptRefusesARequestWithoutAnIdentity holds that the token alone is no
+// credential: the inviter holds it too, so an unauthenticated request is
+// refused before the row is read.
+func TestAcceptRefusesARequestWithoutAnIdentity(t *testing.T) {
+	h := newHarness(t)
+	issued := h.issue(tenant, "alice@example.com")
+	h.accounts.put("alice@example.com", "acct-alice")
+
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationUnauthenticated) {
+		t.Fatalf("accepting without an identity gave %v, want ErrInvitationUnauthenticated", err)
+	}
+	if h.members.count != 0 {
+		t.Errorf("a membership was written without an identity")
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("row status = %d, want pending", got)
+	}
+}
+
+// TestTheInviterCannotAcceptOnTheInviteesBehalf holds the product rule's reason
+// for requiring the proof: the issuer receives the token in the issue answer, so
+// bearing the token says nothing about owning the invited address. The issuer's
+// own account, which holds a different proven address, is refused and the
+// invitation stays pending for the person the address belongs to.
+func TestTheInviterCannotAcceptOnTheInviteesBehalf(t *testing.T) {
+	h := newHarness(t)
+	issued := h.issue(tenant, "invitee@example.com")
+	ctx := h.acceptCtx(adminID, "operator@example.com")
+
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationEmailUnproved) {
+		t.Fatalf("the issuer accepted its own invitation with %v, want ErrInvitationEmailUnproved", err)
+	}
+	if h.members.count != 0 {
+		t.Errorf("the issuer wrote %d membership(s) for an address it does not hold", h.members.count)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("row status = %d, want pending for the holder of the address", got)
+	}
+}
+
+// TestAcceptKeepsAnExistingMembershipsSourceAndExemption holds that an
+// acceptance adds a member and does not rewrite how the member came to be one:
+// an active membership that already exists keeps its source and its SSO
+// exemption.
+func TestAcceptKeepsAnExistingMembershipsSourceAndExemption(t *testing.T) {
+	h := newHarness(t)
+	issued := h.issue(tenant, "alice@example.com")
+	ctx := h.acceptCtx("acct-alice", "alice@example.com")
+	h.members.hold(authn.Membership{
+		Account: "acct-alice", Tenant: tenant, Active: true, Source: "admin", SSOExempt: true,
+	})
+
+	mem, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token})
 	if err != nil {
-		t.Fatalf("accepting: %v", err)
+		t.Fatalf("accepting with an active membership: %v", err)
 	}
-	if h.admin.creates != 1 {
-		t.Fatalf("creates = %d, want one", h.admin.creates)
+	if mem.Source != "admin" || !mem.SSOExempt || !mem.Active {
+		t.Errorf("membership = %+v, want the existing source and SSO exemption preserved", mem)
 	}
-	if h.admin.created.Email != "bob@example.com" {
-		t.Errorf("created email = %q, want the normalized address", h.admin.created.Email)
+	if len(h.members.puts) != 1 || h.members.puts[0].Source != "admin" || !h.members.puts[0].SSOExempt {
+		t.Errorf("the write = %+v, want the existing source and SSO exemption", h.members.puts)
 	}
-	if h.admin.created.EmailVerifiedVia.Via != VerifiedViaInvite {
-		t.Errorf("created verification channel = %q, want %q", h.admin.created.EmailVerifiedVia.Via, VerifiedViaInvite)
+}
+
+// TestAcceptRefusesASuspendedMembershipAndRevokesTheInvitation holds that a
+// suspended member is not silently reactivated: the acceptance is refused, no
+// membership is written, and the invitation is revoked so the token cannot be
+// reused.
+func TestAcceptRefusesASuspendedMembershipAndRevokesTheInvitation(t *testing.T) {
+	h := newHarness(t)
+	issued := h.issue(tenant, "alice@example.com")
+	ctx := h.acceptCtx("acct-alice", "alice@example.com")
+	h.members.hold(authn.Membership{Account: "acct-alice", Tenant: tenant, Active: false, Source: "admin"})
+
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationMembershipInactive) {
+		t.Fatalf("accepting over a suspended membership gave %v, want ErrInvitationMembershipInactive", err)
 	}
-	if h.admin.created.Password != "correct horse" || h.admin.created.DisplayName != "Bob" {
-		t.Errorf("created account = %+v, want the name and password from the acceptance", h.admin.created)
+	if h.members.count != 0 {
+		t.Errorf("the acceptance wrote %d membership(s), want none", h.members.count)
 	}
-	if mem.Account != "acct-new" || mem.Source != SourceInvite {
-		t.Errorf("membership = %+v, want acct-new with source %q", mem, SourceInvite)
+	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("row status = %d, want revoked so the token cannot be retried", got)
 	}
 }
 
 func TestAcceptReportsTerminalStates(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := h.acceptCtx("acct-dave", "dave@example.com")
 
 	if _, err := h.p.Accept(ctx, AcceptInvite{Token: ""}); !errors.Is(err, ErrInvitationNotFound) {
 		t.Errorf("empty token gave %v, want ErrInvitationNotFound", err)
@@ -170,7 +245,8 @@ func TestAcceptReportsTerminalStates(t *testing.T) {
 	if err := h.p.Revoke(ctx, tenant, revoked.Invitation.ID); err != nil {
 		t.Fatalf("revoking: %v", err)
 	}
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: revoked.Token}); !errors.Is(err, ErrInvitationRevoked) {
+	erin := h.acceptCtx("acct-erin", "erin@example.com")
+	if _, err := h.p.Accept(erin, AcceptInvite{Token: revoked.Token}); !errors.Is(err, ErrInvitationRevoked) {
 		t.Errorf("accepting a revoked token gave %v, want ErrInvitationRevoked", err)
 	}
 }
@@ -178,13 +254,14 @@ func TestAcceptReportsTerminalStates(t *testing.T) {
 func TestAcceptRefusesAnExpiredToken(t *testing.T) {
 	h := newHarness(t)
 	deadline := h.clock.read().Add(time.Hour)
-	ctx := context.Background()
-	issued, err := h.p.Issue(ctx, IssueInvite{Tenant: tenant, Email: "frank@example.com", ExpiresAt: deadline})
+	issueCtx := authntest.Context(h.t, context.Background(), authntest.WithAccount(adminID))
+	issued, err := h.p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "frank@example.com", ExpiresAt: deadline})
 	if err != nil {
 		t.Fatalf("issuing: %v", err)
 	}
 	h.clock.advance(2 * time.Hour)
 
+	ctx := h.acceptCtx("acct-frank", "frank@example.com")
 	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationExpired) {
 		t.Errorf("accepting an expired token gave %v, want ErrInvitationExpired", err)
 	}
@@ -197,8 +274,9 @@ func TestAcceptSettlesATransientFailureBackToPending(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = errors.New("the membership store is down")
 	issued := h.issue(tenant, "grace@example.com")
+	ctx := h.acceptCtx("acct-grace", "grace@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "grace"}); !errors.Is(err, authn.ErrUnavailable) {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("accepting over a failing membership store gave %v, want ErrUnavailable", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
@@ -208,10 +286,11 @@ func TestAcceptSettlesATransientFailureBackToPending(t *testing.T) {
 
 func TestAcceptSettlesAPermanentFailureAsRevoked(t *testing.T) {
 	h := newHarness(t)
-	h.admin.err = authn.ErrBindingConflict
+	h.members.err = authn.ErrBindingConflict
 	issued := h.issue(tenant, "heidi@example.com")
+	ctx := h.acceptCtx("acct-heidi", "heidi@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "heidi"}); !errors.Is(err, authn.ErrBindingConflict) {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrBindingConflict) {
 		t.Fatalf("accepting over a conflicting binding gave %v, want ErrBindingConflict", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
@@ -219,58 +298,17 @@ func TestAcceptSettlesAPermanentFailureAsRevoked(t *testing.T) {
 	}
 }
 
-// TestAUsernameRefusalDoesNotSpendTheInvitation holds that the three ways a
-// username is refused — taken, reserved and malformed — are values the person
-// accepting the invitation holds and can change: the invitation returns to
-// pending and the same token redeems once a valid name is given.
-func TestAUsernameRefusalDoesNotSpendTheInvitation(t *testing.T) {
-	cases := []struct {
-		name string
-		err  error
-		want error
-	}{
-		{"taken", authn.ErrAccountExists, authn.ErrAccountExists},
-		{"reserved", authn.ErrUsernameReserved, authn.ErrUsernameReserved},
-		{"malformed", authn.UsernameShape(fmt.Errorf("%w", authn.ErrInvalidIdentifier)), authn.ErrInvalidIdentifier},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			h := newHarness(t)
-			h.admin.err = c.err
-			issued := h.issue(tenant, "nora@example.com")
-
-			_, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "refused"})
-			if !errors.Is(err, c.want) {
-				t.Fatalf("accepting with the %s name gave %v, want %v", c.name, err, c.want)
-			}
-			if got := h.row(issued.Invitation.ID).Status; got != statusPending {
-				t.Fatalf("status after the refusal = %d, want back to pending: the name is the invitee's to change", got)
-			}
-
-			h.admin.err = nil
-			mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "nora"})
-			if err != nil {
-				t.Fatalf("retrying the same token with a valid name: %v", err)
-			}
-			if mem.Tenant != tenant || mem.Source != SourceInvite {
-				t.Errorf("membership after the retry = %+v, want a %q membership in %q", mem, SourceInvite, tenant)
-			}
-			if got := h.row(issued.Invitation.ID).Status; got != statusAccepted {
-				t.Errorf("status after the retry = %d, want accepted", got)
-			}
-		})
-	}
-}
-
-// TestAcceptSettlesATakenContactAsRevoked holds that an address another account
-// reserved or proved is a permanent failure: the invitation is revoked rather
-// than left pending for a retry that cannot work.
+// TestAcceptSettlesATakenContactAsRevoked holds that a membership write the
+// store refuses because another account holds the contact is a permanent
+// failure: the invitation is revoked rather than left pending for a retry that
+// cannot work.
 func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
 	h := newHarness(t)
-	h.admin.err = authn.ErrContactTaken
+	h.members.err = authn.ErrContactTaken
 	issued := h.issue(tenant, "judy@example.com")
+	ctx := h.acceptCtx("acct-judy", "judy@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "judy"}); !errors.Is(err, authn.ErrContactTaken) {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrContactTaken) {
 		t.Fatalf("accepting over a reserved contact gave %v, want ErrContactTaken", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
@@ -278,19 +316,18 @@ func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
 	}
 }
 
-// TestAcceptPropagatesACleanupIncomplete holds that an account the acceptance
-// created and whose lifecycle cleanup failed is that failure and not an
-// unavailable dependency: the caller reads the same sentinel the account call
-// returned, and the invitation goes back to pending so a retry is not locked
-// out.
+// TestAcceptPropagatesACleanupIncomplete holds that a failure the membership
+// store reports is handed back as it is and not merged into ErrUnavailable, and
+// that it returns the invitation to pending so a retry is not locked out.
 func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
 	h := newHarness(t)
-	h.admin.err = authn.ErrCleanupIncomplete
+	h.members.err = authn.ErrCleanupIncomplete
 	issued := h.issue(tenant, "karl@example.com")
+	ctx := h.acceptCtx("acct-karl", "karl@example.com")
 
-	_, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "karl"})
+	_, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token})
 	if !errors.Is(err, authn.ErrCleanupIncomplete) {
-		t.Fatalf("accepting over a failing lifecycle hook gave %v, want ErrCleanupIncomplete", err)
+		t.Fatalf("accepting over a failing cleanup gave %v, want ErrCleanupIncomplete", err)
 	}
 	if errors.Is(err, authn.ErrUnavailable) {
 		t.Error("the cleanup failure was merged into ErrUnavailable instead of being propagated")
@@ -300,37 +337,151 @@ func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
 	}
 }
 
-// A CleanupIncomplete is transient: once the account the failed acceptance
-// created is visible, the retry accepts the invitation without creating a
-// second account, and the hook is what the earlier call left to finish.
-func TestAcceptRetriesAfterACleanupIncomplete(t *testing.T) {
+// A transient membership failure does not spend the invitation: once the
+// store answers, the same token redeems for the same caller.
+func TestAcceptRetriesAfterATransientFailure(t *testing.T) {
 	h := newHarness(t)
-	h.admin.err = authn.ErrCleanupIncomplete
+	h.members.err = authn.ErrCleanupIncomplete
 	issued := h.issue(tenant, "lena@example.com")
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "lena"}); !errors.Is(err, authn.ErrCleanupIncomplete) {
+	ctx := h.acceptCtx("acct-lena", "lena@example.com")
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrCleanupIncomplete) {
 		t.Fatalf("the first acceptance gave %v, want ErrCleanupIncomplete", err)
 	}
 
-	// The account exists though its hook failed, which is the state the account
-	// module leaves in force.
-	h.accounts.put("lena@example.com", "acct-lena")
-	h.admin.err = nil
-
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "lena"})
+	h.members.err = nil
+	mem, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token})
 	if err != nil {
 		t.Fatalf("retrying the acceptance: %v", err)
 	}
 	if mem.Account != "acct-lena" {
-		t.Errorf("the retry accepted for %q, want the account the first call created", mem.Account)
-	}
-	if h.admin.creates != 1 {
-		t.Errorf("the retry created %d account(s) in all, want the one create of the first call", h.admin.creates)
+		t.Errorf("the retry accepted for %q, want acct-lena", mem.Account)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusAccepted {
 		t.Errorf("status after the retry = %d, want accepted", got)
 	}
 	if h.members.count != 1 {
 		t.Errorf("memberships written = %d, want one", h.members.count)
+	}
+}
+
+// A membership suspended between the acceptance's read and its conditional
+// write is not resurrected: the write reports that the account is not an active
+// member, the invitation is revoked, and no membership row is written.
+func TestAcceptDoesNotResurrectAMembershipSuspendedDuringTheWrite(t *testing.T) {
+	h := newHarness(t)
+	issued := h.issue(tenant, "mia@example.com")
+	ctx := h.acceptCtx("acct-mia", "mia@example.com")
+	h.members.hold(authn.Membership{Account: "acct-mia", Tenant: tenant, Active: true, Source: "admin"})
+	h.members.duringJoin = func() {
+		h.members.hold(authn.Membership{Account: "acct-mia", Tenant: tenant, Active: false, Source: "admin"})
+	}
+
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationMembershipInactive) {
+		t.Fatalf("accepting over a membership suspended mid-write gave %v, want ErrInvitationMembershipInactive", err)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("status after the lost race = %d, want revoked", got)
+	}
+	if h.members.count != 0 {
+		t.Errorf("the lost race wrote %d membership(s), want none", h.members.count)
+	}
+	held, ok, err := h.members.Membership(context.Background(), tenant, "acct-mia")
+	if err != nil || !ok || held.Active {
+		t.Errorf("the membership reads %+v (%v, %v), want it still suspended", held, ok, err)
+	}
+}
+
+// A resend issued while an acceptance holds the old row writes a new pending
+// invitation. Settling the failed acceptance must not collide with it: the old
+// row is revoked and the new one stays pending.
+func TestSettlingAfterAResendRevokesTheOldRow(t *testing.T) {
+	h := newHarness(t)
+	issued := h.issue(tenant, "nora@example.com")
+	ctx := h.acceptCtx("acct-nora", "nora@example.com")
+	h.members.err = errors.New("the membership store is down")
+	var resent Issued
+	h.members.duringJoin = func() {
+		resent = h.issue(tenant, "nora@example.com")
+	}
+
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrUnavailable) {
+		t.Fatalf("accepting over a failing membership store gave %v, want ErrUnavailable", err)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("the old row's status = %d, want revoked so it does not collide with the resend", got)
+	}
+	if got := h.row(resent.Invitation.ID).Status; got != statusPending {
+		t.Errorf("the resent row's status = %d, want pending", got)
+	}
+}
+
+// A disabled tenant refuses acceptance and the invitation survives: enabling the
+// tenant makes the same token redeemable again.
+func TestAcceptRefusesADisabledTenantAndKeepsTheInvitation(t *testing.T) {
+	h := newHarness(t)
+	h.tenantStates.states[tenant] = authn.TenantDisabled
+	issued := h.issue(tenant, "olga@example.com")
+	ctx := h.acceptCtx("acct-olga", "olga@example.com")
+
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationTenantInactive) {
+		t.Fatalf("accepting into a disabled tenant gave %v, want ErrInvitationTenantInactive", err)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("status into a disabled tenant = %d, want pending", got)
+	}
+	if h.members.count != 0 {
+		t.Errorf("a disabled tenant accepted %d membership(s), want none", h.members.count)
+	}
+
+	h.tenantStates.states[tenant] = authn.TenantServing
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); err != nil {
+		t.Fatalf("accepting after the tenant was enabled again: %v", err)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusAccepted {
+		t.Errorf("status after re-enabling = %d, want accepted", got)
+	}
+}
+
+// A deleted tenant refuses acceptance and its live row is withdrawn, so a token
+// the deletion's cleanup missed cannot be redeemed later.
+func TestAcceptRefusesADeletedTenantAndWithdrawsTheRow(t *testing.T) {
+	h := newHarness(t)
+	h.tenantStates.states[tenant] = authn.TenantDeleted
+	issued := h.issue(tenant, "pete@example.com")
+	ctx := h.acceptCtx("acct-pete", "pete@example.com")
+
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationNotFound) {
+		t.Fatalf("accepting into a deleted tenant gave %v, want ErrInvitationNotFound", err)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("status into a deleted tenant = %d, want revoked", got)
+	}
+	if h.members.count != 0 {
+		t.Errorf("a deleted tenant accepted %d membership(s), want none", h.members.count)
+	}
+}
+
+func TestRevokeTenantInvitationsWithdrawsOnlyThatTenantsPendingRows(t *testing.T) {
+	h := newHarness(t)
+	kept := h.issue(tenant, "quinn@example.com")
+	other := h.issue("tenant-b", "quinn@example.com")
+	accepted := h.issue(tenant, "rae@example.com")
+	if err := h.handle.Model(&invitationRow{}).Where("id = ?", accepted.Invitation.ID).
+		Update("status", statusAccepted).Error; err != nil {
+		t.Fatalf("accepting the row by hand: %v", err)
+	}
+
+	if err := h.p.RevokeTenantInvitations(context.Background(), tenant); err != nil {
+		t.Fatalf("revoking the tenant's invitations: %v", err)
+	}
+	if got := h.row(kept.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("the tenant's pending row = %d, want revoked", got)
+	}
+	if got := h.row(other.Invitation.ID).Status; got != statusPending {
+		t.Errorf("another tenant's row = %d, want pending", got)
+	}
+	if got := h.row(accepted.Invitation.ID).Status; got != statusAccepted {
+		t.Errorf("the accepted row = %d, want accepted", got)
 	}
 }
 
@@ -350,7 +501,8 @@ func TestRevokeIsIdempotentAndRefusesAnAcceptedInvitation(t *testing.T) {
 	}
 
 	accepted := h.issue(tenant, "jane@example.com")
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: accepted.Token, Username: "jane"}); err != nil {
+	jane := h.acceptCtx("acct-jane", "jane@example.com")
+	if _, err := h.p.Accept(jane, AcceptInvite{Token: accepted.Token}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 	if err := h.p.Revoke(ctx, tenant, accepted.Invitation.ID); !errors.Is(err, ErrInvitationAlreadyAccepted) {
@@ -368,7 +520,8 @@ func TestListOrdersPendingFirstAndPagesByCursor(t *testing.T) {
 	b := h.issue(tenant, "b@example.com")
 	h.clock.advance(time.Minute)
 	c := h.issue(tenant, "c@example.com")
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: b.Token, Username: "brand"}); err != nil {
+	brand := h.acceptCtx("acct-brand", "b@example.com")
+	if _, err := h.p.Accept(brand, AcceptInvite{Token: b.Token}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 
@@ -411,8 +564,8 @@ func TestListOrdersPendingFirstAndPagesByCursor(t *testing.T) {
 
 func TestAcceptLeavesOneWinnerUnderConcurrency(t *testing.T) {
 	h := newHarness(t)
-	h.accounts.put("kate@example.com", "acct-kate")
 	issued := h.issue(tenant, "kate@example.com")
+	ctx := h.acceptCtx("acct-kate", "kate@example.com")
 
 	const racers = 4
 	var wg sync.WaitGroup
@@ -421,7 +574,7 @@ func TestAcceptLeavesOneWinnerUnderConcurrency(t *testing.T) {
 	for i := 0; i < racers; i++ {
 		go func(i int) {
 			defer wg.Done()
-			_, results[i] = h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
+			_, results[i] = h.p.Accept(ctx, AcceptInvite{Token: issued.Token})
 		}(i)
 	}
 	wg.Wait()

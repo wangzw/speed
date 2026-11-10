@@ -64,7 +64,7 @@ func TestTheListRouteFiltersByStatus(t *testing.T) {
 	h.clock.advance(169 * time.Hour)
 	pending := h.issue(tenant, "pending@example.com")
 	accepted := h.issue(tenant, "accepted@example.com")
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: accepted.Token, Username: "accepted"}); err != nil {
+	if _, err := h.p.Accept(h.acceptCtx("acct-accepted", "accepted@example.com"), AcceptInvite{Token: accepted.Token}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 	revoked := h.issue(tenant, "revoked@example.com")

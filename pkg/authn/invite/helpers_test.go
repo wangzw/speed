@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
+	"github.com/vislake/speed/pkg/kv"
 )
 
 // quietly is a session of a delivered handle that writes no record of a failed
@@ -233,13 +235,50 @@ func (a *fakeAccountAdmin) Create(_ context.Context, in authn.CreateAccount) (au
 	return authn.Account{ID: id, Kind: authn.KindUser, Status: authn.StatusActive}, nil
 }
 
-// fakeMemberships is the membership write surface.
+// fakeMemberships is the membership read and write surface. err is the write
+// failure a case scripts; readErr is the read failure, kept separate because an
+// acceptance reads before it writes.
 type fakeMemberships struct {
 	authn.Memberships
-	mu    sync.Mutex
-	puts  []authn.Membership
-	count int
-	err   error
+	mu      sync.Mutex
+	held    map[string]authn.Membership
+	puts    []authn.Membership
+	count   int
+	err     error
+	readErr error
+	// duringJoin runs after the acceptance read the membership and before the
+	// conditional write, so a case can interleave a suspension or a resend.
+	duringJoin func()
+}
+
+// newMemberships builds an empty membership stand-in.
+func newMemberships() *fakeMemberships {
+	return &fakeMemberships{held: map[string]authn.Membership{}}
+}
+
+// membershipKey identifies one membership in the fake's held map.
+func membershipKey(tenant string, id authn.AccountID) string {
+	return tenant + "\x00" + string(id)
+}
+
+// hold writes a membership the case wants the read to answer.
+func (f *fakeMemberships) hold(m authn.Membership) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.held == nil {
+		f.held = make(map[string]authn.Membership)
+	}
+	f.held[membershipKey(m.Tenant, m.Account)] = m
+}
+
+func (f *fakeMemberships) Membership(_ context.Context, tenant string, id authn.AccountID) (authn.Membership, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.readErr != nil {
+		return authn.Membership{}, false, f.readErr
+	}
+	m, ok := f.held[membershipKey(tenant, id)]
+	return m, ok, nil
 }
 
 func (f *fakeMemberships) Put(_ context.Context, m authn.Membership) error {
@@ -250,7 +289,55 @@ func (f *fakeMemberships) Put(_ context.Context, m authn.Membership) error {
 	}
 	f.puts = append(f.puts, m)
 	f.count++
+	f.held[membershipKey(m.Tenant, m.Account)] = m
 	return nil
+}
+
+// PutJoining models the account module's conditional write: an inactive row is
+// never resumed, and a row the caller read as active but that is gone is not
+// written again.
+func (f *fakeMemberships) PutJoining(_ context.Context, m authn.Membership, wasActive bool) (bool, error) {
+	if f.duringJoin != nil {
+		f.duringJoin()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return false, f.err
+	}
+	held, ok := f.held[membershipKey(m.Tenant, m.Account)]
+	if ok && !held.Active {
+		return false, nil
+	}
+	if !ok && wasActive {
+		return false, nil
+	}
+	f.puts = append(f.puts, m)
+	f.count++
+	f.held[membershipKey(m.Tenant, m.Account)] = m
+	return true, nil
+}
+
+// fakeTenantStates answers the tenant state the authentication face reads. A
+// tenant a case did not name is serving.
+type fakeTenantStates struct {
+	mu     sync.Mutex
+	states map[string]authn.TenantState
+	err    error
+	asked  []string
+}
+
+func (f *fakeTenantStates) TenantStateOf(_ context.Context, id string) (authn.TenantState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, id)
+	if f.err != nil {
+		return authn.TenantDeleted, f.err
+	}
+	if state, ok := f.states[id]; ok {
+		return state, nil
+	}
+	return authn.TenantServing, nil
 }
 
 // recordingAudit keeps the rows it was asked to write and can be told to fail.
@@ -315,9 +402,12 @@ type harness struct {
 	verification *fakeSignupVerification
 	admin        *fakeAccountAdmin
 	members      *fakeMemberships
+	tenantStates *fakeTenantStates
 	audit        *recordingAudit
 	decider      *fakeDecider
 	mounter      *mounttest.Mounter
+	store        *fakeSettingsStore
+	counters     *fakeKV
 	logs         *logBuffer
 }
 
@@ -331,22 +421,27 @@ func newHarness(t *testing.T) *harness {
 		accounts:     newAccounts(),
 		verification: &fakeSignupVerification{},
 		admin:        &fakeAccountAdmin{},
-		members:      &fakeMemberships{},
+		members:      newMemberships(),
+		tenantStates: &fakeTenantStates{states: map[string]authn.TenantState{}},
 		audit:        &recordingAudit{},
 		decider:      &fakeDecider{allow: true},
 		mounter:      mounttest.New(t),
+		store:        &fakeSettingsStore{values: map[string]any{}, errs: map[string]error{}},
+		counters:     newFakeKV(),
 		logs:         &logBuffer{},
 	}
 	p := &product{
 		handle:       handle,
 		accounts:     h.accounts,
 		verification: h.verification,
-		accountAdm:   h.admin,
 		memberships:  h.members,
 		mounter:      h.mounter,
 		audit:        h.audit,
+		kv:           h.counters,
+		store:        h.store,
 		decider:      h.decider,
 		tenantNames:  identityNames{},
+		tenantState:  h.tenantStates,
 		logger:       h.logs.logger(),
 	}
 	p.now = h.clock.read
@@ -365,6 +460,33 @@ func (h *harness) issue(tenant, email string) Issued {
 		h.t.Fatalf("issuing an invitation for %s: %v", email, err)
 	}
 	return issued
+}
+
+// acceptCtx records that the account proves the address and returns a context
+// carrying that account, which is what an acceptance takes.
+func (h *harness) acceptCtx(id authn.AccountID, email string) context.Context {
+	h.t.Helper()
+	h.proveEmail(id, email)
+	return authntest.Context(h.t, context.Background(), authntest.WithAccount(id))
+}
+
+// acceptAsHTTP does the same for a request through the Mounter: it records the
+// proof and sets the identity the following requests carry.
+func (h *harness) acceptAsHTTP(id authn.AccountID, email string) {
+	h.t.Helper()
+	h.proveEmail(id, email)
+	h.mounter.As(authntest.WithAccount(id))
+}
+
+// proveEmail records that the account holds the address as a proven email
+// identifier in the account read stand-in.
+func (h *harness) proveEmail(id authn.AccountID, email string) {
+	h.t.Helper()
+	normalized, err := normalizeEmail(email)
+	if err != nil {
+		h.t.Fatalf("the case's address %q is not well formed: %v", email, err)
+	}
+	h.accounts.put(normalized, id)
 }
 
 // row reads one row straight from the table, for a case to inspect the stored
@@ -434,4 +556,140 @@ type identityNames struct{}
 
 func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
+}
+
+// fakeKV is an in-memory kv.KV for the budget counters. It implements the whole
+// contract, but the budgets only use IncrByFloatWithTTL; the expiry is the wall
+// clock, so a case that moves the injected clock to a new window gets a new key
+// rather than relying on an eviction.
+type fakeKV struct {
+	mu     sync.Mutex
+	values map[string]float64
+	expiry map[string]time.Time
+	err    error
+}
+
+var _ kv.KV = (*fakeKV)(nil)
+
+func newFakeKV() *fakeKV {
+	return &fakeKV{values: map[string]float64{}, expiry: map[string]time.Time{}}
+}
+
+func (k *fakeKV) live(key string) (float64, bool) {
+	v, ok := k.values[key]
+	if !ok {
+		return 0, false
+	}
+	if at, has := k.expiry[key]; has && !at.IsZero() && !at.After(time.Now()) {
+		delete(k.values, key)
+		delete(k.expiry, key)
+		return 0, false
+	}
+	return v, true
+}
+
+func (k *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.err != nil {
+		return nil, false, k.err
+	}
+	v, ok := k.live(key)
+	if !ok {
+		return nil, false, nil
+	}
+	return []byte(strconv.FormatFloat(v, 'g', -1, 64)), true, nil
+}
+
+func (k *fakeKV) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.err != nil {
+		return k.err
+	}
+	v, err := strconv.ParseFloat(string(value), 64)
+	if err != nil {
+		return kv.ErrNotNumeric
+	}
+	k.values[key] = v
+	k.setExpiry(key, ttl)
+	return nil
+}
+
+func (k *fakeKV) Delete(_ context.Context, key string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.err != nil {
+		return k.err
+	}
+	delete(k.values, key)
+	delete(k.expiry, key)
+	return nil
+}
+
+func (k *fakeKV) IncrByFloat(ctx context.Context, key string, delta float64) (float64, error) {
+	return k.IncrByFloatWithTTL(ctx, key, delta, 0)
+}
+
+func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.err != nil {
+		return 0, k.err
+	}
+	v, ok := k.live(key)
+	v += delta
+	k.values[key] = v
+	if !ok {
+		k.setExpiry(key, ttl)
+	}
+	return v, nil
+}
+
+func (k *fakeKV) CompareAndSwap(_ context.Context, key string, old, newVal []byte) (bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.err != nil {
+		return false, k.err
+	}
+	current, ok := k.live(key)
+	var text string
+	if ok {
+		text = strconv.FormatFloat(current, 'g', -1, 64)
+	}
+	if text != string(old) {
+		return false, nil
+	}
+	v, err := strconv.ParseFloat(string(newVal), 64)
+	if err != nil {
+		return false, kv.ErrNotNumeric
+	}
+	k.values[key] = v
+	return true, nil
+}
+
+func (k *fakeKV) SetIfAbsent(_ context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.err != nil {
+		return false, k.err
+	}
+	if _, ok := k.live(key); ok {
+		return false, nil
+	}
+	v, err := strconv.ParseFloat(string(value), 64)
+	if err != nil {
+		return false, kv.ErrNotNumeric
+	}
+	k.values[key] = v
+	k.setExpiry(key, ttl)
+	return true, nil
+}
+
+func (k *fakeKV) setExpiry(key string, ttl time.Duration) {
+	if ttl > 0 {
+		k.expiry[key] = time.Now().Add(ttl)
+		return
+	}
+	delete(k.expiry, key)
 }

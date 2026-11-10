@@ -500,7 +500,7 @@ func TestTheVerifiedAddressBreaksATieByIdentifier(t *testing.T) {
 			},
 			{
 				ID: "aaa", AccountID: account.ID.String(), Kind: string(authn.IdentifierEmail), Value: "a@example.com",
-				VerifiedAt: at, VerifiedVia: authn.VerifiedViaInvite, CreatedAt: at,
+				VerifiedAt: at, VerifiedVia: authn.VerifiedViaIDPPrefix + "google", CreatedAt: at,
 			},
 		} {
 			if err := h.handle.Create(&row).Error; err != nil {
@@ -936,36 +936,39 @@ func TestRegisterRefusesIdentifiersThatCannotBeNormalized(t *testing.T) {
 	})
 }
 
-// The two proving email channels a pending account can reach besides its own
-// code — an invitation acceptance and a provider's claim — both move it to
-// verified and consume its pending contact.
+// The proving email channel a pending account can reach besides its own code is
+// a provider's claim: it moves the account to verified and consumes its pending
+// contact. An invitation is not a proof of the invited address, so it leaves the
+// registration pending and the contact awaiting verification.
 func TestAddIdentifierProvesAPendingRegistration(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		h.openSelfRegistration()
-		for _, c := range []struct {
-			name string
-			via  string
-		}{
-			{"invite", authn.VerifiedViaInvite},
-			{"provider", authn.VerifiedViaIDPPrefix + "github"},
-		} {
-			account := h.mustRegister(c.name, c.name+"@example.com", "password123")
-			provedAt := h.clock.read()
-			if err := h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, c.name+"@example.com",
-				authn.Verification{Via: c.via}); err != nil {
-				t.Fatalf("%s: proving the address: %v", c.name, err)
-			}
-			status, err := h.p.SignupStateOf(ctx, account.ID)
-			if err != nil {
-				t.Fatalf("%s: reading the signup state: %v", c.name, err)
-			}
-			if status.State != authn.SignupVerified || status.Email != c.name+"@example.com" || !status.Since.Equal(provedAt) {
-				t.Errorf("%s: the state reads %+v, want verified on %s since %v", c.name, status, status.Email, provedAt)
-			}
-			if n := h.count(tablePending, "account_id = ? AND verified_at IS NOT NULL", account.ID.String()); n != 1 {
-				t.Errorf("%s: the proved address left %d proved reservation(s), want the row kept and stamped", c.name, n)
-			}
+
+		account := h.mustRegister("provider", "provider@example.com", "password123")
+		provedAt := h.clock.read()
+		if err := h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "provider@example.com",
+			authn.Verification{Via: authn.VerifiedViaIDPPrefix + "github"}); err != nil {
+			t.Fatalf("proving the address: %v", err)
+		}
+		status, err := h.p.SignupStateOf(ctx, account.ID)
+		if err != nil {
+			t.Fatalf("reading the signup state: %v", err)
+		}
+		if status.State != authn.SignupVerified || status.Email != "provider@example.com" || !status.Since.Equal(provedAt) {
+			t.Errorf("the state reads %+v, want verified on %s since %v", status, status.Email, provedAt)
+		}
+		if n := h.count(tablePending, "account_id = ? AND verified_at IS NOT NULL", account.ID.String()); n != 1 {
+			t.Errorf("the proved address left %d proved reservation(s), want the row kept and stamped", n)
+		}
+
+		invited := h.mustRegister("invited", "invited@example.com", "password123")
+		if err := h.p.AddIdentifier(ctx, invited.ID, authn.IdentifierEmail, "invited@example.com",
+			authn.Verification{Via: authn.VerifiedViaInvite}); err != nil {
+			t.Fatalf("writing an invitation channel: %v", err)
+		}
+		if status, err := h.p.SignupStateOf(ctx, invited.ID); err != nil || status.State != authn.SignupPending {
+			t.Errorf("an invitation channel reads (%+v, %v), want pending: an invitation proves no address", status, err)
 		}
 	})
 }
@@ -1019,9 +1022,11 @@ func TestPendingAccountByContactIgnoresAVerifiedAccount(t *testing.T) {
 	})
 }
 
-// The unverified sweep keeps an account that proved an address through an
-// invitation or a provider claim, and one whose row says pending while a proving
-// email identifier exists: the identifier is judged, not the column alone.
+// The unverified sweep keeps an account that proved an address through a
+// provider claim, and one whose row says pending while a proving email identifier
+// exists: the identifier is judged, not the column alone. An invitation is not a
+// proof, so an account whose only email channel is one is swept like any other
+// unproved registration.
 func TestTheUnverifiedSweepKeepsAProvedAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1031,7 +1036,7 @@ func TestTheUnverifiedSweepKeepsAProvedAccount(t *testing.T) {
 		inconsistent := h.mustRegister("inconsistent", "left@example.com", "password123")
 		if err := h.p.AddIdentifier(ctx, invited.ID, authn.IdentifierEmail, "invited@example.com",
 			authn.Verification{Via: authn.VerifiedViaInvite}); err != nil {
-			t.Fatalf("proving by invitation: %v", err)
+			t.Fatalf("writing an invitation channel: %v", err)
 		}
 		if err := h.p.AddIdentifier(ctx, claimed.ID, authn.IdentifierEmail, "claimed@example.com",
 			authn.Verification{Via: authn.VerifiedViaIDPPrefix + "github"}); err != nil {
@@ -1050,10 +1055,13 @@ func TestTheUnverifiedSweepKeepsAProvedAccount(t *testing.T) {
 		if err != nil {
 			t.Fatalf("sweeping: %v", err)
 		}
-		if deleted != 0 {
-			t.Errorf("the sweep deleted %d account(s), want the proved and the inconsistent rows kept", deleted)
+		if deleted != 1 {
+			t.Errorf("the sweep deleted %d account(s), want the invitation-only one alone", deleted)
 		}
-		for _, kept := range []authn.AccountID{invited.ID, claimed.ID, inconsistent.ID} {
+		if n := h.count(tableAccounts, "id = ? AND status <> ?", invited.ID.String(), statusDeleted); n != 0 {
+			t.Error("the sweep kept an account whose only email channel is an invitation")
+		}
+		for _, kept := range []authn.AccountID{claimed.ID, inconsistent.ID} {
 			if n := h.count(tableAccounts, "id = ? AND status <> ?", kept.String(), statusDeleted); n != 1 {
 				t.Errorf("the sweep deleted account %s, want it kept", kept)
 			}
@@ -1088,7 +1096,7 @@ func TestTheUnverifiedDeletionSkipsAnAccountThatChangedState(t *testing.T) {
 		at := h.clock.read()
 		if err := h.handle.Create(&identifierRow{
 			ID: "leftover-email", AccountID: leftover.ID.String(), Kind: string(authn.IdentifierEmail),
-			Value: "left@example.com", VerifiedAt: at, VerifiedVia: authn.VerifiedViaInvite, CreatedAt: at,
+			Value: "left@example.com", VerifiedAt: at, VerifiedVia: authn.VerifiedViaIDPPrefix + "github", CreatedAt: at,
 		}).Error; err != nil {
 			t.Fatalf("writing a proved email on a pending row: %v", err)
 		}

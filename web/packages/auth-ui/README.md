@@ -48,7 +48,7 @@ storage and navigates nowhere.
 | `SignOutButton.tsx` | `SignOutButton`, `SignOutButtonProps` |
 | `SignOutMenuItem.tsx` | `SignOutMenuItem`, `SignOutMenuItemProps` |
 | `SessionEndedScreen.tsx` | `SessionEndedScreen`, `SessionEndedScreenProps` |
-| `AcceptInvitationScreen.tsx` | `AcceptInvitationScreen`, `AcceptInvitationScreenProps`, `AcceptInvitationInput`, `InvitationOperations`, `InvitationSummary` |
+| `AcceptInvitationScreen.tsx` | `AcceptInvitationScreen`, `AcceptInvitationScreenProps`, `InvitationOperations`, `InvitationSummary` |
 | `PasswordResetScreen.tsx` | `PasswordResetScreen`, `PasswordResetScreenProps`, `PasswordResetOperations`, `PasswordResetRequest`, `PasswordResetSent`, `PasswordResetVerified`, `PasswordResetChannel` (re-exported from `@speed/auth-core`) |
 | `ImpersonationBanner.tsx` | `ImpersonationBanner`, `ImpersonationBannerProps`, `ImpersonationBannerState` |
 | `ImpersonationNotice.tsx` | `ImpersonationNoticeProvider`, `ImpersonationNoticeProviderProps`, `ImpersonationIndicator`, `ImpersonationIndicatorProps`, `ImpersonationEndMenuItem`, `ImpersonationEndMenuItemProps`, `ImpersonationNoticeBanner`, `ImpersonationNoticeBannerProps`, `ImpersonationNoticeIndicator`, `useImpersonationNotice`, `ImpersonationNotice` |
@@ -669,30 +669,40 @@ continues the page's order.
 The recipient's side of an invitation: it reads the invitation a token
 points to and accepts it through two host-bound operations
 (`InvitationOperations`), so the package ships no invitation HTTP and its
-public surface references no generated contract type. The acceptance is
-public -- the token is the whole credential, and the membership lands on
-the invited address's account -- and a host may render its own sign-in
-surface ahead of the screen. The read's own view is judged before it is
-shown: a status other than pending, or a pending deadline at or past,
-renders "invitation no longer valid" without the summary or the accept
-action. A bare 404 renders "invitation not found", a 409 renders that same
-"no longer valid" text, and any other failure renders its code with a retry.
+public surface references no generated contract type. The read is public --
+the token is the whole credential for what the link points to -- but the
+token does not prove the invited address, because the inviter holds it too.
+Acceptance therefore needs a signed-in account whose own identifiers hold
+the invited address as a proven email; the address need not be one the
+account signs in with, and acceptance never creates an account or makes the
+address a sign-in identifier. A host may render its own sign-in surface
+ahead of the screen (the demo host does). The read's own view is judged
+before it is shown: a status other than pending, or a pending deadline at
+or past, renders "invitation no longer valid" without the summary or the
+accept action. A bare 404 renders "invitation not found", a 409 renders
+that same "no longer valid" text, and any other failure renders its code
+with a retry.
 
-The expiry renders in the host's display time zone when the tree provides
-one (`ui-kit`'s display-time-zone context), else the device zone. When the
-invited address has no account yet the acceptance creates one, so the
-screen offers an optional display name and password; `newAccountFields`
-lets a host that binds that flow itself hide either (both by default).
-Hiding both also hides the explanatory hint. `headingLevel` is the element
-the screen's titles render as (`'h1'` by default, the screen normally being
-the page); the accepted confirmation takes the level one below.
+When the backend refuses the acceptance with
+`authn.invitation_email_unproved`, the screen replaces the accept action
+with a proof step: it names the address that must be proved, explains that
+the signed-in account must prove it, points at the host's account surface
+through `onProveEmail` when supplied, and offers to accept again once the
+proof is in place. The invitation stays pending throughout. A refusal that
+is not the unproved email renders its code in the whole-attempt banner and
+leaves the accept action ready for another try. The expiry renders in the
+host's display time zone when the tree provides one (`ui-kit`'s
+display-time-zone context), else the device zone. `headingLevel` is the
+element the screen's titles render as (`'h1'` by default, the screen
+normally being the page); the accepted confirmation and the proof step take
+the level one below.
 
 | Prop | Type | Notes |
 |---|---|---|
 | `token` | `string` (required) | the token from the host's route |
-| `invitations` | `InvitationOperations` (required) | the host-bound read/accept operations |
+| `invitations` | `InvitationOperations` (required) | the host-bound read/accept operations; accept takes the token alone |
 | `onAccepted` | `() => void` | fired once after the acceptance lands; the host navigates |
-| `newAccountFields` | `{ displayName?: boolean; password?: boolean }` | which new-account inputs to offer; both default to true |
+| `onProveEmail` | `() => void` | navigates to the host's account surface where an email is added and verified; the proof step renders its action when supplied |
 | `headingLevel` | `'h1'…'h6'` | the title's heading element; defaults to `'h1'` |
 
 ## PasswordResetScreen
@@ -807,7 +817,7 @@ enforced by registration):
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |
-| `acceptInvitation.*` | the invitation landing: title, loading notice, tenant/email/expiry facts, the accept action, the retry action, and the accepted, not-found and no-longer-valid states |
+| `acceptInvitation.*` | the invitation landing: title, loading notice, tenant/email/expiry facts, the accept action, the retry action, the proof step for an unproved invited address, and the accepted, not-found and no-longer-valid states |
 | `impersonation.*` | the impersonation notice: the region name, the acting-as / tenant / expiry statements, the management-unavailable notice, the end action with its ending and ended messages, the hide control's name, and the header chip's visible text with its hide/show hints |
 | `errors.*` | code-to-text answers (see below) |
 

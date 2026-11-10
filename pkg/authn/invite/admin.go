@@ -10,7 +10,8 @@ import (
 )
 
 // handleIssue answers POST /admin/tenants/:tenant/invitations: it issues an
-// invitation and returns its view together with the one-time token. The action
+// invitation and returns its view together with the notice's outcome, and with
+// the one-time token only when the notice did not reach the address. The action
 // is membership.manage, decided in the tenant in the path.
 //
 // The entry point binds the declared input before the handler runs, so a body it

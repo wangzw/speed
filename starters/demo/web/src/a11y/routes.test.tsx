@@ -433,6 +433,7 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
       readonly acceptInvitation: { readonly accept: string }
     }
     const view: AuthnInviteView = {
+      state: 'pending',
       invitation: {
         id: 'invite-1',
         tenant: 'acme',

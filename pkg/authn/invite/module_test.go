@@ -10,6 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -21,13 +22,28 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	if m.Name != ModuleName || ModuleName != "authn.invite" {
 		t.Errorf("module name = %q (constant %q), want authn.invite", m.Name, ModuleName)
 	}
-	if len(m.Provides) != 1 || m.Provides[0].Token != (*Invites)(nil) || !m.Provides[0].Exclusive {
-		t.Errorf("Provides = %+v, want the Invites capability delivered exclusively", m.Provides)
+	if len(m.Provides) != 2 {
+		t.Errorf("Provides = %+v, want the Invites capability and the invitation revoker delivered exclusively", m.Provides)
+	}
+	providesInvites, providesRevoker := false, false
+	for _, p := range m.Provides {
+		if !p.Exclusive {
+			t.Errorf("provision %v is not exclusive", p.Token)
+		}
+		switch p.Token {
+		case (*Invites)(nil):
+			providesInvites = true
+		case (*authn.InvitationRevoker)(nil):
+			providesRevoker = true
+		}
+	}
+	if !providesInvites || !providesRevoker {
+		t.Errorf("Provides = %+v, want Invites and authn.InvitationRevoker", m.Provides)
 	}
 
 	wantRequired := []core.Token{
-		(*db.Database)(nil), (*mount.Mounter)(nil), (*authn.Accounts)(nil),
-		(*authn.AccountAdmin)(nil), (*authn.SignupVerification)(nil), (*authn.Memberships)(nil),
+		(*db.Database)(nil), (*mount.Mounter)(nil), (*kv.KV)(nil), (*authn.Accounts)(nil),
+		(*authn.SignupVerification)(nil), (*authn.Memberships)(nil),
 		(*audit.Audit)(nil),
 	}
 	var required []core.Token

@@ -501,12 +501,15 @@ export function OrganizationMembersPage({
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
 
+  // A notice whose delivery succeeded carries no token: the recipient holds
+  // the link already, so the panel only says the invitation was emailed.
+  const issuedToken = issued?.token
   const issuedValue =
-    issued === null
+    issuedToken === undefined
       ? ''
       : invitationLink === undefined
-        ? issued.token
-        : acceptanceUrl(invitationLink(issued.token))
+        ? issuedToken
+        : acceptanceUrl(invitationLink(issuedToken))
   const issuedHasBuilder = invitationLink !== undefined
 
   const issue = () => {
@@ -1119,58 +1122,68 @@ export function OrganizationMembersPage({
         {issued !== null && (
           <OneTimeValuePanel
             message={
-              <>
-                {issuedHasBuilder
-                  ? t('invitations.issued.link', {
-                      email: issued.invitation.email,
-                    })
-                  : t('invitations.issued.token', {
-                      email: issued.invitation.email,
+              issued.token === undefined ? (
+                // The notice reached the address, so there is no link to pass
+                // on and no expiry or risk to describe.
+                t('invitations.issued.emailed', {
+                  email: issued.invitation.email,
+                })
+              ) : (
+                <>
+                  {issuedHasBuilder
+                    ? t('invitations.issued.link', {
+                        email: issued.invitation.email,
+                      })
+                    : t('invitations.issued.token', {
+                        email: issued.invitation.email,
+                      })}
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ display: 'block', mt: 0.5 }}
+                  >
+                    {t('invitations.issued.expiresAt', {
+                      time: formatInstant(
+                        issued.invitation.expires_at,
+                        i18n.language,
+                        { timeZone: 'UTC' },
+                      ),
                     })}
-                <Typography
-                  component="span"
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ display: 'block', mt: 0.5 }}
-                >
-                  {t('invitations.issued.expiresAt', {
-                    time: formatInstant(
-                      issued.invitation.expires_at,
-                      i18n.language,
-                      { timeZone: 'UTC' },
-                    ),
-                  })}
-                </Typography>
-                <Typography
-                  component="span"
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ display: 'block', mt: 0.5 }}
-                >
-                  {t('invitations.issued.risk')}
-                </Typography>
-                <Typography
-                  component="span"
-                  variant="body2"
-                  color={
-                    issued.email_delivery === 'failed'
-                      ? 'error'
-                      : 'text.secondary'
-                  }
-                  sx={{ display: 'block', mt: 0.5 }}
-                >
-                  {t(
-                    `invitations.issued.delivery.${issued.email_delivery}`,
-                  )}
-                </Typography>
-              </>
+                  </Typography>
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ display: 'block', mt: 0.5 }}
+                  >
+                    {t('invitations.issued.risk')}
+                  </Typography>
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    color={
+                      issued.email_delivery === 'failed'
+                        ? 'error'
+                        : 'text.secondary'
+                    }
+                    sx={{ display: 'block', mt: 0.5 }}
+                  >
+                    {t(
+                      `invitations.issued.delivery.${issued.email_delivery}`,
+                    )}
+                  </Typography>
+                </>
+              )
             }
-            value={issuedValue}
-            copyLabel={
-              issuedHasBuilder
-                ? t('invitations.issued.copyLink')
-                : t('invitations.issued.copyToken')
-            }
+            {...(issued.token === undefined
+              ? {}
+              : {
+                  value: issuedValue,
+                  copyLabel: issuedHasBuilder
+                    ? t('invitations.issued.copyLink')
+                    : t('invitations.issued.copyToken'),
+                })}
             closeLabel={t('invitations.issued.close')}
             closeAriaLabel={t('invitations.issued.closeAria', {
               tenant: issued.tenant,

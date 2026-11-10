@@ -58,10 +58,10 @@
         "type": "object"
       },
       "AuthnInviteIssued": {
-        "description": "The answer of an issue: the invitation's view together with its one-time acceptance token and the outcome of the notice.",
+        "description": "The answer of an issue: the invitation's view, the outcome of the notice, and the one-time acceptance token only when the notice did not reach the address.",
         "properties": {
           "email_delivery": {
-            "description": "How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link.",
+            "description": "How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link; a sent notice carries no token in this answer.",
             "enum": [
               "sent",
               "failed",
@@ -71,16 +71,15 @@
           },
           "invitation": {
             "$ref": "#/components/schemas/AuthnInviteInvitation",
-            "description": "The issued invitation; the token is delivered beside it, not inside it."
+            "description": "The issued invitation; a token is delivered beside it only when the notice did not reach the address."
           },
           "token": {
-            "description": "The acceptance token, handed out once",
+            "description": "The acceptance token, present only when email_delivery is failed or not_configured: the inviter has to hand the link over. Absent when the notice was sent, because the recipient already holds it.",
             "type": "string"
           }
         },
         "required": [
           "invitation",
-          "token",
           "email_delivery"
         ],
         "type": "object"
@@ -260,7 +259,7 @@
         "summary": "One page of a tenant's invitations"
       },
       "post": {
-        "description": "Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201 with its one-time token. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.",
+        "description": "Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201, with its one-time token only when the notice was not sent. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.",
         "operationId": "authn.invite.issue",
         "parameters": [
           {
@@ -309,7 +308,7 @@
                 }
               }
             },
-            "description": "The invitation view together with its one-time token"
+            "description": "The invitation view and the notice outcome; the one-time token only when the notice was not sent"
           },
           "400": {
             "content": {
@@ -368,6 +367,24 @@
               }
             },
             "description": "The request body is not application/json"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A send or acceptance-probe budget is spent; Retry-After names the seconds until the window opens again",
+            "headers": {
+              "Retry-After": {
+                "description": "The number of seconds until the counting window opens again",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "503": {
             "content": {

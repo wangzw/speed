@@ -80,6 +80,7 @@ var codeTable = []struct {
 	{"human-verification-required", 403},
 	{"password-reset-closed", 403},
 	{"password-reset-unavailable", 403},
+	{"invitation-email-unproved", 403},
 	{"factor-not-found", 404},
 	{"conflict", 409},
 	{"account-last-tenant-admin", 409},
@@ -89,6 +90,7 @@ var codeTable = []struct {
 	{"username-immutable", 409},
 	{"username-taken", 409},
 	{"email-taken", 409},
+	{"membership-inactive", 409},
 	{"unsupported-media-type", 415},
 	{"throttled", 429},
 	{"unavailable", 503},
@@ -128,9 +130,9 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
 		CodeContactRequired, CodePhoneRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,
-		CodePasswordResetUnavailable, CodeFactorNotFound, CodeConflict, CodeAccountLastTenantAdmin,
-		CodeAccountOrganizationOwner, CodeLoginIdentifierRequired,
-		CodeLastLoginMethod, CodeUsernameImmutable, CodeUsernameTaken, CodeEmailTaken,
+		CodePasswordResetUnavailable, CodeInvitationEmailUnproved, CodeFactorNotFound, CodeConflict,
+		CodeAccountLastTenantAdmin, CodeAccountOrganizationOwner, CodeLoginIdentifierRequired,
+		CodeLastLoginMethod, CodeUsernameImmutable, CodeUsernameTaken, CodeEmailTaken, CodeMembershipInactive,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
 	for i, c := range codeTable {
@@ -233,6 +235,7 @@ func TestForbiddenWritesThe403CodesItOwns(t *testing.T) {
 		CodeMethodDisabled, CodeAccountUnavailable, CodeImpersonationRestricted,
 		CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed, CodeContactRequired,
 		CodePhoneRequired, CodeHumanVerificationRequired, CodePasswordResetClosed, CodePasswordResetUnavailable,
+		CodeInvitationEmailUnproved,
 	} {
 		w := serve(func(c *gin.Context) { Forbidden(c, code) }, http.MethodGet, nil, nil)
 		if w.Code != http.StatusForbidden {

@@ -1185,11 +1185,10 @@ describe('InvitationsPage', () => {
   })
 
   it.each([
-    ['sent', zhCN.invitations.issued.delivery.sent],
     ['failed', zhCN.invitations.issued.delivery.failed],
     ['not_configured', zhCN.invitations.issued.delivery.not_configured],
   ] as const)(
-    'reports the %s delivery outcome beside the one-time value',
+    'keeps the copy control for the %s delivery outcome',
     async (delivery, expected) => {
       const user = userEvent.setup()
       const operations = withTenant({
@@ -1201,11 +1200,73 @@ describe('InvitationsPage', () => {
       await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
       await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
       expect(await screen.findByText(expected)).toBeInTheDocument()
-      // A failed or unconfigured carrier is why the operator still has to
-      // hand the link over, so the token stays on screen in every outcome.
+      // The carrier did not deliver the invitation, so the operator still has
+      // to hand the link over: the token and its copy control stay.
       expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', {
+          name: zhCN.invitations.issued.copyToken,
+        }),
+      ).toBeInTheDocument()
     },
   )
+
+  it('says the invitation was emailed and offers no copy when the answer carries no token', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      issueInvitation: () =>
+        // A sent notice means the recipient already holds the link, so the
+        // answer carries no token.
+        Promise.resolve(issuedInvitationFixture({ email_delivery: 'sent' })),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
+    const emailed = await screen.findByText(
+      fill(zhCN.invitations.issued.emailed, { email: 'ada@example.com' }),
+    )
+    // Nothing was handed out, so the panel shows neither a token nor a
+    // control that would copy an empty value.
+    const panel = emailed.closest('[role="status"]') as HTMLElement
+    expect(within(panel).queryByText('spd_inv_test_token')).toBeNull()
+    expect(
+      within(panel).queryByRole('button', {
+        name: zhCN.invitations.issued.copyLink,
+      }),
+    ).toBeNull()
+    expect(
+      within(panel).queryByRole('button', {
+        name: zhCN.invitations.issued.copyToken,
+      }),
+    ).toBeNull()
+  })
+
+  it('keeps the copy control for a sent answer that still carries a token', async () => {
+    // Belt and braces: the panel keys off the value actually handed out, so a
+    // response that reports `sent` but still carries a token keeps its copy
+    // control rather than hiding the only copy.
+    const user = userEvent.setup()
+    const operations = withTenant({
+      issueInvitation: () =>
+        Promise.resolve(
+          issuedInvitationFixture({
+            email_delivery: 'sent',
+            token: 'spd_inv_override_token',
+          }),
+        ),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
+    expect(await screen.findByText('spd_inv_override_token')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.invitations.issued.copyToken,
+      }),
+    ).toBeInTheDocument()
+  })
 
   it('shows the acceptance value in a named, closable live region', async () => {
     const user = userEvent.setup()

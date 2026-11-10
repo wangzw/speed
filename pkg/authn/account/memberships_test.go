@@ -261,3 +261,81 @@ func TestTenantsListsEveryMembershipOfAnAccount(t *testing.T) {
 		}
 	})
 }
+
+// PutJoining writes a membership only into a tenant the account has no
+// membership in, or over one that is still active. A suspended membership is
+// never resumed by a join.
+func TestPutJoiningNeverResumesASuspendedMembership(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("joiner", "")
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: false, Source: "admin"}); err != nil {
+			t.Fatalf("suspending: %v", err)
+		}
+		joined, err := h.p.PutJoining(ctx, authn.Membership{
+			Account: id, Tenant: "acme", Active: true, Source: "invite",
+		}, true)
+		if err != nil {
+			t.Fatalf("joining over a suspended membership: %v", err)
+		}
+		if joined {
+			t.Error("PutJoining resumed a suspended membership")
+		}
+		got, found, err := h.p.Membership(ctx, "acme", id)
+		if err != nil || !found || got.Active || got.Source != "admin" {
+			t.Errorf("membership = %+v (found %v, %v), want the suspended admin row left alone", got, found, err)
+		}
+	})
+}
+
+// PutJoining inserts a membership when the account has none, and reports that
+// the account is an active member.
+func TestPutJoiningInsertsWhenTheAccountHasNoMembership(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("newcomer", "")
+		joined, err := h.p.PutJoining(ctx, authn.Membership{
+			Account: id, Tenant: "acme", Active: true, Source: "invite",
+		}, false)
+		if err != nil || !joined {
+			t.Fatalf("PutJoining into an empty tenant = %v, %v; want a join", joined, err)
+		}
+		got, found, err := h.p.Membership(ctx, "acme", id)
+		if err != nil || !found || !got.Active || got.Source != "invite" {
+			t.Errorf("membership = %+v (found %v, %v), want an active invite row", got, found, err)
+		}
+	})
+}
+
+// PutJoining does not write again a membership the caller read as active but
+// that has been removed, and it leaves an active membership active.
+func TestPutJoiningRespectsTheRemovalThatFollowedTheRead(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("mover", "")
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		joined, err := h.p.PutJoining(ctx, authn.Membership{
+			Account: id, Tenant: "acme", Active: true, Source: "admin",
+		}, true)
+		if err != nil || !joined {
+			t.Fatalf("PutJoining over an active membership = %v, %v; want a join", joined, err)
+		}
+		if removeErr := h.p.Remove(ctx, id, "acme"); removeErr != nil {
+			t.Fatalf("removing: %v", removeErr)
+		}
+		joined, err = h.p.PutJoining(ctx, authn.Membership{
+			Account: id, Tenant: "acme", Active: true, Source: "invite",
+		}, true)
+		if err != nil {
+			t.Fatalf("joining after the removal: %v", err)
+		}
+		if joined {
+			t.Error("PutJoining wrote a membership again after it had been removed")
+		}
+		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 0 {
+			t.Errorf("%d row(s) after the lost race, want none", n)
+		}
+	})
+}

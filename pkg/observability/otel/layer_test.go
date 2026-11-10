@@ -1257,6 +1257,67 @@ func TestAHandlerThatEndsItsGoroutineLeavesAnUnmarkedSpan(t *testing.T) {
 	}
 }
 
+// TestACredentialInThePathIsRedactedFromTheExportedSpan holds the one thing the
+// upstream instrumentation would otherwise publish verbatim: the request's path.
+// An invitation's acceptance token is in the path of the route that redeems it
+// and of the page its link lands on, and it is the whole credential of
+// acceptance; a span backend is not a place for it. The token segment is replaced
+// by the placeholder wherever it appears, and every other path segment — a route
+// segment, another parameter, an opaque identifier — is left as it was.
+func TestACredentialInThePathIsRedactedFromTheExportedSpan(t *testing.T) {
+	const token = "spd_inv_s3cr3tValue"
+	const invitationID = "0192f3c4-5d6e-7f80-9a1b-2c3d4e5f6071"
+	for _, tc := range []struct {
+		name      string
+		route     string
+		requested string
+		want      string
+	}{
+		{
+			name:      "the acceptance route",
+			route:     "/api/v1/auth/invitations/:token",
+			requested: "/api/v1/auth/invitations/" + token,
+			want:      "/api/v1/auth/invitations/[REDACTED]",
+		},
+		{
+			name:      "the page the link lands on",
+			route:     "/invitations/*path",
+			requested: "/invitations/" + token,
+			want:      "/invitations/[REDACTED]",
+		},
+		{
+			name:      "a path without a credential",
+			route:     "/api/v1/tenants/:tenant/invitations/:id",
+			requested: "/api/v1/tenants/acme/invitations/" + invitationID,
+			want:      "/api/v1/tenants/acme/invitations/" + invitationID,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, rec, _ := layerUnderTest(t)
+			serve(t, p, routes{
+				{nethttp.MethodGet, tc.route}: func(c *gin.Context) { c.Status(nethttp.StatusOK) },
+			}.register, func(h *entryHost) {
+				if got := h.status(t, nethttp.MethodGet, tc.requested); got != nethttp.StatusOK {
+					t.Fatalf("the request was answered %d, want 200", got)
+				}
+			})
+
+			spans := rec.recorded()
+			if len(spans) != 1 {
+				t.Fatalf("the layer ended %d spans, want 1", len(spans))
+			}
+			attrs := attribute.NewSet(spans[0].Attributes()...)
+			got := attributeOf(t, attrs, "url.path")
+			if got != tc.want {
+				t.Errorf("the exported url.path is %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, token) {
+				t.Errorf("the exported url.path carries the token: %q", got)
+			}
+		})
+	}
+}
+
 // panicWith panics with whatever value it is handed, which a case needs to throw
 // a nil that is a value the handler was given rather than a constant.
 func panicWith(v any) { panic(v) }

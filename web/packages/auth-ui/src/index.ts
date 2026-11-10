@@ -96,7 +96,6 @@ export {
 export {
   AcceptInvitationScreen,
   type AcceptInvitationScreenProps,
-  type AcceptInvitationInput,
   type InvitationOperations,
   type InvitationSummary,
 } from './AcceptInvitationScreen.js'

@@ -71,13 +71,14 @@ func (a Account) Clone() Account {
 }
 
 // The ways an identifier's ownership was established, as Verification.Via and
-// Identifier.VerifiedVia write them. SMS-code, email-code, invite and
-// idp:<provider> are proofs: the phone received a code, the address received and
-// presented a code, the invited address's link was delivered and presented, the
-// provider declared the address verified. Admin, import-unverified and self only
-// record a fact an administrator, an import or the account's own holder
-// asserted; a proof they are not, and they are never grounds for automatic
-// linking or an enterprise merge.
+// Identifier.VerifiedVia write them. SMS-code, email-code and idp:<provider> are
+// proofs: the phone received a code, the address received and presented a code,
+// the provider declared the address verified. Invite, admin, import-unverified
+// and self only record a fact: an invitation's link was delivered and presented
+// (which grants a membership but does not prove the invited address), an
+// administrator asserted the value, an import carried it unproven, or the
+// account's own holder asserted it. None of those four is a proof, and none is
+// grounds for automatic linking or an enterprise merge.
 const (
 	VerifiedViaSMSCode          = "sms-code"
 	VerifiedViaEmailCode        = "email-code"
@@ -113,11 +114,12 @@ func (v Verification) Valid() bool {
 }
 
 // Proves reports whether the verification is a proof of ownership, which is
-// sms-code, email-code, invite and idp:<provider>. The unproven channels, admin,
-// import-unverified and self, and a value that is not valid at all, read false.
+// sms-code, email-code and idp:<provider>. Invite, admin, import-unverified and
+// self, and a value that is not valid at all, read false: holding an invitation
+// token grants a membership and says nothing about who owns the invited address.
 func (v Verification) Proves() bool {
-	return v.Valid() && v.Via != VerifiedViaAdmin && v.Via != VerifiedViaImportUnverified &&
-		v.Via != VerifiedViaSelf
+	return v.Valid() && v.Via != VerifiedViaInvite && v.Via != VerifiedViaAdmin &&
+		v.Via != VerifiedViaImportUnverified && v.Via != VerifiedViaSelf
 }
 
 // SignupState is how far an account's email verification has got. It is

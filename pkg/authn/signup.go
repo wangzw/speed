@@ -79,7 +79,8 @@ type SignupVerification interface {
 	// account reserved the contact or more than one does: a caller never guesses
 	// an owner. Only owners that are still pending are reported, and a row whose
 	// verified_at is set is never one: that contact is held by the identifier
-	// table. The caller is the invitation acceptance path, whose token has
-	// already proved control of the address.
+	// table. The caller must have established control of the address through a
+	// proof of its own; an invitation token is not one, so the invitation module
+	// does not call this method.
 	PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error)
 }

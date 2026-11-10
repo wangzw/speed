@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
@@ -516,6 +517,29 @@ func (r *roster) TenantIDOf(ctx context.Context, name string) (string, bool, err
 		return "", false, err
 	}
 	return string(t.ID), true, nil
+}
+
+// TenantStateOf implements authn.TenantStateResolver. It is the roster's
+// status reduced to what an authentication path judges: served, disabled or
+// deleted. An identifier no row carries is deleted, because a tenant that is
+// not there is not served.
+func (r *roster) TenantStateOf(_ context.Context, id string) (authn.TenantState, error) {
+	s, err := r.current()
+	if err != nil {
+		return authn.TenantDeleted, err
+	}
+	t, ok := s.byID[tenant.ID(id)]
+	if !ok {
+		return authn.TenantDeleted, nil
+	}
+	switch t.Status {
+	case tenant.StatusActive:
+		return authn.TenantServing, nil
+	case tenant.StatusDisabled:
+		return authn.TenantDisabled, nil
+	default:
+		return authn.TenantDeleted, nil
+	}
 }
 
 // List implements tenant.Catalog. The slice is a copy, so a caller sorting or

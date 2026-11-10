@@ -33,6 +33,7 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
+	maillog "github.com/vislake/speed/pkg/mail/log"
 )
 
 // ModuleName is this module's name in the registry, and the name its
@@ -166,13 +167,21 @@ func newProduct(cfg resolved, sender mail.Sender, localizer i18n.Localizer) (*pr
 // Notify renders one invitation notice and hands it to the mail capability.
 //
 // An unconfigured channel reports InviteNotConfigured with no error and reaches
-// no carrier. A configured one renders in the language the notice names,
-// falling back through the catalog, and reports InviteSent or InviteFailed. The
-// carrier's error is returned as it stands: whether the message was throttled,
-// rejected or left in an unknown state is the caller's to collapse, and this
-// module adds nothing a client could tell the three apart by.
+// no carrier. So does the log carrier: it writes a message to the process log
+// and reaches no recipient, so for an invitation it is not a delivery channel.
+// The issue answer therefore hands the issuer the acceptance token, as
+// InviteNotConfigured asks it to, instead of withholding the link behind a log
+// line only the deployment can read. Other mail (a verification code) keeps
+// that carrier's own behaviour; this module holds the rule for invitations
+// alone.
+//
+// A configured channel renders in the language the notice names, falling back
+// through the catalog, and reports InviteSent or InviteFailed. The carrier's
+// error is returned as it stands: whether the message was throttled, rejected
+// or left in an unknown state is the caller's to collapse, and this module adds
+// nothing a client could tell the three apart by.
 func (p *product) Notify(ctx context.Context, notice authn.InviteNotice) (authn.InviteDelivery, error) {
-	if p.baseURL == "" {
+	if p.baseURL == "" || p.sender.Name() == maillog.CarrierName {
 		return authn.InviteNotConfigured, nil
 	}
 	acceptURL := p.acceptURL(notice.Token)

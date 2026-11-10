@@ -41,8 +41,8 @@
 |---|---|---|---|
 | 标识 | identifier | 本文 | `Identifier`：账户对一条用户名、邮箱或手机的所有权记录，带验证时刻与验证渠道，以及「联系方式」与「登录方式」两个标记；邮箱与手机标识恒为联系方式，用户名标识恒为登录方式。与账户标识不是一回事。 |
 | 登录名 | login name | 本文 | 口令登录接受的标识：用户名，或被选作登录方式的邮箱；手机号不作口令登录名（REQ-signin-006）。 |
-| 真实证明 | proof | 本文 | 验证渠道 `sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>`：短信验证码证明了手机，发到地址的验证码被兑现，证明了这个地址，送达被邀请地址的链接被兑现，提供方声明了已验证邮箱。 |
-| 未证明渠道 | unproved channel | 本文 | 验证渠道 `admin`、`import-unverified` 与 `self`：只记录事实，不是邮箱所有权的证明。 |
+| 真实证明 | proof | 本文 | 验证渠道 `sms-code`、`email-code` 与 `idp:<提供方标识>`：短信验证码证明了手机，发到地址的验证码被兑现，证明了这个地址，提供方声明了已验证邮箱。 |
+| 未证明渠道 | unproved channel | 本文 | 验证渠道 `invite`、`admin`、`import-unverified` 与 `self`：邀请链接被送达并出示只说明持有者收到了链接，签发者也持有同一枚令牌，它不证明被邀请地址的归属；其余只记录管理员、导入或持有人断言的事实。四者都不是邮箱所有权的证明。 |
 | 未验证账户 | unverified account | 本文 | 持有邮箱而没有一条真实证明邮箱的用户账户，即 `SignupStateOf` 读 `SignupPending` 的账户。没有邮箱的账户不是未验证账户，本规则不拦截它。 |
 | 墓碑 | tombstone | 本文 | 账户被删除后保留的一行：只含 `id`、`kind`、`status`、`created_at`、`deleted_at`，个人数据已抹除。 |
 
@@ -60,7 +60,7 @@
 | `SignupVerification` | 只读 | `authn.profile`、`authn.admin`、`authn.impersonation`、`authn.login`、`authn.invite`、`authz.admin`、`settings.admin`、`tenant.admin`、宿主 |
 | `UsernameReservation` | 保留用户名的只读答案 | `tenant.selfcreate` |
 | `Passwords` | 口令与服务密钥的校验与写入 | `authn.login.password`、`authn.token`、`authn.login` |
-| `Memberships` | 成员关系的读写 | `tenant.admission`、`authn.login`、`authn.impersonation`、`authn.admin`、`authz.policy` |
+| `Memberships` | 成员关系的读写 | `tenant.admission`、`authn.login`、`authn.impersonation`、`authn.admin`、`authn.invite`、`authz.policy` |
 | `MembershipCleanup` | 账户删除收尾的成员关系清理 | 宿主 |
 | `Throttle` | 失败退避的存取 | `authn.login`、`authn.login.password`、`authn.mfa`、`authn.token` |
 
@@ -122,12 +122,12 @@ type AccountAdmin interface {
 
 | 方法 | 承诺 |
 |---|---|
-| `Create` | 写入启用状态的账户，`signup_state = 0`。邮箱与手机须带一个合法的验证渠道，分别由 `EmailVerifiedVia` 与 `PhoneVerifiedVia` 给出（短信首登开户取 `sms-code`），没有「待验证」的行；渠道是否构成归属证明不影响写入，只决定该标识的 `proven`。新写入的邮箱与手机标识都是联系方式，`contact` 恒为真；`sign_in` 为假，由持有人另经 `SetIdentifierFlags` 选择（REQ-account-061、REQ-account-062、REQ-account-064）；用户名标识恒为登录方式、不作联系方式。例外情形：以 `sms-code` 写下的手机来自短信首登开户，它是那次登录签入所用的方式，建号时 `sign_in` 为真，持有人之后可以取消登录方式（REQ-account-014、REQ-account-064）；建号时账户只有这一条邮箱地址、且它以 `Proves` 为真的渠道写下时，该邮箱建号即 `sign_in` 为真——社交首登开户的 `idp:<提供方标识>` 地址即属这一种（REQ-account-068、REQ-signup-048）；以 `Proves` 为真的渠道（`email-code`、`idp:<提供方标识>` 或 `invite`）写下的邮箱，在同一事务里成为默认联系地址，未证明的邮箱不能作默认联系地址（REQ-account-063、REQ-account-066）。导入路径写入的账户经 `EmailFlags`、`PhoneFlags` 与 `DefaultContact` 按源记录设置登录方式与默认联系地址：写下的邮箱与手机恒为联系方式，按源记录可登录，不回溯改写源记录之外的事实（REQ-signup-050）；源记录没有点名默认联系地址而写下的邮箱已证明时，该邮箱成为默认联系地址。经 `admin` 或 `import-unverified` 写下的邮箱标识与未证明预留一样视为「有邮箱而未验证」，账户因此受限，直到 `AddIdentifier` 以证明渠道就地提升该行。`Username` 为空只在 `Kind = service` 的服务账户上成立（以服务密钥登录，用户名不作它的登录方式）；`Create` 写入用户账户的每一条路径——管理面预置、初始装配、首登开户、邀请受理与导入——缺用户名拒绝建户（`ErrInvalidIdentifier`）。非空时先经 `NormalizeIdentifier` 规范化并过保留字校验，任一失败拒绝建户（`ErrInvalidIdentifier`、`ErrUsernameReserved`）。用户名标识的验证渠道取 `UsernameVerifiedVia`，零值按 `admin`，该字段供宿主或导入创建账户时标注用户名的来源；邀请受理、社交与短信首登开户、企业即时开通的 `user-confirm` 策略经本方法写入用户名时取 `self`，企业即时开通的 `claim` 策略取 `idp:<提供方标识>`。自助注册不调用 `Create`：`Signups.Register` 在自己的事务里写 `via = self` 的用户名标识与 `signup_state = 1`；自助添加用户名经 `AddIdentifier`（`via = self`）。`Password` 与 `PasswordHash` 二选一，`Password` 经口令策略校验，`PasswordHash` 是 PHC 或遗留格式、供导入用；`ID` 留空则生成，仅导入用，管理面路由不暴露它；`Via` 取 `admin`、`jit`、`signup`、`import`，写进事件载荷。标识、登录名或绑定违反唯一约束返回 `ErrAccountExists`；邮箱地址已在 `authn_pending_contacts` 中被别的账户预留或持有返回 `ErrContactTaken`，邮箱标识与已经证明的预留在同一事务里成对写入。`signup_state = 0` 使该账户永不被未验证账户的清理选中。账户行、标识与凭据写入之后、创建事件暂存之前，在同一事务内调用 `AccountProvisioning.ProvisionAccount`，失败回滚整个事务；提交之后调用全部 `AccountLifecycle.AccountCreated`，失败返回 `ErrCleanupIncomplete`。 |
+| `Create` | 写入启用状态的账户，`signup_state = 0`。邮箱与手机须带一个合法的验证渠道，分别由 `EmailVerifiedVia` 与 `PhoneVerifiedVia` 给出（短信首登开户取 `sms-code`），没有「待验证」的行；渠道是否构成归属证明不影响写入，只决定该标识的 `proven`。新写入的邮箱与手机标识都是联系方式，`contact` 恒为真；`sign_in` 为假，由持有人另经 `SetIdentifierFlags` 选择（REQ-account-061、REQ-account-062、REQ-account-064）；用户名标识恒为登录方式、不作联系方式。例外情形：以 `sms-code` 写下的手机来自短信首登开户，它是那次登录签入所用的方式，建号时 `sign_in` 为真，持有人之后可以取消登录方式（REQ-account-014、REQ-account-064）；建号时账户只有这一条邮箱地址、且它以 `Proves` 为真的渠道写下时，该邮箱建号即 `sign_in` 为真——社交首登开户的 `idp:<提供方标识>` 地址即属这一种（REQ-account-068、REQ-signup-048）；以 `Proves` 为真的渠道（`email-code` 或 `idp:<提供方标识>`）写下的邮箱，在同一事务里成为默认联系地址，未证明的邮箱不能作默认联系地址（REQ-account-063、REQ-account-066）。导入路径写入的账户经 `EmailFlags`、`PhoneFlags` 与 `DefaultContact` 按源记录设置登录方式与默认联系地址：写下的邮箱与手机恒为联系方式，按源记录可登录，不回溯改写源记录之外的事实（REQ-signup-050）；源记录没有点名默认联系地址而写下的邮箱已证明时，该邮箱成为默认联系地址。经 `admin` 或 `import-unverified` 写下的邮箱标识与未证明预留一样视为「有邮箱而未验证」，账户因此受限，直到 `AddIdentifier` 以证明渠道就地提升该行。`Username` 为空只在 `Kind = service` 的服务账户上成立（以服务密钥登录，用户名不作它的登录方式）；`Create` 写入用户账户的每一条路径——管理面预置、初始装配、首登开户与导入——缺用户名拒绝建户（`ErrInvalidIdentifier`）。非空时先经 `NormalizeIdentifier` 规范化并过保留字校验，任一失败拒绝建户（`ErrInvalidIdentifier`、`ErrUsernameReserved`）。用户名标识的验证渠道取 `UsernameVerifiedVia`，零值按 `admin`，该字段供宿主或导入创建账户时标注用户名的来源；社交与短信首登开户、企业即时开通的 `user-confirm` 策略经本方法写入用户名时取 `self`，企业即时开通的 `claim` 策略取 `idp:<提供方标识>`。自助注册不调用 `Create`：`Signups.Register` 在自己的事务里写 `via = self` 的用户名标识与 `signup_state = 1`；自助添加用户名经 `AddIdentifier`（`via = self`）。`Password` 与 `PasswordHash` 二选一，`Password` 经口令策略校验，`PasswordHash` 是 PHC 或遗留格式、供导入用；`ID` 留空则生成，仅导入用，管理面路由不暴露它；`Via` 取 `admin`、`jit`、`signup`、`import`，写进事件载荷。标识、登录名或绑定违反唯一约束返回 `ErrAccountExists`；邮箱地址已在 `authn_pending_contacts` 中被别的账户预留或持有返回 `ErrContactTaken`，邮箱标识与已经证明的预留在同一事务里成对写入。`signup_state = 0` 使该账户永不被未验证账户的清理选中。账户行、标识与凭据写入之后、创建事件暂存之前，在同一事务内调用 `AccountProvisioning.ProvisionAccount`，失败回滚整个事务；提交之后调用全部 `AccountLifecycle.AccountCreated`，失败返回 `ErrCleanupIncomplete`。 |
 | `SetStatus`、`Delete` | 在本模块事务里写 `status`、`valid_after`、墓碑与暂存的发件箱事件；`Delete` 在 `eraseAccount` 之后、事务返回之前调用 `AccountProvisioning.ProvisionAccountDeletion`，失败回滚墓碑与抹除；`SetStatus` 不调用 provisioning seam。停用与删除在取完 `LockAccountAdministration` 的租户锁之后另问可选的 `TenantOwnerCounter`：账户拥有一个仍在服务的业务租户时以 `ErrAccountOwnsOrganization` 拒绝，删除先问所有者、再问最后管理员；个人租户由宿主的 `WriteGuard` 排除，不阻止账户自身的删除或停用。事务提交之后同步调用全部 `AccountLifecycle`，清理失败返回 `ErrCleanupIncomplete`：状态已生效，重试同一调用幂等地补完清理。迁移表见[账户状态与生命周期](#账户状态与生命周期)。两者的 `reason` 形参取自 [authn-events](design-authn-events.md) 的 `ReasonClass` 闭集；签名是 `string`，没有类型约束，靠调用方与 `ValidReasonClass` 保证，它随 `authn.account.status-changed` 以 `reason_class` 写入载荷。`Sessions.Revoke` 的 `reason` 同此。 |
 | `SetDisplayName` | 至多 100 个字符。 |
 | `SetAttributes` | 受[属性集的限制](#扩展点)约束；经 `Identity.Attribute` 只读到达所有层。 |
 | `SetProtected` | 为真的账户不得被冒充，不依赖 `Decider`（[design-authn-impersonation](design-authn-impersonation.md)）。 |
-| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`kind = username` 时规范化之后再过一遍保留字校验，命中返回 `ErrUsernameReserved`，与 `ErrInvalidIdentifier` 同答 400 `bad-request`；`via` 取值限于 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下（[design-authn-login](design-authn-login.md)），`invite` 由邀请接受的兑现写下（[design-authn-invite](design-authn-invite.md)）。`AddIdentifier` 写入邮箱标识时——无论 `via` 是哪一个——都在同一事务里写入或提升该地址的联系方式预留：本账户已有的同值预留置为已持有，没有则插入一条已持有的预留；预留属于别的账户返回 `ErrContactTaken` 并回滚。账户已经持有同值邮箱标识时就地改写该行，不插入第二行、不发布标识变更事件、返回 nil：以 `Proves` 为真的渠道写入是**幂等证明**，重写该行的 `verified_at` 与 `verified_via`；以 `admin`、`import-unverified` 或 `self` 写入时，该行已有证明则保持原 `verified_at` 与 `verified_via` 不变，尚未证明则改写成这次写入的渠道。同值手机标识遵循同一条规则：`Proves` 为真的渠道重写该行，未证明渠道只在原行尚未证明时改写它，已有证明的手机行不被降级。其中 `Proves` 为真的邮箱标识——`email-code`、`idp:<提供方标识>`，或命中同一未证明预留的 `invite`——在首次证明该行时写 `signup_verified_at`（任何账户都写，`0` 与 `2` 一视同仁），`signup_state` 为 `1` 时同时置 `2`；`admin`、`import-unverified` 与 `self` 不改变 `signup_state`，也不写 `signup_verified_at`。写入手机标识（`sms-code`）时删除同值的待验证目标，但不改变 `signup_state`，也不写预留。`RemoveIdentifier` 删除 `kind = username` 的标识一律拒绝，在事务内返回 `authn.ErrUsernameImmutable`，删除不生效，对外答 409 `username-immutable`；用户名在账户存续期内不可删除、不可更换，没有改名操作，账户整体删除不受此限（REQ-account-070、[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）。标识不存在时返回 nil。删除邮箱标识时在同一事务里删除该地址的预留，地址随即释放；删的是默认联系地址时，同一事务把它转给剩余已证明邮箱中最早证明的一封（同一时刻按标识 ID 取第一个），没有剩余时清空该选择；删除最后一个 `Proves` 为真的邮箱时，若 `signup_state` 为 2 则回到 1，但保留 `signup_verified_at`，也不重建预留；写入手机从不把它拉回 2。带口令凭据的账户删除最后一个被选作登录方式的 email 标识时，`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired` 并回滚，这条规则先于下一条；最后登录名保护只约束被选作登录方式的邮箱，正常写入下账户总有用户名，这条规则只在绕过写入接口、库中没有用户名的行上可达（REQ-account-044）。删除任何标识后，账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，返回 `ErrLastLoginMethod` 并回滚，通行密钥不算，未证明或未被选作登录方式的手机号不算。证明本身不改变 `contact` 与 `sign_in`：登记即联系方式，`contact` 恒为真；新写入的行 `sign_in` 为假，由持有人另经 `SetIdentifierFlags` 选择（REQ-account-062、REQ-account-064）。例外是账户唯一的邮箱地址：一条邮箱标识首次被证明后，若账户此刻只有这一条邮箱地址，同一事务把它置为 `sign_in = TRUE`——持有人没有可比较的对象，选择无从发生，而这条地址正是「社交地址已属于某个账户、请用原来的方式登录后再绑定」这条恢复路径要用的登录名（REQ-account-068）。账户此后登记第二条邮箱地址不改变这条已经作出的选择；手机不适用本例外。默认联系地址由账户维护：以 `Proves` 为真的渠道写入邮箱且账户此前没有已证明邮箱时，同一事务把它置为默认联系地址；账户已有默认时不改动，持有人可另经 `SetDefaultContact` 改选（REQ-account-063）。 |
+| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`kind = username` 时规范化之后再过一遍保留字校验，命中返回 `ErrUsernameReserved`，与 `ErrInvalidIdentifier` 同答 400 `bad-request`；`via` 取值限于 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下（[design-authn-login](design-authn-login.md)）；`invite` 仍留在封闭集里，但邀请接受从不写标识，产品路径不再以它写入，`Proves` 对它为假。`AddIdentifier` 写入邮箱标识时——无论 `via` 是哪一个——都在同一事务里写入或提升该地址的联系方式预留：本账户已有的同值预留置为已持有，没有则插入一条已持有的预留；预留属于别的账户返回 `ErrContactTaken` 并回滚。账户已经持有同值邮箱标识时就地改写该行，不插入第二行、不发布标识变更事件、返回 nil：以 `Proves` 为真的渠道写入是**幂等证明**，重写该行的 `verified_at` 与 `verified_via`；以 `admin`、`import-unverified` 或 `self` 写入时，该行已有证明则保持原 `verified_at` 与 `verified_via` 不变，尚未证明则改写成这次写入的渠道。同值手机标识遵循同一条规则：`Proves` 为真的渠道重写该行，未证明渠道只在原行尚未证明时改写它，已有证明的手机行不被降级。其中 `Proves` 为真的邮箱标识——`email-code` 或 `idp:<提供方标识>`——在首次证明该行时写 `signup_verified_at`（任何账户都写，`0` 与 `2` 一视同仁），`signup_state` 为 `1` 时同时置 `2`；`admin`、`import-unverified` 与 `self` 不改变 `signup_state`，也不写 `signup_verified_at`。写入手机标识（`sms-code`）时删除同值的待验证目标，但不改变 `signup_state`，也不写预留。`RemoveIdentifier` 删除 `kind = username` 的标识一律拒绝，在事务内返回 `authn.ErrUsernameImmutable`，删除不生效，对外答 409 `username-immutable`；用户名在账户存续期内不可删除、不可更换，没有改名操作，账户整体删除不受此限（REQ-account-070、[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）。标识不存在时返回 nil。删除邮箱标识时在同一事务里删除该地址的预留，地址随即释放；删的是默认联系地址时，同一事务把它转给剩余已证明邮箱中最早证明的一封（同一时刻按标识 ID 取第一个），没有剩余时清空该选择；删除最后一个 `Proves` 为真的邮箱时，若 `signup_state` 为 2 则回到 1，但保留 `signup_verified_at`，也不重建预留；写入手机从不把它拉回 2。带口令凭据的账户删除最后一个被选作登录方式的 email 标识时，`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired` 并回滚，这条规则先于下一条；最后登录名保护只约束被选作登录方式的邮箱，正常写入下账户总有用户名，这条规则只在绕过写入接口、库中没有用户名的行上可达（REQ-account-044）。删除任何标识后，账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，返回 `ErrLastLoginMethod` 并回滚，通行密钥不算，未证明或未被选作登录方式的手机号不算。证明本身不改变 `contact` 与 `sign_in`：登记即联系方式，`contact` 恒为真；新写入的行 `sign_in` 为假，由持有人另经 `SetIdentifierFlags` 选择（REQ-account-062、REQ-account-064）。例外是账户唯一的邮箱地址：一条邮箱标识首次被证明后，若账户此刻只有这一条邮箱地址，同一事务把它置为 `sign_in = TRUE`——持有人没有可比较的对象，选择无从发生，而这条地址正是「社交地址已属于某个账户、请用原来的方式登录后再绑定」这条恢复路径要用的登录名（REQ-account-068）。账户此后登记第二条邮箱地址不改变这条已经作出的选择；手机不适用本例外。默认联系地址由账户维护：以 `Proves` 为真的渠道写入邮箱且账户此前没有已证明邮箱时，同一事务把它置为默认联系地址；账户已有默认时不改动，持有人可另经 `SetDefaultContact` 改选（REQ-account-063）。 |
 | `SetIdentifierFlags` | 只对这一账户的一条邮箱或手机标识生效；登记即联系方式，`Contact` 为假返回 `ErrInvalidArgument`，为真不改变任何事实；`SignIn` 为真要求该行 `Proves` 为真，未证明行只能取假。用户名恒是登录方式，不接受本方法。`SignIn` 置假导致账户不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种时，按 `RemoveIdentifier` 的规则返回 `ErrLastLoginMethod` 并回滚；带口令凭据的账户因此失去最后一个被选作登录方式的邮箱时返回 `ErrIdentifierRequired`，正常写入下账户总有用户名，这条规则只在绕过写入接口、库中没有用户名的行上可达。标识不属于该账户或不是邮箱、手机时返回 `ErrInvalidArgument`。 |
 | `SetDefaultContact` | 只对这一账户的一条已证明邮箱标识生效：把它记为默认联系地址，同一事务清除同一账户此前的选择；不改变 `contact` 与 `sign_in`。不是该账户的已证明邮箱时返回 `ErrInvalidArgument`。账户没有已证明邮箱时没有默认联系地址；账户首条已证明邮箱出现时由 `Create`、`AddIdentifier` 或导入建立默认联系地址，不需要本方法。 |
 | `LinkExternal` | 该（提供方，主体）已被别的账户占用返回 `ErrBindingConflict`。 |
@@ -160,9 +160,9 @@ type SignupVerification interface {
 | 方法 | 承诺 |
 |---|---|
 | `SignupStateOf` | 请求期活读，不读账户快照缓存，也不读 `signup_state` 列：判定从标识与联系方式预留现算，因此对每一个 `KindUser` 账户成立，与它的创建路径无关。`SignupStatus.State` 的判据是二值的：账户持有至少一条 `Proves` 为真的邮箱标识即 `SignupVerified`；否则持有任何邮箱——一条 `Proves` 为假（`admin`、`import-unverified`、`self`）的邮箱标识，或一条 `verified_at` 为空的邮箱预留——即 `SignupPending`；两者都没有（没有任何邮箱）即 `SignupNone`。`KindService` 账户读 `SignupNone`。`Email` 是当前状态下的邮箱：`SignupVerified` 取 `Proves` 为真且 `VerifiedAt` 最早的邮箱、同一时刻按标识 ID 排序取第一个；`SignupPending` 取未证明的邮箱标识与未证明预留中创建时刻最早的一条，同一时刻按行标识排序取第一个；`SignupNone` 为空。`Since` 是 `signup_verified_at`，从未证明过邮箱时为零值，`1` → `2` → `1` 之后仍是首次进入 `2` 时的时刻；`SignupVerified` 而该列为空时（经证明渠道直接写下邮箱、`signup_state` 从未置 `2` 的账户）取最早那条证明标识的 `VerifiedAt`。判定只读所有权证明，不读 `contact`、`sign_in` 或默认联系地址；登录方式的选择不改写验证状态（REQ-account-062）。账户不存在返回 `ErrAccountNotFound`，db 不可用返回 `ErrUnavailable`。读取失败不得按 `SignupNone` 放行：调用方答 503。 |
-| `PendingAccountByContact` | 只读反查 `authn_pending_contacts`：`kind` 取 `email` 或 `phone`，`value` 先规范化（失败返回 `ErrInvalidIdentifier`），按（`kind`, `value`）找未证明预留，只在所有者是 `signup_state = 1` 的账户时返回该账户标识且 `ok` 为真。`(kind, value)` 的全局唯一索引使同一地址至多一条预留，因此命中至多一个所有者；未命中、或唯一索引之外的写入造出多个所有者时 `ok` 为假，不猜归属。db 不可用返回 `ErrUnavailable`。**唯一调用方是 `authn.invite` 的接受路径**，参数是邀请令牌已经证明控制权的邮箱。安全前提是这条控制权：令牌被送达该地址并由持有者出示，与本模块的 `sms-code` 同类；返回的账户标识让调用方能在该账户上写已验证标识与成员行，所以调用方不得用未经证明控制的地址调用它。调用方把读取失败答 503，不按未命中处理：把读失败读成未命中会让接受路径新建第二个账户。 |
+| `PendingAccountByContact` | 只读反查 `authn_pending_contacts`：`kind` 取 `email` 或 `phone`，`value` 先规范化（失败返回 `ErrInvalidIdentifier`），按（`kind`, `value`）找未证明预留，只在所有者是 `signup_state = 1` 的账户时返回该账户标识且 `ok` 为真。`(kind, value)` 的全局唯一索引使同一地址至多一条预留，因此命中至多一个所有者；未命中、或唯一索引之外的写入造出多个所有者时 `ok` 为假，不猜归属。db 不可用返回 `ErrUnavailable`。**调用方是自助添加邮箱的路由**，参数是持有人刚刚用验证码证明控制权的地址。安全前提是这条控制权：验证码被发到该地址并由持有人兑现；返回的账户标识让调用方能在该账户上写已验证标识，所以调用方不得用未经证明控制的地址调用它。调用方把读取失败答 503，不按未命中处理：把读失败读成未命中会让同一地址挂到第二个账户。 |
 
-`PendingAccountByContact` 只回答「这条未证明预留属于谁」，不读 `authn_identifiers`——地址已经是某账户标识的情况由 `Accounts.Lookup` 覆盖，邀请接受先查 `Lookup`、未命中才用本方法反查。两个方法都是请求期活读，不读账户快照缓存。
+`PendingAccountByContact` 只回答「这条未证明预留属于谁」，不读 `authn_identifiers`——地址已经是某账户标识的情况由 `Accounts.Lookup` 覆盖，自助添加邮箱先查 `Lookup`、未命中才用本方法反查。两个方法都是请求期活读，不读账户快照缓存。
 
 ### UsernameReservation
 
@@ -218,6 +218,7 @@ type Memberships interface {
 	Tenants(ctx context.Context, id AccountID) ([]Membership, error)
 	Members(ctx context.Context, tenant string, query MemberQuery) ([]Membership, error)
 	Put(ctx context.Context, m Membership) error
+	PutJoining(ctx context.Context, m Membership, wasActive bool) (joined bool, err error)
 	Remove(ctx context.Context, id AccountID, tenant string) error
 }
 ```
@@ -228,6 +229,7 @@ type Memberships interface {
 | `Tenants` | 跨租户列出账户的全部成员关系，按租户标识升序；按 `authn_memberships_account` 索引走。 |
 | `Members` | 按租户分页，`Limit` 缺省 100、上限 1000。`MemberQuery.Query` 非空时收窄到账户显示名的字节前缀，或登录标识值在查询串小写后的前缀；两类匹配都不改变按账户标识升序的分页与游标。 |
 | `Put` | 幂等：新增、暂停、恢复。账户不存在（含墓碑）返回 `ErrAccountNotFound`：表间没有外键，由本方法核对。 |
+| `PutJoining` | 邀请加入的条件写。`wasActive` 是调用方读到的状态；只有账户原本没有成员关系、或其成员关系仍活跃时，才把它写成活跃成员。读到活跃而在写入时已被停用或移除的成员关系不被复活，返回 `joined = false` 且不改行；账户原本没有成员关系而并发的另一条写先插入时同样返回 `false`。账户不存在（含墓碑）返回 `ErrAccountNotFound`。 |
 | `Remove` | 删除一条成员关系。删除之前先取每个可选 `MembershipGuard` 的租户删除锁（多个守卫接同一个 `authz.TenantLock` 对象时只取一次），再问每一个守卫，任何一个拒绝即拒绝：会让租户不再有任何租户管理员绑定时以 `ErrLastTenantAdmin` 拒绝，宿主守卫按它自己的政策拒绝，都不删行；没有行可删时不问，锁仍先取再放。锁取不到以 `ErrUnavailable` 返回，守卫不问、行不删。事务提交之后同步调用全部 `MembershipLifecycle.MembershipRemoved`，失败返回 `ErrCleanupIncomplete`（删除已生效，重试同一调用幂等地补完）。账户删除不走本方法，因而不问守卫，也不调成员关系生命周期钩子（见下）。 |
 | 实现 | 每条语句显式写 `tenant_id`；`authn_memberships` 由 `Memberships` 的实现独占，`authz.policy` 与准入层经接口读，不直接读表。 |
 
@@ -584,7 +586,7 @@ type CreateAccount struct {
 	Kind               AccountKind
 	DisplayName        string
 	Username           string       // 用户账户必填；服务账户可空
-	UsernameVerifiedVia Verification // 零值按 admin；供宿主或导入标注用户名来源，自助注册与自助添加用户名不经 Create；首登开户与邀请受理经 Create 时取 self
+	UsernameVerifiedVia Verification // 零值按 admin；供宿主或导入标注用户名来源，自助注册与自助添加用户名不经 Create；首登开户经 Create 时取 self
 	Email              string       // 须带一个合法的验证渠道；渠道不构成归属证明时账户视为未验证
 	EmailVerifiedVia   Verification
 	Phone              string       // 须带一个合法的验证渠道；sms-code 表示短信首登开户，该手机建号即为登录方式
@@ -611,7 +613,7 @@ type RegisterAccount struct {
 }
 
 // Verification 的 Via 写进 verified_via；Proves 报这条渠道是否构成所有权证明：
-// sms-code、email-code、invite 与 idp:<提供方标识> 为真，admin、import-unverified 与 self 为假。
+// sms-code、email-code 与 idp:<提供方标识> 为真，invite、admin、import-unverified 与 self 为假。
 type Verification struct{ Via string }
 
 type AccountQuery struct {
@@ -684,7 +686,7 @@ CREATE TABLE authn_identifiers (
     kind         TEXT        NOT NULL CHECK (kind IN ('username', 'email', 'phone')),
     value        TEXT        NOT NULL,                        -- 已规范化
     verified_at  TIMESTAMPTZ NOT NULL,                        -- 没有未验证行
-    verified_via TEXT        NOT NULL,                        -- sms-code、email-code、invite、idp:<提供方标识>（真实证明）；admin、import-unverified、self（未证明渠道）
+    verified_via TEXT        NOT NULL,                        -- sms-code、email-code、idp:<提供方标识>（真实证明）；invite、admin、import-unverified、self（未证明渠道）
     sign_in      BOOLEAN     NOT NULL DEFAULT FALSE,          -- 登录方式轴；用户名恒真，邮箱与手机只有已证明行可被持有人置真；旧行为写下的行由迁移回填置真，导入按源记录写入
     contact      BOOLEAN     NOT NULL DEFAULT FALSE,          -- 联系方式；用户名恒假，邮箱与手机恒真；未证明行也为真，旧行为的行由迁移回填置真
     default_contact BOOLEAN  NOT NULL DEFAULT FALSE,          -- 默认联系地址；仅已证明邮箱，部分唯一索引保证每账户至多一条，有已证明邮箱时由写入方保证恰有一条
@@ -847,7 +849,7 @@ flowchart TD
 | A2 | 已有绑定：直接登录那个账户。账户非启用则失败：口令与短信路径与密码错误一致，外部登录路径因调用方已在 IdP 处认证过而报 403 `account-unavailable`。提供方声明的邮箱变化不更新账户的邮箱标识，只更新绑定行里仅作展示的字段。 |
 | A3 | 无绑定、来源是社交：不关联。仅当 `External.EmailVerified` 为真且该邮箱已登记在现有账户的邮箱标识上时应答 `link-required`（请先用原有方式登录，再在账户页显式绑定该提供方）；不进入该账户、不建绑定、不另开账户（REQ-signin-017）。提供方自称未验证的邮箱（Google 在某些账号上给 `email_verified=false`）不作线索，按「无邮箱线索」处理，走首登开户或统一的 `login-failed`。所以 `link-required` 只在调用者已被提供方证明拥有该邮箱时才给，不构成对陌生人的枚举预言机。地址未被命中且开户开放时，取得用户名与口令后新建账户：账户带提供方给的显示名，提供方声明为已验证的那个地址写成该账户的邮箱标识（`verified_via = idp:<提供方标识>`），按 `Create` 的规则成为联系方式与默认通讯邮箱；账户此刻只有这一条邮箱地址，它同时被选作登录方式，因此可以作口令登录名（REQ-account-068、REQ-signup-048、REQ-signin-038、REQ-account-063）。**`via = signup` 的建户必须带口令**：短信首登开户与社交首登开户都要在建号之前取得一个合法口令，`Create` 拒绝 `via = signup` 而没有口令的建户（`ErrPasswordPolicy` 一类的拒绝在策略校验处给出），这条判据按路径事实判定，将来新增同类建户路径要按它同步；企业即时开通走 `via = jit`，不设口令。建户事务里该地址若已被另一个账户取得（判定与写入之间输了竞态），`Create` 返回 `ErrContactTaken`，登录按 `link-required` 作答，与该地址早已登记时同一结果（[design-authn-login](design-authn-login.md) 的回跳结局表）。 |
 | A4 | 自动关联退役：设置 `authn.account.auto-link` 不再存在，除 A5 的企业预置外，任何一次登录都不按提供方声明的地址把外部身份关联或登录到一个既有账户（REQ-signup-049）；A5 的预置开户匹配是租户预先开户的合同，不是关联，也是这条退役规则唯一的例外。地址未命中时的开户写提供方的显示名，并把提供方声明为已验证的地址写成联系方式（默认通讯邮箱）与登录方式（REQ-account-068）；企业即时开通不写该地址。旧行为下由自动关联写下的绑定保留在账户上，继续按写入时的方式工作，不回溯改写或删除（REQ-signup-050）。显式绑定是账户页的 `purpose=link` 流程（A6），入口见 [design-authn-login](design-authn-login.md)。 |
-| A5 | 企业 SSO（提供方属租户 T）无绑定时：提供方声明的邮箱，其域必须属于 T 已验证的域，否则 `ErrDomainMismatch`，防止恶意租户管理员用自己配置的 IdP 声明别家用户的邮箱。**企业预置是自动关联退役后的唯一例外**：`provisioning` 为 `preprovisioned` 且提供方声明该邮箱已验证时，只匹配管理员为租户 T 预先建好、且带该邮箱标识的账户（标识的验证渠道合法且不是 `import-unverified`，即 `admin`、`invite` 或 `idp:*`；`admin` 的断言在这里算数，预置账户就是管理员为这个人建的；`invite` 同样算数，它是管理员对某个具体地址发起的邀请，且接受方以持有该地址的令牌接受了它，比管理员手写的地址更强），匹配不上即 `ErrNotProvisioned`；这是租户预先开户的合同，不是按声明地址关联一个既有账户，也不把提供方声明写入该账户（REQ-signin-021、REQ-signup-049）。其余路径不受这个例外影响：`jit` 才可新建账户并建 T 的成员关系（`source = jit:<提供方标识>`），建户之前按提供方的用户名策略取得一个合法用户名（`claim` 取断言声明，`user-confirm` 向当事人索取），没有合法用户名不建户；新建的账户只带提供方给的显示名，不写声明邮箱，也不设口令（REQ-signup-048、REQ-signup-044）。除预置匹配外，邮箱已登记在现有账户时一律应答 `link-required`，不并入、不建绑定、不另开账户（REQ-signin-017、REQ-signup-049）；域匹配已由 IdP 的域证明替代 A3 的 `EmailVerified` 前提。提供方行的 `merge_existing` 不再打开并入；旧行为下已并入的账户按写入时的方式继续工作（REQ-signin-034）。成员关系只在建绑定的开户这一次里新建：已有绑定的后续登录不读不写成员关系（A2），所以管理员暂停或移除的成员不会被 JIT 复活或重建；下线人员要么暂停成员关系，要么在 IdP 侧停用。 |
+| A5 | 企业 SSO（提供方属租户 T）无绑定时：提供方声明的邮箱，其域必须属于 T 已验证的域，否则 `ErrDomainMismatch`，防止恶意租户管理员用自己配置的 IdP 声明别家用户的邮箱。**企业预置是自动关联退役后的唯一例外**：`provisioning` 为 `preprovisioned` 且提供方声明该邮箱已验证时，只匹配管理员为租户 T 预先建好、且带该邮箱标识的账户（标识的验证渠道必须构成归属证明或是 `admin`，即 `admin`、`email-code`、`sms-code` 或 `idp:*`；`admin` 的断言在这里算数，预置账户就是管理员为这个人建的；`invite` 不算，邀请令牌不证明被邀请地址的归属），匹配不上即 `ErrNotProvisioned`；这是租户预先开户的合同，不是按声明地址关联一个既有账户，也不把提供方声明写入该账户（REQ-signin-021、REQ-signup-049）。其余路径不受这个例外影响：`jit` 才可新建账户并建 T 的成员关系（`source = jit:<提供方标识>`），建户之前按提供方的用户名策略取得一个合法用户名（`claim` 取断言声明，`user-confirm` 向当事人索取），没有合法用户名不建户；新建的账户只带提供方给的显示名，不写声明邮箱，也不设口令（REQ-signup-048、REQ-signup-044）。除预置匹配外，邮箱已登记在现有账户时一律应答 `link-required`，不并入、不建绑定、不另开账户（REQ-signin-017、REQ-signup-049）；域匹配已由 IdP 的域证明替代 A3 的 `EmailVerified` 前提。提供方行的 `merge_existing` 不再打开并入；旧行为下已并入的账户按写入时的方式继续工作（REQ-signin-034）。成员关系只在建绑定的开户这一次里新建：已有绑定的后续登录不读不写成员关系（A2），所以管理员暂停或移除的成员不会被 JIT 复活或重建；下线人员要么暂停成员关系，要么在 IdP 侧停用。 |
 | A6 | 解绑与关联要新鲜的本地多因素认证（账户有因素时，`Requirement.Local`，IdP 声明的多因素不算）；解绑后账户至少还剩一种非因素的登录方式（口令、被选作登录方式的已验证手机号、另一条绑定；未证明或未被选中的手机号不算），否则 `ErrLastLoginMethod`；因素不算登录方式，只有因素可退的账户同样被拒；关联是账户页的显式动作（`purpose=link`），不因任何登录按提供方声明的地址自动发生（REQ-account-067、REQ-signin-017）；解绑与关联成功后处理器调 `Sessions.RevokeAccount(except = 当前会话)` 撤销其余登录会话，并发 `authn.binding.changed`。 |
 | A7 | 手机的变更与添加经短信验证（新号码的验证码，`verified_via = sms-code`）；通过后是已证明的手机记录，不自动选作登录方式（REQ-account-014）。邮箱除经管理员登记成为标识外，还可由本人自助添加：发码到地址、兑现码后写标识（`verified_via = email-code`）；通过后是已证明的邮箱记录，它从登记起就是联系方式，`sign_in` 为假，由持有人按 REQ-account-064 选择。用户名由管理员添加或由本人自助写入时是一条未证明的登录名（`verified_via = self`），这条添加只对绕过写入接口而没有用户名的账户可达；首登开户建号前收集的用户名与邀请受理写入的用户名同取 `self`；企业即时开通按提供方的用户名策略取值：`user-confirm` 取 `self`，`claim` 取 `idp:<提供方标识>`。自助添加的路由、验证回路与 `verified_via` 归属见 [design-authn-login](design-authn-login.md)。添加用户名要求新鲜的本地多因素，成功后处理器调 `Sessions.RevokeAccount(except = 当前会话)`；登记并证明一条邮箱或手机本身不要求新鲜认证、也不撤销会话，但一条将取代默认联系地址或成为唯一邮箱地址（因而自动登录方式）的邮箱、一个将取代已启用短信因素发码目标的新手机号，其证明要求新鲜认证。 |
 | A8 | 微信后来收到 `unionid` 时，若没有账户占用该 `unionid`，给同一账户补一条以 `unionid` 为键的绑定；若已被别的账户占用，报 `ErrBindingConflict`，不自动合并。 |
@@ -868,7 +870,7 @@ flowchart TD
 - 没有可作登录名的标识的账户（没有用户名、也没有被选作登录方式的已验证邮箱）设口令得到 409 `login-identifier-required`：口令登录要有登录名，登录名是用户名或被选作登录方式的已验证邮箱（REQ-account-012、REQ-signin-006），证明渠道只决定它是否 `proven`，不决定它是否在登录方式里（REQ-account-064）；用户名由管理员经管理面添加，或由本人经自助路由添加。新开户的账户在建号时已带用户名，只有绕过写入接口、库中没有用户名的行才到达这一状态（见下段）。
 - 带口令凭据的账户不能删除最后一个被选作登录方式的邮箱：`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired`，删除不生效（REQ-account-044、[ADR-authn-login-identifier](../../../adr/adr-authn-login-identifier.md)）；最后登录名保护只约束这条邮箱，用户名不参与，因为它不可删除。任何账户删除标识后若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种（通行密钥不算，未证明或未被选中的手机号也不算），返回 `ErrLastLoginMethod`，删除不生效。用户名一经写入，在账户存续期内不可删除、不可更换，删除用户名返回 `ErrUsernameImmutable`，对外答 409 `username-immutable`（REQ-account-070、[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）；账户整体删除不受此限。
 
-**哪些账户带用户名。** 用户账户的每一条写路径——自助注册、短信与社交首登开户、企业即时开通、邀请受理、管理面预置、初始装配与导入——在建号之前取得合法用户名（REQ-account-060、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）；初始装配的账户由部署配置给出用户名；没有合法用户名不建户。服务账户以服务密钥登录，不受这项要求。正常写入永远造不出没有用户名的用户账户；库中没有用户名的行只来自绕过写入接口，这类账户照常以邮箱、手机或外部身份登录，并可在账户页上补写一个用户名（REQ-account-008）。
+**哪些账户带用户名。** 用户账户的每一条写路径——自助注册、短信与社交首登开户、企业即时开通、管理面预置、初始装配与导入——在建号之前取得合法用户名（REQ-account-060、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）；初始装配的账户由部署配置给出用户名；没有合法用户名不建户。服务账户以服务密钥登录，不受这项要求。正常写入永远造不出没有用户名的用户账户；库中没有用户名的行只来自绕过写入接口，这类账户照常以邮箱、手机或外部身份登录，并可在账户页上补写一个用户名（REQ-account-008）。
 
 自助注册不经过首登开户：它由 `Signups.Register` 一次建号，见下一节。首登开户的 `closed` 取值不影响 `authn.account.password-signup`，反之亦然。
 
@@ -891,13 +893,13 @@ flowchart TD
 | 事件 | `signup_state` 变化 | `signup_verified_at` |
 |---|---|---|
 | `Signups.Register` | 开户时写 `1` | 不写 |
-| `AddIdentifier` 以 `Proves` 为真的渠道证明邮箱：`email-code`、`idp:<提供方标识>`，或命中同一未证明预留的 `invite`；账户已经持有该地址的未证明标识时就地提升该行 | `1` → `2`，`0` 与 `2` 不变；同一事务把本账户对该地址的预留置为已持有（无行则插入） | 首次证明邮箱时写当前时刻（`0` 的账户同样写），此后再证明其他邮箱不更新 |
+| `AddIdentifier` 以 `Proves` 为真的渠道证明邮箱：`email-code` 或 `idp:<提供方标识>`；账户已经持有该地址的未证明标识时就地提升该行 | `1` → `2`，`0` 与 `2` 不变；同一事务把本账户对该地址的预留置为已持有（无行则插入） | 首次证明邮箱时写当前时刻（`0` 的账户同样写），此后再证明其他邮箱不更新 |
 | `AddIdentifier` 以 `admin`、`import-unverified` 或 `self` 写入邮箱标识 | 不变；同一事务写入或提升该地址的已持有预留；同值行已有证明时保持原证明并返回 nil，尚未证明时改写成这次写入的渠道 | 不变 |
 | `AddIdentifier` 以 `admin`、`import-unverified` 或 `self` 写入同值手机标识 | 不变；同值行已有证明时保持原证明并返回 nil，尚未证明时改写成这次写入的渠道 | 不变 |
 | `AddIdentifier` 写入手机标识（`sms-code`） | 不变；同一事务删除同值的待验证目标，手机不写预留 | 不变 |
 | `RemoveIdentifier` 删除邮箱标识 | 若删的是最后一个 `Proves` 为真的邮箱则 `2` → `1`；同一事务删除该地址的预留 | 保留 |
 
-手机（`sms-code`）永不把账户置为 `2`。证明一个邮箱只处置同值预留：注册写下、随后被更换掉的旧地址预留不在这条写入里删除，仍占用旧地址直到账户删除；账户删除时全部预留一并删除。未验证账户实际可达的邮箱证明渠道是 `email-code`，以及命中同一未证明预留的 `invite`；`idp:<提供方标识>` 同为邮箱证明，但未验证账户在解除限制前不能发起外部绑定（`purpose=link` 被拒），因此不可达（[design-authn-login](design-authn-login.md)）。经管理员或导入写下的未证明邮箱标识按写入时的渠道视为未证明；新写入的这类标识 `sign_in` 为假，不是登录名，验证它就是给这一行补上证明：自助回路向该地址发码、兑现后以 `AddIdentifier` 的幂等证明就地转为 `email-code`，但仍由持有人决定是否选作登录方式（REQ-account-064）。导入复原既有账户，导入路径写下的标识按源记录的登录方式与默认联系地址写入，登记的地址恒为联系方式。证明一条邮箱不改变登录方式上的选择；账户此前没有默认联系地址时，这一封成为默认联系地址（它就是最早证明的一封），已有默认时不改变，持有人可另经 `SetDefaultContact` 改选（REQ-account-062、REQ-account-063）。登录方式仍由持有人另写。
+手机（`sms-code`）永不把账户置为 `2`。证明一个邮箱只处置同值预留：注册写下、随后被更换掉的旧地址预留不在这条写入里删除，仍占用旧地址直到账户删除；账户删除时全部预留一并删除。未验证账户实际可达的邮箱证明渠道是 `email-code`；`idp:<提供方标识>` 同为邮箱证明，但未验证账户在解除限制前不能发起外部绑定（`purpose=link` 被拒），因此不可达（[design-authn-login](design-authn-login.md)）。经管理员或导入写下的未证明邮箱标识按写入时的渠道视为未证明；新写入的这类标识 `sign_in` 为假，不是登录名，验证它就是给这一行补上证明：自助回路向该地址发码、兑现后以 `AddIdentifier` 的幂等证明就地转为 `email-code`，但仍由持有人决定是否选作登录方式（REQ-account-064）。导入复原既有账户，导入路径写下的标识按源记录的登录方式与默认联系地址写入，登记的地址恒为联系方式。证明一条邮箱不改变登录方式上的选择；账户此前没有默认联系地址时，这一封成为默认联系地址（它就是最早证明的一封），已有默认时不改变，持有人可另经 `SetDefaultContact` 改选（REQ-account-062、REQ-account-063）。登录方式仍由持有人另写。
 
 **删除最后一个已证明邮箱是合法状态。** `RemoveIdentifier` 把 `signup_state` 从 `2` 拉回 `1`，同一事务删除该地址的预留，本模块不重建预留。账户此后是否受限取决于它还剩什么：仍有未证明的邮箱标识或预留时读 `SignupPending`，界面给出目标地址与验证入口；一条邮箱也不剩时读 `SignupNone`，本规则不拦截它。`SignupStateOf` 的 `Email` 在前一种情形是剩下的最早一条，后一种为空；界面不能假设一个账户总有目标地址（[design-authn-profile](design-authn-profile.md)）。
 
@@ -1089,7 +1091,7 @@ flowchart TD
 - **`authn_throttles` 的行数上界。** 键与账户是否存在无关，匿名攻击者用随机用户名可使每个失败请求多一行；上界是失败请求速率乘 `throttle-decay`。缓解是 `ratelimit` 的地址盾（按来源地址限制单位时间内的请求数）与清扫；地址盾由宿主装配。
 - **已知账户的口令登录可被有界地拒绝服务。** 匿名攻击者对已知标识连续失败，使该账户的口令登录最长 `throttle-max-delay` 不可用；受害者仍可用不经口令的方式登录。
 - **哈希参数变更后的计时差。** 已知账户的哈希参数弱于当前设置、尚未随登录升级时，派生比诱饵快；这一差别存在于设置变更之后到该账户下次登录之前，上界是新旧参数之差。改参数是受控变更。
-- **预置账户匹配信任管理员登记的邮箱。** `preprovisioned` 的匹配里 `admin` 与 `invite` 来源的邮箱被采信，管理员写错邮箱即错配；迁移导入的邮箱不经验证，由导入方负责标成 `import-unverified`。
+- **预置账户匹配信任管理员登记的邮箱。** `preprovisioned` 的匹配采信 `Proves` 为真的来源与 `admin` 来源的邮箱，管理员写错邮箱即错配；`invite` 来源不采信，因为邀请令牌不证明地址归属；迁移导入的邮箱不经验证，由导入方负责标成 `import-unverified`。
 - **邮箱、手机号、显示名在库里是明文**（规范化后），库转储即泄露；机密不是明文：口令哈希是 PHC，服务密钥只存摘要，因素种子与 IdP 密钥走加密列。
 - **按显示名前缀的列表过滤扫全表。** `authn_accounts` 上没有覆盖 `display_name` 的索引，这个条件无法走索引；过滤本身收缩的是返回集，不是读的成本，成本随表里账户数线性增长，上界是整张 `authn_accounts`。缓解是分页上限与把这一读留在平台运营侧（`authn.admin`），普通租户侧不提供它。
 - **没有外键。** 孤儿行靠写入方在自己的事务里清理、跨模块靠钩子与事件补偿避免，数据库不替它兜底。
@@ -1115,7 +1117,7 @@ flowchart TD
 - 首登开户（社交、短信、企业即时开通）写下的账户没有提供方声明的地址作任何记录；社交首登与企业即时开通的显示名取提供方的值，短信首登取当事人选填的值，没有给出时取用户名。
 - 提供方声明的地址命中现有账户的邮箱标识时，登录应答 `link-required`，不进入该账户、不建绑定、不建账户。
 - 未证明的邮箱或手机不能登录，也不能成为默认联系地址；已证明但未被选作登录方式的邮箱不能用于口令登录。
-- 自助注册、短信与社交首登开户、企业即时开通、邀请受理、管理面预置、初始装配与导入各自建出的用户账户都带用户名；任一路径缺用户名时不产生账户；服务账户缺用户名照常建立。
+- 自助注册、短信与社交首登开户、企业即时开通、管理面预置、初始装配与导入各自建出的用户账户都带用户名；任一路径缺用户名时不产生账户；服务账户缺用户名照常建立。
 - 删除用户名标识被拒，返回 `ErrUsernameImmutable`，标识仍在，账户的其余标识不变。
 - 删除不存在的标识返回 nil，账户不变。
 - 带口令凭据、库中没有用户名的账户（绕过写入接口构造）删除最后一个被选作登录方式的邮箱被拒，返回 `ErrIdentifierRequired`。

@@ -26,6 +26,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	kvmemory "github.com/vislake/speed/pkg/kv/memory"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -310,16 +311,21 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Errorf("the enterprise account's membership = %+v, %v, %v, want an active one", member, ok, memberErr)
 		}
 
-		// Six: accepting an invitation, which is the account-opening path of
-		// that module.
+		// Six: accepting an invitation, which adds a membership to an account
+		// that already proved the invited address. It opens no account.
+		inviteHolder, err := admin.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindUser, Username: "invite-made", Email: "invite@example.org",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode}, Via: authn.ReasonAdmin,
+		})
+		if err != nil {
+			t.Fatalf("preparing the invited account: %v", err)
+		}
 		issued, err := invites.Issue(ctx, invite.IssueInvite{Tenant: tenantAcme, Email: "invite@example.org"})
 		if err != nil {
 			t.Fatalf("issuing an invitation: %v", err)
 		}
-		invited, err := invites.Accept(ctx, invite.AcceptInvite{
-			Token: issued.Token, Username: "invite-made", DisplayName: "Invite Person",
-			Password: "correct horse battery staple",
-		})
+		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(inviteHolder.ID))
+		invited, err := invites.Accept(acceptCtx, invite.AcceptInvite{Token: issued.Token})
 		if err != nil {
 			t.Fatalf("accepting an invitation: %v", err)
 		}
@@ -586,7 +592,7 @@ func withRealAccountStore(t *testing.T, use func(context.Context, *core.Registry
 	}
 
 	modules := []core.Module{
-		sqlite.Module(), account.Module(), provisioningtest.Module(), invite.Module(),
+		sqlite.Module(), account.Module(), provisioningtest.Module(), invite.Module(), kvmemory.Module(),
 		module("stand-in.identity-settings", (*settings.Store)(nil), func() (any, error) { return standInSettings{}, nil }),
 		module("stand-in.identity-audit", (*audit.Audit)(nil), func() (any, error) { return standInAudit{}, nil }),
 		module("stand-in.identity-mounter", (*mountinternal.Mounter)(nil), func() (any, error) { return noopMounter{}, nil }),

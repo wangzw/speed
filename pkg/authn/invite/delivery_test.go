@@ -39,11 +39,14 @@ func TestTheIssueRouteReportsTheEmailDelivery(t *testing.T) {
 	}
 }
 
-// issuedAnswer is the part of the issue answer a delivery case reads.
+// issuedAnswer is the part of the issue answer a delivery case reads. raw is the
+// answer as it was written, kept so a case can assert that the token field is
+// absent rather than merely empty.
 type issuedAnswer struct {
 	Invitation    AuthnInviteInvitation `json:"invitation"`
 	Token         string                `json:"token"`
 	EmailDelivery string                `json:"email_delivery"`
+	raw           string
 }
 
 func (h *harness) issueOverRoute(email string) issuedAnswer {
@@ -57,6 +60,7 @@ func (h *harness) issueOverRoute(email string) issuedAnswer {
 	if err := json.Unmarshal(w.Body.Bytes(), &answered); err != nil {
 		h.t.Fatalf("decoding the answer: %v", err)
 	}
+	answered.raw = w.Body.String()
 	return answered
 }
 
@@ -164,8 +168,17 @@ func TestASentNoticeReportsSentAndAuditsNothing(t *testing.T) {
 	if notice.Tenant == "tenant-a" {
 		t.Error("the notice carries the internal tenant identifier")
 	}
-	if notice.Token != answered.Token {
-		t.Error("the notice does not carry the token the answer hands out")
+	if !strings.HasPrefix(notice.Token, "spd_inv_") {
+		t.Errorf("the notice carries %q, want the acceptance token", notice.Token)
+	}
+	if answered.Token != "" {
+		t.Errorf("a sent notice was answered with the token %q; the recipient holds it already", answered.Token)
+	}
+	if strings.Contains(answered.raw, "spd_inv_") {
+		t.Errorf("the answer of a sent notice carries a token: %s", answered.raw)
+	}
+	if strings.Contains(answered.raw, `"token"`) {
+		t.Errorf("the answer of a sent notice carries a token field: %s", answered.raw)
 	}
 	if notice.ExpiresAt.IsZero() {
 		t.Error("the notice carries no deadline")
@@ -237,6 +250,9 @@ func TestAnUnconfiguredNoticeIsNotAFailure(t *testing.T) {
 	answered := h.issueOverRoute("alice@example.com")
 	if got := answered.EmailDelivery; got != authn.InviteNotConfigured.String() {
 		t.Errorf("email_delivery = %q, want not_configured", got)
+	}
+	if !strings.HasPrefix(answered.Token, "spd_inv_") {
+		t.Errorf("an unconfigured notice withheld the token; the inviter has to hand the link over")
 	}
 	if rows := h.deliverAuditRows(); len(rows) != 0 {
 		t.Errorf("an unconfigured notice wrote %d delivery audit rows, want none", len(rows))

@@ -11,21 +11,37 @@ import (
 // token points to, so a client can show what it is about to accept. The route is
 // public and the token is the whole credential. An unknown token is a bare 404,
 // which the handler builds.
-func (p *product) handleAcceptView(ctx context.Context, in acceptViewInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	inv, err := p.viewToken(ctx, in.Token)
+//
+// The probe budget is charged before the token is looked up, so a source that
+// presents many tokens is throttled whether or not any of them exists: a 429
+// here says the window is spent, never that a token was found.
+func (p *product) handleAcceptView(ctx context.Context, in acceptViewInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	if err := p.chargeProbe(ctx, in.Token, meta.ClientIP, p.at()); err != nil {
+		return p.acceptAnswerReply("probing an invitation", err)
+	}
+	inv, state, err := p.viewToken(ctx, in.Token)
 	if err != nil {
 		return p.acceptAnswerReply("reading an invitation", err)
+	}
+	if state != viewStatePending {
+		// A token that can no longer be redeemed answers its state alone: the
+		// address, the tenant's name and the deadline are not shown once the
+		// link no longer grants anything.
+		return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{State: state}), nil
 	}
 	tenantName, nameErr := p.nameOf(ctx, inv.Tenant)
 	if nameErr != nil {
 		return p.acceptAnswerReply("reading the tenant's name", nameErr)
 	}
-	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{Invitation: invitationViewOf(inv, tenantName)}), nil
+	view := invitationViewOf(inv, tenantName)
+	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{State: state, Invitation: &view}), nil
 }
 
-// handleAccept answers POST /invitations/:token: it redeems the invitation,
-// making an account when the address has none and writing the membership. The
-// route is public and the token is the whole credential.
+// handleAccept answers POST /invitations/:token: it redeems the invitation and
+// writes the membership for the authenticated caller. The route is optional
+// rather than public, so a request that carries a credential gets its identity;
+// the handler refuses one that carries none, because the token is not proof of
+// anything on its own — the inviter holds it too.
 //
 // A request that declares a length of zero carries no body and is refused: the
 // route has always required a body, while a body of "{}" is a body and is
@@ -33,15 +49,16 @@ func (p *product) handleAcceptView(ctx context.Context, in acceptViewInput, _ *s
 // Content-Length — says nothing about whether a body is there, so the request is
 // bound normally and the binder is what reads the body.
 func (p *product) handleAccept(ctx context.Context, in acceptInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	if _, err := p.caller(ctx); err != nil {
+		return nil, err
+	}
+	if err := p.chargeProbe(ctx, in.Token, meta.ClientIP, p.at()); err != nil {
+		return p.acceptAnswerReply("probing an invitation", err)
+	}
 	if meta.ContentLength == 0 {
 		return nil, p.badRequest()
 	}
-	mem, err := p.Accept(ctx, AcceptInvite{
-		Token:       in.Token,
-		Username:    in.Username,
-		DisplayName: in.DisplayName,
-		Password:    in.Password,
-	})
+	mem, err := p.Accept(ctx, AcceptInvite{Token: in.Token})
 	if err != nil {
 		return p.acceptAnswerReply("accepting an invitation", err)
 	}
@@ -52,18 +69,24 @@ func (p *product) handleAccept(ctx context.Context, in acceptInput, meta *speedh
 	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(mem, tenantName)), nil
 }
 
-// viewToken reads the invitation a token points to. It is the read side of the
-// acceptance face, which is not part of the Invites capability.
-func (p *product) viewToken(ctx context.Context, token string) (Invitation, error) {
+// viewToken reads the invitation a token points to and the state the read
+// judges: pending while the link is redeemable, and expired, accepted or
+// revoked once it is not. It is the read side of the acceptance face, which is
+// not part of the Invites capability.
+func (p *product) viewToken(ctx context.Context, token string) (Invitation, string, error) {
 	if token == "" {
-		return Invitation{}, ErrInvitationNotFound
+		return Invitation{}, "", ErrInvitationNotFound
 	}
 	row, found, err := p.findByDigest(p.conn(ctx), tokenDigest(token))
 	if err != nil {
-		return Invitation{}, err
+		return Invitation{}, "", err
 	}
 	if !found {
-		return Invitation{}, ErrInvitationNotFound
+		return Invitation{}, "", ErrInvitationNotFound
 	}
-	return toInvitation(row), nil
+	state := readState(row, p.at())
+	if state != viewStatePending {
+		return Invitation{Status: toInvitation(row).Status}, state, nil
+	}
+	return toInvitation(row), state, nil
 }

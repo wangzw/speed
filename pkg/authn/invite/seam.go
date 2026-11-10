@@ -12,10 +12,12 @@ import (
 // and decides whether one can be issued and whether a token can be redeemed.
 //
 // An invitation is a pending grant of a membership. It names an address and a
-// tenant, and until it is accepted no account and no membership row exists. The
-// token is the whole credential of acceptance: it is handed out once, at issue,
-// and only its SHA-256 is kept, so revoking is a change of state and not the
-// revocation of a signature.
+// tenant, and until it is accepted no membership row exists. The token grants the
+// act of joining, not ownership of the invited address: it is handed out once, at
+// issue, and only its SHA-256 is kept, so revoking is a change of state and not
+// the revocation of a signature. The account that redeems it has to prove the
+// invited address, because the issuer holds the token too and possession alone
+// says nothing about who owns the address.
 //
 // The design places this interface and the value types below beside the other
 // authentication seams in the root package. They live here instead because the
@@ -35,8 +37,10 @@ type Invites interface {
 	// already accepted is ErrInvitationAlreadyAccepted; revoking one that was
 	// already revoked is an idempotent success.
 	Revoke(ctx context.Context, tenant, id string) error
-	// Accept redeems an invitation with its token: it makes an account when the
-	// address has none, and writes the membership, whose source is invite.
+	// Accept redeems an invitation with its token for an authenticated caller
+	// who holds the invited address as a proven email identifier. It writes the
+	// membership, whose source is invite when it is new. It never creates an
+	// account and never proves the invited address.
 	Accept(ctx context.Context, in AcceptInvite) (authn.Membership, error)
 }
 
@@ -72,16 +76,16 @@ type Invitation struct {
 	CreatedAt  time.Time
 }
 
-// AcceptInvite is what accepting an invitation takes: the token, and the
-// username, display name and password to create an account with when the
-// address has none. The username is required when an account is created and is
-// read only then; it is ignored when the address is already an account. The
-// password is read only when an account is created; it is ignored too.
+// AcceptInvite is what accepting an invitation takes. Only the token is read:
+// acceptance writes a membership for the authenticated caller and never creates
+// an account, so the account-opening fields below are ignored. They stay in the
+// shape so an older client can keep sending them without its request being
+// refused.
 type AcceptInvite struct {
 	Token       string
-	Username    string
-	DisplayName string
-	Password    string
+	Username    string // ignored: acceptance never opens an account
+	DisplayName string // ignored: acceptance never opens an account
+	Password    string // ignored: acceptance never opens an account
 }
 
 // InvitationStatus is the closed set of an invitation's states. The zero value
@@ -131,6 +135,22 @@ var (
 	// ErrInvitationPending reports that issuing lost the race against a
 	// concurrent issuance of the same tenant and address.
 	ErrInvitationPending = errors.New("authn.invite: a pending invitation already exists")
+	// ErrInvitationUnauthenticated reports an acceptance from a request that has
+	// no authenticated caller. The token alone is not enough, because the
+	// inviter holds it too.
+	ErrInvitationUnauthenticated = errors.New("authn.invite: accepting an invitation requires an authenticated account")
+	// ErrInvitationEmailUnproved reports an authenticated caller who does not
+	// hold the invited address as a proven email identifier. The client answers
+	// it by showing the proof step; the invitation stays pending.
+	ErrInvitationEmailUnproved = errors.New("authn.invite: the caller has not proved the invited address")
+	// ErrInvitationMembershipInactive reports an acceptance by an account whose
+	// membership in the tenant is suspended. The membership is not reactivated
+	// silently, and the invitation is revoked.
+	ErrInvitationMembershipInactive = errors.New("authn.invite: the caller's membership is suspended")
+	// ErrInvitationTenantInactive reports an acceptance into a tenant that is
+	// disabled. The invitation is left pending, so enabling the tenant makes the
+	// same token redeemable again.
+	ErrInvitationTenantInactive = errors.New("authn.invite: the tenant is not being served")
 	// ErrInvalidEmail reports an invited address that is not well formed.
 	ErrInvalidEmail = errors.New("authn.invite: the invited address is not well formed")
 	// ErrInvite reports a construction failure of this module of its own, such
