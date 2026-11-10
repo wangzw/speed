@@ -30,9 +30,7 @@ func TestTransferOwnerGrantsTenantAdminToAMemberThatDidNotHoldIt(t *testing.T) {
 			t.Fatalf("the target holds %+v before the transfer, want no binding", before)
 		}
 
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
-			t.Fatalf("transferring the owner: %v", err)
-		}
+		a.transfer(t, "acme", target.ID.String())
 		after := a.bindingsOf(t, "acme", target)
 		if len(after) != 1 || after[0].Role != authz.Role(authz.TenantAdminRole) {
 			t.Fatalf("the target holds %+v after the transfer, want exactly tenant-admin", after)
@@ -54,9 +52,7 @@ func TestTransferOwnerKeepsThePreviousOwnerAnActiveMemberHoldingTenantAdmin(t *t
 			t.Fatalf("the previous owner holds %+v before the transfer, want tenant-admin", held)
 		}
 
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
-			t.Fatalf("transferring the owner: %v", err)
-		}
+		a.transfer(t, "acme", target.ID.String())
 		held := a.bindingsOf(t, "acme", owner)
 		if len(held) != 1 || held[0].Role != authz.Role(authz.TenantAdminRole) {
 			t.Errorf("the previous owner holds %+v after the transfer, want tenant-admin", held)
@@ -94,9 +90,7 @@ func TestTransferOwnerKeepsThePreviousOwnersOtherBindings(t *testing.T) {
 			t.Fatalf("the previous owner holds %+v before the transfer, want tenant-admin and auditor", held)
 		}
 
-		if err := a.writer.TransferOwner(t.Context(), "acme", target.ID.String(), ""); err != nil {
-			t.Fatalf("transferring the owner: %v", err)
-		}
+		a.transfer(t, "acme", target.ID.String())
 		roles := make(map[authz.Role]bool)
 		for _, held := range a.bindingsOf(t, "acme", owner) {
 			roles[held.Role] = true

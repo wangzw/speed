@@ -13,6 +13,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { attachSession } from '@speed/auth-core'
+import { formatInstant } from '@speed/i18n'
 import { uiKitResources } from '@speed/ui-kit'
 import { TenantProfilePage } from './TenantProfilePage.js'
 import {
@@ -166,13 +167,16 @@ describe('TenantProfilePage', () => {
 
     expect(screen.getByText('acme-inc')).toBeInTheDocument()
     expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
-    // The chip names the status field, so a screen reader hears which fact
-    // the value states rather than a bare "Active".
+    // The status names the field it states, so a screen reader hears which
+    // fact "Active" belongs to rather than a bare value. The field name is a
+    // visually hidden prefix beside the chip; the chip itself is a generic
+    // element and takes no aria-label.
     expect(
-      screen.getByLabelText(
+      screen.getByText(
         zhCN.tenantProfile.field.statusAria
           .replace('{{label}}', zhCN.tenantProfile.field.status)
-          .replace('{{value}}', zhCN.tenants.status.active),
+          .replace('{{value}}', '')
+          .trimEnd(),
       ),
     ).toBeInTheDocument()
     // The name is stated, never editable: there is no control named after
@@ -540,51 +544,52 @@ describe('TenantProfilePage owner row', () => {
 })
 
 describe('TenantProfilePage ownership', () => {
-  it('lets the current owner transfer the organization and keeps the caller in it', async () => {
+  /** The pending request the ownership card renders. */
+  const PENDING = {
+    id: 'transfer-1',
+    targetDisplayName: 'Bob Stone',
+    targetUsername: 'bob',
+    requestedAt: '2026-10-20T08:30:00Z',
+    expiresAt: '2026-10-27T08:30:00Z',
+    status: 'pending' as const,
+  }
+
+  it('asks an active member to take ownership and shows the pending request without changing the owner', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
-    const transfers: unknown[] = []
-    const onTenantUpdated = vi.fn()
+    const requests: unknown[] = []
     const onOrganizationLeft = vi.fn()
-    // The removal writes the old ownership flow would have sent. The new
-    // decision issues neither: the previous owner stays a member and keeps
-    // every binding.
+    // The old ownership flow removed the previous owner's membership and
+    // bindings. A request changes neither; it only records the request.
     const removeMember = vi.fn(() => Promise.resolve())
     const unbindTenantRole = vi.fn(() => Promise.resolve())
-    let profile = ownerProfile()
+    let pending: typeof PENDING | null = null
     renderPage({
-      getTenantProfile: () => Promise.resolve(profile),
-      onTenantUpdated,
+      getTenantProfile: () => Promise.resolve(ownerProfile()),
       onOrganizationLeft,
       backend: {
+        getPendingOrganizationOwner: () => Promise.resolve(pending),
+        requestOrganizationOwner: (input) => {
+          requests.push(input)
+          pending = PENDING
+          return Promise.resolve(PENDING)
+        },
         listMembers: () =>
           Promise.resolve({
             members: [ADA, BOB, SUSPENDED],
             next_cursor: '',
           }),
-        transferOrganizationOwner: (input) => {
-          transfers.push(input)
-          // Only the owner column changes: the previous owner is still an
-          // active member holding tenant-admin.
-          profile = ownerProfile({
-            ownerAccount: OTHER_ACCOUNT,
-            ownerDisplayName: 'Bob Stone',
-            ownerUsername: 'bob',
-          })
-          return Promise.resolve()
-        },
         removeMember,
         unbindTenantRole,
       },
     })
     await ready()
 
-    // The owner is shown by display name and username; the transfer control
-    // is offered because the acting account is the profile's ownerAccount.
-    expect(screen.getByText(zhCN.tenantProfile.field.owner)).toBeInTheDocument()
     expect(
-      screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
-    ).toBeInTheDocument()
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    ).toBeEnabled()
 
     await user.click(
       screen.getByRole('button', {
@@ -619,87 +624,113 @@ describe('TenantProfilePage ownership', () => {
     )
 
     await waitFor(() =>
-      expect(transfers).toEqual([{ tenant: TENANT, account: OTHER_ACCOUNT }]),
+      expect(requests).toEqual([{ tenant: TENANT, account: OTHER_ACCOUNT }]),
     )
-    const message = zhCN.tenantProfile.ownership.transfer.saved
-      .replace('{{name}}', ORG_NAME)
-      .replace('{{account}}', 'Bob Stone (bob)')
-    // Ownership changes only: the caller stays on the page, so the
-    // confirmation stays in the card instead of going to a departure action.
-    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        zhCN.tenantProfile.ownership.transfer.requested.replace(
+          '{{account}}',
+          'Bob Stone (bob)',
+        ),
+      ),
+    ).toBeInTheDocument()
+    // Ownership has not changed: the caller is still the owner and stays on
+    // the page, with no membership or binding removal.
     expect(onOrganizationLeft).not.toHaveBeenCalled()
-    expect(onTenantUpdated).not.toHaveBeenCalled()
     expect(removeMember).not.toHaveBeenCalled()
     expect(unbindTenantRole).not.toHaveBeenCalled()
-    // The profile re-read shows the new owner with its own names, not a
-    // neutral label and not a stale one.
-    expect(await screen.findByText('Bob Stone (bob)')).toBeInTheDocument()
-    // The controls are withdrawn because the caller no longer owns the
-    // organization, while the page it stays on remains fully rendered.
     expect(
-      screen.queryByRole('button', {
+      screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
+    ).toBeInTheDocument()
+    // The pending panel names the target and the deadline, and holds the
+    // transfer control while the request waits.
+    expect(
+      screen.getByText(zhCN.tenantProfile.ownership.pending.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        zhCN.tenantProfile.ownership.pending.target.replace(
+          '{{target}}',
+          'Bob Stone (bob)',
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        zhCN.tenantProfile.ownership.pending.expires.replace(
+          '{{expires}}',
+          formatInstant(PENDING.expiresAt, 'zh-CN', { timeZone: 'UTC' }),
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,
       }),
-    ).toBeNull()
-    expect(screen.getByText(zhCN.tenantProfile.identity.title)).toBeInTheDocument()
+    ).toBeDisabled()
+    // Deletion stays available: the delete transaction settles the request.
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    ).toBeEnabled()
   })
 
-  it('keeps the transfer confirmation in the card with no host action at all', async () => {
+  it('lets the owner cancel the pending request and keeps the ownership unchanged', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
-    let profile = ownerProfile()
+    const cancelled: unknown[] = []
+    let pending: typeof PENDING | null = PENDING
     renderPage({
-      getTenantProfile: () => Promise.resolve(profile),
+      getTenantProfile: () => Promise.resolve(ownerProfile()),
       backend: {
-        listMembers: () =>
-          Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
-        transferOrganizationOwner: () => {
-          profile = ownerProfile({
-            ownerAccount: OTHER_ACCOUNT,
-            ownerDisplayName: 'Bob Stone',
-            ownerUsername: 'bob',
-          })
+        getPendingOrganizationOwner: () => Promise.resolve(pending),
+        cancelOrganizationOwner: (input) => {
+          cancelled.push(input)
+          pending = null
           return Promise.resolve()
         },
       },
     })
     await ready()
 
+    expect(
+      await screen.findByText(zhCN.tenantProfile.ownership.pending.title),
+    ).toBeInTheDocument()
     await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.pending.cancel,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.tenantProfile.ownership.pending.cancelTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.tenantProfile.ownership.pending.cancelConfirm,
+      }),
+    )
+
+    await waitFor(() =>
+      expect(cancelled).toEqual([{ tenant: TENANT, request: 'transfer-1' }]),
+    )
+    expect(
+      await screen.findByText(zhCN.tenantProfile.ownership.pending.cancelled),
+    ).toBeInTheDocument()
+    // The request is gone from the card, and the caller is still the owner.
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.tenantProfile.ownership.pending.title),
+      ).toBeNull(),
+    )
+    expect(
       screen.getByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,
       }),
-    )
-    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
-    await user.click(
-      within(dialog).getByRole('combobox', {
-        name: zhCN.tenantProfile.ownership.transfer.targetLabel,
-      }),
-    )
-    await user.click(
-      await screen.findByRole('option', { name: 'Bob Stone (bob)' }),
-    )
-    await armAndConfirm(
-      user,
-      dialog,
-      zhCN.tenantProfile.ownership.transfer.confirmLabel,
-    )
-
+    ).toBeEnabled()
     expect(
-      await screen.findByText(
-        zhCN.tenantProfile.ownership.transfer.saved
-          .replace('{{name}}', ORG_NAME)
-          .replace('{{account}}', 'Bob Stone (bob)'),
-      ),
+      screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
     ).toBeInTheDocument()
-    // The caller remains a member: the page still renders the organization,
-    // and only the owner-only controls are gone.
-    expect(screen.getByText(zhCN.tenantProfile.identity.title)).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.tenantProfile.ownership.transfer.button,
-      }),
-    ).toBeNull()
   })
 
   it('keeps the controls off the page for a tenant administrator who is not the owner', async () => {
@@ -753,7 +784,7 @@ describe('TenantProfilePage ownership', () => {
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
-        transferOrganizationOwner: () =>
+        requestOrganizationOwner: () =>
           Promise.reject({ status: 403, code: 'client.http.403' }),
       },
     })
@@ -792,7 +823,7 @@ describe('TenantProfilePage ownership', () => {
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
-        transferOrganizationOwner: () =>
+        requestOrganizationOwner: () =>
           Promise.reject({ status: 409, code: 'tenant.conflict' }),
       },
     })
@@ -866,7 +897,7 @@ describe('TenantProfilePage ownership', () => {
       backend: {
         listMembers: () =>
           Promise.resolve({ members: [ADA, BOB], next_cursor: '' }),
-        transferOrganizationOwner: () =>
+        requestOrganizationOwner: () =>
           Promise.reject({ status: 503, code: 'client.http.503' }),
       },
     })

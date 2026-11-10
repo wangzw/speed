@@ -35,7 +35,7 @@ var gateWrites = []struct {
 		},
 	},
 	{
-		"the owner transfer", http.MethodPut, "/api/v1/system/tenants/acme/owner",
+		"the owner transfer request", http.MethodPost, "/api/v1/system/tenants/acme/owner/requests",
 		map[string]any{"account": "acc-2"},
 	},
 	{

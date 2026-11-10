@@ -31,6 +31,7 @@ generated read or write on the shared access token.
 | `src/SocialBindingsSection.tsx` | `SocialBindingsSection`, `SocialBindingsSectionProps` |
 | `src/BindingCallbackHandler.tsx` | `BindingCallbackHandler`, `BindingCallbackHandlerProps` |
 | `src/MfaSection.tsx` | `MfaSection`, `MfaSectionProps` |
+| `src/OwnerTransferRequestsPage.tsx` | `OwnerTransferRequestsPage`, `OwnerTransferRequestsPageProps` |
 | `src/internal/step-up-challenge.tsx` | `StepUpDialog` (re-exported as `StepUpDialog`/`StepUpDialogProps`), host use only |
 | `src/resources.ts` | `ACCOUNT_UI_NAMESPACE`, `accountUiResources` |
 
@@ -631,6 +632,35 @@ formatted with the account's display-timezone chain.
 ```tsx
 interface MfaSectionProps {
   readonly session: AuthSession
+}
+```
+
+## OwnerTransferRequestsPage
+
+The account-level surface where a member confirms or declines an
+organization's request to take its ownership. It reads the caller's own
+requests over `GET /api/v1/auth/me/owner-transfer-requests` (the list) and
+`GET /api/v1/auth/me/owner-transfer-requests/{request}` (one request,
+whatever its state), and writes `.../confirm` and `.../decline`. Nothing
+here addresses a tenant path or asks for an organization permission: a
+plain member, who usually cannot read the organization's profile, can
+still open the page and decide.
+
+`request` selects the detail view; absent or empty renders the list. The
+host supplies the detail address (`requestHref`), the way back
+(`listHref`) and, optionally, what "open the organization" means
+(`onOpenOrganization`). Confirming is the only action that changes
+ownership, so it takes the danger double confirmation; declining is
+harmless and takes the single-step one. A conflict re-reads the request so
+the page can name expiry or a finished request.
+
+```tsx
+interface OwnerTransferRequestsPageProps {
+  readonly request?: string
+  readonly requestHref?: (id: string) => string
+  readonly onOpenRequest?: (id: string) => void
+  readonly listHref?: string
+  readonly onOpenOrganization?: (tenant: string) => void | Promise<unknown>
 }
 ```
 

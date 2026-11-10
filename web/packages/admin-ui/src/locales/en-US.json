@@ -344,17 +344,17 @@
   },
   "tenantLifecycle": {
     "sectionTitle": "Ownership and deletion",
-    "sectionDescription": "Hand this organization to another account, or end it permanently.",
-    "transferLabel": "Transfer owner",
-    "transferAria": "Transfer owner of organization {{name}}",
+    "sectionDescription": "Ask another account to take ownership, or end this organization permanently.",
+    "transferLabel": "Request transfer",
+    "transferAria": "Request an owner transfer of organization {{name}}",
     "deleteLabel": "Delete organization",
     "deleteAria": "Delete organization {{name}}",
     "transfer": {
-      "title": "Transfer ownership of organization \"{{name}}\"",
-      "description": "Choose the person who will become the organization's owner. The transfer changes ownership only: the previous owner stays an active member and keeps every role it held, including tenant administrator.",
+      "title": "Request an ownership transfer of organization \"{{name}}\"",
+      "description": "Choose the active member to ask. Ownership changes only after they confirm; until then the current owner keeps it.",
       "memberLabel": "New owner",
       "accountLabel": "New owner's account",
-      "accountHint": "The account must already be an active member of this organization. If it is not, the transfer is refused.",
+      "accountHint": "The account must already be an active member of this organization. If it is not, the request is refused.",
       "searching": "Searching members",
       "noMembers": "No active member matches this search.",
       "membersNarrow": "More members match than are listed. Narrow the search by name or sign-in name.",
@@ -363,13 +363,20 @@
       "clear": "Clear",
       "open": "Open",
       "close": "Close",
-      "submit": "Transfer owner",
-      "confirmTitle": "Transfer ownership of \"{{name}}\"?",
-      "confirmMessage": "\"{{target}}\" becomes the owner and receives the tenant administrator role. The transfer changes ownership only: the previous owner stays an active member and keeps every role it held.",
-      "confirmLabel": "Transfer owner",
+      "submit": "Send request",
+      "confirmTitle": "Send an ownership transfer request for \"{{name}}\"?",
+      "confirmMessage": "\"{{target}}\" is asked to take ownership. Ownership changes only after they confirm; until then the current owner keeps it.",
+      "confirmLabel": "Send request",
       "failedNotFound": "This organization no longer exists.",
-      "failedConflict": "The transfer was refused. The new owner must be an active member of this organization, and their account must be active. Add the account as a member first, then try again.",
-      "success": "Organization \"{{name}}\" is now owned by {{target}}."
+      "failedConflict": "The request was refused. The target must be an active member of this organization, and the organization may already have a pending request.",
+      "success": "A transfer request was sent to {{target}} for organization \"{{name}}\". Ownership changes when they confirm.",
+      "pendingTitle": "Pending transfer request",
+      "pendingTarget": "Target: {{target}}",
+      "pendingExpires": "Expires: {{expires}}",
+      "pendingCancel": "Cancel request",
+      "pendingCancelTitle": "Cancel the transfer request?",
+      "pendingCancelMessage": "The target will no longer be able to confirm it. Ownership is unchanged.",
+      "pendingCancelled": "Transfer request cancelled."
     },
     "deleteConfirm": {
       "title": "Delete organization \"{{name}}\"?",
@@ -456,11 +463,11 @@
     },
     "ownership": {
       "title": "Organization ownership",
-      "description": "An organization has one owner. The owner can hand ownership to another member or delete the organization.",
+      "description": "An organization has one owner. The owner can ask another member to take ownership, or delete the organization. Ownership changes only after the member confirms.",
       "transfer": {
-        "button": "Transfer ownership",
-        "title": "Transfer ownership of {{name}}",
-        "message": "After the transfer the target member becomes the owner and receives the tenant administrator role. The transfer changes ownership only: you stay an active member of this organization and keep every role you held. This cannot be undone.",
+        "button": "Request ownership transfer",
+        "title": "Request ownership transfer of {{name}}",
+        "message": "The member is asked to take ownership and receives the tenant administrator role when they confirm. You stay the owner, and an active member keeping every role you held, until they confirm. The request can be cancelled and expires after seven days.",
         "targetLabel": "New owner",
         "targetHint": "Only active members of this organization can be chosen.",
         "searchLabel": "Search members",
@@ -469,8 +476,20 @@
         "membersError": "The member list could not be loaded. Close this dialog and try again.",
         "noMembers": "This organization has no other active member.",
         "noMatches": "No active member matches this search.",
-        "confirmLabel": "Confirm transfer",
-        "saved": "Ownership of {{name}} was transferred to {{account}}."
+        "confirmLabel": "Send request",
+        "requested": "A transfer request was sent to {{account}}. Ownership changes when they confirm."
+      },
+      "pending": {
+        "title": "Pending transfer request",
+        "description": "Ownership changes only after the member confirms. You remain the owner until then.",
+        "target": "Target: {{target}}",
+        "requested": "Requested: {{requested}}",
+        "expires": "Expires: {{expires}}",
+        "cancel": "Cancel request",
+        "cancelTitle": "Cancel the transfer request?",
+        "cancelMessage": "The member will no longer be able to confirm it. You remain the owner.",
+        "cancelConfirm": "Cancel request",
+        "cancelled": "The transfer request was cancelled."
       },
       "delete": {
         "button": "Delete organization",
@@ -484,6 +503,11 @@
       "error": {
         "forbidden": "You are not the owner of this organization, so you cannot do that.",
         "notFound": "This organization no longer exists.",
+        "pending": "This organization already has a pending transfer request.",
+        "expired": "The transfer request has expired. You are still the owner.",
+        "notPending": "The transfer request is no longer pending.",
+        "ownerChanged": "The organization's owner has changed, so this request can no longer be acted on.",
+        "notMember": "That account is not an active member of this organization.",
         "conflict": "That change conflicts with the organization's current state. Refresh and try again.",
         "unknown": "The action did not complete. Try again."
       }

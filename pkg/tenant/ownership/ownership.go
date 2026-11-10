@@ -1,24 +1,29 @@
 // Package ownership performs the organization writes that span the roster, the
-// policy store and the membership store: an owner transfer and an organization
-// deletion.
+// policy store and the membership store: an owner-transfer request and its
+// confirmation, and an organization deletion.
 //
-// Neither write belongs to the roster alone. A transfer changes the roster's
-// owner column and the new owner's tenant-admin binding; the previous owner
-// keeps its membership and every binding it held. A deletion writes the roster
-// tombstone and removes the tenant's memberships, bindings, roles and grants.
-// Both must stand or fall as one transaction, so they live in a module that
-// holds the transaction-aware surfaces of the stores involved rather than in
-// any one of them.
+// A submission does not change ownership. It records a pending request in this
+// module's own tenant_owner_transfers table; only the target's confirmation
+// writes the roster's owner column and the new owner's tenant-admin binding,
+// and the previous owner keeps its membership and every binding it held. A
+// deletion writes the roster tombstone, removes the tenant's memberships,
+// bindings, roles and grants and cancels its pending request. The confirmation
+// and the deletion must stand or fall as one transaction, so they live in a
+// module that holds the transaction-aware surfaces of the stores involved
+// rather than in any one of them.
 //
-// The module mounts no route and delivers no configurable behavior. Both the
-// platform management surface and the organization's own tenant surface take
-// the capability up and call it; the module cannot tell them apart.
+// The module mounts no route and delivers no configurable behavior. The
+// platform management surface, the organization's own tenant surface and the
+// target's account-level surface take the capability up and call it; the module
+// cannot tell them apart.
 package ownership
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"strings"
 
@@ -30,7 +35,9 @@ import (
 	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/tenant"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
@@ -38,12 +45,67 @@ import (
 // ModuleName is this module's name in the registry.
 const ModuleName = "tenant.ownership"
 
+//go:embed migrations
+var migrationRoot embed.FS
+
+// migrationsFS is migrationRoot with the wrapping directory removed, so the
+// tree the database module sees has one directory per dialect at its root.
+var migrationsFS = func() fs.FS {
+	sub, err := fs.Sub(migrationRoot, "migrations")
+	if err != nil {
+		// The embed directive above is what makes this unreachable: the
+		// directory is part of the source tree or the build fails first.
+		panic(ModuleName + ": the embedded migration tree: " + err.Error())
+	}
+	return sub
+}()
+
+//go:embed locales/*.json
+var localesFS embed.FS
+
+// notificationTypes are the four kinds of message this module declares. The
+// request notice goes to the target; the confirmed and declined results go to
+// the account that made the request, and the expired type is declared for a
+// later active-expiry notice but is not dispatched in this release. They are
+// in-app only: a target need not have a proved email address, and the target
+// page is the authoritative place to act either way.
+var notificationTypes = []notification.TypeSpec{
+	{
+		Key:                    notificationTransferRequested,
+		Group:                  "tenant",
+		DefaultChannels:        []notification.Channel{notification.ChannelInApp},
+		Unsubscribable:         false,
+		RecipientVisibleParams: []string{"tenant", "request", "expires_at"},
+	},
+	{
+		Key:                    notificationTransferConfirmed,
+		Group:                  "tenant",
+		DefaultChannels:        []notification.Channel{notification.ChannelInApp},
+		Unsubscribable:         false,
+		RecipientVisibleParams: []string{"tenant"},
+	},
+	{
+		Key:                    notificationTransferDeclined,
+		Group:                  "tenant",
+		DefaultChannels:        []notification.Channel{notification.ChannelInApp},
+		Unsubscribable:         false,
+		RecipientVisibleParams: []string{"tenant"},
+	},
+	{
+		Key:                    notificationTransferExpired,
+		Group:                  "tenant",
+		DefaultChannels:        []notification.Channel{notification.ChannelInApp},
+		Unsubscribable:         false,
+		RecipientVisibleParams: []string{"tenant"},
+	},
+}
+
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers. It delivers
-// tenant.OrganizationWriter and requires the stores whose writes it joins in
-// one transaction.
+// tenant.OrganizationWriter and tenant.OwnershipTarget, and requires the stores
+// whose writes it joins in one transaction.
 //
 // The tenant lock is optional and defaults to the in-process implementation. An
 // assembly that supplies the same lock the policy module's binding delete and
@@ -62,10 +124,17 @@ func Module() core.Module {
 			{Token: (*authn.InvitationRevoker)(nil), Optional: true},
 			{Token: (*authz.TenantLock)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
+			{Token: (*notification.Dispatcher)(nil), Optional: true},
+			{Token: (*tenant.Catalog)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
-			{Token: (*tenant.OrganizationWriter)(nil)},
+			{Token: (*tenant.OrganizationWriter)(nil), Exclusive: true},
+			{Token: (*tenant.OwnershipTarget)(nil), Exclusive: true},
 		},
+		Resources: append([]any{
+			db.Migrations{FS: migrationsFS},
+			i18n.Catalog{FS: localesFS, Pattern: "locales/*.json"},
+		}, typeSpecResources()...),
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
@@ -92,9 +161,31 @@ type product struct {
 	invitations      authn.InvitationRevoker
 	lock             authz.TenantLock
 	logger           *slog.Logger
+	// dispatcher submits the request and result notices. It is optional: a
+	// process that names no delivery pipeline still records and confirms
+	// requests, and the absence is logged once rather than failing the write.
+	dispatcher notification.Dispatcher
+	// roster enters the tenant a notice is about, so the delivery pipeline can
+	// write its in-app row even when the organization is disabled. It is
+	// optional for the same reason.
+	roster tenant.Catalog
 }
 
-var _ tenant.OrganizationWriter = (*product)(nil)
+var (
+	_ tenant.OrganizationWriter = (*product)(nil)
+	_ tenant.OwnershipTarget    = (*product)(nil)
+)
+
+// typeSpecResources turns the notification declarations into the resources the
+// descriptor carries. The registry collects resources by type, so each
+// declaration is one entry.
+func typeSpecResources() []any {
+	out := make([]any, len(notificationTypes))
+	for i, spec := range notificationTypes {
+		out[i] = spec
+	}
+	return out
+}
 
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
@@ -146,12 +237,26 @@ func (p *product) wire(reg *core.Registry) error {
 	if found {
 		p.lock = lock
 	}
-	revoker, found, err := optional[authn.InvitationRevoker](reg, "the invitation revoker")
+	revoker, revokerFound, err := optional[authn.InvitationRevoker](reg, "the invitation revoker")
 	if err != nil {
 		return err
 	}
-	if found {
+	if revokerFound {
 		p.invitations = revoker
+	}
+	dispatcher, dispatcherFound, err := optional[notification.Dispatcher](reg, "the notification dispatcher")
+	if err != nil {
+		return err
+	}
+	if dispatcherFound {
+		p.dispatcher = dispatcher
+	}
+	roster, rosterFound, err := optional[tenant.Catalog](reg, "the tenant roster")
+	if err != nil {
+		return err
+	}
+	if rosterFound {
+		p.roster = roster
 	}
 	return nil
 }

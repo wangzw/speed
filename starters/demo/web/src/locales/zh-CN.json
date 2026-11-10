@@ -182,6 +182,7 @@
     "accountSettings": "账户设置",
     "messages": "消息通知",
     "messagesWithCount": "消息通知，{{n}} 条未读",
+    "transferRequests": "转移请求",
     "preferences": "偏好设置",
     "signOut": "退出登录"
   },

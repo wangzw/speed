@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,6 +36,7 @@ var (
 	_ tenant.WriteGuard               = (*stubWriteGuard)(nil)
 	_ tenant.Provisioner              = (*stubProvisioner)(nil)
 	_ tenant.OrganizationWriter       = (*stubOrganization)(nil)
+	_ tenant.OwnershipTarget          = (*stubTarget)(nil)
 	_ guard.Guard                     = (*stubGuard)(nil)
 	_ audit.Audit                     = (*recordingAudit)(nil)
 	_ speedhttp.Router                = (*stubRouter)(nil)
@@ -468,6 +470,7 @@ type rig struct {
 	writeGuard   *stubWriteGuard
 	provisioner  *stubProvisioner
 	organization *stubOrganization
+	target       *stubTarget
 	guard        *stubGuard
 	routeGuard   stubTenantAdminGuard
 	audit        *recordingAudit
@@ -490,6 +493,7 @@ func newRig(t *testing.T) *rig {
 		catalog:      &stubCatalog{},
 		writeGuard:   &stubWriteGuard{},
 		organization: &stubOrganization{},
+		target:       &stubTarget{},
 		guard:        &stubGuard{allow: true},
 		audit:        &recordingAudit{},
 		router:       newStubRouter("public"),
@@ -502,13 +506,17 @@ func newRig(t *testing.T) *rig {
 		writeGuard:   r.writeGuard,
 		provisioner:  r.provisioner,
 		organization: r.organization,
+		ownerTarget:  r.target,
 		guard:        r.guard,
 		routeGuard:   r.routeGuard,
 		names:        r.catalog,
 		audit:        r.audit,
 		verification: r.signup,
 		logger:       logs.logger(),
-		cfg:          resolved{endpoints: []string{"public"}, tenantEndpoints: []string{"public"}},
+		cfg: resolved{
+			endpoints: []string{"public"}, tenantEndpoints: []string{"public"},
+			selfEndpoints: []string{"public"},
+		},
 	}
 	r.engine = r.mount()
 	return r
@@ -519,7 +527,91 @@ type organizationCall struct {
 	op            string
 	id            tenant.ID
 	owner         string
+	request       string
 	expectedOwner string
+}
+
+// stubTarget is the target's account-level side. It records every action and
+// answers the reads a case scripts.
+type stubTarget struct {
+	mu     sync.Mutex
+	err    error
+	calls  []organizationCall
+	during func()
+
+	request tenant.TransferRequest
+	found   bool
+	list    []tenant.TransferRequest
+	readErr error
+}
+
+func (t *stubTarget) ConfirmTransfer(_ context.Context, requestID, target string) error {
+	return t.record(organizationCall{op: "ConfirmTransfer", owner: target, request: requestID})
+}
+
+func (t *stubTarget) DeclineTransfer(_ context.Context, requestID, target string) error {
+	return t.record(organizationCall{op: "DeclineTransfer", owner: target, request: requestID})
+}
+
+func (t *stubTarget) PendingTransfersFor(_ context.Context, target string) ([]tenant.TransferRequest, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.readErr != nil {
+		return nil, t.readErr
+	}
+	out := make([]tenant.TransferRequest, len(t.list))
+	copy(out, t.list)
+	return out, nil
+}
+
+func (t *stubTarget) TransferFor(_ context.Context, requestID, target string) (tenant.TransferRequest, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.readErr != nil {
+		return tenant.TransferRequest{}, t.readErr
+	}
+	if !t.found {
+		return tenant.TransferRequest{}, fmt.Errorf("%w: request %q", tenant.ErrTransferNotFound, requestID)
+	}
+	request := t.request
+	if request.To != "" && request.To != target {
+		return tenant.TransferRequest{}, fmt.Errorf("%w: request %q", tenant.ErrTransferNotTarget, requestID)
+	}
+	return request, nil
+}
+
+func (t *stubTarget) record(c organizationCall) error {
+	if t.during != nil {
+		t.during()
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.calls = append(t.calls, c)
+	return t.err
+}
+
+func (t *stubTarget) recorded() []organizationCall {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]organizationCall(nil), t.calls...)
+}
+
+func (t *stubTarget) fail(err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.err = err
+	t.readErr = err
+}
+
+// failAction makes the next confirmation or decline fail while the reads still
+// answer what a case scripted.
+func (t *stubTarget) failAction(err error) { t.mu.Lock(); t.err = err; t.mu.Unlock() }
+
+// answer scripts the reads: the one request, the list and any read failure.
+func (t *stubTarget) answer(request tenant.TransferRequest, found bool, list []tenant.TransferRequest, err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.request, t.found, t.list, t.readErr = request, found, list, err
 }
 
 // stubOrganization records the owner transfers and organization deletions a
@@ -530,10 +622,40 @@ type stubOrganization struct {
 	err    error
 	calls  []organizationCall
 	during func()
+
+	// The pending read's answer, scripted by a case.
+	pending      tenant.TransferRequest
+	pendingFound bool
+	pendingErr   error
 }
 
-func (o *stubOrganization) TransferOwner(_ context.Context, id tenant.ID, target, expectedOwner string) error {
-	return o.record(organizationCall{op: "TransferOwner", id: id, owner: target, expectedOwner: expectedOwner})
+func (o *stubOrganization) RequestTransfer(_ context.Context, id tenant.ID, target, expectedOwner string) (tenant.TransferRequest, error) {
+	err := o.record(organizationCall{op: "RequestTransfer", id: id, owner: target, expectedOwner: expectedOwner})
+	if err != nil {
+		return tenant.TransferRequest{}, err
+	}
+	return tenant.TransferRequest{
+		ID: "11111111-1111-1111-1111-111111111111", Tenant: id, From: expectedOwner, To: target,
+		Status: tenant.TransferPending, RequestedAt: time.Unix(1, 0).UTC(), ExpiresAt: time.Unix(2, 0).UTC(),
+	}, nil
+}
+
+func (o *stubOrganization) CancelTransfer(_ context.Context, id tenant.ID, requestID, expectedOwner string) error {
+	return o.record(organizationCall{op: "CancelTransfer", id: id, request: requestID, expectedOwner: expectedOwner})
+}
+
+func (o *stubOrganization) PendingTransfer(_ context.Context, id tenant.ID) (tenant.TransferRequest, bool, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.pendingErr != nil {
+		return tenant.TransferRequest{}, false, o.pendingErr
+	}
+	if !o.pendingFound {
+		return tenant.TransferRequest{}, false, nil
+	}
+	request := o.pending
+	request.Tenant = id
+	return request, true, nil
 }
 
 func (o *stubOrganization) DeleteOrganization(_ context.Context, id tenant.ID, expectedOwner string) error {
@@ -570,6 +692,9 @@ func (r *rig) mount() *gin.Engine {
 		engine.Handle(rt.method, rt.path, withRealm("public", rt.handler))
 	}
 	for _, rt := range r.p.tenantRoutes() {
+		engine.Handle(rt.method, rt.path, withRealm("public", rt.handler))
+	}
+	for _, rt := range r.p.selfRoutes() {
 		engine.Handle(rt.method, rt.path, withRealm("public", rt.handler))
 	}
 	return engine

@@ -50,6 +50,49 @@
   "stale": {
     "description": "What you see here may be out of date. Retry to refresh it."
   },
+  "transferRequests": {
+    "title": "Ownership transfer requests",
+    "description": "Organizations that asked you to take ownership. Nothing changes until you confirm.",
+    "loading": "Loading ownership transfer requests.",
+    "retry": "Try again",
+    "emptyTitle": "No pending requests",
+    "empty": "You have no pending ownership transfer requests.",
+    "pendingTitle": "Waiting for your confirmation",
+    "pendingDescription": "Confirming makes you the organization's owner; until then its current owner keeps it.",
+    "requestedAt": "Requested: {{requested}}",
+    "expiresAt": "Expires: {{expires}}",
+    "open": "Review request",
+    "openOrganization": "Open organization",
+    "back": "Back to transfer requests",
+    "status": "Status",
+    "statusValues": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "declined": "Declined",
+      "cancelled": "Cancelled",
+      "expired": "Expired"
+    },
+    "detailDescription": "Ownership changes only when you confirm. The previous owner stays an active member and keeps every role and binding they held.",
+    "confirm": "Confirm and become owner",
+    "decline": "Decline",
+    "cancel": "Cancel",
+    "confirmTitle": "Become the owner of {{tenant}}?",
+    "confirmMessage": "You become the owner of {{tenant}} and receive the tenant administrator role. The previous owner stays an active member and keeps every role and binding they held.",
+    "confirmed": "You are now the owner of {{tenant}}.",
+    "declineTitle": "Decline the request from {{tenant}}?",
+    "declineMessage": "Ownership of {{tenant}} stays with its current owner.",
+    "declined": "You declined the ownership transfer request.",
+    "terminal": "This request is no longer pending.",
+    "error": {
+      "title": "The transfer request could not be loaded",
+      "description": "This content didn't load. Try again shortly.",
+      "notFound": "This transfer request no longer exists.",
+      "expired": "This transfer request has expired. Ownership has not changed.",
+      "notPending": "This transfer request is no longer pending.",
+      "conflict": "This request can no longer be confirmed. The organization's owner may have changed, or you may no longer be an active member.",
+      "unknown": "The action did not complete. Try again."
+    }
+  },
   "sessions": {
     "title": "Sessions",
     "prevPage": "Previous",

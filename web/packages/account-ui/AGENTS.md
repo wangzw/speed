@@ -27,9 +27,15 @@ bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow; `useSocialMethodsAvailable` tells a host
 whether the deployment serves any social method, so the whole card can be
-withheld from an assembly that has none), and `MfaSection` (the two-step
+withheld from an assembly that has none), `MfaSection` (the two-step
 verification surface: the factors read from `GET /api/v1/auth/factors`, their
-kind-grouped rows, their row menus, and the enroll flow). The package sits one step above
+kind-grouped rows, their row menus, and the enroll flow), and
+`OwnerTransferRequestsPage` (the account-level surface where a member
+confirms or declines an organization's request to take its ownership: the
+list of pending requests, one request's detail, and the two decisions over
+`/api/v1/auth/me/owner-transfer-requests`; it reads no tenant permission
+and no tenant path, so a plain member who cannot open the organization's
+profile can still use it). The package sits one step above
 `@speed/auth-ui`'s tier: reads go through the react-query hooks generated
 into `@speed/api-sdk` over the host's QueryClient (the shared-QueryClient
 contract: one host-bound QueryClient, never package-constructed), and
@@ -434,7 +440,8 @@ Everything in `src/index.ts` is public: the surfaces (`ProfileSection`;
 `ContactVerificationSectionProps`; `PreferencesSection`;
 `ColorModeSection` (with `ColorModeSectionProps`);
 `SessionsSection` with `SessionsSectionProps`; `SocialBindingsSection`
-with `SocialBindingsSectionProps`; `MfaSection` with `MfaSectionProps`),
+with `SocialBindingsSectionProps`; `MfaSection` with `MfaSectionProps`;
+`OwnerTransferRequestsPage` with `OwnerTransferRequestsPageProps`),
 `BindingCallbackHandler` with `BindingCallbackHandlerProps`,
 `StepUpDialog` with `StepUpDialogProps` (the host seam; see rule 7), and
 the resource pair (`ACCOUNT_UI_NAMESPACE`, `accountUiResources`). Prop

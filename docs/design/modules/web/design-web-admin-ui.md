@@ -37,7 +37,7 @@ admin-ui 是平台侧与租户侧的管理面在浏览器里的页面家族，�
 
 ### 非职责
 
-- **不拥有、不切换当前租户。** 切换当前租户是租户侧的动作，归 [tenancy-ui](design-web-tenancy-ui.md)；管理名册（开租户、转移所有者、删除与停用）是平台管理面的动作。切换改的是宿主的路由，管理改的是名册，两者不共用控件、不共用查询键。平台管理面的按租户寻址页面持的租户选择器选的是**请求的实参**，不是当前租户；组织管理面把宿主给出的当前租户写进请求路径，仍不持切换器。两个面的租户都不由本包推导。
+- **不拥有、不切换当前租户。** 切换当前租户是租户侧的动作，归 [tenancy-ui](design-web-tenancy-ui.md)；管理名册（开租户、发起所有者转移请求、删除与停用）是平台管理面的动作。切换改的是宿主的路由，管理改的是名册，两者不共用控件、不共用查询键。平台管理面的按租户寻址页面持的租户选择器选的是**请求的实参**，不是当前租户；组织管理面把宿主给出的当前租户写进请求路径，仍不持切换器。两个面的租户都不由本包推导。
 - **不做导航、不解析 URL。** 页面的路径匹配、链接构造、深链接解析与未命中回退归 `route-kit` 的收集方，特性缺席的页面落到未命中回退同样在那里发生；本包只提供页面与它们的声明，不做路径匹配。
 - **不读特性态。** 本包不取回特性文档，也不调用 auth-core 读特性态的钩子；页内控件所依赖的特性是否在场，由宿主经 `AdminShell` 的 `hasFeature` 给出（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
 - **不做判定。** 名册、账户、会话、冒充、权限、邀请与成员、SSO、设置、组织资料与审计的授权判定都在服务端做出（判定域按能力：冒充与权限在平台域，邀请与成员、SSO 与组织资料在那个租户的域，设置的全局层在平台域、租户层在那个租户的域），本包只渲染应答；路由级的授权是宿主的组合（经 [layout-kit](design-web-layout-kit.md) 的路由守卫与 [auth-core](design-web-auth-core.md) 的权限读数），不在本包内。
@@ -197,7 +197,7 @@ interface OrganizationAdminProviderProps {
   // 缺席时资料页只重读自己的读。
   readonly onTenantUpdated?: () => void | Promise<unknown>
   // 删除组织使调用方不再属于这个组织后宿主的动作：离开组织、重读调用方
-  // 租户表，并在落点展示传入的成功文案。转移所有权只改变所有权，调用方
+  // 租户表，并在落点展示传入的成功文案。目标确认的转移只改变所有权，调用方
   // 仍是成员，不触发它。缺席时资料页退回 `onTenantUpdated`，把文案留在
   // 所有权卡内，不自行导航。
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
@@ -258,7 +258,7 @@ export function OrganizationProfilePage(): ReactElement
 - **`OrganizationAdminProvider` 只安装上下文，不渲染外壳。** 宿主已用 `ProductShell` 渲染了租户侧的壳，组织管理面因此不另造一帧：provider 把当前租户、操作束、会话、特性判定、导航回调、路由表、面包屑、邀请链接构造器、受保护角色、租户更新回调与离任回调交给包装页，本身不渲染 DOM；操作束经 `OrganizationAdminOperationsProvider` 一并发布给页面。它不 import `product-shell` 与 `tenancy-ui`；当前租户是一个属性，不是它从会话或路由推导的值。
 - **面包屑上下文优先，且只在一个地方判断。** 包装页经 `OrganizationAdminBreadcrumbProvider` 发布组织管理面的面包屑（当前组织名称到该页，起点不可点）；管理面各页面统一经 `AdminPageHeader` 渲染页头，由它优先取这个上下文，没有它时渲染页面自己的平台管理面面包屑。页面只声明自己的平台面包屑，不需要感知上下文，新增页面也不会漏掉这条规则。两个面的面包屑因此不会互相泄漏。`OrganizationAdminProvider` 在给出 `breadcrumbs` 时挂载同一个提供者；渲染自有外壳、只用页面组件的宿主单独挂载它，形态同 `AdminSessionProvider`。
 - **包装页是薄组合。** 五个包装页读 provider 的上下文。成员与邀请包装页把当前租户交给 `OrganizationMembersPage`；资料包装页把当前租户、`onTenantUpdated` 与 `onOrganizationLeft` 交给共享的 `TenantProfilePage`；SSO 包装页把当前租户作为受控租户交给共享页；设置包装页挂载组织管理面自己的 `OrganizationSecurityPage`；角色权限包装页挂载组织管理面自己的 `OrganizationRolesPage`，把当前租户与 provider 的 `protectedRoles` 交给它。它们不复制页面逻辑：成员与邀请的读写都在 `OrganizationMembersPage` 里，资料的读写都在 `TenantProfilePage` 里，SSO 的读写都在共享页里，设置与角色的读写分别在 `OrganizationSecurityPage` 与 `OrganizationRolesPage` 里。
-- **组织操作束是租户作用域的。** `OrganizationAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点，设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)，角色、授予与绑定指向 [authz.tenantadmin](../design-authz.md)，组织资料指向 [tenant.profile](../tenant/design-tenant-profile.md) 的生成操作。它不持有平台操作，也不接受 `/api/v1/system` 的路径。租户作用域的读键以租户标识为最外层段：`tenantQueryKey` 套在生成的裸键之外，写经同一工厂失效（所有者转移与组织删除除外：调用方已经离开，重读只会被拒，见「组织资料」），切租户即换键、离任租户的缓存由宿主逐出。`organizationAdminOperations` 是出厂绑定；宿主可改挂自己的，页面经 `useOrganizationAdminOperations` 取用。
+- **组织操作束是租户作用域的。** `OrganizationAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点，设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)，角色、授予与绑定指向 [authz.tenantadmin](../design-authz.md)，组织资料指向 [tenant.profile](../tenant/design-tenant-profile.md) 的生成操作。它不持有平台操作，也不接受 `/api/v1/system` 的路径。租户作用域的读键以租户标识为最外层段：`tenantQueryKey` 套在生成的裸键之外，写经同一工厂失效；所有者转移请求另失效待处理读与成员读，取消另失效待处理读与资料读，组织删除把墓碑写回资料读并移除待处理读（调用方已经离开，重读只会被拒，见「组织资料」），切租户即换键、离任租户的缓存由宿主逐出。`organizationAdminOperations` 是出厂绑定；宿主可改挂自己的，页面经 `useOrganizationAdminOperations` 取用。
 
 ### 组织管理面的页面声明
 
@@ -286,7 +286,7 @@ export function OrganizationProfilePage(): ReactElement
 - **角色与权限。** 组织角色与权限页是组织管理面自己的页面（`OrganizationRolesPage`），不是共享权限页的租户模式；它的分区、控件来源与只读规则见「组织管理面的角色与权限页」。平台 `PermissionsPage` 只服务平台域：角色、授权、目录、绑定与按账户查询都读 `/api/v1/system`，绑定与账户查询保留。
 - **组织资料。** 当前租户由上下文给出，资料页读写 `/api/v1/tenants/{tenant}/profile`，不读 `/api/v1/system` 下的租户资料。页面由一张只读的身份卡、一张可编辑的资料卡与（仅所有者可见的）一张组织所有权卡组成：身份卡陈列名称、所有者、状态与注册时间，不陈列内部标识；所有者按「显示名 (用户名)」指认，只有一个时写有值的那个，都没有时写中性的「组织所有者」，任何分支都不渲染账户标识；资料卡编辑显示名、描述、联系邮箱与网站，显示名可清空、清空后各处以名称代替。保存落地后页面调用 provider 的 `onTenantUpdated`，账户菜单与面包屑随即重读调用方的租户表；宿主不给回调时只重读资料页自己的读。读被拒与其他失败按「读的失败情形」分开呈现，写拒绝按白名单渲染。
 
-  **组织所有权卡的控件只在调用方正是该组织所有者、组织不是个人组织、且不是墓碑时渲染。** 一次拒绝把资料改写成另一种状态时，已落定的拒绝文案仍留在卡内。卡内是两个控件：转移所有权与删除组织。转移对话框以服务端的成员前缀搜索列出该组织的已启用成员（不含当前所有者），每次取前 100 条匹配，成员更多时以收窄搜索代替翻页；目标由服务端在尚未持有 tenant-admin 时授予。删除对话框要求输入组织名称。两个动作都经 ui-kit 的两步确认，删除另以名称输入作为前置。两者的拒绝只按写自身的应答解析：403 落「你不是所有者」，404 落「组织已不存在」，409 落「与组织当前状态冲突」（服务端对所有者已变、目标不再是成员与墓碑都只回同一种冲突类型，应答无法再细分），其余状态落回本地的未知文案；这些文案由资料页在本地的失败码集合解析，不进平台错误白名单。转移落地后调用方仍是成员，页面留在原处，成功文案留在所有权卡内；写失效的资料读重读后显示新所有者，控件因调用方不再是所有者而收掉。删除落地后调用方已不属于该组织，资料读与成员读只会被拒，因此不再重读：墓碑状态写回缓存的资料读，页面据它收掉控件，离任租户的缓存由宿主逐出，并调用 `onOrganizationLeft`，宿主离开组织、重读调用方租户表并在落点展示成功文案；宿主不给这个回调时退回 `onTenantUpdated`，文案留在卡内。非所有者、个人组织、墓碑与已经离开的调用方都不渲染这两个控件；服务端仍然是每一笔写的权威。
+  **组织所有权卡的控件只在调用方正是该组织所有者、组织不是个人组织、且不是墓碑时渲染。** 一次拒绝把资料改写成另一种状态时，已落定的拒绝文案仍留在卡内。卡内是发起转移请求与删除组织。转移对话框以服务端的成员前缀搜索列出该组织的已启用成员（不含当前所有者），每次取前 100 条匹配，成员更多时以收窄搜索代替翻页；发起只写一条待处理请求，所有权不变，目标在账户级转移请求页确认后才改变，目标未持有 tenant-admin 时由确认授予。待处理期间卡内渲染请求面板（目标、发起时刻、截止时刻）与取消控件，转移控件保持不可用；发起落地后的成功文案点名目标并留在卡内，取消后请求面板消失，所有权不变。删除对话框要求输入组织名称，删除事务同时结算待处理请求。转移请求与删除都经 ui-kit 的两步确认，删除另以名称输入作为前置。两者的拒绝只按写自身的应答解析：403 落「你不是所有者」，404 落「组织已不存在」，409 落「与组织当前状态冲突」（服务端对所有者已变、目标不再是成员、已有待处理请求与墓碑都只回同一种冲突类型，应答无法再细分；发起遇 409 时页面重读待处理请求，观察到已有请求就改述为该情形），其余状态落回本地的未知文案；这些文案由资料页在本地的失败码集合解析，不进平台错误白名单。目标确认后所有权改变：失效的资料读重读后显示新所有者，控件因调用方不再是所有者而收掉；原所有者仍是成员，页面留在原处。删除落地后调用方已不属于该组织，资料读与成员读只会被拒，因此不再重读：墓碑状态写回缓存的资料读，页面据它收掉控件，待处理读被移除，离任租户的缓存由宿主逐出，并调用 `onOrganizationLeft`，宿主离开组织、重读调用方租户表并在落点展示成功文案；宿主不给这个回调时退回 `onTenantUpdated`，文案留在卡内。非所有者、个人组织、墓碑与已经离开的调用方都不渲染这两个控件；服务端仍然是每一笔写的权威。
 
 ### 平台管理面的页面声明
 
@@ -324,9 +324,9 @@ export function OrganizationProfilePage(): ReactElement
 - **列表页**（`TenantRosterPage`、`AccountsPage`、`SessionsPage`、`ImpersonationsPage`、`PermissionsPage`、`InvitationsPage`、`SsoPage`、`SmsPage`、`AuditPage`）：页头、工具栏或写入区、数据表、分页。行详情与创建表单在操作者需要参照列表时由侧边面板承载（`AccountsPage`），见「账户页的详情与创建面板」。**租户名册的列是显示名、名称、状态与停用来源；行以名称定位，详情链接按名称构造，不设内部标识列。** **状态列按名册的每一个状态取值渲染**，`active`、`disabled` 与 `deleted` 各一条文案，集合之外的值渲染同一条通用文案；已删除的行不渲染生命周期与启停控件——名册拒绝写它，摆出来的控件只能空转。停用的行在状态列里另带停用来源的文案（运营者或账户），取自视图的 `disabledBy` 字段，运营者据它判断这个租户会不会随账户恢复。租户名册不承载内联注册表单：页头给出到 `/tenants/new` 的「登记组织」链接，注册表单是独立的创建页。
 组织管理面的 `OrganizationMembersPage` 由两个列表页型分区组成：成员分区与邀请分区各自有工具栏、数据表与游标分页，页头只负责标题与面包屑。组织管理面的 `OrganizationRolesPage` 由四个带标题的分区组成：角色表、选中角色的授权表、使用情况表与底部折叠的权限目录参考区，页头同样只负责标题与面包屑。
 
-**组织生命周期入口（名册行与详情页）。** 名册的每一行与租户详情页各提供转移所有者与删除组织两个入口，分别写 `PUT /api/v1/system/tenants/:name/owner` 与 `DELETE /api/v1/system/tenants/:name`。两个入口只在调用方的平台权限集持有 `tenant.manage` 时渲染——服务端仍是判定者，这一可见性只是不摆出对当前调用方必然失败、而删除又不可逆的控件。个人组织（租户视图的 `kind` 为 `personal`）与墓碑不渲染这两个入口：个人域不属于平台名册的管理范围，删除是终态。两个入口各以带名称的可及名区分同表的多行。
+**组织生命周期入口（名册行与详情页）。** 名册的每一行与租户详情页各提供发起转移请求与删除组织入口，分别写 `POST /api/v1/system/tenants/:name/owner/requests` 与 `DELETE /api/v1/system/tenants/:name`。这些入口只在调用方的平台权限集持有 `tenant.manage` 时渲染——服务端仍是判定者，这一可见性只是不摆出对当前调用方必然失败、而删除又不可逆的控件。入口组读出待处理请求时渲染请求面板（目标、截止时刻）与取消控件，转移入口在有待处理请求期间不可用；发起只记请求，所有权不变，目标在自己的账户级转移请求页确认后才改变。个人组织（租户视图的 `kind` 为 `personal`）与墓碑不渲染这两个入口：个人域不属于平台名册的管理范围，删除是终态。各入口以带名称的可及名区分同表的多行。
 
-**转移目标的两条路径。** 转移对话框按调用方在该租户的权限选择目标控件：租户权限集持有 `authn.membership.manage` 时用该组织的成员选择器（`GET /api/v1/tenants/{tenant}/members`，只列出活跃成员，停用的成员关系不进入选项）；否则用平台账户选择器。账户路径不声称所选账户已是成员，也不把成员校验从请求里拿掉：端点仍要求目标是活跃成员，非成员答 409，对话框就地把成员要求说明在所选目标旁。两条路径都经过共享的危险确认对话框的 `doubleConfirm` 两步守卫，确认文案点名目标成为所有者并获得租户管理员，并说明原所有者保留成员关系与全部角色；转移落地后失效名册读与详情读，失败时对话框保持打开并渲染可读文案（404 表示组织已不在，409 表示成员或状态不满足，其余经错误码白名单解析）。
+**转移目标的选择路径。** 转移对话框按调用方在该租户的权限选择目标控件：租户权限集持有 `authn.membership.manage` 时用该组织的成员选择器（`GET /api/v1/tenants/{tenant}/members`，只列出活跃成员，停用的成员关系不进入选项）；否则用平台账户选择器。账户路径不声称所选账户已是成员，也不把成员校验从请求里拿掉：端点仍要求目标是活跃成员，非成员答 409，对话框就地把成员要求说明在所选目标旁。无论用哪个选择器，都经过共享的危险确认对话框的 `doubleConfirm` 两步守卫，确认文案点名目标，并说明请求在目标确认后才改变所有权、原所有者确认后保留成员关系与全部角色；发起落地后失效待处理读，名册读与详情读在目标确认前不变，失败时对话框保持打开并渲染可读文案（404 表示组织已不在，409 表示成员、状态或已有待处理请求，其余经错误码白名单解析）。
 
 **删除经两步确认。** 删除入口经共享的危险确认对话框的 `doubleConfirm` 两步守卫；确认文案写明影响：成员关系、绑定、角色与授予一并清除，名称与内部标识都不复用，且不可撤销。删除落地后失效名册读与详情读，名册行消失，详情读返回墓碑。失败落在控件组自己的结果区域：409 是墓碑（组织已经删除），渲染删除自己的文案而不是登记冲突文案；404 与 403 同样渲染各自的文案。成功确认落在页面级作用域，因为承载控件的行会在删除后离开表格或详情页转为墓碑。
 
@@ -427,7 +427,7 @@ graph TD
 | 租户作用域选择 | 页面自身状态 | 按租户寻址的页面持有的租户 id，作为请求实参，缺省为空即禁用该页的租户作用域读 |
 | 账户选择 | `AccountSelector` 的 `value` | 页面持有的已选账户（不是 id 文本），选择器交出账户对象，页面从中取 id 作为请求实参 |
 | 组织上下文 | `OrganizationAdminProviderProps` | 当前租户、组织操作束、会话、特性判定、路由表、面包屑、邀请链接构造器、受保护角色、租户更新回调（`onTenantUpdated`）与离任回调（`onOrganizationLeft`）；只安装上下文，不渲染 DOM |
-| 组织操作束 | `OrganizationAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO、设置、角色、权限、授予与绑定，组织资料的读写（`useTenantProfile`、`useTenantProfileWrite`），以及所有者转移与组织删除（`useTenantOwnerTransfer`、`useTenantOwnerDelete`），全部落在 `/api/v1/tenants/{tenant}/...`；读键以租户标识为最外层段 |
+| 组织操作束 | `OrganizationAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO、设置、角色、权限、授予与绑定，组织资料的读写（`useTenantProfile`、`useTenantProfileWrite`），以及所有者转移请求、待处理读取、取消与组织删除（`useTenantOwnerPending`、`useTenantOwnerRequest`、`useTenantOwnerCancel`、`useTenantOwnerDelete`），全部落在 `/api/v1/tenants/{tenant}/...`；读键以租户标识为最外层段 |
 | 组织操作束的发布 | `OrganizationAdminOperationsProvider` | `OrganizationAdminProvider` 挂载它把操作束交给页面；页面经 `useOrganizationAdminOperations` 取用，没有挂载时取出厂绑定 |
 | 游标翻页 | `CursorPager` | 成员表与邀请表共用的上一页／下一页控件；页码从 1 起显示，单页时不渲染，写入或下一页读在途时两个方向都禁用 |
 | 邀请观察态 | `invitationStatusOf` | 由存量状态与期限推出 `pending／expired／accepted／revoked`；期限解析不出时保留 `pending` |
@@ -596,7 +596,7 @@ graph TD
 
 ### 与租户侧的分工
 
-租户这个概念在三处是三类动作：**切换当前租户**（改变宿主路由解析出的租户）在租户侧，归 [tenancy-ui](design-web-tenancy-ui.md)；**管理租户名册**（开租户、转移所有者、删除与停用）是平台管理面的动作；**管理当前租户自身**（邀请与成员、SSO、设置、角色权限、组织资料）是组织管理面的动作。平台管理面的按租户寻址页面持的租户选择器既不是当前租户、也不是名册管理：它是平台请求的一个实参。组织管理面的租户是宿主给出的当前租户，不是页面选择器。三者不共用控件、不共用查询键。
+租户这个概念在三处是三类动作：**切换当前租户**（改变宿主路由解析出的租户）在租户侧，归 [tenancy-ui](design-web-tenancy-ui.md)；**管理租户名册**（开租户、发起所有者转移请求、删除与停用）是平台管理面的动作；**管理当前租户自身**（邀请与成员、SSO、设置、角色权限、组织资料）是组织管理面的动作。平台管理面的按租户寻址页面持的租户选择器既不是当前租户、也不是名册管理：它是平台请求的一个实参。组织管理面的租户是宿主给出的当前租户，不是页面选择器。三者不共用控件、不共用查询键。
 
 ### 账户页的详情与创建面板
 
@@ -766,7 +766,7 @@ graph TD
 | 租户管理页（PageHeader 开篇） | 已实现 | `web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/admin-ui/src/routes.tsx` `tenantAdminRoutes` |
 | 名册的 `deleted` 状态文案、已删除行的只读渲染与停用来源文案 | 已实现 | `web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`、`disabledByLabel`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`、`disabledByLabel`；测试 `TenantRosterPage.test.tsx`、`TenantDetailPage.test.tsx`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`（`tenants.status.deleted`、`tenants.disabledBy.*`） |
 | 租户详情页（主栏与侧栏） | 已实现 | `web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
-| 名册行与详情页的组织生命周期入口（转移所有者、删除组织、两条目标选择路径、两步确认与错误文案） | 已实现 | `web/packages/admin-ui/src/internal/tenant-lifecycle.tsx` `TenantLifecycleActions`、`TransferOwnerDialog`、`TenantMemberSelector`、`isPersonalTenant`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`、`TenantLifecycleCard`；测试 `tenant-lifecycle.test.tsx`、`tenant-lifecycle.browser.test.tsx` |
+| 名册行与详情页的组织生命周期入口（发起转移请求、待处理面板与取消、删除组织、两条目标选择路径、两步确认与错误文案） | 已实现 | `web/packages/admin-ui/src/internal/tenant-lifecycle.tsx` `TenantLifecycleActions`、`TransferOwnerDialog`、`TenantMemberSelector`、`isPersonalTenant`；`web/packages/admin-ui/src/operations.tsx` `usePendingTenantOwner`、`useRequestTenantOwner`、`useCancelTenantOwner`、`useDeleteTenant`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`、`TenantLifecycleCard`；测试 `tenant-lifecycle.test.tsx`、`tenant-lifecycle.browser.test.tsx` |
 | 审计详情页（主栏与侧栏） | 已实现 | `web/packages/admin-ui/src/AuditDetailPage.tsx` `AuditDetailPage` |
 | 设置页的二级导航、默认／已覆盖状态与粘性保存条 | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`、`settingState` |
 | 读的失败情形（权限拒绝与其它失败分开） | 已实现 | `web/packages/admin-ui/src/internal/async-section.tsx` `AdminAsyncSection`、`isForbidden` |
@@ -839,7 +839,7 @@ graph TD
 | 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/admin-ui/src/operations.tsx` `adminOperations` |
 | 组织管理面的声明表 `organizationAdminRoutes`（邀请与成员、SSO、角色与权限、设置、组织资料）与五个包装页（`organization-routes.tsx`、`organization-pages.tsx`） | 已实现 | `web/packages/admin-ui/src/organization-routes.tsx` `organizationAdminRoutes`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationInvitationsPage`、`OrganizationSsoPage`、`OrganizationPermissionsPage`、`OrganizationSettingsPage`、`OrganizationProfilePage` |
 | 组织资料页（只读身份卡、可编辑资料卡、显示名清空后回退名称、保存落地后经 `onTenantUpdated` 重读调用方租户表） | 已实现 | `web/packages/admin-ui/src/TenantProfilePage.tsx` `TenantProfilePage`；`web/packages/admin-ui/src/TenantProfileFields.tsx` `TenantProfileFields`；`web/packages/admin-ui/src/TenantProfileForm.tsx` `TenantProfileForm`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationProfilePage` |
-| 组织所有权卡（所有者陈列、仅所有者可见的转移与删除、转移对话框的成员搜索与双击确认、删除对话框的名称输入与双击确认、按写自身应答的拒绝分类、转移落地后留在页面并在卡内展示成功文案、删除落地后经 `onOrganizationLeft` 离开组织并在落点展示成功文案） | 已实现 | `web/packages/admin-ui/src/TenantOwnership.tsx` `TenantOwnership`、`TransferOwnershipDialog`、`DeleteOrganizationDialog`；`web/packages/admin-ui/src/TenantProfilePage.tsx` `TenantProfilePage`；`web/packages/admin-ui/src/organization-operations.tsx` `useTenantOwnerTransfer`、`useTenantOwnerDelete` |
+| 组织所有权卡（所有者陈列、仅所有者可见的转移请求与删除、转移对话框的成员搜索与双击确认、待处理面板与取消、确认后重读资料并收掉控件、删除对话框的名称输入与双击确认、按写自身应答的拒绝分类、删除落地后经 `onOrganizationLeft` 离开组织并在落点展示成功文案） | 已实现 | `web/packages/admin-ui/src/TenantOwnership.tsx` `TenantOwnership`、`TransferOwnershipDialog`、`DeleteOrganizationDialog`；`web/packages/admin-ui/src/TenantProfilePage.tsx` `TenantProfilePage`；`web/packages/admin-ui/src/organization-operations.tsx` `useTenantOwnerPending`、`useTenantOwnerRequest`、`useTenantOwnerCancel`、`useTenantOwnerDelete` |
 | 平台创建页与共享创建表单（`/tenants/new`，平台模式；客户端校验含标识域、显示名与网站界限） | 已实现 | `web/packages/admin-ui/src/TenantCreatePage.tsx` `TenantCreatePage`；`web/packages/admin-ui/src/routes.tsx` `tenantAdminRoutes`；`web/packages/org-create-ui/src/OrganizationCreateForm.tsx` `OrganizationCreateForm`；`web/packages/org-create-ui/src/validation.ts` `validateOrganizationCreateValues`、`isRejectedIdentifier` |
 | 组织管理面的上下文与面包屑提供者（`OrganizationAdminProvider.tsx` 的 `OrganizationAdminProvider`、`OrganizationAdminBreadcrumb.tsx` 的 `OrganizationAdminBreadcrumbProvider`） | 已实现 | `web/packages/admin-ui/src/OrganizationAdminProvider.tsx` `OrganizationAdminProvider`、`useOrganizationAdminTenant`、`useOrganizationAdminProtectedRoles`；`web/packages/admin-ui/src/OrganizationAdminBreadcrumb.tsx` `OrganizationAdminBreadcrumbProvider`、`useOrganizationAdminBreadcrumbs` |
 | 组织操作束（`organization-operations.tsx` 的 `OrganizationAdminOperations`、`organizationAdminOperations`）及其发布上下文 | 已实现 | `web/packages/admin-ui/src/organization-operations.tsx` `OrganizationAdminOperations`、`organizationAdminOperations`、`OrganizationAdminOperationsProvider`、`useOrganizationAdminOperations` |

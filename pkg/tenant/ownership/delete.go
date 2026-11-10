@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -66,6 +67,15 @@ func (p *product) DeleteOrganization(ctx context.Context, id tenant.ID, expected
 		}
 		after = append(after, memberships)
 
+		// A deletion is terminal, so a pending request has nothing left to
+		// confirm. It is cancelled in the same transaction as the tombstone: a
+		// failure here rolls the whole deletion back.
+		now := time.Now().UTC()
+		if writeErr := tx.WithContext(ctx).Model(&transferRow{}).
+			Where("tenant_id = ? AND status = ?", string(id), statusPending).
+			Updates(map[string]any{"status": statusCancelled, "resolved_at": now}).Error; writeErr != nil {
+			return fmt.Errorf("cancelling the organization's pending owner-transfer requests: %w", writeErr)
+		}
 		// A deleted organization has no grant left to hand out. The invitation
 		// module owns its rows, so it is asked to withdraw the pending ones once
 		// the deletion has committed; a failure is a warning and acceptance still

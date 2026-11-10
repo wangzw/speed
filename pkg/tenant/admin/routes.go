@@ -18,12 +18,24 @@ var (
 	pathTenant        = tenantAdminSpec.ResolvePath(pathTenantFragment)
 	pathTenantProfile = tenantAdminSpec.ResolvePath(pathTenantProfileFragment)
 	pathTenantStatus  = tenantAdminSpec.ResolvePath(pathTenantStatusFragment)
-	pathTenantOwner   = tenantAdminSpec.ResolvePath(pathTenantOwnerFragment)
+
+	pathTenantOwnerRequests = tenantAdminSpec.ResolvePath(pathTenantOwnerRequestsFragment)
+	pathTenantPending       = tenantAdminSpec.ResolvePath(pathTenantPendingFragment)
+	pathTenantRequest       = tenantAdminSpec.ResolvePath(pathTenantRequestFragment)
 
 	// The tenant-surface routes. They are resolved against the tenants-scope
 	// root, so the tenant is the first segment after /api/v1/tenants.
-	pathOwnerTransfer = tenantOwnerSpec.ResolvePath(pathOwnerTransferFragment)
+	pathOwnerRequests = tenantOwnerSpec.ResolvePath(pathOwnerRequestsFragment)
+	pathOwnerPending  = tenantOwnerSpec.ResolvePath(pathOwnerPendingFragment)
+	pathOwnerRequest  = tenantOwnerSpec.ResolvePath(pathOwnerRequestFragment)
 	pathOrganization  = tenantOwnerSpec.ResolvePath(pathOrganizationFragment)
+
+	// The target's account-level routes. They are resolved against the ordinary
+	// root, so they sit under /api/v1/auth/me with the caller's other self routes.
+	pathMyRequests = selfSpec.ResolvePath(pathMyRequestsFragment)
+	pathMyRequest  = selfSpec.ResolvePath(pathMyRequestFragment)
+	pathMyConfirm  = selfSpec.ResolvePath(pathMyConfirmFragment)
+	pathMyDecline  = selfSpec.ResolvePath(pathMyDeclineFragment)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -86,8 +98,16 @@ func (p *product) routes() []route {
 			getOperation.Handle(p.handleTenantGet),
 		},
 		{
-			http.MethodPut, pathTenantOwner, PermissionTenantManage,
-			prescreenJSON[transferOwnerInput](p, transferOwnerOperation.Handle(p.handleTenantTransferOwner)),
+			http.MethodPost, pathTenantOwnerRequests, PermissionTenantManage,
+			prescreenJSON[requestTransferInput](p, requestTransferOperation.Handle(p.handleTenantRequestTransfer)),
+		},
+		{
+			http.MethodGet, pathTenantPending, PermissionTenantRead,
+			pendingTransferOperation.Handle(p.handleTenantPendingTransfer),
+		},
+		{
+			http.MethodDelete, pathTenantRequest, PermissionTenantManage,
+			cancelTransferOperation.Handle(p.handleTenantCancelTransfer),
 		},
 		{
 			http.MethodDelete, pathTenant, PermissionTenantManage,
@@ -117,9 +137,20 @@ func (p *product) routes() []route {
 func (p *product) tenantRoutes() []route {
 	routes := []route{
 		{
-			http.MethodPut, pathOwnerTransfer, "",
-			p.guardOwnerRoute(http.MethodPut,
-				tenantTransferOwnerOperation.Handle(p.handleTenantOwnerTransfer)),
+			http.MethodPost, pathOwnerRequests, "",
+			p.guardOwnerRoute(http.MethodPost,
+				prescreenJSON[ownerRequestTransferInput](p,
+					tenantRequestTransferOperation.Handle(p.handleOwnerRequestTransfer))),
+		},
+		{
+			http.MethodGet, pathOwnerPending, "",
+			p.guardOwnerRoute(http.MethodGet,
+				tenantPendingTransferOperation.Handle(p.handleOwnerPendingTransfer)),
+		},
+		{
+			http.MethodDelete, pathOwnerRequest, "",
+			p.guardOwnerRoute(http.MethodDelete,
+				tenantCancelTransferOperation.Handle(p.handleOwnerCancelTransfer)),
 		},
 		{
 			http.MethodDelete, pathOrganization, "",
@@ -131,6 +162,32 @@ func (p *product) tenantRoutes() []route {
 		routes[i].handler = p.routeGuard.GuardTenantAdmin(routes[i].handler)
 	}
 	return routes
+}
+
+// selfRoutes is the closed set of the target's account-level routes. Every one
+// acts on the caller's own identity: no tenant resolution, no tenant
+// administration guard and no permission. The confirm route also carries the
+// registration-verification gate; the decline route does not, because it is
+// harmless and may be ignored.
+func (p *product) selfRoutes() []route {
+	return []route{
+		{
+			http.MethodGet, pathMyRequests, "",
+			p.guardSelfRoute(false, myTransferRequestsOperation.Handle(p.handleMyTransferRequests)),
+		},
+		{
+			http.MethodGet, pathMyRequest, "",
+			p.guardSelfRoute(false, myTransferRequestOperation.Handle(p.handleMyTransferRequest)),
+		},
+		{
+			http.MethodPost, pathMyConfirm, "",
+			p.guardSelfRoute(true, myTransferConfirmOperation.Handle(p.handleMyTransferConfirm)),
+		},
+		{
+			http.MethodPost, pathMyDecline, "",
+			p.guardSelfRoute(false, myTransferDeclineOperation.Handle(p.handleMyTransferDecline)),
+		},
+	}
 }
 
 // mount resolves every configured endpoint on the entry point and registers the
@@ -165,6 +222,10 @@ func (p *product) mount(router speedhttp.Router) error {
 	if err != nil {
 		return err
 	}
+	selfTargets, err := resolve(p.cfg.selfEndpoints)
+	if err != nil {
+		return err
+	}
 	for _, tgt := range platformTargets {
 		// The tenant every module's platform management route names is an
 		// name on the request surface and an identifier behind it. The layer
@@ -177,6 +238,11 @@ func (p *product) mount(router speedhttp.Router) error {
 	}
 	for _, tgt := range tenantTargets {
 		for _, r := range p.tenantRoutes() {
+			tgt.endpoint.Route(r.method, r.path, withRealm(tgt.name, r.handler))
+		}
+	}
+	for _, tgt := range selfTargets {
+		for _, r := range p.selfRoutes() {
 			tgt.endpoint.Route(r.method, r.path, withRealm(tgt.name, r.handler))
 		}
 	}
@@ -201,6 +267,9 @@ func (p *product) declareOpen() {
 		p.gate.Open(r.method, r.path)
 	}
 	for _, r := range p.tenantRoutes() {
+		p.gate.Open(r.method, r.path)
+	}
+	for _, r := range p.selfRoutes() {
 		p.gate.Open(r.method, r.path)
 	}
 }

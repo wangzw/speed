@@ -60,11 +60,12 @@ import type {
   AdminGrant,
   AdminPatchAccountInput,
   AdminResetPasswordInput,
+  AdminRequestTenantOwnerInput,
+  AdminCancelTenantOwnerTransferInput,
   AdminSetAccountStatusInput,
   AdminSetMFARequiredInput,
   AdminSetMemberSSOExemptInput,
   AdminSsoVerifyToken,
-  AdminTransferTenantOwnerInput,
   AdminWriteMemberInput,
   AdminWriteSsoProviderInput,
   AdminGrantRef,
@@ -106,7 +107,8 @@ import type {
   AdminTenantGrant,
   AdminTenantGrantRef,
   AdminTenantPermission,
-  AdminTenantOwnerTransferInput,
+  AdminTenantOwnerRequestInput,
+  AdminTenantOwnerRequestRef,
   AdminTenantProfile,
   AdminTenantProfileWriteInput,
   AdminTenantRef,
@@ -116,6 +118,7 @@ import type {
   AdminTenantRoleBindingsQuery,
   AdminTenantRoleRef,
   AdminTenantSetSettingInput,
+  AdminTenantTransfer,
   AdminTenantSettings,
   AdminTenantWriteRoleInput,
   OrganizationAdminOperations,
@@ -130,7 +133,13 @@ export interface AdminBackend {
   createTenant: (input: AdminCreateTenantInput) => Promise<AdminTenant>
   setTenantStatus: (input: AdminSetTenantStatusInput) => Promise<void>
   setTenantProfile: (input: AdminSetTenantProfileInput) => Promise<void>
-  transferTenantOwner: (input: AdminTransferTenantOwnerInput) => Promise<void>
+  requestTenantOwner: (
+    input: AdminRequestTenantOwnerInput,
+  ) => Promise<AdminTenantTransfer>
+  getPendingTenantOwner: (name: string) => Promise<AdminTenantTransfer | null>
+  cancelTenantOwner: (
+    input: AdminCancelTenantOwnerTransferInput,
+  ) => Promise<void>
   deleteTenant: (input: AdminDeleteTenantInput) => Promise<void>
   listSettings: (
     namespace: string | undefined,
@@ -228,8 +237,14 @@ export interface AdminBackend {
   // Tenant management surfaces (the organization bundle's own members).
   getTenantProfile: (tenant: string) => Promise<AdminTenantProfile>
   updateTenantProfile: (input: AdminTenantProfileWriteInput) => Promise<void>
-  transferOrganizationOwner: (
-    input: AdminTenantOwnerTransferInput,
+  requestOrganizationOwner: (
+    input: AdminTenantOwnerRequestInput,
+  ) => Promise<AdminTenantTransfer>
+  getPendingOrganizationOwner: (
+    tenant: string,
+  ) => Promise<AdminTenantTransfer | null>
+  cancelOrganizationOwner: (
+    input: AdminTenantOwnerRequestRef,
   ) => Promise<void>
   deleteOrganization: (input: AdminTenantRef) => Promise<void>
   listTenantSettings: (tenant: string) => Promise<AdminTenantSettings>
@@ -297,7 +312,9 @@ export function makeAdminBackend(
       ),
     setTenantStatus: () => Promise.resolve(),
     setTenantProfile: () => Promise.resolve(),
-    transferTenantOwner: () => Promise.resolve(),
+    requestTenantOwner: () => Promise.resolve(transferFixture()),
+    getPendingTenantOwner: () => Promise.resolve(null),
+    cancelTenantOwner: () => Promise.resolve(),
     deleteTenant: () => Promise.resolve(),
     listSettings: () => Promise.resolve([]),
     setSetting: () => Promise.resolve(),
@@ -367,7 +384,9 @@ export function makeAdminBackend(
 
     getTenantProfile: () => Promise.resolve(profileFixture()),
     updateTenantProfile: () => Promise.resolve(),
-    transferOrganizationOwner: () => Promise.resolve(),
+    requestOrganizationOwner: () => Promise.resolve(transferFixture()),
+    getPendingOrganizationOwner: () => Promise.resolve(null),
+    cancelOrganizationOwner: () => Promise.resolve(),
     deleteOrganization: () => Promise.resolve(),
     listTenantSettings: () =>
       Promise.resolve({
@@ -452,6 +471,21 @@ export function profileFixture(
     ownerUsername: '',
     status: 'active',
     createdAt: '2026-10-15T12:00:00Z',
+    ...overrides,
+  }
+}
+
+/** A pending owner-transfer request for the default ownership reads. */
+export function transferFixture(
+  overrides: Partial<AdminTenantTransfer> = {},
+): AdminTenantTransfer {
+  return {
+    id: 'transfer-1',
+    targetDisplayName: 'Bob Stone',
+    targetUsername: 'bob',
+    requestedAt: '2026-10-20T08:30:00Z',
+    expiresAt: '2026-10-27T08:30:00Z',
+    status: 'pending',
     ...overrides,
   }
 }
@@ -662,14 +696,33 @@ export function createAdminOperations(
         },
       })
     },
-    useTransferTenantOwner: () => {
+    usePendingTenantOwner: (name, enabled = true) =>
+      useQuery({
+        queryKey: ['console-test', 'pending-owner-transfer', name ?? ''],
+        queryFn: () => backend.getPendingTenantOwner(name ?? ''),
+        enabled: name !== undefined && name !== '' && enabled,
+      }),
+    useRequestTenantOwner: () => {
       const client = useQueryClient()
       return useMutation({
-        mutationFn: (input: AdminTransferTenantOwnerInput) =>
-          backend.transferTenantOwner(input),
+        mutationFn: (input: AdminRequestTenantOwnerInput) =>
+          backend.requestTenantOwner(input),
         onSuccess: (_answer, input) => {
-          void client.invalidateQueries({ queryKey: TENANTS_KEY })
-          void client.invalidateQueries({ queryKey: tenantKey(input.name) })
+          void client.invalidateQueries({
+            queryKey: ['console-test', 'pending-owner-transfer', input.name],
+          })
+        },
+      })
+    },
+    useCancelTenantOwner: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminCancelTenantOwnerTransferInput) =>
+          backend.cancelTenantOwner(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: ['console-test', 'pending-owner-transfer', input.name],
+          })
         },
       })
     },
@@ -1213,20 +1266,49 @@ export function createAdminOperations(
         },
       })
     },
-    useTenantOwnerTransfer: () => {
+    useTenantOwnerPending: (tenant, enabled = true) =>
+      useQuery({
+        queryKey: tenantQueryKey(tenant, 'console-test', 'tenant-owner-pending'),
+        queryFn: () => backend.getPendingOrganizationOwner(tenant),
+        enabled: tenant !== '' && enabled,
+      }),
+    useTenantOwnerRequest: () => {
       const client = useQueryClient()
       return useMutation({
-        mutationFn: (input: AdminTenantOwnerTransferInput) =>
-          backend.transferOrganizationOwner(input),
+        mutationFn: (input: AdminTenantOwnerRequestInput) =>
+          backend.requestOrganizationOwner(input),
         onSuccess: (_answer, input) => {
-          // Mirror the shipped bundle: ownership changes only, so the caller
-          // keeps reading both the profile (whose owner column changed) and
-          // the member rows (which carry the target's new tenant-admin role).
+          // Mirror the shipped bundle: the request is recorded but ownership
+          // has not changed, so only the pending read and the member rows
+          // (which the dialog searches) are re-read.
           void client.invalidateQueries({
-            queryKey: tenantProfileKey(input.tenant),
+            queryKey: tenantQueryKey(
+              input.tenant,
+              'console-test',
+              'tenant-owner-pending',
+            ),
           })
           void client.invalidateQueries({
             queryKey: membersKey(input.tenant),
+          })
+        },
+      })
+    },
+    useTenantOwnerCancel: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantOwnerRequestRef) =>
+          backend.cancelOrganizationOwner(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantQueryKey(
+              input.tenant,
+              'console-test',
+              'tenant-owner-pending',
+            ),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantProfileKey(input.tenant),
           })
         },
       })

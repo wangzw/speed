@@ -80,6 +80,7 @@ import type {
   NotificationInboxListMessages200,
   NotificationMessage,
   NotificationType,
+  MyTransferView,
   SettingsAdminSetting,
   SettingsTenantAdminSettings,
   SmsAdminTemplatesList200,
@@ -361,6 +362,15 @@ const NOTIFICATION_TYPE: NotificationType = {
   recipient_visible_params: [],
 }
 
+/** One ownership transfer request addressed to the caller. */
+const MY_TRANSFER: MyTransferView = {
+  id: 'transfer-1',
+  tenant: TENANT.name,
+  requestedAt: INSTANT,
+  expiresAt: '2026-01-08T00:00:00Z',
+  status: 'pending',
+}
+
 const PROFILE: AuthnProfileProfile = {
   account_id: 'account-1',
   kind: 'user',
@@ -558,6 +568,12 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     // verification section and no banner.
     verification: { state: 'none', email: '', since: '' },
   } satisfies AuthnProfileProfile),
+  // The account-level ownership transfer requests page: data mode lists one
+  // pending request, empty mode lists none.
+  '/api/v1/auth/me/owner-transfer-requests': answer(
+    { requests: [MY_TRANSFER] },
+    { requests: [] },
+  ),
   '/api/v1/auth/sessions': answer(
     {
       sessions: [
@@ -643,6 +659,21 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
     answer({ account: ACCOUNT } satisfies AuthnAdminAccountEnvelope, {
       account: ACCOUNT,
     } satisfies AuthnAdminAccountEnvelope),
+  ],
+  [
+    /^\/api\/v1\/auth\/me\/owner-transfer-requests\/[^/]+$/,
+    // Data mode renders the pending request and its two actions; the empty
+    // mode's request is finished, so the detail renders its terminal state.
+    answer(
+      { request: MY_TRANSFER },
+      { request: { ...MY_TRANSFER, status: 'expired' } },
+    ),
+  ],
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/owner\/requests\/pending$/,
+    // The owner card has no pending request in either sweep state, so it
+    // renders its controls without the pending panel.
+    answer({ request: null }, { request: null }),
   ],
   [
     /^\/api\/v1\/auth\/invitations\/[^/]+$/,

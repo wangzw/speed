@@ -107,22 +107,44 @@ export const NOTIFICATIONS_PATH: string = notificationRoutes[0]?.path ?? '/'
 export const ACCOUNT_CALLBACK_PATH = '/account/callback'
 
 /**
+ * The ownership transfer requests' account-level page: the destination
+ * every owner-transfer notification links to. It sits outside both shells'
+ * tenant scope because the request is addressed to the signed-in person,
+ * not to an organization, and the target needs no organization permission
+ * to open it.
+ */
+export const TRANSFER_REQUESTS_PATH = '/transfer-requests'
+
+/** One request's detail: the deep link a notification carries. */
+export const TRANSFER_REQUEST_PATH = `${TRANSFER_REQUESTS_PATH}/:request`
+
+/** The detail address for one request. */
+export function transferRequestPath(id: string): string {
+  return `${TRANSFER_REQUESTS_PATH}/${encodeURIComponent(id)}`
+}
+
+/**
  * The account-level pages: the routes that read no tenant data, so they
  * stay usable whatever the tenant context's state. The account settings
  * page, where the email verification runs and a first password is set, is
  * the one the design names; the binding callback is the same family (it
  * completes a write of the account's own), and the tenant frame renders both
- * inside the tenant area.
+ * inside the tenant area. The ownership transfer requests read the
+ * caller's own requests and join the same family.
  */
 const ACCOUNT_LEVEL_PATHS: ReadonlySet<string> = new Set([
   ACCOUNT_PATH,
   ...Object.values(ACCOUNT_SECTION_PATHS),
   ACCOUNT_CALLBACK_PATH,
+  TRANSFER_REQUESTS_PATH,
 ])
 
 /** Whether the path is an account-level page (no tenant-scoped reads). */
 export function isAccountLevelPath(pathname: string): boolean {
-  return ACCOUNT_LEVEL_PATHS.has(pathname)
+  return (
+    ACCOUNT_LEVEL_PATHS.has(pathname) ||
+    pathname.startsWith(`${TRANSFER_REQUESTS_PATH}/`)
+  )
 }
 
 /**

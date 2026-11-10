@@ -8,15 +8,18 @@ import (
 
 // The audit action names this module writes, one per write route. The set
 // mirrors the permission vocabulary: a read writes no audit row of its own, and
-// every write is one of these five. A name is written for the mandatory row a
+// every write is one of these. A name is written for the mandatory row a
 // write lands before its action and, when the action fails, for the failed row
 // that links to it.
 const (
-	actionTenantCreate        = "tenant.create"
-	actionTenantStatus        = "tenant.status"
-	actionTenantProfileUpdate = "tenant.profile.update"
-	actionTenantOwnerTransfer = "tenant.owner.transfer"
-	actionTenantDelete        = "tenant.delete"
+	actionTenantCreate               = "tenant.create"
+	actionTenantStatus               = "tenant.status"
+	actionTenantProfileUpdate        = "tenant.profile.update"
+	actionTenantOwnerTransfer        = "tenant.owner.transfer"
+	actionTenantOwnerTransferRequest = "tenant.owner.transfer.request"
+	actionTenantOwnerTransferCancel  = "tenant.owner.transfer.cancel"
+	actionTenantOwnerTransferDecline = "tenant.owner.transfer.decline"
+	actionTenantDelete               = "tenant.delete"
 )
 
 // The outcomes this module writes. The permitted value of a mandatory row is
@@ -38,6 +41,10 @@ const (
 	// profile module writes the same action with the value tenant, so an audit
 	// reader can tell the two apart.
 	detailSurface = "surface"
+	// detailTarget is the account a transfer request names as the next owner.
+	detailTarget = "target"
+	// detailRequest is the transfer request an action acts on.
+	detailRequest = "request"
 )
 
 // surfacePlatform is the surface a platform staff member's write comes through.
@@ -46,6 +53,10 @@ const surfacePlatform = "platform"
 // surfaceTenant is the surface an organization's own owner's write comes
 // through: the tenant-surface routes under /api/v1/tenants.
 const surfaceTenant = "tenant"
+
+// surfaceTarget is the surface a transfer request's target acts through: the
+// account-level routes under /api/v1/auth/me.
+const surfaceTarget = "target"
 
 // newActionID mints the action identifier a write's audit rows are linked by. It
 // is made after the decision and before the mandatory row, so the permitted row

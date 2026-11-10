@@ -231,11 +231,11 @@
 
 ### REQ-platform-admin-051
 
-系统必须在平台租户名册中提供所有者转移与组织删除的入口；名册不提供名称改名。
+系统必须在平台租户名册中提供发起所有者转移请求与组织删除的入口；名册不提供名称改名。
 
-- **验收**：租户行提供转移所有者与删除组织操作；没有名称改名控件；转移成功后出现点名新所有者的确认；删除后该行以墓碑呈现。
+- **验收**：租户行提供发起转移请求与删除组织操作；没有名称改名控件；发起成功后出现点名目标的待处理确认，所有权不变；目标确认后名册显示新所有者；删除后该行以墓碑呈现。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`；`operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（删除与墓碑）；所有权转移请求的端到端用例未实现
 
 ### REQ-platform-admin-052
 
@@ -265,9 +265,9 @@
 
 租户写入成功时必须给出点名该租户的确认。
 
-- **验收**：转移所有者、删除组织或启停成功后，出现点名该租户的确认。
+- **验收**：发起转移请求、删除组织或启停成功后，出现点名该租户的确认。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator transfers a tenant owner through the member selector`；`operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（启停的确认由 admin-ui 单测覆盖）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（删除的确认；启停的确认由 admin-ui 单测覆盖）；发起转移请求的确认端到端未实现，由组件用例覆盖
 
 ### REQ-platform-admin-056
 
@@ -295,9 +295,9 @@
 
 ### REQ-platform-admin-058
 
-系统必须在租户详情页提供所有者转移与组织删除；详情页不提供名称改名。
+系统必须在租户详情页提供发起所有者转移请求与组织删除；详情页不提供名称改名。
 
-- **验收**：详情页提供转移所有者与删除组织操作；没有名称编辑控件；转移成功后出现点名新所有者的确认；删除后详情以墓碑呈现。
+- **验收**：详情页提供发起转移请求与删除组织操作；没有名称编辑控件；发起成功后出现点名目标的待处理确认，所有权不变；目标确认后详情的名册读显示新所有者；删除后详情以墓碑呈现。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -417,7 +417,7 @@
 
 删除账户前必须要求两次确认，并说明会一并移除其登录标识、密钥与会话。
 
-- **验收**：删除需两次确认后才生效，确认文案说明会一并移除登录标识、密钥与会话；删除后账户及其标识、密钥、会话都不再出现。账户是活跃业务组织的所有者时，删除被拒绝并点名该组织；需先转移所有者或删除组织。
+- **验收**：删除需两次确认后才生效，确认文案说明会一并移除登录标识、密钥与会话；删除后账户及其标识、密钥、会话都不再出现。账户是活跃业务组织的所有者时，删除被拒绝并点名该组织；需先完成所有权转移或删除组织。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -489,7 +489,7 @@
 
 系统必须在运营者自身是未验证账户时拒绝其管理面的人类写，并给出先到账户页验证邮箱的指引；加强认证不能解除这一拒绝。
 
-- **验收**：以带未证明邮箱的运营者执行登记租户、转移所有者、删除组织、改状态等人类写，均被拒并显示先验证邮箱的说明；打开加强认证并完成后重试，仍被同一说明拒绝。
+- **验收**：以带未证明邮箱的运营者执行登记租户、发起所有权转移请求、删除组织、改状态等人类写，均被拒并显示先验证邮箱的说明；打开加强认证并完成后重试，仍被同一说明拒绝。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -935,8 +935,8 @@
 
 ### REQ-platform-admin-118
 
-平台租户详情必须能读取已删除租户的墓碑；对墓碑的资料写入、所有者转移与状态变更必须被拒绝。平台不新增租户删除权限码，组织删除按租户管理权限判定。
+平台租户详情必须能读取已删除租户的墓碑；对墓碑的资料写入、所有权转移请求与状态变更必须被拒绝。平台不新增租户删除权限码，组织删除按租户管理权限判定。
 
-- **验收**：读取已删除租户的详情返回 200 并显示墓碑；对墓碑发起资料写入、所有者转移或状态变更得到 409；平台没有新增的租户删除权限码，删除操作按租户管理权限判定。
+- **验收**：读取已删除租户的详情返回 200 并显示墓碑；对墓碑发起资料写入、所有权转移请求或状态变更得到 409；平台没有新增的租户删除权限码，删除操作按租户管理权限判定。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（覆盖墓碑行与名称、标识不可复用；墓碑详情读取与写入拒绝由后端测试覆盖）

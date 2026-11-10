@@ -48,7 +48,11 @@ import {
 } from './chrome.js'
 import type { DemoTenant } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_SECTION_PATHS, NOTIFICATIONS_PATH } from './paths.js'
+import {
+  ACCOUNT_SECTION_PATHS,
+  NOTIFICATIONS_PATH,
+  TRANSFER_REQUESTS_PATH,
+} from './paths.js'
 import { PlatformPermissions } from './platform-permissions.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
 import { mockMatchMedia } from './test-utils/matchMedia.js'
@@ -491,6 +495,7 @@ vi.mock('./account-entry.js', () => ({
  * allows it. */
 const ACCOUNT_MENU_LABELS = [
   demoEnUS.userMenu.messages,
+  demoEnUS.userMenu.transferRequests,
   demoEnUS.account.sections.profile,
   demoEnUS.account.sections.security,
   demoEnUS.account.sections.sessions,
@@ -501,6 +506,10 @@ const ACCOUNT_MENU_LABELS = [
 /** The destination each entry that navigates opens. */
 const ACCOUNT_MENU_DESTINATIONS = [
   { label: demoEnUS.userMenu.messages, path: NOTIFICATIONS_PATH },
+  {
+    label: demoEnUS.userMenu.transferRequests,
+    path: TRANSFER_REQUESTS_PATH,
+  },
   {
     label: demoEnUS.account.sections.profile,
     path: ACCOUNT_SECTION_PATHS.profile,

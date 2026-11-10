@@ -1,0 +1,11 @@
+{
+  "tenant.owner.transfer_requested.in_app.title": "Ownership transfer request",
+  "tenant.owner.transfer_requested.in_app.body": "The owner of {{tenant}} wants to hand the organization to you. The request expires on {{expires_at}}. Confirm or decline it in your transfer requests.",
+  "tenant.owner.transfer_requested.in_app.link": "/transfer-requests/{{request}}",
+  "tenant.owner.transfer_confirmed.in_app.title": "Ownership transferred",
+  "tenant.owner.transfer_confirmed.in_app.body": "The ownership of {{tenant}} has been transferred to the member you named.",
+  "tenant.owner.transfer_declined.in_app.title": "Ownership transfer declined",
+  "tenant.owner.transfer_declined.in_app.body": "The member you named declined the ownership of {{tenant}}. You are still its owner.",
+  "tenant.owner.transfer_expired.in_app.title": "Ownership transfer expired",
+  "tenant.owner.transfer_expired.in_app.body": "The request to transfer the ownership of {{tenant}} has expired. You are still its owner."
+}

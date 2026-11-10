@@ -1,8 +1,14 @@
 package admin
 
 import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -68,4 +74,90 @@ func tenantViewOf(t tenant.Tenant, kind tenant.Kind) TenantAdminTenant {
 		view.DisabledBy = t.DisabledBy.String()
 	}
 	return view
+}
+
+// TenantTransferView is one owner-transfer request as the requester's surfaces
+// show it. It names the target by display name and username, never by the
+// internal account identifier: a target the account store does not resolve
+// leaves both fields empty.
+type TenantTransferView struct {
+	_ struct{} `description:"One pending or finished owner-transfer request on the organization's own surface."`
+
+	ID                string    `json:"id" required:"true" description:"The request identifier the target and the canonical paths address."`
+	TargetDisplayName string    `json:"targetDisplayName" required:"true" description:"The target account's display name. Empty when the account store does not resolve it."`
+	TargetUsername    string    `json:"targetUsername" required:"true" description:"The target account's username. Empty when the account store does not resolve it."`
+	RequestedAt       time.Time `json:"requestedAt" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
+	ExpiresAt         time.Time `json:"expiresAt" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
+	Status            string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be cancelled or confirmed."`
+}
+
+// MyTransferView is one owner-transfer request as the target's account-level
+// surface shows it. It names the organization by its name and carries no
+// account or tenant identifier.
+type MyTransferView struct {
+	_ struct{} `description:"One owner-transfer request addressed to the caller."`
+
+	ID          string    `json:"id" required:"true" description:"The request identifier."`
+	Tenant      string    `json:"tenant" required:"true" description:"The organization whose ownership the request is about, by its name."`
+	RequestedAt time.Time `json:"requestedAt" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
+	ExpiresAt   time.Time `json:"expiresAt" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
+	Status      string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be confirmed or declined."`
+}
+
+// transferViewOf builds the requester's view and resolves the target's two
+// names. The account identifier is never a fallback: an absent account, one
+// that does not parse and a static-table subject leave both fields empty. A
+// read that fails otherwise is a 503 with no cause on the wire.
+func (p *product) transferViewOf(ctx context.Context, request tenant.TransferRequest) (TenantTransferView, error) {
+	view := TenantTransferView{
+		ID:          request.ID,
+		RequestedAt: request.RequestedAt.UTC(),
+		ExpiresAt:   request.ExpiresAt.UTC(),
+		Status:      string(request.Status),
+	}
+	if p.accounts == nil || request.To == "" {
+		return view, nil
+	}
+	id, err := authn.ParseAccountID(request.To)
+	if err != nil || id.IsStatic() {
+		return view, nil
+	}
+	account, err := p.accounts.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, authn.ErrAccountNotFound) {
+			return view, nil
+		}
+		p.logger.Error(ModuleName+": the transfer target's account could not be read, so the target is unresolved",
+			slog.String("cause", err.Error()))
+		return TenantTransferView{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
+	}
+	view.TargetDisplayName = account.DisplayName
+	identifiers, err := p.accounts.IdentifiersMany(ctx, []authn.AccountID{id})
+	if err != nil {
+		p.logger.Error(ModuleName+": the transfer target's identifiers could not be read, so the username is unresolved",
+			slog.String("cause", err.Error()))
+		return TenantTransferView{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
+	}
+	for _, identifier := range identifiers[id] {
+		if identifier.Kind == authn.IdentifierUsername {
+			view.TargetUsername = identifier.Value
+			break
+		}
+	}
+	return view, nil
+}
+
+// myTransferViewOf builds the target's view, resolving the organization's name.
+func (p *product) myTransferViewOf(ctx context.Context, request tenant.TransferRequest) (MyTransferView, error) {
+	name, err := p.nameOf(ctx, request.Tenant)
+	if err != nil {
+		return MyTransferView{}, err
+	}
+	return MyTransferView{
+		ID:          request.ID,
+		Tenant:      name,
+		RequestedAt: request.RequestedAt.UTC(),
+		ExpiresAt:   request.ExpiresAt.UTC(),
+		Status:      string(request.Status),
+	}, nil
 }

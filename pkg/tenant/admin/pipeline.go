@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
@@ -172,6 +173,26 @@ func (p *product) guardOwnerRoute(method string, next gin.HandlerFunc) gin.Handl
 			return
 		}
 		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusForbidden})
+	}
+}
+
+// guardSelfRoute puts the caller-identity decision in front of the target's
+// account-level routes. There is no permission decision: the routes act on the
+// caller's own requests, and the ownership module holds every row to the
+// caller's identifier. The confirm route also carries the registration gate, so
+// an account that has not proved an email address cannot take ownership;
+// declining is harmless and ungated.
+func (p *product) guardSelfRoute(verify bool, next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := authn.FromContext(c.Request.Context())
+		if !ok {
+			writeNoIdentity401(c, realmOf(c))
+			return
+		}
+		if verify && !p.requireVerifiedAccount(c, id) {
+			return
+		}
+		next(c)
 	}
 }
 
@@ -338,9 +359,14 @@ func (p *product) failureOf(op string, err error) error {
 	switch {
 	case errors.Is(err, tenant.ErrTenantExists), errors.Is(err, tenant.ErrNameConflict),
 		errors.Is(err, tenant.ErrTenantDeleted), errors.Is(err, tenant.ErrOwnerNotMember),
-		errors.Is(err, tenant.ErrOwnerInactive), errors.Is(err, tenant.ErrOwnerChanged):
+		errors.Is(err, tenant.ErrOwnerInactive), errors.Is(err, tenant.ErrOwnerChanged),
+		errors.Is(err, tenant.ErrNoOwner), errors.Is(err, tenant.ErrTransferAlreadyPending),
+		errors.Is(err, tenant.ErrTransferNotPending), errors.Is(err, tenant.ErrTransferExpired):
 		return speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
-	case errors.Is(err, tenant.ErrInvalidTenant):
+	case errors.Is(err, tenant.ErrTransferTargetIsOwner):
+		return speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
+	case errors.Is(err, tenant.ErrInvalidTenant), errors.Is(err, tenant.ErrTransferNotFound),
+		errors.Is(err, tenant.ErrTransferNotTarget):
 		return speedhttp.Fault{Status: http.StatusNotFound}
 	default:
 		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
@@ -353,10 +379,18 @@ func (p *product) failureOf(op string, err error) error {
 // writer cannot produce, so it becomes an empty reply; every other failure stays
 // the fault failureOf names.
 func (p *product) replyFailure(op string, err error) (speedhttp.Reply, error) {
-	if errors.Is(err, tenant.ErrInvalidTenant) {
+	if errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTransferNotFound) ||
+		errors.Is(err, tenant.ErrTransferNotTarget) {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	}
 	return nil, p.failureOf(op, err)
+}
+
+// validRequestID reports whether a path segment is one this surface mints. A
+// malformed identifier is a shape the request surface refuses before any read.
+func validRequestID(value string) bool {
+	_, err := uuid.Parse(value)
+	return err == nil
 }
 
 // refuse answers a request this module refuses on shape alone. The answer is

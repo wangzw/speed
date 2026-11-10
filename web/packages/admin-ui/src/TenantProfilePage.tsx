@@ -33,6 +33,7 @@ import {
   ListSkeleton,
   SectionCard,
   useWriteFeedback,
+  visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { ProfileIcon, SettingsIcon } from './internal/icons.js'
@@ -299,26 +300,24 @@ export function TenantProfilePage({
                       >
                         {settledProfile.name}
                       </Typography>
-                      {/* The chip's root is a role-less div, which does not
-                          permit an authored name. The wrapping group does,
-                          so a screen reader hears which fact the value
-                          states rather than a bare "Active". */}
-                      <Box
-                        component="span"
-                        role="group"
-                        aria-label={t('tenantProfile.field.statusAria', {
+                      {/* The chip's root is a generic element: an aria-label
+                          is prohibited there, and a generic element gets no
+                          accessible name from its contents. A visually hidden
+                          field name before it supplies the "Status:" the
+                          visible value alone cannot, so a screen reader hears
+                          which fact the value states. */}
+                      <Box component="span" sx={visuallyHiddenSx}>
+                        {t('tenantProfile.field.statusAria', {
                           label: t('tenantProfile.field.status'),
-                          value: statusLabel(settledProfile.status, t),
-                        })}
-                        sx={{ display: 'inline-flex', alignItems: 'center' }}
-                      >
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          color={statusColorOf(settledProfile.status)}
-                          label={statusLabel(settledProfile.status, t)}
-                        />
+                          value: '',
+                        }).trimEnd()}
                       </Box>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={statusColorOf(settledProfile.status)}
+                        label={statusLabel(settledProfile.status, t)}
+                      />
                     </Box>
                   </Box>
                   <ProfileField

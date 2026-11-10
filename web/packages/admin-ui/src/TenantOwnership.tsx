@@ -3,14 +3,22 @@
  * controls on the organization profile page.
  *
  * The organization profile is read by every tenant administrator, but only
- * the account named in the profile's `ownerAccount` may hand ownership on or
- * delete the organization. A personal organization has no owner controls at
- * all: it is the account's own space, not an organization with a transferable
- * owner. The package hides the controls for every other caller; the server
- * remains the authority on every write.
+ * the account named in the profile's `ownerAccount` may ask for ownership to
+ * be handed on or delete the organization. A personal organization has no
+ * owner controls at all: it is the account's own space, not an organization
+ * with a transferable owner. The package hides the controls for every other
+ * caller; the server remains the authority on every write.
+ *
+ * Ownership moves only after the target confirms. The owner's control sends a
+ * request to an active member; until that member confirms, the caller stays
+ * the owner. The card renders the pending request (target, request time,
+ * deadline) and lets the current owner cancel it. Only one request can be
+ * pending at a time and it expires after a fixed window, so the transfer
+ * control is held while one is pending; the delete control stays available,
+ * because deletion settles the request in the same transaction.
  *
  * The transfer dialog searches the organization's active members (the server
- * grants the target tenant-admin when it does not hold it) and asks for the
+ * grants the target tenant-admin when it confirms) and asks for the
  * deliberate second confirmation. The delete dialog requires the operator to
  * type the organization's name and also asks for the second confirmation;
  * deletion is a tombstone with no restore route, so both guards are the heavy
@@ -18,17 +26,18 @@
  *
  * A refusal is resolved locally rather than through the console's server-code
  * whitelist, from the write's own answer. A removed or unauthorized caller
- * is answered 403, a vanished organization 404, and every conflict -- a
- * target that stopped being an active member, an ownership change that beat
- * this attempt, a tombstone another request wrote -- with the one problem
- * type the tenant admin uses. The answer cannot separate those conflicts, so
- * they share one sentence; nothing is re-read to guess which one it was.
+ * is answered 403, a vanished organization 404, and a conflict -- an
+ * ownership change that beat this attempt, a target that stopped being an
+ * active member, a tombstone, a request already pending or already settled --
+ * with the one problem type the tenant admin uses. The answer cannot separate
+ * those conflicts, so the page re-reads the pending state and the profile to
+ * word the case it can observe; the rest share one sentence.
  *
- * A landed transfer changes ownership only: the previous owner stays an
+ * A confirmed transfer changes ownership only: the previous owner stays an
  * active member and keeps every binding it held, so the caller stays on the
  * page and the confirmation stays in the card. The profile re-read that the
- * write invalidates shows the new owner, and the controls withdraw because
- * the caller no longer owns the organization.
+ * confirmation invalidates shows the new owner, and the controls withdraw
+ * because the caller no longer owns the organization.
  *
  * A landed deletion, by contrast, ends the caller's membership. The host's
  * departure action leaves the organization and shows the success message on
@@ -39,10 +48,12 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
+import { formatInstant } from '@speed/i18n'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import { useAuthState } from '@speed/auth-core'
 import {
   ConfirmDialog,
@@ -55,18 +66,25 @@ import { identityLabel } from './internal/account-identity.js'
 import { PermissionsIcon } from './internal/icons.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { useOrganizationAdminOperations } from './organization-operations.js'
-import type { AdminTenantProfile } from './organization-operations.js'
+import type {
+  AdminTenantProfile,
+  AdminTenantTransfer,
+} from './organization-operations.js'
 import type { AdminMember } from './operations.js'
 
 /**
  * The local failure codes this surface resolves. They are UI facts, not
  * server codes: the tenant admin answers 403, 404 and one conflict type, so
- * these are the cases the page can name without inventing a distinction the
- * answer does not carry.
+ * these are the cases the page can name from the answer and the pending
+ * state it re-reads beside it.
  */
 const OWNERSHIP_FORBIDDEN = 'ownership.forbidden'
 const OWNERSHIP_NOT_FOUND = 'ownership.not_found'
 const OWNERSHIP_CONFLICT = 'ownership.conflict'
+const OWNERSHIP_PENDING = 'ownership.pending'
+const OWNERSHIP_EXPIRED = 'ownership.expired'
+const OWNERSHIP_NOT_PENDING = 'ownership.not_pending'
+const OWNERSHIP_OWNER_CHANGED = 'ownership.owner_changed'
 const OWNERSHIP_UNKNOWN = 'ownership.unknown'
 
 /** The failure code a synthetic error carries into the feedback scope. */
@@ -79,9 +97,9 @@ function ownershipFailure(code: string): Error & { readonly code: string } {
  * 403 is a caller the server no longer accepts, a 404 an organization that
  * is gone, and a 409 every conflict the tenant admin reports under its one
  * conflict type -- an ownership change that beat this attempt, a target
- * that stopped being a member, a tombstone. Those conflicts cannot be told
- * apart from the answer, so they share the conflict sentence; nothing is
- * re-read to guess which one it was.
+ * that stopped being a member, a tombstone, a request already pending or
+ * already settled. The page re-reads its pending state where that can
+ * separate one case; the rest share the conflict sentence.
  */
 function ownershipFailureCode(error: unknown): string {
   const status = httpStatusOf(error)
@@ -139,18 +157,20 @@ export function TenantOwnership({
   onTenantUpdated,
   onOrganizationLeft,
 }: TenantOwnershipProps): ReactElement | null {
-  const { t } = useAdminUiTranslation()
+  const { t, i18n } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
   const snapshot = useAuthState()
-  const transfer = operations.useTenantOwnerTransfer()
+  const request = operations.useTenantOwnerRequest()
+  const cancel = operations.useTenantOwnerCancel()
   const remove = operations.useTenantOwnerDelete()
   const feedback = useWriteFeedback()
   const [transferOpen, setTransferOpen] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   // A landed deletion ends the caller's membership. The local flag withdraws
   // the controls even when the host supplies no departure action (the card
-  // then carries the confirmation alone). A transfer does not set it: the
-  // previous owner stays an active member.
+  // then carries the confirmation alone). A confirmed transfer does not set
+  // it: the previous owner stays an active member.
   const [departed, setDeparted] = useState(false)
 
   const currentAccount =
@@ -160,19 +180,6 @@ export function TenantOwnership({
   // The kind is the roster's answer, never a guess from the name: a personal
   // tenant's name is its owner's username, which says nothing about the kind.
   const personal = profile.kind === 'personal'
-
-  const resolve = (code: string): string => {
-    switch (code) {
-      case OWNERSHIP_FORBIDDEN:
-        return t('tenantProfile.ownership.error.forbidden')
-      case OWNERSHIP_NOT_FOUND:
-        return t('tenantProfile.ownership.error.notFound')
-      case OWNERSHIP_CONFLICT:
-        return t('tenantProfile.ownership.error.conflict')
-      default:
-        return t('tenantProfile.ownership.error.unknown')
-    }
-  }
 
   // Only the current owner sees the controls; a personal organization, a
   // tombstone and a caller who already left carry none. The server decides
@@ -185,6 +192,33 @@ export function TenantOwnership({
     profile.status !== 'deleted' &&
     currentAccount !== '' &&
     currentAccount === profile.ownerAccount
+  // The pending read is the owner's; a caller the controls are hidden from
+  // never issues it, so an administrator who is not the owner makes no
+  // request the server would refuse.
+  const pendingRead = operations.useTenantOwnerPending(tenant, controlsAllowed)
+  const pending: AdminTenantTransfer | null = pendingRead.data ?? null
+
+  const resolve = (code: string): string => {
+    switch (code) {
+      case OWNERSHIP_FORBIDDEN:
+        return t('tenantProfile.ownership.error.forbidden')
+      case OWNERSHIP_NOT_FOUND:
+        return t('tenantProfile.ownership.error.notFound')
+      case OWNERSHIP_PENDING:
+        return t('tenantProfile.ownership.error.pending')
+      case OWNERSHIP_EXPIRED:
+        return t('tenantProfile.ownership.error.expired')
+      case OWNERSHIP_NOT_PENDING:
+        return t('tenantProfile.ownership.error.notPending')
+      case OWNERSHIP_OWNER_CHANGED:
+        return t('tenantProfile.ownership.error.ownerChanged')
+      case OWNERSHIP_CONFLICT:
+        return t('tenantProfile.ownership.error.conflict')
+      default:
+        return t('tenantProfile.ownership.error.unknown')
+    }
+  }
+
   // One scope, one region: the same element is rendered either beside the
   // controls or alone when a refusal left no controls to show.
   const feedbackRegion = (
@@ -233,21 +267,54 @@ export function TenantOwnership({
     }
   }
 
-  const runTransfer = (account: string, label: string): void => {
+  const runRequest = (account: string, label: string): void => {
     void feedback.run(async () => {
       try {
-        await transfer.mutateAsync({ tenant, account })
+        await request.mutateAsync({ tenant, account })
       } catch (error) {
+        // A conflict can also mean the organization already has a pending
+        // request. Re-read it so the card names that case instead of the
+        // generic conflict sentence; the card's own pending panel then
+        // renders the request the read found.
+        if (httpStatusOf(error) === 409) {
+          const reread = await pendingRead.refetch()
+          if (reread.data !== null && reread.data !== undefined) {
+            throw ownershipFailure(OWNERSHIP_PENDING)
+          }
+        }
         throw ownershipFailure(ownershipFailureCode(error))
       }
-      // A transfer changes ownership only: the previous owner keeps its
-      // membership and bindings, so the caller stays on the page and the
-      // confirmation stays in the card. The write's profile re-read shows the
-      // new owner and withdraws the controls.
-      return t('tenantProfile.ownership.transfer.saved', {
-        name: displayName,
+      // The request is recorded but ownership is unchanged: the caller stays
+      // the owner, the card shows the pending request, and the transfer
+      // control is held until the target confirms, declines or the window
+      // closes.
+      return t('tenantProfile.ownership.transfer.requested', {
         account: label,
       })
+    })
+  }
+
+  const runCancel = (): void => {
+    if (pending === null) {
+      return
+    }
+    void feedback.run(async () => {
+      try {
+        await cancel.mutateAsync({ tenant, request: pending.id })
+      } catch (error) {
+        // A conflict on cancel means the request was settled by someone the
+        // caller cannot see -- confirmed, declined, expired or already
+        // cancelled. Re-read it: the card drops the pending panel, and the
+        // failure names the state that can be observed.
+        if (httpStatusOf(error) === 409) {
+          const reread = await pendingRead.refetch()
+          if (reread.data === null || reread.data === undefined) {
+            throw ownershipFailure(OWNERSHIP_NOT_PENDING)
+          }
+        }
+        throw ownershipFailure(ownershipFailureCode(error))
+      }
+      return t('tenantProfile.ownership.pending.cancelled')
     })
   }
 
@@ -263,6 +330,12 @@ export function TenantOwnership({
       )
     })
   }
+
+  const pendingTarget =
+    pending === null
+      ? ''
+      : (identityLabel(pending.targetDisplayName, pending.targetUsername) ??
+        t('common.accountUnavailable'))
 
   return (
     <SectionCard
@@ -284,7 +357,7 @@ export function TenantOwnership({
           type="button"
           variant="outlined"
           onClick={openTransfer}
-          disabled={feedback.pending}
+          disabled={feedback.pending || pending !== null}
         >
           {t('tenantProfile.ownership.transfer.button')}
         </Button>
@@ -298,6 +371,60 @@ export function TenantOwnership({
           {t('tenantProfile.ownership.delete.button')}
         </Button>
       </Box>
+      {pending !== null ? (
+        <Box
+          component="section"
+          aria-label={t('tenantProfile.ownership.pending.title')}
+          sx={{
+            mt: 2,
+            p: 2,
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="subtitle1" component="h3">
+            {t('tenantProfile.ownership.pending.title')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {t('tenantProfile.ownership.pending.description')}
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 3, rowGap: 0.5, mt: 1 }}>
+            <Typography variant="body2">
+              {t('tenantProfile.ownership.pending.target', {
+                target: pendingTarget,
+              })}
+            </Typography>
+            <Typography variant="body2">
+              {t('tenantProfile.ownership.pending.requested', {
+                requested: formatInstant(pending.requestedAt, i18n.language, {
+                  timeZone: 'UTC',
+                }),
+              })}
+            </Typography>
+            <Typography variant="body2">
+              {t('tenantProfile.ownership.pending.expires', {
+                expires: formatInstant(pending.expiresAt, i18n.language, {
+                  timeZone: 'UTC',
+                }),
+              })}
+            </Typography>
+          </Box>
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            sx={{ mt: 1.5 }}
+            disabled={feedback.pending}
+            onClick={() => {
+              feedback.reset()
+              setCancelOpen(true)
+            }}
+          >
+            {t('tenantProfile.ownership.pending.cancel')}
+          </Button>
+        </Box>
+      ) : null}
       {feedbackRegion}
       {transferOpen && (
         <TransferOwnershipDialog
@@ -308,10 +435,24 @@ export function TenantOwnership({
           onCancel={() => setTransferOpen(false)}
           onConfirm={(account, label) => {
             setTransferOpen(false)
-            runTransfer(account, label)
+            runRequest(account, label)
           }}
         />
       )}
+      <ConfirmDialog
+        open={cancelOpen}
+        title={t('tenantProfile.ownership.pending.cancelTitle')}
+        message={t('tenantProfile.ownership.pending.cancelMessage')}
+        variant="default"
+        confirmLabel={t('tenantProfile.ownership.pending.cancelConfirm')}
+        cancelLabel={t('common.cancel')}
+        confirmLoading={feedback.pending}
+        onCancel={() => setCancelOpen(false)}
+        onConfirm={() => {
+          setCancelOpen(false)
+          runCancel()
+        }}
+      />
       {deleteOpen && (
         <DeleteOrganizationDialog
           name={profile.name}
@@ -362,12 +503,12 @@ function memberLabel(
 const MEMBER_SEARCH_LIMIT = 100
 
 /**
- * The transfer dialog: search for one active member, choose one and confirm
- * twice. Mounted only while open, so the member read is issued when the
- * operator asks for it and not on every profile view. The search is a
- * prefix over the members' display names and login identifiers; the list
- * holds the first `MEMBER_SEARCH_LIMIT` matches, which the operator narrows
- * with the search field.
+ * The request dialog: search for one active member, choose one and confirm
+ * the request twice. Mounted only while open, so the member read is issued
+ * when the operator asks for it and not on every profile view. The search
+ * is a prefix over the members' display names and login identifiers; the
+ * list holds the first `MEMBER_SEARCH_LIMIT` matches, which the operator
+ * narrows with the search field.
  */
 function TransferOwnershipDialog({
   tenant,

@@ -1735,6 +1735,36 @@ export interface FeatureBoardDocument {
 }
 
 /**
+ * The request's state. Only pending requests can be confirmed or declined.
+ */
+export type MyTransferViewStatus = typeof MyTransferViewStatus[keyof typeof MyTransferViewStatus];
+
+
+export const MyTransferViewStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  declined: 'declined',
+  cancelled: 'cancelled',
+  expired: 'expired',
+} as const;
+
+/**
+ * One owner-transfer request addressed to the caller.
+ */
+export interface MyTransferView {
+  /** When the confirmation window closes, as an RFC 3339 instant in UTC. */
+  expiresAt: string;
+  /** The request identifier. */
+  id: string;
+  /** When the request was made, as an RFC 3339 instant in UTC. */
+  requestedAt: string;
+  /** The request's state. Only pending requests can be confirmed or declined. */
+  status: MyTransferViewStatus;
+  /** The organization whose ownership the request is about, by its name. */
+  tenant: string;
+}
+
+/**
  * The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none.
  */
 export type NotificationMessageParams = {[key: string]: unknown};
@@ -2247,8 +2277,8 @@ export interface TenantAdminTenant {
   website: string;
 }
 
-export interface TenantAdminTenantOwnerTransfer {
-  /** The account identifier of the active member that becomes the organization's owner. */
+export interface TenantAdminTenantOwnerTransferRequest {
+  /** The account identifier of the active member the request names as the next owner. */
   account: string;
 }
 
@@ -2279,8 +2309,8 @@ export interface TenantAdminTenantRegistration {
   website?: string;
 }
 
-export interface TenantOwnerTransfer {
-  /** The account identifier of the active member that becomes the organization's owner. */
+export interface TenantOwnerTransferRequest {
+  /** The account identifier of the active member the request names as the next owner. */
   account: string;
 }
 
@@ -2344,6 +2374,38 @@ export interface TenantProfileWrite {
   display_name: string;
   /** The organization's absolute http or https address, at most 2048 bytes, with a host and no userinfo. Empty clears it. */
   website: string;
+}
+
+/**
+ * The request's state. Only pending requests can be cancelled or confirmed.
+ */
+export type TenantTransferViewStatus = typeof TenantTransferViewStatus[keyof typeof TenantTransferViewStatus];
+
+
+export const TenantTransferViewStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  declined: 'declined',
+  cancelled: 'cancelled',
+  expired: 'expired',
+} as const;
+
+/**
+ * One pending or finished owner-transfer request on the organization's own surface.
+ */
+export interface TenantTransferView {
+  /** When the confirmation window closes, as an RFC 3339 instant in UTC. */
+  expiresAt: string;
+  /** The request identifier the target and the canonical paths address. */
+  id: string;
+  /** When the request was made, as an RFC 3339 instant in UTC. */
+  requestedAt: string;
+  /** The request's state. Only pending requests can be cancelled or confirmed. */
+  status: TenantTransferViewStatus;
+  /** The target account's display name. Empty when the account store does not resolve it. */
+  targetDisplayName: string;
+  /** The target account's username. Empty when the account store does not resolve it. */
+  targetUsername: string;
 }
 
 /**
@@ -2547,6 +2609,22 @@ export type AuthnProfilePatchBody = {
   locale?: string;
   /** An IANA time-zone name stored under the i18n.tz attribute. A name outside the IANA set is refused 400; the empty string clears the attribute and an absent field leaves it alone. */
   time_zone?: string;
+};
+
+/**
+ * Every pending owner-transfer request addressed to the caller.
+ */
+export type TenantAdminMeTransferRequests200 = {
+  /** The caller's pending requests, ordered by request time. */
+  requests: MyTransferView[];
+};
+
+/**
+ * One owner-transfer request addressed to the caller, in whatever state it is.
+ */
+export type TenantAdminMeTransferRequest200 = {
+  /** The request, with the organization's name and its state. */
+  request: MyTransferView;
 };
 
 /**
@@ -3052,6 +3130,22 @@ after?: string;
 };
 
 /**
+ * The owner-transfer request as recorded, pending.
+ */
+export type TenantAdminTenantsRequestTransfer201 = {
+  /** The pending request. Ownership has not changed. */
+  request: TenantTransferView;
+};
+
+/**
+ * The organization's pending owner-transfer request, or null.
+ */
+export type TenantAdminTenantsPendingTransfer200 = {
+  /** The pending request, or null when the organization has none. */
+  request: TenantTransferView;
+};
+
+/**
  * The tenant the name named.
  */
 export type TenantAdminTenantsProfile200 = {
@@ -3159,6 +3253,22 @@ limit?: number;
  * The next_cursor of the previous page, or empty for the first page. The cursor is the account identifier of the last matching membership on that page.
  */
 after?: string;
+};
+
+/**
+ * The owner-transfer request as recorded, pending.
+ */
+export type TenantAdminOwnerRequestTransfer201 = {
+  /** The pending request. Ownership has not changed. */
+  request: TenantTransferView;
+};
+
+/**
+ * The organization's pending owner-transfer request, or null.
+ */
+export type TenantAdminOwnerPendingTransfer200 = {
+  /** The pending request, or null when the organization has none. */
+  request: TenantTransferView;
 };
 
 /**
@@ -5106,6 +5216,320 @@ export const useAuthnProfilePatch = <TError = Problem,
         TContext
       > => {
       return useMutation(getAuthnProfilePatchMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists every pending owner-transfer request addressed to the caller, across every organization. The caller's own identity is the whole credential: no tenant context and no organization permission is asked. Expired requests are settled as expired before the read.
+ * @summary List the caller's pending ownership-transfer requests
+ */
+export const tenantAdminMeTransferRequests = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantAdminMeTransferRequests200>(
+      {url: `/api/v1/auth/me/owner-transfer-requests`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getTenantAdminMeTransferRequestsQueryKey = () => {
+    return [
+    `/api/v1/auth/me/owner-transfer-requests`
+    ] as const;
+    }
+
+
+export const getTenantAdminMeTransferRequestsQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError = Problem>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTenantAdminMeTransferRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>> = ({ signal }) => tenantAdminMeTransferRequests(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type TenantAdminMeTransferRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>>
+export type TenantAdminMeTransferRequestsQueryError = Problem
+
+
+export function useTenantAdminMeTransferRequests<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError = Problem>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminMeTransferRequests<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError = Problem>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminMeTransferRequests<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError = Problem>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the caller's pending ownership-transfer requests
+ */
+
+export function useTenantAdminMeTransferRequests<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError = Problem>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequests>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getTenantAdminMeTransferRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Reads one request addressed to the caller in whatever state it is, so a deep link can show a request that was already confirmed, declined, cancelled or expired. A request that does not exist and one addressed to another account are answered alike with a bare 404.
+ * @summary Read one ownership-transfer request addressed to the caller
+ */
+export const tenantAdminMeTransferRequest = (
+    request: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantAdminMeTransferRequest200>(
+      {url: `/api/v1/auth/me/owner-transfer-requests/${request}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getTenantAdminMeTransferRequestQueryKey = (request: string,) => {
+    return [
+    `/api/v1/auth/me/owner-transfer-requests/${request}`
+    ] as const;
+    }
+
+
+export const getTenantAdminMeTransferRequestQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError = Problem | void>(request: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTenantAdminMeTransferRequestQueryKey(request);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>> = ({ signal }) => tenantAdminMeTransferRequest(request, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: request !== null && request !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type TenantAdminMeTransferRequestQueryResult = NonNullable<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>>
+export type TenantAdminMeTransferRequestQueryError = Problem | void
+
+
+export function useTenantAdminMeTransferRequest<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError = Problem | void>(
+ request: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminMeTransferRequest<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError = Problem | void>(
+ request: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminMeTransferRequest<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError = Problem | void>(
+ request: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one ownership-transfer request addressed to the caller
+ */
+
+export function useTenantAdminMeTransferRequest<TData = Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError = Problem | void>(
+ request: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminMeTransferRequest>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getTenantAdminMeTransferRequestQueryOptions(request,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Confirms one pending request addressed to the caller and writes the transfer. The request is re-read under the organization's lock; the requester must still be the owner and the caller must still be an active member, or the request is answered 409. The previous owner stays an active member and keeps every binding it held. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. An unverified self-registration is answered 403 contact-required.
+ * @summary Confirm an ownership-transfer request addressed to the caller
+ */
+export const tenantAdminMeConfirmTransfer = (
+    request: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/auth/me/owner-transfer-requests/${request}/confirm`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminMeConfirmTransferMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminMeConfirmTransfer>>, TError,{request: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminMeConfirmTransfer>>, TError,{request: string}, TContext> => {
+
+const mutationKey = ['tenantAdminMeConfirmTransfer'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminMeConfirmTransfer>>, {request: string}> = (props) => {
+          const {request} = props ?? {};
+
+          return  tenantAdminMeConfirmTransfer(request,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminMeConfirmTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminMeConfirmTransfer>>>
+
+    export type TenantAdminMeConfirmTransferMutationError = Problem | void
+
+    /**
+ * @summary Confirm an ownership-transfer request addressed to the caller
+ */
+export const useTenantAdminMeConfirmTransfer = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminMeConfirmTransfer>>, TError,{request: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminMeConfirmTransfer>>,
+        TError,
+        {request: string},
+        TContext
+      > => {
+      return useMutation(getTenantAdminMeConfirmTransferMutationOptions(options), queryClient);
+    }
+
+/**
+ * Declines one pending request addressed to the caller. Ownership does not change. The caller's own identity is the whole credential; the action is harmless and carries no registration gate.
+ * @summary Decline an ownership-transfer request addressed to the caller
+ */
+export const tenantAdminMeDeclineTransfer = (
+    request: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/auth/me/owner-transfer-requests/${request}/decline`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminMeDeclineTransferMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminMeDeclineTransfer>>, TError,{request: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminMeDeclineTransfer>>, TError,{request: string}, TContext> => {
+
+const mutationKey = ['tenantAdminMeDeclineTransfer'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminMeDeclineTransfer>>, {request: string}> = (props) => {
+          const {request} = props ?? {};
+
+          return  tenantAdminMeDeclineTransfer(request,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminMeDeclineTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminMeDeclineTransfer>>>
+
+    export type TenantAdminMeDeclineTransferMutationError = Problem | void
+
+    /**
+ * @summary Decline an ownership-transfer request addressed to the caller
+ */
+export const useTenantAdminMeDeclineTransfer = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminMeDeclineTransfer>>, TError,{request: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminMeDeclineTransfer>>,
+        TError,
+        {request: string},
+        TContext
+      > => {
+      return useMutation(getTenantAdminMeDeclineTransferMutationOptions(options), queryClient);
     }
 
 /**
@@ -10724,31 +11148,31 @@ export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
     }
 
 /**
- * Hands one tenant's ownership to an active member. The target must already be an active member of the organization; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.
- * @summary Transfer one tenant's owner
+ * Records a pending request to hand one tenant's ownership to an active member. Ownership does not change until the target confirms. The target must be an active member whose account is active; one pending request per organization is accepted. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.
+ * @summary Request a tenant's ownership transfer
  */
-export const tenantAdminTenantsTransferOwner = (
+export const tenantAdminTenantsRequestTransfer = (
     tenant: string,
-    tenantAdminTenantOwnerTransfer: TenantAdminTenantOwnerTransfer,
+    tenantAdminTenantOwnerTransferRequest: TenantAdminTenantOwnerTransferRequest,
  signal?: AbortSignal
 ) => {
 
 
-      return speedRequest<void>(
-      {url: `/api/v1/system/tenants/${tenant}/owner`, method: 'PUT',
+      return speedRequest<TenantAdminTenantsRequestTransfer201>(
+      {url: `/api/v1/system/tenants/${tenant}/owner/requests`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
-      data: tenantAdminTenantOwnerTransfer, signal
+      data: tenantAdminTenantOwnerTransferRequest, signal
     },
       );
     }
 
 
 
-export const getTenantAdminTenantsTransferOwnerMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransfer}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransfer}, TContext> => {
+export const getTenantAdminTenantsRequestTransferMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsRequestTransfer>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransferRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsRequestTransfer>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransferRequest}, TContext> => {
 
-const mutationKey = ['tenantAdminTenantsTransferOwner'];
+const mutationKey = ['tenantAdminTenantsRequestTransfer'];
 const {mutation: mutationOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -10758,10 +11182,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, {tenant: string;data: TenantAdminTenantOwnerTransfer}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsRequestTransfer>>, {tenant: string;data: TenantAdminTenantOwnerTransferRequest}> = (props) => {
           const {tenant,data} = props ?? {};
 
-          return  tenantAdminTenantsTransferOwner(tenant,data,)
+          return  tenantAdminTenantsRequestTransfer(tenant,data,)
         }
 
 
@@ -10771,22 +11195,180 @@ const {mutation: mutationOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type TenantAdminTenantsTransferOwnerMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>>
-    export type TenantAdminTenantsTransferOwnerMutationBody = TenantAdminTenantOwnerTransfer
-    export type TenantAdminTenantsTransferOwnerMutationError = Problem | void
+    export type TenantAdminTenantsRequestTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsRequestTransfer>>>
+    export type TenantAdminTenantsRequestTransferMutationBody = TenantAdminTenantOwnerTransferRequest
+    export type TenantAdminTenantsRequestTransferMutationError = Problem | void
 
     /**
- * @summary Transfer one tenant's owner
+ * @summary Request a tenant's ownership transfer
  */
-export const useTenantAdminTenantsTransferOwner = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransfer}, TContext>, }
+export const useTenantAdminTenantsRequestTransfer = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsRequestTransfer>>, TError,{tenant: string;data: TenantAdminTenantOwnerTransferRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof tenantAdminTenantsTransferOwner>>,
+        Awaited<ReturnType<typeof tenantAdminTenantsRequestTransfer>>,
         TError,
-        {tenant: string;data: TenantAdminTenantOwnerTransfer},
+        {tenant: string;data: TenantAdminTenantOwnerTransferRequest},
         TContext
       > => {
-      return useMutation(getTenantAdminTenantsTransferOwnerMutationOptions(options), queryClient);
+      return useMutation(getTenantAdminTenantsRequestTransferMutationOptions(options), queryClient);
+    }
+
+/**
+ * Reads the organization's pending owner-transfer request, or null when it has none. An expired request is settled as expired before the read, so it is never returned as pending.
+ * @summary Read a tenant's pending ownership-transfer request
+ */
+export const tenantAdminTenantsPendingTransfer = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantAdminTenantsPendingTransfer200>(
+      {url: `/api/v1/system/tenants/${tenant}/owner/requests/pending`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getTenantAdminTenantsPendingTransferQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/system/tenants/${tenant}/owner/requests/pending`
+    ] as const;
+    }
+
+
+export const getTenantAdminTenantsPendingTransferQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError = Problem | void>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTenantAdminTenantsPendingTransferQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>> = ({ signal }) => tenantAdminTenantsPendingTransfer(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type TenantAdminTenantsPendingTransferQueryResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>>
+export type TenantAdminTenantsPendingTransferQueryError = Problem | void
+
+
+export function useTenantAdminTenantsPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminTenantsPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminTenantsPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read a tenant's pending ownership-transfer request
+ */
+
+export function useTenantAdminTenantsPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsPendingTransfer>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getTenantAdminTenantsPendingTransferQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Cancels one pending owner-transfer request platform staff names. Ownership does not change. A request that is already terminal is answered 409.
+ * @summary Cancel a tenant's pending ownership-transfer request
+ */
+export const tenantAdminTenantsCancelTransfer = (
+    tenant: string,
+    request: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/owner/requests/${request}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminTenantsCancelTransferMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsCancelTransfer>>, TError,{tenant: string;request: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsCancelTransfer>>, TError,{tenant: string;request: string}, TContext> => {
+
+const mutationKey = ['tenantAdminTenantsCancelTransfer'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsCancelTransfer>>, {tenant: string;request: string}> = (props) => {
+          const {tenant,request} = props ?? {};
+
+          return  tenantAdminTenantsCancelTransfer(tenant,request,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminTenantsCancelTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsCancelTransfer>>>
+
+    export type TenantAdminTenantsCancelTransferMutationError = Problem | void
+
+    /**
+ * @summary Cancel a tenant's pending ownership-transfer request
+ */
+export const useTenantAdminTenantsCancelTransfer = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsCancelTransfer>>, TError,{tenant: string;request: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminTenantsCancelTransfer>>,
+        TError,
+        {tenant: string;request: string},
+        TContext
+      > => {
+      return useMutation(getTenantAdminTenantsCancelTransferMutationOptions(options), queryClient);
     }
 
 /**
@@ -12298,31 +12880,31 @@ export const useAuthnAdminMembersSsoExempt = <TError = Problem | void,
     }
 
 /**
- * Hands one organization's ownership on, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The target must be an active member of the organization whose account is active; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction, under the tenant lock the platform surface takes too. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.
- * @summary Transfer the caller's organization to another member
+ * Records a pending request to hand one organization's ownership to an active member, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. Ownership does not change until the target confirms. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.
+ * @summary Request the caller's organization's ownership transfer
  */
-export const tenantAdminOwnerTransfer = (
+export const tenantAdminOwnerRequestTransfer = (
     tenant: string,
-    tenantOwnerTransfer: TenantOwnerTransfer,
+    tenantOwnerTransferRequest: TenantOwnerTransferRequest,
  signal?: AbortSignal
 ) => {
 
 
-      return speedRequest<void>(
-      {url: `/api/v1/tenants/${tenant}/owner`, method: 'PUT',
+      return speedRequest<TenantAdminOwnerRequestTransfer201>(
+      {url: `/api/v1/tenants/${tenant}/owner/requests`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
-      data: tenantOwnerTransfer, signal
+      data: tenantOwnerTransferRequest, signal
     },
       );
     }
 
 
 
-export const getTenantAdminOwnerTransferMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, TError,{tenant: string;data: TenantOwnerTransfer}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, TError,{tenant: string;data: TenantOwnerTransfer}, TContext> => {
+export const getTenantAdminOwnerRequestTransferMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerRequestTransfer>>, TError,{tenant: string;data: TenantOwnerTransferRequest}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerRequestTransfer>>, TError,{tenant: string;data: TenantOwnerTransferRequest}, TContext> => {
 
-const mutationKey = ['tenantAdminOwnerTransfer'];
+const mutationKey = ['tenantAdminOwnerRequestTransfer'];
 const {mutation: mutationOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -12332,10 +12914,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, {tenant: string;data: TenantOwnerTransfer}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminOwnerRequestTransfer>>, {tenant: string;data: TenantOwnerTransferRequest}> = (props) => {
           const {tenant,data} = props ?? {};
 
-          return  tenantAdminOwnerTransfer(tenant,data,)
+          return  tenantAdminOwnerRequestTransfer(tenant,data,)
         }
 
 
@@ -12345,22 +12927,180 @@ const {mutation: mutationOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type TenantAdminOwnerTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>>
-    export type TenantAdminOwnerTransferMutationBody = TenantOwnerTransfer
-    export type TenantAdminOwnerTransferMutationError = Problem | void
+    export type TenantAdminOwnerRequestTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminOwnerRequestTransfer>>>
+    export type TenantAdminOwnerRequestTransferMutationBody = TenantOwnerTransferRequest
+    export type TenantAdminOwnerRequestTransferMutationError = Problem | void
 
     /**
- * @summary Transfer the caller's organization to another member
+ * @summary Request the caller's organization's ownership transfer
  */
-export const useTenantAdminOwnerTransfer = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>, TError,{tenant: string;data: TenantOwnerTransfer}, TContext>, }
+export const useTenantAdminOwnerRequestTransfer = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerRequestTransfer>>, TError,{tenant: string;data: TenantOwnerTransferRequest}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof tenantAdminOwnerTransfer>>,
+        Awaited<ReturnType<typeof tenantAdminOwnerRequestTransfer>>,
         TError,
-        {tenant: string;data: TenantOwnerTransfer},
+        {tenant: string;data: TenantOwnerTransferRequest},
         TContext
       > => {
-      return useMutation(getTenantAdminOwnerTransferMutationOptions(options), queryClient);
+      return useMutation(getTenantAdminOwnerRequestTransferMutationOptions(options), queryClient);
+    }
+
+/**
+ * Reads the organization's pending owner-transfer request, or null when it has none, called by the organization's current owner. An expired request is settled as expired before the read.
+ * @summary Read the caller's organization's pending ownership-transfer request
+ */
+export const tenantAdminOwnerPendingTransfer = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantAdminOwnerPendingTransfer200>(
+      {url: `/api/v1/tenants/${tenant}/owner/requests/pending`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getTenantAdminOwnerPendingTransferQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/owner/requests/pending`
+    ] as const;
+    }
+
+
+export const getTenantAdminOwnerPendingTransferQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError = Problem | void>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTenantAdminOwnerPendingTransferQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>> = ({ signal }) => tenantAdminOwnerPendingTransfer(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type TenantAdminOwnerPendingTransferQueryResult = NonNullable<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>>
+export type TenantAdminOwnerPendingTransferQueryError = Problem | void
+
+
+export function useTenantAdminOwnerPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminOwnerPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>,
+          TError,
+          Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useTenantAdminOwnerPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the caller's organization's pending ownership-transfer request
+ */
+
+export function useTenantAdminOwnerPendingTransfer<TData = Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError = Problem | void>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminOwnerPendingTransfer>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getTenantAdminOwnerPendingTransferQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Cancels one pending owner-transfer request of the caller's organization. Ownership does not change. The caller must still be the organization's owner.
+ * @summary Cancel the caller's organization's pending ownership-transfer request
+ */
+export const tenantAdminOwnerCancelTransfer = (
+    tenant: string,
+    request: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/owner/requests/${request}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getTenantAdminOwnerCancelTransferMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerCancelTransfer>>, TError,{tenant: string;request: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerCancelTransfer>>, TError,{tenant: string;request: string}, TContext> => {
+
+const mutationKey = ['tenantAdminOwnerCancelTransfer'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminOwnerCancelTransfer>>, {tenant: string;request: string}> = (props) => {
+          const {tenant,request} = props ?? {};
+
+          return  tenantAdminOwnerCancelTransfer(tenant,request,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TenantAdminOwnerCancelTransferMutationResult = NonNullable<Awaited<ReturnType<typeof tenantAdminOwnerCancelTransfer>>>
+
+    export type TenantAdminOwnerCancelTransferMutationError = Problem | void
+
+    /**
+ * @summary Cancel the caller's organization's pending ownership-transfer request
+ */
+export const useTenantAdminOwnerCancelTransfer = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminOwnerCancelTransfer>>, TError,{tenant: string;request: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof tenantAdminOwnerCancelTransfer>>,
+        TError,
+        {tenant: string;request: string},
+        TContext
+      > => {
+      return useMutation(getTenantAdminOwnerCancelTransferMutationOptions(options), queryClient);
     }
 
 /**

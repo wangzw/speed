@@ -1,18 +1,24 @@
 /**
  * The organization lifecycle controls the platform surface adds to the
- * tenant roster and the tenant detail: hand the organization to another
- * account, or write its tombstone.
+ * tenant roster and the tenant detail: ask another account to take the
+ * organization's ownership, or write its tombstone.
  *
  * Both entries are platform operations over the roster
- * (`PUT /api/v1/system/tenants/{tenant}/owner`,
- * `DELETE /api/v1/system/tenants/{tenant}`), judged in the platform domain with
- * `tenant.manage`. The server is the authority; the entries are a UX
+ * (`POST /api/v1/system/tenants/{tenant}/owner/requests`,
+ * `DELETE /api/v1/system/tenants/{tenant}`), judged in the platform domain
+ * with `tenant.manage`. The server is the authority; the entries are a UX
  * affordance for a control group that can only ever fail otherwise, so
  * they render only for a caller whose attached platform permission set
  * holds `tenant.manage`. An unknown or absent set fails closed. A personal
  * organization (`kind === 'personal'`) is the account's own domain and
  * carries no transfer or delete entry, and a tombstone is terminal, so
  * neither does a deleted row.
+ *
+ * **A transfer is a request until the target confirms.** The dialog asks
+ * which active member should take ownership; the answer records a pending
+ * request and leaves the owner column untouched. The control group reads
+ * that pending request back and renders it (target, deadline) with a
+ * cancel action, and holds the request button while one is pending.
  *
  * **Transfer target: two paths, chosen by what the caller may read.** The
  * endpoint itself validates only that the target account is an active
@@ -68,6 +74,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { usePermission } from '@speed/auth-core'
+import { formatInstant } from '@speed/i18n'
 import { ConfirmDialog, errorCodeOf, httpStatusOf } from '@speed/ui-kit'
 import { AccountSelector } from './account-selector.js'
 import { useAdminUiErrorText } from './error-text.js'
@@ -325,9 +332,10 @@ export interface TenantLifecycleActionsProps {
 }
 
 /**
- * The transfer dialog: target selection followed by the shared danger
- * confirmation. It stays open on a refusal so the failure stands beside
- * the target that was chosen, and closes on a landed write.
+ * The transfer-request dialog: target selection followed by the shared
+ * danger confirmation. It stays open on a refusal so the failure stands
+ * beside the target that was chosen, and closes once the request is
+ * recorded.
  */
 function TransferOwnerDialog({
   open,
@@ -344,7 +352,7 @@ function TransferOwnerDialog({
 }) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
-  const transfer = operations.useTransferTenantOwner()
+  const request = operations.useRequestTenantOwner()
   const resolveError = useAdminUiErrorText()
   const titleId = useId()
   const descriptionId = useId()
@@ -386,7 +394,7 @@ function TransferOwnerDialog({
     setPending(true)
     void (async () => {
       try {
-        await transfer.mutateAsync({
+        await request.mutateAsync({
           name: tenant.name,
           account: targetAccount,
         })
@@ -559,19 +567,28 @@ export function TenantLifecycleActions({
   tenant,
   onSuccess,
 }: TenantLifecycleActionsProps) {
-  const { t } = useAdminUiTranslation()
+  const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const canManage = usePermission('system', TENANT_MANAGE)
   const canReadMembers = usePermission('tenant', MEMBERSHIP_MANAGE)
   const remove = operations.useDeleteTenant()
+  const cancel = operations.useCancelTenantOwner()
   const resolveError = useAdminUiErrorText()
   const [transferOpen, setTransferOpen] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [outcome, setOutcome] = useState<LifecycleOutcome | null>(null)
 
   const deleted = tenant.status === 'deleted'
   const personal = isPersonalTenant(tenant.kind)
   const organizationName = displayNameOf(tenant.displayName, tenant.name)
+  // The pending read is the lifecycle surface's; a caller the controls are
+  // hidden from never issues it.
+  const pendingRead = operations.usePendingTenantOwner(
+    tenant.name,
+    canManage && !deleted && !personal,
+  )
+  const pending = pendingRead.data ?? null
   // A result describes the organization as it stood when the write landed;
   // a different tenant in the same slot drops it.
   useEffect(() => {
@@ -614,10 +631,34 @@ export function TenantLifecycleActions({
     })()
   }
 
+  const runCancel = () => {
+    if (pending === null) {
+      return
+    }
+    setOutcome(null)
+    void (async () => {
+      try {
+        await cancel.mutateAsync({ name: tenant.name, request: pending.id })
+        settleSuccess(t('tenantLifecycle.transfer.pendingCancelled'))
+      } catch (error) {
+        setOutcome({
+          kind: 'failure',
+          message: transferFailureText(error, t, resolveError),
+        })
+      }
+    })()
+  }
+
   const success =
     outcome?.kind === 'success'
       ? { kind: 'success' as const, message: outcome.message }
       : null
+
+  const pendingTarget =
+    pending === null
+      ? ''
+      : (identityLabel(pending.targetDisplayName, pending.targetUsername) ??
+        t('common.accountUnavailable'))
 
   return (
     <Box>
@@ -635,7 +676,7 @@ export function TenantLifecycleActions({
           size="small"
           variant="outlined"
           aria-label={t('tenantLifecycle.transferAria', { name: tenant.name })}
-          disabled={remove.isPending}
+          disabled={remove.isPending || pending !== null}
           onClick={() => {
             setOutcome(null)
             setTransferOpen(true)
@@ -656,6 +697,50 @@ export function TenantLifecycleActions({
           {t('tenantLifecycle.deleteLabel')}
         </Button>
       </Box>
+      {pending !== null ? (
+        <Box
+          component="section"
+          aria-label={t('tenantLifecycle.transfer.pendingTitle')}
+          sx={{
+            mt: 1.5,
+            p: 2,
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="subtitle1" component="h3">
+            {t('tenantLifecycle.transfer.pendingTitle')}
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 3, rowGap: 0.5, mt: 0.5 }}>
+            <Typography variant="body2">
+              {t('tenantLifecycle.transfer.pendingTarget', {
+                target: pendingTarget,
+              })}
+            </Typography>
+            <Typography variant="body2">
+              {t('tenantLifecycle.transfer.pendingExpires', {
+                expires: formatInstant(pending.expiresAt, i18n.language, {
+                  timeZone: 'UTC',
+                }),
+              })}
+            </Typography>
+          </Box>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            sx={{ mt: 1 }}
+            disabled={cancel.isPending}
+            onClick={() => {
+              setOutcome(null)
+              setCancelOpen(true)
+            }}
+          >
+            {t('tenantLifecycle.transfer.pendingCancel')}
+          </Button>
+        </Box>
+      ) : null}
 
       {/* The component's own result area, used only when the page did not
           take the success over; a refusal always stands here. */}
@@ -674,6 +759,19 @@ export function TenantLifecycleActions({
         onTransferred={(message) => {
           setTransferOpen(false)
           settleSuccess(message)
+        }}
+      />
+      <ConfirmDialog
+        open={cancelOpen}
+        title={t('tenantLifecycle.transfer.pendingCancelTitle')}
+        message={t('tenantLifecycle.transfer.pendingCancelMessage')}
+        confirmLabel={t('tenantLifecycle.transfer.pendingCancel')}
+        cancelLabel={t('common.cancel')}
+        confirmLoading={cancel.isPending}
+        onCancel={() => setCancelOpen(false)}
+        onConfirm={() => {
+          setCancelOpen(false)
+          runCancel()
         }}
       />
       {deleteOpen && (

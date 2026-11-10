@@ -178,10 +178,13 @@ type Catalog interface {
 	// and returns nil. An identifier no row carries, or one outside the domain,
 	// is refused with ErrInvalidTenant.
 	Delete(ctx context.Context, id ID) error
-	// SetOwner writes one tenant's owner account and nothing else. It is the
-	// transfer path: the name, the status, the profile and the creation time
-	// are not named, so a transfer cannot undo a disable or a profile update
-	// committed in the same window. A business organization always has an owner,
+	// SetOwner writes one tenant's owner account and nothing else. It is for the
+	// transaction of a confirmed transfer only; the public seam exposes no
+	// immediate transfer, and a confirmation reaches this write through
+	// TxCatalog.SetOwnerTx inside its own transaction. The name, the status, the
+	// profile and the creation time are not named, so a confirmation cannot undo
+	// a disable or a profile update committed in the same window. A business
+	// organization always has an owner,
 	// so the empty value is refused with ErrInvalidTenant, as is a value carrying
 	// a blank or a control character. Writing the owner a row already carries is
 	// a no-op. An identifier no row carries is refused with ErrInvalidTenant, and

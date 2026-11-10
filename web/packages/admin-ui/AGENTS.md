@@ -107,19 +107,25 @@ profile wrapper hands the current tenant, the host's `onTenantUpdated` and
 `onOrganizationLeft` to the shared `TenantProfilePage`: a read-only identity
 card (with the owner's display name and username), an editable profile card, and a
 current-owner-only ownership card that searches the organization's members,
-transfers it to one of them, or deletes it after the name is typed. A
-landed save asks the host to reload the caller tenant list the account menu
-and breadcrumb read; a landed transfer or deletion asks the host to leave
-the organization, reload that list, and show the confirmation where the
-viewer lands, because the caller is no longer a member. The
+requests a transfer to one of them, shows the pending request with its
+deadline, cancels it, or deletes the organization after the name is typed.
+Ownership moves only when the target confirms; the card holds the request
+control while one is pending. A landed save asks the host to reload the
+caller tenant list the account menu and breadcrumb read; a landed deletion
+asks the host to leave the organization, reload that list, and show the
+confirmation where the viewer lands, because the caller is no longer a
+member. A request never departs, and the confirmation of a completed
+transfer withdraws the controls on the profile's next read. The
 shared pages render through `AdminPageHeader`, which prefers the
 organization breadcrumb context and falls back to the page's own platform
 trail otherwise, so neither surface leaks the other's trail.
 `OrganizationAdminOperations` carries the tenant-scoped invitation,
 membership and SSO members, the
 tenant settings members, the tenant roles/grants/bindings members, and the
-owner transfer and organization deletion writes; no
-member addresses a platform asset or the platform account read.
+owner-transfer pending/request/cancel writes plus organization deletion; no
+member addresses a platform asset or the platform account read. The
+platform lifecycle group carries the same request/pending/cancel pair over
+the platform routes.
 
 The package ships one entry (`src/index.ts`, the export set in the
 README's "What ships") and no subpath. The organization surface's exports

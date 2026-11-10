@@ -7,7 +7,7 @@
 ## 职责
 
 - 在端点的中间件链上认定每条请求属于哪个租户：按配置选定的取法从请求侧取出租户名，经名册换成不可变标识，写进请求上下文。
-- 维护租户名册：登记租户、转移所有者、迁移状态并把删除写成终态，同时刷新名册在内存里的快照，使解析层与两个进入方法读到当前的租户。
+- 维护租户名册：登记租户、改写所有者列、迁移状态并把删除写成终态，同时刷新名册在内存里的快照，使解析层与两个进入方法读到当前的租户。
 - 只在名册这一行上表达停用的来源与删除的终态，并按来源约束账户联动与运营者各自的状态迁移。
 - 定义受租户约束的模型的约定，并以一条 GORM（[REF-gorm](../../../references.md)）插件为每一条针对这类模型的语句加上租户条件。
 - 提供跨租户的唯一途径，并要求它在调用点字面写出。
@@ -104,10 +104,10 @@ type Catalog interface {
     SetStatusByAccount(ctx context.Context, id ID, s Status) error
     // Delete 把一个租户写成已删除，终态：行、标识与名称保留，此后不再被服务。
     Delete(ctx context.Context, id ID) error
-    // SetOwner 只写一个租户的所有者一列，是转移的写入。
+    // SetOwner 只写一个租户的所有者一列，是确认事务里写所有者列的那一步。
     SetOwner(ctx context.Context, id ID, owner string) error
-    // SetOwnerIfEmpty 只在所有者列仍为空时写入，是补写旧行的路径，不是转移：
-    // 读与写之间落地的转移保持原值，调用返回未写入。
+    // SetOwnerIfEmpty 只在所有者列仍为空时写入，是补写旧行的路径，不是确认：
+    // 读与写之间落地的确认保持原值，调用返回未写入。
     SetOwnerIfEmpty(ctx context.Context, id ID, owner string) (bool, error)
     // SetProfile 只写一个租户的资料列，不动名称、所有者、状态与创建时间。
     SetProfile(ctx context.Context, id ID, profile Profile) error
@@ -227,9 +227,9 @@ type Extractor interface {
 
 ### 名册的读写接口
 
-名册的读写接口就是 `Catalog` 的方法。**写入是本模块唯一的运维动作**：宿主经它登记租户、转移所有者、改状态、改写资料、把租户写成已删除。两个进入方法不写名册，它们读名册、写上下文，见不经请求侧的路径。
+名册的读写接口就是 `Catalog` 的方法。**写入是本模块唯一的运维动作**：宿主经它登记租户、改状态、改写资料、把租户写成已删除；所有者列由 [tenant.ownership](design-tenant-ownership.md) 的确认事务经事务内写面改写。两个进入方法不写名册，它们读名册、写上下文，见不经请求侧的路径。
 
-`Put` 是幂等的按标识写入：标识已存在即改写那一行，状态取新值；名称不取新值，写入的名称与既有名称不一致时以 `ErrInvalidTenant` 拒绝；所有者只在插入时写入，改写不动它——转移走 `SetOwner`。那一行是墓碑时以 `ErrTenantDeleted` 拒绝（见下）。两个租户抢同一个名称是 `ErrNameConflict`，写入与登记都拒绝，不留半个结果。**并发时同样如此**：两次写同时查到名称空闲，后提交的那一次撞上名称列的唯一约束，它同样以 `ErrNameConflict` 作答并点名占有者，驱动的约束错误留在错误链里，而不是以驱动错误本身作答。
+`Put` 是幂等的按标识写入：标识已存在即改写那一行，状态取新值；名称不取新值，写入的名称与既有名称不一致时以 `ErrInvalidTenant` 拒绝；所有者只在插入时写入，改写不动它——确认事务走 `SetOwner`。那一行是墓碑时以 `ErrTenantDeleted` 拒绝（见下）。两个租户抢同一个名称是 `ErrNameConflict`，写入与登记都拒绝，不留半个结果。**并发时同样如此**：两次写同时查到名称空闲，后提交的那一次撞上名称列的唯一约束，它同样以 `ErrNameConflict` 作答并点名占有者，驱动的约束错误留在错误链里，而不是以驱动错误本身作答。
 
 **不许覆盖既有租户的登记走 `Create`。** 它只插入：名册表里已有这个标识即以 `ErrTenantExists` 拒绝，什么也不写；名称的冲突与 `Put` 同样以 `ErrNameConflict` 拒绝。**标识是否已被占用问的是表，不是快照**：插入本身在标识冲突时什么也不做，没有插入任何一行即是拒绝，因而一个快照早于别的副本那次登记的副本，拿不到那个标识；同一个标识的两次创建同时发生，结局是一个租户、一次 `ErrTenantExists`，后到的那一次等前一次的行落定之后被拒，不改写它。先 `Get` 再 `Put` 两条性质都没有：快照还没见过某个租户的副本会把它当成新租户，改写它的状态，一个停用的租户因此被重新启用。宿主的注册入口、管理端点这类「开一个新租户」的动作因而写 `Create`，并把 `ErrTenantExists` 答成冲突；种子数据这类有意每次都写成同一份的动作写 `Put`。
 
@@ -479,7 +479,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 ### 对外接口
 
-`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`DisabledBy`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口。`WriteGuard`、`WriteOp` 与它的两个取值同样属于对外接口：宿主据它决定哪些租户拒绝停用与删除。`Provisioner` 的签名同样属于对外接口：宿主据它把租户与首任管理员一次建立。`OrganizationWriter` 的签名同样属于对外接口：平台管理面与租户面都经它把所有者转移与组织删除做成一条事务，见 [design-tenant-ownership](design-tenant-ownership.md)。`Catalog` 里 `Delete`、`SetStatusByAccount`、`SetOwner`、`SetOwnerIfEmpty` 与 `SetProfile` 的加入、`Status` 多出的取值、`Tenant` 多出的字段与 `ErrOwnerNotMember`、`ErrOwnerChanged` 同样在接口上。`Status` 与 `DisabledBy` 的字符串形式（`active`、`disabled`、`deleted` 与 `operator`、`account`）是管理面视图的取值来源，同样在接口上。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样属于对外接口：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口。
+`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`DisabledBy`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口。`WriteGuard`、`WriteOp` 与它的两个取值同样属于对外接口：宿主据它决定哪些租户拒绝停用与删除。`Provisioner` 的签名同样属于对外接口：宿主据它把租户与首任管理员一次建立。`OrganizationWriter` 的签名同样属于对外接口：平台管理面与租户面都经它发起或取消所有者转移请求、删除组织，见 [design-tenant-ownership](design-tenant-ownership.md)。`OwnershipTarget` 的签名同样属于对外接口：目标面经它读取、确认或拒绝自己名下的请求。`TransferRequest`、`TransferStatus` 与 `ErrOwnerNotMember`、`ErrOwnerInactive`、`ErrOwnerChanged`、`ErrNoOwner`、`ErrTransferNotFound`、`ErrTransferNotTarget`、`ErrTransferNotPending`、`ErrTransferExpired`、`ErrTransferAlreadyPending`、`ErrTransferTargetIsOwner` 同样在接口上。`Catalog` 里 `Delete`、`SetStatusByAccount`、`SetOwner`、`SetOwnerIfEmpty` 与 `SetProfile` 的加入、`Status` 多出的取值与 `Tenant` 多出的字段同样在接口上。`Status` 与 `DisabledBy` 的字符串形式（`active`、`disabled`、`deleted` 与 `operator`、`account`）是管理面视图的取值来源，同样在接口上。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样属于对外接口：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口。
 
 **本人租户读取的路由与应答同样在对外接口上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `name` 与 `kind`、`kind` 的闭集取值 `business` 与 `personal`、按名称升序与 `[]` 的空结果写法，以及「要求已认证、不要求权限、登记为可冒充且冒充身份的应答收窄到授予租户」；前端与生成的客户端据这些取值分支。`Kind` 与 `KindResolver` 的签名同样在接口上：`tenant.personal` 据它给出种类，改动它改变每一个承载个人租户的装配。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口上，改动它们是宿主可见的破坏性变更。
 
@@ -497,7 +497,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 名册子包 import 根包、`pkg/core`、`pkg/config`、`pkg/db` 与 `pkg/log`；最后一个用于启动诊断，以及两个进入方法把标识绑上 logger、或在拒绝时撤下的 `log.WithAttrs` 与 `log.WithoutAttrs`。
 
-所有者转移与组织删除子包 import 根包、`pkg/authn` 根包、`pkg/authn/provisioning`、`pkg/authz` 根包、`pkg/authz/policy`、`pkg/core`、`pkg/db`、`pkg/log` 与名册子包。它要求数据库、名册的事务写面、策略的事务写面、成员关系与成员关系的写面，并可选地取用租户锁与日志；方向仍是本功能目录指向认证与授权，没有反向 import。
+所有者转移请求、确认与组织删除子包 import 根包、`pkg/authn` 根包、`pkg/authn/provisioning`、`pkg/authz` 根包、`pkg/authz/policy`、`pkg/core`、`pkg/db`、`pkg/log` 与名册子包。它要求数据库、名册的事务写面、策略的事务写面、成员关系与成员关系的写面，并可选地取用租户锁与日志；方向仍是本功能目录指向认证与授权，没有反向 import。
 
 **名册子包声明对数据库功能的构造期依赖**，它要建立那张表、并在 `Init` 中读它；表由它声明的迁移集建立，而迁移在 `Migrate` 阶段施加，整体早于 `Init`（见 [core](../design-core.md) 的阶段表）。
 
@@ -965,7 +965,7 @@ flowchart TD
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
 | 名册的读写接口与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByName`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`Delete`、`SetOwner`、`SetOwnerIfEmpty`、`SetProfile`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot`、`disabledByOf`、`counts` |
 | 已删除的终态、墓碑的标识与名称不再复用、各条写路径对墓碑的拒绝 | 已实现 | `pkg/tenant/tenant.go` `StatusDeleted`；`pkg/tenant/catalog/roster.go` `Delete`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`SetOwner`、`SetProfile`、`enter` |
-| 所有者转移与组织删除的事务内写入 `tenant.ownership` | 已实现 | `pkg/tenant/ownership/ownership.go` `Module`；`transfer.go` `(*product).TransferOwner`；`delete.go` `(*product).DeleteOrganization`；`pkg/tenant/catalog/tx.go` `GetTx`、`SetOwnerTx`、`DeleteTx`；`pkg/authz/policy/tx.go` `DeleteTenantPolicyTx`；`pkg/authn/account/memberships.go` `RemoveTenantMembershipsTx` |
+| 所有者转移请求、确认与组织删除的事务内写入 `tenant.ownership` | 已实现 | `pkg/tenant/ownership/ownership.go` `Module`；`transfer.go` `(*product).RequestTransfer`、`CancelTransfer`、`PendingTransfer`、`ConfirmTransfer`、`DeclineTransfer`、`PendingTransfersFor`、`TransferFor`；`delete.go` `(*product).DeleteOrganization`；`pkg/tenant/catalog/tx.go` `GetTx`、`SetOwnerTx`、`DeleteTx`；`pkg/authz/policy/tx.go` `DeleteTenantPolicyTx`；`pkg/authn/account/memberships.go` `RemoveTenantMembershipsTx` |
 | 停用来源与账户联动的状态迁移（`DisabledBy`、`SetStatusByAccount`） | 已实现 | `pkg/tenant/tenant.go` `DisabledBy`、`DisabledByOperator`、`DisabledByAccount`；`pkg/tenant/catalog/roster.go` `SetStatus`、`SetStatusByAccount`、`Put`、`Create`；`pkg/tenant/catalog/migrations/` 的 `0002_tenants_disabled_by.sql` |
 | `ErrTenantDeleted`，以及进入方法对墓碑的处置 | 已实现 | `pkg/tenant/errors.go` `ErrTenantDeleted`；`pkg/tenant/catalog/roster.go` `enter`、`EnterRegistered`、`Delete`；`pkg/tenant/resolve/admit_test.go` `TestADeletedTenantAnswersLikeAnUnknownOne` |
 | 名册的语句经 `Connection` 取交付连接，表不在、取不到连接与其余失败分开作答，PostgreSQL 上在搜索路径列出的模式里读系统目录 | 已实现 | `pkg/tenant/catalog/roster.go` `onConnection`、`connectionWait`、`failedStatement`、`tableAbsent`、`namedSchemas`、`searchPath`、`quotedName`、`answered`、`lookUp`；`pkg/tenant/errors.go` `ErrNoConnection`、`ErrRosterMissing` |

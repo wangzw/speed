@@ -62,10 +62,12 @@ import {
   ProfileNavIcon,
   SecurityNavIcon,
   SessionsNavIcon,
+  TransferRequestsNavIcon,
 } from './nav-icons.js'
 import {
   ACCOUNT_SECTION_PATHS,
   NOTIFICATIONS_PATH,
+  TRANSFER_REQUESTS_PATH,
 } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import type { SelfTenantKind } from './tenant-self.js'
@@ -1063,6 +1065,20 @@ function AccountMenuItems({
             {unread?.badgeText}
           </Box>
         ) : null}
+      </MenuItem>
+      {/* The ownership transfer requests: a person-level entry beside the
+          messages, because a request is addressed to the account and is
+          handled without any organization permission. */}
+      <MenuItem
+        onClick={() => onNavigate(TRANSFER_REQUESTS_PATH)}
+        sx={itemSx}
+      >
+        <Box component="span" sx={accountMenuItemIconSx}>
+          <TransferRequestsNavIcon size={24} />
+        </Box>
+        <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0 }}>
+          {t('userMenu.transferRequests')}
+        </Box>
       </MenuItem>
       {/* The menu's section rhythm is set here rather than by MUI's sibling
           rule, which does not match a divider after the group container. */}

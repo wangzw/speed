@@ -344,17 +344,17 @@
   },
   "tenantLifecycle": {
     "sectionTitle": "所有权与删除",
-    "sectionDescription": "把这个组织交给另一个账户，或永久终止它。",
-    "transferLabel": "转移所有者",
-    "transferAria": "转移组织 {{name}} 的所有者",
+    "sectionDescription": "请求另一个账户接管所有权，或永久终止这个组织。",
+    "transferLabel": "请求转移",
+    "transferAria": "请求转移组织 {{name}} 的所有者",
     "deleteLabel": "删除组织",
     "deleteAria": "删除组织 {{name}}",
     "transfer": {
-      "title": "转移组织「{{name}}」的所有权",
-      "description": "选择将成为组织所有者的人。转移只改变所有权：原所有者仍是该组织的活跃成员，并保留原有的全部角色，包括租户管理员。",
+      "title": "请求转移组织「{{name}}」的所有权",
+      "description": "选择要请求接管的活跃成员。对方确认后所有权才会改变；在此之前仍由当前所有者持有。",
       "memberLabel": "新所有者",
       "accountLabel": "新所有者的账户",
-      "accountHint": "该账户必须已经是这个组织的活跃成员。如果不是，转移会被拒绝。",
+      "accountHint": "该账户必须已经是这个组织的活跃成员。如果不是，请求会被拒绝。",
       "searching": "正在搜索成员",
       "noMembers": "没有匹配的活跃成员。",
       "membersNarrow": "匹配的成员多于此处的列表。请按姓名或登录名缩小范围。",
@@ -363,13 +363,20 @@
       "clear": "清除",
       "open": "展开",
       "close": "收起",
-      "submit": "转移所有者",
-      "confirmTitle": "确定转移「{{name}}」的所有权？",
-      "confirmMessage": "「{{target}}」将成为所有者并获得租户管理员角色。转移只改变所有权：原所有者仍是该组织的活跃成员，并保留原有的全部角色。",
-      "confirmLabel": "转移所有者",
+      "submit": "发送请求",
+      "confirmTitle": "确定发送「{{name}}」的所有权转移请求？",
+      "confirmMessage": "「{{target}}」会收到接管所有权的请求。对方确认后所有权才会改变；在此之前仍由当前所有者持有。",
+      "confirmLabel": "发送请求",
       "failedNotFound": "这个组织已不存在。",
-      "failedConflict": "转移被拒绝：新所有者必须已是这个组织的活跃成员，且其账户处于可用状态。请先把该账户添加为成员，然后再试。",
-      "success": "组织「{{name}}」的所有者已转给 {{target}}。"
+      "failedConflict": "请求被拒绝：目标必须已是这个组织的活跃成员，且该组织可能已有一条待确认的请求。",
+      "success": "已向 {{target}} 发送组织「{{name}}」的转移请求。对方确认后所有权才会改变。",
+      "pendingTitle": "待确认的转移请求",
+      "pendingTarget": "目标成员：{{target}}",
+      "pendingExpires": "到期时间：{{expires}}",
+      "pendingCancel": "取消请求",
+      "pendingCancelTitle": "取消这条转移请求？",
+      "pendingCancelMessage": "目标成员将无法再确认这条请求。所有权保持不变。",
+      "pendingCancelled": "转移请求已取消。"
     },
     "deleteConfirm": {
       "title": "确定删除组织「{{name}}」？",
@@ -456,11 +463,11 @@
     },
     "ownership": {
       "title": "组织所有权",
-      "description": "组织只有一个所有者。所有者可以把所有权转交给其他成员，或删除这个组织。",
+      "description": "组织只有一个所有者。所有者可以请求其他成员接管所有权，或删除这个组织。成员确认后所有权才会改变。",
       "transfer": {
-        "button": "转移所有权",
-        "title": "转移「{{name}}」的所有权",
-        "message": "转移后，目标成员会成为所有者并获得租户管理员角色。转移只改变所有权：你仍是这个组织的活跃成员，并保留原有的全部角色。此操作不可撤销。",
+        "button": "请求转移所有权",
+        "title": "请求转移「{{name}}」的所有权",
+        "message": "目标成员会收到接管所有权的请求，确认后获得租户管理员角色。在对方确认之前，你仍是所有者，并作为活跃成员保留原有的全部角色。请求可以取消，并会在七天后到期。",
         "targetLabel": "新的所有者",
         "targetHint": "只能选择这个组织中已启用的成员。",
         "searchLabel": "搜索成员",
@@ -469,8 +476,20 @@
         "membersError": "成员列表加载失败，请关闭对话框后重试。",
         "noMembers": "这个组织没有其他已启用的成员。",
         "noMatches": "没有已启用的成员匹配这次搜索。",
-        "confirmLabel": "确认转移",
-        "saved": "「{{name}}」的所有权已转交给 {{account}}。"
+        "confirmLabel": "发送请求",
+        "requested": "已向 {{account}} 发送转移请求。对方确认后所有权才会改变。"
+      },
+      "pending": {
+        "title": "待确认的转移请求",
+        "description": "目标成员确认后所有权才会改变。在此之前你仍是所有者。",
+        "target": "目标成员：{{target}}",
+        "requested": "请求时间：{{requested}}",
+        "expires": "到期时间：{{expires}}",
+        "cancel": "取消请求",
+        "cancelTitle": "取消这条转移请求？",
+        "cancelMessage": "目标成员将无法再确认这条请求。你仍是所有者。",
+        "cancelConfirm": "取消请求",
+        "cancelled": "转移请求已取消。"
       },
       "delete": {
         "button": "删除组织",
@@ -484,6 +503,11 @@
       "error": {
         "forbidden": "你不是这个组织的所有者，无法执行此操作。",
         "notFound": "这个组织已不存在。",
+        "pending": "这个组织已有一条待确认的转移请求。",
+        "expired": "转移请求已到期。你仍是所有者。",
+        "notPending": "这条转移请求已不在待确认状态。",
+        "ownerChanged": "组织的所有者已经变更，这条请求无法再处理。",
+        "notMember": "该账户不是这个组织的活跃成员。",
         "conflict": "这次修改与组织的当前状态冲突。请刷新后重试。",
         "unknown": "操作没有完成，请稍后重试。"
       }

@@ -50,14 +50,14 @@ func TestATombstoneReadsAndRefusesEveryWrite(t *testing.T) {
 		"platform profile": {
 			http.MethodPatch, pathTenants + "/t_acme/profile", fullProfile(), false,
 		},
-		"platform owner transfer": {
-			http.MethodPut, pathTenants + "/t_acme/owner", map[string]any{"account": "acc-2"}, false,
+		"platform owner transfer request": {
+			http.MethodPost, pathTenants + "/t_acme/owner/requests", map[string]any{"account": "acc-2"}, false,
 		},
 		"platform delete": {
 			http.MethodDelete, pathTenants + "/t_acme", nil, false,
 		},
-		"tenant owner transfer": {
-			http.MethodPut, tenantPath(pathOwnerTransfer, "t_acme"), map[string]any{"account": "acc-2"}, true,
+		"tenant owner transfer request": {
+			http.MethodPost, tenantPath(pathOwnerRequests, "t_acme"), map[string]any{"account": "acc-2"}, true,
 		},
 		"tenant delete": {
 			http.MethodDelete, tenantPath(pathOrganization, "t_acme"), nil, true,

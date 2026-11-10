@@ -50,6 +50,49 @@
   "stale": {
     "description": "这里显示的信息可能已过期，重试即可更新。"
   },
+  "transferRequests": {
+    "title": "所有权转移请求",
+    "description": "这些组织请求你接管所有权。在你确认之前，什么都不会改变。",
+    "loading": "正在加载所有权转移请求。",
+    "retry": "重试",
+    "emptyTitle": "没有待确认的请求",
+    "empty": "你目前没有待确认的所有权转移请求。",
+    "pendingTitle": "等待你确认",
+    "pendingDescription": "确认后你会成为组织所有者；在此之前，组织仍由当前所有者持有。",
+    "requestedAt": "请求时间：{{requested}}",
+    "expiresAt": "到期时间：{{expires}}",
+    "open": "查看请求",
+    "openOrganization": "打开组织",
+    "back": "返回转移请求列表",
+    "status": "状态",
+    "statusValues": {
+      "pending": "待确认",
+      "confirmed": "已确认",
+      "declined": "已拒绝",
+      "cancelled": "已取消",
+      "expired": "已到期"
+    },
+    "detailDescription": "只有你确认后所有权才会改变。原所有者仍是活跃成员，并保留原有的全部角色与绑定。",
+    "confirm": "确认并成为所有者",
+    "decline": "拒绝",
+    "cancel": "取消",
+    "confirmTitle": "成为「{{tenant}}」的所有者？",
+    "confirmMessage": "你会成为「{{tenant}}」的所有者，并获得租户管理员角色。原所有者仍是活跃成员，并保留原有的全部角色与绑定。",
+    "confirmed": "你现在是「{{tenant}}」的所有者。",
+    "declineTitle": "拒绝「{{tenant}}」的请求？",
+    "declineMessage": "「{{tenant}}」的所有权仍由当前所有者持有。",
+    "declined": "你已拒绝这条所有权转移请求。",
+    "terminal": "这条请求已不在待确认状态。",
+    "error": {
+      "title": "无法加载转移请求",
+      "description": "内容没有加载出来，请稍后重试。",
+      "notFound": "这条转移请求已不存在。",
+      "expired": "这条转移请求已到期，所有权没有改变。",
+      "notPending": "这条转移请求已不在待确认状态。",
+      "conflict": "这条请求已无法确认：组织的所有者可能已经变更，或者你可能已不是活跃成员。",
+      "unknown": "操作没有完成，请稍后重试。"
+    }
+  },
   "sessions": {
     "title": "登录会话",
     "prevPage": "上一页",

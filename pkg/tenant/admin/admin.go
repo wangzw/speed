@@ -64,6 +64,8 @@ const (
 	endpointsKey        = ConfigNamespace + "." + endpointsItem
 	tenantEndpointsItem = "tenant-endpoints"
 	tenantEndpointsKey  = ConfigNamespace + "." + tenantEndpointsItem
+	selfEndpointsItem   = "self-endpoints"
+	selfEndpointsKey    = ConfigNamespace + "." + selfEndpointsItem
 )
 
 // allEndpoints is the name that stands for every endpoint in an endpoint list.
@@ -101,6 +103,12 @@ const defaultEndpoint = "admin"
 // defaultEndpoint uses "admin".
 const defaultTenantEndpoint = "api"
 
+// defaultSelfEndpoint is the endpoint the target's account-level routes are
+// mounted on by default. They carry the caller's own identity and no tenant
+// resolution, so they belong on the account endpoint with the rest of
+// /api/v1/auth/me.
+const defaultSelfEndpoint = "account"
+
 // openAPIFragment is this module's OpenAPI fragment, read at build time. It is
 // generated from the operations this module declares, not written by hand.
 //
@@ -115,6 +123,14 @@ var openAPIFragment []byte
 //
 //go:embed openapi/tenant.owner.json
 var tenantOwnerFragment []byte
+
+// selfFragment is the fragment of the target's account-level transfer routes.
+// It is a third fragment because those routes are ordinary ones: they carry no
+// tenant segment and no scope root, and the account endpoint mounts them under
+// /api/v1/auth/me.
+//
+//go:embed openapi/tenant.self.json
+var selfFragment []byte
 
 // tenantAdminSpec is the API root the platform management routes hang off. The
 // fragment is generated from operations; the routes are mounted from the same
@@ -137,6 +153,15 @@ var tenantOwnerSpec = speedhttp.Spec{
 	Version:  "v1",
 	Scope:    speedhttp.ScopeTenants,
 	Document: tenantOwnerFragment,
+}
+
+// selfSpec is the API root the target's account-level routes hang off. It is the
+// ordinary scope: the caller's own resources under the account endpoint.
+var selfSpec = speedhttp.Spec{
+	Endpoint: defaultSelfEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: selfFragment,
 }
 
 // init registers this module with the process registry. Registration travels
@@ -190,6 +215,7 @@ func Module() core.Module {
 			{Token: (*tenant.WriteGuard)(nil)},
 			{Token: (*tenant.Provisioner)(nil)},
 			{Token: (*tenant.OrganizationWriter)(nil)},
+			{Token: (*tenant.OwnershipTarget)(nil)},
 			{Token: (*speedhttp.TenantAdminRouteGuard)(nil)},
 			{Token: (*tenant.KindResolver)(nil), Optional: true},
 			{Token: (*tenant.NameResolver)(nil), Optional: true},
@@ -199,8 +225,10 @@ func Module() core.Module {
 			schema(), permissionSpec(), translationSpec(), messageCatalog,
 			tenantAdminSpec,
 			tenantOwnerSpec,
+			selfSpec,
 			operations,
 			tenantOperations,
+			selfOperations,
 			// The roster management surface: its routes are mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.
@@ -265,6 +293,13 @@ type product struct {
 	// the two writes that span the roster, the policy store and the membership
 	// store and therefore have to be one transaction.
 	organization tenant.OrganizationWriter
+	// ownerTarget is the target's own side of a transfer request. Its routes are
+	// account-level and carry no tenant context.
+	ownerTarget tenant.OwnershipTarget
+	// accounts resolves a transfer target's display name and username, nil when
+	// the assembly supplies no account read surface. A nil surface leaves both
+	// names empty rather than falling back to an internal identifier.
+	accounts authn.Accounts
 	// routeGuard is the tenant administration guard the tenant-scoped
 	// organization-lifecycle routes are wrapped with: the path-tenant identity
 	// rule plus the refusal of the platform domain.
@@ -318,6 +353,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the organization writer: %w", ModuleName, err)
 	}
+	ownerTarget, err := core.Resolve[tenant.OwnershipTarget](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the ownership target surface: %w", ModuleName, err)
+	}
 	routeGuard, err := core.Resolve[speedhttp.TenantAdminRouteGuard](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the tenant administration guard: %w", ModuleName, err)
@@ -346,6 +385,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 		writeGuard:   writeGuard,
 		provisioner:  provisioner,
 		organization: organization,
+		ownerTarget:  ownerTarget,
 		routeGuard:   routeGuard,
 		kind:         kind,
 		names:        names,
@@ -385,6 +425,11 @@ func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
 	}
+	if accounts, found, err := optional[authn.Accounts](reg, "the account read surface"); err != nil {
+		return err
+	} else if found {
+		p.accounts = accounts
+	}
 	if gate, found, err := optional[authz.Gate](reg, "the route-declaration surface"); err != nil {
 		return err
 	} else if found {
@@ -414,6 +459,7 @@ func (p *product) diagnose() {
 	p.logger.Info(ModuleName+": the management routes are mounted",
 		"endpoints", p.cfg.endpoints,
 		"tenant-endpoints", p.cfg.tenantEndpoints,
+		"self-endpoints", p.cfg.selfEndpoints,
 		"groups", managementGroups)
 }
 
@@ -443,6 +489,13 @@ func schema() config.Schema {
 					"names only, never *. They must be endpoints that carry tenant resolution and the tenant " +
 					"administration guard. Unset means the API endpoint, [\"api\"]",
 			},
+			selfEndpointsItem: {
+				Origins: config.OriginPrimary,
+				Description: "the listening endpoints the target's account-level owner-transfer routes are mounted " +
+					"on, by the names the entry point's own configuration gives them; concrete names only, never *. " +
+					"They must carry the caller's identity and must not carry tenant resolution or the tenant " +
+					"administration guard. Unset means the account endpoint, [\"account\"]",
+			},
 		},
 	}
 }
@@ -466,12 +519,17 @@ type moduleConfig struct {
 	// resolution and the tenant administration guard. Unset means the API
 	// endpoint.
 	TenantEndpoints []string `config:"tenant-endpoints"`
+	// SelfEndpoints names the listening endpoints the target's account-level
+	// owner-transfer routes are mounted on. They must carry the caller's identity
+	// and no tenant resolution. Unset means the account endpoint.
+	SelfEndpoints []string `config:"self-endpoints"`
 }
 
 // resolved is the configuration this module runs on.
 type resolved struct {
 	endpoints       []string
 	tenantEndpoints []string
+	selfEndpoints   []string
 }
 
 // resolve turns decoded configuration into what the module runs on, refusing
@@ -479,24 +537,29 @@ type resolved struct {
 // ErrInvalidConfig: a management surface mounted nowhere, or on every endpoint,
 // is a shape this module will not run on.
 func (c moduleConfig) resolve() (resolved, error) {
-	endpoints, err := resolveEndpoints(endpointsKey, "management", c.Endpoints, true)
+	endpoints, err := resolveEndpoints(endpointsKey, "management", c.Endpoints, true, "")
 	if err != nil {
 		return resolved{}, err
 	}
 	tenantEndpoints, err := resolveEndpoints(tenantEndpointsKey, "tenant-surface organization-lifecycle",
-		c.TenantEndpoints, false)
+		c.TenantEndpoints, false, defaultTenantEndpoint)
 	if err != nil {
 		return resolved{}, err
 	}
-	return resolved{endpoints: endpoints, tenantEndpoints: tenantEndpoints}, nil
+	selfEndpoints, err := resolveEndpoints(selfEndpointsKey, "account-level owner-transfer",
+		c.SelfEndpoints, false, defaultSelfEndpoint)
+	if err != nil {
+		return resolved{}, err
+	}
+	return resolved{endpoints: endpoints, tenantEndpoints: tenantEndpoints, selfEndpoints: selfEndpoints}, nil
 }
 
 // resolveEndpoints validates one endpoint list the same way. required says an
-// empty list is a failure; otherwise an empty list takes the API endpoint.
-func resolveEndpoints(key, what string, list []string, required bool) ([]string, error) {
+// empty list is a failure; otherwise an empty list takes fallback.
+func resolveEndpoints(key, what string, list []string, required bool, fallback string) ([]string, error) {
 	if len(list) == 0 {
 		if !required {
-			return []string{defaultTenantEndpoint}, nil
+			return []string{fallback}, nil
 		}
 		return nil, fmt.Errorf("%w: %s is empty. The %s routes are mounted on the "+
 			"endpoints this module is told to and on none by default; list the endpoints that should "+

@@ -16,6 +16,9 @@ const fragmentPath = "openapi/tenant.admin.json"
 // tenantOwnerFragmentPath is this module's tenant-surface fragment.
 const tenantOwnerFragmentPath = "openapi/tenant.owner.json"
 
+// selfFragmentPath is this module's account-level target fragment.
+const selfFragmentPath = "openapi/tenant.self.json"
+
 // TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragments to
 // what the declarations generate. The fragments are build products: a handler
 // or a route that changes without the declaration fails here, and the fix is to
@@ -30,6 +33,7 @@ func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	}{
 		{fragmentPath, fragmentTitle, operations},
 		{tenantOwnerFragmentPath, tenantOwnerFragmentTitle, tenantOperations},
+		{selfFragmentPath, selfFragmentTitle, selfOperations},
 	} {
 		generated, err := openapigen.Generate(c.title, fragmentVersion, c.ops)
 		if err != nil {

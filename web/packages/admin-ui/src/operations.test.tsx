@@ -300,20 +300,28 @@ describe('adminOperations', () => {
     })
   })
 
-  it('drives the owner-transfer and tenant-delete endpoints', async () => {
+  it('drives the owner-transfer request, cancel and tenant-delete endpoints', async () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest(answer, { recordBody: true })
     function Writes() {
-      const transfer = adminOperations.useTransferTenantOwner()
+      const request = adminOperations.useRequestTenantOwner()
+      const cancel = adminOperations.useCancelTenantOwner()
       const remove = adminOperations.useDeleteTenant()
       return (
         <>
           <button
             onClick={() =>
-              transfer.mutate({ name: 'acme', account: 'acc-2' })
+              request.mutate({ name: 'acme', account: 'acc-2' })
             }
           >
-            transferOwner
+            requestOwner
+          </button>
+          <button
+            onClick={() =>
+              cancel.mutate({ name: 'acme', request: 'transfer-1' })
+            }
+          >
+            cancelOwner
           </button>
           <button onClick={() => remove.mutate({ name: 'acme' })}>
             deleteTenant
@@ -322,13 +330,18 @@ describe('adminOperations', () => {
       )
     }
     renderWithProviders(<Writes />, { operations: adminOperations })
-    await user.click(screen.getByRole('button', { name: 'transferOwner' }))
+    await user.click(screen.getByRole('button', { name: 'requestOwner' }))
+    await user.click(screen.getByRole('button', { name: 'cancelOwner' }))
     await user.click(screen.getByRole('button', { name: 'deleteTenant' }))
     await waitFor(() => {
       expect(calls).toContainEqual({
-        method: 'PUT',
-        path: '/api/v1/system/tenants/acme/owner',
+        method: 'POST',
+        path: '/api/v1/system/tenants/acme/owner/requests',
         body: { account: 'acc-2' },
+      })
+      expect(calls).toContainEqual({
+        method: 'DELETE',
+        path: '/api/v1/system/tenants/acme/owner/requests/transfer-1',
       })
       expect(calls).toContainEqual({
         method: 'DELETE',

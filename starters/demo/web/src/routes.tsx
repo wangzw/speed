@@ -41,9 +41,11 @@ import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
+import { NotificationsPage } from './pages/notifications-page.js'
 import { OrganizationCreateRoute } from './pages/organization-create-page.js'
 import { TENANT_HOME_PATH } from './pages/not-found-page.js'
 import { PasswordResetPage } from './pages/password-reset-page.js'
+import { TransferRequestsPage } from './pages/transfer-requests-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
@@ -53,6 +55,8 @@ import {
   INVITATION_PREFIX,
   ORGANIZATIONS_NEW_PATH,
   PASSWORD_RESET_PATH,
+  TRANSFER_REQUESTS_PATH,
+  TRANSFER_REQUEST_PATH,
 } from './paths.js'
 
 // The path constants live in src/paths.ts, shared with the chrome that
@@ -65,6 +69,8 @@ export {
   ADMIN_PREFIX,
   NOTIFICATIONS_PATH,
   PASSWORD_RESET_PATH,
+  TRANSFER_REQUESTS_PATH,
+  TRANSFER_REQUEST_PATH,
 } from './paths.js'
 // The admin area's prefixed declarations and the prefix test live in
 // src/admin-routes.ts, shared with the start page (which must not import
@@ -172,12 +178,29 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
     view: () => <OrganizationCreateRoute />,
     requires: ['org.create'],
   },
+  // The ownership transfer requests: the account-level surface a target
+  // opens to confirm or decline a request, and the deep link a notification
+  // carries. Unlabelled -- the account menu offers the entry -- and written
+  // without a tenant prefix, because the request is addressed to the person,
+  // not to an organization.
+  {
+    path: TRANSFER_REQUESTS_PATH,
+    view: () => <TransferRequestsPage />,
+  },
+  {
+    path: TRANSFER_REQUEST_PATH,
+    view: (context) => (
+      <TransferRequestsPage request={context.params.request ?? ''} />
+    ),
+  },
   // The notification surface: the same declarative seam as the admin's
   // pages -- notification-ui exports a structurally route-kit declaration,
   // so it drops straight into the table, with the host's icon added beside
-  // the package's own path and label.
+  // the package's own path and label. The view is the host's composition so
+  // opening a message follows its link (the package itself never navigates).
   ...notificationRoutes.map((route) => ({
     ...route,
+    view: () => <NotificationsPage />,
     icon: <NotificationsNavIcon />,
   })),
   // Unlabelled: the binding callback is a completion point, not a

@@ -169,7 +169,7 @@ starters/demo/
 
 **两个租户管理面模块挂在 `api` 端，接线已落。** 平台默认文档给出 `authz.tenantadmin.endpoints` 与 `settings.tenantadmin.endpoints`，取值都是 `["api"]`；两个模块的配置缺省也是 `["api"]`，默认文档把它们显式写出，部署不必重复写。`baselineServe` 点名 `authz.tenantadmin` 与 `settings.tenantadmin`，并纳入它们的必需依赖（`authz.policy`、`authn.account`、`tenant.catalog`，宿主提供的 `authz.MembershipChecker` 与必需的 `authz.WriteSettings`）；宿主可选取用 `authz.WriteGuard` 收紧个人租户的策略写。示范宿主为 `authz.WriteSettings` 提供一个独立模块，拒绝个人租户的设置写：`authz.WriteSettings` 与 `authz.WriteGuard` 各自声明 `Denied`，一个 Go 类型不能同时实现两者。`api` 端在租户作用域的每个路由组上挂路径租户核对，覆盖两个模块与复用的成员、邀请、SSO 路由组。两个模块各声明静态特性 `authz.tenantadmin` 与 `settings.tenantadmin`；`gen` 把它们写进 `contracts/features.json`，并据此生成 OpenAPI 片段、合并文档与 SDK。租户管理路由在该租户的策略域判定，落在 `api` 上才与 `tenant.resolve`、`tenant.admission` 所守的端一致；`/api/v1/tenants` 由 `api` 的 `/api` 认领覆盖，不是 `account` 的一条认领。平台管理作用域的路由在平台域判定，落在 `admin` 上，该端不在租户两层之内。租户管理路由的判定在 handler 内经 `authn.Decider` 做出，`api` 端的授权守卫不为其再判一次：`authz.tenantadmin` 与 `settings.tenantadmin` 各自在 `Init` 里把自己的路由在声明接口上登记为开放；宿主的 `management.access` 模块只登记 `authn` 的租户管理路由组（成员、邀请与 SSO），列表与提交的契约双向核对。冒充记录的路由在 `admin` 端，该端不在授权守卫之列，无须这份声明。留在 `admin` 端的租户相关接口按判定域划分：名册的单行路由、授权与冒充记录按租户寻址而判定在平台域，租户是数据；名册的集合路由不按租户寻址；审计在整张表上读，设置的租户层由查询串点名——都不落在 `api` 的租户两层里（[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）。
 
-**名册管理面与它的组织写一起点名。** `baselineServe` 点名 `tenant.admin` 与 `tenant.ownership`：前者挂平台域的名册路由，后者交付 `tenant.OrganizationWriter`，把所有者转移与组织删除做成跨名册、策略与成员关系的一条事务（[tenant-ownership](tenant/design-tenant-ownership.md)）。`tenant.admin` 把 `tenant.OrganizationWriter` 列为必需依赖，命令树只点名名册管理面而不点名组织写时在依赖解析处失败；`tenant.ownership` 不挂路由、不要配置，取用名册、策略与成员关系的事务写面，并可选地取用宿主提供的 `authz.TenantLock`。名册管理面落在平台域的 `admin` 端。
+**名册管理面与它的组织写一起点名。** `baselineServe` 点名 `tenant.admin` 与 `tenant.ownership`：前者挂平台域的名册路由与账户级的目标路由，后者交付 `tenant.OrganizationWriter` 与 `tenant.OwnershipTarget`，把所有者转移的确认与组织删除做成跨名册、策略与成员关系的一条事务，并把转移请求记在 `tenant_owner_transfers`（[tenant-ownership](tenant/design-tenant-ownership.md)）。`tenant.admin` 把两个接缝列为必需依赖，命令树只点名名册管理面而不点名组织写时在依赖解析处失败；`tenant.ownership` 不挂路由、不要配置，取用名册、策略与成员关系的事务写面，并可选地取用宿主提供的 `authz.TenantLock` 与通知派发面。名册管理面落在平台域的 `admin` 端，目标面落在账户端。
 
 - **认领是产品固定的命名空间表，去掉一项能力不删它的认领。** 撤出运行集也好，删掉 import 也好，那项能力的命名空间都留在认领里：示范的二进制 import 了 `sms.admin` 而基线不运行它，`admin` 仍认领 `/api/v1/system/sms`；从示范拷出、删掉 `tenant.admin` import 的产品，仍认领 `/api/v1/system/tenants`。认领表覆盖可用集里每个 operation 的命名空间，以及平台前端包会寻址的命名空间。
 - **前端页面路径不落在 `/` 以外的任何认领之下。** 落在这类认领之下的页面路径，整页导航得到那个端的应答，拿不到入口文档。
@@ -197,17 +197,18 @@ starters/demo/
 
 ### 前端的页面表
 
-前端应用的页面声明集中在 `starters/demo/web/src/routes.tsx` 的 `routes`，是 [route-kit](web/design-web-route-kit.md) 的一张声明表。一条声明所依赖的后端接口若随装配而变，它以 `requires` 列出对应的特性名，所列特性全部在场时该页面才存在；只依赖前端直接依赖的模块（见「平台基线」）的页面不带 `requires`。下表列出示范租户区的全部声明：
+前端应用的页面声明集中在 `starters/demo/web/src/routes.tsx` 的 `routes`，是 [route-kit](web/design-web-route-kit.md) 的一张声明表。一条声明所依赖的后端接口若随装配而变，它以 `requires` 列出对应的特性名，所列特性全部在场时该页面才存在；只依赖前端直接依赖的模块（见「平台基线」）的页面不带 `requires`。下表列出示范前端应用的全部声明：
 
 | 页面 | `requires` | 声明者 |
 |---|---|---|
 | `/` | 无 | 示范 |
 | `/account` | 无 | 示范 |
+| `/transfer-requests`、`/transfer-requests/:request` | 无 | 示范 |
 | `/notifications` | `notification.inbox` | notification-ui 的 `notificationRoutes`（[notification-ui](web/design-web-notification-ui.md)） |
 | `/invitations/:token` | `authn.invitations` | 示范 |
 | `/sign-in/callback`、`/account/callback` | 无 | 示范 |
 
-`/sign-in/callback` 与 `/account/callback` 依赖的是登录前的事实——部署有没有重定向类与企业类登录方式——它不在特性文档里，部署没有这类登录方式时它们怎样呈现，见「租户框架与回调落点」。管理后台区的声明由 admin-ui 导出，示范把它们挂在 `/admin` 前缀下，`requires` 与权限码随声明自带（[admin-ui](web/design-web-admin-ui.md)）。
+`/transfer-requests` 是账户级路由，不进任何外壳的租户作用域：请求指向登录的人，不指向组织，目标不需要组织权限，也不要求该组织是当前租户；列表页由账户菜单进入，详情地址是通知链接的落点。`/sign-in/callback` 与 `/account/callback` 依赖的是登录前的事实——部署有没有重定向类与企业类登录方式——它不在特性文档里，部署没有这类登录方式时它们怎样呈现，见「租户框架与回调落点」。管理后台区的声明由 admin-ui 导出，示范把它们挂在 `/admin` 前缀下，`requires` 与权限码随声明自带（[admin-ui](web/design-web-admin-ui.md)）。
 
 - **页面表里的每个 `requires` 都属于 `@speed/api-sdk/features` 的 `FEATURE_NAMES`**，含 admin-ui 与 notification-ui 的声明：示范的测试逐项断言，示范自己的声明以 `satisfies` 收紧到 `FeatureName`（[ADR-feature-vocabulary](../../adr/adr-feature-vocabulary.md)）。
 - **页面路径不落在 `backend-prefixes.json` 里任何前缀之下**，由测试守住，见「端点集合」（[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。

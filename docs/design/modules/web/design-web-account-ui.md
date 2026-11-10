@@ -1,6 +1,6 @@
 # account-ui
 
-account-ui 是已登录账户管理在浏览器里的界面族，处在能力 UI 包这一层，向下取 ui-kit、i18n、auth-core 与生成的 api-sdk 钩子，向上由[宿主](../../../glossary.md)的账户页组合。它拥有账户档案、口令、手机、登录标识与联系方式、偏好、外观、会话、社交绑定与两步验证这些节的渲染与写动作。它不拥有会话状态机、查询客户端、路由与权限判定。进入职责清单前的心智模型只有一句：每一节都是受控界面，读写经生成接口，会话只以操作的形式出现。
+account-ui 是已登录账户管理在浏览器里的界面族，处在能力 UI 包这一层，向下取 ui-kit、i18n、auth-core 与生成的 api-sdk 钩子，向上由[宿主](../../../glossary.md)的账户页组合。它拥有账户档案、口令、手机、登录标识与联系方式、偏好、外观、会话、社交绑定与两步验证这些节的渲染与写动作，以及账户级的所有者转移请求页。它不拥有会话状态机、查询客户端、路由与权限判定。进入职责清单前的心智模型只有一句：每一节与所有者转移请求页都是受控界面，读写经生成接口，会话只以操作的形式出现。
 
 第一遍为「职责」与「外部接口契约」，先给出各节的受控约定与宿主接线；「依赖」「UML 图」「核心数据结构」随读随查，「核心算法与流程」按遇到的节查阅其中的分段，「错误与失败语义」与「并发与事务边界」作查表用。竞态与边界情形（加强认证门控、身份切换窗口、待验证记录的唯一性）是读完接口契约之后的最后自检项。
 
@@ -18,9 +18,10 @@ account-ui 是已登录账户管理在浏览器里的界面族，处在能力 UI
 - `AppearanceSection`：渲染受控的外观主题选择节。预设列表、每个预设的显示名、当前值与选择回调都由宿主给出，本包不 import `@speed/theme-presets`、不读主题 provider，也不持有选择状态。宿主把选择接到主题 provider 后，切换立即生效。
 - `SessionsSection`：列出账户的会话与设备，给当前会话所属的那条打上当前徽标，提供逐条撤销与批量撤销「其它会话」。撤销自己的会话是低损失动作（行上不再确认），撤销其余走 ui-kit 危险 `ConfirmDialog` 的单次确认——它是可恢复的动作（被登出的设备再登录即可），不设 `doubleConfirm` 两步守卫，免得比不可逆的删除还重。
 - `SocialBindingsSection` 渲染社交绑定界面，`BindingCallbackHandler` 在宿主的回调路由上完成一次绑定。已绑定的社交与企业身份是登录方式组的一类，不列在联系方式组（REQ-account-067）。外部身份只经本节的显式添加建立；登录不按提供方声明的地址接管账户或并入绑定（REQ-signup-049）。添加区的渠道取自部署的发现文档（`GET /api/v1/auth/methods` 中 `kind=redirect` 的方法）。
+- **所有者转移请求页 `OwnerTransferRequestsPage`。** 账户级页面，列出点名调用方的待处理请求，详情视图读取一条请求的任一状态并让目标确认或拒绝。它不要求租户权限，也不要求该组织是当前租户；确认是唯一改变所有权的动作，拒绝不改变所有权。
 - `MfaSection`：渲染经加强认证门控的两步验证设置。清单经读发现，按种类分组：每个已装配种类成一节，标题取 `mfa.factor.kind.<kind>`（未知种类用通用的其它名称）；部署公布该种类可登记时，标题右侧有唯一一个动作：通行密钥与短信恒为「添加」，验证器应用在该组已有启用行时为「更换验证器应用」（可及名同文本）——它一个账户只有一个，再登记即替换。组内只列已启用与已停用条目，待确认（pending）行是登记流程的中间态、由登记面板持有，不渲染；已停用行带弱化的「已停用」标记。行内显示名称与最近使用时刻（按账户时区链格式化）：通行密钥行显示名称（无名称回退种类名），验证器应用行恒显示种类名、不显示名称。通行密钥行的行尾把重命名与移除作为一个 `ActionRow size="small"` 同组渲染，重命名在行内展开编辑器——名称字段独占一行并占满编辑区的文本列宽，取消与保存的动作行在其下方靠右（取消在前、保存在后）；验证器应用行与已停用行只在行尾渲染一个移除按钮。重命名走 `PATCH /api/v1/auth/factors/{id}`；移除走 `DELETE /api/v1/auth/factors/{id}`，经 ui-kit 危险 `ConfirmDialog`，需要新鲜多因素认证时开加强认证对话框并在成功后重跑一次；对话框把被删的那个因素排除在可选项之外（它是可能已经丢失的那一个），账户只剩它这一种可用方式时改由口令再证明完成，没有口令的账户仍给重新登录出口。登记入口按发现文档的 `mfa.factors` 逐个生成：点击后在该节就地展开登记面板、替换该节的条目，面板把该方法的正文与唯一一个确认控件放在一起，通行密钥另有名称字段（验证器应用不取名），标题取参数化的 `mfa.enroll.title` 并点名正在添加的种类，正文之上给一句确认之后会发生什么的说明，取消在左、确认为主且相邻。只启用一种方式且部署公布可登记种类时，分组之上显示建议再添加一种的提示。因素行不渲染状态 chip。
 
-这些界面是节，不是一个带路由的屏：拥有它们的页面、它们之上的标题以及本包之外的其它界面（通用属性集的编辑、登录历史）都是宿主内容。
+这些账户管理界面多数是节，不是一个带路由的屏：拥有它们的页面、它们之上的标题以及本包之外的其它界面（通用属性集的编辑、登录历史）都是宿主内容。`OwnerTransferRequestsPage` 是例外：它是一个账户级页面，由宿主挂在自己的路径上，不在账户页内。
 
 **账户页把登录方式与联系方式分成两组。** 登录方式组列出用户名、被持有人选作登录方式的邮箱与手机、通行密钥，以及已绑定的社交与企业身份；联系方式组列出每一条已登记的邮箱与手机，其中默认联系地址另行标出。账户登记的邮箱或手机恒为联系方式，登录方式由持有人另行选择；同一个值可以同时出现在两组，未作登录方式时只出现在联系方式组（REQ-account-061）。`IdentifiersSection` 呈现用户名、邮箱与手机在这两份列表中的位置：登录方式组按种类分段，每段只渲染组标题、该段的组级控件与一句说明——用户名段没有登录方式开关，也没有移除动作——不渲染逐条地址或号码行；地址在选择框里呈现，用户名与手机由说明句呈现。用户名段的说明句陈述用户名是固定登录名、不能更改或删除；邮箱段的开关表示账户是否用邮箱登录，开启后由一个选择框在已证明的地址中选一条，关闭后选择框让位给一行说明；手机段有一个切换代表号码的控件，号码未作登录方式时该段的说明与「启用」动作同义。写同一条 `sign_in` 字段：打开把该值移入登录方式组，关闭把它退回联系方式组。联系方式组不承载登录方式的选择，只列出每一条已登记的邮箱与手机，默认联系地址另行标出。`SocialBindingsSection` 把已绑定的外部身份列在登录方式组（REQ-account-067）。验证只证明归属，不决定一个值是否作登录方式（REQ-account-062）；未证明的邮箱或手机不能作登录方式，未证明的邮箱不能作默认联系地址（REQ-account-065、REQ-account-066）。**账户只有一条邮箱地址时，这条地址在验证之后已经由服务端选作登录方式**，本节按读到的标记把它渲染在登录方式组里；持有人可以关掉它，账户因此不再持有任何可用的登录方式时服务端拒绝这次写，本节渲染该码的文案，登录方式组退回原状态（REQ-account-068、REQ-account-069）。
 
@@ -43,7 +44,7 @@ account-ui 是已登录账户管理在浏览器里的界面族，处在能力 UI
 
 ## 外部接口契约
 
-`web/packages/account-ui/src/index.ts` 是公开接口：`ProfileSection`；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`ContactVerificationSection`（连同 `ContactVerificationSectionProps`）；`PreferencesSection`；`AppearanceSection`（连同 `AppearanceSectionProps`、`ThemePresetChoice`）；`ColorModeSection`（连同 `ColorModeSectionProps`）；`SessionsSection`（连同 `SessionsSectionProps`）；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。加强认证对话框与门控的归属由 [ADR-web-auth-seams](../../../adr/adr-web-auth-seams.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `admin-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），安全类自助写的加强认证门控用 `@speed/auth-core` 的 `useStepUpGate`。
+`web/packages/account-ui/src/index.ts` 是公开接口：`ProfileSection`；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`ContactVerificationSection`（连同 `ContactVerificationSectionProps`）；`PreferencesSection`；`AppearanceSection`（连同 `AppearanceSectionProps`、`ThemePresetChoice`）；`ColorModeSection`（连同 `ColorModeSectionProps`）；`SessionsSection`（连同 `SessionsSectionProps`）；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`OwnerTransferRequestsPage`（连同 `OwnerTransferRequestsPageProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。加强认证对话框与门控的归属由 [ADR-web-auth-seams](../../../adr/adr-web-auth-seams.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `admin-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），安全类自助写的加强认证门控用 `@speed/auth-core` 的 `useStepUpGate`。
 
 ```tsx
 interface PasswordSectionProps {
@@ -122,6 +123,14 @@ interface BindingCallbackHandlerProps {
 
 interface MfaSectionProps {
   readonly session: AuthSession // 登记与挑战都驱动流程
+}
+
+interface OwnerTransferRequestsPageProps {
+  readonly request?: string // 详情视图读取的请求；缺省或空串渲染列表
+  readonly requestHref?: (id: string) => string // 列表行的详情链接；缺省时列表行交给 onOpenRequest
+  readonly onOpenRequest?: (id: string) => void // 宿主打开详情视图
+  readonly listHref?: string // 详情视图返回列表的地址
+  readonly onOpenOrganization?: (tenant: string) => void | Promise<unknown> // 确认成功后打开该组织
 }
 ```
 
@@ -225,6 +234,10 @@ sequenceDiagram
 
 行尾的移除按钮用危险色，点击后经 `ConfirmDialog` 的危险变体确认。会话行的撤销不在行尾的动作组里：撤销自己的会话直接生效，撤销其余会话经一次确认。行尾按钮沿用各界面已有的措辞：验证取 `identifiers.verify`、设为默认联系取 `identifiers.axes.defaultContact`、移除取 `identifiers.remove`，宿主的手机行沿用账户页自己的删除文案。
 
+### 所有者转移请求的确认与拒绝
+
+列表读 `GET /api/v1/auth/me/owner-transfer-requests`，每条给出组织名称与发起、截止时刻；详情读同前缀的 `/{request}`，包含终态，深链在一次决定之后打开时据此渲染结果。待处理时详情给确认与拒绝控件：确认经 ui-kit 的危险 `ConfirmDialog` 两步守卫，因为它改变组织所有者；拒绝只经单次确认，所有权不动。确认成功后失效列表、该请求与组织资料读（资料读以租户前缀套键），页面停在原处并显示点名该组织的确认；拒绝成功后同样失效列表与请求。失败按写自身的应答解析：404 是请求不存在或不属于调用方，403 `authn.contact_required` 是确认者未证明邮箱；409 时重读该请求，到期读作到期，其余终态读作已结束，都停在详情页而不猜测具体原因。
+
 ### 轮换点上的身份切换窗口
 
 替换调用方凭据的写在服务端提交时换上新的 cookie 与令牌。以旧凭据发出的读可能在新凭据生效前答匿名：已在进行中的读，或同一轮里由焦点、重连与 `staleTime` 0 触发的读。会话的静默分支默认把这一匿名应答当作会话结束，监听会话的壳随之清缓存并显示登出视图。因此，发起页在写之前同步调用 `session.beginIdentityTransition()` 打开一个窗口，并在写后的失效与重读结算之后调用它返回的释放函数。窗口打开期间、入口前已打开、或入口后才打开时仍在进行中的读，其匿名应答被丢弃：快照不变，发起该读的请求保留自己的 401，认证成功的应答照常接受。窗口不延迟或暂挂请求，只改变静默分支如何对待显式匿名应答；它只作用于 cookie 会话的静默分支，不影响令牌刷新路径。窗口计数可嵌套，释放幂等，被加强认证门控重跑的一次写自开自己的窗口。
@@ -317,6 +330,9 @@ sequenceDiagram
 | 情形 | 表现 |
 |---|---|
 | 一次写被拒（`authn.bad_request`、`authn.throttled`、`ratelimit.throttled`、`authn.unavailable`、`client.http.<status>`） | 一条横幅渲染错误码文本（`client.http.<status>` 渲染带状态码的参数化句子），相关查询在选择处失效 |
+| 所有者转移请求页的请求不存在或不属于调用方（404） | 一条横幅渲染请求不存在的文案；非目标账户与不存在的请求得到同一个结果 |
+| 所有者转移请求页的确认或拒绝遇到已到期或已结束的请求（409） | 重读该请求：到期渲染到期文案，其余终态渲染已结束文案；不猜测具体原因 |
+| 所有者转移请求页的确认被 403 `authn.contact_required` 拒绝 | 一条横幅渲染该码文案，提示先证明邮箱；请求保持待处理，拒绝不受这条限制 |
 | 一次发送缺少、无效、过期或已用的人机证明（403 `human-verification-required`） | 一条横幅渲染 `authn.human_verification_required` 的文本；块取得新证明后发送可重试 |
 | 登记通行密钥时认证器已持有该账户的凭据（浏览器答 `InvalidStateError`，服务端下发的 `excludeCredentials` 命中） | 仪式失败横幅渲染 `flowStep.passkeyAlreadyRegistered`：说明此设备已登记过通行密钥，提示换一台设备或改用验证器应用；不把同一设备上的重试当作可修复的失败 |
 | 需要新鲜认证的自助写被拒为 401 `authn.insufficient_user_authentication` | 打开加强认证对话框，成功后重跑那次被拒的写一次 |
@@ -370,6 +386,7 @@ sequenceDiagram
 - **写后失效。** 每次成功的写（撤销、解绑、绑定、改显示名、改口令、加手机、加标识、删标识、验证邮箱、更换待验证邮箱、选择或取消登录方式、改选默认联系地址）都失效相关查询，让视图收敛到服务端应答；验证邮箱、更换邮箱与登录方式的选择、默认联系地址的改选另失效档案读，使 `verification`、`identifiers` 与分组同步翻转。改口令、添加用户名与把邮箱或手机选作登录方式另失效会话列表，因为这几条路由会撤销账户的其余会话。失效用导出的查询键构造器。
 - **加强认证的存续期随会话。** 一次加强认证流程的完成更新会话的等级与认证时刻；未完成加强认证的安全类动作由服务端以 401 要求加强认证，本包据此打开挑战流程。
 - **新鲜第一因素的判定用客户端时钟，边缘不保证。** 判定把会话的认证时刻（服务端时钟）与客户端当前时间相比；两个时钟有偏差时，落在窗口边缘的判定可能偏向任一侧：客户端时钟偏慢，则窗口刚过的偏差时长内给出登记两步验证的提示；偏快，则多一次重新证明。两种偏向都只持续到偏差时长过去，重新打开对话框即得到正确情形，账户的可进展性不受影响。认证时刻晚于客户端当前时间的会话不判为新鲜。
+- **所有者转移的确认与拒绝以服务端条件更新仲裁。** `OwnerTransferRequestsPage` 不打开事务；确认或拒绝被 409 拒绝时重读该请求，以服务端状态收敛。确认成功失效列表、请求与组织资料读，拒绝成功失效列表与请求。
 - 本包不打开事务；读与写都是宿主 QueryClient 与绑定客户端上的往返。
 
 ## 实现状态
@@ -406,6 +423,7 @@ sequenceDiagram
 | 两步验证因素行的名称、最近使用时刻、行尾动作（重命名与移除） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.rename`、`mfa.renamed`、`mfa.renameLabel`、`mfa.renameHint`、`mfa.renameSave`、`mfa.renameCancel`、`mfa.remove`、`mfa.removeConfirm`、`mfa.factor.lastUsedAt`、`mfa.factor.neverUsed`、`mfa.factor.status.disabled`、`mfa.enroll.labelField`、`mfa.enroll.labelHelp` |
 | 两步验证按种类分组，待确认行不渲染，登记面板就地展开并说明确认后果 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.enroll.title`、`mfa.enroll.note`、`mfa.addAria`、`mfa.action.add` |
 | 两步验证的登记、重命名与移除共用一个结果槽，位于分组列表下方 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/ui-kit/src/write-feedback.ts` `useWriteFeedback`；`web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion` |
+| 账户级所有者转移请求页（列表、详情、确认与拒绝、确认后失效组织资料读） | 已实现 | `web/packages/account-ui/src/OwnerTransferRequestsPage.tsx` `OwnerTransferRequestsPage`、`OwnerTransferRequestsPageProps`；测试 `OwnerTransferRequestsPage.test.tsx` |
 | 命名空间资源 | 已实现 | `web/packages/account-ui/src/resources.ts` `ACCOUNT_UI_NAMESPACE`、`accountUiResources` |
 | 登录标识节的邮箱可用性属性 `emailAvailable` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
 | 档案已列出用户名时，添加界面不提供用户名 kind | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |

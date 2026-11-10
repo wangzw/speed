@@ -49,12 +49,15 @@ frame, the admin root being a dashboard:
   the roster read (its length and status split) and the newest page of the
   audit query as the recent-activity list;
 - the **tenant roster** over `/api/v1/system/tenants` -- list, rename,
-  enable/disable, transfer ownership and delete an organization, and a row
-  opens that tenant's detail page; registration is the standalone
+  enable/disable, request an ownership transfer and delete an organization,
+  and a row opens that tenant's detail page; registration is the standalone
   `/tenants/new` page, which renders the shared `@speed/org-create-ui` form
   in platform mode. The transfer and delete entries render only for a
   caller whose platform permission set holds `tenant.manage`, and a
-  personal organization or a tombstone carries neither. The transfer
+  personal organization or a tombstone carries neither. Ownership moves
+  only when the target confirms the request; the control group reads the
+  pending request back and shows its target and deadline with a cancel
+  action. The request
   dialog has two target paths: the organization's member selector when the
   caller's tenant permission set holds `authn.membership.manage`, and the
   platform account selector otherwise. The endpoint still refuses a target
@@ -130,18 +133,22 @@ profile wrapper hands the current tenant, the host's
 `onTenantUpdated` and `onOrganizationLeft` to `TenantProfilePage`: a
 read-only identity card (including the owner's display name and username), an editable profile
 card, and an ownership card only the current owner sees, from which the
-organization can be transferred to a searched member or deleted after the
-name is typed; a landed save asks the host to reload the caller tenant list
-the account menu and breadcrumb read, and a landed transfer or deletion asks
+organization can be asked to take ownership, or deleted after the name is
+typed; the card shows a pending request with its deadline and a cancel
+action, and holds the request control while one waits. A landed save asks
+the host to reload the caller tenant list
+the account menu and breadcrumb read; a landed deletion asks
 the host to leave the organization, reload that list and show the
-confirmation where the viewer lands. The
+confirmation where the viewer lands. A request changes nothing until the
+target confirms, so it never departs. The
 shared pages render through the
 package-internal `AdminPageHeader`, which prefers the organization
 breadcrumb context and falls back to the page's own platform trail
 otherwise. The `OrganizationAdminOperations` bundle carries
 the tenant-scoped invitation, membership and SSO members, the tenant
 settings members, the tenant roles/grants/bindings members, and the owner
-transfer and organization deletion writes; no member addresses a platform
+transfer pending/request/cancel writes plus organization deletion; no
+member addresses a platform
 asset or the platform account read.
 
 Each page opens with the package-internal `AdminPageHeader` (a binding of
@@ -313,9 +320,11 @@ policies as switches under `/api/v1/tenants/{tenant}/settings`; the roles
 page reads the governed catalog, the role list, its grants and its usage
 page, and writes roles, descriptions and grants; the profile page reads
 and writes `/api/v1/tenants/{tenant}/profile`, shows the current owner, and
-offers the current owner the transfer and deletion controls; a landed save
-asks the host to reload the caller tenant list, and a landed transfer or
-deletion asks the host to leave the organization, reload it, and show the
+offers the current owner the transfer-request and deletion controls (the
+request waits for the target's confirmation, and the card shows the pending
+request with a cancel action); a landed save
+asks the host to reload the caller tenant list, and a landed deletion asks
+the host to leave the organization, reload it, and show the
 confirmation where the viewer lands. The platform
 `PermissionsPage` remains the platform surface's own page and keeps its
 bindings and account lookup.
@@ -507,11 +516,12 @@ the current tenant:
   `onTenantUpdated` and `onOrganizationLeft`: it reads and writes
   `/api/v1/tenants/{tenant}/profile`, renders a read-only identity card
   (with the owner's display name and username), an editable profile card and a current-owner-only
-  ownership card that searches the organization's members and transfers the
-  organization to one of them or deletes it after the name is typed, asks
+  ownership card that searches the organization's members, requests a
+  transfer to one of them, shows the pending request with its deadline and
+  cancel action, or deletes it after the name is typed, asks
   the host to reload the caller tenant list after a landed save, and asks the
   host to leave the organization, reload that list and show the confirmation
-  where the viewer lands after a landed transfer or deletion.
+  where the viewer lands after a landed deletion.
 
 None of the five wrappers issues an `/api/v1/system` request.
 

@@ -28,6 +28,7 @@ import {
   createAdminOperations,
   makeAdminBackend,
   tenantFixture,
+  transferFixture,
 } from '../test-utils/operations.js'
 import {
   AUTHENTICATED_SNAPSHOT,
@@ -218,9 +219,9 @@ describe('platform tenant lifecycle entries', () => {
         },
         listMembers: () =>
           Promise.resolve({ members: [...MEMBERS], next_cursor: '' }),
-        transferTenantOwner: (input) => {
+        requestTenantOwner: (input) => {
           writes.push(input)
-          return Promise.resolve()
+          return Promise.resolve(transferFixture())
         },
       }),
     )
@@ -290,8 +291,73 @@ describe('platform tenant lifecycle entries', () => {
       ),
     ).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // A landed transfer re-reads the roster.
-    await waitFor(() => expect(reads).toBeGreaterThan(1))
+    // A request changes no owner column, so the roster is not re-read.
+    expect(reads).toBe(1)
+  })
+
+  it('shows the pending request with its target and lets platform staff cancel it', async () => {
+    const user = userEvent.setup()
+    let pending: ReturnType<typeof transferFixture> | null = transferFixture({
+      targetDisplayName: 'Ada Lovelace',
+      targetUsername: 'ada',
+    })
+    const cancelled: Array<{ name: string; request: string }> = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        getPendingTenantOwner: () => Promise.resolve(pending),
+        cancelTenantOwner: (input) => {
+          cancelled.push(input)
+          pending = null
+          return Promise.resolve()
+        },
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    expect(
+      await screen.findByText(zhCN.tenantLifecycle.transfer.pendingTitle),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        text(zhCN.tenantLifecycle.transfer.pendingTarget, {
+          target: 'Ada Lovelace (ada)',
+        }),
+      ),
+    ).toBeInTheDocument()
+    // The request control is held while one is pending.
+    expect(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+      }),
+    ).toBeDisabled()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.pendingCancel,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.tenantLifecycle.transfer.pendingCancelTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.pendingCancel,
+      }),
+    )
+    await waitFor(() =>
+      expect(cancelled).toEqual([{ name: 'acme', request: 'transfer-1' }]),
+    )
+    expect(
+      await screen.findByText(zhCN.tenantLifecycle.transfer.pendingCancelled),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.tenantLifecycle.transfer.pendingTitle),
+      ).toBeNull(),
+    )
   })
 
   it('uses the account selector without the member read, and explains the 409 inline', async () => {
@@ -310,7 +376,7 @@ describe('platform tenant lifecycle entries', () => {
             accounts: [accountFixture({ id: 'acc-9', display_name: 'Bob' })],
             next_cursor: '',
           }),
-        transferTenantOwner: (input) => {
+        requestTenantOwner: (input) => {
           writes.push(input)
           return Promise.reject({ status: 409, code: 'tenant.conflict' })
         },
@@ -377,7 +443,7 @@ describe('platform tenant lifecycle entries', () => {
             accounts: [accountFixture({ id: 'acc-9', display_name: 'Bob' })],
             next_cursor: '',
           }),
-        transferTenantOwner: () =>
+        requestTenantOwner: () =>
           Promise.reject({ status: 404, code: 'client.http.404' }),
       }),
     )
@@ -419,7 +485,7 @@ describe('platform tenant lifecycle entries', () => {
             accounts: [accountFixture({ id: 'acc-9', display_name: 'Bob' })],
             next_cursor: '',
           }),
-        transferTenantOwner: () =>
+        requestTenantOwner: () =>
           Promise.reject({ status: 403, code: 'client.http.403' }),
       }),
     )
@@ -705,10 +771,11 @@ describe('tenant detail lifecycle', () => {
     ).toBeNull()
   })
 
-  it('refreshes the detail read after a landed transfer', async () => {
+  it('shows the pending request on the detail page without re-reading the tenant', async () => {
     const user = userEvent.setup()
     let reads = 0
     const writes: Array<{ name: string; account: string }> = []
+    let pending: ReturnType<typeof transferFixture> | null = null
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () => {
@@ -717,11 +784,16 @@ describe('tenant detail lifecycle', () => {
             tenantFixture({ name: 'acme', displayName: 'Acme' }),
           )
         },
+        getPendingTenantOwner: () => Promise.resolve(pending),
         listMembers: () =>
           Promise.resolve({ members: [...MEMBERS], next_cursor: '' }),
-        transferTenantOwner: (input) => {
+        requestTenantOwner: (input) => {
           writes.push(input)
-          return Promise.resolve()
+          pending = transferFixture({
+            targetDisplayName: 'Ada Lovelace',
+            targetUsername: 'ada',
+          })
+          return Promise.resolve(pending)
         },
       }),
     )
@@ -754,7 +826,12 @@ describe('tenant detail lifecycle', () => {
     await waitFor(() => {
       expect(writes).toEqual([{ name: 'acme', account: 'acc-2' }])
     })
-    await waitFor(() => expect(reads).toBeGreaterThan(1))
+    // The request is recorded; the tenant's owner column is not, so the
+    // detail read stays settled and only the pending read converges.
+    expect(
+      await screen.findByText(zhCN.tenantLifecycle.transfer.pendingTitle),
+    ).toBeInTheDocument()
+    expect(reads).toBe(1)
   })
 
   it('keeps the delete confirmation after the detail settles into a tombstone', async () => {

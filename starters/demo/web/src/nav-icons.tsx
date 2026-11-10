@@ -62,6 +62,29 @@ export function NotificationsNavIcon({ size = 24 }: IconProps) {
   )
 }
 
+/** The ownership transfer requests: two arrows exchanging. */
+export function TransferRequestsNavIcon({ size = 24 }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 8.5h13" />
+      <path d="m15 5.5 3 3-3 3" />
+      <path d="M19 15.5H6" />
+      <path d="m9 12.5-3 3 3 3" />
+    </svg>
+  )
+}
+
 /** The account settings: a person silhouette. */
 export function AccountNavIcon({ size = 24 }: IconProps) {
   return (

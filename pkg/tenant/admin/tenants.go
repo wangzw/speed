@@ -137,55 +137,6 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 	return tenantCreatedBody{Tenant: tenantViewOf(written, kind)}, nil
 }
 
-// handleTenantTransferOwner answers PUT /api/v1/system/tenants/:tenant/owner:
-// it hands one tenant's ownership to an active member. It is a write, so the
-// action is tenant.manage.
-//
-// The tenant is read first so an identifier no row carries is a bare 404 and a
-// tombstone a 409, both before the audit. The mandatory audit row lands before
-// the transfer; a refusal closes it with a linked failed row. The transfer
-// itself is the host seam's: it grants the target tenant-admin if needed, writes
-// the owner, and removes the previous owner's bindings and membership in one
-// transaction. A target that is not an active member, a target whose account is
-// not active, and a transfer that lost the row to a deletion, are 409. This is
-// platform staff's route, so the transfer carries no ownership expectation.
-func (p *product) handleTenantTransferOwner(ctx context.Context, in transferOwnerInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	if !tenant.IsIdentifier(in.ID) {
-		return nil, badRequest()
-	}
-	if _, err := authn.ParseAccountID(in.Account); err != nil {
-		return nil, badRequest()
-	}
-	got, ok, err := p.catalog.Get(ctx, tenant.ID(in.ID))
-	if err != nil {
-		return p.replyFailure("reading a tenant", err)
-	}
-	if !ok {
-		return speedhttp.EmptyReply(http.StatusNotFound), nil
-	}
-	if got.Status == tenant.StatusDeleted {
-		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
-	}
-
-	name, nameErr := p.nameOf(ctx, tenant.ID(in.ID))
-	if nameErr != nil {
-		return p.replyFailure("reading a tenant's name", nameErr)
-	}
-	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, name, map[string]string{
-		detailActionID: actionID,
-		detailTenant:   name,
-		detailSurface:  surfacePlatform,
-	})); err != nil {
-		return nil, err
-	}
-	if err := p.organization.TransferOwner(ctx, tenant.ID(in.ID), in.Account, ""); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, name, actionID))
-		return nil, p.failureOf("transferring a tenant's owner", err)
-	}
-	return speedhttp.EmptyReply(http.StatusNoContent), nil
-}
-
 // handleTenantDelete answers DELETE /api/v1/system/tenants/:tenant: it writes
 // the tenant's tombstone and cleans its core relations. It is platform staff's
 // route: the action is tenant.manage in the platform domain.
@@ -239,65 +190,6 @@ func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *
 	if err := p.organization.DeleteOrganization(ctx, tenant.ID(in.ID), ""); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, name, actionID))
 		return nil, p.failureOf("deleting a tenant", err)
-	}
-	return speedhttp.EmptyReply(http.StatusNoContent), nil
-}
-
-// handleTenantOwnerTransfer answers PUT /api/v1/tenants/:tenant/owner: the
-// organization's own owner hands its ownership to an active member. The tenant
-// surface's guard has already held the path tenant to the resolved tenant,
-// refused the platform domain and decided that the caller is the row's owner;
-// this handler reads the row again for its existence answers, lands the
-// mandatory audit row and calls the same organization writer the platform
-// surface calls.
-//
-// The expected owner is the caller, not the owner this handler's read returns: a
-// transfer can commit between the guard's read and this one, and the second read
-// would otherwise name the new owner as its own expectation. A transfer that
-// wins the race therefore leaves the old owner's transfer a 409
-// (tenant.ErrOwnerChanged) rather than handing on an organization the caller no
-// longer governs.
-//
-// The tenant is the identifier the request resolved to, never the path segment
-// as written, so a name addresses the same tenant.
-func (p *product) handleTenantOwnerTransfer(ctx context.Context, in ownerTransferInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	if _, err := authn.ParseAccountID(in.Account); err != nil {
-		return nil, badRequest()
-	}
-	tenantID, ok := tenant.FromContext(ctx)
-	if !ok {
-		return speedhttp.EmptyReply(http.StatusNotFound), nil
-	}
-	got, found, err := p.catalog.Get(ctx, tenantID)
-	if err != nil {
-		return p.replyFailure("reading a tenant", err)
-	}
-	if !found {
-		return speedhttp.EmptyReply(http.StatusNotFound), nil
-	}
-	if got.Status == tenant.StatusDeleted {
-		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
-	}
-	id, ok := authn.FromContext(ctx)
-	if !ok {
-		return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
-	}
-
-	name, nameErr := p.nameOf(ctx, tenantID)
-	if nameErr != nil {
-		return p.replyFailure("reading a tenant's name", nameErr)
-	}
-	actionID := newActionID()
-	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, name, map[string]string{
-		detailActionID: actionID,
-		detailTenant:   name,
-		detailSurface:  surfaceTenant,
-	})); err != nil {
-		return nil, err
-	}
-	if err := p.organization.TransferOwner(ctx, tenantID, in.Account, id.Actor().String()); err != nil {
-		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, name, actionID))
-		return nil, p.failureOf("transferring a tenant's owner", err)
 	}
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }

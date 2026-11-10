@@ -2,7 +2,7 @@
 
 ## 参与者
 
-平台运营者：持平台域的租户读取权限与租户管理权限，以及成员关系管理权限，账户邮箱已经证明。邀请落地一步由受邀成员在浏览器中完成；该成员是持有接受链接的访问者。
+平台运营者：持平台域的租户读取权限与租户管理权限，以及成员关系管理权限，账户邮箱已经证明。邀请落地一步由受邀成员在浏览器中完成；该成员是持有接受链接的访问者，也是所有权转移请求的目标，确认或拒绝由它在本人的账户级转移请求页完成。
 
 ## 前置条件
 
@@ -25,9 +25,9 @@
 10. 成员在账户菜单的组织行看到当前租户就是这个租户；若账户另有租户，展开组织行后列出其余租户，选中其一即切到该租户，切回时展示的数据随之切换。再次打开同一条接受链接得到邀请已失效的结果，不产生新的成员关系。
 11. 运营者回到管理后台的「邀请与成员」页并刷新，看到这条邀请的状态为已接受，成员列表包含被邀请地址对应的账户。
 
-12. 运营者在名册中选择一个成员列表含可转移成员的租户，打开转移所有者操作。运营者是该组织的 tenant-admin 时，对话框提供该组织的成员选择器；只持 `tenant.manage` 时提供平台账户选择器。选定 active 成员并二次确认后，转移成功，页面给出点名该租户与新所有者的确认；目标不是该组织 active 成员时被拒绝。
+12. 运营者在名册中选择一个成员列表含可转移成员的租户，打开发起转移请求操作。运营者是该组织的 tenant-admin 时，对话框提供该组织的成员选择器；只持 `tenant.manage` 时提供平台账户选择器。选定 active 成员并二次确认后，请求被记录，页面给出点名该租户与目标的待处理确认，所有权不变；目标不是该组织 active 成员时被拒绝。系统向目标发出站内通知，目标在自己的账户级转移请求页确认后，名册的显示内容才变为新所有者；目标拒绝、运营者取消或请求到期时所有权不变。运营者不能代替目标确认。
 
-13. 运营者在名册中删除一个自己登记的租户：一次确认对话框与一次加重确认之后，该行以墓碑呈现，转移与删除入口都不再出现；再次登记同一个名称被拒绝，名册不新增行。
+13. 运营者在名册中删除一个自己登记的租户：一次确认对话框与一次加重确认之后，该行以墓碑呈现，转移请求与删除入口都不再出现；再次登记同一个名称被拒绝，名册不新增行。
 
 ## 结果
 
@@ -36,7 +36,7 @@
 - 该租户的成员列表包含被邀请地址对应的账户。
 - 受邀成员接受后落在该租户的租户区首页，账户菜单的组织行把它显示为当前组织；展示的数据属于该租户。
 - 同一条接受链接再次打开被拒，不产生第二条成员关系。
-- 平台运营者可以转移租户的所有者并删除租户；转移给出点名新所有者的确认，删除后该行以墓碑呈现、入口消失，删除的名称不能再次登记。
+- 平台运营者可以发起租户的所有者转移请求并删除租户；发起给出点名目标的待处理确认，目标确认后名册显示新所有者；目标拒绝、取消或到期时所有权不变。删除后该行以墓碑呈现、入口消失，删除的名称不能再次登记。
 
 ## 备选路径
 
@@ -91,7 +91,12 @@ flowchart TD
 - `REQ-tenancy-061`
 - `REQ-tenancy-062`
 - `REQ-tenancy-064`
+- `REQ-tenancy-066`
+- `REQ-tenancy-067`
+- `REQ-tenancy-068`
+- `REQ-tenancy-069`
+- `REQ-tenancy-070`
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`；`operator-onboards-tenant: the operator transfers a tenant owner through the member selector`（组织成员选择器转移所有者）；`operator-onboards-tenant: with only tenant.manage the operator uses the account selector and a non-member is refused`（平台账户选择器与非成员拒绝）；`operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（删除与墓碑、名称不可复用）。平台详情页的资料编辑由 `web/packages/admin-ui/src/TenantDetailPage.test.tsx` 覆盖。
+`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`；所有权转移请求与目标确认的端到端用例未实现，由后端用例 `pkg/tenant/ownership/request_test.go` 与组件用例 `web/packages/admin-ui/src/internal/tenant-lifecycle.test.tsx` 覆盖；`operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused`（删除与墓碑、名称不可复用）。平台详情页的资料编辑由 `web/packages/admin-ui/src/TenantDetailPage.test.tsx` 覆盖。

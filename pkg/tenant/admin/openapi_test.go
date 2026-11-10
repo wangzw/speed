@@ -19,6 +19,7 @@ type seams struct {
 	tenant.WriteGuard
 	tenant.Provisioner
 	tenant.OrganizationWriter
+	tenant.OwnershipTarget
 	guard.Guard
 	audit.Audit
 	authn.SignupVerification
@@ -37,7 +38,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Stubs: []core.Module{
 			routecontract.StandIn("stand-in.seams", &seams{},
 				(*tenant.Catalog)(nil), (*tenant.WriteGuard)(nil), (*tenant.Provisioner)(nil),
-				(*tenant.OrganizationWriter)(nil),
+				(*tenant.OrganizationWriter)(nil), (*tenant.OwnershipTarget)(nil),
 				(*guard.Guard)(nil), (*audit.Audit)(nil),
 				(*authn.SignupVerification)(nil)),
 		},
@@ -45,6 +46,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 			ConfigNamespace: map[string]any{
 				"endpoints":        []string{"admin"},
 				"tenant-endpoints": []string{"api"},
+				"self-endpoints":   []string{"api"},
 			},
 		},
 	})

@@ -13,7 +13,9 @@
  * surface (a controlled theme-preset choice whose presets and labels the
  * host supplies), the session list
  * (with per-session and bulk revocation), the social-binding surface and
- * its callback handler, and the step-up-gated two-step-verification setup
+ * its callback handler, the step-up-gated two-step-verification setup, and
+ * the account-level ownership transfer requests page where a target
+ * confirms or declines an organization's request
  * -- each rendering every built-in string from the bilingual account-ui
  * namespace
  * (ACCOUNT_UI_NAMESPACE + accountUiResources, which the host registers
@@ -88,6 +90,10 @@ export {
   useSocialMethodsAvailable,
   type SocialMethodsAvailability,
 } from './social-methods.js'
+export {
+  OwnerTransferRequestsPage,
+  type OwnerTransferRequestsPageProps,
+} from './OwnerTransferRequestsPage.js'
 export { MfaSection, type MfaSectionProps } from './MfaSection.js'
 /**
  * The step-up re-verification dialog, exported for the host. Its gate is

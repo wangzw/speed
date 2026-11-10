@@ -1,0 +1,11 @@
+{
+  "tenant.owner.transfer_requested.in_app.title": "所有权转移请求",
+  "tenant.owner.transfer_requested.in_app.body": "{{tenant}} 的所有者希望把组织所有权转交给你。该请求将于 {{expires_at}} 到期。请在你的转移请求中确认或拒绝。",
+  "tenant.owner.transfer_requested.in_app.link": "/transfer-requests/{{request}}",
+  "tenant.owner.transfer_confirmed.in_app.title": "所有权已转移",
+  "tenant.owner.transfer_confirmed.in_app.body": "{{tenant}} 的所有权已转交给你指定的成员。",
+  "tenant.owner.transfer_declined.in_app.title": "转移请求被拒绝",
+  "tenant.owner.transfer_declined.in_app.body": "你指定的成员拒绝了 {{tenant}} 的所有权。你仍是该组织的所有者。",
+  "tenant.owner.transfer_expired.in_app.title": "转移请求已到期",
+  "tenant.owner.transfer_expired.in_app.body": "{{tenant}} 的所有权转移请求已到期。你仍是该组织的所有者。"
+}

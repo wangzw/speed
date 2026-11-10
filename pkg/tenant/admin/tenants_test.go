@@ -150,12 +150,13 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 		body   any
 		want   authz.Permission
 	}{
-		"list":     {http.MethodGet, pathTenants, nil, PermissionTenantRead},
-		"get":      {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
-		"create":   {http.MethodPost, pathTenants, createBody{Name: "abc"}, PermissionTenantManage},
-		"transfer": {http.MethodPut, pathTenants + "/t/owner", map[string]any{"account": "acc-2"}, PermissionTenantManage},
-		"delete":   {http.MethodDelete, pathTenants + "/t", nil, PermissionTenantManage},
-		"status":   {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
+		"list":             {http.MethodGet, pathTenants, nil, PermissionTenantRead},
+		"get":              {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
+		"create":           {http.MethodPost, pathTenants, createBody{Name: "abc"}, PermissionTenantManage},
+		"request transfer": {http.MethodPost, pathTenants + "/t/owner/requests", map[string]any{"account": "acc-2"}, PermissionTenantManage},
+		"pending transfer": {http.MethodGet, pathTenants + "/t/owner/requests/pending", nil, PermissionTenantRead},
+		"delete":           {http.MethodDelete, pathTenants + "/t", nil, PermissionTenantManage},
+		"status":           {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -426,14 +427,14 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 		target string
 		body   any
 	}{
-		"create carrying an identifier":     {http.MethodPost, pathTenants, map[string]any{"name": "acme", "id": "t_acme"}},
-		"create with a blank name":          {http.MethodPost, pathTenants, createBody{Name: "a b"}},
-		"create with a short name":          {http.MethodPost, pathTenants, createBody{Name: "ab"}},
-		"create with an underscored name":   {http.MethodPost, pathTenants, createBody{Name: "a_b"}},
-		"create with a body it cannot read": {http.MethodPost, pathTenants, "not-an-object"},
-		"delete with a blank identifier":    {http.MethodDelete, pathTenants + "/t%20acme", nil},
-		"transfer with an invalid account":  {http.MethodPut, pathTenants + "/t_acme/owner", map[string]any{"account": "not an account"}},
-		"status outside the closed set":     {http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "pending"}},
+		"create carrying an identifier":            {http.MethodPost, pathTenants, map[string]any{"name": "acme", "id": "t_acme"}},
+		"create with a blank name":                 {http.MethodPost, pathTenants, createBody{Name: "a b"}},
+		"create with a short name":                 {http.MethodPost, pathTenants, createBody{Name: "ab"}},
+		"create with an underscored name":          {http.MethodPost, pathTenants, createBody{Name: "a_b"}},
+		"create with a body it cannot read":        {http.MethodPost, pathTenants, "not-an-object"},
+		"delete with a blank identifier":           {http.MethodDelete, pathTenants + "/t%20acme", nil},
+		"transfer request with an invalid account": {http.MethodPost, pathTenants + "/t_acme/owner/requests", map[string]any{"account": "not an account"}},
+		"status outside the closed set":            {http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "pending"}},
 		"status the closed set keeps for deletion": {
 			http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "deleted"},
 		},

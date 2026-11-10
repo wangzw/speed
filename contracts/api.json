@@ -2755,6 +2755,291 @@
         "x-endpoint": "account"
       }
     },
+    "/api/v1/auth/me/owner-transfer-requests": {
+      "get": {
+        "description": "Lists every pending owner-transfer request addressed to the caller, across every organization. The caller's own identity is the whole credential: no tenant context and no organization permission is asked. Expired requests are settled as expired before the read.",
+        "operationId": "tenant.admin.me.transferRequests",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Every pending owner-transfer request addressed to the caller.",
+                  "properties": {
+                    "requests": {
+                      "description": "The caller's pending requests, ordered by request time.",
+                      "items": {
+                        "$ref": "#/components/schemas/MyTransferView"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller's pending requests"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List the caller's pending ownership-transfer requests",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "account"
+      }
+    },
+    "/api/v1/auth/me/owner-transfer-requests/{request}": {
+      "get": {
+        "description": "Reads one request addressed to the caller in whatever state it is, so a deep link can show a request that was already confirmed, declined, cancelled or expired. A request that does not exist and one addressed to another account are answered alike with a bare 404.",
+        "operationId": "tenant.admin.me.transferRequest",
+        "parameters": [
+          {
+            "description": "The owner-transfer request identifier.",
+            "in": "path",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "One owner-transfer request addressed to the caller, in whatever state it is.",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/MyTransferView",
+                      "description": "The request, with the organization's name and its state."
+                    }
+                  },
+                  "required": [
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "404": {
+            "description": "No such request is addressed to the caller"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read one ownership-transfer request addressed to the caller",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "account"
+      }
+    },
+    "/api/v1/auth/me/owner-transfer-requests/{request}/confirm": {
+      "post": {
+        "description": "Confirms one pending request addressed to the caller and writes the transfer. The request is re-read under the organization's lock; the requester must still be the owner and the caller must still be an active member, or the request is answered 409. The previous owner stays an active member and keeps every binding it held. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503. An unverified self-registration is answered 403 contact-required.",
+        "operationId": "tenant.admin.me.confirmTransfer",
+        "parameters": [
+          {
+            "description": "The owner-transfer request identifier.",
+            "in": "path",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The ownership was transferred"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller has not proved an email address (contact-required)"
+          },
+          "404": {
+            "description": "No such request is addressed to the caller"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request is no longer pending or has expired, the requester no longer owns the organization, the organization was deleted, or the caller is no longer an active member"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Confirm an ownership-transfer request addressed to the caller",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "account"
+      }
+    },
+    "/api/v1/auth/me/owner-transfer-requests/{request}/decline": {
+      "post": {
+        "description": "Declines one pending request addressed to the caller. Ownership does not change. The caller's own identity is the whole credential; the action is harmless and carries no registration gate.",
+        "operationId": "tenant.admin.me.declineTransfer",
+        "parameters": [
+          {
+            "description": "The owner-transfer request identifier.",
+            "in": "path",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The request was declined"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "404": {
+            "description": "No such request is addressed to the caller"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request is no longer pending or has expired"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Decline an ownership-transfer request addressed to the caller",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "account"
+      }
+    },
     "/api/v1/auth/me/tenants": {
       "get": {
         "description": "Answers the tenants the calling account holds an active membership in, with each tenant's name, display name and kind. No identifier is exposed: the name is what a client addresses the tenant by. The display name is the organization's, empty when its profile names none; a surface falls back to the name then. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is in the membership read's order, a stable enumeration over tenants the view exposes by name alone, and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
@@ -9616,10 +9901,10 @@
         "x-endpoint": "admin"
       }
     },
-    "/api/v1/system/tenants/{tenant}/owner": {
-      "put": {
-        "description": "Hands one tenant's ownership to an active member. The target must already be an active member of the organization; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.",
-        "operationId": "tenant.admin.tenants.transferOwner",
+    "/api/v1/system/tenants/{tenant}/owner/requests": {
+      "post": {
+        "description": "Records a pending request to hand one tenant's ownership to an active member. Ownership does not change until the target confirms. The target must be an active member whose account is active; one pending request per organization is accepted. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.",
+        "operationId": "tenant.admin.tenants.requestTransfer",
         "parameters": [
           {
             "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
@@ -9635,16 +9920,33 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TenantAdminTenantOwnerTransfer"
+                "$ref": "#/components/schemas/TenantAdminTenantOwnerTransferRequest"
               }
             }
           },
-          "description": "The account identifier of the active member that becomes the owner.",
+          "description": "The account identifier of the active member the request names as the next owner.",
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "The ownership was transferred"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The owner-transfer request as recorded, pending.",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/TenantTransferView",
+                      "description": "The pending request. Ownership has not changed."
+                    }
+                  },
+                  "required": [
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The pending request"
           },
           "400": {
             "content": {
@@ -9654,7 +9956,7 @@
                 }
               }
             },
-            "description": "The name is outside the slug domain, the request body is not one JSON object, or the account member is absent"
+            "description": "The name is outside the slug domain, the request body is not one JSON object, the account member is absent, or the target is already the owner"
           },
           "401": {
             "content": {
@@ -9674,7 +9976,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the organization is protected"
           },
           "404": {
             "description": "No tenant carries the name"
@@ -9687,7 +9989,7 @@
                 }
               }
             },
-            "description": "The target is not an active member of the organization, the target's account is not active, or the tenant is a tombstone"
+            "description": "The target is not an active member, the target's account is not active, the tenant is a tombstone, the organization has no owner, or a request is already pending"
           },
           "413": {
             "content": {
@@ -9718,7 +10020,189 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Transfer one tenant's owner",
+        "summary": "Request a tenant's ownership transfer",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "admin"
+      }
+    },
+    "/api/v1/system/tenants/{tenant}/owner/requests/pending": {
+      "get": {
+        "description": "Reads the organization's pending owner-transfer request, or null when it has none. An expired request is settled as expired before the read, so it is never returned as pending.",
+        "operationId": "tenant.admin.tenants.pendingTransfer",
+        "parameters": [
+          {
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The organization's pending owner-transfer request, or null.",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/TenantTransferView",
+                      "description": "The pending request, or null when the organization has none."
+                    }
+                  },
+                  "required": [
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The pending request, or null"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no tenant.read in the platform domain"
+          },
+          "404": {
+            "description": "No tenant carries the name"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read a tenant's pending ownership-transfer request",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "admin"
+      }
+    },
+    "/api/v1/system/tenants/{tenant}/owner/requests/{request}": {
+      "delete": {
+        "description": "Cancels one pending owner-transfer request platform staff names. Ownership does not change. A request that is already terminal is answered 409.",
+        "operationId": "tenant.admin.tenants.cancelTransfer",
+        "parameters": [
+          {
+            "description": "The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The owner-transfer request identifier.",
+            "in": "path",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The request was cancelled"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The name is outside the slug domain or the request identifier is not well formed"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no tenant.manage in the platform domain"
+          },
+          "404": {
+            "description": "No tenant carries the name, or no such request belongs to it"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request is no longer pending, or it has expired"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Cancel a tenant's pending ownership-transfer request",
         "tags": [
           "tenant.admin"
         ],
@@ -11970,10 +12454,10 @@
         "x-endpoint": "api"
       }
     },
-    "/api/v1/tenants/{tenant}/owner": {
-      "put": {
-        "description": "Hands one organization's ownership on, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. The target must be an active member of the organization whose account is active; the transfer grants it tenant-admin if it does not hold it, and the previous owner loses every binding in the organization and is removed from it. The transfer and those writes are one transaction, under the tenant lock the platform surface takes too. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.",
-        "operationId": "tenant.admin.owner.transfer",
+    "/api/v1/tenants/{tenant}/owner/requests": {
+      "post": {
+        "description": "Records a pending request to hand one organization's ownership to an active member, called by the organization's current owner. The tenant surface decides by owner identity: the acting account must be the row's OwnerAccount, and no platform permission is asked. Ownership does not change until the target confirms. A mandatory audit row lands before the write; if it cannot, nothing is written and the request is answered 503.",
+        "operationId": "tenant.admin.owner.requestTransfer",
         "parameters": [
           {
             "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404.",
@@ -11989,16 +12473,33 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TenantOwnerTransfer"
+                "$ref": "#/components/schemas/TenantOwnerTransferRequest"
               }
             }
           },
-          "description": "The account identifier of the active member that becomes the owner.",
+          "description": "The account identifier of the active member the request names as the next owner.",
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "The ownership was transferred"
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The owner-transfer request as recorded, pending.",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/TenantTransferView",
+                      "description": "The pending request. Ownership has not changed."
+                    }
+                  },
+                  "required": [
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The pending request"
           },
           "400": {
             "content": {
@@ -12008,7 +12509,7 @@
                 }
               }
             },
-            "description": "The name is outside the slug domain, the request body is not one JSON object, or the account member is absent"
+            "description": "The name is outside the slug domain, the request body is not one JSON object, the account member is absent, or the target is already the owner"
           },
           "401": {
             "content": {
@@ -12028,7 +12529,7 @@
                 }
               }
             },
-            "description": "The caller is not the organization's owner, or the caller has not proved an email address (contact-required)"
+            "description": "The caller is not the organization's owner, the caller has not proved an email address (contact-required), or the organization is protected"
           },
           "404": {
             "description": "No tenant carries the name, or the path tenant is not the tenant the request resolved to or is the platform domain"
@@ -12041,7 +12542,7 @@
                 }
               }
             },
-            "description": "The target is not an active member, the target's account is not active, the tenant is a tombstone, or the caller stopped owning the organization before the write committed"
+            "description": "The target is not an active member, the target's account is not active, the tenant is a tombstone, the organization has no owner, a request is already pending, or the caller stopped owning the organization"
           },
           "413": {
             "content": {
@@ -12072,7 +12573,189 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Transfer the caller's organization to another member",
+        "summary": "Request the caller's organization's ownership transfer",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "api"
+      }
+    },
+    "/api/v1/tenants/{tenant}/owner/requests/pending": {
+      "get": {
+        "description": "Reads the organization's pending owner-transfer request, or null when it has none, called by the organization's current owner. An expired request is settled as expired before the read.",
+        "operationId": "tenant.admin.owner.pendingTransfer",
+        "parameters": [
+          {
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The organization's pending owner-transfer request, or null.",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/TenantTransferView",
+                      "description": "The pending request, or null when the organization has none."
+                    }
+                  },
+                  "required": [
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The pending request, or null"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is not the organization's owner"
+          },
+          "404": {
+            "description": "No tenant carries the name, or the path tenant is not the tenant the request resolved to or is the platform domain"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read the caller's organization's pending ownership-transfer request",
+        "tags": [
+          "tenant.admin"
+        ],
+        "x-endpoint": "api"
+      }
+    },
+    "/api/v1/tenants/{tenant}/owner/requests/{request}": {
+      "delete": {
+        "description": "Cancels one pending owner-transfer request of the caller's organization. Ownership does not change. The caller must still be the organization's owner.",
+        "operationId": "tenant.admin.owner.cancelTransfer",
+        "parameters": [
+          {
+            "description": "The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The owner-transfer request identifier.",
+            "in": "path",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The request was cancelled"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The name is outside the slug domain or the request identifier is not well formed"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is not the organization's owner"
+          },
+          "404": {
+            "description": "No tenant carries the name, or no such request belongs to it"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request is no longer pending, it has expired, or the caller stopped owning the organization"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Cancel the caller's organization's pending ownership-transfer request",
         "tags": [
           "tenant.admin"
         ],
@@ -17525,6 +18208,48 @@
         ],
         "type": "object"
       },
+      "MyTransferView": {
+        "description": "One owner-transfer request addressed to the caller.",
+        "properties": {
+          "expiresAt": {
+            "description": "When the confirmation window closes, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The request identifier.",
+            "type": "string"
+          },
+          "requestedAt": {
+            "description": "When the request was made, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "description": "The request's state. Only pending requests can be confirmed or declined.",
+            "enum": [
+              "pending",
+              "confirmed",
+              "declined",
+              "cancelled",
+              "expired"
+            ],
+            "type": "string"
+          },
+          "tenant": {
+            "description": "The organization whose ownership the request is about, by its name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant",
+          "requestedAt",
+          "expiresAt",
+          "status"
+        ],
+        "type": "object"
+      },
       "NotificationMessage": {
         "description": "One in-app message as the inbox shows it. The title and body arrive already rendered, and the bookkeeping columns — tenant, recipient, dedupe key, expiry and update time — are not part of this view.",
         "properties": {
@@ -18384,11 +19109,11 @@
         ],
         "type": "object"
       },
-      "TenantAdminTenantOwnerTransfer": {
+      "TenantAdminTenantOwnerTransferRequest": {
         "additionalProperties": false,
         "properties": {
           "account": {
-            "description": "The account identifier of the active member that becomes the organization's owner.",
+            "description": "The account identifier of the active member the request names as the next owner.",
             "type": "string"
           }
         },
@@ -18455,11 +19180,11 @@
         ],
         "type": "object"
       },
-      "TenantOwnerTransfer": {
+      "TenantOwnerTransferRequest": {
         "additionalProperties": false,
         "properties": {
           "account": {
-            "description": "The account identifier of the active member that becomes the organization's owner.",
+            "description": "The account identifier of the active member the request names as the next owner.",
             "type": "string"
           }
         },
@@ -18566,6 +19291,53 @@
           "description",
           "contact_email",
           "website"
+        ],
+        "type": "object"
+      },
+      "TenantTransferView": {
+        "description": "One pending or finished owner-transfer request on the organization's own surface.",
+        "properties": {
+          "expiresAt": {
+            "description": "When the confirmation window closes, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The request identifier the target and the canonical paths address.",
+            "type": "string"
+          },
+          "requestedAt": {
+            "description": "When the request was made, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "description": "The request's state. Only pending requests can be cancelled or confirmed.",
+            "enum": [
+              "pending",
+              "confirmed",
+              "declined",
+              "cancelled",
+              "expired"
+            ],
+            "type": "string"
+          },
+          "targetDisplayName": {
+            "description": "The target account's display name. Empty when the account store does not resolve it.",
+            "type": "string"
+          },
+          "targetUsername": {
+            "description": "The target account's username. Empty when the account store does not resolve it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "targetDisplayName",
+          "targetUsername",
+          "requestedAt",
+          "expiresAt",
+          "status"
         ],
         "type": "object"
       }
@@ -18771,6 +19543,10 @@
     {
       "module": "sms.admin",
       "endpoint": "admin"
+    },
+    {
+      "module": "tenant.admin",
+      "endpoint": "account"
     },
     {
       "module": "tenant.admin",

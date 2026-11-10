@@ -27,6 +27,8 @@ import {
   NOTIFICATIONS_PATH,
   passwordResetRoutes,
   routes,
+  TRANSFER_REQUESTS_PATH,
+  TRANSFER_REQUEST_PATH,
 } from './routes.js'
 import {
   ACCOUNT_SECTION_PATHS,
@@ -49,6 +51,8 @@ describe('the route table', () => {
       ACCOUNT_SECTION_PATHS.sessions,
       ACCOUNT_SECTION_PATHS.preferences,
       ORGANIZATIONS_NEW_PATH,
+      TRANSFER_REQUESTS_PATH,
+      TRANSFER_REQUEST_PATH,
       NOTIFICATIONS_PATH,
       ACCOUNT_CALLBACK_PATH,
     ])
@@ -67,6 +71,10 @@ describe('the route table', () => {
     }
     // The callback is a completion point, not a navigation destination.
     expect(labelled.has(ACCOUNT_CALLBACK_PATH)).toBe(false)
+    // The transfer requests are reached from the account menu, not the
+    // navigation rail.
+    expect(labelled.has(TRANSFER_REQUESTS_PATH)).toBe(false)
+    expect(labelled.has(TRANSFER_REQUEST_PATH)).toBe(false)
   })
 
   it('carries each navigation entry its icon on the declaration itself', () => {

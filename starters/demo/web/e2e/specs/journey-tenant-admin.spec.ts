@@ -3070,6 +3070,153 @@ function deleteOrganizationButton(page: Page): Locator {
 }
 
 /**
+ * Ask the organization's owner to hand ownership to one of its active
+ * members, from the profile page. The dialog's member selector offers the
+ * organization's active members and the request takes the deliberate second
+ * confirmation. A request changes nothing: the caller stays the owner until
+ * the target confirms on the account-level page.
+ */
+async function requestOwnerTransfer(
+  page: Page,
+  target: { readonly displayName: string },
+): Promise<void> {
+  await transferOwnerButton(page).click()
+  const dialog = page.getByRole('dialog', {
+    name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
+      name: OWNED_DISPLAY_NAME,
+    }),
+    exact: true,
+  })
+  await expect(dialog).toBeVisible()
+  await dialog
+    .getByRole('combobox', {
+      name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
+      exact: true,
+    })
+    .click()
+  // Only the organization's active members are offered, minus the current
+  // owner; the target is one.
+  const option = page.getByRole('option', {
+    name: new RegExp(`^${escapeRegExp(target.displayName)} \\(.+\\)$`),
+  })
+  await expect(option).toBeVisible()
+  await option.click()
+
+  // The request asks for the deliberate second confirmation.
+  await dialog
+    .getByRole('button', {
+      name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
+      exact: true,
+    })
+    .click()
+  const again = dialog.getByRole('button', {
+    name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+    exact: true,
+  })
+  await expect(again).toBeEnabled({ timeout: 5_000 })
+  await again.click()
+
+  // The confirmation says the request was sent and that ownership has not
+  // moved, and the card now holds the pending request.
+  await expect(
+    ownershipSection(page).getByText(
+      copyPattern('adminUi', 'tenantProfile.ownership.transfer.requested', {
+        account: `${escapeRegExp(target.displayName)} \\(.+\\)`,
+      }),
+    ),
+  ).toBeVisible({ timeout: 15_000 })
+  await expect(
+    ownershipSection(page).getByRole('region', {
+      name: copy('adminUi', 'tenantProfile.ownership.pending.title'),
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
+/**
+ * The target's side: open the account-level transfer requests page from the
+ * account menu, open the request naming the organization, and confirm it
+ * through the page's own two-step confirmation. The caller has to be a
+ * signed-in active member whose address the invitation proved, because the
+ * confirmation is registration-gated.
+ */
+async function confirmOwnerTransfer(
+  page: Page,
+  organizationName: string,
+): Promise<void> {
+  const menu = await openAccountMenu(page)
+  await menu
+    .getByRole('menuitem', {
+      name: copy('demo', 'userMenu.transferRequests'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: copy('accountUi', 'transferRequests.title'),
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 15_000 })
+
+  // The list addresses a request by the organization's own name; the row's
+  // Review action opens the detail view.
+  const row = page
+    .getByRole('listitem')
+    .filter({ hasText: organizationName })
+  await expect(row).toHaveCount(1)
+  await row
+    .getByRole('link', {
+      name: copy('accountUi', 'transferRequests.open'),
+      exact: true,
+    })
+    .click()
+
+  const detail = page.getByRole('region', {
+    name: organizationName,
+    exact: true,
+  })
+  await expect(detail).toBeVisible({ timeout: 15_000 })
+  await detail
+    .getByRole('button', {
+      name: copy('accountUi', 'transferRequests.confirm'),
+      exact: true,
+    })
+    .click()
+
+  // Confirming changes an organization's owner, so it takes the deliberate
+  // second confirmation the shared dialog asks for.
+  const confirm = page.getByRole('dialog', {
+    name: copy('accountUi', 'transferRequests.confirmTitle', {
+      tenant: organizationName,
+    }),
+    exact: true,
+  })
+  await expect(confirm).toBeVisible()
+  await confirm
+    .getByRole('button', {
+      name: copy('accountUi', 'transferRequests.confirm'),
+      exact: true,
+    })
+    .click()
+  const again = confirm.getByRole('button', {
+    name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
+    exact: true,
+  })
+  await expect(again).toBeEnabled({ timeout: 5_000 })
+  await again.click()
+
+  await expect(
+    page.getByText(
+      copy('accountUi', 'transferRequests.confirmed', {
+        tenant: organizationName,
+      }),
+      { exact: true },
+    ),
+  ).toBeVisible({ timeout: 15_000 })
+}
+
+/**
  * Create an organization through the self-service page: the account menu's
  * organization row expands to the create entry, the form is filled, and the
  * hand-over lands on the new organization's profile page. The creator is its
@@ -3547,63 +3694,22 @@ test.describe('the organization profile page belongs to its owner', () => {
       await acceptInvitationAsInvitee(invitee, link)
 
       await openOrganizationPage(page, 'profile')
-      await transferOwnerButton(page).click()
+      await requestOwnerTransfer(page, reviewInvitee)
 
-      const dialog = page.getByRole('dialog', {
-        name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
-          name: OWNED_DISPLAY_NAME,
-        }),
-        exact: true,
-      })
-      await expect(dialog).toBeVisible()
-      await dialog
-        .getByRole('combobox', {
-          name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
-          exact: true,
-        })
-        .click()
-      // Only the organization's active members are offered; the invitee is
-      // one, and the owner is excluded from the list.
-      await expect(
-        page.getByRole('option', {
-          name: new RegExp(
-            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
-          ),
-        }),
-      ).toBeVisible()
-      await page
-        .getByRole('option', {
-          name: new RegExp(
-            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
-          ),
-        })
-        .click()
-
-      // The transfer asks for the deliberate second confirmation.
-      await dialog
-        .getByRole('button', {
-          name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
-          exact: true,
-        })
-        .click()
-      const again = dialog.getByRole('button', {
-        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
-        exact: true,
-      })
-      await expect(again).toBeEnabled({ timeout: 5_000 })
-      await again.click()
-
-      // A landed transfer changes ownership only: the caller stays on the
-      // organization's own page, and the confirmation stays in the ownership
-      // card.
+      // A request changes nothing yet: the caller stays on the
+      // organization's own page and remains its owner.
       expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
-      const confirmation = ownershipSection(page).getByText(
-        copyPattern('adminUi', 'tenantProfile.ownership.transfer.saved', {
-          name: escapeRegExp(OWNED_DISPLAY_NAME),
-          account: '.+',
-        }),
-      )
-      await expect(confirmation).toBeVisible({ timeout: 15_000 })
+
+      // The target confirms on the account-level page opened from its own
+      // account menu. The confirmation is the write that moves the owner,
+      // and it happens in the target's context, so this page's own read is
+      // re-issued rather than updated through a shared cache.
+      await confirmOwnerTransfer(invitee, OWNED_NAME)
+
+      // Re-open the profile: this page's own read predates the confirmation,
+      // and the target's context shares no cache with it.
+      await openOrganizationPage(page, 'invitations')
+      await openOrganizationPage(page, 'profile')
 
       // The re-read profile names the target as the owner, and the controls
       // withdraw from the previous owner because it no longer owns the
@@ -3765,9 +3871,10 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       await expect(again).toBeEnabled({ timeout: 5_000 })
 
-      // A second session of the same account hands the organization to the
-      // colleague. The one write grants the target the tenant-admin role and
-      // leaves the previous owner's membership and bindings in place.
+      // A second session of the same account requests the organization for
+      // the colleague. The request changes nothing by itself: the target's
+      // confirmation is the write that moves the owner, and it leaves the
+      // previous owner's membership and bindings in place.
       otherContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -3782,51 +3889,15 @@ test.describe('the organization profile page belongs to its owner', () => {
       await expect(homeHeading(other)).toBeVisible()
       await switchOrganization(other, 'acme', OWNED_DISPLAY_NAME)
       await openOrganizationPage(other, 'profile')
-      await transferOwnerButton(other).click()
-      const transferDialog = other.getByRole('dialog', {
-        name: copy('adminUi', 'tenantProfile.ownership.transfer.title', {
-          name: OWNED_DISPLAY_NAME,
-        }),
-        exact: true,
-      })
-      await expect(transferDialog).toBeVisible()
-      await transferDialog
-        .getByRole('combobox', {
-          name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
-          exact: true,
-        })
-        .click()
-      await other
-        .getByRole('option', {
-          name: new RegExp(
-            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
-          ),
-        })
-        .click()
-      await transferDialog
-        .getByRole('button', {
-          name: copy('adminUi', 'tenantProfile.ownership.transfer.confirmLabel'),
-          exact: true,
-        })
-        .click()
-      const transferAgain = transferDialog.getByRole('button', {
-        name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
-        exact: true,
-      })
-      await expect(transferAgain).toBeEnabled({ timeout: 5_000 })
-      await transferAgain.click()
+      await requestOwnerTransfer(other, reviewInvitee)
 
-      // The transfer changes ownership only: the second session stays on the
-      // organization's profile, and its confirmation stays in the ownership
-      // card.
-      await expect(
-        other.getByText(
-          copyPattern('adminUi', 'tenantProfile.ownership.transfer.saved', {
-            name: escapeRegExp(OWNED_DISPLAY_NAME),
-            account: '.+',
-          }),
-        ),
-      ).toBeVisible({ timeout: 15_000 })
+      // The second session stays on the organization's profile: a request
+      // does not move the owner. The target then confirms on its own
+      // account-level page, in a session of its own, and that confirmation
+      // is what hands the organization on while this first page keeps the
+      // owner profile it read.
+      expect(new URL(other.url()).pathname).toBe(organizationPath('/profile'))
+      await confirmOwnerTransfer(invitee, OWNED_NAME)
 
       // The stale page's confirmation is still armed. The caller is still a
       // member -- the transfer kept its membership and its bindings -- but the

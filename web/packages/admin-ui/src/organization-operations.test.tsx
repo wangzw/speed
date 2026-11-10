@@ -551,7 +551,9 @@ describe('the organization operations bundle', () => {
       'useTenantGrants',
       'useTenantRoleBindings',
       'useTenantBindings',
-      'useTenantOwnerTransfer',
+      'useTenantOwnerPending',
+      'useTenantOwnerRequest',
+      'useTenantOwnerCancel',
       'useTenantOwnerDelete',
     ]) {
       expect(members).toContain(member)
@@ -575,23 +577,44 @@ describe('the organization operations bundle', () => {
 })
 
 describe('the organization ownership writes', () => {
-  /** Every request the ownership probe makes, with a settled read pair. The
-   * transfer rewrites the owner column only: the member rows, including the
-   * previous owner's tenant-admin role, are unchanged. */
-  function ownershipResponder(): (call: ObservedCall) => unknown {
-    let ownerAccount = 'acc-1'
+  /** Every request the ownership probe makes, with a settled read pair. A
+   * request changes no owner column: the pending read is the one fact the
+   * write creates, and the member rows, including the previous owner's
+   * tenant-admin role, are unchanged. */
+  function ownershipResponder(
+    initialPending = false,
+  ): (call: ObservedCall) => unknown {
+    const transfer = {
+      id: 'transfer-1',
+      targetDisplayName: 'Bob Stone',
+      targetUsername: 'bob',
+      requestedAt: '2026-10-20T08:30:00Z',
+      expiresAt: '2026-10-27T08:30:00Z',
+      status: 'pending',
+    }
+    let pending: typeof transfer | null = initialPending ? transfer : null
     return (call) => {
       if (call.path === `/api/v1/tenants/${TENANT}/profile`) {
-        return { profile: profileFixture({ ownerAccount }) }
+        return { profile: profileFixture() }
       }
       if (call.path === `/api/v1/tenants/${TENANT}/members`) {
         return { members: [PREVIOUS_OWNER, NEW_OWNER], next_cursor: '' }
       }
+      if (call.path === `/api/v1/tenants/${TENANT}/owner/requests/pending`) {
+        return { request: pending }
+      }
       if (
-        call.method === 'PUT' &&
-        call.path === `/api/v1/tenants/${TENANT}/owner`
+        call.method === 'POST' &&
+        call.path === `/api/v1/tenants/${TENANT}/owner/requests`
       ) {
-        ownerAccount = 'acc-2'
+        pending = transfer
+        return { request: transfer }
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `/api/v1/tenants/${TENANT}/owner/requests/transfer-1`
+      ) {
+        pending = null
         return undefined
       }
       if (
@@ -604,15 +627,25 @@ describe('the organization ownership writes', () => {
     }
   }
 
-  function OwnershipProbe({ action }: { readonly action: 'transfer' | 'delete' }) {
+  function OwnershipProbe({
+    action,
+  }: {
+    readonly action: 'request' | 'cancel' | 'delete'
+  }) {
     const operations = useOrganizationAdminOperations()
     const profile = operations.useTenantProfile(TENANT)
     const members = operations.useMembers(TENANT, { limit: 100 })
-    const transfer = operations.useTenantOwnerTransfer()
+    const pending = operations.useTenantOwnerPending(TENANT)
+    const request = operations.useTenantOwnerRequest()
+    const cancel = operations.useTenantOwnerCancel()
     const remove = operations.useTenantOwnerDelete()
     return (
       <div>
-        <p>{profile.isSuccess && members.isSuccess ? 'settled' : 'loading'}</p>
+        <p>
+          {profile.isSuccess && members.isSuccess && pending.isSuccess
+            ? 'settled'
+            : 'loading'}
+        </p>
         <p data-testid="member-rows">
           {(members.data?.members ?? [])
             .map(
@@ -621,11 +654,14 @@ describe('the organization ownership writes', () => {
             )
             .join(',')}
         </p>
+        <p data-testid="pending-request">{pending.data?.id ?? 'none'}</p>
         <button
           type="button"
           onClick={() => {
-            if (action === 'transfer') {
-              transfer.mutate({ tenant: TENANT, account: 'acc-2' })
+            if (action === 'request') {
+              request.mutate({ tenant: TENANT, account: 'acc-2' })
+            } else if (action === 'cancel') {
+              cancel.mutate({ tenant: TENANT, request: 'transfer-1' })
             } else {
               remove.mutate({ tenant: TENANT })
             }
@@ -637,18 +673,15 @@ describe('the organization ownership writes', () => {
     )
   }
 
-  it('transfers at the tenant owner path and re-reads the profile and members without removing the previous owner', async () => {
+  it('records a transfer request at the tenant path without changing the owner or re-reading the profile', async () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest(ownershipResponder(), { recordBody: true })
-    const { queryClient } = renderWithProviders(
-      <OwnershipProbe action="transfer" />,
-    )
+    renderWithProviders(<OwnershipProbe action="request" />)
     expect(await screen.findByText('settled')).toBeInTheDocument()
-    // The previous owner is an active member holding tenant-admin before the
-    // write, and the transfer changes only the owner column.
     expect(screen.getByTestId('member-rows')).toHaveTextContent(
       'acc-1:active:tenant-admin',
     )
+    expect(screen.getByTestId('pending-request')).toHaveTextContent('none')
 
     const profileReads = () =>
       calls.filter((call) => call.path === `/api/v1/tenants/${TENANT}/profile`)
@@ -656,43 +689,63 @@ describe('the organization ownership writes', () => {
     const memberReads = () =>
       calls.filter((call) => call.path === `/api/v1/tenants/${TENANT}/members`)
         .length
+    const pendingReads = () =>
+      calls.filter(
+        (call) =>
+          call.path === `/api/v1/tenants/${TENANT}/owner/requests/pending`,
+      ).length
     expect(profileReads()).toBe(1)
     expect(memberReads()).toBe(1)
+    expect(pendingReads()).toBe(1)
 
     await user.click(screen.getByRole('button', { name: 'write' }))
     await waitFor(() =>
       expect(calls).toContainEqual({
-        method: 'PUT',
-        path: `/api/v1/tenants/${TENANT}/owner`,
+        method: 'POST',
+        path: `/api/v1/tenants/${TENANT}/owner/requests`,
         query: undefined,
         body: { account: 'acc-2' },
       }),
     )
-    // Ownership changes only, so both tenant-scoped reads stay permitted and
-    // are re-read: the profile's owner column changed, and the member rows
-    // carry the target's granted role.
-    await waitFor(() => expect(profileReads()).toBe(2))
+    // The request is recorded; ownership has not moved, so the profile is
+    // not re-read. The pending read is, and so is the member search the
+    // dialog consults.
+    await waitFor(() => expect(pendingReads()).toBe(2))
     await waitFor(() => expect(memberReads()).toBe(2))
-    await waitFor(() =>
-      expect(
-        queryClient.getQueryData([
-          TENANT,
-          `/api/v1/tenants/${TENANT}/profile`,
-        ]),
-      ).toEqual({
-        profile: { ...profileFixture(), ownerAccount: 'acc-2' },
-      }),
+    expect(profileReads()).toBe(1)
+    expect(screen.getByTestId('pending-request')).toHaveTextContent(
+      'transfer-1',
     )
-    // The previous owner still holds tenant-admin and remains a member: the
-    // transfer writes no membership or binding removal.
+    // The previous owner still holds tenant-admin and remains a member.
     expect(screen.getByTestId('member-rows')).toHaveTextContent(
       'acc-1:active:tenant-admin',
     )
-    expect(calls.filter((call) => call.method === 'DELETE')).toEqual([])
+    expect(calls.filter((call) => call.method === 'PUT')).toEqual([])
     for (const call of calls) {
       expect(call.path.startsWith(`/api/v1/tenants/${TENANT}`)).toBe(true)
       expect(call.path.startsWith('/api/v1/system')).toBe(false)
     }
+  })
+
+  it('cancels a pending request at the tenant path and re-reads the pending state', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest(ownershipResponder(true))
+    renderWithProviders(<OwnershipProbe action="cancel" />)
+    expect(await screen.findByText('settled')).toBeInTheDocument()
+    expect(screen.getByTestId('pending-request')).toHaveTextContent(
+      'transfer-1',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'write' }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'DELETE',
+        path: `/api/v1/tenants/${TENANT}/owner/requests/transfer-1`,
+      }),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('pending-request')).toHaveTextContent('none'),
+    )
   })
 
   it('deletes at the tenant path and reflects the tombstone without a refused re-read', async () => {

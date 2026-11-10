@@ -1263,6 +1263,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
  * The platform roster's organization lifecycle: an owner transfer through the
  * member selector, one through the account selector, and the terminal delete.
  *
+ * A transfer is a request between two parties: the dialog records the target
+ * and leaves the owner column where it is until the target confirms on the
+ * account-level transfer page, so this journey drives the request and asserts
+ * what the requesting operator is told, not a moved owner.
+ *
  * The platform transfer dialog chooses its target path from the caller's
  * tenant permission set -- the member selector when `authn.membership.manage`
  * is held in the current tenant, the platform account selector otherwise. The
@@ -1429,7 +1434,15 @@ async function confirmDelete(dialog: Locator, name: string): Promise<void> {
 }
 
 test.describe('the platform lifecycle controls', () => {
-  test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
+  test.use({
+    seedInvitee: true,
+    // acme's owner is the operator, so the ordinary member is an active
+    // member the owner can ask to take over. A request naming the current
+    // owner is refused, and the lifecycle transfer below is the operator
+    // handing the organization it owns to somebody else.
+    tenantAdmins: { acme: [OPERATOR.identifier] },
+    viewport: { width: 1920, height: 1080 },
+  })
 
   test('operator-onboards-tenant: the operator transfers a tenant owner through the member selector', async ({
     demo,
@@ -1493,7 +1506,8 @@ test.describe('the platform lifecycle controls', () => {
       copy('adminUi', 'tenantLifecycle.transfer.confirmLabel'),
     )
 
-    // A landed transfer names the organization and its new owner.
+    // A recorded request names the organization and the target it asks, and
+    // says that ownership moves only when that target confirms.
     await expect(
       page.getByText(
         copyPattern('adminUi', 'tenantLifecycle.transfer.success', {

@@ -182,6 +182,7 @@
     "accountSettings": "Account settings",
     "messages": "Messages",
     "messagesWithCount": "Messages, {{n}} unread",
+    "transferRequests": "Transfer requests",
     "preferences": "Preferences",
     "signOut": "Sign out"
   },

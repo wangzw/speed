@@ -251,6 +251,7 @@
 | [租户名册的管理面由框架提供一个平台域的模块](adr-admin-tenant.md) |
 | [租户的停用来源记在名册行上，账户联动只撤销它自己造成的那一次](adr-tenant-suspension.md) |
 | [管理员身份由租户成员关系承载，system 是名册中的真实租户](adr-tenant-administration.md) |
+| [所有者转移在目标确认后生效](adr-tenant-owner-transfer-confirmation.md) |
 | [调用方本人的租户读取由 tenant 目录新增的只挂路由的模块承担，挂在账户端的普通接口](adr-tenant-self.md) |
 
 ## 授权

@@ -36,6 +36,7 @@ describe('the account entry in the header', () => {
       screen.getAllByRole('menuitem').map((item) => item.textContent),
     ).toEqual([
       demoEnUS.userMenu.messages,
+      demoEnUS.userMenu.transferRequests,
       demoEnUS.account.sections.profile,
       demoEnUS.account.sections.security,
       demoEnUS.account.sections.sessions,

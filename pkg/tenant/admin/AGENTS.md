@@ -1,15 +1,17 @@
 # pkg/tenant/admin
 
 The tenant capability's management module. It mounts the roster-management routes
-under `/api/v1/system/tenants` (platform staff) and the organization-lifecycle
-routes under `/api/v1/tenants` (the organization's own owner), and delivers no
-capability of its own: a route's action is a call on the roster — reached through
-the `tenant.Catalog` capability — except registration, which goes through the
-host's `tenant.Provisioner` so a tenant and its first administrator come into
-being together, and an owner transfer or organization deletion, which goes
-through the host's `tenant.OrganizationWriter`. The module holds no tenant, no
-rule and no data of its own. It builds no table, caches nothing and migrates
-nothing.
+under `/api/v1/system/tenants` (platform staff), the organization-lifecycle
+routes under `/api/v1/tenants` (the organization's own owner), and the target's
+account-level owner-transfer routes under `/api/v1/auth/me` (the caller's own
+identity). It delivers no capability of its own: a route's action is a call on
+the roster — reached through the `tenant.Catalog` capability — except
+registration, which goes through the host's `tenant.Provisioner` so a tenant and
+its first administrator come into being together, an owner-transfer request or
+cancellation and an organization deletion, which go through the host's
+`tenant.OrganizationWriter`, and the target's confirmation or decline, which
+goes through `tenant.OwnershipTarget`. The module holds no tenant, no rule and
+no data of its own. It builds no table, caches nothing and migrates nothing.
 
 The descriptor declares the static feature `tenant.admin`, present whenever the
 module is in force.
@@ -46,12 +48,20 @@ writes is required. This set is the module's whole route surface.
 | Platform | `GET /api/v1/system/tenants` | `tenant.read` |
 | Platform | `POST /api/v1/system/tenants` | `tenant.manage` |
 | Platform | `GET /api/v1/system/tenants/:tenant` | `tenant.read` |
-| Platform | `PUT /api/v1/system/tenants/:tenant/owner` | `tenant.manage` |
+| Platform | `POST /api/v1/system/tenants/:tenant/owner/requests` | `tenant.manage` |
+| Platform | `GET /api/v1/system/tenants/:tenant/owner/requests/pending` | `tenant.read` |
+| Platform | `DELETE /api/v1/system/tenants/:tenant/owner/requests/:request` | `tenant.manage` |
 | Platform | `DELETE /api/v1/system/tenants/:tenant` | `tenant.manage` |
 | Platform | `PATCH /api/v1/system/tenants/:tenant/profile` | `tenant.manage` |
 | Platform | `POST /api/v1/system/tenants/:tenant/status` | `tenant.manage` |
-| Tenant | `PUT /api/v1/tenants/:tenant/owner` | the organization's owner |
+| Tenant | `POST /api/v1/tenants/:tenant/owner/requests` | the organization's owner |
+| Tenant | `GET /api/v1/tenants/:tenant/owner/requests/pending` | the organization's owner |
+| Tenant | `DELETE /api/v1/tenants/:tenant/owner/requests/:request` | the organization's owner |
 | Tenant | `DELETE /api/v1/tenants/:tenant` | the organization's owner |
+| Account | `GET /api/v1/auth/me/owner-transfer-requests` | the caller's identity |
+| Account | `GET /api/v1/auth/me/owner-transfer-requests/:request` | the caller's identity |
+| Account | `POST /api/v1/auth/me/owner-transfer-requests/:request/confirm` | the caller's identity, verified |
+| Account | `POST /api/v1/auth/me/owner-transfer-requests/:request/decline` | the caller's identity |
 
 A platform read route is held to `tenant.read` and a platform write route to
 `tenant.manage`. The tenant-surface routes ask no permission: the
@@ -66,10 +76,12 @@ action is one roster call, one organization write or one profile write:
 | `GET /tenants` | `List`, every tenant, in the roster's order (by name) |
 | `POST /tenants` | `Provisioner`, a tenant, its owner and its first tenant-admin |
 | `GET /tenants/:tenant` | `Get`, one tenant by the name the path layer resolved |
-| `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner` |
+| `POST /tenants/:tenant/owner/requests` | `OrganizationWriter.RequestTransfer` |
+| `GET /tenants/:tenant/owner/requests/pending` | `OrganizationWriter.PendingTransfer` |
+| `DELETE /tenants/:tenant/owner/requests/:request` | `OrganizationWriter.CancelTransfer` |
 | `DELETE /tenants/:tenant` | `OrganizationWriter.DeleteOrganization`; `WriteGuard` first |
-| `PUT /tenants/:tenant/owner` | `OrganizationWriter.TransferOwner`, the same call |
-| `DELETE /tenants/:tenant` | `OrganizationWriter.DeleteOrganization`, the same call |
+| `POST /auth/me/owner-transfer-requests/:request/confirm` | `OwnershipTarget.ConfirmTransfer` |
+| `POST /auth/me/owner-transfer-requests/:request/decline` | `OwnershipTarget.DeclineTransfer` |
 | `PATCH /tenants/:tenant/profile` | `SetProfile`, the four descriptive fields, and nothing else |
 | `POST /tenants/:tenant/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
@@ -107,18 +119,26 @@ key.
   the shared organization-id generator, and a body that carries an `id` is a
   400. A registration starts the tenant `active` and makes the creator its
   owner and first tenant-admin.
-- **The owner transfer has one implementation and two surfaces.** The platform
-  route asks `tenant.manage` in the platform domain; the tenant route asks no
-  permission and admits only the row's owner. Both call
-  `OrganizationWriter.TransferOwner` and take the same tenant lock. The target
-  must be an active member whose account is active; the transfer grants it
-  `tenant-admin` when it does not hold it, writes the roster owner, and removes
-  the previous owner's bindings and membership in one transaction. The platform
-  route passes no owner expectation; the tenant route passes the caller as the
-  expected owner, so a transfer that commits after the guard read the roster
-  answers 409 `ErrOwnerChanged`. The mandatory audit row lands before the write
-  with `surface=platform` or `surface=tenant`; a refusal closes it with a linked
-  failed row.
+- **An owner transfer takes effect only after the target confirms it.** The
+  platform and tenant request routes ask `OrganizationWriter.RequestTransfer` and
+  change no ownership; the target's account-level confirm route asks
+  `OwnershipTarget.ConfirmTransfer`, the only path that writes the owner column
+  from a request. The request routes take the same tenant lock; the platform
+  route asks `tenant.manage` in the platform domain, the tenant route asks no
+  permission and admits only the row's owner, and both pass the caller as the
+  observed owner (the platform route passes none). The target must be an active
+  member whose account is active, one pending request per organization is
+  accepted, and the target is notified. Confirmation re-reads the request under
+  the lock, checks that the requester still owns the organization and that the
+  target is still an active member, grants `tenant-admin` when missing, writes
+  the owner column and marks the request confirmed in one transaction. The
+  previous owner stays an active member and keeps every binding it held. The
+  target's routes carry the caller's own identity and no tenant context; the
+  confirm route also carries the registration-verification gate, and a request
+  that does not exist and one addressed to another account are both a bare 404.
+  The mandatory audit row lands before each action with `surface=platform`,
+  `surface=tenant` or `surface=target`; a refusal closes it with a linked failed
+  row.
 - **The deletion has one implementation and two surfaces.** The platform route
   asks `tenant.manage` in the platform domain and passes no owner expectation;
   the tenant route asks no permission, admits only the row's owner, and passes
@@ -202,12 +222,13 @@ key.
   write, a failed row linked to the permitted one by the action identifier is
   written best-effort: its own failure is an Error line and changes nothing about
   the answer. The action names are a closed set — `tenant.create`,
-  `tenant.status`, `tenant.profile.update`, `tenant.owner.transfer` and
-  `tenant.delete` — one per write route, and a read
-  writes no audit row of its own. A profile update's rows carry
-  `surface=platform`; a transfer's and a deletion's rows carry the surface the
-  request actually used (`platform` or `tenant`), so the two routes of one action
-  are distinguishable.
+  `tenant.status`, `tenant.profile.update`, `tenant.owner.transfer`,
+  `tenant.owner.transfer.request`, `tenant.owner.transfer.cancel`,
+  `tenant.owner.transfer.decline` and `tenant.delete` — one per write route, and a
+  read writes no audit row of its own. A profile update's rows carry
+  `surface=platform`; a transfer request, cancellation, confirmation, decline and
+  deletion carry the surface the request actually used (`platform`, `tenant` or
+  `target`), so the routes of one action are distinguishable.
 - **The platform tenant prefix carries the name boundary.** `Init` registers an
   endpoint layer, not a route wrapper, on every endpoint the platform routes are
   mounted on. A request under `/api/v1/system/tenants/` has its `tenant` path
@@ -281,10 +302,11 @@ key.
   with, the audit to record through, the `authn.SignupVerification` read to gate
   a write on, the `speedhttp.TenantAdminRouteGuard` to hold the tenant-surface
   path tenant, the `tenant.WriteGuard` to protect a tenant, the
-  `tenant.Provisioner` to open a tenant with its first administrator, or the
-  `tenant.OrganizationWriter` to transfer an owner and delete an organization,
-  fails the startup before any route is mounted, rather than answering every
-  route with a refusal or a write that cannot land. The write guard, the
+  `tenant.Provisioner` to open a tenant with its first administrator, the
+  `tenant.OrganizationWriter` to request or cancel a transfer and delete an
+  organization, or the `tenant.OwnershipTarget` to confirm or decline one, fails
+  the startup before any route is mounted, rather than answering every route
+  with a refusal or a write that cannot land. The write guard, the
   provisioner and the organization writer are the host's to supply: none is a
   `pkg/` capability, and the roster knows none of them. The tenant
   administration route guard is delivered by `tenant.resolve`. The HTTP entry
@@ -323,6 +345,11 @@ key.
   mounted on. Unset means `["api"]`. It takes concrete names only, never `*`, and
   an endpoint it names must carry tenant resolution and the tenant administration
   route guard. The same shape checks and failures apply.
+- **`tenant.admin.self-endpoints`** (configuration, a list of strings): the
+  endpoints the target's account-level owner-transfer routes are mounted on.
+  Unset means `["account"]`. The endpoints must carry the caller's identity and
+  must not carry tenant resolution or the tenant administration guard. The same
+  shape checks and failures apply.
 
 ## Running it
 

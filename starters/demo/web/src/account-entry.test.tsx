@@ -87,6 +87,7 @@ function renderAccountEntry(options: {
 /** The menu's unconditional labels, in render order. */
 const menuLabels = [
   demoEnUS.userMenu.messages,
+  demoEnUS.userMenu.transferRequests,
   demoEnUS.account.sections.profile,
   demoEnUS.account.sections.security,
   demoEnUS.account.sections.sessions,

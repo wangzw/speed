@@ -72,7 +72,8 @@ export const ROUTE_PATHS = [
  * routes.test.tsx asserts each of these is still enumerated. Drawn from the
  * app's route table: the business routes (the home page, the account settings'
  * group address and its profile, security, sessions and preferences panes, the
- * notification centre, the binding callback), the auth and invitation
+ * notification centre, the account-level transfer requests list and detail,
+ * the binding callback), the auth and invitation
  * landings, the admin area under ADMIN_PREFIX, and the organization admin area
  * under ORGANIZATION_ADMIN_PREFIX, every `:param` concretized to `sample` as
  * `concretize` does.
@@ -87,6 +88,8 @@ export const EXPECTED_ROUTE_PATHS = [
   '/account/callback',
   '/notifications',
   '/organizations/new',
+  '/transfer-requests',
+  '/transfer-requests/sample',
   '/sign-in/callback',
   '/invitations/sample',
   '/password-reset',

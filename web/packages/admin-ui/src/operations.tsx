@@ -126,17 +126,20 @@ import {
   getTenantAdminTenantsGetQueryOptions,
   getTenantAdminTenantsListQueryKey,
   getTenantAdminTenantsListQueryOptions,
+  getTenantAdminTenantsPendingTransferQueryKey,
+  getTenantAdminTenantsPendingTransferQueryOptions,
   settingsAdminSettingsRemove,
   settingsAdminSettingsSet,
   smsAdminTemplatesOffer,
   smsAdminTemplatesRegister,
   smsAdminTemplatesRemove,
   smsAdminTemplatesSetEnabled,
+  tenantAdminTenantsCancelTransfer,
   tenantAdminTenantsCreate,
   tenantAdminTenantsDelete,
   tenantAdminTenantsProfile,
+  tenantAdminTenantsRequestTransfer,
   tenantAdminTenantsSetStatus,
-  tenantAdminTenantsTransferOwner,
 } from '@speed/api-sdk'
 import type {
   AuditAdminRecord,
@@ -182,6 +185,7 @@ import type {
   TenantAdminTenant,
   TenantAdminTenantStatus,
   TenantAdminTenantsSetStatusBodyStatus,
+  TenantTransferView,
 } from '@speed/api-sdk'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { profileWriteOf } from './TenantProfileFields.js'
@@ -264,15 +268,23 @@ export interface AdminSetTenantProfileInput {
   readonly fields: TenantProfileFields
 }
 
-/** PUT /api/v1/system/tenants/{tenant}/owner body: the target account that
- * becomes the organization's owner. The tenant name is the route parameter;
- * the endpoint itself validates that the account is an active member of
- * that tenant and answers 409 otherwise (the console never asserts
- * membership on the server's behalf). */
-export interface AdminTransferTenantOwnerInput {
+/** POST /api/v1/system/tenants/{tenant}/owner/requests body: the active
+ * member platform staff ask to take ownership. Ownership does not change
+ * until the target confirms. */
+export interface AdminRequestTenantOwnerInput {
   readonly name: string
   readonly account: string
 }
+
+/** DELETE /api/v1/system/tenants/{tenant}/owner/requests/{request} target:
+ * the pending request platform staff cancel. */
+export interface AdminCancelTenantOwnerTransferInput {
+  readonly name: string
+  readonly request: string
+}
+
+/** One owner-transfer request as the platform surface reports it. */
+export type AdminTenantTransfer = TenantTransferView
 
 /** DELETE /api/v1/system/tenants/{tenant} target: the tenant whose tombstone
  * the write lands. */
@@ -673,13 +685,28 @@ export interface AdminOperations {
     unknown,
     AdminSetTenantProfileInput
   >
-  /** PUT /api/v1/system/tenants/{tenant}/owner -- hand the organization to one
-   * account. The server refuses a target that is not an active member of
-   * the organization (409). */
-  readonly useTransferTenantOwner: () => UseMutationResult<
+  /** GET /api/v1/system/tenants/{tenant}/owner/requests/pending -- the
+   * organization's pending transfer request, or null. The read stays
+   * disabled until a tenant name is chosen. */
+  readonly usePendingTenantOwner: (
+    name: string | undefined,
+    enabled?: boolean,
+  ) => UseQueryResult<AdminTenantTransfer | null, unknown>
+  /** POST /api/v1/system/tenants/{tenant}/owner/requests -- ask one active
+   * member to take ownership. The server refuses a target that is not an
+   * active member of the organization (409); ownership changes only when
+   * the target confirms. */
+  readonly useRequestTenantOwner: () => UseMutationResult<
+    AdminTenantTransfer,
+    unknown,
+    AdminRequestTenantOwnerInput
+  >
+  /** DELETE /api/v1/system/tenants/{tenant}/owner/requests/{request} --
+   * cancel a pending request. Ownership is unchanged. */
+  readonly useCancelTenantOwner: () => UseMutationResult<
     void,
     unknown,
-    AdminTransferTenantOwnerInput
+    AdminCancelTenantOwnerTransferInput
   >
   /** DELETE /api/v1/system/tenants/{tenant} -- write the organization's
    * tombstone. Deletion is terminal; a tombstone is a 409. */
@@ -1103,22 +1130,42 @@ export const adminOperations: AdminOperations = {
     })
   },
 
-  useTransferTenantOwner: () => {
+  usePendingTenantOwner: (name, enabled = true) => {
+    const options = getTenantAdminTenantsPendingTransferQueryOptions(name ?? '')
+    return useQuery({
+      ...options,
+      queryKey: getTenantAdminTenantsPendingTransferQueryKey(name ?? ''),
+      select: (envelope) => envelope.request,
+      enabled: name !== undefined && name !== '' && enabled,
+    })
+  },
+
+  useRequestTenantOwner: () => {
     const queryClient = useQueryClient()
     return useMutation({
-      mutationFn: (input: AdminTransferTenantOwnerInput) =>
-        tenantAdminTenantsTransferOwner(input.name, {
+      mutationFn: (input: AdminRequestTenantOwnerInput) =>
+        tenantAdminTenantsRequestTransfer(input.name, {
           account: input.account,
-        }),
+        }).then((answer) => answer.request),
       onSuccess: (_answer, input) => {
-        // The roster and detail views both carry the owner account, which a
-        // transfer rewrites; the membership and bindings of both accounts
-        // stay in place, so only the owner-carrying reads are stale.
+        // The request is recorded but the owner column has not moved. The
+        // pending read now carries it; the roster and detail reads stay as
+        // they are until the target confirms.
         void queryClient.invalidateQueries({
-          queryKey: getTenantAdminTenantsListQueryKey(),
+          queryKey: getTenantAdminTenantsPendingTransferQueryKey(input.name),
         })
+      },
+    })
+  },
+
+  useCancelTenantOwner: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: AdminCancelTenantOwnerTransferInput) =>
+        tenantAdminTenantsCancelTransfer(input.name, input.request),
+      onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
-          queryKey: getTenantAdminTenantsGetQueryKey(input.name),
+          queryKey: getTenantAdminTenantsPendingTransferQueryKey(input.name),
         })
       },
     })
