@@ -224,6 +224,11 @@ flowchart TD
 - `REQ-tenancy-068`
 - `REQ-tenancy-069`
 - `REQ-tenancy-070`
+- `REQ-tenancy-071`
+- `REQ-tenancy-072`
+- `REQ-tenancy-073`
+- `REQ-tenancy-074`
+- `REQ-tenancy-075`
 
 ## 端到端测试
 

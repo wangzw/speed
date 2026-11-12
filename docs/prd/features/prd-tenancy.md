@@ -583,7 +583,7 @@
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`（覆盖创建、切换与落在资料页；拒绝分支由后端用例覆盖）
 
-### REQ-tenancy-066
+### REQ-tenancy-071
 
 成员被停用或移除时，系统必须撤销该账户在该租户下的待接受邀请。
 
@@ -591,7 +591,7 @@
 - **状态**：已实现
 - **端到端测试**：未实现
 
-### REQ-tenancy-067
+### REQ-tenancy-072
 
 系统不得向已是该租户成员的账户（活跃或停用）、服务账户签发邀请，也不得向系统租户签发邀请。
 
@@ -599,7 +599,7 @@
 - **状态**：未实现
 - **端到端测试**：未实现
 
-### REQ-tenancy-068
+### REQ-tenancy-073
 
 系统必须对邀请的签发施加固定窗口的预算，按被邀请地址、发起账户与整个部署分别计数；任一预算耗尽时以限流结果拒绝签发。
 
@@ -607,7 +607,7 @@
 - **状态**：已实现
 - **端到端测试**：未实现
 
-### REQ-tenancy-069
+### REQ-tenancy-074
 
 系统必须对邀请的接收探测施加固定窗口的预算，按令牌摘要与客户端地址分别计数；超限时以限流结果拒绝，且不透露令牌是否存在。
 
@@ -615,7 +615,7 @@
 - **状态**：已实现
 - **端到端测试**：未实现
 
-### REQ-tenancy-070
+### REQ-tenancy-075
 
 签发时给出的显式期限必须晚于当前时刻且不超过 90 天；超过 90 天的期限被拒绝，且不产生邀请。
 
