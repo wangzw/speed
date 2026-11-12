@@ -1,19 +1,19 @@
 # notification.inbox
 
-本[模块](../../../glossary.md)是站内信的收件箱存储与读取接口：它是投递流水线写站内信行的唯一下游，HTTP 接口只读行与标记已读。它拥有 `in_app_messages` 表、写行的去重与 `notification.inbox.created` 事件，不拥有消息文本的渲染、渠道选择与实时推送。读职责清单前应持有的一句话心智模型是：收件箱是「收件人看得见什么」的那本账，写入只有投递流水线一个来源。
+本[模块](../../../glossary.md)是站内信的收件箱存储与读取接口：它是投递流水线写站内信行的唯一下游，HTTP 接口只读行与标记已读。它拥有 `in_app_messages` 表、写行的去重与 `notification.inbox.created` 事件，不拥有消息文本的渲染、渠道选择与实时推送。读职责清单前应持有的一句话心智模型是：收件箱是“收件人看得见什么”的那本账，写入只有投递流水线一个来源。
 
 ## 职责
 
-本模块交付**站内信收件箱**：一个账户在应用内的消息行，以及它的列出、未读计数与标记已读。一条站内信由[投递流水线](design-notification-delivery.md)写进来——本模块的写入口是它唯一的下游写入口——HTTP 接口把行读出来、把行标为已读，**不新建站内信行**。
+本模块交付**站内信收件箱**：一个账户在应用内的消息行，以及它的列出、未读计数与标记已读。一条站内信由[投递流水线](design-notification-delivery.md)写进来（本模块的写入口是它唯一的下游写入口），HTTP 接口把行读出来、把行标为已读，**不新建站内信行**。
 
-行是租户作用域的：租户取自上下文，收件人是某个账户。`read_at` 是从空到一个时刻的单向变化，此后不再改写，首读时间戳因而稳定。写入口按去重键幂等，同一个去重键只落一行；标记已读由谓词给出，匹配的是「尚未标记」这个条件，与消息是否过期无关。
+行是租户作用域的：租户取自上下文，收件人是某个账户。`read_at` 是从空到一个时刻的单向变化，此后不再改写，首读时间戳因而稳定。写入口按去重键幂等，同一个去重键只落一行；标记已读由谓词给出，匹配的是“尚未标记”这个条件，与消息是否过期无关。
 
 本模块的实现子包 `pkg/notification/inbox` 登记模块 `notification.inbox`，排他交付功能 `notification.Inbox`（功能标识写作 `(*notification.Inbox)(nil)`）。根包 `pkg/notification` 是接口包，声明 `Inbox` 接口、它的输入输出类型与消息视图，不登记模块。
 
 ### 非职责
 
-- **不投递、不渲染。** 站内信是「给自己人发消息」的一个渠道；写这一行的标题与正文由投递流水线渲染好之后交进来。渲染、渠道选择与出站投递属于[投递流水线](design-notification-delivery.md)。
-- **不推送。** 把「刚写入一行」推给在线客户端是[推送模块](design-notification-stream.md)的事；本模块只写行、读行、发一条总线事件。
+- **不投递、不渲染。** 站内信是“给自己人发消息”的一个渠道；写这一行的标题与正文由投递流水线渲染好之后交进来。渲染、渠道选择与出站投递属于[投递流水线](design-notification-delivery.md)。
+- **不推送。** 把“刚写入一行”推给在线客户端是[推送模块](design-notification-stream.md)的事；本模块只写行、读行、发一条总线事件。
 - **不判定谁能读谁的收件箱。** 本模块不声明权限点，路由不带自有权限闸。谁可以读某个收件人的收件箱由宿主侧的授权决定（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不校验通知类型。** 一个 `type_key` 是不是已声明的类型，由[偏好与分类法](design-notification-preferences.md)这个消费点校验；本模块收下它并原样存下，不对照分类法。
 - **不接收非用户收件人。** 站内信的一行有一个账户收件人；外部联系人的同意台账本轮刻意后置（[ADR-notification-scope](../../../adr/adr-notification-scope.md)），因此没有生产者写到 `external` 类的收件人。
@@ -32,7 +32,7 @@
 
 **端名清单 `notification.inbox.endpoints` 在路由能力在场时必填。** `Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.inbox.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。
 
-**本模块声明静态[特性](../../../glossary.md) `notification.inbox`。** 描述符的 `Resources` 带 `feature.Spec{Name: "notification.inbox"}`；这个特性在场，表示本进程挂出「路由」一节的收件箱路由（[feature](../design-feature.md)）。路由能力在场时端名清单必填，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+**本模块声明静态[特性](../../../glossary.md) `notification.inbox`。** 描述符的 `Resources` 带 `feature.Spec{Name: "notification.inbox"}`；这个特性在场，表示本进程挂出“路由”一节的收件箱路由（[feature](../design-feature.md)）。路由能力在场时端名清单必填，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
 ### 交付的功能
 
@@ -188,7 +188,7 @@ classDiagram
 
 ### 路由的判定顺序
 
-这些路由共享一段前缀，之后各自分开。前缀：从请求上下文取调用方身份（`pkg/authn` `FromContext`）；没有身份即 401——本模块不设权限闸，身份是用来确定读谁的收件箱的，缺了它无从服务。租户由解析层在中间件里写进上下文，路由不再判定租户。
+这些路由共享一段前缀，之后各自分开。前缀：从请求上下文取调用方身份（`pkg/authn` `FromContext`）；没有身份即 401：本模块不设权限闸，身份是用来确定读谁的收件箱的，缺了它无从服务。租户由解析层在中间件里写进上下文，路由不再判定租户。
 
 | 路由 | 判定顺序 | 应答码 |
 |---|---|---|
@@ -199,23 +199,23 @@ classDiagram
 
 **越界是整页拒绝，不静默截断。** `limit` 超过上限或 `offset` 为负时，路由答 400 而不取一个被夹住的值；一个越界的请求要么按原样答错，要么整页缺失，本模块取按原样答错这一条。
 
-**`GET /messages` 的排序固定**：`created_at DESC, id DESC`。`created_at` 相同的两行按 `id` 倒序，翻页在并发写入下因而稳定——同一时刻写入多行时，一个 `id` 已经排定，不会在两次翻页之间跳序。
+**`GET /messages` 的排序固定**：`created_at DESC, id DESC`。`created_at` 相同的两行按 `id` 倒序，翻页在并发写入下因而稳定：同一时刻写入多行时，一个 `id` 已经排定，不会在两次翻页之间跳序。
 
 ### 写行与去重键
 
 **写行的唯一入口是投递流水线的 `Write` 调用**（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。路由不调用 `Write`；HTTP 接口只读行与改 `read_at`。
 
-`Write` 在交付的库上做一次插入，按 `dedupe_key` 幂等：插入命中唯一索引即返回既有行的视图，不新建、不发事件。去重键由投递流水线按逐渠道的公式算出——`idempotency_key = hex(sha256(canonicalJSON{tenant, type_key, recipient_class, user_id, channel, locale, occurrence_id, params}))`，站内信渠道的取值固定为 `in_app`——本模块收下这个键，不重算它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
+`Write` 在交付的库上做一次插入，按 `dedupe_key` 幂等：插入命中唯一索引即返回既有行的视图，不新建、不发事件。去重键由投递流水线按逐渠道的公式算出（`idempotency_key = hex(sha256(canonicalJSON{tenant, type_key, recipient_class, user_id, channel, locale, occurrence_id, params}))`，站内信渠道的取值固定为 `in_app`），本模块收下这个键，不重算它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
 
-**行先提交、事件后发。** `Write` 先把行插入并在自己的事务里提交，提交成功之后才发布 `notification.inbox.created`。本模块是这条事件的唯一发布方：写这一行的是 `Write`，发事件的也是它，调用它的[投递流水线](design-notification-delivery.md)不发布。装配里有总线时事件照发，发布失败不回滚那一行、也不向调用方报错；装配里没有总线时事件不发，行照常落库。这一条使「一次送不到任何人的通告什么都不丢」——使用方回读那一行即可，事件只决定它多快得到提示（[ADR-notification-stream](../../../adr/adr-notification-stream.md)）。
+**行先提交、事件后发。** `Write` 先把行插入并在自己的事务里提交，提交成功之后才发布 `notification.inbox.created`。本模块是这条事件的唯一发布方：写这一行的是 `Write`，发事件的也是它，调用它的[投递流水线](design-notification-delivery.md)不发布。装配里有总线时事件照发，发布失败不回滚那一行、也不向调用方报错；装配里没有总线时事件不发，行照常落库。这一条使“一次送不到任何人的通告什么都不丢”：使用方回读那一行即可，事件只决定它多快得到提示（[ADR-notification-stream](../../../adr/adr-notification-stream.md)）。
 
-**事件载荷是封闭集**：`{message_id, tenant_id, recipient_user_id, type_key}`。事件的类型名常量 `EventInboxCreated` 由本模块在自己的包里声明；事件的标识由 `event.NewID` 赋予，发布方不预设它。审计动作不在此列——本模块不发审计事件，谁审计由宿主在配置里点名。
+**事件载荷是封闭集**：`{message_id, tenant_id, recipient_user_id, type_key}`。事件的类型名常量 `EventInboxCreated` 由本模块在自己的包里声明；事件的标识由 `event.NewID` 赋予，发布方不预设它。审计动作不在此列：本模块不发审计事件，谁审计由宿主在配置里点名。
 
 ### 标记已读的谓词
 
-**`ReadAll` 的幂等由谓词给出。** 它的语句是 `UPDATE in_app_messages SET read_at = <现在> WHERE <本收件人> AND read_at IS NULL`；谓词匹配的是「尚未标记」这个条件。重复调用匹配 0 行、返回 `read_count` 为 0 且成功。标记不以消息是否过期、是否已从列表隐藏为条件——一条已过期的行照旧可被标为已读。
+**`ReadAll` 的幂等由谓词给出。** 它的语句是 `UPDATE in_app_messages SET read_at = <现在> WHERE <本收件人> AND read_at IS NULL`；谓词匹配的是“尚未标记”这个条件。重复调用匹配 0 行、返回 `read_count` 为 0 且成功。标记不以消息是否过期、是否已从列表隐藏为条件：一条已过期的行照旧可被标为已读。
 
-**`MarkRead` 命中已读行时不写库。** 语句是 `UPDATE ... SET read_at = <现在> WHERE <本收件人> AND id = ? AND read_at IS NULL`。匹配到一行即成功；匹配 0 行时再取一次本收件人范围内的 `id`：存在即命中的是已读行，返回成功而不写库、保留首读时间戳；不存在即 `ErrMessageNotFound`，路由答 404。未命中（未知 id、他人、他租户）在语句层面就被收成一个「看不见」，不作区分。
+**`MarkRead` 命中已读行时不写库。** 语句是 `UPDATE ... SET read_at = <现在> WHERE <本收件人> AND id = ? AND read_at IS NULL`。匹配到一行即成功；匹配 0 行时再取一次本收件人范围内的 `id`：存在即命中的是已读行，返回成功而不写库、保留首读时间戳；不存在即 `ErrMessageNotFound`，路由答 404。未命中（未知 id、他人、他租户）在语句层面就被收成一个“看不见”，不作区分。
 
 ### 列出与计数
 

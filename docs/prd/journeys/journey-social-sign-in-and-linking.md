@@ -22,8 +22,8 @@
 
 ## 结果
 
-- 新用户得到一个可用的账户：账户带提供方给出的显示名、开户前选定的用户名与口令；提供方声明为已验证的那个地址写进了账户，既作联系方式（默认通讯邮箱）也作登录方式——它是账户唯一的邮箱地址，验证之后由系统选作登录方式。
-- 该地址因此可以作口令登录名：当事人之后可以用「该地址 + 建号时设的口令」登录同一个账户。
+- 新用户得到一个可用的账户：账户带提供方给出的显示名、开户前选定的用户名与口令；提供方声明为已验证的那个地址写进了账户，既作联系方式（默认通讯邮箱）也作登录方式：它是账户唯一的邮箱地址，验证之后由系统选作登录方式。
+- 该地址因此可以作口令登录名：当事人之后可以用“该地址 + 建号时设的口令”登录同一个账户。
 - 该账户此后仍可用同一个 Google 账号直接登录，进入的就是这个账户；Google 身份是账户的一条登录方式。
 
 ## 备选路径
@@ -71,4 +71,4 @@ flowchart TD
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact` 覆盖开户面、地址作联系方式与它出现在登录方式组；`social-sign-in: the account-opening password signs in under the provider address` 覆盖用「该地址 + 建号时的口令」登录同一账户；`social-sign-in: a Google email already on an account is refused with link-required` 覆盖需先绑定的拒绝。
+`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact` 覆盖开户面、地址作联系方式与它出现在登录方式组；`social-sign-in: the account-opening password signs in under the provider address` 覆盖用“该地址 + 建号时的口令”登录同一账户；`social-sign-in: a Google email already on an account is refused with link-required` 覆盖需先绑定的拒绝。

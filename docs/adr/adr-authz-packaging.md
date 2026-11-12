@@ -2,11 +2,11 @@
 
 ## 背景
 
-宿主的依赖范围由它 import 的包决定，登记随 import 发生——import 一个包即执行它的 `init`，该包登记的模块随之进入可用集（[ADR-module-layout](adr-module-layout.md)、[ADR-module-registration](adr-module-registration.md)）。一个包所绑的第三方库只有 import 它的宿主才背负；被每个使用方 import 的根包，其 import 随之进入全部使用方的依赖闭包。
+宿主的依赖范围由它 import 的包决定，登记随 import 发生：import 一个包即执行它的 `init`，该包登记的模块随之进入可用集（[ADR-module-layout](adr-module-layout.md)、[ADR-module-registration](adr-module-registration.md)）。一个包所绑的第三方库只有 import 它的宿主才背负；被每个使用方 import 的根包，其 import 随之进入全部使用方的依赖闭包。
 
 授权的各项交付依赖闭包不同：策略引擎经数据库模块读写自己的表，绑定 Casbin（[REF-casbin](../references.md)）引擎；请求路径上的强制点落在入口模块的授权阶段，读租户上下文；管理面 HTTP 路由落在入口模块，取用策略模块的 `Manager` 与 `Catalog`。判定接口、权限常量与模型文本要被这几处与读取权限的代码共用。
 
-`authn` 功能目录的先例是根包只放接口、一个功能一个叶子包一个模块，判据是依赖闭包（[ADR-authn-packaging](adr-authn-packaging.md)）。把一个交付拆成独立 Go module 的判据是「该功能自身需要独立发布节奏」（[ADR-module-layout](adr-module-layout.md)）。
+`authn` 功能目录的先例是根包只放接口、一个功能一个叶子包一个模块，判据是依赖闭包（[ADR-authn-packaging](adr-authn-packaging.md)）。把一个交付拆成独立 Go module 的判据是“该功能自身需要独立发布节奏”（[ADR-module-layout](adr-module-layout.md)）。
 
 ## 考虑过的选项
 
@@ -20,13 +20,13 @@
 
 采纳它意味着 `pkg/authz` 根包既定义接口与常量，又登记模块并实现引擎。
 
-**否决**：根包被每个使用方 import——强制点、管理面与将来读取权限常量的业务代码都 import 它。根包登记模块，这些 import 就都把一个策略引擎（连同数据库模块与 Casbin）带进可用集，「本二进制有没有策略引擎」不再由宿主的 import 决定；根包还要随之占用一个模块名与一个配置命名空间。判据与 [ADR-authn-packaging](adr-authn-packaging.md) 针对 `authn` 根包的同一条相同。
+**否决**：根包被每个使用方 import：强制点、管理面与将来读取权限常量的业务代码都 import 它。根包登记模块，这些 import 就都把一个策略引擎（连同数据库模块与 Casbin）带进可用集，“本二进制有没有策略引擎”不再由宿主的 import 决定；根包还要随之占用一个模块名与一个配置命名空间。判据与 [ADR-authn-packaging](adr-authn-packaging.md) 针对 `authn` 根包的同一条相同。
 
 ### 把 Decider 实现与中间件拆成两个模块
 
-采纳它意味着强制点拆成「中间件」与「`Decider` 实现」两个模块，各自登记。
+采纳它意味着强制点拆成“中间件”与“`Decider` 实现”两个模块，各自登记。
 
-**否决**：两者共用同一份路由声明表与同一次租户读取，是同一个判定产品的两个接口。拆开要把声明表经一个新接口暴露给另一个模块，多一处需要同步的中间契约，且两个模块必须同进同出——单独装一个都不构成可用的强制点。
+**否决**：两者共用同一份路由声明表与同一次租户读取，是同一个判定产品的两个接口。拆开要把声明表经一个新接口暴露给另一个模块，多一处需要同步的中间契约，且两个模块必须同进同出：单独装一个都不构成可用的强制点。
 
 ### 每个叶子功能一个独立 Go module
 
@@ -45,12 +45,12 @@
 - **根包。** 根包定义判定接口、类型、权限常量、模型文本与哨兵，不登记模块，也不导出模块名常量。它被强制点、管理面与读取权限的代码 import，其 import 范围因此受限：不 import 第三方库（尤其不 import Casbin），也不 import 实现子包。封闭的非测试 import 集由依赖范围测试守住。
 - **叶子模块。** 策略（表与迁移、薄适配器、引擎、权限目录、管理接口、账户生命周期）、强制点（中间件、路由声明接口、处理函数内 API、实现 `authn.Decider`）、管理面（管理面 HTTP 路由）各为一个模块，模块名取包名。
 - **不登记的内部单元。** 内部库包与测试夹具不登记为模块。
-- **Decider 的交付方。** `authn.Decider` 由强制点的产品实现，编译期断言它的实现。这一条使「判定接口的实现在哪里」唯一：装强制点即接入该判定接口（[ADR-authz-decision-seam](adr-authz-decision-seam.md)）。
+- **Decider 的交付方。** `authn.Decider` 由强制点的产品实现，编译期断言它的实现。这一条使“判定接口的实现在哪里”唯一：装强制点即接入该判定接口（[ADR-authz-decision-seam](adr-authz-decision-seam.md)）。
 - **模块名、配置与设置命名空间、迁移与权限点的落点在设计文档 design-authz 里。**
 
 ## 后果
 
-宿主的依赖范围按功能裁剪：只装强制点的宿主不背负策略引擎所绑的库；只装策略引擎的宿主不背负入口模块；接口与权限常量经根包共享，不给任何使用方带进第三方库。登记随 import 发生，「本二进制有没有强制点」「有没有策略引擎」由宿主的 import 决定。
+宿主的依赖范围按功能裁剪：只装强制点的宿主不背负策略引擎所绑的库；只装策略引擎的宿主不背负入口模块；接口与权限常量经根包共享，不给任何使用方带进第三方库。登记随 import 发生，“本二进制有没有强制点”“有没有策略引擎”由宿主的 import 决定。
 
 **接受的代价：**
 

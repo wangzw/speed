@@ -2,7 +2,7 @@
 
 本[模块](../../glossary.md)是业务后端的对象存取能力：它把一份字节连同元数据存下来，此后按标识读回、列举与删除，并可为业务前端铸一条直连地址。它拥有字节接口、元数据与生命周期状态机、内容路由与直连地址的铸造，不拥有终端用户授权、内容净化、缩略图派生与审计行的写入。读职责清单前应持有的一句话心智模型是：字节与元数据分开存放，元数据模块只经稳定的字节接口寻址字节，调用方拿到的永远是对象标识而不是内部键。
 
-第一遍的次序是职责、外部接口契约、依赖、UML 图、核心数据结构与核心算法与流程：职责与外部接口契约给出能力、状态与路由，依赖与 UML 图给出后端接口与实现的关系，核心数据结构给出 `objects` 表、`object_grants` 表与对象状态，核心算法与流程给出直传生命周期、地址铸造、内容路由与过期清扫，其开头的走查先跟一次直传从声明到删除的持久状态。错误与失败语义、并发与事务边界与扩展点属查阅用；实现状态放在最后，用代码锚点核对声称已实现的部分。竞态与边界情形——上传与状态推进不在同一事务、清扫与并发删除、令牌过期与墓碑——是最后的自检项，与并发与事务边界一并核对。
+第一遍的次序是职责、外部接口契约、依赖、UML 图、核心数据结构与核心算法与流程：职责与外部接口契约给出能力、状态与路由，依赖与 UML 图给出后端接口与实现的关系，核心数据结构给出 `objects` 表、`object_grants` 表与对象状态，核心算法与流程给出直传生命周期、地址铸造、内容路由与过期清扫，其开头的走查先跟一次直传从声明到删除的持久状态。错误与失败语义、并发与事务边界与扩展点属查阅用；实现状态放在最后，用代码锚点核对声称已实现的部分。竞态与边界情形（上传与状态推进不在同一事务、清扫与并发删除、令牌过期与墓碑）是最后的自检项，与并发与事务边界一并核对。
 
 ## 职责
 
@@ -10,7 +10,7 @@
 
 本能力是给**业务后端**用的能力，不是给终端用户用的功能。业务后端在进程内经 `objectstore.Objects` 声明、上传、完成、取址、列举与删除；业务前端**从不**调用对象存储自己的结构化 API，只用一条直连地址读写字节（例如 `<img src>`）。一条直连地址在交给某个终端用户之前是否被允许，是**业务后端**的判断：本能力不拥有通用对象权限，只校验租户与对象状态。
 
-一个对象经**声明**（落一行 `pending`，带上尺寸与内容类型的声明，开一个上传窗口）→ **上传**（字节经 `Store` 以内部键存下，状态转 `uploaded`；字节可以由业务后端经 `Upload` 送入，也可以由前端按直连写地址直传）→ **完成**（`Stat` 核对字节，状态转 `completed`）落地。字节与元数据分开存放：元数据在数据库里，字节在后端接口背后，两者各自由持有它的一方负责。
+一个对象经**声明**（落一行 `pending`，带上尺寸与内容类型的声明，开一个上传窗口）、**上传**（字节经 `Store` 以内部键存下，状态转 `uploaded`；字节可以由业务后端经 `Upload` 送入，也可以由前端按直连写地址直传）、**完成**（`Stat` 核对字节，状态转 `completed`）落地。字节与元数据分开存放：元数据在数据库里，字节在后端接口背后，两者各自由持有它的一方负责。
 
 **字节与键是本模块自己的事。** 一份字节在后端里以一个**内部键**定位：键是**随机不透明串**，由本模块生成，不含租户标识与对象标识，**不出现在任何结构化应答、错误文本与日志**里。调用方拿到的是对象标识 `id`，不是键；`Store` 是字节进出的唯一通道，元数据模块不 import 任何后端 SDK。
 
@@ -20,7 +20,7 @@
 
 **`Store` 的每个实现都排他交付**：一个进程里恰好一个生效，多于一个表态启用即启动失败（照 `pkg/sms` 的载体形态）。`fs` 落在本地目录，`s3` 落在 S3（[REF-amazon-s3](../../references.md)）兼容的对象存储；`s3` 另交付可选能力 `DirectURL`，`fs` 不交付。不装 `s3` 的装配不背那个 SDK（[architecture](../architecture.md) 不变量 11）。根包是接口包与公共类型，不登记模块（[ADR-objectstore-packaging](../../adr/adr-objectstore-packaging.md)）。
 
-**HTTP 接口只有内容路由**：`metadata` 只挂 `/content`（GET/HEAD/PUT），且只在装配的字节后端不交付 `DirectURL` 时挂出（见「内容路由」与「装配契约」）。业务前端没有别的对象存储接口可调。
+**HTTP 接口只有内容路由**：`metadata` 只挂 `/content`（GET/HEAD/PUT），且只在装配的字节后端不交付 `DirectURL` 时挂出（见“内容路由”与“装配契约”）。业务前端没有别的对象存储接口可调。
 
 ### 非职责
 
@@ -29,10 +29,10 @@
 - **不做终端用户授权判定，也不提供撤销。** 一条直连地址可以交给谁归业务后端判断；本模块只校验租户与对象状态，不声明权限点，不记录签发对象，也没有撤销 API。一条地址只因到期而死，删对象与清扫使既有地址立即读不到字节，那是生命周期的效应。
 - **不解释对象的内容与用途。** `Object.MIME` 是不透明值，`Declaration.Name` 是调用方给的标签，本模块只把它规整后存下、不读它的含义；本模块不知道一份字节是票据、头像还是日志归档。
 - **不认识内部键之外的存储布局。** 键的语法是本模块的私有约定；`fs` 与 `s3` 各自把它映射到自己的后端拼写（相对路径、对象键），映射细节不进接口，也不出现在任何应答里。
-- **不写审计行。** 本模块在根包声明审计动作的类型名常量，由宿主在不可逆的迁移点显式把事件发上总线（见「审计动作」）；本模块只声明动作的名字，不写审计行，也不点审计模块为依赖。
+- **不写审计行。** 本模块在根包声明审计动作的类型名常量，由宿主在不可逆的迁移点显式把事件发上总线（见“审计动作”）；本模块只声明动作的名字，不写审计行，也不点审计模块为依赖。
 - **不提供供终端用户调用的对象 CRUD 接口。** 本模块挂出的路由只有内容路由，它服务签名地址，不进 OpenAPI（[REF-openapi](../../references.md)）；声明、列举与删除都只在进程内经 `Objects` 调用。
 - **不排队、不重试。** 一次上传与一次读取都是同步调用，`Store` 的方法在后端调用返回后才返回；后端不可达即那次调用失败，是否重试归调用方。
-- **不保证多副本下的字节可见性。** `fs` 的字节只在本进程能到达的目录里；多副本共享一份字节要用 `s3`（见「后端适配」与「错误与失败语义」的非保证）。
+- **不保证多副本下的字节可见性。** `fs` 的字节只在本进程能到达的目录里；多副本共享一份字节要用 `s3`（见“后端适配”与“错误与失败语义”的非保证）。
 
 ## 外部接口契约
 
@@ -181,13 +181,13 @@ var (
 
 `Objects` 各方法的语义，约束的主体是交付 `Objects` 的模块：
 
-- `Create` 校验 `Declaration`（`Size` 大于零、`ContentType` 非空、`ChecksumSHA256` 为空或 64 位十六进制），生成对象标识与随机内部键，落一行 `pending`，写 `name`、`declared_size`、`declared_type`、`declared_checksum` 与 `upload_expires_at = now + upload-window`，返回该对象。`Name` 不参与校验，按下文「名字的规整」存入。校验不过即 `ErrInvalidRequest`，不落行。
+- `Create` 校验 `Declaration`（`Size` 大于零、`ContentType` 非空、`ChecksumSHA256` 为空或 64 位十六进制），生成对象标识与随机内部键，落一行 `pending`，写 `name`、`declared_size`、`declared_type`、`declared_checksum` 与 `upload_expires_at = now + upload-window`，返回该对象。`Name` 不参与校验，按下文“名字的规整”存入。校验不过即 `ErrInvalidRequest`，不落行。
 - `Upload` 取该行，要求状态为 `pending` 或 `uploaded`、上传窗口未关、`size` 参数等于 `declared_size`；字节经 `Store.Put(内部键, r, size)` 存下，同时以流式读出实际字节数与 SHA-256；声明了校验和而不符即拒绝；写 `size`、`checksum_sha256`、`mime`（取 `declared_type`），状态转 `uploaded`。前置不符答 `ErrStateConflict`（状态不符或窗口已关）或 `ErrInvalidRequest`（字节数与声明不符），均在写字节之前拦下。
 - `Complete` 接受 `pending` 与 `uploaded`：先经 `Store.Stat(内部键)` 核对后端持有的字节数，不符即 `ErrInvalidRequest` 并尽力删掉字节、行保持原状态；字节不在后端即 `ErrContentMissing`；核对通过后条件 UPDATE 转 `completed`，写观测尺寸、`mime` 与按 `object-ttl` 算出的 `expires_at`。`completed` 原样返回该行、不改状态，也不再 `Stat`；`deleted` 与未知 id 答 `ErrObjectNotFound`。
 - `Get` 返回该对象；`deleted` 与不存在相同，答 `ErrObjectNotFound`。
 - `OpenContent` 只对 `completed` 开放（`pending`／`uploaded` 答 `ErrStateConflict`，`deleted` 答 `ErrObjectNotFound`），经 `Store.Open(内部键)` 返回字节的只读流，读取方负责关闭它；`Store` 里找不到该行的字节即 `ErrContentMissing`。
-- `URL` 为一个对象铸一条直连地址：装配了 `DirectURL` 的后端直接给出预签名地址，本地目录后端给出本进程内容路由上的一条带令牌地址（见「直连地址的铸造」）。读地址要求状态 `completed` 且未过期；写地址要求 `pending` 或 `uploaded` 且上传窗口未关；状态不符答 `ErrStateConflict`，对象不可见答 `ErrObjectNotFound`，本进程铸不出地址答 `ErrURLUnavailable`。
-- `List` 返回本租户**未删除**的对象，按 `(created_at, id)` 升序，取 `Limit` 行，游标见「列表的键集游标」。
+- `URL` 为一个对象铸一条直连地址：装配了 `DirectURL` 的后端直接给出预签名地址，本地目录后端给出本进程内容路由上的一条带令牌地址（见“直连地址的铸造”）。读地址要求状态 `completed` 且未过期；写地址要求 `pending` 或 `uploaded` 且上传窗口未关；状态不符答 `ErrStateConflict`，对象不可见答 `ErrObjectNotFound`，本进程铸不出地址答 `ErrURLUnavailable`。
+- `List` 返回本租户**未删除**的对象，按 `(created_at, id)` 升序，取 `Limit` 行，游标见“列表的键集游标”。
 - `Delete` 取该行，条件 `WHERE id = ? AND state <> 'deleted'`：任何未删除状态先经 `Store.Delete(内部键)` 删字节（`Delete` 幂等）、再把状态置 `deleted`；`deleted` 上重复调用匹配不到行、成功返回，不再删字节。
 
 ### 登记单元与名字
@@ -201,11 +201,11 @@ var (
 
 模块名照顶层能力：裸名 `objectstore`，叶子 `objectstore.<名>`，配置命名空间取同一取值（对照 `sms`/`sms.registry`、`kv`/`kv.redis`）。每个登记模块的包导出自己的 `ModuleName` 常量。
 
-**`DirectURL` 是可声明的可选能力，不是 `Store` 的必选方法，也不是裸类型断言。** 一个后端在它的 `Spec` 里把 `Direct` 置真，工厂便把 `DirectURL` 与 `Store` 一并声明为交付；实例仍是 `Open` 返回的同一个值，同时实现两个接口（与 `pkg/sms`、`pkg/authz/policy`、`pkg/audit/journal` 的「一模块一实例多 token」一致），`core.assertDelivered` 在构造时逐一校验。
+**`DirectURL` 是可声明的可选能力，不是 `Store` 的必选方法，也不是裸类型断言。** 一个后端在它的 `Spec` 里把 `Direct` 置真，工厂便把 `DirectURL` 与 `Store` 一并声明为交付；实例仍是 `Open` 返回的同一个值，同时实现两个接口（与 `pkg/sms`、`pkg/authz/policy`、`pkg/audit/journal` 的“一模块一实例多 token”一致），`core.assertDelivered` 在构造时逐一校验。
 
 **`fs` 不 import 任何对象存储 SDK，也不认识 URL。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK；它不 import `pkg/http`、不持有任何密钥、不交付 `DirectURL`。**`s3` 绑它自己的 SDK**（`github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，[REF-minio-go](../../references.md)），SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
 
-`fs` 与 `s3` 都排他：一个进程里恰好一个 `Store` 生效，多于一个表态启用即在消解阶段以排他冲突失败，宿主在命令树上点名其一。`metadata` 排他交付 `Objects`，它对 `Store` 的依赖是**必需**的——一个 `Store` 都没纳入的装配里，该功能缺提供者、启动失败；`DirectURL` 是可选依赖，缺席时地址改由内容路由发出。
+`fs` 与 `s3` 都排他：一个进程里恰好一个 `Store` 生效，多于一个表态启用即在消解阶段以排他冲突失败，宿主在命令树上点名其一。`metadata` 排他交付 `Objects`，它对 `Store` 的依赖是**必需**的：一个 `Store` 都没纳入的装配里，该功能缺提供者、启动失败；`DirectURL` 是可选依赖，缺席时地址改由内容路由发出。
 
 ### 审计动作
 
@@ -219,7 +219,7 @@ const (
 )
 ```
 
-审计动作**不是资源**。发布方在自己包里声明类型名常量并把事件发上总线；审计模块用配置项（`events []string`）点名它要看的类型名，**从不推断、不支持通配**。**本模块不发布这些事件，也不写审计行**：它只声明动作的名字，由**宿主**在自己的代码里、在不可逆的迁移点显式把对应事件发上总线——一个对象已落下 `pending` 行、一个对象已可读、一个对象已不可恢复。点了名而发布方不发即静默不审计，没有任何一层会报错。因此本模块不点 `pkg/event`、不点 `pkg/audit` 为依赖。
+审计动作**不是资源**。发布方在自己包里声明类型名常量并把事件发上总线；审计模块用配置项（`events []string`）点名它要看的类型名，**从不推断、不支持通配**。**本模块不发布这些事件，也不写审计行**：它只声明动作的名字，由**宿主**在自己的代码里、在不可逆的迁移点显式把对应事件发上总线：一个对象已落下 `pending` 行、一个对象已可读、一个对象已不可恢复。点了名而发布方不发即静默不审计，没有任何一层会报错。因此本模块不点 `pkg/event`、不点 `pkg/audit` 为依赖。
 
 ### 内容路由
 
@@ -270,7 +270,7 @@ http:
 4. 跨源部署：设 `objectstore.metadata.public-url`，把该端点加进 `http.cors.endpoints`；`s3` 部署给桶配 CORS（[REF-whatwg-fetch](../../references.md)）（允许前端来源的 `GET`、`HEAD`、`PUT`，暴露 `ETag`）。
 5. 端点前缀必须覆盖 `/content`：没被任何 claim 覆盖时入口模块以 `ErrUnclaimedRoute` 启动失败。它与 `web` 的 `"/"` 冲突由最长前缀胜出解决，宿主自定前缀时要保证比 `"/"` 更具体。
 
-`Init` 写一条启动诊断：挂了哪些端点，或「后端直接铸址，内容路由未挂载」。
+`Init` 写一条启动诊断：挂了哪些端点，或“后端直接铸址，内容路由未挂载”。
 
 ### 对外接口
 
@@ -317,7 +317,7 @@ http:
 
 ## UML 图
 
-本能力的结构是一个字节接口、一项可选的直连能力与一个生命周期接口，以及它们各自的实现。图里的约束不在图中：`fs` 与 `s3` 之间是**互斥**的，`metadata` 排他交付 `Objects`——图上看不出这一点，因为排他性由描述符声明、由消解阶段裁定，不是类型之间的关系。`metadata` **不 import 任何后端实现子包**，只经根包的 `Store` 与 `DirectURL` 接口触达字节；`DirectURL` 缺席时由 `metadata` 自己的内容路由发地址。
+本能力的结构是一个字节接口、一项可选的直连能力与一个生命周期接口，以及它们各自的实现。图里的约束不在图中：`fs` 与 `s3` 之间是**互斥**的，`metadata` 排他交付 `Objects`：图上看不出这一点，因为排他性由描述符声明、由消解阶段裁定，不是类型之间的关系。`metadata` **不 import 任何后端实现子包**，只经根包的 `Store` 与 `DirectURL` 接口触达字节；`DirectURL` 缺席时由 `metadata` 自己的内容路由发地址。
 
 ```mermaid
 classDiagram
@@ -410,7 +410,7 @@ classDiagram
     Object --> State
 ```
 
-有生命周期的实体是对象本身，它的状态机如下。上传的两个入口——业务后端的 `Upload` 与前端对直连写地址的 `PUT`——落到同一行状态；上传窗口过期与过期清扫都由 `metadata` 模块自己的清扫 ticker 驱动。删除是一条从任何未删除状态通向 `deleted` 的边，图中只画出自 `已上传` 出发的一条代表它，不重复画出。`deleted` 是墓碑：元数据行保留 `state = deleted`，字节已从后端删去。
+有生命周期的实体是对象本身，它的状态机如下。上传的两个入口（业务后端的 `Upload` 与前端对直连写地址的 `PUT`）落到同一行状态；上传窗口过期与过期清扫都由 `metadata` 模块自己的清扫 ticker 驱动。删除是一条从任何未删除状态通向 `deleted` 的边，图中只画出自 `已上传` 出发的一条代表它，不重复画出。`deleted` 是墓碑：元数据行保留 `state = deleted`，字节已从后端删去。
 
 ```mermaid
 stateDiagram-v2
@@ -460,7 +460,7 @@ stateDiagram-v2
 | `expires_at` | 令牌的到期时刻 |
 | `created_at` | 令牌的签发时刻 |
 
-另有 `expires_at` 上的索引服务清扫。**令牌是 `crypto/rand` 的 32 字节，`base64.RawURLEncoding` 编码为 43 个字符；库里只存它的 SHA-256 小写十六进制，明文令牌从不落库。** 不签名，只存行：没有密钥，因此没有首启造钥、没有轮换、没有多副本共享密钥，也没有「换密钥作废在途地址」这件事。
+另有 `expires_at` 上的索引服务清扫。**令牌是 `crypto/rand` 的 32 字节，`base64.RawURLEncoding` 编码为 43 个字符；库里只存它的 SHA-256 小写十六进制，明文令牌从不落库。** 不签名，只存行：没有密钥，因此没有首启造钥、没有轮换、没有多副本共享密钥，也没有“换密钥作废在途地址”这件事。
 
 **首次读表不得早于 `Init`。** `New` 早于 `Migrate`，`New` 里这些表还不存在，本模块因此不在 `New` 读表；路由在 `Init` 里只登记、不读表。第一次读表落在 `Start`：清扫的第一次 pass。清扫关闭（`sweep-interval ≤ 0`）时，第一次读表是 `Serve` 阶段的第一条请求。
 
@@ -497,10 +497,10 @@ stateDiagram-v2
 
 ### 对象生命周期（直传）
 
-1. **声明**：业务后端 `Create(Declaration{Name, Size, ContentType, ChecksumSHA256})` → `pending` 行、随机内部键、上传窗口。
+1. **声明**：业务后端 `Create(Declaration{Name, Size, ContentType, ChecksumSHA256})`，得到 `pending` 行、随机内部键、上传窗口。
 2. **取写址**：业务后端鉴权通过后 `URL(id, URLRequest{Access: URLAccessWrite})`。地址绑定到**对象标识**（因而绑定它的租户、`declared_size`、`declared_type`）与到期时刻，不绑定一次内容哈希。
 3. **前端直传**：浏览器对该地址发一次普通 `PUT`，body 就是文件。`fs` 走 `/content?t=…`，按声明尺寸精确限流，超或欠都是 400 且不留半份字节，`Content-Type` 请求头被忽略、MIME 一律取声明值；`s3` 走预签名 PUT，字节不经本进程，长度在服务端不可约束。
-4. **完成**：`Complete(id)` 先 `Stat` 再看状态，见「Complete 的字节核对」。
+4. **完成**：`Complete(id)` 先 `Stat` 再看状态，见“Complete 的字节核对”。
 5. **取读址**：业务后端判定某个终端用户可读后 `URL(id, URLRequest{Access: URLAccessRead})`；只对 `completed` 且未过期的对象发得出。
 6. **前端直读**：浏览器 `GET`（`<img src>` 或 `fetch`）。
 7. **删除与过期**：`Delete` 先删字节再墓碑；清扫按 `upload_expires_at`／`expires_at` 处置，并顺手删过期授权行。删对象使既有地址立即 404（内容路由每次都重读对象状态），这是生命周期的效应，不是撤销 API。
@@ -512,28 +512,28 @@ stateDiagram-v2
 `URL()` 的输入是对象标识与 `URLRequest`，输出是一条 `IssuedURL`。读址与写址共用同一条路径，只在状态判定与地址来源上不同：
 
 1. `Access` 只接受 `read`／`write`，否则 `ErrInvalidRequest`；`Expiry < 0` 同理。
-2. 按租户取行；未知、他人租户、已删除 → `ErrObjectNotFound`。
+2. 按租户取行；未知、他人租户、已删除均答 `ErrObjectNotFound`。
 3. 有效期取 `Expiry`（为零取设置 `url-ttl`）、对象剩余寿命或上传窗口剩余、后端上限三者的最小值：一个正值只能缩短，不能放大配置值；`s3` 与 `fs` 的上限都是 7 天（`minio-go` 的预签名边界是 600 秒到 604800 秒，`fs` 守同一边界，过期语义因此一致）。
 4. **读**：状态必须 `completed`，否则 `ErrStateConflict`；有 `expires_at` 时剩余寿命不足 1 秒即 `ErrObjectNotFound`（等同已过期）。
 5. **写**：状态必须 `pending` 或 `uploaded`，否则 `ErrStateConflict`；上传窗口剩余不足 1 秒即 `ErrStateConflict`。
 6. 装配了 `DirectURL`：读地址调 `PresignRead`，带上 `mime` 与 `Name`；写地址调 `PresignWrite`。后端直接返回它的 `IssuedURL`；后端失败包装为 `ErrURLUnavailable`。
-7. 否则由内容路由发地址：内容路由没有挂载 → `ErrURLUnavailable`；挂载了就铸一个令牌，插入一行 `object_grants`（`use` 取这次铸址的方向，`expires_at` 取当前时刻加有效期，插入失败 → `ErrStoreUnavailable`），返回 `IssuedURL{URL: publicURL + "/content?t=" + token, Method: "GET" 或 "PUT", Expires: 到期时刻}`。`publicURL` 去掉尾斜杠；为空时得到根相对地址 `/content?t=…`，同源部署直接可用。
+7. 否则由内容路由发地址：内容路由没有挂载则答 `ErrURLUnavailable`；挂载了就铸一个令牌，插入一行 `object_grants`（`use` 取这次铸址的方向，`expires_at` 取当前时刻加有效期，插入失败则答 `ErrStoreUnavailable`），返回 `IssuedURL{URL: publicURL + "/content?t=" + token, Method: "GET" 或 "PUT", Expires: 到期时刻}`。`publicURL` 去掉尾斜杠；为空时得到根相对地址 `/content?t=…`，同源部署直接可用。
 
 ### 内容路由的处理顺序
 
 读与写共用令牌校验与租户进入，之后按方向分开。令牌缺失或不是 43 个 base64url 字符即 404，不说明原因。
 
-1. 在 `tenant.CrossTenant(ctx)` 下按 `token_hash` 查授权行，同一条语句用数据库时钟算出 `live = expires_at > now`；无行 → 404。
-2. 方法 ↔ `use` 不符（GET／HEAD 只认 `read`，PUT 只认 `write`）→ 404。
-3. 令牌已过期 → 410 Gone。
-4. `catalog.Enter(ctx, row.TenantID)`：未知或停用租户 → 404；名册读失败 → 503。
-5. 在进入后的上下文里按租户作用域加载对象行：无行或 `deleted` → 404。
+1. 在 `tenant.CrossTenant(ctx)` 下按 `token_hash` 查授权行，同一条语句用数据库时钟算出 `live = expires_at > now`；无行答 404。
+2. 方法与 `use` 不符（GET／HEAD 只认 `read`，PUT 只认 `write`）答 404。
+3. 令牌已过期答 410 Gone。
+4. `catalog.Enter(ctx, row.TenantID)`：未知或停用租户答 404；名册读失败答 503。
+5. 在进入后的上下文里按租户作用域加载对象行：无行或 `deleted` 答 404。
 
-**读**：状态不是 `completed` → 404（读路径不泄露状态机）。经 `Store.Open` 打开字节：`ErrContentMissing` → 404，其它失败 → 503。流实现 `io.ReadSeeker` 时（`fs` 的 `*os.File` 是）用 `http.ServeContent` 应答，自带 Range、HEAD 与 `Content-Length`；否则写出 `Content-Length` 全量拷贝并标 `Accept-Ranges: none`。响应头见「内容路由」。
+**读**：状态不是 `completed` 答 404（读路径不泄露状态机）。经 `Store.Open` 打开字节：`ErrContentMissing` 答 404，其它失败答 503。流实现 `io.ReadSeeker` 时（`fs` 的 `*os.File` 是）用 `http.ServeContent` 应答，自带 Range、HEAD 与 `Content-Length`；否则写出 `Content-Length` 全量拷贝并标 `Accept-Ranges: none`。响应头见“内容路由”。
 
-**写**：状态 `completed` → 409，`pending`／`uploaded` 继续；上传窗口已关（`upload_expires_at` 已过）→ 410。`Content-Length` 缺失（分块传输）→ 411；不等于 `declared_size` → 400。与进程内 `Upload` 共用同一条流式写入：经一个边读边算 SHA-256 的读取器写入 `Store.Put`，条件推进到 `uploaded`（记观测尺寸与 SHA-256，`mime` 取 `declared_type`）；声明了校验和而不符即尽力 `Store.Delete` 并答 400。成功 204。
+**写**：状态 `completed` 答 409，`pending`／`uploaded` 继续；上传窗口已关（`upload_expires_at` 已过）答 410。`Content-Length` 缺失（分块传输）答 411；不等于 `declared_size` 答 400。与进程内 `Upload` 共用同一条流式写入：经一个边读边算 SHA-256 的读取器写入 `Store.Put`，条件推进到 `uploaded`（记观测尺寸与 SHA-256，`mime` 取 `declared_type`）；声明了校验和而不符即尽力 `Store.Delete` 并答 400。成功 204。
 
-后端失败 → 503；错误体一律为空或最小 problem，不写内部键、不写令牌。
+后端失败答 503；错误体一律为空或最小 problem，不写内部键、不写令牌。
 
 ### Complete 的字节核对
 
@@ -561,7 +561,7 @@ blob.Size != row.DeclaredSize
 
 `metadata` 模块在 `Start` 起一个 ticker、`Stop` 停，间隔取 `objectstore.metadata.sweep-interval`，**`≤0` 即关闭**（与既有各模块自起的 ticker 一致：间隔 `≤0` 关掉，失败只 `Warn`，各自持有停机制约）。每 tick 跑一次清扫 pass：
 
-- `pending` 且 `upload_expires_at < now`：窗口已关。**不能假定后端没有字节**——一次 `Put` 成功而置行失败的上传会让字节暂留在后端——所以先经 `Store.Delete(内部键)` 删字节（`Delete` 幂等），再把行置 `deleted` 墓碑。
+- `pending` 且 `upload_expires_at < now`：窗口已关。**不能假定后端没有字节**（一次 `Put` 成功而置行失败的上传会让字节暂留在后端），所以先经 `Store.Delete(内部键)` 删字节（`Delete` 幂等），再把行置 `deleted` 墓碑。
 - `completed` 且 `expires_at` 非空且 `< now`：先经 `Store.Delete(内部键)` 删字节（`Delete` 幂等），再把行置 `deleted` 墓碑。
 - 删掉 `expires_at < now` 的授权行。正确性不依赖这一条（每次使用都比对到期），它只负责让表不无限增长。
 
@@ -593,7 +593,7 @@ type Spec[C any] struct {
 | `Prepare` | `Decode` 自己那份配置；读出后调 `Stance`，与自身性质不符即启动失败，错误点名缺的是哪一项 |
 | `New` | `Decode` 配置 → 调 `Secrets` 并经 `pkg/internal/literal` 登记字面量脱敏匹配器 → 取可选 `log.Logger` 并以模块名绑定 → 把该 logger 交给 `Open` 建立后端 |
 
-**次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在实现把任何属性绑到 logger 之前。`Secrets` 钩子把「凭据先登记」这一步收进工厂，实现因此不 import `literal`，只交出凭据字符串。`fs` 不承载凭据，`Secrets` 交回空。
+**次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在实现把任何属性绑到 logger 之前。`Secrets` 钩子把“凭据先登记”这一步收进工厂，实现因此不 import `literal`，只交出凭据字符串。`fs` 不承载凭据，`Secrets` 交回空。
 
 **实现把外部调用记在工厂交给它的 logger 上，不从操作的 context 取。** 工厂的后台清扫用自己创建的 context 调 `Delete`，那个 context 没有注入 logger；`log.FromContext` 会把这条路径的记录落到进程默认链上，配置的目的地看不到。模块 logger 还使每条记录带上模块属性，无论调用由哪个 context 驱动。
 
@@ -606,7 +606,7 @@ type Spec[C any] struct {
 - `Open` 打开该路径只读并返回正文流；`Delete` 删除该路径，幂等。
 - `Name()` 报告实现名，供诊断。`fs` 不 import 任何对象存储 SDK，依赖只有标准库的 `os`、`io`；不认识 URL、不持有任何密钥，`Direct` 为假。
 
-**`s3` 绑 S3 兼容的对象存储。** 配置项：`endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`。SDK 是 `github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，只被这个实现子包 import。`Put` 以内部键为对象键调用 `PutObject`（`size` 作为对象的 `Content-Length`），`Open` 用 `GetObject` 返回对象正文的只读流，`Delete` 用 `RemoveObject`（S3 的 `DeleteObject`）。`endpoint` 与 `use-path-style` 一起把客户端指向自建或云上的 S3 兼容服务，`region` 由 SDK 用于签名。`access-key` 与 `secret-key` 是凭据，由 `Secrets` 钩子交出、在 `New` 里先于 logger 绑定登记为日志的字面量脱敏匹配器（见「工厂的构造次序」）。
+**`s3` 绑 S3 兼容的对象存储。** 配置项：`endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`。SDK 是 `github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，只被这个实现子包 import。`Put` 以内部键为对象键调用 `PutObject`（`size` 作为对象的 `Content-Length`），`Open` 用 `GetObject` 返回对象正文的只读流，`Delete` 用 `RemoveObject`（S3 的 `DeleteObject`）。`endpoint` 与 `use-path-style` 一起把客户端指向自建或云上的 S3 兼容服务，`region` 由 SDK 用于签名。`access-key` 与 `secret-key` 是凭据，由 `Secrets` 钩子交出、在 `New` 里先于 logger 绑定登记为日志的字面量脱敏匹配器（见“工厂的构造次序”）。
 
 `s3` 用 `Spec.Direct` 声明交付 `DirectURL`，`Open` 返回的 `*store` 同时实现 `Store` 与 `DirectURL`：
 
@@ -618,7 +618,7 @@ type Spec[C any] struct {
 
 ### 出站调用的记录
 
-**每一次向外部服务发出的调用写一条记录，成功与失败各一条。** `objectstore.s3` 的 `Put`、`Open`、`Stat`、`PresignRead`、`PresignWrite` 与 `Delete` 在调用前后取时间，经**模块自己的 logger** 写出记录：工厂在 `New` 里取可选 `log.Logger`、以模块名绑定后交给 `Open`，实现持有它。操作的 context 不参与——工厂的后台清扫用自己创建的 context 调 `Delete`，那个 context 没有注入 logger，`log.FromContext` 会把这条路径落到进程默认链上，配置的目的地看不到。`Open` 的请求在交回字节流之前以一次 `Stat` 落地，该次调用的成功与失败各有一条记录。`objectstore.fs` 只访问本地目录，没有出站调用，不写这类记录。
+**每一次向外部服务发出的调用写一条记录，成功与失败各一条。** `objectstore.s3` 的 `Put`、`Open`、`Stat`、`PresignRead`、`PresignWrite` 与 `Delete` 在调用前后取时间，经**模块自己的 logger** 写出记录：工厂在 `New` 里取可选 `log.Logger`、以模块名绑定后交给 `Open`，实现持有它。操作的 context 不参与：工厂的后台清扫用自己创建的 context 调 `Delete`，那个 context 没有注入 logger，`log.FromContext` 会把这条路径落到进程默认链上，配置的目的地看不到。`Open` 的请求在交回字节流之前以一次 `Stat` 落地，该次调用的成功与失败各有一条记录。`objectstore.fs` 只访问本地目录，没有出站调用，不写这类记录。
 
 | 字段 | 取值 |
 |---|---|
@@ -631,9 +631,9 @@ type Spec[C any] struct {
 | `cause` | 失败时的分类：服务应答的错误码，或无应答时剥去内部键的传输错误文本 |
 | `http_status` | 失败且服务有应答时的状态码 |
 
-**内部键本身、对象的字节、凭据与返回的地址都不进记录。** 一条预签名地址带着对象键与 access-key 标识，记下它等于记下一条能力凭证。`key_hash` 足以把指向同一对象的多次调用关联起来，不能用来寻址该对象。服务应答按错误码记录而不按消息记录——服务可能把键回显进消息；其余错误文本在写出之前把内部键及其 URL 转义形式（路径转义与查询转义）替换掉，因为 SDK 会在服务消息与传输错误的 URL 里重复这个键。
+**内部键本身、对象的字节、凭据与返回的地址都不进记录。** 一条预签名地址带着对象键与 access-key 标识，记下它等于记下一条能力凭证。`key_hash` 足以把指向同一对象的多次调用关联起来，不能用来寻址该对象。服务应答按错误码记录而不按消息记录：服务可能把键回显进消息；其余错误文本在写出之前把内部键及其 URL 转义形式（路径转义与查询转义）替换掉，因为 SDK 会在服务消息与传输错误的 URL 里重复这个键。
 
-**`Open` 之后的正文读取失败另有记录。** `Open` 的成功记录在对象头到手时写出，正文尚未读取；返回的流在读取出错时写一条同 `key_hash` 的 `read` 失败记录，`EOF` 不算失败。一条断掉的流只写一条这样的记录，无论读取方把同一个错误报多少次。`read` 记录的 `duration_ms` 是这次正文读取自身的耗时：从第一次读取——SDK 由它发出请求——算到失败发生，`Open` 的调用（另有自己的记录）与交回流之后的等待都不计入。
+**`Open` 之后的正文读取失败另有记录。** `Open` 的成功记录在对象头到手时写出，正文尚未读取；返回的流在读取出错时写一条同 `key_hash` 的 `read` 失败记录，`EOF` 不算失败。一条断掉的流只写一条这样的记录，无论读取方把同一个错误报多少次。`read` 记录的 `duration_ms` 是这次正文读取自身的耗时：从第一次读取（SDK 由它发出请求）算到失败发生，`Open` 的调用（另有自己的记录）与交回流之后的等待都不计入。
 
 **流式交付的失败另有一行。** `metadata` 把 `OpenContent` 的字节流或内容路由的读应答写给 HTTP 调用方时，`io.Copy` 失败写一条 `Error`，带对象标识与成因；这一行不涉及内部键，与后端的出站调用记录相互独立。
 
@@ -683,14 +683,14 @@ type Spec[C any] struct {
 - **上游代理可能记下令牌。** 令牌在查询串里，绕开了本进程的访问日志，但反向代理或负载均衡若记录完整请求行仍会记下它。部署前提：不记查询串，或接受该窗口（即有效期）。
 - **`s3` 预签名 PUT 不能约束长度。** 预签名 PUT 只能签方法、键与过期。过量的上传会花掉带宽，`Complete` 的 `Stat` 发现长度不符后删字节，中间存在一段占用（窗口缺省 15 分钟）。需要严格约束时用进程内 `Upload`。
 - **`s3` 直传没有校验和。** `checksum_sha256` 为空，声明的校验和无法核对。
-- **`fs` 的媒体热路径依赖数据库。** 每次字节请求一次授权行查询加一次对象行读取；数据库不可用时图片不可用。这是「令牌无状态且删除即失效」的代价。
+- **`fs` 的媒体热路径依赖数据库。** 每次字节请求一次授权行查询加一次对象行读取；数据库不可用时图片不可用。这是“令牌无状态且删除即失效”的代价。
 - **每次铸一条 `fs` 地址写一行授权行。** 写入放大与签发率同阶。业务应缓存已铸的地址直到临近到期。
 - **`fs` 多副本不成立。** 共享卷能勉强工作但不在承诺内；内容地址指向的进程必须能读到字节。多副本用 `s3`。
 - **装配是配置正确性依赖。** 内容端点必须匿名且 `max-body-bytes: 0`，没有编译期护栏。缓解：启动诊断、这份文档与迁移清单；没有路由器时 `URL()` 明确答 `ErrURLUnavailable`，不会发出不可用地址。
 - **`public-url` 留空只适合同源部署。** 跨源忘了配会得到根相对地址，运行期表现为前端请求打到自己的源。
 - **不保证上传的字节与声明的校验和一致。** 校验和只在字节经过进程的路径上才有观测值；两种值分列存放，不一致时本模块不阻止完成。
 - **一次 `Delete` 有一个窗口。** 字节删成功、行尚未置 `deleted` 的窗口内，行仍是 `completed` 而字节已无，此间一次读取答 `ErrContentMissing`；重试 `Delete` 会再次尝试删字节（删不存在的字节不是错误）并置行，窗口随重试闭合。
-- **不做内容复验与净化。** 复验与净化刻意后置（见「非职责」）。
+- **不做内容复验与净化。** 复验与净化刻意后置（见“非职责”）。
 
 ## 并发与事务边界
 

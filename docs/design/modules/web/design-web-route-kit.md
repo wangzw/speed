@@ -2,13 +2,13 @@
 
 route-kit 是产品的路由与导航层，独立于壳与其它同族包，由应用的组合层取用。它拥有声明式注册表、路径匹配、链接构造、导航选中态、深链接解析与未命中回退，并按[宿主](../../../glossary.md)给出的在场谓词收窄注册表。它不据权限拦路由、不取回特性集合、不渲染壳的框架，也不持会话状态。进入职责清单前的心智模型只有一句：页面在一处登记，导航与渲染读同一份有效注册表，特性缺席与路径不存在落到同一个回退。
 
-第一遍为「职责」「术语表」与「外部接口契约」的「声明接口」「接线与渲染」，给出声明、有效注册表与渲染的对应；「依赖」「UML 图」「核心数据结构」随读随查，「核心算法与流程」按匹配、导航与链接查阅，「错误与失败语义」与「扩展点」作查表用。边界情形（装配期校验、特性缺席与未命中同落回退、读取中与读取失败的分支）是最后的自检项。
+第一遍为“职责”“术语表”与“外部接口契约”的“声明接口”“接线与渲染”，给出声明、有效注册表与渲染的对应；“依赖”“UML 图”“核心数据结构”随读随查，“核心算法与流程”按匹配、导航与链接查阅，“错误与失败语义”与“扩展点”作查表用。边界情形（装配期校验、特性缺席与未命中同落回退、读取中与读取失败的分支）是最后的自检项。
 
 ## 职责
 
 `@speed/route-kit` 承载一个产品的**路由与导航**：一份声明式注册表把产品的页面登记在一处，路径匹配、深链接解析、链接构造、导航选中态与未命中回退由本包一处承担。
 
-- **声明式注册表。** 产品的每个页面导出一份声明——路径、视图、导航标签、所需权限、所需特性；产品在一处点名它由哪些页面组成。这与后端的命令树对称：后端由命令树在一处点名一个程序由哪些模块组成，前端由注册表在一处点名一个产品由哪些页面组成（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。
+- **声明式注册表。** 产品的每个页面导出一份声明：路径、视图、导航标签、所需权限、所需特性；产品在一处点名它由哪些页面组成。这与后端的命令树对称：后端由命令树在一处点名一个程序由哪些模块组成，前端由注册表在一处点名一个产品由哪些页面组成（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。
 - **按特性在场收窄注册表。** 宿主给出在场谓词，本包据它算出有效注册表：带 `requires` 的声明只在其中特性全部在场时渲染视图、进入导航；特性缺席的页面与未登记的路径走同一个 `fallback`。谓词读取中或读取失败时，门控的路径渲染宿主给出的等待视图或失败视图（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。
 - **路由与导航独立成层。** 本包是独立包，**不被壳 import，也不 import 任何同类前端包**；一个产品要加页面，插的是本包的注册表，不动壳。它交出的导航条目是一种结构性类型（`id`、`label`、`href`、`selected` 与可选 `onClick`），壳的框架按结构接受它，因而不需要一条共享类型边。
 - **这些事由本包一处承担：** 选中态（当前 URL 命中哪一条导航项）、链接构造（由路径生成可点的链接）、深链接解析（一个深链接直接打开对应页面）、未命中回退（没有登记项匹配时渲染回退视图）、精确命中的查询（当前 URL 在有效注册表上命中哪一条声明），以及入口判定（一条路径是否在有效注册表上有声明）。
@@ -17,7 +17,7 @@ route-kit 是产品的路由与导航层，独立于壳与其它同族包，由�
 
 ### 非职责
 
-- **不据权限拦路由，也不据权限过滤导航；按宿主给出的在场谓词收窄注册表。** 登记项里的权限码是**数据**；本包不校验一个页面占的路径与它所需的权限是否相符，不据权限拦一条路由，也不据权限生成或过滤导航项。路由级授权是宿主在内容区里的组合——把 [layout-kit](design-web-layout-kit.md) 的 `RouteGuard` 挂在内容区，喂它一个由宿主算出、其读数来自 [auth-core](design-web-auth-core.md) 权限 hook 的 `status`（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。特性在场不是授权：本包据在场谓词收窄的是哪些页面存在，不是谁能进入（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。
+- **不据权限拦路由，也不据权限过滤导航；按宿主给出的在场谓词收窄注册表。** 登记项里的权限码是**数据**；本包不校验一个页面占的路径与它所需的权限是否相符，不据权限拦一条路由，也不据权限生成或过滤导航项。路由级授权是宿主在内容区里的组合：把 [layout-kit](design-web-layout-kit.md) 的 `RouteGuard` 挂在内容区，喂它一个由宿主算出、其读数来自 [auth-core](design-web-auth-core.md) 权限 hook 的 `status`（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。特性在场不是授权：本包据在场谓词收窄的是哪些页面存在，不是谁能进入（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。
 - **不取回特性集合，也不认识任何特性名。** 在场谓词由宿主给出，特性态归 [auth-core](design-web-auth-core.md)；`requires` 里的名字是数据，本包只把它交给谓词判定。
 - **不渲染壳的框架。** 本包不被 product-shell import；壳继续只渲染宿主算好的导航条目，契约不变。导航条目由产品从本包取到后传进壳的 `navItems` 槽，壳不因本包而知道路由。
 - **不持会话状态、不发请求、不做数据读取。** 本包在渲染期把当前 URL 匹配到一条登记项并渲染其视图；页面自己的数据经 [api-sdk](design-web-api-sdk.md) 的生成操作读取，与本包无关。
@@ -151,17 +151,17 @@ function useLocationPath(): RouteLocationPath
 
 **`presentDeclarations` 计算有效注册表。** 它保留不带 `requires` 的全部声明；带 `requires` 的声明只在谓词就绪，且其中每个名字的 `has` 都为真时保留，谓词缺席、读取中或读取失败时一律不保留。它是泛型的：宿主可以把它用在自己的声明类型上，例如宿主用它收窄管理后台的页面声明，再交给 [admin-ui](design-web-admin-ui.md) 的 `AdminShell`，管理后台侧栏与本包的导航因此读同一个集合。
 
-**`useMatch` 交出精确命中，不做前缀继承。** 它交出当前 URL 在有效注册表上完整匹配的那条声明及其匹配上下文；一个落在某条导航项路径之下、自己却没有声明的路径，不因此命中那条导航项。宿主据它取该页的 `permission` 交给权限守卫。没有精确命中——未命中、特性缺席，或门控路径的谓词尚未就绪——时，`RouteView` 渲染回退、等待或失败视图，宿主不为它取权限码，判定次序因此是先存在性，后权限。
+**`useMatch` 交出精确命中，不做前缀继承。** 它交出当前 URL 在有效注册表上完整匹配的那条声明及其匹配上下文；一个落在某条导航项路径之下、自己却没有声明的路径，不因此命中那条导航项。宿主据它取该页的 `permission` 交给权限守卫。没有精确命中（未命中、特性缺席，或门控路径的谓词尚未就绪）时，`RouteView` 渲染回退、等待或失败视图，宿主不为它取权限码，判定次序因此是先存在性，后权限。
 
-**`useHasRoute` 让入口跟随目标页。** `useHasRoute(path)` 当且仅当 `path` 精确命中有效注册表上的某条声明时为真；带参数的 pattern 按路径匹配。指向某页的入口控件（首页卡片、跳转按钮）据它决定是否渲染，目标页特性缺席时入口一并消失，「这一页在不在」只写在页面声明里一处。
+**`useHasRoute` 让入口跟随目标页。** `useHasRoute(path)` 当且仅当 `path` 精确命中有效注册表上的某条声明时为真；带参数的 pattern 按路径匹配。指向某页的入口控件（首页卡片、跳转按钮）据它决定是否渲染，目标页特性缺席时入口一并消失，“这一页在不在”只写在页面声明里一处。
 
-**`RouteProvider` 缺省安装一个路由器。** 它挂载 react-router-dom 的 `BrowserRouter`：页面得到真实路径 URL，深链接由平台的 SPA 回退提供。`basename` 给出部署路径前缀（例如应用挂在 `/admin/` 时传 `/admin`），缺省为源站根；它不是换路由器的口子，第三方路由器是包级决定（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。`useNavItems` 交出的 `href` 同样带上这个前缀——新标签、复制链接或中键点击直接打开应用实际服务的 URL——而 `id` 保持声明路径，应用内导航按 `id` 交给路由器，前缀由路由器自己加，不会叠加两次。
+**`RouteProvider` 缺省安装一个路由器。** 它挂载 react-router-dom 的 `BrowserRouter`：页面得到真实路径 URL，深链接由平台的 SPA 回退提供。`basename` 给出部署路径前缀（例如应用挂在 `/admin/` 时传 `/admin`），缺省为源站根；它不是换路由器的口子，第三方路由器是包级决定（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。`useNavItems` 交出的 `href` 同样带上这个前缀（新标签、复制链接或中键点击直接打开应用实际服务的 URL），而 `id` 保持声明路径，应用内导航按 `id` 交给路由器，前缀由路由器自己加，不会叠加两次。
 
 **链接只在普通主键单击时接管。** `useRouteLinkProps` 与 `useNavItems` 用同一条判定：主键、无修饰键、`target` 缺失或为 `_self`、无 `download` 属性，且未被先前的处理器 `preventDefault` 的点击，在应用内导航并阻止默认行为；其余点击一概不处理，交给浏览器完成新标签、下载或默认导航。判定在包内私有：本包不 import 同类包，layout-kit 的 `isPlainPrimaryClick` 因此是另一份独立实现。两者共享同一条策略（只接管本意留在应用内的点击），但代码并不等价：本包要求 `event.button === 0`，layout-kit 也接受没有 `button` 值的事件；本包除缺失、空串与 `_self` 外的 `target` 一律不接管，layout-kit 只拒绝 `_blank`（大小写不敏感）；本包从 `event.currentTarget` 取锚点（处理器挂在链接本身），layout-kit 从 `event.target` 找最近的 `a`（处理器可挂在容器上）。改动其中一份时要同时审视另一份，但不得假定两份逐条相同。
 
 **`NavItem` 的 `onClick` 由 `useNavItems` 填入。** 它与 `useRouteLinkProps` 的处理器同一判定，配合 `href` 让壳的条目在普通单击时留在应用内、在修饰键单击时开新标签。`NavItem` 的必填字段与附加的可选字段（`onClick`）同壳的框架条目结构兼容，两者因此仍不需要共享类型边。
 
-**对外接口。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence`、`NavItem`、`RouteLinkTarget`、`RouteLocationPath` 的字段与结构，`RouteProvider`、`RouteView`、`RouteLink`、`RouteLinkProps`、`useRouteLinkProps`、`useNavItems`、`useNavigate`、`useRedirect`、`useLocationPath`、`presentDeclarations`、`useMatch`、`useHasRoute` 的签名，是宿主可见的接口。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。变更分类与判据见 [ADR-web-route-seam](../../../adr/adr-web-route-seam.md)。
+**对外接口。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence`、`NavItem`、`RouteLinkTarget`、`RouteLocationPath` 的字段与结构，`RouteProvider`、`RouteView`、`RouteLink`、`RouteLinkProps`、`useRouteLinkProps`、`useNavItems`、`useNavigate`、`useRedirect`、`useLocationPath`、`presentDeclarations`、`useMatch`、`useHasRoute` 的签名，是宿主可见的接口。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。变更分类与判据见 [ADR-web-route-seam](../../../adr/adr-web-route-seam.md)。
 
 ## 依赖
 
@@ -170,9 +170,9 @@ function useLocationPath(): RouteLocationPath
 | `react`、`react-dom` | peer（必需） | 声明接口、渲染与钩子 |
 | `react-router-dom` | peer（必需） | 路径匹配、历史导航与链接构造的底座；本包建在它之上，产品不直接 import 它 |
 
-**方向的落点。** 本包**不 import 任何同类前端包**：它交出的导航条目是结构性类型，壳的框架按结构接受它，因而不需要一条指向 layout-kit 的类型边（[design-web](design-web.md) 的「依赖」）；在场谓词同样是结构性类型，宿主从 auth-core 得到的值按结构交给本包，不需要一条指向 auth-core 的边。本包被**产品装配**取用，但**不被壳 import**。产品侧的方向是：产品 import 本包与壳，本包不认识任何壳、任何会话、任何业务页面。
+**方向的落点。** 本包**不 import 任何同类前端包**：它交出的导航条目是结构性类型，壳的框架按结构接受它，因而不需要一条指向 layout-kit 的类型边（[design-web](design-web.md) 的“依赖”）；在场谓词同样是结构性类型，宿主从 auth-core 得到的值按结构交给本包，不需要一条指向 auth-core 的边。本包被**产品装配**取用，但**不被壳 import**。产品侧的方向是：产品 import 本包与壳，本包不认识任何壳、任何会话、任何业务页面。
 
-**与 product-shell 的分工是「谁做导航」。** 壳保持不做导航（不检查 URL、不改 `location`、不重解释 `navItems`），本包承担路由；产品的装配是：把壳的整棵组合包在 `RouteProvider` 里，用 `useNavItems()` 算出的条目喂给壳的 `navItems` 槽，把 `RouteView` 作为壳的 `children` 渲染。于是壳仍只渲染宿主算好的条目，路由在它之外的一层。
+**与 product-shell 的分工是“谁做导航”。** 壳保持不做导航（不检查 URL、不改 `location`、不重解释 `navItems`），本包承担路由；产品的装配是：把壳的整棵组合包在 `RouteProvider` 里，用 `useNavItems()` 算出的条目喂给壳的 `navItems` 槽，把 `RouteView` 作为壳的 `children` 渲染。于是壳仍只渲染宿主算好的条目，路由在它之外的一层。
 
 ## UML 图
 
@@ -256,7 +256,7 @@ classDiagram
     RouteLink ..> RouteTable : 构造链接
 ```
 
-一次渲染命中一条声明之后的分支如下。图里的每个分支都由同一份表与同一个谓词决定；特性缺席与未命中落在同一个 `fallback` 分支，这是「特性缺席的页面与不存在的路径得到相同的 404」在结构上的保证。
+一次渲染命中一条声明之后的分支如下。图里的每个分支都由同一份表与同一个谓词决定；特性缺席与未命中落在同一个 `fallback` 分支，这是“特性缺席的页面与不存在的路径得到相同的 404”在结构上的保证。
 
 ```mermaid
 flowchart TD
@@ -289,7 +289,7 @@ flowchart TD
 
 ### 装配期的校验
 
-`RouteProvider` 在子节点渲染之前对**全表**校验：路径合法，每条声明有视图，没有重复或无法由顺序消解的歧义 pattern，`fallback` 在场；表里只要有一条声明带 `requires`，`presence`、`pending`、`failed` 都须在场。同深度的字面 pattern 与 `:name` pattern 可重叠：字面 pattern 更具体，排在前面即由声明顺序解析——字面 URL 命中它，其余 URL 命中 `:name` pattern；更宽泛的 pattern 排在前面会遮挡字面 pattern，装配期报歧义。两个只在参数名上不同的 pattern 同样报歧义。特性在场与否不影响合法性：一张表在任何谓词下都按同一组规则校验。
+`RouteProvider` 在子节点渲染之前对**全表**校验：路径合法，每条声明有视图，没有重复或无法由顺序消解的歧义 pattern，`fallback` 在场；表里只要有一条声明带 `requires`，`presence`、`pending`、`failed` 都须在场。同深度的字面 pattern 与 `:name` pattern 可重叠：字面 pattern 更具体，排在前面即由声明顺序解析：字面 URL 命中它，其余 URL 命中 `:name` pattern；更宽泛的 pattern 排在前面会遮挡字面 pattern，装配期报歧义。两个只在参数名上不同的 pattern 同样报歧义。特性在场与否不影响合法性：一张表在任何谓词下都按同一组规则校验。
 
 ### 一次渲染的匹配
 
@@ -304,7 +304,7 @@ flowchart TD
 ### 导航的收集与选中态
 
 1. `useNavItems` 遍历**有效注册表**，为每条**带 `label`** 的声明派生一条目：`id` 取声明的路径，`label` 取声明的标签，`href` 由路径构造。特性缺席的声明，以及谓词读取中、读取失败时的全部门控声明，都不进入导航。
-2. 每条目的 `selected` 由当前 URL 判定：当前路径命中该声明的 pattern，或**落在该声明路径之下**（当前路径以该声明的字面路径为前缀）即为真；「落在路径之下」这一条使一条子路由（如 `/cases/:caseId`）落在其父级导航项（`/cases`）之下，从而选中父级。
+2. 每条目的 `selected` 由当前 URL 判定：当前路径命中该声明的 pattern，或**落在该声明路径之下**（当前路径以该声明的字面路径为前缀）即为真；“落在路径之下”这一条使一条子路由（如 `/cases/:caseId`）落在其父级导航项（`/cases`）之下，从而选中父级。
 3. 多条同时满足时，**取字面前缀最长者**为选中项；无 `label` 的声明、不在有效注册表上的声明与未命中的 URL 都不使任何条目选中。
 
 谓词从读取中转为就绪时，导航只增不减：门控项在就绪之前不出现，就绪之后按在场与否出现，不会先显示后隐藏。
@@ -317,7 +317,7 @@ flowchart TD
 
 `RouteLink` 由目标路径生成一个可点链接，点击经历史导航推入该路径，不整页刷新；其余 props 透传给 react-router-dom 的 `Link`，因此可以充当 MUI（[REF-mui](../../../references.md)）的 `component` 目标。`useRouteLinkProps` 交出同一目标路径的 `href` 与点击处理器：`href` 经 `useHref` 生成、含部署的 basename，处理器只在普通主键单击时导航（主键、无修饰键、`target` 缺失或为 `_self`、无 `download`、未被 `preventDefault`），其余点击不处理而由浏览器完成新标签、下载或默认导航。宿主自绘锚点，或把两者交给接受 `href` 与 `onClick` 的组件时用它。
 
-`useNavigate` 推入历史，供事件处理器使用（如一个成败提示后的返回）；`useRedirect` 以替换语义改当前历史项，用于回调页、登录完成这类不应留在后退栈里的跳转；`useLocationPath` 交出当前 URL 的原始路径与查询串，路径不因是否命中声明而不同。这些接口都只改或读 URL，页面随之被 `RouteView` 按匹配重渲染——`RouteView` 读的是 URL，不是任何组件局部状态。
+`useNavigate` 推入历史，供事件处理器使用（如一个成败提示后的返回）；`useRedirect` 以替换语义改当前历史项，用于回调页、登录完成这类不应留在后退栈里的跳转；`useLocationPath` 交出当前 URL 的原始路径与查询串，路径不因是否命中声明而不同。这些接口都只改或读 URL，页面随之被 `RouteView` 按匹配重渲染：`RouteView` 读的是 URL，不是任何组件局部状态。
 
 ## 错误与失败语义
 
@@ -332,7 +332,7 @@ flowchart TD
 | 一条路径 pattern 的来源有重复或歧义 | 注册表自洽校验失败，在装配处抛出并点名冲突的声明（早于渲染） |
 | `fallback` 缺席 | 注册表自洽校验失败，装配处抛出（回退是必填的） |
 | 表里有带 `requires` 的声明，而 `presence`、`pending`、`failed` 缺任一项 | 注册表自洽校验失败，装配处抛出 |
-| 一条从未被任何声明覆盖的深链接 | 与「没有登记项匹配」相同，落到 `fallback` |
+| 一条从未被任何声明覆盖的深链接 | 与“没有登记项匹配”相同，落到 `fallback` |
 | `requires` 里写了一个永远不会在场的名字 | 与特性缺席无法区分，该页恒落到 `fallback`；本包不拦，由名字对齐检查在编译期拦下（[ADR-feature-vocabulary](../../../adr/adr-feature-vocabulary.md)） |
 | 一个页面渲染了它无权取的资源 | 不在路由层被拦下；授权由宿主在内容区里组合（本包按路径匹配，不看 `permission`） |
 
@@ -340,7 +340,7 @@ flowchart TD
 
 ## 扩展点
 
-- **新增一个页面**即由页面所属的包导出一份 `RouteDeclaration`，产品把它并进自己的 `RouteTable`——与「加一个后端模块」在后端的对应动作是「命令树点名模块」。这是「加一个业务页面」在前端的唯一动作（见 [starters](../design-starters.md) 的「扩展点」）。
+- **新增一个页面**即由页面所属的包导出一份 `RouteDeclaration`，产品把它并进自己的 `RouteTable`，与“加一个后端模块”在后端的对应动作是“命令树点名模块”。这是“加一个业务页面”在前端的唯一动作（见 [starters](../design-starters.md) 的“扩展点”）。
 - **页面带权限**由声明里的 `permission` 表达、由宿主读它去组合 `RouteGuard`；本包不据此过滤。
 - **页面带特性门控**由声明里的 `requires` 表达；宿主给出在场谓词与等待、失败视图，本包据它收窄注册表。在场谓词从哪来不归本包：特性按租户收窄时，宿主交来的谓词随租户变化，本包与声明都不变。
 - **导航分组与子路由**由路径结构表达（父级声明带标签、子路由不带标签），不由本包新增结构。

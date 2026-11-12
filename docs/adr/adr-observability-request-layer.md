@@ -14,7 +14,7 @@
 
 - 响应体大小直方图记 `c.Writer.Size()`，gin 的写出者在没有任何写入之前返回 `-1`；没有写出响应体的请求，包括空 `200` 与 `204`，记 `-1`，总和可以为负。请求体大小直方图记请求的 `ContentLength`，长度未知时为 `-1`。服务端跨度只在写出字节数大于零时带 `http.response.body.size`。
 - 没有匹配路由的请求，服务端跨度带 `http.route` 属性且取值为空串；计量侧此时不带 `http.route`。
-- 跨度名取 `c.FullPath()` 非空时的「方法 路由模板」，否则只取方法。方法不在 `GET`、`HEAD`、`POST`、`PUT`、`PATCH`、`DELETE`、`CONNECT`、`OPTIONS`、`TRACE` 之内时，跨度名里写作 `HTTP`，而 `http.request.method` 属性写作 `_OTHER`，原值另记在跨度的 `http.request.method_original` 上。
+- 跨度名取 `c.FullPath()` 非空时的“方法 路由模板”，否则只取方法。方法不在 `GET`、`HEAD`、`POST`、`PUT`、`PATCH`、`DELETE`、`CONNECT`、`OPTIONS`、`TRACE` 之内时，跨度名里写作 `HTTP`，而 `http.request.method` 属性写作 `_OTHER`，原值另记在跨度的 `http.request.method_original` 上。
 - 计量属性含 `http.request.method`、`http.response.status_code`、`http.route`（匹配时）、`url.scheme`、`server.address`、`server.port`、`network.protocol.name`、`network.protocol.version`，以及 `error.type`（请求带有错误或请求上下文已结束时）。`server.address` 取自请求的 `Host`。服务端跨度另带 `url.path`、`client.address`、`user_agent.original`、`network.peer.address`、`network.peer.port`。
 - 跨度与计量的仪器作用域名是上游采集库自己的 `ScopeName`，不是本模块的。
 - 状态码取调用返回时写出者持有的值，不对 1xx 做折叠。
@@ -31,13 +31,13 @@
 
 采纳它意味着登记上游采集库的中间件，本模块在请求路径上不再有自己的层。
 
-**否决**：日志关联字段与端名没有承接处——上游采集库不往日志上下文里绑跨度的标识，也没有登记方的端名可写，这两样只在本模块手里。panic 的处理不构成理由：它由入口模块的恢复层承担，与本模块是否登记守护层无关。
+**否决**：日志关联字段与端名没有承接处，即上游采集库不往日志上下文里绑跨度的标识，也没有登记方的端名可写，这两样只在本模块手里。panic 的处理不构成理由：它由入口模块的恢复层承担，与本模块是否登记守护层无关。
 
 ### 上游采集库加一个守护层，守护层在它之内
 
 采纳它意味着登记外层与守护层：外层是上游采集库的中间件；内层是守护层，位于它之内，把跨度的标识绑进日志上下文，并给跨度写端名属性。panic 不在这里处理，接住它的是入口模块的恢复层。
 
-**采纳** —— 见决策。
+**采纳**：见决策。
 
 ### 守护层在上游采集库之外
 
@@ -77,10 +77,10 @@ panic 的处理不归本模块。入口模块的恢复层内建在 gin 引擎之
 - **panic 的请求，恢复层记下的堆栈在接住的那一帧取得。** 崩溃处及其穿过的各帧仍在栈上，崩溃的位置就在这条记录里；跨度不带 `exception` 事件，因为 panic 在跨度结束之前已被接住，没有穿过跨度的结束。
 - **守护层按 `After` 放置，不按相邻放置。** 别的层可以被放在外层与守护层之间，这样的层是观测层的，在恢复层之外：它抛出的 panic 不被恢复层接住，直接穿过上游采集库与引擎抵达 `net/http`，连接被关闭，跨度以状态未设结束（上游 SDK 在结束跨度时给它记一个不含堆栈的 `exception` 事件），请求不进任何直方图。
 - **链没有正常返回时，跨度以未标记结束、请求不进任何直方图。** handler 调用 `runtime.Goexit`，或用 `http.ErrAbortHandler` 请恢复层放行连接时，展开越过两层而不回到上游采集库的计量记录：跨度结束时没有本模块设的状态，请求不进任何直方图。客户端主动断开的那一档如此是应当的；`Goexit` 的那一档是一处真缺陷，跨度不显示它，恢复层自己写一条日志记录承接。守护层不 `recover`，因为能看见这两种展开的 `recover` 正是会吞掉 `ErrAbortHandler` 的那个，连接将不再被关闭。
-- **`GODEBUG=panicnil=1` 下的 `panic(nil)` 由恢复层按「链没有返回」处理。** `recover` 读到的是 `nil` 而不是 panic 值，恢复层照 handler 停下的缺陷处理：把一个定型的错误登记进请求的错误列表、应答 `500`、中止其后的链，跨度随之标错。
+- **`GODEBUG=panicnil=1` 下的 `panic(nil)` 由恢复层按“链没有返回”处理。** `recover` 读到的是 `nil` 而不是 panic 值，恢复层照 handler 停下的缺陷处理：把一个定型的错误登记进请求的错误列表、应答 `500`、中止其后的链，跨度随之标错。
 - **依赖随上游采集库与 OTLP（[REF-otlp](../references.md)）导出器的版本而定。** `pkg` 模块依赖上游采集库；OpenTelemetry 的各模块与导出器都与它所要求的版本对齐，上游采集库自己的 `go.mod` 最低版本要求更高的间接依赖（gin 的序列化与校验一侧的库等）取该版本；OTLP 导出器的该版本要求更高的 `google.golang.org/grpc`（[REF-grpc](../references.md)）与 `google.golang.org/genproto/googleapis/api`（[REF-genproto](../references.md)）、`google.golang.org/genproto/googleapis/rpc`，这一部分不出自上游采集库。依赖 `pkg` 的宿主的 `go.mod` 与 `go.sum` 带着同样的版本。
 - **panic 值的文本进恢复层的日志记录，不进跨度。** 恢复层登记到请求错误列表里的是一个定型错误、不带 panic 值，跨度的状态描述因此不携带它，`error.type` 只是那个类型名；panic 值与堆栈留在恢复层的日志记录里。
 
 ## 失效条件
 
-若上游采集库不再提供请求计量，或其属性面的基数在宿主的部署里不可接受——`server.address` 随调用方写下的 `Host` 增长到指标后端的基数限制——则属性面应当由本模块自己持有，回到自写的采集层。
+若上游采集库不再提供请求计量，或其属性面的基数在宿主的部署里不可接受（`server.address` 随调用方写下的 `Host` 增长到指标后端的基数限制）则属性面应当由本模块自己持有，回到自写的采集层。

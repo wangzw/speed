@@ -13,18 +13,18 @@
 - **划界**：判定一个取值落在配置、设置还是表里的数据，并给出判据与判定顺序。
 - **配置键表**：逐键声明类型、缺省值、来源、敏感与必填标记；必填项只在运行级纳入的模块上判定，缺项时 `Decode` 失败并点名缺的那一项、不带秘密。
 - **设置键表**：逐键声明类型、缺省值、取值域、是否按租户回退与放宽方向；写入按取值域拒绝越界值，设置缺席时各模块取声明默认值，放宽方向的改动进入监视。
-- **放宽开关**：给出集合与各自取值域，在启动诊断与 `settings.changed` 监视中各为放宽项写一行 `Warn`，运行期改到放宽方向时另记一条 `authn.settings.relaxed`；「放宽开关」指取值变化即放宽校验、且改动要在运行期生效的设置项。
+- **放宽开关**：给出集合与各自取值域，在启动诊断与 `settings.changed` 监视中各为放宽项写一行 `Warn`，运行期改到放宽方向时另记一条 `authn.settings.relaxed`；“放宽开关”指取值变化即放宽校验、且改动要在运行期生效的设置项。
 - **设置的读取**：规定设置对 authn 各模块是可选依赖，给出缺席时的降级、读取出错的方向与放宽变更的监视。
 - **秘密的存放**：把每类秘密材料归入既有的存放形态，给出轮换方式、暴露范围与处置，使秘密不进命令行、不进设置，新增秘密只能沿用已登记的形态。
 - **启动期自检与启动诊断**：启动时核对配置、秘密与迁移，失败即终止启动并点名缺的那一项且不带秘密；成功路径写常规行、放宽项 `Warn` 与其余 `Warn`。
 
-本文用「放宽开关」指取值变化即放宽校验、且改动要在运行期生效的设置项：取放宽值时，一次校验比取缺省值时更容易通过，或发送范围更大。这是判据，不是名单；名单见[放宽开关](#放宽开关)一节。
+本文用“放宽开关”指取值变化即放宽校验、且改动要在运行期生效的设置项：取放宽值时，一次校验比取缺省值时更容易通过，或发送范围更大。这是判据，不是名单；名单见[放宽开关](#放宽开关)一节。
 
 ### 非职责
 
 - **不承载取舍理由。** 为什么分界取这条判据、为什么放宽开关是设置、为什么签名私钥不进数据库，以及被否决的选项与接受的代价，归 [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)。
-- **不承载键的行为语义。** 键表的「说明」列只写一句话；键起什么作用、与哪些流程相关，归持有它的文档：[design-authn-gate](design-authn-gate.md)、[design-authn-account](design-authn-account.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md)、[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)、[design-authn-sms](design-authn-sms.md)、[design-authn-sso](design-authn-sso.md)、[design-authn-impersonation](design-authn-impersonation.md)、[design-tenant-admission](../tenant/design-tenant-admission.md)。
-- **不承载哨兵表全集与依赖不可用时每条路径的方向。** 自检表只列「这一项失败时报哪个哨兵」；哨兵的含义与修复动作、运行期的失败方向归 [design-authn-failure](design-authn-failure.md)。
+- **不承载键的行为语义。** 键表的“说明”列只写一句话；键起什么作用、与哪些流程相关，归持有它的文档：[design-authn-gate](design-authn-gate.md)、[design-authn-account](design-authn-account.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md)、[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)、[design-authn-sms](design-authn-sms.md)、[design-authn-sso](design-authn-sso.md)、[design-authn-impersonation](design-authn-impersonation.md)、[design-tenant-admission](../tenant/design-tenant-admission.md)。
+- **不承载哨兵表全集与依赖不可用时每条路径的方向。** 自检表只列“这一项失败时报哪个哨兵”；哨兵的含义与修复动作、运行期的失败方向归 [design-authn-failure](design-authn-failure.md)。
 - **不承载 `authn.settings.relaxed` 的审计与事件契约。** 记录的档位、字段与名字归 [design-authn-events](design-authn-events.md)；本文只写何时记、记什么不记什么。
 - **不承载每租户的 IdP 清单。** 数目在运行期才确定的实体是表里的数据，IdP 在 `authn_idps` 表（[design-authn-sso](design-authn-sso.md)），不是配置，也不是设置。
 - **不提供设置写入接口的访问控制。** 设置的写入接口不判权限，访问控制归宿主（[ADR-settings-scope](../../../adr/adr-settings-scope.md)、[design-settings](../settings/design-settings.md)）；authn 只在放宽方向上提供事后可见。
@@ -68,9 +68,9 @@
 
 配置项是启动期的值：在数据库可用之前就被需要的值，与塑造启动结构、改变要重启才生效的值（[ADR-config-scope](../../../adr/adr-config-scope.md)）。键表的约定：
 
-- **来源**列：「主」表示只取主配置源，环境变量与命令行都改不了；「默认」是 `Origins` 的零值，即主配置源加环境变量，不含命令行。
-- **标记**列：「敏」是 `Sensitive: true`，必带 `Description`；「必填」是 `Required: true`。必填项只对这次运行级纳入的模块判定，缺项时 `Decode` 失败，错误点名缺的那一项且不带秘密（[design-config](../design-config.md)）。
-- 容器叶子（映射与结构体列表）只能取主配置源，所以 `subjects` 与 `templates` 的来源是「主」，不是出于放宽的考虑。
+- **来源**列：“主”表示只取主配置源，环境变量与命令行都改不了；“默认”是 `Origins` 的零值，即主配置源加环境变量，不含命令行。
+- **标记**列：“敏”是 `Sensitive: true`，必带 `Description`；“必填”是 `Required: true`。必填项只对这次运行级纳入的模块判定，缺项时 `Decode` 失败，错误点名缺的那一项且不带秘密（[design-config](../design-config.md)）。
+- 容器叶子（映射与结构体列表）只能取主配置源，所以 `subjects` 与 `templates` 的来源是“主”，不是出于放宽的考虑。
 - 表里写着缺省值取另一个键的，是该键解析后的值。
 
 下表是网关与口令表后端的配置项（封闭集合）。
@@ -107,7 +107,7 @@
 | `authn.token.signing-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 当前签名私钥，PKCS#8（[REF-rfc5958](../../../references.md)） PEM（[REF-rfc7468](../../../references.md)）；不填则本模块只验证、不签发 |
 | `authn.token.verify-key-files` | 字符串列表，文件路径 | 空 | 默认 | | 只用来验签与发布的密钥文件 |
 
-下表是登录方式与多因素的配置项（封闭集合）。提供方的客户端标识与密钥在声明里标 `Required`，用途是让方法分得出「一个来源都没给」；它们不再是「缺了就一定启动失败」的启动必须项：两项都没有时方法在 `Prepare` 里自行关闭，只给了一项时是半配置，启动失败并点名缺的那项（[design-config](../design-config.md)、[ADR-module-enablement](../../../adr/adr-module-enablement.md)）。
+下表是登录方式与多因素的配置项（封闭集合）。提供方的客户端标识与密钥在声明里标 `Required`，用途是让方法分得出“一个来源都没给”；它们不再是“缺了就一定启动失败”的启动必须项：两项都没有时方法在 `Prepare` 里自行关闭，只给了一项时是半配置，启动失败并点名缺的那项（[design-config](../design-config.md)、[ADR-module-enablement](../../../adr/adr-module-enablement.md)）。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
@@ -182,7 +182,7 @@
 设置项是运行期可变的值。键表的约定：
 
 - 类型取 settings 的封闭集：字符串、布尔、整数、浮点、`time.Duration`；列表用 JSON 文本的字符串项（[design-settings](../settings/design-settings.md)）。
-- **租**列：「是」表示按租户回退，取值依次取租户行、全局行、声明默认值；空白表示只读全局层。
+- **租**列：“是”表示按租户回退，取值依次取租户行、全局行、声明默认值；空白表示只读全局层。
 - **取值域**由 `Item.Domain` 声明，写入时判，读取不判；每项带 `Description`。设置声明的默认值必须在自己的取值域内。
 - **放宽方向**列给出该键取值朝哪个方向改动即放宽校验或扩大发送范围；空白表示该键的改动不放宽校验，不被监视。判据与监视见[放宽变更的监视](#放宽变更的监视)。
 - 数字缺省值是起点，不是对规范条文的引用。NIST SP 800-63B-4（[REF-nist-sp-800-63b](../../../references.md)）与 ASVS 5.0（[REF-owasp-asvs](../../../references.md)）给的是上界与定性要求：验证码长度至少 6、有效期至多 10 分钟、单次有效、重发不清零失败计数、尝试次数上界 100；规范没有给出重发频率与发送预算的数字。这些条文的条号未逐条核对，缺省值不构成合规声明。
@@ -239,7 +239,7 @@
 
 Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项取值域内判，而 OWASP 最低组合（[REF-owasp-password-storage](../../../references.md)）按（m, t, p）的组合判：各自合法而组合低于下限时，写入不被拒绝，使用处回退到默认组合并记 `Error`（回退与内存预算的口径见 [design-authn-account](design-authn-account.md)）。`secret-retention` 是服务密钥到期或撤销之后行的保留期。
 
-`authn.account.password-algorithm` 在每次写哈希时读取：登记账户与改口令，以及登录成功后的再哈希。它是设置项，但读取没有回退：设置缺席时取声明默认值 `argon2id`；读取失败或取值越出取值域时，哈希写入失败而不是改用另一个算法——登记账户与改口令答不可用，登录后的再哈希跳过、记一行 `Error`，登录本身仍成功。键没有任何声明覆盖（本模块自身 schema 的缺陷）是唯一的例外：按声明默认值 `argon2id` 写出并记一行 `Error`，不令写失败。理由是回退到另一个算法会让宿主以为选定的算法在生效，而实际写下的条目用了别的算法。
+`authn.account.password-algorithm` 在每次写哈希时读取：登记账户与改口令，以及登录成功后的再哈希。它是设置项，但读取没有回退：设置缺席时取声明默认值 `argon2id`；读取失败或取值越出取值域时，哈希写入失败而不是改用另一个算法：登记账户与改口令答不可用，登录后的再哈希跳过、记一行 `Error`，登录本身仍成功。键没有任何声明覆盖（本模块自身 schema 的缺陷）是唯一的例外：按声明默认值 `argon2id` 写出并记一行 `Error`，不令写失败。理由是回退到另一个算法会让宿主以为选定的算法在生效，而实际写下的条目用了别的算法。
 
 下表是邀请的设置项（封闭集合）。
 
@@ -356,11 +356,11 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 这些开关都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.password-signup` 由 `Signups.Register` 读（权威检查），注册路由与发现端点读它只作预检查，`authn.token.check-session` 在每次令牌校验、会话步骤之前读，`authn.login.password-reset` 由发现端点与匿名口令重置的路由读。声明模块（`pkg/authn/account`、`pkg/authn/token` 与 `pkg/authn/login`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这些设置项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
 
-`authn.account.reserved-usernames` 不取「开关」的形态，因此不在上表的放宽开关之列，但它在放宽方向上受同样的监视：生效集合是内置清单与设置值的并集，设置只能追加、不能移除内置项，追加项只增加被拒绝的用户名；删去追加项使集合回退到内置清单，方向取 `relax`，按放宽开关同一条通道记录一行 `Warn` 与 `authn.settings.relaxed`。
+`authn.account.reserved-usernames` 不取“开关”的形态，因此不在上表的放宽开关之列，但它在放宽方向上受同样的监视：生效集合是内置清单与设置值的并集，设置只能追加、不能移除内置项，追加项只增加被拒绝的用户名；删去追加项使集合回退到内置清单，方向取 `relax`，按放宽开关同一条通道记录一行 `Warn` 与 `authn.settings.relaxed`。
 
-`authn.invite.ttl` 与 `authn.account.password-algorithm` 也是设置项、也在放宽方向上受监视，但不在上表：上表的判据是「一个开关，声明默认值取严的一端」，而这两项的取值本身有强弱次序，没有「打开」这一动作。前者变长扩大邀请的可用窗口，方向取 `increase`；后者改为 `pbkdf2-sha256` 降低哈希成本，方向取 `downgrade`（[design-authn-events](design-authn-events.md) 的放宽方向取值）。
+`authn.invite.ttl` 与 `authn.account.password-algorithm` 也是设置项、也在放宽方向上受监视，但不在上表：上表的判据是“一个开关，声明默认值取严的一端”，而这两项的取值本身有强弱次序，没有“打开”这一动作。前者变长扩大邀请的可用窗口，方向取 `increase`；后者改为 `pbkdf2-sha256` 降低哈希成本，方向取 `downgrade`（[design-authn-events](design-authn-events.md) 的放宽方向取值）。
 
-仅开发用的 `authn.gate.mount.allow-insecure` 与 `authn.sso.allow-private-egress` 留在配置，不属于上表：它们在启动期决定基址校验、cookie 名称与出站客户端，改动要重启才生效，按 (b) 落在配置，启动诊断各写一行 `Warn`。
+仅开发用的 `authn.gate.mount.allow-insecure` 与 `authn.sso.allow-private-egress` 留在配置，不属于上表：它们在启动期决定基址校验、cookie 名称与出站客户端，改动要重启才生效，按（b）落在配置，启动诊断各写一行 `Warn`。
 
 决定守护范围的清单（`authn.gate.endpoints`、`authn.gate.trusted-origins`、`tenant.admission.endpoints`）同样只取主配置源：它们在装配期决定路由挂到哪个端、跨源检查信谁。给这类项设环境变量不会生效：启动诊断点名该变量与它命中的路径，说明该项只接受主配置源，然后忽略该变量。
 
@@ -386,7 +386,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | TOTP（[REF-rfc6238](../../../references.md)）种子 | `authn_totp_secrets.secret` 加密列 | 用户删除并重新登记 | db 根密钥；只在登记应答里出现一次；应用被攻破即种子泄露 |
 | WebAuthn 公钥 | 明文列 | 用户删除并重新登记 | 非秘密 |
 | JWT（[REF-rfc7519](../../../references.md)）签名私钥 | 配置里的文件路径，PKCS#8 PEM | 两相轮换与应急撤销，步骤见 [design-authn-token](design-authn-token.md) | 文件权限只能 `Warn`、不能强制；Kubernetes（[REF-kubernetes](../../../references.md)）密钥挂载是自然的承载方式 |
-| 企业 OIDC 客户端密钥 | `authn_idps.client_secret` 加密列 | 管理面 `PUT` 带新密钥，`version` 加一，各副本按版本重建缓存 | 读取接口从不交出它，应答里只有「是否已设置」 |
+| 企业 OIDC 客户端密钥 | `authn_idps.client_secret` 加密列 | 管理面 `PUT` 带新密钥，`version` 加一，各副本按版本重建缓存 | 读取接口从不交出它，应答里只有“是否已设置” |
 | SAML（[REF-saml2](../../../references.md)）的 SP 私钥 | 配置里的文件路径 | `authn.sso.saml.sp-next-cert-file` 先发布新证书，IdP 侧更新后换位 | 同 JWT 签名私钥 |
 | IdP 的签名证书 | `config.idp_certs`，公钥证书 | 管理员更新，可同时放当前与下一张 | 非秘密，但变更要经管理面，强制审计 |
 | 社交登录与微信的密钥 | 配置的敏感项 | 运维改配置并滚动重启；提供方允许新旧并存的，先加新、再换、再删旧 | 另登记为日志的字面量匹配器 |
@@ -408,7 +408,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 - 键的路径（命名空间加键名）、类型、缺省值、来源与取值域，以及放宽开关的集合与它们的取值域，是 authn 与宿主的接口。`authn.account.reserved-usernames` 的键名、类型与内置清单同属这一接口。改键名、命名空间或类型使旧写法成为主配置源里的未知键，宿主随之启动失败；把配置项迁到设置，使配置里残留的旧写法成为未知键，同样启动失败；收窄取值域使以前写得进去的值被拒绝；改变缺省值改变没有显式配置的宿主的行为。上述变更都是宿主可见的变更。
 - 放宽开关的缺省值恒取严的一端。
-- 放宽方向列、`authn.settings.relaxed` 的名字与「只含键名与方向」属于可观察接口：运维的告警规则读的是它们。
+- 放宽方向列、`authn.settings.relaxed` 的名字与“只含键名与方向”属于可观察接口：运维的告警规则读的是它们。
 
 ## 依赖
 
@@ -513,7 +513,7 @@ flowchart TD
     K -- 否 --> F["取声明默认值并记 Error"]
 ```
 
-强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回退到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。`authn.login.disabled-methods` 另有两条读取规则：空串与 `[]` 都在取值域内，视为没有关闭任何方式；库里的原生值含 `password` 时，读取侧把 `password` 过滤掉、口令方式照常可用，并记一行 `Error`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类回退到默认值只是用了起点。**第三类是决定写出产物的写路径设置**（当前为 `authn.account.password-algorithm`）：它读不出来，或取值越出取值域时，不替换为默认值，而令这次写失败——登记账户与改口令答不可用，登录后的再哈希跳过并记 `Error`。键没有任何声明覆盖时按声明默认值写出并记一行 `Error`，这是本模块自身 schema 的缺陷，不令写失败。回退到另一个值会让宿主以为选定的值在生效，而实际写下的产物用了别的值。请求期的读取走内存快照；读取本身只在未知键、类型不符这类编程错误时出错，域外的行由各读取分支按上表处置并记 `Error`。因此 `Error` 日志多半指向代码缺陷，域外的行则指向一次绕过写入接口的写入。
+强制类开关读不出来按拒绝：它们的声明默认值是“不强制”“不关闭”，回退到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。`authn.login.disabled-methods` 另有两条读取规则：空串与 `[]` 都在取值域内，视为没有关闭任何方式；库里的原生值含 `password` 时，读取侧把 `password` 过滤掉、口令方式照常可用，并记一行 `Error`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类回退到默认值只是用了起点。**第三类是决定写出产物的写路径设置**（当前为 `authn.account.password-algorithm`）：它读不出来，或取值越出取值域时，不替换为默认值，而令这次写失败：登记账户与改口令答不可用，登录后的再哈希跳过并记 `Error`。键没有任何声明覆盖时按声明默认值写出并记一行 `Error`，这是本模块自身 schema 的缺陷，不令写失败。回退到另一个值会让宿主以为选定的值在生效，而实际写下的产物用了别的值。请求期的读取走内存快照；读取本身只在未知键、类型不符这类编程错误时出错，域外的行由各读取分支按上表处置并记 `Error`。因此 `Error` 日志多半指向代码缺陷，域外的行则指向一次绕过写入接口的写入。
 
 设置缺席是合法的装配，不是读取出错：缺席时全部取声明默认值，不记 `Error`，也不按拒绝。
 
@@ -555,7 +555,7 @@ flowchart TD
 
 **常规行**写出当前装配的事实：启用的校验后端与载体、登录方式与因素种类、每个端上被 `Exempt`、`Optional`、`Impersonable` 开出的路由、`authn.admin` 挂了哪几组路由。
 
-**放宽项一律单独一行 `Warn`**，使它们在日志里可检索。下列是例举，判据是「每次放宽都是一个显式可见的开关」；设置项里的放宽开关在启动时已取放宽值时写这一行，运行期改到放宽方向时另写同一行并记 `authn.settings.relaxed`：
+**放宽项一律单独一行 `Warn`**，使它们在日志里可检索。下列是例举，判据是“每次放宽都是一个显式可见的开关”；设置项里的放宽开关在启动时已取放宽值时写这一行，运行期改到放宽方向时另写同一行并记 `authn.settings.relaxed`：
 
 - `authn.gate.mount.allow-insecure` 为真。
 - `authn.token.check-session` 为假。
@@ -565,7 +565,7 @@ flowchart TD
 - `authn.account.password-signup` 为 `open`。
 - `authn.sso.allow-private-egress` 为真。
 - 口令表里低于策略下限的条目与遗留写法的条目。
-- `authn.session.cookie-domain` 非空：`__Host-` 前缀所保证的「子域不可写」随之失去。
+- `authn.session.cookie-domain` 非空：`__Host-` 前缀所保证的“子域不可写”随之失去。
 - 签名私钥与 SAML 私钥的文件对其他用户可读。
 
 **其余 `Warn`：**
@@ -582,7 +582,7 @@ flowchart TD
 | 假设 | 依赖它的断言 | 守住它的测试 |
 |---|---|---|
 | 审计的语句级明细不带加密列的列值 | 秘密存放中数据库加密列这一形态成立：含加密列的模型经模型路径写入，值不会经审计明细泄露 | 审计行里不得出现秘密字节 |
-| `settings.changed` 事件载荷足以让订阅方判定「改到更宽松」的方向，不必另读旧值 | 放宽变更的监视只靠事件载荷判方向 | 对放宽方向列里的每个键写入放宽方向的值，断言 `Warn` 与审计记录出现；不成立则订阅方要自己维护上一份取值 |
+| `settings.changed` 事件载荷足以让订阅方判定“改到更宽松”的方向，不必另读旧值 | 放宽变更的监视只靠事件载荷判方向 | 对放宽方向列里的每个键写入放宽方向的值，断言 `Warn` 与审计记录出现；不成立则订阅方要自己维护上一份取值 |
 
 ## 错误与失败语义
 
@@ -610,7 +610,7 @@ flowchart TD
 - **设置写入接口不保证被访问控制。** 经 `settings.admin` 管理面写入时，全局层由平台域判定并留强制档审计；设置能力本身不做授权，宿主自建写入口（例如种子命令）的鉴权由宿主负责。持有写权限的主体因而可以把退避、预算、前缀名单、会话期限与放宽开关（`authn.account.signup`、`authn.account.password-signup`、`authn.token.check-session`）改到更宽松；authn 只提供 `Warn` 与 `authn.settings.relaxed` 的事后可见，不提供阻止。阻止依赖宿主的管理面与 `AGENTS.md` 的硬要求，authn 不检查宿主是否遵守。
 - **不保证一次放宽变更恰好留下一份痕迹。** 痕迹条数取决于事件实现的投递语义：广播到每个副本则每个副本各一份，消费者组式的则一份；事件丢失的副本没有痕迹。
 - **设置变更不保证在副本之间同时生效。** 租户刚开启强制多因素或强制 SSO 后，最长数分钟内个别副本仍放行。
-- **在租户层写非「租」键不起作用且不报错。** settings 没有「该键只许全局」的声明；authn 只在全局层读这些键。
+- **在租户层写非“租”键不起作用且不报错。** settings 没有“该键只许全局”的声明；authn 只在全局层读这些键。
 - **设置快照在每个副本的内存里含全部租户的全部行**，这是 settings 的既有性质。
 - **密钥文件的权限不保证被强制。** 签名私钥与 SAML 私钥的文件对其他用户可读时，只写 `Warn`。
 - **日志脱敏不保证覆盖每个秘密配置值。** 登记由持有值的模块各自做，漏登记不报错，遮蔽与否取决于登记；日志模块不在参与集里时规则为空。

@@ -25,7 +25,7 @@
 
 前端另读一份公开的部署配置文档得到渠道与注册开关。
 
-**否决**：要在方法与配置之间再维护一份结构相同的数据源，与方法自报的字段重复，两处必然漂移；配置端点面向的是部署参数，不是「每个方法怎么画」这层逐方法结构。
+**否决**：要在方法与配置之间再维护一份结构相同的数据源，与方法自报的字段重复，两处必然漂移；配置端点面向的是部署参数，不是“每个方法怎么画”这层逐方法结构。
 
 ### 前端逐一调用每个方法的探测接口
 
@@ -35,7 +35,7 @@
 
 ## 决策
 
-采纳：前端登录渠道的来源是后端发现端点。`SignInScreen` 读取 `@speed/auth-core` 的 `listMethods()`（或宿主注入的同一文档），按每个方法描述符的 `kind` 分组渲染；`@speed/auth-core` 的会话契约新增 `discoverSso(email)`，企业入口据此读邮箱域映射的 IdP。前端不写死任何方法名到界面的闭集——`SocialProvider` 由名字闭集改为 `string`，方法显示名取描述符的品牌标签，缺失时按方法名查 `@speed/auth-ui` 命名空间，再退回方法名本身。用户名加口令的自助注册是独立的匿名路由 `POST /api/v1/auth/register`，开户在注册路由完成，不经登录流程；登录流程负责登录，以及社交与短信方法的首登开户（[ADR-authn-signup](adr-authn-signup.md)）。前端把「注册」作为一个入口呈现，可见性由 `discovery.signup.enabled` 与「`discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`」决定。
+采纳：前端登录渠道的来源是后端发现端点。`SignInScreen` 读取 `@speed/auth-core` 的 `listMethods()`（或宿主注入的同一文档），按每个方法描述符的 `kind` 分组渲染；`@speed/auth-core` 的会话契约新增 `discoverSso(email)`，企业入口据此读邮箱域映射的 IdP。前端不写死任何方法名到界面的闭集：`SocialProvider` 由名字闭集改为 `string`，方法显示名取描述符的品牌标签，缺失时按方法名查 `@speed/auth-ui` 命名空间，再退回方法名本身。用户名加口令的自助注册是独立的匿名路由 `POST /api/v1/auth/register`，开户在注册路由完成，不经登录流程；登录流程负责登录，以及社交与短信方法的首登开户（[ADR-authn-signup](adr-authn-signup.md)）。前端把“注册”作为一个入口呈现，可见性由 `discovery.signup.enabled` 与“`discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`”决定。
 
 ## 后果
 
@@ -51,5 +51,5 @@
 ## 失效条件
 
 - 前端仍要按方法名硬编码某些行为，说明描述符的取材不足以覆盖渲染所需，扩描述符而不是回到硬编码。
-- 部署出现无邮箱域可 discover 的企业 SSO，或企业 SSO 需要把提供方清单并入发现，则「IdP 清单不进发现端点、另走 discover」这一条要重审。
+- 部署出现无邮箱域可 discover 的企业 SSO，或企业 SSO 需要把提供方清单并入发现，则“IdP 清单不进发现端点、另走 discover”这一条要重审。
 - 出现一个既非 `form`／`redirect`／`enterprise`／`webauthn` 又需要前端专门渲染的渲染类别，说明 `kind` 闭集不足以覆盖渲染，扩 `kind` 而不是加旁路。

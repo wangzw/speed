@@ -14,12 +14,12 @@
 
 ### 特性文档承载的事实
 
-**判据是存在性。** 特性文档只承载这样的事实：它回答「前端已带着代码的某个界面——页面、区块或入口控件——在本进程是否成立」，取值是布尔，且只在登录后才需要（[ADR-feature-ownership](../../adr/adr-feature-ownership.md)）。例：手机号自助（`authn.phone`）、自助添加邮箱（`authn.identifiers.email`）、邮件渠道（`notification.channel.email`）、SSO 管理组（`authn.admin.sso`）。
+**判据是存在性。** 特性文档只承载这样的事实：它回答“前端已带着代码的某个界面（页面、区块或入口控件）在本进程是否成立”，取值是布尔，且只在登录后才需要（[ADR-feature-ownership](../../adr/adr-feature-ownership.md)）。例：手机号自助（`authn.phone`）、自助添加邮箱（`authn.identifiers.email`）、邮件渠道（`notification.channel.email`）、SSO 管理组（`authn.admin.sso`）。
 
 不满足这条判据的事实按下面的判据归属；不发布的判据先于发现接口的判据适用：
 
-- **不发布**：满足任一即是——只是参数（时长、上限、预算），违反时服务端逐次拒绝；结果经流程应答送达；发布即暴露租户、IdP 或账户维度。例：`authn.mfa.global-required`、`authn.sms.allowed-prefixes`、IdP 清单。
-- **归拥有该事实的模块自己的发现接口**：满足任一即是——不是布尔而是取值集合或渲染结构；登录前就要用；需要逐请求求值又不属于存在性。例：`GET /api/v1/auth/methods` 的 `methods`、`signup.enabled` 与 `mfa.factors`（[authn-login](authn/design-authn-login.md)）。
+- **不发布**：满足任一即是：只是参数（时长、上限、预算），违反时服务端逐次拒绝；结果经流程应答送达；发布即暴露租户、IdP 或账户维度。例：`authn.mfa.global-required`、`authn.sms.allowed-prefixes`、IdP 清单。
+- **归拥有该事实的模块自己的发现接口**：满足任一即是：不是布尔而是取值集合或渲染结构；登录前就要用；需要逐请求求值又不属于存在性。例：`GET /api/v1/auth/methods` 的 `methods`、`signup.enabled` 与 `mfa.factors`（[authn-login](authn/design-authn-login.md)）。
 
 **同一事实只有一个发布点。** 可登记的因素种类只在 `mfa.factors` 里；特性文档里只有 MFA 区块是否存在（`authn.mfa`），没有逐种类的特性名。
 
@@ -31,9 +31,9 @@
 
 ### 非职责
 
-- **不发布登录前的事实，也不发布取值、结构与参数。** 归属见「特性文档承载的事实」与「匿名档边界」。
+- **不发布登录前的事实，也不发布取值、结构与参数。** 归属见“特性文档承载的事实”与“匿名档边界”。
 - **不按权限过滤，也不按租户成员身份过滤。** 特性在场与授权是两件事：每个已认证调用者读到同一份集合，授权仍由各模块在服务端判定（[ADR-feature-document](../../adr/adr-feature-document.md)）。
-- **不描述界面。** 特性名只承担「在不在」；页面路径、标签、图标与控件的结构都在前端产物里，本模块不发布渲染描述。前端只门控自己已带着代码的面。
+- **不描述界面。** 特性名只承担“在不在”；页面路径、标签、图标与控件的结构都在前端产物里，本模块不发布渲染描述。前端只门控自己已带着代码的面。
 - **不认识任何具体特性。** 名字由服务它的模块声明或贴出，本模块只按名字规则校验、按取材域计算。哪个模块声明哪些特性，由该模块的设计文档承载。
 - **不核对特性与路由是否一致。** 一个静态特性的路由是否已登记、一份 `Spec` 与模块挂的路由是否对得上，本模块都不核对；声明模块受架构不变量 18 约束，各自以测试守住。
 - **不门控前端。** 前端怎样持有特性文档、怎样据它收窄路由与控件，归 [web](web/design-web.md) 的 [auth-core](web/design-web-auth-core.md) 与 [route-kit](web/design-web-route-kit.md)。
@@ -121,7 +121,7 @@ core.Module{
 }
 ```
 
-**`Requires` 约束的主体是把本模块纳入命令的每个宿主。** `(*speedhttp.Router)(nil)` 必需：本模块挂路由经它，「`feature.board` 在场」因而蕴含「本进程有路由器」。`(*log.Logger)(nil)` 可选：在场时 `Start` 写一行集合摘要。`authn.Gate` 与 `authz.Gate` 不列入 `Requires`，在 `Init` 经 `core.Resolve` 取用。`Board` 声明排他交付，依赖闭包不替宿主纳入本模块，宿主在命令树上点名它。
+**`Requires` 约束的主体是把本模块纳入命令的每个宿主。** `(*speedhttp.Router)(nil)` 必需：本模块挂路由经它，“`feature.board` 在场”因而蕴含“本进程有路由器”。`(*log.Logger)(nil)` 可选：在场时 `Start` 写一行集合摘要。`authn.Gate` 与 `authz.Gate` 不列入 `Requires`，在 `Init` 经 `core.Resolve` 取用。`Board` 声明排他交付，依赖闭包不替宿主纳入本模块，宿主在命令树上点名它。
 
 **配置。** `feature.board.endpoint`：单个端名，只从主配置源取值，必填，无缺省。缺席即 `Prepare` 以 `config.ErrMissingRequired` 失败，错误以完整路径点名这一项。
 
@@ -295,9 +295,9 @@ sequenceDiagram
 
 `Prepare` 读配置，表态 `StateEnabled`，再以 `core.Resources[feature.Spec](reg)` 取可用集里的全部声明，逐条校验：
 
-1. 名字不合格式 → `ErrInvalidName`，点名声明模块与名字。
-2. 首段与声明模块名的首段不同 → `ErrForeignName`，点名声明模块与名字。
-3. 同一个名字由两个模块声明 → `ErrDuplicate`，点名两个模块与名字。
+1. 名字不合格式时返回 `ErrInvalidName`，点名声明模块与名字。
+2. 首段与声明模块名的首段不同时返回 `ErrForeignName`，点名声明模块与名字。
+3. 同一个名字由两个模块声明时返回 `ErrDuplicate`，点名两个模块与名字。
 
 任一失败即启动失败。未被本次命令纳入的模块同样受校验：它的名字写错，同样让启动失败。
 
@@ -310,7 +310,7 @@ sequenceDiagram
 `Start` 依次执行：
 
 1. **封板**：关闭窗口，此后 `Post` 即 panic。
-2. **核对贴出**：一条贴出的名字若没有被贴出者声明为条件特性——没有声明、由别的模块声明、或声明为静态特性——返回 `ErrUndeclared`，启动失败。
+2. **核对贴出**：一条贴出的名字若没有被贴出者声明为条件特性（没有声明、由别的模块声明、或声明为静态特性）返回 `ErrUndeclared`，启动失败。
 3. **算出特性集**，判定式与 `pkg/db/plugins.go` `collectPlugins`、`pkg/jobs/scheduler/scheduler.go` `inForce` 相同：
 
    ```
@@ -356,7 +356,7 @@ sequenceDiagram
 
 ### 非保证
 
-- **宿主为网关预置的实例不是网关模块的产物时，「只有已认证者读得到」不成立。** 认证层与网关的封板核对都随之缺席，`GET /api/v1/features` 所在的端无认证放行（[authn](authn/design-authn.md) 的错误与失败语义、对宿主的要求）。
+- **宿主为网关预置的实例不是网关模块的产物时，“只有已认证者读得到”不成立。** 认证层与网关的封板核对都随之缺席，`GET /api/v1/features` 所在的端无认证放行（[authn](authn/design-authn.md) 的错误与失败语义、对宿主的要求）。
 - **宿主为声明模块预置的实例不是该模块的产物时，特性文档不反映那个实例实际服务什么。** 预置了实例的模块表态固定为启用，它的静态特性照启用结果计入；条件特性由该模块的回调贴出，回调对这样的实例不做事时条件特性不贴出，方向是失败即关。宿主为 `notification.delivery` 预置实例时，渠道特性不贴出（[notification-delivery](notification/design-notification-delivery.md)）。
 - **宿主经 `AllResources` 声明的面，若实际没有任何进程服务，前端显示的页面请求必然失败。** 这是宿主显式声明的后果，由宿主负责。
 - **同一个源背后的副本装配不一致时，前端可能显示一个某些副本不服务的页面。** 本模块不跨副本核对，前端在一个会话内也不重取：某特性在一个副本上在场、在另一个上缺席时，打到缺席副本的请求落在所在端的认领之内，得到该端的 404（缺席副本的配置没有认领该路径、请求落到前端时是入口文档，传输层以 `client.html` 拒答），在页面上表现为可重试的错误；反向时页面不出现。各副本在服务端各自授权，不一致没有安全后果。运维逐副本比对 `Start` 写出的摘要；滚动发布期间的不一致，在下次登录或刷新时收敛。
@@ -375,7 +375,7 @@ sequenceDiagram
 
 本模块的特性集是进程级的，不含租户级收窄。租户级收窄按以下方式接入，约束是**只做减法**：
 
-- **收窄集由一个可选功能给出**（`feature.Narrower`，形如 `Narrow(ctx, tenant) (absent []string, err error)`）。作答取「封板时冻结的进程集减去收窄集」，租户不能打开本进程没有服务的面。收窄出错时整份应答答 503，不给部分结果。
+- **收窄集由一个可选功能给出**（`feature.Narrower`，形如 `Narrow(ctx, tenant) (absent []string, err error)`）。作答取“封板时冻结的进程集减去收窄集”，租户不能打开本进程没有服务的面。收窄出错时整份应答答 503，不给部分结果。
 - **收窄的取值放在设置的租户层**（架构不变量 14，[ADR-settings-scope](../../adr/adr-settings-scope.md)）。
 - **租户档的读取接口挂在租户解析端**：一个可选配置点名一个受 `tenant.resolve` 与 `tenant.admission` 守卫的端，在其上挂与 `GET /api/v1/features` 相同的读取接口。
 - **服务端强制由请求层承担**：按（端、方法、路径）登记特性名，对被收窄的特性答出与无匹配路由逐字节相同的 404。

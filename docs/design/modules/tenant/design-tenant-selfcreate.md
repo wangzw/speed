@@ -1,15 +1,15 @@
 # tenant.selfcreate
 
-`tenant.selfcreate` 是租户[功能目录](../../../glossary.md)里业务组织自助创建的公共模块，包 `pkg/tenant/selfcreate`，登记名 `org.create`。它拥有创建动作的全部判定：调用方资格、名称与资料的形状、上界、创建锁、审计与交给 `tenant.Provisioner` 的那一次建立。它不拥有名册、成员关系、授权与审计记录本身。读职责清单前应持有的一句话心智模型是：**一个没有未证明邮箱的账户在账户端请求一次自己的业务组织，模块按固定次序判定，把建立交给宿主提供的 provisioner，判定本身不写租户表**。模块作为公共模块、带上界与审计、不做人机验证的取舍见 [ADR-tenant-self-service-creation](../../../adr/adr-tenant-self-service-creation.md)。
+`tenant.selfcreate` 是租户[功能目录](../../../glossary.md)里业务组织自助创建的公共模块，包 `pkg/tenant/selfcreate`，登记名 `org.create`。它拥有创建动作的全部判定：调用方资格、名称与资料的格式、上界、创建锁、审计与交给 `tenant.Provisioner` 的那一次建立。它不拥有名册、成员关系、授权与审计记录本身。读职责清单前应持有的一句话心智模型是：**一个没有未证明邮箱的账户在账户端请求一次自己的业务组织，模块按固定次序判定，把建立交给宿主提供的 provisioner，判定本身不写租户表**。模块作为公共模块、带上界与审计、不做人机验证的取舍见 [ADR-tenant-self-service-creation](../../../adr/adr-tenant-self-service-creation.md)。
 
 第一遍的次序是职责与非职责、外部接口契约、依赖与 UML 图、核心数据结构与核心算法与流程。核心算法与流程从[走查](#走查)开始，用一次创建把判定次序与写入落点串起来。错误与失败语义与并发与事务边界属查阅用；实现状态在最后供核对。
 
 ## 职责
 
 - 在账户端挂出 `POST /api/v1/orgs`：请求不解析租户，创建由调用方自己的账户决定。
-- 按固定次序判定：已认证、拒绝冒充、拒绝服务账户与静态主体、邮箱证明、名称与资料形状、命名空间、创建锁、活跃业务组织上界、每小时次数、标识生成、计次、强制审计。
+- 按固定次序判定：已认证、拒绝冒充、拒绝服务账户与静态主体、邮箱证明、名称与资料格式、命名空间、创建锁、活跃业务组织上界、每小时次数、标识生成、计次、强制审计。
 - 拒绝持有未证明邮箱地址的账户；没有邮箱地址的账户放行。
-- 校验名称：slug 形状、保留字、不等于任何租户标识、在名册上唯一；用户名与名称共用一个命名空间。
+- 校验名称：slug 格式、保留字、不等于任何租户标识、在名册上唯一；用户名与名称共用一个命名空间。
 - 把建立交给 `tenant.Provisioner`：创建者成为首任 `tenant-admin`，角色标为内置并持有治理集，成员关系来源写 `initial`。
 - 声明静态配置开关 `org.create.enabled` 与条件[特性](../../../glossary.md) `org.create`；开关关闭时路由不挂、特性缺席。
 - 声明两个平台运行时设置 `org.create.max-organizations` 与 `org.create.max-per-hour`，并只从全局层读取。
@@ -37,7 +37,7 @@
 | `display_name` | 必填。显示名，去空白后一到一百个 rune |
 | `description` | 可选。描述，去空白后至多五百个 rune |
 
-成功应答 201，携带生成的组织标识、名称、显示名、描述与 `active` 状态。拒绝是 400（形状或保留字）、401（没有身份）、403（冒充、服务账户、静态主体或邮箱未证明）、409（`creation-in-progress`、`organization-limit` 或 `identifier-unavailable`）、429（`rate-limited`，带 `Retry-After`）与 503（依赖无法回答）。问题类型落在 `urn:speed:org:` 命名空间。
+成功应答 201，携带生成的组织标识、名称、显示名、描述与 `active` 状态。拒绝是 400（格式或保留字）、401（没有身份）、403（冒充、服务账户、静态主体或邮箱未证明）、409（`creation-in-progress`、`organization-limit` 或 `identifier-unavailable`）、429（`rate-limited`，带 `Retry-After`）与 503（依赖无法回答）。问题类型落在 `urn:speed:org:` 命名空间。
 
 开关关闭时本模块不挂 `/orgs`，该路径到达账户端自己的 404。个人租户没有路由：它在账户创建事务里写入，不占用账户端的任何路径。
 
@@ -164,7 +164,7 @@ sequenceDiagram
 2. 冒充身份答 403，先于一切读取。
 3. 服务账户与静态主体答 403。
 4. 邮箱证明：`SignupPending` 答 403 `authn.contact_required`；读取失败答 503；`SignupNone` 与已证明放行。
-5. 资料与名称的形状：显示名为空、资料越界、名称不是 slug，或保留名，答 400。
+5. 资料与名称的结构：显示名为空、资料越界、名称不是 slug，或保留名，答 400。
 6. 名称可用：名册上作为名称或标识被占用，答 409 `org.identifier_unavailable`。
 7. 创建锁：取不到答 409 `org.creation_in_progress`。
 8. 活跃业务组织上界：达到上界答 409 `org.organization_limit`。
@@ -178,7 +178,7 @@ sequenceDiagram
 
 **活跃业务组织按“有效成员关系、租户在册、非个人”计数。** 成员关系先读一次，名册再读一次，计数两次读完成；个人租户与停用租户都不计。
 
-**每小时次数只计通过全部前置校验的尝试。** 计次发生在强制审计与 provisioner 之前，因而 provisioner 的失败同样消耗一次；形状、邮箱、名称、锁、组织上界与限流的拒绝都不计。
+**每小时次数只计通过全部前置校验的尝试。** 计次发生在强制审计与 provisioner 之前，因而 provisioner 的失败同样消耗一次；格式、邮箱、名称、锁、组织上界与限流的拒绝都不计。
 
 **创建锁是每账户一把，存活三十秒。** 并发请求只有一个能取到锁，其余得到 `creation-in-progress`；请求结束（无论成功、拒绝或失败）都尽力释放锁，TTL 是进程在释放前停止时的兜底。多副本依赖共享键值存储；内存键值只保证单副本内的互斥。
 
@@ -204,7 +204,7 @@ sequenceDiagram
 | 冒充、服务账户、静态主体 | 403 |
 | 邮箱未证明 | 403 `contact-required` |
 | 邮箱状态读取失败 | 503 |
-| 显示名或名称形状不合法，或名称是保留名 | 400 |
+| 显示名或名称格式不合法，或名称是保留名 | 400 |
 | 名称是现有租户的名称或标识 | 409 `identifier-unavailable` |
 | 创建锁被占用 | 409 `creation-in-progress` |
 | 活跃业务组织达到上界 | 409 `organization-limit` |
@@ -237,7 +237,7 @@ sequenceDiagram
 |---|---|---|
 | 模块描述符、开关与条件特性 | 已实现 | `pkg/tenant/selfcreate/selfcreate.go` `Module`、`configSchema`、`readConfig` |
 | 创建路由与判定次序 | 已实现 | `pkg/tenant/selfcreate/handlers.go` `(*product).handleCreate`；`operations.go` `createOperation` |
-| 名称形状、保留名与命名空间 | 已实现 | `handlers.go` `(*product).nameAvailable`；`pkg/authn/reserved.go` `UsernameReservation` |
+| 名称格式、保留名与命名空间 | 已实现 | `handlers.go` `(*product).nameAvailable`；`pkg/authn/reserved.go` `UsernameReservation` |
 | 两个运行时设置与平台层写入 | 已实现 | `selfcreate.go` `settingsSchema`；`settings_test.go` `TestThePlatformLayerWritesBothNumericLimits` |
 | 活跃业务组织与每小时上界 | 已实现 | `handlers.go` `(*product).activeBusinessOrganizations`、`hourlyCount`、`recordAttempt` |
 | 创建锁 | 已实现 | `handlers.go` `(*product).handleCreate`、`lockKeyOf` |

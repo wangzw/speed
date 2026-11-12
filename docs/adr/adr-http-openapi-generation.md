@@ -2,9 +2,9 @@
 
 ## 背景
 
-模块的 OpenAPI（[REF-openapi](../references.md)）片段此前是手写 JSON，与 handler 各自维护，靠一致性测试桥接。独立审查在这棵树上找到的偏差说明这个机制不够：不可达的应答、可达而未声明的应答、被路由拒收的请求字段、声明为 `application/json` 而实现写 `application/problem+json`（[REF-rfc9457](../references.md)）的错误体，都能通过「方法+路径」这一层的核对。请求参数与请求体字段只有在少数模块有专门核对，新增一个参数而忘记写文档不会被发现。
+模块的 OpenAPI（[REF-openapi](../references.md)）片段此前是手写 JSON，与 handler 各自维护，靠一致性测试桥接。独立审查在这棵树上找到的偏差说明这个机制不够：不可达的应答、可达而未声明的应答、被路由拒收的请求字段、声明为 `application/json` 而实现写 `application/problem+json`（[REF-rfc9457](../references.md)）的错误体，都能通过“方法+路径”这一层的核对。请求参数与请求体字段只有在少数模块有专门核对，新增一个参数而忘记写文档不会被发现。
 
-要的是「加参数忘文档」在代码里写不出来。文档是数据，handler 是代码，Go 编译器只把代码与代码联系起来；只有让一侧由另一侧生成才可能。
+要的是“加参数忘文档”在代码里写不出来。文档是数据，handler 是代码，Go 编译器只把代码与代码联系起来；只有让一侧由另一侧生成才可能。
 
 只把片段从 JSON 换成 Go 结构体并不够：声明与 handler 仍是两份事实，handler 照样可以用 `c.Query` 读一个声明里没有的参数。声明必须同时是 handler 的类型边界。
 
@@ -20,19 +20,19 @@
 
 片段作为唯一来源，生成 typed input 与 handler 签名，读未声明参数的代码写不出来。
 
-**否决**：路由的挂载级别、条件路由、端点多路复用与特性声明都不在 OpenAPI 里，要先为它们设计扩展；这推翻 [ADR-http-routing](adr-http-routing.md) 的「Spec 不参与路由」，且宿主构建必须运行生成器。
+**否决**：路由的挂载级别、条件路由、端点多路复用与特性声明都不在 OpenAPI 里，要先为它们设计扩展；这推翻 [ADR-http-routing](adr-http-routing.md) 的“Spec 不参与路由”，且宿主构建必须运行生成器。
 
 ### 只把片段换成 Go 声明
 
 模块用 Go 结构体声明 operation 并生成片段，handler 仍直接读写请求。
 
-**否决**：声明与 handler 之间没有类型联系。加一个 `c.Query("x")` 不需要改声明，门禁仍然发现不了——这正是要消灭的那类漂移。
+**否决**：声明与 handler 之间没有类型联系。加一个 `c.Query("x")` 不需要改声明，门禁仍然发现不了，这正是要消灭的那类漂移。
 
 ### 从 Go 声明生成片段，并让声明绑定 handler
 
 模块在 Go 里声明 operation 及其 handler 的输入与成功应答类型；生成器把类型反射成 JSON Schema（[REF-json-schema](../references.md)）并组装成片段，入口模块按声明绑定请求、调用 handler、写出声明的应答。生成器桥接现成库 `github.com/swaggest/openapi-go`（[REF-swaggest-openapi-go](../references.md)），只做 OpenAPI 3.1 的 schema 反射与文档组装。
 
-**采纳**，见「决策」。
+**采纳**，见“决策”。
 
 ## 决策
 

@@ -54,7 +54,7 @@
 - **端点前缀。** 这两个模块的全部路由以 `/api/v1/tenants/{tenant}/` 开头，作用域为 `tenants`；这两个模块不挂 `/system` 下的路径。判定域取该租户，不取平台域。
 - **治理元数据。** 权限声明带一项治理标记，表示该权限可以由租户管理员在自己的租户内授予。业务租户与 `system` 租户的 `tenant-admin` 允许集是治理集；个人租户取（宿主的业务资源集 ∩ 治理集）− 宿主的排除集，且该角色不作为内建角色种入、不由 `Reconciler` 收敛。平台管理员取完整 `Catalog.Declared()`，不因本决策收窄；`platform-admin` 只在平台域存在，在租户域内不凭自身放行。新增权限的模块在声明时同时声明它是否治理；未声明的权限按非治理处理。
 - **权限码拆分。** 平台侧的角色接口继续用 `authz.role.read` / `authz.role.manage`；设置的 `settings.read` / `settings.write` 只服务全局层。租户层用 `settings.tenant.read` / `settings.tenant.write`，租户角色接口用 `authz.tenant.role.read` / `authz.tenant.role.manage`。平台侧的 `layer=tenant` 与租户侧共用租户码：平台员工要在某个租户读写租户层，须在该租户持有对应的租户码，通常经该租户的 `tenant-admin`（治理集）。两组码各自翻译、各自授予：一个持有平台码的调用方不因平台码通过而通过租户层的判定，反之亦然。`settings.admin` 在 `layer=tenant` 上询问租户码，租户侧的路由由 `settings.tenantadmin` 挂出。
-- **设置的治理范围。** 全局层只经 `settings.admin` 用 `settings.read`／`settings.write` 读写；租户层由 `settings.tenantadmin` 与平台侧的 `layer=tenant` 两条通道读写，都用 `settings.tenant.read`／`settings.tenant.write`。租户可见性由声明逐项回答：`Schema.TenantFacing` 为零时整份声明不对租户开放，`Item.TenantAccess` 为零（`TenantNone`）时该项不可见，只有 `TenantRead` 与 `TenantReadWrite` 进入租户面。声明归属在建键表时校验，缺元数据即启动失败；没有「命名空间默认可由租户写」的缺省。
+- **设置的治理范围。** 全局层只经 `settings.admin` 用 `settings.read`／`settings.write` 读写；租户层由 `settings.tenantadmin` 与平台侧的 `layer=tenant` 两条通道读写，都用 `settings.tenant.read`／`settings.tenant.write`。租户可见性由声明逐项回答：`Schema.TenantFacing` 为零时整份声明不对租户开放，`Item.TenantAccess` 为零（`TenantNone`）时该项不可见，只有 `TenantRead` 与 `TenantReadWrite` 进入租户面。声明归属在建键表时校验，缺元数据即启动失败；没有“命名空间默认可由租户写”的缺省。
 - **路径租户与解析租户的名称一致。** 每一个 `ScopeTenants` 的路由组挂一层中间件，核对路径里的 `{tenant}` 段与请求解析出的租户的名称相等：请求以名称寻址，解析层把名称换成标识写进上下文，中间件据该标识从名册取回名称再比对。路径段解析不到唯一租户，或解析到另一个租户，都以不区分原因的 404 拒绝，与租户解析层的拒绝相同。所有租户侧路由组都挂这一层，新增路由组不挂即覆盖不到。模块的路由在声明表上登记为开放（`declareOpen`），由中间件与 handler 内的判定承担权限，与 `authz.admin` 的写法相同。
 - **防提权规则。** 下列规则由写入侧执行，不交给每个 handler 自己判断：
   - **允许集。** 写入的权限必须在治理集内；一条非治理权限在 `Manager` 之前以 400 拒绝。
@@ -66,7 +66,7 @@
   - **设置写守卫 `authz.WriteSettings`。** 新增一个独立的宿主能力，`settings.tenantadmin` 以它为必需依赖，缺席即启动失败。它在租户层写之前被询问：答复拒绝答 403 `urn:speed:settings:protected`，读不出来答 503，不按放行处理。它只接收租户标识，宿主在它里面拒绝个人租户的写；声明归属的判定不在这里，而在 `settings.tenantadmin` 对设置声明的读取里。`WriteOp` 的封闭三元组（角色、授予、绑定）不变：设置写不属于策略数据，不并入它。
   - **审计先于动作。** 两类模块的每条写都先落一行强制档审计，写不进即 503 且动作不执行；策略数据的写另经既有的 `authz.WriteGuard`，拒绝 403、读不出 503。
   - **服务端逐条执行。** 前端不渲染被排除的租户，不构成后端放行的理由；上列规则在服务端逐条执行。
-- **内建角色的收敛。** 新增独立于 `Seeder` 与 `Manager` 的 `authz.Reconciler` 能力，由 `authz.policy` 排他交付，宿主取用，`authz.tenantadmin` 永远拿不到。它与 `Seeder` 共用输入类型 `Grant`：目标集与废弃集都是 `[]Grant`。它只收敛一个域的 builtin `tenant-admin`，从不作用于 `platform-admin`，也不收敛个人租户的 `tenant-admin`（该角色不是内建角色）：把授予集收敛到本次声明的治理集，先添加缺失的授予，再删除本次版本声明为废弃的授予，全过程在一个数据库事务里；目标集与废弃集重叠时目标集胜出，两者都列出的授予保留；事务失败整体回滚，重试重新收敛；提交之后重载快照并发布 `authz.policy.changed`；可重试、幂等。错误顺序固定：角色不是 `tenant-admin` 时在任何读取之前返回 `ErrReservedRole`；`tenant-admin` 不存在时返回 `ErrUnknownRole`；`tenant-admin` 存在但不是内建时返回 `ErrReservedRole`；这些都在任何收敛写入之前发生。调用方在调用前落一行强制档审计，审计写不进即不收敛；多副本下只删除本次版本明确废弃的权限，不按「不在本次集合里就删」推断。机制见 [ADR-authz-seeding](adr-authz-seeding.md)。
+- **内建角色的收敛。** 新增独立于 `Seeder` 与 `Manager` 的 `authz.Reconciler` 能力，由 `authz.policy` 排他交付，宿主取用，`authz.tenantadmin` 永远拿不到。它与 `Seeder` 共用输入类型 `Grant`：目标集与废弃集都是 `[]Grant`。它只收敛一个域的 builtin `tenant-admin`，从不作用于 `platform-admin`，也不收敛个人租户的 `tenant-admin`（该角色不是内建角色）：把授予集收敛到本次声明的治理集，先添加缺失的授予，再删除本次版本声明为废弃的授予，全过程在一个数据库事务里；目标集与废弃集重叠时目标集胜出，两者都列出的授予保留；事务失败整体回滚，重试重新收敛；提交之后重载快照并发布 `authz.policy.changed`；可重试、幂等。错误顺序固定：角色不是 `tenant-admin` 时在任何读取之前返回 `ErrReservedRole`；`tenant-admin` 不存在时返回 `ErrUnknownRole`；`tenant-admin` 存在但不是内建时返回 `ErrReservedRole`；这些都在任何收敛写入之前发生。调用方在调用前落一行强制档审计，审计写不进即不收敛；多副本下只删除本次版本明确废弃的权限，不按“不在本次集合里就删”推断。机制见 [ADR-authz-seeding](adr-authz-seeding.md)。
 - **请求顺序。** 租户侧的读与写按下列顺序执行。守卫读不出策略时答 503，不写审计，也不调用 `Manager` 或 `Store`；调用方自己的持有集（`SubjectPermissions.Held`）在防提权检查之前读取，防提权检查据此判断子集约束。
 
 ```mermaid
@@ -147,7 +147,7 @@ sequenceDiagram
 
 ## 后果
 
-租户管理员有了自己的管理端点，平台管理面不再替他们代劳；治理元数据把「租户能授什么」写进权限声明，平台管理员与租户管理员的允许集有了可执行的差别。防提权规则由写入侧统一执行，新增租户路由不会因为漏写一条检查而放开一条提权路径。
+租户管理员有了自己的管理端点，平台管理面不再替他们代劳；治理元数据把“租户能授什么”写进权限声明，平台管理员与租户管理员的允许集有了可执行的差别。防提权规则由写入侧统一执行，新增租户路由不会因为漏写一条检查而放开一条提权路径。
 
 **接受的代价：**
 
@@ -163,5 +163,5 @@ sequenceDiagram
 
 - 租户侧开始需要跨租户的视图或平台资产：`/api/v1/tenants/{tenant}` 前缀与租户域判定不再成立，要另立一套接口。
 - 治理权限的集合细分到按角色或按租户套餐：单一治理标记不再够用，元数据要重新裁定。
-- 内建角色的收敛不再需要删除旧授予，或废弃集可以由代码自动推出：`Reconciler` 的「只删本次废弃」这一条要重新比较。
+- 内建角色的收敛不再需要删除旧授予，或废弃集可以由代码自动推出：`Reconciler` 的“只删本次废弃”这一条要重新比较。
 - 租户管理员被允许管理 `system` 或平台域：本记录的排除与平台侧/租户侧的分工同时失效。

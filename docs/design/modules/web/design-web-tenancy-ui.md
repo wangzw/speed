@@ -4,15 +4,15 @@ tenancy-ui 是[租户](../../../glossary.md)切换控件，位于 ui-kit 与 i18
 
 ## 职责
 
-`@speed/tenancy-ui` 交付租户切换：一个受控的 `TenantSwitcher`，触发器显示当前租户，打开宿主给出的租户列表，选中一个不同的租户即把选择交给宿主。宿主已经拥有一个自己的菜单时，同一套行逻辑以 `TenantMenuItems` 交付——只渲染租户行，由宿主嵌进那个菜单；切换确认的 `role="status"` 区域另以 `TenantSwitchAnnouncement` 交付，由宿主挂在菜单之外。包还交付这些符号的属性类型与 `tenancy-ui` 命名空间资源，不交付别的。
+`@speed/tenancy-ui` 交付租户切换：一个受控的 `TenantSwitcher`，触发器显示当前租户，打开宿主给出的租户列表，选中一个不同的租户即把选择交给宿主。宿主已经拥有一个自己的菜单时，同一套行逻辑以 `TenantMenuItems` 交付：只渲染租户行，由宿主嵌进那个菜单；切换确认的 `role="status"` 区域另以 `TenantSwitchAnnouncement` 交付，由宿主挂在菜单之外。包还交付这些符号的属性类型与 `tenancy-ui` 命名空间资源，不交付别的。
 
-租户是请求的路由事实：服务端的解析层按端从请求头、子域或路径解析当前租户，认证不携带租户（[authn 登录](../authn/design-authn-login.md)、[tenant 准入](../tenant/design-tenant-admission.md)）。切换租户因而是一次宿主的路由变更，不是会话上的一次操作——本控件只把用户的意图报给宿主，由宿主改变它的路由并更新它交给 [auth-core](design-web-auth-core.md) 的租户上下文。
+租户是请求的路由事实：服务端的解析层按端从请求头、子域或路径解析当前租户，认证不携带租户（[authn 登录](../authn/design-authn-login.md)、[tenant 准入](../tenant/design-tenant-admission.md)）。切换租户因而是一次宿主的路由变更，不是会话上的一次操作：本控件只把用户的意图报给宿主，由宿主改变它的路由并更新它交给 [auth-core](design-web-auth-core.md) 的租户上下文。
 
-**列表的来源是宿主的本人租户读取接口。** 宿主经平台的一个读取接口（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是名称；个人租户那一行是宿主自己的组织文案。本控件不调用这个读取接口，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成组织文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
+**列表的来源是宿主的本人租户读取接口。** 宿主经平台的一个读取接口（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是名称；个人租户那一行是宿主自己的组织文案。本控件不调用这个读取接口，也不判定哪个租户是个人租户：个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成组织文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
 控件的结构：
 
-- **触发器显示当前租户。** 标签是租户列表里与 `currentTenantId` 相配那一行的名字——宿主数据，原样渲染，从不翻译。没有相配的行，或 `currentTenantId` 为空时，触发器禁用并显示 `tenantSwitcher.noCurrentTenant` 文案。
+- **触发器显示当前租户。** 标签是租户列表里与 `currentTenantId` 相配那一行的名字（宿主数据），原样渲染，从不翻译。没有相配的行，或 `currentTenantId` 为空时，触发器禁用并显示 `tenantSwitcher.noCurrentTenant` 文案。
 - **打开列表列出全部租户，当前那一行禁用**，它的点击守卫在任何回调之前返回，故合成点击也改不动。
 - **选中另一行调 `onSelect(id)`。** 用户的选择报给宿主，由宿主把路由切到那个租户、更新租户上下文并逐出离任租户的查询缓存。
 - **一次选择安静地播报。** 提交给宿主之后，一个 `role="status"` 区域报出已切换到的新租户（`tenantSwitcher.switchedTo`）。该区域从控件挂载起存在，`announcement` 决定确认文本是否在触发器旁绘制。
@@ -64,7 +64,7 @@ interface TenantSwitchAnnouncementProps {
 }
 ```
 
-**`tenants`、`currentTenantId`、`onSelect` 是必需属性，`TenantOption` 的字段均只读。** 这是本控件对宿主的语义契约：宿主必须提供 `tenants`、`currentTenantId` 与 `onSelect`。把其中任一个放宽为可选，类型上属于源码兼容的放宽，但它破坏了这条语义契约——一个不再提供它们的宿主仍能通过编译，故这是契约语义层面的破坏性变更，而不是类型不兼容。`TenantOption` 的字段与这些属性同属宿主提供的输入：宿主构造租户列表，控件只读取渲染。故按同一分类，给 `TenantOption` 新增可选字段是源码兼容的；新增必选字段、删除字段、或改字段的含义或名，是不兼容变更。
+**`tenants`、`currentTenantId`、`onSelect` 是必需属性，`TenantOption` 的字段均只读。** 这是本控件对宿主的语义契约：宿主必须提供 `tenants`、`currentTenantId` 与 `onSelect`。把其中任一个放宽为可选，类型上属于源码兼容的放宽，但它破坏了这条语义契约：一个不再提供它们的宿主仍能通过编译，故这是契约语义层面的破坏性变更，而不是类型不兼容。`TenantOption` 的字段与这些属性同属宿主提供的输入：宿主构造租户列表，控件只读取渲染。故按同一分类，给 `TenantOption` 新增可选字段是源码兼容的；新增必选字段、删除字段、或改字段的含义或名，是不兼容变更。
 
 **`menuFooter`、`announcement`、`triggerProps`、`compact`、`onDismiss`、`itemSx`、`leading` 是可选属性，缺省时行为不变。`TenantSwitchAnnouncement` 的 `tenantName` 是必需属性，`null` 表示还没有过切换。**
 
@@ -73,12 +73,12 @@ interface TenantSwitchAnnouncementProps {
 - `onDismiss` 在 `TenantMenuItems` 的每次选择生效之前运行一次，宿主用它关闭嵌入这些行的菜单；未提供时选择照常上报。
 - `itemSx` 展开到 `TenantMenuItems` 的每一行上，使行与宿主菜单的其余条目对齐；未提供时用菜单条目的缺省间距。
 - `leading(tenant)` 为 `TenantMenuItems` 的每行渲染一个前导标记，放在菜单的图标格里，使名字与其他条目的标签同轨；未提供时行只有名字。标记是装饰，行的可及名仍是租户名。
-- `triggerProps` 只携带呈现属性——`variant`、`size`、`sx`、`startIcon`——展开到触发器按钮上，使控件的外观与宿主自己的 chrome 一致。未提供时触发器是继承环境文字颜色的描边按钮。
+- `triggerProps` 只携带呈现属性（`variant`、`size`、`sx`、`startIcon`），展开到触发器按钮上，使控件的外观与宿主自己的 chrome 一致。未提供时触发器是继承环境文字颜色的描边按钮。
 - `compact` 把触发器收成仅图标形态，供放不下租户名的窄 chrome（收起侧栏的图标窄栏）使用：可及名仍是文字触发器会显示的那个租户名，`triggerProps.startIcon` 给出时作图标，否则用包内字形；MUI（[REF-mui](../../../references.md)）按钮的 64px 最小宽度与两侧内边距在形态内取消。列表、当前租户行的禁用与切换播报不变。
 
 **`onSelect` 在用户选一个非当前租户时触发一次，携带选中的租户标识。** 宿主在那里把路由切过去、更新租户上下文、重取数据并逐出上一租户的查询缓存；回调抛出不是选择失败，本包把它包住，既不当错误渲染，也不让它变成未处理的拒绝。
 
-**对外接口。** 公开接口是上述导出集；控件受控、只调 `onSelect`、不使用 auth-core 的钩子、不发请求；触发器与列表项渲染宿主文本，内建文案只覆盖控件自己的状态。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
+**对外接口。** 公开接口是上述导出集；控件受控、只调 `onSelect`、不使用 auth-core 的钩子、不发请求；触发器与列表项渲染宿主文本，内建文案只覆盖控件自己的状态。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 
 ## 依赖
 
@@ -118,7 +118,7 @@ sequenceDiagram
 
 1. 用户在列表里点一个非当前租户的行；行的点击守卫先确认它不是当前租户，再把菜单关掉、调 `onSelect(id)`。
 2. 宿主接手：把路由切到那个租户，更新它交给 `TenantProvider` 的租户标识，并用切换之前读到的离任租户 id 逐出该租户的查询子树。
-3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；`announcement` 为 `visually-hidden` 时该区域始终裁切、只留在无障碍树中。示范的账户菜单不用 `TenantSwitcher`：它用 `TenantMenuItems` 把行嵌进自己的菜单，并把 `TenantSwitchAnnouncement` 挂在菜单之外——菜单在选行后关闭，播报区域须比它活得久。运行期只依赖 `@speed/i18n`、`@speed/ui-kit`（仅取共享的裁切配方 `visuallyHiddenSx`）与 MUI，区域是本包自己的，遵守与 `InlineSuccess` 同一套先挂空区域、再填文本的做法；租户切换是宿主回调，不是写入，不在 `useWriteFeedback` 的作用域之内。
+3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；`announcement` 为 `visually-hidden` 时该区域始终裁切、只留在无障碍树中。示范的账户菜单不用 `TenantSwitcher`：它用 `TenantMenuItems` 把行嵌进自己的菜单，并把 `TenantSwitchAnnouncement` 挂在菜单之外：菜单在选行后关闭，播报区域须比它活得久。运行期只依赖 `@speed/i18n`、`@speed/ui-kit`（仅取共享的裁切配方 `visuallyHiddenSx`）与 MUI，区域是本包自己的，遵守与 `InlineSuccess` 同一套先挂空区域、再填文本的做法；租户切换是宿主回调，不是写入，不在 `useWriteFeedback` 的作用域之内。
 
 ### 当前租户收敛
 
@@ -126,7 +126,7 @@ sequenceDiagram
 
 ### 切换与组织管理面
 
-组织管理面（[admin-ui](design-web-admin-ui.md) 的 `/organization/admin`）作用在当前租户上，一次切换因此改变它的全部输入。控件仍只做一件事：把选中的租户标识交给 `onSelect` 一次。在「一次选择」的逐出与租户上下文更新之外，宿主按次序：
+组织管理面（[admin-ui](design-web-admin-ui.md) 的 `/organization/admin`）作用在当前租户上，一次切换因此改变它的全部输入。控件仍只做一件事：把选中的租户标识交给 `onSelect` 一次。在“一次选择”的逐出与租户上下文更新之外，宿主按次序：
 
 1. 把租户域的权限集置回未知，并按新租户重读；读回之前，组织管理面的入口与页面按未知处置，不按旧租户的权限渲染。
 2. 以新的租户标识重挂载组织管理面的子树。页面的本地状态随卸载丢弃，租户作用域的查询键换到新租户。

@@ -10,7 +10,7 @@
 - 根包只放接口与数据类型，第三方库落在叶子包里，库的类型不出现在根包的接口上（[ADR-authn-packaging](adr-authn-packaging.md)、[ADR-module-layout](adr-module-layout.md)）。
 - 所有出站请求走受限的出站客户端，因为目的地址来自外部输入（[ADR-authn-sso](adr-authn-sso.md)）。
 
-候选库对授权码流程各环节的责任归属不同。下表按各库已发布版本的源码核对；「调用方」指 speed 一侧的代码。
+候选库对授权码流程各环节的责任归属不同。下表按各库已发布版本的源码核对；“调用方”指 speed 一侧的代码。
 
 | 库 | PKCE（[REF-rfc7636](../references.md)）校验串的生成 | 保存校验串与 state | `state` 的生成与比对 | `nonce` 的发出与比对 | ID 令牌验签 |
 |---|---|---|---|---|---|
@@ -20,7 +20,7 @@
 | `github.com/zitadel/oidc/v3`（[REF-zitadel-oidc](../references.md)） | 提供，绑在 cookie 上 | cookie | 调用方给生成函数，存 cookie | 库自带的授权地址处理器不发；校验器缺省要求令牌里的 `nonce` 为空 | 做 |
 | `github.com/hashicorp/cap`（[REF-hashicorp-cap](../references.md)） | 提供 | 调用方保存库返回的 `Request` 对象 | 库生成，在 `Exchange` 内比对 | 库发出并比对 | 做 |
 
-除 cap 外，`state`、PKCE 校验串与 `nonce` 的「生成、保存、一次性消费、过期」没有一个库替调用方做完。因此选哪个库不改变这部分工作量，改变的是库其余部分与 speed 的契合度。
+除 cap 外，`state`、PKCE 校验串与 `nonce` 的“生成、保存、一次性消费、过期”没有一个库替调用方做完。因此选哪个库不改变这部分工作量，改变的是库其余部分与 speed 的契合度。
 
 go-oidc 另有会静默放过校验的缺口：`UserInfo` 取回的 `sub` 不与 ID 令牌的 `sub` 比对；构造 `Provider` 与取密钥集、取 userinfo 的 HTTP 请求在未注入客户端时走没有超时的 `http.DefaultClient`。
 
@@ -119,19 +119,19 @@ flowchart LR
   - speed 承担库明说或实际不做的环节。判据是这一句，下列各项是已核对的例举，不是封闭集：`state`、PKCE 校验串、`nonce` 的生成、保存与一次性消费，`state` 与 `nonce` 的比对，多受众时 `azp` 等于 `client_id` 的核对，出站客户端的注入。`state` 由桥自己生成，不接受请求指定；PKCE 一律 S256。
   - 记录的存放、原子性与授权码至多换一次由登录引擎的比较并交换保证，桥不另做（[ADR-authn-login-flow](adr-authn-login-flow.md)）。
 - **userinfo。** 桥的校验路径只读 ID 令牌里的声明，不调用 userinfo。go-oidc 的 `UserInfo` 不核对 userinfo 的 `sub` 与 ID 令牌的 `sub`，桥不让这一缺口进入校验路径；任何将来引入的 userinfo 读取先比对 `sub`，是它进入桥的前提。
-- **出站客户端。** 桥的全部出站请求以 `oidc.ClientContext` 注入的受限客户端发出，注入一次对 go-oidc 与 x/oauth2 同时生效；库在未注入时使用无超时的默认客户端，因此「未经注入的出站调用」本身是缺陷。受限客户端的约束见 design-authn-sso。
+- **出站客户端。** 桥的全部出站请求以 `oidc.ClientContext` 注入的受限客户端发出，注入一次对 go-oidc 与 x/oauth2 同时生效；库在未注入时使用无超时的默认客户端，因此“未经注入的出站调用”本身是缺陷。受限客户端的约束见 design-authn-sso。
 - **三条提供方路径。** Google 与企业 OIDC 共用同一条 OIDC 路径；GitHub 走 OAuth 2.0 分支，自写对 `/user` 与 `/user/emails` 的读取，不引入 go-github。`redirect_uri` 的构造与回跳 `iss` 的比对、GitHub 的邮箱取法、`email_verified` 的处理、Google 的 `hd` 检查、企业 OIDC 提供方对象的缓存与失败语义，都是这些路径的实现细节，见 design-authn-login 与 design-authn-sso；企业 OIDC 与按租户的 IdP 登记的关系见 [ADR-authn-sso](adr-authn-sso.md)。
 - **库类型不出根包。** `oauth2.Config`、`oidc.IDToken` 等库类型只出现在登录方式与企业 SSO 所在的叶子包里；桥交给引擎的是 speed 自己的外部身份类型。
 - **微信不在这座桥上。** 微信（[REF-wechat-website-login](../references.md)、[REF-wechat-oa-web-auth](../references.md)）没有 PKCE、没有 `nonce`、没有 ID 令牌，其客户端与理由见 [ADR-authn-wechat](adr-authn-wechat.md)。
 
 ## 后果
 
-校验链上的每一环都有归属：库做的与自己做的在上图与决策里分别列出，没有靠「库应该会做」成立的环节。依赖范围小：对 `pkg/go.mod` 只增加 go-oidc、go-jose/v4 与 x/oauth2，许可证为 Apache-2.0 与 BSD-3-Clause，go-jose/v4 与 JWT（[REF-rfc7519](../references.md)）访问令牌共用。`state` 与 PKCE 校验串落在 kv 的流程记录里，不绑 cookie 加密方式，多副本与按租户装配的 IdP 不受影响。Google 与企业 OIDC 一条路径，同一类缺陷只在一处修、一处测。
+校验链上的每一环都有归属：库做的与自己做的在上图与决策里分别列出，没有靠“库应该会做”成立的环节。依赖范围小：对 `pkg/go.mod` 只增加 go-oidc、go-jose/v4 与 x/oauth2，许可证为 Apache-2.0 与 BSD-3-Clause，go-jose/v4 与 JWT（[REF-rfc7519](../references.md)）访问令牌共用。`state` 与 PKCE 校验串落在 kv 的流程记录里，不绑 cookie 加密方式，多副本与按租户装配的 IdP 不受影响。Google 与企业 OIDC 一条路径，同一类缺陷只在一处修、一处测。
 
 **接受的代价：**
 
 - 每一项自做的校验都需要负向测试，缺任何一项都是静默放过，库不会报错。例举的负向用例（非封闭集）：`state` 缺失、被改动、重放；`nonce` 缺失或不符；`azp` 不符；`iss` 不符或回跳 `iss` 与提供方不符；回跳路径与流程记录里的提供方不一致；`hd` 不符；GitHub 的邮箱只有 `primary` 而未 `verified`，或只有 `/user` 里的公开邮箱；未经注入客户端的出站调用。
-- 选择 cap 可以得到的「比对做进库里」被放弃：`state`、PKCE、`nonce` 的生成、保存、一次性消费与过期全由 speed 维护，库升级不会自动带来这部分的修正。
+- 选择 cap 可以得到的“比对做进库里”被放弃：`state`、PKCE、`nonce` 的生成、保存、一次性消费与过期全由 speed 维护，库升级不会自动带来这部分的修正。
 - go-oidc 每次构造 `Provider` 都发一次发现请求且不缓存，提供方对象的缓存与失效由 speed 承担；密钥集随提供方对象存活，轮换靠库在 `kid` 未命中时重取。
 - GitHub 的 `/user` 与 `/user/emails` 读取由 speed 维护：响应结构、分页与限流行为的变化要自己跟进，go-github 不再兜底。
 - Google 是否要求或接受 PKCE 未核实，桥照常发 S256；该假设见失效条件。

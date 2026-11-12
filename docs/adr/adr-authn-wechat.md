@@ -11,7 +11,7 @@
 - 微信不提供邮箱。外部身份的主体取 `unionid`，没有则取按应用区分的 `openid`（[ADR-authn-external-binding](adr-authn-external-binding.md)）。
 - Go 的 `*url.Error` 的文本带完整请求 URL。`secret` 在查询串里，任何把出站错误原样记入日志、写入响应或转交调用方的路径都会泄露它。
 - 认证模块取现成库与 speed 之间的桥，自写需要现成库承担不了的理由（[ADR-authn-scope](adr-authn-scope.md)）。社交与企业 OIDC 的校验已取 `go-oidc`（[REF-go-oidc](../references.md)）加 `x/oauth2`（[REF-golang-x-oauth2](../references.md)）。
-- 一个模块只有一个实例，一个实例只报一个登录方式名；每个模块依据自己那份应用凭据决定是否运行——两项凭据都空时自行关闭，只给一项时是半配置（[ADR-authn-packaging](adr-authn-packaging.md)、[ADR-module-enablement](adr-module-enablement.md)）。
+- 一个模块只有一个实例，一个实例只报一个登录方式名；每个模块依据自己那份应用凭据决定是否运行：两项凭据都空时自行关闭，只给一项时是半配置（[ADR-authn-packaging](adr-authn-packaging.md)、[ADR-module-enablement](adr-module-enablement.md)）。
 - 日志脱敏由规则登记提供，持有秘密的模块在 `New` 里先于日志器绑定登记（[ADR-log-redaction](adr-log-redaction.md)、[ADR-authn-wiring](adr-authn-wiring.md)）。
 
 ## 考虑过的选项
@@ -71,12 +71,12 @@
 - **自写的判据。** `x/oauth2` 与各整套 SDK 在参数名、错误结构、HTTP 客户端的注入与错误文本的净化上，没有一项能不绕开而直接承担；桥接方案要补的部分与自写相当，补完之后留给库的只剩一次 `GET` 与响应体解码。以上是本项目破例自写而不取桥的理由，适用范围限于微信这一个提供方，不推广到其他提供方。
 - **两个模块。** 网站应用与公众号各是一个模块，分别交付登录方式名 `wechat.web` 与 `wechat.mp`。每个模块有自己的一份配置与必填校验，缺必填项即以配置不合法失败，两个模块之间没有联合判定。宿主在命令树上点名哪个模块，哪个入口就存在、哪份配置就必填。模块名、配置键与哨兵由 design-authn-config 与 design-authn-failure 承载。
 - **共用客户端。** 两个模块共用登录目录内部的同一个微信客户端包。换令牌的请求、`errcode` 判定、错误净化与主体选取只在这一个包里有一份实现。HTTP 200 加非零 `errcode` 一律按失败。身份只取 `unionid` 或 `openid` 命名空间的键，不合成邮箱，昵称与头像不是授权依据。流程细节见 design-authn-login。
-- **`secret` 的处置。** 判据是：携带 `secret` 的 URL 不得以任何形式离开客户端包。客户端的出站错误在返回前剥去 URL。客户端套 `observability.Transport(log.Transport(...))`：外层注入追踪头，内层为每次换令牌写一条记录，只取方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时取 `url.Error` 之下的底层成因；query 里的 `secret` 与授权码既不进跨度属性也不进记录。配置里的应用密钥值登记为日志脱敏的字面量匹配器，登记发生在模块的 `New` 里、先于日志器绑定。登记与「永不记录」的范围见 design-authn-events 与 [ADR-authn-events-and-audit](adr-authn-events-and-audit.md)，应用密钥作为敏感配置项的存放见 [ADR-authn-settings-and-secrets](adr-authn-settings-and-secrets.md)。
+- **`secret` 的处置。** 判据是：携带 `secret` 的 URL 不得以任何形式离开客户端包。客户端的出站错误在返回前剥去 URL。客户端套 `observability.Transport(log.Transport(...))`：外层注入追踪头，内层为每次换令牌写一条记录，只取方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时取 `url.Error` 之下的底层成因；query 里的 `secret` 与授权码既不进跨度属性也不进记录。配置里的应用密钥值登记为日志脱敏的字面量匹配器，登记发生在模块的 `New` 里、先于日志器绑定。登记与“永不记录”的范围见 design-authn-events 与 [ADR-authn-events-and-audit](adr-authn-events-and-audit.md)，应用密钥作为敏感配置项的存放见 [ADR-authn-settings-and-secrets](adr-authn-settings-and-secrets.md)。
 - **CSRF 的残余风险。** 协议没有 PKCE 与 `nonce`，微信入口的回跳防线只有 `state` 与流程绑定。该风险写入威胁模型的残余风险栏并接受，不为它在客户端之外另造一层防线（design-authn-threats）。
 
 ## 后果
 
-微信的错误语义、`secret` 的去向与外部身份的主体选取由 speed 自己持有。进程内没有被改写的全局 HTTP 客户端，模块图里也没有另一个 Redis 客户端主版本。两个入口按纳入与否各自判必填，只用其一的宿主不必为另一个入口配置凭据。微信出站调用经 `observability.Transport(log.Transport(...))` 带追踪头，换令牌的每次调用另留一条不含 query 与 `secret` 的记录：不套 `observability.Transport` 的例外曾以「`Transport` 是否会把请求 URL 带进跨度属性未经核实」为理由设立，并附带「核实它不触及 URL 即取消例外」的条件；`pkg/observability/transport.go` 的 `Transport` 只向请求的副本注入追踪头，不读取也不记录 URL，条件成立，该例外取消。
+微信的错误语义、`secret` 的去向与外部身份的主体选取由 speed 自己持有。进程内没有被改写的全局 HTTP 客户端，模块图里也没有另一个 Redis 客户端主版本。两个入口按纳入与否各自判必填，只用其一的宿主不必为另一个入口配置凭据。微信出站调用经 `observability.Transport(log.Transport(...))` 带追踪头，换令牌的每次调用另留一条不含 query 与 `secret` 的记录：不套 `observability.Transport` 的例外曾以“`Transport` 是否会把请求 URL 带进跨度属性未经核实”为理由设立，并附带“核实它不触及 URL 即取消例外”的条件；`pkg/observability/transport.go` 的 `Transport` 只向请求的副本注入追踪头，不读取也不记录 URL，条件成立，该例外取消。
 
 **接受的代价：**
 
@@ -97,6 +97,6 @@
 
 以下行为是未经运行核实的假设，依赖它们的断言以对应的测试守住，测试失败即视为本决策的前提不成立：
 
-- 假设微信换令牌接口以 HTTP 200 加非零 `errcode` 返回失败（已有实测依据，需带真实凭据复核）。模拟的微信服务端驱动「200 加 `errcode`」「非 200」「畸形响应体」「网络错误与超时」，断言每种情形都以登录失败结束，且失败原因能区分授权码失效与凭据错误。
+- 假设微信换令牌接口以 HTTP 200 加非零 `errcode` 返回失败（已有实测依据，需带真实凭据复核）。模拟的微信服务端驱动“200 加 `errcode`”“非 200”“畸形响应体”“网络错误与超时”，断言每种情形都以登录失败结束，且失败原因能区分授权码失效与凭据错误。
 - 假设 `secret` 没有任何出口。对客户端的每条错误路径与每条日志路径，配置里放哨兵值作为应用密钥，断言返回的错误文本、日志输出与响应体里既不含该值，也不含携带它的 URL。新增出站路径时同步增加该断言。
 - 假设两个入口的必填校验互不牵连。装配测试只纳入其中一个模块并只给它配置，断言构造成功；缺该模块自己的必填项则以配置不合法失败。

@@ -8,7 +8,7 @@
 
 `pkg/event` 的 `Event` 字段是 `ID`、`Type`、`TenantID` 与 `Payload`，没有承载跨度的位置；`Bus.Subscribe` 的匹配是精确字符串比较，订阅者没有名字。
 
-「订阅者收到并处理了吗」在遥测模块产出的信号里没有答案。遥测模块已决定不订阅总线，并把「在总线的分发层为每个订阅者记跨度」判为不在本模块、「属于事件模块」（[ADR-observability-events](adr-observability-events.md)）。事件模块此前没有承接这一条：`pkg/event` 不产生任何跨度，`pkg/event/internal/dispatch` 没有埋点。
+“订阅者收到并处理了吗”在遥测模块产出的信号里没有答案。遥测模块已决定不订阅总线，并把“在总线的分发层为每个订阅者记跨度”判为不在本模块、“属于事件模块”（[ADR-observability-events](adr-observability-events.md)）。事件模块此前没有承接这一条：`pkg/event` 不产生任何跨度，`pkg/event/internal/dispatch` 没有埋点。
 
 跨进程的追踪要在两侧都做：发布方把当前跨度上下文写进事件，订阅方从事件取出它作为父跨度。遥测模块的传播器只承载 W3C 追踪上下文（[REF-w3c-trace-context](../references.md)），不承载 baggage（[REF-w3c-baggage](../references.md)）（[ADR-observability-propagation](adr-observability-propagation.md)），provider 只经注册表交付，不装进程级全局（[ADR-observability-provider](adr-observability-provider.md)）。
 
@@ -24,11 +24,11 @@
 
 ### 不做，改文档
 
-维持现状，只把「领域事件的投递与处理在本模块的信号里没有踪迹」写进事件模块的设计文档。
+维持现状，只把“领域事件的投递与处理在本模块的信号里没有踪迹”写进事件模块的设计文档。
 
-**否决**：这条要求已经被裁定归属事件模块（[ADR-observability-events](adr-observability-events.md)）。把它再记为「不做」是把悬空项原地保留：追问「订阅者处理了吗」的宿主仍然答不出，这一次是有了归属方之后的再次搁置。
+**否决**：这条要求已经被裁定归属事件模块（[ADR-observability-events](adr-observability-events.md)）。把它再记为“不做”是把悬空项原地保留：追问“订阅者处理了吗”的宿主仍然答不出，这一次是有了归属方之后的再次搁置。
 
-### 分发层记跨度，事件携带追踪上下文，订阅者名可选：匿名者的跨度为「事件类型 + 该类型下订阅的序号」
+### 分发层记跨度，事件携带追踪上下文，订阅者名可选：匿名者的跨度为“事件类型 + 该类型下订阅的序号”
 
 `Subscribe` 的名字参数可以留空，留空时订阅者的跨度名取事件类型与一个序号。
 
@@ -38,7 +38,7 @@
 
 `Subscribe` 的名字参数可以留空，留空时不记这个订阅者的跨度。
 
-**否决**：它把本记录要回答的问题在部分订阅者上重新打开——交到匿名订阅者手上的那一档投递从追踪里答不出来，而「谁没建跨度」在信号里看不出。一个可选的参数一旦被省略就静默失去覆盖，正是这条要求要消除的形态。
+**否决**：它把本记录要回答的问题在部分订阅者上重新打开：交到匿名订阅者手上的那一档投递从追踪里答不出来，而“谁没建跨度”在信号里看不出。一个可选的参数一旦被省略就静默失去覆盖，正是这条要求要消除的形态。
 
 ### 分发层记跨度，事件携带追踪上下文，订阅者名必填
 
@@ -50,11 +50,11 @@
 
 采纳：**事件总线在分发层为每个订阅者记一个跨度；事件跨进程携带发布时所在跨度的追踪上下文；为此本模块的公共签名有一组变更。**
 
-- **`Event` 增加追踪上下文。** 一个字段以中立的载体承载发布时所在跨度的上下文——键值对，键取上游传播格式的键。发布方留空时 `Publish` 在事件离开调用之前写入当时上下文里的跨度，非空时原样携带——与事件标识同一形态。每个订阅者、每个副本、每种实现下收到同一个载体，重发的条目带着它。
+- **`Event` 增加追踪上下文。** 一个字段以中立的载体承载发布时所在跨度的上下文（键值对），键取上游传播格式的键。发布方留空时 `Publish` 在事件离开调用之前写入当时上下文里的跨度，非空时原样携带，与事件标识同一形态。每个订阅者、每个副本、每种实现下收到同一个载体，重发的条目带着它。
 - **`Spec[C]` 增加 `Trace` 字段，`Open` 增加追踪 provider 参数，类型是本模块自己定义的窄接口。** 根包不 import 遥测的接口包：provider 的类型与传播器只出现在实现子包与 `dispatch` 里，实现子包在 `Trace` 里把遥测模块的 provider 适配成这个窄接口，`Open` 收到的是适配后的那一个。
-- **那条可选的注册表依赖由实现子包声明。** 根包写不出 `Token` 为 `(*observability.TracerProvider)(nil)` 的依赖——它 import 不了遥测的接口包——所以 `NewModule` 交回的描述符由实现子包在事后追加这一条。这条边定的是两者的构造先后：没有它，模块名以外的次序无从保证，`Trace` 取不到 provider 而静默回退成不导出信号的实现。provider 经注册表取（`Token` 为 `(*observability.TracerProvider)(nil)`，可选），不装进程级全局（[ADR-observability-provider](adr-observability-provider.md)）。装配里没有遥测功能时它缺席，总线照常起落，只是不导出信号。
+- **那条可选的注册表依赖由实现子包声明。** 根包写不出 `Token` 为 `(*observability.TracerProvider)(nil)` 的依赖（它 import 不了遥测的接口包），所以 `NewModule` 交回的描述符由实现子包在事后追加这一条。这条边定的是两者的构造先后：没有它，模块名以外的次序无从保证，`Trace` 取不到 provider 而静默回退成不导出信号的实现。provider 经注册表取（`Token` 为 `(*observability.TracerProvider)(nil)`，可选），不装进程级全局（[ADR-observability-provider](adr-observability-provider.md)）。装配里没有遥测功能时它缺席，总线照常起落，只是不导出信号。
 - **`Bus.Subscribe` 与 `dispatch.Table.Subscribe` 增加订阅者名参数，必填。** 它用作订阅者跨度的名称。
-- **传播格式取自遥测接口包的传播器（`observability.Propagator()`），取用落在子包**——实现子包与 `dispatch`，不落根包。它不是配置项，只承载 W3C 追踪上下文（[ADR-observability-propagation](adr-observability-propagation.md)）。
+- **传播格式取自遥测接口包的传播器（`observability.Propagator()`），取用落在子包**（实现子包与 `dispatch`），不落根包。它不是配置项，只承载 W3C 追踪上下文（[ADR-observability-propagation](adr-observability-propagation.md)）。
 - provider 交给分发层：实现子包把适配好的窄接口 provider 与传播器一并交给 `dispatch.New`，订阅表因而持有记跨度所需的东西。
 
 ## 后果
@@ -69,7 +69,7 @@
 - **每个 `Subscribe` 调用点要给出一个名字。** 名字是必填的位置参数，现有的每个订阅点因此各改一次，连同一致性套件的订阅调用与各实现对 `Subscribe` 的转发：它是本模块对外交付的接口方法，改动落到每一个实现与每一个调用点上。各订阅点已持有自己的身份，可径直用作名字。两个订阅者取同一个名字不报错，它们的跨度靠事件类型属性区分，类型也相同时不可区分。
 - **事务发件箱的暂存表与 PostgreSQL 实现自己的发件箱表各多一列。** 追踪上下文在暂存时写入、发布时读出，订阅者的跨度因而以暂存方所在的跨度为父。此前建成的表在迁移或启动时补上这一列，旧行取默认的空值。
 - **线格式是破坏性升级。** 追踪上下文进入了 NATS（[REF-nats](../references.md)）与 Redis 的 envelope、PostgreSQL 发件箱表的 insert 与 select、事务发件箱的暂存表与各方言的迁移。旧条目与旧行没有这一部分，解出来是空值，那次投递的订阅者跨度自成一条追踪的根，不是发布方那条的子。这份缺失按事件逐条出现，新旧并存期间没有一层会报出来。
-- **provider 的扩展点多一层适配。** 根包不 import 遥测的接口包，`Spec[C].Open` 收到的是本模块自己定义的窄接口，不是遥测模块的类型别名；实现子包要把遥测的 provider 适配成它，这层适配是隔离的代价。换来的是根包的依赖范围不变——遥测接口包经它的类型别名带上的上游追踪 API、指标 API 与两个 SDK 导出接口包，不进每一个发布事件的模块的依赖闭包，无论装配里有没有遥测功能。
+- **provider 的扩展点多一层适配。** 根包不 import 遥测的接口包，`Spec[C].Open` 收到的是本模块自己定义的窄接口，不是遥测模块的类型别名；实现子包要把遥测的 provider 适配成它，这层适配是隔离的代价。换来的是根包的依赖范围不变：遥测接口包经它的类型别名带上的上游追踪 API、指标 API 与两个 SDK 导出接口包，不进每一个发布事件的模块的依赖闭包，无论装配里有没有遥测功能。
 
 ## 失效条件
 

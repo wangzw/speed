@@ -20,7 +20,7 @@
 
 `http.Operation` 与 `http.ReplyOperation` 增加 `Access`，零值为受保护；构造选项 `Public()` 与 `Optional()` 覆盖它。认证能力的挂载入口 `mount.Declared` 读描述符、按字段分派到网关的三种登记；生成器读同一字段写 `security`。
 
-**采纳**，见「决策」。
+**采纳**，见“决策”。
 
 ### 让片段自己定义 securitySchemes
 
@@ -34,7 +34,7 @@
 - `AccessOptional`：不带凭据的请求以匿名身份通过；带了凭据但不成立的仍拒绝。
 - `AccessPublic`：不读凭据。
 
-生成器写出的 `security` 依次是：受保护的两个载体择一（`bearerAuth`、`sessionCookie`）；可选的在两者之外再加一个空要求；公开的是空数组。`security: []` 是 OpenAPI 表达「移除要求」的写法，因此公开必须显式声明。
+生成器写出的 `security` 依次是：受保护的两个载体择一（`bearerAuth`、`sessionCookie`）；可选的在两者之外再加一个空要求；公开的是空数组。`security: []` 是 OpenAPI 表达“移除要求”的写法，因此公开必须显式声明。
 
 认证能力的模块一律经 `mount.Declared` 挂载，它的级别来自描述符，不再由挂载调用另行指定。`Callback` 仍是独立入口：回调既公开又跳过跨源检查，只有登记方知道哪些方法来自别的站。
 
@@ -57,4 +57,4 @@
 - 契约新增 `servers`、`tags`、`security`、`components.securitySchemes` 与 `info.description`，以及每个 operation 的 `tags` 与 `security`；读取这些键的一方（网关、前端生成器、文档站点）获得信息，不读取的一方不受影响。
 - 一条 operation 只带一个标签。宿主写制品时可以把声明它的模块的标签换成自己的所有者标签；`gen` 对应用所有的 operation 这么做，并从顶层 `tags` 摘掉该模块名，按标签分组的读者因此不会把同一条 operation 列两次。
 - 合并文档改为缩进输出，字节内容变化，`/openapi.json` 的应答体随之变大；合并仍是确定性的纯函数，构建产物与运行时应答仍逐字节一致。
-- 公开路由此后必须显式声明，新增一条未声明 `security` 的 operation 会以受保护的身份进入文档——错误方向是低估可达性而不是高估保护。
+- 公开路由此后必须显式声明，新增一条未声明 `security` 的 operation 会以受保护的身份进入文档：错误方向是低估可达性而不是高估保护。

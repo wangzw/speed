@@ -1,25 +1,25 @@
 # notification
 
-本[功能目录](../../../glossary.md)把一次业务事件变成收件人可读的消息并交给收件人：站内信落成收件箱的一行，渠道偏好决定走哪些渠道，投递流水线把一次派发发出去并记账，SSE 把刚落地的行推给连着的人。它拥有这些模块与各自的表，不拥有通知类型的声明、邮件与短信的实际发送，也不拥有平台级的收件人与权限判定。读职责清单前应持有的一句话心智模型是：本能力只认识「一条消息、一个收件人、一组参数」，业务含义来自声明它的业务模块。
+本[功能目录](../../../glossary.md)把一次业务事件变成收件人可读的消息并交给收件人：站内信落成收件箱的一行，渠道偏好决定走哪些渠道，投递流水线把一次派发发出去并记账，SSE 把刚落地的行推给连着的人。它拥有这些模块与各自的表，不拥有通知类型的声明、邮件与短信的实际发送，也不拥有平台级的收件人与权限判定。读职责清单前应持有的一句话心智模型是：本能力只认识“一条消息、一个收件人、一组参数”，业务含义来自声明它的业务模块。
 
 第一遍的次序是职责与非职责、外部接口契约、依赖与 UML 图、核心数据结构与核心算法与流程：职责与非职责给出边界，外部接口契约按交付的功能、根包类型与各字段语义、渠道与可用性、分类法与取材域逐节展开，依赖与 UML 图给出模块关系与一次派发的路径；核心数据结构之后是核心算法与流程，走查用一次派发把入队、消费与落账串起来。错误与失败语义、并发与事务边界属查阅用，竞态与边界情形是最后的自检项；扩展点与实现状态在主体之后回看。
 
 ## 职责
 
-本能力交付**把一次业务事件变成某个收件人可读的消息，并把它交给该收件人**：站内信收件箱把一条消息落成收件人可读的一行，并管理它的读取、未读数与标记已读，渠道偏好矩阵决定一条消息能走哪些渠道，类型分类法收齐业务模块声明的通知类型，据此回答「有哪些通知」并校验偏好写入与投递时的类型键，出站投递流水线把一次派发按渠道发出去并把结果落成账，SSE 把刚落地的消息实时推给正在看的收件人。
+本能力交付**把一次业务事件变成某个收件人可读的消息，并把它交给该收件人**：站内信收件箱把一条消息落成收件人可读的一行，并管理它的读取、未读数与标记已读，渠道偏好矩阵决定一条消息能走哪些渠道，类型分类法收齐业务模块声明的通知类型，据此回答“有哪些通知”并校验偏好写入与投递时的类型键，出站投递流水线把一次派发按渠道发出去并把结果落成账，SSE 把刚落地的消息实时推给正在看的收件人。
 
-一次派发由发出它的业务模块发起。业务模块声明自己的通知类型（`notification.TypeSpec`），构造一条 `notification.Dispatch`，经本能力的提交接口校验并入队；投递流水线在消费这条作业时校验、解析生效渠道、逐渠道渲染与发送——站内信落到收件箱、邮件交 `pkg/mail`、短信交 `pkg/sms`——每一次尝试记一行投递账。
+一次派发由发出它的业务模块发起。业务模块声明自己的通知类型（`notification.TypeSpec`），构造一条 `notification.Dispatch`，经本能力的提交接口校验并入队；投递流水线在消费这条作业时校验、解析生效渠道、逐渠道渲染与发送（站内信落到收件箱、邮件交 `pkg/mail`、短信交 `pkg/sms`），每一次尝试记一行投递账。
 
-本能力位于依赖图的底层之一：它不认识任何业务，只认识「一条消息、一个收件人、一组参数」。它拆成下列模块，各持自己的一张表与迁移集：`notification.inbox`（站内信收件箱）、`notification.preferences`（渠道偏好矩阵与类型分类法的消费点）、`notification.delivery`（出站投递流水线）、`notification.stream`（SSE 推送）。根包 `pkg/notification` 是接口包与公共类型，不登记模块（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
+本能力位于依赖图的底层之一：它不认识任何业务，只认识“一条消息、一个收件人、一组参数”。它拆成下列模块，各持自己的一张表与迁移集：`notification.inbox`（站内信收件箱）、`notification.preferences`（渠道偏好矩阵与类型分类法的消费点）、`notification.delivery`（出站投递流水线）、`notification.stream`（SSE 推送）。根包 `pkg/notification` 是接口包与公共类型，不登记模块（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 
 ### 非职责
 
-- **不声明通知类型。** 一个类型是发出它的那个业务模块的声明，本能力只收齐这份声明并拿它当校验参照（见「分类法与取材域」）。本能力不定义任何类型，也不持有类型的词表。
-- **不声明任何权限点。** 本能力的路由不带自有权限闸：没有任何模块为本能力的路由声明权限，路由在中间件的声明表里按需认证、不带权限判定。谁可以读某个收件人的收件箱、谁可以改某个收件人的偏好，由**宿主侧的授权**决定——宿主在自己的链上另加一层判定，或按他自己的模型约束这些端。本能力因此不进入 `authz.PermissionSpec` 与 `authz.TranslationSpec` 的声明范围（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
+- **不声明通知类型。** 一个类型是发出它的那个业务模块的声明，本能力只收齐这份声明并拿它当校验参照（见“分类法与取材域”）。本能力不定义任何类型，也不持有类型的词表。
+- **不声明任何权限点。** 本能力的路由不带自有权限闸：没有任何模块为本能力的路由声明权限，路由在中间件的声明表里按需认证、不带权限判定。谁可以读某个收件人的收件箱、谁可以改某个收件人的偏好，由**宿主侧的授权**决定：宿主在自己的链上另加一层判定，或按他自己的模型约束这些端。本能力因此不进入 `authz.PermissionSpec` 与 `authz.TranslationSpec` 的声明范围（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **非用户外部联系人的同意台账刻意后置。** 给**非用户的外部联系人**（手机号、邮箱地址这类不属于本系统账户的联系人）发消息，需要一份独立的同意台账：`verified_contacts` 表、`contact_type_unsubscribes` 表、平台级黑名单，以及 `/contacts` 一组路由（`POST /contacts`、`POST /contacts/:id/verify`、`POST /contacts/:id/resend`、`GET /contacts`）。**本轮刻意后置，不是漏项**（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。因此 `RecipientClass` 的闭集里保留 `external` 取值，但本轮**没有生产者**，相关的 `notification.contact.*` 审计动作本轮也不声明。
 - **不发送邮件与短信本身。** 出站的外部渠道各经一个接口：邮件交 `pkg/mail` 的 `Sender`，短信交 `pkg/sms` 的 `Registry` 与 `Sender`。本能力选择模板、渲染文本、构造请求，实际投递与载体交互归 `pkg/mail` 与 `pkg/sms`。
 - **不聚合同类消息，不限频。** 一次派发就落一条消息、发一次；把短时间内的同类型消息合并成一条、按收件人给发送设上限，都不在本能力内。面向收件人的发送上限由宿主经 `pkg/ratelimit` 另行设定。
-- **不产生平台域的行。** 本能力的每一行都属于一个租户——收件人是一个账户，账户属于租户。平台级广播与非用户外部联系人的同意台账同属一类：它们需要一个不属于任何租户的收件人，而本轮没有这样的收件人。
+- **不产生平台域的行。** 本能力的每一行都属于一个租户：收件人是一个账户，账户属于租户。平台级广播与非用户外部联系人的同意台账同属一类：它们需要一个不属于任何租户的收件人，而本轮没有这样的收件人。
 
 ## 外部接口契约
 
@@ -131,17 +131,17 @@ type Message struct {
 }
 ```
 
-**`Channel` 的字段语义是承诺。** 取值恰是 `in_app`、`email`、`sms`，`KnownChannel` 是这条闭集的判定；业务模块从这条闭集里挑选类型默认渠道与偏好，**不能扩展**它。新增一个渠道是通知模块自己的变更，不是业务模块的扩展点（见「扩展点」）。
+**`Channel` 的字段语义是承诺。** 取值恰是 `in_app`、`email`、`sms`，`KnownChannel` 是这条闭集的判定；业务模块从这条闭集里挑选类型默认渠道与偏好，**不能扩展**它。新增一个渠道是通知模块自己的变更，不是业务模块的扩展点（见“扩展点”）。
 
-**`TypeSpec.Key` 是全局唯一的类型名**，形如 `<模块>.<实体>.<动作>`；命名空间前缀是本能力对消费点的约定，用于诊断与去重，本能力不按前缀做任何判定。`Group` 是给收件箱按组过滤用的自由文本，本能力不解释它的取值。`DefaultChannels` 是未经偏好改写时这条类型走的渠道，元素是 `Channel` 闭集的子集，非空、不重复、每个取值都在闭集内。`Unsubscribable` 为 `false` 表示这条类型不可退订——验证码一类的类型把 `DefaultChannels` 定为它必须走的渠道（验证码走 `sms`），收件人改不了它；为 `true` 时收件人可以关掉某个渠道。`Unsubscribable` 只约束偏好写入：它为 `false` 的类型不落偏好行、写入以 `ErrNotUnsubscribable` 回绝；默认走哪些渠道与它无关，`DefaultChannels` 取 `in_app` 之外的渠道不构成不自洽。`RecipientVisibleParams` 非 `nil` 时是白名单：载荷里只有列出的参数名进得了最终消息，其余被拒（`ErrParamsNotAllowed`）；为 `nil` 表示不设白名单，全部参数可见。
+**`TypeSpec.Key` 是全局唯一的类型名**，形如 `<模块>.<实体>.<动作>`；命名空间前缀是本能力对消费点的约定，用于诊断与去重，本能力不按前缀做任何判定。`Group` 是给收件箱按组过滤用的自由文本，本能力不解释它的取值。`DefaultChannels` 是未经偏好改写时这条类型走的渠道，元素是 `Channel` 闭集的子集，非空、不重复、每个取值都在闭集内。`Unsubscribable` 为 `false` 表示这条类型不可退订：验证码一类的类型把 `DefaultChannels` 定为它必须走的渠道（验证码走 `sms`），收件人改不了它；为 `true` 时收件人可以关掉某个渠道。`Unsubscribable` 只约束偏好写入：它为 `false` 的类型不落偏好行、写入以 `ErrNotUnsubscribable` 回绝；默认走哪些渠道与它无关，`DefaultChannels` 取 `in_app` 之外的渠道不构成不自洽。`RecipientVisibleParams` 非 `nil` 时是白名单：载荷里只有列出的参数名进得了最终消息，其余被拒（`ErrParamsNotAllowed`）；为 `nil` 表示不设白名单，全部参数可见。
 
 **`RecipientClass` 的闭集是 `user` 与 `external`。** `external` 取值留在闭集里以保证闭集稳定，但本轮没有生产者：没有任何一条派发的收件人是 `external`，给 `external` 的派发在本轮被拒（见非职责）。`Recipient.Class` 是收件人的种类，`Recipient.UserID` 在 `user` 类下是系统账户标识。
 
-**`Dispatch.Locale` 非空**，是一条 BCP 47（[REF-bcp47](../../../references.md)）标签。它决定渲染用哪种语言，也参与去重键；本能力不校验它是否受支持（受支持集由 i18n 目录派生，只有渲染引擎知道），一个不受支持而格式合法的标签在渲染时回退到默认语言。`Dispatch.OccurrenceID` 是同一逻辑事件的重发标识：同一个逻辑事件重发必须携带同一个值，它在去重键里区分「同一件事的两次投递」与「两件事」。
+**`Dispatch.Locale` 非空**，是一条 BCP 47（[REF-bcp47](../../../references.md)）标签。它决定渲染用哪种语言，也参与去重键；本能力不校验它是否受支持（受支持集由 i18n 目录派生，只有渲染引擎知道），一个不受支持而格式合法的标签在渲染时回退到默认语言。`Dispatch.OccurrenceID` 是同一逻辑事件的重发标识：同一个逻辑事件重发必须携带同一个值，它在去重键里区分“同一件事的两次投递”与“两件事”。
 
 **`Message` 的 `Title` 与 `Body` 是已渲染的成品文本**，不是模板。`Params` 是这条消息携带的参数原值，供客户端二次使用。`ReadAt` 为空表示未读。
 
-**`Preference` 是一条按类型的渠道偏好**：某收件人对某类型选了哪些渠道。它不含收件人字段——收件人由存取它的接口方法给出。
+**`Preference` 是一条按类型的渠道偏好**：某收件人对某类型选了哪些渠道。它不含收件人字段：收件人由存取它的接口方法给出。
 
 ### 登记单元与名字
 
@@ -153,19 +153,19 @@ type Message struct {
 | `pkg/notification/delivery` | `notification.delivery` | 出站投递流水线：`Dispatch` 校验、核对目的地归属、计投递预算并入队、消费 `jobs.Handler`、逐渠道发送、去重落账 | `(*notification.Dispatcher)(nil)` 排他 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*kv.KV)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 | `pkg/notification/stream` | `notification.stream` | SSE 推送：每副本一个 Hub | 不交付功能接口（挂 `/stream` 路由） | 必需 `(*event.Bus)(nil)`；可选 `(*http.Router)(nil)`、`(*log.Logger)(nil)` |
 
-上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每个收件人的生效渠道——提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送——经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题（见「分类法与取材域」）；提交时另经 `(*authn.Accounts)(nil)` 读收件人的标识符，核对派发携带的目的地是否属于收件人。邮件的投递预算计数落在 `(*kv.KV)(nil)` 的固定窗口计数器上，短信的计数落在共享台账 `(*budget.Store)(nil)` 上，各上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的「投递预算」。
+上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每个收件人的生效渠道（提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送），经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题（见“分类法与取材域”）；提交时另经 `(*authn.Accounts)(nil)` 读收件人的标识符，核对派发携带的目的地是否属于收件人。邮件的投递预算计数落在 `(*kv.KV)(nil)` 的固定窗口计数器上，短信的计数落在共享台账 `(*budget.Store)(nil)` 上，各上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的“投递预算”。
 
 ### 渠道与可用性
 
-**渠道是封闭的平台词汇**，取值恰是 `in_app`、`email`、`sms`，业务模块从中挑选、不能扩展。**一条渠道的可用性由装配决定**：`email` 需要 `mail.Sender` 在场，`sms` 需要 `sms.Registry` 与 `sms.Sender` 都在场，`in_app` 恒可用——它只写本进程的库。一条派发的生效渠道里若有接口缺席的渠道，投递时**跳过该渠道并落一条 `skipped` 结果**，不当作失败：接口缺席是装配的选择，不是这条消息的错，跳过它不重试、不失败整次派发。记录一次 `skipped` 让「这条消息本该走这个渠道、但这次装配没有它」在投递账上可查。
+**渠道是封闭的平台词汇**，取值恰是 `in_app`、`email`、`sms`，业务模块从中挑选、不能扩展。**一条渠道的可用性由装配决定**：`email` 需要 `mail.Sender` 在场，`sms` 需要 `sms.Registry` 与 `sms.Sender` 都在场，`in_app` 恒可用：它只写本进程的库。一条派发的生效渠道里若有接口缺席的渠道，投递时**跳过该渠道并落一条 `skipped` 结果**，不当作失败：接口缺席是装配的选择，不是这条消息的错，跳过它不重试、不失败整次派发。记录一次 `skipped` 让“这条消息本该走这个渠道、但这次装配没有它”在投递账上可查。
 
 ### 分类法与取材域
 
 **一个通知类型是发出它的那个业务模块的声明，不是通知模块的声明。** 业务模块把自己的 `notification.TypeSpec` 放进模块描述符的 `Resources`：`core.ProcessRegistry.Register(...)` 的一个 `core.Module` 的 `Resources []any` 里含这个值。**`notification.preferences` 与 `notification.delivery` 是两处消费点**，各自在它的 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明：偏好据以回答 `Types` 与 `Type` 并在写入时对照它校验，投递据以在发送前查类型。
 
-**取材域取「可用集」，不做减法。** 判据是：**类型是词汇**。偏好写入与投递拿它当校验参照——「这个类型键认不认识」是一个词汇问题，与这次命令装了什么无关；同一个声明不能在这条命令下合法、在另一条命令下非法。一个只被静态级纳入、没有被本次命令驱动的业务模块，它的类型声明照旧进得了分类法；消解落选的模块，其类型声明同样不退出。这与既有资源消费点（`settings.Schema`、`authz.PermissionSpec`、`authz.TranslationSpec`）同一条判据（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)、架构不变量 15）。
+**取材域取“可用集”，不做减法。** 判据是：**类型是词汇**。偏好写入与投递拿它当校验参照：“这个类型键认不认识”是一个词汇问题，与这次命令装了什么无关；同一个声明不能在这条命令下合法、在另一条命令下非法。一个只被静态级纳入、没有被本次命令驱动的业务模块，它的类型声明照旧进得了分类法；消解落选的模块，其类型声明同样不退出。这与既有资源消费点（`settings.Schema`、`authz.PermissionSpec`、`authz.TranslationSpec`）同一条判据（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)、架构不变量 15）。
 
-**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，「业务模块可以在 notification 之后才声明类型」因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)。
+**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，“业务模块可以在 notification 之后才声明类型”因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)。
 
 ### 路由
 
@@ -182,15 +182,15 @@ type Message struct {
 | preferences | `PUT /preferences/:typeKey/:channel` | 无 |
 | stream | `GET /stream`（SSE） | 无 |
 
-`GET /messages` 的过滤参数只有 `group`；分页为 `limit`（缺省 50、上限 200）加 `offset`，参数越界**整页拒绝**、不静默截断；排序 `created_at DESC, id DESC`。`POST /messages/read-all` 的幂等由谓词给出：`WHERE recipient_user_id = ? AND read_at IS NULL`，重复调用匹配 0 行、答 `{read_count: 0}` 且成功；标记已读不以过期与否为条件。`POST /messages/:messageId/read` 命中已读行直接返回 204 且不写库，保留首读时间戳；未知 id、他人、他租户三合一，一律 `ErrMessageNotFound`，不做泄露存在性的区分。`GET /messages/unread-count` 只计未读且未过期的行。`GET /stream` 的语义见「SSE 推送」。
+`GET /messages` 的过滤参数只有 `group`；分页为 `limit`（缺省 50、上限 200）加 `offset`，参数越界**整页拒绝**、不静默截断；排序 `created_at DESC, id DESC`。`POST /messages/read-all` 的幂等由谓词给出：`WHERE recipient_user_id = ? AND read_at IS NULL`，重复调用匹配 0 行、答 `{read_count: 0}` 且成功；标记已读不以过期与否为条件。`POST /messages/:messageId/read` 命中已读行直接返回 204 且不写库，保留首读时间戳；未知 id、他人、他租户三合一，一律 `ErrMessageNotFound`，不做泄露存在性的区分。`GET /messages/unread-count` 只计未读且未过期的行。`GET /stream` 的语义见“SSE 推送”。
 
-收件人来源随路由而分：inbox 与 stream 的 handler 经认证根包的读取接口（`pkg/authn` `FromContext` 返回的 `Identity` 的账户）取已认定的身份，以其账户标识为收件人；preferences 的 handler 不从身份解析收件人，它的收件人取值来自请求上下文里的一个值，由宿主的身份与授权侧给出（[notification-preferences](design-notification-preferences.md)）。本能力不给路由挂权限闸，因此「这个身份能不能读这个收件人的收件箱」不在本能力的路由上判定。
+收件人来源随路由而分：inbox 与 stream 的 handler 经认证根包的读取接口（`pkg/authn` `FromContext` 返回的 `Identity` 的账户）取已认定的身份，以其账户标识为收件人；preferences 的 handler 不从身份解析收件人，它的收件人取值来自请求上下文里的一个值，由宿主的身份与授权侧给出（[notification-preferences](design-notification-preferences.md)）。本能力不给路由挂权限闸，因此“这个身份能不能读这个收件人的收件箱”不在本能力的路由上判定。
 
 ### 对外接口
 
 - `Channel`、`KnownChannel`、`TypeSpec`、`RecipientClass`、`Recipient`、`Dispatch`、`Preference`、`Message`、`Inbox`、`Preferences`、`Dispatcher` 的方法集与字段名，以及本能力的全部哨兵，是本能力对调用方的接口。加方法、改签名、改字段名对实现了接口的模块与取用它们的调用方都是不兼容变更。
 - `Channel` 的取值集合：`in_app`、`email`、`sms`，`KnownChannel` 的判定接口。增删一个渠道是宿主可见的破坏性变更。
-- `TypeSpec` 的字段语义：`Key` 是全局唯一类型名、`DefaultChannels` 是 `Channel` 子集、`Unsubscribable` 的极性与「不可退订」相反、`RecipientVisibleParams` 非 `nil` 即白名单。改字段名或改极性使既有声明静默改变行为。
+- `TypeSpec` 的字段语义：`Key` 是全局唯一类型名、`DefaultChannels` 是 `Channel` 子集、`Unsubscribable` 的极性与“不可退订”相反、`RecipientVisibleParams` 非 `nil` 即白名单。改字段名或改极性使既有声明静默改变行为。
 - `Dispatch` 的字段语义：`Locale` 非空、`OccurrenceID` 参与去重键。`Message` 的字段语义：`Title` 与 `Body` 是已渲染文本。
 - 路由的路径、每条路由的过滤参数与分页界限、基路径 `/api/v1/notifications`，以及收件箱与偏好的应答结构，是宿主可见的接口；改动它们是宿主可见的破坏性变更。
 - 哨兵 `ErrUnknownType`、`ErrUnknownChannel`、`ErrNotUnsubscribable`、`ErrParamsNotAllowed`、`ErrMessageNotFound`、`ErrInvalidConfig`、`ErrInvalidRequest` 是判别依据，调用方以 `errors.Is` 判别，包裹一律用 `%w`。
@@ -229,9 +229,9 @@ type Message struct {
 
 **依赖方向。** 各模块都 import `pkg/core` 与根包；`notification.delivery` import `pkg/jobs`、`pkg/db`、`pkg/tenant` 的根包，`pkg/i18n`、`pkg/mail`、`pkg/sms`、`pkg/kv`、`pkg/settings` 的根包，并经 `pkg/authn` 根包取投递预算拒绝的 `ThrottledError`、`ErrUnavailable` 与目的地归属校验的 `Accounts`；`notification.inbox` import `pkg/db`、`pkg/tenant`、`pkg/event`、`pkg/i18n` 与 `pkg/authn`；`notification.stream` import `pkg/event`、`pkg/tenant`、`pkg/http` 与 `pkg/authn`；`notification.preferences` import `pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/config`。本能力**不 import 任何上层功能目录**，也不 import 任何业务模块：它位于底层，任何要发消息的模块引入它，不必背上对方。
 
-**渲染经由 i18n 引擎，文案目录归声明它的业务模块。** 一条文案的键形如 `<type_key>.<channel>.<part>`，由**声明该类型的业务模块**以 i18n 目录承载，装配期并入引擎；`notification.delivery` 在投递时按收件人语言经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题，引擎回退到默认语言、再回退到键本身，结果永不为空。渲染接口是投递模块的构造期必需依赖。文案的归属与 i18n 的「由产生消息的模块渲染」不冲突：目录归声明方，渲染发生在把文本写出的投递流水线（[design-i18n](../design-i18n.md)）。
+**渲染经由 i18n 引擎，文案目录归声明它的业务模块。** 一条文案的键形如 `<type_key>.<channel>.<part>`，由**声明该类型的业务模块**以 i18n 目录承载，装配期并入引擎；`notification.delivery` 在投递时按收件人语言经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题，引擎回退到默认语言、再回退到键本身，结果永不为空。渲染接口是投递模块的构造期必需依赖。文案的归属与 i18n 的“由产生消息的模块渲染”不冲突：目录归声明方，渲染发生在把文本写出的投递流水线（[design-i18n](../design-i18n.md)）。
 
-**`notification.delivery` 取用 `notification.Preferences` 读分类法与偏好。** 投递需要「这个类型走哪些渠道」（分类法的默认渠道，被收件人偏好改写后）与「这条收件人的生效渠道」，两者都归偏好模块；投递因此把 `(*notification.Preferences)(nil)` 列为构造期必需依赖（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)）。
+**`notification.delivery` 取用 `notification.Preferences` 读分类法与偏好。** 投递需要“这个类型走哪些渠道”（分类法的默认渠道，被收件人偏好改写后）与“这条收件人的生效渠道”，两者都归偏好模块；投递因此把 `(*notification.Preferences)(nil)` 列为构造期必需依赖（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)）。
 
 方向满足架构不变量：`notification.delivery` import 的是各功能目录的根包，不 import 任何别的功能目录的实现子包；各模块不相互 import 对方的实现子包，只经根包声明的功能接口与资源类型相连。
 
@@ -389,7 +389,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 }))
 ```
 
-`canonicalJSON` 是键序固定、数按十进制文本、不可序列化即失败的规范化编码。这个键把「同一租户、同一类型、同一收件人、同一渠道、同一语言、同一逻辑事件、同一参数」的两次尝试收敛成一行：消费一次作业时，投递对每个渠道先按它查 `notification_sends`，命中 `succeeded` 行即跳过该渠道、不重发；命中 `failed` 行则重试。因此一次作业重试只补发上次没成功的渠道。站内信行的 `dedupe_key` 用同一条派生式取 `channel = in_app` 的值，使收件箱行与投递账在同一逻辑事件下各自唯一。
+`canonicalJSON` 是键序固定、数按十进制文本、不可序列化即失败的规范化编码。这个键把“同一租户、同一类型、同一收件人、同一渠道、同一语言、同一逻辑事件、同一参数”的两次尝试收敛成一行：消费一次作业时，投递对每个渠道先按它查 `notification_sends`，命中 `succeeded` 行即跳过该渠道、不重发；命中 `failed` 行则重试。因此一次作业重试只补发上次没成功的渠道。站内信行的 `dedupe_key` 用同一条派生式取 `channel = in_app` 的值，使收件箱行与投递账在同一逻辑事件下各自唯一。
 
 **`notification_preferences.channels` 是按类型的渠道集**，存成文本（JSON 数组或分隔文本），因为没有任何一处按它的分部查询。一条偏好不存在即用类型的默认渠道；一条偏好存在即用它的渠道集，`Unsubscribable` 为 `false` 的类型不允许出现偏好行。
 
@@ -408,16 +408,16 @@ idempotency_key = hex(sha256(canonicalJSON{
 ### 一次派发：从入队到落账
 
 1. **业务模块构造派发。** 声明了类型 `S` 的业务模块把 `S` 放进自己的 `Resources`，构造一条 `Dispatch`（类型键为 `S.Key`、收件人为一个 `user`、语言非空、参数在白名单内、`OccurrenceID` 是这条逻辑事件的稳定标识），调提交接口的 `Dispatch(ctx, d)`。
-2. **`Dispatcher.Dispatch` 只入队、不出站。** 它按自己收齐的分类法校验 `d`：类型键在册、收件人类别为 `user`、语言非空、参数不越出该类型的 `RecipientVisibleParams`（`nil` 即不设限）。任一不符即以对应哨兵拒绝，不入队。全部相符则把 `d` 序列化成一次投递作业——作业类型是本能力的作业类型，载荷是 `d` 的规范化 JSON——经它持有的 `jobs.Queue` 入队，返回作业标识。它不渲染、不投递、不写任何账。
+2. **`Dispatcher.Dispatch` 只入队、不出站。** 它按自己收齐的分类法校验 `d`：类型键在册、收件人类别为 `user`、语言非空、参数不越出该类型的 `RecipientVisibleParams`（`nil` 即不设限）。任一不符即以对应哨兵拒绝，不入队。全部相符则把 `d` 序列化成一次投递作业（作业类型是本能力的作业类型，载荷是 `d` 的规范化 JSON），经它持有的 `jobs.Queue` 入队，返回作业标识。它不渲染、不投递、不写任何账。
 3. **投递流水线消费作业。** `notification.delivery` 在 `Init` 里向 `jobs.Handlers` 登记一个 handler，作业类型与 `Dispatch` 入队时用的相同。`jobs.db` 执行这条作业时先 `tenant.Catalog.Enter(ctx, id)` 进入它的租户，再交 handler；handler 因此在租户上下文里运行，不必自己进入。
-4. **handler 校验并解析渠道。** handler 解出 `d`，经 `Preferences.Type(d.TypeKey)` 取类型规格（未声明即 `ErrUnknownType`，作业以终态失败），再经 `Preferences.Effective(ctx, d.Recipient.UserID, d.TypeKey)` 取生效渠道集——类型的默认渠道中被收件人退订的已去掉；`Unsubscribable` 为 `false` 的类型取全部默认渠道。生效集为空即没有可走的渠道，作业成功而不投递。
+4. **handler 校验并解析渠道。** handler 解出 `d`，经 `Preferences.Type(d.TypeKey)` 取类型规格（未声明即 `ErrUnknownType`，作业以终态失败），再经 `Preferences.Effective(ctx, d.Recipient.UserID, d.TypeKey)` 取生效渠道集：类型的默认渠道中被收件人退订的已去掉；`Unsubscribable` 为 `false` 的类型取全部默认渠道。生效集为空即没有可走的渠道，作业成功而不投递。
 5. **逐渠道投递。** 对每个生效渠道：
    1. **渠道可用性**：`in_app` 恒可用；`email` 需 `mail.Sender` 在场；`sms` 需 `sms.Registry` 与 `sms.Sender` 都在场。任一缺席即记一行 `skipped`（`duration_ms` 为零），进下一个渠道。
    2. **去重**：按去重键查 `notification_sends`；命中 `succeeded` 行即跳过该渠道；命中 `failed` 行则重试。
    3. **渲染**：经 `i18n.Localizer` 按收件人语言渲染 `<type_key>.<channel>.<part>`：站内信渲染 `title` 与 `body`，邮件渲染 `subject` 与 `body_text`、目录里另有 `body_html` 时一并渲染出 HTML 正文，短信取模板标识而非自由文本。引擎对不受支持的语言回退到默认语言、再回退到键本身。
-   4. **发送**：站内信经 `Inbox.Write`（`dedupeKey` 取去重键在 `channel = in_app` 下的值），写行本身不发布事件——`notification.inbox.created` 由收件箱在提交那一行之后发布，本模块不发布；邮件经 `mail.Sender.Send`；短信先经 `sms.Registry.Resolve` 解出模板与参数、再经 `sms.Sender.Send`。
-   5. **落账**：按该渠道的结果写一行 `notification_sends`——`succeeded` 带回执标识与耗时，`failed` 带原因与耗时。
-6. **作业的终态。** 全部渠道处理完，若无渠道以失败告终，作业成功；有任一渠道失败则 handler 返回错误，作业按 `jobs.db` 的退避与重试规则重跑——重跑时已成功的渠道因去重键命中 `succeeded` 行而跳过，只补发失败的渠道。重试用尽即进死信（`dead_letter`），投递账上保留每次失败的原因。
+   4. **发送**：站内信经 `Inbox.Write`（`dedupeKey` 取去重键在 `channel = in_app` 下的值），写行本身不发布事件：`notification.inbox.created` 由收件箱在提交那一行之后发布，本模块不发布；邮件经 `mail.Sender.Send`；短信先经 `sms.Registry.Resolve` 解出模板与参数、再经 `sms.Sender.Send`。
+   5. **落账**：按该渠道的结果写一行 `notification_sends`：`succeeded` 带回执标识与耗时，`failed` 带原因与耗时。
+6. **作业的终态。** 全部渠道处理完，若无渠道以失败告终，作业成功；有任一渠道失败则 handler 返回错误，作业按 `jobs.db` 的退避与重试规则重跑：重跑时已成功的渠道因去重键命中 `succeeded` 行而跳过，只补发失败的渠道。重试用尽即进死信（`dead_letter`），投递账上保留每次失败的原因。
 
 **端到端的投递承诺是至少一次、由去重键收敛。** 一次派发至少被投递一次；重复的作业或重跑的作业不重发已经成功的渠道，因为那条成功已落成 `succeeded` 行、去重键唯一。站内信行的唯一 `dedupe_key` 与投递账的唯一 `(tenant_id, idempotency_key)` 是这条收敛的落点。
 
@@ -427,7 +427,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 ### SSE 推送
 
-`notification.stream` 的 Hub 是**每副本一个**的内存结构，没有跨副本的 hub、没有 Redis Pub/Sub 扩展点。它在 `Init` 里订阅 `event.Bus` 上类型名恰为 `notification.inbox.created` 的事件，载荷含 `{message_id, tenant_id, recipient_user_id, type_key}`；`GET /stream` 的连接按 `(tenant, recipient)` 作用域订阅本副本的 Hub。因为**行先提交、事件后发**——收件箱行先落库并提交，收件箱在写行提交之后才发事件——所以一次送不到任何人的通告什么都不丢：使用方可以回读那一行，Hub 唯一的价值是延迟。Hub 的并发模型见「并发与事务边界」，路由与帧格式见 [notification-stream](design-notification-stream.md)。
+`notification.stream` 的 Hub 是**每副本一个**的内存结构，没有跨副本的 hub、没有 Redis Pub/Sub 扩展点。它在 `Init` 里订阅 `event.Bus` 上类型名恰为 `notification.inbox.created` 的事件，载荷含 `{message_id, tenant_id, recipient_user_id, type_key}`；`GET /stream` 的连接按 `(tenant, recipient)` 作用域订阅本副本的 Hub。因为**行先提交、事件后发**（收件箱行先落库并提交，收件箱在写行提交之后才发事件），所以一次送不到任何人的通告什么都不丢：使用方可以回读那一行，Hub 唯一的价值是延迟。Hub 的并发模型见“并发与事务边界”，路由与帧格式见 [notification-stream](design-notification-stream.md)。
 
 ## 错误与失败语义
 
@@ -447,15 +447,15 @@ idempotency_key = hex(sha256(canonicalJSON{
 | 请求结构不可读（缺必填项、分页越界、正文不可解析、参数的值无法字符串化） | `ErrInvalidRequest`；路由答 400，或该渠道落 `failed` |
 | 语言不受支持 | 引擎回退到默认语言、再回退到键本身，结果非空，投递照常 |
 
-**降级方向是「不丢消息、不重复发已成功的渠道」。** 渠道接口缺席跳过而非失败，是为了让一次装配缺少某个渠道时不阻塞其余渠道；发送失败重试、成功不重发，是为了让一次作业的重跑只补未完成的渠道。本能力不聚合同类消息、不限频，因此不存在「因为合并而丢弃一条」的路径。
+**降级方向是“不丢消息、不重复发已成功的渠道”。** 渠道接口缺席跳过而非失败，是为了让一次装配缺少某个渠道时不阻塞其余渠道；发送失败重试、成功不重发，是为了让一次作业的重跑只补未完成的渠道。本能力不聚合同类消息、不限频，因此不存在“因为合并而丢弃一条”的路径。
 
 ## 并发与事务边界
 
 - **`Inbox.Write` 落行在自己的事务里**，以 `dedupe_key` 唯一索引裁定并发写：两个并发写同一去重键，一个落行、另一个命中唯一冲突即返回既有行，不重复写、不重复发事件。读与标记操作各自一条语句或一个事务，`ReadAll` 的谓词写是单条条件写。
-- **投递 handler 可被多个作业并发执行。** 同一逻辑事件的两次作业（或一次作业的重跑）在逐渠道上是幂等的：去重键的两次查—写由唯一索引收口，一次成功、再一次读到 `succeeded` 行而跳过。因此同一渠道不会因为并发而重复发送，代价是两次尝试可能都发出请求、由唯一索引留下一条账。
+- **投递 handler 可被多个作业并发执行。** 同一逻辑事件的两次作业（或一次作业的重跑）在逐渠道上是幂等的：去重键的两次先查后写由唯一索引收口，一次成功、再一次读到 `succeeded` 行而跳过。因此同一渠道不会因为并发而重复发送，代价是两次尝试可能都发出请求、由唯一索引留下一条账。
 - **SSE Hub 的 `Publish` 永不阻塞、永不报错。** 每连接一个深度 64 的缓冲；匹配 `(tenant, recipient)` 在缓冲**之前**做，使整个平台的流量挤不掉某个合法客户端自己的 64 格缓冲。慢消费者丢自己的帧，不拖累其他连接。
-- **SSE 的消息 channel 永不 close。** `Close` 只置一个连接级的 done 并注销该连接；发送侧的「一次与 close 竞争的发送」正是会让并发 hub 触发 panic 的那种竞争，本能力以「channel 从不 close」消除它——注销之后新来的匹配帧无处可发即由发送侧丢弃。
-- **投递的写与发送不在同一事务里。** 站内信行、投递账各自落表；一次外部发送（邮件、短信）不能进数据库事务，它的结果以 `notification_sends` 的一行记账，因此「账」与「外部副作用」之间是至少一次、由去重键收敛，不是恰好一次。
+- **SSE 的消息 channel 永不 close。** `Close` 只置一个连接级的 done 并注销该连接；发送侧的“一次与 close 竞争的发送”正是会让并发 hub 触发 panic 的那种竞争，本能力以“channel 从不 close”消除它：注销之后新来的匹配帧无处可发即由发送侧丢弃。
+- **投递的写与发送不在同一事务里。** 站内信行、投递账各自落表；一次外部发送（邮件、短信）不能进数据库事务，它的结果以 `notification_sends` 的一行记账，因此“账”与“外部副作用”之间是至少一次、由去重键收敛，不是恰好一次。
 - **租户进入由 `jobs.db` 完成。** handler 运行在作业的租户上下文里，投递流水线不自行更改租户；投递对每条表语句的过滤因此照常按作业租户生效。
 
 ## 扩展点

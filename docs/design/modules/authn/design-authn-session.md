@@ -1,12 +1,12 @@
 # authn.session
 
-`authn.session` 是认证[功能目录](../../../glossary.md)里登录会话的唯一持有者：浏览器 cookie 会话、非浏览器客户端令牌所挂靠的会话与服务账户密钥对应的会话，都住在一张 `authn_sessions` 表里，共用一套撤销入口。它决定会话 cookie 的写法与读法，按会话种类判定有效性，并在账户停用、删除或服务密钥撤销之后清理自己的行与缓存。它不认证任何人、不签发或校验令牌、不持有冒充记录，也不执行授权。职责清单之前的一句话心智模型：本模块只回答「这个凭据对应哪个会话、这个会话现在是否有效」，其余判断由建立身份之后的各层做。
+`authn.session` 是认证[功能目录](../../../glossary.md)里登录会话的唯一持有者：浏览器 cookie 会话、非浏览器客户端令牌所挂靠的会话与服务账户密钥对应的会话，都住在一张 `authn_sessions` 表里，共用一套撤销入口。它决定会话 cookie 的写法与读法，按会话种类判定有效性，并在账户停用、删除或服务密钥撤销之后清理自己的行与缓存。它不认证任何人、不签发或校验令牌、不持有冒充记录，也不执行授权。职责清单之前的一句话心智模型：本模块只回答“这个凭据对应哪个会话、这个会话现在是否有效”，其余判断由建立身份之后的各层做。
 
-第一遍的次序是「职责」「非职责」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，依次是「期限的计算」「行的生命周期」「scs 的适配与必须绕开的部分」「cookie」「轮换、撤销、列出与踢下线」。「错误与失败语义」与「并发与事务边界」属查阅用；「扩展点」供宿主预置自己的会话实现时查。「实现状态」供核对上文承诺。竞态与边界情形是最后的自检项。
+第一遍的次序是“职责”“非职责”“外部接口契约”“UML 图”“核心数据结构”“核心算法与流程”；“核心算法与流程”从[走查](#走查)开始，依次是“期限的计算”“行的生命周期”“scs 的适配与必须绕开的部分”“cookie”“轮换、撤销、列出与踢下线”。“错误与失败语义”与“并发与事务边界”属查阅用；“扩展点”供宿主预置自己的会话实现时查。“实现状态”供核对上文承诺。竞态与边界情形是最后的自检项。
 
 ## 职责
 
-`authn.session` 是登录会话的唯一持有者。浏览器的 cookie 会话、非浏览器客户端的访问令牌与刷新令牌所挂靠的会话、服务账户每个密钥对应的会话，共用一张表 `authn_sessions` 与一套撤销入口。包为 `pkg/authn/session`，模块名为 `authn.session`。本文的「会话」一律指登录会话。取舍见 [ADR-authn-session](../../../adr/adr-authn-session.md)，状态放置的判据见 [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)。
+`authn.session` 是登录会话的唯一持有者。浏览器的 cookie 会话、非浏览器客户端的访问令牌与刷新令牌所挂靠的会话、服务账户每个密钥对应的会话，共用一张表 `authn_sessions` 与一套撤销入口。包为 `pkg/authn/session`，模块名为 `authn.session`。本文的“会话”一律指登录会话。取舍见 [ADR-authn-session](../../../adr/adr-authn-session.md)，状态放置的判据见 [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)。
 
 本模块负责下列事项（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
@@ -22,17 +22,17 @@
 
 ### 非职责
 
-- **不执行跨源检查。** 浏览器自行附带的凭据下的跨源检查由网关在调用校验后端之前执行，规则写在本文的「浏览器自行附带的凭据下的跨源检查」一节，载体判据、执行点与拒绝结构见 [design-authn-gate](design-authn-gate.md)。
+- **不执行跨源检查。** 浏览器自行附带的凭据下的跨源检查由网关在调用校验后端之前执行，规则写在本文的“浏览器自行附带的凭据下的跨源检查”一节，载体判据、执行点与拒绝结构见 [design-authn-gate](design-authn-gate.md)。
 - **不认证任何人。** 第一因素与第二因素由登录引擎与因素编排完成（[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)），登录完成后调用 `Sessions.Create`；本模块不创建没有账户的匿名会话。
 - **不持有账户状态。** 账户的启用、停用、删除与 `valid_after` 归 `authn.account`（[design-authn-account](design-authn-account.md)）；本模块只读，并在每次校验时核对。
 - **不承载注册验证状态。** 注册验证状态由账户持有的邮箱标识与联系方式预留判定，二者都归 `authn.account`；会话行、`SessionStatus` 与访问令牌都不携带它，请求期由 `GET B/me` 与 `SignupVerification.SignupStateOf` 实时读取。未验证账户的会话与其余账户的会话按同一判据有效（[design-authn](design-authn.md)、[design-authn-account](design-authn-account.md)）。
 - **不签发、不校验访问令牌与刷新令牌。** 令牌、刷新令牌表 `authn_refresh_tokens` 与服务密钥的换令牌流程归 `authn.token`（[design-authn-token](design-authn-token.md)）；`token` 种与 `service` 种的会话行住在本模块，行里没有令牌。
 - **不持有冒充记录。** `authn_impersonations` 归 `authn.impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）；本模块只在会话行上记冒充记录标识，并在校验时向它询问记录是否仍然有效。
 - **不写管理面路由。** 列出与撤销他人会话、按账户批量撤销的 HTTP 路由、判定接口与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）；本模块只提供它调用的方法。
-- **不做授权，不写 403。** 本模块回答「这个 cookie 属于哪个账户、会话是否有效」，不回答「能不能做某件事」。
+- **不做授权，不写 403。** 本模块回答“这个 cookie 属于哪个账户、会话是否有效”，不回答“能不能做某件事”。
 - **不定义审计、事件与指标的取值。** 审计的写入点与档位、事件与指标的取值表归 [design-authn-events](design-authn-events.md)；本文只写本模块在何处发布与订阅。
 - **不提供 CORS（[REF-whatwg-fetch](../../../references.md)）层。** 单页应用与 API 跨域时需要一个排在网关之外的 CORS 层（防护阶段），由宿主提供。
-- **不提供「记住我」，不绑定设备或来源地址，不做令牌式 CSRF。** 长期免登录只经刷新令牌，面向非浏览器客户端。
+- **不提供“记住我”，不绑定设备或来源地址，不做令牌式 CSRF。** 长期免登录只经刷新令牌，面向非浏览器客户端。
 - **不保存登录流程状态。** OAuth（[REF-rfc6749](../../../references.md)）的 `state`、一次性占位等流程记录在 kv，由登录引擎持有（[design-authn-login](design-authn-login.md)）。
 
 ## 外部接口契约
@@ -45,7 +45,7 @@
 |---|---|---|
 | `Sessions` | 是 | 会话的全部操作，以及 cookie 的写出、清除与读取。 |
 | `Verifier` | 否 | `Name()` 恒为 `session`。`Accepts` 为 `{Cookies: [会话 cookie 名], Accounts: 空串（库命名空间）, Impersonation: true, SSO: true}`，`Schemes` 为空：本模块认领会话 cookie，不认领任何 `Authorization` scheme。 |
-| `AccountLifecycle` | 否 | 见「账户状态迁移与服务密钥撤销之后的清理」一节。 |
+| `AccountLifecycle` | 否 | 见“账户状态迁移与服务密钥撤销之后的清理”一节。 |
 
 同一模块的各能力接口方法名两两不相交：一个模块只有一个实例，`core.Resolve[T]` 对它做类型断言，构造期核对逐个检查 `Provides` 里声明的接口。包内为每个交付的接口加 `var _ authn.X = (*product)(nil)` 编译期断言，`assembly_test` 用真实注册表跑一遍交付核对。
 
@@ -75,13 +75,13 @@ type Sessions interface {
 }
 ```
 
-值类型（`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`、`SessionKind`）见「核心数据结构」。
+值类型（`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`、`SessionKind`）见“核心数据结构”。
 
 下表逐方法写出承诺（封闭集合，与上面的方法一一对应）。
 
 | 方法 | 承诺 |
 |---|---|
-| `Create` | 建一个 `browser` 或 `token` 种会话；`service` 种被拒绝，只经 `ForCredential` 建。`Issued.Token` 是秘密，只此一次交出：`browser` 种是 cookie 的值，其余种类为空。期限由 `Create` 统一计算（见「期限的计算」）。属性集越过根包规定的界限，或载荷超过 8 KiB，拒绝写入。账户的 `browser` 与 `token` 种会话数超过 `max-per-account` 时，撤销该账户最久未使用的会话。 |
+| `Create` | 建一个 `browser` 或 `token` 种会话；`service` 种被拒绝，只经 `ForCredential` 建。`Issued.Token` 是秘密，只此一次交出：`browser` 种是 cookie 的值，其余种类为空。期限由 `Create` 统一计算（见“期限的计算”）。属性集越过根包规定的界限，或载荷超过 8 KiB，拒绝写入。账户的 `browser` 与 `token` 种会话数超过 `max-per-account` 时，撤销该账户最久未使用的会话。 |
 | `Get` | 按公开标识读一行，含已撤销与已过期的行；没有则 `ErrSessionNotFound`。 |
 | `List` | 只含该账户活的 `browser` 与 `token` 种；`service` 种不列出。 |
 | `RevocableSessions` | 交出该账户未撤销的 `browser` 与 `token` 行，条件是 `RevokeAccount` 的那一条。`except` 为空时读到的集合就是那条语句改动的集合，管理面的批量撤销读它正是为此；`except` 非空时它不扣掉那一个，读到的集合大于被改动的集合。已过期而未撤销的行在其中：那条语句会结束它，按行写审计的调用方因此得点名它。`service` 种不在其内。 |
@@ -100,7 +100,7 @@ type Sessions interface {
 
 ### 路由
 
-下表是本模块经 `authn.mount` 登记的全部路由（封闭集合）。所有 authn 响应带 `Cache-Control: no-store`；「CSRF」指浏览器自行附带的凭据下的非安全方法过跨源检查；`Impersonable` 经 `mount.Impersonable()` 登记，冒充身份在网关只被放进这样的路由，冒充期间允许的路由的完整集合见 [design-authn-impersonation](design-authn-impersonation.md)。
+下表是本模块经 `authn.mount` 登记的全部路由（封闭集合）。所有 authn 响应带 `Cache-Control: no-store`；“CSRF”指浏览器自行附带的凭据下的非安全方法过跨源检查；`Impersonable` 经 `mount.Impersonable()` 登记，冒充身份在网关只被放进这样的路由，冒充期间允许的路由的完整集合见 [design-authn-impersonation](design-authn-impersonation.md)。
 
 | 方法与路径 | 访问 | 要求 |
 |---|---|---|
@@ -108,13 +108,13 @@ type Sessions interface {
 | `POST B/logout` | Required，`Impersonable` | CSRF；调用 `Sessions.Revoke`，应答清除 cookie。冒充中登出的是发起者自己的会话，冒充随之结束。 |
 | `GET B/sessions` | Required，`Impersonable` | 调用 `Sessions.List`，只含活的 `browser` 与 `token` 种：`id`、种类、创建时刻、最近使用时刻、到期时刻、来源地址、用户代理与 `current` 标记。 |
 | `DELETE B/sessions` | Required，`Impersonable` | CSRF；撤销除当前会话外的全部会话；冒充期间撤销的是被冒充账户的会话，发起者自己的会话不在其中。 |
-| `DELETE B/sessions/:id` | Required，`Impersonable` | CSRF；只能撤销自己的会话；冒充期间「自己的会话」是被冒充账户的会话，点名发起者自己的会话找不到对应行。 |
+| `DELETE B/sessions/:id` | Required，`Impersonable` | CSRF；只能撤销自己的会话；冒充期间“自己的会话”是被冒充账户的会话，点名发起者自己的会话找不到对应行。 |
 
 ### 配置项
 
 本模块声明的配置项只有 `authn.session.cookie-domain` 与 `authn.session.same-site`；类型、缺省与取值写在 [design-authn-config](design-authn-config.md)。语义如下：
 
-- `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的「子域不可写」随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 或 `allow-insecure` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。
+- `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的“子域不可写”随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 或 `allow-insecure` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。
 - `same-site` 取 `lax` 或 `strict`；取 `none` 是 `ErrInsecureConfig`。
 
 cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主机除外）而未开 `authn.gate.mount.allow-insecure` 是 `ErrInsecureConfig`；回环主机的 http 基址按 https 处理，保留 `__Host-` 前缀与 `Secure`，不写 Warn；`allow-insecure`（仅开发）同时去掉 `__Host-` 前缀与 `Secure`，启动诊断为此写一行 Warn。`public-url` 与 `allow-insecure` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取，它们决定 cookie 名、前缀与 `Secure`（[design-authn-gate](design-authn-gate.md)）。`trusted-origins` 同样由 `authn.gate` 声明，但本模块不读它：取用它的是网关与 `authn.mount` 建的跨源检查，本模块用不到该值。
@@ -140,7 +140,7 @@ cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主�
 
 ## 依赖
 
-下表是本模块的依赖（封闭集合）。「取用」列写 `Requires` 里的排他功能，或 `Init` 里 `core.Resolve` 取得的功能；缺席合法者标○，缺席时对应的子功能不启用，启动诊断写一行说明。
+下表是本模块的依赖（封闭集合）。“取用”列写 `Requires` 里的排他功能，或 `Init` 里 `core.Resolve` 取得的功能；缺席合法者标○，缺席时对应的子功能不启用，启动诊断写一行说明。
 
 | 依赖 | 取用 | 用途 |
 |---|---|---|
@@ -222,7 +222,7 @@ classDiagram
     Sessions ..> SessionInfo : 读取与列出
 ```
 
-下图是一次带 cookie 的请求在网关与本模块之间的校验次序。会话校验缓存先于 `scs.Load`，使缓存命中的请求不调 scs、不读库；账户核对经账户快照缓存，冒充询问经冒充记录缓存，三者的有效期都是 `check-ttl`。每一步的判决见「cookie 校验」一节。
+下图是一次带 cookie 的请求在网关与本模块之间的校验次序。会话校验缓存先于 `scs.Load`，使缓存命中的请求不调 scs、不读库；账户核对经账户快照缓存，冒充询问经冒充记录缓存，三者的有效期都是 `check-ttl`。每一步的判决见“cookie 校验”一节。
 
 ```mermaid
 sequenceDiagram
@@ -264,7 +264,7 @@ sequenceDiagram
     Note over G: Denied 时调用 ClearCookie
 ```
 
-下图是登录完成时本模块与登录引擎的交互。`SetCookie` 的调用位置见「cookie」一节的写出时机。
+下图是登录完成时本模块与登录引擎的交互。`SetCookie` 的调用位置见“cookie”一节的写出时机。
 
 ```mermaid
 sequenceDiagram
@@ -363,7 +363,7 @@ type Elevation struct {
 }
 ```
 
-`SessionStatus.Active` 的定义是「该种类的期限条件成立」且「账户处于启用状态」且「会话的 `CreatedAt` 不早于账户的 `valid_after`」，其中账户启用与 `valid_after` 两项对全部种类共有，所以 cookie、访问令牌与刷新令牌的校验共用同一判据。
+`SessionStatus.Active` 的定义是“该种类的期限条件成立”且“账户处于启用状态”且“会话的 `CreatedAt` 不早于账户的 `valid_after`”，其中账户启用与 `valid_after` 两项对全部种类共有，所以 cookie、访问令牌与刷新令牌的校验共用同一判据。
 
 `SessionStatus` 的字段集不含注册验证状态，`Active` 的判据也不读它：未验证账户是启用账户，它的会话照常有效。门控在需要它的接口上、身份确定之后与授权和强度判定之前按请求期读取的状态判定，不改会话有效性，也不把状态复制进会话行或 `data` 载荷。
 
@@ -429,7 +429,7 @@ CREATE INDEX authn_sessions_expires ON authn_sessions (expires_at);
 
 ### 期限的计算
 
-`Create` 与 `ForCredential` 按种类算出 `idle_expires_at` 与 `expires_at`，写进行与载荷。`Create` 统一计算绝对期限：`AbsoluteTTL` 为零取设置里该种类的值，非零时不得超过该设置值；`Provider` 非空时，不论种类，再与 `sso-absolute-timeout` 取较小者。下表是各种类的期限与有效条件（封闭集合）；每个种类的有效性另加「账户处于启用状态」与「`CreatedAt` 不早于账户的 `valid_after`」。
+`Create` 与 `ForCredential` 按种类算出 `idle_expires_at` 与 `expires_at`，写进行与载荷。`Create` 统一计算绝对期限：`AbsoluteTTL` 为零取设置里该种类的值，非零时不得超过该设置值；`Provider` 非空时，不论种类，再与 `sso-absolute-timeout` 取较小者。下表是各种类的期限与有效条件（封闭集合）；每个种类的有效性另加“账户处于启用状态”与“`CreatedAt` 不早于账户的 `valid_after`”。
 
 | 种类 | `idle_expires_at` | `expires_at` | 有效的条件 | 续期 |
 |---|---|---|---|---|
@@ -449,7 +449,7 @@ CREATE INDEX authn_sessions_expires ON authn_sessions (expires_at);
 
 ### 行的生命周期
 
-下图是一个会话行的状态。「过期」与「已撤销」都是读时判定：过期不写库，撤销写 `revoked_at`；两者都使行不能再用于认证。`service` 种没有「空闲过期」，其「过期」随密钥。
+下图是一个会话行的状态。“过期”与“已撤销”都是读时判定：过期不写库，撤销写 `revoked_at`；两者都使行不能再用于认证。`service` 种没有“空闲过期”，其“过期”随密钥。
 
 ```mermaid
 stateDiagram-v2
@@ -466,7 +466,7 @@ stateDiagram-v2
     已清除 --> [*]
 ```
 
-没有从「已撤销」回到「有效」的迁移：会话行的每一次续期与轮换都以 `revoked_at IS NULL` 为写入条件，写不会把已撤销的会话写回。账户停用再启用之后，`service` 种的行经 `ForCredential` 把 `created_at` 置为当前时刻而恢复有效；`revoked_at` 不变，已撤销的行不恢复。
+没有从“已撤销”回到“有效”的迁移：会话行的每一次续期与轮换都以 `revoked_at IS NULL` 为写入条件，写不会把已撤销的会话写回。账户停用再启用之后，`service` 种的行经 `ForCredential` 把 `created_at` 置为当前时刻而恢复有效；`revoked_at` 不变，已撤销的行不恢复。
 
 ### scs 的适配与必须绕开的部分
 
@@ -481,7 +481,7 @@ stateDiagram-v2
 | S1 | `scs.New()` 配 `Lifetime` 取各会话种类绝对期限设置域上界中的最大者（设置域写在 [design-authn-config](design-authn-config.md)），不取设置的当前值；当前的绝对期限由本模块在建会话时读设置、写进载荷的 `exp`，并由本模块强制；`IdleTimeout` 置 0；`HashTokenInStore` 为真；`Codec` 换成 JSON。 | 构造后断言 `Lifetime`、`IdleTimeout` 与 `HashTokenInStore` 的取值；载荷往返为 JSON；库里不出现令牌明文。 |
 | S2 | 空闲期限不交给 scs，由本模块按 `touch-interval` 节流地执行 `UPDATE … SET last_seen_at, idle_expires_at WHERE id = ? AND revoked_at IS NULL`；`WHERE` 里的 `revoked_at IS NULL` 保证续期写不会把刚撤销的会话写回。 | 撤销后的续期写影响行数为零且会话保持已撤销；`touch-interval` 之内的连续请求只写一次库。 |
 | S3 | `CommitCtx(token, blob, expiry)` 只用于创建：先解出载荷取 `sid`、账户、种类、`exp` 与 `idle`，再 `INSERT`；`expires_at` 与 `idle_expires_at` 一律取载荷里本模块按设置算出的值，忽略 `CommitCtx` 传入的 `expiry`。`expiry` 由 S1 的 `Lifetime` 推出，不反映设置的当前值，`Status` 只看行。换算出的存储期限小于等于零时不写，按过期处理。 | `Lifetime` 取设置域上界、`absolute-timeout` 为 12 小时时，会话在 12 小时零 1 秒后 `Status` 判为过期；换算出的存储期限小于等于零时不写。 |
-| S4 | `FindCtx(token)` 只对 `browser` 种的行（`token_hash` 非空）：命中行的条件是 `revoked_at IS NULL AND idle_expires_at > now AND expires_at > now`，否则按「找不到」返回。`DeleteCtx` 只把 `token_hash` 置空（脱钩），不设 `revoked_at`；真正的撤销只经 `Sessions.Revoke`。 | 已撤销、空闲过期、绝对过期的 `browser` 行返回找不到；`token` 与 `service` 行不被命中；`DeleteCtx` 之后行仍在、`token_hash` 为空、`revoked_at` 仍为空。 |
+| S4 | `FindCtx(token)` 只对 `browser` 种的行（`token_hash` 非空）：命中行的条件是 `revoked_at IS NULL AND idle_expires_at > now AND expires_at > now`，否则按“找不到”返回。`DeleteCtx` 只把 `token_hash` 置空（脱钩），不设 `revoked_at`；真正的撤销只经 `Sessions.Revoke`。 | 已撤销、空闲过期、绝对过期的 `browser` 行返回找不到；`token` 与 `service` 行不被命中；`DeleteCtx` 之后行仍在、`token_hash` 为空、`revoked_at` 仍为空。 |
 | S5 | 轮换不用 scs 的 `RenewToken`，因为 `Elevate` 与 `SetImpersonation` 按公开标识寻址，API 端调用时手里没有 cookie 令牌。轮换由本模块完成：生成同格式的新令牌，存储键按 scs 的哈希函数（令牌的 SHA-256，编码同令牌）算出，再以 `UPDATE … SET token_hash = <新> WHERE id = ? AND token_hash = <旧> AND revoked_at IS NULL` 原子替换。 | 断言本模块算出的存储键与 scs 为同一令牌算出的一致，scs 升级时它先失败；条件更新影响行数为零时旧行不变、不丢会话。 |
 | S6 | 适配器不缓存；缓存放在校验后端，一处负责一个放宽上界。 | 缓存未命中的请求读一次库，命中的请求不调 `scs.Load`、不读库；连续两次适配器读取各读库一次。 |
 
@@ -496,7 +496,7 @@ stateDiagram-v2
 | 写出的时机 | 一律经 `Sessions.SetCookie`，在处理器里最后一个可能失败的步骤之后（`Commit` 成功之后、写响应体之前）调用。入口模块的兜底层写出的 500 会带出已设置的 `Set-Cookie`，先设 cookie 再失败的处理器会把有效会话带进错误响应；这一位置避开它。 |
 | 清除 | 一律经 `Sessions.ClearCookie`（也是 `CookieClearer` 的实现）：登出、撤销、凭据被判 `Denied` 时写 `Max-Age=0`。跨源检查不通过时不清除：cookie 本身有效，被拒的是请求的意图，跨站请求不能借一次被拒的 POST 让用户登出。 |
 
-没有「记住我」：cookie 为会话期，关闭浏览器即丢；长期免登录只经刷新令牌。
+没有“记住我”：cookie 为会话期，关闭浏览器即丢；长期免登录只经刷新令牌。
 
 ### cookie 校验
 
@@ -520,7 +520,7 @@ stateDiagram-v2
 
 ### 轮换、撤销、列出与踢下线
 
-**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；删除因素；解绑外部身份；添加用户名；把一条已证明的邮箱或手机选作登录方式（REQ-account-013、REQ-security-029）；冒充的开始。登记因素与关联外部身份会撤销该账户的其余会话，但不轮换当前令牌 —— 它们收窄的是其他设备的会话，发起设备继续用原令牌。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、删除因素、解绑外部身份、添加用户名、`PUT B/identifiers/:id` 把一条已证明的邮箱或手机的 `sign_in` 置真）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除已启用因素、添加用户名、把一条已证明的邮箱或手机选作登录方式、解绑外部身份成功之后，各自的处理器（删除因素是它的用户侧 DELETE 路由）另调 `RevokeAccount(except = 当前会话)`；登记因素与关联外部身份完成之后也调它，只是不轮换当前令牌。`MFA.Remove` 自己不撤销，也就不依赖会话模块。`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。登记并验证一条邮箱或手机不是轮换点，也不调 `RevokeAccount`：证明只回答所有权，一条邮箱成为账户唯一地址时自动成为登录方式这一后果随验证发生、要求新鲜认证，但同样不轮换会话；其余是否选作登录方式由持有人另经 `PUT B/identifiers/:id` 选择；用户名标识恒为登录名（[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。
+**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；删除因素；解绑外部身份；添加用户名；把一条已证明的邮箱或手机选作登录方式（REQ-account-013、REQ-security-029）；冒充的开始。登记因素与关联外部身份会撤销该账户的其余会话，但不轮换当前令牌：它们收窄的是其他设备的会话，发起设备继续用原令牌。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、删除因素、解绑外部身份、添加用户名、`PUT B/identifiers/:id` 把一条已证明的邮箱或手机的 `sign_in` 置真）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除已启用因素、添加用户名、把一条已证明的邮箱或手机选作登录方式、解绑外部身份成功之后，各自的处理器（删除因素是它的用户侧 DELETE 路由）另调 `RevokeAccount(except = 当前会话)`；登记因素与关联外部身份完成之后也调它，只是不轮换当前令牌。`MFA.Remove` 自己不撤销，也就不依赖会话模块。`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。登记并验证一条邮箱或手机不是轮换点，也不调 `RevokeAccount`：证明只回答所有权，一条邮箱成为账户唯一地址时自动成为登录方式这一后果随验证发生、要求新鲜认证，但同样不轮换会话；其余是否选作登录方式由持有人另经 `PUT B/identifiers/:id` 选择；用户名标识恒为登录名（[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。
 
 登录完成时，请求若带着可解析的旧会话 cookie（经 `Sessions.Current`），旧会话被撤销，不让它继续并存。这不是会话固定的防线：防线是登录总是新建会话与新令牌，加上令牌只由服务端生成。SAML（[REF-saml2](../../../references.md)）的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销。
 
@@ -563,10 +563,10 @@ stateDiagram-v2
 规则的执行点在网关，位于调用校验后端之前；本节固定规则本身。
 
 - **适用范围。** 载体可能由浏览器自己附带、且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求；哪些载体算在内的判据与执行点只在 [design-authn-gate](design-authn-gate.md)，本节不重复。
-- **检查。** 调用标准库 `http.CrossOriginProtection.Check`：它以 `Sec-Fetch-Site` 判跨源，只放行 `same-origin` 与 `none`；缺失时比较 `Origin` 与 `Host`；`Sec-Fetch-Site` 与 `Origin` 都没有的请求按「非浏览器或同源」放行。`same-site`（兄弟子域）按跨源处理，除非把那个来源加进可信来源。
+- **检查。** 调用标准库 `http.CrossOriginProtection.Check`：它以 `Sec-Fetch-Site` 判跨源，只放行 `same-origin` 与 `none`；缺失时比较 `Origin` 与 `Host`；`Sec-Fetch-Site` 与 `Origin` 都没有的请求按“非浏览器或同源”放行。`same-site`（兄弟子域）按跨源处理，除非把那个来源加进可信来源。
 - **可信来源。** `public-url` 的来源加 `authn.gate.trusted-origins`（仅主配置源；每项先规范成浏览器发送的形式再匹配，规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）。SAML 的断言消费端点等外部方回跳经 `Mounter.Callback` 登记旁路（`AddInsecureBypassPattern`，模式语法同 `ServeMux`，gin 的 `:provider` 写成 `{provider}`）。
 - **不通过。** 401，由网关自产，计入 `denied` 桶、记在网关名下；不写 403；不清除 cookie。
-- **覆盖面。** authn 自己的 POST 路由（登录与加强认证等）经 `Mounter` 登记时先过同一检查，防登录 CSRF；可选认证的路由上 cookie 凭据同样要过，`Optional` 只放过「没带凭据」。
+- **覆盖面。** authn 自己的 POST 路由（登录与加强认证等）经 `Mounter` 登记时先过同一检查，防登录 CSRF；可选认证的路由上 cookie 凭据同样要过，`Optional` 只放过“没带凭据”。
 - **不做令牌式 CSRF。** 这一检查与 `SameSite=Lax` 互为兜底。跨源的单页应用用承载令牌，不用 cookie：承载令牌没有环境凭据，也就没有 CSRF 攻击面。
 
 ### 外部行为假设与守住它们的测试
@@ -649,7 +649,7 @@ stateDiagram-v2
 
 ### 处理器的 panic
 
-本模块的路由处理器不设 `recover`，panic 落到入口模块的兜底层（500）；`SetCookie` 的位置见「cookie」一节的写出时机。
+本模块的路由处理器不设 `recover`，panic 落到入口模块的兜底层（500）；`SetCookie` 的位置见“cookie”一节的写出时机。
 
 ## 并发与事务边界
 
@@ -663,7 +663,7 @@ stateDiagram-v2
 
 ## 扩展点
 
-`Sessions` 是排他功能：宿主可以不纳入 `authn.session`，换上自己的会话模块，交付 `Sessions` 与认领自己的 cookie 名的 `Verifier`（该 `Verifier` 另实现 `CookieClearer`）。`authn.login`、`authn.impersonation` 等别的模块，以及这个宿主模块，都只经 `SetCookie` 与 `ClearCookie` 写 cookie，不自己拼。宿主换上的模块要满足本文「外部接口契约」写出的方法承诺，包括撤销入口唯一与以 `revoked_at` 为准。scs 的 `Codec` 与存储接口是本模块的内部构造，不是扩展点。
+`Sessions` 是排他功能：宿主可以不纳入 `authn.session`，换上自己的会话模块，交付 `Sessions` 与认领自己的 cookie 名的 `Verifier`（该 `Verifier` 另实现 `CookieClearer`）。`authn.login`、`authn.impersonation` 等别的模块，以及这个宿主模块，都只经 `SetCookie` 与 `ClearCookie` 写 cookie，不自己拼。宿主换上的模块要满足本文“外部接口契约”写出的方法承诺，包括撤销入口唯一与以 `revoked_at` 为准。scs 的 `Codec` 与存储接口是本模块的内部构造，不是扩展点。
 
 ## 实现状态
 

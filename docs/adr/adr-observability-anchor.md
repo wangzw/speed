@@ -2,7 +2,7 @@
 
 ## 背景
 
-中间件的先后由阶段给出，同一阶段之内按功能标识建图：一层用 `Provides` 声明它在链上代表什么，同阶段的别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-stages](adr-http-stages.md)）。`pkg/http` 的登记接口把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记接口拿不到登记方的身份——`http.Endpoint` 不带它——因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付内容的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 `http` 设计文档的中间件一节）。
+中间件的先后由阶段给出，同一阶段之内按功能标识建图：一层用 `Provides` 声明它在链上代表什么，同阶段的别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-stages](adr-http-stages.md)）。`pkg/http` 的登记接口把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记接口拿不到登记方的身份（`http.Endpoint` 不带它）因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付内容的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 `http` 设计文档的中间件一节）。
 
 入口模块的 panic 兜底由它内建，落在观测阶段之内、排在该阶段的登记层之内（见 `http` 设计文档的兜底层一节、[ADR-http-recovery](adr-http-recovery.md)）。它之内的层抛出的 panic 才到它；观测阶段本身的层抛出的 panic 越过它，抵达协议层。
 
@@ -20,7 +20,7 @@
 
 采纳它意味着 `Provides` 留空。
 
-**否决**：声明为空会让任何别的层的 `After` 或 `Before` 都指不到本层，那些约束随之被丢掉。丢掉一条约束不失败，只在启动诊断里记一行 Info（`pkg/http/assemble.go` 的 `reportRemarks`），与本模块缺席、或没有在这个端上登记采集层时合法装配记下的那一行相同——声明方以为自己有位置保证，而这一点在启动期看不出区别。
+**否决**：声明为空会让任何别的层的 `After` 或 `Before` 都指不到本层，那些约束随之被丢掉。丢掉一条约束不失败，只在启动诊断里记一行 Info（`pkg/http/assemble.go` 的 `reportRemarks`），与本模块缺席、或没有在这个端上登记采集层时合法装配记下的那一行相同：声明方以为自己有位置保证，而这一点在启动期看不出区别。
 
 ### 依赖入口模块的兜底层接住 panic，本层不捕获
 
@@ -36,11 +36,11 @@
 
 ### 采集层的锚点取本模块交付的功能，采集层自带记录后重抛
 
-**采纳**——见决策。
+**采纳**，见决策。
 
 ## 决策
 
-采纳：**采集层在链上的标识取本模块实际交付的两个功能**——`(*observability.TracerProvider)(nil)` 与 `(*observability.MeterProvider)(nil)`，两者都是装配器排他交付的功能，不另立一个只在这一层出现的标识。
+采纳：**采集层在链上的标识取本模块实际交付的两个功能**：`(*observability.TracerProvider)(nil)` 与 `(*observability.MeterProvider)(nil)`，两者都是装配器排他交付的功能，不另立一个只在这一层出现的标识。
 
 **采集层自带一次捕获与记录动作，记录后原样重抛。** 外层承载 `(*observability.TracerProvider)(nil)` 与 `(*observability.MeterProvider)(nil)`；守护层不声明任何功能，以 `After` 指向追踪 provider 的功能标识，放在外层之内。守护层接住内层抛出的 panic，给跨度记下错误、异常事件与状态，把值交给外层，外层在上游采集库记录完成后把同一个值抛出；写出响应不是采集层的职责。
 

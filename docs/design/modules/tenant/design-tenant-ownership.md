@@ -23,7 +23,7 @@
 
 ## 外部接口契约
 
-本模块 `Provides` 排他交付 `(*tenant.OrganizationWriter)(nil)` 与 `(*tenant.OwnershipTarget)(nil)`，不交付配置或路由。两个接缝分开是因为前者是请求者对组织的写，后者是目标对自身请求的动作；[tenant.admin](design-tenant-admin.md) 的两组路由分别只依赖对应的一半。
+本模块 `Provides` 排他交付 `(*tenant.OrganizationWriter)(nil)` 与 `(*tenant.OwnershipTarget)(nil)`，不交付配置或路由。两个接口分开是因为前者是请求者对组织的写，后者是目标对自身请求的动作；[tenant.admin](design-tenant-admin.md) 的两组路由分别只依赖对应的一半。
 
 ```go
 // OrganizationWriter 是请求者一侧的组织写。
@@ -52,14 +52,14 @@ type OwnershipTarget interface {
 }
 ```
 
-两个接缝都只接受取值域内的标识；`RequestTransfer` 还要求目标是一个账户标识。拒绝沿用根包的哨兵：目标不是活跃成员报 `tenant.ErrOwnerNotMember`，目标的账户不是活跃状态报 `tenant.ErrOwnerInactive`，标识没有名册行报 `tenant.ErrInvalidTenant`，墓碑报 `tenant.ErrTenantDeleted`，所有者已变报 `tenant.ErrOwnerChanged`。转移请求另有一组哨兵：请求不存在或不在调用方可见范围报 `tenant.ErrTransferNotFound`，调用方不是目标报 `tenant.ErrTransferNotTarget`，请求已结束报 `tenant.ErrTransferNotPending`，窗口已过报 `tenant.ErrTransferExpired`，已有待处理请求报 `tenant.ErrTransferAlreadyPending`，目标就是当前所有者报 `tenant.ErrTransferTargetIsOwner`，组织没有所有者报 `tenant.ErrNoOwner`。调用方用 `errors.Is` 分辨它们；本模块不把名册、账户或策略的拒绝改写成另一种失败。
+两个接口都只接受取值域内的标识；`RequestTransfer` 还要求目标是一个账户标识。拒绝沿用根包的哨兵：目标不是活跃成员报 `tenant.ErrOwnerNotMember`，目标的账户不是活跃状态报 `tenant.ErrOwnerInactive`，标识没有名册行报 `tenant.ErrInvalidTenant`，墓碑报 `tenant.ErrTenantDeleted`，所有者已变报 `tenant.ErrOwnerChanged`。转移请求另有一组哨兵：请求不存在或不在调用方可见范围报 `tenant.ErrTransferNotFound`，调用方不是目标报 `tenant.ErrTransferNotTarget`，请求已结束报 `tenant.ErrTransferNotPending`，窗口已过报 `tenant.ErrTransferExpired`，已有待处理请求报 `tenant.ErrTransferAlreadyPending`，目标就是当前所有者报 `tenant.ErrTransferTargetIsOwner`，组织没有所有者报 `tenant.ErrNoOwner`。调用方用 `errors.Is` 分辨它们；本模块不把名册、账户或策略的拒绝改写成另一种失败。
 
 ## 依赖
 
 | 依赖 | 用途 |
 |---|---|
 | `pkg/db` | 打开跨存储的那一条事务；`tenant_owner_transfers` 与迁移集的声明 |
-| `pkg/tenant` 根包 | 两个接缝、`TransferRequest`、`TransferStatus`、`ID` 与哨兵 |
+| `pkg/tenant` 根包 | 两个接口、`TransferRequest`、`TransferStatus`、`ID` 与哨兵 |
 | `pkg/tenant/catalog` | `TxCatalog` 的 `GetTx`、`SetOwnerTx`、`DeleteTx` |
 | `pkg/authz/policy` | `TxManager` 的 `PutBindingTx`、`DeleteTenantPolicyTx` |
 | `pkg/authn` 根包 | 账户读取接口 `Accounts`（目标的状态） |
@@ -75,7 +75,7 @@ type OwnershipTarget interface {
 
 ## UML 图
 
-下图固定一次请求与确认的调用序。删除组织取同一把锁，并在同一条事务里依次写墓碑、清策略、清成员关系、取消待处理请求，并在提交之后请 `InvitationRevoker` 收回该组织的待接受邀请；两条路径的区别在写的内容，不在事务与锁的形状。
+下图固定一次请求与确认的调用序。删除组织取同一把锁，并在同一条事务里依次写墓碑、清策略、清成员关系、取消待处理请求，并在提交之后请 `InvitationRevoker` 收回该组织的待接受邀请；两条路径的区别在写的内容，不在事务与锁的结构。
 
 ```mermaid
 sequenceDiagram
@@ -163,9 +163,9 @@ sequenceDiagram
 
 初始状态：名册里 `acme` 在册，所有者是 `alice`；`alice` 是 `acme` 的成员并持有 tenant-admin；`bob` 是 `acme` 的活跃成员但没有绑定。
 
-1. 平台员工调用 `RequestTransfer(ctx, "acme", "bob", "")`，组织所有者调用 `RequestTransfer(ctx, "acme", "bob", "alice")`。本模块取 `acme` 的租户锁；随后经账户读取面读 `bob` 的账户状态——一次停用或删除 `bob` 同样取这把锁（见 [design-authz](../design-authz.md) 的账户管理锁），所以这里读到的状态不会在提交之前改变。账户不存在、停用或删除时报 `ErrOwnerInactive`。写入前先把该组织窗口已过的请求结算为 expired。
+1. 平台员工调用 `RequestTransfer(ctx, "acme", "bob", "")`，组织所有者调用 `RequestTransfer(ctx, "acme", "bob", "alice")`。本模块取 `acme` 的租户锁；随后经账户读取面读 `bob` 的账户状态。一次停用或删除 `bob` 同样取这把锁（见 [design-authz](../design-authz.md) 的账户管理锁），所以这里读到的状态不会在提交之前改变。账户不存在、停用或删除时报 `ErrOwnerInactive`。写入前先把该组织窗口已过的请求结算为 expired。
 2. 账户活跃时开启事务，`GetTx` 先读 `acme`：没有行报 `ErrInvalidTenant`，墓碑报 `ErrTenantDeleted`，`expectedOwner` 非空且与行上所有者不同报 `ErrOwnerChanged`，行上没有所有者报 `ErrNoOwner`，目标就是该所有者报 `ErrTransferTargetIsOwner`，五者都在读成员关系之前。
-3. 事务继续，经 `MembershipTx` 取 `bob` 的账户行锁并读到它的活跃成员关系——成员关系的写路径同样先取那一行，一次并发停用因而不会落在校验与提交之间；不是活跃成员报 `ErrOwnerNotMember`。
+3. 事务继续，经 `MembershipTx` 取 `bob` 的账户行锁并读到它的活跃成员关系。成员关系的写路径同样先取那一行，一次并发停用因而不会落在校验与提交之间；不是活跃成员报 `ErrOwnerNotMember`。
 4. 事务写一条 pending 行，`from` 是名册当刻的所有者，`expires_at` 是当刻加固定窗口。部分唯一索引保证同一组织最多一条 pending；并发发起由索引仲裁，冲突报 `ErrTransferAlreadyPending`。提交后向目标派发站内信。
 5. 目标调用 `ConfirmTransfer(ctx, 请求, "bob")`。本模块先按请求标识结算过期行，读请求并校验 `to` 是目标、状态 pending、窗口未过；随后取 `acme` 的租户锁，在锁内重读请求、重读 `bob` 的账户状态。
 6. 开启事务，`GetTx` 读 `acme`：没有行报 `ErrInvalidTenant`，`held.OwnerAccount != from` 报 `ErrOwnerChanged`；墓碑报 `ErrTenantDeleted`，但删除事务已先取消待处理请求，这一支只在请求与名册不满足事务不变量的防御路径上出现。`MembershipTx` 再校验 `bob` 是活跃成员。随后 `PutBindingTx` 把 tenant-admin 绑给 `bob`，`SetOwnerTx` 把所有者列写成 `bob`，条件更新把请求标为 confirmed；条件更新命中零行说明另一写入者先结算了请求，事务回滚并报 `ErrTransferNotPending`。原所有者的成员关系与绑定不被读写。
@@ -193,7 +193,7 @@ sequenceDiagram
 2. 行不存在报 `ErrInvalidTenant`；行是墓碑报 `ErrTenantDeleted`；`expectedOwner` 非空且与行上所有者不同报 `ErrOwnerChanged`。三种拒绝都在写入之前。
 3. `DeleteTx` 写状态与删除时刻；`DeleteTenantPolicyTx` 删除该租户的授予、绑定与角色；`RemoveTenantMembershipsTx` 删除该租户的全部成员关系；条件更新把该组织的 pending 请求结算为 cancelled。
 4. 提交；提交后重读名册与策略的快照。
-5. 装配交付了 `authn.InvitationRevoker` 时，在事务之外请它收回该组织的全部待接受邀请。收回以「状态仍为待接受」为条件，失败只记一行 Warn，不回滚已经提交的删除；接受侧按租户状态拒绝尚未收回的行。
+5. 装配交付了 `authn.InvitationRevoker` 时，在事务之外请它收回该组织的全部待接受邀请。收回以“状态仍为待接受”为条件，失败只记一行 Warn，不回滚已经提交的删除；接受侧按租户状态拒绝尚未收回的行。
 6. 标识与名称留在墓碑上：`Create` 对同一标识报 `ErrTenantExists`，对同一名称报 `ErrNameConflict`。
 
 ## 错误与失败语义
@@ -220,7 +220,7 @@ sequenceDiagram
 
 ## 并发与事务边界
 
-- **一条事务。** 请求、确认与删除各自在 `db.Database.DB()` 上开一条事务；每一步都接收同一个 `*gorm.DB`，没有一步另开连接。任一步失败，涉及的各存储一起回退：确认回退名册、策略与请求行，删除回退名册、策略、成员关系与请求行。拒绝与取消是单条条件更新，条件本身是仲裁。收回邀请不在那条事务里：它在删除提交之后进行，以「状态仍为待接受」为条件，幂等，失败不回滚删除。
+- **一条事务。** 请求、确认与删除各自在 `db.Database.DB()` 上开一条事务；每一步都接收同一个 `*gorm.DB`，没有一步另开连接。任一步失败，涉及的各存储一起回退：确认回退名册、策略与请求行，删除回退名册、策略、成员关系与请求行。拒绝与取消是单条条件更新，条件本身是仲裁。收回邀请不在那条事务里：它在删除提交之后进行，以“状态仍为待接受”为条件，幂等，失败不回滚删除。
 - **一把锁。** 请求、确认、拒绝、取消与删除都在事务之前取 `authz.TenantLock` 的租户锁，在事务提交与提交后重读都结束之后释放。装配把策略的绑定删除与成员关系守卫接到同一个锁对象时，这些路径在同一租户上互相排除。
 - **只有一方胜出。** 一次确认与一次所有者发起的删除并发时，锁把两者排成先后：删除先到，确认读到墓碑并被拒；确认先到，删除观察到的所有者已经改变，以 `ErrOwnerChanged` 被拒。一次确认与一次取消并发时，先写入条件更新的一方胜出，另一方读到零行。
 - **到期结算不需要锁。** 条件更新不改所有权，并与确认的条件更新在数据库上串行。
@@ -230,7 +230,7 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 模块 `tenant.ownership`、两个接缝的交付与四种通知类型的声明 | 已实现 | `pkg/tenant/ownership/ownership.go` `Module`、`newProduct`、`wire`、`notificationTypes` |
+| 模块 `tenant.ownership`、两个接口的交付与四种通知类型的声明 | 已实现 | `pkg/tenant/ownership/ownership.go` `Module`、`newProduct`、`wire`、`notificationTypes` |
 | 请求、取消与待处理读取 | 已实现 | `pkg/tenant/ownership/transfer.go` `(*product).RequestTransfer`、`CancelTransfer`、`PendingTransfer` |
 | 确认、拒绝与目标侧读取 | 已实现 | `pkg/tenant/ownership/transfer.go` `(*product).ConfirmTransfer`、`DeclineTransfer`、`PendingTransfersFor`、`TransferFor` |
 | `tenant_owner_transfers` 表与迁移 | 已实现 | `pkg/tenant/ownership/migrations/{sqlite,postgres}/0001_tenant_owner_transfers.sql`；`pkg/tenant/ownership/store.go` |

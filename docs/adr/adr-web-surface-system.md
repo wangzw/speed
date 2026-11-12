@@ -45,7 +45,7 @@ token 树只有两级背景（`background.default` 与 `background.paper`），�
 - 表头底色是独立角色，不与行悬停态共用 `action.hover`，表头与悬停行不会同色。
 - `theme.surface` 是新增的公开主题字段：`Theme` 上必填，`ThemeOptions` 上可选。宿主不经 `createAppTheme` 自行组合主题时，主题选项允许缺席该字段，读取方需处理缺席。
 - 四个角色是闭合的语义集。新增一种表面是 token 段与主题映射的变更，不是页面里的局部选择。
-- 可选字段的缺省是「无」而不是「沿用某个默认视觉」：`borderWidth` 缺省为 0，只有 container 的 token 默认声明 1。需要描边的角色必须声明宽度，只声明 `borderColor` 不画线。
+- 可选字段的缺省是“无”而不是“沿用某个默认视觉”：`borderWidth` 缺省为 0，只有 container 的 token 默认声明 1。需要描边的角色必须声明宽度，只声明 `borderColor` 不画线。
 - `header` 的底色取中性色阶而非背景槽，覆写中性色阶会连带改变表头。
 - 手写 `Paper` 或裸 `section` 表面与 `SectionCard` 并存会使同一页出现两种表面来源；设计上只有后者是内容节的表面。
 - 按官方 Table 示例在 `SectionCard` 内再包 `TableContainer component={Paper}` 会叠出第二层表面；这条偏离必须随设计文档传递。
@@ -54,4 +54,4 @@ token 树只有两级背景（`background.default` 与 `background.paper`），�
 
 - MUI 提供一等公民的表面角色或 `theme.surface` 约定：以 MUI 的公开接口替换本包的模块扩充。
 - 一次整体换风格仍需要改页面代码而不只是覆写 token：分层未成立，重新评估。
-- 出现四个角色覆盖不了的表面，或角色之间的继承关系无法用「缺省即继承」表达：重新裁定角色集。
+- 出现四个角色覆盖不了的表面，或角色之间的继承关系无法用“缺省即继承”表达：重新裁定角色集。

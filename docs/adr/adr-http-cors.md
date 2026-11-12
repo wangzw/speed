@@ -14,7 +14,7 @@ CORS 的来源匹配、通配符、browser-extension 与 WebSocket 等 schema �
 
 自研可以完全控制响应头，去掉对上游库的依赖。
 
-**否决**：本仓对「有成熟现成库的常见需求」的既定做法是桥接该库、不重复发明（`pkg/db` 之于 GORM，[REF-gorm](../references.md)、`pkg/config` 之于 viper，[REF-viper](../references.md) 与 mapstructure，[REF-mapstructure](../references.md)、`pkg/http` 之于 gin，[REF-gin](../references.md) 皆是）。CORS 的来源规则与预检语义有规范定义的边界情形，自研要逐一重造，且上游库已就这些情形积累过修正。
+**否决**：本仓对“有成熟现成库的常见需求”的既定做法是桥接该库、不重复发明（`pkg/db` 之于 GORM，[REF-gorm](../references.md)、`pkg/config` 之于 viper，[REF-viper](../references.md) 与 mapstructure，[REF-mapstructure](../references.md)、`pkg/http` 之于 gin，[REF-gin](../references.md) 皆是）。CORS 的来源规则与预检语义有规范定义的边界情形，自研要逐一重造，且上游库已就这些情形积累过修正。
 
 ### 桥接上游库，把层放进入口模块的根包
 
@@ -30,7 +30,7 @@ CORS 的来源匹配、通配符、browser-extension 与 WebSocket 等 schema �
 
 ### 桥接上游库，作为独立子包登记在防护阶段的最外侧
 
-**采纳**——见决策。
+**采纳**，见决策。
 
 ## 决策
 
@@ -40,7 +40,7 @@ CORS 的来源匹配、通配符、browser-extension 与 WebSocket 等 schema �
 
 **付出的代价：**
 
-- **本层的拒绝与预检应答由库写出，不经入口模块的 `Fail`。** 来源不被允许时库以 `c.AbortWithStatus` 写出一个空体 403，预检上它写出配置的状态码。这偏离「错误响应集中一处」的规则——那一处写出 `problem+json`（[REF-rfc9457](../references.md)）或交付的 `ErrorResponder` 结构。这个 403 只抵达带 `Origin` 的请求，而这类请求来自浏览器，浏览器在缺少 CORS 头时本就不把响应交给脚本；不带 `Origin` 的客户端不受约束，走不到这个分支。代价由设计文档记载，不在本记录内展开。
+- **本层的拒绝与预检应答由库写出，不经入口模块的 `Fail`。** 来源不被允许时库以 `c.AbortWithStatus` 写出一个空体 403，预检上它写出配置的状态码。这偏离“错误响应集中一处”的规则：那一处写出 `problem+json`（[REF-rfc9457](../references.md)）或交付的 `ErrorResponder` 结构。这个 403 只抵达带 `Origin` 的请求，而这类请求来自浏览器，浏览器在缺少 CORS 头时本就不把响应交给脚本；不带 `Origin` 的客户端不受约束，走不到这个分支。代价由设计文档记载，不在本记录内展开。
 - **引入一个第三方依赖，且它随本子包而非根包交付。** 不 import 本子包的宿主不编译它。入口模块对子目录下的包同样要求依赖预算，这个包是预算里明确放行的例外。
 - **本层不交付功能标识，链上没有据它定序的锚点。** 别的层不能写 `After(Audit)` 那样的一条边来相对本层定位，只能靠阶段与阶段内的位置。
 - **`OrderOutermost` 是偏好而非保证。** 另一个防护阶段的层若同样取 `OrderOutermost`，二者同值即无序，先后由登记顺序决定，这一并列不产生任何信号；此时预检与拒绝是否仍在本层之内取决于登记顺序。
@@ -49,4 +49,4 @@ CORS 的来源匹配、通配符、browser-extension 与 WebSocket 等 schema �
 ## 失效条件
 
 - 上游库停止维护，或它对预检语义的实现与规范出现需要自行修正的分歧时，自研的理由重新成立。
-- 出现需要在请求期按调用方动态决定允许来源的宿主时，「静态来源清单」这一形态失效，需要另一条以函数表达策略的路径。
+- 出现需要在请求期按调用方动态决定允许来源的宿主时，“静态来源清单”这一形态失效，需要另一条以函数表达策略的路径。

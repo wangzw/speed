@@ -2,7 +2,7 @@
 
 web 是平台交付的前端包族与装配入口，位于浏览器一侧，向上由[宿主](../../../glossary.md)应用组合、向下接后端契约生成的操作接口。它拥有包的分层与依赖方向、契约生成的边界、特性门控的分工、壳与业务内容的分离，以及路由与导航独立成层。它不拥有后端契约、不内建业务页面，也不托管构建产物。进入职责清单前的心智模型只有一句：按后端能力切包，契约只从 `api-sdk` 流出，装配由壳承担，业务内容由宿主传入。
 
-第一遍为「职责」「外部接口契约」与「依赖」，给出包的分层与装配次序；「UML 图」「核心数据结构」「核心算法与流程」随读随查，「错误与失败语义」与「扩展点」作查表用，「实现状态」只在确认某项是否落地时查。竞态与边界情形集中在「错误与失败语义」，是读完接口契约之后的最后自检项。
+第一遍为“职责”“外部接口契约”与“依赖”，给出包的分层与装配次序；“UML 图”“核心数据结构”“核心算法与流程”随读随查，“错误与失败语义”与“扩展点”作查表用，“实现状态”只在确认某项是否落地时查。竞态与边界情形集中在“错误与失败语义”，是读完接口契约之后的最后自检项。
 
 ## 职责
 
@@ -21,9 +21,9 @@ web 是平台交付的前端包族与装配入口，位于浏览器一侧，向�
 
 包按下列各条轴划分，各条轴同时成立。
 
-**按层。** `tokens` 与 `theme-presets` 处于底层，`i18n` 同层独立，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开接口——`theme-presets` 只以类型依赖取 `tokens`，`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
+**按层。** `tokens` 与 `theme-presets` 处于底层，`i18n` 同层独立，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开接口：`theme-presets` 只以类型依赖取 `tokens`，`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
 
-**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户接口、`admin-ui` 对平台与组织两个管理面、`org-create-ui` 对 tenant 的自助创建接口、`notification-ui` 对通知的收件箱、偏好与推送三个接口。判据是每个能力 UI 包都是某个后端能力在浏览器里的界面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
+**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户接口、`admin-ui` 对平台与组织两个管理面、`org-create-ui` 对 tenant 的自助创建接口、`notification-ui` 对通知的收件箱、偏好与推送三个接口。判据是每个能力 UI 包都是某个后端能力在浏览器里的界面。证据是各包 `src/index.ts` 的包文档：`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
 **按契约边界。** `api-sdk` 是唯一与后端耦合的包，且是从后端契约生成的产物：orval（[REF-orval](../../../references.md)）从 `contracts/api.json` 生成操作接口，特性名生成器从 `contracts/features.json` 生成特性名类型（[api-sdk](design-web-api-sdk.md)）；`api-client` 是契约无关的手写传输运行时。判据是包与后端契约的耦合程度。证据是 `web/packages/api-sdk/src/runtime.ts` 的包文档（生成的代码保持与 fetch、axios、tenant 无关，[REF-axios](../../../references.md)）与 `web/orval.config.ts` 的 mutator 指向（生成的代码经该接口转发给宿主绑定的请求函数）。
 
@@ -74,7 +74,7 @@ interface SpeedAppDefinition {
 }
 ```
 
-**一次装配的接线次序固定**：i18n 实例（先注册框架命名空间并开启平台错误兜底，再依次注册应用的命名空间）→ 会话（内存 access token store 喂会话状态机并 attach）→ 客户端（`createClient` 以会话静默刷新为 401 分支、以 i18n 实例当前语言为语言源）→ 把客户端绑进 `api-sdk` 的 runtime 接口 → 查询客户端与会话结束策略 → provider 栈（I18next → 主题 → QueryClient → 应用的 provider，应用 provider 最外层在前，[REF-i18next](../../../references.md)、[REF-tanstack-query](../../../references.md)）→ 视图。装配返回 `SpeedAppBootstrap { root, i18n, queryClient, session }`。
+**一次装配的接线次序固定**：先建 i18n 实例（先注册框架命名空间并开启平台错误兜底，再依次注册应用的命名空间），再建会话（内存 access token store 喂会话状态机并 attach），再建客户端（`createClient` 以会话静默刷新为 401 分支、以 i18n 实例当前语言为语言源），再把客户端绑进 `api-sdk` 的 runtime 接口，再建查询客户端并装会话结束策略，再套 provider 栈（I18next、主题、QueryClient、应用的 provider，应用 provider 最外层在前，[REF-i18next](../../../references.md)、[REF-tanstack-query](../../../references.md)），最后挂上视图。装配返回 `SpeedAppBootstrap { root, i18n, queryClient, session }`。
 
 **装配入口是一个子路径出口**（`@speed/product-shell/bootstrap`）：主出口维持组件包最小的依赖底（`auth-core`、`auth-ui`、`layout-kit`、`i18n`），这个出口额外 import 应用入口要驱动的那几件（`@speed/api-client`、`@speed/api-sdk/runtime`、`@speed/ui-kit` 与 react-query），它们都在主出口的传递闭包内。
 
@@ -86,9 +86,9 @@ interface SpeedAppDefinition {
 
 ### 运行期的 API origin 注入
 
-`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回退到同源（[ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如管理后台页的 `/admin/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入「取配置本身需要配置」的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。这份文件由部署方写出，不反映后端装配；后端服务哪些接口由特性文档回答（见「特性门控」）。
+`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回退到同源（[ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如管理后台页的 `/admin/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入“取配置本身需要配置”的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。这份文件由部署方写出，不反映后端装配；后端服务哪些接口由特性文档回答（见“特性门控”）。
 
-**是否配置 CORS（[REF-whatwg-fetch](../../../references.md)）由部署拓扑决定。** 合一拓扑是单端口同源：产物与 API 由同一个进程在同一个源答出，浏览器不发跨域请求，部署里因而没有 CORS 这一环——demo 骨架即此拓扑。分离拓扑把前端交静态主机、后端只做 API，两者异源，跨域请求才出现，CORS 在此时进入部署范围。跨域部署是受支持的形态，但它不是 demo 骨架的形态。
+**是否配置 CORS（[REF-whatwg-fetch](../../../references.md)）由部署拓扑决定。** 合一拓扑是单端口同源：产物与 API 由同一个进程在同一个源答出，浏览器不发跨域请求，部署里因而没有 CORS 这一环：demo 骨架即此拓扑。分离拓扑把前端交静态主机、后端只做 API，两者异源，跨域请求才出现，CORS 在此时进入部署范围。跨域部署是受支持的形态，但它不是 demo 骨架的形态。
 
 ### 管理面
 
@@ -102,9 +102,9 @@ interface SpeedAppDefinition {
 
 **三类端点的判定域各自成立。** 平台资产在平台域判定。平台管理面的邀请与成员、SSO 两页按租户寻址，在那个租户的域判定：调用方要在该租户持有 `tenant-admin` 或相应权限，`platform-admin` 本身不放行。组织管理面在当前租户的域判定，平台域权限本身不放行。平台管理面不持**当前租户**，其按租户寻址页持的是请求的实参（租户选择器）；组织管理面把宿主给出的当前租户写进每条请求的路径。
 
-**两个管理面共用一套页面组件，按租户模式分支。** 平台管理面渲染平台侧外壳；组织管理面把同一组页面按租户模式组合，由 `OrganizationAdminProvider` 只装上下文、不渲染外壳。租户模式换掉的是数据来源与选择器——成员身份取自租户成员、设置只读写租户层、权限目录取受治理集合、账户选择器换成员选择器——不是页面布局。
+**两个管理面共用一套页面组件，按租户模式分支。** 平台管理面渲染平台侧外壳；组织管理面把同一组页面按租户模式组合，由 `OrganizationAdminProvider` 只装上下文、不渲染外壳。租户模式换掉的是数据来源与选择器（成员身份取自租户成员、设置只读写租户层、权限目录取受治理集合、账户选择器换成员选择器），不是页面布局。
 
-**入口由宿主派生。** 平台管理面的入口（账户菜单里进入管理后台区的条目与首页卡片）只在当前租户是系统租户、平台权限集持有声明的权限码、且收窄后的平台声明非空时出现，冒充期间不出现；两处调用同一个派生，不各判一次。组织管理面的入口（账户菜单里的组织分组与首页卡片）在会话不冒充、当前租户既不是系统租户也不是个人租户、收窄后的组织声明非空、调用方持有其中一条权限码时出现；判据见 [admin-ui](design-web-admin-ui.md) 的「入口的派生」。
+**入口由宿主派生。** 平台管理面的入口（账户菜单里进入管理后台区的条目与首页卡片）只在当前租户是系统租户、平台权限集持有声明的权限码、且收窄后的平台声明非空时出现，冒充期间不出现；两处调用同一个派生，不各判一次。组织管理面的入口（账户菜单里的组织分组与首页卡片）在会话不冒充、当前租户既不是系统租户也不是个人租户、收窄后的组织声明非空、调用方持有其中一条权限码时出现；判据见 [admin-ui](design-web-admin-ui.md) 的“入口的派生”。
 
 **自助创建组织的入口由宿主派生，不属于任何管理面。** 账户菜单的组织行展开区底部与首页卡片各给出一个到 `/organizations/new` 的入口，条件是 `org.create` 特性在场且会话不在冒充中；特性缺席时路由与两处入口都不出现。创建页与表单由公共包 `org-create-ui` 交付，宿主只装配 `org.create` 操作、创建成功后的切换租户与落点。创建后的权限读可能仍在途，落点页显示加载态与重试，不闪回租户首页。
 
@@ -114,16 +114,16 @@ interface SpeedAppDefinition {
 
 **路由与导航独立成层（`@speed/route-kit`）。** 壳保持不做导航不变；路由与导航是独立一层，新增业务接入它而不动壳（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。
 
-**声明式注册接口。** 业务模块导出结构相同的声明——路径、视图、导航标签、所需权限、所需特性——由收集方收齐后渲染。它与后端的命令树点名模块对称：它是「加一个业务模块」在前端的对应动作。所需特性（`requires`）与所需权限一样是数据；带它的声明只在其中特性全部在场时可渲染、可导航（[route-kit](design-web-route-kit.md)）。
+**声明式注册接口。** 业务模块导出结构相同的声明（路径、视图、导航标签、所需权限、所需特性），由收集方收齐后渲染。它与后端的命令树点名模块对称：它是“加一个业务模块”在前端的对应动作。所需特性（`requires`）与所需权限一样是数据；带它的声明只在其中特性全部在场时可渲染、可导航（[route-kit](design-web-route-kit.md)）。
 
-**租户作用域的查询键归框架。** 框架提供查询键工厂（形如 `tenantQueryKey(tenantId, ...tail)`，产出以租户标识为最外层段的键）与「切换租户时逐出整棵子树」的辅助函数，落在 [auth-core](design-web-auth-core.md)（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。`api-sdk` 生成的代码保持与 tenant 无关，不改。
+**租户作用域的查询键归框架。** 框架提供查询键工厂（形如 `tenantQueryKey(tenantId, ...tail)`，产出以租户标识为最外层段的键）与“切换租户时逐出整棵子树”的辅助函数，落在 [auth-core](design-web-auth-core.md)（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。`api-sdk` 生成的代码保持与 tenant 无关，不改。
 
 ### 特性门控
 
 特性缺席的页面，前端一律按 404 处理：导航里不出现，直接访问其链接得到与不存在的路径相同的 404；特性缺席的区块与控件不渲染。前端据后端发布的[特性文档](../../../glossary.md)（[feature](../design-feature.md)）门控页面、导航项与页内控件，各包的分工如下：
 
 - **会话层持有特性态。** [auth-core](design-web-auth-core.md) 随会话提交取回特性文档，作为快照的 `features` 字段与会话一起生效；读取失败是独立的状态，既不当作特性缺席，也不当作特性在场（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
-- **只有宿主读特性态。** 读特性态的钩子（`useFeature`、`useFeatureState`）与 `featurePresence` 的使用者是宿主。能力 UI 包不读特性态：一个包的界面依赖特性时，宿主经该包的属性或上下文组件给出特性在场的信息，各包「不读会话」「对 auth-core 只依赖加强认证」「会话只以属性传入」这类界不变（ADR-web-feature-state）。
+- **只有宿主读特性态。** 读特性态的钩子（`useFeature`、`useFeatureState`）与 `featurePresence` 的使用者是宿主。能力 UI 包不读特性态：一个包的界面依赖特性时，宿主经该包的属性或上下文组件给出特性在场的信息，各包“不读会话”“对 auth-core 只依赖加强认证”“会话只以属性传入”这类界不变（ADR-web-feature-state）。
 - **路由层收窄注册范围。** 页面声明以 `requires` 列出所需特性；[route-kit](design-web-route-kit.md) 按宿主给出的特性在场判定，让特性缺席的页面与未登记的路径走同一个回退视图，导航里也不出现（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。
 - **判定次序是先存在性、后权限。** 特性缺席的页面落到回退视图，不进入宿主的权限守卫；特性在场的页面再由宿主组合的 `RouteGuard` 按权限判定。
 - **特性缺席的控件隐藏，无权限的写入控件照常渲染。** 特性缺席的控件所对的接口不存在；无权限的写入控件只是示能，授权由服务端判定。
@@ -131,7 +131,7 @@ interface SpeedAppDefinition {
 
 ### 对外接口
 
-- 每个包的 `src/index.ts` 公开接口、文档化的子路径出口，以及 `bootstrapSpeedApp` 与 `SpeedAppDefinition`、`SpeedAppBootstrap`、`SpeedAppServices`、`SpeedAppNamespace` 的结构，是对使用者的接口。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名称、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
+- 每个包的 `src/index.ts` 公开接口、文档化的子路径出口，以及 `bootstrapSpeedApp` 与 `SpeedAppDefinition`、`SpeedAppBootstrap`、`SpeedAppServices`、`SpeedAppNamespace` 的结构，是对使用者的接口。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名称、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 - 包以锁定版本组发布（`web/.changeset/config.json` 的 fixed 组），使用者不会同时持两个版本的同名包。
 - `SpeedAppDefinition.baseUrl` 的缺省同源：合一拓扑不写任何配置的前提就是它。
 
@@ -247,14 +247,14 @@ graph TD
 3. 装配建一个内存 access token store 与会话，把会话 attach 到 hooks。
 4. 装配以 `createClient` 建客户端（`baseUrl` 取定义的值或缺省同源，语言源读 i18n 实例的当前语言，静默刷新接会话的 `refresh`），并把客户端绑进 `api-sdk` 的 runtime 接口。
 5. 装配建查询客户端（查询与变更都不重试）并装上会话结束策略。
-6. 装配把 provider 栈按次序套在定义的视图根之外（I18next → 主题 → QueryClient → 应用的 provider，应用 provider 最外层在前），挂到容器上。
+6. 装配把 provider 栈按次序套在定义的视图根之外（I18next、主题、QueryClient、应用的 provider，应用 provider 最外层在前），挂到容器上。
 7. 装配返回 `SpeedAppBootstrap`。
 
 **引入一份新契约不改变这条次序。** 平台契约与应用契约都经同一个绑定的请求函数发请求，装配只绑一次。
 
 ### 装配与内容的分离
 
-壳渲染一台视图机：认证快照下渲染框架包住应用内容；已到达过应用而快照转匿名时渲染会话结束界面（可被宿主的槽替换）；从未到达的匿名访客渲染登录槽或空。壳不驱动会话、不导航、不发请求——分支由快照驱动，登录与登出由宿主槽里的视图调用。框架的字符串取自 `layout-kit` 命名空间，默认会话结束界面的字符串取自 `auth-ui` 命名空间，其余字符串是宿主内容。
+壳渲染一台视图机：认证快照下渲染框架包住应用内容；已到达过应用而快照转匿名时渲染会话结束界面（可被宿主的槽替换）；从未到达的匿名访客渲染登录槽或空。壳不驱动会话、不导航、不发请求：分支由快照驱动，登录与登出由宿主槽里的视图调用。框架的字符串取自 `layout-kit` 命名空间，默认会话结束界面的字符串取自 `auth-ui` 命名空间，其余字符串是宿主内容。
 
 ### 声明式注册接口的收集
 
@@ -281,7 +281,7 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 
 **新增一个后端能力 UI 包。** 准入条件是：一个能力 UI 包对一个后端能力目录；依赖只指向比它低的层，同层不互相依赖；自带 i18n 命名空间与资源，由宿主登记；经 `api-sdk` 生成的代码发请求，不自己写 HTTP；不读特性态，包的界面依赖特性时由宿主经属性或上下文组件给出特性在场的信息。
 
-**新增一个业务页面。** 业务模块导出它的路由声明，经声明式注册接口接入（见核心算法与流程）；不动壳。页面依赖的后端接口不属于「不经特性门控的后端模块」时，声明以 `requires` 列出所需特性。
+**新增一个业务页面。** 业务模块导出它的路由声明，经声明式注册接口接入（见核心算法与流程）；不动壳。页面依赖的后端接口不属于“不经特性门控的后端模块”时，声明以 `requires` 列出所需特性。
 
 **新增一个管理后台。** 平台管理面的平台资产挂在 `/api/v1/system` 下、在平台域判定；按租户寻址的邀请与成员、SSO 页挂在 `/api/v1/tenants/{tenant}` 下、在那个租户的域判定。它是第二种壳：没有租户切换器，也就没有租户作用域的查询键；按租户寻址页持的租户选择器是请求的实参。组织管理面挂在租户侧壳里，读宿主给出的当前租户、不另造外壳。两者都复用声明式注册接口，用各自的壳或上下文。
 

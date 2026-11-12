@@ -1,8 +1,8 @@
 # authn/sms
 
-`authn/sms` 是认证[功能目录](../../../glossary.md)的短信验证码模块：它持有挑战行的全部状态——发放、重发、尝试计数、消费与作废——并经顶层短信能力把消息交给厂商。它按共享台账核对号码、来源、账户与用途各维度的发送预算，在账户删除之后清理自己的挑战行。它不挂路由、不判定号码是否登记、不持有失败退避，也不托管厂商侧的验证码。职责清单之前的一句话心智模型：本模块只管「这条挑战发出去没有、这个码对不对」，为什么发、发完接什么由调用方决定。
+`authn/sms` 是认证[功能目录](../../../glossary.md)的短信验证码模块：它持有挑战行的全部状态（发放、重发、尝试计数、消费与作废），并经顶层短信能力把消息交给厂商。它按共享台账核对号码、来源、账户与用途各维度的发送预算，在账户删除之后清理自己的挑战行。它不挂路由、不判定号码是否登记、不持有失败退避，也不托管厂商侧的验证码。职责清单之前的一句话心智模型：本模块只管“这条挑战发出去没有、这个码对不对”，为什么发、发完接什么由调用方决定。
 
-第一遍的次序是「职责」「术语表」「外部接口契约」「UML 图」「核心数据结构」「核心算法与流程」；「核心算法与流程」从[走查](#走查)开始，依次是「发送」「预算维度」「重发与作废」「校验」，「发送工作池与失败归类」一节供排查发送结果时查。「错误与失败语义」与「并发与事务边界」属查阅用；「扩展点」供接入新载体时查。「实现状态」供核对上文承诺。竞态与边界情形是最后的自检项。
+第一遍的次序是“职责”“术语表”“外部接口契约”“UML 图”“核心数据结构”“核心算法与流程”；“核心算法与流程”从[走查](#走查)开始，依次是“发送”“预算维度”“重发与作废”“校验”，“发送工作池与失败归类”一节供排查发送结果时查。“错误与失败语义”与“并发与事务边界”属查阅用；“扩展点”供接入新载体时查。“实现状态”供核对上文承诺。竞态与边界情形是最后的自检项。
 
 ## 职责
 
@@ -17,9 +17,9 @@
 
 ### 非职责
 
-- **不挂路由，不写 HTTP。** 短信登录与短信因素的路由、请求与响应结构归登录引擎与 MFA 编排（见 [design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)）。本模块只回答「这条挑战发出去了没有、这个码对不对」。
+- **不挂路由，不写 HTTP。** 短信登录与短信因素的路由、请求与响应结构归登录引擎与 MFA 编排（见 [design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)）。本模块只回答“这条挑战发出去了没有、这个码对不对”。
 - **不判定号码是否已登记，不解析账户。** `SendCode.Deliver` 由调用方依据号码的登记状态与注册开关决定；本模块对 `Deliver` 为假的请求写抑制行与抑制的台账行，不探知为什么为假。手机标识的写入（`verified_via = sms-code`）归 `authn.account`（见 [design-authn-account](design-authn-account.md)）。
-- **不持有失败退避。** 退避状态在 `authn.account` 交付的 `Throttle` 里，由使用方在答复阶段施加，施加的方式见「失败退避的施加」；本模块不依赖 `Throttle`，只管每条挑战自己的尝试次数。
+- **不持有失败退避。** 退避状态在 `authn.account` 交付的 `Throttle` 里，由使用方在答复阶段施加，施加的方式见“失败退避的施加”；本模块不依赖 `Throttle`，只管每条挑战自己的尝试次数。
 - **不持有流程记录，不核对每流程的发送上限。** 流程记录的 `sends` 在 kv 里，由登录引擎在调用 `Send` 之前核对（见 [design-authn-login](design-authn-login.md)）。
 - **不定保障等级。** 单凭短信码只算一个因素，等级只在 `authn.mfa` 一处合成。
 - **不规范化号码。** `SendCode.Phone` 由调用方规范化为 E.164（[REF-itu-t-e164](../../../references.md)）；`BlindIndex` 对输入原样计算，不规范化（见 [design-db](../design-db.md)）。
@@ -35,7 +35,7 @@
 | 术语 | 英文 | 适用范围 | 定义 |
 |---|---|---|---|
 | 挑战 | challenge | 本文档与 ADR-authn-sms | 一次短信验证码的发放记录，落在表 `authn_challenges` 的一行：号码与验证码都只以带密钥摘要留存，附尝试次数与期限。它与校验后端在拒绝响应里发出的质询（`WWW-Authenticate`、`Challenger`）无关。 |
-| 抑制行 | suppressed row | 本文档与 ADR-authn-sms | 调用方传 `Deliver = false` 时写入的挑战行与台账行：号码未登记且注册关闭时写入，不入队、不发送，但与真实行走同一条计数路径，计入号码、来源与账户维度，不计入全局、尝试与跨渠道上界，对外应答与「已发送」一致。 |
+| 抑制行 | suppressed row | 本文档与 ADR-authn-sms | 调用方传 `Deliver = false` 时写入的挑战行与台账行：号码未登记且注册关闭时写入，不入队、不发送，但与真实行走同一条计数路径，计入号码、来源与账户维度，不计入全局、尝试与跨渠道上界，对外应答与“已发送”一致。 |
 | 预算台账 | budget ledger | 本文档、design-sms 与 ADR-authn-sms | `sms.budget` 持有的 `sms_budget_events` 表，一行是一次短信尝试，认证与通知两个渠道都往这里写，全部预算与跨渠道上界都由它的行数回答。 |
 | 确定失败 | certain failure | 本文档与 ADR-authn-sms | 能证明消息没有离开本模块或没有进入厂商管线的失败：载体答 `ErrThrottled`、`ErrRejected` 或 `ErrUnroutable`，注册表拒绝构建消息，或入队失败。确定失败的台账行标为退款，发送预算不再计它，尝试预算计它。 |
 
@@ -67,11 +67,11 @@ func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
 }
 ```
 
-模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll` 与 `authn.code.reset`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。`authn.code.login`、`authn.code.mfa` 与 `authn.code.enroll` 是启动的必需项：点名了载体或声明了任一模板后，注册表持有的 `templates` 里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言——多声明一个本模块不发送的参数，该模板就没有任何消息能满足。选择项为空且一个模板也没有时是「没有配置短信」，本模块在 `Prepare` 里关闭，不走这条启动必需项核对。`authn.code.reset` 是可选模板：声明了它，短信重置渠道可用，本模块按同一套参数、语言与默认语言规则核对它；没有声明，短信重置渠道不发布，其余用途照常启动。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。**模板的语言集是有效语言集（厂商编号与本地正文的并集），所以这些模板在按编号发送的载体与按正文发送的载体上都能用**：按正文发送的载体由配置里的 `bodies` 提供正文，本模块不写任何载体特有的文案。
+模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll` 与 `authn.code.reset`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。`authn.code.login`、`authn.code.mfa` 与 `authn.code.enroll` 是启动的必需项：点名了载体或声明了任一模板后，注册表持有的 `templates` 里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言：多声明一个本模块不发送的参数，该模板就没有任何消息能满足。选择项为空且一个模板也没有时是“没有配置短信”，本模块在 `Prepare` 里关闭，不走这条启动必需项核对。`authn.code.reset` 是可选模板：声明了它，短信重置渠道可用，本模块按同一套参数、语言与默认语言规则核对它；没有声明，短信重置渠道不发布，其余用途照常启动。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。**模板的语言集是有效语言集（厂商编号与本地正文的并集），所以这些模板在按编号发送的载体与按正文发送的载体上都能用**：按正文发送的载体由配置里的 `bodies` 提供正文，本模块不写任何载体特有的文案。
 
-**覆盖由本模块在 `New` 核对。** `pkg/sms` 只让注册表报告自己持有什么，覆盖哪些组合由使用方核对，所以本模块在 `newProduct` 取到 `sms.Registry` 后立即调 `registry.Declared()`，逐项核对自己所需的（模板，参数）契约——每个必需模板的名字都要在、每个模板至少声明一种语言、每个模板都要覆盖配置的默认语言、参数名表须恰为本模块所发的两个（少一个或多一个都是 `ErrInvalidConfig` 并点名那个参数）；`New` 返回错误同样终止启动，早于服务。`Prepare` 早于 `New`、拿不到实例，核对因此落在 `New`。配置的默认语言用 `reader.Decode(i18n.ConfigNamespace, &cfg)` 读，`cfg` 的字段带 `config:"default-locale"` 且预置为 `en-US`，因而一个没有纳入 i18n 引擎、也就没有该命名空间的装配，读到的仍是英文，与那个引擎自己会读的默认一致。
+**覆盖由本模块在 `New` 核对。** `pkg/sms` 只让注册表报告自己持有什么，覆盖哪些组合由使用方核对，所以本模块在 `newProduct` 取到 `sms.Registry` 后立即调 `registry.Declared()`，逐项核对自己所需的（模板，参数）契约：每个必需模板的名字都要在、每个模板至少声明一种语言、每个模板都要覆盖配置的默认语言、参数名表须恰为本模块所发的两个（少一个或多一个都是 `ErrInvalidConfig` 并点名那个参数）；`New` 返回错误同样终止启动，早于服务。`Prepare` 早于 `New`、拿不到实例，核对因此落在 `New`。配置的默认语言用 `reader.Decode(i18n.ConfigNamespace, &cfg)` 读，`cfg` 的字段带 `config:"default-locale"` 且预置为 `en-US`，因而一个没有纳入 i18n 引擎、也就没有该命名空间的装配，读到的仍是英文，与那个引擎自己会读的默认一致。
 
-`sms.Registry.Resolve` 把 `sms.Message` 解成载体直接可用于构造请求的结构；一条注册表解不出的消息以 `ErrRejected` 拒绝，一条模板被禁用或审核未过的消息以 `ErrNotSendable` 拒绝，两者都在请求路径上记指标与日志、不外露，并把已写的台账行与挑战行标为退款：消息从未离开本模块。`sms.Sender.Send` 返回的错误取自封闭集 `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUnroutable`、`sms.ErrUncertain`；本模块的工作池归类它们、只记指标与日志，确定失败时另写退款，不外露（见「发送工作池与失败归类」）。空 `Locale` 或注册表里没有的（模板，语言）组合在 `pkg/sms` 一侧以 `ErrRejected` 拒绝、不调厂商。
+`sms.Registry.Resolve` 把 `sms.Message` 解成载体直接可用于构造请求的结构；一条注册表解不出的消息以 `ErrRejected` 拒绝，一条模板被禁用或审核未过的消息以 `ErrNotSendable` 拒绝，两者都在请求路径上记指标与日志、不外露，并把已写的台账行与挑战行标为退款：消息从未离开本模块。`sms.Sender.Send` 返回的错误取自封闭集 `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUnroutable`、`sms.ErrUncertain`；本模块的工作池归类它们、只记指标与日志，确定失败时另写退款，不外露（见“发送工作池与失败归类”）。空 `Locale` 或注册表里没有的（模板，语言）组合在 `pkg/sms` 一侧以 `ErrRejected` 拒绝、不调厂商。
 
 ### SMSCodes：挑战状态机
 
@@ -103,9 +103,9 @@ type SMSCodes interface {
 - **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；`login` 与 `reset` 不要求 `Account`。违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。`Proof` 由调用方原样交出，本模块负责校验并消费一次；调用方不自行校验，一次性证明被两个部件各校验一次时，第二次必然被拒。
 - **证明先于一切发送状态。** `Send` 以手机号面在放行表、队列容量与任何预算之前核对人机验证证明：本模块的每次发送都落地到手机号，所以它问的是 `phone` 面，其余面的机制与它无关。部署在手机号面把闸关闭（机制为 `off`）时整步跳过；闸是构造期依赖，缺席时本模块的构造失败，装配不会走到发送。证明过长以 `ErrHumanProofTooLong` 拒绝；缺失、无效、过期或重放以 `ErrHumanVerificationRequired` 拒绝；提供方或其存储不可用以 `ErrUnavailable` 拒绝。三者都发生在任何行写入之前，因此不写台账、不写挑战行、不占任何预算。
 - **用途的可用性经可选接口报告。** 本模块可以实现可选接口 `PurposeSupport` 的 `SupportsPurpose(purpose string) bool`：对 `login`、`mfa`、`enroll` 恒为真，对 `reset` 当且仅当模板注册表声明了 `authn.code.reset` 模板时为真。调用方以它决定是否提供短信重置渠道；不实现该接口的实现在调用方看来不支持 `reset`。这条接口不改变 `SMSCodes` 的方法集。
-- **`Source` 为空即不施加来源维度。** `Source` 是调用方从请求上取得的来源地址。非空时本模块先经 `netip.ParseAddr` 规范成地址的规范文本，再经 `BlindIndex` 算摘要，只把摘要写进台账行、只按摘要计数；明文地址不写表、不写日志。为空表示调用方没有可信来源：不取来源锁、不核对来源预算，这条发送不计入任何来源的窗口，台账行的来源列写 NULL（fail-open）。判据是不把「解析不了来源」与「同一个来源」混为一谈——把全部无名来源压到一把键上，会让一个没配置可信代理的部署把全站算作一个来源。
-- **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种结构，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
-- **`Locale` 的来源与取值。** 本模块不声明任何语言表：它的受支持语言集是注册表声明的语言集（`registry.Declared()`），按用途模板逐条持有、由本模块在 `New` 派生一次，一条消息的可用语言是它 `Template` 指向的那个模板声明的语言，不是各模板的并集（[ADR-i18n-language-set](../../../adr/adr-i18n-language-set.md)）。`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](../design-sms.md)）。本模块不读 HTTP，也不解析 `Accept-Language`：那次解析由登录引擎在发起流程的请求上做（优先取 i18n 协商结果，取不到时为空串），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；解析本身归 [design-authn-login](design-authn-login.md)。**请求语言由本模块解析到该用途模板声明的语言**：`SendCode.Locale` 为空时视为配置的默认语言；非空时取该模板声明的语言中主子标签与它相等的那一个（比较不分大小写）；没有相等的则落到配置的默认语言。**一个不受支持的请求语言因此不是被拒，而是落到默认语言**——语言是调用方的偏好，该模板声明的集合才是这条消息实际能发出去的语言。这与直接调用 `sms.Registry.Resolve` 不同：那时空 `Locale` 与编号表里没有的语言都被 `pkg/sms` 视为调用方缺陷、以 `ErrRejected` 拒绝、不调厂商（[design-sms](../design-sms.md)）。本模块构造的 `sms.Message.Locale` 取 `resolveLocale(SendCode.Locale, 配置的默认语言, 该用途模板声明的语言)`。
+- **`Source` 为空即不施加来源维度。** `Source` 是调用方从请求上取得的来源地址。非空时本模块先经 `netip.ParseAddr` 规范成地址的规范文本，再经 `BlindIndex` 算摘要，只把摘要写进台账行、只按摘要计数；明文地址不写表、不写日志。为空表示调用方没有可信来源：不取来源锁、不核对来源预算，这条发送不计入任何来源的窗口，台账行的来源列写 NULL（fail-open）。判据是不把“解析不了来源”与“同一个来源”混为一谈：把全部无名来源压到一把键上，会让一个没配置可信代理的部署把全站算作一个来源。
+- **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种结构，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见“非保证”）。
+- **`Locale` 的来源与取值。** 本模块不声明任何语言表：它的受支持语言集是注册表声明的语言集（`registry.Declared()`），按用途模板逐条持有、由本模块在 `New` 派生一次，一条消息的可用语言是它 `Template` 指向的那个模板声明的语言，不是各模板的并集（[ADR-i18n-language-set](../../../adr/adr-i18n-language-set.md)）。`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](../design-sms.md)）。本模块不读 HTTP，也不解析 `Accept-Language`：那次解析由登录引擎在发起流程的请求上做（优先取 i18n 协商结果，取不到时为空串），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；解析本身归 [design-authn-login](design-authn-login.md)。**请求语言由本模块解析到该用途模板声明的语言**：`SendCode.Locale` 为空时视为配置的默认语言；非空时取该模板声明的语言中主子标签与它相等的那一个（比较不分大小写）；没有相等的则落到配置的默认语言。**一个不受支持的请求语言因此不是被拒，而是落到默认语言**：语言是调用方的偏好，该模板声明的集合才是这条消息实际能发出去的语言。这与直接调用 `sms.Registry.Resolve` 不同：那时空 `Locale` 与编号表里没有的语言都被 `pkg/sms` 视为调用方缺陷、以 `ErrRejected` 拒绝、不调厂商（[design-sms](../design-sms.md)）。本模块构造的 `sms.Message.Locale` 取 `resolveLocale(SendCode.Locale, 配置的默认语言, 该用途模板声明的语言)`。
 - **`Verify` 不回传号码与账户。** 通过只证明持有该挑战标识的调用方出示了正确的码；码发往哪个号码，由调用方在自己的流程记录里保存，以发起时的号码为准。
 - **`Verify` 对抑制行恒返回 `ErrInvalidCredentials`**，照样计数并做一次诱饵比对。
 - **方法名核对。** 同一模块交付的各能力接口方法名两两不相交的规则见 [design-authn](design-authn.md#扩展点)。`authn.sms` 交付的 `SMSCodes` 的方法（`Send`、`Verify`）与 `AccountLifecycle` 的方法（`AccountDisabled`、`AccountEnabled`、`AccountDeleted`、`ServiceSecretRevoked`）互不重名；`sms.Sender` 的 `Send` 与 `SMSCodes` 的 `Send` 同名异签，二者由不同模块交付（`sms.Sender` 由 `pkg/sms` 的载体叶子，`SMSCodes` 由 `authn.sms`），不会落在同一个类型上。
@@ -131,14 +131,14 @@ type SMSCodes interface {
 
 本模块不声明语言闭集：`SendCode.Locale` 的取值由该用途模板声明的语言集与配置的默认语言共同给出，请求语言按主子标签解析到前者、落不到时用后者。`pkg/sms` 不声明语言闭集，把语言当作不透明字符串（[design-sms](../design-sms.md)）。配置的默认语言来自 i18n 能力目录的 `i18n.default-locale` 项，与那个引擎读的是同一个，一处声明服务两个能力目录。
 
-这些键由本模块声明，`sms.ceiling-hourly` 由台账模块声明。除 `per-flow-sends` 与 `ceiling-hourly` 外，各键由本模块读；`code-ttl` 与 `resend-interval` 另由登录模块的手机号自助路由读（构成记录的有效期与应答里的 `resend_after`，见 [design-authn-login](design-authn-login.md) 的「手机号验证」），`per-flow-sends` 由登录引擎读（构成交给方法与因素的 `SendsLeft`）。各键经设置存储从全局层读，读取出错或取值越出取值域时取声明的缺省；`ceiling-hourly` 的缺省由台账模块的同一处常量给出，本模块读同一个缺省。`per-flow-sends` 的声明模块不在装配里时（没有装配 `authn.sms`），登录引擎按设置的缺席规则取声明缺省，不记 `Error`；声明在场而读取失败或取值越出取值域才记 `Error`（[design-authn-config](design-authn-config.md) 的「设置缺席与读取出错」）。
+这些键由本模块声明，`sms.ceiling-hourly` 由台账模块声明。除 `per-flow-sends` 与 `ceiling-hourly` 外，各键由本模块读；`code-ttl` 与 `resend-interval` 另由登录模块的手机号自助路由读（构成记录的有效期与应答里的 `resend_after`，见 [design-authn-login](design-authn-login.md) 的“手机号验证”），`per-flow-sends` 由登录引擎读（构成交给方法与因素的 `SendsLeft`）。各键经设置存储从全局层读，读取出错或取值越出取值域时取声明的缺省；`ceiling-hourly` 的缺省由台账模块的同一处常量给出，本模块读同一个缺省。`per-flow-sends` 的声明模块不在装配里时（没有装配 `authn.sms`），登录引擎按设置的缺席规则取声明缺省，不记 `Error`；声明在场而读取失败或取值越出取值域才记 `Error`（[design-authn-config](design-authn-config.md) 的“设置缺席与读取出错”）。
 
 `allowed-prefixes` 与预算项是设置，改到更宽松的取值时，本模块写一行 `Warn` 并经审计接口记一条尽力档记录，事前不拦（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。`sms.ceiling-hourly` 的放宽同样被本模块监视。
 
 ### 对外接口
 
-- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47（[REF-bcp47](../../../references.md)）标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有「不施加来源维度」的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`、`authn.code.reset`）是配置文件里出现的取值，是本模块与载体的配置接口。增删封闭集的成员会同时改变使用方与载体看到的接口，两者一并复核。`authn.code.reset` 是可选成员：它的缺席只关闭短信重置渠道，不使启动失败。
-- **`SendCode` 的宿主可见变化。** `authn.SendCode` 是 `pkg/authn/internal/model` 的导出结构体 `SendCode` 的别名，所以 `SendCode` 的字段集属于导出接口；`Proof` 是新增字段，加入它改变的是导出的 `model.SendCode`，实现或消费 `SendCode` 的宿主必须携带证明，空值视为「请求没有出示证明」。
+- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47（[REF-bcp47](../../../references.md)）标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有“不施加来源维度”的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`、`authn.code.reset`）是配置文件里出现的取值，是本模块与载体的配置接口。增删封闭集的成员会同时改变使用方与载体看到的接口，两者一并复核。`authn.code.reset` 是可选成员：它的缺席只关闭短信重置渠道，不使启动失败。
+- **`SendCode` 的宿主可见变化。** `authn.SendCode` 是 `pkg/authn/internal/model` 的导出结构体 `SendCode` 的别名，所以 `SendCode` 的字段集属于导出接口；`Proof` 是新增字段，加入它改变的是导出的 `model.SendCode`，实现或消费 `SendCode` 的宿主必须携带证明，空值视为“请求没有出示证明”。
 - 挑战表的列与索引是本模块私有的存储结构，不在对外接口内：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。台账的表归 `sms.budget`，本模块只经 `budget.Store` 写入与计数。
 - 单个载体叶子包可替换、可撤掉，不改变 `SMSCodes` 的行为。
 
@@ -162,7 +162,7 @@ type SMSCodes interface {
 依赖方向满足架构不变量：
 
 - `Requires` 只写排他功能，并立功能一律经 `ResolveAll` 取用（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。`AccountLifecycle` 是并立功能，`authn.account` 在 `Init` 里 `ResolveAll[AccountLifecycle]` 取到本模块的实例；`authn.account` 在运行期调用本模块，编译期与构造期都不 import 它，所以不构成环。
-- `authn.login.sms`、`authn.mfa.sms` 依赖 `SMSCodes`，本模块不依赖它们。失败退避由使用方经 `Throttle` 施加（「失败退避的施加」一节），所以 `authn.login.sms` 另依赖 `Throttle`，本模块不依赖。
+- `authn.login.sms`、`authn.mfa.sms` 依赖 `SMSCodes`，本模块不依赖它们。失败退避由使用方经 `Throttle` 施加（“失败退避的施加”一节），所以 `authn.login.sms` 另依赖 `Throttle`，本模块不依赖。
 - 本模块不用 kv 持有挑战或预算：挑战行的丢失会放宽尝试上限，预算行的丢失会放宽发送上限，状态放置的判据要求进 db（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。证明的已用记录归提供方，`pow` 自己用 kv，不是本模块的状态。
 - 构造阶段（`New`）不读写自己的表，首次启动时表尚未建立；需要读表的初始化与清扫协程放在 `Start`。
 
@@ -318,10 +318,10 @@ stateDiagram-v2
 | `created_at` | 时间戳 | 发放时刻 |
 | `expires_at` | 时间戳 | 写入时取设置的有效期 |
 | `consumed_at` | 时间戳，可空 | 消费、作废或退款的时刻；校验对非空值恒失败 |
-| `refunded_at` | 时间戳，可空 | 退款时刻：确定没有发出时写入——厂商答复消息没有进入处理管线，或请求路径上注册表拒绝构建消息、入队失败。该行不能通过校验，并在同一条语句里置 `consumed_at`，所以从未送达的验证码不能通过校验。历史行为 NULL，不补写 |
+| `refunded_at` | 时间戳，可空 | 退款时刻：确定没有发出时写入，即厂商答复消息没有进入处理管线，或请求路径上注册表拒绝构建消息、入队失败。该行不能通过校验，并在同一条语句里置 `consumed_at`，所以从未送达的验证码不能通过校验。历史行为 NULL，不补写 |
 | `budget_event_id` | 整数，可空 | 这次挑战在共享台账里的尝试行；退款路径凭它找到台账行。历史行为 NULL，退款只改挑战行 |
 
-索引：`(phone_mac, created_at)` 服务于号码维度的关联与重发间隔所在的台账查询之外的历史读；`(source_mac, created_at)` 与 `(account_id, created_at)`、`(purpose, suppressed, created_at)` 服务于账户清理与清扫；`expires_at` 上的索引服务于清扫。**预算计数不读这张表**：所有窗口计数都由 `sms_budget_events` 回答，见「预算维度」。
+索引：`(phone_mac, created_at)` 服务于号码维度的关联与重发间隔所在的台账查询之外的历史读；`(source_mac, created_at)` 与 `(account_id, created_at)`、`(purpose, suppressed, created_at)` 服务于账户清理与清扫；`expires_at` 上的索引服务于清扫。**预算计数不读这张表**：所有窗口计数都由 `sms_budget_events` 回答，见“预算维度”。
 
 **摘要。** 验证码空间只有百万量级，不带密钥的摘要等于明文，所以 `code_mac`、`phone_mac` 与 `source_mac` 都经 `db.Database.BlindIndex`（HMAC-SHA256，密钥由 db 根密钥派生）计算：`code_mac` 的输入是 `<挑战标识>|<验证码>`，`phone_mac` 的输入是规范化后的 E.164 号码，`source_mac` 的输入是先经 `netip.ParseAddr` 规范化、再取 `Addr.String()` 的来源地址文本；解析不了的文本按原样参与摘要，因为读不出来源的发送仍要计数。`BlindIndex` 在没有根密钥时 panic，所以 `Start` 里做一次包 `recover` 的自检，缺根密钥即以 `ErrNoEncryptionKey` 终止启动，不降级为无密钥摘要。
 
@@ -355,7 +355,7 @@ stateDiagram-v2
 | 状态 | 一句话含义 | 当前动作（本模块） | 直觉画面 |
 |---|---|---|---|
 | 有效 | 真实发出、尚未消费，也没有过期 | 接受一次比对，成功后转为已消费 | 一张还没兑的取件单 |
-| 抑制 | `suppressed` 为真，未发出但走同一计数路径 | 照常计数与比对，恒不通过 | 一张写着「不发出」的取件单，窗口照开 |
+| 抑制 | `suppressed` 为真，未发出但走同一计数路径 | 照常计数与比对，恒不通过 | 一张写着“不发出”的取件单，窗口照开 |
 | 已消费 | `consumed_at` 已写且无退款标记 | 拒绝后续校验，重发时另写新行 | 取件单已兑，票根留下 |
 | 已作废 | 同号码同用途重发时被置 `consumed_at` | 对它恒判失败，与已消费在存储上同一形态 | 旧取件单被新单顶掉 |
 | 已退款 | `refunded_at` 非空，消息确定没有发出 | 拒绝校验，台账行不再占发送预算 | 取件单作废并退了款 |
@@ -409,13 +409,13 @@ flowchart TD
     RD --> R
 ```
 
-1. **人机验证证明。** 部署要求证明时，先核对其有效性与一次性；被拒绝的请求不写台账、不写挑战行、不占预算、不发送。判据与三档离场见「`Send` 的调用方责任」。
+1. **人机验证证明。** 部署要求证明时，先核对其有效性与一次性；被拒绝的请求不写台账、不写挑战行、不占预算、不发送。判据与三档离场见“`Send` 的调用方责任”。
 2. **放行表。** 规范化后的号码前缀不在放行表内，返回 `ErrUnsupportedRegion`，不写行。判定只看前缀，与号码是否登记无关；放行表缺省为空，不明确放行就不发。
-3. **队列容量。** 队列已满，返回 `ErrUnavailable`，不写行、不作废旧行。这一步对真实行与抑制行同样执行，使「队列满」不成为区分已登记与未登记号码的观察点。
+3. **队列容量。** 队列已满，返回 `ErrUnavailable`，不写行、不作废旧行。这一步对真实行与抑制行同样执行，使“队列满”不成为区分已登记与未登记号码的观察点。
 4. **生成。** 生成验证码与挑战标识，计算 `phone_mac`、`source_mac` 与 `code_mac`。各预算的限额在打开写事务之前一次读出，持锁期间不读设置。
-5. **事务：取锁、核对预算、写台账与挑战行。** 在同一个事务里先取部署的跨渠道锁，再按 **用途 → 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后用建立在同一事务上的台账核对各预算；未超限时写台账尝试行、把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`）、写新挑战行，`suppressed` 取 `Deliver` 的反。任一项超限即回滚，台账行与挑战行都不写。
+5. **事务：取锁、核对预算、写台账与挑战行。** 在同一个事务里先取部署的跨渠道锁，再按 **用途、号码、来源、账户** 的固定顺序取咨询锁，取齐之后用建立在同一事务上的台账核对各预算；未超限时写台账尝试行、把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`）、写新挑战行，`suppressed` 取 `Deliver` 的反。任一项超限即回滚，台账行与挑战行都不写。
 6. **解出可发送的结构。** `Deliver` 为真时，把构造的 `sms.Message` 交给注册表的 `Resolve` 解出 `sms.Resolved`；注册表以 `ErrRejected`（消息结构）或 `ErrNotSendable`（模板被禁用或审核未过）拒绝时，记指标与 `Warn`、不入队，把已写的台账行与挑战行标为退款并置为已消费（消息从未离开本模块），`Send` 仍返回 `challengeID`，用户走重发。`Deliver` 为假时不解出。
-7. **入队。** 解出成功后非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见「结果与指标」），已写的台账行与挑战行标为退款并置为已消费，`Send` 仍返回 `challengeID`，用户走重发且这次不占发送预算。
+7. **入队。** 解出成功后非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见“结果与指标”），已写的台账行与挑战行标为退款并置为已消费，`Send` 仍返回 `challengeID`，用户走重发且这次不占发送预算。
 
 ### 预算维度
 
@@ -439,10 +439,10 @@ flowchart TD
 
 **计数的判据。** 台账查询的开关相互独立：是否计入抑制行，以及退款状态。由此得到下列计数：
 
-- **发送预算**取未退款的行。带抑制开关时，抑制行按一次占用计入它瞄向的维度——它在写入时已退款，单靠退款条件会把它排除，而号码、来源与账户维度必须看见它，否则已登记与未登记号码达到超限的次数不同。
-- **尝试预算**只取事后退款的行，默认排除抑制行；一次成功到达或结局不确定的发送不计入它，一次确定失败计一次。这是认证侧的取法（`OnlyRefunded`）；「尝试预算」是认证与通知共用的设置名，通知渠道的同名预算取 `IncludeRefunded`，计每一次尝试，同一个名字不是一个判据（[design-sms](../design-sms.md)）。
+- **发送预算**取未退款的行。带抑制开关时，抑制行按一次占用计入它瞄向的维度：它在写入时已退款，单靠退款条件会把它排除，而号码、来源与账户维度必须看见它，否则已登记与未登记号码达到超限的次数不同。
+- **尝试预算**只取事后退款的行，默认排除抑制行；一次成功到达或结局不确定的发送不计入它，一次确定失败计一次。这是认证侧的取法（`OnlyRefunded`）；“尝试预算”是认证与通知共用的设置名，通知渠道的同名预算取 `IncludeRefunded`，计每一次尝试，同一个名字不是一个判据（[design-sms](../design-sms.md)）。
 - **跨渠道上界**取两个渠道未退款、未抑制的行；抑制行与确定失败都不占它。
-- **重发间隔**取该号码最新一行，两个开关都打开：退款行与抑制行都算一次「请求过」，间隔不能因号码未登记而不同。
+- **重发间隔**取该号码最新一行，两个开关都打开：退款行与抑制行都算一次“请求过”，间隔不能因号码未登记而不同。
 
 **顺序。** 跨渠道上界之后、各维度之前，先核对重发间隔；它不是预算维度，但读的是同一张台账。各维度按表中的次序核对，任一超限即停止，其后的维度不再读。
 
@@ -454,14 +454,14 @@ flowchart TD
 - **账户维度只对 `mfa` 与 `enroll` 计。** 判据是账户不得由手机号推出：这两种用途的账户由第一因素或会话确定；`login` 与 `reset` 用途若按账户计，已登记号码有账户可计、未登记号码没有，应答随之不同。
 - **号码维度跨用途累计。** 同一号码换一个用途不能绕开另一个用途的重发间隔与小时、日上限。
 - **来源维度只对 `Source` 非空的发送计，且跨用途累计。** 一个来源换号码或换用途不能绕开来源的窗口；不同目的地数与确定失败数是来源维度的另外两面，分别约束轮换号码与反复打必然失败的目的地。
-- **确定失败的发送退还发送预算，但计一次尝试。** 载体以 `ErrRejected`、`ErrUnroutable` 或 `ErrThrottled` 答复，说明消息没有进入厂商的处理管线，台账行标为退款，发送维度不再统计它，用户以同一号码在同一窗口内重发即可通过，且这条从未送达的验证码不能通过校验。请求路径上还有两条确定没发出的同步路径——注册表拒绝构建消息、行已写入但入队失败——同样退款。`ErrUncertain`（以及闭集之外的错误）不退款，该次仍计入发送预算——消息可能已经送达时，按已发送处理是唯一不会造成伤害的方向。退款不使这次尝试从尝试预算中消失，所以一个反复打必然失败目的地的来源会耗尽自己的失败额度。
-- **抑制行从不入队，写入时即退款。** 它的计数口径不受退款规则影响，见「抑制行与应答一致」。
+- **确定失败的发送退还发送预算，但计一次尝试。** 载体以 `ErrRejected`、`ErrUnroutable` 或 `ErrThrottled` 答复，说明消息没有进入厂商的处理管线，台账行标为退款，发送维度不再统计它，用户以同一号码在同一窗口内重发即可通过，且这条从未送达的验证码不能通过校验。请求路径上还有两条确定没发出的同步路径（注册表拒绝构建消息、行已写入但入队失败）同样退款。`ErrUncertain`（以及闭集之外的错误）不退款，该次仍计入发送预算：消息可能已经送达时，按已发送处理是唯一不会造成伤害的方向。退款不使这次尝试从尝试预算中消失，所以一个反复打必然失败目的地的来源会耗尽自己的失败额度。
+- **抑制行从不入队，写入时即退款。** 它的计数口径不受退款规则影响，见“抑制行与应答一致”。
 
 ### 硬上限、锁序与多副本
 
-预算在这里是硬上限。每次发送在自己的写事务里先取跨渠道锁，再按 **用途 → 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再统计各维度，未超才写台账行、作废旧行并写新挑战行；两个并发请求只要共享任一维度，就在同一把锁上串行，后一个读到前一个已提交的行。锁键为 `sms.budget:lock:ceiling`、`authn.sms:lock:global:<用途>`、`authn.sms:lock:phone:<phone_mac>`、`authn.sms:lock:source:<source_mac>` 与 `authn.sms:lock:account:<account_id>`，由数据库以 `hashtextextended` 计算，随事务提交或回滚释放；`login` 用途没有账户，不取账户锁；`Source` 为空时没有来源摘要，不取来源锁也不统计来源维度。各维度把限额在打开事务之前读出，持锁期间不读设置。这些锁是 PostgreSQL 专有的；SQLite 在数据库层串行化写者，重叠的第二个写者自行等待，没有咨询锁可拿。
+预算在这里是硬上限。每次发送在自己的写事务里先取跨渠道锁，再按 **用途、号码、来源、账户** 的固定顺序取咨询锁，取齐之后再统计各维度，未超才写台账行、作废旧行并写新挑战行；两个并发请求只要共享任一维度，就在同一把锁上串行，后一个读到前一个已提交的行。锁键为 `sms.budget:lock:ceiling`、`authn.sms:lock:global:<用途>`、`authn.sms:lock:phone:<phone_mac>`、`authn.sms:lock:source:<source_mac>` 与 `authn.sms:lock:account:<account_id>`，由数据库以 `hashtextextended` 计算，随事务提交或回滚释放；`login` 用途没有账户，不取账户锁；`Source` 为空时没有来源摘要，不取来源锁也不统计来源维度。各维度把限额在打开事务之前读出，持锁期间不读设置。这些锁是 PostgreSQL 专有的；SQLite 在数据库层串行化写者，重叠的第二个写者自行等待，没有咨询锁可拿。
 
-**多副本的一致性由「一张表、只插入」给出。** 每一个计数都是对已提交行的查询，每一次写入都是一次插入，没有可丢更新的共享计数器；两个副本并发写同一次发送，各自插一行，两个都被计到。一个必须成为硬上限的预算，由调用方把计数与写入放进同一个事务，并在该事务上建立台账（`budget.New(tx)`），自己串行化维度；跨副本时，这个串行化就是上面那把事务级咨询锁。不共享事务的两个调用方之间是软上限：两者在计数与插入之间看不到对方未提交的行。
+**多副本的一致性由“一张表、只插入”给出。** 每一个计数都是对已提交行的查询，每一次写入都是一次插入，没有可丢更新的共享计数器；两个副本并发写同一次发送，各自插一行，两个都被计到。一个必须成为硬上限的预算，由调用方把计数与写入放进同一个事务，并在该事务上建立台账（`budget.New(tx)`），自己串行化维度；跨副本时，这个串行化就是上面那把事务级咨询锁。不共享事务的两个调用方之间是软上限：两者在计数与插入之间看不到对方未提交的行。
 
 **跨渠道锁只有一把，代价是短信写入的吞吐。** 认证与通知的每次发送都在同一个键 `sms.budget:lock:ceiling` 上取锁，所以两个渠道的写入彼此串行，一个渠道的发送高峰会让另一个渠道的发送排队；这把锁也是两个渠道都必须在写行之前取到的第一把锁。这是跨渠道上界必须精确的代价，换来的是一次通知派发与一次认证发送不会同时读到上界以下、再各写一行（[design-sms](../design-sms.md)）。
 
@@ -471,7 +471,7 @@ flowchart TD
 
 ### 重发与作废
 
-重发即再调一次 `Send`：写新挑战行、写新的台账行并作废同（`phone_mac`，用途）下尚有效的旧行。作废表现为把旧行的 `consumed_at` 置为当前时刻（条件为该列仍空），校验对 `consumed_at` 非空的行恒失败，所以作废与消费在校验看来是同一状态。**重发不清零失败计数**：失败计数落在 `Throttle` 里的退避键上（`login`、`enroll` 用途是 `ScopePhone` 键，`mfa` 用途是 `ScopeFactor` 键，见「失败退避的施加」），它不随挑战行而变，重发写新行并不触及它；每行自己的 `attempts` 随新行从零起算，上界由退避键与预算共同给出。重发间隔从台账里该号码最新的一行量起，退款行与抑制行都算，所以一次确定失败的重发不会立刻获得一个新的间隔。
+重发即再调一次 `Send`：写新挑战行、写新的台账行并作废同（`phone_mac`，用途）下尚有效的旧行。作废表现为把旧行的 `consumed_at` 置为当前时刻（条件为该列仍空），校验对 `consumed_at` 非空的行恒失败，所以作废与消费在校验看来是同一状态。**重发不清零失败计数**：失败计数落在 `Throttle` 里的退避键上（`login`、`enroll` 用途是 `ScopePhone` 键，`mfa` 用途是 `ScopeFactor` 键，见“失败退避的施加”），它不随挑战行而变，重发写新行并不触及它；每行自己的 `attempts` 随新行从零起算，上界由退避键与预算共同给出。重发间隔从台账里该号码最新的一行量起，退款行与抑制行都算，所以一次确定失败的重发不会立刻获得一个新的间隔。
 
 ### 校验
 
@@ -530,9 +530,9 @@ flowchart TD
 | `sms.ErrRejected` | `rejected` | 工作池记；台账行与挑战行标为退款 |
 | `sms.ErrUnroutable` | `unroutable` | 工作池记；台账行与挑战行标为退款 |
 
-**预算利用率仪表。** 每次比较一个预算之前，本模块把「已用 / 上限」记到仪表 `authn.sms.budget.utilization`，属性 `channel` 取 `authn`，`purpose` 取该用途、跨渠道上界取 `shared`，`dimension` 取该预算的名字（`ceiling`、`phone`、`source`、`source-distinct`、`source-attempt`、`global`、`global-attempt`、`account`）。上限为零或负不记；没有指标能力是合法装配，记什么都不做。跨渠道上界的这一个数据点与通知投递的同名仪表共用名字，靠 `channel` 区分两个发送能力。属性集在 [design-authn-events](design-authn-events.md) 登记。
+**预算利用率仪表。** 每次比较一个预算之前，本模块把“已用 / 上限”记到仪表 `authn.sms.budget.utilization`，属性 `channel` 取 `authn`，`purpose` 取该用途、跨渠道上界取 `shared`，`dimension` 取该预算的名字（`ceiling`、`phone`、`source`、`source-distinct`、`source-attempt`、`global`、`global-attempt`、`account`）。上限为零或负不记；没有指标能力是合法装配，记什么都不做。跨渠道上界的这一个数据点与通知投递的同名仪表共用名字，靠 `channel` 区分两个发送能力。属性集在 [design-authn-events](design-authn-events.md) 登记。
 
-`dropped` 只表示本进程的队列没有容量，不分预检与提交之后：提交之后的那条已写行随即退款，预检那条没有行可退；`throttled` 只表示厂商的答复，`rejected` 表示发送侧不接受这条消息（厂商拒绝，或注册表解不出），`unroutable` 表示当前部署无法把这条消息送到这个目的地（缺权限、资源不存在、配额不足，或身份覆盖不了目的地国家）——它是确定失败，与 `rejected` 一样不被视为未知结局，区别只在消息本身没有缺陷；号码、来源、账户、全局与跨渠道上界的超限都归 `budget-exhausted`；`not-sendable` 表示模板被禁用或审核未过，与这条消息无关。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
+`dropped` 只表示本进程的队列没有容量，不分预检与提交之后：提交之后的那条已写行随即退款，预检那条没有行可退；`throttled` 只表示厂商的答复，`rejected` 表示发送侧不接受这条消息（厂商拒绝，或注册表解不出），`unroutable` 表示当前部署无法把这条消息送到这个目的地（缺权限、资源不存在、配额不足，或身份覆盖不了目的地国家）：它是确定失败，与 `rejected` 一样不被视为未知结局，区别只在消息本身没有缺陷；号码、来源、账户、全局与跨渠道上界的超限都归 `budget-exhausted`；`not-sendable` 表示模板被禁用或审核未过，与这条消息无关。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
 
 ### 厂商适配
 
@@ -605,14 +605,14 @@ flowchart TD
 
 以下行为未经运行核实。依赖它们的断言写作假设，对应的测试失败即视为该断言的前提不成立。厂商错误码归类与编译兼容的假设在 [design-sms](../design-sms.md)：
 
-- **应答一致。** 假设已登记号码与「未登记且注册关闭」的号码，其 `Send` 在返回值、错误以及号码、来源与账户维度的计数增量上相同；全局、尝试与跨渠道上界不因抑制行增加。契约测试对已登记号码与抑制号码各发一轮，断言应答一致、台账计数符合这组判据。
+- **应答一致。** 假设已登记号码与“未登记且注册关闭”的号码，其 `Send` 在返回值、错误以及号码、来源与账户维度的计数增量上相同；全局、尝试与跨渠道上界不因抑制行增加。契约测试对已登记号码与抑制号码各发一轮，断言应答一致、台账计数符合这组判据。
 - **时区无关。** 假设台账的窗口统计在非 UTC 的 `time.Time` 写入下结果仍正确。SQLite 夹具在 `TZ=America/New_York` 下断言预算统计的条件。
 - **锁序不产生死锁。** 假设所有发送方按同一顺序取锁时，共享任一维度的事务不互相等待成环。PostgreSQL 集成用例并发发送共享来源、号码与账户的请求，断言没有死锁且每个计数达到上限。
 - **跨渠道上界是一把锁。** 通知投递与认证取同一个锁键，断言两者的并发发送不会同时读到上界以下。
 
 ## 并发与事务边界
 
-- **挑战行、台账行与预算核对走同一个事务，并持有有序的咨询锁。** 预算核对、写台账行、作废与写新行在一个事务里，事务先取跨渠道锁，再按 用途 → 号码 → 来源 → 账户 的固定顺序取咨询锁，锁随提交或回滚释放；`Verify` 的条件更新是带竞争语义的单语句更新。它们不产生语句级审计行，也不被租户插件触及。
+- **挑战行、台账行与预算核对走同一个事务，并持有有序的咨询锁。** 预算核对、写台账行、作废与写新行在一个事务里，事务先取跨渠道锁，再按 用途、号码、来源、账户 的固定顺序取咨询锁，锁随提交或回滚释放；`Verify` 的条件更新是带竞争语义的单语句更新。它们不产生语句级审计行，也不被租户插件触及。
 - **计数读建立在发送的事务上。** 各预算的计数经 `budget.New(tx)` 读同一个事务里的行，事务提交前别的发送看不到这次写入，写入也只在这个事务仍持锁时发生；这使计数与写入成为一次决定，而不是两次独立的语句。
 - **一次性消费靠条件更新。** 并发提交同一个正确的码，只有 `consumed_at` 仍为空的那条更新受影响一行；败者得到 `ErrInvalidCredentials`。
 - **不跨模块传递事务。** `pkg/db` 没有跨模块的事务通道，本模块只在自己的事务里写自己的表与台账；对账户事务不可见，账户的停用与删除经 `AccountLifecycle` 钩子与事件触达这里。台账是两个渠道共用的表，但每个渠道只在自己的事务里写自己的行。
@@ -638,7 +638,7 @@ flowchart TD
 | `authn.sms` 引擎：挑战状态机、共享台账行、抑制行、预算核对（含跨渠道上界） | 已实现 | `pkg/authn/sms/send.go` `Send`、`checkProof`、`checkBudgets`、`throttleCeiling`、`throttleOver`；`pkg/authn/sms/register.go` `insert`、`lock`；`pkg/authn/sms/verify.go`、`config.go`、`module.go` |
 | 来源维度：`source_mac` 的规范化与摘要、每来源小时与日预算、每来源不同目的地预算、每来源确定失败预算、来源锁、`Source` 为空的 fail-open | 已实现 | `pkg/authn/sms/send.go` `sourceMAC`、`checkBudgets`；`pkg/authn/sms/register.go` `lock`；`pkg/authn/sms/settings.go` `perSourceHourly`、`perSourceDaily`、`perSourceDistinctHourly`、`perSourceDistinctDaily`、`perSourceAttemptHourly`；`pkg/authn/sms/budget_ledger_dimensions_test.go` |
 | 尝试预算：按来源与按用途的 `OnlyRefunded` 计数，确定失败计一次、成功与抑制不计 | 已实现 | `pkg/authn/sms/send.go` `checkBudgets`；`pkg/authn/sms/settings.go` `perSourceAttemptHourly`、`globalAttemptHourly`；`pkg/authn/sms/budget_abuse_test.go` |
-| `authn_challenges` 迁移集（含 `budget_event_id`） | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql` … `0007_authn_challenges_budget_event.sql`；`migrations/sqlite/` 同名文件 |
+| `authn_challenges` 迁移集（含 `budget_event_id`） | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql` …… `0007_authn_challenges_budget_event.sql`；`migrations/sqlite/` 同名文件 |
 | 发送工作池与确定失败退款：台账行与挑战行在同一次退款里标为退款，退款同时使验证码失效 | 已实现 | `pkg/authn/sms/pool.go` `deliverOne`、`refundChallenge`；`pkg/authn/sms/send.go`；`pkg/authn/sms/register.go` `refund`；`pkg/authn/sms/refund_test.go` |
 | 人机验证证明在 `Send` 内校验并消费，先于放行表、队列与预算 | 已实现 | `pkg/authn/sms/send.go` `checkProof`；`pkg/authn/sms/module.go` 取用 `authn.HumanVerifier`；`pkg/authn/sms/human_test.go` |
 | 预算利用率仪表 `authn.sms.budget.utilization` | 已实现 | `pkg/authn/sms/meters.go` `budget`、`dimensionCeiling`、`dimensionPhone`、`dimensionSource`、`dimensionSourceDistinct`、`dimensionSourceAttempt`、`dimensionGlobal`、`dimensionGlobalAttempt`、`dimensionAccount` |

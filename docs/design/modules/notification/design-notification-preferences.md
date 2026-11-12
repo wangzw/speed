@@ -6,14 +6,14 @@
 
 ## 职责
 
-本模块交付**按通知类型的渠道偏好矩阵**，并作为**通知类型分类法的消费点**。它把各业务模块声明的通知类型（`notification.TypeSpec`）收成一份只读分类法，据以校验一次偏好写入点名的类型是否在册；它持有每个收件人对每个类型的渠道集合，回答「这个收件人、这个类型，走哪些渠道」。它在入口模块的登记接口上挂 `/types`、`/preferences` 与 `PUT /preferences/:typeKey/:channel`。
+本模块交付**按通知类型的渠道偏好矩阵**，并作为**通知类型分类法的消费点**。它把各业务模块声明的通知类型（`notification.TypeSpec`）收成一份只读分类法，据以校验一次偏好写入点名的类型是否在册；它持有每个收件人对每个类型的渠道集合，回答“这个收件人、这个类型，走哪些渠道”。它在入口模块的登记接口上挂 `/types`、`/preferences` 与 `PUT /preferences/:typeKey/:channel`。
 
 类型不是本模块声明的：一个类型是**发出它的那个业务模块的声明**。业务模块把 `notification.TypeSpec` 放进自己的 `Resources`，本模块在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，构成分类法。本模块排他交付 `(*notification.Preferences)(nil)`（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)）。
 
 ### 非职责
 
-- **不发送，不渲染，不落收件箱。** 本模块只回答「这个收件人对这个类型走哪些渠道」，把消息送到渠道上归 [notification.delivery](design-notification-delivery.md)，收件箱行归 [notification.inbox](design-notification-inbox.md)。
-- **不声明通知类型。** 类型是业务模块的声明，本模块只收、只读、只据以校验（见「类型分类法是资源消费点」）。
+- **不发送，不渲染，不落收件箱。** 本模块只回答“这个收件人对这个类型走哪些渠道”，把消息送到渠道上归 [notification.delivery](design-notification-delivery.md)，收件箱行归 [notification.inbox](design-notification-inbox.md)。
+- **不声明通知类型。** 类型是业务模块的声明，本模块只收、只读、只据以校验（见“类型分类法是资源消费点”）。
 - **不做授权判定。** 路由不带本模块自己的权限闸。谁可以读某个收件人的偏好、谁可以改它，由宿主侧的授权决定；本模块不声明任何权限点（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不解释参数。** 类型声明里的 `RecipientVisibleParams` 是参数白名单，本模块只保存它、交给投递侧核对；本模块不认识参数的含义，也不读参数的值。
 - **不持外部联系人的同意台账。** 该台账刻意后置（见 [notification](design-notification.md) 的范围一节）。
@@ -41,7 +41,7 @@
 
 **本模块声明配置命名空间 `notification.preferences`，读端名清单 `notification.preferences.endpoints`。** 端名清单在路由能力在场时必填：`Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.preferences.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。清单是一组具体端名（封闭判据）：保留端名 `*`、空名与写了两遍的端名都被拒绝并点名这一项。
 
-**本模块声明静态[特性](../../../glossary.md) `notification.preferences`。** 描述符的 `Resources` 带 `feature.Spec{Name: "notification.preferences"}`；这个特性在场，表示本进程挂出「路由」一节的分类法与偏好路由（[feature](../design-feature.md)）。路由能力在场时端名清单必填，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+**本模块声明静态[特性](../../../glossary.md) `notification.preferences`。** 描述符的 `Resources` 带 `feature.Spec{Name: "notification.preferences"}`；这个特性在场，表示本进程挂出“路由”一节的分类法与偏好路由（[feature](../design-feature.md)）。路由能力在场时端名清单必填，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
 ### 交付的功能
 
@@ -54,17 +54,17 @@ type Preferences interface {
 }
 ```
 
-`Types` 与 `Type` 是只读视图：`Types` 返回分类法的一份副本，调用方改动它不影响本模块持有的那份；`Type` 报告一个类型是否在册。`Effective` 与 `Set` 的租户取自 `ctx`（`tenant.FromContext`），无租户一律以租户的错误拒绝；`recipient` 由调用方按身份给出，不由本模块解析。`Set` 用给定的渠道集替换该收件人该类型的渠道，返回**写入后的有效集**。这些方法都不判定调用方是否有权读改某个收件人的偏好——那是宿主侧的事。
+`Types` 与 `Type` 是只读视图：`Types` 返回分类法的一份副本，调用方改动它不影响本模块持有的那份；`Type` 报告一个类型是否在册。`Effective` 与 `Set` 的租户取自 `ctx`（`tenant.FromContext`），无租户一律以租户的错误拒绝；`recipient` 由调用方按身份给出，不由本模块解析。`Set` 用给定的渠道集替换该收件人该类型的渠道，返回**写入后的有效集**。这些方法都不判定调用方是否有权读改某个收件人的偏好：那是宿主侧的事。
 
 **`Effective` 是投递侧解析渠道的唯一接口。** [notification.delivery](design-notification-delivery.md) 的处理器按收件人调它拿到有效集，据以逐渠道发送；它不复制本模块的矩阵，也不直接读 `notification_preferences` 表。
 
 ### 类型分类法是资源消费点
 
-**取材域取可用集**（架构不变量 15）。消费点在 `New`：`core.Resources[notification.TypeSpec](reg)` 遍历全部已登记模块，收齐每一份 `notification.TypeSpec`，构成分类法。判据是**类型是词汇**：偏好写入与投递拿它当校验参照，同一个类型声明不能在这条命令下合法、在另一条命令下非法——那会让同一份偏好在一处写得进、在另一处被拒，而类型本身没变。**这个消费点不做减法**：一个本次未被运行级纳入、或消解落选的模块，它声明的类型照常留在分类法里，与既有资源消费点（settings、authz 的 policy 与 guard）一致（[ADR-module-resource-scope](../../../adr/adr-module-resource-scope.md)）。
+**取材域取可用集**（架构不变量 15）。消费点在 `New`：`core.Resources[notification.TypeSpec](reg)` 遍历全部已登记模块，收齐每一份 `notification.TypeSpec`，构成分类法。判据是**类型是词汇**：偏好写入与投递拿它当校验参照，同一个类型声明不能在这条命令下合法、在另一条命令下非法：那会让同一份偏好在一处写得进、在另一处被拒，而类型本身没变。**这个消费点不做减法**：一个本次未被运行级纳入、或消解落选的模块，它声明的类型照常留在分类法里，与既有资源消费点（settings、authz 的 policy 与 guard）一致（[ADR-module-resource-scope](../../../adr/adr-module-resource-scope.md)）。
 
-**减法只属于这样的消费点：这份声明所描述之物由这次运行产生或改写。** 通知类型不是由这次运行产生的：它是业务模块编译进来的一份供校验参照的词汇，跨命令不变，因此本消费点不适用减法。（对照：jobs 的周期声明 `jobs.Schedule` 描述的是「这次运行要做的活」，它的效果依赖声明它的模块真的被驱动，取材域取参与集——见 [jobs](../jobs/design-jobs.md) 的取材域裁定。两者判据的差别是「词汇」与「活」的差别。）
+**减法只属于这样的消费点：这份声明所描述之物由这次运行产生或改写。** 通知类型不是由这次运行产生的：它是业务模块编译进来的一份供校验参照的词汇，跨命令不变，因此本消费点不适用减法。（对照：jobs 的周期声明 `jobs.Schedule` 描述的是“这次运行要做的活”，它的效果依赖声明它的模块真的被驱动，取材域取参与集，见 [jobs](../jobs/design-jobs.md) 的取材域裁定。两者判据的差别是“词汇”与“活”的差别。）
 
-**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，「业务模块可以在 notification 之后才声明类型」因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)。
+**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，“业务模块可以在 notification 之后才声明类型”因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)。
 
 **声明冲突在 `New` 报出。** 一个 `TypeSpec` 声明不自洽（`Key` 为空、`DefaultChannels` 为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 内有重复、`RecipientVisibleParams` 内有重复），或两个模块声明同一个 `Key`，都是 `ErrInvalidConfig`，在 `New` 终止启动并点名那个类型键与声明方；不等到一次请求才发现分类法读不起来。
 
@@ -88,7 +88,7 @@ type Preferences interface {
 { "types": [ { "key", "group", "default_channels", "unsubscribable", "recipient_visible_params" } ] }
 ```
 
-**`GET /preferences` 报收件人的偏好矩阵**，每个在册类型一行，渠道取**有效集**——该类型在该收件人上没有存储行时取 `DefaultChannels`：
+**`GET /preferences` 报收件人的偏好矩阵**，每个在册类型一行，渠道取**有效集**（该类型在该收件人上没有存储行时取 `DefaultChannels`）：
 
 ```json
 { "preferences": [ { "type_key", "group", "channels", "explicit" } ] }
@@ -100,7 +100,7 @@ type Preferences interface {
 
 `PUT /preferences/:typeKey/:channel` 的正文是 `{ "enabled": true | false }`。判定顺序固定，收口在一处：
 
-1. **正文可读**：入口模块在 handler 之前绑定正文。`Content-Type` 缺失或不是 `application/json` 答 415；正文为空答 400（PUT 的正文声明为必需）；正文不是 JSON 对象（字面量 `null` 除外，它按空对象绑定）、`enabled` 是 `null` 之外的其它非布尔值、或带声明之外的成员也答 400。这些拒绝是入口模块的答案：`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail。字面量 `null` 绑定成空对象后与缺少 `enabled` 一致，因此与「正文没有 `enabled`、或 `enabled` 是 `null`」一道由本模块的 handler 答 400 `urn:speed:notification:bad-request`，标题与 detail 由本模块的消息目录渲染。两种情况都不触达存储。
+1. **正文可读**：入口模块在 handler 之前绑定正文。`Content-Type` 缺失或不是 `application/json` 答 415；正文为空答 400（PUT 的正文声明为必需）；正文不是 JSON 对象（字面量 `null` 除外，它按空对象绑定）、`enabled` 是 `null` 之外的其它非布尔值、或带声明之外的成员也答 400。这些拒绝是入口模块的答案：`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail。字面量 `null` 绑定成空对象后与缺少 `enabled` 一致，因此与“正文没有 `enabled`、或 `enabled` 是 `null`”一道由本模块的 handler 答 400 `urn:speed:notification:bad-request`，标题与 detail 由本模块的消息目录渲染。两种情况都不触达存储。
 2. **渠道已知**：`KnownChannel(channel)` 为 false 即 `ErrUnknownChannel`，先于任何 no-op 分支拒绝。
 3. **类型在册**：`Type(typeKey)` 的第二个结果为 false 即 `ErrUnknownType`。
 4. **类型可退订**：该类型的 `Unsubscribable` 为 false 即 `ErrNotUnsubscribable`。
@@ -109,11 +109,11 @@ type Preferences interface {
 7. **目标集合与当前有效集相等即 200 直接返回，不写行**：把一条已经在集合里的渠道再加一次、或把一条不在集合里的渠道再删一次，都落在这一支，读起来是成功，磁盘上没有写入。
 8. **否则调 `Set(ctx, recipient, typeKey, 目标集合)` 置换该类型的渠道**，应答 200 与 `Set` 返回的有效集。
 
-第 7 步使一次重复的 PUT 不产生写入，也让「本就没有存储行的类型被 PUT 成它的 `DefaultChannels`」不落一行——那样的行与缺行语义相同，写下来只会让 `explicit` 谎报一次。
+第 7 步使一次重复的 PUT 不产生写入，也让“本就没有存储行的类型被 PUT 成它的 `DefaultChannels`”不落一行：那样的行与缺行语义相同，写下来只会让 `explicit` 谎报一次。
 
 **一次 PUT 只改（类型，渠道）这一格。** 第 6 步只把路径点名的渠道并入或移出当前有效集，同一类型其余渠道的有效值不变；前端按装配不显示某个渠道时，那一列上已有的偏好因此不随别的列的写入改变。
 
-图里的顺序不可调换：渠道与类型的校验都在算有效集之前，未知渠道因此不会被当成一个 no-op；可退订的校验在它之后，使「一个不可退订的类型收到一条写入」以 409 而不是 200 回绝。
+图里的顺序不可调换：渠道与类型的校验都在算有效集之前，未知渠道因此不会被当成一个 no-op；可退订的校验在它之后，使“一个不可退订的类型收到一条写入”以 409 而不是 200 回绝。
 
 ```mermaid
 flowchart TD
@@ -171,7 +171,7 @@ flowchart TD
 | `pkg/log` | 可选：启动诊断 |
 | `pkg/i18n` | 可选：`i18n.Localizer` 按请求的协商语言渲染本模块写出的 `Problem` 的标题与正文；缺席时用本模块内嵌的英文文案 |
 
-**依赖方向。** 本模块 import 数据库、租户、`pkg/config`、`pkg/i18n`、`pkg/http`、`pkg/feature` 根包与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`——授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import 数据库、租户、`pkg/config`、`pkg/i18n`、`pkg/http`、`pkg/feature` 根包与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`：授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
 
 **根包 `pkg/notification` 不 import 本模块。** 根包依赖标准库与 `pkg/jobs` 这一个接口包（`Dispatcher.Dispatch` 的返回类型是 `jobs.JobID`），因而一个只读 `notification.Channel` 或 `notification.TypeSpec` 的业务模块 import 它，拉进来的是作业的标识类型，不是数据库、租户或本模块。
 
@@ -241,19 +241,19 @@ classDiagram
 2. 同一请求再发一次。当前有效集取行里的 `in_app`，目标集合仍是 `in_app`，当前有效集与目标集合相等，handler 答 200 且不写行。持久状态不变。
 3. `PUT /preferences/billing.invoice_paid/email`，正文 `{"enabled": true}`。当前有效集为 `in_app`，目标集合为 `in_app` 与 `email`，当前有效集与目标集合不等，`Set` 更新该行的 `channels`。持久状态：该行持有两个渠道。
 4. 若把同一请求指向一个 `Unsubscribable` 为假的类型，类型校验之后即以 `ErrNotUnsubscribable` 拒绝，答 409，表里不落行。
-5. 若一个本就没有存储行的类型被 PUT 成它的 `DefaultChannels`，目标集合与当前有效集相等，答 200 且不写行——缺行与持有同样集合的行语义相同。
+5. 若一个本就没有存储行的类型被 PUT 成它的 `DefaultChannels`，目标集合与当前有效集相等，答 200 且不写行：缺行与持有同样集合的行语义相同。
 
 ### 分类法的收集
 
-`New` 里 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，逐份校验：一个 `TypeSpec` 声明不自洽（`Key` 为空、`DefaultChannels` 为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 内有重复、`RecipientVisibleParams` 内有重复），或两个模块声明同一个 `Key`，都是 `ErrInvalidConfig`，终止启动并点名那个键与声明方；校验通过的声明按类型键去重并排序，构成分类法。取值域是可用集，不做减法（见「类型分类法是资源消费点」）。
+`New` 里 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，逐份校验：一个 `TypeSpec` 声明不自洽（`Key` 为空、`DefaultChannels` 为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 内有重复、`RecipientVisibleParams` 内有重复），或两个模块声明同一个 `Key`，都是 `ErrInvalidConfig`，终止启动并点名那个键与声明方；校验通过的声明按类型键去重并排序，构成分类法。取值域是可用集，不做减法（见“类型分类法是资源消费点”）。
 
-**分类法在 `New` 里定下，不读表。** `New` 早于 `Migrate`，本模块的表那时还不存在；分类法来自 `Resources`、不来自表。本模块的 `Init` 不读表——偏好矩阵按请求读，不持进程内快照。
+**分类法在 `New` 里定下，不读表。** `New` 早于 `Migrate`，本模块的表那时还不存在；分类法来自 `Resources`、不来自表。本模块的 `Init` 不读表：偏好矩阵按请求读，不持进程内快照。
 
 ### 有效集的计算
 
 给定收件人与类型键，有效集的算法固定：
 
-1. 该类型的 `Unsubscribable` 为 false 时，直接从 `DefaultChannels` 取——不可退订的类型没有存储行，也不接受写入。
+1. 该类型的 `Unsubscribable` 为 false 时，直接从 `DefaultChannels` 取：不可退订的类型没有存储行，也不接受写入。
 2. 否则查 `notification_preferences`：有行取该行的 `channels`，无行取 `DefaultChannels`。
 3. 结果去重、按渠道闭集的固定次序排序。
 
@@ -261,7 +261,7 @@ classDiagram
 
 ### 一次 PUT
 
-操作序见「PUT 的判定顺序」一节；这里给出取值与写库的细节。第 6 步按 `enabled` 作用于第 5 步算出的集合，产出目标集合；第 7 步以集合相等（元素相同，与次序无关）判定 no-op，相等即返回当前有效集、不写行。第 8 步调 `Set` 把目标集合写进表：存在行即更新 `channels` 与 `updated_at`，不存在即插入，`Set` 返回写入后的有效集。写与读在同一事务里（见「并发与事务边界」）。
+操作序见“PUT 的判定顺序”一节；这里给出取值与写库的细节。第 6 步按 `enabled` 作用于第 5 步算出的集合，产出目标集合；第 7 步以集合相等（元素相同，与次序无关）判定 no-op，相等即返回当前有效集、不写行。第 8 步调 `Set` 把目标集合写进表：存在行即更新 `channels` 与 `updated_at`，不存在即插入，`Set` 返回写入后的有效集。写与读在同一事务里（见“并发与事务边界”）。
 
 ### 阶段行为
 

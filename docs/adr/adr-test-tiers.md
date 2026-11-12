@@ -18,31 +18,31 @@
 
 夹具自己 `docker run` 一个同名容器、用临时端口发布、`docker port` 读回端口，并在两个二进制同时创建同名容器时等待胜者。
 
-**否决**：容器生命周期不是被测对象，夹具却要为它承担代码与覆盖——两个专门测这场创建竞态的测试文件即由此而来。临时端口使「哪台服务器」无法从用例读出来；`docker run` 成功与服务器就绪是两件事，容器起来而服务器仍在初始化时只拨 TCP 的检查会放过它，表现为冷启动首批用例偶发连接失败。
+**否决**：容器生命周期不是被测对象，夹具却要为它承担代码与覆盖：两个专门测这场创建竞态的测试文件即由此而来。临时端口使“哪台服务器”无法从用例读出来；`docker run` 成功与服务器就绪是两件事，容器起来而服务器仍在初始化时只拨 TCP 的检查会放过它，表现为冷启动首批用例偶发连接失败。
 
 ### 用测试容器库
 
 以 testcontainers（[REF-testcontainers-go](../references.md)）一类库管理容器。
 
-**否决**：一个只被测试用到的依赖仍会进入模块的依赖清单，而它替夹具做的只是「起容器、读端口」。
+**否决**：一个只被测试用到的依赖仍会进入模块的依赖清单，而它替夹具做的只是“起容器、读端口”。
 
 ### 用例内嵌等价实现
 
 用进程内的替代物替换这些后端。
 
-**否决**：见背景——被测的正是这些后端的行为，替换即取消被测对象。
+**否决**：见背景：被测的正是这些后端的行为，替换即取消被测对象。
 
 ### 外部后端由 compose 栈提供，用例按是否依赖它分两层
 
 后端由 `compose.yaml` 声明、由 compose 起停；夹具只连不管，连不上即失败；需要后端的用例带构建标签，与不需要的用例分开执行。
 
-**采纳**——见决策。
+**采纳**，见决策。
 
 ## 决策
 
 采纳：**仓库根的 `compose.yaml` 声明 PostgreSQL、Redis、NATS 与 Memcached 四个服务，`docker compose up -d --wait` 是把它们起来的唯一方式，也是唯一管它们的东西。** 每个服务自带 healthcheck，`--wait` 因此返回即就绪。
 
-**一套栈属于一个检出，端口按需分配。** 每个服务的宿主端口由 `SPEED_TEST_PG_PORT`、`SPEED_TEST_REDIS_PORT`、`SPEED_TEST_NATS_PORT`、`SPEED_TEST_MEMCACHED_PORT` 指定，变量缺省时取 5432、6379、4222、11211。`make deps-up` 调用 `tools/backends.py up`：项目名由检出根路径的散列派生（`speed-test-<12 位十六进制>`，同一检出稳定、不同检出不同），脚本在 `127.0.0.1` 上绑定 :0 取四个互不相同的空闲端口，把项目名与端口写入仓库根的 `.cache/test-backends.env`，再以该项目名执行 `docker compose up -d --wait`。状态文件存在且该项目的容器全部健康时直接复用；`up` 失败时重新取端口重试，至多三次；最终失败先取下这一套栈，取下成功则删掉状态文件，取下本身失败则保留状态文件供 `make deps-down` 清除残留容器，并报出最后一次完整输出。`make deps-down` 只按状态文件里的项目名取下这一套栈，随后删除状态文件。直接执行 `docker compose up` 仍按默认端口起栈。
+**一套栈属于一个检出，端口按需分配。** 每个服务的宿主端口由 `SPEED_TEST_PG_PORT`、`SPEED_TEST_REDIS_PORT`、`SPEED_TEST_NATS_PORT`、`SPEED_TEST_MEMCACHED_PORT` 指定，变量缺省时取 5432、6379、4222、11211。`make deps-up` 调用 `tools/backends.py up`：项目名由检出根路径的散列派生（`speed-test-<12 位十六进制>`，同一检出稳定、不同检出不同），脚本在 `127.0.0.1` 上绑定 `:0` 取四个互不相同的空闲端口，把项目名与端口写入仓库根的 `.cache/test-backends.env`，再以该项目名执行 `docker compose up -d --wait`。状态文件存在且该项目的容器全部健康时直接复用；`up` 失败时重新取端口重试，至多三次；最终失败先取下这一套栈，取下成功则删掉状态文件，取下本身失败则保留状态文件供 `make deps-down` 清除残留容器，并报出最后一次完整输出。`make deps-down` 只按状态文件里的项目名取下这一套栈，随后删除状态文件。直接执行 `docker compose up` 仍按默认端口起栈。
 
 **测试夹具只连不管。** 夹具的地址来自 `SPEED_TEST_PG_ADDR`、`SPEED_TEST_REDIS_ADDR`、`SPEED_TEST_NATS_URL`、`SPEED_TEST_MEMCACHED_ADDR`，变量缺省时回退到固定的回环地址。夹具只做协议层的事：每用例一个 PostgreSQL 库、一个 Redis 库序号租约、一个 Memcached 键空间前缀、一个 NATS bucket 或 stream 名。**后端不可达时用例失败，不跳过。**
 

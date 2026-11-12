@@ -11,7 +11,7 @@
 - handler 自己读 body 而忽略错误时，截断后的数据以 201 成功落地；
 - 三种情形都不写任何日志。
 
-上限的位置由两条约束决定。其一，它写出的 413 是一次拒绝，按 [ADR-http-stages](adr-http-stages.md) 与 [ADR-http-cors](adr-http-cors.md)，会拒绝的层要落在 CORS（[REF-whatwg-fetch](../references.md)）之内，否则 413 上没有 `Access-Control-Allow-Origin`，浏览器读不到这次拒绝。其二，防护阶段的层按契约不读 body——来源限流只看地址，CORS 只看头部与预检——所以上限不能落在防护阶段之前：那会在来源限流计数之前就把超限请求挡掉。
+上限的位置由两条约束决定。其一，它写出的 413 是一次拒绝，按 [ADR-http-stages](adr-http-stages.md) 与 [ADR-http-cors](adr-http-cors.md)，会拒绝的层要落在 CORS（[REF-whatwg-fetch](../references.md)）之内，否则 413 上没有 `Access-Control-Allow-Origin`，浏览器读不到这次拒绝。其二，防护阶段的层按契约不读 body（来源限流只看地址，CORS 只看头部与预检），所以上限不能落在防护阶段之前：那会在来源限流计数之前就把超限请求挡掉。
 
 ## 考虑过的选项
 
@@ -27,7 +27,7 @@
 
 ### 每个 handler 自己限制
 
-**否决**：每个 handler 各写一遍同一件事；「漏一条就失效」，把横切能力交给每一处调用点正是 [ADR-db-plugin-scope](adr-db-plugin-scope.md) 否决过的形态。而超限的读取发生在 gin 的绑定路径里，handler 未必经手。
+**否决**：每个 handler 各写一遍同一件事；“漏一条就失效”，把横切能力交给每一处调用点正是 [ADR-db-plugin-scope](adr-db-plugin-scope.md) 否决过的形态。而超限的读取发生在 gin 的绑定路径里，handler 未必经手。
 
 ### 从 body 的 Read 里 panic，打断 handler
 
@@ -37,7 +37,7 @@
 
 ### 入口模块内建一层，落在防护阶段之内
 
-**采纳** —— 见决策。
+**采纳**，见决策。
 
 ## 决策
 
@@ -46,13 +46,13 @@
 1. 请求声明了 `Content-Length` 且其值超过上限时，直接经 `Fail` 写出 413，`Cause` 是一个 `*http.MaxBytesError`，并记一行日志；原因同时写进 `c.Errors`。
 2. 其余请求把 `c.Request.Body` 换成 `MaxBytesReader`，外层再包一层本模块的 `ReadCloser`。它读到 `*http.MaxBytesError` 时把原因写进 `c.Errors` 并记一行日志，每个请求只记一次（`sync.Once`）。这样不依赖 handler 配合：无论谁读、读几次，第一次越过上限的读取都被记下。
 
-`max-body-bytes` 为 0 或负数时不设上限。层落在引擎之内，因而匹配不到路由的请求、方法不允许的请求照样被限界；防护阶段各层的 body 不被它包住，那是它们的契约——它们不读 body。
+`max-body-bytes` 为 0 或负数时不设上限。层落在引擎之内，因而匹配不到路由的请求、方法不允许的请求照样被限界；防护阶段各层的 body 不被它包住，那是它们的契约：它们不读 body。
 
 ## 后果
 
 声明了 `Content-Length` 的超限请求得到确定性的 413，观测层与访问日志看到 413 而非别的状态，并有一行日志。
 
-长度未知（分块传输）的请求由第二步限界，原因被记录，观测层据此把跨度标错。**这一档的状态码不统一**：由 handler 对失败读取的处理决定——走 gin 绑定的给 400，自己判 `ReadAll` 错误的给 413。层保证的是「读取有界、原因被记录、日志与访问日志看得到」，不是状态码统一。
+长度未知（分块传输）的请求由第二步限界，原因被记录，观测层据此把跨度标错。**这一档的状态码不统一**：由 handler 对失败读取的处理决定：走 gin 绑定的给 400，自己判 `ReadAll` 错误的给 413。层保证的是“读取有界、原因被记录、日志与访问日志看得到”，不是状态码统一。
 
 **接受的代价：**
 
@@ -62,4 +62,4 @@
 
 ## 失效条件
 
-若 gin 的绑定路径开始把 `*http.MaxBytesError` 作为可分辨的失败单独给出，或需求变成「所有超限请求一律同一个状态码」，则上限应当由本层自己写出状态，而不是留给 handler。
+若 gin 的绑定路径开始把 `*http.MaxBytesError` 作为可分辨的失败单独给出，或需求变成“所有超限请求一律同一个状态码”，则上限应当由本层自己写出状态，而不是留给 handler。

@@ -7,7 +7,7 @@ theme-presets 是[主题预设](../../../glossary.md)的数据货架，位于依
 本包交付主题预设的货架（包 `web/packages/theme-presets`）：它是一个纯数据包，每个预设是一份 `ThemePreset`，内容是相对默认 token 树的一份差异，由装配层与其它层一并交给主题 provider。
 
 - **交付随包的成品风格。** 基线 `default`，以及 `classic`（传统管理后台）、`modern`（时尚产品页）、`compact`（信息密集型）、`glass`（液态玻璃）、`ascii`（ASCII 终端）。
-- **只写设计取值。** 预设改 token 的段——配色、排版、间距、圆角、阴影、表面——不写 MUI（[REF-mui](../../../references.md)）的组件覆盖。效果映射是主题适配器的事（[ui-kit](design-web-ui-kit.md)）。
+- **只写设计取值。** 预设改 token 的段（配色、排版、间距、圆角、阴影、表面），不写 MUI（[REF-mui](../../../references.md)）的组件覆盖。效果映射是主题适配器的事（[ui-kit](design-web-ui-kit.md)）。
 - **不持文案。** 预设只有 `id` 与 `tokens`；显示名是产品文案，归宿主的 i18n 资源。
 
 ### 非职责
@@ -39,7 +39,7 @@ export const asciiThemePreset: ThemePreset
 export const themePresets: readonly ThemePreset[]
 ```
 
-- **每个预设是「相对默认树的差异」。** `tokens` 的结构与 `@speed/tokens` 的 `TokensOverride` 相同，只是类型层排除了 `breakpoints` 与 `zIndex`：预设改这两段不是风格问题，而是破坏布局与层序契约，因此在编译期拒绝。随包预设由测试守住这条限制。
+- **每个预设是“相对默认树的差异”。** `tokens` 的结构与 `@speed/tokens` 的 `TokensOverride` 相同，只是类型层排除了 `breakpoints` 与 `zIndex`：预设改这两段不是风格问题，而是破坏布局与层序契约，因此在编译期拒绝。随包预设由测试守住这条限制。
 - **`themePresets` 是随包货架。** 第一项是 `defaultThemePreset`，其后依次是 `classic`、`modern`、`compact`、`glass`、`ascii`。宿主可以直接把它交给主题 provider，也可以只取其中几项或自行提供预设。
 - **预设是冻结的共享数据。** 随包预设经深度冻结，读方不能就地改写；`themePresets` 本身也是冻结数组。
 - **包不携带显示名。** 一个预设的显示名不属于它的数据；宿主按 `id` 从自己的语言资源取文案。
@@ -111,9 +111,9 @@ classDiagram
 
 1. 宿主把 `themePresets`（或自选的预设集合）与一个起始 id 交给主题 provider，或经装配壳的 `theme` 选项转交。
 2. provider 解析活动预设：显式选择优先，其次是起始 id，其次是货架第一项；空货架不叠预设层。
-3. provider 把活动预设的 `tokens` 合到项目层之前：`deepMerge(preset.tokens, projectTokens)`，再由主题工厂按 `defaultTokens → 该结果 → tenantOverrides` 建成主题。
+3. provider 把活动预设的 `tokens` 合到项目层之前：`deepMerge(preset.tokens, projectTokens)`，再由主题工厂按 `defaultTokens`、该结果、`tenantOverrides` 的次序建成主题。
 
-装配层序因此是 `defaultTokens → 预设 → projectTokens → tenantOverrides`：客户的品牌色压过预设，租户覆写仍最高。预设因此可以只声明风格差异，不必知道项目的品牌色。
+装配层序因此是 `defaultTokens`、预设、`projectTokens`、`tenantOverrides`：客户的品牌色压过预设，租户覆写仍最高。预设因此可以只声明风格差异，不必知道项目的品牌色。
 
 ### 半透明与画布的合成
 

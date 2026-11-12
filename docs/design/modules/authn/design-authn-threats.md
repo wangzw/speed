@@ -24,7 +24,7 @@
 - **不承载哨兵表与依赖不可用时每条路径的方向。** 它们由 [design-authn-failure](design-authn-failure.md) 承载；本文只写这些方向在威胁上的含义。
 - **不承载设计取舍。** 为什么选这个对策、否决了哪些替代、接受了什么代价的论证，在决策记录里。
 - **不防护[未覆盖的威胁](#未覆盖的威胁)里列出的威胁。**
-- **不做以下防护措施。** 下列各项是例举，凡不在模块清单里的防护同样不提供：行为风控；会话绑定来源地址或 User-Agent；定期强制改口令；以「检测到可疑行为」为条件的封号；全局统一的威胁等级开关；泄露口令库比对；持有人证明（DPoP、mTLS，[REF-rfc9449](../../../references.md)、[REF-rfc8705](../../../references.md)）；自适应风险评分。
+- **不做以下防护措施。** 下列各项是例举，凡不在模块清单里的防护同样不提供：行为风控；会话绑定来源地址或 User-Agent；定期强制改口令；以“检测到可疑行为”为条件的封号；全局统一的威胁等级开关；泄露口令库比对；持有人证明（DPoP、mTLS，[REF-rfc9449](../../../references.md)、[REF-rfc8705](../../../references.md)）；自适应风险评分。
 - **不判定一条对策是否已经实现。** 实现与否以[实现状态](#实现状态)和各模块文档的实现状态为准。
 
 ## 术语表
@@ -37,7 +37,7 @@
 | 装配层对策 | assembly layer control | 本文 | authn 自己的代码与装配补上的防护：对库的补充校验、状态放置、统一应答、默认拒绝。表中没有标注层次的对策属于这一层。 |
 | 部署层前提 | deployment prerequisite | 本文 | 对策成立所依赖、只有宿主能提供的条件，例如时钟同步、秘密的保管、前端的安全响应头。前提不成立时，依赖它的对策失效，失效的范围写在[部署层前提](#部署层前提)里。 |
 | 残余风险 | residual risk | 本文 | 全部对策生效之后仍然存在的风险；不是对策自身的缺陷清单。 |
-| 接受 | accepted | 本文 | 残余风险栏里的标记，表示这一项风险是明说接受的代价；取舍与理由由[依赖](#依赖)一节「决策记录」栏列出的决策记录承载，本文不汇总。 |
+| 接受 | accepted | 本文 | 残余风险栏里的标记，表示这一项风险是明说接受的代价；取舍与理由由[依赖](#依赖)一节“决策记录”栏列出的决策记录承载，本文不汇总。 |
 | 无已知剩余项 | no known residual risk | 本文 | 残余风险栏的取值，表示没有已知的剩余风险；它不声称风险已经消除，库的新缺陷与未核实的假设仍记在[依赖未核实行为的假设](#依赖未核实行为的假设)与依赖里。 |
 
 ## 外部接口契约
@@ -46,7 +46,7 @@
 
 ### 威胁、对策与残余风险
 
-表的读法：「对策」栏是已设计的机制，「落点」栏是承载它的设计文档，「残余风险」栏是对策之后仍存在的风险。对策栏里写出的配置键与设置键只作机制的名字，取值与缺省值由 [design-authn-config](design-authn-config.md) 与落点文档承载。
+表的读法：“对策”栏是已设计的机制，“落点”栏是承载它的设计文档，“残余风险”栏是对策之后仍存在的风险。对策栏里写出的配置键与设置键只作机制的名字，取值与缺省值由 [design-authn-config](design-authn-config.md) 与落点文档承载。
 
 #### 账户接管
 
@@ -58,7 +58,7 @@
 | SIM 劫持与号码携转 | 短信是受限认证器（[REF-nist-sp-800-63b](../../../references.md)）：不计入管理面动作的强认证；冒充发起与重置他人因素、口令不接受仅短信 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-impersonation](design-authn-impersonation.md) | 以短信作登录或第二因素的普通账户仍受影响，短信登录与短信因素是本功能目录提供的方式；发送前的风险信号检查不做；号码被回收后，新持有者可用短信登录旧账户。**接受** |
 | 邀请链接被签发者或任何持链接者用来加入他人组织：令牌被当成地址归属的凭据 | 令牌只授予加入，不证明被邀请地址的归属；接受要求已登录账户持有一条与邀请地址规范化后相等的已证明邮箱（`Verification.Proves` 为真，`invite`、`admin`、`import-unverified` 与 `self` 都不算），未证明答 403 `invitation-email-unproved` 且邀请保持待接受；接受从不建账户、不写标识，也不把地址选作登录方式；签发者持有同一枚令牌，单独不能完成接受；成员被停用或移除时其待接受邀请被撤销，组织被删除时该租户的待接受邀请被收回，停用组织的令牌被拒绝且行保持待接受；终态与已过期的令牌只返回状态；签发与接受探测各有固定窗口的预算，超限 429 且不透露令牌是否存在 | [design-authn-invite](design-authn-invite.md) | 能证明被邀请地址的账户就是受邀人：共享邮箱、邮箱转发或地址回收之后，新持有人可以证明并加入；链接仍可转发，但转发本身不足以接受；签发者决定把链接交给谁，本模块只拒绝已属于成员、服务账户与系统租户的目标。**接受** |
 | 预占抢注：先用受害者的邮箱建号，等受害者经 SSO 或社交登录时被并入该账户 | 提供方声明的地址只用于判定需先绑定，以及与企业预置账户的邮箱标识比对；它不关联提供方，不进入其他既有账户，也不写进新账户。命中现有账户已登记的邮箱时报告 `link-required`，不进入该账户也不另开账户，当事人以自己的登录方式登录后显式绑定该提供方；企业预置的账户由 IdP 断言同一已验证邮箱直接进入，这是租户预先开户的合同，不是按地址关联既有账户 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 预置账户的匹配采信管理员断言的邮箱，管理员写错邮箱即错配；迁移导入的邮箱不经验证，由导入方负责标成 `import-unverified`。**接受** |
-| 社交与 SSO 的账户关联接管 | 键永远是（提供方，主体）；提供方声明的地址不参与识别，也不写进新账户，只用于判定需先绑定与企业预置的匹配；邮箱变化不更新账户；关联与解绑要求新鲜的本地多因素；`link-required` 只对提供方已证明邮箱或其域的调用者给出 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 提供方的「已验证」只在断言那一刻成立：Google Workspace（[REF-google-workspace-change-user-email](../../../references.md)）管理员可改邮箱，邮箱地址可被回收；它改变不了账户归属，但当事人显式绑定时采信的是那一刻的断言。**接受** |
+| 社交与 SSO 的账户关联接管 | 键永远是（提供方，主体）；提供方声明的地址不参与识别，也不写进新账户，只用于判定需先绑定与企业预置的匹配；邮箱变化不更新账户；关联与解绑要求新鲜的本地多因素；`link-required` 只对提供方已证明邮箱或其域的调用者给出 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 提供方的“已验证”只在断言那一刻成立：Google Workspace（[REF-google-workspace-change-user-email](../../../references.md)）管理员可改邮箱，邮箱地址可被回收；它改变不了账户归属，但当事人显式绑定时采信的是那一刻的断言。**接受** |
 | 租户 IdP 对跨租户的全局账户的权限边界 | 企业 SSO 的 JIT 从不并入现有账户，`merge_existing` 的取值不打开并入；`preprovisioned` 只匹配管理员为该租户预建、带该邮箱标识的账户，匹配不上即拒绝；成员关系只在建绑定的同一事务里新建，已有绑定的登录不读不写成员关系，被暂停或移除的成员不会被复活；IdP 声明的多因素只在该提供方所属租户内算数，账户安全类操作不采信；IdP 行的变更是强制审计的管理动作 | [design-authn-sso](design-authn-sso.md)、[design-authn-account](design-authn-account.md) | 租户的 IdP 管理员对自己租户新建的账户有登录控制权，这是企业 SSO 的本质；预置账户的邮箱由管理员断言，写错即错配；该 IdP 对预置账户有永久的登录能力，直到绑定被解除。**接受** |
 | 租户 A 的 IdP 声明的多因素被租户 B 的 `require-mfa` 采信，或覆盖账户自己的因素 | `idp_assured` 记在会话上，只在该提供方所属的租户内算数；账户有因素时 IdP 的声明盖不过；账户安全类操作与冒充发起不采信 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-sso](design-authn-sso.md) | 租户 A 的 IdP 管理员对自己租户内请求的 MFA 判定有话语权，这是企业 SSO 的信任边界。**接受** |
 | 首次登记的因素被抢先：持口令者先于真用户登记自己的因素 | 登录期间登记的因素不计入本次保障等级；账户安全类操作要求本地验证过的因素；冒充发起与管理员重置要求启用已满规定时长的因素（`MFA.Seasoned`） | [design-authn-mfa](design-authn-mfa.md) | 账户尚无因素时，持口令者与真用户不可区分：抢先登记者得到一个普通的多因素会话，真用户被锁在外，要靠管理员重置；首次登记没有带外证明（本模块不以邮箱验证码作因素证明）。**接受** |
@@ -81,7 +81,7 @@
 | 用户名枚举 | 注册先做用户名唯一性检查，冲突答 409 `username-taken`；邮箱冲突答 409 `email-taken`：注册在同一事务里插入联系方式预留，`(kind, value)` 唯一索引是地址的唯一仲裁点，自助添加邮箱在过人机验证之后、发码之前读标识与未证明预留；来源预算、全局小时预算与按用户名的退避限定单位时间内的探测次数 | [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md) | 匿名者可以确认某个用户名或邮箱地址已被占用，这是显式取舍；预算只给探测次数一个上界，不隐藏占用事实。**接受** |
 | 批量注册 | 按来源地址的分钟预算（`authn.account.signup-ip-limit`）、全局小时预算与 `ratelimit` 的地址盾（按来源地址限制单位时间内的请求数，不数消息）；注册派生有独立的并发名额；注册不发送任何邮件，不为批量提交附带发送成本 | [design-authn-config](design-authn-config.md)、[design-authn-login](design-authn-login.md)、[design-ratelimit](../design-ratelimit.md) | 预算额度之内仍可批量建号；注册不发送消息，因此不经人机验证；不做行为风控与一次性邮箱识别（见[未覆盖的威胁](#未覆盖的威胁)）。**接受** |
 | 注册的口令派生（Argon2id）耗尽 CPU 与内存 | 注册使用独立的派生并发上限，耗尽答 503，不挤占口令登录的派生容量；先做用户名唯一性检查，再做派生 | [design-authn-account](design-authn-account.md)、[design-authn-config](design-authn-config.md) | 独立容量之内的占用仍可拖慢注册；注册关闭的部署没有这条路径 |
-| 未验证账户越过能力边界 | 视为未验证（`SignupPending`：有邮箱而没有一条已证明的）的账户在 REQ-signup-025 列明的封闭动作上一律 403 `contact-required`，REQ-signup-024 列明的动作照常放行；判定与账户来源无关（REQ-signup-027）；服务账户与没有任何邮箱的账户（`SignupNone`）豁免；门控在身份确定之后、授权与强度判定之前，只收紧不放行，读状态失败答 503，不按放行处理。平台强制的门控限于这些身份与运营端点；`objectstore`、`notification`、`jobs` 一类业务写接口的门控由宿主决定，平台不统一拦截 | [design-authn-admin](design-authn-admin.md)、[design-authn-config](design-authn-config.md)、[design-authn](design-authn.md) | 允许的接口（登录、本人资料读写、改口令、登记多因素与通行密钥、添加并验证邮箱或手机、退出与撤销本人其他会话、接受邀请、读特性文档）仍是攻击面；未验证账户可以消耗发送预算与允许的接口内的资源。删除最后一个已证明邮箱会让账户不再有邮箱，判定落到 `SignupNone` 而不再受限，这是「没有邮箱不拦截」的直接结果。**接受** |
+| 未验证账户越过能力边界 | 视为未验证（`SignupPending`：有邮箱而没有一条已证明的）的账户在 REQ-signup-025 列明的封闭动作上一律 403 `contact-required`，REQ-signup-024 列明的动作照常放行；判定与账户来源无关（REQ-signup-027）；服务账户与没有任何邮箱的账户（`SignupNone`）豁免；门控在身份确定之后、授权与强度判定之前，只收紧不放行，读状态失败答 503，不按放行处理。平台强制的门控限于这些身份与运营端点；`objectstore`、`notification`、`jobs` 一类业务写接口的门控由宿主决定，平台不统一拦截 | [design-authn-admin](design-authn-admin.md)、[design-authn-config](design-authn-config.md)、[design-authn](design-authn.md) | 允许的接口（登录、本人资料读写、改口令、登记多因素与通行密钥、添加并验证邮箱或手机、退出与撤销本人其他会话、接受邀请、读特性文档）仍是攻击面；未验证账户可以消耗发送预算与允许的接口内的资源。删除最后一个已证明邮箱会让账户不再有邮箱，判定落到 `SignupNone` 而不再受限，这是“没有邮箱不拦截”的直接结果。**接受** |
 | 未验证邮箱与 pre-hijacking（[REF-pre-hijacked-accounts](../../../references.md)）：先用受害者的地址注册 | 联系方式预留 `(kind, value)` 全局唯一，注册插入预留即原子仲裁，未证明预留被接受为占用；预留只由证明、删除标识或未验证账户的清理释放；未证明预留不进 `authn_identifiers`，`Lookup`、口令登录名与提供方登录都看不到它；只有邮箱被证明（`email-code`，或提供方声明已验证的 `idp:<提供方标识>`）才写入标识并解除限制 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 受害者地址被一个未验证账户预占时，受害者自己的注册得到 409 `email-taken`，只能等预占账户被删除或经 `unverified-ttl` 清理，或由管理员处理；没有所有者凭证明接管的路径。该账户的持有人登录后可以为这个地址请求验证码，使受害者收到邮件，见下一条。**接受** |
 | 认证后的邮件轰炸 | 注册本身不发送任何邮件；发码发生在已认证账户的自助验证与匿名口令重置，按地址（小时与 UTC 日）、按账户（小时与 UTC 日）、按请求来源（小时与 UTC 日）与全局小时预算限；重置按用途使用独立计数键，任何发送预算超限都抑制发送并仍答 202；按地址的重发窗口跨会话与账户共享，同一收件箱的 `+` 后缀、Gmail（[REF-gmail-dots](../../../references.md)）局部部分的点与 `googlemail.com` 归一后共用地址预算与重发窗口，来源为空时来源维度 fail-open；地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算；能证明未发出的失败退还本次占用的预算，结果不确定的失败保留；验证码六位、五次尝试、十分钟有效、常量时间比较、原子计数，且不进日志、事件与指标 | [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md) | 已登录的账户仍可向任意未占用地址发码，逐个地址试探即在预算内对第三方轰炸；按地址的预算只约束单个收件箱，全局预算只给总量一个上界；来源维度按地址不按人，共享出口之后的用户共用一个来源窗口，调用方没有可信来源时该维度不设上界；地址占用在发码前即可读出，匿名注册与自助添加都能确认一个地址是否已被占用。匿名口令重置的邮箱发送受同一组数值预算与人机门槛约束，不合格目标走抑制路径、不投递。**接受** |
 | 清理误删未验证账户 | 自动清理只删 `signup_state=1`、`signup_verified_at` 为空、没有已验证邮箱且长期未登录的自助注册账户；`signup_state=0` 与 `signup_state=2` 的账户永不清理；期限与清扫间隔是设置 | [design-authn-account](design-authn-account.md)、[design-authn-config](design-authn-config.md) | 长期不登录的合法用户会在期限之后被删除，删除是破坏性动作；账户标识留墓碑，但账户资料与联系方式预留不恢复。**接受** |
@@ -141,7 +141,7 @@
 
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
-| 短信轰炸与流量泵 | 缺省拒绝所有号码前缀（`allowed-prefixes` 为空）；认证与通知的每条短信尝试写同一张共享台账 `sms_budget_events`，全部预算与跨渠道上界由它的行数得出，已登记与未登记的号码走同一条计数路径；部署的跨渠道小时上界 `sms.ceiling-hourly` 先于其余每一项，只计各渠道未退款、未抑制的行；号码未登记且注册关闭时写抑制的台账行与挑战行，不入队、不发送，抑制行计号码、来源与账户维度，不计全局、尝试与跨渠道上界；重发间隔、每号码每小时与每日的上限由台账行数得出；按来源地址的每小时与滚动一日上限（`per-source-hourly`、`per-source-daily`）、按来源的不同目的地数（`per-source-distinct-hourly`、`-daily`）与按来源的确定失败数（`per-source-attempt-hourly`）由同一来源摘要的台账行数得出，跨用途累计，`SendCode.Source` 为空时 fail-open 不施加；全局发送预算与全局失败预算按用途分设（登录、第二因素、登记与口令重置），一个用途被耗尽不挤占其余用途，匿名请求写抑制行也不消耗全局额度；尝试预算只计事后退款的确定失败，成功与抑制行不计；每流程至多 `per-flow-sends` 条；每账户每小时的上限只对 `mfa` 与 `enroll` 计，`login` 与 `reset` 不计；运行期开关 `disabled-methods` 可立刻关掉 `sms`，含 `sms` 时短信重置渠道同时撤下；`sms.ErrUncertain` 不盲目重发；厂商确定没有收下消息的发送（`ErrThrottled`、`ErrRejected`、`ErrUnroutable`）退还发送预算，请求路径上确定没发出的发送（注册表拒绝构建消息、行已写入但入队失败）同样退还，退还时在同一条语句里使验证码失效，发送预算因此只约束可能送达的发送，失败尝试则计入尝试预算；指标 `authn.sms.sends` 的 `budget-exhausted` 取值与 `authn.sms.budget.utilization` 仪表供告警；发送前人机验证按发送面选择机制，手机号面缺省自托管人机验证码、其余面缺省自托管工作量证明；手机号面的自托管人机验证码在数字图片与可键盘操作的滑块拼图之间由服务端轮换，客户端不能指定数字图片或滑块拼图中的哪一种，能请求且会被采纳的只有作为无障碍替代的音频，且音频的按来源签发上界更严；每次手机号面的发送——短信登录、加强认证时重新证明第一因素、第二因素、手机登记、匿名短信重置——由 `authn.sms.Send` 在放行表、队列与任何预算之前以手机号面核对并消费一份有效、一次性的证明，自助添加邮箱与匿名口令重置的邮箱分支以其余面由各自的路由核对；缺失、无效、过期或重放答 403 `human-verification-required`，提供方或它的存储不可用答 503 且不发送，过长的证明答 400；评审装配与端到端装配显式写 `off` | [design-authn-sms](design-authn-sms.md)、[design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md)、[design-sms](../design-sms.md) | 注册开放且前缀放行时，攻击者可对任意允许前缀的号码触发发送，上界是来源、号码、账户、各用途全局预算与跨渠道上界的最小者，但发送维度的上界只对未被证明未送达的发送成立；确定失败的发送退还发送预算却计一次尝试，攻击者可对必然失败的目的地重复触发发送、重复调用厂商，直到来源或用途的失败额度耗尽，之后该来源或用途被拒；某用途的预算耗尽即拒绝该用途的合法用户，登录、第二因素、登记各有预算，互不挤占；跨渠道上界使一次通知投递的爆发可以耗尽同一小时的认证短信额度；全局维度只由真实发送消耗，抑制行仍计号码、来源与账户维度，所以超限出现的次数不因号码是否登记而不同；来源维度按地址不按人，共享出口之后的用户共用一个来源窗口，一个发送者可以耗尽同一出口其他人的来源额度；调用方没有可信来源时来源维度不设上界，此时只剩号码、账户、全局与跨渠道上界；人机验证按发送面缺省开启（手机号面自托管人机验证码、其余面自托管工作量证明），重复触发需逐次取得证明，提供方不可用时发送一并失败而不是放行；轮换包含滑块：能自动求解滑块的攻击者在轮到滑块的签发上以与图片相同的成本取得证明，轮换不把闸的强度提高到强于滑块这一形式的可解性；音频是三形中最弱的一种，作为无障碍替代保留，按来源一分钟一个的签发上界与自身的后处理限定其求解成本；显式写 `off` 时上述残余风险原样成立。**接受** |
+| 短信轰炸与流量泵 | 缺省拒绝所有号码前缀（`allowed-prefixes` 为空）；认证与通知的每条短信尝试写同一张共享台账 `sms_budget_events`，全部预算与跨渠道上界由它的行数得出，已登记与未登记的号码走同一条计数路径；部署的跨渠道小时上界 `sms.ceiling-hourly` 先于其余每一项，只计各渠道未退款、未抑制的行；号码未登记且注册关闭时写抑制的台账行与挑战行，不入队、不发送，抑制行计号码、来源与账户维度，不计全局、尝试与跨渠道上界；重发间隔、每号码每小时与每日的上限由台账行数得出；按来源地址的每小时与滚动一日上限（`per-source-hourly`、`per-source-daily`）、按来源的不同目的地数（`per-source-distinct-hourly`、`-daily`）与按来源的确定失败数（`per-source-attempt-hourly`）由同一来源摘要的台账行数得出，跨用途累计，`SendCode.Source` 为空时 fail-open 不施加；全局发送预算与全局失败预算按用途分设（登录、第二因素、登记与口令重置），一个用途被耗尽不挤占其余用途，匿名请求写抑制行也不消耗全局额度；尝试预算只计事后退款的确定失败，成功与抑制行不计；每流程至多 `per-flow-sends` 条；每账户每小时的上限只对 `mfa` 与 `enroll` 计，`login` 与 `reset` 不计；运行期开关 `disabled-methods` 可立刻关掉 `sms`，含 `sms` 时短信重置渠道同时撤下；`sms.ErrUncertain` 不盲目重发；厂商确定没有收下消息的发送（`ErrThrottled`、`ErrRejected`、`ErrUnroutable`）退还发送预算，请求路径上确定没发出的发送（注册表拒绝构建消息、行已写入但入队失败）同样退还，退还时在同一条语句里使验证码失效，发送预算因此只约束可能送达的发送，失败尝试则计入尝试预算；指标 `authn.sms.sends` 的 `budget-exhausted` 取值与 `authn.sms.budget.utilization` 仪表供告警；发送前人机验证按发送面选择机制，手机号面缺省自托管人机验证码、其余面缺省自托管工作量证明；手机号面的自托管人机验证码在数字图片与可键盘操作的滑块拼图之间由服务端轮换，客户端不能指定数字图片或滑块拼图中的哪一种，能请求且会被采纳的只有作为无障碍替代的音频，且音频的按来源签发上界更严；每次手机号面的发送（短信登录、加强认证时重新证明第一因素、第二因素、手机登记、匿名短信重置）由 `authn.sms.Send` 在放行表、队列与任何预算之前以手机号面核对并消费一份有效、一次性的证明，自助添加邮箱与匿名口令重置的邮箱分支以其余面由各自的路由核对；缺失、无效、过期或重放答 403 `human-verification-required`，提供方或它的存储不可用答 503 且不发送，过长的证明答 400；评审装配与端到端装配显式写 `off` | [design-authn-sms](design-authn-sms.md)、[design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md)、[design-sms](../design-sms.md) | 注册开放且前缀放行时，攻击者可对任意允许前缀的号码触发发送，上界是来源、号码、账户、各用途全局预算与跨渠道上界的最小者，但发送维度的上界只对未被证明未送达的发送成立；确定失败的发送退还发送预算却计一次尝试，攻击者可对必然失败的目的地重复触发发送、重复调用厂商，直到来源或用途的失败额度耗尽，之后该来源或用途被拒；某用途的预算耗尽即拒绝该用途的合法用户，登录、第二因素、登记各有预算，互不挤占；跨渠道上界使一次通知投递的爆发可以耗尽同一小时的认证短信额度；全局维度只由真实发送消耗，抑制行仍计号码、来源与账户维度，所以超限出现的次数不因号码是否登记而不同；来源维度按地址不按人，共享出口之后的用户共用一个来源窗口，一个发送者可以耗尽同一出口其他人的来源额度；调用方没有可信来源时来源维度不设上界，此时只剩号码、账户、全局与跨渠道上界；人机验证按发送面缺省开启（手机号面自托管人机验证码、其余面自托管工作量证明），重复触发需逐次取得证明，提供方不可用时发送一并失败而不是放行；轮换包含滑块：能自动求解滑块的攻击者在轮到滑块的签发上以与图片相同的成本取得证明，轮换不把闸的强度提高到强于滑块这一形式的可解性；音频是三形中最弱的一种，作为无障碍替代保留，按来源一分钟一个的签发上界与自身的后处理限定其求解成本；显式写 `off` 时上述残余风险原样成立。**接受** |
 | 验证码重用、重放与暴力 | 每码的尝试次数用尽即作废；单次消费（条件更新）；有效期有界；摘要带密钥 | [design-authn-sms](design-authn-sms.md) | 6 位数字的摘要抗不了离线穷举（库被读走时），只防短期暴露 |
 | 计时侧信道 | 口令诱饵派生（按当前设置懒生成，设置变更时重建）；常量时间比较（口令哈希、验证码摘要、流程令牌、`state`）；匿名口令重置把发送交给工作池，响应路径不等待载体 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 常量时间比较与诱饵派生只使服务端处理时间相等，网络与调度抖动造成的差别不在保证内；设置变更之后到账户下次登录升级哈希之前，已知与未知标识的派生耗时有差；口令表的未知用户名因快速拒绝而快（已接受）。匿名口令重置只保证合格与抑制目标的应答结构、状态码与响应头一致，合格分支多出的账户读与投递入队不作时延上界。**接受** |
 | 口令派生耗尽 CPU 与内存 | 并发信号量，满则 503；Argon2 的取值域与解析上限有界，另有按字节计的内存预算，每个口令后端各持一份；解析条目有界限；口令长度有上限 | [design-authn-account](design-authn-account.md)、[design-authn-gate](design-authn-gate.md) | 并发与内存预算以内的占用，各口令后端的预算互相独立，整个进程的上界是各份之和；已知有效用户名的口令表主体仍可被用来消耗派生，受退避约束；并发内存峰值在目标部署规格之内是假设，见[依赖未核实行为的假设](#依赖未核实行为的假设) |
@@ -152,7 +152,7 @@
 |---|---|---|---|
 | `state` 缺失、可预测、可由发起方指定（goth 的缺陷，[REF-goth](../../../references.md)） | 32 字节随机数，存摘要，回跳时常量时间比较；自己生成，不接受外部指定；与流程绑定一同校验 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
 | PKCE（[REF-rfc7636](../../../references.md)）缺失或降级、授权码截获 | Google（[REF-google-openid-connect](../../../references.md)）、GitHub（[REF-github-oauth-apps](../../../references.md)）、企业 OIDC（[REF-openid-connect-core](../../../references.md)）一律 S256；校验串存流程记录 | [design-authn-login](design-authn-login.md) | 微信（[REF-wechat-website-login](../../../references.md)、[REF-wechat-oa-web-auth](../../../references.md)）协议不支持 PKCE；Google 是否强制 PKCE 未核实 |
-| 授权码重放与注入、登录 CSRF | 回跳时对流程记录比较并交换，置为「正在交换」，授权码至多换一次；流程绑定 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
+| 授权码重放与注入、登录 CSRF | 回跳时对流程记录比较并交换，置为“正在交换”，授权码至多换一次；流程绑定 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
 | 开放重定向（`return_to`、`redirect_uri`） | `redirect_uri` 由配置的 `public-url` 拼出；`return_to` 只接受相对路径或可信来源，开始时校验并存服务端，回跳时只用记录里的值 | [design-authn-login](design-authn-login.md) | `trusted-origins` 配宽了即开放；宿主前端若把任意 `return_to` 里的路径当重定向目标，要自己校验 |
 | 混淆攻击：把 A 提供方的回跳投给 B | 每个提供方的回跳路径不同；流程里记提供方；回跳带 `iss` 时仍比对 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
 | ID 令牌重放、`nonce` 缺失、`sub` 不一致 | 自己发 `nonce`、自己比对；校验 `aud`、`azp`、`iss`；不调 userinfo | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
@@ -168,7 +168,7 @@
 | 跨租户访问：持合法凭据的调用方指名另一个租户 | `tenant.admission` 默认拒绝，非成员的应答与不存在的租户一致（404） | [design-tenant-admission](../tenant/design-tenant-admission.md) | 准入层的拒绝落在审计与限流之内：准入层在授权阶段，该阶段在记录与限流之内；装配后的真实次序未经运行核对（见[依赖未核实行为的假设](#依赖未核实行为的假设)） |
 | 端点漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：声明在鉴别阶段之外各阶段的层、阶段内被 `After`、`Before` 或 `Order` 排到网关之外的层，以及入口模块内建的请求上下文、访问日志与兜底层，都在网关之前；宿主仍可显式放宽 |
 | 管理面被远程滥用 | 默认不可用：`authn.admin` 要宿主纳入并交付 `Decider` 与审计；强制审计 | [design-authn-admin](design-authn-admin.md) | 宿主交付的 `Decider` 有缺陷，则管理面有缺陷 |
-| 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`password-signup`、`check-session`）是设置项，与其余可在运行期修改的安全项走同一控制：经 `settings.admin` 管理面写全局层时由平台域 `settings.write` 判定，管理面在每次写之前落强制档审计；宿主自建的写入口由宿主鉴权；authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings-admin](../settings/design-settings-admin.md) | 事后可见、不能事前阻止；设置没有按键的写控制，拿到全局写权限的主体仍能把放宽开关、`throttle-*` 与短信预算调松。**接受** |
+| 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`password-signup`、`check-session`）是设置项，与其余可在运行期修改的安全项走同一控制：经 `settings.admin` 管理面写全局层时由平台域 `settings.write` 判定，管理面在每次写之前落强制档审计；宿主自建的写入口由宿主鉴权；authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明“`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限” | [design-authn-config](design-authn-config.md)、[design-settings-admin](../settings/design-settings-admin.md) | 事后可见、不能事前阻止；设置没有按键的写控制，拿到全局写权限的主体仍能把放宽开关、`throttle-*` 与短信预算调松。**接受** |
 | 预认证请求使表无界增长 | 每张会增长的表有持有者与清扫协程；kv 的流程记录与重置记录靠键的生存期过期，没有另设清扫协程；`authn_throttles` 的行数上界是失败请求速率乘 `throttle-decay` | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 匿名洪泛期间表会变大；缓解是 `ratelimit` 的地址盾（按来源地址限制单位时间内的请求数）。登录路径的前置减负按发出的验证消息计数，不按流程开始计数，不给这一项上界。一次被人机验证拒绝的登录第一步仍写一条流程记录（停在 `first`、没有方法步、不写流程 cookie，随 `authn.login.flow-ttl` 到期），且因没有报告发送不占来源前置减负的桶；这类请求按来源的上界只由地址盾给出，宿主须让它覆盖登录路由所在的端（见[部署层前提](#部署层前提)）。**接受** |
 | 自托管机制的挑战签发耗尽算力 | `pow` 与 `captcha` 的视觉形式各按来源地址在一分钟固定窗口内至多签发十个挑战；`captcha` 的音频形式是显式请求的无障碍替代，另用一个计数键，按来源在一分钟固定窗口内至多签发一个；`pow` 与 `captcha` 各另有一个覆盖全部来源的全局计数键，缺省一窗口六百次，`captcha` 的全局计数覆盖三种形式；超过任一上界即 429；挑战只在计数通过后绘制 | [design-authn](design-authn.md)、[design-authn-config](design-authn-config.md) | 计数按来源地址，不按人：共享同一出口地址（如 NAT）的多个用户共用这一分钟十个视觉挑战与一个音频挑战的额度，其中一个用户可以耗尽它们，使同一出口的其他用户取不到挑战、发送被 429 挡住；分布在不同来源的请求仍能在全局上界内让进程按轮换逐个绘制图片或滑块、并按来源每分钟各绘制一份客户端请求的音频并写 `kv`；全局上界被大量来源耗尽后，同一窗口内全部来源都取不到挑战，合法用户同样被 429 挡住。上界之外的总工作量由宿主地址防护层覆盖挑战路由所在的端给出，本仓库的默认文档把 `account` 端列入 `ratelimit.address-endpoints`（见[部署层前提](#部署层前提)）。不装该层或把它配宽的部署承受这份开销。**接受** |
 | 供应链：依赖库的漏洞 | 固定版本；go-jose 与 goxmldsig 设版本下限；每个库隔在叶子包；升级走专门的变更 | [design-authn-token](design-authn-token.md)、[design-authn-sso](design-authn-sso.md) | 新漏洞出现到升级之间的窗口 |
@@ -210,12 +210,12 @@
 | 一次性邮箱与一次性号码的识别 | 不做：需要外部数据源与判定，注册只按格式与长度校验地址与用户名；批量注册的上界由预算给出 |
 | 口令泄露库比对 | 不做：需要出站调用，并有隐私上的权衡 |
 | 自适应风险评分 | 不做：没有可用的信号来源，且未配置可信代理时代理之后的对端地址不可靠 |
-| 公共后缀表对 WebAuthn `rp-id` 的核对 | 不做；残余风险写在[账户接管](#账户接管)的「钓鱼与实时代理」一行 |
+| 公共后缀表对 WebAuthn `rp-id` 的核对 | 不做；残余风险写在[账户接管](#账户接管)的“钓鱼与实时代理”一行 |
 
 ### 对外接口
 
 - **已写入的对策不得削弱而不同时更新本文与对应的决策记录。** 对策是一条威胁所依赖的性质，削弱它等于改变残余风险。
-- **残余风险栏的「接受」项增减是对接受的代价的变更**，同时更新对应的决策记录。
+- **残余风险栏的“接受”项增减是对接受的代价的变更**，同时更新对应的决策记录。
 - **部署层前提的增减是对宿主可见的接口的变更**，同时更新[部署层前提](#部署层前提)。
 - 类别与行的措辞不在对外接口内：威胁的归类可以调整，对策与落点的指向不可以与被指向文档不一致。
 
@@ -223,7 +223,7 @@
 
 本文是叶子文档：被 [design-authn](design-authn.md) 与设计文档索引引用，没有任何代码与文档依赖本文，因此不引入依赖方向问题。本文对其余文档的依赖是引用，不是构建依赖。
 
-对策的落点与取舍记录按类别列出，类别与[威胁、对策与残余风险](#威胁对策与残余风险)的小节一致；「落点」栏列出该类别的对策所在的设计文档，「决策记录」栏列出对应的取舍。
+对策的落点与取舍记录按类别列出，类别与[威胁、对策与残余风险](#威胁对策与残余风险)的小节一致；“落点”栏列出该类别的对策所在的设计文档，“决策记录”栏列出对应的取舍。
 
 | 类别 | 落点 | 决策记录 |
 |---|---|---|
@@ -237,7 +237,7 @@
 | 注册与邮件 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md)、[design-authn-admin](design-authn-admin.md) | [ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)、[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md) |
 | 基础设施与服务端 | [design-authn-config](design-authn-config.md)、[design-authn-events](design-authn-events.md)、[design-authn-failure](design-authn-failure.md)、[design-authn-gate](design-authn-gate.md) | [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)、[ADR-authn-failure](../../../adr/adr-authn-failure.md)、[ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md)、[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md) |
 
-对策依赖的其他模块与库的性质如下，列表是例举，不是封闭集。「失守时」栏写依赖的性质不成立时受影响的对策。
+对策依赖的其他模块与库的性质如下，列表是例举，不是封闭集。“失守时”栏写依赖的性质不成立时受影响的对策。
 
 | 依赖 | 依赖的性质 | 失守时 |
 |---|---|---|
@@ -362,7 +362,7 @@ flowchart LR
 
 ### 失败的方向
 
-依赖不可用时的方向是拒绝：db、kv、签名密钥、短信发送方与 IdP 不可用时，对应路径答 503，不答 200，也不答 401。有界的放宽是封闭集，各自带设置与上界，集合与上界由 [design-authn](design-authn.md) 与 [design-authn-failure](design-authn-failure.md) 承载；上文表中的缓存滞后、`check-session=false` 下的令牌存续、设置变更的传播延迟与证书陈旧窗口是同一批。本文的表不新增放宽项：表中出现的放宽方向的风险，要么属于那个封闭集，要么写在[部署层前提](#部署层前提)的「前提不成立时」一栏里。
+依赖不可用时的方向是拒绝：db、kv、签名密钥、短信发送方与 IdP 不可用时，对应路径答 503，不答 200，也不答 401。有界的放宽是封闭集，各自带设置与上界，集合与上界由 [design-authn](design-authn.md) 与 [design-authn-failure](design-authn-failure.md) 承载；上文表中的缓存滞后、`check-session=false` 下的令牌存续、设置变更的传播延迟与证书陈旧窗口是同一批。本文的表不新增放宽项：表中出现的放宽方向的风险，要么属于那个封闭集，要么写在[部署层前提](#部署层前提)的“前提不成立时”一栏里。
 
 ### 依赖未核实行为的假设
 
@@ -370,8 +370,8 @@ flowchart LR
 
 | 假设 | 守住它的测试 |
 |---|---|
-| 链上次序成立：准入层在审计与限流之内、授权之外，网关在租户解析与审计之外；本文的拦截位置图与跨租户访问的对策依赖它 | 该假设与它的装配测试由 [design-authn](design-authn.md#链上次序) 的「链上次序」一节承载，本文不另设测试 |
-| gosaml2：校验后能取得 `types.Response`；响应与断言都未签名时拒绝；NameID 中的 XML 注释不被截断，或被补充校验拒绝 | 签名包装向量与「全未签名」向量的表驱动测试，含注释 NameID 的负向用例 |
+| 链上次序成立：准入层在审计与限流之内、授权之外，网关在租户解析与审计之外；本文的拦截位置图与跨租户访问的对策依赖它 | 该假设与它的装配测试由 [design-authn](design-authn.md#链上次序) 的“链上次序”一节承载，本文不另设测试 |
+| gosaml2：校验后能取得 `types.Response`；响应与断言都未签名时拒绝；NameID 中的 XML 注释不被截断，或被补充校验拒绝 | 签名包装向量与“全未签名”向量的表驱动测试，含注释 NameID 的负向用例 |
 | goxmldsig 没有另外的拒绝 SHA-1 的途径，预扫描足以拦住 SHA-1 | SHA-1 签名向量的负向测试 |
 | go-jose：每把密钥只配一种算法，并在运算时检查，由 authn 自己查令牌头里的算法完成；已解析令牌的 `typ` 头可取 | `alg` 在白名单之外、`typ` 不符、缺 `exp` 的令牌各被拒；依赖测试断言 `pkg/go.mod` 对 go-jose 的版本下限不低于 [design-authn-token](design-authn-token.md) 的依赖写明的版本 |
 | scs 对库里没有的令牌新建空会话，不沿用客户端给的令牌；存储键的哈希与 authn 自己轮换时算出的一致 | 提交一个预置令牌，断言判为无此会话；断言两处算出的存储键相等 |
@@ -386,7 +386,7 @@ flowchart LR
 
 ### 本文不作的保证
 
-- **本文是设计层的威胁分析，不是渗透测试或形式化证明的结果。** 残余风险栏的「无已知剩余项」只说没有已知的剩余风险。
+- **本文是设计层的威胁分析，不是渗透测试或形式化证明的结果。** 残余风险栏的“无已知剩余项”只说没有已知的剩余风险。
 - **库的未知缺陷不在表里。** 表只写已知的公告与版本下限。
 - **对策的存在以实现状态为准。** 表描述设计；对应模块尚未实现时，该对策不存在，见[实现状态](#实现状态)。
 - **部署层前提不由 authn 校验。** 启动诊断能让一部分前提的缺席被察觉，不能让它们成立。

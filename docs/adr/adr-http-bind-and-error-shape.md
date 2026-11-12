@@ -22,18 +22,18 @@
 
 ### 抽 `BindJSON`，并把宿主的业务错误体改用 `Fail`
 
-**采纳** —— 见决策。
+**采纳**：见决策。
 
 ### 不抽，让 handler 直接用 gin 的 `ShouldBindJSON`
 
-**否决**：gin（[REF-gin](../references.md)）把「超限」与「JSON 不可读」归成同一个 error，状态码要调用方自己按 `errors.As` 分；不抽就是把这段判定留在每个宿主，这正是重复发生的地方。
+**否决**：gin（[REF-gin](../references.md)）把“超限”与“JSON 不可读”归成同一个 error，状态码要调用方自己按 `errors.As` 分；不抽就是把这段判定留在每个宿主，这正是重复发生的地方。
 
 ## 决策
 
 采纳：**入口模块交付请求体绑定入口 `BindJSON`，宿主的 handler 错误体统一到本模块的 RFC 9457 结构。**
 
-- 新增 `func BindJSON(c *gin.Context, dst any) bool`（`pkg/http`）。语义自宿主的 `bindBody` 迁移：`ShouldBindJSON` 失败 → 413（`*nethttp.MaxBytesError`）否则 400；成功且 `dst` 实现 `interface{ Validate() error }` 而它报错 → 422。这些失败都经既有的 `Fail` 写出 `Problem`，并返回 false。
-- 第二宿主检验通过：它也重复了同一套 `ShouldBindJSON` 与 `*nethttp.MaxBytesError` → 413 的判定。
+- 新增 `func BindJSON(c *gin.Context, dst any) bool`（`pkg/http`）。语义自宿主的 `bindBody` 迁移：`ShouldBindJSON` 失败时答 413（`*nethttp.MaxBytesError`），否则 400；成功且 `dst` 实现 `interface{ Validate() error }` 而它报错时答 422。这些失败都经既有的 `Fail` 写出 `Problem`，并返回 false。
+- 第二宿主检验通过：它也重复了同一套 `ShouldBindJSON` 与 `*nethttp.MaxBytesError` 归为 413 的判定。
 - 宿主自造的错误体删除：`apiError` 与 `writeError` 撤掉，业务 handler 改调 `speedhttp.Fail`。响应体从 `{"error":"…"}` 变成 RFC 9457 的 problem 对象。
 - 错误体的内容与结构仍由 `Problem` 与 `ErrorResponder` 决定（[ADR-http-errors](adr-http-errors.md)），文本仍是渲染完成的成品文本（[ADR-i18n-error-rendering](adr-i18n-error-rendering.md)）。
 
@@ -44,7 +44,7 @@ handler 侧的绑定失败与业务失败，其错误体出自同一个结构定
 **接受的代价：**
 
 - 宿主对客户端的错误体契约发生破坏性变更：从 `{"error":"…"}` 变成 problem 对象。须按破坏性变更标注。
-- `pkg/http` 的公开接口多一个函数 `BindJSON`，它是本模块包装请求体绑定过程的入口；本能力现行表述「handler 里的请求体绑定、校验与响应渲染直接用 `gin.Context` 的方法，本模块不包装它们」随之不再成立。
+- `pkg/http` 的公开接口多一个函数 `BindJSON`，它是本模块包装请求体绑定过程的入口；本能力现行表述“handler 里的请求体绑定、校验与响应渲染直接用 `gin.Context` 的方法，本模块不包装它们”随之不再成立。
 - 本模块自己写出的拒绝覆盖无匹配路由的 404、方法不允许的 405、请求体超限的 413 与接住 panic 的 500；`BindJSON` 的 400 与 422 不在其中，它们的文本由谁渲染没在本记录里定，落在设计文档。
 
 ## 失效条件

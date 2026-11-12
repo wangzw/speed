@@ -2,23 +2,23 @@
 
 本[模块](../../../glossary.md)是作业能力的默认队列后端：它持有一张作业表，把提交、查询与取消做成 `Queue` 的方法，并由若干执行协程认领到期行、进入租户、交给 handler、再按结果结清。它拥有作业行的全部状态迁移、认领与租约、退避与死信，不拥有周期调度、作业语义与业务补偿。读职责清单前应持有的一句话心智模型是：多副本分摊只靠一行有时限的认领，没有选主，也没有分布式锁。
 
-第一遍的次序是职责与非职责、外部接口契约、依赖与 UML 图、核心数据结构与核心算法与流程：职责与非职责给出边界，外部接口契约按登记单元与名字、交付的功能、宿主可见的接口、对外接口与哨兵错误逐节展开，依赖与 UML 图给出一轮认领的路径与生命周期；核心数据结构的状态一览说明每个状态在做什么，核心算法与流程的走查用一条作业从入队到结清把状态行串起来，一轮认领、退避与死信、「取消」「停机」随后给出细则。错误与失败语义、并发与事务边界属查阅用，非保证与竞态情形是最后的自检项；扩展点与实现状态在主体之后回看。
+第一遍的次序是职责与非职责、外部接口契约、依赖与 UML 图、核心数据结构与核心算法与流程：职责与非职责给出边界，外部接口契约按登记单元与名字、交付的功能、宿主可见的接口、对外接口与哨兵错误逐节展开，依赖与 UML 图给出一轮认领的路径与生命周期；核心数据结构的状态一览说明每个状态在做什么，核心算法与流程的走查用一条作业从入队到结清把状态行串起来，一轮认领、退避与死信、“取消”“停机”随后给出细则。错误与失败语义、并发与事务边界属查阅用，非保证与竞态情形是最后的自检项；扩展点与实现状态在主体之后回看。
 
 ## 职责
 
-`jobs.db` 交付**跨副本的持久作业队列**与**handler 登记接口**：`Queue`（提交、查询、取消）与 `Handlers`（登记执行者）两个接口、一张作业表 `jobs`，以及把到期作业认领、执行、结清的驱动器。提交方经 `Queue.Enqueue` 在一个租户的上下文里落一行作业；每个副本的若干执行协程从这张表认领到期的行，经 `tenant.Catalog.Enter` 进入该行的租户，把行交给按 `Type` 登记的 `Handler` 执行，再按结果结清那一行——成功、按退避重试或进入死信。作业因此至少执行一次；多副本之间靠有时限的认领分摊同一张表，不选主、不引入中间件（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
+`jobs.db` 交付**跨副本的持久作业队列**与**handler 登记接口**：`Queue`（提交、查询、取消）与 `Handlers`（登记执行者）两个接口、一张作业表 `jobs`，以及把到期作业认领、执行、结清的驱动器。提交方经 `Queue.Enqueue` 在一个租户的上下文里落一行作业；每个副本的若干执行协程从这张表认领到期的行，经 `tenant.Catalog.Enter` 进入该行的租户，把行交给按 `Type` 登记的 `Handler` 执行，再按结果结清那一行：成功、按退避重试或进入死信。作业因此至少执行一次；多副本之间靠有时限的认领分摊同一张表，不选主、不引入中间件（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
 
 `Queue` 与 `Handlers` 都由本模块**排他交付**：一个进程里恰好一个队列。根包 `pkg/jobs` 是接口包与公共类型，不登记模块；本子包登记模块 `jobs.db`，配置命名空间取同一个取值（[ADR-jobs-packaging](../../../adr/adr-jobs-packaging.md)）。
 
 ### 非职责
 
-- **不含调度，不声明周期任务。** 周期声明 `jobs.Schedule`、窗口幂等键与按租户展开归 `jobs.scheduler`。本模块只执行提交进来的作业；它不认识「每个周期该做一次」这件事，落在作业行上的只是调用方给的 `idempotency_key`。
+- **不含调度，不声明周期任务。** 周期声明 `jobs.Schedule`、窗口幂等键与按租户展开归 `jobs.scheduler`。本模块只执行提交进来的作业；它不认识“每个周期该做一次”这件事，落在作业行上的只是调用方给的 `idempotency_key`。
 - **不解释作业语义。** `Task.Type` 与 `Task.Payload` 对队列不透明；作业做什么、`Result` 是什么，由登记该 `Type` 的 `Handler` 定义。
 - **不替使用方去重。** 作业至少执行一次；一次因认领到期或副本崩溃带来的重复执行，由使用方按 `IdempotencyKey` 自行幂等，本模块不重放一次已结清作业的结果（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
 - **不选主，不持分布式锁。** 多副本的分摊靠有时限的认领，没有任何一个副本是唯一的认领者。
 - **不保证执行顺序。** 认领按优先与到期取，退避与跨租户轮转都会改变次序；需要顺序的使用方在载荷里携带序号。
 - **不拥有事件总线。** `(*event.Bus)(nil)` 是可选依赖；它缺席时终态事件不发，作业照常执行与结清。
-- **不做进程内循环。** 本模块做的事是「认领到期作业并执行」，不是「按间隔跑一段逻辑」；进程内的周期循环归各模块自己的 ticker，见 [design-jobs](design-jobs.md) 的职责。
+- **不做进程内循环。** 本模块做的事是“认领到期作业并执行”，不是“按间隔跑一段逻辑”；进程内的周期循环归各模块自己的 ticker，见 [design-jobs](design-jobs.md) 的职责。
 - **不实现业务补偿。** 失败后延迟重试、到上限进死信是队列的全部重试语义；一次执行留下的副作用由使用方自己补偿。
 - **不挂 HTTP 接口，不声明权限点。** 提交与取消是进程内的接口调用，不经过任何路由。
 
@@ -57,7 +57,7 @@ type Handler interface {
 
 - **租户取自 `ctx`，不取自 `Task`。** `Task` 不带租户字段，租户经 `tenant.FromContext(ctx)` 读出，写行时由内嵌的 `tenant.Model` 落下 `tenant_id` 列。上下文里没有租户时，`Enqueue` 以租户功能目录的哨兵 `tenant.ErrNoTenantInContext` 拒绝，什么都不写。这与数据库的租户过滤是同一条判据（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
 - **`Enqueue` 校验 `Task` 的格式再落一行。** `Type` 非空且有一个已登记的 `Handler`，否则以 `ErrInvalidTask` 或 `ErrNoHandler` 拒绝，不写行。`id` 是应用在该步生成的 UUID；`status` 起于 `pending`；`scheduled_at` 与 `available_at` 起于到期时刻。
-- **选项按传入次序应用。** `WithDelay(d)` 把 `scheduled_at` 置为当下加 `d`，`WithScheduledAt(t)` 置为 `t`；两者互斥，**后传入者胜**——后应用的那一个覆盖先应用的。`WithMaxRetries`、`WithTimeout`、`WithPriority` 各自覆盖对应的列。未给 `WithMaxRetries` 时取 `DefaultMaxRetries`，未给 `WithTimeout` 时取 `DefaultTimeout`，未给 `WithPriority` 时取 `PriorityNormal`，`Priority` 的类型零值 `PriorityLow` 只在调用方显式传 `Priority(0)` 时出现。
+- **选项按传入次序应用。** `WithDelay(d)` 把 `scheduled_at` 置为当下加 `d`，`WithScheduledAt(t)` 置为 `t`；两者互斥，**后传入者胜**：后应用的那一个覆盖先应用的。`WithMaxRetries`、`WithTimeout`、`WithPriority` 各自覆盖对应的列。未给 `WithMaxRetries` 时取 `DefaultMaxRetries`，未给 `WithTimeout` 时取 `DefaultTimeout`，未给 `WithPriority` 时取 `PriorityNormal`，`Priority` 的类型零值 `PriorityLow` 只在调用方显式传 `Priority(0)` 时出现。
 - **`IdempotencyKey` 非空时 `Enqueue` 幂等。** `(tenant_id, idempotency_key)` 唯一，重复提交返回既有作业的 `JobID`，不新建行、不报错。
 - **`Get` 在本租户可见范围内按 `id` 取一行。** 未知 `id`、他人的 `id`、不属于本租户的行一律是同一个 `ErrJobNotFound`，不泄露存在性。
 - **`Cancel` 按行的当前状态分档。** 未知或被隐藏的行以 `ErrJobNotFound` 拒绝。未认领的行（`claimed_by` 为空，状态 `pending` 或 `retrying`）在一条语句里直接置 `cancelled`。已认领的行只置 `cancel_requested`，由认领者在认领与执行之间查它，命中即以 `cancelled` 结清。已进入终态的行（`succeeded`／`dead_letter`／`cancelled`）是幂等空操作，返回 `nil`、不改任何行。
@@ -85,9 +85,9 @@ type Handler interface {
 | 取源 | 配置项取主配置源；设置项取设置存储，缺席时取声明默认值 |
 | 事件（发出） | `jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled`（终态）；可选依赖 `event.Bus` 缺席时不发，作业照常跑 |
 
-设置项读取失败或取值越出取值域时取声明默认值并记一行 `Error`，那一轮照常进行。`retry-max` 小于 `retry-base` 不是启动期的跨键不变量：两个值都收下，队列照常运行，退避在使用处以 `retry-max` 为上限（见「退避与死信」）。配置不再承载 `poll-interval`、`claim-batch`、`lease`、`retry-base` 与 `retry-max`：旧配置里仍写着它们的宿主在启动时按未知键失败。
+设置项读取失败或取值越出取值域时取声明默认值并记一行 `Error`，那一轮照常进行。`retry-max` 小于 `retry-base` 不是启动期的跨键不变量：两个值都收下，队列照常运行，退避在使用处以 `retry-max` 为上限（见“退避与死信”）。配置不再承载 `poll-interval`、`claim-batch`、`lease`、`retry-base` 与 `retry-max`：旧配置里仍写着它们的宿主在启动时按未知键失败。
 
-各输入项的用途见「认领的常数与取值」；`jobs.db` 是排他交付 `Queue` 与 `Handlers` 的唯一模块，宿主在命令树上点名它或为它预置实例，依赖闭包不替宿主挑（排他交付的提供者不被依赖闭包自动纳入）。
+各输入项的用途见“认领的常数与取值”；`jobs.db` 是排他交付 `Queue` 与 `Handlers` 的唯一模块，宿主在命令树上点名它或为它预置实例，依赖闭包不替宿主挑（排他交付的提供者不被依赖闭包自动纳入）。
 
 ### 对外接口
 
@@ -126,7 +126,7 @@ type Handler interface {
 | `pkg/log` | 可选：诊断 |
 | GORM（[REF-gorm](../../../references.md)） | 经交付句柄发出的语句 |
 
-**方向。** 本模块 import 数据库、租户与 `pkg/jobs` 的根包，不 import 任何上层功能目录，也不 import `pkg/http`——提交与取消是进程内接口，没有路由。数据库与租户都在本模块之前构造、在本模块之后停止。`event.Bus` 与 `log.Logger` 都是可选取用：取不到时终态事件不发，诊断减少，作业照常执行与结清。
+**方向。** 本模块 import 数据库、租户与 `pkg/jobs` 的根包，不 import 任何上层功能目录，也不 import `pkg/http`：提交与取消是进程内接口，没有路由。数据库与租户都在本模块之前构造、在本模块之后停止。`event.Bus` 与 `log.Logger` 都是可选取用：取不到时终态事件不发，诊断减少，作业照常执行与结清。
 
 ## UML 图
 
@@ -191,7 +191,7 @@ stateDiagram-v2
 
 **作业表 `jobs`**，一行一条作业。**行模型由本模块持有**（未导出的 `job`），它内嵌 `tenant.Model`：租户列 `tenant_id` 由此落下，本模块的模型语句据它填列与过滤。根包的 `Job` 是这张表的一行在调用方一侧的**只读视图**，不带租户字段。
 
-**全部时刻列是 epoch 毫秒的整数**（PostgreSQL `BIGINT`、SQLite `INTEGER`）：认领、结清与租约到期都是原生 SQL 算术，两个方言对时间戳字面量的拼写不同而整数相同，整数因而是在两个方言上一条语句判定「到点」与「持有到何时」的形态（形态照 `pkg/event/outbox/relay` 的迁移）。认领循环的每条语句读数据库自己的时钟（`pkg/jobs/db/statements.go` 的 `statements.now`），多副本的执行协程因此按同一个时钟判断到期与认领；`Enqueue` 写行时读提交方进程的时钟（`pkg/jobs/db/store.go` 的 `Enqueue` 里的 `time.Now`），那是经模型的一次单行写入。
+**全部时刻列是 epoch 毫秒的整数**（PostgreSQL `BIGINT`、SQLite `INTEGER`）：认领、结清与租约到期都是原生 SQL 算术，两个方言对时间戳字面量的拼写不同而整数相同，整数因而是在两个方言上一条语句判定“到点”与“持有到何时”的形态（形态照 `pkg/event/outbox/relay` 的迁移）。认领循环的每条语句读数据库自己的时钟（`pkg/jobs/db/statements.go` 的 `statements.now`），多副本的执行协程因此按同一个时钟判断到期与认领；`Enqueue` 写行时读提交方进程的时钟（`pkg/jobs/db/store.go` 的 `Enqueue` 里的 `time.Now`），那是经模型的一次单行写入。
 
 | 列 | 含义 |
 |---|---|
@@ -218,7 +218,7 @@ stateDiagram-v2
 | `terminal_published_at` | 终态事件已发布的时刻；为空即发布义务未结；epoch 毫秒 |
 | `created_at`、`updated_at` | 行的创建与最近更新时刻；epoch 毫秒 |
 
-**主键是 `(tenant_id, id)` 复合键，租户列领衔。** 受租户约束的写表以 `tenant_id` 领衔主键：一条不领衔租户列的键会让一个租户的写入经 upsert 够到另一个租户的行——插入在别人的键上冲突，把那一行改写成写入方租户的行（先例：`pkg/authz`、`pkg/settings`、`pkg/tenant/catalog` 的表，约定见 `pkg/tenant` 的 `Model`）。`Enqueue` 的单行写入带 `OnConflict` 子句，这条键是它的判据所在。两个方言的迁移各自声明这条键。
+**主键是 `(tenant_id, id)` 复合键，租户列领衔。** 受租户约束的写表以 `tenant_id` 领衔主键：一条不领衔租户列的键会让一个租户的写入经 upsert 够到另一个租户的行，即插入在别人的键上冲突，把那一行改写成写入方租户的行（先例：`pkg/authz`、`pkg/settings`、`pkg/tenant/catalog` 的表，约定见 `pkg/tenant` 的 `Model`）。`Enqueue` 的单行写入带 `OnConflict` 子句，这条键是它的判据所在。两个方言的迁移各自声明这条键。
 
 索引：`available_at` 上有索引，认领按它取到期的行，读表按它算下一次到期；`(tenant_id, idempotency_key)` 唯一，使幂等键再次提交收敛到既有行。幂等键为空的行在该列上写作 NULL，SQL 的唯一索引不把多个 NULL 判为冲突，无键的作业因而可以多条并存。
 
@@ -268,21 +268,21 @@ stateDiagram-v2
 1. **读表**：取最早一行的 `available_at` 与数据库当前时刻之差。没有行即本轮结束；最早的还没到期，下一轮定在它到期之时；有到期的行就进第 2 步。
 2. **认领**：一条语句取至多 `claim-batch` 行到期的作业，按 `priority` 降序、`available_at` 升序、跨租户轮转取；写下本执行者为 `claimed_by`、认领到期为数据库当前时刻加 `lease`、`status` 置 `running`，交回这些行。
 3. **执行**：逐行执行，交 handler 之前先查 `cancel_requested`，再经 `tenant.Catalog.Enter` 进入该行的租户；一次执行的上下文在作业自己的 `timeout_ms` 处到期。
-4. **结清**：逐行以 `claimed_by` 为条件写回结果（见「退避与死信」与「终态事件与发布义务」）。
+4. **结清**：逐行以 `claimed_by` 为条件写回结果（见“退避与死信”与“终态事件与发布义务”）。
 
 一轮在还有到期的行时接着认领下一批。每一批有读表与认领各一条语句，每一行另有结清的一条；空表上的一轮只有读表那一条。读表或认领失败时行不动，间隔从 `poll-interval` 起翻倍，至多 `retry-max`，每次写一条错误日志。
 
 ### 认领的常数与取值
 
-常数取自本模块的输入项（命名空间与缺省见「宿主可见的接口」）：`workers` 与 `shutdown-grace` 是配置项，在构造期定下执行协程数与 `Stop` 等进行中作业的上限；`poll-interval`、`claim-batch`、`lease`、`retry-base` 与 `retry-max` 是设置项，在每轮循环、每次认领与每次失败结算时读取当前值。`poll-interval` 是无到期作业时读表的间隔，`claim-batch` 是一次认领取的行数上限，`lease` 是一次认领的有效期，`retry-base` 与 `retry-max` 是退避的起点与上限。退避自 `retry-base` 起，每次失败翻倍，至多 `retry-max`，形态照 `pkg/event/outbox/relay` 的 `timing.retryAfter`。
+常数取自本模块的输入项（命名空间与缺省见“宿主可见的接口”）：`workers` 与 `shutdown-grace` 是配置项，在构造期定下执行协程数与 `Stop` 等进行中作业的上限；`poll-interval`、`claim-batch`、`lease`、`retry-base` 与 `retry-max` 是设置项，在每轮循环、每次认领与每次失败结算时读取当前值。`poll-interval` 是无到期作业时读表的间隔，`claim-batch` 是一次认领取的行数上限，`lease` 是一次认领的有效期，`retry-base` 与 `retry-max` 是退避的起点与上限。退避自 `retry-base` 起，每次失败翻倍，至多 `retry-max`，形态照 `pkg/event/outbox/relay` 的 `timing.retryAfter`。
 
 ### 并发认领
 
-两次认领同时进行，都读到同一行到期、都还没写下认领，这一种由行锁裁定：PostgreSQL 上认领对它取的行加锁，并跳过另一个认领正锁着的行，第二个认领因而不取那些行、也不等它们；SQLite 一次只有一个写者，一条认领语句本身即原子，不另加锁。时刻一律取数据库的时钟，多个副本的认领按同一个时钟判断到期——按各自副本的时钟判断会让一个时钟走快的副本提前接手别人还持有着的行。这两条与方言的时钟表达式、锁子句写在同一个扩展点里（见「扩展点」）。
+两次认领同时进行，都读到同一行到期、都还没写下认领，这一种由行锁裁定：PostgreSQL 上认领对它取的行加锁，并跳过另一个认领正锁着的行，第二个认领因而不取那些行、也不等它们；SQLite 一次只有一个写者，一条认领语句本身即原子，不另加锁。时刻一律取数据库的时钟，多个副本的认领按同一个时钟判断到期：按各自副本的时钟判断会让一个时钟走快的副本提前接手别人还持有着的行。这两条与方言的时钟表达式、锁子句写在同一个扩展点里（见“扩展点”）。
 
 ### 执行与租户进入
 
-把行交给 handler 之前，先以该行的 `tenant_id` 调 `tenant.Catalog.Enter(ctx, id)`，进入那个租户，再交 handler。进入之后 handler 里的受约束语句按该租户过滤、按该租户填列，与一条解析成功的请求相同。进入失败——名册里没有这一行，或该租户已停用——即本次执行失败，以租户的错误记下并按退避处置，不交 handler。**执行时的租户取自作业行，提交时的租户取自 `ctx`，两端是同一条租户作用域规则**：作业行内嵌 `tenant.Model`，租户列在入队时由上下文落下，执行时再进入同一个租户。
+把行交给 handler 之前，先以该行的 `tenant_id` 调 `tenant.Catalog.Enter(ctx, id)`，进入那个租户，再交 handler。进入之后 handler 里的受约束语句按该租户过滤、按该租户填列，与一条解析成功的请求相同。进入失败（名册里没有这一行，或该租户已停用）即本次执行失败，以租户的错误记下并按退避处置，不交 handler。**执行时的租户取自作业行，提交时的租户取自 `ctx`，两端是同一条租户作用域规则**：作业行内嵌 `tenant.Model`，租户列在入队时由上下文落下，执行时再进入同一个租户。
 
 ### 退避与死信
 
@@ -290,19 +290,19 @@ handler 返回错误，或执行上下文到期，都是本次执行失败：`at
 
 ### 取消
 
-`Cancel` 按行的当前状态分档。未认领的行（`claimed_by` 为空，状态 `pending` 或 `retrying`）在一条语句里直接置 `cancelled`，条件写清 `WHERE id = ? AND claimed_by IS NULL AND status IN ('pending','retrying')`。已认领的行只置 `cancel_requested`，执行协程在认领与执行之间查它：命中即不交 handler、把该行结清为 `cancelled`（终态）并发终态事件。终态行（`succeeded`／`dead_letter`／`cancelled`）是幂等空操作，返回 `nil`、不改任何行。一次执行中途的取消不被队列观察——队列不持有正在执行的那一行的取消通道，正在跑的 handler 自己按 `ctx` 判断；一次执行结束之后若有重试，下一次认领之后再查 `cancel_requested`。
+`Cancel` 按行的当前状态分档。未认领的行（`claimed_by` 为空，状态 `pending` 或 `retrying`）在一条语句里直接置 `cancelled`，条件写清 `WHERE id = ? AND claimed_by IS NULL AND status IN ('pending','retrying')`。已认领的行只置 `cancel_requested`，执行协程在认领与执行之间查它：命中即不交 handler、把该行结清为 `cancelled`（终态）并发终态事件。终态行（`succeeded`／`dead_letter`／`cancelled`）是幂等空操作，返回 `nil`、不改任何行。一次执行中途的取消不被队列观察：队列不持有正在执行的那一行的取消通道，正在跑的 handler 自己按 `ctx` 判断；一次执行结束之后若有重试，下一次认领之后再查 `cancel_requested`。
 
 ### 终态事件与发布义务
 
-作业进入 `succeeded`、`dead_letter` 或 `cancelled` 时，队列尝试向总线发一条对应类型的事件（`jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled`）。**发布义务记在作业行自己身上**：`terminal_published_at` 为空即未发布，结清进终态时尝试一次，一轮里另有一段补发：取终态且 `terminal_published_at` 为空的行补发并置上时刻。总线缺席，或一次发布失败，都不改变作业的终态，也不撤销结清——`terminal_published_at` 留空，下一次补发接手。发布义务落在行上，`pkg/event` 因此是**可选依赖**：装配里没有总线时，事件不发，作业照常执行、结清、进死信（[ADR-jobs-terminal-event](../../../adr/adr-jobs-terminal-event.md)）。
+作业进入 `succeeded`、`dead_letter` 或 `cancelled` 时，队列尝试向总线发一条对应类型的事件（`jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled`）。**发布义务记在作业行自己身上**：`terminal_published_at` 为空即未发布，结清进终态时尝试一次，一轮里另有一段补发：取终态且 `terminal_published_at` 为空的行补发并置上时刻。总线缺席，或一次发布失败，都不改变作业的终态，也不撤销结清：`terminal_published_at` 留空，下一次补发接手。发布义务落在行上，`pkg/event` 因此是**可选依赖**：装配里没有总线时，事件不发，作业照常执行、结清、进死信（[ADR-jobs-terminal-event](../../../adr/adr-jobs-terminal-event.md)）。
 
 ### 公平性
 
-认领的排序键含租户维度：在 `priority` 与 `available_at` 之后，认领按跨租户的轮转取，使一个租户的到期行不会在每一个批次里都排在别的租户之前。判据是**一个租户不得饿死其他租户**——一个租户的高优先作业堆满到期时刻，别的租户的作业仍要在有限的轮次里被认领到。租户维度是排序键，不是过滤条件：每一行仍在所有租户的行里竞争被认领，轮转只改变同一排序位置上的先后。
+认领的排序键含租户维度：在 `priority` 与 `available_at` 之后，认领按跨租户的轮转取，使一个租户的到期行不会在每一个批次里都排在别的租户之前。判据是**一个租户不得饿死其他租户**：一个租户的高优先作业堆满到期时刻，别的租户的作业仍要在有限的轮次里被认领到。租户维度是排序键，不是过滤条件：每一行仍在所有租户的行里竞争被认领，轮转只改变同一排序位置上的先后。
 
 ### 停机
 
-`Stop` 之后不再认领。进行中的那一次执行在 `shutdown-grace` 内跑完，超出即取消它的上下文；本执行者持有而尚未执行的行全部交还——`claimed_by` 与 `claim_expires_at` 置空、`available_at` 置为当时、`status` 回到可认领（未曾执行的回 `pending`，曾经失败的回 `retrying`），下一个执行者——同一个库上别的副本，或下一次启动——立即可认领它们，不必等认领到期。别的副本持有的行不在其内：它们正在被执行，交还了就会被第三个副本再执行一次。
+`Stop` 之后不再认领。进行中的那一次执行在 `shutdown-grace` 内跑完，超出即取消它的上下文；本执行者持有而尚未执行的行全部交还：`claimed_by` 与 `claim_expires_at` 置空、`available_at` 置为当时、`status` 回到可认领（未曾执行的回 `pending`，曾经失败的回 `retrying`），下一个执行者（同一个库上别的副本，或下一次启动）立即可认领它们，不必等认领到期。别的副本持有的行不在其内：它们正在被执行，交还了就会被第三个副本再执行一次。
 
 ## 错误与失败语义
 

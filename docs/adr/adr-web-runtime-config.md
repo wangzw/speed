@@ -4,7 +4,7 @@
 
 一份 `server/dist` 要在合一拓扑与分离拓扑下共用（[ADR-web-static-hosting](adr-web-static-hosting.md)、[ADR-web-two-build-artifacts](adr-web-two-build-artifacts.md)）：合一拓扑里产物内嵌进 Go 二进制、由本进程答出；分离拓扑里同一份产物交静态主机、后端只做 API。
 
-API 的 origin 因部署而异：与页面同源、在另一台主机、经反向代理挂在一条路径前缀下。今天的 origin 在装配期定下——`web/packages/product-shell/src/bootstrap.tsx` 的 `bootstrapSpeedApp` 取 `definition.baseUrl`，缺省 `window.location.origin`；一个不同源的部署要在应用源码里写死，或经构建期注入（vite 的 `import.meta.env`，[REF-vite](../references.md)）。
+API 的 origin 因部署而异：与页面同源、在另一台主机、经反向代理挂在一条路径前缀下。目前的 origin 在装配期定下：`web/packages/product-shell/src/bootstrap.tsx` 的 `bootstrapSpeedApp` 取 `definition.baseUrl`，缺省 `window.location.origin`；一个不同源的部署要在应用源码里写死，或经构建期注入（vite 的 `import.meta.env`，[REF-vite](../references.md)）。
 
 把 origin 烘进 dist，同一份 dist 就只在一种 origin 下可用：改部署位置要重建前端，合一与分离两条拓扑也各需一次构建。
 
@@ -14,13 +14,13 @@ API 的 origin 因部署而异：与页面同源、在另一台主机、经反�
 
 在构建时把 origin 注入产物（vite 的环境变量或 `define`）。
 
-**否决**：一份 dist 只在一种 origin 下可用；两条拓扑各需一次构建，与 [ADR-web-two-build-artifacts](adr-web-two-build-artifacts.md) 的「拓扑共用同一份产物」直接冲突，且改一次部署位置要重建并重发前端。
+**否决**：一份 dist 只在一种 origin 下可用；两条拓扑各需一次构建，与 [ADR-web-two-build-artifacts](adr-web-two-build-artifacts.md) 的“拓扑共用同一份产物”直接冲突，且改一次部署位置要重建并重发前端。
 
 ### 由宿主在应用源码里写死 origin
 
 在应用入口把 origin 写成常量交给 `bootstrapSpeedApp`。
 
-**否决**：同构建期烘焙的后果——origin 成为一份需重新发布的产物的一部分；「另一台主机、另一条反代前缀」这类运行期事实被固化进源码。
+**否决**：同构建期烘焙的后果：origin 成为一份需重新发布的产物的一部分；“另一台主机、另一条反代前缀”这类运行期事实被固化进源码。
 
 ### 运行期注入：dist 旁的 runtime-config.json 在启动时取回，缺省回退同源
 

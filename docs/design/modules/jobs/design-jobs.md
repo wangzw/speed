@@ -6,17 +6,17 @@
 
 ## 职责
 
-本能力交付**面向分布式部署的作业执行**：一件要在稍后的某个时刻做、或要离开当前请求路径在别处做的活，落成一条持久的作业记录，由任一在运行的副本认领并执行。同一张作业表承载三类需求——**定时一次**（在一个远期的时刻做一件事）、**周期**（每隔一段做一次）、**异步执行**（把一件耗时的活推迟到请求路径之外）。提交侧只依赖提交接口 `Queue`，执行侧由业务模块登记 `Handler`。
+本能力交付**面向分布式部署的作业执行**：一件要在稍后的某个时刻做、或要离开当前请求路径在别处做的活，落成一条持久的作业记录，由任一在运行的副本认领并执行。同一张作业表承载三类需求：**定时一次**（在一个远期的时刻做一件事）、**周期**（每隔一段做一次）、**异步执行**（把一件耗时的活推迟到请求路径之外）。提交侧只依赖提交接口 `Queue`，执行侧由业务模块登记 `Handler`。
 
 根包 `pkg/jobs` 是接口包与公共类型，不登记模块。队列与登记接口由 `pkg/jobs/db` 排他交付，它持一张作业表并组织消费者。周期调度由 `pkg/jobs/scheduler` 承担，它按业务模块声明的 `Schedule` 在 tick 上入队（[ADR-jobs-packaging](../../../adr/adr-jobs-packaging.md)）。
 
 ### 非职责
 
-- **单个进程内循环触发的任务不由本能力承载。** 判据是**这件事的触发是否必须跨副本收敛**：一件必须全平台只做一次的活归本能力，一件每个副本各做各的、不需要在副本之间收敛的活不由本能力承载。仓库现有各模块自起的 ticker 循环属于不需要跨副本收敛的那一类——刷新进程内快照（`pkg/authz/policy`、`pkg/settings`、`pkg/tenant/catalog`）、清扫过期行（`pkg/authn/session`、`pkg/authn/token`、`pkg/authn/account`、`pkg/authn/mfa`、`pkg/authn/sms`、`pkg/authn/sso`）、文件轮转（`pkg/log`）、轮询外部（`pkg/sms/registry` 的厂商审核），其中 `pkg/sms/registry` 的那一个循环既刷新快照也轮询外部——各持有自己的循环与间隔，统一形态是「间隔 ≤0 即关掉，失败只 Warn，各自持有停机制约」。这些活是每副本各刷自己的进程内状态，触发不需要跨副本收敛（[ADR-jobs-scope](../../../adr/adr-jobs-scope.md)）。
+- **单个进程内循环触发的任务不由本能力承载。** 判据是**这件事的触发是否必须跨副本收敛**：一件必须全平台只做一次的活归本能力，一件每个副本各做各的、不需要在副本之间收敛的活不由本能力承载。仓库现有各模块自起的 ticker 循环属于不需要跨副本收敛的那一类：刷新进程内快照（`pkg/authz/policy`、`pkg/settings`、`pkg/tenant/catalog`）、清扫过期行（`pkg/authn/session`、`pkg/authn/token`、`pkg/authn/account`、`pkg/authn/mfa`、`pkg/authn/sms`、`pkg/authn/sso`）、文件轮转（`pkg/log`）、轮询外部（`pkg/sms/registry` 的厂商审核），其中 `pkg/sms/registry` 的那一个循环既刷新快照也轮询外部。各持有自己的循环与间隔，统一形态是“间隔 ≤0 即关掉，失败只 Warn，各自持有停机制约”。这些活是每副本各刷自己的进程内状态，触发不需要跨副本收敛（[ADR-jobs-scope](../../../adr/adr-jobs-scope.md)）。
 - **不做工作流编排。** 一个作业的执行结果不驱动下一个作业；作业之间没有依赖、没有扇入扇出、没有有向无环图。需要按序做几件事的调用方自己在 `Handle` 里做，或自己在成功之后再入队。
 - **不在请求路径里同步执行。** `Enqueue` 只落一行并返回，执行发生在某个副本的消费者上；一件必须在调用返回前做完的活不在本能力的形态里。
 - **不解释作业类型的含义。** 类型名由调用方定义（`Handler.Type()`），载荷是不透明字节，本能力不解释它，也不据它分派到业务数据。
-- **不承诺结果的重放。** 结果存在作业行上供查询，本能力不把它投递给别的订阅方，也不在重复执行时重放（见「错误与失败语义」的至少一次）。
+- **不承诺结果的重放。** 结果存在作业行上供查询，本能力不把它投递给别的订阅方，也不在重复执行时重放（见“错误与失败语义”的至少一次）。
 - **不选主、不引入中间件。** 多副本分摊靠作业表上有期限的认领，本能力没有 leader 选举、没有分布式锁、没有独立的队列中间件。
 
 ## 外部接口契约
@@ -124,17 +124,17 @@ var (
 )
 ```
 
-`Queue` 与 `Handlers` 都由 `jobs.db` 排他交付。`Task` **不带租户字段**：租户取自 `ctx`（`tenant.FromContext`），无租户即以租户的错误拒绝——与数据库的租户过滤同一条判据，写行时租户列由模型内嵌的 `tenant.Model` 落下。
+`Queue` 与 `Handlers` 都由 `jobs.db` 排他交付。`Task` **不带租户字段**：租户取自 `ctx`（`tenant.FromContext`），无租户即以租户的错误拒绝：与数据库的租户过滤同一条判据，写行时租户列由模型内嵌的 `tenant.Model` 落下。
 
-`Queue` 的各方法约束的主体是每个实现 `Queue` 的队列模块。`Enqueue` 校验 `Task` 的格式、从 `ctx` 解析租户、写下一行作业并返回它的 `JobID`；`IdempotencyKey` 非空且 `(tenant_id, idempotency_key)` 已占时返回既有作业的 `JobID`。`Get` 返回本租户可见的一条作业；未见过的 id、他人租户的 id 与已不可见的 id 一律以 `ErrJobNotFound` 拒绝，不区分存在性。`Cancel` 请求取消一条作业，按行的当前状态分档：未认领的行（`claimed_by` 为空）在一条语句里直接进入终态 `cancelled`，已认领的行只置下取消请求、由认领者在认领与执行之间观察后以 `cancelled` 结清，已进入终态的行是幂等空操作（见 [jobs.db](design-jobs-db.md) 的「取消」）。
+`Queue` 的各方法约束的主体是每个实现 `Queue` 的队列模块。`Enqueue` 校验 `Task` 的格式、从 `ctx` 解析租户、写下一行作业并返回它的 `JobID`；`IdempotencyKey` 非空且 `(tenant_id, idempotency_key)` 已占时返回既有作业的 `JobID`。`Get` 返回本租户可见的一条作业；未见过的 id、他人租户的 id 与已不可见的 id 一律以 `ErrJobNotFound` 拒绝，不区分存在性。`Cancel` 请求取消一条作业，按行的当前状态分档：未认领的行（`claimed_by` 为空）在一条语句里直接进入终态 `cancelled`，已认领的行只置下取消请求、由认领者在认领与执行之间观察后以 `cancelled` 结清，已进入终态的行是幂等空操作（见 [jobs.db](design-jobs-db.md) 的“取消”）。
 
 `Handlers` 约束的主体是每个调用它的业务模块：`Register` 以 `Type()` 标识一个 `Handler`，同一类型只登记一次后由消费者按类型分派；`Registered` 列出已登记的类型名。`Queue.Enqueue` 遇一个没有已登记 handler 的 `Type` 时即以 `ErrNoHandler` 拒绝，不写行。
 
 `Job` 是作业的只读视图，**不带租户字段**：持久化用的行模型由 `jobs.db` 持有，它内嵌 `tenant.Model` 并据此落租户列。`Status` 的取值是闭集；`Status.Terminal()` 对 `StatusSucceeded`、`StatusDeadLetter`、`StatusCancelled` 为真，对其余值为假。`Priority` 的取值是闭集 `{PriorityLow, PriorityNormal, PriorityHigh}`，认领按它降序。`Result` 与 `Error` 都是执行结果的表述，`Result` 只在成功时有值。
 
-`EnqueueOption` 的各构造函数各自设定一个入队参数：`WithPriority` 设定 `Job.Priority`（缺省 `PriorityNormal`，不是 `Priority` 的类型零值 `PriorityLow`——只有调用方显式传 `Priority(0)` 时才是它）、`WithDelay` 设定从现在起延迟多久可被认领、`WithScheduledAt` 设定一个绝对时刻之后才可被认领、`WithMaxRetries` 设定 `Job.MaxRetries`（缺省 `DefaultMaxRetries`）、`WithTimeout` 设定单次执行的时限（缺省 `DefaultTimeout`）。`WithDelay` 与 `WithScheduledAt` 互斥，后传入者胜。
+`EnqueueOption` 的各构造函数各自设定一个入队参数：`WithPriority` 设定 `Job.Priority`（缺省 `PriorityNormal`，不是 `Priority` 的类型零值 `PriorityLow`；只有调用方显式传 `Priority(0)` 时才是它）、`WithDelay` 设定从现在起延迟多久可被认领、`WithScheduledAt` 设定一个绝对时刻之后才可被认领、`WithMaxRetries` 设定 `Job.MaxRetries`（缺省 `DefaultMaxRetries`）、`WithTimeout` 设定单次执行的时限（缺省 `DefaultTimeout`）。`WithDelay` 与 `WithScheduledAt` 互斥，后传入者胜。
 
-`enqueueOptions` 不导出；`NewEnqueueOptions` 是**跨包取得一份初始参数集的唯一入口**——队列模块（`jobs.db` 与提交方不在同一个包）先向它要一份起点：`PriorityNormal`、`DefaultMaxRetries`、`DefaultTimeout`、没有定时时刻；再按调用方传入的次序逐个应用选项。它本身不是调用方使用的符号，调用方只构造 `EnqueueOption`。
+`enqueueOptions` 不导出；`NewEnqueueOptions` 是**跨包取得一份初始参数集的唯一入口**。队列模块（`jobs.db` 与提交方不在同一个包）先向它要一份起点：`PriorityNormal`、`DefaultMaxRetries`、`DefaultTimeout`、没有定时时刻；再按调用方传入的次序逐个应用选项。它本身不是调用方使用的符号，调用方只构造 `EnqueueOption`。
 
 `Schedule` 是业务模块在 `Resources` 里声明的周期任务，由 `jobs.scheduler` 消费；字段语义见下一节的取材域裁定与 [jobs.scheduler](design-jobs-scheduler.md)。
 
@@ -150,9 +150,9 @@ var (
 
 ### 周期声明与取材域
 
-`Schedule` 是业务模块对外声明周期任务的资源类型；`pkg/jobs/scheduler` 是它的消费点。取材域取**参与集**。判据是：周期声明描述的是**这次运行要做的活**，它的效果依赖声明它的模块真的被驱动——那个模块的 handler 才登记得进去；只被静态级纳入的模块不构造、handler 不存在，它的声明因此不该被 tick。取材域之内，消解落选的模块其声明退出。
+`Schedule` 是业务模块对外声明周期任务的资源类型；`pkg/jobs/scheduler` 是它的消费点。取材域取**参与集**。判据是：周期声明描述的是**这次运行要做的活**，它的效果依赖声明它的模块真的被驱动：那个模块的 handler 才登记得进去；只被静态级纳入的模块不构造、handler 不存在，它的声明因此不该被 tick。取材域之内，消解落选的模块其声明退出。
 
-对照是 notification 的[类型分类法](../notification/design-notification-preferences.md)，它取**可用集**：类型是**词汇**——偏好写入与投递拿它当校验参照，同一个声明不能在这条命令下合法、在另一条下非法；周期声明是**活**——它必须与这次装配的东西一致，只被静态级纳入、handler 不存在的声明不该被 tick。两者判据的差别即本条裁定与类型分类法裁定之间的实质（[ADR-jobs-schedule](../../../adr/adr-jobs-schedule.md)）。
+对照是 notification 的[类型分类法](../notification/design-notification-preferences.md)，它取**可用集**：类型是**词汇**：偏好写入与投递拿它当校验参照，同一个声明不能在这条命令下合法、在另一条下非法；周期声明是**活**：它必须与这次装配的东西一致，只被静态级纳入、handler 不存在的声明不该被 tick。两者判据的差别即本条裁定与类型分类法裁定之间的实质（[ADR-jobs-schedule](../../../adr/adr-jobs-schedule.md)）。
 
 ### 对外接口
 
@@ -242,7 +242,7 @@ classDiagram
     scheduler ..> Schedule
 ```
 
-一行作业在一个副本上的生命周期。图里看不出的约束：`pending` 在到期之前一直等着被认领（延迟与定时一次都落在这个状态里）；`retrying` 是失败之后、退避到期之前的状态；未认领的行（`pending` 或 `retrying`）被 `Cancel` 时在一条语句里直接进入 `cancelled`，已认领的行由认领者在执行前观察到取消请求后进入 `cancelled`；`succeeded`、`dead_letter`、`cancelled` 是终态，进入其一向总线发事件、不再被认领；认领之后持有而尚未执行的行在停机或认领到期时交还，回到可认领的状态——未曾执行的回 `pending`，曾经失败的回 `retrying`。
+一行作业在一个副本上的生命周期。图里看不出的约束：`pending` 在到期之前一直等着被认领（延迟与定时一次都落在这个状态里）；`retrying` 是失败之后、退避到期之前的状态；未认领的行（`pending` 或 `retrying`）被 `Cancel` 时在一条语句里直接进入 `cancelled`，已认领的行由认领者在执行前观察到取消请求后进入 `cancelled`；`succeeded`、`dead_letter`、`cancelled` 是终态，进入其一向总线发事件、不再被认领；认领之后持有而尚未执行的行在停机或认领到期时交还，回到可认领的状态：未曾执行的回 `pending`，曾经失败的回 `retrying`。
 
 ```mermaid
 stateDiagram-v2
@@ -302,7 +302,7 @@ stateDiagram-v2
 
 **周期入队。** `jobs.scheduler` 按 `tick` 读全部 `jobs.Schedule` 声明，对每个到期的周期以窗口幂等键入队一条：键是 `sha256(声明键 + 窗口起点的十进制 UnixNano)` 的十六进制（不含租户），作为 `IdempotencyKey`，同一窗口的多次 tick 因此在唯一索引上收敛成一个作业。在册租户在每次 tick 里读一次（`tenant.Catalog.List`），本轮的每条声明与每个窗口共用这一份，逐个 `Enter` 后各入队一条（细则见 [jobs.scheduler](design-jobs-scheduler.md)）。
 
-**终态与发布义务。** 一条作业进入任一终态时向总线发一条事件；发布义务记在作业行自己身上（`terminal_published_at` 为空即补发），因此对 `pkg/event` 是可选依赖——总线缺席时作业照跑、只是不发事件。
+**终态与发布义务。** 一条作业进入任一终态时向总线发一条事件；发布义务记在作业行自己身上（`terminal_published_at` 为空即补发），因此对 `pkg/event` 是可选依赖：总线缺席时作业照跑、只是不发事件。
 
 ### 分布式语义总览
 
@@ -322,7 +322,7 @@ stateDiagram-v2
 | 终态发事件 | [jobs.db](design-jobs-db.md) | 进入终态时向总线发事件；发布义务记在作业行自己身上（`terminal_published_at` 为空即补发），对 `pkg/event` 是可选依赖 |
 | 租户作用域 | [jobs.db](design-jobs-db.md) | 作业行内嵌 `tenant.Model`；执行时先 `tenant.Catalog.Enter(ctx, id)` 再交 handler |
 | 周期声明按租户展开 | [jobs.scheduler](design-jobs-scheduler.md) | 每次 tick 读一次在册租户（`tenant.Catalog.List`），本轮的每条声明与每个窗口共用这一份，逐个 `Enter` 后各入队一条 |
-| 周期声明的取材域 | [jobs.scheduler](design-jobs-scheduler.md) | 取参与集；判据见本文「周期声明与取材域」 |
+| 周期声明的取材域 | [jobs.scheduler](design-jobs-scheduler.md) | 取参与集；判据见本文“周期声明与取材域” |
 
 ## 错误与失败语义
 
@@ -349,13 +349,13 @@ stateDiagram-v2
 - **执行一个作业前先进入它的租户。** 作业在 `tenant.Catalog.Enter(ctx, id)` 之后的上下文里跑，模型内嵌的 `tenant.Model` 使语句落在该租户作用域内。
 - **终态的写与事件的发布分离。** 先写作业行的终态，再由作业行自己的 `terminal_published_at` 记录发布义务；一次发布失败不撤销终态的写。
 
-细则——认领语句、交还与停机、方言差异——落在 [jobs.db](design-jobs-db.md)。
+细则（认领语句、交还与停机、方言差异）落在 [jobs.db](design-jobs-db.md)。
 
 ## 扩展点
 
 **新增一种队列后端。** 一个模块实现 `Queue` 与 `Handlers` 两个接口并各排他交付，持自己的存储与认领机制，`pkg/jobs/db` 是默认实现。拒绝的条件是：根包必须保持接口包的身份、不登记模块；同一个功能标识 `(*jobs.Queue)(nil)` 或 `(*jobs.Handlers)(nil)` 上同时纳入两个实现时，在消解阶段以排他冲突失败。
 
-**新增一种触发方式。** 触发是入队的另一种来路：一个模块取用 `Queue`，按它自己的规则（cron 表达式、外部事件、命令行动作）入队，`jobs.scheduler` 是周期触发的默认实现。新的触发方式不修改根包，也不修改 `jobs.db`——它只依赖提交接口。
+**新增一种触发方式。** 触发是入队的另一种来路：一个模块取用 `Queue`，按它自己的规则（cron 表达式、外部事件、命令行动作）入队，`jobs.scheduler` 是周期触发的默认实现。新的触发方式不修改根包，也不修改 `jobs.db`：它只依赖提交接口。
 
 ## 实现状态
 
