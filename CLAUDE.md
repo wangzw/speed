@@ -87,7 +87,7 @@ through `go.work` like every other.
 | `docs/glossary.md`, `docs/references.md` | The shared vocabulary and the register of external sources; a `REF-<slug>` cited in any document names an entry of the latter. Chinese. |
 | `<module>/AGENTS.md` | A module's own contract: its boundaries and how to run it. |
 | `tools/` | Repository self-checks. `tools/README.md` says what each one does. |
-| `Makefile`, `.mise.toml`, `.golangci.yml`, `.github/workflows/` | The engineering machinery: entry points, toolchain pins, lint configuration, CI. |
+| `Makefile`, `.mise.toml`, `.golangci.yml`, `.github/` | The engineering machinery: entry points, toolchain pins, lint configuration, CI workflows with their toolchain action, dependency updates. |
 | `compose.yaml` | The external backends the `integration`-tagged cases run against: PostgreSQL, Redis, NATS and memcached. The tests connect to it; it is the only thing that starts it. |
 | `.claude/skills/` | How the work is done: `document-standards` before writing under the documentation paths, `commit-convention` for commit messages, `frontend-coding-standards` for `web/`, and `browser-review` before opening a headed browser against the demo (every command carries `-s=speed-review`, and `open` carries the fixed profile). |
 | `docs/site/` | Documentation generated for the earlier implementation. No gate builds or validates its content, though the repository-wide hygiene gates still traverse the tree. |
