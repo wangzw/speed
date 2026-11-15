@@ -32,6 +32,7 @@ Each script also runs on its own:
 python3 tools/check_toolchain.py
 python3 tools/check_markdown_examples.py
 python3 tools/check_conflict_markers.py
+python3 tools/check_fixup_commits.py
 python3 tools/check_observability_readiness.py
 python3 tools/check_test_tiers.py
 python3 tools/check_e2e_honesty.py
@@ -98,6 +99,18 @@ in the tree is in scope, `node_modules` and non-UTF-8 files excepted.
 Exit codes: 0 clean, 1 markers found (each with file, line and text),
 2 infrastructure error (the root is not a directory, or the scan read no
 text file at all).
+
+`check_fixup_commits.py` — fails when a commit whose subject starts with
+`fixup! `, `squash! ` or `amend! ` sits on the branch beyond its base. Such a
+commit is a correction waiting to be folded into the commit it corrects by
+`git rebase --autosquash main`; landed as it is, it becomes a standalone
+commit on a history that is never rewritten. The range is `origin/main..HEAD`
+when `origin/main` resolves in the repository at `--root`, `main..HEAD`
+otherwise, and HEAD equal to the base is an empty range. Each hit is reported
+with its short SHA and subject. A root outside a git work tree, or one where
+neither ref resolves, has no range to read: one line says nothing was
+checked and the exit code is 0. Exit codes: 0 clean or nothing checked,
+1 at least one such commit.
 
 `check_observability_readiness.py` — fails when a package under `pkg/`
 breaks one of the observability obligations that three Go tests guard, each

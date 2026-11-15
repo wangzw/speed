@@ -116,4 +116,7 @@ through `go.work` like every other.
   the capability directory the change touches** — `fix(config): reject a
   manifest with two mounts on one path`.
 - **Rebase onto the target branch and fast-forward.** History stays
-  linear.
+  linear. Before landing, fold each correction into the commit it
+  corrects (fixup plus autosquash), and one logical change lands as one
+  commit; the procedure is the commit-convention skill's "Landing a
+  branch" section.
