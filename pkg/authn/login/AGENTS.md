@@ -236,12 +236,32 @@ does.
   `authn.account.signup` is closed; the password method never carries
   `opens_account`, because it never opens an account.
 - **The routes are mounted through `mount.Mounter` with their access level in one
-  call, and the callback bypasses the cross-origin check.** The base path is
-  `authn.gate.mount.bases.default` on the endpoint
-  `authn.gate.mount.endpoints.default`; the flow cookie is `SameSite=None` so
-  that a SAML POST navigation still carries it. The flow and reset cookies
-  always carry the `__Host-` prefix, `Secure` and `HttpOnly`: the public URL is
-  https or a loopback host, for which a browser keeps a `Secure` cookie.
+  call, and only `callback/:provider` bypasses the cross-origin check.** The
+  base path is `authn.gate.mount.bases.default` on the endpoint
+  `authn.gate.mount.endpoints.default`. The flow cookie is `SameSite=Lax`, the
+  reset cookie `SameSite=Strict`; both always carry the `__Host-` prefix,
+  `Secure` and `HttpOnly`, written as constants: the public URL is https or a
+  loopback host, for which a browser keeps a `Secure` cookie.
+- **A provider's cross-site POST to `callback/:provider` is bounced, never
+  handled there** (`bounce.go`). A cross-site POST does not carry the Lax flow
+  cookie, so the route parses the form within the 512 KiB bound and answers the
+  bounce page whether or not a cookie came along; it reads no flow, writes no
+  record and asks no method. The page's limits are the contract: it echoes only
+  the posted form fields, escaped by `html/template`; its form's target is the
+  same provider's `callback/:provider/resume`, built from the declared route and
+  the path parameter and never from a field or header of the request; its one
+  script carries a nonce drawn per response that the response's
+  `Content-Security-Policy` admits (`default-src 'none'`, `form-action` naming
+  `'self'` and every trusted origin, `frame-ancestors 'none'`, `base-uri
+  'none'`); it carries no product text. Chromium and WebKit hold `form-action`
+  to every redirect the submission follows, so its list covers each target the
+  resume route redirects to: a relative return target or failure landing is
+  `'self'`, an absolute one has passed `checkReturnTo` against the trusted
+  origins (`TestTheBouncePagesFormActionAdmitsEveryTrustedOrigin`). The
+  resume route is registered with `mount.Declared`, not `Callback`, so it keeps
+  the cross-origin check; it runs the callback (binding, then the method, or
+  the IdP-initiated branch without a cookie). `TestACrossSiteCallbackPostIsAllowed`
+  holds that the bypass does not reach it.
 - **A setting moved toward more lenient is visible after the fact, never
   blocked.** The subscription to `settings.changed` writes a `Warn` and a
   best-effort `authn.settings.relaxed` audit row naming the key and the

@@ -24,8 +24,23 @@ func (r *routes) callbackGet(ctx context.Context, in callbackInput, meta *speedh
 }
 
 // callbackPost handles a provider's callback delivered as a cross-site form
-// post.
+// post, which is how SAML's assertion consumer service is reached. The route is
+// outside the cross-origin check, and a cross-site post does not carry the Lax
+// flow cookie, so the route never handles the post itself: it answers the
+// bounce page, which posts the same form to the provider's resume route as a
+// same-origin navigation that carries the cookie.
 func (r *routes) callbackPost(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
+	reply, err := r.bounce(c, in.Provider)
+	return r.landCallbackFailure(c, reply, err)
+}
+
+// callbackResume handles the form post the bounce page sends. It is an ordinary
+// route that keeps the cross-origin check, so a post that reaches it comes from
+// a page of this origin, and it runs the callback: the flow cookie binds the
+// post to the flow it started, and a post with no flow cookie is an
+// identity-provider-initiated sign-in.
+func (r *routes) callbackResume(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	reply, err := r.callback(c, in.Provider)
 	return r.landCallbackFailure(c, reply, err)
@@ -271,12 +286,14 @@ func (r *routes) migrateCallback(c *call, token string, old []byte, rec record, 
 	}
 }
 
-// callbackIDPInitiated answers a callback that carries no flow cookie and comes
-// from an enterprise provider that allows an identity-provider-initiated
-// sign-in. The engine creates a login flow on the spot, moves it to processing
-// and answers it like any other callback. Without a binding this path cannot
-// defend against a login CSRF, which is why the provider row leaves it off by
-// default.
+// callbackIDPInitiated answers a posted callback that carries no flow cookie and
+// comes from an enterprise provider that allows an identity-provider-initiated
+// sign-in. It is reached through the resume route, whose post the bounce page
+// sends, and a GET callback never reaches it. The engine creates a login flow on
+// the spot, moves it to processing and answers it like any other callback; the
+// flow cookie it writes lets a second factor or a username step continue
+// through flows/current. Without a binding this path cannot defend against a
+// login CSRF, which is why the provider row leaves it off by default.
 func (r *routes) callbackIDPInitiated(c *call, provider string) {
 	if c.req.Method != http.MethodPost || r.sso == nil {
 		c.unauthorized(mount.CodeFlowInvalid)

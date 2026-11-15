@@ -175,7 +175,8 @@ type Proof struct {
 | `POST B/flows/authenticated` | Required，`Impersonable` | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定生效账户与会话；冒充期间绑定被冒充账户与发起者的会话；`enroll` 是因素登记的唯一入口；起始状态与前置要求见“在已登录身份上开始流程” |
 | `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input, human_proof}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定。待建号状态下的 `step=answer` 由引擎处理用户名，不交给方法 |
 | `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等，删除记录前先让为流程保存状态的一方释放它（见“LoginMethod 接口”）；要求绑定 |
-| `GET\|POST B/callback/:provider` | Open | OAuth（[REF-rfc6749](../../../references.md)）与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
+| `GET\|POST B/callback/:provider` | Open | OAuth（[REF-rfc6749](../../../references.md)）与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路。`GET` 按回跳处理；`POST` 不处理回跳，只答一页把收到的表单原样提交给 `POST B/callback/:provider/resume` 的页面，见“跨站回跳 POST 的转投”；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
+| `POST B/callback/:provider/resume` | Open | 按回跳处理转投页以同源导航提交的表单，含 IdP 发起的 SAML；不在跨源检查的旁路之内 |
 | `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`PUT B/identifiers/:id`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required，`Impersonable` | 账户自助：改口令、添加或更换邮箱与手机、添加用户名、设置标识的登录方式与默认联系地址、删标识、解绑外部身份；改口令、添加用户名、选作或取消登录方式、设置默认联系地址、删除标识与解绑外部身份要求新鲜认证并过 CSRF，登记并验证一条邮箱或手机本身不要求新鲜认证、不轮换会话、不结束其他会话，但其证明改变账户据以证明或找回自己的事实时例外：一条将取代默认联系地址或成为唯一邮箱地址的邮箱、一个将取代已启用短信因素发码目标的新手机号，其证明要求新鲜认证；冒充身份与被冒充账户本人相同；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
 | `POST B/password-reset` | Open | 匿名口令重置的第一步：body `{channel, identifier, human_proof?}`；按渠道发送验证码或走抑制路径，合格与不合格目标的应答一致；建立独立的 `__Host-authn-reset` 绑定，不读登录流程 cookie |
 | `GET\|DELETE B/password-reset/current` | Open | 读当前重置流程或放弃它；要求重置绑定；`GET` 只答状态与期限，不答账户或标识 |
@@ -308,7 +309,7 @@ type Proof struct {
 
 读请求体之前，按下列次序校验，任一项不过即拒绝：
 
-1. `CrossOriginProtection.Check`：先看 `Sec-Fetch-Site`，缺失时比较 `Origin` 与 `Host`；可信来源是 `public-url` 的来源加 `trusted-origins`；回跳端点旁路。
+1. `CrossOriginProtection.Check`：先看 `Sec-Fetch-Site`，缺失时比较 `Origin` 与 `Host`；可信来源是 `public-url` 的来源加 `trusted-origins`；`B/callback/:provider` 旁路，`B/callback/:provider/resume` 不旁路。
 2. `Content-Type`。
 3. 流程绑定，`POST flows` 与 `POST flows/authenticated` 除外。
 4. `seq` 与 `step`。
@@ -549,7 +550,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `cookie`（缺省） | cookie `__Host-authn-flow` | 不含 `flow_token`，脚本读不到绑定秘密，XSS 取不到 |
 | `header` | 请求头 `Authn-Flow` | 返回 `flow_token`，不设 cookie |
 
-cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None`**。SAML 的断言是 IdP 页面发起的跨站 POST，`Lax` 的 cookie 不随跨站 POST 发送，绑定会丢。`SameSite=None` 使它随所有跨站请求发出；它只承载一个不透明值、只对流程端点有意义、流程完成即作废、服务端只存哈希，对其他端点没有权限；`__Host-` 前缀使子域不能写入同名 cookie。名字与这些属性不随部署变化：`public-url` 只能是 https 或回环主机的 http，两者下浏览器都保存 `Secure` cookie。
+cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=Lax`**。流程的同站请求（开始、答复、读取与放弃）都带上它；OAuth、企业 OIDC、Google、GitHub 与微信的回跳是跨站的顶层 `GET` 导航，同样带上它。SAML 的 SP 发起登录由 IdP 页面把断言跨站 POST 到 ACS，这一请求不带 `Lax` 的 cookie，由“跨站回跳 POST 的转投”换成一次带 cookie 的同源 POST。`__Host-` 前缀使子域不能写入同名 cookie。名字与这些属性不随部署变化：`public-url` 只能是 https 或回环主机的 http，两者下浏览器都保存 `Secure` cookie。
 
 回跳请求是用户代理的导航，带不了自定义请求头，所以回跳类方法只能在 `binding=cookie` 的流程里走完；`binding=header` 的流程里它们的回跳因绑定缺失以 `flow-invalid` 失败。回跳与每次答复都要求绑定匹配，这是对登录 CSRF 与流程固定的主要防线：`state` 与 SAML 的 `InResponseTo` 各自只证明请求与某个流程对得上，不证明流程与发起它的浏览器对得上。待建号的外部身份同样只由流程记录承载，读取要过绑定比对；授权码与断言一次性，因此另一个浏览器不能接手一条停在待建号的流程。
 
@@ -693,9 +694,20 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ### 回跳类的一步
 
-`GET|POST B/callback/:provider` 由引擎处理，分发给方法。引擎先核对：流程存在且处于 `first`；回跳路径的 `:provider` 与记录里的 `provider` 一致（社交方法的记录记方法名，企业 SSO 的记录记 `Begin` 时 `input.provider` 给的值）；绑定匹配。通过后引擎**在调用 `Answer` 之前**先把记录交换成 `processing`，`seq` 与方法状态不变。并发的第二次回跳败于这一步，当场得到 `flow-invalid`，所以授权码至多换一次、SAML 断言至多处理一次。
+`GET B/callback/:provider` 与 `POST B/callback/:provider/resume` 由引擎处理，分发给方法；`POST B/callback/:provider` 只做转投，见下一节。引擎先核对：流程存在且处于 `first`；回跳路径的 `:provider` 与记录里的 `provider` 一致（社交方法的记录记方法名，企业 SSO 的记录记 `Begin` 时 `input.provider` 给的值）；绑定匹配。通过后引擎**在调用 `Answer` 之前**先把记录交换成 `processing`，`seq` 与方法状态不变。并发的第二次回跳败于这一步，当场得到 `flow-invalid`，所以授权码至多换一次、SAML 断言至多处理一次。
 
 `Answer` 返回之后，引擎再把记录交换成新状态；方法交回 `StepRefused` 或 `StepUnavailable` 时置 `failed` 墓碑。停在 `processing` 的记录，即进程崩溃而 `Answer` 没有返回的情形，一律按失效处理，用户重新开始。方法自己不对流程记录做任何写。这一做法的取舍见 [ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)。
+
+### 跨站回跳 POST 的转投
+
+SAML 的 SP 发起登录里，IdP 页面把断言以跨站 POST 送到 ACS `POST B/callback/:provider`。这一请求不带 `SameSite=Lax` 的流程 cookie，当作回跳处理会落进 IdP 发起的分支。转投（bounce）把它换成一次带 cookie 的同源 POST，取舍见 [ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)：
+
+- **ACS 只答转投页。** `POST B/callback/:provider` 在跨源检查的旁路之内，所以不处理回跳：在 512 KiB 的体上限内解析表单，答 200 的 HTML 页面，不读流程记录、不写 kv、不调方法，带不带流程 cookie 都如此。体超限或解析不了答 401 `login-failed`，顶层导航按“回跳的失败落地”落地。
+- **转投页。** 页面经 `html/template` 渲染：一个表单把收到的每个表单字段按原名原值写成隐藏字段，名与值都经转义；表单的目标是同一提供方的续接路由 `POST B/callback/:provider/resume`，由路由声明与路径参数 `:provider` 拼出，不取请求里的任何字段或头；一段脚本提交表单，没有脚本的浏览器显示一个提交按钮，按钮文字由浏览器按自己的语言给出，页面不含产品文案。引擎按通用方式转交字段，不认 SAML 的字段名。
+- **转投页的响应头。** `Content-Security-Policy: default-src 'none'; script-src 'nonce-<n>'; form-action 'self' <可信来源>; frame-ancestors 'none'; base-uri 'none'`，nonce 每个响应由 `crypto/rand` 新取，与页面脚本上的一致；`form-action` 列出本来源与每个可信来源，即 `public-url` 的来源与 `trusted-origins` 的各项。Chromium 与 WebKit 对表单提交之后的每次重定向都核对 `form-action`，续接路由 303 到的回跳目标或失败落地若是相对路径，属于本来源，若是绝对 URL，其来源已按 `trusted-origins` 核对过，所以都在这份列表里；`Referrer-Policy: same-origin`，取 `no-referrer` 会使续接 POST 的 `Origin` 成为 `null`；`X-Content-Type-Options: nosniff`；`Cache-Control: no-store` 由 `Wrap` 写出。
+- **续接路由。** `POST B/callback/:provider/resume` 是经 `mount.Declared` 登记的普通 Open 路由，过跨源检查。页面的提交是同源导航，`Sec-Fetch-Site` 为 `same-origin`，带 `Lax` 与 `Strict` 的 cookie，因而带着流程 cookie 与浏览器里已有的会话 cookie。续接路由按“回跳类的一步”处理；没有流程 cookie 时走“IdP 发起的 SAML”。别的站点直接跨站 POST 到续接路由，在处理器之前即被跨源检查以 401 拒绝，流程不动。
+- **投进别人浏览器的应答。** 另一条流程的有效应答被跨站投到受害者的浏览器时，转投把它带进受害者的流程：`RelayState` 与 `InResponseTo` 对不上，方法拒绝，受害者的流程作废，不建会话（[authn-sso](design-authn-sso.md)）。
+- **不运行页面的客户端**把同一表单直接 POST 到续接路由；既无 `Sec-Fetch-Site` 又无 `Origin` 的请求被跨源检查放行。
 
 ### 账户解析与策略判定
 
@@ -748,14 +760,14 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 说明：
 
-- `login` 撤销旧会话不是会话固定防护所依赖的环节：登录总是新建会话、不沿用任何旧令牌。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销，这是已知的例外。
+- `login` 撤销旧会话不是会话固定防护所依赖的环节：登录总是新建会话、不沿用任何旧令牌。
 - 口令方式的 `must_change` 路径完成后，引擎调 `Sessions.RevokeAccount(except = 新会话)`，因为口令变了。引擎判断这条路径有没有走，由 `Proof.PasswordChanged` 承载：口令方法在自己重设了凭据（`Passwords.Set` 成功）时把它的证明上的该字段置真，引擎据此在完成时撤销其余会话。撤销其余会话只对 `login` 生效；`step-up` 的 `must_change`（以口令走第一因素时）同样置真，但 `step-up` 完成时不撤销其余会话，本设计不为它加这一动作。
 - `login` 的审计行用新认定的身份派生上下文，使 `actor` 是登录的账户而不是空串；登录失败写同名审计行，`actor` 为空；本实现不写 `identifier_mac`，失败因此不经审计按标识关联。失败不发事件，只走审计、日志与计数器，否则 `login.failed` 会成为枚举旁路（[authn-events](design-authn-events.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)）。
 - 会话与令牌的期限、cookie 的属性与 CSRF 归 [authn-session](design-authn-session.md) 与 [authn-token](design-authn-token.md)。
 
 ### 回跳类的收尾
 
-回调证明通过后，按流程的 `delivery` 与后续步骤分情况收尾，收尾情况的全集如下：
+回调证明通过后，按流程的 `delivery` 与后续步骤分情况收尾，收尾情况的全集如下；SAML 的回调响应指续接路由 `POST B/callback/:provider/resume` 的响应：
 
 | 情况 | 收尾 |
 |---|---|
@@ -788,7 +800,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 ### IdP 发起的 SAML
 
-`POST B/callback/:provider` 没有流程 cookie、而提供方行的 `allow_idp_initiated` 为真时，引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录，`return_to` 取设置 `authn.login.default-return-to`（按 `return_to` 的规则校验），并直接置 `processing`，其余同回跳；新流程 cookie 随应答设立。方法不创建流程记录。没有可比对的绑定，所以这一路径防不了登录 CSRF，该方式由提供方行缺省关闭（[authn-sso](design-authn-sso.md)）。
+转投之后的 `POST B/callback/:provider/resume` 没有流程 cookie、而提供方行的 `allow_idp_initiated` 为真时，引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录，`return_to` 取设置 `authn.login.default-return-to`（按 `return_to` 的规则校验），并直接置 `processing`，其余同回跳；新流程 cookie 随应答设立。方法不创建流程记录。没有可比对的绑定，所以这一路径防不了登录 CSRF，该方式由提供方行缺省关闭（[authn-sso](design-authn-sso.md)）。
 
 ### 失败退避
 
@@ -975,7 +987,9 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 |---|---|
 | 每个 kv 实现对 `CompareAndSwap` 都满足“只在当前值等于旧值时写入”，包括并发写入者抢先时的重新判定 | 对每个 kv 实现并发提交同一次回跳，断言只有一个越过 `processing` |
 | 通行密钥的仪式数据序列化后放得进 `FlowState.Private` 的上限 | 按允许的凭据清单增长测量序列化大小 |
-| `SameSite=None` 的 `__Host-` cookie 随 IdP 页面发起的跨站 POST 送达回跳端点，且跨源检查的旁路只覆盖回跳路由；gin 的 `:provider` 写成 `ServeMux` 的 `{provider}` 后模式能命中 | 对回跳路由的跨站 POST 用例，同时断言其他流程路由的跨源请求仍被拒 |
+| 跨站的顶层 POST 不带 `SameSite=Lax` 的 cookie，ACS 因此凭 cookie 处理不了回跳 | 在浏览器里由另一站点的页面自动提交表单到 ACS，断言请求不带流程 cookie；服务端一侧 `pkg/authn/login` `TestACookielessCrossSitePostToTheCallbackIsAnsweredTheBouncePage` 断言 ACS 对这样的请求只答转投页 |
+| 同源页面自动提交的表单带 `Lax` 与 `Strict` 的 cookie，`Sec-Fetch-Site` 为 `same-origin` | 在浏览器里走完转投，断言续接请求带流程 cookie 与会话 cookie；服务端一侧 `pkg/authn/sso/saml` `TestAnSPInitiatedLoginCompletesThroughTheBounce` 以这样的请求走完整条链 |
+| 跨源检查的旁路只覆盖 `B/callback/:provider`，不覆盖续接路由；gin 的 `:provider` 写成 `ServeMux` 的 `{provider}` 后模式能命中 | `pkg/authn/login` `TestACrossSiteCallbackPostIsAllowed` 断言 ACS 放行而续接路由不放行，`TestACrossSitePostToTheResumeRouteIsRefusedBeforeTheHandler` 断言跨站直投续接路由在处理器之前被拒 |
 | Google 的授权端点接受带 `code_challenge`（S256）的请求 | 用测试客户端对授权端点发带 `code_challenge` 的请求 |
 | 微信：成功路径上 `POST` 是否被接受；`snsapi_login` 与 `snsapi_userinfo` 下 `unionid` 的下发条件；网页授权是否只能在微信内置浏览器发起 | 需要真实应用凭据，自动化只对模拟服务端测，真实行为在联调时核实 |
 | 能读出 `tenant.resolve.endpoints` 的解码结构以核对挂载端不被解析层所守 | 解不开则只记 `Warn` 而不失败；用一个结构不符的配置读取接口断言启动不终止 |
@@ -1015,6 +1029,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 | 终态动作（`login`、`link`、`step-up`、`enroll`）与完成复核 | 已实现 | `pkg/authn/login/action.go` |
 | 在已登录身份上开始流程（`POST B/flows/authenticated`） | 已实现 | `pkg/authn/login/start.go` |
 | 短信发送的每流程上限（`SendsLeft`、`Step.WithSends`） | 已实现 | `pkg/authn/login/engine.go`；`pkg/authn/internal/step/step.go` `(Step).WithSends`、`SendsOf`；`pkg/authn/internal/model/flow.go` `Start`、`FlowState` |
+| 跨站回跳 POST 的转投与续接路由 | 已实现 | `pkg/authn/login/bounce.go` `(*routes).bounce`；`pkg/authn/login/callback.go` `(*routes).callbackPost`、`(*routes).callbackResume` |
 | IdP 发起的 SAML 的流程创建 | 已实现 | `pkg/authn/login/callback.go` `callbackIDPInitiated`；`pkg/authn/login/flow.go` `flowProvider`（社交方法的记录取方法名、企业 SSO 的记录取 `input.provider`；`FlowState.Provider` 同源交给方法） |
 | 路由、请求与应答的结构、问题码 | 已实现 | `pkg/authn/login/routes.go`、`pkg/authn/login/respond.go`；`pkg/authn/login/answer.go`；`pkg/authn/internal/mount/problem.go` |
 | 账户凭据自助路由与手机号验证 | 已实现 | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |

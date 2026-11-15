@@ -15,8 +15,10 @@ import (
 )
 
 // The carriers a flow token travels in. The cookie carries the __Host- prefix,
-// which requires Secure, a path of "/" and no Domain; SameSite=None lets it ride
-// an IdP-initiated cross-site POST, which a Lax cookie would not.
+// which requires Secure, a path of "/" and no Domain. It is SameSite=Lax: it
+// rides the same-site requests of a flow and a provider's cross-site top-level
+// GET back, and a provider's cross-site form post, which does not carry it, is
+// bounced to the resume route as a same-origin post that does.
 const (
 	flowCookieName = "__Host-authn-flow"
 	flowHeader     = "Authn-Flow"
@@ -34,7 +36,8 @@ type routes struct {
 // routes. Each route is registered from the operation that declares it, so the
 // handler's input and answer types, the fragment and the route are one source.
 // The callback is registered through Callback, so its cross-site POST skips the
-// cross-origin check while every other route keeps it.
+// cross-origin check while every other route keeps it; the resume route the
+// callback's bounce page posts to is an ordinary public route and keeps it.
 func (p *product) mountRoutes() {
 	r := &routes{product: p, endpoint: p.mounter.Endpoint()}
 	m := p.mounter
@@ -65,6 +68,8 @@ func (p *product) mountRoutes() {
 		withRequest(callbackGetOperation.Handle(r.callbackGet)))
 	m.Callback([]string{http.MethodPost}, mountRel(callbackPostOperation.Path),
 		withRequest(callbackPostOperation.Handle(r.callbackPost)))
+	mount.Declared(m, callbackResumeOperation, mountRel(callbackResumeOperation.Path),
+		withRequest(callbackResumeOperation.Handle(r.callbackResume)))
 
 	if p.selfservice != nil {
 		p.selfservice.Mount(m, mountRel, p.postFeature)
@@ -108,7 +113,7 @@ func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
 		MaxAge:   maxAge,
 		Secure:   true,
 		HttpOnly: true,
-		SameSite: http.SameSiteNoneMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 

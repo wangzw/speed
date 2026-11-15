@@ -3,6 +3,7 @@ package login
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -38,8 +39,9 @@ func holdsHostCookie(t *testing.T, c *http.Cookie, sameSite http.SameSite) {
 
 // TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared holds the flow
 // binding's carrier: the start writes __Host-authn-flow with the attributes its
-// prefix requires, and the delete that abandons the flow clears it with the same
-// ones, so the browser replaces the cookie it holds instead of keeping it.
+// prefix requires and SameSite=Lax, and the delete that abandons the flow clears
+// it with the same ones, so the browser replaces the cookie it holds instead of
+// keeping it.
 func TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared(t *testing.T) {
 	r := newRig(t, &fakeMethod{name: "password", begin: func(authn.Start) (authn.Step, error) {
 		return authn.StepPrompt("credentials", nil,
@@ -50,7 +52,10 @@ func TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared(t *testing.T) {
 		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
 	}
 	set := cookieNamed(t, start, flowCookieName)
-	holdsHostCookie(t, set, http.SameSiteNoneMode)
+	holdsHostCookie(t, set, http.SameSiteLaxMode)
+	if header := start.Header().Get("Set-Cookie"); !strings.Contains(header, "; SameSite=Lax") {
+		t.Errorf("the flow cookie is written as %q, want SameSite=Lax", header)
+	}
 	if set.Value == "" || set.MaxAge <= 0 {
 		t.Errorf("the flow cookie has value %q and Max-Age %d, want a token and a positive Max-Age", set.Value, set.MaxAge)
 	}
@@ -60,7 +65,7 @@ func TestTheFlowCookieIsASecureHostCookieWhenSetAndWhenCleared(t *testing.T) {
 		t.Fatalf("DELETE flows/current answered %d: %s", del.Code, del.Body.String())
 	}
 	cleared := cookieNamed(t, del, flowCookieName)
-	holdsHostCookie(t, cleared, http.SameSiteNoneMode)
+	holdsHostCookie(t, cleared, http.SameSiteLaxMode)
 	if cleared.Value != "" || cleared.MaxAge >= 0 {
 		t.Errorf("the clearing flow cookie has value %q and Max-Age %d, want no value and a negative Max-Age",
 			cleared.Value, cleared.MaxAge)

@@ -140,6 +140,7 @@
 | REF-gorilla-sessions | gorilla/sessions | Go 语言的 cookie 与文件系统会话库，含签名 cookie 存储 `CookieStore` | <https://github.com/gorilla/sessions> | — |
 | REF-gorm | GORM | Go 语言的对象关系映射库，提供模型、关联、查询构造、迁移与回调 | <https://gorm.io/> | v1 |
 | REF-gosaml2 | gosaml2 | Go 语言的 SAML 2.0 服务提供方库 | <https://github.com/russellhaering/gosaml2> | v0 |
+| REF-gosec | gosec | Go 源码的安全静态检查器，其 G124 规则要求 `http.Cookie` 写成 `Secure`、`HttpOnly`，且 `SameSite` 取 `Lax` 或 `Strict` | <https://github.com/securego/gosec> | v2 |
 | REF-goth | Goth | Go 语言的多提供方 OAuth 登录库 | <https://github.com/markbates/goth> | — |
 | REF-goxmldsig | goxmldsig | Go 语言的 XML 数字签名库 | <https://github.com/russellhaering/goxmldsig> | v1 |
 | REF-grpc | gRPC | 基于 HTTP/2 与 Protocol Buffers 的远程过程调用框架，含 Go 实现 `google.golang.org/grpc` | <https://grpc.io/> | — |

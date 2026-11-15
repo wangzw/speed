@@ -133,8 +133,92 @@
         "x-endpoint": "account"
       },
       "post": {
-        "description": "Handles a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer service is reached. The callback is bound through the flow cookie only, because a form post cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The engine moves the flow to processing before calling the method, so an assertion is handled at most once. A token-delivery login whose request declares a navigation (`Sec-Fetch-Mode: navigate`) answers 303 to the flow's stored return target with no session made and the flow left at ready; without that declaration it is answered the completion body. A callback of a purpose other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return target, with no session made and the flow left in the cookie for the host's callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.",
+        "description": "Receives a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer service is reached. The route bypasses the cross-origin check, and a cross-site post does not carry the `SameSite=Lax` flow cookie, so it never handles the post itself: it answers 200 with the bounce page, which posts the same fields to `POST /auth/callback/{provider}/resume` as a same-origin navigation. The route reads no flow, writes no record and asks no method. The posted form is bounded to 512 KiB before it is parsed; a body over that bound, or one that does not parse, is answered 401 login-failed. A client that does not run the page posts the same form to the resume route itself.",
         "operationId": "authn.login.callbackPost",
+        "parameters": [
+          {
+            "description": "The provider this callback is for: a social method's stable name, or, for an enterprise SSO provider, the identifier the start named in `input.provider`. It must equal the provider recorded in the flow the callback is bound to; a mismatch is a 401 flow-invalid and the callback never reaches a method.",
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The bounce page: an HTML document whose form carries every posted field unchanged, as hidden inputs, to `POST /auth/callback/{provider}/resume` of the same provider, and whose one script submits it. The submission is a same-origin navigation, so it carries the `SameSite=Lax` flow cookie the cross-site post did not. A browser without scripts shows a submit button. The page carries no product text.",
+            "headers": {
+              "Content-Security-Policy": {
+                "description": "`default-src 'none'; script-src 'nonce-\u003cnonce\u003e'; form-action 'self' \u003ctrusted\u003e; frame-ancestors 'none'; base-uri 'none'`, where the nonce is drawn afresh for each response and is the one the page's script carries, and `\u003ctrusted\u003e` lists every trusted origin, the public URL's among them, so the submission reaches the resume route's redirect to a return target or a failure landing on any of them.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "description": "`same-origin`, so the resume post carries the site's own origin in `Origin`.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "`nosniff`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "A refused post that is a top-level navigation (`Sec-Fetch-Mode: navigate`) lands the user agent on the configured `authn.login.callback-error-return-to` with the problem code in the `authn_error` fragment.",
+            "headers": {
+              "Location": {
+                "description": "The configured `authn.login.callback-error-return-to`, with the problem code in the `authn_error` fragment.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The posted body is over the 512 KiB bound or does not parse (login-failed)",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Bounce a provider's cross-site form post to the resume route",
+        "tags": [
+          "authn.login"
+        ],
+        "x-endpoint": "account"
+      }
+    },
+    "/api/v1/auth/callback/{provider}/resume": {
+      "post": {
+        "description": "Handles a provider's callback form post that the bounce page of `POST /auth/callback/{provider}` sends on as a same-origin navigation. Unlike the callback route, this route keeps the cross-origin check: a cross-site post is refused with 401 before the handler runs. The callback is bound through the flow cookie only, because a form post cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The engine moves the flow to processing before calling the method, so an assertion is handled at most once. A token-delivery login whose request declares a navigation (`Sec-Fetch-Mode: navigate`) answers 303 to the flow's stored return target with no session made and the flow left at ready; without that declaration it is answered the completion body. A callback of a purpose other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return target, with no session made and the flow left in the cookie for the host's callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.",
+        "operationId": "authn.login.callbackResume",
         "parameters": [
           {
             "description": "The provider this callback is for: a social method's stable name, or, for an enterprise SSO provider, the identifier the start named in `input.provider`. It must equal the provider recorded in the flow the callback is bound to; a mismatch is a 401 flow-invalid and the callback never reaches a method.",
@@ -246,7 +330,7 @@
           }
         },
         "security": [],
-        "summary": "Handle a provider's callback as a cross-site form post",
+        "summary": "Handle a provider's form post callback",
         "tags": [
           "authn.login"
         ],

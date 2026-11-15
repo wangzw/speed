@@ -3433,8 +3433,8 @@ export function useAuthnLoginCallbackGet<TData = Awaited<ReturnType<typeof authn
 
 
 /**
- * Handles a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer service is reached. The callback is bound through the flow cookie only, because a form post cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The engine moves the flow to processing before calling the method, so an assertion is handled at most once. A token-delivery login whose request declares a navigation (`Sec-Fetch-Mode: navigate`) answers 303 to the flow's stored return target with no session made and the flow left at ready; without that declaration it is answered the completion body. A callback of a purpose other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return target, with no session made and the flow left in the cookie for the host's callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.
- * @summary Handle a provider's callback as a cross-site form post
+ * Receives a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer service is reached. The route bypasses the cross-origin check, and a cross-site post does not carry the `SameSite=Lax` flow cookie, so it never handles the post itself: it answers 200 with the bounce page, which posts the same fields to `POST /auth/callback/{provider}/resume` as a same-origin navigation. The route reads no flow, writes no record and asks no method. The posted form is bounded to 512 KiB before it is parsed; a body over that bound, or one that does not parse, is answered 401 login-failed. A client that does not run the page posts the same form to the resume route itself.
+ * @summary Bounce a provider's cross-site form post to the resume route
  */
 export const authnLoginCallbackPost = (
     provider: string,
@@ -3442,7 +3442,7 @@ export const authnLoginCallbackPost = (
 ) => {
 
 
-      return speedRequest<AuthnLoginFlow>(
+      return speedRequest<string>(
       {url: `/api/v1/auth/callback/${provider}`, method: 'POST', signal
     },
       );
@@ -3482,7 +3482,7 @@ const {mutation: mutationOptions} = options ?
     export type AuthnLoginCallbackPostMutationError = void | Problem
 
     /**
- * @summary Handle a provider's callback as a cross-site form post
+ * @summary Bounce a provider's cross-site form post to the resume route
  */
 export const useAuthnLoginCallbackPost = <TError = void | Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginCallbackPost>>, TError,{provider: string}, TContext>, }
@@ -3493,6 +3493,69 @@ export const useAuthnLoginCallbackPost = <TError = void | Problem,
         TContext
       > => {
       return useMutation(getAuthnLoginCallbackPostMutationOptions(options), queryClient);
+    }
+
+/**
+ * Handles a provider's callback form post that the bounce page of `POST /auth/callback/{provider}` sends on as a same-origin navigation. Unlike the callback route, this route keeps the cross-origin check: a cross-site post is refused with 401 before the handler runs. The callback is bound through the flow cookie only, because a form post cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The engine moves the flow to processing before calling the method, so an assertion is handled at most once. A token-delivery login whose request declares a navigation (`Sec-Fetch-Mode: navigate`) answers 303 to the flow's stored return target with no session made and the flow left at ready; without that declaration it is answered the completion body. A callback of a purpose other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return target, with no session made and the flow left in the cookie for the host's callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row enables it.
+ * @summary Handle a provider's form post callback
+ */
+export const authnLoginCallbackResume = (
+    provider: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnLoginFlow>(
+      {url: `/api/v1/auth/callback/${provider}/resume`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginCallbackResumeMutationOptions = <TError = void | Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginCallbackResume>>, TError,{provider: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginCallbackResume>>, TError,{provider: string}, TContext> => {
+
+const mutationKey = ['authnLoginCallbackResume'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginCallbackResume>>, {provider: string}> = (props) => {
+          const {provider} = props ?? {};
+
+          return  authnLoginCallbackResume(provider,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginCallbackResumeMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginCallbackResume>>>
+
+    export type AuthnLoginCallbackResumeMutationError = void | Problem
+
+    /**
+ * @summary Handle a provider's form post callback
+ */
+export const useAuthnLoginCallbackResume = <TError = void | Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginCallbackResume>>, TError,{provider: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginCallbackResume>>,
+        TError,
+        {provider: string},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginCallbackResumeMutationOptions(options), queryClient);
     }
 
 /**

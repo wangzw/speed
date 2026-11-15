@@ -514,8 +514,8 @@ func TestACallbackNeedingASecondFactorRedirects(t *testing.T) {
 }
 
 // TestCallbackIDPInitiatedIsGated holds the guards of an IdP-initiated sign-in:
-// only a POST from an enabled provider that allows it is accepted, and the
-// default return target falls back to "/" when it is not trusted.
+// only a resumed POST from an enabled provider that allows it is accepted, and
+// the default return target falls back to "/" when it is not trusted.
 func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	body := func() *rig {
 		m := &redirectMethod{}
@@ -536,7 +536,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 
 	t.Run("no provider register refuses", func(t *testing.T) {
 		r := body()
-		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent/resume", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a POST with no provider register answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -544,7 +544,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("a disabled provider refuses", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: false, AllowIDPInitiated: true}}
-		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent/resume", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a disabled provider answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -552,7 +552,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("a provider that forbids IdP-initiated refuses", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: true, AllowIDPInitiated: false}}
-		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent/resume", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a provider that forbids IdP-initiated answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -560,7 +560,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("a provider whose protocol is not a registered method refuses", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "oidc", Enabled: true, AllowIDPInitiated: true}}
-		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", ""); rec.Code != http.StatusUnauthorized {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent/resume", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("a provider whose protocol is not a registered method answered %d, want 401: %s", rec.Code, rec.Body.String())
 		}
 	})
@@ -568,7 +568,7 @@ func TestCallbackIDPInitiatedIsGated(t *testing.T) {
 	t.Run("an enabled provider that allows it proceeds", func(t *testing.T) {
 		r := body()
 		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: true, AllowIDPInitiated: true}}
-		rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent", "")
+		rec := r.send(http.MethodPost, "/api/v1/auth/callback/ent/resume", "")
 		if rec.Code != http.StatusSeeOther {
 			t.Fatalf("an accepted IdP-initiated sign-in answered %d, want 303: %s", rec.Code, rec.Body.String())
 		}
@@ -674,7 +674,9 @@ func TestACallbackMustNameTheFlowsProvider(t *testing.T) {
 }
 
 // TestACrossSiteCallbackPostIsAllowed holds that the callback route bypasses the
-// cross-origin check while another flow route keeps it.
+// cross-origin check while another flow route keeps it: a cross-site POST to the
+// callback reaches its handler and is answered the bounce page, and the bypass
+// pattern does not cover the resume route the page posts to.
 func TestACrossSiteCallbackPostIsAllowed(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
@@ -683,8 +685,25 @@ func TestACrossSiteCallbackPostIsAllowed(t *testing.T) {
 
 	cross := []string{"Sec-Fetch-Site", "cross-site", "Origin", "https://evil.example.org"}
 	cb := r.send(http.MethodPost, "/api/v1/auth/callback/password", "", append([]string{"Cookie", cookie}, cross...)...)
-	if cb.Code != http.StatusSeeOther {
-		t.Errorf("a cross-site callback POST answered %d, want 303: the callback must bypass the check", cb.Code)
+	if cb.Code != http.StatusOK || !strings.HasPrefix(cb.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("a cross-site callback POST answered %d %q, want the 200 bounce page: the callback must bypass the check",
+			cb.Code, cb.Header().Get("Content-Type"))
+	}
+	if n := m.calls.Load(); n != 0 {
+		t.Errorf("the method was asked %d times by the callback route, want none", n)
+	}
+
+	check := func(path string) error {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Origin", "https://evil.example.org")
+		return r.m.CSRF().Check(req)
+	}
+	if err := check("/api/v1/auth/callback/password"); err != nil {
+		t.Errorf("the cross-origin check refused a cross-site POST to the callback route: %v", err)
+	}
+	if err := check("/api/v1/auth/callback/password/resume"); err == nil {
+		t.Error("the cross-origin check let a cross-site POST to the resume route through: the callback bypass covers it")
 	}
 }
 
@@ -758,40 +777,72 @@ func TestBeginProcessingLosingTheRecordIsRefused(t *testing.T) {
 	}
 }
 
-// TestCallbackIDPInitiatedRecordsProviderAndResumableBinding holds that the
-// record an IdP-initiated sign-in creates carries the path's provider id — which
-// the method reads as FlowState.Provider — and a binding the issued cookie
-// resumes, so a login that still needs a second factor continues rather than
-// being lost.
+// TestCallbackIDPInitiatedRecordsProviderAndResumableBinding holds that an
+// IdP-initiated sign-in runs through the bounce: the cookie-less cross-site post
+// to the callback is answered the page, and the page's same-origin post to the
+// resume route creates the record. The record carries the path's provider id —
+// which the method reads as FlowState.Provider — and a binding the issued
+// cookie resumes, so a login that still needs a second factor continues rather
+// than being lost. A provider whose row forbids it is refused at the resume
+// route and the method is never asked.
 func TestCallbackIDPInitiatedRecordsProviderAndResumableBinding(t *testing.T) {
-	m := &redirectMethod{}
-	m.answer = func(f authn.FlowState, in authn.StepInput) (authn.Step, error) {
-		if f.Provider != "ent" {
-			return authn.Step{}, errors.New("the flow carried no provider")
+	build := func(allow bool) (*rig, *redirectMethod) {
+		m := &redirectMethod{}
+		m.answer = func(f authn.FlowState, in authn.StepInput) (authn.Step, error) {
+			if f.Provider != "ent" {
+				return authn.Step{}, errors.New("the flow carried no provider")
+			}
+			if in.Form.Get("SAMLResponse") != "assertion" {
+				return authn.StepRefused(authn.ErrInvalidCredentials), nil
+			}
+			return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
 		}
-		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+		r := newRigMethod(t, m)
+		r.allow("acct1")
+		r.mfa.outcome = authn.MFAFactor
+		r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP}}
+		r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: true, AllowIDPInitiated: allow}}
+		return r, m
 	}
-	r := newRigMethod(t, m)
-	r.allow("acct1")
-	r.mfa.outcome = authn.MFAFactor
-	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP}}
-	r.p.sso = &fakeSSO{row: authn.SSOProvider{ID: "ent", Protocol: "password", Enabled: true, AllowIDPInitiated: true}}
 
-	out := r.send(http.MethodPost, "/api/v1/auth/callback/ent", "")
-	if out.Code != http.StatusSeeOther {
-		t.Fatalf("an IdP-initiated sign-in needing a second factor answered %d, want 303: %s", out.Code, out.Body.String())
-	}
-	cookie := flowCookie(t, out)
-	if got := flowRecordOf(t, r, cookie).Provider; got != "ent" {
-		t.Errorf("the IdP-initiated record carries provider %q, want the path id", got)
-	}
-	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
-	if current.Code != http.StatusOK {
-		t.Fatalf("resuming the IdP-initiated flow answered %d, want 200: %s", current.Code, current.Body.String())
-	}
-	if st := decode(t, current.Body.String())["state"]; st != "second" {
-		t.Errorf("the resumed flow state is %v, want second", st)
-	}
+	t.Run("a provider that allows it", func(t *testing.T) {
+		r, m := build(true)
+		page := r.bounceThrough(t, "ent", "SAMLResponse=assertion")
+		out := r.resume(t, page, "")
+		if out.Code != http.StatusSeeOther {
+			t.Fatalf("an IdP-initiated sign-in needing a second factor answered %d, want 303: %s", out.Code, out.Body.String())
+		}
+		if n := m.calls.Load(); n != 1 {
+			t.Errorf("the method was asked %d times, want once", n)
+		}
+		cookie := flowCookie(t, out)
+		if got := flowRecordOf(t, r, cookie).Provider; got != "ent" {
+			t.Errorf("the IdP-initiated record carries provider %q, want the path id", got)
+		}
+		current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
+		if current.Code != http.StatusOK {
+			t.Fatalf("resuming the IdP-initiated flow answered %d, want 200: %s", current.Code, current.Body.String())
+		}
+		if st := decode(t, current.Body.String())["state"]; st != "second" {
+			t.Errorf("the resumed flow state is %v, want second", st)
+		}
+	})
+
+	t.Run("a provider that forbids it", func(t *testing.T) {
+		r, m := build(false)
+		page := r.bounceThrough(t, "ent", "SAMLResponse=assertion")
+		out := r.resume(t, page, "")
+		if out.Code != http.StatusUnauthorized {
+			t.Fatalf("a resumed IdP-initiated post for a provider that forbids it answered %d, want 401: %s",
+				out.Code, out.Body.String())
+		}
+		if n := m.calls.Load(); n != 0 {
+			t.Errorf("the method was asked %d times, want none", n)
+		}
+		if len(r.kv.keys()) != 0 {
+			t.Errorf("a refused IdP-initiated post left records %v, want none", r.kv.keys())
+		}
+	})
 }
 
 // TestACallbackReadsOnlyTheCookie holds that a callback carrying the flow token
@@ -805,7 +856,7 @@ func TestACallbackReadsOnlyTheCookie(t *testing.T) {
 	cookie := startRedirect(t, r, "")
 	_, token, _ := strings.Cut(cookie, "=")
 
-	out := r.send(http.MethodPost, "/api/v1/auth/callback/password", "", flowHeader, token)
+	out := r.send(http.MethodPost, "/api/v1/auth/callback/password/resume", "", flowHeader, token)
 	if out.Code != http.StatusUnauthorized {
 		t.Errorf("a callback carrying only the header answered %d, want 401: a callback reads only the cookie", out.Code)
 	}
@@ -1026,27 +1077,41 @@ func TestACallbackOfAnUnregisteredMethodIsRefused(t *testing.T) {
 }
 
 // TestACallbackBodyOverTheLimitIsRefused holds the callback's posted-body bound
-// (the design's 512 KiB for SAML's ACS): a body over it is refused before any
-// method reads it, and a body within it is dispatched.
+// (the design's 512 KiB for SAML's ACS) on both routes a post reaches. On the
+// resume route a body over it is refused before any method reads it and the flow
+// is left a tombstone, and a body within it is dispatched. On the callback route
+// a body over it is refused without a page and without touching the flow.
 func TestACallbackBodyOverTheLimitIsRefused(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
 	r.allow("acct1")
+	over := "SAMLResponse=" + strings.Repeat("x", maxCallbackFormBytes+1024)
 
 	cookie := startRedirect(t, r, "")
-	over := "SAMLResponse=" + strings.Repeat("x", maxCallbackFormBytes+1024)
-	out := r.postForm("/api/v1/auth/callback/password", over, cookie)
+	out := r.postForm("/api/v1/auth/callback/password/resume", over, cookie)
 	if out.Code != http.StatusUnauthorized {
-		t.Errorf("a callback body over the limit answered %d, want 401: %s", out.Code, out.Body.String())
+		t.Errorf("a resumed body over the limit answered %d, want 401: %s", out.Code, out.Body.String())
 	}
 	if n := m.calls.Load(); n != 0 {
 		t.Errorf("the method was asked %d times for an oversized callback body, want none", n)
 	}
+	if st := flowRecordOf(t, r, cookie).State; st != stateFailed {
+		t.Errorf("the flow state after an oversized resumed body is %q, want the failed tombstone", st)
+	}
 
 	cookie = startRedirect(t, r, "")
-	within := r.postForm("/api/v1/auth/callback/password", "SAMLResponse=ok", cookie)
+	within := r.postForm("/api/v1/auth/callback/password/resume", "SAMLResponse=ok", cookie)
 	if within.Code != http.StatusSeeOther {
-		t.Errorf("a callback body within the limit answered %d, want 303: %s", within.Code, within.Body.String())
+		t.Errorf("a resumed body within the limit answered %d, want 303: %s", within.Code, within.Body.String())
+	}
+
+	cookie = startRedirect(t, r, "")
+	bounced := r.postForm("/api/v1/auth/callback/password", over, "")
+	if bounced.Code != http.StatusUnauthorized || !strings.Contains(bounced.Body.String(), "login-failed") {
+		t.Errorf("a callback body over the limit answered %d, want 401 login-failed: %s", bounced.Code, bounced.Body.String())
+	}
+	if st := flowRecordOf(t, r, cookie).State; st != stateFirst {
+		t.Errorf("the flow state after an oversized callback body is %q, want it untouched at first", st)
 	}
 }
 

@@ -35,8 +35,10 @@ const (
 	pathPasswordResetVerify   = "/auth/password-reset/verify"
 	pathPasswordResetComplete = "/auth/password-reset/complete"
 	pathCallback              = "/auth/callback/:provider"
+	pathCallbackResume        = "/auth/callback/:provider/resume"
 	callbackGetID             = "authn.login.callbackGet"
 	callbackPostID            = "authn.login.callbackPost"
+	callbackResumeID          = "authn.login.callbackResume"
 )
 
 // AuthnLoginMethods is the discovery document: one descriptor per login method
@@ -387,6 +389,12 @@ var retryAfterHeader = speedhttp.Header{
 var locationHeader = speedhttp.Header{
 	Name:        "Location",
 	Description: "The flow's stored return target, or the configured `authn.login.default-return-to` when the flow recorded none.",
+}
+
+// landingHeader is the Location of a refused callback landed in the product.
+var landingHeader = speedhttp.Header{
+	Name:        "Location",
+	Description: "The configured `authn.login.callback-error-return-to`, with the problem code in the `authn_error` fragment.",
 }
 
 // unauthorized is the declaration of a 401 that carries the capability's
@@ -750,26 +758,89 @@ var callbackGetOperation = speedhttp.NewReplyOperation[callbackInput](
 	speedhttp.Public(),
 )
 
+// callbackPostResponses are the answers of the route a provider's cross-site
+// form post reaches.
+var callbackPostResponses = []speedhttp.Response{
+	{
+		Status: http.StatusOK,
+		Description: "The bounce page: an HTML document whose form carries every posted field unchanged, as " +
+			"hidden inputs, to `POST /auth/callback/{provider}/resume` of the same provider, and whose one " +
+			"script submits it. The submission is a same-origin navigation, so it carries the `SameSite=Lax` " +
+			"flow cookie the cross-site post did not. A browser without scripts shows a submit button. The page " +
+			"carries no product text.",
+		Headers: []speedhttp.Header{
+			{
+				Name: bounceCSPHeader,
+				Description: "`default-src 'none'; script-src 'nonce-<nonce>'; form-action 'self' <trusted>; " +
+					"frame-ancestors 'none'; base-uri 'none'`, where the nonce is drawn afresh for each " +
+					"response and is the one the page's script carries, and `<trusted>` lists every trusted " +
+					"origin, the public URL's among them, so the submission reaches the resume route's " +
+					"redirect to a return target or a failure landing on any of them.",
+			},
+			{
+				Name:        bounceReferrerHeader,
+				Description: "`same-origin`, so the resume post carries the site's own origin in `Origin`.",
+				Value:       bounceReferrerPolicy,
+			},
+			{
+				Name:        bounceNoSniffHeader,
+				Description: "`nosniff`.",
+				Value:       bounceNoSniff,
+			},
+		},
+		Body: &speedhttp.Body{MediaType: bounceMediaType},
+	},
+	{
+		Status: http.StatusSeeOther,
+		Description: "A refused post that is a top-level navigation (`Sec-Fetch-Mode: navigate`) lands the " +
+			"user agent on the configured `authn.login.callback-error-return-to` with the problem code in the " +
+			"`authn_error` fragment.",
+		Headers: []speedhttp.Header{landingHeader},
+	},
+	unauthorized("The posted body is over the 512 KiB bound or does not parse (login-failed)"),
+}
+
 // callbackPostOperation declares a callback delivered as a cross-site form post.
 var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 	callbackPostID,
 	http.MethodPost,
 	pathCallback,
-	"Handle a provider's callback as a cross-site form post",
-	"Handles a provider's callback delivered as a cross-site form post, which is how SAML's assertion consumer "+
-		"service is reached. The callback is bound through the flow cookie only, because a form post cannot set "+
-		"a request header; the path's provider must equal the provider recorded in the flow and the flow must be "+
-		"at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted "+
-		"form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed "+
-		"with the flow left a tombstone. The engine moves the flow to processing before calling the method, so "+
-		"an assertion is handled at most once. A token-delivery login whose request declares a navigation "+
-		"(`Sec-Fetch-Mode: navigate`) answers 303 to the flow's stored return target with no session made and "+
-		"the flow left at ready; without that declaration it is answered the completion body. A callback of a purpose other than login (a link, or a "+
-		"step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return "+
-		"target, with no session made and the flow left in the cookie for the host's callback page to read with `GET "+
-		"/auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route "+
-		"serves an identity-provider-initiated sign-in, but only for an enterprise provider whose row "+
-		"enables it.",
+	"Bounce a provider's cross-site form post to the resume route",
+	"Receives a provider's callback delivered as a cross-site form post, which is how SAML's assertion "+
+		"consumer service is reached. The route bypasses the cross-origin check, and a cross-site post does "+
+		"not carry the `SameSite=Lax` flow cookie, so it never handles the post itself: it answers 200 with "+
+		"the bounce page, which posts the same fields to `POST /auth/callback/{provider}/resume` as a "+
+		"same-origin navigation. The route reads no flow, writes no record and asks no method. The posted form "+
+		"is bounded to 512 KiB before it is parsed; a body over that bound, or one that does not parse, is "+
+		"answered 401 login-failed. A client that does not run the page posts the same form to the resume "+
+		"route itself.",
+	nil,
+	callbackPostResponses,
+	speedhttp.Public(),
+)
+
+// callbackResumeOperation declares the post the bounce page sends.
+var callbackResumeOperation = speedhttp.NewReplyOperation[callbackInput](
+	callbackResumeID,
+	http.MethodPost,
+	pathCallbackResume,
+	"Handle a provider's form post callback",
+	"Handles a provider's callback form post that the bounce page of `POST /auth/callback/{provider}` "+
+		"sends on as a same-origin navigation. Unlike the callback route, this route keeps the cross-origin "+
+		"check: a cross-site post is refused with 401 before the handler runs. The callback is bound through "+
+		"the flow cookie only, because a form post cannot set a request header; the path's provider must equal "+
+		"the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a "+
+		"401 flow-invalid before any method is asked. The posted form is bounded to 512 KiB before it is "+
+		"parsed, and a body over that bound is answered 401 login-failed with the flow left a tombstone. The "+
+		"engine moves the flow to processing before calling the method, so an assertion is handled at most "+
+		"once. A token-delivery login whose request declares a navigation (`Sec-Fetch-Mode: navigate`) "+
+		"answers 303 to the flow's stored return target with no session made and the flow left at ready; "+
+		"without that declaration it is answered the completion body. A callback of a purpose other than "+
+		"login (a link, or a step-up of an account with no factor) that reaches ready answers 303 to the "+
+		"flow's stored return target, with no session made and the flow left in the cookie for the host's "+
+		"callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`. "+
+		"Without a flow cookie the route serves an identity-provider-initiated sign-in, but only for an "+
+		"enterprise provider whose row enables it.",
 	nil,
 	callbackResponses,
 	speedhttp.Public(),
@@ -930,6 +1001,7 @@ var loginOperations = speedhttp.Operations{
 	passwordResetCompleteOperation,
 	callbackGetOperation,
 	callbackPostOperation,
+	callbackResumeOperation,
 }
 
 // operations is this module's declaration of the API it serves. The fragment is

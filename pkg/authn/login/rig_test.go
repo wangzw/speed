@@ -413,6 +413,11 @@ type fakeSessions struct {
 	except      authn.SessionID
 	// revokedAccount is the account whose other sessions were revoked last.
 	revokedAccount authn.AccountID
+	// cookie, when set, is the session cookie name the fake reads the current
+	// session from and writes a made session under, for a case that follows a
+	// session cookie through a request. Unset, the fake reads no session and
+	// writes no cookie.
+	cookie string
 }
 
 func (s *fakeSessions) Create(_ context.Context, in authn.NewSession) (authn.Issued, error) {
@@ -421,9 +426,26 @@ func (s *fakeSessions) Create(_ context.Context, in authn.NewSession) (authn.Iss
 	s.made = append(s.made, issued)
 	return issued, nil
 }
-func (s *fakeSessions) SetCookie(http.ResponseWriter, authn.Issued) {}
-func (s *fakeSessions) Current(*http.Request) (authn.SessionID, bool, error) {
-	return "", false, nil
+
+func (s *fakeSessions) SetCookie(w http.ResponseWriter, issued authn.Issued) {
+	if s.cookie == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: s.cookie, Value: issued.Token, Path: "/", Secure: true, HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func (s *fakeSessions) Current(req *http.Request) (authn.SessionID, bool, error) {
+	if s.cookie == "" {
+		return "", false, nil
+	}
+	c, err := req.Cookie(s.cookie)
+	if err != nil || c.Value == "" {
+		return "", false, nil
+	}
+	return authn.SessionID(c.Value), true, nil
 }
 
 func (s *fakeSessions) Revoke(_ context.Context, id authn.SessionID, _ string) error {

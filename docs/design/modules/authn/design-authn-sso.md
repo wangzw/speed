@@ -130,7 +130,8 @@ type SSOMetadataRefresher interface {
 |---|---|---|---|
 | `POST B/sso/discover` | Open | `authn.sso` | 邮箱域发现，应答的结构与耗时一致，只回答与域有关的公开信息 |
 | `GET B/sso/saml/:provider/metadata` | Open | `authn.sso.saml` | 该提供方的 SP 元数据，`entityID` 即本地址 |
-| `GET\|POST B/callback/:provider` | Open | 引擎处理，分发给 `authn.sso.saml` 或 `authn.sso.oidc` | `:provider` 是提供方标识；POST 是 SAML 的 ACS，体上限 512 KiB，登记跨源检查旁路 |
+| `GET\|POST B/callback/:provider` | Open | 引擎处理；`GET` 分发给 `authn.sso.oidc`，`POST` 不分发 | `:provider` 是提供方标识；POST 是 SAML 的 ACS，体上限 512 KiB，登记跨源检查旁路，只答把表单原样转交续接路由的转投页（[design-authn-login](design-authn-login.md) 的“跨站回跳 POST 的转投”） |
+| `POST B/callback/:provider/resume` | Open | 引擎处理，分发给 `authn.sso.saml` | 续接路由：处理转投页提交的 ACS 表单，体上限 512 KiB，过跨源检查 |
 
 提供方、域与元数据刷新的管理路由挂在 `authn.admin` 名下，路径与附加要求写在 [design-authn-admin](design-authn-admin.md)。`authn.sso` 挂路由时经 `mount.Mounter` 成对登记路由与访问级别；`authn.sso.saml` 的元数据路由同理，所以 gosaml2 的类型只在叶子包里，基础包只挂发现路由。
 
@@ -245,7 +246,7 @@ classDiagram
 
 ### SAML 登录的交互
 
-时序图固定一次 SAML 登录涉及的模块与同步边界：断言的一次性由引擎在调用 `Answer` 之前先交换记录保证，重放的最后防线是 db 的唯一约束，方法自己不写流程记录。
+时序图固定一次 SAML 登录涉及的模块与同步边界：IdP 跨站投到 ACS 的表单不带 `SameSite=Lax` 的流程 cookie，ACS 只答转投页，断言由续接路由在绑定比对之后交给方法；断言的一次性由引擎在调用 `Answer` 之前先交换记录保证，重放的最后防线是 db 的唯一约束，方法自己不写流程记录。
 
 ```mermaid
 sequenceDiagram
@@ -262,7 +263,9 @@ sequenceDiagram
     E-->>B: redirect 到 IdP
     B->>I: AuthnRequest
     I-->>B: 带 SAMLResponse 的表单
-    B->>E: POST B/callback/provider
+    B->>E: 跨站 POST B/callback/provider 不带流程 cookie
+    E-->>B: 200 转投页
+    B->>E: 同源 POST B/callback/provider/resume 带流程 cookie
     E->>E: 核对绑定并置 processing
     E->>S: Answer
     S->>S: 逐项校验并验签
@@ -446,7 +449,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 **SP 元数据** `GET B/sso/saml/:provider/metadata`（Open）由 `authn.sso.saml` 挂载：
 
 - `entityID` 即该元数据地址（`public-url + B/sso/saml/<id>/metadata`），每个提供方独立，IdP 一侧因此是不同的 SP。
-- ACS 为 `public-url + B/callback/<id>`，HTTP-POST 绑定。
+- ACS 为 `public-url + B/callback/<id>`，HTTP-POST 绑定。投到 ACS 的表单经转投页同源转交续接路由 `B/callback/<id>/resume` 处理，IdP 一侧只登记 ACS。
 - `WantAssertionsSigned="true"`；`AuthnRequestsSigned` 取 `sign_requests`。
 - 有 SP 证书时写入当前与下一张（`sp-cert-file`、`sp-next-cert-file`）：轮换时先把新证书放进 `sp-next-cert-file` 发布到元数据，IdP 一侧更新后换位。
 - 全部由配置的 `public-url` 派生，不从 `Host` 或 `X-Forwarded-*` 推。
@@ -457,7 +460,7 @@ gosaml2 没有元数据解析辅助函数，`authn.sso.saml` 用标准库 `encod
 
 ### SAML：断言消费
 
-`POST B/callback/:provider` 的表单带 `SAMLResponse` 与 `RelayState`，体上限 512 KiB。**方法不能直接调用 gosaml2 的 `RetrieveAssertionInfo`**：它只用第一条断言、不查 `InResponseTo`、对空的颁发者与目的地跳过校验。校验按下表自上而下的顺序进行，顺序是契约；每一项在失败时都拒绝，对外统一为 `login-failed`，成因只进日志与指标 `authn.sso.assertions`，审计动作 `authn.sso.reject` 记同一取值。“指标取值”是失败落入的 `outcome`，取自 `authn.sso.assertions` 的闭集。
+续接路由 `POST B/callback/:provider/resume` 收到的表单是 IdP 投到 ACS 的那一份，经转投页原样转交，带 `SAMLResponse` 与 `RelayState`；两条路由的体上限都是 512 KiB。**方法不能直接调用 gosaml2 的 `RetrieveAssertionInfo`**：它只用第一条断言、不查 `InResponseTo`、对空的颁发者与目的地跳过校验。校验按下表自上而下的顺序进行，顺序是契约；每一项在失败时都拒绝，对外统一为 `login-failed`，成因只进日志与指标 `authn.sso.assertions`，审计动作 `authn.sso.reject` 记同一取值。“指标取值”是失败落入的 `outcome`，取自 `authn.sso.assertions` 的闭集。
 
 | 校验项 | 判据 | 来源与理由 | 指标取值 |
 |---|---|---|---|
@@ -491,7 +494,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 
 ### SAML：IdP 发起登录
 
-`allow_idp_initiated` 为真时，`POST B/callback/:provider` 可以没有流程 cookie：引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录并置 `processing`（[design-authn-login](design-authn-login.md)），方法随后按“断言消费”校验，其中“请求标识”一项允许 `InResponseTo` 为空。断言消费要先取提供方行（构造 SP、取 `idp_certs` 与 `issuer`），这条路径没有 `Begin`，提供方标识只来自回跳路径，所以引擎把提供方标识经 `FlowState.Provider` 交给方法：它在新建流程时把该标识写进记录，也写进交给方法的流程状态（[design-authn-login](design-authn-login.md)）。没有流程就没有可比对的绑定，所以这一路径防不了登录 CSRF（攻击者把自己的断言投给受害者的浏览器）；能做的是：断言必须新鲜（`IssueInstant` 在 2 分钟内）、标识唯一、受众与接收者精确、已签名。该路径没有可比对的绑定，登录 CSRF 防线不成立，所以该开关缺省关闭，开启时在管理应答里作为警告、在启动诊断里写一行 `Warn`。
+`allow_idp_initiated` 为真时，转投之后的 `POST B/callback/:provider/resume` 可以没有流程 cookie：引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录并置 `processing`（[design-authn-login](design-authn-login.md)），方法随后按“断言消费”校验，其中“请求标识”一项允许 `InResponseTo` 为空。断言消费要先取提供方行（构造 SP、取 `idp_certs` 与 `issuer`），这条路径没有 `Begin`，提供方标识只来自回跳路径，所以引擎把提供方标识经 `FlowState.Provider` 交给方法：它在新建流程时把该标识写进记录，也写进交给方法的流程状态（[design-authn-login](design-authn-login.md)）。没有流程就没有可比对的绑定，所以这一路径防不了登录 CSRF（攻击者把自己的断言投给受害者的浏览器）；能做的是：断言必须新鲜（`IssueInstant` 在 2 分钟内）、标识唯一、受众与接收者精确、已签名。该路径没有可比对的绑定，登录 CSRF 防线不成立，所以该开关缺省关闭，开启时在管理应答里作为警告、在启动诊断里写一行 `Warn`。
 
 ### 企业 OIDC
 
