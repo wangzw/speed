@@ -26,7 +26,7 @@ func TestTheZeroValuesRefuse(t *testing.T) {
 	if (SessionStatus{}).Active {
 		t.Error("the zero SessionStatus is active")
 	}
-	if MFANone != 0 || (MFAOutcome(0)) != MFANone {
+	if MFANone != 0 || MFAOutcome(0) != MFANone {
 		t.Errorf("MFANone = %d, want the zero value", MFANone)
 	}
 	if (SSOProvider{}).Enabled {
@@ -35,7 +35,7 @@ func TestTheZeroValuesRefuse(t *testing.T) {
 	if (Verification{}).Valid() || (Verification{}).Proves() {
 		t.Error("the zero Verification is valid or proves ownership")
 	}
-	if (AccountKind("")).Valid() || (SessionKind("")).Valid() {
+	if AccountKind("").Valid() || SessionKind("").Valid() {
 		t.Error("the empty kind is in a closed set")
 	}
 	if (MFAResult{}).Assurance != AssuranceNone || (MFAResult{}).IDPAssured {

@@ -219,7 +219,8 @@ func flowTTLInDomain(d time.Duration) bool      { return d >= minFlowTTL && d <=
 func callBudgetInDomain(d time.Duration) bool   { return d >= minCallBudget && d <= maxCallBudget }
 func ipLimitInDomain(n int) bool                { return n >= 0 && n <= maxIPLimit }
 func emailCodeTTLInDomain(d time.Duration) bool { return d >= minEmailCodeTTL && d <= maxEmailCodeTTL }
-func emailResendInDomain(d time.Duration) bool  { return d >= minEmailResend && d <= maxEmailResend }
+
+func emailResendInDomain(d time.Duration) bool { return d >= minEmailResend && d <= maxEmailResend }
 
 func emailPerAddressHourlyInDomain(n int) bool {
 	return n >= minEmailPerAddressHourly && n <= maxEmailPerAddressHourly

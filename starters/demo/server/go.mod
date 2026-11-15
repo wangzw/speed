@@ -1,6 +1,6 @@
 module github.com/vislake/speed/starters/demo/server
 
-go 1.26.10
+go 1.27.4
 
 // The pkg module has no released version yet, so this skeleton resolves it from
 // the sibling checkout inside this repository. A consumer of a published

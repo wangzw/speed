@@ -794,7 +794,7 @@ func isJSONMediaType(mediaType string) bool {
 
 // isProblemDocument reports whether t is the entry point's default error shape.
 func isProblemDocument(t reflect.Type) bool {
-	return t == problemDocumentType || (t.Kind() == reflect.Ptr && t.Elem() == problemDocumentType)
+	return t == problemDocumentType || (t.Kind() == reflect.Pointer && t.Elem() == problemDocumentType)
 }
 
 // responseStructure is the body type an answer publishes: the operation's

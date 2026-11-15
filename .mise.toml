@@ -25,13 +25,13 @@ _.file = ".env"
 
 [tools]
 # Mirror of go.work's `go` directive.
-go = "1.26.10"
+go = "1.27.4"
 # Mirror of web/.nvmrc; the frontend leg of `make check` runs on this Node.
-node = "24"
+node = "26"
 # Mirror of web/package.json's packageManager; `make web-check` runs on this pnpm.
 pnpm = "11.1.2"
 # Pinned here only; .golangci.yml carries the configuration, not the version.
-golangci-lint = "2.11.4"
+golangci-lint = "2.15.0"
 # Pinned here only; `make tools-test` needs 3.11 or newer, for tomllib.
 python = "3.14.7"
 # Pinned here only; `make actionlint` lints .github/workflows with the

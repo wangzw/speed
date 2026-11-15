@@ -564,8 +564,9 @@ func (noopMounter) Guarded(string, string, gin.HandlerFunc, ...mountinternal.Opt
 func (noopMounter) Callback([]string, string, gin.HandlerFunc)                        {}
 func (noopMounter) BaseIn(speedhttp.Scope) string                                     { return "" }
 func (noopMounter) Endpoint() string                                                  { return "public" }
-func (noopMounter) PublicURL() string                                                 { return "http://127.0.0.1" }
-func (noopMounter) CSRF() *http.CrossOriginProtection                                 { return nil }
+
+func (noopMounter) PublicURL() string                 { return "http://127.0.0.1" }
+func (noopMounter) CSRF() *http.CrossOriginProtection { return nil }
 
 // module is a stand-in that provides one capability.
 func module(name string, token any, build func() (any, error)) core.Module {

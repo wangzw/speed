@@ -21,11 +21,15 @@ func (h scopedHuman) verifier(scope authn.HumanScope) authn.HumanVerifier {
 }
 
 func (h scopedHuman) Required(scope authn.HumanScope) bool { return h.verifier(scope).Required(scope) }
+
 func (h scopedHuman) Provider(scope authn.HumanScope) string {
 	return h.verifier(scope).Provider(scope)
 }
+
 func (h scopedHuman) SiteKey(scope authn.HumanScope) string { return h.verifier(scope).SiteKey(scope) }
-func (h scopedHuman) Action(scope authn.HumanScope) string  { return h.verifier(scope).Action(scope) }
+
+func (h scopedHuman) Action(scope authn.HumanScope) string { return h.verifier(scope).Action(scope) }
+
 func (h scopedHuman) Verify(ctx context.Context, p authn.HumanProof, scope authn.HumanScope) error {
 	return h.verifier(scope).Verify(ctx, p, scope)
 }

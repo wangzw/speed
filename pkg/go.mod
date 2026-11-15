@@ -1,6 +1,6 @@
 module github.com/vislake/speed/pkg
 
-go 1.26.10
+go 1.27.4
 
 require (
 	github.com/alexedwards/argon2id v1.0.0

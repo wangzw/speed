@@ -154,8 +154,11 @@ func LockWait(t *testing.T, handle, other *gorm.DB, lockWait time.Duration, conn
 	}
 	if waiting {
 		// The call still waiting takes the lock the one below needs once it
-		// is given up, so it is let finish first.
-		<-answer
+		// is given up, so it is let finish first, and it then holds the lock
+		// to itself: its update is expected to go through.
+		if err := <-answer; err != nil {
+			t.Errorf("the statement left waiting, once the lock was given up: %v", err)
+		}
 	}
 	if err := connect(t.Context(), handle, answeredWithin, update); err != nil {
 		t.Errorf("the statement once the lock was given up: %v", err)

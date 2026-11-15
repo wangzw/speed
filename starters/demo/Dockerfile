@@ -43,7 +43,7 @@ RUN pnpm -C /src/web install --frozen-lockfile
 RUN mkdir -p /src/starters/demo/server/dist \
     && pnpm -C /src/web --filter demo-web run build
 
-FROM golang:1.27.0-bookworm AS build
+FROM golang:1.27.4-bookworm AS build
 
 WORKDIR /src
 

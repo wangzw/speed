@@ -312,7 +312,9 @@ func (f *fakeProviders) Secret(_ context.Context, id string) (string, error) {
 }
 
 func (f *fakeProviders) List(context.Context, string) ([]authn.SSOProvider, error) { return nil, nil }
-func (f *fakeProviders) Tenant(context.Context, string) (string, error)            { return "", nil }
+
+func (f *fakeProviders) Tenant(context.Context, string) (string, error) { return "", nil }
+
 func (f *fakeProviders) Discover(context.Context, string) ([]authn.SSOProvider, error) {
 	return nil, nil
 }
