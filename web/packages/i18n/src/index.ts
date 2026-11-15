@@ -25,6 +25,7 @@ export {
   waitCountdownText,
   type ErrorTextResolverOptions,
   type ErrorTextTranslate,
+  type ErrorTextTranslateOptions,
   type HttpFamilyOptions,
 } from './error-text.js'
 export {

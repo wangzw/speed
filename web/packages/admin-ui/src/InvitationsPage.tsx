@@ -503,7 +503,9 @@ export function InvitationsPage({
     }
     return key !== null &&
       i18n.exists(key, { ns: ADMIN_UI_NAMESPACE })
-      ? t(key, options)
+      ? options === undefined
+        ? t(key)
+        : t(key, options)
       : source
   }
 

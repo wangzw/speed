@@ -13,6 +13,7 @@ import {
   createErrorTextResolver,
   waitCountdownText,
   type ErrorTextTranslate,
+  type ErrorTextTranslateOptions,
 } from './error-text.js'
 
 describe('createErrorTextResolver', () => {
@@ -206,14 +207,17 @@ describe('the shared code vocabulary', () => {
 
 describe('waitCountdownText', () => {
   const keys = { short: 'throttle.countdown', long: 'throttle.countdownLong' }
-  type TranslateCall = Parameters<ErrorTextTranslate>
+  type TranslateCall = [key: string, options?: ErrorTextTranslateOptions]
 
   function recordingTranslate(): {
     t: ErrorTextTranslate
     calls: TranslateCall[]
   } {
     const calls: TranslateCall[] = []
-    const t: ErrorTextTranslate = (key, options) => {
+    const t: ErrorTextTranslate = (
+      key: string,
+      options?: ErrorTextTranslateOptions,
+    ) => {
       calls.push([key, options])
       return key
     }

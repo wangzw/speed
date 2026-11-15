@@ -637,12 +637,9 @@ function PasskeyPrompt({
       {failure !== null && (
         <Box sx={{ mt: 1 }}>
           <Alert severity="error" role="alert">
-            {t(
-              failure.key,
-              failure.actionKey === undefined
-                ? undefined
-                : { action: t(failure.actionKey) },
-            )}
+            {failure.actionKey === undefined
+              ? t(failure.key)
+              : t(failure.key, { action: t(failure.actionKey) })}
           </Alert>
         </Box>
       )}

@@ -125,19 +125,25 @@ export interface ErrorTextResolverOptions {
   readonly fallthrough?: (code: string) => boolean
 }
 
+/** The interpolation options a resolver passes to its translation function. */
+export interface ErrorTextTranslateOptions {
+  readonly status?: string
+  readonly seconds?: number
+  readonly minutes?: number
+}
+
 /**
- * The translation function a resolver composes: a key, plus the status
- * option the parameterized bare-HTTP leaf interpolates. A plain
- * `(key) => string` is assignable, so existing callers keep working.
+ * The translation function a resolver composes: a key, plus the status,
+ * seconds or minutes option the parameterized leaves interpolate. It is two
+ * call forms rather than one optional parameter so that an i18next
+ * TFunction, whose type requires the options for a key it cannot see the
+ * variables of, is assignable to it; a plain `(key) => string` is assignable
+ * too, so existing callers keep working.
  */
-export type ErrorTextTranslate = (
-  key: string,
-  options?: {
-    readonly status?: string
-    readonly seconds?: number
-    readonly minutes?: number
-  },
-) => string
+export interface ErrorTextTranslate {
+  (key: string): string
+  (key: string, options: ErrorTextTranslateOptions): string
+}
 
 /**
  * Builds a code-to-text resolver over one surface's whitelist: a listed
