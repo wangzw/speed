@@ -892,22 +892,47 @@ describe('SignInScreen', () => {
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       )
-      act(() => {
-        flushSync(() => {
-          screen
-            .getByRole('button', { name: zhCN.signInFlow.passkeyRetry })
-            .click()
+      // The mutations are recorded rather than the DOM sampled between the
+      // two commits: whether a passive effect's state update lands before or
+      // after flushSync returns depends on how the environment schedules
+      // effects, but the order of the two writes does not.
+      const observer = new MutationObserver(() => {})
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      })
+      try {
+        act(() => {
+          flushSync(() => {
+            screen
+              .getByRole('button', { name: zhCN.signInFlow.passkeyRetry })
+              .click()
+          })
         })
+        const records = observer.takeRecords()
         // The waiting region is born empty: a live region announces only
         // content changes that follow its own insertion, and the text fills
         // the existing region a commit later. (The channel's feedback scope
-        // adds its own silent success region, hence the collection.)
-        expect(
-          screen
-            .getAllByRole('status')
-            .every((region) => region.textContent === ''),
-        ).toBe(true)
-      })
+        // adds its own silent success region, hence the lookup by text.)
+        const region = screen
+          .getAllByRole('status')
+          .find(
+            (candidate) =>
+              candidate.textContent === zhCN.signInFlow.passkeyWaiting,
+          )
+        expect(region).toBeDefined()
+        const insertedAt = records.findIndex((record) =>
+          Array.from(record.addedNodes).some((node) => node.contains(region!)),
+        )
+        const filledAt = records.findIndex((record) =>
+          region!.contains(record.target),
+        )
+        expect(insertedAt).toBeGreaterThanOrEqual(0)
+        expect(filledAt).toBeGreaterThan(insertedAt)
+      } finally {
+        observer.disconnect()
+      }
       await waitFor(() =>
         expect(
           screen
