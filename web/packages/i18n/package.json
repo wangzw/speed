@@ -41,8 +41,8 @@
   },
   "devDependencies": {
     "@mui/material": "^9.5.0",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.0.0",
-    "react": "^19.2.8"
+    "react": "^19.3.1"
   }
 }
