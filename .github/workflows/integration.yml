@@ -5,20 +5,18 @@
 # on ports it allocates for this checkout, and then runs every module's tagged
 # cases. That is why this file carries no command list of its own, exactly as
 # ci.yml does not: the entry points live in the Makefile, and a leg added there
-# runs here without this file changing.
+# runs here without this file changing. A hosted runner provides docker with the
+# compose plugin.
 #
 # They are not part of `make check`, and so not part of what gates a commit:
 # they are slower by orders of magnitude, and every case that needs no server is
-# already run on every push. This workflow is the periodic leg that covers the
-# rest.
+# already run by the commit gate. This workflow is the periodic leg that covers
+# the rest.
 #
-# This job runs on the organization's self-hosted runner group, labelled
-# `self-hosted-runners`, because hosted GitHub Actions runners are not
-# available to this account. The group is maintained outside this repository.
-# Besides what .mise.toml pins (go, node, pnpm, python), a runner has to
-# provide docker with the compose plugin. A job that stays queued instead of
-# failing means no runner of that label is online, or the runner group does
-# not grant this repository.
+# The race leg runs even after the first leg failed, so a red leg does not hide
+# a red one beneath it; only a cancellation stops it. After a failure the
+# backends' logs are dumped, because the containers are gone with the runner.
+# The last step takes the stack down however the job ended.
 #
 # The cron is off the hour on purpose, like e2e.yml's and browser.yml's.
 
@@ -32,14 +30,53 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   integration:
-    runs-on: self-hosted-runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: jdx/mise-action@v4.3.0
-      # Both legs run even after an earlier one failed, so a red race leg does
-      # not hide a red one beneath it.
-      - run: make test-integration
-      - if: always()
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+
+      - name: Run the integration cases
+        run: make test-integration
+
+      - name: Run the integration cases under the race detector
+        if: ${{ !cancelled() }}
         run: make test-integration-race
+
+      # tools/backends.py records the compose project it started in the state
+      # file make's TEST_BACKENDS_STATE names; the logs are read from that
+      # project and from no other.
+      - name: Dump the backends' logs
+        if: failure()
+        run: |
+          state=.cache/test-backends.env
+          if [ ! -f "${state}" ]; then
+            echo "::notice::no backend state file at ${state}: the stack never came up, so there are no logs to dump"
+            exit 0
+          fi
+          project="$(sed -n 's/^SPEED_TEST_PROJECT=//p' "${state}")"
+          if [ -z "${project}" ]; then
+            echo "::error::${state} names no SPEED_TEST_PROJECT"
+            exit 1
+          fi
+          docker compose -f compose.yaml -p "${project}" ps --all
+          docker compose -f compose.yaml -p "${project}" logs --no-color --timestamps
+
+      - name: Take the backends down
+        if: always()
+        run: make deps-down

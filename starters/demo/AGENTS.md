@@ -706,8 +706,9 @@ flyctl secrets set --app vislake-speed-demo \
   DEMO_GITHUB_CLIENT_SECRET='...'
 # optional: DEMO_SMTP_PORT (default 587), DEMO_SMTP_TLS (starttls, implicit, none)
 
-# the repository secret the deploy workflow reads
-gh secret set FLY_API_TOKEN --body "$(flyctl tokens create deploy --app vislake-speed-demo)"
+# the production environment's secret the deploy workflow reads; GitHub creates
+# the environment the first time the deploy job starts, so this runs after that
+gh secret set FLY_API_TOKEN --env production --body "$(flyctl tokens create deploy --app vislake-speed-demo)"
 ```
 
 The deployment carries no development credential. The entrypoint refuses to
@@ -829,11 +830,39 @@ operations endpoint's `GET /ready` on port 8083, declared as a top-level check
 because the operations listener is not a service; top-level checks report
 Machine health and gate no routing.
 
-**Deploying.** `.github/workflows/deploy.yml` runs `make fly` when the
-`check` workflow has completed successfully on `main`, and on request. It
-installs the pinned flyctl and builds the image on Fly's remote builder. The
-repository secret `FLY_API_TOKEN` is the account credential; the one-time setup
-above scopes it to the app.
+**Deploying.** `.github/workflows/deploy.yml` has a `decide` job and a `deploy`
+job. `decide` runs when the `check` workflow has completed successfully for a
+push to `main`, and on a manual dispatch on `main`; a dispatch from another
+branch skips both jobs, and a dispatch does not wait for `check`. It resolves
+the commit to deploy (the completed `check` run's head commit, or the
+dispatched commit) and compares it with the current tip of `main`, which it
+reads from the public origin. It has no secret, no environment and no
+concurrency group. When `main` no longer points at that commit it ends with a
+notice, so a queued run does not put an older commit over a newer one.
+
+Apart from a dispatch on `main`, the tip of `main` is deployed only by the run
+that follows a successful push-triggered `check` of that very commit. A tip
+whose push-triggered `check` failed, was cancelled or was replaced in its
+concurrency group stays undeployed, and a commit pushed with `[skip ci]` gets no
+`check` at all. Such a tip is deployed when its push-triggered `check` is re-run
+and passes (a `[skip ci]` commit has no run to re-run), when a later push
+passes `check`, or when `deploy` is dispatched on `main`.
+
+`deploy` runs only when `decide` found the commit at the tip. The `deploy`
+concurrency group is declared on this job, so only a run whose commit `decide`
+found at the tip can take a place in it and replace a waiting deploy. Its first
+step reads the tip again, because the job may have waited behind a running
+deploy, and skips every later step with a notice when `main` no longer points at
+that commit. It then installs the pinned flyctl and runs `make fly`, which
+builds the image on Fly's remote builder.
+
+The `deploy` job runs in the `production` environment, and `FLY_API_TOKEN` is a
+secret of that environment; the one-time setup above scopes it to the app. A
+deploy job that reaches the token check while `FLY_API_TOKEN` is not set fails
+there, with an error that names the `production` environment and
+`FLY_API_TOKEN`; add `FLY_API_TOKEN` as a secret of the `production`
+environment. GitHub creates the environment the first time the deploy job
+starts, and the secret is added by hand afterwards.
 
 ## Endpoints and guards
 

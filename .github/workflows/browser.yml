@@ -1,18 +1,19 @@
 # The frontend's browser tier, on a schedule.
 #
-# The cases assert real geometry, focus order and focusability in
-# Chromium -- properties jsdom cannot answer (see
-# docs/adr/adr-web-browser-tier.md). Chromium is not part of
-# the .mise.toml toolchain, so this job installs it and then calls the
-# repository's own entry point; the command list stays in the Makefile
-# (`make web-browser`), exactly as ci.yml and integration.yml keep
-# theirs.
+# The cases assert real geometry, focus order and focusability in Chromium,
+# properties jsdom cannot answer (see docs/adr/adr-web-browser-tier.md). The
+# tier is not part of `make check`: it is slower by an order of magnitude and
+# depends on the machine's fonts, so this is the periodic leg that covers it.
 #
-# The tier is not part of `make check`: it is slower by an order of
-# magnitude and depends on the machine's fonts. This is the periodic leg
-# that covers it.
+# Chromium is not part of the .mise.toml toolchain, so the setup action installs
+# it with its system libraries. The command list stays in the Makefile
+# (`make web-browser`), exactly as ci.yml's does.
 #
-# The cron is off the hour on purpose, like integration.yml's.
+# A failing case leaves its screenshot beside the test file, under
+# __screenshots__, and a copy under web/.vitest-attachments; both are uploaded.
+# The attachments directory is hidden, hence include-hidden-files.
+#
+# The cron is off the hour on purpose, like integration.yml's and e2e.yml's.
 
 name: browser
 
@@ -24,12 +25,41 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: browser
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   browser:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: jdx/mise-action@v4.3.0
-      - run: pnpm -C web install --frozen-lockfile
-      - run: pnpm -C web exec playwright install --with-deps chromium
-      - run: make web-browser
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the toolchain and Chromium
+        uses: ./.github/actions/setup
+        with:
+          playwright: "true"
+
+      - name: Run the browser tier
+        run: make web-browser
+
+      - name: Upload the failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-screenshots-${{ github.run_attempt }}
+          path: |
+            web/.vitest-attachments/**
+            web/packages/*/src/**/__screenshots__/**
+            starters/demo/web/src/**/__screenshots__/**
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore

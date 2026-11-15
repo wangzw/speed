@@ -1,20 +1,42 @@
 # The demo program's deployment to Fly.io.
 #
-# It runs when the `check` workflow has completed successfully on main, and on
-# request. The trigger is that completion rather than the push itself: a deploy
-# starts only for a commit that has passed the gate, and it ships that commit's
-# own tree (workflow_run.head_sha), not whatever main holds when the runner
-# picks the job up.
+# It runs when the `check` workflow has completed successfully for a push to
+# main, and on request from main. The trigger is that completion rather than the
+# push itself: a deploy starts only for a commit that has passed the gate, and
+# it ships that commit's own tree (workflow_run.head_sha), not whatever main
+# holds when the runner picks the job up. A run requested by hand does not wait
+# for the gate: it ships the commit it was dispatched on.
 #
-# The work is one Makefile target (`make fly`); this file installs the one
-# tool that target calls. flyctl is deployment machinery rather than a build
-# input, so .mise.toml does not pin it and this file does. The image is built by
-# Fly's remote builder, so the runner needs no Docker daemon and no Go or Node
-# toolchain.
+# Two jobs. `decide` resolves the commit and compares it with the tip of main,
+# which it reads from the public origin with git ls-remote, so it needs no
+# credential. It declares no concurrency group, no environment and no secret, so
+# its runs do not queue behind one another and none of them can touch the
+# deployment. `deploy` needs it and runs only when the commit is the tip; a
+# commit that main has moved past is skipped with a notice. An older tree must
+# not replace a newer one when runs queue up.
 #
-# A deploy needs FLY_API_TOKEN among the repository's secrets; the app, its
-# volume and the three secrets the entrypoint reads are created once, by hand
-# (starters/demo/AGENTS.md, "Deploying to Fly.io").
+# Apart from a dispatch on main, main's tip is deployed only by the run that
+# follows a successful push run of `check` for that very commit. A tip whose
+# push run failed, was cancelled or was replaced stays undeployed, and a commit
+# pushed with [skip ci] gets no push run at all. Such a tip is deployed when its
+# push run is re-run and passes (where it has one), when a later push passes, or
+# when this workflow is dispatched on main.
+#
+# The deploy job runs in the `production` environment, and FLY_API_TOKEN is a
+# secret of that environment. GitHub creates the environment the first time the
+# deploy job starts; the secret is added to it by hand. A deploy job that
+# reaches the token check while FLY_API_TOKEN is not set fails there, with an
+# error that says where to add the secret, instead of letting flyctl fail on a
+# missing credential. The token is in the environment of the one step that
+# deploys.
+#
+# The work is one Makefile target (`make fly`); this file installs the one tool
+# that target calls. flyctl is deployment machinery rather than a build input, so
+# .mise.toml does not pin it and this file does. The image is built by Fly's
+# remote builder, so the runner needs no Docker daemon. The setup action still
+# provides the toolchain, because the Makefile runs `go work edit` while it is
+# parsed. The app, its volume and the three secrets the entrypoint reads are
+# created once, by hand (starters/demo/AGENTS.md, "Deploying to Fly.io").
 
 name: deploy
 
@@ -28,28 +50,111 @@ on:
 permissions:
   contents: read
 
-# Deploys replace one Machine at a time; two overlapping runs would race for
-# the same volume. A queued run is allowed to finish rather than be cancelled:
-# the later commit is the one that should end up live.
-concurrency:
-  group: deploy
-  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  deploy:
+  decide:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      commit: ${{ steps.tip.outputs.commit }}
+      is_tip: ${{ steps.tip.outputs.is_tip }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - name: Resolve the commit and compare it with the tip of main
+        id: tip
+        env:
+          COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          tip="$(git ls-remote "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)"
+          if [ -z "${tip}" ]; then
+            echo "::error::git ls-remote found no refs/heads/main in ${GITHUB_REPOSITORY}"
+            exit 1
+          fi
+          echo "commit=${COMMIT}" >> "${GITHUB_OUTPUT}"
+          if [ "${tip}" = "${COMMIT}" ]; then
+            echo "is_tip=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice::not deploying ${COMMIT}: main is now at ${tip}, which is deployed after its own push check passes; if that check ends without passing, re-run it; if no check runs for ${tip}, dispatch deploy on main"
+            echo "is_tip=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+  deploy:
+    needs: decide
+    if: needs.decide.outputs.is_tip == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    # Deploys replace one Machine at a time; two overlapping runs would race for
+    # the same volume, and the group does not cancel a running deploy. The group
+    # is on this job rather than on the workflow or on `decide` because a run
+    # that enters the group replaces the run waiting there even with
+    # cancel-in-progress false. Only a run whose commit `decide` found at main's
+    # tip may enter: a run that `decide` skipped, or that found main past its
+    # commit, does not start this job and so does not evict a waiting deploy.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    steps:
+      # This job may have waited in the group behind a deploy that was running,
+      # and main may point at another commit by then, so the tip is read again
+      # before anything is set up or deployed.
+      - name: Check that the commit is still the tip of main
+        id: tip
+        env:
+          COMMIT: ${{ needs.decide.outputs.commit }}
+        run: |
+          tip="$(git ls-remote "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)"
+          if [ -z "${tip}" ]; then
+            echo "::error::git ls-remote found no refs/heads/main in ${GITHUB_REPOSITORY}"
+            exit 1
+          fi
+          if [ "${tip}" = "${COMMIT}" ]; then
+            echo "is_tip=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice::skipping the deploy of ${COMMIT}: main is now at ${tip}, which is deployed after its own push check passes; if that check ends without passing, re-run it; if no check runs for ${tip}, dispatch deploy on main"
+            echo "is_tip=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Require the Fly API token
+        if: steps.tip.outputs.is_tip == 'true'
+        env:
+          TOKEN_PRESENT: ${{ secrets.FLY_API_TOKEN != '' }}
+        run: |
+          if [ "${TOKEN_PRESENT}" != "true" ]; then
+            echo "::error::the secret FLY_API_TOKEN is empty: add it as a secret of the production environment (Settings > Environments > production > Environment secrets)"
+            exit 1
+          fi
+
+      - name: Check out the commit
+        if: steps.tip.outputs.is_tip == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - uses: superfly/flyctl-actions/setup-flyctl@1.6
+          ref: ${{ needs.decide.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up the toolchain
+        if: steps.tip.outputs.is_tip == 'true'
+        uses: ./.github/actions/setup
+
+      # Tag 1.6 has no GitHub Release: the latest release, 1.5, declares the
+      # node20 runtime and 1.6 declares node24. The major tag v1 points at the
+      # same commit as 1.6.
+      - name: Set up flyctl
+        if: steps.tip.outputs.is_tip == 'true'
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
         with:
           version: "0.4.99"
-      - run: make fly
+
+      - name: Deploy to Fly.io
+        if: steps.tip.outputs.is_tip == 'true'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: make fly

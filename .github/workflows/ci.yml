@@ -1,51 +1,83 @@
-# Continuous integration.
+# The commit gate.
 #
-# This file installs the toolchain and calls the repository's own entry
-# point. It deliberately carries no command list of its own: every check
-# lives in the Makefile, which derives the module set from go.work, so a
-# check added there runs here without this file changing, and CI never needs
-# to know a module name or a tool version.
+# This file installs the toolchain and calls the repository's own entry point.
+# It carries no command list of its own: every check lives in the Makefile,
+# which derives the module set from go.work, so a check added there runs here
+# without this file changing, and CI never needs to know a module name or a
+# tool version. The toolchain comes from .mise.toml through the local setup
+# action.
 #
-# The toolchain comes from .mise.toml through mise-action. Should that action
-# ever be unavailable, the replacement is still toolchain installation and
-# not a command list: actions/setup-go with `go-version-file: go.work`, plus
-# an install step that reads the golangci-lint and python pins out of
-# .mise.toml.
+# Concurrency. The group is keyed by the event name and then by the pull request
+# number, or by the ref when there is none, so a run started by one event does
+# not replace a run started by another. In particular a check dispatched by hand
+# on main sits in a group of its own, apart from the push runs: the deploy
+# workflow acts only on the completion of a push run, so a dispatched run that
+# replaced a pending push run would leave that commit without a deploy.
 #
-# This job runs on the organization's self-hosted runner group, labelled
-# `self-hosted-runners`, because hosted GitHub Actions runners are not
-# available to this account. The group is maintained outside this repository;
-# a runner in it has to provide what .mise.toml pins (go, node, pnpm, python)
-# and a Go toolchain reachable through mise. A job that stays queued instead
-# of failing means no runner of that label is online, or the runner group
-# does not grant this repository -- it is not a failed check.
+# cancel-in-progress is on for every ref but main. On main the group does not
+# cancel a run while it executes, because cancelling a push run would leave its
+# commit without a verdict. For a pull request (ref refs/pull/<n>/merge) and
+# for a dispatch from another branch, the next run of the same event for the
+# same pull request or branch cancels the one in progress.
+#
+# cancel-in-progress governs only a running run. A group holds one running run
+# and one waiting run, and a run that is still waiting is replaced by the next
+# run queued in the group. When pushes to main arrive faster than the gate
+# finishes, the commits between the running push run and the newest get no
+# verdict. The newest push run can be replaced too: a re-run of an older main
+# commit's push run keeps the event push and the ref refs/heads/main, so it
+# enters the same group and replaces a waiting push run of main's tip.
+#
+# Apart from a dispatch of the deploy workflow on main, main's tip is deployed
+# only after a successful push run of that commit. A tip whose push run failed,
+# was cancelled or was replaced stays undeployed, and a commit pushed with
+# [skip ci] gets no push run at all. Such a tip is deployed when its push run is
+# re-run and passes (where it has one), when a later push passes, or when the
+# deploy workflow is dispatched on main.
 
 name: check
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: check-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check:
-    runs-on: self-hosted-runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: jdx/mise-action@v4.3.0
-      # A self-hosted runner's toolchain is whoever set it up, so the first
-      # run of this job prints what it actually got. A missing tool fails
-      # here, naming itself, rather than surfacing later as an obscure make
-      # error.
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+
+      # A missing tool fails here, naming itself, rather than surfacing later
+      # as an obscure make error.
       - name: Report the runner and the toolchain it provides
         run: |
-          echo "runner.os=${{ runner.os }} runner.arch=${{ runner.arch }}"
-          echo "uname=$(uname -srm)"
+          echo "runner.os=${RUNNER_OS} runner.arch=${RUNNER_ARCH}"
+          uname -srm
           go version
           node --version
           pnpm --version
           python3 --version
           golangci-lint --version
-      - run: make check
+
+      - name: Run the commit gate
+        run: make check
