@@ -1,46 +1,46 @@
 module github.com/vislake/speed/pkg
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/alexedwards/scs/v2 v2.9.0
-	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.4
+	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.5
 	github.com/alibabacloud-go/dysmsapi-20170525/v5 v5.6.0
-	github.com/alibabacloud-go/tea v1.5.3
-	github.com/aws/aws-sdk-go-v2 v1.47.3
-	github.com/aws/aws-sdk-go-v2/config v1.33.9
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
-	github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2 v1.42.1
+	github.com/alibabacloud-go/tea v1.5.4
+	github.com/aws/aws-sdk-go-v2 v1.48.0
+	github.com/aws/aws-sdk-go-v2/config v1.33.18
+	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
+	github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2 v1.42.8
 	github.com/beevik/etree v1.8.1
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/casbin/casbin/v3 v3.11.0
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/gin-contrib/cors v1.7.3
+	github.com/gin-contrib/cors v1.7.11
 	github.com/gin-gonic/gin v1.12.0
-	github.com/glebarez/go-sqlite v1.21.2
+	github.com/glebarez/go-sqlite v1.23.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.11.0
-	github.com/minio/minio-go/v7 v7.3.0
+	github.com/jackc/pgx/v5 v5.13.0
+	github.com/minio/minio-go/v7 v7.4.1
 	github.com/mojocn/base64Captcha v1.3.8
-	github.com/nats-io/nats.go v1.54.0
+	github.com/nats-io/nats.go v1.55.0
 	github.com/pquerna/otp v1.5.0
-	github.com/redis/go-redis/v9 v9.22.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/russellhaering/gosaml2 v0.12.0
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/spf13/viper v1.21.0
 	github.com/swaggest/jsonschema-go v0.3.79
 	github.com/swaggest/openapi-go v0.2.61
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.193
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.212
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms v1.3.172
-	github.com/twilio/twilio-go v1.32.0
-	github.com/wneessen/go-mail v0.8.1
+	github.com/twilio/twilio-go v1.33.0
+	github.com/wneessen/go-mail v0.8.2
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.47.0
@@ -53,16 +53,16 @@ require (
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
-	go.yaml.in/yaml/v3 v3.0.5
-	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
-	golang.org/x/oauth2 v0.37.0
-	golang.org/x/sync v0.24.0
-	golang.org/x/text v0.43.0
-	golang.org/x/time v0.15.0
-	google.golang.org/grpc v1.83.2
-	gorm.io/driver/postgres v1.6.0
+	go.yaml.in/yaml/v3 v3.0.6
+	golang.org/x/crypto v0.59.0
+	golang.org/x/oauth2 v0.38.0
+	golang.org/x/sync v0.25.0
+	golang.org/x/text v0.44.0
+	golang.org/x/time v0.16.0
+	google.golang.org/grpc v1.85.0
+	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
-	modernc.org/sqlite v1.23.1
+	modernc.org/sqlite v1.55.0
 )
 
 require (
@@ -70,17 +70,17 @@ require (
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.9 // indirect
 	github.com/aliyun/credentials-go v1.4.5 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.6 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.6 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.21 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.10.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4 // indirect
-	github.com/aws/smithy-go v1.28.5 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.9 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.13.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.39.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.52.0 // indirect
+	github.com/aws/smithy-go v1.28.9 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
@@ -114,7 +114,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
@@ -131,6 +131,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -155,17 +156,17 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/arch v0.31.0 // indirect
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	modernc.org/libc v1.22.5 // indirect
-	modernc.org/mathutil v1.5.0 // indirect
-	modernc.org/memory v1.5.0 // indirect
+	modernc.org/libc v1.74.1 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.11.0 // indirect
 )
