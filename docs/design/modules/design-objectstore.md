@@ -203,7 +203,7 @@ var (
 
 **`DirectURL` 是可声明的可选能力，不是 `Store` 的必选方法，也不是裸类型断言。** 一个后端在它的 `Spec` 里把 `Direct` 置真，工厂便把 `DirectURL` 与 `Store` 一并声明为交付；实例仍是 `Open` 返回的同一个值，同时实现两个接口（与 `pkg/sms`、`pkg/authz/policy`、`pkg/audit/journal` 的“一模块一实例多 token”一致），`core.assertDelivered` 在构造时逐一校验。
 
-**`fs` 不 import 任何对象存储 SDK，也不认识 URL。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK；它不 import `pkg/http`、不持有任何密钥、不交付 `DirectURL`。**`s3` 绑它自己的 SDK**（`github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，[REF-minio-go](../../references.md)），SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
+**`fs` 不 import 任何对象存储 SDK，也不认识 URL。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK；它不 import `pkg/http`、不持有任何密钥、不交付 `DirectURL`。**`s3` 绑它自己的 SDK**（`github.com/minio/minio-go/v7` v7.4.1 及其 `pkg/credentials` 子包，[REF-minio-go](../../references.md)），SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
 
 `fs` 与 `s3` 都排他：一个进程里恰好一个 `Store` 生效，多于一个表态启用即在消解阶段以排他冲突失败，宿主在命令树上点名其一。`metadata` 排他交付 `Objects`，它对 `Store` 的依赖是**必需**的：一个 `Store` 都没纳入的装配里，该功能缺提供者、启动失败；`DirectURL` 是可选依赖，缺席时地址改由内容路由发出。
 
@@ -606,7 +606,7 @@ type Spec[C any] struct {
 - `Open` 打开该路径只读并返回正文流；`Delete` 删除该路径，幂等。
 - `Name()` 报告实现名，供诊断。`fs` 不 import 任何对象存储 SDK，依赖只有标准库的 `os`、`io`；不认识 URL、不持有任何密钥，`Direct` 为假。
 
-**`s3` 绑 S3 兼容的对象存储。** 配置项：`endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`。SDK 是 `github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，只被这个实现子包 import。`Put` 以内部键为对象键调用 `PutObject`（`size` 作为对象的 `Content-Length`），`Open` 用 `GetObject` 返回对象正文的只读流，`Delete` 用 `RemoveObject`（S3 的 `DeleteObject`）。`endpoint` 与 `use-path-style` 一起把客户端指向自建或云上的 S3 兼容服务，`region` 由 SDK 用于签名。`access-key` 与 `secret-key` 是凭据，由 `Secrets` 钩子交出、在 `New` 里先于 logger 绑定登记为日志的字面量脱敏匹配器（见“工厂的构造次序”）。
+**`s3` 绑 S3 兼容的对象存储。** 配置项：`endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`。SDK 是 `github.com/minio/minio-go/v7` v7.4.1 及其 `pkg/credentials` 子包，只被这个实现子包 import。`Put` 以内部键为对象键调用 `PutObject`（`size` 作为对象的 `Content-Length`），`Open` 用 `GetObject` 返回对象正文的只读流，`Delete` 用 `RemoveObject`（S3 的 `DeleteObject`）。`endpoint` 与 `use-path-style` 一起把客户端指向自建或云上的 S3 兼容服务，`region` 由 SDK 用于签名。`access-key` 与 `secret-key` 是凭据，由 `Secrets` 钩子交出、在 `New` 里先于 logger 绑定登记为日志的字面量脱敏匹配器（见“工厂的构造次序”）。
 
 `s3` 用 `Spec.Direct` 声明交付 `DirectURL`，`Open` 返回的 `*store` 同时实现 `Store` 与 `DirectURL`：
 

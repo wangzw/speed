@@ -14,7 +14,7 @@
 
 **删除与个人数据。** 邮箱、手机号与显示名是个人数据，删除账户要能抹除它们。GORM（[REF-gorm](../references.md)）的 `DeletedAt` 软删除保留行的全部内容，也不记录删除者（[ADR-db-plugin-scope](adr-db-plugin-scope.md)）。
 
-**时间的存储。** GORM 的 `NowFunc` 默认取本地时间，`pkg/db` 没有覆盖它。SQLite 驱动把 `time.Time` 按其所在时区存成文本，比较是字符串比较。实测（`glebarez/go-sqlite` v1.21.2，[REF-glebarez-go-sqlite](../references.md)）：写入 `07:00-05:00`（即 12:00Z）之后，`WHERE at > 11:00Z` 命中 0 行。PostgreSQL 的 `TIMESTAMPTZ` 不受影响。
+**时间的存储。** GORM 的 `NowFunc` 默认取本地时间，`pkg/db` 没有覆盖它。SQLite 驱动把 `time.Time` 按其所在时区存成文本，比较是字符串比较。实测（`glebarez/go-sqlite` v1.23.0，[REF-glebarez-go-sqlite](../references.md)）：写入 `07:00-05:00`（即 12:00Z）之后，`WHERE at > 11:00Z` 命中 0 行。PostgreSQL 的 `TIMESTAMPTZ` 不受影响。
 
 **加密列与盲索引。** `pkg/db` 的盲索引不替调用方规范化，一侧没规范化就查不到而不报错；换根密钥后每个已存摘要失效，要逐行重写；缺根密钥时 `BlindIndex` panic（[ADR-db-encryption](adr-db-encryption.md)）。
 
@@ -148,7 +148,7 @@
 
 ## 失效条件
 
-- **假设：SQLite 驱动按所在时区存时间文本、按字符串比较。** 这是实测所得（`glebarez/go-sqlite` v1.21.2），UTC 规则以它为据。守住它的测试：SQLite 夹具在 `TZ=America/New_York` 下用非 UTC 的 `time.Time` 写入，断言每个带时间比较的条件（会话有效性、退避锁定、刷新令牌空闲、断言去重清扫、挑战预算统计）结果仍然正确。驱动升级后行为改变，则这条规则的理由要重新比较；规则本身对 PostgreSQL 无害，不随之放宽。
+- **假设：SQLite 驱动按所在时区存时间文本、按字符串比较。** 这是实测所得（`glebarez/go-sqlite` v1.23.0），UTC 规则以它为据。守住它的测试：SQLite 夹具在 `TZ=America/New_York` 下用非 UTC 的 `time.Time` 写入，断言每个带时间比较的条件（会话有效性、退避锁定、刷新令牌空闲、断言去重清扫、挑战预算统计）结果仍然正确。驱动升级后行为改变，则这条规则的理由要重新比较；规则本身对 PostgreSQL 无害，不随之放宽。
 - **假设：`pkg/db` 不覆盖 GORM 的 `NowFunc`。** 若它覆盖为 UTC，模型路径的显式赋值成为冗余，保留与否重新比较；对原生 SQL 路径绑定的时间，显式 `.UTC()` 仍然必要。
 - **跨模块外键的否决不以 SQLite 外键开关为唯一理由。** 即便核实该开关恒开，迁移先后的隐含契约，以及墓碑行拦不住指向它的写入，仍然成立。
 - **授权模块落地并要求自己持有成员关系**，或租户模块的约定放宽到可以不经 `CrossTenant` 按账户反查：成员关系归属与嵌入约定的比较要重做。

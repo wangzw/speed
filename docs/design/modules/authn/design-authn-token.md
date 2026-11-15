@@ -629,7 +629,7 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 | 服务账户的 `client_credentials` | 已实现 | `pkg/authn/token/client.go`（`clientCredentials`），经 `Passwords.VerifyServiceSecret`、`Sessions.ForCredential`、`Throttle` 的 `ScopeClient` |
 | 刷新令牌表的清扫协程 | 已实现 | `pkg/authn/token/sweep.go`（`startSweep`、`sweepOnce`） |
 | 指标 `authn.token.operations`、事件 `authn.token.reuse-detected`、审计 `authn.token.refresh-reuse` | 已实现 | `pkg/authn/token/product.go`（`takeMeter`）、`pkg/authn/token/issue.go`（`recordOperation`）、`pkg/authn/token/refresh.go`（`revokeFamily` 发 `authn.token.reuse-detected`、写审计 `authn.token.refresh-reuse`） |
-| `pkg/go.mod` 对 `go-jose` 的下限要求与 `UnsafeClaimsWithoutVerification` 的静态检查 | 已实现 | `pkg/go.mod`（`github.com/go-jose/go-jose/v4` v4.1.5）；`pkg/authn/deps_test.go`（`TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld`） |
+| `pkg/go.mod` 对 `go-jose` 的下限要求与 `UnsafeClaimsWithoutVerification` 的静态检查 | 已实现 | `pkg/go.mod`（对 `github.com/go-jose/go-jose/v4` 的要求）；`pkg/authn/deps_test.go`（`goJoseFloor` 为 v4.1.5，`TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld`） |
 | operation 声明与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/authn/token/operations.go`；`pkg/authn/token/openapi_generated_test.go`；片段 `pkg/authn/token/openapi/token.json` |
 
 指标、事件与审计的名字、属性与档位由 [design-authn-events](design-authn-events.md) 承载；配置键与设置键的取值域由 [design-authn-config](design-authn-config.md) 承载。
