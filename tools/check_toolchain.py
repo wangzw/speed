@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Toolchain drift gate for the root .mise.toml.
+"""Toolchain drift gate for the root .mise.toml and the demo image.
 
 The developer toolchain is pinned with mise; the root .mise.toml carries
 the versions. Some of those versions are MIRRORS of an authoritative
@@ -13,14 +13,25 @@ reads -- and this gate fails when a mirror drifts from its source:
 The other tools .mise.toml pins are pinned there and nowhere else, so
 they have no source to drift from and this gate does not check them.
 
+starters/demo/Dockerfile builds the demo image on base images that carry
+the same toolchain, so two of its tags are mirrors as well:
+
+  golang image  its tag's version (the part before the first `-`)
+                equals go.work's `go` directive
+  node image    its tag's major equals web/.nvmrc's major
+
+Every `FROM` line naming that image is checked. The Dockerfile's other
+images (the runtime base) are not toolchain versions and are not checked.
+
 Bump the authoritative source and the mirror together; this gate exists
 because they are separate files and will drift without it.
 
 Exit codes: 0 = every mirror equals its source; 1 = drift (a mirror
 differs from its source, or a report printed below that starts with
-MISMATCH); 2 = infrastructure error (a source file missing or
-unparsable, or an expected tool absent from .mise.toml). Paths in the
-report are relative to --root.
+MISMATCH); 2 = infrastructure error (a source file or the Dockerfile
+missing or unparsable, an expected tool absent from .mise.toml, or an
+expected image absent from the Dockerfile). Paths in the report are
+relative to --root.
 """
 
 from __future__ import annotations
@@ -109,6 +120,54 @@ def _read_package_manager_pnpm_version(root: str) -> str:
     return version.split("+", 1)[0]
 
 
+DOCKERFILE = os.path.join("starters", "demo", "Dockerfile")
+
+# A FROM line's image reference: optional flags such as --platform=..., an
+# optional Docker Hub prefix, then the image name and its tag. A digest
+# after the tag (`@sha256:...`) is not part of the tag.
+_FROM_RE = re.compile(
+    r"^FROM\s+(?:--\S+\s+)*(?:docker\.io/)?(?:library/)?"
+    r"(?P<image>[a-z0-9._/-]+):(?P<tag>[^\s@]+)",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def _read_dockerfile_tags(root: str, image: str) -> list[str]:
+    """Return the tag of every FROM line in the demo Dockerfile naming image."""
+    path = os.path.join(root, DOCKERFILE)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except FileNotFoundError:
+        _infra(f"error: {path} is missing -- the demo image this gate guards")
+    tags = [
+        m.group("tag")
+        for m in _FROM_RE.finditer(text)
+        if m.group("image").lower() == image
+    ]
+    if not tags:
+        _infra(f"error: no 'FROM {image}:<tag>' line found in {path}")
+    return tags
+
+
+def _major(version: str) -> str:
+    return re.split(r"[.-]", version, maxsplit=1)[0]
+
+
+def _golang_image_version(tag: str) -> str:
+    # golang:1.27.4-bookworm -> 1.27.4; the suffix names the base distribution.
+    return tag.split("-", 1)[0]
+
+
+def _node_image_major(tag: str) -> str:
+    # node:26-bookworm-slim -> 26; node:26.13.1-bookworm-slim -> 26.
+    return _major(tag)
+
+
+def _read_nvmrc_node_major(root: str) -> str:
+    return _major(_read_nvmrc_node_version(root))
+
+
 # Tools .mise.toml mirrors, with the authoritative source each one mirrors
 # and the name the report calls that source.
 SOURCES = [
@@ -117,13 +176,22 @@ SOURCES = [
     ("pnpm", _read_package_manager_pnpm_version, "web/package.json's packageManager"),
 ]
 
+# Images the demo Dockerfile mirrors: the image name, how its tag reduces to
+# the compared version, the authoritative source and the name the report
+# calls that source.
+IMAGE_SOURCES = [
+    ("golang", _golang_image_version, _read_go_version, "go.work's go directive"),
+    ("node", _node_image_major, _read_nvmrc_node_major, "web/.nvmrc's major"),
+]
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Fail when a version pinned in the root .mise.toml no longer "
             "mirrors its authoritative source (go.work, web/.nvmrc, "
-            "web/package.json)."
+            "web/package.json), or a toolchain image in "
+            "starters/demo/Dockerfile no longer matches go.work or web/.nvmrc."
         )
     )
     parser.add_argument(
@@ -160,6 +228,23 @@ def main(argv: list[str] | None = None) -> int:
             )
             drifted += 1
 
+    dockerfile = DOCKERFILE.replace(os.sep, "/")
+    for image, reduce_tag, reader, source_name in IMAGE_SOURCES:
+        source = reader(root)
+        for tag in _read_dockerfile_tags(root, image):
+            mirror = reduce_tag(tag)
+            if mirror == source:
+                print(
+                    f"toolchain: ok          {image} image: {dockerfile} "
+                    f"{image}:{tag} == {source_name} ({source})"
+                )
+            else:
+                print(
+                    f"toolchain: MISMATCH    {image} image: {dockerfile} pins "
+                    f"{image}:{tag} but {source_name} says {source}"
+                )
+                drifted += 1
+
     if missing:
         # An expected tool absent from .mise.toml is an infrastructure
         # failure per the module docstring's exit-code contract: the gate
@@ -175,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     if drifted:
         print(
             f"error: {drifted} tool version(s) drifted -- bump the authoritative "
-            "source and .mise.toml together (see the .mise.toml header)",
+            "source and its mirror together (see the .mise.toml header)",
             file=sys.stderr,
         )
         return 1

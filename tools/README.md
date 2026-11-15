@@ -72,9 +72,13 @@ addresses for the Makefile to export. The root `Makefile` reaches it through
 actually reads. Three pins are mirrors: `go` against `go.work`'s `go`
 directive, `node` against `web/.nvmrc`, and `pnpm` against
 `web/package.json`'s `packageManager`; the file's own header says which
-pins have no mirror and are therefore not checked. Exit codes: 0 clean,
-1 drift, 2 infrastructure error (a source missing or unparsable, a
-mirrored tool absent from `.mise.toml`).
+pins have no mirror and are therefore not checked. The demo image's
+toolchain is held to the same sources: the tag of every `golang` image in
+`starters/demo/Dockerfile` must carry `go.work`'s `go` directive, and the
+major of every `node` image must equal `web/.nvmrc`'s. Exit codes: 0 clean,
+1 drift, 2 infrastructure error (a source or the Dockerfile missing or
+unparsable, a mirrored tool absent from `.mise.toml`, a mirrored image
+absent from the Dockerfile).
 
 `check_markdown_examples.py` — compiles or parse-checks the fenced Go code
 blocks in markdown prose, which no other harness covers (godoc `Example`

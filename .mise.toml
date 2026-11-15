@@ -9,6 +9,12 @@
 #   node   web/.nvmrc
 #   pnpm   web/package.json's `packageManager`
 #
+# starters/demo/Dockerfile's toolchain images mirror the same sources, and the
+# same gate checks them:
+#
+#   golang image tag     go.work's `go` directive
+#   node image major     web/.nvmrc
+#
 # Bump the mirror and its source together; they are separate files and drift
 # unless something checks them, which is what tools/check_toolchain.py does.
 #

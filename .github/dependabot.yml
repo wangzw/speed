@@ -61,6 +61,14 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
+    # The node and golang images carry the toolchain, so they move together
+    # with its pins: .mise.toml, web/.nvmrc and go.work's go directive, files
+    # no Dependabot ecosystem edits. A pull request that moved an image alone
+    # would fail tools/check_toolchain.py, which holds the images to those
+    # pins. alpine is the runtime base, not a toolchain, and keeps updating.
+    ignore:
+      - dependency-name: "node"
+      - dependency-name: "golang"
     groups:
       docker-minor-patch:
         patterns: ["*"]
