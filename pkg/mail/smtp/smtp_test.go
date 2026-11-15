@@ -353,13 +353,15 @@ func TestSendDeliversAnAttachment(t *testing.T) {
 	}
 }
 
-// attachmentPart finds the part whose Content-Disposition names fileName. The
-// disposition is decoded first, because a file name outside ASCII travels as an
-// RFC 2047 encoded word that the media-type parser alone does not undo.
+// attachmentPart finds the part whose Content-Disposition names fileName. A
+// file name outside ASCII travels as an RFC 2231 extended parameter
+// (filename* carrying the charset and the percent-encoded octets), which the
+// media-type parser decodes itself, so the raw header is parsed as it was
+// written.
 func attachmentPart(t *testing.T, parts []part, fileName string) part {
 	t.Helper()
 	for _, p := range parts {
-		_, params, err := mime.ParseMediaType(decodedHeader(t, p.header, "Content-Disposition"))
+		_, params, err := mime.ParseMediaType(p.header.Get("Content-Disposition"))
 		if err != nil {
 			continue
 		}

@@ -41,7 +41,7 @@ var allowedRootPackages = []string{
 // carrier, so it must appear in its leaf's own files and nowhere else.
 const (
 	smtpSDKPath     = "github.com/wneessen/go-mail"
-	smtpSDKVersion  = "v0.8.1"
+	smtpSDKVersion  = "v0.8.2"
 	smtpCarrierLeaf = mailRootPath + "/smtp"
 )
 
@@ -170,7 +170,7 @@ func TestTheVersionPinFailsOnADriftedRequirement(t *testing.T) {
 	if v := pinViolation(line(smtpSDKVersion), pin); v != "" {
 		t.Errorf("a go.mod at the pinned version is reported: %q", v)
 	}
-	for _, gomod := range []string{line("v0.8.2"), line("v0.8.0"), ""} {
+	for _, gomod := range []string{line("v0.9.0"), line("v0.8.0"), ""} {
 		if v := pinViolation(gomod, pin); v == "" {
 			t.Errorf("a go.mod %q is not reported, so the pin would let it through", gomod)
 		}

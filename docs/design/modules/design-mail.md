@@ -119,7 +119,7 @@ type Receipt struct{ ProviderID string }
 
 **本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送与用途无关：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。
 
-**根包不 import 任何厂商库。** SMTP 库落在绑定它的载体叶子包 `pkg/mail/smtp` 里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/mail/deps_test.go` 的守卫：根包的传递闭包只含 `pkg/config`、`pkg/core`、`pkg/internal/literal`、`pkg/log`，不含任何厂商库，也不含 `pkg/authn` 或其他功能目录。SMTP 库在 `pkg/go.mod` 里精确固定版本 `v0.8.1`，同样由该守卫守住。
+**根包不 import 任何厂商库。** SMTP 库落在绑定它的载体叶子包 `pkg/mail/smtp` 里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/mail/deps_test.go` 的守卫：根包的传递闭包只含 `pkg/config`、`pkg/core`、`pkg/internal/literal`、`pkg/log`，不含任何厂商库，也不含 `pkg/authn` 或其他功能目录。SMTP 库在 `pkg/go.mod` 里精确固定版本 `v0.8.2`，同样由该守卫守住。
 
 **`pkg/internal/literal` 与 `pkg/internal/dedupe` 是共享单元。** 两个能力的根包工厂都在 `New` 里 import `literal`，替自己的载体登记凭据的字面量脱敏匹配器；两个能力的载体也都持一张 `dedupe.Table`。`pkg/sms` 下的包不能 import `pkg/mail` 的 `internal` 包，所以这两个单元落在 `pkg/internal/` 下（[ADR-shared-backend-unit](../../adr/adr-shared-backend-unit.md)）。它们不登记模块，不交付功能，不参与生命周期。本模块的载体只经工厂取用它们，见“工厂的构造次序”。
 
@@ -228,7 +228,7 @@ type Spec[C any] struct {
 
 | 项 | SMTP 载体 `mail.smtp` |
 |---|---|
-| 库 | `github.com/wneessen/go-mail` v0.8.1 |
+| 库 | `github.com/wneessen/go-mail` v0.8.2 |
 | 调用 | `DialAndSendWithContext`（一条连接，自带 `MAIL FROM`/`RCPT TO`/`DATA`） |
 | 连接姿态 | `tls` 取 `starttls`（缺省，强制 STARTTLS）、`implicit`（SMTPS）或 `none` |
 | 归 `ErrThrottled` | 中继答 4xx（暂态失败） |
@@ -266,7 +266,7 @@ SMTP 事务同样不幂等：重复一次会投递并计费第二封，所以适
 - **不保证一个 `Message` 值能被发送两次。** 附件的 `Data` 是一个 `io.Reader`，`Send` 把它读到结尾；`DedupeID` 命中时不再读一次这个读取器，所以重试用一个新的 `DedupeID` 时要重建读取器，否则发出去的是一份空附件，且没有错误可看。这一条是“附件以 `io.Reader` 交出”这一决定的代价。
 - **不保证厂商专有接口可达。** 载体集合只有 SMTP；SMTP 之外的厂商专有接口（例如只存在于某家 OpenAPI 的功能）没有通道。
 - **不设头字段的长度上界。** 主题、附件名与附件媒体类型的长度都不度量。载体库按空白把长值折成多行，所以带空白的取值会散成几个短行；不带空白的取值则成为一整条长行，可能超出 SMTP 的 998 字节行限，怎么处置由中继决定。要控制它的长度是调用方的事。
-- **不保证附件名按原样到达收件人。** 载体库对文件名做校验，把控制字符与 `/ : < > ? \\ |` 一类字符换成下划线，非 ASCII 的名字另编成编码字。本模块拒绝的是调用方缺陷信号（控制字符），不代为规定库把它写成什么。
+- **不保证附件名按原样到达收件人。** 载体库对文件名做校验，把控制字符与 `/ : < > ? \\ |` 一类字符换成下划线，非 ASCII 的名字另写成扩展参数（`filename*=utf-8''…`，取值经百分号编码）。本模块拒绝的是调用方缺陷信号（控制字符），不代为规定库把它写成什么。
 
 ## 并发与事务边界
 

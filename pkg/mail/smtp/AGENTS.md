@@ -7,7 +7,7 @@ into the sending sentinels. A host writes this module's name into a command; it
 declares the sending seam exclusively, so a command names exactly one carrier and
 two at once fail in resolution.
 
-The whole leaf package binds `github.com/wneessen/go-mail` v0.8.1 and can be
+The whole leaf package binds `github.com/wneessen/go-mail` v0.8.2 and can be
 dropped without touching any other module. A host deploys it against any relay
 that speaks submission — Aliyun DirectMail, Tencent SES, or a private relay —
 by setting the host and port, so no vendor SDK beyond this one library enters the

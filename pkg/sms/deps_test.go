@@ -42,11 +42,11 @@ const (
 	tencentCarrierLeaf = smsRootPath + "/tencent"
 
 	awsSDKPath     = "github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2"
-	awsSDKVersion  = "v1.42.1"
+	awsSDKVersion  = "v1.42.8"
 	awsCarrierLeaf = smsRootPath + "/aws"
 
 	twilioSDKPath     = "github.com/twilio/twilio-go"
-	twilioSDKVersion  = "v1.32.0"
+	twilioSDKVersion  = "v1.33.0"
 	twilioCarrierLeaf = smsRootPath + "/twilio"
 )
 

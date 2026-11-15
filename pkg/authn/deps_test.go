@@ -1005,9 +1005,9 @@ const (
 	uuidPath        = "github.com/google/uuid"
 	uuidVersion     = "v1.6.0"
 	xCryptoPath     = "golang.org/x/crypto"
-	xCryptoVersion  = "v0.58.1-0.20261009181718-2f1f834330b2"
+	xCryptoVersion  = "v0.59.0"
 	xTextPath       = "golang.org/x/text"
-	xTextVersion    = "v0.43.0"
+	xTextVersion    = "v0.44.0"
 )
 
 // bridgeLibrary is one third-party library the module binds to a single leaf
