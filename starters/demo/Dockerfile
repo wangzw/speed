@@ -13,7 +13,7 @@
 # The build order is the one the repository fixes: the frontend first, because
 # the Go program embeds its output with go:embed.
 
-FROM node:24-bookworm-slim AS web
+FROM node:26-bookworm-slim AS web
 
 WORKDIR /src
 
