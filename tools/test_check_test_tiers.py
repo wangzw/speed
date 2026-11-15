@@ -12,9 +12,13 @@ its file from every leg, in the file and in the Makefile alike; a library
 that skips a case turns a layer green; and a gated tag whose cases the
 commit gate's `-run` pattern does not select runs nothing, while a
 pattern that also catches an untagged case runs the unit layer twice.
+A GOOS or GOARCH term is held to the platforms the workflows run on
+rather than to the legs: a Linux-only file passes on a Linux runner, and
+a Windows-only one is compiled by no run.
 The exit-code contract is the other half: a
 finding exits 1, while a root that is not a directory, a Makefile with no
-tag and a scan with no subject are infrastructure errors and exit 2. An
+tag, a runner label of unknown platform, a constraint that does not parse
+and a scan with no subject are infrastructure errors and exit 2. An
 uncaught traceback exits 1 and would read as a finding.
 
 Most cases are written over a scratch tree that starts with the least it
@@ -31,6 +35,7 @@ import io
 import os
 import pathlib
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -61,9 +66,20 @@ test-review:
 GATED_TEST_TAGS := review
 """
 
+# A workflow whose job runs on the runner every workflow of this repository
+# names, which is where the platform-constrained files are compiled.
+WORKFLOW = """jobs:
+  check:
+    runs-on: ubuntu-latest # the commit gate
+    steps:
+      - run: make check
+"""
+
 # The least a tree needs for every check to have a subject: a file carrying
-# each tag a leg passes, and a library importing testing.
+# each tag a leg passes, a library importing testing, and the workflow the
+# platforms are read from.
 BASELINE = {
+    ".github/workflows/ci.yml": WORKFLOW,
     "pkg/unit_test.go": """//go:build integration
 package pkg
 
@@ -180,6 +196,132 @@ class TestTheTagsAgreeWithTheLegs(GateCase):
         self.tree(**{"pkg/prose.go": "package pkg\n\n// //go:build intergration\n"})
         code, out, err = self.run_gate()
         self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+
+class TestAPlatformIsNotATierTag(GateCase):
+    """A GOOS or GOARCH term is met by the runner's platform, not by -tags.
+
+    The baseline workflow runs on ubuntu-latest, so linux/amd64 is the one
+    platform the scratch tree's legs execute on.
+    """
+
+    def test_a_linux_file_is_compiled_on_the_runner(self):
+        # The shape of a Linux-only regression test: the name and the
+        # constraint both say linux.
+        self.tree(**{"pkg/busywait_linux_test.go": case_file("//go:build linux")})
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_a_linux_constraint_alone_is_compiled_on_the_runner(self):
+        self.tree(**{"pkg/busywait_test.go": case_file("//go:build linux")})
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_a_linux_name_suffix_alone_is_compiled_on_the_runner(self):
+        self.tree(**{"pkg/busywait_linux_amd64_test.go": case_file("")})
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_a_platform_and_a_tier_tag_are_compiled_by_that_tier_on_the_runner(self):
+        # The integration leg passes the tag on Linux, which is the run that
+        # compiles this file.
+        self.tree(**{"pkg/busywait_test.go": case_file("//go:build linux && integration")})
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_a_windows_name_suffix_is_a_finding(self):
+        # No workflow runs on Windows, so nothing compiles the file even
+        # though its head carries no constraint at all.
+        self.tree(**{"pkg/console_windows_test.go": case_file("")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/console_windows_test.go", out)
+        self.assertIn("linux/amd64", out)
+
+    def test_a_windows_constraint_is_a_finding(self):
+        self.tree(**{"pkg/console_test.go": case_file("//go:build windows")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/console_test.go", out)
+
+    def test_a_legacy_windows_line_is_a_finding(self):
+        self.tree(**{"pkg/console_test.go": case_file("// +build windows,integration")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/console_test.go", out)
+
+    def test_a_windows_constraint_with_a_tier_tag_is_a_finding(self):
+        self.tree(**{"pkg/console_test.go": case_file("//go:build windows && integration")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/console_test.go", out)
+
+    def test_a_linux_file_excluded_on_linux_is_a_finding(self):
+        # The name allows Linux and the constraint refuses it: no platform
+        # satisfies both.
+        self.tree(**{"pkg/busywait_linux_test.go": case_file("//go:build !linux")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/busywait_linux_test.go", out)
+
+    def test_an_unknown_tag_beside_a_platform_is_still_a_finding(self):
+        self.tree(**{"pkg/busywait_test.go": case_file("//go:build linux && nosuchtier")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("nosuchtier", out)
+
+    def test_an_unknown_tag_is_still_a_finding(self):
+        self.tree(**{"pkg/busywait_test.go": case_file("//go:build nosuchtier")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("nosuchtier", out)
+
+    def test_the_platforms_are_read_from_the_workflows(self):
+        # An arm64 file is compiled by no run until a workflow names an
+        # arm64 runner, which is what makes the platform set a reading of
+        # the workflows rather than a constant.
+        self.tree(**{"pkg/atomic_arm64_test.go": case_file("")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/atomic_arm64_test.go", out)
+
+        self.write(".github/workflows/arm.yml", WORKFLOW.replace("ubuntu-latest", "ubuntu-24.04-arm"))
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_a_tree_whose_workflows_name_no_runner_runs_a_platform_file_nowhere(self):
+        self.tree(
+            **{
+                ".github/workflows/ci.yml": "on: push\n",
+                "pkg/busywait_linux_test.go": case_file("//go:build linux"),
+            }
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/busywait_linux_test.go", out)
+
+    def test_a_runner_label_of_unknown_platform_is_an_infrastructure_error(self):
+        self.tree(**{".github/workflows/ci.yml": WORKFLOW.replace("ubuntu-latest", "${{ matrix.os }}")})
+        code, _, err = self.run_gate()
+        self.assertEqual(2, code)
+        self.assertIn("matrix.os", err)
+
+    def test_a_constraint_that_does_not_parse_is_an_infrastructure_error(self):
+        self.tree(**{"pkg/busywait_test.go": case_file("//go:build linux &&")})
+        code, _, err = self.run_gate()
+        self.assertEqual(2, code)
+        self.assertIn("pkg/busywait_test.go", err)
+
+    def test_a_pattern_that_selects_a_case_in_a_linux_file_is_a_finding(self):
+        # A file constrained only by platform is compiled by the unit leg on
+        # the runner, so a tagged leg selecting its case runs it twice.
+        self.tree(
+            makefile=MAKEFILE.replace(" -run '^TestReview'", " -run '^Test'"),
+            **{"pkg/plain_test.go": case_file("//go:build linux")},
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("runs it a second time", out)
 
 
 class TestNoLibrarySkipsACase(GateCase):
@@ -371,6 +513,21 @@ class TestThisRepository(unittest.TestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = m.main(["--root", str(REPO)])
         self.assertEqual(0, code, f"stdout={out.getvalue()!r} stderr={err.getvalue()!r}")
+
+    def test_the_platform_terms_are_the_ports_the_go_command_knows(self):
+        # The gate does not ask the toolchain at run time, so the two sets
+        # are held here to the go command on PATH, the one the gates run with.
+        listed = subprocess.run(
+            ["go", "tool", "dist", "list"], check=True, capture_output=True, text=True
+        ).stdout.split()
+        ports = [port.split("/", 1) for port in listed]
+        self.assertEqual({goos for goos, _ in ports}, set(m.GOOS))
+        self.assertEqual({goarch for _, goarch in ports}, set(m.GOARCH))
+
+    def test_every_runner_platform_is_a_port(self):
+        for label, (goos, goarch) in m.RUNNER_PLATFORMS.items():
+            self.assertIn(goos, m.GOOS, label)
+            self.assertIn(goarch, m.GOARCH, label)
 
 
 if __name__ == "__main__":

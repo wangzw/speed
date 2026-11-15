@@ -17,6 +17,18 @@ and each fails silently when the two drift apart:
     tags from the Makefile rather than restating them, so a new leg and a
     new tag arrive together or the gate says so.
 
+    A GOOS or GOARCH term -- a `//go:build linux`, or the `_linux` of a
+    file name -- is not a tag a leg passes: the platform a run executes
+    on satisfies it. The platforms the gate runs on are read from the
+    `runs-on` of every job under .github/workflows, each runner label
+    mapped to its platform by RUNNER_PLATFORMS, and a file whose
+    constraints none of them satisfies -- a Windows-only file, say -- is
+    compiled by no run and is the same finding. The read is the union of
+    the workflows' runners, not which job runs which leg, so a file passes
+    when some runner's platform and some choice of the legs' tags satisfy
+    it; while every workflow runs on one platform, that runner is the one
+    every leg runs on.
+
   * A case that skips is not a case that ran, and `go test` exits 0 on a
     binary whose cases all skipped. The tier decision is that a backend
     which cannot be reached fails the case rather than skipping it; the
@@ -45,8 +57,9 @@ and each fails silently when the two drift apart:
 Exit codes: 0 = the tags and the legs agree, no library skips a case, and
 every gated tag's cases are selected; 1 = at least one finding, each
 reported with file, line and what it is; 2 = infrastructure error -- the
-root is not a directory, the Makefile is missing or passes no tag, or a
-check found no subject at all (no tagged file, no library, or a gated tag
+root is not a directory, the Makefile is missing or passes no tag, a
+workflow names a runner whose platform this gate does not know, a
+constraint does not parse, or a check found no subject at all (no tagged file, no library, or a gated tag
 no test file carries). A gate that checked nothing has not passed. Paths
 in the report are relative to --root.
 """
@@ -72,6 +85,40 @@ CONSTRAINT_PREFIXES = ("//go:build ", "// +build ")
 # `||`, `!`, parentheses) are not among them, so a plain scan for
 # identifier-shaped runs is what is left.
 TAG_RE = re.compile(r"[A-Za-z0-9_]+")
+
+# The ports the go command builds for, as `go tool dist list` prints them,
+# split into the operating systems and the architectures. A constraint term
+# from either set is a platform the run executes on, not a tag a leg passes.
+# The toolchain is not asked at gate time, which keeps this gate a plain
+# script; test_check_test_tiers.py holds the two sets to the command's
+# output, so a toolchain that adds a port fails that test until they agree.
+GOOS = frozenset({
+    "aix", "android", "darwin", "dragonfly", "freebsd", "illumos", "ios", "js",
+    "linux", "netbsd", "openbsd", "plan9", "solaris", "wasip1", "windows",
+})
+GOARCH = frozenset({
+    "386", "amd64", "arm", "arm64", "loong64", "mips", "mips64", "mips64le",
+    "mipsle", "ppc64", "ppc64le", "riscv64", "s390x", "wasm",
+})
+PLATFORM_TERMS = GOOS | GOARCH
+
+# The GitHub-hosted runner labels this gate knows, by the platform a job on
+# one executes on. A workflow naming any other runs-on value -- another
+# label, a list or an expression -- is an infrastructure error naming it,
+# since this gate would otherwise guess the platform its legs run on.
+RUNNER_PLATFORMS = {
+    "ubuntu-latest": ("linux", "amd64"),
+    "ubuntu-24.04": ("linux", "amd64"),
+    "ubuntu-22.04": ("linux", "amd64"),
+    "ubuntu-24.04-arm": ("linux", "arm64"),
+    "ubuntu-22.04-arm": ("linux", "arm64"),
+}
+
+# A job's runner line in a workflow file, with its trailing comment.
+RUNS_ON_RE = re.compile(r"^\s*runs-on:(.*)$", re.MULTILINE)
+
+# A token of a `//go:build` expression: an operator, a parenthesis or a term.
+CONSTRAINT_TOKEN_RE = re.compile(r"\s*(&&|\|\||!|\(|\)|[A-Za-z0-9_.]+)")
 
 # A skip method on a testing value. `Skip`, `Skipf` and `SkipNow` are the
 # three `testing` declares; `Skip` alone would also match a method of some
@@ -299,6 +346,201 @@ def constraint_of(path: str) -> str:
     return ""
 
 
+def platforms_of_workflows(root: str) -> set[tuple[str, str]]:
+    """Return the platforms the workflows' jobs run on, as (GOOS, GOARCH) pairs.
+
+    Every `runs-on` under .github/workflows is read and mapped through
+    RUNNER_PLATFORMS. A tree with no workflow runs on nothing, so each
+    platform-constrained file in it is compiled by no run.
+    """
+    directory = os.path.join(root, ".github", "workflows")
+    platforms: set[tuple[str, str]] = set()
+    if not os.path.isdir(directory):
+        return platforms
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        path = os.path.join(directory, name)
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+        for match in RUNS_ON_RE.finditer(text):
+            label = re.split(r"\s#", match.group(1), maxsplit=1)[0].strip().strip("'\"")
+            platform = RUNNER_PLATFORMS.get(label)
+            if platform is None:
+                _infra(
+                    f"error: {os.path.relpath(path, root)}: runs-on {label!r} is not a runner "
+                    "label whose platform this gate knows, so it cannot say which "
+                    "platform-constrained files the workflows compile; RUNNER_PLATFORMS in "
+                    "tools/check_test_tiers.py maps each label it reads"
+                )
+            platforms.add(platform)
+    return platforms
+
+
+def _bad_constraint(where: str, text: str) -> None:
+    _infra(f"error: {where}: the build constraint {text!r} does not parse, so this gate cannot say which run compiles the file")
+
+
+def parse_go_build(text: str, where: str):
+    """Parse a `//go:build` expression into nested tuples.
+
+    A node is ("tag", name), ("not", node), ("and", left, right) or
+    ("or", left, right), with Go's precedence: `!` binds tightest, then
+    `&&`, then `||`.
+    """
+    tokens: list[str] = []
+    pos, text = 0, text.strip()
+    while pos < len(text):
+        match = CONSTRAINT_TOKEN_RE.match(text, pos)
+        if not match:
+            _bad_constraint(where, text)
+        tokens.append(match.group(1))
+        pos = match.end()
+
+    def disjunction(i: int):
+        node, i = conjunction(i)
+        while i < len(tokens) and tokens[i] == "||":
+            right, i = conjunction(i + 1)
+            node = ("or", node, right)
+        return node, i
+
+    def conjunction(i: int):
+        node, i = unary(i)
+        while i < len(tokens) and tokens[i] == "&&":
+            right, i = unary(i + 1)
+            node = ("and", node, right)
+        return node, i
+
+    def unary(i: int):
+        if i >= len(tokens) or tokens[i] in ("&&", "||", ")"):
+            _bad_constraint(where, text)
+        if tokens[i] == "!":
+            inner, i = unary(i + 1)
+            return ("not", inner), i
+        if tokens[i] == "(":
+            inner, i = disjunction(i + 1)
+            if i >= len(tokens) or tokens[i] != ")":
+                _bad_constraint(where, text)
+            return inner, i + 1
+        return ("tag", tokens[i]), i + 1
+
+    node, end = disjunction(0)
+    if end != len(tokens):
+        _bad_constraint(where, text)
+    return node
+
+
+def parse_plus_build(lines: list[str], where: str):
+    """Parse `// +build` lines into the tree parse_go_build returns.
+
+    A space separates alternatives, a comma joins required terms, `!`
+    negates one term, and the lines are all required.
+    """
+    node = None
+    for line in lines:
+        options = None
+        for option in line.split():
+            terms = None
+            for term in option.split(","):
+                negated = term.startswith("!")
+                name = term[1:] if negated else term
+                if not re.fullmatch(r"[A-Za-z0-9_.]+", name):
+                    _bad_constraint(where, line)
+                leaf = ("not", ("tag", name)) if negated else ("tag", name)
+                terms = leaf if terms is None else ("and", terms, leaf)
+            options = terms if options is None else ("or", options, terms)
+        if options is not None:
+            node = options if node is None else ("and", node, options)
+    return node
+
+
+def constraint_tree_of(path: str, where: str):
+    """Return the parsed build constraint of a file, or None if it has none.
+
+    A `//go:build` line is the constraint when there is one, as for the
+    toolchain; the `// +build` lines are read only in a file without it.
+    """
+    go_build, plus_build = [], []
+    for line in head_of(path):
+        if line.startswith(CONSTRAINT_PREFIXES[0]):
+            go_build.append(line[len(CONSTRAINT_PREFIXES[0]):])
+        elif line.startswith(CONSTRAINT_PREFIXES[1]):
+            plus_build.append(line[len(CONSTRAINT_PREFIXES[1]):])
+    if go_build:
+        return parse_go_build(go_build[0], where)
+    if plus_build:
+        return parse_plus_build(plus_build, where)
+    return None
+
+
+def terms_of(node) -> set[str]:
+    """Return every term a parsed constraint names."""
+    if node is None:
+        return set()
+    if node[0] == "tag":
+        return {node[1]}
+    return set().union(*(terms_of(child) for child in node[1:]))
+
+
+def holds(node, true_terms: set[str]) -> bool:
+    """Evaluate a parsed constraint with the given terms satisfied."""
+    kind = node[0]
+    if kind == "tag":
+        return node[1] in true_terms
+    if kind == "not":
+        return not holds(node[1], true_terms)
+    if kind == "and":
+        return holds(node[1], true_terms) and holds(node[2], true_terms)
+    return holds(node[1], true_terms) or holds(node[2], true_terms)
+
+
+def platform_of_name(name: str) -> tuple[str | None, str | None]:
+    """Return the (GOOS, GOARCH) a file name constrains its file to.
+
+    The toolchain's rule: after the first underscore of the name without
+    its extension, and without a trailing `_test`, a final `_GOOS_GOARCH`,
+    `_GOOS` or `_GOARCH` element restricts the file to that platform. Either
+    half is None when the name leaves it open.
+    """
+    stem = name.split(".", 1)[0]
+    first = stem.find("_")
+    if first < 0:
+        return None, None
+    parts = stem[first:].split("_")
+    if parts[-1] == "test":
+        parts = parts[:-1]
+    if len(parts) >= 2 and parts[-2] in GOOS and parts[-1] in GOARCH:
+        return parts[-2], parts[-1]
+    if parts and parts[-1] in GOOS:
+        return parts[-1], None
+    if parts and parts[-1] in GOARCH:
+        return None, parts[-1]
+    return None, None
+
+
+def compiled_by_some_run(
+    name: str, node, platforms: set[tuple[str, str]], legs: set[str]
+) -> bool:
+    """Report whether some gate platform and some choice of leg tags build a file.
+
+    A file is built on a platform its name allows when its constraint
+    holds with that platform's GOOS and GOARCH satisfied and some subset of
+    the tags the legs pass set; a tag no leg passes is never set.
+    """
+    name_os, name_arch = platform_of_name(name)
+    free = sorted(terms_of(node).intersection(legs) - PLATFORM_TERMS)
+    for goos, goarch in sorted(platforms):
+        if name_os not in (None, goos) or name_arch not in (None, goarch):
+            continue
+        if node is None:
+            return True
+        for bits in range(1 << len(free)):
+            chosen = {tag for index, tag in enumerate(free) if bits >> index & 1}
+            if holds(node, chosen | {goos, goarch}):
+                return True
+    return False
+
+
 def test_names_of(path: str) -> list[str]:
     """Return the test, fuzz and example names a file declares."""
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -361,6 +603,7 @@ def main(argv: list[str] | None = None) -> int:
             "gate reads the file wrong"
         )
 
+    platforms = platforms_of_workflows(root)
     gated = gated_tags_of(text)
     # The tagged cases a gated tag selects, by tag: a test file's constraint
     # says which build compiles it. A negated constraint excludes the file from
@@ -374,23 +617,38 @@ def main(argv: list[str] | None = None) -> int:
     for path in sorted(walk_go_files(root)):
         relative = os.path.relpath(path, root)
         tags = tags_of(path)
+        # The tier tags are the terms a leg opts into with -tags; a GOOS or
+        # GOARCH term is met by the platform the run executes on instead.
+        tier_tags = tags - PLATFORM_TERMS
+        name = os.path.basename(path)
+        platform_bound = bool(tags & PLATFORM_TERMS) or platform_of_name(name) != (None, None)
         if tags:
             tagged += 1
-            unknown = sorted(tags - legs)
-            if unknown:
-                stranding += 1
-                print(
-                    f"{relative}: the build tag {', '.join(unknown)} is passed by no leg, so "
-                    f"this file is compiled by no run; the legs pass {', '.join(sorted(legs))}"
-                )
+        unknown = sorted(tier_tags - legs)
+        if unknown:
+            stranding += 1
+            print(
+                f"{relative}: the build tag {', '.join(unknown)} is passed by no leg, so "
+                f"this file is compiled by no run; the legs pass {', '.join(sorted(legs))}"
+            )
+        elif platform_bound and not compiled_by_some_run(
+            name, constraint_tree_of(path, relative), platforms, legs
+        ):
+            stranding += 1
+            ran_on = ", ".join(f"{goos}/{goarch}" for goos, goarch in sorted(platforms)) or "nothing"
+            print(
+                f"{relative}: no platform a workflow runs on satisfies this file's build "
+                f"constraint and file name, so this file is compiled by no run; the "
+                f"workflows run on {ran_on}"
+            )
         if path.endswith("_test.go"):
             constraint = constraint_of(path)
-            selected = [] if "!" in constraint else sorted(tags.intersection(gated))
-            if gated and (selected or not tags):
+            selected = [] if "!" in constraint else sorted(tier_tags.intersection(gated))
+            if gated and (selected or not tier_tags):
                 names = test_names_of(path)
                 for tag in selected:
                     gated_files[tag].append((relative, names))
-                if not tags:
+                if not tier_tags:
                     untagged.setdefault(os.path.dirname(relative), set()).update(names)
         if path.endswith("_test.go") or not imports_testing(path):
             continue
@@ -483,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if stranding or skips or gating:
         print(
-            f"test-tiers: {stranding} file(s) tagged by no leg, {skips} skip call(s) in "
+            f"test-tiers: {stranding} file(s) compiled by no run, {skips} skip call(s) in "
             f"{libraries} librar(y|ies) read, {gating} commit-gate finding(s)",
             file=sys.stderr,
         )

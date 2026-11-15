@@ -168,7 +168,14 @@ files, so the cases are gone with nothing red anywhere. The gate reads
 the tags from the Makefile's `-tags=` flags and from its `-race` — a leg
 passing the race detector establishes that tag, and a target merely named
 `test-race` does not — and fails a file whose constraint names anything
-else, which is the same finding whichever side the misspelling is on. The
+else, which is the same finding whichever side the misspelling is on. A
+GOOS or GOARCH term (a port `go tool dist list` prints, in a constraint or
+as a `_linux`-style file-name suffix) is not a tag a leg passes but the
+platform a run executes on: the gate reads the platforms from the
+`runs-on` of every job under `.github/workflows`, maps each runner label
+through its `RUNNER_PLATFORMS` table, and fails a file no such platform
+and no choice of the legs' tags compiles, so a Linux-only test passes and
+a Windows-only one is a finding. The
 second ruling is that a backend which cannot be reached fails a case
 rather than skipping it, and `go test` exits 0 on a binary whose cases
 all skipped: a non-test Go file that imports `testing` and calls a skip
@@ -178,8 +185,10 @@ reason of its own. Tags are read from the head of a file, before its
 package clause, which is where Go reads them — a comment quoting one
 below the clause is prose. Exit codes: 0 clean, 1 a finding (each with
 file, line and what it is), 2 infrastructure error (the root is not a
-directory, the Makefile passes no tag, or a check found no subject at all
-— the integration layer gone, or no library to read).
+directory, the Makefile passes no tag, a workflow names a runner label
+whose platform the gate does not know, a constraint does not parse, or a
+check found no subject at all — the integration layer gone, or no library
+to read).
 
 `check_platform_errors.py` — holds the platform error-copy bundle
 (`web/packages/i18n/src/platform-errors/locales/{zh-CN,en-US}.json`) to
