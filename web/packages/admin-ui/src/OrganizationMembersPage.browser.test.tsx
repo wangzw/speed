@@ -449,11 +449,23 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  // Device emulation is page state and would leak into the next case.
+  // Device emulation is page state: it would leak into the next case, and
+  // into whichever test file the same page runs next. Turning it off has to
+  // hand the page back with the hovering, fine pointer the rest of the tier
+  // relies on (DataTable's row-hover case asserts it). Chromium restores the
+  // pointer it started with only from 159 on; an earlier build restores the
+  // device the platform reports instead, which on a headless Linux runner is
+  // no pointer at all.
   const session = cdp() as unknown as {
     send(method: string, params?: Record<string, unknown>): Promise<unknown>
   }
   await session.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  await waitFor(() => {
+    expect(
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches,
+      'turning touch emulation off did not restore the hovering, fine pointer',
+    ).toBe(true)
+  })
 })
 
 describe('OrganizationMembersPage horizontal overflow in Chromium', () => {

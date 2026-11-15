@@ -66,6 +66,9 @@ this file adds what is specific to the npm side.
   literal; test comments stay English. The cases render in en-US and the
   tier's setup pins the document's family to Arial / Liberation Sans, so
   the measured text keeps the same metrics on macOS and on the CI image.
+  The tier also runs a hovering, fine pointer: a case that turns touch
+  emulation on turns it off again and checks the page is back on that
+  pointer, which a Chromium build before 159 does not restore on Linux.
 - CI runs `pnpm install --frozen-lockfile` from `web/`, then
   lint/typecheck/test/build per package with the root-provided toolchain.
   The browser tier is a separate scheduled job
