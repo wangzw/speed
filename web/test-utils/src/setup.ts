@@ -9,7 +9,7 @@
  * One environment adaptation is shared here too: jsdom ships
  * `HTMLCanvasElement.getContext()` as a not-implemented stub that emits a
  * `jsdomError` ("Not implemented: HTMLCanvasElement's getContext() method:
- * without installing the canvas npm package") and returns null. axe-core
+ * without installing the @napi-rs/canvas npm package") and returns null. axe-core
  * probes a canvas while computing accessible text -- its `_isIconLigature`
  * check, which detects icon fonts smuggled in as text -- so any axe scan
  * over a document with such a text node prints that error. The stub below

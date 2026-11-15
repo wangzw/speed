@@ -7,10 +7,10 @@
  *
  * jsdom ships `HTMLCanvasElement.getContext()` as a not-implemented stub
  * that emits a `jsdomError` ("Not implemented: HTMLCanvasElement's
- * getContext() method: without installing the canvas npm package") and
- * returns null. axe-core's accessible-text computation probes a canvas to
- * detect icon fonts smuggled in as text (its `_isIconLigature` check),
- * which runs for a visible text node -- this package renders short,
+ * getContext() method: without installing the @napi-rs/canvas npm
+ * package") and returns null. axe-core's accessible-text computation
+ * probes a canvas to detect icon fonts smuggled in as text (its
+ * `_isIconLigature` check), which runs for a visible text node -- this package renders short,
  * standalone text nodes (a notification badge's count) that reach it, so
  * every axe scan here would otherwise print that jsdom error. axe handles
  * the absent context (a null return) without failing the scan -- verified:
