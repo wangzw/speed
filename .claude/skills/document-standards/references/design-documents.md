@@ -122,6 +122,7 @@ The fastest-rotting content in any design document, and therefore the most tight
 - **An entry states the status and nothing else.** It does not explain the state, name what is missing, list what remains, or say where the rest has landed — one status word per entry, no trailing clause. An explanation is a second assertion about the code, and it rots on its own schedule: correcting the status edits one word, while an explanation written beside it survives the correction and is read as fact long after it stopped being one.
 - Every entry that claims implementation carries a **code anchor: path plus symbol name, no line number**. A status is an assertion falsifiable against the code, not an impression.
 - **Each document is authoritative for its own status, and the roll-up above it links down.** A module document rolls up no sub-module; `architecture.md` carries one line per top-level module; a module whose sub-modules have their own documents carries their roll-up in that module subdirectory's `README.md` (section 1). Detail appears once, in the document it belongs to; the same fact written twice will drift.
+- **The commit that implements, changes or removes what an entry describes updates that entry, code anchor included, and every roll-up line above it (`architecture.md`, the module subdirectory's `README.md`) in the same commit.** A status change never lands as a commit of its own after the code. The implementer edits the design document for this, loading this skill first as the root `CLAUDE.md` requires; there is no separate later pass by another party.
 
 `Partially implemented` exists here and **does not exist in a requirements document**. The two document types look at the system from different places: a design document is the implementation view, where partial implementation is a real and informative state; a requirements document is the outside view, where it is not.
 
@@ -152,6 +153,7 @@ The common checklist in `SKILL.md` applies as well.
 - [ ] External interface contract states what is callable and what stability is promised
 - [ ] Complexity analysis present for every performance-sensitive algorithm
 - [ ] Every implementation-status entry that claims implementation has a code anchor, and the entry states the status and no explanation
+- [ ] The commit that implements, changes or removes what a status entry describes also updates that entry, code anchor included, and every roll-up line above it; no status change sits in a later commit
 - [ ] Status detail appears only in the document it belongs to; `architecture.md` carries one line per top-level module, a module subdirectory's `README.md` one line per sub-module
 - [ ] Every entry point appears in the tree's README index exactly once; every file appears in its module subdirectory's README index exactly once
 - [ ] Overview opens with Core Concepts and continues with Design Mainline when the status roll-up lists more than one top-level module; a short lead paragraph may precede Core Concepts and its absence is not a defect, a relationship table is allowed, and a definition table is refused
