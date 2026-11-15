@@ -9,8 +9,12 @@
  * host that installs @speed/product-shell renders the auth-ui family the
  * shell's sign-in slot pairs with (auth-ui's barrel statically imports
  * useForm), so react-hook-form must be a declared peer of this package
- * too. The devDependency pins the exact workspace version so the
- * package's own suite resolves the peer against a real install.
+ * too. The devDependency pins the workspace's version of each shared
+ * library (the one its sibling packages pin) so the package's own suite
+ * resolves the peer against a real install of the same version the
+ * workspace tests everywhere else; the expected value is read from a
+ * sibling manifest, so a dependency bump moves every package together
+ * without editing this suite.
  *
  * The manifest is read from disk, never imported as a module: vite
  * refuses to resolve a package's own package.json through the module
@@ -26,13 +30,24 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const manifestPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
-const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+interface Manifest {
   readonly exports?: Readonly<Record<string, unknown>>
   readonly dependencies?: Readonly<Record<string, string>>
   readonly peerDependencies?: Readonly<Record<string, string>>
   readonly devDependencies?: Readonly<Record<string, string>>
 }
+
+const packageDir = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+function readManifest(dir: string): Manifest {
+  return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Manifest
+}
+
+const manifest = readManifest(packageDir)
+// The sibling packages that carry the workspace's pin of each shared
+// library: ui-kit owns the form family, api-sdk the query runtime.
+const uiKitManifest = readManifest(join(packageDir, '..', 'ui-kit'))
+const apiSdkManifest = readManifest(join(packageDir, '..', 'api-sdk'))
 
 describe('package manifest', () => {
   it('declares react-hook-form as a peer at the workspace-wide range', () => {
@@ -40,7 +55,9 @@ describe('package manifest', () => {
   })
 
   it('satisfies that peer from its own devDependencies at the workspace-pinned version', () => {
-    expect(manifest.devDependencies?.['react-hook-form']).toBe('7.87.0')
+    const pinned = uiKitManifest.devDependencies?.['react-hook-form']
+    expect(pinned).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(manifest.devDependencies?.['react-hook-form']).toBe(pinned)
   })
 
   it('exports the bootstrap entry as its own subpath, built from the same src', () => {
@@ -65,6 +82,8 @@ describe('package manifest', () => {
     expect(manifest.dependencies?.['@speed/api-sdk']).toBe('workspace:*')
     expect(manifest.dependencies?.['@speed/ui-kit']).toBe('workspace:*')
     expect(manifest.peerDependencies?.['@tanstack/react-query']).toBe('^5.0.0')
-    expect(manifest.devDependencies?.['@tanstack/react-query']).toBe('^5.62.0')
+    const pinned = apiSdkManifest.devDependencies?.['@tanstack/react-query']
+    expect(pinned).toMatch(/^\^5\.\d+\.\d+$/)
+    expect(manifest.devDependencies?.['@tanstack/react-query']).toBe(pinned)
   })
 })

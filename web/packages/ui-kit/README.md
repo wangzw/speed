@@ -1681,7 +1681,7 @@ same rationale documented here.
 | `react`, `react-dom` | peer (required, ^18 or ^19) | the host owns the React tree; one copy makes `useTranslation` and hooks inside shipped components safe. devDependencies pin the tested React 19 |
 | `@mui/material` | peer (required, ^9.5) | theme and components; two MUI copies would split the theme context. devDependency 9.5.0 is the tested point |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements -- the emotion context must be shared with the host |
-| `react-hook-form` | peer (required, ^7) | the form family's `FormProvider`/`Controller` identity needs one RHF in the tree, and `FormLayout`'s `UseFormReturn` must be the host's own type. devDependency 7.87.0 is the tested point (the peer range is the ^7 API family) |
+| `react-hook-form` | peer (required, ^7) | the form family's `FormProvider`/`Controller` identity needs one RHF in the tree, and `FormLayout`'s `UseFormReturn` must be the host's own type. The pinned devDependency is the tested point (the peer range is the ^7 API family) |
 | `zod` | peer (required, ^4) | the host builds the schema `zodFormResolver` consumes, so the schema instance and this package's `ZodType` must be one class -- one zod in the tree, exactly like `react-hook-form`. devDependency 4.6.7 is the tested point |
 | `@speed/tokens`, `@speed/i18n` | dependencies | the token tree this package maps, and the i18n instance/bindings every component renders through |
 | `qrcode-generator` | dependency | encodes an enrolment URI into the module matrix `TotpQrCode` draws; the package has no runtime side effects and tree-shakes with the component |
