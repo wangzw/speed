@@ -19,7 +19,7 @@
  * requirement.
  *
  * Every path is derived from this file's own URL rather than the process's
- * working directory: the tier is run through `pnpm -C starters/demo/web`, but a
+ * working directory: the tier is run through `pnpm -C web --filter demo-web`, but a
  * person may also run `playwright test` from the config's directory, and the
  * two must resolve the same tree.
  */
@@ -65,25 +65,34 @@ export const DEPLOY_BINARY_NAME = 'demo-deploy'
 /** The helper that signs the SAML identity provider's responses. */
 export const SAML_SIGNER_NAME = 'saml-signer'
 
+/**
+ * A path relative to this file. The reference is a parameter rather than a
+ * literal in each `new URL(..., import.meta.url)`, because vite rewrites that
+ * literal form into a dev-server asset URL when it transforms a module for the
+ * jsdom environment the fixtures' unit tests run in.
+ */
+function fromHere(reference: string): string {
+  return fileURLToPath(new URL(reference, import.meta.url))
+}
+
 /** The repository root. */
-export const REPO_ROOT = fileURLToPath(new URL('../../../../../', import.meta.url))
+export const REPO_ROOT = fromHere('../../../../../')
 
 /** The demo program's Go module directory. */
-export const SERVER_DIR = fileURLToPath(new URL('../../../server/', import.meta.url))
+export const SERVER_DIR = fromHere('../../../server/')
 
 /** The demo starter's front-end package directory. */
-export const WEB_DIR = fileURLToPath(new URL('../../', import.meta.url))
+export const WEB_DIR = fromHere('../../')
+
+/** The pnpm workspace root the demo starter's front-end package is a member of. */
+export const WEB_WORKSPACE_DIR = fromHere('../../../../../web/')
 
 /** The review assembly's configuration template, copied and edited per server. */
-export const REVIEW_CONFIG_TEMPLATE = fileURLToPath(
-  new URL('../../../server/review/sqlite.yaml', import.meta.url),
-)
+export const REVIEW_CONFIG_TEMPLATE = fromHere('../../../server/review/sqlite.yaml')
 
 /**
  * The deployment's configuration template. The container entrypoint renders it
  * from Fly secrets; the deploy fixture renders the same placeholders itself and
  * runs the rendered document from the temporary volume.
  */
-export const DEPLOY_CONFIG_TEMPLATE = fileURLToPath(
-  new URL('../../../deploy/fly.yaml.tmpl', import.meta.url),
-)
+export const DEPLOY_CONFIG_TEMPLATE = fromHere('../../../deploy/fly.yaml.tmpl')

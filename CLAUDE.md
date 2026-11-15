@@ -50,7 +50,7 @@ spends most of its time on the side that did not move.
 
 - **Frontend only** (`web/`, `starters/demo/web/`): iterate with the
   touched package's own `pnpm -C web/packages/<name> test` (or
-  `pnpm -C starters/demo/web ...` for the demo host), plus `lint` and
+  `pnpm -C web --filter demo-web ...` for the demo host), plus `lint` and
   `typecheck`; then `make web-check` for the whole frontend. Add
   `make web-browser` when geometry, focus order or focusability is the
   subject, and `make e2e` when the change is user-visible (copy, layout,

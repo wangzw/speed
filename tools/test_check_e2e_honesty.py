@@ -104,7 +104,7 @@ e2e-install:
 \t@pnpm -C web exec playwright install chromium
 
 e2e:
-\t@pnpm -C starters/demo/web exec playwright test --config e2e/playwright.config.ts
+\t@pnpm -C web --filter demo-web exec playwright test --config e2e/playwright.config.ts
 
 check:
 \t@$(MAKE) build
@@ -773,7 +773,7 @@ class TestArtifactsAndEntryPoint(GateCase):
             "Makefile",
             ".PHONY: e2e e2e-install check\n\ne2e-install:\n\t@echo install\n\n"
             "e2e:\n\t@echo run\n\ncheck:\n\t@echo build\n"
-            "\t@pnpm -C starters/demo/web exec playwright test "
+            "\t@pnpm -C web --filter demo-web exec playwright test "
             "--config e2e/playwright.config.ts\n",
         )
         code, out, _ = self.run_gate()
@@ -785,7 +785,7 @@ class TestArtifactsAndEntryPoint(GateCase):
             "Makefile",
             ".PHONY: e2e e2e-install check\n\ne2e-install:\n\t@echo install\n\n"
             "e2e:\n\t@echo run\n\ncheck:\n\t@echo build\n"
-            "\t@pnpm -C starters/demo/web run typecheck:e2e\n",
+            "\t@pnpm -C web --filter demo-web run typecheck:e2e\n",
         )
         code, out, _ = self.run_gate()
         self.assertEqual(code, 1)

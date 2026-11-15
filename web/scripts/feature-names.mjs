@@ -36,8 +36,8 @@
  * The committed outputs are generated artifacts: edit this script or the
  * vocabulary, never the files it writes. On the platform side,
  * `pnpm api:gen` from web/ regenerates src/features.ts (and the platform
- * orval output); on the application side, `pnpm api:gen` from
- * starters/demo/web runs the demo host's `gen`, which writes the
+ * orval output); on the application side, the demo host's own `api:gen`
+ * script runs the demo host's `gen`, which writes the
  * vocabulary beside the merged OpenAPI document, and then runs the
  * starter's copy of this script. A declaration added, removed or renamed
  * on the backend reaches the frontend's types through those commands.

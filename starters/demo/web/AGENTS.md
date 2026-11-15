@@ -119,7 +119,7 @@ program beside this directory embeds with `go:embed` and serves through
   Go program mounts the api, account and admin surfaces on separate ports, so the
   built bundle served straight from it renders for static browsing but cannot
   sign in; a deployment fronts the bundle and those endpoints behind one origin
-  (as `pnpm dev` proxies in development). See README "One origin for the API".
+  (as the vite dev server proxies in development). See README "One origin for the API".
 - **The two shells live in disjoint path spaces.** The tenant area renders
   `@speed/product-shell`; the admin area renders `@speed/admin-ui` under
   `ADMIN_PREFIX`. `src/app.tsx` picks the shell from the route table's
@@ -280,15 +280,21 @@ program beside this directory embeds with `go:embed` and serves through
 
 ## Checks
 
-Run from this directory, or from `web/` with `pnpm --filter demo-web <script>`:
+Run from the repository root through the workspace under `web/`:
 
 ```
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:a11y
-pnpm build
+pnpm -C web --filter demo-web run lint
+pnpm -C web --filter demo-web run typecheck
+pnpm -C web --filter demo-web run test
+pnpm -C web --filter demo-web run test:a11y
+pnpm -C web --filter demo-web run build
 ```
+
+No directory above this one holds `pnpm-workspace.yaml`, so pnpm started here
+installs the package as a standalone project and asks the registry for the
+unpublished `@speed` packages. A copy lifted out of the repository installs
+them from the registry and runs the same scripts as `pnpm <script>` from its
+own directory.
 
 The tests use vitest's defaults: this tree deliberately does not take
 `web/vitest.shared.ts`, the package library's shared preset, so a case here

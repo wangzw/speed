@@ -17,7 +17,7 @@ make e2e           # type-checks the tier, then runs every spec
 A single journey, without the `make` wrapper:
 
 ```sh
-pnpm -C starters/demo/web exec playwright test \
+pnpm -C web --filter demo-web exec playwright test \
   --config e2e/playwright.config.ts -g first-registration
 ```
 
@@ -25,7 +25,7 @@ The Playwright runner transpiles TypeScript but does not check it, so the tier
 has its own type-check:
 
 ```sh
-pnpm -C starters/demo/web run typecheck:e2e
+pnpm -C web --filter demo-web run typecheck:e2e
 ```
 
 The tier is deliberately **not** part of `make check`: it needs Chromium and a
@@ -40,7 +40,7 @@ remembering to run it.
 
 - **Global setup** (`global-setup.ts`) runs once per invocation. An e2e-tagged
   Go build embeds `starters/demo/server/dist-e2e`, so it builds the front end
-  first (`pnpm -C starters/demo/web build`) with `DEMO_WEB_OUT_DIR` pointed
+  first (`pnpm -C web --filter demo-web run build`) with `DEMO_WEB_OUT_DIR` pointed
   there: the harness passes the directory's absolute path, and a person
   reproducing the command by hand writes the web-root-relative
   `../server/dist-e2e`, because vite resolves a relative `outDir` against the

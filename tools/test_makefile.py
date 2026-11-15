@@ -20,9 +20,11 @@ Stdlib-only (unittest, subprocess, tempfile). Run directly:
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -123,6 +125,30 @@ MODULE_LEGS: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {
 # Variables a parent make exports to its children. A case run by `make
 # tools-test` would otherwise hand them to the make it starts.
 MAKE_ENVIRONMENT = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "GNUMAKEFLAGS", "GOWORK")
+
+
+def workspace_package_names(workspace_root: pathlib.Path) -> set[str]:
+    """The package.json names of the members a pnpm-workspace.yaml lists.
+
+    The member globs are the `- <glob>` entries under `packages:`, read up
+    to the next key; each glob resolves against the workspace root, as pnpm
+    resolves it, and a member outside the root (`../...`) counts like any
+    other.
+    """
+    lines = (workspace_root / "pnpm-workspace.yaml").read_text(encoding="utf-8").splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == "packages:")
+    names: set[str] = set()
+    for line in lines[start + 1 :]:
+        entry = re.match(r"^\s+-\s+(\S+)", line)
+        if entry is None:
+            if line.strip() and not line.strip().startswith("#"):
+                break
+            continue
+        for member in glob.glob(str(workspace_root / entry.group(1))):
+            manifest = pathlib.Path(member) / "package.json"
+            if manifest.is_file():
+                names.add(json.loads(manifest.read_text(encoding="utf-8"))["name"])
+    return names
 
 
 class LoopingLegTests(unittest.TestCase):
@@ -474,7 +500,7 @@ class EntryPointTests(unittest.TestCase):
         result = self.make("dev")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(
-            "mise exec -- pnpm -C starters/demo/web run dev",
+            "mise exec -- pnpm -C web --filter demo-web --fail-if-no-match run dev",
             result.stdout,
             "the local loop no longer starts the frontend's dev server",
         )
@@ -483,6 +509,76 @@ class EntryPointTests(unittest.TestCase):
             result.stdout,
             "the local loop no longer runs the Go program under air",
         )
+
+    def test_pnpm_runs_where_it_finds_the_web_workspace(self) -> None:
+        """Every pnpm invocation in a recipe runs inside the web workspace.
+
+        pnpm locates its workspace by walking up from the directory it runs
+        in. The demo host (starters/demo/web) is an external member of the
+        workspace under web/, and no directory above it holds
+        pnpm-workspace.yaml, so pnpm run from there installs as a standalone
+        project and asks the registry for the unpublished @speed packages.
+        A recipe reaches the host through `-C web --filter demo-web`.
+        """
+        offenders = []
+        for number, line in enumerate(
+            (ROOT / "Makefile").read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if not line.startswith("\t"):
+                continue
+            match = re.search(r"(?:^|[\s@])pnpm(?:\s+(?:-C|--dir)[\s=]+(\S+))?(?:\s|$)", line)
+            if match is None:
+                continue
+            directory = ROOT / (match.group(1) or ".")
+            holder = next(
+                (
+                    candidate
+                    for candidate in (directory, *directory.parents)
+                    if (candidate / "pnpm-workspace.yaml").is_file()
+                    and ROOT in (candidate, *candidate.parents)
+                ),
+                None,
+            )
+            if holder is None:
+                offenders.append(f"Makefile:{number}: {line.strip()}")
+        self.assertEqual(
+            offenders,
+            [],
+            "pnpm runs where no pnpm-workspace.yaml is found above it; run it "
+            "through `pnpm -C web --filter <package>`",
+        )
+
+    def test_every_pnpm_filter_selects_a_workspace_member_or_fails(self) -> None:
+        """Every `--filter` in a recipe names a member, and no match fails.
+
+        A filter that matches no package makes pnpm print "No projects
+        matched" and exit 0, so a recipe whose filter misses would run nothing
+        and pass. Each filter therefore names the package.json name of a
+        member web/pnpm-workspace.yaml lists, and its invocation carries
+        `--fail-if-no-match`, which turns a miss into a failure if the member
+        is later renamed or dropped.
+        """
+        names = workspace_package_names(ROOT / "web")
+        self.assertIn("demo-web", names, "the workspace member scan finds no demo host")
+        filtered = []
+        offenders = []
+        for number, line in enumerate(
+            (ROOT / "Makefile").read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if not line.startswith("\t") or re.search(r"(?:^|[\s@])pnpm\s", line) is None:
+                continue
+            selectors = re.findall(r"(?:--filter|-F)(?:\s+|=)(\S+)", line)
+            if not selectors:
+                continue
+            filtered.append(number)
+            where = f"Makefile:{number}: {line.strip()}"
+            for selector in selectors:
+                if selector not in names:
+                    offenders.append(f"{where}: {selector!r} is no workspace member's name")
+            if re.search(r"\s--fail-if-no-match(?:\s|$)", line) is None:
+                offenders.append(f"{where}: no --fail-if-no-match")
+        self.assertNotEqual(filtered, [], "no recipe runs pnpm with a filter")
+        self.assertEqual(offenders, [])
 
     def test_fly_is_the_deployment_entry_point(self) -> None:
         result = self.make("fly")

@@ -315,7 +315,7 @@ web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule test
 	@pnpm -C web -r --workspace-concurrency=1 build
 
 web-a11y: ## Run the frontend's route-level accessibility sweep
-	@pnpm -C web --filter demo-web run test:a11y
+	@pnpm -C web --filter demo-web --fail-if-no-match run test:a11y
 
 # The browser tier: the cases whose subject is real geometry, focus order
 # or focusability, in Chromium through Vitest's browser mode. Chromium is
@@ -339,8 +339,8 @@ e2e-install: ## Install the Chromium build the end-to-end tier drives
 	@pnpm -C web exec playwright install chromium
 
 e2e: ## Run the end-to-end journey specs against the built demo binary
-	@pnpm -C starters/demo/web run typecheck:e2e
-	@pnpm -C starters/demo/web exec playwright test --config e2e/playwright.config.ts
+	@pnpm -C web --filter demo-web --fail-if-no-match run typecheck:e2e
+	@pnpm -C web --filter demo-web --fail-if-no-match exec playwright test --config e2e/playwright.config.ts
 
 # The local development loop: the frontend's vite dev server in the background
 # and the Go program under air in the foreground. Air builds the default binary
@@ -359,7 +359,7 @@ dev: ## Run the demo locally: vite dev server plus the default build under air
 	  echo "dev: mise is not on PATH. It supplies .env and the pinned toolchain; install it and run 'mise install'." >&2; \
 	  exit 1; \
 	fi; \
-	mise exec -- pnpm -C starters/demo/web run dev & \
+	mise exec -- pnpm -C web --filter demo-web --fail-if-no-match run dev & \
 	vite=$$!; \
 	trap 'kill $$vite 2>/dev/null || true; wait $$vite 2>/dev/null || true' EXIT INT TERM; \
 	mise exec -- env -C starters/demo/server air -c .air.toml

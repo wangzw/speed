@@ -36,6 +36,7 @@ import {
   SERVER_DIR,
   WEB_DIR,
 } from './fixtures/paths'
+import { FRONT_END_BUILD_ARGS } from './fixtures/front-end-build'
 import {
   removeExpiredPerSpecDirectories,
   removeExpiredRunDirectories,
@@ -142,7 +143,7 @@ export default async function globalSetup(): Promise<void> {
   )
   await build(
     'pnpm',
-    ['-C', WEB_DIR, 'build'],
+    FRONT_END_BUILD_ARGS,
     REPO_ROOT,
     'building the demo front end',
     { DEMO_WEB_OUT_DIR: join(SERVER_DIR, 'dist-e2e') },

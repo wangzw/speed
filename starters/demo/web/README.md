@@ -11,14 +11,22 @@ This directory is a pnpm workspace member of `web/` (see `web/pnpm-workspace.yam
 and lives outside `web/` on purpose: a delivered consumer project's frontend
 sits with the project, not inside the package library.
 
+Inside the repository every pnpm command for this package runs through that
+workspace, as `pnpm -C web --filter demo-web run <script>` from the repository
+root. No directory above this one holds `pnpm-workspace.yaml`, so pnpm started
+here installs the package as a standalone project and asks the registry for the
+unpublished `@speed` packages. A copy lifted out of the repository installs them
+from the registry and runs the same scripts as `pnpm <script>` from its own
+directory.
+
 ## Develop
 
 ```
-pnpm install --filter demo-web      # or: pnpm -C web install, from the repo root
-pnpm dev                            # vite dev server
+pnpm -C web install                     # the whole workspace, this package included
+pnpm -C web --filter demo-web run dev   # vite dev server
 ```
 
-`pnpm dev` serves the app with hot module replacement on port 8080. The
+The `dev` script serves the app with hot module replacement on port 8080. The
 app talks to its own origin by default (the client base URL falls back to
 `window.location.origin`), and the dev server proxies the namespaces the
 backend endpoints claim onto the demo's single backend listener: the api,
@@ -41,15 +49,15 @@ follow the port override.
 Run the backend on the compiled defaults first — `go -C starters/demo/server run .
 sqlite seed` once, then the same command with `sqlite serve` — which bind
 `127.0.0.1:8081`, this server's proxy target. Every sample configuration binds
-that same listener, so `pnpm dev` reaches them as they stand. A configuration
+that same listener, so the dev server reaches them as they stand. A configuration
 that binds another address needs `DEMO_WEB_BACKEND_PROXY` pointed at it, and
-`DEMO_WEB_PORT` moved if that address is this server's own port. Then run
-`pnpm dev`.
+`DEMO_WEB_PORT` moved if that address is this server's own port. Then start
+the dev server.
 
 ## Build
 
 ```
-pnpm build                          # tsc typecheck, then vite build into ../server/dist
+pnpm -C web --filter demo-web run build   # tsc typecheck, then vite build into ../server/dist
 ```
 
 The output is one entry document (`index.html`) plus a content-addressed
@@ -238,8 +246,9 @@ program mounts the API, account and admin surfaces on separate ports
 therefore a **gateway** that routes each claimed namespace to the endpoint it
 belongs to (`backend-prefixes.json` lists them):
 
-- In development the vite dev server is that gateway: `pnpm dev` proxies every
-  claimed prefix onto the endpoints (`DEMO_WEB_BACKEND_PROXY` above).
+- In development the vite dev server is that gateway: the `dev` script
+  proxies every claimed prefix onto the endpoints (`DEMO_WEB_BACKEND_PROXY`
+  above).
 - The demo's Go program ships no such gateway. Its `web` endpoint serves the
   built bundle alone, so loading the bundle straight from the Go program
   (`http://127.0.0.1:8084/`) renders for static browsing but cannot sign in:
@@ -473,9 +482,9 @@ verification state; the notice is independent of it.
 ## Checks
 
 ```
-pnpm lint        # eslint
-pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest
-pnpm test:a11y   # the route-level axe sweep (its own config and file set)
-pnpm build       # tsc + vite build into ../server/dist
+pnpm -C web --filter demo-web run lint        # eslint
+pnpm -C web --filter demo-web run typecheck   # tsc --noEmit
+pnpm -C web --filter demo-web run test        # vitest
+pnpm -C web --filter demo-web run test:a11y   # the route-level axe sweep (its own config and file set)
+pnpm -C web --filter demo-web run build       # tsc + vite build into ../server/dist
 ```

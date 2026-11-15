@@ -91,7 +91,7 @@ export async function readHarnessManifest(): Promise<HarnessManifest> {
     throw new Error(
       `the harness manifest ${MANIFEST_PATH} could not be read; the Playwright ` +
         `global setup builds the front end and the review binary and writes it. ` +
-        `Run the tier through \`pnpm -C starters/demo/web exec playwright test ` +
+        `Run the tier through \`pnpm -C web --filter demo-web exec playwright test ` +
         `--config e2e/playwright.config.ts\`: ${String(error)}`,
     )
   }
@@ -261,7 +261,7 @@ async function ensureBinary(binary: string): Promise<void> {
       `the harness manifest names the review binary ${binary}, but it cannot ` +
         `be used (${String(error)}). The binary is built into /tmp by the ` +
         `Playwright global setup; a stale manifest is rebuilt by rerunning ` +
-        `the tier through \`pnpm -C starters/demo/web exec playwright test ` +
+        `the tier through \`pnpm -C web --filter demo-web exec playwright test ` +
         `--config e2e/playwright.config.ts\`.`,
     )
   }
