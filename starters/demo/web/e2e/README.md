@@ -128,6 +128,29 @@ remembering to run it.
   and the template's single seeded tenant. This opt-in is separate from
   `socialIdentityProvider`.
 
+- **A SAML identity provider backs the SAML journey**
+  (`fixtures/saml-identity-provider.ts`). A spec that drives it opts in with
+  `test.use({ enterpriseSSO: true, samlIdentityProvider: true })`; the first
+  supplies the tenant, the DNS stub and the domain proof, the second starts the
+  provider. The review build runs the SAML method (`authn.sso.saml` is in its
+  `reviewModules`), and an operator registers the provider through the admin's
+  provider form with its entity identifier, https sign-on address, certificate
+  and claim mapping. The provider receives the AuthnRequest on the redirect
+  binding, shows a page for one fixed user and, once the person approves, serves
+  a page that posts a signed response to the assertion consumer service. The
+  signature comes from `starters/demo/server/e2e/samlsign`, a Go command the
+  global setup builds beside the binaries; it signs with the library the product
+  validates with. A second listener on plain http is the attacker's origin: it
+  posts a response the fixture kept back for another browser's flow
+  (`holdNextResponse`). Both origins are on 127.0.0.1 and the product is on
+  localhost, so both are cross-site to it. The product accepts only an https
+  single sign-on address, so the provider's certificate is self-minted and the
+  spec sets `ignoreHTTPSErrors` for its own browser contexts; no other journey
+  relaxes certificate checking. The spec reads the browser's own requests with
+  `page.on('request')` to assert that the cross-site post reached the assertion
+  consumer service without the flow cookie and that the re-post to the resume
+  route was same-origin with it.
+
 ## The sanctioned non-UI reads
 
 The review assembly's carriers reach no vendor or relay, so the process log is

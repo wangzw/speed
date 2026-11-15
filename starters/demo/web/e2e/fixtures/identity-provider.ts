@@ -178,7 +178,7 @@ function s256(verifier: string): string {
 }
 
 /** Escape a value for an HTML attribute or text node. */
-function escapeHTML(value: string): string {
+export function escapeHTML(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
     switch (character) {
       case '&':
@@ -196,7 +196,7 @@ function escapeHTML(value: string): string {
 }
 
 /** Run one openssl command, failing with its whole output. */
-function openssl(args: readonly string[]): Promise<void> {
+export function openssl(args: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(
       'openssl',
@@ -219,7 +219,7 @@ function openssl(args: readonly string[]): Promise<void> {
 }
 
 /** Ask the kernel for ports that are free at this moment. */
-async function freePorts(count: number): Promise<number[]> {
+export async function freePorts(count: number): Promise<number[]> {
   const opened: NetServer[] = []
   try {
     for (let index = 0; index < count; index += 1) {
@@ -250,7 +250,7 @@ async function freePorts(count: number): Promise<number[]> {
 }
 
 /** Listen on one loopback port, failing the fixture when the bind does not. */
-function listen(server: HTTPServer, port: number): Promise<void> {
+export function listen(server: HTTPServer, port: number): Promise<void> {
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, '127.0.0.1', () => resolve())
@@ -258,7 +258,7 @@ function listen(server: HTTPServer, port: number): Promise<void> {
 }
 
 /** Close a listener, dropping the connections it still holds. */
-function close(server: HTTPServer): Promise<void> {
+export function close(server: HTTPServer): Promise<void> {
   return new Promise((resolve) => {
     server.closeAllConnections()
     server.close(() => resolve())
@@ -266,7 +266,7 @@ function close(server: HTTPServer): Promise<void> {
 }
 
 /** Read a request's whole body. */
-async function readBody(request: IncomingMessage): Promise<string> {
+export async function readBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of request) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
@@ -348,7 +348,7 @@ function authorizePage(
  * Each provider gets its own directory, so one run's providers never overwrite
  * each other's material.
  */
-async function mintServerCertificate(
+export async function mintServerCertificate(
   directory: string,
 ): Promise<{ certificate: string; privateKeyPEM: string; caPath: string }> {
   await mkdir(directory, { recursive: true })

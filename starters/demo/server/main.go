@@ -120,9 +120,9 @@ import (
 	// so no baseline Include lists them; their fragments still describe the
 	// platform's API surface, and what gen and /openapi.json merge is the
 	// fragments of the modules the binary's imports reach, not the modules a
-	// run names. The import is what puts them in the available set. No command
-	// runs authn.sso.saml; the review build's serve is the only run that names
-	// sms.admin. Naming a module for a run and importing it for its contract
+	// run names. The import is what puts them in the available set. No default
+	// build command runs authn.sso.saml; the review build's serve names it
+	// (review.go). Naming a module for a run and importing it for its contract
 	// are two different questions; see AGENTS.md.
 	_ "github.com/vislake/speed/pkg/authn/sso/saml"
 	_ "github.com/vislake/speed/pkg/sms/admin"

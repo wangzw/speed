@@ -44,6 +44,10 @@ import {
   type OutboundRecord,
 } from './log'
 import { MANIFEST_PATH } from './paths'
+import {
+  startSamlIdentityProvider,
+  type SamlIdentityProvider,
+} from './saml-identity-provider'
 
 // Every bound below is strictly inside the Playwright test timeout (120s in
 // playwright.config.ts), with room left for the journey and for teardown. A
@@ -70,6 +74,8 @@ interface HarnessManifest {
   readonly binary: string
   /** The default binary the deploy fixture starts. */
   readonly deployBinary: string
+  /** The helper that signs the SAML identity provider's responses. */
+  readonly samlSigner: string
   readonly repoRoot: string
   readonly serverDir: string
   readonly webDir: string
@@ -651,6 +657,11 @@ export interface ReviewServer {
    * through `setTXT`, the way an operator publishes it at the domain's DNS.
    */
   readonly dnsStub?: DNSStub
+  /**
+   * The local SAML identity provider and the attacker origin beside it, when
+   * this server's spec opted into them; undefined otherwise.
+   */
+  readonly samlIdentityProvider?: SamlIdentityProvider
   /** Everything the child wrote to standard output, line by line. */
   readonly log: ProcessLog
   /** Everything the child wrote to standard error, joined. */
@@ -775,6 +786,7 @@ export async function startReviewServer(
     readonly seedSocialAccount?: boolean
     readonly socialIdentityProvider?: boolean
     readonly enterpriseSSO?: boolean
+    readonly samlIdentityProvider?: boolean
     readonly tenantSSO?: boolean
     readonly seedTenantAdmin?: boolean
     readonly seedUnprovedTenantAdmin?: boolean
@@ -796,6 +808,7 @@ export async function startReviewServer(
   let identityProvider: IdentityProvider | undefined
   let enterpriseProvider: EnterpriseIdentityProvider | undefined
   let dnsStub: DNSStub | undefined
+  let samlProvider: SamlIdentityProvider | undefined
   const log = new ProcessLog()
   const stderrLines: string[] = []
   let stopped = false
@@ -857,6 +870,15 @@ export async function startReviewServer(
       enterpriseProvider = await startEnterpriseProvider(dir)
       dnsStub = await startDNSStub({
         recordName: enterpriseIdentityProviderRecordName,
+      })
+    }
+    // The SAML identity provider needs neither seam: the product never calls
+    // it, the browser does, and the provider row carries its certificate. It
+    // starts for the spec that drives it and is stopped with the server.
+    if (options.samlIdentityProvider === true) {
+      samlProvider = await startSamlIdentityProvider({
+        dir,
+        signer: manifest.samlSigner,
       })
     }
     const ssoProvider =
@@ -1019,6 +1041,7 @@ export async function startReviewServer(
       await identityProvider?.stop()
       await enterpriseProvider?.stop()
       await dnsStub?.stop()
+      await samlProvider?.stop()
       if (options.keep !== true) {
         await rm(dir, { recursive: true, force: true })
       }
@@ -1033,6 +1056,7 @@ export async function startReviewServer(
       identityProvider,
       enterpriseIdentityProvider: enterpriseProvider,
       dnsStub,
+      samlIdentityProvider: samlProvider,
       log,
       get stderr(): string {
         return stderrLines.join('\n')
@@ -1165,6 +1189,7 @@ export async function startReviewServer(
     await identityProvider?.stop()
     await enterpriseProvider?.stop()
     await dnsStub?.stop()
+    await samlProvider?.stop()
     await rm(dir, { recursive: true, force: true })
     throw error
   }

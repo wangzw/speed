@@ -162,3 +162,44 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 			"it off:\n%s", serve.output())
 	}
 }
+
+// TestReviewRunServesTheSAMLLoginMethod runs the review binary over the review
+// configuration and reads the login discovery: the enterprise SAML method is
+// listed beside the enterprise OIDC one. The review build names authn.sso.saml
+// for a run, which a default build does not, so the method's presence is what
+// shows the roster reached the assembly.
+func TestReviewRunServesTheSAMLLoginMethod(t *testing.T) {
+	binary := reviewBinary(t)
+	ports := freePorts(t, listenerCount)
+	config := "file://" + reviewConfig(t,
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+	seedReview(t, binary, config)
+
+	serve := startReview(t, binary, config)
+	serve.waitReady(t)
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	listing := get(t, base+"/api/v1/auth/methods")
+	if listing.status != http.StatusOK {
+		t.Fatalf("GET /api/v1/auth/methods answered %d: %s", listing.status, listing.body)
+	}
+	var discovery struct {
+		Methods []struct {
+			Name     string `json:"name"`
+			Kind     string `json:"kind"`
+			Protocol string `json:"protocol"`
+		} `json:"methods"`
+	}
+	if err := json.Unmarshal(listing.body, &discovery); err != nil {
+		t.Fatalf("reading the login discovery: %v\n%s", err, listing.body)
+	}
+	for _, method := range discovery.Methods {
+		if method.Name == "saml" {
+			if method.Kind != "enterprise" {
+				t.Errorf("the saml method is listed with kind %q, want enterprise", method.Kind)
+			}
+			return
+		}
+	}
+	t.Errorf("the login discovery lists no saml method: %+v", discovery.Methods)
+}

@@ -9,8 +9,10 @@ go 1.26.10
 replace github.com/vislake/speed/pkg => ../../../pkg
 
 require (
+	github.com/beevik/etree v1.8.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
+	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/vislake/speed/pkg v0.0.0
 	gorm.io/gorm v1.31.2
 )
@@ -18,7 +20,6 @@ require (
 require (
 	github.com/alexedwards/argon2id v1.0.0 // indirect
 	github.com/alexedwards/scs/v2 v2.9.0 // indirect
-	github.com/beevik/etree v1.8.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/boombuler/barcode v1.0.1 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c // indirect
@@ -83,7 +84,6 @@ require (
 	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/russellhaering/gosaml2 v0.12.0 // indirect
-	github.com/russellhaering/goxmldsig v1.6.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect

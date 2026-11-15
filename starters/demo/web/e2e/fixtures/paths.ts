@@ -62,6 +62,9 @@ export const BINARY_NAME = 'demo-review'
 /** The deploy assembly's binary: the default build, with no review controls. */
 export const DEPLOY_BINARY_NAME = 'demo-deploy'
 
+/** The helper that signs the SAML identity provider's responses. */
+export const SAML_SIGNER_NAME = 'saml-signer'
+
 /** The repository root. */
 export const REPO_ROOT = fileURLToPath(new URL('../../../../../', import.meta.url))
 

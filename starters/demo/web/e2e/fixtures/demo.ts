@@ -103,6 +103,14 @@ export const test = base.extend<{
    */
   enterpriseSSO: boolean
   /**
+   * Start the SAML identity provider the SP-initiated SAML journey signs in
+   * at, and the attacker origin beside it. A spec that drives that journey sets
+   * `test.use({ samlIdentityProvider: true })` together with `enterpriseSSO`,
+   * which supplies the tenant, the DNS stub and the domain proof the provider's
+   * address is discovered through; every other spec starts neither.
+   */
+  samlIdentityProvider: boolean
+  /**
    * Start the enterprise fixtures and seed the tenant-SSO journey's state: the
    * enterprise user as the target tenant's administrator and that tenant's own
    * `tenant.admission.require-sso` switched on. A spec that drives the tenant
@@ -186,6 +194,7 @@ export const test = base.extend<{
   seedSocialAccount: [false, { option: true }],
   socialIdentityProvider: [false, { option: true }],
   enterpriseSSO: [false, { option: true }],
+  samlIdentityProvider: [false, { option: true }],
   tenantSSO: [false, { option: true }],
   seedTenantAdmin: [false, { option: true }],
   seedUnprovedTenantAdmin: [false, { option: true }],
@@ -207,6 +216,7 @@ export const test = base.extend<{
       seedSocialAccount,
       socialIdentityProvider,
       enterpriseSSO,
+      samlIdentityProvider,
       tenantSSO,
       seedTenantAdmin,
       seedUnprovedTenantAdmin,
@@ -231,6 +241,7 @@ export const test = base.extend<{
       seedSocialAccount,
       socialIdentityProvider,
       enterpriseSSO,
+      samlIdentityProvider,
       tenantSSO,
       seedTenantAdmin,
       seedUnprovedTenantAdmin,

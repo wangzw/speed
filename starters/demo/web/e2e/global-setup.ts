@@ -32,6 +32,7 @@ import {
   HARNESS_DIR,
   MANIFEST_PATH,
   REPO_ROOT,
+  SAML_SIGNER_NAME,
   SERVER_DIR,
   WEB_DIR,
 } from './fixtures/paths'
@@ -170,9 +171,21 @@ export default async function globalSetup(): Promise<void> {
     'building the default binary',
   )
 
+  // The SAML identity provider fixture signs its responses with the library the
+  // product validates them with, through this small command. It is built beside
+  // the binaries and used only by the spec that drives that provider.
+  const samlSigner = join(HARNESS_DIR, SAML_SIGNER_NAME)
+  await build(
+    'go',
+    ['-C', SERVER_DIR, 'build', '-o', samlSigner, './e2e/samlsign'],
+    REPO_ROOT,
+    'building the SAML signing helper',
+  )
+
   const manifest = {
     binary,
     deployBinary,
+    samlSigner,
     artifactsRoot: ARTIFACT_ROOT,
     repoRoot: REPO_ROOT,
     serverDir: SERVER_DIR,

@@ -987,8 +987,8 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 |---|---|
 | 每个 kv 实现对 `CompareAndSwap` 都满足“只在当前值等于旧值时写入”，包括并发写入者抢先时的重新判定 | 对每个 kv 实现并发提交同一次回跳，断言只有一个越过 `processing` |
 | 通行密钥的仪式数据序列化后放得进 `FlowState.Private` 的上限 | 按允许的凭据清单增长测量序列化大小 |
-| 跨站的顶层 POST 不带 `SameSite=Lax` 的 cookie，ACS 因此凭 cookie 处理不了回跳 | 在浏览器里由另一站点的页面自动提交表单到 ACS，断言请求不带流程 cookie；服务端一侧 `pkg/authn/login` `TestACookielessCrossSitePostToTheCallbackIsAnsweredTheBouncePage` 断言 ACS 对这样的请求只答转投页 |
-| 同源页面自动提交的表单带 `Lax` 与 `Strict` 的 cookie，`Sec-Fetch-Site` 为 `same-origin` | 在浏览器里走完转投，断言续接请求带流程 cookie 与会话 cookie；服务端一侧 `pkg/authn/sso/saml` `TestAnSPInitiatedLoginCompletesThroughTheBounce` 以这样的请求走完整条链 |
+| 跨站的顶层 POST 不带 `SameSite=Lax` 的 cookie，ACS 因此凭 cookie 处理不了回跳 | 浏览器一侧 `starters/demo/web/e2e/specs/journey-saml-sign-in.spec.ts` 的两条用例在 Chromium 里由另一站点的页面（IdP 页面与攻击者页面）自动提交表单到 ACS，断言请求的 `Sec-Fetch-Site` 为 `cross-site` 且不带流程 cookie；服务端一侧 `pkg/authn/login` `TestACookielessCrossSitePostToTheCallbackIsAnsweredTheBouncePage` 断言 ACS 对这样的请求只答转投页 |
+| 同源页面自动提交的表单带 `Lax` 与 `Strict` 的 cookie，`Sec-Fetch-Site` 为 `same-origin` | 浏览器一侧同一规格在 Chromium 里走完转投，断言续接请求的 `Sec-Fetch-Site` 为 `same-origin` 且带流程 cookie（`Lax` 的一半；浏览器里没有预先存在的会话，`Strict` 的会话 cookie 一半没有浏览器一侧的断言）；服务端一侧 `pkg/authn/sso/saml` `TestAnSPInitiatedLoginCompletesThroughTheBounce` 以这样的请求走完整条链 |
 | 跨源检查的旁路只覆盖 `B/callback/:provider`，不覆盖续接路由；gin 的 `:provider` 写成 `ServeMux` 的 `{provider}` 后模式能命中 | `pkg/authn/login` `TestACrossSiteCallbackPostIsAllowed` 断言 ACS 放行而续接路由不放行，`TestACrossSitePostToTheResumeRouteIsRefusedBeforeTheHandler` 断言跨站直投续接路由在处理器之前被拒 |
 | Google 的授权端点接受带 `code_challenge`（S256）的请求 | 用测试客户端对授权端点发带 `code_challenge` 的请求 |
 | 微信：成功路径上 `POST` 是否被接受；`snsapi_login` 与 `snsapi_userinfo` 下 `unionid` 的下发条件；网页授权是否只能在微信内置浏览器发起 | 需要真实应用凭据，自动化只对模拟服务端测，真实行为在联调时核实 |

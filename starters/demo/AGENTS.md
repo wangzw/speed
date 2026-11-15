@@ -113,8 +113,10 @@ configuration answer three different questions:
 So every platform module that declares an HTTP fragment is imported. `sms.admin`
 is in `capabilityModules` and named by `serve`; it runs only when its
 configuration enables the SMS family, which the review configuration does and
-the baseline does not. `authn.sso.saml` is imported for the contract alone and
-named by no command. Both fragments still describe the platform's API surface.
+the baseline does not. `authn.sso.saml` is imported for the contract in every
+build; a default build's commands do not name it and only the review build's
+`serve` does (`reviewModules`). Both fragments still describe the platform's API
+surface.
 Leaving one unimported would drop its operations from the merged document with
 no error — the document would simply be smaller than the platform contract.
 `server/main.go` carries the blank import for `authn.sso.saml` beside a comment
@@ -134,6 +136,19 @@ build and considered by `serve` (`capabilities.go`); whether one starts is its
 own configuration decision. `server/review_off.go` is the untagged counterpart
 and names nothing, so a default binary carries neither the controls nor the
 guard.
+
+**The review build runs the enterprise SAML method.** `reviewModules` names
+`authn.sso.saml`, which a default build imports for the contract alone. A SAML
+provider is data in the `authn.sso` register and the method needs no
+configuration to start, so the review build lists a `saml` enterprise method and
+the end-to-end tier can drive an SP-initiated sign-in against its local identity
+provider (`web/e2e/fixtures/saml-identity-provider.ts`). That provider's
+responses are signed by `server/e2e/samlsign`, a command the end-to-end global
+setup builds into its own run directory; nothing in the program imports it. It
+signs with goxmldsig, the library the method validates with, and carries its own
+test (`TestTheSignedResponseValidatesAgainstTheCertificate`). The review-tagged
+case `TestReviewRunServesTheSAMLLoginMethod` holds that the roster reaches the
+assembly.
 
 `mail.log` is a carrier built through `mail.NewModule`, the same factory
 `mail.smtp` uses: it reaches no relay and writes each rendered message to the
