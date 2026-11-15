@@ -2425,7 +2425,7 @@ export type AuthnLoginStartBodyInput = {[key: string]: string};
  * The start request; `method` must name a login method this deployment takes in, or the call is a bad request.
  */
 export type AuthnLoginStartBody = {
-  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
   binding?: string;
   /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
   delivery?: string;
@@ -2469,7 +2469,7 @@ export type AuthnLoginStartAuthenticatedBodyInput = {[key: string]: string};
  * The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.
  */
 export type AuthnLoginStartAuthenticatedBody = {
-  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
   binding?: string;
   /** Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`. */
   delivery?: string;

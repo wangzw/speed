@@ -21,7 +21,6 @@ const (
 	mountEndpointsItem = "mount.endpoints"
 	mountBasesItem     = "mount.bases"
 	mountPublicURLItem = "mount.public-url"
-	mountInsecureItem  = "mount.allow-insecure"
 	trustedOriginsItem = "trusted-origins"
 )
 
@@ -97,8 +96,6 @@ type mountConfig struct {
 	// PublicURL is the origin the deployment is reached at from outside, which
 	// the entry point cannot derive from a request.
 	PublicURL string `config:"public-url"`
-	// AllowInsecure admits an http public URL, for development.
-	AllowInsecure bool `config:"allow-insecure"`
 }
 
 // endpoints is the endpoint of each scope the capability's routes are published
@@ -176,7 +173,7 @@ func (c moduleConfig) resolve() (settings, error) {
 			return settings{}, err
 		}
 	}
-	if err := checkPublicURL(s.mount.PublicURL, s.mount.AllowInsecure); err != nil {
+	if err := checkPublicURL(s.mount.PublicURL); err != nil {
 		return settings{}, err
 	}
 	// The cross-origin check is built from this same list when the module is
@@ -252,13 +249,14 @@ func checkBasePath(item, p string) error {
 }
 
 // checkPublicURL holds the public base to an origin, and to https unless the host
-// is a loopback one or insecure use was allowed. Empty is allowed here: the
-// modules that need the address refuse it themselves.
+// is a loopback one. A browser keeps a Secure cookie for a loopback host over
+// http, and every cookie the authn modules write is Secure. Empty is allowed
+// here: the modules that need the address refuse it themselves.
 //
 // A URL that does not parse is not quoted, and one that does is quoted without
 // its user information, query or fragment: the value may carry a password written
 // where no password belongs, and the refusal must not copy it into an error text.
-func checkPublicURL(raw string, allowInsecure bool) error {
+func checkPublicURL(raw string) error {
 	if raw == "" {
 		return nil
 	}
@@ -278,11 +276,11 @@ func checkPublicURL(raw string, allowInsecure bool) error {
 			"shown). Write scheme, host and port alone: the path is %s.%s", authn.ErrInvalidConfig, ConfigNamespace,
 			mountPublicURLItem, shown, ConfigNamespace, mountBasesItem)
 	}
-	if u.Scheme == "http" && !allowInsecure && !loopbackHost(u.Hostname()) {
+	if u.Scheme == "http" && !loopbackHost(u.Hostname()) {
 		return fmt.Errorf("%w: %s.%s is %q, which is not https. Cookies and redirects built on it "+
-			"would travel in the clear. Use https, or allow insecure use, which is for "+
-			"development, with %s.%s", authn.ErrInsecureConfig, ConfigNamespace, mountPublicURLItem,
-			shown, ConfigNamespace, mountInsecureItem)
+			"would travel in the clear, and every cookie this capability writes is Secure, which a "+
+			"browser does not keep for an http address other than a loopback one. Use https",
+			authn.ErrInsecureConfig, ConfigNamespace, mountPublicURLItem, shown)
 	}
 	return nil
 }
@@ -353,11 +351,6 @@ func schema() config.Schema {
 			mountPublicURLItem: {
 				Description: "the origin the deployment is reached at from outside, without a " +
 					"path, which redirects, cookies and token issuers are built from",
-			},
-			mountInsecureItem: {
-				Origins: config.OriginPrimary,
-				Description: "for development only: admit an http public URL and drop the " +
-					"__Host- prefix and the Secure attribute from cookies",
 			},
 			trustedOriginsItem: {
 				Origins: config.OriginPrimary,

@@ -609,19 +609,33 @@ func (p *product) ClearCookie(w http.ResponseWriter) {
 }
 
 // clearingCookie is the cookie a reply operation attaches with WithCookies: the
-// manager's configured attributes and the value and expiry the library writes
-// when asked to clear, reproduced as a value because a reply has no response
-// writer to hand.
+// attributes the manager writes the session cookie with and the value and expiry
+// the library writes when asked to clear, reproduced as a value because a reply
+// has no response writer to hand. Secure and HttpOnly are always on, and the
+// SameSite is the configured one, lax or strict: Prepare refuses none.
 func (p *product) clearingCookie() *http.Cookie {
 	c := p.sm.Cookie
+	if c.SameSite == http.SameSiteStrictMode {
+		return &http.Cookie{
+			Name:        c.Name,
+			Domain:      c.Domain,
+			Path:        c.Path,
+			Partitioned: c.Partitioned,
+			Secure:      true,
+			HttpOnly:    true,
+			SameSite:    http.SameSiteStrictMode,
+			Expires:     time.Unix(1, 0),
+			MaxAge:      -1,
+		}
+	}
 	return &http.Cookie{
 		Name:        c.Name,
 		Domain:      c.Domain,
-		HttpOnly:    c.HttpOnly,
 		Path:        c.Path,
-		SameSite:    c.SameSite,
-		Secure:      c.Secure,
 		Partitioned: c.Partitioned,
+		Secure:      true,
+		HttpOnly:    true,
+		SameSite:    http.SameSiteLaxMode,
 		Expires:     time.Unix(1, 0),
 		MaxAge:      -1,
 	}

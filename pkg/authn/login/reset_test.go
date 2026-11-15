@@ -547,7 +547,7 @@ func TestResetRecordBelongsToItsCookie(t *testing.T) {
 	other := r.send(http.MethodPost, resetPath, `{"channel":"email","identifier":"nobody@example.com"}`)
 	otherCookie := resetCookie(t, other)
 	_ = otherCookie
-	if got := r.verify("authn-reset=not-a-bound-token", code); got.Code != http.StatusUnauthorized ||
+	if got := r.verify(resetCookieName+"=not-a-bound-token", code); got.Code != http.StatusUnauthorized ||
 		resetProblemCode(t, got) != "flow-invalid" {
 		t.Errorf("an unbound cookie answered %d %q, want 401 flow-invalid", got.Code, resetProblemCode(t, got))
 	}

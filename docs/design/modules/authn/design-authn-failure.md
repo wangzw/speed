@@ -219,7 +219,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrExemptionUnguarded` | `Exempt`、`Optional` 或 `Impersonable` 登记在网关不守的端上 | 把该端写进 `endpoints`，或把登记挪走 |
 | `ErrAccessConflict` | 同一（端，方法，路径）既登记 `Exempt` 又登记 `Optional`，或既登记 `Exempt` 又登记 `Impersonable` | 去掉其中一个 |
 | `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | `authn.mount` 在 `Init` 里发现 `mount.endpoints.default` 为空而入口声明的端不是恰好一个（零个或多个），网关在 `Start` 对同一规则再判一次；`mount.endpoints` 的任一项不是网关所守的端。租户作用域的路由在 `mount.endpoints.tenants` 未配置时登记即 panic，点名该键 | 配置 `authn.gate.mount.endpoints.default`；把该端写进 `endpoints`；租户作用域写上被两层覆盖的端 |
-| `ErrInsecureConfig` | `public-url` 不是 https（回环主机除外）而未开 `allow-insecure`；`same-site` 取 `none` | 改基址，或显式开 `allow-insecure`（仅开发） |
+| `ErrInsecureConfig` | `public-url` 不是 https，且主机不是回环主机；`same-site` 取 `none` | 改用 https 基址；`same-site` 取 `lax` 或 `strict` |
 | `ErrNoEncryptionKey` | 加密列往返自检失败：`db` 的根密钥缺失或不可用 | 给 `db` 模块配 `encryption-key` |
 | `ErrInvalidKey` | 签名或验证密钥文件读不了、类型与算法不符、RSA 小于 2048 位、`kid` 重复、没有任何密钥 | 点名文件 |
 | `ErrNotMigrated` | 带表模块的 `Start` 探测不到自己的表 | 点名施加迁移的命令；把该模块静态级纳入它（`IncludeAllDeclarations`） |

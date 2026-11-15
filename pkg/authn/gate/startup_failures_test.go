@@ -229,10 +229,9 @@ func TestPrepareAndNewReportAMissingConfigurationReader(t *testing.T) {
 
 func TestAConfigurationThatDoesNotDecodeStopsTheStartup(t *testing.T) {
 	for key, body := range map[string]string{
-		"authn.gate.call-budget":          `{"authn":{"gate":{"call-budget":"soon"}}}`,
-		"authn.gate.in-flight":            `{"authn":{"gate":{"in-flight":"many"}}}`,
-		"authn.gate.endpoints":            `{"authn":{"gate":{"endpoints":5}}}`,
-		"authn.gate.mount.allow-insecure": `{"authn":{"gate":{"mount":{"allow-insecure":"maybe"}}}}`,
+		"authn.gate.call-budget": `{"authn":{"gate":{"call-budget":"soon"}}}`,
+		"authn.gate.in-flight":   `{"authn":{"gate":{"in-flight":"many"}}}`,
+		"authn.gate.endpoints":   `{"authn":{"gate":{"endpoints":5}}}`,
 	} {
 		t.Run(key, func(t *testing.T) {
 			err := assembly{

@@ -49,11 +49,10 @@ func loadSettings(t *testing.T, body string, args ...string) (settings, error) {
 	return readSettings(reader)
 }
 
-// TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates holds the two items
-// that widen what the gateway accepts: the switch that admits an http base
-// address and the list of origins trusted beyond the public one. Neither can be
-// moved by a variable of the process's environment, which a deployment's
-// orchestrator and every process of the same user can write.
+// TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates holds the item that
+// widens what the gateway accepts: the list of origins trusted beyond the public
+// one. It cannot be moved by a variable of the process's environment, which a
+// deployment's orchestrator and every process of the same user can write.
 //
 // A variable on an item that does read the environment, written the same way, is
 // the control: without it a variable name that was never going to be read would
@@ -73,14 +72,6 @@ func TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 		}
 	})
 
-	t.Run("the insecure switch", func(t *testing.T) {
-		t.Setenv(gate+"MOUNT__ALLOW_INSECURE", "true")
-		_, err := loadSettings(t, `{"authn":{"gate":{"mount":{"public-url":"http://example.com"}}}}`)
-		if !errors.Is(err, authn.ErrInsecureConfig) {
-			t.Fatalf("loading gave %v, want %v: the variable relaxed what the file states", err, authn.ErrInsecureConfig)
-		}
-	})
-
 	t.Run("the trusted origins", func(t *testing.T) {
 		t.Setenv(gate+"TRUSTED_ORIGINS", "https://evil.example")
 		set, err := loadSettings(t, `{}`)
@@ -93,47 +84,82 @@ func TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	})
 }
 
-// TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates holds the same two
-// items against the command line, which a process listing shows and a wrapper
-// script can add to. The item takes no flag, so the loader refuses the argument or
+// TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates holds the same item
+// against the command line, which a process listing shows and a wrapper script
+// can add to. The item takes no flag, so the loader refuses the argument or
 // ignores it; either way what the file states is what the gateway runs on.
 func TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates(t *testing.T) {
-	t.Run("the insecure switch", func(t *testing.T) {
-		set, err := loadSettings(t, `{"authn":{"gate":{"mount":{"public-url":"http://example.com"}}}}`,
-			"--authn.gate.mount.allow-insecure=true")
-		if err == nil {
-			t.Fatalf("loading accepted the argument and the gateway runs with insecure use %v", set.mount.AllowInsecure)
-		}
-		if errors.Is(err, authn.ErrInsecureConfig) {
-			return
-		}
-		if !strings.Contains(err.Error(), "allow-insecure") {
-			t.Errorf("loading failed with %q, which does not say the argument was the problem", err)
-		}
-	})
-
-	t.Run("the trusted origins", func(t *testing.T) {
-		set, err := loadSettings(t, `{}`, "--authn.gate.trusted-origins=https://evil.example")
-		if err == nil && len(set.trustedOrigins) != 0 {
-			t.Errorf("the gateway trusts %v, which an argument put there", set.trustedOrigins)
-		}
-		if err != nil && !strings.Contains(err.Error(), "trusted-origins") {
-			t.Errorf("loading failed with %q, which does not say the argument was the problem", err)
-		}
-	})
+	set, err := loadSettings(t, `{}`, "--authn.gate.trusted-origins=https://evil.example")
+	if err == nil && len(set.trustedOrigins) != 0 {
+		t.Errorf("the gateway trusts %v, which an argument put there", set.trustedOrigins)
+	}
+	if err != nil && !strings.Contains(err.Error(), "trusted-origins") {
+		t.Errorf("loading failed with %q, which does not say the argument was the problem", err)
+	}
 }
 
 // TestTheMainSourceCanRelaxWhatItAloneMay is the control for the cases above: the
-// two items do take a value from the main source, so a refusal there is a refusal
-// of the other origins and not of the items.
+// item does take a value from the main source, so a refusal there is a refusal of
+// the other origins and not of the item.
 func TestTheMainSourceCanRelaxWhatItAloneMay(t *testing.T) {
-	set, err := loadSettings(t, `{"authn":{"gate":{"mount":{"public-url":"http://example.com","allow-insecure":true},`+
+	set, err := loadSettings(t, `{"authn":{"gate":{"mount":{"public-url":"https://example.com"},`+
 		`"trusted-origins":["https://app.example.com"]}}}`)
 	if err != nil {
 		t.Fatalf("loading: %v", err)
 	}
-	if !set.mount.AllowInsecure || len(set.trustedOrigins) != 1 || set.trustedOrigins[0] != "https://app.example.com" {
+	if len(set.trustedOrigins) != 1 || set.trustedOrigins[0] != "https://app.example.com" {
 		t.Errorf("the settings read %+v and %v", set.mount, set.trustedOrigins)
+	}
+}
+
+// TestAnHTTPPublicURLStartsOnlyOnALoopbackHost holds the one form an http public
+// URL may take: a loopback host, for which a browser keeps a Secure cookie, so
+// every cookie the capability writes stays Secure and keeps its __Host- prefix.
+// Any other http address is refused through the real loader, and the
+// configuration has no item that admits one: a key written beside the address to
+// relax the check is refused as a key no module declares.
+func TestAnHTTPPublicURLStartsOnlyOnALoopbackHost(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		body  string
+		want  error
+		named string
+	}{
+		{
+			"an http address", `{"authn":{"gate":{"mount":{"public-url":"http://example.com"}}}}`,
+			authn.ErrInsecureConfig, mountPublicURLItem,
+		},
+		{
+			"an http private address", `{"authn":{"gate":{"mount":{"public-url":"http://10.0.0.5:8080"}}}}`,
+			authn.ErrInsecureConfig, mountPublicURLItem,
+		},
+		{
+			"an http address with allow-insecure written beside it",
+			`{"authn":{"gate":{"mount":{"public-url":"http://example.com","allow-insecure":true}}}}`,
+			config.ErrUnknownKey, "authn.gate.mount.allow-insecure",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := loadSettings(t, c.body)
+			if !errors.Is(err, c.want) {
+				t.Fatalf("loading gave %v, want %v", err, c.want)
+			}
+			if !strings.Contains(err.Error(), c.named) {
+				t.Errorf("the refusal %q does not name %s", err, c.named)
+			}
+		})
+	}
+
+	for _, address := range []string{"http://localhost:8080", "http://127.0.0.1", "http://[::1]:8080"} {
+		t.Run(address, func(t *testing.T) {
+			set, err := loadSettings(t, `{"authn":{"gate":{"mount":{"public-url":"`+address+`"}}}}`)
+			if err != nil {
+				t.Fatalf("loading a loopback http address: %v", err)
+			}
+			if set.mount.PublicURL != address {
+				t.Errorf("the public URL reads %q, want %q", set.mount.PublicURL, address)
+			}
+		})
 	}
 }
 
@@ -147,47 +173,6 @@ func warnings(logs *recorder) []slog.Record {
 		}
 	}
 	return out
-}
-
-// TestInsecureUseIsWrittenAsOneWarnLineOfItsOwn holds the startup diagnostic of
-// the one switch that relaxes the base address: admitting an http address is
-// allowed, and the startup says so on a line that is its own, at Warn, so that a
-// pipeline that keeps warnings keeps it. Without the switch the line is not there.
-func TestInsecureUseIsWrittenAsOneWarnLineOfItsOwn(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		gate string
-		want int
-	}{
-		{"with insecure use allowed", `"mount":{"public-url":"http://example.com","allow-insecure":true}`, 1},
-		{"with an https address", `"mount":{"public-url":"https://example.com"}`, 0},
-		{"with no address at all", ``, 0},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			logs := liveAssembly{
-				gateItems: c.gate,
-				backends:  []authn.Verifier{basicBackend("static", "static.")},
-			}.serve(t, func(*live) {})
-
-			var got []slog.Record
-			for _, r := range warnings(logs) {
-				if strings.Contains(r.Message, mountInsecureItem) {
-					got = append(got, r)
-				}
-			}
-			if len(got) != c.want {
-				t.Fatalf("%d Warn line(s) name %s, want %d: %v", len(got), mountInsecureItem, c.want, messages(warnings(logs)))
-			}
-			for _, r := range got {
-				if !strings.HasPrefix(r.Message, diagnosticPrefix) {
-					t.Errorf("the line %q does not carry the diagnostic prefix", r.Message)
-				}
-				if strings.Contains(r.Message, "example.com") {
-					t.Error("the line carries the address, which is no business of the warning")
-				}
-			}
-		})
-	}
 }
 
 // messages lists the messages of records, for a failure to print.

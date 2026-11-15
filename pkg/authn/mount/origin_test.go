@@ -113,7 +113,6 @@ func TestThePublicURLIsHandedOutAsTheOriginABrowserSends(t *testing.T) {
 		var s settings
 		s.Mount.Bases = defaultBases()
 		s.Mount.PublicURL = c.configured
-		s.Mount.AllowInsecure = true
 		p, err := newProduct(s)
 		if err != nil {
 			t.Fatalf("building the product for %q: %v", c.configured, err)

@@ -215,11 +215,10 @@ type product struct {
 	methodNames []string
 
 	// Configuration read once, in Init: the trusted origins a return_to may
-	// name, whether the flow cookie keeps its __host- prefix and Secure
-	// attribute, and the origin the deployment is reached at. The registration
-	// and the registration switch are settings, read at each use.
+	// name, which are the origin the deployment is reached at when none is
+	// configured. The registration and the registration switch are settings,
+	// read at each use.
 	trustedOrigins []string
-	allowInsecure  bool
 
 	clock clock.Source
 }
@@ -397,8 +396,8 @@ func (p *product) takeMethods(all []authn.LoginMethod) error {
 	return nil
 }
 
-// readConfig reads the gateway origins a return_to may name and the insecure-use
-// switch, and refreshes the disabled-method set from the settings.
+// readConfig reads the gateway origins a return_to may name, and refreshes the
+// disabled-method set from the settings.
 func (p *product) readConfig(reader config.Reader) error {
 	gate, err := readGate(reader)
 	if err != nil {
@@ -412,7 +411,6 @@ func (p *product) readConfig(reader config.Reader) error {
 		origins = []string{p.mounter.PublicURL()}
 	}
 	p.trustedOrigins = origins
-	p.allowInsecure = gate.Mount.AllowInsecure
 	return nil
 }
 

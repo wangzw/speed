@@ -239,8 +239,9 @@ does.
   call, and the callback bypasses the cross-origin check.** The base path is
   `authn.gate.mount.bases.default` on the endpoint
   `authn.gate.mount.endpoints.default`; the flow cookie is `SameSite=None` so
-  that a SAML POST navigation still carries it, and the `__Host-` prefix is
-  dropped only under `allow-insecure`.
+  that a SAML POST navigation still carries it. The flow and reset cookies
+  always carry the `__Host-` prefix, `Secure` and `HttpOnly`: the public URL is
+  https or a loopback host, for which a browser keeps a `Secure` cookie.
 - **A setting moved toward more lenient is visible after the fact, never
   blocked.** The subscription to `settings.changed` writes a `Warn` and a
   best-effort `authn.settings.relaxed` audit row naming the key and the

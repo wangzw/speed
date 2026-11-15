@@ -68,7 +68,8 @@ Each operation gains three members the merge owns:
 
 `components.securitySchemes` is written by the merge, once, from the platform's
 vocabulary: `bearerAuth` (an `Authorization: Bearer` header) and
-`sessionCookie` (the `sid` cookie). A fragment that declares either itself is
+`sessionCookie` (the `__Host-sid` cookie, `__Secure-sid` when the deployment
+configures a cookie domain). A fragment that declares either itself is
 held to the same content. These three members and the two schemes are the
 host-visible shape a gateway or a frontend reads; changing them is a breaking
 change.

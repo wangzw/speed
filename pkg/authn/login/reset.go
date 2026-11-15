@@ -34,12 +34,10 @@ import (
 // every other target follows the same record, verify and answer path with a
 // suppressed record, so an answer never says whether an account can be reset.
 const (
-	// resetCookieHost is the production cookie name. The __Host- prefix requires
-	// Secure, a path of "/" and no Domain, so the insecure form drops the prefix
-	// and the Secure attribute together.
-	resetCookieHost  = "__Host-authn-reset"
-	resetCookiePlain = "authn-reset"
-	resetCookiePath  = "/"
+	// resetCookieName is the cookie the reset binding travels in. The __Host-
+	// prefix requires Secure, a path of "/" and no Domain.
+	resetCookieName = "__Host-authn-reset"
+	resetCookiePath = "/"
 
 	// resetKeyPrefix starts the key of a reset record. The rest is the SHA-256 of
 	// the cookie secret, never the secret itself.
@@ -146,24 +144,16 @@ func (m *resetMailer) release() {
 	<-m.slots
 }
 
-// resetCookieName is the cookie the reset binding travels in.
-func (r *routes) resetCookieName() string {
-	if r.allowInsecure {
-		return resetCookiePlain
-	}
-	return resetCookieHost
-}
-
 // setResetCookie writes the reset cookie. A maxAge of -1 clears it. The cookie is
 // SameSite=Strict: the reset is driven from the site's own page, and a cross-site
 // request must not carry it.
 func (r *routes) setResetCookie(c *call, token string, maxAge int) {
 	c.setCookie(&http.Cookie{
-		Name:     r.resetCookieName(),
+		Name:     resetCookieName,
 		Value:    token,
 		Path:     resetCookiePath,
 		MaxAge:   maxAge,
-		Secure:   !r.allowInsecure,
+		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
@@ -567,7 +557,7 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 	oldToken := ""
 	var oldRaw []byte
 	var old *resetRecord
-	if presented := c.cookieValue(r.resetCookieName()); presented != "" {
+	if presented := c.cookieValue(resetCookieName); presented != "" {
 		rec, raw, present, err := r.loadResetRecord(c.ctx, presented)
 		if err != nil {
 			r.fail(c, err)
@@ -849,7 +839,7 @@ func (r *routes) passwordResetCurrent(ctx context.Context, _ struct{}, meta *spe
 	if !r.resetOpen(c) {
 		return c.result()
 	}
-	token := c.cookieValue(r.resetCookieName())
+	token := c.cookieValue(resetCookieName)
 	rec, _, present, err := r.loadResetRecord(c.ctx, token)
 	if err != nil {
 		r.fail(c, err)
@@ -880,7 +870,7 @@ func (r *routes) passwordResetCurrent(ctx context.Context, _ struct{}, meta *spe
 // not change with the switch, sends nothing and changes no account.
 func (r *routes) passwordResetDelete(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
-	token := c.cookieValue(r.resetCookieName())
+	token := c.cookieValue(resetCookieName)
 	if token != "" {
 		if err := r.deleteResetRecord(c.ctx, token); err != nil {
 			r.fail(c, err)
@@ -900,7 +890,7 @@ func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerify
 	if !r.resetOpen(c) {
 		return c.result()
 	}
-	token := c.cookieValue(r.resetCookieName())
+	token := c.cookieValue(resetCookieName)
 	rec, raw, present, err := r.loadResetRecord(c.ctx, token)
 	if err != nil {
 		r.fail(c, err)
@@ -1029,7 +1019,7 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 	if !r.resetOpen(c) {
 		return c.result()
 	}
-	token := c.cookieValue(r.resetCookieName())
+	token := c.cookieValue(resetCookieName)
 	rec, raw, present, err := r.loadResetRecord(c.ctx, token)
 	if err != nil {
 		r.fail(c, err)

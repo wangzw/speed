@@ -83,7 +83,6 @@
 | `authn.gate.mount.endpoints.default`、`.tenants`、`.system` | 字符串 | 空 | 默认 | | 各作用域的路由所挂的入口端。`default` 为空取入口模块声明的唯一端，`system` 为空取 `default`；`tenants` 无缺省，为空时该作用域不可挂载（租户管理路由的判定在该租户的策略域，必须落在租户两层的端上） |
 | `authn.gate.mount.bases.default`、`.tenants`、`.system` | 字符串 | `/api/v1/auth`、`/api/v1/tenants`、`/api/v1/system` | 默认 | | 各作用域的路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin（[REF-gin](../../../references.md)）规整后的写法。`system` 是整段平台管理命名空间的根，其下的 `/auth/...` 与 `/tenants/...` 都相对它书写 |
 | `authn.gate.mount.public-url` | 字符串 | 空 | 默认 | | 对外基址，只含来源不含路径 |
-| `authn.gate.mount.allow-insecure` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放行 http 基址，cookie 去掉 `__Host-`（[REF-rfc6265bis](../../../references.md)）前缀与 `Secure`；改动要重启 |
 | `authn.gate.trusted-origins` | 字符串列表 | 空 | 主 | | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`，先规范成浏览器发送的形式再匹配（规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）；`public-url` 的来源恒可信 |
 | `authn.static.subjects` | 主体名到 PHC（[REF-phc-string-format](../../../references.md)）条目的映射 | 无 | 主 | 必填、敏 | 口令表；键是主体名，值是 PHC 条目，遗留写法只读并告警 |
 | `authn.static.cache-size` | 整数 | `1024` | 默认 | | 口令校验缓存的容量，取值 1 到 1000000，0 被拒绝（要关闭缓存，把设置 `authn.static.cache-ttl` 设为 0），构造时分配 |
@@ -360,7 +359,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 `authn.invite.ttl` 与 `authn.account.password-algorithm` 也是设置项、也在放宽方向上受监视，但不在上表：上表的判据是“一个开关，声明默认值取严的一端”，而这两项的取值本身有强弱次序，没有“打开”这一动作。前者变长扩大邀请的可用窗口，方向取 `increase`；后者改为 `pbkdf2-sha256` 降低哈希成本，方向取 `downgrade`（[design-authn-events](design-authn-events.md) 的放宽方向取值）。
 
-仅开发用的 `authn.gate.mount.allow-insecure` 与 `authn.sso.allow-private-egress` 留在配置，不属于上表：它们在启动期决定基址校验、cookie 名称与出站客户端，改动要重启才生效，按（b）落在配置，启动诊断各写一行 `Warn`。
+仅开发用的 `authn.sso.allow-private-egress` 留在配置，不属于上表：它在启动期决定出站客户端，改动要重启才生效，按（b）落在配置，启动诊断写一行 `Warn`。
 
 决定守护范围的清单（`authn.gate.endpoints`、`authn.gate.trusted-origins`、`tenant.admission.endpoints`）同样只取主配置源：它们在装配期决定路由挂到哪个端、跨源检查信谁。给这类项设环境变量不会生效：启动诊断点名该变量与它命中的路径，说明该项只接受主配置源，然后忽略该变量。
 
@@ -530,7 +529,7 @@ flowchart TD
 | `authn.gate.mount.bases.{default,tenants,system}` 的任一项不以 `/` 起头、以 `/` 结尾、含通配或路径参数（`*`、`:`）、`?` 或 `#`，或不是 `path.Clean` 之后的写法 | `ErrInvalidConfig` |
 | `authn.gate.trusted-origins` 的某一项不是 `scheme://host[:port]`：scheme 不是 http 或 https，带用户信息、路径、查询、片段、空端口、通配，端口不在 1 到 65535，或主机不是 ASCII（国际化域名写 punycode）；每项先规范成浏览器发送的形式，规范后相同的项并作一项 | `ErrInvalidConfig` |
 | `authn.static.cache-size` 不在 1 到 1000000（0 被拒绝）；`authn.static.concurrency` 不在 1 到 256 | `ErrInvalidConfig` |
-| `authn.gate.mount.public-url` 是 https（回环主机与 `allow-insecure` 为真时除外）；`authn.session.same-site` 不取 `none` | `ErrInsecureConfig` |
+| `authn.gate.mount.public-url` 是 https，主机是回环主机时可以是 http；`authn.session.same-site` 不取 `none` | `ErrInsecureConfig` |
 | `authn.gate.mount.endpoints.{default,tenants,system}` 里的端名存在于入口模块 | `ErrUnknownEndpoint` |
 | `authn.gate.mount.endpoints.{default,tenants,system}` 被网关所守；`authn.mount` 在 `authn.gate.mount.endpoints.default` 为空且入口声明的端不是恰好一个时失败，网关在 `Start` 对同一规则再判一次 | `ErrRoutesUnguarded`、`ErrRoutesUnconfigured` |
 | `authn.gate.mount.endpoints.default`、`.system` 不被 `ScopeGuard` 所守，也不在 `tenant.resolve.endpoints` 里（核不了则 `Warn`）；`authn.gate.mount.endpoints.tenants` 反向：必须同时被 `ScopeGuard` 所守且列在 `tenant.resolve.endpoints` 里（该清单读不出即失败） | `ErrInvalidConfig` |
@@ -557,7 +556,6 @@ flowchart TD
 
 **放宽项一律单独一行 `Warn`**，使它们在日志里可检索。下列是例举，判据是“每次放宽都是一个显式可见的开关”；设置项里的放宽开关在启动时已取放宽值时写这一行，运行期改到放宽方向时另写同一行并记 `authn.settings.relaxed`：
 
-- `authn.gate.mount.allow-insecure` 为真。
 - `authn.token.check-session` 为假。
 - `authn.login.ip-limit` 为 0。
 - 任一 IdP 的 `allow_idp_initiated` 或 `allow_sha1`。
@@ -565,7 +563,7 @@ flowchart TD
 - `authn.account.password-signup` 为 `open`。
 - `authn.sso.allow-private-egress` 为真。
 - 口令表里低于策略下限的条目与遗留写法的条目。
-- `authn.session.cookie-domain` 非空：`__Host-` 前缀所保证的“子域不可写”随之失去。
+- `authn.session.cookie-domain` 非空：`__Host-`（[REF-rfc6265bis](../../../references.md)）前缀所保证的“子域不可写”随之失去。
 - 签名私钥与 SAML 私钥的文件对其他用户可读。
 
 **其余 `Warn`：**

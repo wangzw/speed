@@ -95,8 +95,9 @@ var secretPairKeys = map[string]struct{}{
 	"password": {},
 }
 
-// sessionCookieKeys are the names the session cookie is written under, in lower
-// case: the plain name, and the two prefixed forms the session module issues.
+// sessionCookieKeys are the session cookie's names in lower case: the two
+// prefixed forms the session module issues, and the bare name they are built
+// on.
 var sessionCookieKeys = map[string]struct{}{
 	"sid": {}, "__host-sid": {}, "__secure-sid": {},
 }

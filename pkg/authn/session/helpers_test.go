@@ -513,7 +513,7 @@ func sharingDatabaseWith(other *fixture) option {
 
 // defaultCookie is the cookie a deployment on an https address gets.
 func defaultCookie() cookieSpec {
-	return cookieSpec{name: hostCookieName, sameSite: http.SameSiteLaxMode, secure: true}
+	return cookieSpec{name: hostCookieName, sameSite: http.SameSiteLaxMode}
 }
 
 func newFixture(t *testing.T, d dialectCase, opts ...option) *fixture {

@@ -56,12 +56,13 @@ The API is the package's godoc.
   it (on a first start it is not there until the migration runs). Rows carry
   no foreign key; every time in them is UTC, and a read normalises the zone.
 - **The cookie's configuration is read from the gateway's address.** The
-  name and the `Secure`, `Domain` and prefix attributes follow
-  `authn.gate.mount.public-url` and `allow-insecure`; `authn.session`'s own
-  items are `cookie-domain` and `same-site`. A configuration that cannot run
-  on (`same-site: none`, an address that is not https with no
-  `allow-insecure`) is `ErrInsecureConfig` from `Prepare`, so a module a
-  drive includes fails the startup rather than running insecurely.
+  cookie is always `Secure` and `HttpOnly` with `Path=/`; it is `__Host-sid`,
+  or `__Secure-sid` with a `Domain` when `authn.session.cookie-domain` is set,
+  and `authn.session.same-site` is `lax` or `strict`. A configuration that
+  cannot run on (`same-site: none`, or an `authn.gate.mount.public-url` that is
+  http on a host other than a loopback one) is `ErrInsecureConfig` from
+  `Prepare`, so a module a drive includes fails the startup rather than running
+  insecurely.
 - **The routes are mounted through `mount.Mounter` and the access level is
   registered beside them.** `GET /session` is optional and impersonable and
   answers `authenticated: false` with no credential; the other four are guarded

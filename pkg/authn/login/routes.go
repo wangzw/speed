@@ -14,14 +14,13 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The carriers a flow token travels in. The cookie keeps its __Host- prefix and
-// its Secure attribute unless insecure use was allowed; SameSite=None lets it
-// ride an IdP-initiated cross-site POST, which a Lax cookie would not.
+// The carriers a flow token travels in. The cookie carries the __Host- prefix,
+// which requires Secure, a path of "/" and no Domain; SameSite=None lets it ride
+// an IdP-initiated cross-site POST, which a Lax cookie would not.
 const (
-	flowCookieName  = "__Host-authn-flow"
-	flowCookiePlain = "authn-flow"
-	flowHeader      = "Authn-Flow"
-	flowCookiePath  = "/"
+	flowCookieName = "__Host-authn-flow"
+	flowHeader     = "Authn-Flow"
+	flowCookiePath = "/"
 )
 
 // routes binds the product to the endpoint its routes were mounted on, whose
@@ -99,25 +98,15 @@ func (r *routes) identityPrecheck(c *gin.Context) bool {
 	return true
 }
 
-// cookieName is the name of the flow cookie: the prefixed one in production, the
-// plain one under insecure use, as the __Host- prefix requires Secure and a path
-// of "/" and forbids a Domain.
-func (r *routes) cookieName() string {
-	if r.allowInsecure {
-		return flowCookiePlain
-	}
-	return flowCookieName
-}
-
 // setFlowCookie adds the flow cookie, the carrier of the binding secret for a
 // cookie-bound flow. A maxAge of -1 clears it.
 func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
 	c.setCookie(&http.Cookie{
-		Name:     r.cookieName(),
+		Name:     flowCookieName,
 		Value:    token,
 		Path:     flowCookiePath,
 		MaxAge:   maxAge,
-		Secure:   !r.allowInsecure,
+		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteNoneMode,
 	})
@@ -130,7 +119,7 @@ func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
 // fromHeader reports that the token arrived in the Authn-Flow header, which is
 // what makes a reply echo it in its body.
 func (r *routes) readBindingToken(c *call, allowHeader bool) (token string, fromHeader, ok bool) {
-	if v := c.cookieValue(r.cookieName()); v != "" {
+	if v := c.cookieValue(flowCookieName); v != "" {
 		return v, false, true
 	}
 	if allowHeader {

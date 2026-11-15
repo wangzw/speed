@@ -61,8 +61,7 @@ type call struct {
 	w        http.ResponseWriter
 	clientIP string
 
-	endpoint      string
-	allowInsecure bool
+	endpoint string
 
 	reply   speedhttp.Reply
 	err     error
@@ -88,11 +87,10 @@ type call struct {
 // call builds the answer builder of one request.
 func (r *routes) call(ctx context.Context, meta *speedhttp.Meta) *call {
 	c := &call{
-		ctx:           ctx,
-		req:           requestOf(ctx),
-		w:             writerOf(ctx),
-		endpoint:      r.endpoint,
-		allowInsecure: r.allowInsecure,
+		ctx:      ctx,
+		req:      requestOf(ctx),
+		w:        writerOf(ctx),
+		endpoint: r.endpoint,
 	}
 	if meta != nil {
 		c.clientIP = meta.ClientIP

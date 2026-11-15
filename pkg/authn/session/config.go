@@ -12,26 +12,25 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// The keys this module accepts, relative to its namespace, and the keys of the
-// gateway it reads. The gateway declares the second group and this module reads
-// them in Prepare, because what the session cookie is called and whether it is
-// Secure follow from the public address the deployment is reached at.
+// The keys this module accepts, relative to its namespace, and the key of the
+// gateway it reads. The gateway declares the public URL and this module reads
+// it in Prepare, because whether the session cookie can be written at all, and
+// the host its Domain has to cover, follow from the public address the
+// deployment is reached at.
 const (
 	cookieDomainItem = "cookie-domain"
 	sameSiteItem     = "same-site"
 
 	gateNamespace     = "authn.gate"
 	gatePublicURLItem = "mount.public-url"
-	gateInsecureItem  = "mount.allow-insecure"
 )
 
 // The cookie names. The prefixes are the browser's own: __Host- makes the
 // cookie host-only and Secure, so no subdomain can set it; __Secure- only
-// requires Secure and leaves Domain free.
+// requires Secure and leaves Domain free. The cookie is Secure under either.
 const (
-	hostCookieName     = "__Host-sid"
-	secureCookieName   = "__Secure-sid"
-	insecureCookieName = "sid"
+	hostCookieName   = "__Host-sid"
+	secureCookieName = "__Secure-sid"
 )
 
 // moduleConfig is the set of input items this module accepts.
@@ -49,20 +48,16 @@ var configDefaults = moduleConfig{SameSite: "lax"}
 
 // gateMount is the part of the gateway's configuration this module reads.
 type gateMount struct {
-	PublicURL     string `config:"public-url"`
-	AllowInsecure bool   `config:"allow-insecure"`
+	PublicURL string `config:"public-url"`
 }
 
 // cookieSpec is what the configuration comes to: the name and the attributes of
-// the session cookie, and the diagnostics that follow from them.
+// the session cookie that vary with it, and the diagnostics that follow from
+// them. Secure, HttpOnly and Path=/ do not vary.
 type cookieSpec struct {
 	name     string
 	domain   string
 	sameSite http.SameSite
-	secure   bool
-	// insecureAllowed is the gateway's allow-insecure switch: the cookie has no
-	// prefix and is not Secure, for development.
-	insecureAllowed bool
 }
 
 // domainShape is a host name as a cookie's Domain attribute may carry it:
@@ -72,7 +67,7 @@ var domainShape = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9](
 // resolve turns decoded configuration into the cookie this module writes,
 // refusing what cannot be run on.
 func (c moduleConfig) resolve(gm gateMount) (cookieSpec, error) {
-	spec := cookieSpec{insecureAllowed: gm.AllowInsecure}
+	var spec cookieSpec
 
 	switch strings.ToLower(c.SameSite) {
 	case "lax":
@@ -91,10 +86,10 @@ func (c moduleConfig) resolve(gm gateMount) (cookieSpec, error) {
 	if err != nil {
 		return cookieSpec{}, err
 	}
-	if !secureScheme && !gm.AllowInsecure {
-		return cookieSpec{}, fmt.Errorf("%w: %s.%s is not https, and the session cookie is Secure and cannot "+
-			"be made otherwise. Use https, or allow insecure use, which is for development, with %s.%s",
-			authn.ErrInsecureConfig, gateNamespace, gatePublicURLItem, gateNamespace, gateInsecureItem)
+	if !secureScheme {
+		return cookieSpec{}, fmt.Errorf("%w: %s.%s is not https, and the session cookie is Secure, which a "+
+			"browser does not keep for an http address other than a loopback one. Use https",
+			authn.ErrInsecureConfig, gateNamespace, gatePublicURLItem)
 	}
 
 	if c.CookieDomain != "" {
@@ -111,15 +106,9 @@ func (c moduleConfig) resolve(gm gateMount) (cookieSpec, error) {
 		spec.domain = domain
 	}
 
-	switch {
-	case gm.AllowInsecure:
-		spec.name = insecureCookieName
-	case spec.domain != "":
+	spec.name = hostCookieName
+	if spec.domain != "" {
 		spec.name = secureCookieName
-		spec.secure = true
-	default:
-		spec.name = hostCookieName
-		spec.secure = true
 	}
 	return spec, nil
 }

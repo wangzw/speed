@@ -847,7 +847,7 @@
                 "description": "The start request; `method` must name a login method this deployment takes in, or the call is a bad request.",
                 "properties": {
                   "binding": {
-                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
+                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
                     "type": "string"
                   },
                   "delivery": {
@@ -1175,7 +1175,7 @@
                 "description": "The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.",
                 "properties": {
                   "binding": {
-                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
+                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
                     "type": "string"
                   },
                   "delivery": {

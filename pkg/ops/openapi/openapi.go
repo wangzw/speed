@@ -129,8 +129,8 @@ var securitySchemes = map[string]any{
 	"sessionCookie": map[string]any{
 		"type":        "apiKey",
 		"in":          "cookie",
-		"name":        "sid",
-		"description": "The session cookie a browser attaches by itself. Its name carries the __Host- or __Secure- prefix unless the deployment allows insecure use, in which case it is sid.",
+		"name":        "__Host-sid",
+		"description": "The session cookie a browser attaches by itself. It is __Host-sid, or __Secure-sid when the deployment configures a cookie domain.",
 	},
 }
 

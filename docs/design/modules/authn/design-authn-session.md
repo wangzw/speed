@@ -114,10 +114,10 @@ type Sessions interface {
 
 本模块声明的配置项只有 `authn.session.cookie-domain` 与 `authn.session.same-site`；类型、缺省与取值写在 [design-authn-config](design-authn-config.md)。语义如下：
 
-- `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的“子域不可写”随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 或 `allow-insecure` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。
+- `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的“子域不可写”随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。
 - `same-site` 取 `lax` 或 `strict`；取 `none` 是 `ErrInsecureConfig`。
 
-cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主机除外）而未开 `authn.gate.mount.allow-insecure` 是 `ErrInsecureConfig`；回环主机的 http 基址按 https 处理，保留 `__Host-` 前缀与 `Secure`，不写 Warn；`allow-insecure`（仅开发）同时去掉 `__Host-` 前缀与 `Secure`，启动诊断为此写一行 Warn。`public-url` 与 `allow-insecure` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取，它们决定 cookie 名、前缀与 `Secure`（[design-authn-gate](design-authn-gate.md)）。`trusted-origins` 同样由 `authn.gate` 声明，但本模块不读它：取用它的是网关与 `authn.mount` 建的跨源检查，本模块用不到该值。
+cookie 恒带 `Secure`，没有开关能去掉它。`public-url` 不是 https 且主机不是回环主机时是 `ErrInsecureConfig`，部署在启动期失败：浏览器不为这样的 http 地址保存 `Secure` cookie。回环主机的 http 基址按 https 处理，保留 `__Host-` 前缀与 `Secure`，不写 Warn，Chromium 与 Firefox 都为回环主机保存 `Secure` cookie。`public-url` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取，它决定部署能否启动以及 `cookie-domain` 须覆盖的主机（[design-authn-gate](design-authn-gate.md)）。`trusted-origins` 同样由 `authn.gate` 声明，但本模块不读它：取用它的是网关与 `authn.mount` 建的跨源检查，本模块用不到该值。
 
 ### 设置项
 
@@ -491,10 +491,10 @@ stateDiagram-v2
 
 | 项 | 取值 |
 |---|---|
-| 名 | `__Host-sid`（`public-url` 为 https 或回环主机时）。配了 `authn.session.cookie-domain` 则 `__Secure-sid`，且无法再保证子域不可写。`allow-insecure`（仅开发）去掉前缀并写 Warn。 |
+| 名 | `__Host-sid`（`public-url` 为 https 或回环主机时）。配了 `authn.session.cookie-domain` 则 `__Secure-sid`，且无法再保证子域不可写。 |
 | 属性 | `Path=/`；`Secure`，不可单独关闭，由本模块在启动校验里强制，不留给 scs 的默认值（scs 默认 `Secure=false`）；`HttpOnly`；`SameSite=Lax`，`authn.session.same-site` 可设 `strict`，`none` 拒绝；无 `Domain`（配了 `cookie-domain` 除外）；不设 `Max-Age` 与 `Expires`，即会话期（scs 的 `Persist` 置假）。响应带 `Cache-Control: no-store`。 |
 | 写出的时机 | 一律经 `Sessions.SetCookie`，在处理器里最后一个可能失败的步骤之后（`Commit` 成功之后、写响应体之前）调用。入口模块的兜底层写出的 500 会带出已设置的 `Set-Cookie`，先设 cookie 再失败的处理器会把有效会话带进错误响应；这一位置避开它。 |
-| 清除 | 一律经 `Sessions.ClearCookie`（也是 `CookieClearer` 的实现）：登出、撤销、凭据被判 `Denied` 时写 `Max-Age=0`。跨源检查不通过时不清除：cookie 本身有效，被拒的是请求的意图，跨站请求不能借一次被拒的 POST 让用户登出。 |
+| 清除 | 凭据被判 `Denied` 时网关经 `Sessions.ClearCookie`（也是 `CookieClearer` 的实现）写 `Max-Age=0`；登出与撤销自己的会话由本模块的路由把同样的清除 cookie 附在应答上。清除 cookie 的名、`Domain`、`Path`、`Secure`、`HttpOnly`、`SameSite` 与写出时相同，浏览器据此替换原 cookie，不与它并存。跨源检查不通过时不清除：cookie 本身有效，被拒的是请求的意图，跨站请求不能借一次被拒的 POST 让用户登出。 |
 
 没有“记住我”：cookie 为会话期，关闭浏览器即丢；长期免登录只经刷新令牌。
 
@@ -592,7 +592,7 @@ stateDiagram-v2
 
 | 哨兵 | 触发条件 | 修复动作 |
 |---|---|---|
-| `ErrInsecureConfig` | `public-url` 不是 https（回环主机除外）而未开 `allow-insecure`；`same-site` 取 `none` | 改基址，或显式开 `allow-insecure`（仅开发）；`same-site` 取 `lax` 或 `strict` |
+| `ErrInsecureConfig` | `public-url` 不是 https，且主机不是回环主机；`same-site` 取 `none` | 改用 https 基址；`same-site` 取 `lax` 或 `strict` |
 | `ErrInvalidConfig` | `public-url` 为空或不合法；`bases` 不合法 | 点名该项 |
 | `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | `mount.endpoints.default` 为空而入口声明的端不是恰好一个；该端不是网关所守的端 | 配置 `authn.gate.mount.endpoints.default`；把它写进 `endpoints` |
 | `ErrNotMigrated` | `Start` 探测不到 `authn_sessions` | 点名施加迁移的命令；把本模块静态级纳入它（`IncludeAllDeclarations`） |
@@ -637,7 +637,7 @@ stateDiagram-v2
 - **跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行。** 不发送它们的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源加进可信来源。
 - **同源脚本注入不在防护内。** 它靠宿主前端的内容安全策略。
 - **SAML 的跨站 POST 回跳时，旧会话无从撤销。**
-- **`cookie-domain` 非空或 `allow-insecure` 为真时，`__Host-` 前缀的保证失去。** 启动诊断写 Warn。
+- **`cookie-domain` 非空时，`__Host-` 前缀的保证失去。** 启动诊断写 Warn。
 - **缓存里的撤销滞后以 `check-ttl` 为上界，不是零。** 缓存有效期之外 db 不可用时，已登录用户也被拒。
 - **没有发件箱的装配里，账户删除后的抹除不保证。** 崩溃发生在账户事务提交与钩子之间时，残留的行不能用于认证，但不一定被删除。
 

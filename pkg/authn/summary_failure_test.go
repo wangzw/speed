@@ -315,7 +315,7 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 		"authn": map[string]any{
 			"gate": map[string]any{"mount": map[string]any{
 				"endpoints":  map[string]any{"default": "public"},
-				"public-url": "http://127.0.0.1", "allow-insecure": true,
+				"public-url": "http://127.0.0.1",
 			}},
 			"token": map[string]any{
 				"issuer":           "https://auth.example.com",

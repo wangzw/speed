@@ -676,7 +676,6 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		settings:       newReader(nil, slog.New(slog.NewTextHandler(ioDiscard{}, nil))),
 		logger:         slog.New(slog.NewTextHandler(ioDiscard{}, nil)),
 		trustedOrigins: []string{"https://app.example.org"},
-		allowInsecure:  true,
 	}
 	for _, m := range methods {
 		p.methods[m.Name()] = m

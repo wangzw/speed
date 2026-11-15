@@ -76,9 +76,9 @@ func TestAConfigurationThisGatewayCannotRunOnIsRefused(t *testing.T) {
 		{"a public URL with a query", func(m *moduleConfig) { m.Mount.PublicURL = "https://example.com?x=1" }, authn.ErrInvalidConfig, "more than an origin"},
 		{"a public URL with a fragment", func(m *moduleConfig) { m.Mount.PublicURL = "https://example.com#x" }, authn.ErrInvalidConfig, "more than an origin"},
 		{"a public URL with credentials", func(m *moduleConfig) { m.Mount.PublicURL = "https://u:p@example.com" }, authn.ErrInvalidConfig, "more than an origin"},
-		{"a public URL that is http", func(m *moduleConfig) { m.Mount.PublicURL = "http://example.com" }, authn.ErrInsecureConfig, mountInsecureItem},
-		{"a public URL that is http on a name that only looks like loopback", func(m *moduleConfig) { m.Mount.PublicURL = "http://localhost.example.com" }, authn.ErrInsecureConfig, mountInsecureItem},
-		{"a public URL that is http on an address that is not loopback", func(m *moduleConfig) { m.Mount.PublicURL = "http://10.0.0.1:8080" }, authn.ErrInsecureConfig, mountInsecureItem},
+		{"a public URL that is http", func(m *moduleConfig) { m.Mount.PublicURL = "http://example.com" }, authn.ErrInsecureConfig, "not https"},
+		{"a public URL that is http on a name that only looks like loopback", func(m *moduleConfig) { m.Mount.PublicURL = "http://localhost.example.com" }, authn.ErrInsecureConfig, "not https"},
+		{"a public URL that is http on an address that is not loopback", func(m *moduleConfig) { m.Mount.PublicURL = "http://10.0.0.1:8080" }, authn.ErrInsecureConfig, "not https"},
 
 		{"a trusted origin with a path", func(m *moduleConfig) { m.TrustedOrigins = []string{"https://a.example/x"} }, authn.ErrInvalidConfig, trustedOriginsItem},
 		{"a trusted origin with no scheme", func(m *moduleConfig) { m.TrustedOrigins = []string{"a.example"} }, authn.ErrInvalidConfig, trustedOriginsItem},
@@ -151,10 +151,6 @@ func TestASoundConfigurationResolves(t *testing.T) {
 		{"an http public URL on localhost", func(m *moduleConfig) { m.Mount.PublicURL = "http://localhost:8080" }, nil},
 		{"an http public URL on 127.0.0.1", func(m *moduleConfig) { m.Mount.PublicURL = "http://127.0.0.1:8080" }, nil},
 		{"an http public URL on ::1", func(m *moduleConfig) { m.Mount.PublicURL = "http://[::1]:8080" }, nil},
-		{"an http public URL with insecure use allowed", func(m *moduleConfig) {
-			m.Mount.PublicURL = "http://example.com"
-			m.Mount.AllowInsecure = true
-		}, nil},
 		{"no public URL", func(m *moduleConfig) { m.Mount.PublicURL = "" }, func(t *testing.T, s settings) {
 			if got, _ := mount.Origin(s.mount.PublicURL); got != "" {
 				t.Errorf("the origin reads %q with no public URL", got)
@@ -197,7 +193,7 @@ func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	if set.budget != 5*time.Second || set.inFlight != 64 {
 		t.Errorf("the budget is %s and the width %d, want 5s and 64", set.budget, set.inFlight)
 	}
-	if set.mount.Bases != (bases{Default: "/api/v1/auth", Tenants: "/api/v1/tenants", System: "/api/v1/system"}) || set.mount.Endpoints != (endpoints{}) || set.mount.PublicURL != "" || set.mount.AllowInsecure {
+	if set.mount.Bases != (bases{Default: "/api/v1/auth", Tenants: "/api/v1/tenants", System: "/api/v1/system"}) || set.mount.Endpoints != (endpoints{}) || set.mount.PublicURL != "" {
 		t.Errorf("the mount section reads %+v by default, want /api/v1/auth and nothing else", set.mount)
 	}
 	if len(set.trustedOrigins) != 0 {
@@ -242,7 +238,7 @@ func TestTheEndpointListAndTheMountKeysAreReadFromConfiguration(t *testing.T) {
 		"endpoints":["public","admin"],
 		"call-budget":"2s",
 		"in-flight":4,
-		"mount":{"endpoints":{"default":"admin"},"bases":{"default":"/identity","tenants":"/identity","system":"/identity"},"public-url":"https://id.example.com","allow-insecure":false},
+		"mount":{"endpoints":{"default":"admin"},"bases":{"default":"/identity","tenants":"/identity","system":"/identity"},"public-url":"https://id.example.com"},
 		"trusted-origins":["https://app.example.com"]
 	}}}`
 	set, err := readSettings(authntest.ConfigReader(t, Module(), body))
@@ -269,13 +265,12 @@ func TestTheEndpointListAndTheMountKeysAreReadFromConfiguration(t *testing.T) {
 }
 
 // TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone holds the origins of
-// the three items that decide the guard: the endpoint list, the trusted origins
-// and the switch that relaxes the checks. A command line argument must not be
-// able to change which endpoints are guarded or which origins are trusted, and
-// the insecure switch is for the file a deployment is reviewed by.
+// the two items that decide the guard: the endpoint list and the trusted
+// origins. A command line argument must not be able to change which endpoints
+// are guarded or which origins are trusted.
 func TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone(t *testing.T) {
 	items := schema().Items
-	for _, key := range []string{endpointsItem, trustedOriginsItem, mountInsecureItem} {
+	for _, key := range []string{endpointsItem, trustedOriginsItem} {
 		item, found := items[key]
 		if !found {
 			t.Errorf("the schema does not declare %q", key)

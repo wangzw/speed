@@ -461,11 +461,6 @@ func (g *gateway) diagnose() {
 		"a route registered for it",
 		slog.String("endpoints", describeReach(g.reachable())))
 	g.warnUnprefixedCookies()
-	if g.settings.mount.AllowInsecure {
-		g.logger.Warn(diagnosticPrefix + mountInsecureItem + " is on: an http public URL is " +
-			"admitted and cookies lose the __Host- prefix and the Secure attribute. This is " +
-			"for development and is not safe where a browser reaches the deployment over a network")
-	}
 }
 
 // hostCookiePrefix is the prefix a browser holds a cookie to being host-only,

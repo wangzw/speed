@@ -212,7 +212,7 @@ var ErrMalformedHash error
 
 ### 配置
 
-网关的输入项挂在 `authn.gate` 下，口令表的挂在 `authn.static` 下；全部配置键与设置键的类型、缺省与取值域见 [design-authn-config](design-authn-config.md)，本节只写各键的语义。命令行、环境变量与主配置源的取舍同样见该文档；决定守护范围的清单（`endpoints`、`trusted-origins`）与仅开发用的 `mount.allow-insecure` 只取主配置源。
+网关的输入项挂在 `authn.gate` 下，口令表的挂在 `authn.static` 下；全部配置键与设置键的类型、缺省与取值域见 [design-authn-config](design-authn-config.md)，本节只写各键的语义。命令行、环境变量与主配置源的取舍同样见该文档；决定守护范围的清单（`endpoints`、`trusted-origins`）只取主配置源。
 
 | 键 | 语义 |
 |---|---|
@@ -221,8 +221,7 @@ var ErrMalformedHash error
 | `authn.gate.in-flight` | 同时进行中的后端调用数；满则 503，不排队 |
 | `authn.gate.mount.endpoints.default`、`.tenants`、`.system` | 各作用域的路由挂在哪个端。`default` 为空且入口模块恰好声明了一个端时取那一个，否则 `ErrRoutesUnconfigured`（由 `authn.mount` 在 `Init` 里判，网关在 `Start` 对同一规则再判一次）；`system` 为空取 `default`；`tenants` 无缺省，为空时该作用域不可挂载，`authn.mount` 拒绝登记租户作用域的路由。每一项都必须是网关所守的端（`ErrRoutesUnguarded`）。`default` 与 `system` 不得是准入层所守的端（`ScopeGuard.Covers` 为真即 `ErrInvalidConfig`），也不得出现在 `tenant.resolve.endpoints` 里：全局账户的请求不带租户名，被解析层所守的端对它们答 404；网关在 `Start` 核对，读得出该清单且端在其中时 `ErrInvalidConfig`，读不出解码结构时只写一行 `Warn`。`tenants` 的方向相反：必须同时被 `ScopeGuard` 所守且列在 `tenant.resolve.endpoints` 里，该清单读不出即 `ErrInvalidConfig`，因为租户管理路由在该租户的策略域判定，落不到这两层上就会在没有租户、没有成员检查的链上被服务 |
 | `authn.gate.mount.bases.default`、`.tenants`、`.system` | 各作用域的路由基路径 `B`；须是 gin 规整后的写法，以 `/` 起头、不以 `/` 结尾、无通配 |
-| `authn.gate.mount.public-url` | 对外基址，只含来源、不含路径；入口模块没有对外基址的概念，不能从 `Host` 与 `X-Forwarded-*` 可靠推出。OIDC（[REF-openid-connect-core](../../../references.md)）的 `redirect_uri`、SAML（[REF-saml2](../../../references.md)）的 ACS 与实体标识、通行密钥的依赖方来源（[REF-webauthn](../../../references.md)）、令牌的 `iss`、`__Host-`（[REF-rfc6265bis](../../../references.md)） cookie 都要它；需要它的模块在自己的 `Prepare` 里读，空即 `ErrInvalidConfig`。要求 `https`，回环主机除外，否则 `ErrInsecureConfig` |
-| `authn.gate.mount.allow-insecure` | 仅开发：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure`；为真时启动诊断写一行 Warn |
+| `authn.gate.mount.public-url` | 对外基址，只含来源、不含路径；入口模块没有对外基址的概念，不能从 `Host` 与 `X-Forwarded-*` 可靠推出。OIDC（[REF-openid-connect-core](../../../references.md)）的 `redirect_uri`、SAML（[REF-saml2](../../../references.md)）的 ACS 与实体标识、通行密钥的依赖方来源（[REF-webauthn](../../../references.md)）、令牌的 `iss`、`__Host-`（[REF-rfc6265bis](../../../references.md)） cookie 都要它；需要它的模块在自己的 `Prepare` 里读，空即 `ErrInvalidConfig`。要求 `https`，回环主机除外，否则 `ErrInsecureConfig`，部署在启动期失败；没有放行 http 基址的开关。回环主机的 http 基址照常使用 `Secure` 与 `__Host-` cookie，浏览器为回环主机保存 `Secure` cookie |
 | `authn.gate.trusted-origins` | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`；每项先规范成浏览器发送的形式再匹配，规则见可信来源的规范形式；`public-url` 的来源恒可信 |
 | `authn.static.subjects` | 口令表：主体名到口令条目的映射；必填、敏感；主体名匹配 `[A-Za-z0-9][A-Za-z0-9_-]{0,56}` |
 | `authn.static.cache-size`、`authn.static.concurrency` | 校验缓存的容量与口令派生的并发上限；构造时分配，所以是配置 |
@@ -431,7 +430,7 @@ sequenceDiagram
 | 阶段 | 网关 | `authn.mount` |
 |---|---|---|
 | `Prepare` | 取配置读取接口并 `Decode` 自己那份配置；校验 `public-url`（非空时）与 `bases` 的格式；表态 `StateEnabled`。任何输入项都有缺省，本阶段不因缺项失败 | 不声明输入项；读 `authn.gate.mount.*` 与 `trusted-origins`；表态 `StateEnabled` |
-| `New` | 建进行中闸门、`CrossOriginProtection`（加入 `trusted-origins` 与 `public-url` 的来源）与 `Gate` 实例；向日志功能登记键名脱敏规则与不依赖 scheme 的值格式规则（JWT、令牌前缀、`otpauth://`、查询串里的机密对、会话 cookie 的 `sid` 对，[REF-rfc7519](../../../references.md)、[REF-otpauth-key-uri-format](../../../references.md)） | 建 `Mounter`，含它自己的 `CrossOriginProtection` |
+| `New` | 建进行中闸门、`CrossOriginProtection`（加入 `trusted-origins` 与 `public-url` 的来源）与 `Gate` 实例；向日志功能登记键名脱敏规则与不依赖 scheme 的值格式规则（JWT、令牌前缀、`otpauth://`、查询串里的机密对、会话 cookie 的键值对，[REF-rfc7519](../../../references.md)、[REF-otpauth-key-uri-format](../../../references.md)） | 建 `Mounter`，含它自己的 `CrossOriginProtection` |
 | `Migrate` | 打开 `Exempt`、`Optional`、`Impersonable` 的登记窗口 | 无动作 |
 | `Init` | 取 `Router`（缺则 `ErrNoRouter`）；`Router.Endpoints()` 得全集并算出受守的端；`ResolveAll[Verifier]` 建分派表并校验准入；可选取 `ScopeGuard`；逐端建挑战；逐端 `Use` 中间件；取日志（`Named`）与指标；登记依赖各后端认领的 scheme 的值格式脱敏规则；写启动诊断，其中每个不带 `__Host-` 前缀的被认领 cookie 名各占一行 `Warn` | 取 `Router`，经 `mount.Endpoint` 得出各作用域的挂载端：`default` 为空而入口声明的端不是恰好一个（零个或多个）即 `ErrRoutesUnconfigured`，`system` 为空取 `default`，`tenants` 为空则该作用域不可挂载；挂路由的模块在各自的 `Init` 里经 `Mounter` 登记 |
 | `Start` | 关闭登记窗口；校验并冻结登记表；逐作用域校验生效的挂载端：存在、受守；`default` 与 `system` 不被 `ScopeGuard` 守且不在 `tenant.resolve.endpoints` 里（该清单读不出只写一行 `Warn`），`tenants` 反向要求被两者覆盖（读不出即失败）。配置写明的端一律核对；`default` 为空时，仅当装配里有交付 `mount.Mounter` 的模块才核对入口模块的唯一端，没有挂路由的模块就没有挂载端可核对，一个只有单端、该端本就开了租户解析而又不挂 authn 路由的命令因此不被误拒 | 无动作 |
@@ -581,7 +580,7 @@ sequenceDiagram
 | 类别 | 内容 |
 |---|---|
 | 键名（精确匹配；每个名字登记原写法、全小写与首字母大写，去重） | `Authorization`、`Cookie`、`Set-Cookie`、`Credential`、`password`、`new_password`、`current_password`、`code`、`otp`、`secret`、`client_secret`、`refresh_token`、`access_token`、`id_token`、`token`、`assertion`、`SAMLResponse`、`state`、`code_verifier`、`flow_token`、`credential` |
-| 值的格式 | 各后端认领的 scheme 加空白加一个词（`schemeProse` 词表的放行判据，完整的一份在 `pkg/authn/gate/redact.go`）；JWT 格式（`eyJ` 起头的三段 base64url）；`spd_rt_`、`spd_cs_`、`spd_inv_` 前缀的令牌；`otpauth://` 地址；查询串里的机密对（键名为 `secret`、`code`、`access_token`、`refresh_token`、`id_token`、`client_secret`、`samlresponse`、`assertion`、`password` 之一的 `键=值`）；会话 cookie 的 `sid=…` 对 |
+| 值的格式 | 各后端认领的 scheme 加空白加一个词（`schemeProse` 词表的放行判据，完整的一份在 `pkg/authn/gate/redact.go`）；JWT 格式（`eyJ` 起头的三段 base64url）；`spd_rt_`、`spd_cs_`、`spd_inv_` 前缀的令牌；`otpauth://` 地址；查询串里的机密对（键名为 `secret`、`code`、`access_token`、`refresh_token`、`id_token`、`client_secret`、`samlresponse`、`assertion`、`password` 之一的 `键=值`）；会话 cookie 的 `键=值` 对（键名不分大小写，为 `__Host-sid`、`__Secure-sid` 或去掉前缀的 `sid` 之一） |
 | 字面量 | 配置里的客户端密钥、微信 `app-secret`、短信厂商密钥的值本身（精确子串匹配器） |
 
 - **scheme 名后面紧跟一张固定公开词表里的词时不遮蔽**：scheme 名本身也是英文词，谈论凭据的文字在它后面写的是普通词，遮掉它会让拒绝成因读不懂。放行按词表而不按格式，判据是放行不泄露任何东西：词表公开，恰好等于表中某个词的凭据，读过词表的人都叫得出来。词表之外的词跟在 scheme 名后面时照样被遮蔽，这是登记过宽的一面，由登记方承担。

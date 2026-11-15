@@ -115,7 +115,7 @@ authn 的各模块在 `Requires` 里对设置写必需，所有退避、时长�
 
 **放宽开关是设置。**
 
-- 放宽开关是取值变化即放宽校验、且改动要在运行期生效的开关，新增的同类开关一并归入。当前的开关集合与各自的放宽值见 authn-config 的放宽开关一节。仅开发用的 `authn.gate.mount.allow-insecure` 与 `authn.sso.allow-private-egress` 在启动期决定基址校验、cookie 名称与出站客户端，改动要重启，按构造期的判据落在配置，不在这一条之内。
+- 放宽开关是取值变化即放宽校验、且改动要在运行期生效的开关，新增的同类开关一并归入。当前的开关集合与各自的放宽值见 authn-config 的放宽开关一节。仅开发用的 `authn.sso.allow-private-egress` 在启动期决定出站客户端，改动要重启，按构造期的判据落在配置，不在这一条之内。
 - 每一项声明严格的缺省值：`authn.account.signup` 缺省 `closed`，`authn.token.check-session` 缺省 `true`。放宽值分别是 `open` 与 `false`。
 - 各模块在每次决定时读当前值，不把值冻结在构造期；设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 Error。
 - 运行期改动到放宽方向时，声明该键的模块订阅 `settings.changed`，写一行 Warn 并记一条尽力档审计记录：Action `authn.settings.relaxed`，Object 是键名，Outcome `relaxed`，Detail `{"change": direction}`。记录与日志只含键名与方向，不含值。改动到严格方向不写。启动时取值已经是放宽值时，写同一行 Warn。

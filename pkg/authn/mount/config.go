@@ -24,7 +24,6 @@ const (
 	endpointsItem      = "mount.endpoints"
 	basesItem          = "mount.bases"
 	publicURLItem      = "mount.public-url"
-	insecureItem       = "mount.allow-insecure"
 	trustedOriginsItem = "trusted-origins"
 )
 
@@ -66,10 +65,9 @@ func defaultBases() bases {
 // settings is the part of the gateway's section this module reads.
 type settings struct {
 	Mount struct {
-		Endpoints     endpoints `config:"endpoints"`
-		Bases         bases     `config:"bases"`
-		PublicURL     string    `config:"public-url"`
-		AllowInsecure bool      `config:"allow-insecure"`
+		Endpoints endpoints `config:"endpoints"`
+		Bases     bases     `config:"bases"`
+		PublicURL string    `config:"public-url"`
 	} `config:"mount"`
 	TrustedOrigins []string `config:"trusted-origins"`
 }
@@ -118,7 +116,7 @@ func (s settings) check() error {
 		return fmt.Errorf("%w: %s or %s is not an origin the cross-origin check can trust: %w",
 			authn.ErrInvalidConfig, key(publicURLItem), key(trustedOriginsItem), err)
 	}
-	return checkPublicURL(s.Mount.PublicURL, s.Mount.AllowInsecure)
+	return checkPublicURL(s.Mount.PublicURL)
 }
 
 // checkBasePath holds a base path to the form gin keeps a path in: it begins
@@ -141,10 +139,11 @@ func checkBasePath(item, p string) error {
 }
 
 // checkPublicURL holds the public URL to an origin without a path, and to https
-// unless its host is a loopback one or insecure use was allowed. Empty is
-// allowed: the modules that need the address refuse it themselves. The origin's
-// own shape is judged by mount.TrustedOrigins before this runs.
-func checkPublicURL(raw string, allowInsecure bool) error {
+// unless its host is a loopback one, for which a browser keeps a Secure cookie
+// over http. Empty is allowed: the modules that need the address refuse it
+// themselves. The origin's own shape is judged by mount.TrustedOrigins before
+// this runs.
+func checkPublicURL(raw string) error {
 	if raw == "" {
 		return nil
 	}
@@ -157,10 +156,11 @@ func checkPublicURL(raw string, allowInsecure bool) error {
 		return fmt.Errorf("%w: %s is %q, which carries a path. Write scheme, host and port alone: "+
 			"the path is %s", authn.ErrInvalidConfig, key(publicURLItem), shown, key(basesItem))
 	}
-	if u.Scheme == "http" && !allowInsecure && !loopbackHost(u.Hostname()) {
+	if u.Scheme == "http" && !loopbackHost(u.Hostname()) {
 		return fmt.Errorf("%w: %s is %q, which is not https. Cookies and redirects built on it would "+
-			"travel in the clear. Use https, or allow insecure use, which is for development, with %s",
-			authn.ErrInsecureConfig, key(publicURLItem), shown, key(insecureItem))
+			"travel in the clear, and every cookie the authn modules write is Secure, which a browser "+
+			"does not keep for an http address other than a loopback one. Use https",
+			authn.ErrInsecureConfig, key(publicURLItem), shown)
 	}
 	return nil
 }

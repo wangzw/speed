@@ -14,7 +14,7 @@ func gateBody(items string) string { return `{"authn":{"gate":{` + items + `}}}`
 
 // TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults holds what the module
 // reads and what it reads when nothing is written: each scope's base path
-// defaults to the path taxonomy's, and the other keys are empty or false.
+// defaults to the path taxonomy's, and the other keys are empty.
 func TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults(t *testing.T) {
 	want := defaultBases()
 	got, err := readSettings(newReader(t, `{}`))
@@ -22,18 +22,18 @@ func TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults(t *testing.T) {
 		t.Fatalf("reading the defaults: %v", err)
 	}
 	if got.Mount.Bases != want || got.Mount.Endpoints != (endpoints{}) || got.Mount.PublicURL != "" ||
-		got.Mount.AllowInsecure || len(got.TrustedOrigins) != 0 {
+		len(got.TrustedOrigins) != 0 {
 		t.Errorf("the defaults read %+v, want %+v and nothing else", got, want)
 	}
 
 	got, err = readSettings(newReader(t, gateBody(`"mount":{"endpoints":{"default":"admin"},"bases":{`+
 		`"default":"/identity","tenants":"/identity","system":"/identity"},`+
-		`"public-url":"https://app.example.com","allow-insecure":true},"trusted-origins":["https://other.example.com"]`)))
+		`"public-url":"https://app.example.com"},"trusted-origins":["https://other.example.com"]`)))
 	if err != nil {
 		t.Fatalf("reading written values: %v", err)
 	}
 	if got.Mount.Endpoints.Default != "admin" || got.Mount.Bases.Default != "/identity" || got.Mount.PublicURL != "https://app.example.com" ||
-		!got.Mount.AllowInsecure || len(got.TrustedOrigins) != 1 || got.TrustedOrigins[0] != "https://other.example.com" {
+		len(got.TrustedOrigins) != 1 || got.TrustedOrigins[0] != "https://other.example.com" {
 		t.Errorf("the written values read %+v, which is not what the configuration says", got)
 	}
 }
@@ -56,7 +56,8 @@ func TestAConfigurationTheModuleCannotMountOnFailsTheStartWithTheKeyNamed(t *tes
 		{"a base path with a brace", `"mount":{"bases":{"default":"/a/{b}"}}`, authn.ErrInvalidConfig, "authn.gate.mount.bases.default"},
 		{"an uncleaned base path", `"mount":{"bases":{"default":"/a//b"}}`, authn.ErrInvalidConfig, "authn.gate.mount.bases.default"},
 		{"a base path with a dot segment", `"mount":{"bases":{"default":"/a/../b"}}`, authn.ErrInvalidConfig, "authn.gate.mount.bases.default"},
-		{"an http public URL", `"mount":{"public-url":"http://app.example.com"}`, authn.ErrInsecureConfig, "authn.gate.mount.allow-insecure"},
+		{"an http public URL", `"mount":{"public-url":"http://app.example.com"}`, authn.ErrInsecureConfig, "authn.gate.mount.public-url"},
+		{"an http public URL on a private address", `"mount":{"public-url":"http://10.0.0.5:8080"}`, authn.ErrInsecureConfig, "authn.gate.mount.public-url"},
 		{"a public URL with a path", `"mount":{"public-url":"https://app.example.com/app"}`, authn.ErrInvalidConfig, "authn.gate.mount.bases"},
 		{"a public URL with a trailing slash", `"mount":{"public-url":"https://app.example.com/"}`, authn.ErrInvalidConfig, "authn.gate.mount.public-url"},
 		{"a public URL with a query", `"mount":{"public-url":"https://app.example.com?x=1"}`, authn.ErrInvalidConfig, "authn.gate.mount.public-url"},
@@ -100,7 +101,6 @@ func TestAConfigurationTheModuleMountsOnIsAccepted(t *testing.T) {
 		{"an http public URL on localhost", `"mount":{"public-url":"http://localhost:8080"}`},
 		{"an http public URL on a loopback address", `"mount":{"public-url":"http://127.0.0.1:8080"}`},
 		{"an http public URL on a loopback IPv6 address", `"mount":{"public-url":"http://[::1]:8080"}`},
-		{"an http public URL with insecure use allowed", `"mount":{"public-url":"http://app.example.com","allow-insecure":true}`},
 		{"no public URL", `"mount":{"bases":{"default":"/identity"}}`},
 		{"a nested base path", `"mount":{"bases":{"default":"/api/v1/auth"}}`},
 		{"trusted origins in several spellings", `"trusted-origins":["https://a.example.com","HTTP://B.example.com:80","https://c.example.com."]`},

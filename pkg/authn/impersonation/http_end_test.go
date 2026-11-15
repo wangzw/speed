@@ -204,7 +204,7 @@ func assembleOverHTTP(t *testing.T, use func(h *httpHarness)) {
 			"endpoints": map[string]any{"public": map[string]any{"listener": "public"}},
 		},
 		"kv":       map[string]any{"memory": map[string]any{"replicas": 1}},
-		"authn":    map[string]any{"gate": map[string]any{"mount": map[string]any{"endpoints": map[string]any{"default": "public"}, "public-url": "http://127.0.0.1", "allow-insecure": true}}},
+		"authn":    map[string]any{"gate": map[string]any{"mount": map[string]any{"endpoints": map[string]any{"default": "public"}, "public-url": "http://127.0.0.1"}}},
 		"settings": map[string]any{},
 		"event":    map[string]any{},
 	}

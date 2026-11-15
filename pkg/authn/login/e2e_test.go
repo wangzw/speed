@@ -168,7 +168,7 @@ func assembleWithSections(t *testing.T, extra []core.Module, sections map[string
 		"authn": map[string]any{
 			"gate": map[string]any{"mount": map[string]any{
 				"endpoints":  map[string]any{"default": "public"},
-				"public-url": "http://127.0.0.1", "allow-insecure": true,
+				"public-url": "http://127.0.0.1",
 			}},
 			// The gate is a required dependency of the login engine, and these cases
 			// present no proof: both surfaces run the off mechanism.
@@ -430,6 +430,55 @@ func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 			t.Errorf("GET /api/v1/auth/session with the revoked cookie answered %d, want 401: %s", after.status, after.body)
 		}
 	})
+}
+
+// TestALoopbackHTTPDeploymentRunsOnSecureHostCookies holds what an http public
+// URL on a loopback host gets: the deployment starts, the flow cookie and the
+// session cookie carry their __Host- names with Secure and HttpOnly, and a client
+// that keeps Secure cookies for a loopback host, as browsers and Go's cookie jar
+// do, sends the flow cookie back so the login completes.
+func TestALoopbackHTTPDeploymentRunsOnSecureHostCookies(t *testing.T) {
+	assemble(t, func(h *harness) {
+		h.createAccount("carol", "carol-password")
+
+		start := h.post("/api/v1/auth/flows", map[string]any{
+			"method": "password",
+			"input":  map[string]string{"identifier": "carol", "password": "carol-password"},
+		})
+		if start.status != http.StatusOK {
+			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+		}
+		holdsSecureHostCookie(t, start.header, "__Host-authn-flow")
+
+		seq := int(start.json(t)["seq"].(float64))
+		done := h.post("/api/v1/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"})
+		if done.status != http.StatusOK {
+			t.Fatalf("complete answered %d, so the flow cookie did not come back: %s", done.status, done.body)
+		}
+		holdsSecureHostCookie(t, done.header, "__Host-sid")
+		if !h.selfStatus() {
+			t.Errorf("GET /api/v1/auth/session did not report the session, so the session cookie did not come back")
+		}
+	})
+}
+
+// holdsSecureHostCookie checks that header sets the cookie name once, with the
+// attributes its __Host- prefix requires and HttpOnly.
+func holdsSecureHostCookie(t *testing.T, header http.Header, name string) {
+	t.Helper()
+	var found []*http.Cookie
+	for _, c := range (&http.Response{Header: header}).Cookies() {
+		if c.Name == name {
+			found = append(found, c)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("the reply set %d cookies named %s, want one: %v", len(found), name, header.Values("Set-Cookie"))
+	}
+	if c := found[0]; !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" {
+		t.Errorf("the cookie %s is Secure=%v HttpOnly=%v Path=%q Domain=%q, want Secure, HttpOnly, Path=/ and no Domain",
+			name, c.Secure, c.HttpOnly, c.Path, c.Domain)
+	}
 }
 
 // TestASecondLoginMakesASecondSessionForTheSameAccount holds that every login

@@ -262,7 +262,7 @@ type Proof struct {
 
 **渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。人机验证的证明由发送入口按发送面校验：邮箱渠道在自己的路由上、发码之前以其余面校验并消费；短信渠道把证明交给 `SMSCodes.Send`，由它以手机号面在任何发送预算之前校验并消费。证明被拒绝的请求答 403 `human-verification-required` 或 400，不按“已受理”的相同应答处理；预算超限则一律抑制发送并仍答 202。
 
-**绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`；允许不安全传输时用不带 `__Host-` 的名字且不设 `Secure`，[REF-rfc6265bis](../../../references.md)）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都视为 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码的应答一致。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
+**绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`，[REF-rfc6265bis](../../../references.md)）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都视为 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码的应答一致。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
 
 | 路由 | 行为 |
 |---|---|
@@ -549,7 +549,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `cookie`（缺省） | cookie `__Host-authn-flow` | 不含 `flow_token`，脚本读不到绑定秘密，XSS 取不到 |
 | `header` | 请求头 `Authn-Flow` | 返回 `flow_token`，不设 cookie |
 
-cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None`**。SAML 的断言是 IdP 页面发起的跨站 POST，`Lax` 的 cookie 不随跨站 POST 发送，绑定会丢。`SameSite=None` 使它随所有跨站请求发出；它只承载一个不透明值、只对流程端点有意义、流程完成即作废、服务端只存哈希，对其他端点没有权限；`__Host-` 前缀使子域不能写入同名 cookie。`allow-insecure`（仅开发）时去掉前缀与 `Secure`。
+cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None`**。SAML 的断言是 IdP 页面发起的跨站 POST，`Lax` 的 cookie 不随跨站 POST 发送，绑定会丢。`SameSite=None` 使它随所有跨站请求发出；它只承载一个不透明值、只对流程端点有意义、流程完成即作废、服务端只存哈希，对其他端点没有权限；`__Host-` 前缀使子域不能写入同名 cookie。名字与这些属性不随部署变化：`public-url` 只能是 https 或回环主机的 http，两者下浏览器都保存 `Secure` cookie。
 
 回跳请求是用户代理的导航，带不了自定义请求头，所以回跳类方法只能在 `binding=cookie` 的流程里走完；`binding=header` 的流程里它们的回跳因绑定缺失以 `flow-invalid` 失败。回跳与每次答复都要求绑定匹配，这是对登录 CSRF 与流程固定的主要防线：`state` 与 SAML 的 `InResponseTo` 各自只证明请求与某个流程对得上，不证明流程与发起它的浏览器对得上。待建号的外部身份同样只由流程记录承载，读取要过绑定比对；授权码与断言一次性，因此另一个浏览器不能接手一条停在待建号的流程。
 

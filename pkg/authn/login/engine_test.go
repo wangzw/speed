@@ -117,9 +117,9 @@ func TestARefusedFirstFactorKeepsItsStepForTheSameSequence(t *testing.T) {
 		t.Errorf("the refusal carried a sequence number: %s", refused.Body.String())
 	}
 
-	token, ok := strings.CutPrefix(cookie, "authn-flow=")
+	token, ok := strings.CutPrefix(cookie, flowCookieName+"=")
 	if !ok {
-		t.Fatalf("the flow cookie is not named authn-flow: %q", cookie)
+		t.Fatalf("the flow cookie is not named %s: %q", flowCookieName, cookie)
 	}
 	held, _, err := r.p.loadFlow(t.Context(), token)
 	if err != nil {
@@ -311,7 +311,7 @@ func TestNegativeVectorsAreRefusedBeforeTheMethodRuns(t *testing.T) {
 		{"missing binding", http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, nil, http.StatusUnauthorized},
 		{
 			"mismatched binding", http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`,
-			[]string{"Cookie", "authn-flow=not-the-token"},
+			[]string{"Cookie", flowCookieName + "=not-the-token"},
 			http.StatusUnauthorized,
 		},
 		{

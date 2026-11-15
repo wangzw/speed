@@ -192,10 +192,9 @@ field comments before writing a backend.
   host's own management surface, and `authn` does not check that a host honours
   it. The relaxation switches are settings: `signup` and `password-signup`
   declared by the account module, `check-session` by the token module. The
-  developer switches `mount.allow-insecure` and
-  `sso.allow-private-egress`, and the guard-list keys `endpoints` and
-  `trusted-origins`, are configuration read from the primary source alone,
-  because they are decided at construction.
+  developer switch `sso.allow-private-egress` and the guard-list keys
+  `endpoints` and `trusted-origins` are configuration read from the primary
+  source alone, because they are decided at construction.
 - **Which endpoint the routes go on and which origins the cross-origin check
   trusts are each decided in one place.** `internal/mount` holds `Endpoint` and
   `TrustedOrigins` with `CrossOrigin`. The gateway and the module that mounts

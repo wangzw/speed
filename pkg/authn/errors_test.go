@@ -187,3 +187,15 @@ func TestContactRequiredProblemTypeIsTheWireValue(t *testing.T) {
 			ContactRequiredProblemType, "urn:speed:authn:contact-required")
 	}
 }
+
+// TestErrInsecureConfigStatesAProtectionTheDeploymentNeeds holds the text an
+// operator reads when startup refuses an http public URL or a same-site of none.
+// No setting lets a deployment give either protection up, so the text names a
+// protection the deployment cannot run without, not one it could be told to
+// drop.
+func TestErrInsecureConfigStatesAProtectionTheDeploymentNeeds(t *testing.T) {
+	const want = "authn: the configuration weakens a protection the deployment cannot run without"
+	if got := ErrInsecureConfig.Error(); got != want {
+		t.Errorf("ErrInsecureConfig reads %q, want %q", got, want)
+	}
+}

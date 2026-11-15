@@ -24,7 +24,7 @@
 
 ### 让片段自己定义 securitySchemes
 
-**否决**：载体是平台词表（`Authorization: Bearer`，[REF-rfc6750](../references.md) 与 `sid` cookie），由每份片段各写一遍会让同一载体出现多种拼法；合并器写一次，片段只引用名字。
+**否决**：载体是平台词表（`Authorization: Bearer`，[REF-rfc6750](../references.md) 与会话 cookie），由每份片段各写一遍会让同一载体出现多种拼法；合并器写一次，片段只引用名字。
 
 ## 决策
 
@@ -42,7 +42,7 @@
 
 - 给片段里没有 `security` 的 operation 补上受保护要求：路由默认受保护，公开是显式声明。
 - 每个 operation 的 `tags` 带上声明它的模块名；顶层 `tags` 汇总这些名字，按名字排序。
-- `components.securitySchemes` 写出 `bearerAuth`（`Authorization: Bearer`）与 `sessionCookie`（`sid`，以及部署允许不安全用法时的无前缀写法）。片段自己声明同名载体时，内容必须一致。
+- `components.securitySchemes` 写出 `bearerAuth`（`Authorization: Bearer`）与 `sessionCookie`（`__Host-sid`，部署配置 cookie 域时为 `__Secure-sid`）。片段自己声明同名载体时，内容必须一致。
 - `Options` 增加 `Description` 与 `Servers`，分别写进 `info.description` 与顶层 `servers`；空值不写出。
 - 合并结果按两个空格缩进输出，无论作为制品还是运行时应答都更易读。
 

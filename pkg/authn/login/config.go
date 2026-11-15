@@ -778,13 +778,10 @@ func (r *reader) report(path, problem, detail string) {
 }
 
 // gateConfig is the part of the gateway's section this module reads: the public
-// URL the redirect targets are built from and the origins a return_to may name,
-// plus whether insecure use was allowed, which is what drops the __Host- prefix
-// and the Secure attribute from the flow cookie.
+// URL the redirect targets are built from and the origins a return_to may name.
 type gateConfig struct {
 	Mount struct {
-		PublicURL     string `config:"public-url"`
-		AllowInsecure bool   `config:"allow-insecure"`
+		PublicURL string `config:"public-url"`
 	} `config:"mount"`
 	TrustedOrigins []string `config:"trusted-origins"`
 }

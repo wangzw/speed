@@ -105,11 +105,11 @@ var (
 	// into the gateway's endpoint list.
 	ErrRoutesUnguarded = errors.New("authn: the endpoint for authentication routes is not one the gateway guards")
 
-	// ErrInsecureConfig reports a public base URL that is not https while
-	// insecure use was not allowed, or a same-site setting that is none. The
-	// fix is to change the address, or to allow insecure use explicitly,
-	// which is for development.
-	ErrInsecureConfig = errors.New("authn: the configuration weakens a protection it has not been told to give up")
+	// ErrInsecureConfig reports a public base URL that is not https and whose
+	// host is not a loopback one, or a same-site setting that is none. No
+	// setting lets a deployment give either protection up. The fix is to serve
+	// the deployment over https, or to choose lax or strict.
+	ErrInsecureConfig = errors.New("authn: the configuration weakens a protection the deployment cannot run without")
 
 	// ErrBusy reports that a password derivation was refused because the
 	// limit on concurrent derivations or on their memory was reached. The

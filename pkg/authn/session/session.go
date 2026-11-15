@@ -309,7 +309,7 @@ func newManager(p *product, cookie cookieSpec) *scs.SessionManager {
 		HttpOnly:    true,
 		Path:        "/",
 		SameSite:    cookie.sameSite,
-		Secure:      cookie.secure,
+		Secure:      true,
 		Partitioned: false,
 		Persist:     false,
 	}
@@ -366,11 +366,6 @@ func (p *product) diagnose() {
 		p.logger.Warn(diagnosticPrefix+ModuleName+": the session cookie carries a Domain, so it is named "+
 			"__Secure-sid and any subdomain can set it; the host-only guarantee of the __Host- prefix is given up",
 			slog.String("setting", ConfigNamespace+"."+cookieDomainItem))
-	}
-	if p.cookie.insecureAllowed {
-		p.logger.Warn(diagnosticPrefix+ModuleName+": insecure use is allowed, so the session cookie has no "+
-			"__Host- prefix and is not Secure. This is for development only",
-			slog.String("setting", gateNamespace+"."+gateInsecureItem))
 	}
 	if p.impersonation == nil {
 		p.logger.Info(diagnosticPrefix + ModuleName + ": no impersonation capability in this command, so a " +
