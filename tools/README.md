@@ -15,6 +15,17 @@ A script named `check_*.py` is a gate: it takes no arguments, it reports
 against the current directory, and `make repo-check` runs every one of
 them, so a gate added here is wired by its name alone.
 
+`make repo-check` also runs `make actionlint`, which is a Makefile target
+rather than a script here, because its linter is a pinned binary. It lints
+every `.yml` and `.yaml` file directly under `.github/workflows/`, from the
+repository root whichever directory `make` starts in, with the `actionlint` and
+`shellcheck` found on `PATH`. Those are the versions the root `.mise.toml` pins
+when `make` runs under mise (an activated shell, or `mise exec`). The target
+fails on any finding, on a workflow directory with no workflow file in it, and
+when `shellcheck` is not on `PATH`, because actionlint then skips every `run:`
+script without a word and exits 0. Neither a red gate nor a workflow finding
+stops the other from running, so `make repo-check` reports both.
+
 Each script also runs on its own:
 
 ```
@@ -35,10 +46,11 @@ make tools-test
 
 `test_makefile.py` runs there as well. It is not a script's suite: it holds
 the root `Makefile`'s legs that loop over the modules or the gates to running
-every item and failing at the end, driving the real `Makefile` over scratch
-directories with stand-ins for `go` and `golangci-lint` first on `PATH` and a
-stand-in for `backends.py` supplied through the `BACKENDS` variable, so it
-needs `make` and nothing else.
+every item and failing at the end, and the `actionlint` leg to its file roster
+and its failure paths, driving the real `Makefile` over scratch directories
+with stand-ins for `go`, `golangci-lint`, `actionlint` and `shellcheck` first
+on `PATH` and a stand-in for `backends.py` supplied through the `BACKENDS`
+variable, so it needs `make` and nothing else.
 
 ## The integration stack
 

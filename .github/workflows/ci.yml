@@ -78,6 +78,8 @@ jobs:
           pnpm --version
           python3 --version
           golangci-lint --version
+          actionlint -version
+          shellcheck --version
 
       - name: Run the commit gate
         run: make check

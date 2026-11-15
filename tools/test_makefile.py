@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Cases for the root Makefile's legs that loop over a list.
+"""Cases for the root Makefile's legs that loop over a list, and for the
+actionlint leg that `repo-check` runs beside them.
 
 Each leg that loops over the modules go.work lists, or over the gates in
 tools/, runs every item even after an earlier one failed, and fails at the
@@ -8,7 +9,9 @@ another's. The cases drive the real Makefile with MODULES and GATES pointed
 at scratch directories, with stand-ins for go and golangci-lint first on
 PATH, and with tools/backends.py replaced by a stand-in that writes the state
 file the integration legs export. A stand-in records the directory it ran in
-and its subcommand, and fails in a directory named red.
+and its subcommand, and fails in a directory named red. The actionlint leg
+runs against scratch repository roots through stand-ins for actionlint and
+shellcheck, so no real linter is involved.
 
 Stdlib-only (unittest, subprocess, tempfile). Run directly:
 
@@ -133,8 +136,9 @@ class LoopingLegTests(unittest.TestCase):
         # stand-in for the script that does it writes a state file the legs
         # export, so no daemon is driven and no container starts. pnpm is here
         # for the starter Makefile's build leg, whose frontend step runs before
-        # the Go one.
-        for tool in ("go", "golangci-lint", "pnpm"):
+        # the Go one. actionlint and shellcheck stand in for the linters the
+        # workflow leg runs; the leg only needs them to exist and be called.
+        for tool in ("go", "golangci-lint", "pnpm", "actionlint", "shellcheck"):
             path = self.bin / tool
             path.write_text(STAND_IN.format(python=sys.executable), encoding="utf-8")
             path.chmod(0o755)
@@ -146,6 +150,16 @@ class LoopingLegTests(unittest.TestCase):
         for name in ("red", "green"):
             (self.scratch / name).mkdir()
             (self.scratch / name / f"check_{name}.py").write_text(GATE, encoding="utf-8")
+        # Repository roots for the actionlint leg. Each carries workflow files
+        # of both extensions, a file GitHub does not run as a workflow, and a
+        # nested workflow file GitHub does not read either.
+        self.repos = self.scratch / "repos"
+        for name in ("red", "green"):
+            workflows = self.repos / name / ".github" / "workflows"
+            (workflows / "nested").mkdir(parents=True)
+            for workflow in ("ci.yml", "deploy.yaml", "notes.md"):
+                (workflows / workflow).write_text("name: stand-in\n", encoding="utf-8")
+            (workflows / "nested" / "inner.yml").write_text("name: stand-in\n", encoding="utf-8")
 
     def make(
         self,
@@ -153,6 +167,8 @@ class LoopingLegTests(unittest.TestCase):
         *names: str,
         backends: str | pathlib.Path | None = None,
         state: str | pathlib.Path | None = None,
+        repo: str | pathlib.Path = "green",
+        shellcheck: str | pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
         env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
@@ -171,6 +187,9 @@ class LoopingLegTests(unittest.TestCase):
                 f"PYTHON={sys.executable}",
                 f"BACKENDS={backends if backends is not None else self.backends}",
                 f"TEST_BACKENDS_STATE={state if state is not None else self.state}",
+                f"REPO_ROOT={self.repos / repo}",
+                f"ACTIONLINT={self.bin / 'actionlint'}",
+                f"SHELLCHECK={shellcheck if shellcheck is not None else self.bin / 'shellcheck'}",
             ],
             env=env,
             capture_output=True,
@@ -317,6 +336,113 @@ class LoopingLegTests(unittest.TestCase):
         self.assertEqual(ran, ["red", "green"], result.stdout + result.stderr)
         self.assertIn("check_red.py", result.stderr)
         self.assertNotIn("check_green.py", result.stderr)
+
+    def workflow_calls(self) -> list[dict]:
+        return [call for call in self.calls() if call["tool"] == "actionlint"]
+
+    def test_the_workflow_lint_runs_after_a_red_gate_and_is_reported_with_it(self) -> None:
+        result = self.make("repo-check", "red", "green", repo="red")
+        self.assertNotEqual(result.returncode, 0, "repo-check passed with a red gate and red workflows")
+        self.assertTrue(
+            self.workflow_calls(),
+            f"repo-check stopped at the red gate before the workflow lint:\n{result.stdout}{result.stderr}",
+        )
+        self.assertIn("check_red.py", result.stderr)
+        self.assertIn("gate actionlint", result.stderr)
+
+    def test_repo_check_fails_on_a_workflow_finding_alone(self) -> None:
+        result = self.make("repo-check", "green", repo="red")
+        self.assertNotEqual(result.returncode, 0, "repo-check passed with a workflow finding")
+        self.assertIn("gate actionlint", result.stderr)
+        self.assertNotIn("check_green.py", result.stderr)
+
+    def test_the_actionlint_leg_lints_every_workflow_file_in_one_run(self) -> None:
+        result = self.make("actionlint")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.workflow_calls()
+        self.assertEqual(len(calls), 1, "the leg must lint every file in a single run")
+        files = [arg for arg in calls[0]["args"] if not arg.startswith("-")]
+        self.assertEqual(
+            files,
+            [".github/workflows/ci.yml", ".github/workflows/deploy.yaml"],
+            "the leg must name every .yml and .yaml directly under .github/workflows, "
+            "relative to the root, and nothing else",
+        )
+        self.assertEqual(calls[0]["dir"], "green", "the leg must run from the repository root")
+
+    def test_the_actionlint_leg_uses_the_shellcheck_it_checked_for(self) -> None:
+        result = self.make("actionlint")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (call,) = self.workflow_calls()
+        self.assertIn(f"-shellcheck={self.bin / 'shellcheck'}", call["args"])
+
+    def test_the_actionlint_leg_fails_on_a_finding(self) -> None:
+        result = self.make("actionlint", repo="red")
+        self.assertNotEqual(result.returncode, 0, "the leg passed although actionlint failed")
+        self.assertTrue(self.workflow_calls(), "actionlint never ran")
+
+    def test_the_actionlint_leg_fails_when_there_is_no_workflow(self) -> None:
+        empty = self.scratch / "empty"
+        (empty / ".github" / "workflows").mkdir(parents=True)
+        (empty / ".github" / "workflows" / "notes.md").write_text("not a workflow\n", encoding="utf-8")
+        result = self.make("actionlint", repo=empty)
+        self.assertNotEqual(result.returncode, 0, "the leg passed with nothing to lint")
+        self.assertIn("no workflow file", result.stderr)
+        self.assertFalse(self.workflow_calls(), "actionlint ran with no file to lint")
+
+    def test_the_actionlint_leg_fails_when_shellcheck_is_missing(self) -> None:
+        # Without shellcheck, actionlint skips every run: script and still
+        # exits 0, so the leg has to refuse instead of reporting a partial pass.
+        result = self.make("actionlint", shellcheck=self.scratch / "no-such-shellcheck")
+        self.assertNotEqual(result.returncode, 0, "the leg passed without shellcheck")
+        self.assertIn("is not on PATH", result.stderr)
+        self.assertFalse(self.workflow_calls(), "actionlint ran without shellcheck")
+
+    def test_the_actionlint_leg_does_not_depend_on_the_current_directory(self) -> None:
+        elsewhere = self.scratch / "elsewhere"
+        elsewhere.mkdir()
+        env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
+        env["STAND_IN_LOG"] = str(self.log)
+        result = subprocess.run(
+            [
+                "make",
+                "-f",
+                str(ROOT / "Makefile"),
+                "--no-print-directory",
+                "actionlint",
+                f"MODULES={self.scratch / 'green'}",
+                f"ACTIONLINT={self.bin / 'actionlint'}",
+                f"SHELLCHECK={self.bin / 'shellcheck'}",
+            ],
+            cwd=elsewhere,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (call,) = self.workflow_calls()
+        self.assertEqual(call["dir"], ROOT.name, "the leg ran from the starting directory, not the repository root")
+        workflows = ROOT / ".github" / "workflows"
+        expected = sorted(
+            f".github/workflows/{path.name}"
+            for path in workflows.iterdir()
+            if path.is_file() and path.suffix in (".yml", ".yaml")
+        )
+        self.assertEqual([arg for arg in call["args"] if not arg.startswith("-")], expected)
+
+    def test_help_lists_the_actionlint_leg(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        result = subprocess.run(
+            ["make", "-C", str(ROOT), "--no-print-directory", "help"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r"(?m)^  actionlint\s+\S")
 
     def test_every_leg_passes_when_every_item_passes(self) -> None:
         for leg in [*MODULE_LEGS, "repo-check"]:

@@ -34,3 +34,17 @@ pnpm = "11.1.2"
 golangci-lint = "2.11.4"
 # Pinned here only; `make tools-test` needs 3.11 or newer, for tomllib.
 python = "3.14.7"
+# Pinned here only; `make actionlint` lints .github/workflows with the
+# actionlint it finds on PATH, as the lint targets run the golangci-lint they
+# find there, so a run reports this version's findings when make runs under mise
+# (an activated shell, or `mise exec`). The backend is named in full because
+# installing through mise's registry shorthand `actionlint` prints
+# "actionlint is deprecated: jactionlint is an actively maintained fork ..."
+# (reproduce with `actionlint = "1.7.12"` in a scratch mise.toml and a fresh
+# MISE_DATA_DIR), while this identifier installs the same upstream release
+# without a warning.
+"aqua:rhysd/actionlint" = "1.7.12"
+# Pinned here only; `make actionlint` names the shellcheck on PATH to actionlint
+# with -shellcheck, and actionlint runs it over every `run:` script of the
+# workflows, so this version decides which shell findings that target reports.
+shellcheck = "0.11.0"

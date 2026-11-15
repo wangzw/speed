@@ -7,6 +7,11 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
+# The directory this Makefile sits in. A target that reads files by path
+# resolves them from here, so it behaves the same whichever directory make was
+# started from.
+REPO_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
 # A use directive has two legal spellings -- a parenthesised block and a
 # bare `use ./dir` line -- so the roster is parsed by the go toolchain
 # itself rather than by a matcher here that would know only one of them
@@ -54,6 +59,18 @@ PYTHON ?= python3
 TEST_BACKENDS_STATE ?= .cache/test-backends.env
 BACKENDS ?= $(PYTHON) tools/backends.py
 
+# The workflow files the actionlint leg reads: every .yml and .yaml directly
+# under .github/workflows, the files GitHub runs as workflows, named relative
+# to the repository root so a finding reads as .github/workflows/<file>.
+# ACTIONLINT and SHELLCHECK name the two executables. They are looked up on PATH
+# like golangci-lint, and .mise.toml pins them, so the pinned versions run when
+# make runs under mise. A run can point them elsewhere, and the Makefile's own
+# suite stands in for them instead of running the real linters.
+WORKFLOW_DIR := .github/workflows
+WORKFLOWS := $(sort $(patsubst $(REPO_ROOT)/%,%,$(wildcard $(REPO_ROOT)/$(WORKFLOW_DIR)/*.yml $(REPO_ROOT)/$(WORKFLOW_DIR)/*.yaml)))
+ACTIONLINT ?= actionlint
+SHELLCHECK ?= shellcheck
+
 # Every leg that loops over a list -- the modules, or the gates -- runs each
 # item even after an earlier one failed, so one module's red result does not
 # hide another's, and fails at the end naming each item that failed.
@@ -65,7 +82,7 @@ each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$fai
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
-        vet-integration vet-review vet-web-bundle test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
+        vet-integration vet-review vet-web-bundle test-review fmt lint tidy tidy-check actionlint repo-check tools-test check python-version \
         modules-present web-check web-a11y web-browser e2e e2e-install dev fly
 
 # A target name may carry a digit (web-a11y, e2e), so the name pattern admits
@@ -211,8 +228,32 @@ tidy: modules-present ## Tidy every module's go.mod and go.sum in place
 tidy-check: modules-present ## Verify the dependency files are tidy, leaving the tree unchanged
 	@failed=; $(call each,$(MODULES),tidy-check,GOWORK=off go -C $$it mod tidy -diff); $(each-end)
 
-repo-check: python-version ## Run the gates in tools/ over this tree
-	@failed=; $(call each,$(GATES),gate,$(PYTHON) $$it); $(each-end)
+# actionlint reads the workflow files themselves, which no other leg does: a
+# misspelled key, an expression that cannot evaluate or a `run:` script that
+# shellcheck rejects shows up only when GitHub starts the workflow. The leg
+# names the files rather than letting actionlint search for them, so it lints
+# the same ones from any directory, and it fails when there are none: an empty
+# directory would pass without checking anything. actionlint skips its script
+# checks without a word when it cannot find shellcheck, so the leg fails
+# instead of reporting a partial pass. Any finding makes actionlint exit
+# non-zero.
+actionlint: ## Lint every workflow under .github/workflows with actionlint and shellcheck
+	@if [ -z "$(strip $(WORKFLOWS))" ]; then \
+	  echo "actionlint: no workflow file under $(REPO_ROOT)/$(WORKFLOW_DIR); an empty directory would pass without checking anything." >&2; \
+	  exit 1; \
+	fi
+	@if ! command -v '$(SHELLCHECK)' >/dev/null 2>&1; then \
+	  echo "actionlint: '$(SHELLCHECK)' is not on PATH; without it actionlint skips every run: script. Install the version .mise.toml pins ('mise install')." >&2; \
+	  exit 1; \
+	fi
+	@env -C '$(REPO_ROOT)' '$(ACTIONLINT)' -shellcheck='$(SHELLCHECK)' $(WORKFLOWS)
+
+# The gates are the scripts in tools/ plus the workflow lint above, which is a
+# target of its own because its linter is a pinned binary, not a script here.
+# Both run to the end, so a red gate does not hide the workflow findings.
+repo-check: python-version ## Run the gates in tools/ and the workflow lint over this tree
+	@failed=; $(call each,$(GATES),gate,$(PYTHON) $$it); \
+	  $(call each,actionlint,gate,$(MAKE) --no-print-directory actionlint); $(each-end)
 
 tools-test: python-version ## Run the test suites of the scripts in tools/
 	@$(PYTHON) -m unittest discover -s tools -t tools -p 'test_*.py'
