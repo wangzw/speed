@@ -20,7 +20,7 @@ restates nothing another file already carries:
 ## Language Rule (read this first)
 
 - **`docs/design/**`, `docs/adr/**`, `docs/prd/**`, `docs/glossary.md` and `docs/references.md` are written in Chinese.** They hold design documents, decision records, requirements documents, the shared glossary and the shared register of external sources.
-- **Everything else is English**: code comments, godoc/TSDoc, module docs, per-module `AGENTS.md` files, package READMEs, the root `README.md`, `.claude/skills/**`, commit messages, and GitHub Issues (titles, bodies, and comments — including the coding-flow role workflow).
+- **Everything else is English**: code comments, godoc/TSDoc, module docs, per-module `AGENTS.md` files, package READMEs, the root `README.md`, `.claude/skills/**`, commit messages, and GitHub Issues (titles, bodies, and comments).
 - User-facing product text is bilingual (zh-CN + en-US) and lives in i18n resources, never in code.
 
 ## Documentation

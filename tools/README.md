@@ -20,7 +20,6 @@ Each script also runs on its own:
 ```
 python3 tools/check_toolchain.py
 python3 tools/check_markdown_examples.py
-python3 tools/check_workflow_refs.py
 python3 tools/check_conflict_markers.py
 python3 tools/check_observability_readiness.py
 python3 tools/check_test_tiers.py
@@ -87,27 +86,6 @@ in the tree is in scope, `node_modules` and non-UTF-8 files excepted.
 Exit codes: 0 clean, 1 markers found (each with file, line and text),
 2 infrastructure error (the root is not a directory, or the scan read no
 text file at all).
-
-`check_workflow_refs.py` — fails when a coding-flow template copy under
-`.github/workflows/` carries a relative path segment (a `.` or `..`
-that begins one — followed by `/` and not preceded by another `.`, so an
-ellipsis is not a hit). The templates are byte-copies of files that
-live inside the upstream skill directory, whose own cross-references
-(the `../../SKILL.md`-style two-level form, once carried and gone now)
-are written relative to it and can arrive with a
-sync; copied into a consuming repository the same text points into a
-different tree. The gate does not judge where a given reference would
-land — a copy's relative path segment is treated as suspected to dangle,
-so an intentional repository-relative reference is a hit too, a
-criterion trade-off rather than an inline exemption. Guarded files are
-the lowercase `.yml`/`.yaml` files carrying a
-`uses: vislake/coding-flows@...` line — the call to the composite action
-upstream publishes — so this repository's own workflows may keep using
-repository-relative paths, and a fifth template lands under the gate
-with nothing to maintain here. Exit codes: 0 clean (every guarded file
-reported by name), 1 a relative reference found, 2 infrastructure error
-(no `.github/workflows/` directory, no guarded file to check, or a file
-that cannot be read).
 
 `check_observability_readiness.py` — fails when a package under `pkg/`
 breaks one of the observability obligations that three Go tests guard, each
