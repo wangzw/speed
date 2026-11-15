@@ -194,10 +194,11 @@ clickable.
 
 It does not cover color contrast, screenshot or pixel regression, or
 anything a jsdom unit test can already assert. Geometry assertions keep a
-one-pixel tolerance for subpixel rounding. The setup pins the document's
-family to Arial / Liberation Sans for Latin text and to full-width CJK
-families for Chinese text, so the measured text uses metric-compatible
-fonts on macOS and on the CI image; measurements still belong to the
+one-pixel tolerance for subpixel rounding. The setup pins every element's
+family, over the theme's component stacks and the monospace slot, to Arial /
+Liberation Sans for Latin text and to full-width CJK families for Chinese
+text, so the measured text uses metric-compatible fonts on macOS and on the
+CI image; measurements still belong to the
 machine's layout engine, which is one reason the tier runs on a schedule
 rather than in the commit gate.
 

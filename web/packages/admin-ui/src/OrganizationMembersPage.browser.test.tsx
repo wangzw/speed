@@ -590,8 +590,8 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
 
     // Containment alone reports the stretched box; the width the columns
     // actually require is what has to leave the margin. With the identity
-    // cap at 96px the suspended row requires 585.8px, 14.2px inside the
-    // floor.
+    // cap at 96px the suspended row requires 576.8px in the pinned font,
+    // 23.2px inside the floor.
     const members = tableFor(enUS.members.column.displayName)
     expect(
       requiredWidthAtFloor(members.containment, members.container, SM_FLOOR),
@@ -607,7 +607,7 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
   // widens the actions column on top of it. Revoked is the other stored
   // status a row can carry while it still holds the copy link. Both are
   // measured at the 600px floor; with both identity caps at 120px the
-  // accepted row requires 587.7px, 12.3px inside the floor.
+  // accepted row requires 580px in the pinned font, 20px inside the floor.
   for (const status of ['accepted', 'revoked'] as const) {
     it(`keeps the invitation table inside the 600px tier floor when the copy-link action is present (${status})`, async () => {
       await page.viewport(600, 900)

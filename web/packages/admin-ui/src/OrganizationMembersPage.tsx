@@ -115,8 +115,9 @@ const COMPACT_TABLE_SX = {
  * exceed the floor. The status column has no cap of its own and its chip
  * grows with the label -- "Suspended" is the widest state -- so the pair has
  * to fit with that worst-case column as well, not only with "Active". 96px
- * makes the suspended row require 585.8px, 14.2px inside the floor; the
- * complete values remain reachable through the title and the copy control.
+ * makes the suspended row require 576.8px in the browser tier's pinned font,
+ * 23.2px inside the floor; the complete values remain reachable through the
+ * title and the copy control.
  * From `md` up the shared 200px cap applies unchanged.
  */
 const MEMBER_IDENTITY_MAX_WIDTH = {
@@ -136,8 +137,9 @@ const MEMBER_IDENTITY_MAX_WIDTH = {
  * copy-link control, which widens the actions column from 88px to 105px.
  * The widest reachable row is therefore an accepted (or revoked) row that
  * holds the copy link. With both identity caps at 120px that row requires
- * 587.7px, 12.3px inside the floor; the complete values remain reachable
- * through the title and the copy control. From `md` up each column returns
+ * 580.0px in the browser tier's pinned font, 20.0px inside the floor, and the
+ * revoked row 576.9px; the complete values remain reachable through the title
+ * and the copy control. From `md` up each column returns
  * to its shared cap: 200px for the email, 160px for the inviter.
  */
 const INVITATION_IDENTITY_MAX_WIDTH = {

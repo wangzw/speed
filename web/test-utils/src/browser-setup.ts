@@ -17,23 +17,44 @@ import { afterEach, beforeEach } from 'vitest'
 // one-second poll to settle it.
 configure({ asyncUtilTimeout: 5_000 })
 
+/**
+ * The metric-stable families every element's text is measured in. macOS
+ * resolves Arial directly and the CI image installs fonts-liberation, whose
+ * Liberation Sans is metric-compatible with Arial (and is what fontconfig
+ * aliases Arial to).
+ *
+ * The header matrix renders in en-US and zh-CN, so the stack names the
+ * CJK families too. A Chinese glyph is full-width whichever of them
+ * resolves, so a zh-CN run measures a count of em boxes rather than a
+ * platform default's proportional metrics -- the same width on macOS
+ * (PingFang SC) and on the CI image, where Playwright's system
+ * dependencies provide the CJK font.
+ */
+const PINNED_FONT_FAMILY =
+  'Arial, "Liberation Sans", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif'
+
+/** The id of the style element that carries the pin. */
+const FONT_PIN_ID = 'speed-browser-tier-font-pin'
+
 beforeEach(() => {
-  // Pin the document's text to metric-stable families. The browser tier's
-  // geometry assertions compare rendered widths; macOS resolves Arial
-  // directly and the CI image installs fonts-liberation, whose Liberation
-  // Sans is metric-compatible with Arial (and is what fontconfig aliases
-  // Arial to). Without the pin, a platform's default sans-serif would move
-  // the measurements between machines (see the browser-tier ADR's font
-  // consequence). The inline style outranks the theme's body rule.
-  //
-  // The header matrix renders in en-US and zh-CN, so the stack names the
-  // CJK families too. A Chinese glyph is full-width whichever of them
-  // resolves, so a zh-CN run measures a count of em boxes rather than a
-  // platform default's proportional metrics -- the same width on macOS
-  // (PingFang SC) and on the CI image, where Playwright's system
-  // dependencies provide the CJK font.
-  document.body.style.fontFamily =
-    'Arial, "Liberation Sans", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif'
+  // Pin the text of every element. The browser tier's geometry assertions
+  // compare rendered widths, and without the pin a platform's own fonts
+  // would move the measurements between machines (see the browser-tier
+  // ADR's font consequence). MUI's components declare the theme's font
+  // stack on their own classes, and a declared value beats an inherited
+  // one, so a pin on the body reaches only the text that inherits from it:
+  // every table cell, chip and button would render in the stack's
+  // `system-ui`, which is San Francisco on macOS and DejaVu Sans on the CI
+  // image. The important declaration on every element outranks those
+  // class rules. It also outranks the monospace slot and a preset's own
+  // stack, so monospace text renders in the pinned family in this tier: it
+  // measures layout invariants under one known font, not a family's
+  // typography.
+  if (document.getElementById(FONT_PIN_ID) !== null) return
+  const pin = document.createElement('style')
+  pin.id = FONT_PIN_ID
+  pin.textContent = `body, body * { font-family: ${PINNED_FONT_FAMILY} !important; }`
+  document.head.append(pin)
 })
 
 afterEach(() => {
