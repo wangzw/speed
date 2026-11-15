@@ -43,7 +43,7 @@ RUN pnpm -C /src/web install --frozen-lockfile
 RUN mkdir -p /src/starters/demo/server/dist \
     && pnpm -C /src/web --filter demo-web run build
 
-FROM golang:1.26.10-bookworm AS build
+FROM golang:1.27.0-bookworm AS build
 
 WORKDIR /src
 
@@ -66,7 +66,7 @@ WORKDIR /src/starters/demo/server
 # are not part of this build.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/demo .
 
-FROM alpine:3.22
+FROM alpine:3.24
 
 # su-exec drops from the entrypoint's root to the unprivileged user that runs
 # the program, after the entrypoint has taken ownership of the mounted volume.
