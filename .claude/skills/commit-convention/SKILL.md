@@ -97,7 +97,7 @@ docs/upgrade/v1-to-v2.md
 ## Rules
 
 1. **One logical change per commit.** Do not mix unrelated work.
-2. **Each commit compiles and passes tests on its own** — CI runs per commit on pull requests.
+2. **Each commit compiles and passes tests on its own** — so `git bisect` can test every commit it checks out instead of skipping it.
 3. **No generic messages.** "fix bug", "update code", "misc" are rejected.
 4. **Breaking changes** get `BREAKING CHANGE:` in the footer and a `!` after the scope.
    This repository ships libraries consumed via `go get` / `npm install`, so **any change to an exported signature is breaking**, even when the internal behaviour is unchanged.
@@ -105,7 +105,7 @@ docs/upgrade/v1-to-v2.md
 6. **API changes commit the spec and the implementation together.** Editing `api/openapi.yaml` means committing the regenerated backend interface and frontend sdk in the same commit. Use the `api` type.
 7. **New user-facing text is bilingual in the same commit** — zh-CN and en-US both, with matching key sets.
 8. **Every bug fix carries a test that reproduces the bug** (failing before the fix, passing after). If a test genuinely cannot be added, say so in the body with the reason and the follow-up plan.
-9. **Rebase before merging; fast-forward merges only.** Branch protection on `main` rejects merge commits, keeping history linear.
+9. **Rebase before merging; fast-forward merges only.** A merge commit breaks the linear history this keeps.
 10. **Test helper directories are not scopes.** When touching `testutil` or `testdata`, use the domain scope they serve, e.g. `test(billing): ...`.
 
 ## Content constraints
