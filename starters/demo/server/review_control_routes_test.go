@@ -41,6 +41,7 @@ const (
 // the admin endpoint answers 2xx, and so does the tenant notice route on the
 // api endpoint once the operator's personal tenant is current.
 func TestReviewOnlyControlRoutesAreMounted(t *testing.T) {
+	t.Parallel()
 	base, token := reviewImpersonationSession(t)
 	client := &http.Client{Timeout: 10 * time.Second}
 	headers := map[string]string{"Authorization": "Bearer " + token}

@@ -35,6 +35,7 @@ const (
 // be a member of the tenant the impersonation is confined to is held beside
 // them: an account outside the tenant cannot be impersonated.
 func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
+	t.Parallel()
 	base, operator := reviewRecordsServer(t)
 	operatorAuth := map[string]string{"Authorization": "Bearer " + operator}
 
@@ -98,15 +99,15 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 func reviewRecordsServer(t *testing.T) (base, token string) {
 	t.Helper()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	configPath := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + configPath
-	seedReview(t, binary, config)
-	secret := reviewSeededTOTPSecret(t, configPath)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	var secret string
+	_, ports := startServing(t, func(ports []int) *process {
+		configPath := reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		config := "file://" + configPath
+		seedReview(t, binary, config)
+		secret = reviewSeededTOTPSecret(t, configPath)
+		return startReview(t, binary, config)
+	})
 
 	base = fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	return base, signInWithTOTP(t, base, reviewOperatorUsername, reviewOperatorPassword, secret)

@@ -233,8 +233,11 @@ const (
 
 // freePorts hands back n ports that are free at the moment they are asked for.
 // The listeners are closed before the caller uses the ports, so a port could be
-// taken between here and there; in practice nothing else binds a port this
-// quickly, and a collision reads as a serve that never became ready.
+// taken between here and there, and a collision reads as a serve that never
+// became ready. The ordinary serving cases go through startServing and the
+// differential runs through startVariant; both recognise that exit and start
+// the whole attempt again over fresh ports, and freePorts is the port source
+// they retry from.
 func freePorts(t *testing.T, n int) []int {
 	t.Helper()
 	ports := make([]int, 0, n)
@@ -412,7 +415,16 @@ func start(t *testing.T, config string, args ...string) *process {
 // directory.
 func startArgs(t *testing.T, dir string, args, extraEnv []string) *process {
 	t.Helper()
-	cmd := exec.Command(hostBinary, args...)
+	return startProcess(t, hostBinary, dir, args, extraEnv)
+}
+
+// startProcess starts a named program as a long-running child. The review
+// cases' own binary comes through here too, so every serving child's standard
+// error is captured the same way and a bind failure is recognisable on all of
+// them.
+func startProcess(t *testing.T, binary, dir string, args, extraEnv []string) *process {
+	t.Helper()
+	cmd := exec.Command(binary, args...)
 	cmd.Dir = dir
 	cmd.Env = append(childEnv(), extraEnv...)
 	stdout, err := cmd.StdoutPipe()
@@ -437,6 +449,13 @@ func startArgs(t *testing.T, dir string, args, extraEnv []string) *process {
 		p.consume(stderr, true)
 	}()
 	go func() {
+		// Wait closes the pipes, so the readers have to reach EOF first: a
+		// child that writes on its way out would otherwise lose whatever the
+		// reader had not consumed when Wait returned. The readers reach EOF
+		// only when every holder of the write end has exited, so a descendant
+		// that inherited standard error and never exits would hold this wait
+		// open; no child these cases start has such a descendant.
+		p.readers.Wait()
 		p.waitErr = cmd.Wait()
 		close(p.done)
 	}()
@@ -486,17 +505,19 @@ func (p *process) stderr() string {
 	return strings.Join(p.diagnostics, "\n")
 }
 
-// waitReady waits for the ready record and fails the case when it never comes.
-// The record is written once every module has started, so a wait that sees it
-// is past the binding of every endpoint — a wait on a port alone would not be.
-func (p *process) waitReady(t *testing.T) {
-	t.Helper()
+// waitReadyErr waits for the ready record and answers why it never came. The
+// output readers are drained before the child is reaped, so once done closes a
+// caller that reads standard error afterwards sees the whole failure. The record
+// is written once every module has started, so a wait that sees it is past the
+// binding of every endpoint — a wait on a port alone would not be.
+func (p *process) waitReadyErr(limit time.Duration) error {
 	select {
 	case <-p.ready:
+		return nil
 	case <-p.done:
-		t.Fatalf("serve exited before it was ready: %v\n%s", p.waitErr, p.output())
-	case <-time.After(startLimit):
-		t.Fatalf("serve did not write its ready record within %s\n%s", startLimit, p.output())
+		return fmt.Errorf("serve exited before it was ready: %w", p.waitErr)
+	case <-time.After(limit):
+		return fmt.Errorf("serve did not write its ready record within %s", limit)
 	}
 }
 
@@ -515,10 +536,107 @@ func (p *process) stop(t *testing.T) {
 			<-p.done
 			t.Errorf("serve did not leave within %s of SIGTERM\n%s", stopLimit, p.output())
 		}
-		// Wait closes the pipes; the readers finish once they reach EOF, so the
-		// captured diagnostics are complete by the time this returns.
+		// The readers drain before Wait runs, so done closes only once the
+		// captured diagnostics are complete.
 		p.readers.Wait()
 	})
+}
+
+// TestProcessReadsTheLastLineBeforeExit holds the captured standard error to a
+// line written on the child's last write. cmd.Wait closes the pipes as soon as
+// the direct child exits, so a reader that has not drained them loses whatever
+// follows; only waiting for the readers first keeps it. The writer here is a
+// subshell the child backgrounds, so it still holds the write end after the
+// child itself is gone: without the wait the parent closes the read end before
+// the line is written, and it is lost every time.
+func TestProcessReadsTheLastLineBeforeExit(t *testing.T) {
+	t.Parallel()
+	const marker = "the last line the child wrote"
+	const script = `( sleep 1; printf '` + marker + `\n' >&2 ) & exit 1`
+	child := startProcess(t, "/bin/sh", t.TempDir(), []string{"-c", script}, nil)
+	<-child.done
+	child.stop(t)
+	if !strings.HasSuffix(child.stderr(), marker) {
+		t.Fatalf("the child's last line was not read; standard error is %q", child.stderr())
+	}
+}
+
+// bindFailure reports whether this child exited because it could not bind one
+// of its listeners, over the same predicate the differential child uses.
+func (p *process) bindFailure() bool {
+	return bindFailureText(p.stderr())
+}
+
+// launchRetries is how many times a launch is retried when a port freePorts
+// handed out was taken before the child bound it.
+const launchRetries = 3
+
+// bindFailureText reports whether a child's standard error says it exited
+// because it could not bind one of its listeners. freePorts closes the socket
+// it probed before the child binds the address, so another listener can take
+// the port in that gap; that is a property of the port rather than of the run,
+// and it is the only non-ready exit a launch retries. The detection matches the
+// listener's bind sentinel together with the net error for a taken address, so
+// a certificate that cannot load, which shares the sentinel, is not retried.
+func bindFailureText(stderr string) bool {
+	return strings.Contains(stderr, speedhttp.ErrListen.Error()) &&
+		strings.Contains(stderr, "address already in use")
+}
+
+// startWithRetry runs one launch attempt and waits for the child's ready
+// record. When the child exited because a probed port was taken before it could
+// bind, the attempt runs again from source over fresh ports, so a collision is
+// never reported as the case's own failure. Any other failure, or an exhausted
+// retry budget, comes back to the caller with the last child and its ports.
+func startWithRetry[T any](t *testing.T,
+	source func(*testing.T, int) []int, portCount int,
+	attempt func(ports []int) T,
+	waitReady func(T) error,
+	failedByBind func(T) bool,
+	stop func(T),
+) (T, []int, error) {
+	t.Helper()
+	for round := 0; ; round++ {
+		ports := source(t, portCount)
+		child := attempt(ports)
+		err := waitReady(child)
+		if err == nil || !failedByBind(child) || round >= launchRetries {
+			return child, ports, err
+		}
+		stop(child)
+		t.Logf("a port was taken before the child could bind it; retrying with fresh ports (%d/%d)",
+			round+1, launchRetries)
+	}
+}
+
+// startServing starts a serving child over a configuration the case renders for
+// one attempt's ports, and waits for its ready record. It is the entry the
+// ordinary serving cases go through; the differential case launches through
+// startVariant, which holds the same retry. An attempt whose child exits on a
+// taken port is rendered again over fresh ports, so a collision beside the
+// suite's other children is not read as the case's failure. It answers the child
+// and the ports it serves on; the caller builds its addresses from the returned
+// ports, not from the ones it saw while rendering.
+func startServing(t *testing.T, attempt func(ports []int) *process) (*process, []int) {
+	t.Helper()
+	child, ports, err := startServingFrom(t, freePorts, attempt)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, child.output())
+	}
+	return child, ports
+}
+
+// startServingFrom is startServing over a chosen port source, so a case can
+// hand the first attempt a port another listener holds and watch the retry.
+func startServingFrom(t *testing.T, source func(*testing.T, int) []int,
+	attempt func(ports []int) *process,
+) (*process, []int, error) {
+	t.Helper()
+	return startWithRetry(t, source, listenerCount, attempt,
+		func(p *process) error { return p.waitReadyErr(startLimit) },
+		(*process).bindFailure,
+		func(p *process) { p.stop(t) },
+	)
 }
 
 // response is one HTTP answer, kept whole so a case can assert on it.
@@ -698,15 +816,17 @@ func signIn(t *testing.T, accountBase, identifier, password string) string {
 // without the system tenant in the roster, and the seed and the serve are two
 // processes: an in-memory database would lose the row between them.
 func TestServeAnswersTheProbes(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "probes.db"))
-
-	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
-		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
-	}
-
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	t.Parallel()
+	// config is the configuration the successful attempt ran over, for the
+	// platform-claims check below: a retry rewrites it with the fresh ports.
+	var config string
+	serve, ports := startServing(t, func(ports []int) *process {
+		config = writeConfigWith(t, ports, filepath.Join(t.TempDir(), "probes.db"))
+		if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+			t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+		}
+		return start(t, config, "sqlite", serveCommand)
+	})
 
 	// The address shield is assembled on the account endpoint. The startup
 	// line lists each endpoint's chain as written, so a run whose configuration
@@ -877,14 +997,14 @@ func TestServeAnswersTheProbes(t *testing.T) {
 // the session and return to its own login page. The demo wires no Basic backend,
 // so the challenge names Bearer alone and a browser has nothing to prompt from.
 func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "challenge.db"))
-
-	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
-		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
-	}
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	t.Parallel()
+	_, ports := startServing(t, func(ports []int) *process {
+		config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "challenge.db"))
+		if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+			t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+		}
+		return start(t, config, "sqlite", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -925,6 +1045,7 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 // writing standard output, because the two are the two ways the command
 // delivers its result.
 func TestGenWritesTheMergedDocument(t *testing.T) {
+	t.Parallel()
 	config := writeConfig(t, freePorts(t, listenerCount))
 
 	// merged is the part of the document a case asserts on.
@@ -1136,6 +1257,7 @@ const committedMergedDocumentTitle = "speed"
 // what keeps the case honest: it compares the artifact with the command's
 // current result, not with a second copy of the same code.
 func TestCommittedMergedDocument(t *testing.T) {
+	t.Parallel()
 	config := writeConfig(t, freePorts(t, listenerCount))
 	out := filepath.Join(t.TempDir(), "api.json")
 	res := runCommand(t, config, "sqlite-memory", genCommand,
@@ -1188,6 +1310,7 @@ func excerpt(document []byte, index int) string {
 // pkg/ops/openapi's document shape by hand, so a top-level field Merge starts
 // writing would otherwise be dropped from the contract silently.
 func TestMarkOperationsWithNoOwnedOperationIsIdentity(t *testing.T) {
+	t.Parallel()
 	specs := core.Resources[speedhttp.Spec](core.ProcessRegistry)
 	merged, err := openapi.Merge(specs, openapi.Options{Title: "demo-api", Version: "9.9.9"})
 	if err != nil {
@@ -1227,8 +1350,14 @@ const (
 // database belongs to one of them. The seed carries the migrations with it — it
 // drives past them — so it is run on a database that was never migrated.
 func TestSeedBootstrapsTheConsole(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	t.Parallel()
+	// The database is a file the seed and every serve attempt share: the seed
+	// leaves it unchanged on a second run, so it runs once over the same path.
+	// Each serve attempt renders a fresh configuration, so its listeners, its
+	// token signing key and its object-store directory change between attempts
+	// while the database stays the one the seed wrote.
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 
 	first := runCommand(t, config, "sqlite", seedCommand)
 	if first.err != nil {
@@ -1278,8 +1407,9 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		}
 	}
 
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
 
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
@@ -1534,6 +1664,7 @@ func accountCount(t *testing.T, ctx context.Context, accounts authn.Accounts) in
 // account still gets a missing administrator membership written, which is what
 // keeps the operator administering the deployment after the address is gone.
 func TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved(t *testing.T) {
+	t.Parallel()
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "adopt.db")
 	config := writeConfigReplacing(t, ports, dsn, demoSeedSection, emailSeedSection)
@@ -1624,6 +1755,7 @@ func TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved(t *testing.T) {
 // the adoption: an entry whose address and username are both free is created as
 // before, and both names resolve to the one account the run wrote.
 func TestSeedCreatesAnAccountWhenNeitherLoginNameExists(t *testing.T) {
+	t.Parallel()
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "create.db")
 	config := writeConfigReplacing(t, ports, dsn, demoSeedSection, emailSeedSection)
@@ -1659,6 +1791,7 @@ func TestSeedCreatesAnAccountWhenNeitherLoginNameExists(t *testing.T) {
 // account, so the run leaves that account as it stands and does not create a
 // second one under the free username.
 func TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds(t *testing.T) {
+	t.Parallel()
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "address-taken.db")
 	// The first run writes the account holding the operator's address under a
@@ -1708,13 +1841,15 @@ func TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds(t *testing.T) {
 // is refused every management write with 403 contact-required until its holder
 // proves the address.
 func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	operator := signIn(t, base, seedIdentifier, seedPassword)
@@ -1745,21 +1880,26 @@ func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 }
 
 func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
-	ports := freePorts(t, listenerCount)
+	t.Parallel()
 	// Two tenants, so a seed that binds the first one it reads is
 	// distinguishable from one that binds them all.
 	secondTenant := "acme"
-	config := writeConfigReplacing(t, ports, filepath.Join(t.TempDir(), "demo.db"),
-		"  tenants:\n    - name: "+demoTenant+"\n      admins:\n        - "+seedIdentifier+"\n",
-		"  tenants:\n    - name: "+demoTenant+"\n      admins:\n        - "+seedIdentifier+"\n    - name: "+secondTenant+"\n      admins:\n        - "+seedIdentifier+"\n")
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	write := func(ports []int) string {
+		return writeConfigReplacing(t, ports, dsn,
+			"  tenants:\n    - name: "+demoTenant+"\n      admins:\n        - "+seedIdentifier+"\n",
+			"  tenants:\n    - name: "+demoTenant+"\n      admins:\n        - "+seedIdentifier+"\n    - name: "+secondTenant+"\n      admins:\n        - "+seedIdentifier+"\n")
+	}
+	config := write(freePorts(t, listenerCount))
 
 	seeded := runCommand(t, config, "sqlite", seedCommand)
 	if seeded.err != nil {
 		t.Fatalf("seed failed: %v\n%s", seeded.err, seeded.combined())
 	}
 
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, write(ports), "sqlite", serveCommand)
+	})
 
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
@@ -1790,13 +1930,15 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 // tenant-admin binding. A route that wrote only the roster row would leave a
 // tenant nobody can enter, which the roster cannot detect on a later removal.
 func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -1882,13 +2024,15 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 // the same request. The event bus this stack runs delivers in-process, so the
 // read after the removal observes what the cascade left.
 func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -1983,15 +2127,17 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 // four reads reachable, then opens the stream and reads the event-stream answer
 // its handler writes before the first frame.
 func TestTheNotificationSurfaceIsReachable(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 
 	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
 
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
 
 	// The api endpoint is tenant-scoped: the request announces the tenant the
 	// seed registered and the administrator is bound in, and carries the access
@@ -2052,15 +2198,17 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 // seam: exactly one row, and no request row beside it. The profile read the
 // frontend polls on its own is performed too and must leave no request row.
 func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 
 	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
 
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, seedIdentifier, seedPassword)
@@ -2177,6 +2325,7 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 // repair and cannot report. The third is refused by the strict decode of the
 // account entry before the command's own check sees it.
 func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		old  string
@@ -2228,6 +2377,7 @@ func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
 // the sample file's own text rather than a constant, so a change to the sample
 // obliges the template to follow it.
 func TestTheConfigTemplateMirrorsTheSampleFile(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("testdata", "sqlite-memory.yaml"))
 	if err != nil {
 		t.Fatalf("reading the sample configuration: %v", err)
@@ -2302,6 +2452,7 @@ func renderDeployTemplate(t *testing.T) string {
 // pkg/config entry point the binary uses, so a deployment that runs the
 // template carries the trust settings this case asserts.
 func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
+	t.Parallel()
 	rendered := renderDeployTemplate(t)
 	// The default build carries the mail and social methods, so every section
 	// the template names is a declared input item.
@@ -2345,6 +2496,7 @@ type deploySeedCarrier struct {
 // find. The case renders the template the way deploy/entrypoint.sh does and
 // reads the item back, so the placeholder and its input cannot drift apart.
 func TestTheFlyTemplateSeedsTheOperatorUsername(t *testing.T) {
+	t.Parallel()
 	rendered := renderDeployTemplate(t)
 	// The default build carries the mail and social methods, so the template's
 	// sections are all declared input items.

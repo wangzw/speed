@@ -60,6 +60,7 @@ func (m *roleManager) MarkRoleBuiltin(_ context.Context, _ string, role authz.Ro
 // grants are in place, so the mark cannot freeze a role before the grants that
 // give it meaning exist.
 func TestSeedCreatesTheAdministratorRoleWithoutTheMark(t *testing.T) {
+	t.Parallel()
 	manager := &roleManager{}
 	if err := seedRole(t.Context(), manager, "system", platformAdminRole, platformAdminDescriptionKey, time.Now().UTC()); err != nil {
 		t.Fatalf("seedRole: %v", err)
@@ -88,6 +89,7 @@ func TestSeedCreatesTheAdministratorRoleWithoutTheMark(t *testing.T) {
 // is refused, and the rewrite would also touch the description and the
 // creation time the step has no business changing.
 func TestSeedMarksTheAdministratorRoleBuiltin(t *testing.T) {
+	t.Parallel()
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	manager := &roleManager{roles: []authz.RoleRecord{
 		{
@@ -112,6 +114,7 @@ func TestSeedMarksTheAdministratorRoleBuiltin(t *testing.T) {
 // A builtin role that is already there is left alone: a second seed writes
 // nothing.
 func TestSeedLeavesAnExistingBuiltinRoleAlone(t *testing.T) {
+	t.Parallel()
 	manager := &roleManager{roles: []authz.RoleRecord{
 		{Tenant: "system", Role: platformAdminRole, Builtin: true, DescriptionKey: "kept"},
 	}}
@@ -248,6 +251,7 @@ func (c fixedCatalog) Metadata(permission authz.Permission) (authz.PermissionMet
 // the surface reports added is what the seed prints, so a grown set and an
 // unchanged one are distinguished by the surface's own answer.
 func TestSeedGrantsSeedsEveryDeclaredPermission(t *testing.T) {
+	t.Parallel()
 	seeder := &grantSeeder{added: 2}
 	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
 		"crm.deal.read":  {"deal", "read"},
@@ -279,6 +283,7 @@ func TestSeedGrantsSeedsEveryDeclaredPermission(t *testing.T) {
 // named, and the surface's own error survives the wrapping: swallowing it would
 // turn a failed seed into a role silently short of a permission.
 func TestSeedReportsASeedingFailure(t *testing.T) {
+	t.Parallel()
 	refusal := errors.New("authz/policy: the table is unavailable")
 	seeder := &grantSeeder{err: refusal}
 	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
@@ -303,6 +308,7 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 // exactly, and the version's retired set is the declared permissions that are
 // not governed.
 func TestTheAdministrationRolesTakeDifferentGrantSets(t *testing.T) {
+	t.Parallel()
 	catalog := fixedCatalog{
 		pairs: map[authz.Permission][2]string{
 			"crm.deal.read":      {"deal", "read"},
@@ -337,6 +343,7 @@ func TestTheAdministrationRolesTakeDifferentGrantSets(t *testing.T) {
 // convergence whose audit row cannot be written does not run, so a builtin
 // role's grant set is never changed without its record.
 func TestTheSeedDoesNotConvergeWhenTheAuditRowFails(t *testing.T) {
+	t.Parallel()
 	reconciler := &recordingReconciler{}
 	auditor := newRecordedAudit()
 	auditor.err = errors.New("the audit table is unavailable")
@@ -354,6 +361,7 @@ func TestTheSeedDoesNotConvergeWhenTheAuditRowFails(t *testing.T) {
 // the reconciler: the success row is written first, then the convergence is
 // asked for the tenant and role it names.
 func TestTheSeedRecordsTheConvergenceBeforeAsking(t *testing.T) {
+	t.Parallel()
 	reconciler := &recordingReconciler{}
 	auditor := newRecordedAudit()
 	target := []authz.Grant{{Resource: "deal", Action: "read"}}
@@ -1451,6 +1459,7 @@ func TestSeedTenantLeavesATransferThatLandsDuringTheRepair(t *testing.T) {
 }
 
 func TestSeedFailsOnASystemNameConflict(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	roster.createErr = fmt.Errorf("%w: name %q is held by tenant %q",
 		tenant.ErrNameConflict, string(authz.PlatformDomain), "legacy")
@@ -1731,6 +1740,7 @@ func TestSeedConvergesAnExistingTenantToTheGovernedSet(t *testing.T) {
 // seed writes have an entry in every locale, and the catalog carries no key the
 // seed never writes.
 func TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog(t *testing.T) {
+	t.Parallel()
 	want := map[string]bool{
 		platformAdminDescriptionKey: true,
 		tenantAdminDescriptionKey:   true,
@@ -1841,6 +1851,7 @@ func (s *orderSeeder) SeedGrants(context.Context, string, authz.Role, []authz.Gr
 // created with a username, so an entry whose login name is an address must name
 // one, and the command refuses before writing anything.
 func TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress(t *testing.T) {
+	t.Parallel()
 	emailOnly := seedAccount{Identifier: "operator@example.com", Password: "operator-dev-secret"}
 	parseErr := emailOnly.check()
 	if parseErr == nil || !strings.Contains(parseErr.Error(), "seed.accounts") {

@@ -16,6 +16,7 @@ import (
 // serve run names both, so the dependency is satisfied without the host writing
 // it down a second time.
 func TestTheDemoAssemblyProvidesWhatTheInvitationModuleRequires(t *testing.T) {
+	t.Parallel()
 	invitation, ok := core.ProcessRegistry.Lookup(invite.ModuleName)
 	if !ok {
 		t.Fatalf("the demo build registers no %q", invite.ModuleName)

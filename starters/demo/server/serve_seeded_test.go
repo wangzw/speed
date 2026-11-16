@@ -24,15 +24,17 @@ func seededServe(t *testing.T, extra string) (string, string) {
 // for a case that reads the rows the assembly wrote.
 func seededServeWithDatabase(t *testing.T, extra string) (string, string, string) {
 	t.Helper()
-	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "demo.db")
-	body := configBody(t, ports, dsn) + extra
-	config := writeConfigFile(t, body)
+	write := func(ports []int) string {
+		return writeConfigFile(t, configBody(t, ports, dsn)+extra)
+	}
+	config := write(freePorts(t, listenerCount))
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite-memory", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, write(ports), "sqlite-memory", serveCommand)
+	})
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	return base, signIn(t, base, hashIdentifier, seedPassword), dsn
 }

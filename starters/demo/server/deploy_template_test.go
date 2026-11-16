@@ -47,6 +47,7 @@ type deployHTTPSection struct {
 // table whole (http.endpoints is a container leaf), and this case reads the
 // effective configuration the rendered template produces.
 func TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener(t *testing.T) {
+	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
 	var got deployHTTPSection
 	readEffective(t, "deploy/fly.yaml.tmpl", locator, "http", &got)
@@ -74,6 +75,7 @@ func TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener(t *testing.T)
 // fails the startup, so the placeholders have to land under the namespaces the
 // methods decode: authn.login.google and authn.login.github.
 func TestTheDeployTemplateCarriesTheSocialCredentials(t *testing.T) {
+	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
 	for namespace, want := range map[string]socialCredentials{
 		googlelogin.ConfigNamespace: {
@@ -103,6 +105,7 @@ type totpSection struct {
 // deployment template writes into the otpauth address, which an authenticator
 // app shows beside the account.
 func TestTheDeployTemplateNamesTheSiteInTheAuthenticator(t *testing.T) {
+	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
 	var got totpSection
 	readEffective(t, "deploy/fly.yaml.tmpl", locator, "authn.mfa.totp", &got)
@@ -124,6 +127,7 @@ type webauthnSection struct {
 // deployment template writes as the relying party's display name, which the
 // browser's WebAuthn prompt shows beside the account.
 func TestTheDeployTemplateNamesTheSiteInThePasskeyPrompt(t *testing.T) {
+	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
 	var got webauthnSection
 	readEffective(t, "deploy/fly.yaml.tmpl", locator, "authn.mfa.webauthn", &got)
@@ -155,6 +159,7 @@ type humanverifySection struct {
 // names a different mode on each surface, so the two placeholders are shown to
 // be wired to their own item and not to one another.
 func TestTheDeployTemplateCarriesTheHumanVerificationSection(t *testing.T) {
+	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
 	var got humanverifySection
 	readEffective(t, "deploy/fly.yaml.tmpl", locator, humanverify.ConfigNamespace, &got)
@@ -182,6 +187,7 @@ var placeholderPattern = regexp.MustCompile(`__[A-Z][A-Z0-9_]*__`)
 // other cases use fills the placeholders on its own, so the wiring between the
 // script and the template is asserted here.
 func TestTheEntrypointRendersEveryDeploymentTemplatePlaceholder(t *testing.T) {
+	t.Parallel()
 	template, err := os.ReadFile(filepath.Join("..", "deploy", "fly.yaml.tmpl"))
 	if err != nil {
 		t.Fatalf("reading deploy/fly.yaml.tmpl: %v", err)
@@ -299,6 +305,7 @@ func runEntrypointModes(t *testing.T, overrides map[string]string) entrypointMod
 // work and the phone surface the self-hosted captcha, so the demo gates every
 // send without a Cloudflare account and renders no credential.
 func TestTheEntrypointDefaultsEachHumanVerificationSurface(t *testing.T) {
+	t.Parallel()
 	got := runEntrypointModes(t, nil)
 	if got.err != nil {
 		t.Fatalf("running the entrypoint's human-verification block: %v\n%s", got.err, got.stderr)
@@ -322,6 +329,7 @@ func TestTheEntrypointDefaultsEachHumanVerificationSurface(t *testing.T) {
 // entrypoint places in the rendered section: DEMO_TURNSTILE_ACTION when the
 // environment names one, and the login default otherwise.
 func TestTheEntrypointRendersTheConfiguredTurnstileAction(t *testing.T) {
+	t.Parallel()
 	got := runEntrypointModes(t, map[string]string{"DEMO_TURNSTILE_ACTION": "login-sms"})
 	if got.err != nil {
 		t.Fatalf("running the entrypoint's human-verification block: %v\n%s", got.err, got.stderr)
@@ -336,6 +344,7 @@ func TestTheEntrypointRendersTheConfiguredTurnstileAction(t *testing.T) {
 // either surface selects turnstile, and are not rendered when neither does,
 // even when both are present in the environment.
 func TestTheEntrypointRequiresTurnstileCredentialsPerSelectedSurface(t *testing.T) {
+	t.Parallel()
 	credentials := map[string]string{
 		"DEMO_TURNSTILE_SITE_KEY":   "turnstile-site-key.example.test",
 		"DEMO_TURNSTILE_SECRET_KEY": "turnstile-secret",
@@ -429,6 +438,7 @@ type smsSection struct {
 // point the binary uses, so a deployment that runs the template carries the
 // carrier and templates this case asserts.
 func TestTheDeployTemplateCarriesTheSMSCarrier(t *testing.T) {
+	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
 	var got smsSection
 	readEffective(t, "deploy/fly.yaml.tmpl", locator, "sms", &got)

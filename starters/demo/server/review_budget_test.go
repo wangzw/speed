@@ -51,6 +51,7 @@ var wholeNumberRange = regexp.MustCompile(`^whole numbers from ([0-9]+) to ([0-9
 // seeded, and every value is inside its declared domain and above the declared
 // default.
 func TestReviewWidensTheSendBudgets(t *testing.T) {
+	t.Parallel()
 	var seed seedInput
 	readEffective(t, "the review configuration", "file:review/sqlite.yaml", "seed", &seed)
 

@@ -23,6 +23,7 @@ import (
 // seeded tenant's name is a 409, three creations are admitted, the fourth is
 // the hourly refusal, and the feature document carries org.create.
 func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
+	t.Parallel()
 	base, token := seededServe(t, "")
 	client := &http.Client{Timeout: 10 * time.Second}
 	headers := map[string]string{"Authorization": "Bearer " + token}
@@ -73,6 +74,7 @@ func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
 // with org.create.enabled false: the route is a 404, and the feature is
 // absent.
 func TestTheSelfServiceCreationRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
+	t.Parallel()
 	base, token := seededServe(t, "org:\n  create:\n    enabled: false\n")
 	client := &http.Client{Timeout: 10 * time.Second}
 	headers := map[string]string{"Authorization": "Bearer " + token}
@@ -116,6 +118,7 @@ var creationTables = []string{
 // is measured over the six tables the creation path writes, before and after:
 // neither adds a row.
 func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
+	t.Parallel()
 	base, token, dsn := seededServeWithDatabase(t, "")
 	client := &http.Client{Timeout: 10 * time.Second}
 	headers := map[string]string{"Authorization": "Bearer " + token}
@@ -207,6 +210,7 @@ func assertRowCounts(t *testing.T, dsn string, before map[string]int64, what str
 // tenant is written inside the account's transaction, so the account endpoint
 // mounts no personal-tenant route and a POST there is the endpoint's own 404.
 func TestThePersonalRouteIsNotMounted(t *testing.T) {
+	t.Parallel()
 	base, token := seededServe(t, "")
 	client := &http.Client{Timeout: 10 * time.Second}
 	res := send(t, client, http.MethodPost, base+"/api/v1/orgs/personal", nil,

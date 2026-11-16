@@ -29,14 +29,18 @@ const requiredSSOTenant = `    - name: demo
 // tenant-administration route on an endpoint the admission layer does not guard
 // issues the invitation instead.
 func TestAnInvitationWriteUnderRequiredSSOIsRefusedForALocalPasswordSession(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigReplacing(t, ports, filepath.Join(t.TempDir(), "demo.db"),
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigReplacing(t, freePorts(t, listenerCount), dsn,
 		"    - name: demo\n      admins:\n        - operator\n", requiredSSOTenant)
 	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigReplacing(t, ports, dsn,
+			"    - name: demo\n      admins:\n        - operator\n", requiredSSOTenant),
+			"sqlite", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, seedIdentifier, seedPassword)

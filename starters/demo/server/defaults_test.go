@@ -400,13 +400,11 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 // requests below fails.
 func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 	dir := t.TempDir()
-	ports := freePorts(t, listenerCount)
-	backendPort := ports[backendListener]
-	listeners := fmt.Sprintf(
-		`{"backend":{"address":"127.0.0.1:%d"}}`, backendPort)
-	env := []string{"DEMO_HTTP__LISTENERS=" + listeners}
-
-	seeded := runCommandArgs(t, hostBinary, dir, []string{"sqlite", seedCommand}, env)
+	env := func(ports []int) []string {
+		return []string{fmt.Sprintf(`DEMO_HTTP__LISTENERS={"backend":{"address":"127.0.0.1:%d"}}`,
+			ports[backendListener])}
+	}
+	seeded := runCommandArgs(t, hostBinary, dir, []string{"sqlite", seedCommand}, env(freePorts(t, listenerCount)))
 	if seeded.err != nil {
 		t.Fatalf("seed on the compiled defaults failed: %v\n%s", seeded.err, seeded.combined())
 	}
@@ -424,8 +422,10 @@ func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 		}
 	}
 
-	serve := startArgs(t, dir, []string{"sqlite", serveCommand}, env)
-	serve.waitReady(t)
+	serve, ports := startServing(t, func(ports []int) *process {
+		return startArgs(t, dir, []string{"sqlite", serveCommand}, env(ports))
+	})
+	backendPort := ports[backendListener]
 
 	// The environment's address is the one bound, over the document's.
 	if want := fmt.Sprintf("address=127.0.0.1:%d", backendPort); !strings.Contains(serve.output(), want) {

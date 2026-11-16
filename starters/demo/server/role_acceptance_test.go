@@ -209,6 +209,7 @@ func oneConnection(t *testing.T, database db.Database) {
 // accepts it, ending with the membership and the binding written by the real
 // account and policy modules in one transaction.
 func TestTheRoleAcceptanceAssemblyAcceptsARoleThroughTheRealPolicyAndAccountModules(t *testing.T) {
+	t.Parallel()
 	withRoleAcceptanceAssembly(t, func(ctx context.Context, a *roleAcceptanceAssembly) {
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(a.inviter.ID))
 		issued, err := a.invitations.Issue(issueCtx, invite.IssueInvite{
@@ -247,6 +248,7 @@ func TestTheRoleAcceptanceAssemblyAcceptsARoleThroughTheRealPolicyAndAccountModu
 // as they were, and the acceptance must still refuse to bind the role. The
 // invitation is revoked and neither the membership nor the binding is written.
 func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterLeftTheTenant(t *testing.T) {
+	t.Parallel()
 	withRoleAcceptanceAssembly(t, func(ctx context.Context, a *roleAcceptanceAssembly) {
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(a.inviter.ID))
 		issued, err := a.invitations.Issue(issueCtx, invite.IssueInvite{
@@ -292,6 +294,7 @@ func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterLeftTheTenant(t
 // inviter's account and refuse the role anyway. The invitation is revoked and
 // neither the membership nor the binding is written.
 func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterAccountIsDisabled(t *testing.T) {
+	t.Parallel()
 	withRoleAcceptanceAssembly(t, func(ctx context.Context, a *roleAcceptanceAssembly) {
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(a.inviter.ID))
 		issued, err := a.invitations.Issue(issueCtx, invite.IssueInvite{

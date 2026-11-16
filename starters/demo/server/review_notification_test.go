@@ -91,6 +91,7 @@ type messagePage struct {
 // available set notification.preferences and notification.delivery collect with
 // core.Resources, and its schedule names the handler this module registers.
 func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
+	t.Parallel()
 	if !slices.Contains(capabilityModules, reviewNotificationModuleName) {
 		t.Fatalf("the capability ceiling names no %q module, so the review binary would run neither "+
 			"the type nor the worker", reviewNotificationModuleName)
@@ -153,14 +154,14 @@ func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 // catalog, the member turns the email channel off and the write succeeds, an
 // anonymous caller is still refused, and the next windows write no email.
 func TestReviewNotificationJourneyIsReachable(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + path
-	seedReview(t, binary, config)
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	serve, ports := startServing(t, func(ports []int) *process {
+		config := "file://" + reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -322,14 +323,14 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 // above holds the other direction — the same fixture with a member who stores no
 // preference, which resolves to the platform default.
 func TestReviewNotificationRendersInTheRecipientsLanguage(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + path
-	seedReview(t, binary, config)
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	serve, ports := startServing(t, func(ports []int) *process {
+		config := "file://" + reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}

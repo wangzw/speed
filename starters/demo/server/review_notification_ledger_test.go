@@ -58,15 +58,17 @@ type reviewLedgerRow struct {
 // reason names the template, and it carries no carrier receipt, because the
 // local gate stopped the message before any carrier was called.
 func TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	configPath := reviewConfigWithoutScheduler(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + configPath
-	seedReview(t, binary, config)
-	secret := reviewSeededTOTPSecret(t, configPath)
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	var secret, configPath string
+	_, ports := startServing(t, func(ports []int) *process {
+		configPath = reviewConfigWithoutScheduler(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		config := "file://" + configPath
+		seedReview(t, binary, config)
+		secret = reviewSeededTOTPSecret(t, configPath)
+		return startReview(t, binary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}

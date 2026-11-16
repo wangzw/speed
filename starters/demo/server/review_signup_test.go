@@ -68,13 +68,15 @@ type registrationAnswer struct {
 // name-and-password registration closed, so the login page renders no register
 // entry.
 func TestReviewBaselineHasNoRegistrationEntry(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "baseline.db"))
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "baseline.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seeding the baseline: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	res := get(t, base+"/api/v1/auth/methods")
@@ -100,15 +102,14 @@ func TestReviewBaselineHasNoRegistrationEntry(t *testing.T) {
 // code read from the review mail log verifies the address, the profile turns
 // verified, and the account's tenant list still names the same tenant.
 func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + path
-	seedReview(t, binary, config)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	serve, ports := startServing(t, func(ports []int) *process {
+		config := "file://" + reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -323,6 +324,7 @@ func reviewMailCodeFor(p *process, address string) string {
 // exactly six digits, so a body with none reports nothing and a longer run is
 // not taken for a code.
 func TestReviewSixDigitRunReadsOnlyAnExactRun(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, text, want string
 	}{
@@ -343,6 +345,7 @@ func TestReviewSixDigitRunReadsOnlyAnExactRun(t *testing.T) {
 // plain text is read first, and a body with no exact six-digit run contributes
 // nothing, so a message with no code reports none.
 func TestReviewVerificationCodeReadsTheFirstBodyCarryingOne(t *testing.T) {
+	t.Parallel()
 	if got := maillog.VerificationCode("no digits", "the code is 246810"); got != "246810" {
 		t.Errorf("verificationCode fell through to the HTML body as %q, want 246810", got)
 	}

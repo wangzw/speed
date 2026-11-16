@@ -19,15 +19,15 @@ import (
 // Either one alone would pass over a module that mounted the route somewhere
 // the fragment does not describe, or declared it without mounting it.
 func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
-	ports := freePorts(t, listenerCount)
+	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
-	body := configBody(t, ports, dsn)
-	config := writeConfigFile(t, body)
+	config := writeConfigFile(t, configBody(t, freePorts(t, listenerCount), dsn))
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite-memory", serveCommand)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigFile(t, configBody(t, ports, dsn)), "sqlite-memory", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, hashIdentifier, seedPassword)
@@ -81,6 +81,7 @@ func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 // assembly carrying personal tenants must also name tenant.self: the caller's
 // tenant list is where an account reads the space its account creation built.
 func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
+	t.Parallel()
 	if !slices.Contains(baselineServe, tenantself.ModuleName) {
 		t.Fatalf("baselineServe does not name %q, so an assembly that carries personal tenants "+
 			"cannot list the caller's own membership", tenantself.ModuleName)

@@ -110,6 +110,7 @@ func (m errorMemberships) Membership(context.Context, string, authn.AccountID) (
 // false, and a subject no account identifier can name is false rather than a
 // failure.
 func TestTheMembershipCheckerReadsTheMembershipSeam(t *testing.T) {
+	t.Parallel()
 	memberships := newFakeMemberships()
 	if err := memberships.Put(context.Background(), authn.Membership{
 		Account: authn.AccountID("acct-1"), Tenant: "system", Active: true, Source: "admin",
@@ -148,6 +149,7 @@ func TestTheMembershipCheckerReadsTheMembershipSeam(t *testing.T) {
 // credential principal has no account row but is an active subject the
 // deployment configured, so it answers active with no display name.
 func TestTheIdentityReaderResolvesDisplayNamesAndActivity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	memberships := newFakeMemberships()
 	for account, active := range map[authn.AccountID]bool{
@@ -213,6 +215,7 @@ func TestTheIdentityReaderResolvesDisplayNamesAndActivity(t *testing.T) {
 // set, so the role-usage read can answer 503 instead of claiming the accounts
 // are gone.
 func TestTheIdentityReaderLeavesAnUnreadableAnswerToTheCaller(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	accounts := newFakeAccounts()
 	accounts.byID["acct-1"] = authn.Account{ID: "acct-1", Status: authn.StatusActive}
@@ -233,6 +236,7 @@ func TestTheIdentityReaderLeavesAnUnreadableAnswerToTheCaller(t *testing.T) {
 // TestTheIdentityReaderOfNoAccountsIsAnEmptyMap holds the empty read: a role
 // with no binding asks for no identity and gets an empty map, not nil.
 func TestTheIdentityReaderOfNoAccountsIsAnEmptyMap(t *testing.T) {
+	t.Parallel()
 	got, err := tenancyProductOf(newFakeRoster(), newFakeMemberships(), nil, nil, nil).
 		Identities(context.Background(), "acme", nil)
 	if err != nil {
@@ -246,6 +250,7 @@ func TestTheIdentityReaderOfNoAccountsIsAnEmptyMap(t *testing.T) {
 // TestTheWriteGuardProtectsTheSystemTenantAndPersonalTenants holds the two
 // protected classes apart from an ordinary tenant, for both protected writes.
 func TestTheWriteGuardProtectsTheSystemTenantAndPersonalTenants(t *testing.T) {
+	t.Parallel()
 	product := tenancyProductOf(newFakeRoster(), newFakeMemberships(), nil, nil, nil)
 	ctx := context.Background()
 	for _, id := range []tenant.ID{
@@ -277,6 +282,7 @@ func TestTheWriteGuardProtectsTheSystemTenantAndPersonalTenants(t *testing.T) {
 // Provision leaves the domain with its tenant-admin role, the governed grants,
 // the roster row and the creator's membership and binding.
 func TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
@@ -319,6 +325,7 @@ func TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding(t *testing.T) {
 // tenant-admin binding: a binding without the membership names an administrator
 // who cannot enter the tenant it administers.
 func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	memberships := newFakeMemberships()
 	grants := newFakeGrants()
@@ -355,6 +362,7 @@ func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
 // the seed can repair, and the mark precedes the administrator rows so a failed
 // mark leaves no half-written administration.
 func TestTheProvisionerWritesTheRosterRowBeforeTheCreatorRows(t *testing.T) {
+	t.Parallel()
 	steps := &stepLog{}
 	roster := newFakeRoster()
 	roster.steps = steps
@@ -390,6 +398,7 @@ func TestTheProvisionerWritesTheRosterRowBeforeTheCreatorRows(t *testing.T) {
 // TestTheProvisionerRetriesTheBuiltinMarkOnce holds the retry: a first marking
 // failure is retried, and a successful retry completes the tenant.
 func TestTheProvisionerRetriesTheBuiltinMarkOnce(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	memberships := newFakeMemberships()
 	grants := newFakeGrants()
@@ -429,6 +438,7 @@ func TestTheProvisionerRetriesTheBuiltinMarkOnce(t *testing.T) {
 // 503 rather than reporting a tenant it did not finish; the seed repairs every
 // non-personal tenant's role on its next run.
 func TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	memberships := newFakeMemberships()
 	grants := newFakeGrants()
@@ -471,6 +481,7 @@ func TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows(t *testing.T) 
 // both follow the roster row — so it leaves the winner's role, grants and
 // administration in place rather than tearing the domain down.
 func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	roster.lagging["acme"] = true
@@ -517,6 +528,7 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 // state: the management surface may neither rewrite nor delete it, as with the
 // administrator roles the seed writes.
 func TestTheProvisionerMarksTheTenantAdminRoleBuiltin(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
@@ -544,6 +556,7 @@ func TestTheProvisionerMarksTheTenantAdminRoleBuiltin(t *testing.T) {
 // identifier's prefix in every seam, so a tenant opened with such an identifier
 // carries the same unfrozen role the host-built personal tenant does.
 func TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
@@ -576,6 +589,7 @@ func TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen(t *testing.T) {
 // The identifier is registered, so the answer is the already-exists refusal, not
 // a builtin-role failure, and the winner's policy is untouched.
 func TestTheProvisionerAnswersATakenIdentifierWhenTheWinnerFrozeTheRole(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	roster.lagging["acme"] = true
@@ -612,6 +626,7 @@ func TestTheProvisionerAnswersATakenIdentifierWhenTheWinnerFrozeTheRole(t *testi
 // path: a roster that refuses the row leaves no role, grant, binding or
 // membership behind.
 func TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	roster.createErr = errors.New("the roster is unavailable")
 	memberships := newFakeMemberships()
@@ -650,6 +665,7 @@ func TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses(t *testing.T) {
 // no membership row and the checker answers true rather than reading a row that
 // does not exist.
 func TestTheMembershipCheckerTrustsAConfiguredStaticPrincipal(t *testing.T) {
+	t.Parallel()
 	memberships := newFakeMemberships()
 	product := tenancyProductOf(newFakeRoster(), memberships, nil, nil, nil)
 
@@ -677,6 +693,7 @@ func TestTheMembershipCheckerTrustsAConfiguredStaticPrincipal(t *testing.T) {
 // role, a grant or a binding is refused in a domain whose identifier starts
 // with the personal prefix, and an ordinary or system domain is left alone.
 func TestThePolicyWriteGuardRefusesEveryPersonalDomainWrite(t *testing.T) {
+	t.Parallel()
 	guard := policyWriteGuard{}
 	ctx := context.Background()
 	ops := []authz.WriteOp{authz.WriteRole, authz.WriteGrant, authz.WriteBinding}
@@ -707,6 +724,7 @@ func TestThePolicyWriteGuardRefusesEveryPersonalDomainWrite(t *testing.T) {
 // settings surface is refused in a domain whose identifier starts with the
 // personal prefix, and an ordinary or system domain is left alone.
 func TestTheSettingsWriteGuardRefusesAPersonalDomainWrite(t *testing.T) {
+	t.Parallel()
 	guard := settingsWriteGuard{}
 	ctx := context.Background()
 	for _, domain := range []string{tenantpersonal.IDPrefix + "acct-1", tenantpersonal.IDPrefix} {
@@ -733,6 +751,7 @@ func TestTheSettingsWriteGuardRefusesAPersonalDomainWrite(t *testing.T) {
 // as a single-member space: a removal of any membership in it is refused, even
 // when another tenant-administrator binding would satisfy the last-admin floor.
 func TestTheMembershipGuardRefusesAPersonalDomainRemoval(t *testing.T) {
+	t.Parallel()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	personalID := tenantpersonal.IDPrefix + "acct-1"
@@ -752,6 +771,7 @@ func TestTheMembershipGuardRefusesAPersonalDomainRemoval(t *testing.T) {
 // refused, while another administrator or a role that is not tenant-admin keeps
 // it satisfied.
 func TestTheMembershipGuardRefusesTheLastTenantAdmin(t *testing.T) {
+	t.Parallel()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	manager.bindings["acme"] = []authz.Binding{
@@ -784,6 +804,7 @@ func TestTheMembershipGuardRefusesTheLastTenantAdmin(t *testing.T) {
 // and settings write guards, because one Go type cannot carry more than one
 // Denied method.
 func TestTheHostModulesProvideTheGuards(t *testing.T) {
+	t.Parallel()
 	provides := func(module core.Module, token any) bool {
 		want := reflect.TypeOf(token)
 		for _, provision := range module.Provides {
@@ -833,6 +854,7 @@ func TestTheHostModulesProvideTheGuards(t *testing.T) {
 // in this host. An assembly that names no policy module has no counter, and
 // its deletion path is the one the account module documents without it.
 func TestTheBaselineAssemblesTheTenantAdminCounter(t *testing.T) {
+	t.Parallel()
 	modules := assembledDescriptors(t)
 	policy, ok := modules[authzpolicy.ModuleName]
 	if !ok {
@@ -854,6 +876,7 @@ func TestTheBaselineAssemblesTheTenantAdminCounter(t *testing.T) {
 // mount and the merged contract never names them, however complete the module
 // itself is.
 func TestTheBaselineServesTheOrganizationProfile(t *testing.T) {
+	t.Parallel()
 	if !slices.Contains(baselineServe, tenantprofile.ModuleName) {
 		t.Fatalf("the baseline serve roster does not name %q: the demo would serve no "+
 			"organization profile route", tenantprofile.ModuleName)
@@ -875,6 +898,7 @@ func TestTheBaselineServesTheOrganizationProfile(t *testing.T) {
 // check ahead of every policy write: a tenant the roster already holds is
 // ErrTenantExists, and its policy rows are not touched.
 func TestTheProvisionerRefusesATakenIdentifierWithoutTouchingItsPolicy(t *testing.T) {
+	t.Parallel()
 	roster := newFakeRoster()
 	roster.rows["acme"] = tenant.Tenant{ID: "acme", Name: "acme", Status: tenant.StatusActive}
 	grants := newFakeGrants()

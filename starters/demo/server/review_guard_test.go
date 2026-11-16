@@ -48,6 +48,7 @@ func (r stubReader) Decode(path string, target any) error {
 // name that merely starts with localhost is not it. An empty host is every
 // interface, and a value that is not host:port is refused.
 func TestReviewLoopbackAddresses(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		address string
 		want    bool
@@ -78,6 +79,7 @@ func TestReviewLoopbackAddresses(t *testing.T) {
 // TestReviewGuardRefusesANonLoopbackListener holds the refusal: one listener off
 // loopback fails the guard, and a set of loopback listeners passes.
 func TestReviewGuardRefusesANonLoopbackListener(t *testing.T) {
+	t.Parallel()
 	loopback := stubReader{listeners: map[string]reviewListenerConfig{
 		"backend": {Address: "127.0.0.1:8080"},
 		"ops":     {Address: "[::1]:8083"},
@@ -111,6 +113,7 @@ func TestReviewGuardRefusesANonLoopbackListener(t *testing.T) {
 // no longer decides whether such a mutation is noticed. The named listener is
 // pinned too: the first exposed one in name order is the one reported.
 func TestReviewGuardCheckIsDeterministic(t *testing.T) {
+	t.Parallel()
 	reader := stubReader{listeners: map[string]reviewListenerConfig{
 		"a-loopback": {Address: "127.0.0.1:8080"},
 		"b-loopback": {Address: "[::1]:8081"},
@@ -131,6 +134,7 @@ func TestReviewGuardCheckIsDeterministic(t *testing.T) {
 // set. A build whose Prepare skipped the check fails here without the binary
 // case.
 func TestReviewPrepareChecksTheListeners(t *testing.T) {
+	t.Parallel()
 	exposed := reviewRegistry(t, stubReader{listeners: map[string]reviewListenerConfig{
 		"backend": {Address: "0.0.0.0:8080"},
 	}})
@@ -239,33 +243,11 @@ func seedReview(t *testing.T, binary, config string) {
 }
 
 // startReview runs the review build's serve command the way demo_test's start
-// runs the baseline one.
+// runs the baseline one: through the same child type, so its standard error is
+// captured the same way and a bind failure is recognisable on both.
 func startReview(t *testing.T, binary, config string) *process {
 	t.Helper()
-	cmd := exec.Command(binary, "--config", config, "sqlite", serveCommand)
-	cmd.Env = childEnv()
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatalf("opening the review child's standard output: %v", err)
-	}
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("starting the review build: %v", err)
-	}
-	p := &process{cmd: cmd, ready: make(chan struct{}), done: make(chan struct{})}
-	go p.consume(stdout, false)
-	go func() {
-		p.waitErr = cmd.Wait()
-		close(p.done)
-	}()
-	t.Cleanup(func() {
-		p.stop(t)
-		if strings.Contains(stderr.String(), raceWarning) {
-			t.Errorf("the review build reported a data race:\n%s", stderr.String())
-		}
-	})
-	return p
+	return startProcess(t, binary, "", []string{"--config", config, "sqlite", serveCommand}, nil)
 }
 
 // TestReviewRunRefusesANonLoopbackListener builds the review binary and runs
@@ -273,6 +255,7 @@ func startReview(t *testing.T, binary, config string) *process {
 // loopback: the startup fails with the guard's message, and no socket is
 // served.
 func TestReviewRunRefusesANonLoopbackListener(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	path := reviewConfig(t,
@@ -296,15 +279,14 @@ func TestReviewRunRefusesANonLoopbackListener(t *testing.T) {
 // its ready record, and the same listener answers the operations probe. A
 // guard that refused every address would pass the refusal case and fail here.
 func TestReviewRunAcceptsALoopbackListener(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + path
-	seedReview(t, binary, config)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		config := "file://" + reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	probe := get(t, fmt.Sprintf("http://127.0.0.1:%d/health", ports[backendListener]))
 	if probe.status != http.StatusOK {

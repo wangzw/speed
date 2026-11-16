@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 )
@@ -36,6 +37,7 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 // requires the provisioning seam this module provides, dropping it fails the
 // startup instead of lowering a route count; the case holds that failure.
 func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
+	t.Parallel()
 	names := make([]string, 0, len(mayLeaveRouteCountUnchanged))
 	for name := range mayLeaveRouteCountUnchanged {
 		names = append(names, name)
@@ -58,10 +60,10 @@ func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T)
 		assertRouteCountsUnchanged(t, group, before, after[group.id])
 	}
 
-	variant, _ := launch(t, topo, personal.modules)
-	if err := variant.waitReady(startLimit); err == nil {
-		t.Fatalf("dropping %v left a run that starts, want the account module's required "+
-			"provisioning seam to stop it", personal.modules)
+	variant, _, err := startVariant(t, topo, personal.modules)
+	if miss := startupFailureMiss(variant, err, fmt.Sprintf(
+		"the account module's required provisioning seam to stop a run without %v", personal.modules)); miss != "" {
+		t.Fatal(miss)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 // The host's local removal lock serialises one tenant and leaves another
 // tenant's removals alone.
 func TestTheHostRemovalLockSerialisesOneTenant(t *testing.T) {
+	t.Parallel()
 	lock := &tenantRemovalLock{dialect: db.SQLite, byTenant: make(map[string]chan struct{})}
 
 	release, err := lock.localLock(context.Background(), "acme")

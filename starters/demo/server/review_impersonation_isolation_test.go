@@ -31,6 +31,7 @@ const baselineMaxAuthAge = 5 * time.Minute
 // enable the step-up branch from configuration. Before the capability roster
 // became unconditional the module was imported only behind //go:build review.
 func TestDefaultBuildCompilesTheSMSFactor(t *testing.T) {
+	t.Parallel()
 	if _, ok := core.ProcessRegistry.Lookup(smsFactorModuleName); !ok {
 		t.Fatalf("the default build registers no module %q; the SMS second factor is part of the "+
 			"capability ceiling every build carries", smsFactorModuleName)
@@ -44,6 +45,7 @@ func TestDefaultBuildCompilesTheSMSFactor(t *testing.T) {
 // declared default fails here even though no baseline configuration file names
 // the key.
 func TestDefaultBuildKeepsTheImpersonationDefaults(t *testing.T) {
+	t.Parallel()
 	for _, resource := range core.Resources[settings.Schema](core.ProcessRegistry) {
 		if resource.Value.Namespace != "authn.impersonation" {
 			continue

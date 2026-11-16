@@ -29,6 +29,7 @@ var reviewOnlyFeatureNames = []string{"review.sms.control", "review.notification
 // the mail carriers, the verification code sender and the notification fixture
 // were compiled only under deploy or review, so this lookup failed for them.
 func TestDefaultBuildCompilesEveryCapability(t *testing.T) {
+	t.Parallel()
 	if len(capabilityModules) == 0 {
 		t.Fatal("capabilityModules names no module: the capability ceiling is empty")
 	}
@@ -55,6 +56,7 @@ func TestDefaultBuildCompilesEveryCapability(t *testing.T) {
 // test support. A deployment can therefore fall back to them, and a review run
 // reaches them through the same roster.
 func TestTheLogCarriersAreInEveryBuild(t *testing.T) {
+	t.Parallel()
 	named := make(map[string]bool, len(capabilityModules))
 	for _, name := range capabilityModules {
 		named[name] = true
@@ -75,6 +77,7 @@ func TestTheLogCarriersAreInEveryBuild(t *testing.T) {
 // so a deployment that sets its accept base URL sends the notice and a bare run
 // reports not_configured, without a separate binary.
 func TestTheDefaultBuildCarriesTheInvitationNotifier(t *testing.T) {
+	t.Parallel()
 	if _, ok := core.ProcessRegistry.Lookup(invitemail.ModuleName); !ok {
 		t.Errorf("the default build registers no %q", invitemail.ModuleName)
 	}
@@ -91,6 +94,7 @@ func TestTheDefaultBuildCarriesTheInvitationNotifier(t *testing.T) {
 // review-only controls are not in this binary at all, so no configuration can
 // enable them, and the features they declare are absent from the vocabulary.
 func TestDefaultBuildCarriesNoReviewControl(t *testing.T) {
+	t.Parallel()
 	for _, name := range reviewOnlyModuleNames {
 		if module, ok := core.ProcessRegistry.Lookup(name); ok {
 			t.Errorf("the default build registers the review-only control %q (%+v); test controls "+
@@ -115,6 +119,7 @@ func TestDefaultBuildCarriesNoReviewControl(t *testing.T) {
 // ceiling now, and a rename in either package fails here instead of silently
 // dropping a capability from every build.
 func TestDefaultBuildNamesTheDeployAndReviewCapabilities(t *testing.T) {
+	t.Parallel()
 	named := make(map[string]bool, len(capabilityModules))
 	for _, name := range capabilityModules {
 		named[name] = true

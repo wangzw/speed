@@ -58,6 +58,7 @@ func prepareFixture(t *testing.T, reader config.Reader) (core.Enablement, error)
 // case: without the switch, the owner of the notice is absent from the run and
 // the startup succeeds.
 func TestTheNotificationFixtureStandsDownWhenNotEnabled(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		body string
@@ -82,6 +83,7 @@ func TestTheNotificationFixtureStandsDownWhenNotEnabled(t *testing.T) {
 
 // TestTheNotificationFixtureRunsWhenEnabled holds the configured case.
 func TestTheNotificationFixtureRunsWhenEnabled(t *testing.T) {
+	t.Parallel()
 	got, err := prepareFixture(t, fixtureReader(t, `{"review":{"notification":{"enabled":true}}}`))
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
@@ -95,6 +97,7 @@ func TestTheNotificationFixtureRunsWhenEnabled(t *testing.T) {
 // reader is a host omission, not an unconfigured fixture: it fails the start
 // rather than reading as "off" and losing the fixture in silence.
 func TestTheNotificationFixtureRefusesAHostWithNoReader(t *testing.T) {
+	t.Parallel()
 	reg := core.New()
 	reg.Register(reviewNotificationModule())
 	if _, err := reviewNotificationModule().Prepare(t.Context(), reg); err == nil {

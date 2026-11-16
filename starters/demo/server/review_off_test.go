@@ -21,6 +21,7 @@ const reviewEnabled = false
 // personal domain keeps its refusal. The probe names the fixture the review
 // build adds; it is a test value, not a policy this build carries.
 func TestTheDefaultSettingsWriteGuardHasNoReviewFixture(t *testing.T) {
+	t.Parallel()
 	guard := settingsWriteGuard{}
 	ctx := context.Background()
 	for _, domain := range []string{"protected-acme", "protected-"} {

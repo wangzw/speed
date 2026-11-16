@@ -66,6 +66,7 @@ const reviewImpersonationSecretEpoch = 30
 // seasoned, and a password-and-TOTP login completes with a code computed from
 // the stored secret.
 func TestReviewImpersonationTOTPFactorIsSeasonedAndSignsIn(t *testing.T) {
+	t.Parallel()
 	base, token := reviewImpersonationSession(t)
 	if token == "" {
 		t.Fatal("the password-and-TOTP sign-in handed out no access token")
@@ -83,6 +84,7 @@ func TestReviewImpersonationTOTPFactorIsSeasonedAndSignsIn(t *testing.T) {
 // password-and-TOTP sign-in the session has proved TOTP, so a step-up offers a
 // kind it has not proved. The SMS factor must be on the list and TOTP must not.
 func TestReviewImpersonationStepUpOffersSMS(t *testing.T) {
+	t.Parallel()
 	base, token := reviewImpersonationSession(t)
 	res := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
 		base+"/api/v1/auth/flows/authenticated",
@@ -115,6 +117,7 @@ func TestReviewImpersonationStepUpOffersSMS(t *testing.T) {
 // the factor age stays at one hour, so the walkthrough reaches the step-up
 // branch without waiting out the declared defaults.
 func TestReviewImpersonationConfigurationSetsTheFloor(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("review", "sqlite.yaml"))
 	if err != nil {
 		t.Fatalf("reading the review configuration: %v", err)
@@ -139,15 +142,15 @@ func TestReviewImpersonationConfigurationSetsTheFloor(t *testing.T) {
 func reviewImpersonationSession(t *testing.T) (base, token string) {
 	t.Helper()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	configPath := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + configPath
-	seedReview(t, binary, config)
-	secret := reviewSeededTOTPSecret(t, configPath)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	var secret string
+	_, ports := startServing(t, func(ports []int) *process {
+		configPath := reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		config := "file://" + configPath
+		seedReview(t, binary, config)
+		secret = reviewSeededTOTPSecret(t, configPath)
+		return startReview(t, binary, config)
+	})
 
 	base = fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token = signInWithTOTP(t, base, reviewOperatorUsername, reviewOperatorPassword, secret)

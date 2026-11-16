@@ -2,7 +2,10 @@
 
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // mayLeaveRouteCountUnchanged is the review build's exemption table: the routing
 // modules whose removal cannot lower an endpoint's route count over the review
@@ -31,6 +34,7 @@ var mayLeaveRouteCountUnchanged = map[string]string{}
 // redden the human-verification half, which is the check retiring the wrong
 // state. One that mounts no SMS management surface reddens the sms.admin half.
 func TestReviewRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
+	t.Parallel()
 	if reason, exempt := mayLeaveRouteCountUnchanged["org.personal"]; exempt {
 		t.Errorf("the review build exempts org.personal (%q), but the review build "+
 			"names the module: the exemption is false for this build and the baseline table's "+
@@ -55,9 +59,9 @@ func TestReviewRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 
 	// The personal module's removal is a startup failure, not a vacuous route
 	// count: the account module requires the seam it provides.
-	variant, _ := launch(t, topo, personal.modules)
-	if err := variant.waitReady(startLimit); err == nil {
-		t.Fatalf("dropping %v left a run that starts, want the account module's required "+
-			"provisioning seam to stop it", personal.modules)
+	variant, _, err := startVariant(t, topo, personal.modules)
+	if miss := startupFailureMiss(variant, err, fmt.Sprintf(
+		"the account module's required provisioning seam to stop a run without %v", personal.modules)); miss != "" {
+		t.Fatal(miss)
 	}
 }

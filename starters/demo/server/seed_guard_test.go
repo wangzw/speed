@@ -311,20 +311,21 @@ func TestSeedGuardRefusesTheSeedCommandOnAnExternalListener(t *testing.T) {
 // here.
 func TestSeedGuardServesWithAnOverriddenSeedOnAnExternalListener(t *testing.T) {
 	dir := t.TempDir()
-	ports := freePorts(t, listenerCount)
-	listeners := seedGuardListeners(
-		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]))
-	env := []string{
-		"DEMO_HTTP__LISTENERS=" + listeners,
-		`DEMO_SEED__ACCOUNTS=[{"identifier":"deployment-operator","password":"deployment-secret","platform-admin":true}]`,
-		"DEMO_SEED__TENANTS=[]",
+	env := func(ports []int) []string {
+		return []string{
+			"DEMO_HTTP__LISTENERS=" + seedGuardListeners(
+				fmt.Sprintf("0.0.0.0:%d", ports[backendListener])),
+			`DEMO_SEED__ACCOUNTS=[{"identifier":"deployment-operator","password":"deployment-secret","platform-admin":true}]`,
+			"DEMO_SEED__TENANTS=[]",
+		}
 	}
 
-	seeded := runCommandArgs(t, hostBinary, dir, []string{"sqlite", seedCommand}, env)
+	seeded := runCommandArgs(t, hostBinary, dir, []string{"sqlite", seedCommand}, env(freePorts(t, listenerCount)))
 	if seeded.err != nil {
 		t.Fatalf("seed on the overridden seed failed: %v\n%s", seeded.err, seeded.combined())
 	}
 
-	serve := startArgs(t, dir, []string{"sqlite", serveCommand}, env)
-	serve.waitReady(t)
+	startServing(t, func(ports []int) *process {
+		return startArgs(t, dir, []string{"sqlite", serveCommand}, env(ports))
+	})
 }

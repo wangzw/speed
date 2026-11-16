@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -621,6 +622,7 @@ func routeCountOutcome(removed, endpoint string, before, after int) (exemption s
 // runs. Every module a build assembles is a seed of its own, so the start
 // property is held for the review build's additions as well.
 func TestEveryRoutingVariantMustStart(t *testing.T) {
+	t.Parallel()
 	modules := assembledDescriptors(t)
 	classes := classifyModules(t, modules, guardedEndpointSet(t))
 	groups := buildGroups(modules, classes)
@@ -968,13 +970,77 @@ func (topo topology) render(t *testing.T, ports []int, dsn string) string {
 	return body
 }
 
-// launch writes a configuration for the topology and starts the program over
-// it. The working directory is a directory of the case's own, so the signing
-// key the program generates on its first run (var/, relative to the working
-// directory) never lands in the source tree.
-func launch(t *testing.T, topo topology, without []string) (*variantProcess, map[string]int) {
+// bindFailure reports whether this child exited because it could not bind one
+// of its listeners, over the predicate every serving child shares.
+func bindFailure(child *variantProcess) bool {
+	return bindFailureText(child.stderrOutput())
+}
+
+// missingDependencyText is what the capability driver writes when a required
+// capability has no provider: the startup failure a negative case holds.
+const missingDependencyText = "core: capability has no available provider"
+
+// startupFailureMiss answers why a run did not fail its startup for the reason a
+// negative case holds, or the empty string when it did. The case holds a missing
+// dependency, so the failure is recognised positively by the driver's text on
+// standard error: a run that became ready did not fail at all, a run that timed
+// out may still be running, and a run that exited for any other reason -- a
+// taken port among them -- is not the failure the case means to prove.
+func startupFailureMiss(child *variantProcess, err error, want string) string {
+	if err == nil {
+		return fmt.Sprintf("the run started, want %s to stop it", want)
+	}
+	if bindFailure(child) {
+		return fmt.Sprintf("the run exited because it could not bind a probed port, which is not %s: %v",
+			want, err)
+	}
+	if strings.Contains(child.stderrOutput(), missingDependencyText) {
+		return ""
+	}
+	return fmt.Sprintf("the run did not fail for %s: %v; its standard error says:\n%s",
+		want, err, child.stderrOutput())
+}
+
+// startVariant launches a variant and waits for it to become ready, retrying
+// with fresh ports when the child could not bind one. It returns the last child
+// and its error on a non-retryable or exhausted failure, so the caller can hold
+// the variant to its exemption.
+func startVariant(t *testing.T, topo topology, without []string) (*variantProcess, map[string]int, error) {
 	t.Helper()
-	ports := freePorts(t, topo.ports)
+	return startVariantWith(t, topo, without, freePorts)
+}
+
+// startVariantWith is startVariant over a chosen port source, so a case can hand
+// the first attempt a port another listener holds and watch the retry.
+func startVariantWith(t *testing.T, topo topology, without []string,
+	source func(*testing.T, int) []int,
+) (*variantProcess, map[string]int, error) {
+	t.Helper()
+	run, _, err := startWithRetry(t, source, topo.ports,
+		func(ports []int) variantRun {
+			child, byName := launchOn(t, topo, without, ports)
+			return variantRun{child: child, byName: byName}
+		},
+		func(run variantRun) error { return run.child.waitReady(startLimit) },
+		func(run variantRun) bool { return bindFailure(run.child) },
+		func(run variantRun) { run.child.stop(stopLimit) },
+	)
+	return run.child, run.byName, err
+}
+
+// variantRun is one launch attempt: the child and the ports its endpoints
+// answer on.
+type variantRun struct {
+	child  *variantProcess
+	byName map[string]int
+}
+
+// launchOn is the variant's single launch over the given ports. The working
+// directory is a directory of the case's own, so the signing key the program
+// generates on its first run (var/, relative to the working directory) never
+// lands in the source tree.
+func launchOn(t *testing.T, topo topology, without []string, ports []int) (*variantProcess, map[string]int) {
+	t.Helper()
 	dir := t.TempDir()
 	dsn := filepath.Join(dir, "demo.db")
 	body := topo.render(t, ports, dsn)
@@ -1008,6 +1074,201 @@ func launch(t *testing.T, topo topology, without []string) (*variantProcess, map
 		byName["frontend"] = ports[splitFrontendListener]
 	}
 	return child, byName
+}
+
+// TestATakenPortLeavesTheChildUnableToBind reproduces the gap freePorts leaves:
+// it closes the socket it probed before the child binds the address, so a port
+// it handed out can be taken in between. The test takes a port itself and hands
+// the child a port set holding only that address, then checks that the child
+// fails to bind and that bindFailure recognises the exit.
+func TestATakenPortLeavesTheChildUnableToBind(t *testing.T) {
+	t.Parallel()
+	topo := topology{name: "merged", ports: listenerCount}
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("binding a port to hold: %v", err)
+	}
+	defer func() { _ = blocker.Close() }()
+	ports := []int{blocker.Addr().(*net.TCPAddr).Port}
+
+	child, _ := launchOn(t, topo, nil, ports)
+	if err := child.waitReady(startLimit); err == nil {
+		t.Fatalf("the child became ready on a port another listener holds")
+	}
+	if !bindFailure(child) {
+		t.Fatalf("a taken port did not read as a bind failure:\n%s", child.stderrOutput())
+	}
+}
+
+// TestBindFailureIsOnlyTheTakenAddress holds the predicate's exclusions: the
+// listener's sentinel is shared with a certificate that cannot load, and the
+// net error is what separates a taken port from every other bind failure. A
+// predicate that returned true on the sentinel alone would retry a
+// configuration fault three times and report nothing.
+func TestBindFailureIsOnlyTheTakenAddress(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		stderr string
+		want   bool
+	}{
+		{
+			name: "a certificate that cannot load shares the sentinel",
+			stderr: `time=2026-11-17T00:00:00Z level=ERROR msg="http: listener could not bind ` +
+				`its address: listener \"backend\" could not load the certificate \"/tmp/tls.crt\" ` +
+				`with the key \"/tmp/tls.key\": tls: failed to find any PEM data in certificate input"`,
+			want: false,
+		},
+		{
+			name:   "the sentinel and an exit status without a taken address",
+			stderr: "http: listener could not bind its address: listener \"backend\": exit status 1",
+			want:   false,
+		},
+		{
+			name:   "the net error without the listener sentinel",
+			stderr: "listen tcp 127.0.0.1:8081: bind: address already in use",
+			want:   false,
+		},
+		{
+			name: "the sentinel with the taken address",
+			stderr: `http: listener could not bind its address: listener "backend" on ` +
+				`"127.0.0.1:8081": listen tcp 127.0.0.1:8081: bind: address already in use`,
+			want: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := bindFailureText(tc.stderr); got != tc.want {
+				t.Errorf("bindFailureText(%q) = %v, want %v", tc.stderr, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStartVariantRetriesAPortTakenInTheGap holds the retry to the failure the
+// test above reproduces: the first attempt is handed a port another listener
+// holds, and the launch recovers with fresh ports instead of reporting the
+// collision as a property of the variant.
+func TestStartVariantRetriesAPortTakenInTheGap(t *testing.T) {
+	t.Parallel()
+	topo := topology{name: "merged", ports: listenerCount}
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("binding a port to hold: %v", err)
+	}
+	defer func() { _ = blocker.Close() }()
+	stolen := []int{blocker.Addr().(*net.TCPAddr).Port}
+
+	attempts := 0
+	source := func(t *testing.T, n int) []int {
+		attempts++
+		if attempts == 1 {
+			return stolen
+		}
+		return freePorts(t, n)
+	}
+	child, ports, err := startVariantWith(t, topo, nil, source)
+	if err != nil {
+		t.Fatalf("the launch did not recover from a taken port: %v", err)
+	}
+	defer child.stop(stopLimit)
+	if attempts < 2 {
+		t.Fatalf("the launch became ready on its first attempt, so the retry was not exercised")
+	}
+	if ports["backend"] == stolen[backendListener] {
+		t.Fatalf("the retry reused the port another listener holds")
+	}
+}
+
+// TestStartServingRetriesAPortTakenInTheGap holds the retry the ordinary
+// serving cases go through to the same failure: the first attempt is handed a
+// port another listener holds, and startServing recovers over fresh ports rather
+// than failing the case with a collision it did not cause.
+func TestStartServingRetriesAPortTakenInTheGap(t *testing.T) {
+	t.Parallel()
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("binding a port to hold: %v", err)
+	}
+	defer func() { _ = blocker.Close() }()
+	stolen := blocker.Addr().(*net.TCPAddr).Port
+
+	attempts := 0
+	source := func(t *testing.T, n int) []int {
+		attempts++
+		if attempts == 1 {
+			return []int{stolen}
+		}
+		return freePorts(t, n)
+	}
+	child, ports, err := startServingFrom(t, source, func(ports []int) *process {
+		dsn := filepath.Join(t.TempDir(), "retry.db")
+		config := writeConfigWith(t, ports, dsn)
+		if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+			t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+		}
+		return start(t, config, "sqlite", serveCommand)
+	})
+	if err != nil {
+		t.Fatalf("the launch did not recover from a taken port: %v\nstandard error:\n%s",
+			err, child.stderr())
+	}
+	if attempts < 2 {
+		t.Fatalf("the launch became ready on its first attempt, so the retry was not exercised")
+	}
+	if ports[backendListener] == stolen {
+		t.Fatalf("the retry reused the port another listener holds")
+	}
+}
+
+// TestTheStartupFailureCriterionRejectsABindFailure holds the criterion the
+// negative startup cases assert on to both constructions: a run that starts is
+// not the failure they hold, and neither is a run that exited on a port taken
+// from under it. A criterion that only asked whether an error came back would
+// pass on the second, so a collision would read as the missing dependency the
+// case means to prove.
+func TestTheStartupFailureCriterionRejectsABindFailure(t *testing.T) {
+	t.Parallel()
+	const want = "the missing provisioning seam"
+	topo := topology{name: "criterion", ports: listenerCount}
+
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("binding a port to hold: %v", err)
+	}
+	defer func() { _ = blocker.Close() }()
+	taken := []int{blocker.Addr().(*net.TCPAddr).Port}
+	collided, _ := launchOn(t, topo, nil, taken)
+	waitErr := collided.waitReady(startLimit)
+	if waitErr == nil {
+		t.Fatalf("the child became ready on a port another listener holds")
+	}
+	if miss := startupFailureMiss(collided, waitErr, want); !strings.Contains(miss, "could not bind") {
+		t.Fatalf("a run that could not bind a probed port read as %q, want it rejected as a bind failure", miss)
+	}
+
+	started, _, err := startVariant(t, topo, nil)
+	if err != nil {
+		t.Fatalf("the run did not become ready: %v", err)
+	}
+	defer started.stop(stopLimit)
+	if miss := startupFailureMiss(started, nil, want); miss == "" {
+		t.Fatalf("a run that started read as the held startup failure")
+	}
+
+	// A readiness timeout comes back with the child still running, and an
+	// unrelated startup error names something else: neither is the missing
+	// dependency the negative cases hold, so the criterion must reject both.
+	running := &variantProcess{stderr: &lockedBuffer{}}
+	if miss := startupFailureMiss(running, errors.New("the run wrote no ready record within 1s"), want); miss == "" {
+		t.Errorf("a run that timed out while still running read as %s", want)
+	}
+	unrelated := &variantProcess{stderr: &lockedBuffer{}}
+	_, _ = unrelated.stderr.Write([]byte("serve: the certificate could not load"))
+	if miss := startupFailureMiss(unrelated, errors.New("the run exited: exit status 1"), want); miss == "" {
+		t.Errorf("a run that exited for an unrelated reason read as %s", want)
+	}
 }
 
 // sendProbe makes one probe's request and reads the whole answer.
@@ -1067,7 +1328,8 @@ func firstDifference(want, got rawResponse) string {
 
 // runDifferential runs one topology's differential matrix: a baseline run, then
 // one variant per group, with every non-exempt anonymous probe compared byte for
-// byte apart from Date.
+// byte apart from Date. The variants run in parallel; how many run at once is
+// whatever -parallel allows.
 func runDifferential(t *testing.T, topo topology) {
 	t.Helper()
 	modules := assembledDescriptors(t)
@@ -1081,8 +1343,8 @@ func runDifferential(t *testing.T, topo topology) {
 		}
 	}
 
-	baseline, ports := launch(t, topo, nil)
-	if err := baseline.waitReady(startLimit); err != nil {
+	baseline, ports, err := startVariant(t, topo, nil)
+	if err != nil {
 		t.Fatalf("the baseline %s run did not become ready: %v", topo.name, err)
 	}
 
@@ -1171,8 +1433,10 @@ func runDifferential(t *testing.T, topo topology) {
 	for _, group := range groups {
 		group := group
 		t.Run(group.id, func(t *testing.T) {
-			variant, variantPorts := launch(t, topo, group.modules)
-			if err := variant.waitReady(startLimit); err != nil {
+			t.Parallel()
+			variant, variantPorts, err := startVariant(t, topo, group.modules)
+			defer variant.stop(stopLimit)
+			if err != nil {
 				exemption, failure := variantStartOutcome(group, err, variant.stderrOutput())
 				if exemption != "" {
 					t.Logf("dropping %v does not start; exempt: %s", group.modules, exemption)
@@ -1319,8 +1583,8 @@ func variantGroupNamed(t *testing.T, name string) variantGroup {
 // chains are the counts a removal has to lower; each variant's are what it left.
 func removalRouteCounts(t *testing.T, topo topology, groups []variantGroup) (map[string]chainLine, map[string]map[string]chainLine) {
 	t.Helper()
-	baseline, _ := launch(t, topo, nil)
-	if err := baseline.waitReady(startLimit); err != nil {
+	baseline, _, err := startVariant(t, topo, nil)
+	if err != nil {
 		t.Fatalf("the baseline %s run did not become ready: %v", topo.name, err)
 	}
 	before := parseChains(baseline.linesCopy())
@@ -1329,8 +1593,8 @@ func removalRouteCounts(t *testing.T, topo topology, groups []variantGroup) (map
 	}
 	after := map[string]map[string]chainLine{}
 	for _, group := range groups {
-		variant, _ := launch(t, topo, group.modules)
-		if err := variant.waitReady(startLimit); err != nil {
+		variant, _, err := startVariant(t, topo, group.modules)
+		if err != nil {
 			t.Fatalf("the variant %q did not become ready: %v", group.id, err)
 		}
 		chains := parseChains(variant.linesCopy())
@@ -1403,13 +1667,20 @@ func opsSurface(t *testing.T, document []byte) []anonRoute {
 }
 
 // TestAnonymousAnswersDoNotDependOnTheAssembly runs the differential matrix on
-// both deployment topologies.
+// both deployment topologies, each variant in parallel with the others. A
+// parallel variant is a child process serving the whole probe matrix, and in the
+// race leg that child is the race-built test binary. The number in flight at
+// once is the caller's choice: it is whatever -parallel allows.
 func TestAnonymousAnswersDoNotDependOnTheAssembly(t *testing.T) {
+	t.Parallel()
 	for _, topo := range []topology{
 		{name: "merged", ports: listenerCount},
 		{name: "split", ports: splitListenerCount, split: true},
 	} {
 		topo := topo
-		t.Run(topo.name, func(t *testing.T) { runDifferential(t, topo) })
+		t.Run(topo.name, func(t *testing.T) {
+			t.Parallel()
+			runDifferential(t, topo)
+		})
 	}
 }

@@ -52,6 +52,7 @@ const (
 // The management guards admit the protected tenant, which is what lets it enter
 // organization administration; only the settings write is refused.
 func TestReviewSettingsWriteGuardRefusesTheProtectedFixture(t *testing.T) {
+	t.Parallel()
 	guard := settingsWriteGuard{}
 	ctx := context.Background()
 	for _, domain := range []string{protectedTestTenantPrefix + "acme", protectedTestTenantPrefix} {
@@ -115,21 +116,21 @@ func TestReviewSettingsWriteGuardRefusesTheProtectedFixture(t *testing.T) {
 // with 403 protected. The ordinary tenant answers writable and accepts the same
 // write, and the account's personal tenant keeps its authorization refusal.
 func TestReviewProtectedTenantIsReadOnlyOnTheSettingsSurface(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	root := t.TempDir()
-	dsn := filepath.Join(root, "review-protected.db")
-	body := reviewConfigBody(t, root,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]), dsn)
-	body = addProtectedReviewFixture(t, body)
-	path := filepath.Join(root, "review.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("writing the review configuration: %v", err)
-	}
-	config := "file://" + path
-
-	seedReview(t, reviewHostBinary, config)
-	serve := startReview(t, reviewHostBinary, config)
-	serve.waitReady(t)
+	t.Parallel()
+	_, ports := startServing(t, func(ports []int) *process {
+		root := t.TempDir()
+		dsn := filepath.Join(root, "review-protected.db")
+		body := reviewConfigBody(t, root,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]), dsn)
+		body = addProtectedReviewFixture(t, body)
+		path := filepath.Join(root, "review.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("writing the review configuration: %v", err)
+		}
+		config := "file://" + path
+		seedReview(t, reviewHostBinary, config)
+		return startReview(t, reviewHostBinary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, protectedReviewAdminLogin, protectedReviewAdminPassword)

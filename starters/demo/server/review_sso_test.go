@@ -83,23 +83,23 @@ func testCAFile(t *testing.T) string {
 // the assembly now carries, and the startup diagnostics report the relaxation on
 // the SSO module's own item — the evidence that the module read this section.
 func TestReviewRunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	root := t.TempDir()
-	body := reviewConfigBody(t, root,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		filepath.Join(root, "review.db"))
-	if !strings.Contains(body, reviewSSOSeamsBlock) {
-		t.Fatalf("the review configuration holds no enterprise SSO defaults block (%q)", reviewSSOSeamsBlock)
-	}
-	body = strings.Replace(body, reviewSSOSeamsBlock, fmt.Sprintf(
-		"    allow-private-egress: true\n    dns-resolver: %q\n    oidc-ca-file: %q",
-		testResolverAddress(t), testCAFile(t)), 1)
-	config := writeConfigFile(t, body)
-	seedReview(t, binary, config)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	serve, ports := startServing(t, func(ports []int) *process {
+		root := t.TempDir()
+		body := reviewConfigBody(t, root,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
+			filepath.Join(root, "review.db"))
+		if !strings.Contains(body, reviewSSOSeamsBlock) {
+			t.Fatalf("the review configuration holds no enterprise SSO defaults block (%q)", reviewSSOSeamsBlock)
+		}
+		body = strings.Replace(body, reviewSSOSeamsBlock, fmt.Sprintf(
+			"    allow-private-egress: true\n    dns-resolver: %q\n    oidc-ca-file: %q",
+			testResolverAddress(t), testCAFile(t)), 1)
+		config := writeConfigFile(t, body)
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	listing := get(t, base+"/api/v1/auth/methods")
@@ -137,6 +137,7 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
 // are read as the binary's own configuration layer resolves them, then the
 // binary is started over the same file.
 func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
+	t.Parallel()
 	var sso struct {
 		AllowPrivateEgress bool   `config:"allow-private-egress"`
 		DNSResolver        string `config:"dns-resolver"`
@@ -149,13 +150,12 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 	}
 
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	config := "file://" + reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	seedReview(t, binary, config)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	serve, _ := startServing(t, func(ports []int) *process {
+		config := "file://" + reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	if strings.Contains(serve.output(), "authn.sso.allow-private-egress") {
 		t.Errorf("the run reports the SSO loopback relaxation as on although the configuration keeps "+
@@ -169,14 +169,14 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 // for a run, which a default build does not, so the method's presence is what
 // shows the roster reached the assembly.
 func TestReviewRunServesTheSAMLLoginMethod(t *testing.T) {
+	t.Parallel()
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	config := "file://" + reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	seedReview(t, binary, config)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		config := "file://" + reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	listing := get(t, base+"/api/v1/auth/methods")

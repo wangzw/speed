@@ -25,6 +25,7 @@ import (
 // its notification type. Before the capability roster became unconditional this
 // declaration existed only under the review tag.
 func TestDefaultBuildDeclaresTheNotificationType(t *testing.T) {
+	t.Parallel()
 	declared := make(map[string]string)
 	for _, resource := range core.Resources[notification.TypeSpec](core.ProcessRegistry) {
 		declared[resource.Value.Key] = resource.Module
@@ -45,6 +46,7 @@ func TestDefaultBuildDeclaresTheNotificationType(t *testing.T) {
 // vocabulary, so the console never offers a control that would post to a route
 // this binary does not mount.
 func TestDefaultBuildDeclaresNoNotificationControl(t *testing.T) {
+	t.Parallel()
 	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
 		if resource.Value.Name == "review.notification.control" {
 			t.Fatalf("the default build declares %q; the dispatch control is test-only and must "+

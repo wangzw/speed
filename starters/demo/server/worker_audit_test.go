@@ -51,6 +51,7 @@ func workerAuditWriterModule() core.Module {
 // TestTheWorkerBaselineRecordsTheAuditRow holds the worker roster to its
 // background audit: the modules it names, with no router, record a seam entry.
 func TestTheWorkerBaselineRecordsTheAuditRow(t *testing.T) {
+	t.Parallel()
 	if !slices.Contains(baselineWorker, auditjournal.ModuleName) {
 		t.Fatalf("baselineWorker does not name %q", auditjournal.ModuleName)
 	}

@@ -38,6 +38,7 @@ const (
 // its recipient-visible whitelist admits the destination the sms channel reads,
 // and its catalog names the template the journey registers in every language.
 func TestReviewNotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
+	t.Parallel()
 	var declared *notification.TypeSpec
 	for _, resource := range core.Resources[notification.TypeSpec](core.ProcessRegistry) {
 		if resource.Value.Key != reviewNotificationTypeKey {
@@ -81,6 +82,7 @@ func TestReviewNotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 // it is present exactly when that module is in force and absent from every
 // assembly that does not compile it.
 func TestReviewNotificationControlFeatureIsDeclared(t *testing.T) {
+	t.Parallel()
 	declared := false
 	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
 		if resource.Module != reviewNotificationModuleName ||
@@ -105,6 +107,7 @@ func TestReviewNotificationControlFeatureIsDeclared(t *testing.T) {
 // account falls back to its email address, or to in-app alone when it has none;
 // an account with only an email address falls back to email without sms.
 func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
+	t.Parallel()
 	phone := authn.Identifier{
 		Kind:        authn.IdentifierPhone,
 		Value:       reviewSMSTestPhone,
@@ -199,6 +202,7 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 // asked first, so a server that never registered the rollout template does not
 // attempt sms at all.
 func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
+	t.Parallel()
 	templates := &stubReviewSMSTemplates{err: fmt.Errorf("%w: no template", sms.ErrRejected)}
 	prefs := &stubReviewPrefs{
 		effective: []notification.Channel{
@@ -261,6 +265,7 @@ func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 // switch off) is still chosen, so the delivery pipeline records the refusal.
 // The fixture must not turn the platform's gate into a silent channel swap.
 func TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
+	t.Parallel()
 	templates := &stubReviewSMSTemplates{
 		err: fmt.Errorf("%w: the template is disabled", sms.ErrNotSendable),
 	}
@@ -307,6 +312,7 @@ func TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
 // the registry resolves the type's template in the recipient's language, the
 // phones address is the destination and sms stays in the effective set.
 func TestReviewNoticeSendsSMSWithASendableTemplate(t *testing.T) {
+	t.Parallel()
 	prefs := &stubReviewPrefs{
 		effective: []notification.Channel{
 			notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS,
@@ -439,6 +445,7 @@ func (failingReviewProfile) TimeZoneFor(context.Context, string) (string, bool, 
 // that read the request language would send the notice in the browser's
 // language instead of the account's.
 func TestReviewNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
+	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
 	notifier := &reviewNotifier{
 		dispatcher: dispatcher,
@@ -472,6 +479,7 @@ func TestReviewNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 // a third language, neither the request's nor "en-US", so an implementation
 // that hard-coded English fails this case.
 func TestReviewNoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *testing.T) {
+	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
 	notifier := &reviewNotifier{
 		dispatcher: dispatcher,
@@ -523,6 +531,7 @@ func (r *recordingLogs) WithGroup(string) slog.Handler      { return r }
 // tenant without the recipient's identifier anywhere in its fields. The default
 // is a third language, so a hard-coded "en-US" fails this case too.
 func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) {
+	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
 	logs := &recordingLogs{}
 	notifier := &reviewNotifier{
@@ -602,6 +611,7 @@ func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.
 // decides the dispatch, and exactly one warning is written. The fallback is a
 // third language, so answering with the resolver's default fails this case too.
 func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
+	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
 	logs := &recordingLogs{}
 	notifier := &reviewNotifier{
@@ -658,6 +668,7 @@ func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 // addressed on and never adds one back, so a recipient's stored choice survives
 // every window.
 func TestReviewNoticePrunesOnlyUnaddressableChannels(t *testing.T) {
+	t.Parallel()
 	noPhone := reviewNoticePlan{
 		To:       reviewSMSTestEmail,
 		Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},

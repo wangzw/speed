@@ -35,6 +35,7 @@ import (
 // code the carrier has not been told about answers pending — the state the
 // registry records for a language a runtime template was registered in.
 func TestReviewSMSDeclaresPerTemplateReviewAndStartsPending(t *testing.T) {
+	t.Parallel()
 	carrier := &smslog.Product{}
 	if !carrier.Model().Review.PerTemplate {
 		t.Fatalf("the review carrier declares PerTemplate %t, want true: the template registry "+
@@ -56,6 +57,7 @@ func TestReviewSMSDeclaresPerTemplateReviewAndStartsPending(t *testing.T) {
 // moves the named code and leaves a sibling code where it was, and a state the
 // carrier does not review is refused.
 func TestReviewSMSControlMovesOneVerdict(t *testing.T) {
+	t.Parallel()
 	gin.SetMode(gin.TestMode)
 	carrier := smslog.New(nil)
 	engine := gin.New()
@@ -101,6 +103,7 @@ func TestReviewSMSControlMovesOneVerdict(t *testing.T) {
 // statically, so a review run publishes it and a baseline run, which compiles no
 // such module, does not.
 func TestReviewSMSControlDeclaresItsFeature(t *testing.T) {
+	t.Parallel()
 	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
 		if resource.Module != reviewSMSControlModuleName ||
 			resource.Value.Name != reviewSMSControlFeature {
@@ -122,6 +125,7 @@ func TestReviewSMSControlDeclaresItsFeature(t *testing.T) {
 // verdict and the poller records it there alone, and disabling the template
 // leaves both languages' review states reported.
 func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
+	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "review-sms.db")
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"sms":{"registry":{"poll-interval":"10ms"}}}`, dsn)
 	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), smslog.Module(), smsregistry.Module())
@@ -241,6 +245,7 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 // kinds travel through one carrier, so the declaration's kind is what keeps a
 // reader from reading a notice as a code.
 func TestReviewCarrierNamesTheMessageKindItSent(t *testing.T) {
+	t.Parallel()
 	notice := sms.Resolved{
 		To:       reviewSMSTestPhone,
 		Template: reviewNotificationSMSTemplate,

@@ -32,20 +32,19 @@ const (
 // feature: the module is in the capability ceiling every build carries, and a
 // running review binary answers GET /api/v1/features with sms.admin.
 func TestReviewServesTheSMSAdminPage(t *testing.T) {
+	t.Parallel()
 	if !slices.Contains(capabilityModules, smsadmin.ModuleName) {
 		t.Fatalf("the capability ceiling names no %q module, so the review binary would publish no "+
 			"SMS management feature and the console would offer no page", smsadmin.ModuleName)
 	}
 
 	binary := reviewBinary(t)
-	ports := freePorts(t, listenerCount)
-	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-	config := "file://" + path
-	seedReview(t, binary, config)
-
-	serve := startReview(t, binary, config)
-	serve.waitReady(t)
+	_, ports := startServing(t, func(ports []int) *process {
+		config := "file://" + reviewConfig(t,
+			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
+		seedReview(t, binary, config)
+		return startReview(t, binary, config)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, reviewFeatureAccount, reviewFeaturePassword)

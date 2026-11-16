@@ -480,6 +480,7 @@ func checkManifestAgainstClaims(t *testing.T, configName string, owners map[stri
 // without starting a process — so the three are held together even when the
 // cases that run the program are not.
 func TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims(t *testing.T) {
+	t.Parallel()
 	owners := readPrefixManifest(t)
 	checkManifestAgainstOwnership(t, owners)
 	configurations := []namedClaims{{
@@ -645,6 +646,7 @@ var tenantParam = regexp.MustCompile(`\{([^}]+)\}`)
 // handler runs. The check runs both ways: a contract operation missing from the
 // list, and a list entry the contract does not serve.
 func TestTheTenantManagementRoutesAreDeclaredOpenForTheAuthorizationGuard(t *testing.T) {
+	t.Parallel()
 	contract, err := os.ReadFile(filepath.Clean(platformContractPath))
 	if err != nil {
 		t.Fatalf("reading the committed platform contract: %v", err)

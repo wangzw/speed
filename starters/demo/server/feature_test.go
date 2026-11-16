@@ -40,14 +40,16 @@ import (
 // a file: seed and serve are two processes, and only a file survives the first
 // one.
 func TestServePublishesTheFeatureDocument(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite-memory", serveCommand)
-	serve.waitReady(t)
+	serve, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite-memory", serveCommand)
+	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 
@@ -290,6 +292,7 @@ func holdBaselineVocabulary(t *testing.T, artifact []vocabularyEntry) {
 // tag the binary declares the review-only features as well;
 // holdBaselineVocabulary holds that difference to its own list.
 func TestGenWritesTheFeatureVocabulary(t *testing.T) {
+	t.Parallel()
 	config := writeConfig(t, freePorts(t, listenerCount))
 	out := filepath.Join(t.TempDir(), "features.json")
 	res := runCommand(t, config, "sqlite-memory", genCommand, "--features", out)
@@ -316,6 +319,7 @@ func TestGenWritesTheFeatureVocabulary(t *testing.T) {
 // of step, which this case reports rather than letting the frontend's set drift
 // from the backend's.
 func TestCommittedFeatureVocabulary(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(committedVocabularyPath)
 	if err != nil {
 		t.Fatalf("reading %s: %v (regenerate it with the gen command's --features flag)",
