@@ -133,8 +133,11 @@ const MEMBER_IDENTITY_MAX_WIDTH = {
  * caps (160px each) together with the status, both timestamps and the
  * actions column exceed the floor. Two facts widen the worst case: the
  * status column has no cap of its own and "Accepted" is the longest label,
- * and a row that was just issued or resent carries a third action, the
- * copy-link control, which widens the actions column from 88px to 105px.
+ * and a row that was just issued or resent carries the copy-link control
+ * beside the Actions menu trigger. The actions column is the widest control
+ * plus the cell's 8px padding on each side: 93.8px for the trigger alone
+ * (77.8px), 105.1px when the copy-link control (89.1px) wraps beneath it.
+ * Widths here and below are in the browser tier's pinned font.
  * The widest reachable row is therefore an accepted (or revoked) row that
  * holds the copy link. With both identity caps at 120px that row requires
  * 580.0px in the browser tier's pinned font, 20.0px inside the floor, and the

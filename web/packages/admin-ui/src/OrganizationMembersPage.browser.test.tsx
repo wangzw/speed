@@ -378,8 +378,9 @@ const SM_FLOOR = 600
  * The headroom the table's required width must leave inside the tier floor,
  * on top of the strict containment check. A table that exactly fills the
  * floor passes containment but leaves a font metric one glyph away from the
- * scroll fallback; the layout design sets this margin so a reachable state
- * is not merely at the edge.
+ * scroll fallback; this case's own margin, taken under the tier's pinned
+ * font, keeps a reachable state from sitting merely at the edge. The layout
+ * design promises no overflow, not this margin.
  */
 const TIER_HEADROOM = 8
 
@@ -599,9 +600,9 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     ).toBeLessThanOrEqual(SM_FLOOR - TIER_HEADROOM)
   })
 
-  // Issuing or resending an invitation adds a third action to that row --
-  // the copy-link control -- and the actions column widens from the two
-  // buttons' 88px to the copy control's 105px. The widest reachable
+  // Issuing or resending an invitation adds the copy-link control to that
+  // row, and the actions column widens from the Actions menu trigger's
+  // 93.8px to the copy control's 105.1px. The widest reachable
   // invitation is therefore an accepted row that also carries the copy
   // link: "Accepted" is the longest status label, and the extra control
   // widens the actions column on top of it. Revoked is the other stored
