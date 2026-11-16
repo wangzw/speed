@@ -303,13 +303,16 @@ func newManager(p *product, cookie cookieSpec) *scs.SessionManager {
 	sm.HashTokenInStore = true
 	sm.Codec = jsonCodec{}
 	sm.Store = storeAdapter{p: p}
+	// The library writes the session cookie from its own description of it,
+	// which takes every attribute from the cookie cookiename.Cookie builds.
+	c := cookie.cookie("", 0)
 	sm.Cookie = scs.SessionCookie{
-		Name:        cookie.name,
-		Domain:      cookie.domain,
-		HttpOnly:    true,
-		Path:        "/",
-		SameSite:    cookie.sameSite,
-		Secure:      true,
+		Name:        c.Name,
+		Domain:      c.Domain,
+		HttpOnly:    c.HttpOnly,
+		Path:        c.Path,
+		SameSite:    c.SameSite,
+		Secure:      c.Secure,
 		Partitioned: false,
 		Persist:     false,
 	}
@@ -364,7 +367,7 @@ func (p *product) wire(reg *core.Registry) error {
 func (p *product) diagnose() {
 	if p.cookie.domain != "" {
 		p.logger.Warn(diagnosticPrefix+ModuleName+": the session cookie carries a Domain, so it is named "+
-			"__Secure-sid and any subdomain can set it; the host-only guarantee of the __Host- prefix is given up",
+			"__Secure-authn-sid and any subdomain can set it; the host-only guarantee of the __Host- prefix is given up",
 			slog.String("setting", ConfigNamespace+"."+cookieDomainItem))
 	}
 	if p.impersonation == nil {

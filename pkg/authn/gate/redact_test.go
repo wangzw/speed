@@ -260,10 +260,11 @@ func TestEveryShapeOfSecretIsMaskedWhereverItIsWritten(t *testing.T) {
 		{"an assertion in a query string", "?assertion=as-123", "as-123", ""},
 		{"a password in a query string", "?password=p4ss&u=alice", "p4ss", "u=alice"},
 		{"a query pair in a wechat url", "Get \"https://api.weixin.qq.com/sns/oauth2/access_token?appid=wx1&secret=wxsecret-9&code=c1&grant_type=authorization_code\": dial tcp: lookup failed", "wxsecret-9", "appid=wx1"},
-		{"the session cookie", "Cookie: sid=session-secret-1; theme=dark", "session-secret-1", "theme=dark"},
-		{"the host-prefixed session cookie", "Cookie: __Host-sid=session-secret-2; theme=dark", "session-secret-2", "theme=dark"},
-		{"the secure-prefixed session cookie", "Set-Cookie: __Secure-sid=session-secret-3; Path=/", "session-secret-3", "Path=/"},
-		{"the session cookie in another case", "SID=session-secret-4", "session-secret-4", ""},
+		{"the loopback session cookie", "Cookie: authn-sid=session-secret-1; theme=dark", "session-secret-1", "theme=dark"},
+		{"the host-prefixed session cookie", "Cookie: __Host-authn-sid=session-secret-2; theme=dark", "session-secret-2", "theme=dark"},
+		{"the secure-prefixed session cookie", "Set-Cookie: __Secure-authn-sid=session-secret-3; Path=/", "session-secret-3", "Path=/"},
+		{"the session cookie in another case", "AUTHN-SID=session-secret-4", "session-secret-4", ""},
+		{"the secure-prefixed session cookie in another case", "__SECURE-AUTHN-SID=session-secret-5", "session-secret-5", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := mask(shapeMatcher, c.value)
@@ -296,6 +297,7 @@ func TestAWordThatOnlyResemblesASecretShapeIsLeftAlone(t *testing.T) {
 		{"an equals sign with no key", "a = b and =c"},
 		{"a secret key with no value", "?secret=&x=1"},
 		{"a cookie that is not the session's", "Cookie: theme=dark; side=left"},
+		{"cookies whose names only resemble the session's", "Cookie: sid=left; my-authn-sid-x=right"},
 		{"two JWT segments", "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9"},
 		{"two JWT segments before a full stop", "refused eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9."},
 		{"four dotted segments", "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.c2ln.bmF0"},
@@ -330,8 +332,8 @@ func TestAJWTNeedsExactlyThreeSegments(t *testing.T) {
 // span without a word, so a wrong one fails nowhere and leaves a secret readable.
 func TestEverySpanTheShapeRuleHandsOverIsUsable(t *testing.T) {
 	for _, value := range []string{
-		jwtToken, refreshToken, "otpauth://totp/x?secret=A", "?secret=a&code=b", "sid=abc",
-		"x" + jwtToken + "." + refreshToken, "=", "==", "secret=", "sid=;", "eyJ", "eyJ.", "eyJ..",
+		jwtToken, refreshToken, "otpauth://totp/x?secret=A", "?secret=a&code=b", "authn-sid=abc",
+		"x" + jwtToken + "." + refreshToken, "=", "==", "secret=", "authn-sid=;", "eyJ", "eyJ.", "eyJ..",
 		"spd_rt_", "otpauth://", "",
 	} {
 		t.Run(value, func(t *testing.T) {

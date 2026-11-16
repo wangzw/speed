@@ -90,9 +90,9 @@
 
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
-| 会话固定 | 令牌只由服务端生成（scs 对未知令牌新建会话，不沿用客户端给的令牌，[REF-scs](../../../references.md)）；没有登录前的匿名会话；登录、提权、冒充开始时换令牌；登录时撤销请求带来的旧会话；`__Host-` cookie 阻止子域预置 | [design-authn-session](design-authn-session.md) | 无已知剩余项 |
-| cookie 被盗 | `HttpOnly`、`Secure`（不可关）、`__Host-`；库里只存哈希；空闲与绝对超时；可撤销、可列出；会话期 cookie | [design-authn-session](design-authn-session.md) | 窃取者在会话有效期内可用，没有设备绑定（NAT 与移动网络下绑定会误杀）；缓解是缩短期限与 `strict`。**接受** |
-| cookie 投放与子域接管 | `__Host-` 前缀；同名 cookie 出现多次即 401 | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | 设了共享域（`__Secure-`）即失去这一层；设了共享域时启动诊断写 Warn |
+| 会话固定 | 令牌只由服务端生成（scs 对未知令牌新建会话，不沿用客户端给的令牌，[REF-scs](../../../references.md)）；没有登录前的匿名会话；登录、提权、冒充开始时换令牌；登录时撤销请求带来的旧会话；`__Host-` cookie 阻止子域预置 | [design-authn-session](design-authn-session.md) | 回环主机的 http 基址上 cookie 不带前缀，本机进程能预置同名 cookie，预置的令牌不在库里，按无此会话处理。**接受** |
+| cookie 被盗 | `HttpOnly`、`Secure`（https 基址上不可关；回环主机的 http 基址上不写，那里的流量不出本机）、`__Host-`；库里只存哈希；空闲与绝对超时；可撤销、可列出；会话期 cookie | [design-authn-session](design-authn-session.md) | 窃取者在会话有效期内可用，没有设备绑定（NAT 与移动网络下绑定会误杀）；缓解是缩短期限与 `strict`。**接受** |
+| cookie 投放与子域接管 | `__Host-` 前缀；同名 cookie 出现多次即 401 | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | 设了共享域（`__Secure-`）即失去这一层；设了共享域时启动诊断写 Warn。回环主机的 http 基址上三个 cookie 不带前缀（[ADR-authn-session](../../../adr/adr-authn-session.md)），能为这个源写 cookie 的只有本机进程，这一层在那里没有对象；启动诊断为此写一行 Info。**接受** |
 | CSRF（浏览器可能自己附带的凭据） | `SameSite=Lax`；网关对这些载体来源的非安全方法做 `CrossOriginProtection`，失败答 401、不清 cookie、凭据不交给后端；哪些载体算在内的判据只在 [design-authn-gate](design-authn-gate.md) 的请求期给出 | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | 既无 `Sec-Fetch-Site` 又无 `Origin` 的请求被放行（极旧的浏览器与非浏览器客户端）；`same-site` 的兄弟子域按跨源处理，除非列入 `trusted-origins`；同源 XSS 能借浏览器发请求，XSS 是宿主前端的责任 |
 | 登录 CSRF：把受害者登入攻击者的账户 | 流程绑定 cookie 加 `seq`，绑定 cookie 是 `SameSite=Lax`；回跳必须与发起流程的浏览器绑定；登录与流程路由的非安全方法过跨源检查；ACS 在跨源检查的旁路之内，只答转投页、不处理回跳，处理回跳的续接路由过跨源检查 | [design-authn-login](design-authn-login.md) | IdP 发起的 SAML（[REF-saml2](../../../references.md)）登录无从绑定：缺省关闭，开启时写警告 |
 | 转投页回显请求带来的表单字段（反射型 XSS、表单改投） | 页面经 `html/template` 渲染，字段名与值都经转义；表单目标由路由声明与路径参数拼出，不取请求的字段或头；`Content-Security-Policy` 为 `default-src 'none'`，脚本只认每个响应新取的 nonce，`form-action` 只放行本来源与可信来源（续接路由重定向到的回跳目标与失败落地都在其中），`frame-ancestors 'none'`、`base-uri 'none'`；`X-Content-Type-Options: nosniff` | [design-authn-login](design-authn-login.md) | 任何站点都能借转投把一份任意表单以同源 POST 送进续接路由，续接路由对此的防线是流程绑定与方法的校验，不是跨源检查 |
@@ -181,7 +181,7 @@
 
 | 前提 | 依赖它的对策 | 前提不成立时 |
 |---|---|---|
-| `public-url` 是宿主实际对外的 https 基址 | 回跳地址、`iss`、ACS 只来自配置；`Secure` 与 `__Host-` cookie | http 基址在启动期以 `ErrInsecureConfig` 失败，没有开关能放行；回环主机的 http 基址例外，浏览器为回环主机保存 `Secure` cookie，`__Host-` cookie 照常生效；基址写错则回跳失败 |
+| `public-url` 是宿主实际对外的 https 基址 | 回跳地址、`iss`、ACS 只来自配置；`Secure` 与 `__Host-` cookie | http 基址在启动期以 `ErrInsecureConfig` 失败，没有开关能放行；回环主机的 http 基址例外，那里的流量不出本机，cookie 不带前缀与 `Secure`、其余属性不变；基址写错则回跳失败 |
 | 命令树把 `authn.gate` 纳入每条提供服务的命令 | 网关默认守全部端 | 链上没有认证层，该端全部路由无认证放行；这是放行方向的失败，不产生本功能目录自己的信号（见 [design-authn](design-authn.md) 的非保证） |
 | 宿主前端自行设置 `frame-ancestors`，防护 XSS，并校验自己用作重定向目标的 `return_to` | 点击劫持、CSRF 的同源残余、开放重定向 | 这些防护缺席；authn 的端点只返回 JSON，不提供界面 |
 | 宿主自己的 handler 与中间件不记录请求体与表单 | 秘密不进日志 | authn 管不到宿主自己写出的记录 |

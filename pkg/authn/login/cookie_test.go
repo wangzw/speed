@@ -9,6 +9,13 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// The names of the flow and reset cookies on an https origin, written out so
+// that the tests pin the strings a browser sees.
+const (
+	flowCookieName  = "__Host-authn-flow"
+	resetCookieName = "__Host-authn-reset"
+)
+
 // cookieNamed reads the one cookie of a reply that carries name.
 func cookieNamed(t *testing.T, rec *httptest.ResponseRecorder, name string) *http.Cookie {
 	t.Helper()
@@ -26,9 +33,8 @@ func cookieNamed(t *testing.T, rec *httptest.ResponseRecorder, name string) *htt
 
 // holdsHostCookie checks the attributes the __Host- prefix requires and the ones
 // the binding cookies carry besides: Secure, a path of "/", no Domain, HttpOnly,
-// and the SameSite the cookie is written with. The attributes do not depend on
-// the deployment: a loopback http deployment gets the same cookie an https one
-// does.
+// and the SameSite the cookie is written with: the cookie an https deployment,
+// the rig's, gets. What an http deployment gets is held in cookie_names_test.go.
 func holdsHostCookie(t *testing.T, c *http.Cookie, sameSite http.SameSite) {
 	t.Helper()
 	if !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" || c.SameSite != sameSite {

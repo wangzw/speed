@@ -8,7 +8,7 @@
 
 - 外部回跳携带的授权码与 SAML 断言只允许消费一次。并发的两次回跳、重放、浏览器重复提交都必须有且只有一个胜者。
 - 回跳请求来自 IdP 页面发起的跨站导航，请求本身不能证明它出自发起流程的那个浏览器。`state` 与 `InResponseTo` 各自只证明请求与某个流程对得上，不证明流程与浏览器对得上。
-- OAuth 与 OIDC 的回跳是跨站的顶层 `GET` 导航；SAML 的 HTTP-POST 绑定由 IdP 页面把断言跨站 POST 到 ACS。`SameSite=Lax` 与 `Strict` 的 cookie 不随跨站 POST 发送（[REF-rfc6265bis](../references.md)）。仓库的静态检查用 gosec 的 G124（[REF-gosec](../references.md)），它要求每个 cookie 写成 `Secure`、`HttpOnly`，`SameSite` 取 `Lax` 或 `Strict`。
+- OAuth 与 OIDC 的回跳是跨站的顶层 `GET` 导航；SAML 的 HTTP-POST 绑定由 IdP 页面把断言跨站 POST 到 ACS。`SameSite=Lax` 与 `Strict` 的 cookie 不随跨站 POST 发送（[REF-rfc6265bis](../references.md)）。仓库的静态检查用 gosec 的 G124（[REF-gosec](../references.md)），它要求每个 cookie 把 `Secure` 与 `HttpOnly` 写成常量真值，`SameSite` 写成 `Lax` 或 `Strict` 常量。authn 写的 cookie 都由 `pkg/authn/internal/cookiename` 的 `Cookie` 一处构造，对外基址是 http 时不写 `Secure`（[ADR-authn-session](adr-authn-session.md)），这样的基址只在回环主机上能启动，流量不出本机；这一处分配是仓库里唯一豁免 G124 的地方，豁免后 G124 不再检查这些 cookie 的 `SameSite`，各写入方传入的仍只有 `Lax` 与 `Strict`。
 - 流程状态是短命的：有效期以分钟计，丢失的后果是用户重新开始，不会放宽任何校验。按丢失的方向判，它属于 kv，不属于 db（[ADR-authn-state-placement](adr-authn-state-placement.md)）。kv 提供 `CompareAndSwap`，不提供枚举与“取并删”。
 - 第三方方法也要能接入。方法作者不应需要理解流程存储、账户解析与会话。
 - 每个方法单测时不应需要 HTTP 与存储。
@@ -115,7 +115,7 @@ ACS 不处理回跳，只答一页转投页，把收到的表单以同源导航 
   - 回跳类的一步，引擎在调用方法之前先把记录交换成“处理中”：并发的第二次回跳败于这一步，授权码至多换一次，SAML 断言至多处理一次。停在“处理中”的记录，即进程崩溃而方法没有返回的情形，一律按失效处理，用户重新开始。
   - 被拒绝的一步是否保留流程，按该步是否消耗了一次性凭据区分：submit 类被拒保留流程并设答复次数上限，callback 类被拒作废流程。次数上限与迁移表见 authn-login。
   - kv 不可用时开始与继续流程都答 503；已建立的登录会话在 db，不受影响。
-- **绑定。** 每条流程绑定发起它的浏览器或客户端：流程令牌是随机数，库里只存哈希，回跳与每次答复都比对绑定。载体由开始请求指定，缺省为 cookie，且 cookie 载体不把绑定秘密放进响应体。流程 cookie 取 `SameSite=Lax`，以 `__Host-` 前缀限定为无 `Domain`、`Path=/`、`Secure`。cookie 的其余属性与请求头载体见 authn-login。
+- **绑定。** 每条流程绑定发起它的浏览器或客户端：流程令牌是随机数，库里只存哈希，回跳与每次答复都比对绑定。载体由开始请求指定，缺省为 cookie，且 cookie 载体不把绑定秘密放进响应体。流程 cookie 取 `SameSite=Lax`、无 `Domain`、`Path=/`、`Secure`，名字以 `__Host-` 前缀把这些属性交给浏览器强制；对外基址是 http 地址时不带前缀与 `Secure`，其余属性不变，这样的基址只在回环主机上能启动（[ADR-authn-session](adr-authn-session.md)）。cookie 的其余属性与请求头载体见 authn-login。
 - **SAML 的跨站 POST 经同站转投。** ACS 在跨源检查的旁路之内，不读流程、不写 kv、不调方法，只答一页转投页：页面把收到的表单字段转义后原样写进一个表单，目标固定为同一提供方的续接路由，由带 nonce 的脚本以同源导航提交。续接路由不在旁路之内，带着 `Lax` 的流程 cookie 与 `Strict` 的会话 cookie，按回跳比对绑定、调方法。页面的形状与响应头见 authn-login。
 - **按目的的终态动作。** 目的是封闭集：`login`、`link`、`step-up`、`enroll`。`login` 建登录会话或发令牌对；其余三种是在已登录身份上的操作，完成发生在 `Open` 的路由上、网关没有读会话，所以引擎先复核记录里的发起会话仍有效且账户一致，复核通过后才执行各自的动作。完成动作的逐项次序与事件见 authn-login。
 - **IdP 发起的 SAML。** 提供方行允许时，转投之后没有流程 cookie 的续接 POST 由引擎当场新建一条登录流程并直接置“处理中”，其余同回跳。方法不创建流程记录。

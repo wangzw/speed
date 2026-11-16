@@ -513,7 +513,7 @@ func sharingDatabaseWith(other *fixture) option {
 
 // defaultCookie is the cookie a deployment on an https address gets.
 func defaultCookie() cookieSpec {
-	return cookieSpec{name: hostCookieName, sameSite: http.SameSiteLaxMode}
+	return cookieSpec{publicURL: "https://app.example.com", sameSite: http.SameSiteLaxMode}
 }
 
 func newFixture(t *testing.T, d dialectCase, opts ...option) *fixture {
@@ -634,7 +634,7 @@ func noErr(t *testing.T, err error) {
 
 // cookieOf is the credential a request carries after a browser session was made.
 func (f *fixture) cookieOf(token string) authn.Credential {
-	return authn.Credential{Cookie: f.p.cookie.name, Value: token, Peer: "192.0.2.7:1234"}
+	return authn.Credential{Cookie: f.p.cookie.name(), Value: token, Peer: "192.0.2.7:1234"}
 }
 
 // verify runs the verifying backend on a token.

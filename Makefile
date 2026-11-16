@@ -329,14 +329,17 @@ web-browser: ## Run the frontend's browser tier in Chromium (geometry, focus ord
 
 # The end-to-end tier: Playwright drives the built demo binary through a real
 # browser, against a real sqlite file and real HTTP. It is deliberately not
-# part of `check` -- it needs Chromium and a built backend and is slower than
-# the commit gate -- and tools/check_e2e_honesty.py holds that `check` does not
-# reach it. The harness builds its own front end into
+# part of `check` -- it needs Chromium, WebKit and a built backend and is
+# slower than the commit gate -- and tools/check_e2e_honesty.py holds that
+# `check` does not reach it. The harness builds its own front end into
 # starters/demo/server/dist-e2e and its binaries into /tmp in its global setup,
-# so it may run beside `make dev`; `e2e-install` provisions the one browser it
-# drives.
-e2e-install: ## Install the Chromium build the end-to-end tier drives
-	@pnpm -C web exec playwright install chromium
+# so it may run beside `make dev`; `e2e-install` provisions the browsers it
+# drives: Chromium for every journey, and WebKit for the journey that holds the
+# cookies of a loopback http deployment, unprefixed and without Secure, to
+# what WebKit keeps, since WebKit on Linux refuses any Secure cookie set over
+# http, loopback host included.
+e2e-install: ## Install the Chromium and WebKit builds the end-to-end tier drives
+	@pnpm -C web exec playwright install chromium webkit
 
 e2e: ## Run the end-to-end journey specs against the built demo binary
 	@pnpm -C web --filter demo-web --fail-if-no-match run typecheck:e2e

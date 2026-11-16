@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -95,16 +96,30 @@ var secretPairKeys = map[string]struct{}{
 	"password": {},
 }
 
-// sessionCookieKeys are the session cookie's names in lower case: the two
-// prefixed forms the session module issues, and the bare name they are built
-// on.
+// sessionCookieKeys are the session cookie's names in lower case, every form
+// cookiename.Name gives the session stem: __Host-authn-sid, __Secure-authn-sid
+// with a Domain, and authn-sid on an http public URL.
 var sessionCookieKeys = map[string]struct{}{
-	"sid": {}, "__host-sid": {}, "__secure-sid": {},
+	strings.ToLower(cookiename.Session):                           {},
+	strings.ToLower(cookiename.HostPrefix + cookiename.Session):   {},
+	strings.ToLower(cookiename.SecurePrefix + cookiename.Session): {},
 }
 
 // longestPairKey bounds the key a pair is looked up under, so that a long run of
-// word characters before an '=' is never lower-cased only to be found absent.
-const longestPairKey = 16
+// word characters before an '=' is never lower-cased only to be found absent. It
+// is the length of the longest key of the two sets.
+var longestPairKey = longestKey(secretPairKeys, sessionCookieKeys)
+
+// longestKey is the length of the longest key of the sets.
+func longestKey(sets ...map[string]struct{}) int {
+	n := 0
+	for _, set := range sets {
+		for key := range set {
+			n = max(n, len(key))
+		}
+	}
+	return n
+}
 
 // tokenPrefixes begin the opaque tokens the authn modules issue, which are
 // secrets wherever they are written: the refresh token, the service secret and

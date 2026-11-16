@@ -79,7 +79,31 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
 
 一个配置开关放行非回环主机的 http 基址，cookie 随之去掉 `__Host-` 前缀与 `Secure`。
 
-**否决**：本机开发用回环主机的 http 基址即可，浏览器为回环主机保存 `Secure` cookie，`__Host-` 前缀照常生效，不需要这个开关。开关唯一多放行的是非回环主机上的 http 部署，那里会话 cookie 与流程绑定 cookie 明文传输；开关还使 cookie 名、前缀与 `Secure` 随部署变化，每个写 cookie 的模块都要分两支，漏掉一支即是缺陷。
+**否决**：本机开发用回环主机的 http 基址即可，这样的基址上 cookie 去掉前缀与 `Secure`、其余属性不变（见决策），流量经回环接口、不出本机，不需要这个开关。开关唯一多放行的是非回环主机上的 http 部署，那里会话 cookie、流程绑定 cookie 与登录时提交的口令以明文经网络传输，路径上任何能读这段流量的人都能拿到；同域的兄弟子域也真实存在，cookie 去掉前缀后它们能写同名 cookie。
+
+### 回环 http 基址上沿用前缀
+
+cookie 名在任何基址上都带 `__Host-` 前缀，配 `cookie-domain` 时带 `__Secure-`。
+
+**否决**：WebKit 27.2 不保存经 http 写入的 `__Host-` 与 `__Secure-` cookie，回环主机也不例外；Chromium 与 Firefox 保存。Safari 27 加入了回环主机上的 `Secure` cookie（[REF-safari-27-release-notes](../references.md)），没有放宽前缀。沿用前缀时，在 Safari 里经 `http://localhost` 登录拿不到流程 cookie 与会话 cookie，登录走不完。
+
+### 回环 http 基址上只去掉前缀，保留 `Secure`
+
+三个 cookie 在回环 http 基址上不带前缀，`Secure` 与 https 基址上一样恒开。
+
+**否决**：Linux 上的 WebKit 不保存经 http 写入的 `Secure` cookie，回环主机也不例外。实测中，一个 `http://localhost` 源写入两个只差 `Secure` 的 cookie，Linux 上的 WebKit 27.2 只回送不带 `Secure` 的那个，Chromium 159 两个都回送；macOS 上的 WebKit 保存回环主机上不带前缀的 `Secure` cookie，Chromium 与 Firefox 也保存。保留 `Secure` 时，Linux 上的 WebKit 经 `http://localhost` 拿不到重置 cookie、流程 cookie 与会话 cookie，密码重置与登录都走不完。`Secure` 在回环 http 源上也不保护任何东西：浏览器经 http 发往回环主机的请求本就是明文，只经回环接口，不出本机。
+
+### 回环 http 基址上只去掉前缀，词干仍是 `sid`
+
+会话 cookie 在 https 上叫 `__Host-sid`，回环 http 基址上叫 `sid`。
+
+**否决**：`sid` 是常见的会话 cookie 名。浏览器按主机隔离 cookie、不按端口，同一回环主机上另一个应用写的 `sid` 会随请求送到本服务，与本服务的会话 cookie 同名；网关对同名的两个 cookie 整体拒绝，本服务的登录随之失效。前缀在 https 上挡住了这一类覆盖，去掉前缀后要靠名字本身避开。
+
+### 按回环判据决定前缀与 `Secure`
+
+cookie 的前缀与 `Secure` 由“对外基址是否为回环主机的 http 地址”决定，与启动期准入 http 基址共用一个回环判据。
+
+**否决**：浏览器是否保存带 `Secure` 或前缀的 cookie，看的是写入它的源，也就是对外基址，判断从源的 scheme 出发：非回环主机的 http 源上这类 cookie 不被保存，回环主机的 http 源上各浏览器不一致，见“回环 http 基址上沿用前缀”与“回环 http 基址上只去掉前缀，保留 `Secure`”。主机是否回环回答的是另一个问题：明文流量会不会出本机，这是准入要判的。按回环判据定 cookie，非回环主机的 http 基址会得到浏览器不保存的带前缀、带 `Secure` 的 cookie，这条规则只因准入先拒掉了这类基址才不出错，cookie 规则与准入规则因此互相依赖。只看 scheme 时，cookie 规则自己成立，准入只决定哪些基址能启动；终结 TLS 的代理之后对外基址是 https，cookie 写 `Secure`，与代理到进程那一跳的 scheme 无关。
 
 ### 各模块自己写 cookie
 
@@ -115,7 +139,8 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
   - `service`：没有空闲期限；一个服务密钥一行，行只经撤销密钥终结。访问令牌的撤销接口对这一种类是无操作，持有访问令牌的人不能借撤销废掉服务客户端的会话行，也就没有复活被撤销行的路径。
   - 所有种类共有的有效条件：账户处于启用，会话创建时刻不早于账户的 `valid_after`。凡由企业 SSO 建立的会话，不论种类，绝对期限与 SSO 的绝对期限取较小者。
   - 每账户的会话数上限只统计 `browser` 与 `token`，`service` 不占。
-- **cookie 缺省仅主机、会话期。** 缺省的 cookie 名带 `__Host-` 前缀，`Secure` 恒开、没有开关能关闭，`HttpOnly`，不设 `Domain`，不设 `Max-Age` 与 `Expires`；没有记住我。对外基址必须是 https，回环主机的 http 基址除外，其余 http 基址在启动期被拒。偏离缺省只经显式配置：配 `cookie-domain` 时名字改用 `__Secure-` 前缀并写出 `Domain`，`same-site` 可取更严的值。哪些开关存在、取值与启动诊断由设计文档与配置文档承载；偏离缺省会失去 `__Host-` 所保证的子域不可写，这一代价写在后果里。
+- **cookie 缺省仅主机、会话期。** 缺省的 cookie 名带 `__Host-` 前缀，`Secure`，没有开关能关闭它，只有 http 基址上不写（见“cookie 的前缀与 `Secure` 只看对外基址的 scheme”），`HttpOnly`，不设 `Domain`，不设 `Max-Age` 与 `Expires`；没有记住我。对外基址必须是 https，回环主机的 http 基址除外，其余 http 基址在启动期被拒。偏离缺省只经显式配置：配 `cookie-domain` 时名字改用 `__Secure-` 前缀并写出 `Domain`，`same-site` 可取更严的值。哪些开关存在、取值与启动诊断由设计文档与配置文档承载；偏离缺省会失去 `__Host-` 所保证的子域不可写，这一代价写在后果里。
+- **cookie 的前缀与 `Secure` 只看对外基址的 scheme，三个 cookie 的词干带 `authn-`。** 会话 cookie、登录流程绑定 cookie 与密码重置绑定 cookie 的名字是前缀加词干，词干分别为 `authn-sid`、`authn-flow`、`authn-reset`。对外基址 `authn.gate.mount.public-url` 是 https 时，`https://localhost` 也是，名字带 `__Host-` 前缀（配 `cookie-domain` 时带 `__Secure-`）并写 `Secure`；是 http 时两者都不带，其余属性不变：`HttpOnly`、`Path=/`、不设 `Domain`，`SameSite` 仍取写出方定的常量。基址的主机不参与这条规则，回环判据只用于准入：启动期只准入回环主机的 http 基址，所以能启动的部署里，cookie 不带前缀与 `Secure` 的只有回环主机的 http 基址。在终结 TLS 的代理之后，对外基址是 https，cookie 写 `Secure`，与代理到进程那一跳用什么 scheme 无关。名字、是否写 `Secure` 与 cookie 本身都由 authn 内部的同一个包给出：写出与清除这三个 cookie 都经它构造，名字、`Secure`、`HttpOnly` 与 `Path=/` 由它定，读取经它取名。http 基址配 `cookie-domain` 在启动期被拒：带 `Domain` 的 cookie 要用 `__Secure-` 前缀，也就要写 `Secure`。理由：WebKit 不保存经 http 写入的带前缀 cookie，Linux 上的 WebKit 连不带前缀的 `Secure` cookie 也不保存，见考虑过的选项；回环源上两者都不保护任何东西：流量不出本机，`Secure` 所防的明文传输在那里不存在，前缀挡不住任何能到达它的人，只有本机进程能为它写 cookie，Chromium 与 Firefox 本就在同一主机的各端口之间共享 cookie。
 - **cookie 的写出与清除只有一处。** `Sessions` 的 `SetCookie` 与 `ClearCookie` 是唯一写出点，`authn.login`、`authn.impersonation` 等别的模块以及宿主换上的会话模块都不自己拼。凭据被拒、登出与撤销时清除 cookie；跨源检查不通过时不清除，因为 cookie 本身有效、被拒的是请求的意图，跨站请求不能借一次被拒的 POST 让用户登出。
 - **浏览器可能自己附带的凭据的跨源检查在网关。** 载体是 cookie 或 `Authorization` 头里 `Bearer`（[REF-rfc6750](../references.md)）以外的 scheme、且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求，由网关在调用校验后端之前用标准库 `CrossOriginProtection` 检查，载体判据与否决项见 [ADR-authn-credential-dispatch](adr-authn-credential-dispatch.md)。不通过即 401，由网关自产，不写 403。检查与 `SameSite` 互为兜底，不做令牌式 CSRF；外部方回跳的端点登记为检查的旁路；跨源的单页应用用承载令牌，不用 cookie。可信来源的取值与覆盖的路由由设计文档承载。
 - **校验缓存的有效期是撤销生效的上界。** 会话校验经进程内缓存，缓存有效期是撤销在其他副本上生效的上界，属于有界放宽，由 [ADR-authn-failure](adr-authn-failure.md) 逐项列出；缺省取短值，上限由设置的取值域封顶。读库出错是 `Unavailable`，失败时拒绝，不是放行。缓存的键、次序与读库次数见 design-authn-session。
@@ -133,6 +158,8 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
 - **会话要求宿主有 db。** 只有口令表的部署没有会话。
 - **scs 的扩展点要绕开几处**，存储适配器、编码器、轮换与续期各由 authn 自写，scs 在这里承担的只剩令牌生成、cookie 写出与创建路径。scs 升级时，绕开项各带的测试要先重跑，存储键的哈希函数若变化，轮换会先失败。
 - **非回环主机上只有 http 的部署起不来。** 用局域网地址或内网主机名直接以 http 访问的测试环境要在前面放一个终结 TLS 的代理，或改用回环主机；启动期的 `ErrInsecureConfig` 没有开关可绕。
+- **http 基址与 https 基址上 cookie 名与 `Secure` 不同。** 同一浏览器先后经 `http://localhost` 与 `https://localhost` 访问时持有两套 cookie，换基址等于重新登录。http 基址只在回环主机上能启动，那里的 cookie 不带 `Secure`，它们与带 `Secure` 时一样以明文只经回环接口传输。http 基址上的名字没有前缀，同一回环主机上的其他应用能写同名 cookie；`authn-` 词干使只有恰好写 `authn-sid`、`authn-flow` 或 `authn-reset` 的应用才会撞名，撞名时网关拒绝同名的两个 cookie，表现为本服务在该浏览器上的登录失效，不会把另一个应用的值当成凭据放行。http 基址配 `cookie-domain` 起不来。
+- **cookie 是否带 `Secure` 取决于对外基址写成什么。** 终结 TLS 的代理之后，对外基址必须写浏览器实际访问的 https 地址；写成代理到进程那一跳的 http 地址时，非回环主机在启动期被拒，回环主机上能启动，但 cookie 不带前缀与 `Secure`。
 - **需要跨子域共享 cookie 或更严 `SameSite` 的部署要放弃缺省。** 配 `cookie-domain` 之后 `__Host-` 前缀所保证的子域不可写随之失去，同域下的兄弟子域可以覆盖这个 cookie，启动诊断为此写一行 Warn。`same-site` 取更严的值会使从外站链接进入时首个请求不带 cookie。
 - **标准库的跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行**，只有极旧的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源加进可信来源。
 - **会话令牌在 `HttpOnly` cookie 里**，脚本读不到，但注入的脚本能借浏览器发出同源请求。这一类风险靠应用自身的内容安全策略，不在 authn 的保证之内；会话没有绑定设备或网络，绑定在 NAT 与移动网络下会误杀；列出会话时 `ClientInfo.IP` 在未配置可信代理的代理之后是代理地址，仅供记录与展示。

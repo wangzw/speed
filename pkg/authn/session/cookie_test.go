@@ -13,29 +13,60 @@ import (
 	"github.com/vislake/speed/pkg/authn/gate"
 )
 
+// The session cookie's three names, written out so that the tests pin the
+// strings a browser sees.
+const (
+	hostCookieName   = "__Host-authn-sid"
+	secureCookieName = "__Secure-authn-sid"
+	bareCookieName   = "authn-sid"
+)
+
 // The cookie's name and its attributes are what the deployment's public address
 // and the two configuration items come to. Each branch is asserted on its own,
 // with the address that selects it.
 func TestTheCookieNameFollowsThePublicAddressAndTheTwoItems(t *testing.T) {
 	for name, c := range map[string]struct {
-		cfg  moduleConfig
-		gate gateMount
-		want cookieSpec
+		cfg      moduleConfig
+		gate     gateMount
+		want     cookieSpec
+		wantName string
+		secure   bool
 	}{
 		"an https host": {
-			cfg:  moduleConfig{SameSite: "lax"},
-			gate: gateMount{PublicURL: "https://app.example.com"},
-			want: cookieSpec{name: hostCookieName, sameSite: http.SameSiteLaxMode},
+			cfg:      moduleConfig{SameSite: "lax"},
+			gate:     gateMount{PublicURL: "https://app.example.com"},
+			want:     cookieSpec{publicURL: "https://app.example.com", sameSite: http.SameSiteLaxMode},
+			wantName: hostCookieName, secure: true,
 		},
-		"a loopback host over http is treated as secure": {
-			cfg:  moduleConfig{SameSite: "strict"},
-			gate: gateMount{PublicURL: "http://localhost:8080"},
-			want: cookieSpec{name: hostCookieName, sameSite: http.SameSiteStrictMode},
+		"https on localhost keeps the prefix": {
+			cfg:      moduleConfig{SameSite: "lax"},
+			gate:     gateMount{PublicURL: "https://localhost:8443"},
+			want:     cookieSpec{publicURL: "https://localhost:8443", sameSite: http.SameSiteLaxMode},
+			wantName: hostCookieName, secure: true,
+		},
+		"localhost over http carries no prefix": {
+			cfg:      moduleConfig{SameSite: "strict"},
+			gate:     gateMount{PublicURL: "http://localhost:8080"},
+			want:     cookieSpec{publicURL: "http://localhost:8080", sameSite: http.SameSiteStrictMode},
+			wantName: bareCookieName,
+		},
+		"an IPv4 loopback address over http carries no prefix": {
+			cfg:      moduleConfig{SameSite: "lax"},
+			gate:     gateMount{PublicURL: "http://127.0.0.1"},
+			want:     cookieSpec{publicURL: "http://127.0.0.1", sameSite: http.SameSiteLaxMode},
+			wantName: bareCookieName,
+		},
+		"the IPv6 loopback address over http carries no prefix": {
+			cfg:      moduleConfig{SameSite: "lax"},
+			gate:     gateMount{PublicURL: "http://[::1]:8080"},
+			want:     cookieSpec{publicURL: "http://[::1]:8080", sameSite: http.SameSiteLaxMode},
+			wantName: bareCookieName,
 		},
 		"a cookie domain drops the host-only prefix and writes Domain": {
-			cfg:  moduleConfig{SameSite: "lax", CookieDomain: ".example.com"},
-			gate: gateMount{PublicURL: "https://app.example.com"},
-			want: cookieSpec{name: secureCookieName, domain: "example.com", sameSite: http.SameSiteLaxMode},
+			cfg:      moduleConfig{SameSite: "lax", CookieDomain: ".example.com"},
+			gate:     gateMount{PublicURL: "https://app.example.com"},
+			want:     cookieSpec{publicURL: "https://app.example.com", domain: "example.com", sameSite: http.SameSiteLaxMode},
+			wantName: secureCookieName, secure: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -46,13 +77,21 @@ func TestTheCookieNameFollowsThePublicAddressAndTheTwoItems(t *testing.T) {
 			if got != c.want {
 				t.Errorf("cookie = %+v, want %+v", got, c.want)
 			}
+			if got.name() != c.wantName {
+				t.Errorf("the cookie is named %q, want %q", got.name(), c.wantName)
+			}
+			if built := got.cookie("", 0); built.Name != c.wantName || built.Secure != c.secure {
+				t.Errorf("the cookie is built as %q with Secure %v, want %q with Secure %v",
+					built.Name, built.Secure, c.wantName, c.secure)
+			}
 		})
 	}
 }
 
 // What cannot be run on is refused: none as a SameSite, an http address whose
-// host is not a loopback one, and a Domain that is malformed or that a browser
-// would drop.
+// host is not a loopback one, a Domain that is malformed or that a browser would
+// drop, and a Domain on an http address, since a cookie with a Domain needs the
+// __Secure- prefix and so Secure, which an http address leaves off.
 func TestTheCookieConfigurationRefusesWhatCannotRunOn(t *testing.T) {
 	cases := map[string]struct {
 		cfg  moduleConfig
@@ -89,6 +128,16 @@ func TestTheCookieConfigurationRefusesWhatCannotRunOn(t *testing.T) {
 			gate: gateMount{PublicURL: "https://app.example.com"},
 			want: authn.ErrInvalidConfig,
 		},
+		"a domain on a loopback http address": {
+			cfg:  moduleConfig{SameSite: "lax", CookieDomain: "localhost"},
+			gate: gateMount{PublicURL: "http://localhost:8080"},
+			want: authn.ErrInvalidConfig,
+		},
+		"a domain on a loopback http address that the address is not under": {
+			cfg:  moduleConfig{SameSite: "lax", CookieDomain: "example.com"},
+			gate: gateMount{PublicURL: "http://127.0.0.1"},
+			want: authn.ErrInvalidConfig,
+		},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -100,8 +149,8 @@ func TestTheCookieConfigurationRefusesWhatCannotRunOn(t *testing.T) {
 	}
 }
 
-// SetCookie writes the cookie with the attributes the design fixes: the __Host-
-// prefix, Secure, HttpOnly, Path=/, SameSite=Lax, no Domain, and a session
+// SetCookie writes the cookie with the attributes the design fixes on https: the
+// __Host- prefix, Secure, HttpOnly, Path=/, SameSite=Lax, no Domain, and a session
 // lifetime (no Max-Age and no Expires).
 func TestTheSetCookieHeaderCarriesTheFixedAttributes(t *testing.T) {
 	f := newFixture(t, dialects[0])
@@ -152,7 +201,7 @@ func TestClearCookieDropsTheCookie(t *testing.T) {
 func TestTheStartupDiagnosticsWarnAboutEachGivenUpProtection(t *testing.T) {
 	t.Run("a cookie domain", func(t *testing.T) {
 		f := newFixture(t, dialects[0], withCookie(cookieSpec{
-			name: secureCookieName, domain: "example.com", sameSite: http.SameSiteLaxMode,
+			publicURL: "https://app.example.com", domain: "example.com", sameSite: http.SameSiteLaxMode,
 		}))
 		f.p.diagnose()
 		out := f.logs.String()
@@ -195,8 +244,8 @@ func TestAnOmittedSameSiteFallsToTheDeclaredDefault(t *testing.T) {
 	if spec.sameSite != http.SameSiteLaxMode {
 		t.Errorf("with same-site omitted the cookie's SameSite is %v, want Lax", spec.sameSite)
 	}
-	if spec.name != hostCookieName {
-		t.Errorf("the cookie is %q, want the host-only cookie", spec.name)
+	if spec.name() != hostCookieName {
+		t.Errorf("the cookie is %q, want the host-only cookie", spec.name())
 	}
 }
 
@@ -208,27 +257,57 @@ func TestAPrivateAddressOverHttpIsNotTreatedAsSecure(t *testing.T) {
 	}
 }
 
-// A loopback deployment over http, the one http address that starts, writes the
-// same cookie an https one does: __Host-sid, Secure and HttpOnly, which a browser
-// keeps for a loopback host.
-func TestALoopbackHTTPDeploymentWritesTheSecureHostCookie(t *testing.T) {
-	for _, address := range []string{"http://localhost:8080", "http://127.0.0.1", "http://[::1]:8080"} {
-		t.Run(address, func(t *testing.T) {
-			spec, err := (moduleConfig{SameSite: "lax"}).resolve(gateMount{PublicURL: address})
+// Every Set-Cookie the module writes for the session cookie, on SetCookie, on
+// ClearCookie and on the clearing cookie a reply attaches, carries Secure exactly
+// when the public URL is https. On an http address, which starts only on a
+// loopback host, the cookie is authn-sid with HttpOnly, Path=/, no Domain and
+// the configured SameSite and without Secure, which WebKit on Linux does not
+// store when it is set over http. On https, https://localhost included, it is
+// __Host-authn-sid and Secure.
+func TestTheSessionCookieIsSecureOnAnHTTPSAddressAlone(t *testing.T) {
+	for _, c := range []struct {
+		address, name string
+		secure        bool
+	}{
+		{"http://localhost:8080", bareCookieName, false},
+		{"http://127.0.0.1", bareCookieName, false},
+		{"http://[::1]:8080", bareCookieName, false},
+		{"https://app.example.com", hostCookieName, true},
+		{"https://localhost:8443", hostCookieName, true},
+	} {
+		t.Run(c.address, func(t *testing.T) {
+			spec, err := (moduleConfig{SameSite: "strict"}).resolve(gateMount{PublicURL: c.address})
 			noErr(t, err)
 			f := newFixture(t, dialects[0], withCookie(spec))
 			f.accounts.add(alice, nil)
 			issued := f.create(newBrowser(alice))
 
-			rec := httptest.NewRecorder()
-			f.p.SetCookie(rec, issued)
-			cookies := cookiesOf(rec.Header())
-			if len(cookies) != 1 {
-				t.Fatalf("SetCookie wrote %d cookies, want 1", len(cookies))
+			set := httptest.NewRecorder()
+			f.p.SetCookie(set, issued)
+			cleared := httptest.NewRecorder()
+			f.p.ClearCookie(cleared)
+			lines := map[string][]string{
+				"SetCookie":           set.Header().Values("Set-Cookie"),
+				"ClearCookie":         cleared.Header().Values("Set-Cookie"),
+				"the reply's clearer": {f.p.clearingCookie().String()},
 			}
-			if c := cookies[0]; c.Name != hostCookieName || !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" {
-				t.Errorf("the cookie is %q Secure=%v HttpOnly=%v Path=%q Domain=%q, want %q, Secure, HttpOnly, "+
-					"Path=/ and no Domain", c.Name, c.Secure, c.HttpOnly, c.Path, c.Domain, hostCookieName)
+			for source, written := range lines {
+				if len(written) != 1 {
+					t.Fatalf("%s wrote %d Set-Cookie headers, want 1", source, len(written))
+				}
+				line := written[0]
+				parsed := cookiesOf(http.Header{"Set-Cookie": {line}})
+				if len(parsed) != 1 {
+					t.Fatalf("%s wrote %q, which does not parse as one cookie", source, line)
+				}
+				got := parsed[0]
+				if hasSecure := strings.Contains(line, "; Secure"); hasSecure != c.secure || got.Secure != c.secure {
+					t.Errorf("%s wrote %q, whose Secure is %v, want %v", source, line, got.Secure, c.secure)
+				}
+				if got.Name != c.name || !got.HttpOnly || got.Path != "/" || got.Domain != "" ||
+					got.SameSite != http.SameSiteStrictMode {
+					t.Errorf("%s wrote %q, want %s with HttpOnly, Path=/, no Domain and Strict", source, line, c.name)
+				}
 			}
 		})
 	}
@@ -241,12 +320,18 @@ func TestALoopbackHTTPDeploymentWritesTheSecureHostCookie(t *testing.T) {
 // Domain and the SameSite. The library's own clearing header is held to the same
 // attributes, so the two ways a cookie is cleared agree.
 func TestTheClearingCookieMatchesTheSessionCookie(t *testing.T) {
-	for name, spec := range map[string]cookieSpec{
-		"lax":                  {name: hostCookieName, sameSite: http.SameSiteLaxMode},
-		"strict":               {name: hostCookieName, sameSite: http.SameSiteStrictMode},
-		"lax with a domain":    {name: secureCookieName, domain: "example.com", sameSite: http.SameSiteLaxMode},
-		"strict with a domain": {name: secureCookieName, domain: "example.com", sameSite: http.SameSiteStrictMode},
+	const https = "https://app.example.com"
+	for name, c := range map[string]struct {
+		spec   cookieSpec
+		secure bool
+	}{
+		"lax":                      {cookieSpec{publicURL: https, sameSite: http.SameSiteLaxMode}, true},
+		"strict":                   {cookieSpec{publicURL: https, sameSite: http.SameSiteStrictMode}, true},
+		"lax with a domain":        {cookieSpec{publicURL: https, domain: "example.com", sameSite: http.SameSiteLaxMode}, true},
+		"strict with a domain":     {cookieSpec{publicURL: https, domain: "example.com", sameSite: http.SameSiteStrictMode}, true},
+		"lax on a loopback origin": {cookieSpec{publicURL: "http://localhost:8080", sameSite: http.SameSiteLaxMode}, false},
 	} {
+		spec := c.spec
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t, dialects[0], withCookie(spec))
 			f.accounts.add(alice, nil)
@@ -259,9 +344,9 @@ func TestTheClearingCookieMatchesTheSessionCookie(t *testing.T) {
 				t.Fatalf("SetCookie wrote %d cookies, want 1", len(written))
 			}
 			session := written[0]
-			if !session.Secure || !session.HttpOnly || session.SameSite != spec.sameSite {
-				t.Fatalf("the session cookie is Secure=%v HttpOnly=%v SameSite=%v, want Secure, HttpOnly and %v",
-					session.Secure, session.HttpOnly, session.SameSite, spec.sameSite)
+			if session.Secure != c.secure || !session.HttpOnly || session.SameSite != spec.sameSite {
+				t.Fatalf("the session cookie is Secure=%v HttpOnly=%v SameSite=%v, want Secure %v, HttpOnly and %v",
+					session.Secure, session.HttpOnly, session.SameSite, c.secure, spec.sameSite)
 			}
 
 			reply := cookiesOf(http.Header{"Set-Cookie": {f.p.clearingCookie().String()}})
@@ -281,6 +366,38 @@ func TestTheClearingCookieMatchesTheSessionCookie(t *testing.T) {
 				if c.Value != "" || c.MaxAge >= 0 {
 					t.Errorf("%s clearing cookie has value %q and Max-Age %d, want no value and a negative Max-Age",
 						source, c.Value, c.MaxAge)
+				}
+			}
+		})
+	}
+}
+
+// The session is read under the one name the public URL gives: a live token sent
+// under another form of the name finds no session, while the same token under
+// the configured name does.
+func TestASessionUnderAnotherFormOfTheNameIsNotFound(t *testing.T) {
+	for _, c := range []struct {
+		publicURL, configured string
+		others                []string
+	}{
+		{"http://localhost:8080", bareCookieName, []string{hostCookieName, secureCookieName}},
+		{"https://app.example.com", hostCookieName, []string{bareCookieName, secureCookieName}},
+	} {
+		configured, others := c.configured, c.others
+		t.Run(configured, func(t *testing.T) {
+			f := newFixture(t, dialects[0], withCookie(cookieSpec{publicURL: c.publicURL, sameSite: http.SameSiteLaxMode}))
+			if f.p.cookie.name() != configured {
+				t.Fatalf("the session cookie is named %q, want %q", f.p.cookie.name(), configured)
+			}
+			f.accounts.add(alice, nil)
+			issued := f.create(newBrowser(alice))
+
+			if id, ok, err := f.p.Current(newRequest(configured, issued.Token).r); err != nil || !ok || id != issued.ID {
+				t.Fatalf("the session read under %s is %q, %v, %v, want %q", configured, id, ok, err, issued.ID)
+			}
+			for _, other := range others {
+				if id, ok, err := f.p.Current(newRequest(other, issued.Token).r); err != nil || ok {
+					t.Errorf("the session read under %s is %q, %v, %v, want none", other, id, ok, err)
 				}
 			}
 		})

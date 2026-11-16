@@ -113,8 +113,7 @@ func TestTheMainSourceCanRelaxWhatItAloneMay(t *testing.T) {
 }
 
 // TestAnHTTPPublicURLStartsOnlyOnALoopbackHost holds the one form an http public
-// URL may take: a loopback host, for which a browser keeps a Secure cookie, so
-// every cookie the capability writes stays Secure and keeps its __Host- prefix.
+// URL may take: a loopback host, whose traffic never leaves the machine.
 // Any other http address is refused through the real loader, and the
 // configuration has no item that admits one: a key written beside the address to
 // relax the check is refused as a key no module declares.
@@ -205,6 +204,57 @@ func TestACookieWithoutTheHostPrefixIsWarnedAboutOnceEach(t *testing.T) {
 	}
 	if want := "plain/other plain/sid"; strings.Join(named, " ") != want {
 		t.Errorf("the cookie warnings name %v, want one each for %s and none for the __Host- one", named, want)
+	}
+}
+
+// TestTheCookiePrefixDiagnosticFollowsThePublicURL holds the diagnostic on each
+// kind of public URL. On https, https on localhost included, each cookie name
+// without the __Host- prefix gets its Warn line. On an http address, which
+// starts only on a loopback host, the cookies carry no prefix by design, so no
+// Warn is written about a name and one Info line names the setting that makes it
+// so.
+func TestTheCookiePrefixDiagnosticFollowsThePublicURL(t *testing.T) {
+	for _, c := range []struct {
+		publicURL string
+		http      bool
+	}{
+		{"https://app.example.com", false},
+		{"https://localhost:8443", false},
+		{"http://localhost:8080", true},
+		{"http://127.0.0.1:8080", true},
+		{"http://[::1]:8080", true},
+	} {
+		t.Run(c.publicURL, func(t *testing.T) {
+			logs := liveAssembly{
+				gateItems: `"mount":{"public-url":"` + c.publicURL + `"}`,
+				backends:  []authn.Verifier{cookieBackend("session", "authn-sid", "__Host-authn-sid")},
+			}.serve(t, func(*live) {})
+
+			var warned []string
+			for _, r := range warnings(logs) {
+				if strings.Contains(r.Message, hostCookiePrefix) {
+					warned = append(warned, attrText(r, "cookie_name"))
+				}
+			}
+			var told int
+			for _, r := range logs.recordsOf() {
+				if r.Level == slog.LevelInfo && strings.Contains(r.Message, "carry no __Host- or __Secure- prefix and are not Secure") {
+					told++
+					if attrText(r, "setting") != ConfigNamespace+"."+mountPublicURLItem {
+						t.Errorf("the Info line names the setting %q, want %s.%s", attrText(r, "setting"),
+							ConfigNamespace, mountPublicURLItem)
+					}
+				}
+			}
+			if c.http && (len(warned) != 0 || told != 1) {
+				t.Errorf("on %s the diagnostics warned about %v and wrote %d Info line(s), want no Warn and one Info",
+					c.publicURL, warned, told)
+			}
+			if !c.http && (strings.Join(warned, " ") != "authn-sid" || told != 0) {
+				t.Errorf("on %s the diagnostics warned about %v and wrote %d Info line(s), want one Warn for "+
+					"authn-sid and no Info", c.publicURL, warned, told)
+			}
+		})
 	}
 }
 

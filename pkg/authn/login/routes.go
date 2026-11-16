@@ -9,21 +9,21 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The carriers a flow token travels in. The cookie carries the __Host- prefix,
-// which requires Secure, a path of "/" and no Domain. It is SameSite=Lax: it
-// rides the same-site requests of a flow and a provider's cross-site top-level
-// GET back, and a provider's cross-site form post, which does not carry it, is
-// bounced to the resume route as a same-origin post that does.
-const (
-	flowCookieName = "__Host-authn-flow"
-	flowHeader     = "Authn-Flow"
-	flowCookiePath = "/"
-)
+// The header a flow token travels in when it does not travel in the flow
+// cookie. The cookie is built by cookiename.Cookie: __Host-authn-flow, whose
+// prefix requires Secure, a path of "/" and no Domain, or authn-flow on an http
+// public URL, where it carries the same attributes but Secure, which
+// cookiename.Secure leaves off there. It is SameSite=Lax: it rides the
+// same-site requests of a flow and a provider's cross-site top-level GET back,
+// and a provider's cross-site form post, which does not carry it, is bounced to
+// the resume route as a same-origin post that does.
+const flowHeader = "Authn-Flow"
 
 // routes binds the product to the endpoint its routes were mounted on, whose
 // name is the realm of every 401 a handler writes.
@@ -104,17 +104,15 @@ func (r *routes) identityPrecheck(c *gin.Context) bool {
 }
 
 // setFlowCookie adds the flow cookie, the carrier of the binding secret for a
-// cookie-bound flow. A maxAge of -1 clears it.
+// cookie-bound flow. A maxAge of -1 clears it; a set and a clear carry the same
+// attributes.
 func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
-	c.setCookie(&http.Cookie{
-		Name:     flowCookieName,
+	c.setCookie(cookiename.Cookie(r.publicURL, cookiename.Spec{
+		Stem:     cookiename.Flow,
 		Value:    token,
-		Path:     flowCookiePath,
 		MaxAge:   maxAge,
-		Secure:   true,
-		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-	})
+	}))
 }
 
 // readBindingToken reads the flow token from the request. A cookie-bound route
@@ -124,7 +122,7 @@ func (r *routes) setFlowCookie(c *call, token string, maxAge int) {
 // fromHeader reports that the token arrived in the Authn-Flow header, which is
 // what makes a reply echo it in its body.
 func (r *routes) readBindingToken(c *call, allowHeader bool) (token string, fromHeader, ok bool) {
-	if v := c.cookieValue(flowCookieName); v != "" {
+	if v := c.cookieValue(r.flowCookie); v != "" {
 		return v, false, true
 	}
 	if allowHeader {

@@ -297,6 +297,27 @@ func cookieOf(t *testing.T, r chainReply, part string) string {
 	return ""
 }
 
+// holdsLoopbackCookies checks every cookie a reply set on the chain's loopback
+// http public URL: its name carries no __Host- or __Secure- prefix and it is not
+// Secure, since WebKit refuses either over http, and it keeps HttpOnly, Path=/,
+// no Domain and an explicit SameSite.
+func holdsLoopbackCookies(t *testing.T, r chainReply) {
+	t.Helper()
+	cookies := (&http.Response{Header: r.header}).Cookies()
+	if len(cookies) == 0 {
+		t.Fatalf("the reply set no cookie; Set-Cookie %v", r.header.Values("Set-Cookie"))
+	}
+	for _, c := range cookies {
+		if strings.HasPrefix(c.Name, "__") {
+			t.Errorf("the cookie %q carries a prefix on the loopback http address %s", c.Name, chainPublicURL)
+		}
+		if c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" || c.SameSite == http.SameSiteDefaultMode {
+			t.Errorf("the cookie %s is Secure=%v HttpOnly=%v Path=%q Domain=%q SameSite=%v, want no Secure, "+
+				"HttpOnly, Path=/, no Domain and a SameSite", c.Name, c.Secure, c.HttpOnly, c.Path, c.Domain, c.SameSite)
+		}
+	}
+}
+
 // spStart begins an SP-initiated SAML login and returns the flow cookie, the
 // identifier of the AuthnRequest the method drew and the RelayState it sent.
 func (c *chain) spStart() (cookie, requestID, relay string) {
@@ -434,7 +455,14 @@ func TestAnSPInitiatedLoginCompletesThroughTheBounce(t *testing.T) {
 			t.Fatalf("the resume post answered %d to %q, want 303 to the return target: %s",
 				done.status, done.header.Get("Location"), done.body)
 		}
+		holdsLoopbackCookies(t, done)
+		if !strings.HasPrefix(cookie, "authn-flow=") {
+			t.Errorf("the start set the flow cookie %q, want authn-flow on a loopback http address", cookie)
+		}
 		sid := cookieOf(t, done, "sid")
+		if !strings.HasPrefix(sid, "authn-sid=") {
+			t.Errorf("the callback set the session cookie %q, want authn-sid on a loopback http address", sid)
+		}
 		status := c.get(chainBase+"/session", sid)
 		if status.status != http.StatusOK || !strings.Contains(status.body, `"authenticated":true`) {
 			t.Fatalf("the session the login made reads %d: %s", status.status, status.body)

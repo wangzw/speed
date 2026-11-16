@@ -97,7 +97,7 @@
 | `authn.account.password-concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 口令派生的并发上限 |
 | `authn.account.signup-concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 注册口令派生的并发名额，与口令登录的并发名额各自独立；耗尽时注册答 503，不挤占登录；名额在构造时分配。注册不另设内存预算，单次派生的 Argon2（[REF-rfc9106](../../../references.md)）内存由该名额的上界约束 |
 | `authn.account.password-memory-budget-mib` | 整数 | `512` | 默认 | | 账户后端的口令派生内存预算，启动时分配（口令表后端另持自己的一份缺省预算，不设键）；至少是 `authn.account.password-argon2-memory-kib` 取值域上限的两倍，否则 `ErrInvalidConfig` |
-| `authn.session.cookie-domain` | 字符串 | 空 | 默认 | | 非空则 cookie 名改为 `__Secure-sid` 并写出 `Domain` 属性 |
+| `authn.session.cookie-domain` | 字符串 | 空 | 默认 | | 非空则 cookie 名改为 `__Secure-authn-sid` 并写出 `Domain` 属性；`authn.gate.mount.public-url` 是 http 地址时必须为空 |
 | `authn.session.same-site` | 字符串 | `lax` | 默认 | | `lax` 或 `strict`；`none` 被拒绝 |
 | `authn.token.issuer` | 字符串 | `authn.gate.mount.public-url` | 默认 | | 访问令牌的 `iss` |
 | `authn.token.audience` | 字符串列表 | `[issuer]` | 默认 | | 访问令牌的 `aud`；缺省为空时取 `[issuer]` |
@@ -530,6 +530,7 @@ flowchart TD
 | `authn.gate.trusted-origins` 的某一项不是 `scheme://host[:port]`：scheme 不是 http 或 https，带用户信息、路径、查询、片段、空端口、通配，端口不在 1 到 65535，或主机不是 ASCII（国际化域名写 punycode）；每项先规范成浏览器发送的形式，规范后相同的项并作一项 | `ErrInvalidConfig` |
 | `authn.static.cache-size` 不在 1 到 1000000（0 被拒绝）；`authn.static.concurrency` 不在 1 到 256 | `ErrInvalidConfig` |
 | `authn.gate.mount.public-url` 是 https，主机是回环主机时可以是 http；`authn.session.same-site` 不取 `none` | `ErrInsecureConfig` |
+| `authn.gate.mount.public-url` 是 http 地址时 `authn.session.cookie-domain` 为空：带 `Domain` 的 cookie 要用 `__Secure-` 前缀，也就要写 `Secure`，http 基址上的 cookie 不写 | `ErrInvalidConfig` |
 | `authn.gate.mount.endpoints.{default,tenants,system}` 里的端名存在于入口模块 | `ErrUnknownEndpoint` |
 | `authn.gate.mount.endpoints.{default,tenants,system}` 被网关所守；`authn.mount` 在 `authn.gate.mount.endpoints.default` 为空且入口声明的端不是恰好一个时失败，网关在 `Start` 对同一规则再判一次 | `ErrRoutesUnguarded`、`ErrRoutesUnconfigured` |
 | `authn.gate.mount.endpoints.default`、`.system` 不被 `ScopeGuard` 所守，也不在 `tenant.resolve.endpoints` 里（核不了则 `Warn`）；`authn.gate.mount.endpoints.tenants` 反向：必须同时被 `ScopeGuard` 所守且列在 `tenant.resolve.endpoints` 里（该清单读不出即失败） | `ErrInvalidConfig` |
@@ -552,7 +553,7 @@ flowchart TD
 
 诊断是成功路径上的日志，每行以 `authn: ` 起头，由持有对应项的模块写出。
 
-**常规行**写出当前装配的事实：启用的校验后端与载体、登录方式与因素种类、每个端上被 `Exempt`、`Optional`、`Impersonable` 开出的路由、`authn.admin` 挂了哪几组路由。
+**常规行**写出当前装配的事实：启用的校验后端与载体、登录方式与因素种类、每个端上被 `Exempt`、`Optional`、`Impersonable` 开出的路由、`authn.admin` 挂了哪几组路由。`authn.gate.mount.public-url` 是 http 地址时，网关另写一行 Info，说明这个源上的 cookie 不带 `__Host-` 或 `__Secure-` 前缀，也不带 `Secure`，这样的基址只在回环主机上被准入，并点名该键。cookie 是否带前缀与 `Secure` 只看该键的 scheme，主机不参与（[ADR-authn-session](../../../adr/adr-authn-session.md)）。
 
 **放宽项一律单独一行 `Warn`**，使它们在日志里可检索。下列是例举，判据是“每次放宽都是一个显式可见的开关”；设置项里的放宽开关在启动时已取放宽值时写这一行，运行期改到放宽方向时另写同一行并记 `authn.settings.relaxed`：
 
@@ -569,7 +570,7 @@ flowchart TD
 **其余 `Warn`：**
 
 - 没有发件箱的装配里账户抹除不保证完成（[design-authn-account](design-authn-account.md)）。
-- 网关装配里某个校验后端认领的 cookie 名不带 `__Host-` 前缀：每个这样的名字一行。兄弟子域的页面可以种下该名字的 cookie，网关只能拒绝带着两份同名 cookie 的请求，只带被种下的那一份的请求与诚实的请求分不开（[design-authn-gate](design-authn-gate.md)）。
+- 网关装配里某个校验后端认领的 cookie 名不带 `__Host-` 前缀：每个这样的名字一行；`authn.gate.mount.public-url` 是 http 地址时不写这些行，由上述 Info 行代替。兄弟子域的页面可以种下该名字的 cookie，网关只能拒绝带着两份同名 cookie 的请求，只带被种下的那一份的请求与诚实的请求分不开（[design-authn-gate](design-authn-gate.md)）。
 - 口令表里只在大小写上不同、共用一个退避键的主体名：每一组一行，点名这组主体。
 - `authn.sso` 与 `authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，各写一行：租户级强制 SSO 与强制多因素无人执行。
 

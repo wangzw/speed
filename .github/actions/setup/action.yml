@@ -15,10 +15,10 @@ description: Install the .mise.toml toolchain, and optionally the frontend depen
 inputs:
   playwright:
     description: >-
-      Install Playwright's Chromium with the system libraries it needs, after
-      installing the frontend workspace's dependencies from its lockfile
-      (`pnpm -C web install --frozen-lockfile`): the browser is installed
-      through the workspace's own Playwright package, and the browser and
+      Install Playwright's Chromium and WebKit with the system libraries they
+      need, after installing the frontend workspace's dependencies from its
+      lockfile (`pnpm -C web install --frozen-lockfile`): the browsers are
+      installed through the workspace's own Playwright package, and the browser and
       end-to-end targets run from the same install. The demo host under
       starters/demo/web is a member of that workspace, so one install covers
       both. A job that runs `make check` leaves this off: its web-check leg
@@ -39,12 +39,12 @@ runs:
 
     # The libraries come from apt and need root, which a hosted runner's
     # passwordless sudo provides; Playwright invokes sudo itself.
-    - name: Install the system libraries Chromium needs
+    - name: Install the system libraries Chromium and WebKit need
       if: inputs.playwright == 'true'
       shell: bash
-      run: pnpm -C web exec playwright install-deps chromium
+      run: pnpm -C web exec playwright install-deps chromium webkit
 
-    - name: Install Chromium
+    - name: Install Chromium and WebKit
       if: inputs.playwright == 'true'
       shell: bash
       run: make e2e-install

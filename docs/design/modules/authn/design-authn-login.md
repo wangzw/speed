@@ -178,7 +178,7 @@ type Proof struct {
 | `GET\|POST B/callback/:provider` | Open | OAuth（[REF-rfc6749](../../../references.md)）与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路。`GET` 按回跳处理；`POST` 不处理回跳，只答一页把收到的表单原样提交给 `POST B/callback/:provider/resume` 的页面，见“跨站回跳 POST 的转投”；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
 | `POST B/callback/:provider/resume` | Open | 按回跳处理转投页以同源导航提交的表单，含 IdP 发起的 SAML；不在跨源检查的旁路之内 |
 | `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`PUT B/identifiers/:id`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required，`Impersonable` | 账户自助：改口令、添加或更换邮箱与手机、添加用户名、设置标识的登录方式与默认联系地址、删标识、解绑外部身份；改口令、添加用户名、选作或取消登录方式、设置默认联系地址、删除标识与解绑外部身份要求新鲜认证并过 CSRF，登记并验证一条邮箱或手机本身不要求新鲜认证、不轮换会话、不结束其他会话，但其证明改变账户据以证明或找回自己的事实时例外：一条将取代默认联系地址或成为唯一邮箱地址的邮箱、一个将取代已启用短信因素发码目标的新手机号，其证明要求新鲜认证；冒充身份与被冒充账户本人相同；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
-| `POST B/password-reset` | Open | 匿名口令重置的第一步：body `{channel, identifier, human_proof?}`；按渠道发送验证码或走抑制路径，合格与不合格目标的应答一致；建立独立的 `__Host-authn-reset` 绑定，不读登录流程 cookie |
+| `POST B/password-reset` | Open | 匿名口令重置的第一步：body `{channel, identifier, human_proof?}`；按渠道发送验证码或走抑制路径，合格与不合格目标的应答一致；建立独立的重置绑定 cookie（名字见[流程令牌与绑定](#流程令牌与绑定)），不读登录流程 cookie |
 | `GET\|DELETE B/password-reset/current` | Open | 读当前重置流程或放弃它；要求重置绑定；`GET` 只答状态与期限，不答账户或标识 |
 | `POST B/password-reset/verify` | Open | 提交验证码，body `{code}`；通过则进入已证明状态，错码、过期与抑制路径同答 401 `login-failed` |
 | `POST B/password-reset/complete` | Open | 提交新口令，body `{new_password}`；写口令、推进 `valid_after`、撤销该账户全部会话；不建立会话 |
@@ -263,7 +263,7 @@ type Proof struct {
 
 **渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。人机验证的证明由发送入口按发送面校验：邮箱渠道在自己的路由上、发码之前以其余面校验并消费；短信渠道把证明交给 `SMSCodes.Send`，由它以手机号面在任何发送预算之前校验并消费。证明被拒绝的请求答 403 `human-verification-required` 或 400，不按“已受理”的相同应答处理；预算超限则一律抑制发送并仍答 202。
 
-**绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`，[REF-rfc6265bis](../../../references.md)）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都视为 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码的应答一致。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
+**绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`，[REF-rfc6265bis](../../../references.md)；http 基址上的名字与 `Secure` 见[流程令牌与绑定](#流程令牌与绑定)）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都视为 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码的应答一致。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
 
 | 路由 | 行为 |
 |---|---|
@@ -547,10 +547,19 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 
 | `binding` | 承载 | 响应体 |
 |---|---|---|
-| `cookie`（缺省） | cookie `__Host-authn-flow` | 不含 `flow_token`，脚本读不到绑定秘密，XSS 取不到 |
+| `cookie`（缺省） | 流程 cookie，名字见下文 | 不含 `flow_token`，脚本读不到绑定秘密，XSS 取不到 |
 | `header` | 请求头 `Authn-Flow` | 返回 `flow_token`，不设 cookie |
 
-cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=Lax`**。流程的同站请求（开始、答复、读取与放弃）都带上它；OAuth、企业 OIDC、Google、GitHub 与微信的回跳是跨站的顶层 `GET` 导航，同样带上它。SAML 的 SP 发起登录由 IdP 页面把断言跨站 POST 到 ACS，这一请求不带 `Lax` 的 cookie，由“跨站回跳 POST 的转投”换成一次带 cookie 的同源 POST。`__Host-` 前缀使子域不能写入同名 cookie。名字与这些属性不随部署变化：`public-url` 只能是 https 或回环主机的 http，两者下浏览器都保存 `Secure` cookie。
+cookie 的属性是 `Secure; HttpOnly; Path=/`（http 基址上不带 `Secure`，见下文）、无 `Domain`、**`SameSite=Lax`**。流程的同站请求（开始、答复、读取与放弃）都带上它；OAuth、企业 OIDC、Google、GitHub 与微信的回跳是跨站的顶层 `GET` 导航，同样带上它。SAML 的 SP 发起登录由 IdP 页面把断言跨站 POST 到 ACS，这一请求不带 `Lax` 的 cookie，由“跨站回跳 POST 的转投”换成一次带 cookie 的同源 POST。`__Host-` 前缀使子域不能写入同名 cookie。
+
+本模块写的两个 cookie 的名字与 `Secure` 只随 `authn.gate.mount.public-url` 的 scheme 而定，主机不参与，其余属性不随它变：
+
+| cookie | https 基址（`https://localhost` 在内） | http 基址 |
+|---|---|---|
+| 登录流程绑定 | `__Host-authn-flow`，`Secure` | `authn-flow`，不带 `Secure` |
+| 密码重置绑定 | `__Host-authn-reset`，`Secure` | `authn-reset`，不带 `Secure` |
+
+`public-url` 只能是 https 或回环主机的 http，回环判据只用于这一准入。http 基址上不带前缀与 `Secure`，因为 WebKit 不保存经 http 写入的带前缀 cookie，Linux 上的 WebKit 不保存经 http 写入的 `Secure` cookie，回环主机都不例外，而能启动的 http 基址都在回环主机上，流量不出本机（[ADR-authn-session](../../../adr/adr-authn-session.md)）。终结 TLS 的代理之后 `public-url` 是 https，两个 cookie 写 `Secure`，与代理到进程那一跳的 scheme 无关。`Init` 记下 `public-url`（该键为空时取 `Mounter` 的公开地址）。写出与清除都由 `pkg/authn/internal/cookiename` 的 `Cookie` 按它构造，名字与 `Secure` 取自同一包的 `Name` 与 `Secure`，`HttpOnly` 与 `Path=/` 也由它写，与会话 cookie 同一规则（[design-authn-session](design-authn-session.md)）；读取用 `Name` 按同一地址给出的名字，写出、读取与清除因此是同一个名字，写出与清除带同样的 `Secure`，请求只带另一形态名字的 cookie 时找不到绑定。
 
 回跳请求是用户代理的导航，带不了自定义请求头，所以回跳类方法只能在 `binding=cookie` 的流程里走完；`binding=header` 的流程里它们的回跳因绑定缺失以 `flow-invalid` 失败。回跳与每次答复都要求绑定匹配，这是对登录 CSRF 与流程固定的主要防线：`state` 与 SAML 的 `InResponseTo` 各自只证明请求与某个流程对得上，不证明流程与发起它的浏览器对得上。待建号的外部身份同样只由流程记录承载，读取要过绑定比对；授权码与断言一次性，因此另一个浏览器不能接手一条停在待建号的流程。
 
@@ -578,7 +587,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=Lax`
 
 | 步骤 | 事件 | 持久状态 |
 |---|---|---|
-| 1 | `POST B/flows` 选定 `google` | kv 写入一条 `state = first` 的流程记录，`method_state` 存 `state` 摘要与 PKCE 校验串；应答设 `__Host-authn-flow` cookie，库里只有流程令牌的 SHA-256。 |
+| 1 | `POST B/flows` 选定 `google` | kv 写入一条 `state = first` 的流程记录，`method_state` 存 `state` 摘要与 PKCE 校验串；应答设流程 cookie，库里只有流程令牌的 SHA-256。 |
 | 2 | 浏览器在 Google 处授权后回跳 `GET B/callback/google` | 引擎先比较并交换 `first` → `processing`，`seq` 与方法状态不变；这次交换使并发的第二次回跳得到 `flow-invalid`。 |
 | 3 | 方法交出 `StepProven`，引擎完成账户解析与策略判定 | 记录写入解析出的 `account` 与 `proof`；`MFA.Require` 返回 `MFANone`，记录比较并交换为 `ready`。 |
 | 4 | 客户端以 `step=complete` 取走结果 | 记录先交换为墓碑 `done`（交换的败者不能执行终态动作）；`Sessions.Create` 写一行 `browser` 种会话，`authn_sessions` 的 `idle_expires_at` 与 `expires_at` 按设置算出；应答在 `303` 里写出会话 cookie；`authn_accounts.last_login_at` 前移。 |
@@ -1000,7 +1009,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 - **回跳的并发消费在方法之外裁决。** 两个并发回跳读到同一份旧记录时，只有一个能交换成 `processing`；败者在 `Answer` 被调用之前就被挡住，所以授权码至多换一次。
 - **终态动作先交换后执行。** `ready` 交换成 `done` 的败者拒绝，胜者执行动作；动作失败时流程已消耗。这使“登录完成只成功一次”只依赖 kv 的原子性。
 - **重置记录的并发裁判。** 重置的每次迁移同样是 `CompareAndSwap`：验证码通过时 `sent` 换成 `verified`，两个并发提交只有一个胜出；写口令时 `verified` 换成 `processing`，胜者才写审计与口令，并发败者按 `flow-invalid` 拒绝。策略拒绝或审计、依赖失败把 `processing` 换回 `verified`，用户可用同一个码重试；口令写入成功后删除记录。这使一次重置至多写一次口令、至多一条成功审计行。
-- **重置绑定独立于登录绑定。** 重置用 `__Host-authn-reset` 与自己的 KV 记录，不复用登录流程的 cookie；同一浏览器里开始一次登录不会覆盖进行中的重置，反之亦然。
+- **重置绑定独立于登录绑定。** 重置用自己的绑定 cookie 与自己的 KV 记录，不复用登录流程的 cookie；同一浏览器里开始一次登录不会覆盖进行中的重置，反之亦然。
 - **valid_after 与撤销同批。** 写口令、推进 `valid_after` 在账户模块的同一事务里完成；随后调用 `Sessions.RevokeAccount` 结束该账户的 browser 与 token 会话。其他副本在会话状态缓存过期后看到新的 `valid_after`，撤销语句清本副本缓存并发布 `authn.session.revoked`。
 - **注册的一次建号在账户模块的事务里完成。** 注册处理器只做路由、请求校验与哨兵映射；账户、用户名标识、口令凭据与未证明预留由 `Signups.Register` 在同一事务写入，预留的插入是地址的唯一仲裁点。注册不建会话、不发邮件，因而没有跨模块的写。
 - **跨模块的写不在一个事务里。** 账户解析、开户与绑定在 `authn.account` 自己的事务里完成；会话、因素、审计、事件各在自己的模块里写。引擎的一次完成因而是一串各自原子的调用：失败时可能留下已建而未交付的会话，它不可用于认证之外的任何事，随期限到期，用户重新登录。

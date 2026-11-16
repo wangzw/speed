@@ -20,7 +20,7 @@ func (p *product) Name() string { return backendName }
 // a session carries. It claims no Authorization scheme.
 func (p *product) Accepts() authn.Accepts {
 	return authn.Accepts{
-		Cookies:       []string{p.cookie.name},
+		Cookies:       []string{p.cookie.name()},
 		Accounts:      "",
 		Impersonation: true,
 		SSO:           true,

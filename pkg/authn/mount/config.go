@@ -2,12 +2,12 @@ package mount
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"path"
 	"strings"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 )
@@ -139,10 +139,9 @@ func checkBasePath(item, p string) error {
 }
 
 // checkPublicURL holds the public URL to an origin without a path, and to https
-// unless its host is a loopback one, for which a browser keeps a Secure cookie
-// over http. Empty is allowed: the modules that need the address refuse it
-// themselves. The origin's own shape is judged by mount.TrustedOrigins before
-// this runs.
+// unless its host is a loopback one, whose traffic never leaves the machine.
+// Empty is allowed: the modules that need the address refuse it themselves.
+// The origin's own shape is judged by mount.TrustedOrigins before this runs.
 func checkPublicURL(raw string) error {
 	if raw == "" {
 		return nil
@@ -156,10 +155,10 @@ func checkPublicURL(raw string) error {
 		return fmt.Errorf("%w: %s is %q, which carries a path. Write scheme, host and port alone: "+
 			"the path is %s", authn.ErrInvalidConfig, key(publicURLItem), shown, key(basesItem))
 	}
-	if u.Scheme == "http" && !loopbackHost(u.Hostname()) {
+	if u.Scheme == "http" && !cookiename.LoopbackHost(u.Hostname()) {
 		return fmt.Errorf("%w: %s is %q, which is not https. Cookies and redirects built on it would "+
-			"travel in the clear, and every cookie the authn modules write is Secure, which a browser "+
-			"does not keep for an http address other than a loopback one. Use https",
+			"cross the network in the clear: only a loopback host, whose traffic never leaves the "+
+			"machine, is accepted over http. Use https",
 			authn.ErrInsecureConfig, key(publicURLItem), shown)
 	}
 	return nil
@@ -175,15 +174,6 @@ func withoutUser(u *url.URL) string {
 	bare.Fragment = ""
 	bare.RawFragment = ""
 	return bare.String()
-}
-
-// loopbackHost reports whether host names this machine's loopback interface.
-func loopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // clip shortens a value read from configuration before it enters an error, so

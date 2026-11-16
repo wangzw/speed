@@ -621,7 +621,7 @@
                 "description": "The start request; `method` must name a login method this deployment takes in, or the call is a bad request.",
                 "properties": {
                   "binding": {
-                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
+                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when the public URL is a loopback http address) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
                     "type": "string"
                   },
                   "delivery": {
@@ -957,7 +957,7 @@
                 "description": "The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.",
                 "properties": {
                   "binding": {
-                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
+                    "description": "How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when the public URL is a loopback http address) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.",
                     "type": "string"
                   },
                   "delivery": {
@@ -3388,7 +3388,7 @@
     },
     "/api/v1/auth/password-reset": {
       "post": {
-        "description": "Starts an anonymous password reset for the identifier in the body and sends a code to it, or follows the same path without sending one. A target that is not eligible — unknown, disabled, deleted, without a password or whose identifier is not proved by the requested channel — gets the same 202, the same headers and the same reset cookie as an eligible one. Every send budget overrun suppresses the message and still answers 202; only the originating cookie's own resend interval and the login source-address pre-throttle answer 429. The binding is an independent `__Host-authn-reset` cookie; the login flow cookie is neither read nor written, and no session is made.",
+        "description": "Starts an anonymous password reset for the identifier in the body and sends a code to it, or follows the same path without sending one. A target that is not eligible — unknown, disabled, deleted, without a password or whose identifier is not proved by the requested channel — gets the same 202, the same headers and the same reset cookie as an eligible one. Every send budget overrun suppresses the message and still answers 202; only the originating cookie's own resend interval and the login source-address pre-throttle answer 429. The binding is an independent `__Host-authn-reset` cookie (`authn-reset` when the public URL is a loopback http address); the login flow cookie is neither read nor written, and no session is made.",
         "operationId": "authn.login.passwordResetStart",
         "requestBody": {
           "content": {
@@ -19433,9 +19433,9 @@
         "type": "http"
       },
       "sessionCookie": {
-        "description": "The session cookie a browser attaches by itself. It is __Host-sid, or __Secure-sid when the deployment configures a cookie domain.",
+        "description": "The session cookie a browser attaches by itself. It is __Host-authn-sid; __Secure-authn-sid when the deployment configures a cookie domain; authn-sid when the public URL is a loopback http address, where WebKit refuses a prefixed cookie.",
         "in": "cookie",
-        "name": "__Host-sid",
+        "name": "__Host-authn-sid",
         "type": "apiKey"
       }
     }

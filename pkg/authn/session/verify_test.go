@@ -20,7 +20,7 @@ func TestTheBackendDeclaresWhatItTakes(t *testing.T) {
 		t.Errorf("Name = %q, want session", v.Name())
 	}
 	got := v.Accepts()
-	if len(got.Schemes) != 0 || len(got.Cookies) != 1 || got.Cookies[0] != "__Host-sid" ||
+	if len(got.Schemes) != 0 || len(got.Cookies) != 1 || got.Cookies[0] != "__Host-authn-sid" ||
 		got.Accounts != "" || !got.Impersonation || !got.SSO {
 		t.Errorf("Accepts = %+v, want the session cookie, the library namespace, impersonation and SSO, and no scheme", got)
 	}
@@ -64,7 +64,7 @@ func TestADeniedCookieCanBeCleared(t *testing.T) {
 	w := httptest.NewRecorder()
 	clearer.ClearCookie(w)
 	cookies := w.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "__Host-sid" || cookies[0].Value != "" || cookies[0].MaxAge != -1 {
+	if len(cookies) != 1 || cookies[0].Name != "__Host-authn-sid" || cookies[0].Value != "" || cookies[0].MaxAge != -1 {
 		t.Errorf("the clearing cookie is %+v", cookies)
 	}
 	if !strings.Contains(w.Header().Get("Set-Cookie"), "Max-Age=0") {
@@ -119,7 +119,7 @@ func TestAnUnreachableDatabaseIsUnavailableAndNeverDenied(t *testing.T) {
 			"Fresh":   func() error { _, e := f.p.StatusFresh(context.Background(), cached.ID); return e },
 			"Account": func() error { _, e := f.p.RevokeAccount(context.Background(), alice, "", authn.ReasonSelf); return e },
 			"ForCred": func() error { _, e := f.p.ForCredential(context.Background(), alice, "c", nil); return e },
-			"Current": func() error { _, _, e := f.p.Current(newRequest("__Host-sid", cached.Token).r); return e },
+			"Current": func() error { _, _, e := f.p.Current(newRequest("__Host-authn-sid", cached.Token).r); return e },
 		} {
 			if err := call(); !errors.Is(err, authn.ErrUnavailable) {
 				t.Errorf("%s with the database gone = %v, want ErrUnavailable", name, err)

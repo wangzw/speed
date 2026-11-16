@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -247,8 +248,14 @@ type resetRig struct {
 // fakes.
 func newResetRig(t *testing.T) *resetRig {
 	t.Helper()
+	return newResetRigAt(t, mounttest.DefaultPublicURL)
+}
+
+// newResetRigAt is newResetRig for a deployment reached at publicURL.
+func newResetRigAt(t *testing.T, publicURL string) *resetRig {
+	t.Helper()
 	method := &fakeMethod{name: "password"}
-	r := newRig(t, method)
+	r := newRigAt(t, publicURL, method)
 	store := newResetSettings()
 	email := newFakeResetEmail()
 	sms := newFakeResetSMS()

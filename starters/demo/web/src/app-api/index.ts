@@ -2425,7 +2425,7 @@ export type AuthnLoginStartBodyInput = {[key: string]: string};
  * The start request; `method` must name a login method this deployment takes in, or the call is a bad request.
  */
 export type AuthnLoginStartBody = {
-  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when the public URL is a loopback http address) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
   binding?: string;
   /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
   delivery?: string;
@@ -2469,7 +2469,7 @@ export type AuthnLoginStartAuthenticatedBodyInput = {[key: string]: string};
  * The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.
  */
 export type AuthnLoginStartAuthenticatedBody = {
-  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
+  /** How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when the public URL is a loopback http address) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method. */
   binding?: string;
   /** Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`. */
   delivery?: string;
@@ -5849,7 +5849,7 @@ export const useAuthnLoginChangePassword = <TError = Problem,
     }
 
 /**
- * Starts an anonymous password reset for the identifier in the body and sends a code to it, or follows the same path without sending one. A target that is not eligible — unknown, disabled, deleted, without a password or whose identifier is not proved by the requested channel — gets the same 202, the same headers and the same reset cookie as an eligible one. Every send budget overrun suppresses the message and still answers 202; only the originating cookie's own resend interval and the login source-address pre-throttle answer 429. The binding is an independent `__Host-authn-reset` cookie; the login flow cookie is neither read nor written, and no session is made.
+ * Starts an anonymous password reset for the identifier in the body and sends a code to it, or follows the same path without sending one. A target that is not eligible — unknown, disabled, deleted, without a password or whose identifier is not proved by the requested channel — gets the same 202, the same headers and the same reset cookie as an eligible one. Every send budget overrun suppresses the message and still answers 202; only the originating cookie's own resend interval and the login source-address pre-throttle answer 429. The binding is an independent `__Host-authn-reset` cookie (`authn-reset` when the public URL is a loopback http address); the login flow cookie is neither read nor written, and no session is made.
  * @summary Start an anonymous password reset and send a code
  */
 export const authnLoginPasswordResetStart = (

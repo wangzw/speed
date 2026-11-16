@@ -43,7 +43,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up the toolchain and Chromium
+      - name: Set up the toolchain, Chromium and WebKit
         uses: ./.github/actions/setup
         with:
           playwright: "true"

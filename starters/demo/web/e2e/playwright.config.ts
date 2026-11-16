@@ -2,10 +2,11 @@
  * Playwright configuration for the demo starter's end-to-end tier.
  *
  * The tier drives the built demo binary -- a real sqlite file, real HTTP, the
- * review assembly's seeded operator -- through Chromium with nothing but mouse
- * and keyboard input. Its honesty rules live in the specs' README and are
- * enforced twice: by the eslint rule `speed/no-e2e-bypass` over this directory
- * and by `tools/check_e2e_honesty.py` over the tree.
+ * review assembly's seeded operator -- through Chromium, and one journey also
+ * through WebKit, with nothing but mouse and keyboard input. Its honesty rules
+ * live in the specs' README and are enforced twice: by the eslint rule
+ * `speed/no-e2e-bypass` over this directory and by `tools/check_e2e_honesty.py`
+ * over the tree.
  *
  * Four workers, and no parallelism inside a file: every spec starts its own
  * backend in its own temporary directory, with its own sqlite file and its own
@@ -75,8 +76,22 @@ export default defineConfig({
     // journey that flips the scheme opts in with page.emulateMedia.
     colorScheme: 'light',
   },
-  // Chromium is the only browser the tier needs: the journeys exercise the
-  // rendered product, and the bundled Chromium (installed by `make e2e-install`)
-  // is the one the browser tier already pins.
-  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
+  // Chromium runs every journey: they exercise the rendered product, and the
+  // bundled Chromium is the one the browser tier already pins. WebKit runs the
+  // email password-reset journey alone, against the same http://localhost
+  // server: it registers, resets and signs in, so it carries the flow, reset
+  // and session cookies. WebKit, unlike Chromium and Firefox, refuses a
+  // __Host- or __Secure- cookie set over http even on a loopback host, and
+  // WebKit on Linux refuses any Secure cookie set over http, loopback host
+  // included. The journey passing there is what holds the cookies of a
+  // loopback http deployment, unprefixed and without Secure, to what WebKit
+  // keeps. `make e2e-install` installs both.
+  projects: [
+    { name: 'chromium', use: { browserName: 'chromium' } },
+    {
+      name: 'webkit',
+      use: { browserName: 'webkit' },
+      testMatch: /journey-password-reset-email\.spec\.ts$/,
+    },
+  ],
 })

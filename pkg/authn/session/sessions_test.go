@@ -822,7 +822,7 @@ func TestCurrentFindsTheSessionOfTheCookie(t *testing.T) {
 		revoked := f.create(newBrowser(alice))
 		noErr(t, f.p.Revoke(context.Background(), revoked.ID, authn.ReasonSelf))
 
-		request := func(token string) *testRequest { return newRequest(f.p.cookie.name, token) }
+		request := func(token string) *testRequest { return newRequest(f.p.cookie.name(), token) }
 		id, ok, err := f.p.Current(request(issued.Token).r)
 		noErr(t, err)
 		if !ok || id != issued.ID {

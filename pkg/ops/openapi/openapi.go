@@ -129,8 +129,8 @@ var securitySchemes = map[string]any{
 	"sessionCookie": map[string]any{
 		"type":        "apiKey",
 		"in":          "cookie",
-		"name":        "__Host-sid",
-		"description": "The session cookie a browser attaches by itself. It is __Host-sid, or __Secure-sid when the deployment configures a cookie domain.",
+		"name":        "__Host-authn-sid",
+		"description": "The session cookie a browser attaches by itself. It is __Host-authn-sid; __Secure-authn-sid when the deployment configures a cookie domain; authn-sid when the public URL is a loopback http address, where WebKit refuses a prefixed cookie.",
 	},
 }
 

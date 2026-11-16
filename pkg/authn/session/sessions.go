@@ -608,44 +608,21 @@ func (p *product) ClearCookie(w http.ResponseWriter) {
 	p.sm.WriteSessionCookie(p.cookieCtx, w, "", time.Time{})
 }
 
-// clearingCookie is the cookie a reply operation attaches with WithCookies: the
-// attributes the manager writes the session cookie with and the value and expiry
-// the library writes when asked to clear, reproduced as a value because a reply
-// has no response writer to hand. Secure and HttpOnly are always on, and the
-// SameSite is the configured one, lax or strict: Prepare refuses none.
+// clearingCookie is the cookie a reply operation attaches with WithCookies, built
+// as a value because a reply has no response writer to hand. cookiename.Cookie
+// builds it from the same configuration the manager's cookie comes from, so it
+// names the cookie the manager wrote, with no value and Max-Age=0, which a
+// browser acts on ahead of any Expires, as it does for the flow and reset
+// cookies' clears.
 func (p *product) clearingCookie() *http.Cookie {
-	c := p.sm.Cookie
-	if c.SameSite == http.SameSiteStrictMode {
-		return &http.Cookie{
-			Name:        c.Name,
-			Domain:      c.Domain,
-			Path:        c.Path,
-			Partitioned: c.Partitioned,
-			Secure:      true,
-			HttpOnly:    true,
-			SameSite:    http.SameSiteStrictMode,
-			Expires:     time.Unix(1, 0),
-			MaxAge:      -1,
-		}
-	}
-	return &http.Cookie{
-		Name:        c.Name,
-		Domain:      c.Domain,
-		Path:        c.Path,
-		Partitioned: c.Partitioned,
-		Secure:      true,
-		HttpOnly:    true,
-		SameSite:    http.SameSiteLaxMode,
-		Expires:     time.Unix(1, 0),
-		MaxAge:      -1,
-	}
+	return p.cookie.cookie("", -1)
 }
 
 // Current finds the live session the request's cookie belongs to, by the digest
 // of the token. It is no defence and has nothing to do with authentication: a
 // login that completes uses it to revoke the session the request came with.
 func (p *product) Current(r *http.Request) (authn.SessionID, bool, error) {
-	c, err := r.Cookie(p.cookie.name)
+	c, err := r.Cookie(p.cookie.name())
 	if err != nil || c.Value == "" || len(c.Value) > maxTokenLen {
 		return "", false, nil
 	}

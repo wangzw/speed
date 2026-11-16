@@ -223,3 +223,4 @@
 | REF-ghsa-6mp9-8xrw-74r4 | GHSA-6mp9-8xrw-74r4 | go-jose 的安全公告：JSON 解析与 CBC-HMAC 处理中的 panic | <https://github.com/go-jose/go-jose/security/advisories/GHSA-6mp9-8xrw-74r4> | — |
 | REF-ghsa-pcgw-qcv5-h8ch | GHSA-pcgw-qcv5-h8ch | gosaml2 的安全公告：接受未签名的 SAML 登出请求 `LogoutRequest` | <https://github.com/advisories/GHSA-pcgw-qcv5-h8ch> | — |
 | REF-pre-hijacked-accounts | Pre-hijacked accounts: An Empirical Study of Security Failures in User Account Creation on the Web | Sudhodanan 与 Paverd 发表于 USENIX Security 的论文，研究攻击者在受害者创建账户之前预先占用账户的预劫持攻击 | <https://www.usenix.org/conference/usenixsecurity22/presentation/sudhodanan> | 2022 |
+| REF-safari-27-release-notes | Safari 27 Release Notes | Apple 的 Safari 27 发布说明，含对回环主机上 `Secure` cookie 的支持 | <https://developer.apple.com/documentation/safari-release-notes/safari-27-release-notes> | 27 |

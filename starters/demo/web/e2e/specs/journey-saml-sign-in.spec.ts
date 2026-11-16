@@ -88,8 +88,15 @@ import { copy } from '../helpers/i18n'
 /** The provider the operator registers for the SAML sign-in. */
 const PROVIDER_NAME = 'Globex SAML'
 
-/** The flow cookie the product sets when a sign-in leaves for a provider. */
-const FLOW_COOKIE = '__Host-authn-flow'
+/**
+ * The flow cookie the product sets when a sign-in leaves for a provider. The
+ * server's public URL is http://localhost, a loopback http address, where the
+ * cookie carries no __Host- prefix.
+ */
+const FLOW_COOKIE = 'authn-flow'
+
+/** A Cookie header that carries the flow cookie under its exact name. */
+const FLOW_COOKIE_PAIR = new RegExp(`(?:^|;\\s*)${FLOW_COOKIE}=`)
 
 // This journey drives a real SAML round trip and the domain's TXT lookup, so its
 // server starts the SAML identity provider, the DNS stub and the enterprise SSO
@@ -255,7 +262,7 @@ async function expectTheBounce(
   expect(
     resumeHeaders['cookie'] ?? '',
     'a same-origin post carries the flow cookie that binds it to this browser',
-  ).toContain(`${FLOW_COOKIE}=`)
+  ).toMatch(FLOW_COOKIE_PAIR)
   expect((await resume.response())?.status()).toBe(resumeStatus)
 }
 

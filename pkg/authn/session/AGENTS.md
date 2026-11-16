@@ -56,13 +56,25 @@ The API is the package's godoc.
   it (on a first start it is not there until the migration runs). Rows carry
   no foreign key; every time in them is UTC, and a read normalises the zone.
 - **The cookie's configuration is read from the gateway's address.** The
-  cookie is always `Secure` and `HttpOnly` with `Path=/`; it is `__Host-sid`,
-  or `__Secure-sid` with a `Domain` when `authn.session.cookie-domain` is set,
-  and `authn.session.same-site` is `lax` or `strict`. A configuration that
-  cannot run on (`same-site: none`, or an `authn.gate.mount.public-url` that is
-  http on a host other than a loopback one) is `ErrInsecureConfig` from
-  `Prepare`, so a module a drive includes fails the startup rather than running
-  insecurely.
+  cookie is built by `internal/cookiename.Cookie` from the public URL, the
+  `Domain` and the `SameSite` (`cookieSpec.cookie`), so it is always
+  `HttpOnly` with `Path=/`; its name is `internal/cookiename.Name` of the
+  public URL: `__Host-authn-sid`, or `__Secure-authn-sid` with a `Domain` when
+  `authn.session.cookie-domain` is set, and `authn-sid` when the public URL is
+  http, which startup admits only on a loopback host, where WebKit refuses a
+  prefixed cookie. It is `Secure` as `internal/cookiename.Secure` of the same
+  URL says: on https, and not on http, where WebKit on Linux refuses a
+  `Secure` cookie. The scheme of the public URL decides both, not its host.
+  The manager's cookie takes every attribute from a cookie built that way, so
+  `SetCookie` and `ClearCookie` carry them, and the clearing cookie a reply
+  attaches is built that way with `Max-Age=0`; this module allocates no
+  `http.Cookie` of its own. `authn.session.same-site` is `lax` or
+  `strict`. A configuration that cannot run on (`same-site: none`, or an
+  `authn.gate.mount.public-url` that is http on a host other than a loopback
+  one) is `ErrInsecureConfig` from `Prepare`, and a `cookie-domain` on an http
+  public URL is `ErrInvalidConfig`, since a cookie with a `Domain` needs the
+  `__Secure-` prefix and so `Secure`, so a module a drive includes fails the
+  startup rather than running insecurely.
 - **The routes are mounted through `mount.Mounter` and the access level is
   registered beside them.** `GET /session` is optional and impersonable and
   answers `authenticated: false` with no credential; the other four are guarded

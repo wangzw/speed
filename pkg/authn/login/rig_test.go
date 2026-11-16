@@ -665,6 +665,13 @@ func newRigMethod(t *testing.T, m authn.LoginMethod) *rig {
 // mounter. It is what a case that needs more than one method builds on.
 func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 	t.Helper()
+	return newRigAt(t, mounttest.DefaultPublicURL, methods...)
+}
+
+// newRigAt builds a rig whose deployment is reached at publicURL, which names
+// the flow and reset cookies the way Init does.
+func newRigAt(t *testing.T, publicURL string, methods ...authn.LoginMethod) *rig {
+	t.Helper()
 	kv := newKV()
 	mfa := &fakeMFA{outcome: authn.MFANone, assurance: authn.MFAResult{Assurance: authn.AssuranceSingle}}
 	accounts := &fakeAccounts{
@@ -678,7 +685,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 	admin := &fakeAdmin{}
 	signups := &fakeSignups{}
 	verification := &fakeVerification{}
-	mounter := mounttest.New(t)
+	mounter := mounttest.New(t, mounttest.WithPublicURL(publicURL))
 
 	p := &product{
 		mounter:        mounter,
@@ -703,6 +710,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		p.methods[m.Name()] = m
 	}
 	p.methodNames = slices.Sorted(maps.Keys(p.methods))
+	p.nameCookies(mounter.PublicURL())
 
 	r, err := resolve.New(resolve.Config{
 		Accounts: accounts, Admin: admin, Memberships: stubMemberships{},

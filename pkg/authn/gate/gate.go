@@ -41,6 +41,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -465,7 +466,7 @@ func (g *gateway) diagnose() {
 
 // hostCookiePrefix is the prefix a browser holds a cookie to being host-only,
 // Secure and unsettable by a sibling subdomain.
-const hostCookiePrefix = "__Host-"
+const hostCookiePrefix = cookiename.HostPrefix
 
 // warnUnprefixedCookies writes one Warn line for each cookie name a backend takes
 // that does not carry the __Host- prefix. Such a cookie can be set by a page on a
@@ -473,7 +474,21 @@ const hostCookiePrefix = "__Host-"
 // a request that carries two cookies of the name: a request that carries only the
 // planted one is indistinguishable from an honest one. The line is the
 // relaxation said out loud, one per name, and it changes nothing the gateway does.
+//
+// On an http public URL the cookies carry no prefix and are not Secure by
+// design, because WebKit refuses a prefixed cookie set over http even on a
+// loopback host and WebKit on Linux refuses any Secure one there. Startup admits
+// an http public URL only on a loopback host, whose traffic never leaves the
+// machine and for which nothing but a process on the machine can set a cookie.
+// One Info line says so instead.
 func (g *gateway) warnUnprefixedCookies() {
+	if cookiename.HTTP(g.settings.mount.PublicURL) {
+		g.logger.Info(diagnosticPrefix+"the public URL is http, so the cookies on this origin carry no "+
+			"__Host- or __Secure- prefix and are not Secure; it is admitted only on a loopback host, whose "+
+			"traffic never leaves this machine, and only a process on this machine can set a cookie for it",
+			slog.String("setting", ConfigNamespace+"."+mountPublicURLItem))
+		return
+	}
 	for _, b := range g.table.backends {
 		for _, name := range b.cookies {
 			if strings.HasPrefix(name, hostCookiePrefix) {

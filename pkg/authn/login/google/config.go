@@ -4,11 +4,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"net/netip"
 	"net/url"
 	"strings"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/authn/internal/egress"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
@@ -145,23 +145,13 @@ func resolveIssuer(raw string, allowLoopback bool) (string, error) {
 		if !allowLoopback {
 			return "", errors.New("it is not https")
 		}
-		if !loopbackHost(u.Hostname()) {
+		if !cookiename.LoopbackHost(u.Hostname()) {
 			return "", errors.New("a plain http issuer is only accepted on a loopback host with the loopback switch on")
 		}
 		return issuer, nil
 	default:
 		return "", fmt.Errorf("scheme %q is not https", u.Scheme)
 	}
-}
-
-// loopbackHost reports whether host is the literal localhost name or a loopback
-// address.
-func loopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip, err := netip.ParseAddr(host)
-	return err == nil && ip.IsLoopback()
 }
 
 // redirectTarget is the redirect URI the provider sends the user agent back to:

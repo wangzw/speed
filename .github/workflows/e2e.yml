@@ -1,17 +1,18 @@
 # The end-to-end journey tier, on a schedule.
 #
-# The specs drive the built demo binary through Chromium against a real sqlite
-# file and real HTTP (see starters/demo/web/e2e/README.md). The tier is not part
-# of `make check`: it needs Chromium and a built backend, and it is slower than
-# the commit gate, so this is the periodic leg that runs it. Without it a
-# committed journey would only run when a person remembered `make e2e`.
+# The specs drive the built demo binary through Chromium, and one journey also
+# through WebKit, against a real sqlite file and real HTTP (see
+# starters/demo/web/e2e/README.md). The tier is not part of `make check`: it
+# needs Chromium, WebKit and a built backend, and it is slower than the commit
+# gate, so this is the periodic leg that runs it. Without it a committed journey
+# would only run when a person remembered `make e2e`.
 #
-# Chromium is not part of the .mise.toml toolchain, so the setup action installs
-# it with its system libraries. The command list stays in the Makefile
-# (`make e2e`), exactly as ci.yml's does. The global setup builds the front end
-# into the git-ignored starters/demo/server/dist-e2e in the checkout, because
-# the e2e-tagged binaries embed it, and builds the binaries into the run's own
-# /tmp directory.
+# Chromium and WebKit are not part of the .mise.toml toolchain, so the setup
+# action installs them with their system libraries. The command list stays in
+# the Makefile (`make e2e`), exactly as ci.yml's does. The global setup builds
+# the front end into the git-ignored starters/demo/server/dist-e2e in the
+# checkout, because the e2e-tagged binaries embed it, and builds the binaries
+# into the run's own /tmp directory.
 #
 # The run's directory is /tmp/speed-e2e-<SPEED_E2E_RUN_ID>. The id has to match
 # the shape starters/demo/web/e2e/fixtures/retention.ts sweeps and removes,
@@ -56,7 +57,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up the toolchain, the frontend dependencies and Chromium
+      - name: Set up the toolchain, the frontend dependencies, Chromium and WebKit
         uses: ./.github/actions/setup
         with:
           playwright: "true"

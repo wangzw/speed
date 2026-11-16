@@ -2,13 +2,13 @@ package session
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/config"
 )
 
@@ -25,19 +25,13 @@ const (
 	gatePublicURLItem = "mount.public-url"
 )
 
-// The cookie names. The prefixes are the browser's own: __Host- makes the
-// cookie host-only and Secure, so no subdomain can set it; __Secure- only
-// requires Secure and leaves Domain free. The cookie is Secure under either.
-const (
-	hostCookieName   = "__Host-sid"
-	secureCookieName = "__Secure-sid"
-)
-
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// CookieDomain, when non-empty, is written as the Domain attribute of the
-	// session cookie and makes the cookie __Secure-sid, which loses the
-	// guarantee that no subdomain can set it.
+	// session cookie and makes the cookie __Secure-authn-sid, which loses the
+	// guarantee that no subdomain can set it. An http public URL refuses it: a
+	// cookie with a Domain needs the __Secure- prefix, and so Secure, which an
+	// http public URL leaves off.
 	CookieDomain string `config:"cookie-domain"`
 	// SameSite is lax or strict. none is refused.
 	SameSite string `config:"same-site"`
@@ -51,13 +45,34 @@ type gateMount struct {
 	PublicURL string `config:"public-url"`
 }
 
-// cookieSpec is what the configuration comes to: the name and the attributes of
-// the session cookie that vary with it, and the diagnostics that follow from
-// them. Secure, HttpOnly and Path=/ do not vary.
+// cookieSpec is what the configuration comes to: the public URL the session
+// cookie is built for and the attributes of it that vary with the
+// configuration, and the diagnostics that follow from them. cookiename.Cookie
+// builds the cookie from it, so the name is the one cookiename.Name gives the
+// public URL, __Host-authn-sid, __Secure-authn-sid with a Domain, and authn-sid
+// on an http public URL, and Secure is what cookiename.Secure gives the same
+// URL, on https and off on http. HttpOnly and Path=/ do not vary.
 type cookieSpec struct {
-	name     string
-	domain   string
-	sameSite http.SameSite
+	publicURL string
+	domain    string
+	sameSite  http.SameSite
+}
+
+// cookie builds the session cookie with the given value and Max-Age.
+func (s cookieSpec) cookie(value string, maxAge int) *http.Cookie {
+	return cookiename.Cookie(s.publicURL, cookiename.Spec{
+		Stem:     cookiename.Session,
+		Value:    value,
+		Domain:   s.domain,
+		MaxAge:   maxAge,
+		SameSite: s.sameSite,
+	})
+}
+
+// name is the name the session cookie is written and read under, the one
+// cookiename.Cookie gives it.
+func (s cookieSpec) name() string {
+	return cookiename.Name(s.publicURL, cookiename.Session, s.domain)
 }
 
 // domainShape is a host name as a cookie's Domain attribute may carry it:
@@ -82,17 +97,23 @@ func (c moduleConfig) resolve(gm gateMount) (cookieSpec, error) {
 			ConfigNamespace, sameSiteItem)
 	}
 
-	host, secureScheme, err := publicHost(gm.PublicURL)
+	host, admitted, plainHTTP, err := publicHost(gm.PublicURL)
 	if err != nil {
 		return cookieSpec{}, err
 	}
-	if !secureScheme {
-		return cookieSpec{}, fmt.Errorf("%w: %s.%s is not https, and the session cookie is Secure, which a "+
-			"browser does not keep for an http address other than a loopback one. Use https",
+	if !admitted {
+		return cookieSpec{}, fmt.Errorf("%w: %s.%s is http on a host that is not a loopback one, so the "+
+			"session cookie would cross the network in the clear. Use https",
 			authn.ErrInsecureConfig, gateNamespace, gatePublicURLItem)
 	}
 
 	if c.CookieDomain != "" {
+		if plainHTTP {
+			return cookieSpec{}, fmt.Errorf("%w: %s.%s is set and %s.%s is http: a cookie with a Domain "+
+				"needs the __Secure- prefix and so Secure, which an http public URL leaves off. Leave %s.%s empty",
+				authn.ErrInvalidConfig, ConfigNamespace, cookieDomainItem, gateNamespace, gatePublicURLItem,
+				ConfigNamespace, cookieDomainItem)
+		}
 		domain := strings.ToLower(strings.TrimPrefix(c.CookieDomain, "."))
 		if !domainShape.MatchString(domain) {
 			return cookieSpec{}, fmt.Errorf("%w: %s.%s is not a host name", authn.ErrInvalidConfig,
@@ -106,38 +127,28 @@ func (c moduleConfig) resolve(gm gateMount) (cookieSpec, error) {
 		spec.domain = domain
 	}
 
-	spec.name = hostCookieName
-	if spec.domain != "" {
-		spec.name = secureCookieName
-	}
+	spec.publicURL = gm.PublicURL
 	return spec, nil
 }
 
-// publicHost reads the public address: its host, lower-cased, and whether it is
-// to be treated as https, which a loopback http address is, since a browser
-// keeps a Secure cookie for it.
-func publicHost(raw string) (host string, secureScheme bool, err error) {
+// publicHost reads the public address: its host, lower-cased, whether startup
+// admits it, which it does for https and for http on a loopback host, whose
+// traffic never leaves the machine, and whether it is http, which writes the
+// session cookie without a prefix and without Secure.
+func publicHost(raw string) (host string, admitted, plainHTTP bool, err error) {
 	if raw == "" {
-		return "", false, fmt.Errorf("%w: %s.%s is empty, and the session cookie is named and "+
+		return "", false, false, fmt.Errorf("%w: %s.%s is empty, and the session cookie is named and "+
 			"scoped by the address the deployment is reached at", authn.ErrInvalidConfig,
 			gateNamespace, gatePublicURLItem)
 	}
 	u, perr := url.Parse(raw)
 	if perr != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return "", false, fmt.Errorf("%w: %s.%s is not an http or https URL with a host",
+		return "", false, false, fmt.Errorf("%w: %s.%s is not an http or https URL with a host",
 			authn.ErrInvalidConfig, gateNamespace, gatePublicURLItem)
 	}
 	host = strings.ToLower(u.Hostname())
-	return host, u.Scheme == "https" || loopbackHost(host), nil
-}
-
-// loopbackHost reports whether host names this machine's loopback interface.
-func loopbackHost(host string) bool {
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	plainHTTP = cookiename.HTTP(raw)
+	return host, !plainHTTP || cookiename.LoopbackHost(u.Hostname()), plainHTTP, nil
 }
 
 // schema declares this module's input items.
@@ -147,8 +158,9 @@ func schema() config.Schema {
 		Mounts:    []config.Mount{{Value: &configDefaults}},
 		Items: map[string]config.Item{
 			cookieDomainItem: {
-				Description: "when set, the Domain of the session cookie, which is then named __Secure-sid and " +
-					"can be set by any subdomain; empty keeps the cookie to the host that set it",
+				Description: "when set, the Domain of the session cookie, which is then named __Secure-authn-sid " +
+					"and can be set by any subdomain; empty keeps the cookie to the host that set it. An " +
+					"http public URL refuses it",
 			},
 			sameSiteItem: {
 				Description: "the SameSite attribute of the session cookie, lax or strict; none is refused",

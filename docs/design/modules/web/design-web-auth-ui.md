@@ -99,7 +99,7 @@ interface PasswordResetScreenProps {
   readonly onBackToSignIn?: () => void
 }
 
-`session` 用于 `useHumanVerification` 取得人机证明；短信渠道取手机号面，邮箱渠道取其余面。屏幕把证明交给 `requestReset`。重置操作携带 `__Host-authn-reset` cookie，宿主绑定生成的 SDK 操作时保持同源凭据。`channels` 由宿主从发现文档的 `password_reset.methods` 映射，屏幕不自己读发现文档。
+`session` 用于 `useHumanVerification` 取得人机证明；短信渠道取手机号面，邮箱渠道取其余面。屏幕把证明交给 `requestReset`。重置操作携带重置绑定 cookie（`__Host-authn-reset`，对外基址是回环主机的 http 地址时为 `authn-reset`，[design-authn-login](../authn/design-authn-login.md)），宿主绑定生成的 SDK 操作时保持同源凭据。`channels` 由宿主从发现文档的 `password_reset.methods` 映射，屏幕不自己读发现文档。
 
 // 四组渠道与两个宿主内容位。
 type SignInGroup = 'form' | 'redirect' | 'enterprise' | 'webauthn'

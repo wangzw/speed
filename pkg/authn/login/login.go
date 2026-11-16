@@ -42,6 +42,7 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/slug"
 	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
@@ -216,9 +217,13 @@ type product struct {
 
 	// Configuration read once, in Init: the trusted origins a return_to may
 	// name, which are the origin the deployment is reached at when none is
-	// configured. The registration and the registration switch are settings,
-	// read at each use.
+	// configured, the public URL the flow and reset cookies are built for, and
+	// the names a request carries them under, which follow it. The registration
+	// and the registration switch are settings, read at each use.
 	trustedOrigins []string
+	publicURL      string
+	flowCookie     string
+	resetCookie    string
 
 	clock clock.Source
 }
@@ -396,8 +401,9 @@ func (p *product) takeMethods(all []authn.LoginMethod) error {
 	return nil
 }
 
-// readConfig reads the gateway origins a return_to may name, and refreshes the
-// disabled-method set from the settings.
+// readConfig reads the gateway origins a return_to may name and names the flow
+// and reset cookies after the public URL. The public URL is the gateway's key,
+// and the Mounter's when the key is empty.
 func (p *product) readConfig(reader config.Reader) error {
 	gate, err := readGate(reader)
 	if err != nil {
@@ -411,7 +417,23 @@ func (p *product) readConfig(reader config.Reader) error {
 		origins = []string{p.mounter.PublicURL()}
 	}
 	p.trustedOrigins = origins
+	publicURL := gate.Mount.PublicURL
+	if publicURL == "" {
+		publicURL = p.mounter.PublicURL()
+	}
+	p.nameCookies(publicURL)
 	return nil
+}
+
+// nameCookies keeps the public URL the flow and reset cookies are built for and
+// names the two cookies for it: the __Host- prefix and Secure on https, neither
+// on http. Every write, a set or a clear, builds its cookie
+// with cookiename.Cookie from publicURL, and every read looks the cookie up
+// under the name set here, which is the name cookiename.Cookie gives it.
+func (p *product) nameCookies(publicURL string) {
+	p.publicURL = publicURL
+	p.flowCookie = cookiename.Name(publicURL, cookiename.Flow, "")
+	p.resetCookie = cookiename.Name(publicURL, cookiename.Reset, "")
 }
 
 // buildResolver builds the account-resolution step from the membership and

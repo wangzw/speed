@@ -3,6 +3,7 @@
 `starters/demo/web/e2e` drives the **built demo binary** through Chromium and
 proves the product's documented journeys on what the browser actually renders:
 the real review assembly, a real sqlite file, real HTTP, real clicks and typing.
+One journey also runs in WebKit (see [Browsers](#browsers)).
 
 It is not a component test and not an API test. A journey passes only when a
 person clicking through the running product would see the documented outcome.
@@ -10,7 +11,7 @@ person clicking through the running product would see the documented outcome.
 ## Run it
 
 ```sh
-make e2e-install   # once: installs the Chromium build the tier drives
+make e2e-install   # once: installs the Chromium and WebKit builds the tier drives
 make e2e           # type-checks the tier, then runs every spec
 ```
 
@@ -28,13 +29,26 @@ has its own type-check:
 pnpm -C web --filter demo-web run typecheck:e2e
 ```
 
-The tier is deliberately **not** part of `make check`: it needs Chromium and a
+The tier is deliberately **not** part of `make check`: it needs the browsers and a
 built backend, and it is slower than the commit gate. `tools/check_e2e_honesty.py`
 (the `repo-check` leg) holds both facts — that `e2e` exists and that `check`
 does not invoke it, directly or through `playwright test`/`typecheck:e2e`.
 `.github/workflows/e2e.yml` is the periodic leg that does run it (nightly and
 on manual dispatch), so a committed journey is exercised beyond a person
 remembering to run it.
+
+## Browsers
+
+The `chromium` project runs every spec. The `webkit` project runs
+`journey-password-reset-email.spec.ts` alone, against the same server on
+`http://localhost:<port>`. That journey registers an account, resets its
+password and signs in, so the browser has to keep the flow, reset and session
+cookies. WebKit refuses a `__Host-` or `__Secure-` cookie set over http even on
+a loopback host, where Chromium and Firefox keep it, and WebKit on Linux refuses
+any `Secure` cookie set over http, loopback host included. The journey passing
+in WebKit is what holds the cookies of a loopback http deployment, unprefixed
+(`authn-flow`, `authn-reset`, `authn-sid`) and without `Secure`, to what WebKit
+keeps. One project is run on its own with `--project webkit`.
 
 ## What the harness does
 

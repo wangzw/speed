@@ -174,7 +174,7 @@ func TestExactMasksForPairsTerminatorsAndProse(t *testing.T) {
 	M := log.MaskedText
 	for _, c := range []struct{ name, in, want string }{
 		{"query pair", "GET /cb?secret=hunter2&x=1", "GET /cb?secret=" + M + "&x=1"},
-		{"cookie pair without a blank after the semicolon", "Cookie: sid=abc;theme=dark", "Cookie: sid=" + M + ";theme=dark"},
+		{"cookie pair without a blank after the semicolon", "Cookie: authn-sid=abc;theme=dark", "Cookie: authn-sid=" + M + ";theme=dark"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := mask(shapeMatcher, c.in); got != c.want {

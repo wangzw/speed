@@ -2,13 +2,13 @@ package gate
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 )
@@ -249,9 +249,10 @@ func checkBasePath(item, p string) error {
 }
 
 // checkPublicURL holds the public base to an origin, and to https unless the host
-// is a loopback one. A browser keeps a Secure cookie for a loopback host over
-// http, and every cookie the authn modules write is Secure. Empty is allowed
-// here: the modules that need the address refuse it themselves.
+// is a loopback one. Traffic to a loopback host never leaves the machine, so the
+// cookies the authn modules write there, which carry neither a prefix nor Secure,
+// cross no network; on any other host http would carry them in the clear. Empty
+// is allowed here: the modules that need the address refuse it themselves.
 //
 // A URL that does not parse is not quoted, and one that does is quoted without
 // its user information, query or fragment: the value may carry a password written
@@ -276,10 +277,10 @@ func checkPublicURL(raw string) error {
 			"shown). Write scheme, host and port alone: the path is %s.%s", authn.ErrInvalidConfig, ConfigNamespace,
 			mountPublicURLItem, shown, ConfigNamespace, mountBasesItem)
 	}
-	if u.Scheme == "http" && !loopbackHost(u.Hostname()) {
+	if u.Scheme == "http" && !cookiename.LoopbackHost(u.Hostname()) {
 		return fmt.Errorf("%w: %s.%s is %q, which is not https. Cookies and redirects built on it "+
-			"would travel in the clear, and every cookie this capability writes is Secure, which a "+
-			"browser does not keep for an http address other than a loopback one. Use https",
+			"would cross the network in the clear: only a loopback host, whose traffic never leaves "+
+			"the machine, is accepted over http. Use https",
 			authn.ErrInsecureConfig, ConfigNamespace, mountPublicURLItem, shown)
 	}
 	return nil
@@ -295,15 +296,6 @@ func withoutUser(u *url.URL) string {
 	bare.Fragment = ""
 	bare.RawFragment = ""
 	return bare.String()
-}
-
-// loopbackHost reports whether host names this machine's loopback interface.
-func loopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // schema declares this module's input items.

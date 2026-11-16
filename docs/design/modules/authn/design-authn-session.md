@@ -114,10 +114,10 @@ type Sessions interface {
 
 本模块声明的配置项只有 `authn.session.cookie-domain` 与 `authn.session.same-site`；类型、缺省与取值写在 [design-authn-config](design-authn-config.md)。语义如下：
 
-- `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的“子域不可写”随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。
+- `cookie-domain` 非空时 cookie 名改为 `__Secure-authn-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的“子域不可写”随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。`public-url` 是 http 地址时 `cookie-domain` 必须为空，非空是 `ErrInvalidConfig`：带 `Domain` 的 cookie 要用 `__Secure-` 前缀，也就要写 `Secure`，http 基址上不写。
 - `same-site` 取 `lax` 或 `strict`；取 `none` 是 `ErrInsecureConfig`。
 
-cookie 恒带 `Secure`，没有开关能去掉它。`public-url` 不是 https 且主机不是回环主机时是 `ErrInsecureConfig`，部署在启动期失败：浏览器不为这样的 http 地址保存 `Secure` cookie。回环主机的 http 基址按 https 处理，保留 `__Host-` 前缀与 `Secure`，不写 Warn，Chromium 与 Firefox 都为回环主机保存 `Secure` cookie。`public-url` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取，它决定部署能否启动以及 `cookie-domain` 须覆盖的主机（[design-authn-gate](design-authn-gate.md)）。`trusted-origins` 同样由 `authn.gate` 声明，但本模块不读它：取用它的是网关与 `authn.mount` 建的跨源检查，本模块用不到该值。
+https 基址上 cookie 恒带 `Secure`，没有开关能去掉它。`public-url` 不是 https 且主机不是回环主机时是 `ErrInsecureConfig`，部署在启动期失败：会话 cookie 会以明文经网络传输。回环主机的 http 基址照常启动，cookie 保留 `HttpOnly`、`Path=/` 与 `SameSite`，名字不带前缀，为 `authn-sid`，也不带 `Secure`：WebKit 不保存经 http 写入的带前缀 cookie，Linux 上的 WebKit 不保存经 http 写入的 `Secure` cookie，回环主机都不例外，而回环源上的流量不出本机（[ADR-authn-session](../../../adr/adr-authn-session.md)）。名字由 `pkg/authn/internal/cookiename` 的 `Name` 给出，是否带 `Secure` 由同一包的 `Secure` 给出，两者只看 `public-url` 的 scheme：https 带前缀与 `Secure`，`https://localhost` 也是；http 两者都不带，主机不参与。同一包的 `LoopbackHost` 只用于启动期准入 http 基址。终结 TLS 的代理之后 `public-url` 是 https，cookie 写 `Secure`，与代理到进程那一跳的 scheme 无关。cookie 由同一包的 `Cookie` 构造，它按这两个函数定名字与 `Secure`，并写上 `HttpOnly` 与 `Path=/`：scs 管理的会话 cookie 的属性取自它构造的 cookie，登出与撤销的应答附带的清除 cookie 直接由它构造，`authn.login` 的流程与重置 cookie 也由它构造。`public-url` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取，它决定部署能否启动以及 `cookie-domain` 须覆盖的主机（[design-authn-gate](design-authn-gate.md)）。`trusted-origins` 同样由 `authn.gate` 声明，但本模块不读它：取用它的是网关与 `authn.mount` 建的跨源检查，本模块用不到该值。
 
 ### 设置项
 
@@ -491,8 +491,8 @@ stateDiagram-v2
 
 | 项 | 取值 |
 |---|---|
-| 名 | `__Host-sid`（`public-url` 为 https 或回环主机时）。配了 `authn.session.cookie-domain` 则 `__Secure-sid`，且无法再保证子域不可写。 |
-| 属性 | `Path=/`；`Secure`，不可单独关闭，由本模块在启动校验里强制，不留给 scs 的默认值（scs 默认 `Secure=false`）；`HttpOnly`；`SameSite=Lax`，`authn.session.same-site` 可设 `strict`，`none` 拒绝；无 `Domain`（配了 `cookie-domain` 除外）；不设 `Max-Age` 与 `Expires`，即会话期（scs 的 `Persist` 置假）。响应带 `Cache-Control: no-store`。 |
+| 名 | `__Host-authn-sid`（`public-url` 为 https 时，`https://localhost` 在内）。配了 `authn.session.cookie-domain` 则 `__Secure-authn-sid`，且无法再保证子域不可写。`public-url` 为 http 地址时为 `authn-sid`，启动期只准入回环主机的 http 地址。网关的认领、`Current` 的读取与清除 cookie 都用这一个名字，另外两种形态的同值 cookie 不被读取。 |
+| 属性 | `Path=/`；`Secure` 由 `cookiename.Cookie` 按 `cookiename.Secure` 设定，https 基址上恒开、没有开关能关闭，http 基址上不写，不留给 scs 的默认值（scs 默认 `Secure=false`）；`HttpOnly`；`SameSite=Lax`，`authn.session.same-site` 可设 `strict`，`none` 拒绝；无 `Domain`（配了 `cookie-domain` 除外）；不设 `Max-Age` 与 `Expires`，即会话期（scs 的 `Persist` 置假）。响应带 `Cache-Control: no-store`。 |
 | 写出的时机 | 一律经 `Sessions.SetCookie`，在处理器里最后一个可能失败的步骤之后（`Commit` 成功之后、写响应体之前）调用。入口模块的兜底层写出的 500 会带出已设置的 `Set-Cookie`，先设 cookie 再失败的处理器会把有效会话带进错误响应；这一位置避开它。 |
 | 清除 | 凭据被判 `Denied` 时网关经 `Sessions.ClearCookie`（也是 `CookieClearer` 的实现）写 `Max-Age=0`；登出与撤销自己的会话由本模块的路由把同样的清除 cookie 附在应答上。清除 cookie 的名、`Domain`、`Path`、`Secure`、`HttpOnly`、`SameSite` 与写出时相同，浏览器据此替换原 cookie，不与它并存。跨源检查不通过时不清除：cookie 本身有效，被拒的是请求的意图，跨站请求不能借一次被拒的 POST 让用户登出。 |
 
@@ -593,7 +593,7 @@ stateDiagram-v2
 | 哨兵 | 触发条件 | 修复动作 |
 |---|---|---|
 | `ErrInsecureConfig` | `public-url` 不是 https，且主机不是回环主机；`same-site` 取 `none` | 改用 https 基址；`same-site` 取 `lax` 或 `strict` |
-| `ErrInvalidConfig` | `public-url` 为空或不合法；`bases` 不合法 | 点名该项 |
+| `ErrInvalidConfig` | `public-url` 为空或不合法；`bases` 不合法；`public-url` 是 http 地址而 `cookie-domain` 非空 | 点名该项；http 基址上清空 `cookie-domain` |
 | `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | `mount.endpoints.default` 为空而入口声明的端不是恰好一个；该端不是网关所守的端 | 配置 `authn.gate.mount.endpoints.default`；把它写进 `endpoints` |
 | `ErrNotMigrated` | `Start` 探测不到 `authn_sessions` | 点名施加迁移的命令；把本模块静态级纳入它（`IncludeAllDeclarations`） |
 | `ErrMissingProvider` | 宿主漏点名 `Requires` 里的排他功能（`db.Database`、`mount.Mounter`、`Accounts`） | 把对应模块写进这条命令 |
@@ -637,6 +637,7 @@ stateDiagram-v2
 - **跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行。** 不发送它们的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源加进可信来源。
 - **同源脚本注入不在防护内。** 它靠宿主前端的内容安全策略。
 - **`cookie-domain` 非空时，`__Host-` 前缀的保证失去。** 启动诊断写 Warn。
+- **http 基址上 cookie 名不带前缀，这样的基址只在回环主机上能启动。** 本机任何进程都能为这个源写同名 cookie；带两个同名 cookie 的请求由网关整体拒绝。网关的启动诊断为此写一行 Info（[design-authn-gate](design-authn-gate.md)）。
 - **缓存里的撤销滞后以 `check-ttl` 为上界，不是零。** 缓存有效期之外 db 不可用时，已登录用户也被拒。
 - **没有发件箱的装配里，账户删除后的抹除不保证。** 崩溃发生在账户事务提交与钩子之间时，残留的行不能用于认证，但不一定被删除。
 
@@ -677,7 +678,7 @@ stateDiagram-v2
 | 会话的创建、读取、列出、撤销与按账户批量撤销 | 已实现 | `pkg/authn/session/sessions.go` `Create`、`Get`、`List`、`RevocableSessions`、`Revoke`、`RevokeAccount` |
 | 冒充结束只清除标识、不换令牌 | 已实现 | `pkg/authn/session/sessions.go` `SetImpersonation`；`pkg/authn/session/sessions_test.go` `TestSetImpersonationAttachesAndEndsARecord` |
 | 令牌轮换、提权与冒充挂接 | 已实现 | `pkg/authn/session/sessions.go` `Rotate`、`Elevate`、`SetImpersonation` |
-| cookie 的写出、清除、读取与启动校验 | 已实现 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
+| cookie 的写出、清除、读取与启动校验 | 已实现 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`、`clearingCookie`；`pkg/authn/session/config.go` `cookieSpec`；`pkg/authn/internal/cookiename/cookiename.go` `Cookie` |
 | `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 已实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |
 | 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 已实现 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`Epoch`、`PutIfEpoch`；`pkg/authn/session/cache.go` |
 | `CookieClearer` | 已实现 | `pkg/authn/session/sessions.go` `ClearCookie`；`pkg/authn/session.go` `CookieClearer` |

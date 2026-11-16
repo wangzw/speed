@@ -208,6 +208,33 @@ field comments before writing a backend.
   endpoint the routes go on — known, guarded, outside the admission layer and
   outside `tenant.resolve.endpoints` — when the key names one, and when it is
   empty only if a module that mounts routes delivers a `Mounter`.
+- **Every cookie the modules write is built in one place, which decides its
+  name and whether it is Secure from the scheme of the public URL alone.**
+  `internal/cookiename` holds the stems (`authn-sid`, `authn-flow`,
+  `authn-reset`), `HTTP`, which reports whether the public URL
+  (`authn.gate.mount.public-url`) is http, `Name`, which prefixes a stem with
+  `__Host-` (`__Secure-` with a `Domain`) on https, `https://localhost`
+  included, and leaves it bare on http, `Secure`, which is true on https and
+  false on http, and `Cookie`, which builds every `net/http` cookie the modules
+  write from a stem, a value, the public URL, a `Domain`, a `Max-Age` and the
+  writer's `SameSite`, and sets the name, `Secure`, `HttpOnly` and `Path=/`
+  itself. The host of the public URL takes no part in the cookie rule: behind
+  a proxy that terminates TLS the public URL is https and the cookies are
+  Secure whatever scheme reaches the process. The loopback test,
+  `LoopbackHost`, decides admission only: the gateway's, the mount module's
+  and the session module's startup checks admit an http public URL only on a
+  loopback host, whose traffic does not leave the machine. WebKit refuses a
+  prefixed cookie set over http on a loopback host, and WebKit on Linux
+  refuses a Secure one there too. A `cookie-domain` on an http public URL is
+  refused, since a cookie with a `Domain` needs the `__Secure-` prefix and so
+  Secure. The session module's cookie library is configured from a cookie
+  `Cookie` built. gosec's G124 reports every `http.Cookie` whose `Secure` is
+  not the constant `true`; the one allocation in `Cookie` carries the
+  repository's only G124 exemption, because its `Secure` is false on an http
+  public URL, which startup admits only on a loopback host. A module that
+  allocates an `http.Cookie` of its own, spells a cookie name of its own,
+  writes a literal `Secure`, or decides a cookie's name or `Secure` from
+  anything but the public URL's scheme is the shape to reject.
 - **What every handler mounted through a `Mounter` shares is in
   `internal/mount`, written once.** The closed set of problem codes, each with
   the one status it is answered in, and the writers that answer in them: `Fail`

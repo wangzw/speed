@@ -239,9 +239,18 @@ does.
   call, and only `callback/:provider` bypasses the cross-origin check.** The
   base path is `authn.gate.mount.bases.default` on the endpoint
   `authn.gate.mount.endpoints.default`. The flow cookie is `SameSite=Lax`, the
-  reset cookie `SameSite=Strict`; both always carry the `__Host-` prefix,
-  `Secure` and `HttpOnly`, written as constants: the public URL is https or a
-  loopback host, for which a browser keeps a `Secure` cookie.
+  reset cookie `SameSite=Strict`, each written as a constant. Both are built by
+  `internal/cookiename.Cookie` from the public URL `Init` keeps
+  (`nameCookies`), on a set and on a clear alike, which gives `HttpOnly`,
+  `Path=/`, no `Domain`, and a name and `Secure` from
+  `internal/cookiename.Name` and `internal/cookiename.Secure`:
+  `__Host-authn-flow` and `__Host-authn-reset` with `Secure` on https,
+  `authn-flow` and `authn-reset` without `Secure` on an http public URL, which
+  startup admits only on a loopback host, where WebKit refuses a prefixed
+  cookie and WebKit on Linux a `Secure` one.
+  A read looks a cookie up under the product's `flowCookie` or `resetCookie`,
+  named for the same URL. An `http.Cookie` allocated here, or a name or a
+  `Secure` written anywhere else, is the shape to reject.
 - **A provider's cross-site POST to `callback/:provider` is bounced, never
   handled there** (`bounce.go`). A cross-site POST does not carry the Lax flow
   cookie, so the route parses the form within the 512 KiB bound and answers the
