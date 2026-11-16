@@ -41,6 +41,7 @@
  * rows props with the upload transport as host code -- and staying out
  * keeps this config dependency-free.
  */
+import { defineConfig } from 'eslint/config'
 import tseslint from 'typescript-eslint'
 import { noDangerousHtmlRule } from './eslint-rules/no-dangerous-html.js'
 import { noDirectHttpRule } from './eslint-rules/no-direct-http.js'
@@ -77,7 +78,7 @@ const PACKAGE_RUNTIME_SRC = {
   ],
 }
 
-export default tseslint.config(
+export default defineConfig(
   {
     // The browser cases (`*.browser.test.tsx`) are measured by the
     // separate browser tier (web/vitest.browser.config.ts, `make
