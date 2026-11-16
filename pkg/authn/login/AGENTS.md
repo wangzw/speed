@@ -269,8 +269,20 @@ does.
   origins (`TestTheBouncePagesFormActionAdmitsEveryTrustedOrigin`). The
   resume route is registered with `mount.Declared`, not `Callback`, so it keeps
   the cross-origin check; it runs the callback (binding, then the method, or
-  the IdP-initiated branch without a cookie). `TestACrossSiteCallbackPostIsAllowed`
+  the IdP-initiated branch without a binding). `TestACrossSiteCallbackPostIsAllowed`
   holds that the bypass does not reach it.
+- **On the resume route, a flow cookie binds only a flow that can take the
+  callback.** A cookie whose record is gone, unreadable or bound to another
+  token, or whose flow has left the first factor or waits for another
+  provider, is no binding: the post goes to `callbackIDPInitiated` with all its
+  guards, and the flow the cookie names is left as it is. A store failure is
+  not that case and answers 503. A GET callback keeps the bound answers, so a
+  refused link or step-up lands on its own return target.
+  `callbackIDPInitiated` writes its flow cookie only when the answer did not
+  fail, so a refused post leaves the browser's cookie in place
+  (`TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn`,
+  `TestAnUnprovenIdPInitiatedPostLeavesALiveFlowAlone`,
+  `TestAStoreOutageOnAFlowCookiePostIsUnavailable`).
 - **A setting moved toward more lenient is visible after the fact, never
   blocked.** The subscription to `settings.changed` writes a `Warn` and a
   best-effort `authn.settings.relaxed` audit row naming the key and the

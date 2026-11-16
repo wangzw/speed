@@ -1145,3 +1145,341 @@ func TestACallbackWritesTheReturnTargetTheWayRedirectDoes(t *testing.T) {
 		})
 	}
 }
+
+// samlStandIn stands in for the SAML method. Begin draws a request identifier
+// into the flow's private state; Answer checks the form's InResponseTo against
+// it for an SP-initiated flow, or requires it empty and the flow to name
+// provider "ent" for an IdP-initiated one, before it accepts the one valid
+// response value. The form field InResponseTo stands in for the attribute
+// inside the signed response. sp and idp count the answers of each kind.
+type samlStandIn struct {
+	authn.LoginMethod
+	sp, idp atomic.Int32
+}
+
+func (*samlStandIn) Name() string { return "saml" }
+
+func (*samlStandIn) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{Name: "saml", Kind: authn.MethodKindEnterprise, Protocol: authn.MethodProtocolSAML}
+}
+
+func (*samlStandIn) Begin(context.Context, authn.Start) (authn.Step, error) {
+	return authn.StepRedirect("assertion", []byte("req-1"), "https://idp.example.org/sso"), nil
+}
+
+func (m *samlStandIn) Answer(_ context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
+	if len(f.Private) > 0 {
+		m.sp.Add(1)
+		if in.Form.Get("InResponseTo") != string(f.Private) || in.Form.Get("SAMLResponse") != "valid" {
+			return authn.StepRefused(authn.ErrInvalidCredentials), nil
+		}
+		return authn.StepProven(authn.Proof{Account: "acct-sp", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	m.idp.Add(1)
+	if f.Provider != "ent" || in.Form.Get("InResponseTo") != "" || in.Form.Get("SAMLResponse") != "valid" {
+		return authn.StepRefused(authn.ErrInvalidCredentials), nil
+	}
+	return authn.StepProven(authn.Proof{Account: "acct-idp", Methods: []authn.Method{authn.MethodPassword}}), nil
+}
+
+// providerRows is an enterprise provider register that answers its rows by
+// identifier.
+type providerRows struct {
+	authn.SSOProviders
+	rows map[string]authn.SSOProvider
+}
+
+func (s *providerRows) Get(_ context.Context, id string) (authn.SSOProvider, error) {
+	row, ok := s.rows[id]
+	if !ok {
+		return authn.SSOProvider{}, authn.ErrProviderNotFound
+	}
+	return row, nil
+}
+
+// staleCookieRig holds a social redirect method, "github", whose flows leave the
+// browser a flow cookie, and the SAML stand-in for enterprise provider "ent",
+// whose row allows an IdP-initiated sign-in when allowIDP is set.
+func staleCookieRig(t *testing.T, allowIDP bool) (*rig, *redirectMethod, *samlStandIn) {
+	t.Helper()
+	social := &redirectMethod{name: "github"}
+	saml := &samlStandIn{}
+	r := newRigMethods(t, social, saml)
+	r.allow("acct1")
+	r.allow("acct-idp")
+	r.allow("acct-sp")
+	r.p.sso = &providerRows{rows: map[string]authn.SSOProvider{
+		"ent": {ID: "ent", Protocol: "saml", Enabled: true, AllowIDPInitiated: allowIDP},
+	}}
+	return r, social, saml
+}
+
+// startGitHub starts a github login flow and returns its cookie.
+func startGitHub(t *testing.T, r *rig) string {
+	t.Helper()
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"github"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
+	}
+	return flowCookie(t, rec)
+}
+
+// postIDPInitiated delivers a response from provider "ent" the way a browser
+// does: the cross-site post to the callback, then the bounce page's same-origin
+// navigation to the resume route carrying whatever flow cookie the browser
+// holds.
+func postIDPInitiated(t *testing.T, r *rig, form, cookie string) *httptest.ResponseRecorder {
+	t.Helper()
+	page := r.bounceThrough(t, "ent", form)
+	return r.resume(t, page, cookie, "Sec-Fetch-Mode", "navigate")
+}
+
+// rawFlowRecord is the stored bytes of the flow record a cookie names, or nil
+// when there is none.
+func rawFlowRecord(t *testing.T, r *rig, cookie string) []byte {
+	t.Helper()
+	_, token, _ := strings.Cut(cookie, "=")
+	raw, present, err := r.kv.Get(context.Background(), flowKey(token))
+	if err != nil {
+		t.Fatalf("reading the flow record: %v", err)
+	}
+	if !present {
+		return nil
+	}
+	return raw
+}
+
+// signedInFromTheIDP checks that an IdP-initiated post made one session for the
+// provider's account, landed on the default return target, and set a flow
+// cookie other than stale.
+func signedInFromTheIDP(t *testing.T, r *rig, out *httptest.ResponseRecorder, stale string) {
+	t.Helper()
+	if out.Code != http.StatusSeeOther {
+		t.Fatalf("the IdP-initiated sign-in answered %d, want 303: %s", out.Code, out.Body.String())
+	}
+	if loc := out.Header().Get("Location"); loc != "/" {
+		t.Errorf("the IdP-initiated sign-in landed on %q, want the default return target", loc)
+	}
+	if n := len(r.sessions.created); n != 1 {
+		t.Fatalf("the IdP-initiated sign-in made %d sessions, want one", n)
+	}
+	if got := r.sessions.created[0].Account; got != "acct-idp" {
+		t.Errorf("the session is for %q, want acct-idp", got)
+	}
+	if fresh := flowCookie(t, out); fresh == stale {
+		t.Errorf("the IdP-initiated sign-in wrote back the stale flow cookie %q", stale)
+	}
+}
+
+// TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn holds that a flow cookie
+// whose flow cannot take a provider's posted callback binds nothing: the resume
+// post is answered as one that carries no cookie, so a provider that allows an
+// IdP-initiated sign-in signs the user in, and the flow the cookie names is
+// left as it stands.
+func TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSignIn(t *testing.T) {
+	cases := []struct {
+		name  string
+		stale func(t *testing.T, r *rig, social *redirectMethod) string
+	}{
+		{"a done tombstone", func(t *testing.T, r *rig, _ *redirectMethod) string {
+			cookie := startGitHub(t, r)
+			if cb := r.send(http.MethodGet, "/api/v1/auth/callback/github", "", "Cookie", cookie); cb.Code != http.StatusSeeOther {
+				t.Fatalf("the github callback answered %d: %s", cb.Code, cb.Body.String())
+			}
+			// The github login's session; the cookie now names a done tombstone.
+			r.sessions.created = nil
+			return cookie
+		}},
+		{"a failed tombstone", func(t *testing.T, r *rig, social *redirectMethod) string {
+			social.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+				return authn.StepRefused(authn.ErrInvalidCredentials), nil
+			}
+			cookie := startGitHub(t, r)
+			r.send(http.MethodGet, "/api/v1/auth/callback/github", "", "Cookie", cookie)
+			if st := flowRecordOf(t, r, cookie).State; st != stateFailed {
+				t.Fatalf("the github flow is %s, want failed", st)
+			}
+			return cookie
+		}},
+		{"a first-factor flow of another provider", func(t *testing.T, r *rig, _ *redirectMethod) string {
+			return startGitHub(t, r)
+		}},
+		{"a record that is gone", func(t *testing.T, r *rig, _ *redirectMethod) string {
+			cookie := startGitHub(t, r)
+			_, token, _ := strings.Cut(cookie, "=")
+			if err := r.kv.Delete(context.Background(), flowKey(token)); err != nil {
+				t.Fatal(err)
+			}
+			return cookie
+		}},
+		{"a record that cannot be read", func(t *testing.T, r *rig, _ *redirectMethod) string {
+			cookie := startGitHub(t, r)
+			_, token, _ := strings.Cut(cookie, "=")
+			if err := r.kv.Set(context.Background(), flowKey(token), []byte("not a record"), 0); err != nil {
+				t.Fatal(err)
+			}
+			return cookie
+		}},
+		{"a record bound to another token", func(t *testing.T, r *rig, _ *redirectMethod) string {
+			cookie := startGitHub(t, r)
+			editFlowRecord(t, r, cookie, func(rec *record) { rec.Binding = tokenDigest("another-token") })
+			return cookie
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, social, _ := staleCookieRig(t, true)
+			cookie := tc.stale(t, r, social)
+			before := rawFlowRecord(t, r, cookie)
+
+			signedInFromTheIDP(t, r, postIDPInitiated(t, r, "SAMLResponse=valid", cookie), cookie)
+			if after := rawFlowRecord(t, r, cookie); string(after) != string(before) {
+				t.Errorf("the IdP-initiated sign-in rewrote the stale flow's record from %s to %s", before, after)
+			}
+		})
+	}
+}
+
+// TestAnUnprovenIdPInitiatedPostLeavesALiveFlowAlone holds that a post the
+// method refuses, such as a planted or broken response, neither ends nor
+// displaces a live flow of another provider: no session, no flow cookie
+// written over the browser's, the live record untouched, and the original
+// cookie still completes its flow.
+func TestAnUnprovenIdPInitiatedPostLeavesALiveFlowAlone(t *testing.T) {
+	r, _, saml := staleCookieRig(t, true)
+	cookie := startGitHub(t, r)
+	before := rawFlowRecord(t, r, cookie)
+
+	out := postIDPInitiated(t, r, "SAMLResponse=forged", cookie)
+	if n := saml.idp.Load(); n != 1 {
+		t.Fatalf("the method was asked %d times as IdP-initiated, want once", n)
+	}
+	if loc := out.Header().Get("Location"); !strings.Contains(loc, "authn_error=login-failed") {
+		t.Errorf("the unproven post landed on %q, want the login-failed landing", loc)
+	}
+	if n := len(r.sessions.created); n != 0 {
+		t.Fatalf("an unproven post made %d sessions", n)
+	}
+	for _, c := range out.Result().Cookies() {
+		if strings.Contains(c.Name, "authn-flow") {
+			t.Errorf("an unproven post wrote the flow cookie %s=%s over the browser's", c.Name, c.Value)
+		}
+	}
+	if after := rawFlowRecord(t, r, cookie); string(after) != string(before) {
+		t.Errorf("an unproven post rewrote the live flow's record from %s to %s", before, after)
+	}
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/github", "", "Cookie", cookie)
+	if cb.Code != http.StatusSeeOther || strings.Contains(cb.Header().Get("Location"), "authn_error") {
+		t.Errorf("the live flow could not complete after the unproven post: %d %q", cb.Code, cb.Header().Get("Location"))
+	}
+	if n := len(r.sessions.created); n != 1 || r.sessions.created[0].Account != "acct1" {
+		t.Errorf("the live flow made sessions %+v, want one for acct1", r.sessions.created)
+	}
+}
+
+// TestAStaleFlowCookieKeepsAProviderThatForbidsIdPInitiatedRefused holds that
+// the stale cookie's post still meets every guard of the IdP-initiated path: a
+// provider whose row forbids it answers flow-invalid, the method is not asked,
+// no record is written and the browser's cookie is not replaced.
+func TestAStaleFlowCookieKeepsAProviderThatForbidsIdPInitiatedRefused(t *testing.T) {
+	r, _, saml := staleCookieRig(t, false)
+	cookie := startGitHub(t, r)
+	keys := len(r.kv.keys())
+
+	out := postIDPInitiated(t, r, "SAMLResponse=valid", cookie)
+	if loc := out.Header().Get("Location"); !strings.Contains(loc, "authn_error=flow-invalid") {
+		t.Errorf("a provider that forbids IdP-initiated landed on %q, want flow-invalid", loc)
+	}
+	if n := saml.idp.Load() + saml.sp.Load(); n != 0 {
+		t.Errorf("the method was asked %d times, want none", n)
+	}
+	if got := len(r.kv.keys()); got != keys {
+		t.Errorf("a refused post wrote records: %d -> %d", keys, got)
+	}
+	if cookies := out.Result().Cookies(); len(cookies) != 0 {
+		t.Errorf("a refused post set cookies %v, want none", cookies)
+	}
+}
+
+// TestAFirstFactorFlowOfTheSameProviderStaysBound holds that a live
+// SP-initiated flow of the posting provider keeps its binding: an IdP-initiated
+// response reaches the method as an answer to that flow, which refuses it
+// because it answers no request of the flow, and no session is made.
+func TestAFirstFactorFlowOfTheSameProviderStaysBound(t *testing.T) {
+	r, _, saml := staleCookieRig(t, true)
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"saml","input":{"provider":"ent"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
+	}
+	cookie := flowCookie(t, rec)
+
+	postIDPInitiated(t, r, "SAMLResponse=valid", cookie)
+	if sp, idp := saml.sp.Load(), saml.idp.Load(); sp != 1 || idp != 0 {
+		t.Errorf("the method was asked sp=%d idp=%d, want the bound flow once", sp, idp)
+	}
+	if n := len(r.sessions.created); n != 0 {
+		t.Errorf("an IdP-initiated response against a live SP flow made %d sessions", n)
+	}
+}
+
+// TestAFailedGETCallbackOfALinkFlowPastTheFirstFactorLandsOnItsReturnTo holds
+// that a GET callback keeps its bound answer: a link flow that has left the
+// first factor refuses a second navigation callback as flow-invalid and lands
+// the user agent on the page the link started from, not on the sign-in surface.
+func TestAFailedGETCallbackOfALinkFlowPastTheFirstFactorLandsOnItsReturnTo(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{External: &authn.External{
+			Provider: "google", Subject: "g1", Email: "ann@x.org", EmailVerified: true,
+		}}), nil
+	}
+	r := newRigMethod(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1")
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"link","method":"password","return_to":"/account/callback"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	if cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie); cb.Code != http.StatusSeeOther {
+		t.Fatalf("the link callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+	if st := flowRecordOf(t, r, cookie).State; st == stateFirst {
+		t.Fatalf("the link flow is still at the first factor after its callback")
+	}
+
+	again := r.send(http.MethodGet, "/api/v1/auth/callback/password", "",
+		"Cookie", cookie, "Sec-Fetch-Mode", "navigate")
+	if again.Code != http.StatusSeeOther {
+		t.Fatalf("the second link callback answered %d, want 303: %s", again.Code, again.Body.String())
+	}
+	if got := again.Header().Get("Location"); got != "/account/callback#authn_error=flow-invalid" {
+		t.Errorf("the second link callback went to %q, want its own return target with flow-invalid", got)
+	}
+	if n := m.calls.Load(); n != 1 {
+		t.Errorf("the method was asked %d times, want once", n)
+	}
+}
+
+// TestAStoreOutageOnAFlowCookiePostIsUnavailable holds that only a flow the
+// store answered as invalid counts as no binding: when reading the flow record
+// fails, the resume post is answered unavailable and never reaches the
+// IdP-initiated path.
+func TestAStoreOutageOnAFlowCookiePostIsUnavailable(t *testing.T) {
+	r, _, saml := staleCookieRig(t, true)
+	cookie := startGitHub(t, r)
+	page := r.bounceThrough(t, "ent", "SAMLResponse=valid")
+	r.kv.failing = true
+
+	out := r.resume(t, page, cookie, "Sec-Fetch-Mode", "navigate")
+	if loc := out.Header().Get("Location"); !strings.Contains(loc, "authn_error=unavailable") {
+		t.Errorf("a resume post the store could not answer landed on %q, want unavailable", loc)
+	}
+	if n := saml.idp.Load() + saml.sp.Load(); n != 0 {
+		t.Errorf("the method was asked %d times, want none", n)
+	}
+	if n := len(r.sessions.created); n != 0 {
+		t.Errorf("a resume post the store could not answer made %d sessions", n)
+	}
+}

@@ -430,7 +430,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 2. 写入，`version` 创建时为 1、更新时加一；`secret` 为 `nil` 时不动 `client_secret`。
 3. 提交之后发布 `authn.idp.changed`，使各副本的协议模块丢弃缓存；`change` 取：新建为 `created`，启用态由 0 变为 1 为 `enabled`、由 1 变为 0 为 `disabled`，其余更新为 `updated`（值集是封闭集，见 [design-authn-events](design-authn-events.md)）；发布失败只记 `Warn`，从不令写入失败（事件是提示，不是权威）。
 
-`allow_idp_initiated` 或 `allow_sha1` 为真的行，`Put` 写 `Warn`，启动诊断也各写一行 `Warn`；管理面应答里的警告归 [design-authn-admin](design-authn-admin.md)。
+`allow_idp_initiated` 或 `allow_sha1` 为真的行，`Put` 每次写入时为其中每个为真的开关各写一行 `Warn`，启动诊断不涉及提供方行；管理面应答里的警告归 [design-authn-admin](design-authn-admin.md)。
 
 ### 域所有权与发现
 
@@ -494,7 +494,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 
 ### SAML：IdP 发起登录
 
-`allow_idp_initiated` 为真时，转投之后的 `POST B/callback/:provider/resume` 可以没有流程 cookie：引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录并置 `processing`（[design-authn-login](design-authn-login.md)），方法随后按“断言消费”校验，其中“请求标识”一项允许 `InResponseTo` 为空。断言消费要先取提供方行（构造 SP、取 `idp_certs` 与 `issuer`），这条路径没有 `Begin`，提供方标识只来自回跳路径，所以引擎把提供方标识经 `FlowState.Provider` 交给方法：它在新建流程时把该标识写进记录，也写进交给方法的流程状态（[design-authn-login](design-authn-login.md)）。没有流程就没有可比对的绑定，所以这一路径防不了登录 CSRF（攻击者把自己的断言投给受害者的浏览器）；能做的是：断言必须新鲜（`IssueInstant` 在 2 分钟内）、标识唯一、受众与接收者精确、已签名。该路径没有可比对的绑定，登录 CSRF 防线不成立，所以该开关缺省关闭，开启时在管理应答里作为警告、在启动诊断里写一行 `Warn`。
+`allow_idp_initiated` 为真时，转投之后的 `POST B/callback/:provider/resume` 可以没有绑定，即没有流程 cookie，或流程 cookie 指向的流程接不了这次回跳（记录不存在、读不出或绑定不符，流程已离开 `first`，或属于另一提供方）：引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录并置 `processing`（[design-authn-login](design-authn-login.md)），方法随后按“断言消费”校验，其中“请求标识”一项要求 `InResponseTo` 为空。断言消费要先取提供方行（构造 SP、取 `idp_certs` 与 `issuer`），这条路径没有 `Begin`，提供方标识只来自回跳路径，所以引擎把提供方标识经 `FlowState.Provider` 交给方法：它在新建流程时把该标识写进记录，也写进交给方法的流程状态（[design-authn-login](design-authn-login.md)）。没有流程就没有可比对的绑定，所以这一路径防不了登录 CSRF（攻击者把自己的断言投给受害者的浏览器）；能做的是：断言必须新鲜（`IssueInstant` 在 2 分钟内）、标识唯一、受众与接收者精确、已签名。SP 发起的应答带着非空的 `InResponseTo`，只能经绑定分支被接受，带着陈旧流程 cookie 的浏览器接受的应答与不带 cookie 的浏览器相同。该路径没有可比对的绑定，登录 CSRF 防线不成立，所以该开关缺省关闭，开启时在管理应答里作为警告，写入该行时写一行 `Warn`。
 
 ### 企业 OIDC
 

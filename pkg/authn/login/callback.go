@@ -38,8 +38,9 @@ func (r *routes) callbackPost(ctx context.Context, in callbackInput, meta *speed
 // callbackResume handles the form post the bounce page sends. It is an ordinary
 // route that keeps the cross-origin check, so a post that reaches it comes from
 // a page of this origin, and it runs the callback: the flow cookie binds the
-// post to the flow it started, and a post with no flow cookie is an
-// identity-provider-initiated sign-in.
+// post to the flow it started when that flow waits at the first factor for this
+// provider, and a post with no flow cookie, or with one whose flow cannot take
+// this callback, is an identity-provider-initiated sign-in.
 func (r *routes) callbackResume(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	reply, err := r.callback(c, in.Provider)
@@ -135,8 +136,26 @@ func (r *routes) callback(c *call, provider string) (speedhttp.Reply, error) {
 		return c.result()
 	}
 	rec, raw, err := r.loadFlow(c.ctx, token)
-	if err != nil {
+	posted := c.req.Method == http.MethodPost
+	switch {
+	case posted && errors.Is(err, authn.ErrFlowInvalid):
+		// The cookie names no flow this request can use: the record is gone,
+		// cannot be read, or is bound to another token. It binds nothing, so the
+		// post is answered as one without the cookie.
+		r.callbackIDPInitiated(c, provider)
+		return c.result()
+	case err != nil:
 		r.fail(c, err)
+		return c.result()
+	}
+	// A posted callback whose flow has left the first factor, or waits for
+	// another provider, cannot take this post either. It is answered as a post
+	// without a binding, which only a provider that allows an IdP-initiated
+	// sign-in takes; every other provider refuses it as flow-invalid. The flow
+	// the cookie names is left as it stands. A GET keeps the answers below, so a
+	// refused link or step-up still lands on its own page.
+	if posted && (rec.State != stateFirst || rec.Provider != provider) {
+		r.callbackIDPInitiated(c, provider)
 		return c.result()
 	}
 	// A link, a step-up and an enrollment are started from a page of the product,
@@ -286,14 +305,17 @@ func (r *routes) migrateCallback(c *call, token string, old []byte, rec record, 
 	}
 }
 
-// callbackIDPInitiated answers a posted callback that carries no flow cookie and
-// comes from an enterprise provider that allows an identity-provider-initiated
-// sign-in. It is reached through the resume route, whose post the bounce page
-// sends, and a GET callback never reaches it. The engine creates a login flow on
-// the spot, moves it to processing and answers it like any other callback; the
-// flow cookie it writes lets a second factor or a username step continue
-// through flows/current. Without a binding this path cannot defend against a
-// login CSRF, which is why the provider row leaves it off by default.
+// callbackIDPInitiated answers a posted callback that carries no binding, either
+// no flow cookie or one whose flow cannot take this callback, and comes from an
+// enterprise provider that allows an identity-provider-initiated sign-in. It is
+// reached through the resume route, whose post the bounce page sends, and a GET
+// callback never reaches it. The engine creates a login flow on the spot, moves
+// it to processing and answers it like any other callback. Only an answer that
+// did not fail writes the new flow cookie, which lets a second factor or a
+// username step continue through flows/current; a refused post leaves the
+// browser's cookie, and the flow that cookie names, as they were. Without a
+// binding this path cannot defend against a login CSRF, which is why the
+// provider row leaves it off by default.
 func (r *routes) callbackIDPInitiated(c *call, provider string) {
 	if c.req.Method != http.MethodPost || r.sso == nil {
 		c.unauthorized(mount.CodeFlowInvalid)
@@ -337,8 +359,10 @@ func (r *routes) callbackIDPInitiated(c *call, provider string) {
 		r.fail(c, err)
 		return
 	}
-	r.setFlowCookie(c, token, int(ttl.Seconds()))
 	r.answerCallback(c, token, rec, m)
+	if c.err == nil {
+		r.setFlowCookie(c, token, int(ttl.Seconds()))
+	}
 }
 
 // defaultReturnTarget is the target a callback lands the user agent on when the

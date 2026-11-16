@@ -132,9 +132,17 @@ type chainReply struct {
 // runs use against it.
 func runChain(t *testing.T, use func(c *chain, admin authn.AccountAdmin)) {
 	t.Helper()
+	runChainWith(t, func(*authn.SSOProvider) {}, use)
+}
+
+// runChainWith is runChain with the fixture provider's row passed through edit
+// before the register holds it.
+func runChainWith(t *testing.T, edit func(*authn.SSOProvider), use func(c *chain, admin authn.AccountAdmin)) {
+	t.Helper()
 	identity := newIDP(t)
 	row := providerRow(providerConfigJSON(t, identity, nil))
 	row.ID = chainProvider
+	edit(&row)
 	providers := newFakeProviders(row)
 	reader := sdkmetric.NewManualReader()
 	kept := &chainLog{}
@@ -491,6 +499,55 @@ func TestAnSPInitiatedLoginCompletesThroughTheBounce(t *testing.T) {
 		}
 		if got := c.assertions(outcomeOther); got != 1 {
 			t.Errorf("authn.sso.assertions counts %d as other, want the forged response", got)
+		}
+	})
+}
+
+// TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSAMLSignIn holds the
+// IdP-initiated SAML sign-in of a browser that still holds the flow cookie of a
+// finished SP-initiated login, over the real routes: the response the
+// provider's page posts cross-site is bounced, and the same-origin resume post
+// carrying the stale cookie signs the user in as a post without the cookie
+// would.
+func TestAStaleFlowCookieDoesNotBlockAnIdPInitiatedSAMLSignIn(t *testing.T) {
+	allow := func(row *authn.SSOProvider) { row.AllowIDPInitiated = true }
+	runChainWith(t, allow, func(c *chain, admin authn.AccountAdmin) {
+		acct, err := admin.Create(c.ctx, authn.CreateAccount{Kind: authn.KindUser, Username: "alice", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		if err := admin.LinkExternal(c.ctx, acct.ID, authn.ExternalLink{
+			Provider: providerName + ":" + chainProvider, Subject: "alice",
+		}); err != nil {
+			t.Fatalf("binding the account to the provider's subject: %v", err)
+		}
+
+		stale, requestID, relay := c.spStart()
+		action, form := c.deliver(c.response(requestID, "_assertion-sp"), relay)
+		first := c.post(action, "application/x-www-form-urlencoded", form,
+			"Cookie", stale, "Sec-Fetch-Site", "same-origin", "Sec-Fetch-Mode", "navigate", "Origin", chainPublicURL)
+		if first.status != http.StatusSeeOther || first.header.Get("Location") != "/after" {
+			t.Fatalf("the SP-initiated login answered %d to %q, want 303 to the return target: %s",
+				first.status, first.header.Get("Location"), first.body)
+		}
+
+		action, form = c.deliver(c.response("", "_assertion-idp"), "")
+		idp := c.post(action, "application/x-www-form-urlencoded", form,
+			"Cookie", stale, "Sec-Fetch-Site", "same-origin", "Sec-Fetch-Mode", "navigate", "Origin", chainPublicURL)
+		if idp.status != http.StatusSeeOther || strings.Contains(idp.header.Get("Location"), "authn_error") {
+			t.Fatalf("the IdP-initiated post with the stale flow cookie answered %d to %q, want a signed-in 303: %s",
+				idp.status, idp.header.Get("Location"), idp.body)
+		}
+		if fresh := cookieOf(t, idp, "authn-flow"); fresh == stale {
+			t.Errorf("the IdP-initiated sign-in wrote back the stale flow cookie %q", stale)
+		}
+		sid := cookieOf(t, idp, "sid")
+		status := c.get(chainBase+"/session", sid)
+		if status.status != http.StatusOK || !strings.Contains(status.body, `"authenticated":true`) {
+			t.Fatalf("the session the IdP-initiated sign-in made reads %d: %s", status.status, status.body)
+		}
+		if got := c.assertions(outcomeAccepted); got != 2 {
+			t.Errorf("authn.sso.assertions counts %d accepted, want the SP-initiated and the IdP-initiated response", got)
 		}
 	})
 }

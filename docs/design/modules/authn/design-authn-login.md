@@ -703,7 +703,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`（http 基址上不带 `Secure`�
 
 ### 回跳类的一步
 
-`GET B/callback/:provider` 与 `POST B/callback/:provider/resume` 由引擎处理，分发给方法；`POST B/callback/:provider` 只做转投，见下一节。引擎先核对：流程存在且处于 `first`；回跳路径的 `:provider` 与记录里的 `provider` 一致（社交方法的记录记方法名，企业 SSO 的记录记 `Begin` 时 `input.provider` 给的值）；绑定匹配。通过后引擎**在调用 `Answer` 之前**先把记录交换成 `processing`，`seq` 与方法状态不变。并发的第二次回跳败于这一步，当场得到 `flow-invalid`，所以授权码至多换一次、SAML 断言至多处理一次。
+`GET B/callback/:provider` 与 `POST B/callback/:provider/resume` 由引擎处理，分发给方法；`POST B/callback/:provider` 只做转投，见下一节。引擎先核对：流程存在且处于 `first`；回跳路径的 `:provider` 与记录里的 `provider` 一致（社交方法的记录记方法名，企业 SSO 的记录记 `Begin` 时 `input.provider` 给的值）；绑定匹配。`GET` 回跳有一项不过即答 `flow-invalid`。续接路由的 `POST` 带着的流程 cookie 指不到能接这次回跳的流程时，即记录不存在、读不出、绑定不符、不在 `first`，或记录的 `provider` 不是路径里的那个，这个 cookie 不构成绑定：请求按没有流程 cookie 处理，走“IdP 发起的 SAML”，cookie 指向的流程原样不动。读 kv 失败不在此列，照常答 503。通过后引擎**在调用 `Answer` 之前**先把记录交换成 `processing`，`seq` 与方法状态不变。并发的第二次回跳败于这一步，当场得到 `flow-invalid`，所以授权码至多换一次、SAML 断言至多处理一次。
 
 `Answer` 返回之后，引擎再把记录交换成新状态；方法交回 `StepRefused` 或 `StepUnavailable` 时置 `failed` 墓碑。停在 `processing` 的记录，即进程崩溃而 `Answer` 没有返回的情形，一律按失效处理，用户重新开始。方法自己不对流程记录做任何写。这一做法的取舍见 [ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)。
 
@@ -714,8 +714,8 @@ SAML 的 SP 发起登录里，IdP 页面把断言以跨站 POST 送到 ACS `POST
 - **ACS 只答转投页。** `POST B/callback/:provider` 在跨源检查的旁路之内，所以不处理回跳：在 512 KiB 的体上限内解析表单，答 200 的 HTML 页面，不读流程记录、不写 kv、不调方法，带不带流程 cookie 都如此。体超限或解析不了答 401 `login-failed`，顶层导航按“回跳的失败落地”落地。
 - **转投页。** 页面经 `html/template` 渲染：一个表单把收到的每个表单字段按原名原值写成隐藏字段，名与值都经转义；表单的目标是同一提供方的续接路由 `POST B/callback/:provider/resume`，由路由声明与路径参数 `:provider` 拼出，不取请求里的任何字段或头；一段脚本提交表单，没有脚本的浏览器显示一个提交按钮，按钮文字由浏览器按自己的语言给出，页面不含产品文案。引擎按通用方式转交字段，不认 SAML 的字段名。
 - **转投页的响应头。** `Content-Security-Policy: default-src 'none'; script-src 'nonce-<n>'; form-action 'self' <可信来源>; frame-ancestors 'none'; base-uri 'none'`，nonce 每个响应由 `crypto/rand` 新取，与页面脚本上的一致；`form-action` 列出本来源与每个可信来源，即 `public-url` 的来源与 `trusted-origins` 的各项。Chromium 与 WebKit 对表单提交之后的每次重定向都核对 `form-action`，续接路由 303 到的回跳目标或失败落地若是相对路径，属于本来源，若是绝对 URL，其来源已按 `trusted-origins` 核对过，所以都在这份列表里；`Referrer-Policy: same-origin`，取 `no-referrer` 会使续接 POST 的 `Origin` 成为 `null`；`X-Content-Type-Options: nosniff`；`Cache-Control: no-store` 由 `Wrap` 写出。
-- **续接路由。** `POST B/callback/:provider/resume` 是经 `mount.Declared` 登记的普通 Open 路由，过跨源检查。页面的提交是同源导航，`Sec-Fetch-Site` 为 `same-origin`，带 `Lax` 与 `Strict` 的 cookie，因而带着流程 cookie 与浏览器里已有的会话 cookie。续接路由按“回跳类的一步”处理；没有流程 cookie 时走“IdP 发起的 SAML”。别的站点直接跨站 POST 到续接路由，在处理器之前即被跨源检查以 401 拒绝，流程不动。
-- **投进别人浏览器的应答。** 另一条流程的有效应答被跨站投到受害者的浏览器时，转投把它带进受害者的流程：`RelayState` 与 `InResponseTo` 对不上，方法拒绝，受害者的流程作废，不建会话（[authn-sso](design-authn-sso.md)）。
+- **续接路由。** `POST B/callback/:provider/resume` 是经 `mount.Declared` 登记的普通 Open 路由，过跨源检查。页面的提交是同源导航，`Sec-Fetch-Site` 为 `same-origin`，带 `Lax` 与 `Strict` 的 cookie，因而带着流程 cookie 与浏览器里已有的会话 cookie。续接路由按“回跳类的一步”处理；没有流程 cookie，或流程 cookie 指不到能接这次回跳的流程时，走“IdP 发起的 SAML”。别的站点直接跨站 POST 到续接路由，在处理器之前即被跨源检查以 401 拒绝，流程不动。
+- **投进别人浏览器的应答。** 另一条流程的有效应答被跨站投到受害者的浏览器时，受害者有同一提供方停在 `first` 的流程，转投就把应答带进这条流程：`RelayState` 与 `InResponseTo` 对不上，方法拒绝，受害者的流程作废，不建会话（[authn-sso](design-authn-sso.md)）。受害者的流程 cookie 指不到能接这次回跳的流程时，应答进 IdP 发起的分支：提供方不允许 IdP 发起即答 `flow-invalid`，允许时方法拒绝 `InResponseTo` 非空的应答；两种情形都不建会话，浏览器里的流程 cookie 与它指向的流程都不动。
 - **不运行页面的客户端**把同一表单直接 POST 到续接路由；既无 `Sec-Fetch-Site` 又无 `Origin` 的请求被跨源检查放行。
 
 ### 账户解析与策略判定
@@ -809,7 +809,11 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 ### IdP 发起的 SAML
 
-转投之后的 `POST B/callback/:provider/resume` 没有流程 cookie、而提供方行的 `allow_idp_initiated` 为真时，引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录，`return_to` 取设置 `authn.login.default-return-to`（按 `return_to` 的规则校验），并直接置 `processing`，其余同回跳；新流程 cookie 随应答设立。方法不创建流程记录。没有可比对的绑定，所以这一路径防不了登录 CSRF，该方式由提供方行缺省关闭（[authn-sso](design-authn-sso.md)）。
+转投之后的 `POST B/callback/:provider/resume` 没有绑定，即没有流程 cookie，或流程 cookie 指不到能接这次回跳的流程（见“回跳类的一步”）时，引擎依次核对：请求是 `POST`；提供方行存在且启用；`allow_idp_initiated` 为真；提供方的协议是已登记的方法。任一项不过即答 `flow-invalid`，不调方法、不写记录。全部通过时，引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录，`return_to` 取设置 `authn.login.default-return-to`（按 `return_to` 的规则校验），并直接置 `processing`，其余同回跳。方法不创建流程记录。
+
+新流程 cookie 只在这次回跳没有失败时随应答设立，供第二因素或用户名一步经 `flows/current` 续上。方法拒绝或请求失败时应答不带流程 cookie，浏览器原有的流程 cookie 与它指向的流程都不动，当场建的记录留作 `failed` 墓碑。
+
+SP 发起的应答只在绑定分支里被接受，那里 `InResponseTo` 与 `RelayState` 都要与流程记录相符；没有绑定的请求只进这条路径，这里方法拒绝 `InResponseTo` 非空的应答，并要求断言新鲜、断言标识只用一次（[authn-sso](design-authn-sso.md)）。所以带着陈旧流程 cookie 的浏览器接受的应答，与不带 cookie 的浏览器相同。没有可比对的绑定，所以这一路径防不了登录 CSRF，该方式由提供方行缺省关闭（[authn-sso](design-authn-sso.md)）。开启之后，受害者另有流程进行中时这种登录 CSRF 同样成立：新流程 cookie 盖掉原有的流程 cookie，那条进行中的流程随之丢失，取舍见 [ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)。
 
 ### 失败退避
 
