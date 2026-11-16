@@ -86,19 +86,26 @@ CONSTRAINT_PREFIXES = ("//go:build ", "// +build ")
 # identifier-shaped runs is what is left.
 TAG_RE = re.compile(r"[A-Za-z0-9_]+")
 
-# The ports the go command builds for, as `go tool dist list` prints them,
-# split into the operating systems and the architectures. A constraint term
-# from either set is a platform the run executes on, not a tag a leg passes.
-# The toolchain is not asked at gate time, which keeps this gate a plain
-# script; test_check_test_tiers.py holds the two sets to the command's
-# output, so a toolchain that adds a port fails that test until they agree.
+# The operating-system and architecture names go/build treats as platforms: its
+# KnownOS and KnownArch, in $GOROOT/src/internal/syslist/syslist.go. A file-name
+# element from either set restricts the file to that platform, so the sets are
+# wider than the ports `go tool dist list` prints; they include names no port
+# builds for any more (nacl, amd64p32) and names no port has yet (hurd, zos,
+# ppc, riscv). A constraint term from either set is a platform the run executes
+# on, not a tag a leg passes. The toolchain is not asked at gate time, which
+# keeps this gate a plain script; test_check_test_tiers.py holds the two sets to
+# syslist.go in the pinned toolchain and to the ports it builds for, so a
+# toolchain that adds a name fails that test until they agree.
 GOOS = frozenset({
-    "aix", "android", "darwin", "dragonfly", "freebsd", "illumos", "ios", "js",
-    "linux", "netbsd", "openbsd", "plan9", "solaris", "wasip1", "windows",
+    "aix", "android", "darwin", "dragonfly", "freebsd", "hurd", "illumos", "ios",
+    "js", "linux", "nacl", "netbsd", "openbsd", "plan9", "solaris", "wasip1",
+    "windows", "zos",
 })
 GOARCH = frozenset({
-    "386", "amd64", "arm", "arm64", "loong64", "mips", "mips64", "mips64le",
-    "mipsle", "ppc64", "ppc64le", "riscv64", "s390x", "wasm",
+    "386", "amd64", "amd64p32", "arm", "armbe", "arm64", "arm64be", "loong64",
+    "mips", "mipsle", "mips64", "mips64le", "mips64p32", "mips64p32le", "ppc",
+    "ppc64", "ppc64le", "riscv", "riscv64", "s390", "s390x", "sparc", "sparc64",
+    "wasm",
 })
 PLATFORM_TERMS = GOOS | GOARCH
 

@@ -174,8 +174,10 @@ the tags from the Makefile's `-tags=` flags and from its `-race` — a leg
 passing the race detector establishes that tag, and a target merely named
 `test-race` does not — and fails a file whose constraint names anything
 else, which is the same finding whichever side the misspelling is on. A
-GOOS or GOARCH term (a port `go tool dist list` prints, in a constraint or
-as a `_linux`-style file-name suffix) is not a tag a leg passes but the
+GOOS or GOARCH term (a name in `KnownOS` or `KnownArch` of go/build's
+`internal/syslist`, in a constraint or as a `_linux`-style file-name suffix;
+the sets are wider than the ports `go tool dist list` prints, and the suite
+holds them to both) is not a tag a leg passes but the
 platform a run executes on: the gate reads the platforms from the
 `runs-on` of every job under `.github/workflows`, maps each runner label
 through its `RUNNER_PLATFORMS` table, and fails a file no such platform

@@ -34,6 +34,7 @@ import contextlib
 import io
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -237,6 +238,29 @@ class TestAPlatformIsNotATierTag(GateCase):
         self.assertEqual(1, code)
         self.assertIn("pkg/console_windows_test.go", out)
         self.assertIn("linux/amd64", out)
+
+    def test_a_zos_name_suffix_is_a_finding(self):
+        # zos is no port `go tool dist list` prints, but go/build still reads
+        # the suffix as a platform, so the file is compiled by no run.
+        self.tree(**{"pkg/console_zos_test.go": case_file("")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/console_zos_test.go", out)
+        self.assertIn("linux/amd64", out)
+
+    def test_a_hurd_constraint_is_a_platform_term_not_an_unknown_tag(self):
+        self.tree(**{"pkg/console_test.go": case_file("//go:build hurd")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/console_test.go", out)
+        self.assertIn("no platform a workflow runs on satisfies", out)
+        self.assertNotIn("is passed by no leg", out)
+
+    def test_a_32_bit_mips_suffix_variant_is_a_finding(self):
+        self.tree(**{"pkg/console_mips64p32le_test.go": case_file("")})
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/console_mips64p32le_test.go", out)
 
     def test_a_windows_constraint_is_a_finding(self):
         self.tree(**{"pkg/console_test.go": case_file("//go:build windows")})
@@ -547,15 +571,43 @@ class TestThisRepository(unittest.TestCase):
             code = m.main(["--root", str(REPO)])
         self.assertEqual(0, code, f"stdout={out.getvalue()!r} stderr={err.getvalue()!r}")
 
-    def test_the_platform_terms_are_the_ports_the_go_command_knows(self):
-        # The gate does not ask the toolchain at run time, so the two sets
-        # are held here to the go command on PATH, the one the gates run with.
+    def test_every_port_the_go_command_builds_for_is_a_platform_term(self):
+        # The gate does not ask the toolchain at run time, so the sets are
+        # held here to the go command on PATH, the one the gates run with.
+        # The sets are wider than the ports; the other direction is the
+        # syslist case below.
         listed = subprocess.run(
             ["go", "tool", "dist", "list"], check=True, capture_output=True, text=True
         ).stdout.split()
         ports = [port.split("/", 1) for port in listed]
-        self.assertEqual({goos for goos, _ in ports}, set(m.GOOS))
-        self.assertEqual({goarch for _, goarch in ports}, set(m.GOARCH))
+        self.assertLessEqual({goos for goos, _ in ports}, set(m.GOOS))
+        self.assertLessEqual({goarch for _, goarch in ports}, set(m.GOARCH))
+
+    def test_the_platform_terms_are_the_names_go_build_matches_in_file_names(self):
+        # go/build restricts a file by the KnownOS and KnownArch of
+        # internal/syslist, whichever ports exist. A toolchain that moves or
+        # reshapes the file fails here rather than skipping: a skipped case
+        # would leave the sets unchecked against the toolchain they claim to
+        # mirror.
+        goroot = subprocess.run(
+            ["go", "env", "GOROOT"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        path = os.path.join(goroot, "src", "internal", "syslist", "syslist.go")
+        self.assertTrue(os.path.isfile(path), f"{path} is where go/build keeps its platform names")
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+
+        def known(variable: str) -> set[str]:
+            body = re.search(
+                rf"^var {variable} = map\[string\]bool\{{(.*?)^\}}", source, re.MULTILINE | re.DOTALL
+            )
+            self.assertIsNotNone(body, f"{path} no longer declares {variable} as a map literal")
+            names = set(re.findall(r'^\s*"([^"]+)":\s*true,', body.group(1), re.MULTILINE))
+            self.assertTrue(names, f"{variable} in {path} lists no name")
+            return names
+
+        self.assertEqual(known("KnownOS"), set(m.GOOS))
+        self.assertEqual(known("KnownArch"), set(m.GOARCH))
 
     def test_every_runner_platform_is_a_port(self):
         for label, (goos, goarch) in m.RUNNER_PLATFORMS.items():
