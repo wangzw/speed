@@ -12,6 +12,11 @@ SHELL := /bin/bash
 # started from.
 REPO_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
+# The script the actionlint leg lints composite actions with. It lives beside
+# this Makefile and is found from there, while REPO_ROOT names the tree it reads
+# and can point elsewhere.
+LINT_COMPOSITE_ACTIONS := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))/tools/lint_composite_actions.py
+
 # A use directive has two legal spellings -- a parenthesised block and a
 # bare `use ./dir` line -- so the roster is parsed by the go toolchain
 # itself rather than by a matcher here that would know only one of them
@@ -251,7 +256,13 @@ tidy-check: modules-present ## Verify the dependency files are tidy, leaving the
 # checks without a word when it cannot find shellcheck, so the leg fails
 # instead of reporting a partial pass. Any finding makes actionlint exit
 # non-zero.
-actionlint: ## Lint every workflow under .github/workflows with actionlint and shellcheck
+#
+# actionlint does not read the steps of a composite action (its documentation
+# says so), so a `run:` script under .github/actions is linted by
+# tools/lint_composite_actions.py, which runs the same shellcheck the same way.
+# It runs after actionlint and does not wait on it: a workflow finding does not
+# hide a finding in an action, and the leg fails for either.
+actionlint: ## Lint every workflow and composite action script with actionlint and shellcheck
 	@if [ -z "$(strip $(WORKFLOWS))" ]; then \
 	  echo "actionlint: no workflow file under $(REPO_ROOT)/$(WORKFLOW_DIR); an empty directory would pass without checking anything." >&2; \
 	  exit 1; \
@@ -260,7 +271,8 @@ actionlint: ## Lint every workflow under .github/workflows with actionlint and s
 	  echo "actionlint: '$(SHELLCHECK)' is not on PATH; without it actionlint skips every run: script. Install the version .mise.toml pins ('mise install')." >&2; \
 	  exit 1; \
 	fi
-	@env -C '$(REPO_ROOT)' '$(ACTIONLINT)' -shellcheck='$(SHELLCHECK)' $(WORKFLOWS)
+	@failed=; $(call each,workflows,actionlint,env -C '$(REPO_ROOT)' '$(ACTIONLINT)' -shellcheck='$(SHELLCHECK)' $(WORKFLOWS)); \
+	  $(call each,composite-actions,actionlint,$(PYTHON) '$(LINT_COMPOSITE_ACTIONS)' --root '$(REPO_ROOT)' --shellcheck '$(SHELLCHECK)'); $(each-end)
 
 # The gates are the scripts in tools/ plus the workflow lint above, which is a
 # target of its own because its linter is a pinned binary, not a script here.

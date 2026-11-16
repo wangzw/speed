@@ -26,6 +26,19 @@ when `shellcheck` is not on `PATH`, because actionlint then skips every `run:`
 script without a word and exits 0. Neither a red gate nor a workflow finding
 stops the other from running, so `make repo-check` reports both.
 
+actionlint does not read the steps of a composite action, so the same target
+then runs `lint_composite_actions.py`, which finds the `run:` steps of
+`.github/actions/*/action.yml` and `action.yaml` and runs the `shellcheck` found
+on `PATH` over each one that names `bash` or `sh` as its shell, with the flags
+and the `set -eo pipefail` (bash) or `set -e` (sh) line actionlint gives a
+workflow script, and with every `${{ ... }}` replaced by underscores of the same
+length. A step in any other shell is skipped, a `run:` step with no `shell:` is
+a finding, and a finding is reported at its line in the action file. A workflow
+finding does not stop it from running, and the target fails for either. Exit
+codes: 0 clean, 1 a finding, 2 infrastructure error (the root is not a
+directory, no composite action exists, or `shellcheck` is missing or does not
+answer in JSON).
+
 Each script also runs on its own:
 
 ```
@@ -38,6 +51,7 @@ python3 tools/check_test_tiers.py
 python3 tools/check_e2e_honesty.py
 python3 tools/check_platform_errors.py
 python3 tools/check_pnpm_filters.py
+python3 tools/lint_composite_actions.py
 ```
 
 Their own test suites run together, from the repository root:

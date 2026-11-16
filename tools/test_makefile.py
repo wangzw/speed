@@ -125,6 +125,26 @@ MODULE_LEGS: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {
     "tidy-check": [("go", "mod", ("-diff",), "off")],
 }
 
+# A composite action for the scratch repositories: the actionlint leg also lints
+# these scripts, and a tree with none is an error of its own.
+COMPOSITE_ACTION = """name: stand-in
+description: a composite action
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo hi
+"""
+
+# A shellcheck that reports one finding for every script it is given.
+FINDING_SHELLCHECK = """\
+#!{python}
+import json, sys
+sys.stdin.read()
+print(json.dumps([{{"line": 2, "column": 1, "level": "info", "code": 2086, "message": "reported"}}]))
+sys.exit(1)
+"""
+
 # Variables a parent make exports to its children. A case run by `make
 # tools-test` would otherwise hand them to the make it starts.
 MAKE_ENVIRONMENT = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "GNUMAKEFLAGS", "GOWORK")
@@ -165,6 +185,9 @@ class LoopingLegTests(unittest.TestCase):
             for workflow in ("ci.yml", "deploy.yaml", "notes.md"):
                 (workflows / workflow).write_text("name: stand-in\n", encoding="utf-8")
             (workflows / "nested" / "inner.yml").write_text("name: stand-in\n", encoding="utf-8")
+            action = self.repos / name / ".github" / "actions" / "stub"
+            action.mkdir(parents=True)
+            (action / "action.yml").write_text(COMPOSITE_ACTION, encoding="utf-8")
 
     def make(
         self,
@@ -419,6 +442,43 @@ class LoopingLegTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         (call,) = self.workflow_calls()
         self.assertIn(f"-shellcheck={self.bin / 'shellcheck'}", call["args"])
+
+    def shellcheck_calls(self) -> list[dict]:
+        return [call for call in self.calls() if call["tool"] == "shellcheck"]
+
+    def test_the_actionlint_leg_lints_the_composite_actions_with_the_same_shellcheck(self) -> None:
+        # actionlint does not read composite actions, so the leg runs
+        # tools/lint_composite_actions.py over them with the shellcheck it
+        # checked for. The stand-in sees the call the script makes: the
+        # stdin flag, the json format and the repository root as its directory.
+        result = self.make("actionlint")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (call,) = self.shellcheck_calls()
+        self.assertEqual(call["dir"], "green", "the composite lint ran outside the repository root")
+        self.assertEqual(call["args"][-1], "-")
+        self.assertIn("json", call["args"])
+        self.assertIn("bash", call["args"])
+
+    def test_a_composite_action_finding_fails_the_actionlint_leg_alone(self) -> None:
+        finding = self.scratch / "finding-shellcheck"
+        finding.write_text(FINDING_SHELLCHECK.format(python=sys.executable), encoding="utf-8")
+        finding.chmod(0o755)
+        result = self.make("actionlint", shellcheck=finding)
+        self.assertNotEqual(result.returncode, 0, "the leg passed with a finding in a composite action")
+        self.assertEqual(len(self.workflow_calls()), 1, "actionlint did not run")
+        self.assertIn("stub/action.yml", result.stdout)
+        self.assertIn("composite-actions", result.stderr)
+        self.assertNotIn("workflows", result.stderr)
+
+    def test_a_workflow_finding_does_not_hide_the_composite_lint(self) -> None:
+        result = self.make("actionlint", repo="red")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(self.workflow_calls(), "actionlint never ran")
+        self.assertTrue(
+            self.shellcheck_calls(),
+            f"the composite lint did not run after a red actionlint:\n{result.stdout}{result.stderr}",
+        )
+        self.assertIn("workflows", result.stderr)
 
     def test_the_actionlint_leg_fails_on_a_finding(self) -> None:
         result = self.make("actionlint", repo="red")
