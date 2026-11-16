@@ -715,9 +715,12 @@ describe('AppShell sidebar layout in Chromium', () => {
     const paperRect = paper.getBoundingClientRect()
     expect(paper.scrollWidth).toBeLessThanOrEqual(paper.clientWidth)
 
-    const [search, colour] = ['Search', 'Colour mode'].map((name) =>
-      screen.getByRole('button', { name }).getBoundingClientRect(),
-    )
+    const search = screen
+      .getByRole('button', { name: 'Search' })
+      .getBoundingClientRect()
+    const colour = screen
+      .getByRole('button', { name: 'Colour mode' })
+      .getBoundingClientRect()
     for (const rect of [search, colour]) {
       expect(rect.left - paperRect.left).toBeGreaterThanOrEqual(
         RING_REACH - 0.5,

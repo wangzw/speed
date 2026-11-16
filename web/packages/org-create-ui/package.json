@@ -14,7 +14,7 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json",
     "test": "vitest run",
     "build": "pnpm --filter @speed/i18n --filter @speed/ui-kit build && tsc -p tsconfig.build.json"
   },

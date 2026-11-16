@@ -155,9 +155,14 @@ The cases whose subject is real layout or real focusability live beside
 the component under test as `*.browser.test.tsx` and run in Chromium
 through Vitest's browser mode (`web/vitest.browser.config.ts`, the
 Playwright provider). They are excluded from each package's default
-`test`, `typecheck` and `lint` legs, and they are not part of
-`make check`: the root `make web-browser` entry runs only them, and the
-scheduled `.github/workflows/browser.yml` job calls that same entry.
+`test` and `lint` legs and from the default `typecheck` program. They are
+typechecked, which needs no Chromium: each package with browser cases
+carries a `tsconfig.browser.json` (the package config plus only the browser
+cases and `test-utils`) that its `typecheck` script runs after the default
+program, so `make web-check` covers it. They are not run by `make check`:
+the root `make web-browser` entry runs only them, and the
+`.github/workflows/browser.yml` job, which runs daily and on manual
+dispatch, calls that same entry.
 
 The tier's `include` also names the demo host's route-level sweep
 (`starters/demo/web/src/a11y/routes.browser.test.tsx`): it walks the

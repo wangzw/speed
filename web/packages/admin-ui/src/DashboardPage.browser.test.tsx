@@ -15,6 +15,7 @@ import {
   createAdminOperations,
   makeAdminBackend,
   recordFixture,
+  tenantFixture,
 } from '../test-utils/operations.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { adminUiResources } from './resources.js'
@@ -23,9 +24,9 @@ import type { AdminAuditRecord } from './operations.js'
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
 const TENANTS = [
-  { name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const },
-  { id: 'beta', name: 'Beta', status: 'active' as const },
-  { id: 'old', name: 'Old', status: 'disabled' as const },
+  tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+  tenantFixture({ name: 'Beta', displayName: '', status: 'active' }),
+  tenantFixture({ name: 'Old', displayName: '', status: 'disabled' }),
 ]
 
 /** The shipped en-US dashboard strings the overview assertions read. */

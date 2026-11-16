@@ -83,23 +83,26 @@ const BOB: AdminMember = {
 
 const MEMBERS: readonly AdminMember[] = [ADA, BOB]
 
-const INVITATIONS: readonly AdminInvitation[] = [
-  {
-    id: 'inv-1',
-    tenant: TENANT,
-    email: 'ada@example.com',
-    invited_by: SELF,
-    status: 'pending',
-    created_at: '2026-10-15T12:00:00Z',
-    expires_at: '2099-01-01T00:00:00Z',
-    accepted_at: '0001-01-01T00:00:00Z',
-  },
-]
+const INVITATION_ADA: AdminInvitation = {
+  id: 'inv-1',
+  tenant: TENANT,
+  email: 'ada@example.com',
+  invited_by: SELF,
+  status: 'pending',
+  created_at: '2026-10-15T12:00:00Z',
+  expires_at: '2099-01-01T00:00:00Z',
+  accepted_at: '0001-01-01T00:00:00Z',
+}
+
+const INVITATIONS: readonly AdminInvitation[] = [INVITATION_ADA]
 
 const SUPPORT_ROLE: AdminTenantRole = {
   tenant: TENANT,
   role: 'support',
   builtin: false,
+  description: '',
+  permission_count: 0,
+  can_manage: false,
   created_at: '2026-01-01T00:00:00Z',
 }
 
@@ -118,9 +121,9 @@ function backend(
   invitations: readonly AdminInvitation[] = INVITATIONS,
 ): AdminBackend {
   return makeAdminBackend({
-    listMembers: () => Promise.resolve({ members, next_cursor: '' }),
+    listMembers: () => Promise.resolve({ members: [...members], next_cursor: '' }),
     listInvitations: () =>
-      Promise.resolve({ invitations, next_cursor: '' }),
+      Promise.resolve({ invitations: [...invitations], next_cursor: '' }),
     listTenantRoles: () => Promise.resolve([SUPPORT_ROLE]),
     listTenantAccountBindings: () => Promise.resolve([ADA_BINDING]),
   })
@@ -255,7 +258,7 @@ function headerWidth(container: HTMLElement, header: string): number {
 
 /** The first body cell inside `container` whose text contains `value`. */
 function bodyCellWith(container: HTMLElement, value: string): HTMLElement {
-  const cell = Array.from(container.querySelectorAll('tbody td')).find(
+  const cell = Array.from(container.querySelectorAll<HTMLElement>('tbody td')).find(
     (candidate) => candidate.textContent?.includes(value),
   )
   if (cell === undefined) {
@@ -320,7 +323,6 @@ async function expectNoPageHorizontalOverflow(): Promise<void> {
 function expectHeaderOnScreen(container: HTMLElement, header: string): void {
   const cell = within(container).getByRole('columnheader', {
     name: header,
-    exact: true,
   })
   expect(cell, `the ${header} column is hidden`).toBeVisible()
   const cellRect = cell.getBoundingClientRect()
@@ -476,7 +478,7 @@ describe('OrganizationMembersPage horizontal overflow in Chromium', () => {
       renderPage()
 
       await waitForMemberName(ADA.display_name)
-      await screen.findByText(INVITATIONS[0].email)
+      await screen.findByText(INVITATION_ADA.email)
       await expectNoHorizontalOverflow()
     })
   }
@@ -498,7 +500,7 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     username: LONG_USERNAME,
   }
   const LONG_INVITATION: AdminInvitation = {
-    ...INVITATIONS[0],
+    ...INVITATION_ADA,
     email: LONG_EMAIL,
   }
 
@@ -556,7 +558,7 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
       const invitation: AdminInvitation = {
         ...LONG_INVITATION,
         invited_by: LONG_ACCOUNT,
-        status,
+        status: status === 'expired' ? 'pending' : status,
         expires_at:
           status === 'expired'
             ? '2020-01-01T00:00:00Z'
@@ -679,7 +681,7 @@ describe('OrganizationMembersPage single-token identity values in Chromium', () 
     display_name: INVITER_NAME,
   }
   const INVITATION: AdminInvitation = {
-    ...INVITATIONS[0],
+    ...INVITATION_ADA,
     invited_by: INVITER_ACCOUNT,
   }
 
@@ -759,7 +761,7 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
     await page.viewport(1200, 900)
     renderPage()
     await waitForMemberName(ADA.display_name)
-    await screen.findByText(INVITATIONS[0].email)
+    await screen.findByText(INVITATION_ADA.email)
 
     const members = tableFor(enUS.members.column.displayName)
     const invitations = tableFor(enUS.invitations.column.email)
@@ -817,7 +819,7 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
     await page.viewport(1024, 900)
     renderShellPage()
     await waitForMemberName(ADA.display_name)
-    await screen.findByText(INVITATIONS[0].email)
+    await screen.findByText(INVITATION_ADA.email)
     // The shell's content region is ~640-700px wide here, above the sm
     // container floor; the page must fit it without a horizontal scroll.
     await expectNoHorizontalOverflow()
@@ -841,7 +843,6 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
       expect(
         within(members.container).getByRole('columnheader', {
           name: header,
-          exact: true,
         }),
       ).toBeVisible()
     }
@@ -849,7 +850,6 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
       expect(
         within(invitations.container).getByRole('columnheader', {
           name: header,
-          exact: true,
         }),
       ).toBeVisible()
     }
@@ -866,7 +866,7 @@ describe('OrganizationMembersPage column priorities in Chromium', () => {
       ).toBeVisible()
     }
     const invitationRow = within(invitations.container).getByRole('row', {
-      name: new RegExp(INVITATIONS[0].email),
+      name: new RegExp(INVITATION_ADA.email),
     })
     const invitationCells = within(invitationRow).getAllByRole('cell')
     for (const header of invitationHeaders) {
@@ -928,7 +928,7 @@ describe('OrganizationMembersPage dark mode in Chromium', () => {
     await page.viewport(1200, 900)
     renderPage({ defaultMode: 'dark' }, <ThemeProbe />)
     await waitForMemberName(ADA.display_name)
-    await screen.findByText(INVITATIONS[0].email)
+    await screen.findByText(INVITATION_ADA.email)
 
     const probe = screen.getByTestId('theme-probe')
     expect(probe.dataset.mode).toBe('dark')
@@ -975,7 +975,7 @@ describe('OrganizationMembersPage touch targets in Chromium', () => {
 
     renderPage()
     await waitForMemberName(ADA.display_name)
-    await screen.findByText(INVITATIONS[0].email)
+    await screen.findByText(INVITATION_ADA.email)
 
     // The panel's own controls are part of the page's touch surface: open it
     // so the scan covers a row action and the panel together.

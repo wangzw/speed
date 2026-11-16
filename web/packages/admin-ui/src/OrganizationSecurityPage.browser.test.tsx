@@ -126,12 +126,10 @@ async function ready(): Promise<HTMLElement> {
   await screen.findByRole('heading', {
     level: 2,
     name: enUS.organization.security.section.title,
-    exact: true,
   })
   await document.fonts.ready
   return screen.getByRole('region', {
     name: enUS.organization.security.section.title,
-    exact: true,
   })
 }
 

@@ -243,7 +243,11 @@ async function trackColor(range: HTMLElement): Promise<Rgb> {
     1,
     1,
   ).data
-  return [pixel[0], pixel[1], pixel[2]]
+  const [red, green, blue] = pixel
+  if (red === undefined || green === undefined || blue === undefined) {
+    throw new Error('the sampled pixel carries no colour channels')
+  }
+  return [red, green, blue]
 }
 
 /** The active theme's primary, rendered as a computed colour. */

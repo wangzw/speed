@@ -8,14 +8,18 @@ import { screen } from '@testing-library/react'
 import { page } from 'vitest/browser'
 import { InvitationsPage } from './InvitationsPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { createAdminOperations, makeAdminBackend } from '../test-utils/operations.js'
+import {
+  createAdminOperations,
+  makeAdminBackend,
+  tenantFixture,
+} from '../test-utils/operations.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { clearTenant, seedTenant } from '../test-utils/tenant-url.js'
 import type { AdminInvitation, AdminMember } from './operations.js'
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS = [{ name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }]
+const TENANTS = [tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })]
 
 const INVITATIONS: readonly AdminInvitation[] = [
   {
@@ -36,6 +40,7 @@ const MEMBERS: readonly AdminMember[] = [
     tenant: 'acme',
     active: true,
     display_name: 'Member With A Long Display Name',
+    username: 'ada',
     sso_exempt: false,
     source: 'direct',
     roles: [],

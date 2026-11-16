@@ -98,17 +98,14 @@ async function ready(): Promise<HTMLElement> {
   await screen.findByRole('heading', {
     level: 1,
     name: enUS.organization.nav.profile,
-    exact: true,
   })
   await screen.findByRole('heading', {
     level: 2,
     name: enUS.tenantProfile.form.title,
-    exact: true,
   })
   await document.fonts.ready
   return screen.getByRole('region', {
     name: enUS.tenantProfile.form.title,
-    exact: true,
   })
 }
 
@@ -143,7 +140,6 @@ describe('TenantProfilePage touch targets in Chromium', () => {
 
     const save = screen.getByRole('button', {
       name: enUS.tenantProfile.form.save,
-      exact: true,
     })
     expect(
       hasCoarsePointerTouchTarget(save),
@@ -181,7 +177,6 @@ describe('TenantProfilePage ownership controls in Chromium', () => {
       await ready()
       const section = screen.getByRole('region', {
         name: enUS.tenantProfile.ownership.title,
-        exact: true,
       })
       expect(section).toBeVisible()
       expectInsideBox(section)
@@ -196,11 +191,9 @@ describe('TenantProfilePage ownership controls in Chromium', () => {
     for (const control of [
       screen.getByRole('button', {
         name: enUS.tenantProfile.ownership.transfer.button,
-        exact: true,
       }),
       screen.getByRole('button', {
         name: enUS.tenantProfile.ownership.delete.button,
-        exact: true,
       }),
     ]) {
       expect(
@@ -227,7 +220,6 @@ describe('TenantProfilePage ownership controls in Chromium', () => {
       ).toBe(getComputedStyle(probe).backgroundColor)
       const section = screen.getByRole('region', {
         name: enUS.tenantProfile.ownership.title,
-        exact: true,
       })
       expectInsideBox(section)
     })

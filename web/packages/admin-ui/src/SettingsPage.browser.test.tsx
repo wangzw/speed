@@ -18,9 +18,12 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
+/** The key of the first scripted setting, the row the overflow case looks up. */
+const FIRST_SETTING_KEY = 'mail.retry'
+
 const SETTINGS: readonly AdminSetting[] = [
   {
-    key: 'mail.retry',
+    key: FIRST_SETTING_KEY,
     namespace: 'mail',
     type: 'int',
     description: 'Retry count',
@@ -207,7 +210,7 @@ describe('SettingsPage content surfaces in Chromium', () => {
       { operations, language: 'en-US' },
     )
 
-    const key = await screen.findByText(SETTINGS[0].key)
+    const key = await screen.findByText(FIRST_SETTING_KEY)
     const table = key.closest('table')
     expect(table).not.toBeNull()
     const register = table?.closest('section')

@@ -81,6 +81,7 @@ describe('tenant lifecycle geometry in Chromium', () => {
                   tenant: 'acme',
                   account: 'acc-2',
                   display_name: 'Ada Lovelace',
+                  username: '',
                   active: true,
                   joined_at: '2026-01-01T00:00:00Z',
                   roles: [],

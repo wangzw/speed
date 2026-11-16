@@ -57,8 +57,20 @@ this file adds what is specific to the npm side.
   (Vitest browser mode, Playwright provider, Chromium --
   `web/vitest.browser.config.ts`); the shared preset excludes them from
   every package's `test` leg, and the eslint config and base tsconfig keep
-  them out of the default lint and typecheck legs. Install Chromium once
-  with `pnpm -C web exec playwright install chromium`.
+  them out of the default lint leg and the default typecheck program.
+  Typechecking needs no Chromium, so every package with browser cases
+  carries a `tsconfig.browser.json` that extends the package config and
+  includes only `src/**/*.browser.test.tsx` and `test-utils`, and its
+  `typecheck` script runs both programs; `make web-check` therefore
+  typechecks the browser cases. They are a program of their own because one
+  program holding the unit and the browser cases sees two conflicting
+  declarations of the jest-dom matcher types. A new browser case needs no
+  registration, and a package gaining its first one adds the
+  `tsconfig.browser.json` and the second `tsc` call. The demo host
+  (`starters/demo/web`) needs neither: the base exclude is relative to
+  `web/` and does not reach it, so its one program already covers its
+  browser cases. Install Chromium once with
+  `pnpm -C web exec playwright install chromium`.
 - Browser cases assert invariants -- geometry, focus order, focusability
   -- never pixels, and they wait on events rather than fixed sleeps.
   Interface text in an assertion comes from the package's shipped
@@ -75,9 +87,9 @@ this file adds what is specific to the npm side.
   159 does not restore on Linux.
 - CI runs `pnpm install --frozen-lockfile` from `web/`, then
   lint/typecheck/test/build per package with the root-provided toolchain.
-  The browser tier is a separate scheduled job
-  (`.github/workflows/browser.yml`) because Chromium is not part of the
-  `.mise.toml` toolchain.
+  The browser tier is a separate job (`.github/workflows/browser.yml`) that
+  runs daily on a schedule and on manual dispatch, because Chromium is not
+  part of the `.mise.toml` toolchain.
 
 ## Cross-package duplication kept in lockstep
 

@@ -82,7 +82,11 @@ export default tseslint.config(
     // The browser cases (`*.browser.test.tsx`) are measured by the
     // separate browser tier (web/vitest.browser.config.ts, `make
     // web-browser`) and deliberately stay out of the unit packages'
-    // lint, typecheck and test legs.
+    // lint and test legs. The demo host imports this config, so the same
+    // ignore reaches its cases under starters/demo/web/src. A package's
+    // browser cases are typechecked through its tsconfig.browser.json; the
+    // demo host's are typechecked through starters/demo/web/tsconfig.json,
+    // whose program includes all of src.
     ignores: ['**/node_modules/**', '**/dist/**', '**/*.browser.test.tsx'],
   },
   ...tseslint.configs.recommended,

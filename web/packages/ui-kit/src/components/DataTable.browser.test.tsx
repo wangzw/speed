@@ -152,8 +152,9 @@ const PIN_TOLERANCE = 0.5
  */
 function alphaOf(color: string): number {
   const rgba = /^rgba?\(([^)]+)\)$/.exec(color)
-  if (rgba === null) return 1
-  const parts = rgba[1].split(',').map((part) => Number.parseFloat(part))
+  const body = rgba?.[1]
+  if (body === undefined) return 1
+  const parts = body.split(',').map((part) => Number.parseFloat(part))
   return parts[3] ?? 1
 }
 

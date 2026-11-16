@@ -116,7 +116,11 @@ describe('StepUpChallenge actions in Chromium', () => {
       // together for the measurement.
       answerFlow: () =>
         Promise.reject(
-          new ApiError({ status: 400, code: 'authn.login_failed' }),
+          new ApiError({
+            status: 400,
+            code: 'authn.login_failed',
+            attempts: 1,
+          }),
         ),
     }
     const user = userEvent.setup()

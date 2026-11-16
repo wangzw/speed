@@ -14,6 +14,7 @@ import {
   createAdminOperations,
   makeAdminBackend,
   providerFixture,
+  tenantFixture,
 } from '../test-utils/operations.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { clearTenant, seedTenant } from '../test-utils/tenant-url.js'
@@ -21,7 +22,7 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS = [{ name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }]
+const TENANTS = [tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })]
 
 const PROVIDERS = [
   providerFixture({ name: 'Acme Corporate Identity Provider' }),

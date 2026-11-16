@@ -36,6 +36,15 @@ function actionRowOf(action: Element): HTMLElement {
   return row as HTMLElement
 }
 
+/** The box at `index`; an index outside the measured boxes is a case error. */
+function boxAt(boxes: readonly DOMRect[], index: number): DOMRect {
+  const box = boxes[index]
+  if (box === undefined) {
+    throw new Error(`no measured box at index ${index}`)
+  }
+  return box
+}
+
 describe('ActionRow in Chromium', () => {
   it('keeps the actions adjacent, one spacing unit apart, with the primary rightmost', async () => {
     await page.viewport(900, 700)
@@ -141,7 +150,7 @@ describe('ActionRow in Chromium', () => {
     expect(firstLineByLeft.length).toBeGreaterThanOrEqual(2)
     for (let i = 1; i < firstLineByLeft.length; i += 1) {
       expect(
-        firstLineByLeft[i].left - firstLineByLeft[i - 1].right,
+        boxAt(firstLineByLeft, i).left - boxAt(firstLineByLeft, i - 1).right,
       ).toBeCloseTo(SPACING_UNIT, 0)
     }
 
@@ -164,8 +173,8 @@ describe('ActionRow in Chromium', () => {
     // box-edge cap.
     for (let i = 0; i < boxes.length; i += 1) {
       for (let j = i + 1; j < boxes.length; j += 1) {
-        const a = boxes[i]
-        const b = boxes[j]
+        const a = boxAt(boxes, i)
+        const b = boxAt(boxes, j)
         const overlapX = a.left < b.right - TOLERANCE && b.left < a.right - TOLERANCE
         const overlapY =
           a.top < b.bottom - TOLERANCE && b.top < a.bottom - TOLERANCE

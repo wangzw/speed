@@ -10,7 +10,11 @@ import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { PermissionsPage } from './PermissionsPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { createAdminOperations, makeAdminBackend } from '../test-utils/operations.js'
+import {
+  createAdminOperations,
+  makeAdminBackend,
+  tenantFixture,
+} from '../test-utils/operations.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { clearTenant, seedTenant } from '../test-utils/tenant-url.js'
 import type {
@@ -23,7 +27,7 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS = [{ name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }]
+const TENANTS = [tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })]
 
 const ROLES: readonly AdminRole[] = [
   {

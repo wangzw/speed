@@ -113,6 +113,7 @@ const HOLDERS: AdminTenantRoleBindingPage = {
     {
       account: 'acc-1',
       display_name: 'Ada Lovelace',
+      username: '',
       active: true,
       granted_at: '2026-10-15T12:00:00Z',
     },
@@ -251,6 +252,8 @@ describe('OrganizationRolesPage over-long values in Chromium', () => {
   const LONG_PERMISSION =
     'a-very-long-namespace.a-very-long-resource-name.an-equally-long-action'
   const LONG_ACCOUNT = 'account-identifier-with-a-long-unbroken-value-0000000001'
+  const LONG_HOLDER_NAME =
+    'Alexandria Cassandra Montgomery-Worthington the Third of the Long Name'
 
   const LONG_ROLES: readonly AdminTenantRole[] = [
     {
@@ -284,8 +287,8 @@ describe('OrganizationRolesPage over-long values in Chromium', () => {
     bindings: [
       {
         account: LONG_ACCOUNT,
-        display_name:
-          'Alexandria Cassandra Montgomery-Worthington the Third of the Long Name',
+        display_name: LONG_HOLDER_NAME,
+        username: '',
         active: true,
         granted_at: '2026-10-15T12:00:00Z',
       },
@@ -308,7 +311,7 @@ describe('OrganizationRolesPage over-long values in Chromium', () => {
     await screen.findAllByText(LONG_PERMISSION)
     // The binding row names its account by the display name the binding
     // carries, never by the account id.
-    await screen.findAllByText(LONG_HOLDERS.bindings[0].display_name)
+    await screen.findAllByText(LONG_HOLDER_NAME)
     await expandCatalog()
 
     // The helper pins each table's own containment box to the sm, md and lg
