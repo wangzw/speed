@@ -6,8 +6,10 @@
 # needs a line added with it:
 #
 #   gomod            the Go modules go.work lists
-#   npm              the pnpm lockfile of the frontend workspace (web/), which
-#                    also resolves the demo host under starters/demo/web
+#   npm              the pnpm lockfile of the frontend workspace (web/); the
+#                    entry for /web also covers starters/demo/web, because
+#                    web/pnpm-workspace.yaml lists it as a member and
+#                    Dependabot reads each member's package.json
 #   github-actions   the workflows, and the local setup action's own uses: lines
 #   docker           the demo program's Dockerfile
 #
