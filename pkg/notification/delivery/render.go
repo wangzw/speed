@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -41,39 +42,54 @@ func contentKey(typeKey string, channel notification.Channel, part string) i18n.
 	return i18n.Key(typeKey + "." + string(channel) + "." + part)
 }
 
+// localeContext is the context a message's text is rendered in: the recipient's
+// language. It names no time zone, because only the email channel formats an
+// instant on the server and it resolves the recipient's zone separately (see
+// emailMessage); an sms time parameter is written in UTC (see stringify), and
+// the in-app channel writes a marker instead.
+func (p *pipeline) localeContext(ctx context.Context, d notification.Dispatch) context.Context {
+	return i18n.WithLocale(ctx, i18n.Locale(d.Locale))
+}
+
 // message renders one in-app message for a dispatch, in the recipient's
-// language. The title and the body are rendered from the declaring module's
-// catalog; the link is written only when the catalog carries one, so an absent
-// entry does not put a key string into a field a client would open.
+// language. The title and the body carry a {{name, time, layout}} segment as a
+// marker naming the parameter, not as a formatted instant: the client resolves
+// the parameter in the viewer's display zone, so changing the zone or language
+// re-renders a message already delivered. The link is written only when the
+// catalog carries one, so an absent entry does not put a key string into a
+// field a client would open; it is rendered as ordinary text, since it is a URL
+// the client opens and not display text.
 func (p *pipeline) message(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec) notification.Message {
-	rctx := i18n.WithLocale(ctx, i18n.Locale(d.Locale))
+	lctx := p.localeContext(ctx, d)
+	marked := i18n.WithTimeRender(lctx, i18n.TimeRenderMarked)
 	args := renderArgs(d.Params)
 	linkKey := contentKey(spec.Key, notification.ChannelInApp, partLink)
 	msg := notification.Message{
 		TypeKey: spec.Key,
 		Group:   spec.Group,
-		Title:   p.localizer.Localize(rctx, contentKey(spec.Key, notification.ChannelInApp, partTitle), args),
-		Body:    p.localizer.Localize(rctx, contentKey(spec.Key, notification.ChannelInApp, partBody), args),
+		Title:   p.localizer.Localize(marked, contentKey(spec.Key, notification.ChannelInApp, partTitle), args),
+		Body:    p.localizer.Localize(marked, contentKey(spec.Key, notification.ChannelInApp, partBody), args),
 		Params:  visibleParams(d.Params),
 	}
-	if link := p.localizer.Localize(rctx, linkKey, args); link != string(linkKey) {
+	if link := p.localizer.Localize(lctx, linkKey, args); link != string(linkKey) {
 		msg.Link = link
 	}
+	p.warnUnresolvableMarkers(msg)
 	return msg
 }
 
-// emailMessage renders one email for a dispatch, in the recipient's language.
-// The subject and the plain-text body are rendered from the declaring module's
-// catalog; the HTML body is written only when the catalog carries one, so an
-// absent entry leaves the message with its plain-text body rather than putting a
-// key string into a field a client renders as markup.
+// emailMessage renders one email for a dispatch, in the recipient's language and
+// time zone. The subject and the plain-text body are rendered from the declaring
+// module's catalog; the HTML body is written only when the catalog carries one,
+// so an absent entry leaves the message with its plain-text body rather than
+// putting a key string into a field a client renders as markup.
 //
 // From is left empty: an empty Message.From takes the carrier's own configured
 // default sender, and this module names no sender of its own. Each attempt builds
 // its own value — a mail.Message can be sent only once, because its attachments
 // are readers — and this module attaches no file, so nothing here is spent.
-func (p *pipeline) emailMessage(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, to, dedupeID string) mail.Message {
-	rctx := i18n.WithLocale(ctx, i18n.Locale(d.Locale))
+func (p *pipeline) emailMessage(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, to, dedupeID, zone string) mail.Message {
+	rctx := i18n.WithTimeZone(i18n.WithLocale(ctx, i18n.Locale(d.Locale)), zone)
 	args := renderArgs(d.Params)
 	htmlKey := contentKey(spec.Key, notification.ChannelEmail, partBodyHTML)
 	msg := mail.Message{
@@ -96,6 +112,9 @@ func (p *pipeline) emailMessage(ctx context.Context, d notification.Dispatch, sp
 // channel before the vendor is reached.
 func (p *pipeline) smsTemplate(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec) (string, error) {
 	key := contentKey(spec.Key, notification.ChannelSMS, partTemplate)
+	// An sms template carries a template identifier, not prose, and the
+	// parameters travel stringified; no time segment is rendered here, so this
+	// context names only the language.
 	rctx := i18n.WithLocale(ctx, i18n.Locale(d.Locale))
 	rendered := p.localizer.Localize(rctx, key, renderArgs(d.Params))
 	if rendered == string(key) {
@@ -148,6 +167,27 @@ func renderValue(v any) i18n.Value {
 	}
 }
 
+// timeMarker matches a marker an in-app render writes: the two private-use
+// delimiters around "time:" and the parameter name.
+var timeMarker = regexp.MustCompile("\uE000time:([^\uE001]+)\uE001")
+
+// warnUnresolvableMarkers reports a marker naming a parameter the message does
+// not carry. The client resolves a marker from the message's payload, so a
+// missing parameter renders as an empty slot; the warning names a declaration
+// defect — a time segment whose parameter is not in the type's
+// RecipientVisibleParams — where an operator can fix it.
+func (p *pipeline) warnUnresolvableMarkers(msg notification.Message) {
+	for _, text := range []string{msg.Title, msg.Body} {
+		for _, match := range timeMarker.FindAllStringSubmatch(text, -1) {
+			name := match[1]
+			if _, ok := msg.Params[name]; !ok {
+				p.logger.Warn(ModuleName+": a rendered time marker names a parameter the message does not carry",
+					"type_key", msg.TypeKey, "parameter", name)
+			}
+		}
+	}
+}
+
 // visibleParams copies a dispatch's parameters for the message the client may
 // reuse. The whitelist has already been enforced, so the copy is the visible
 // set.
@@ -184,6 +224,12 @@ func stringifyParams(params map[string]any) (map[string]string, error) {
 // stringify renders one parameter as a stable, non-empty text: a string as it
 // is, an integer or a boolean in its decimal or lower-case text, a time in RFC
 // 3339. A missing, empty or non-stringifiable value is an error.
+//
+// An sms time parameter is written in UTC at whole-second precision. The
+// layout carries no fractional second, so Go's Format drops the sub-second
+// part: 09:30:00.123Z becomes 09:30:00Z. This is deliberate — the template
+// parameter is a text on the wire, and a JSON stringification would leak
+// nanoseconds — so a change here must keep both UTC and the second precision.
 func stringify(v any) (string, error) {
 	switch t := v.(type) {
 	case string:

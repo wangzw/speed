@@ -125,20 +125,21 @@ var (
 // Module is the descriptor a host registers.
 //
 // The queue, the handler registration face, the database, the tenant roster, the
-// preferences seam, the inbox seam, the message localizer, the account store, the
-// key-value capability and the shared sms ledger are all required and hard. A
-// pipeline with no queue has nowhere to put a dispatch, one with no registration
-// face cannot be run, one with no table has nowhere to record a send, one with no
-// roster carries no filter to scope its ledger writes by tenant, one with no
-// preferences cannot resolve a recipient's channels, one with no inbox cannot
-// write an in-app message, one with no localizer cannot render one, one with no
-// account store cannot tell whether a destination belongs to the recipient, one
-// with no key-value store cannot count an email delivery's budget, and one with
-// no ledger cannot bound an sms attempt. The key-value store, the ledger and the
-// account store are hard requirements rather than absences the module works
-// around: a delivery budget that cannot count and an ownership rule that cannot
-// read would each let a message through, which is the direction the requirement
-// forbids.
+// preferences seam, the inbox seam, the message localizer, the preference
+// resolver, the account store, the key-value capability and the shared sms
+// ledger are all required and hard. A pipeline with no queue has nowhere to put
+// a dispatch, one with no registration face cannot be run, one with no table has
+// nowhere to record a send, one with no roster carries no filter to scope its
+// ledger writes by tenant, one with no preferences cannot resolve a recipient's
+// channels, one with no inbox cannot write an in-app message, one with no
+// localizer cannot render one, one with no resolver cannot render an email's
+// time in the recipient's zone, one with no account store cannot tell whether a
+// destination belongs to the recipient, one with no key-value store cannot count
+// an email delivery's budget, and one with no ledger cannot bound an sms attempt.
+// The key-value store, the ledger and the account store are hard requirements
+// rather than absences the module works around: a delivery budget that cannot
+// count and an ownership rule that cannot read would each let a message through,
+// which is the direction the requirement forbids.
 //
 // The settings store is optional: a dispatch reads its budget limits through it,
 // and an absence is a legal assembly in which every budget reads its declared
@@ -180,6 +181,7 @@ func Module() core.Module {
 			{Token: (*notification.Preferences)(nil)},
 			{Token: (*notification.Inbox)(nil)},
 			{Token: (*i18n.Localizer)(nil)},
+			{Token: (*i18n.Resolver)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*kv.KV)(nil)},
 			{Token: (*budget.Store)(nil)},
@@ -276,9 +278,14 @@ type pipeline struct {
 	prefs     notification.Preferences
 	inbox     notification.Inbox
 	localizer i18n.Localizer
-	ledger    *ledger
-	taxonomy  taxonomy
-	seams     channelSeams
+	// resolver reads the recipient's stored time zone off the request path. The
+	// handler runs on a context the queue created, which names no zone, so the
+	// email channel reads the recipient's preference through it; the in-app
+	// channel writes a marker for the client to resolve instead.
+	resolver i18n.Resolver
+	ledger   *ledger
+	taxonomy taxonomy
+	seams    channelSeams
 	// accounts reads the recipient's identifiers and asks which account a
 	// destination belongs to. It is what tells the recipient's own address from
 	// anyone else's, and it is a hard dependency: without it a dispatch carrying
@@ -358,6 +365,10 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the message localizer: %w", ModuleName, err)
 	}
+	resolver, err := core.Resolve[i18n.Resolver](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the preference resolver: %w", ModuleName, err)
+	}
 	accounts, err := core.Resolve[authn.Accounts](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the account store the destination rule reads: %w", ModuleName, err)
@@ -412,6 +423,7 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		prefs:       prefs,
 		inbox:       inbox,
 		localizer:   localizer,
+		resolver:    resolver,
 		accounts:    accounts,
 		counters:    counters,
 		ledger:      &ledger{handle: database.DB()},

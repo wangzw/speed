@@ -222,12 +222,16 @@ type Message struct {
 	TypeKey string
 	// Group is the type's group.
 	Group string
-	// Title is the rendered title, not a template.
+	// Title is the rendered title, not a template. A {{name, time, layout}}
+	// segment arrives as a marker naming the parameter, not as a formatted
+	// instant: the client resolves it from Params in the viewer's display zone,
+	// so changing the zone re-renders an already delivered message.
 	Title string
-	// Body is the rendered body, not a template.
+	// Body is the rendered body, not a template, with a time segment written as
+	// a marker exactly as Title writes one.
 	Body string
 	// Params is the parameter values the message carries, for the client to
-	// reuse.
+	// reuse; a time parameter crosses as an RFC 3339 string.
 	Params map[string]any
 	// Link is an optional link the client may open.
 	Link string

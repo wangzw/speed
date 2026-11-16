@@ -22,10 +22,16 @@
  * client's openEventStream (@speed/api-client) -- so the transport seams
  * stay in one place; a host that mounts no opener simply gets no
  * real-time updates. Helpers shared between the components live in
- * src/internal/ and are deliberately not exported.
+ * src/internal/ and are not exported, with one exception: a host's
+ * `renderDetail` receives the raw message, so the message-text resolver
+ * it needs to render a marked title or body is exported here.
  */
 
 export { NOTIFICATION_UI_NAMESPACE, notificationUiResources } from './resources.js'
+export {
+  resolveMessageText,
+  type FormatInstant,
+} from './internal/message-text.js'
 export {
   NotificationBell,
   type NotificationBellProps,

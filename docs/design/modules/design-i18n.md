@@ -23,7 +23,7 @@
 - **不做 HTTP 机制。** 路由、中间件的排序与阶段归 [http](http/design-http.md)；`i18n.http` 只是使用它的登记接口在每个端挂层。
 - **不改机器码与状态码。** 机器码 `Problem.Type`、`Problem.Status` 与 `Problem.Detail` 原样保留，不随语言变化；本功能目录渲染的是消息文本，不决定错误响应的结构（[ADR-i18n-error-rendering](../../adr/adr-i18n-error-rendering.md)）。
 - **不替使用方渲染消息。** 一条消息由产生它的模块渲染：那个模块承载自己的目录、取用引擎、把成品文本写出；本功能目录只提供引擎与目录机制，不集中渲染任何模块的文本，也不认识某条消息的插值上下文（[ADR-i18n-rendering-ownership](../../adr/adr-i18n-rendering-ownership.md)）。
-- **不决定返回形态，也不决定时间在网页上由谁显示。** 一条消息里出现的日期与时间，与文本、计数（复数）、数字一样由引擎按消息语言渲染，日期与时间另按账户时区（见核心算法与流程一节）；服务端渲染时间只用于邮件、短信这类不经前端的渠道，经接口送到网页的文字不嵌入时间（[ADR-api-time-format](../../adr/adr-api-time-format.md)）。**作为独立字段**返回给客户端的日期与时间走带 `Z` 的 UTC ISO 8601（[REF-rfc3339](../../references.md)），由前端按查看者的显示时区渲染；这是模块选择不发复合字符串的场合，不是本功能目录的职责。本功能目录交出账户的 IANA 时区（[REF-iana-tz](../../references.md)）（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）供两者使用（[ADR-i18n-message-rendering](../../adr/adr-i18n-message-rendering.md)）。
+- **不决定返回形态，也不决定时间在网页上由谁显示。** 一条消息里出现的日期与时间，与文本、计数（复数）、数字一样由引擎按消息语言渲染，日期与时间另按账户时区（见核心算法与流程一节）；服务端渲染时间只用于邮件、短信这类不经前端的渠道，经接口送到网页的文字不嵌入时间（[ADR-api-time-format](../../adr/adr-api-time-format.md)）。消息的产生方也可以选择**标记模式**，把时间段写成只带参数名的标记，交客户端按查看者的显示时区解析（[ADR-notification-inbox-time-render](../../adr/adr-notification-inbox-time-render.md)）。**作为独立字段**返回给客户端的日期与时间走带 `Z` 的 UTC ISO 8601（[REF-rfc3339](../../references.md)），由前端按查看者的显示时区渲染；这是模块选择不发复合字符串的场合，不是本功能目录的职责。本功能目录交出账户的 IANA 时区（[REF-iana-tz](../../references.md)）（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）供两者使用（[ADR-i18n-message-rendering](../../adr/adr-i18n-message-rendering.md)）。
 - **不做热加载。** 目录有内嵌声明与配置指定的覆盖目录两个来源，两者都在装配期读取，此后只读，运行期没有更换目录或增删消息的接口（[ADR-i18n-catalogs](../../adr/adr-i18n-catalogs.md)）。
 - **不发送消息。** 短信与邮件的模板与发送归各自的模块；本功能目录渲染的是本进程写出的文本，不投递给任何外部通道。
 
@@ -70,8 +70,8 @@
 type Locale string
 
 // 本功能目录读取配置所用的两个名字。受支持的语言集是各模块声明的目录与配置
-// 指定的覆盖目录所承载的语言集，代码不枚举任何语言表；在此之上唯一的额外选择
-// ——一个什么都没指名的请求解析到哪一种语言——是配置项而非写进代码的值。
+// 指定的覆盖目录所承载的语言集，代码不枚举任何语言表；在此之上唯一的额外选择，
+// 即一个什么都没指名的请求解析到哪一种语言，是配置项而非写进代码的值。
 //
 // 默认语言是短信模块也解析的那一个配置项，一处声明同时服务两个能力目录。因为
 // 那个模块需要这两个名字，它们在此导出，而不是在两侧各写一遍字面量。
@@ -143,8 +143,10 @@ type Resolver interface {
     // LocaleFor 是具名账户的语言：上下文无语言时来自它存的偏好，否则是 Default
     // 报告的那个。
     LocaleFor(ctx context.Context, account string) Locale
-    // TimeZoneFor 是具名账户的时区，未存时为空串。
-    TimeZoneFor(ctx context.Context, account string) string
+    // TimeZoneFor 是具名账户的时区：上下文携带的优先，否则是账户存的偏好。
+    // 它同时报告找到没有，以及某个 Profile 读取失败的错；“未存过”与
+    // “读不出来”对调用方是两种处置，不合并成一个空串。
+    TimeZoneFor(ctx context.Context, account string) (string, bool, error)
 }
 
 // Profile 是通往账户所存语言与时区的一个扩展点。它非排他且可选：引擎用
@@ -153,8 +155,9 @@ type Profile interface {
     // LocaleFor 返回一个账户所存的语言，以及是否存过；读不到偏好时报错，
     // 调用方据此区分“读取失败”与“没有偏好”。
     LocaleFor(ctx context.Context, account string) (Locale, bool, error)
-    // TimeZoneFor 返回一个账户所存的 IANA 时区名，以及是否存过。
-    TimeZoneFor(ctx context.Context, account string) (string, bool)
+    // TimeZoneFor 返回一个账户所存的 IANA 时区名、是否存过，以及读取失败的
+    // 错。账户不存在、标识符格式错与属性缺失或为空都是“没有存过、无错”。
+    TimeZoneFor(ctx context.Context, account string) (string, bool, error)
 }
 
 // Catalog 是一个模块声明自己消息文件的资源类型。引擎是它的使用方：它取
@@ -202,6 +205,8 @@ func ValidTimeZone(name string) bool
 
 **空值不是一种值。** `WithLocale` 与 `WithTimeZone` 收到空串时不写入，一个什么都没指名的上下文因此视为“未携带任何语言”，`FromContext` 与 `TimeZoneFromContext` 据实报告。回退发生在 `Resolver` 上：需要一种语言而上下文未携带它的调用方经 `Resolver.LocaleOf` 取，默认值只在那里。
 
+**渲染模式也在上下文里。** `WithTimeRender` 写入渲染模式，`TimeRenderFromContext` 读回；零值是格式化模式，写入它不改变上下文，没指名模式的每一个调用方因此保持原有行为。
+
 **格式检查不等于受支持检查。** `ValidLocaleTag` 只判格式，不判这个标签在本次运行里受不受支持：受支持集是目录承载的语言集，只有引擎知道，一个格式合法而不受支持的标签因此在这里可被接受，落到渲染时回退（[ADR-i18n-locale-type](../../adr/adr-i18n-locale-type.md)）。`ValidTimeZone` 用一个 IANA 名去 `time.LoadLocation`，空值合法；固定偏移（如 `+08:00`）与缩写（如 `CST`）不是 IANA 名而被拒，Go 的特殊名 `Local` 同样被拒：它不是 IANA 名，解析到的是宿主自己的时区，存进去会把用户可见文本渲染成服务器所在时区。**读取路径另有一道同样的守卫**：`engine.location` 把 `Local` 与空值、加载不出的名字一样视为 UTC，因为上下文存取函数是导出的、不对传进来的值复检。这两个检查是写入侧执行的判据，由写偏好的那一方调用，本包不对任何既有值回头复检。
 
 ### 各模块交付与取用的能力
@@ -216,7 +221,7 @@ func ValidTimeZone(name string) bool
 
 ### 对外接口
 
-`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`／`KindTime`、构造与读回函数 `String`／`Int`／`Float`／`Time`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`／`TimeOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的接口：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与使用方。`Args` 的取值类型是 `map[string]Value`，插值字符串的调用方经 `i18n.String` 构造。消息的语法同属接口：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，以及时间段的关键字与布局，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储接口：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置接口：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地视为没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
+`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`／`KindTime`、构造与读回函数 `String`／`Int`／`Float`／`Time`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`／`TimeOf`、`TimeRender`、`TimeRenderFormatted`／`TimeRenderMarked`、`MarkedTime`、`StripTimeMarkerDelimiters`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的接口：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与使用方。`Args` 的取值类型是 `map[string]Value`，插值字符串的调用方经 `i18n.String` 构造。消息的语法同属接口：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，以及时间段的关键字与布局，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储接口：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置接口：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地视为没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
 
 ## 依赖
 
@@ -232,7 +237,7 @@ func ValidTimeZone(name string) bool
 
 ## UML 图
 
-下图给出契约中的类型与模块内部的结构。图中画不出的约束：目录在装配期装载，此后索引只读、无热加载；一条消息在装配期解析成结点并校验，渲染只走结点、不再解析、没有失败路径；`Args` 的取值带类型，字符串原样写入、整数与数字按消息的语言格式化，一段复数按整数计数选分支，一段时间按渲染上下文的时区渲染；渲染文本、计数、复数与数字不读文件系统，一个时间段在读路径上读一次时区（见并发与事务边界）；`Locale` 是字符串，跨边界不携带匹配库；语言解析的回退只发生在 `Resolver` 上；`Catalog` 只由模块以 `//go:embed` 声明，引擎取可用集，配置指定的覆盖目录与它一致、经同一条装载路径并入其后；`LocaleResolver` 无方法，只作一层的排序锚点。
+下图给出契约中的类型与模块内部的结构。图中画不出的约束：目录在装配期装载，此后索引只读、无热加载；一条消息在装配期解析成结点并校验，渲染只走结点、不再解析、没有失败路径；`Args` 的取值带类型，字符串原样写入、整数与数字按消息的语言格式化，一段复数按整数计数选分支，一段时间按渲染上下文的时区渲染，标记模式下则写成只带参数名的标记、不读时区；渲染文本、计数、复数与数字不读文件系统，一个时间段在格式化模式下于读路径上读一次时区（见并发与事务边界）；`Locale` 是字符串，跨边界不携带匹配库；语言解析的回退只发生在 `Resolver` 上；`Catalog` 只由模块以 `//go:embed` 声明，引擎取可用集，配置指定的覆盖目录与它一致、经同一条装载路径并入其后；`LocaleResolver` 无方法，只作一层的排序锚点。
 
 ```mermaid
 classDiagram
@@ -263,12 +268,12 @@ classDiagram
         +LocaleOf(ctx) Locale
         +TimeZoneOf(ctx) string
         +LocaleFor(ctx, account) Locale
-        +TimeZoneFor(ctx, account) string
+        +TimeZoneFor(ctx, account) string, bool, error
     }
     class Profile {
         <<interface>>
         +LocaleFor(ctx, account) Locale, bool, error
-        +TimeZoneFor(ctx, account) string, bool
+        +TimeZoneFor(ctx, account) string, bool, error
     }
     class Catalog {
         +fs.FS FS
@@ -362,7 +367,9 @@ sequenceDiagram
 | 二 | 账户偏好 | 上下文无语言而身份的属性集带 `i18n.locale` |
 | 三 | 配置的默认语言 | 两者都没有 |
 
-**解析链在 `Resolver` 上收口。** `Default` 报告配置的默认语言；`LocaleOf` 读上下文，未携带时给 `Default`；`LocaleFor(ctx, account)` 在上下文无语言时，经取用的每一个 `Profile` 读该账户存储的语言。`Resolver` 这三条都不报告失败：“没有指名”与“读不到偏好”都落到 `Default`。**`Profile` 这一层把两者分开**：`LocaleFor` 用一个 `error` 报告读取失败，与“账户没有存过偏好”是两个答案。直接读 `Profile` 的模块据此记一条 Warn（几个 Profile 都读取失败也只记一条），然后继续问其余 Profile；没有 Profile 给出答案时，它与“没有存过偏好”落到同一个默认语言，区别只在有没有那条 Warn。时区不做这个区分：读不到时区与没有时区都渲染成 UTC，没有调用方需要分辨。
+**解析链在 `Resolver` 上收口。** `Default` 报告配置的默认语言；`LocaleOf` 读上下文，未携带时给 `Default`；`LocaleFor(ctx, account)` 在上下文无语言时，经取用的每一个 `Profile` 读该账户存储的语言。`Resolver` 这三条都不报告失败：“没有指名”与“读不到偏好”都落到 `Default`。**`Profile` 这一层把两者分开**：`LocaleFor` 用一个 `error` 报告读取失败，与“账户没有存过偏好”是两个答案。直接读 `Profile` 的模块据此记一条 Warn（几个 Profile 都读取失败也只记一条），然后继续问其余 Profile；没有 Profile 给出答案时，它与“没有存过偏好”落到同一个默认语言，区别只在有没有那条 Warn。
+
+`TimeZoneFor` 在上下文无时区时经每一个 `Profile` 读账户存下的时区。一个 `Profile` 读取失败即停止，把错误交给调用方：不继续下一个，也不回退成 UTC。“没有存过”是 `(空, false, nil)`，按 UTC 渲染；“读不出来”是错误，调用方重试而不是定格一个错误的时刻。
 
 ### 协商
 
@@ -373,9 +380,10 @@ sequenceDiagram
 引擎在装配期把每条消息解析成结点并校验（见目录的收集与装载），渲染因此只走结点、不再解析，也没有失败路径。渲染一次按下列规则展开（[ADR-i18n-message-rendering](../../adr/adr-i18n-message-rendering.md)）：
 
 - **字面文本原样写出。**
-- **一个 `{{name}}` 占位符**按 `Args` 的取值展开：值是字符串时原样写入，值是整数或数字时按消息的语言格式化；名字在 `Args` 里没有条目时该处连同 `{{}}` 原样保留，值是时间时同样原样保留：一个 `{{name}}` 写不出时间，时间只经时间段渲染。
+- **一个 `{{name}}` 占位符**按 `Args` 的取值展开：值是字符串时原样写入，值是整数或数字时按消息的语言格式化；名字在 `Args` 里没有条目时该处连同 `{{}}` 原样保留，值是时间时同样原样保留（标记模式下写成标记）：一个 `{{name}}` 在格式化模式下写不出时间，时间只经时间段渲染。
 - **一段 `{{name, plural, <category>=<text>, ...}}`**：参数必须是整数，缺失或类型不符时整段原样保留；否则取计数在该语言的 CLDR 基数类别，选同名的分支，没有该类别时回退到 `other`；分支文本里的 `#` 展开成按语言格式化后的计数。分支文本是一段字面文本与 `#`，不能再嵌一个占位符：嵌套的占位符在装配期以 `ErrInvalidMessage` 报出。
-- **一段 `{{name, time, <layout>}}`**：参数必须是一个时间，缺失或类型不符时整段原样保留；否则取出该时间，按段里第二个逗号之后的内容，即去掉分隔用的首尾空白后的一个 Go 布局（可自带逗号、空格与冒号），与渲染上下文的时区渲染成文本。布局由消息文本自带，是一个 Go 布局：月份与星期的名字随布局取自 Go 的固定英文，一种语言要用自己的名字就在自己的消息文本里写出它们。时区取自 `i18n.TimeZoneFromContext`，请求路径上由 `i18n.http` 的鉴别层从账户偏好 `i18n.tz` 写入；上下文未指定、或指了一个本进程加载不出的时区名时，都视为 UTC。**服务端渲染时间只用于邮件、短信这类不经前端的渠道**：经接口送到网页的文字不嵌时间，作为独立字段返回的时间戳走带 `Z` 的 UTC ISO 8601、由前端按查看者的显示时区渲染（[ADR-api-time-format](../../adr/adr-api-time-format.md)）。
+- **一段 `{{name, time, <layout>}}`（格式化模式）**：参数必须是一个时间，缺失或类型不符时整段原样保留；否则取出该时间，按段里第二个逗号之后的内容，即去掉分隔用的首尾空白后的一个 Go 布局（可自带逗号、空格与冒号），与渲染上下文的时区渲染成文本。布局由消息文本自带，是一个 Go 布局：月份与星期的名字随布局取自 Go 的固定英文，一种语言要用自己的名字就在自己的消息文本里写出它们。时区取自 `i18n.TimeZoneFromContext`，请求路径上由 `i18n.http` 的鉴别层从账户偏好 `i18n.tz` 写入；上下文未指定、或指了一个本进程加载不出的时区名时，都视为 UTC。**归属由返回形态决定**：服务端渲染时间只用于邮件、短信这类不经前端的渠道，经接口送到网页的文字不嵌时间；作为独立字段返回的时间戳走带 `Z` 的 UTC ISO 8601、由客户端按查看者的显示时区渲染（[ADR-api-time-format](../../adr/adr-api-time-format.md)）。
+- **标记模式**：渲染上下文经 `WithTimeRender` 带了 `TimeRenderMarked` 时，时间段不展开成时刻，而写成 `MarkedTime(name)`：U+E000、`time:`、参数名、U+E001；它不读参数值，也不读时区。字符串参数先经 `StripTimeMarkerDelimiters` 去掉两个私用区字符，普通占位符里的时间同样写成标记。复数、数字与 `Translate`（走不带模式的背景上下文）不受影响。
 
 **计数与数字都按消息的语言格式化**，而不是 `fmt` 的默认格式：同一个整数在 en-US 写作 `1,234,567`、在 de-DE 写作 `1.234.567`。复数类别由 `golang.org/x/text/feature/plural` 按语言标签判定，六个类别对应 CLDR 的 `zero`、`one`、`two`、`few`、`many`、`other`。
 

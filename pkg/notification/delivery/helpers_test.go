@@ -22,6 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/i18n"
+	i18ncatalog "github.com/vislake/speed/pkg/i18n/catalog"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/kv"
 	kvmemory "github.com/vislake/speed/pkg/kv/memory"
@@ -49,6 +50,7 @@ var (
 	_ notification.Preferences = (*stubPrefs)(nil)
 	_ notification.Inbox       = (*stubInbox)(nil)
 	_ i18n.Localizer           = (*stubLocalizer)(nil)
+	_ i18n.Resolver            = stubResolver{}
 	_ event.Bus                = (*stubBus)(nil)
 	_ mail.Sender              = (*stubMailSender)(nil)
 	_ authn.Accounts           = (*stubAccounts)(nil)
@@ -279,6 +281,39 @@ func (l *stubLocalizer) argsFor(key string) (i18n.Args, bool) {
 	return nil, false
 }
 
+// stubResolver is a stand-in preference resolver. The context wins, as the real
+// resolver's does; a recipient with no stored zone answers none, which the
+// engine reads as UTC.
+type stubResolver struct {
+	zones map[string]string
+}
+
+func (stubResolver) Default() i18n.Locale { return "en-US" }
+
+func (stubResolver) LocaleOf(ctx context.Context) i18n.Locale {
+	if locale, ok := i18n.FromContext(ctx); ok {
+		return locale
+	}
+	return "en-US"
+}
+
+func (stubResolver) TimeZoneOf(ctx context.Context) string {
+	zone, _ := i18n.TimeZoneFromContext(ctx)
+	return zone
+}
+
+func (r stubResolver) LocaleFor(ctx context.Context, _ string) i18n.Locale {
+	return r.LocaleOf(ctx)
+}
+
+func (r stubResolver) TimeZoneFor(ctx context.Context, account string) (string, bool, error) {
+	if zone, ok := i18n.TimeZoneFromContext(ctx); ok {
+		return zone, true, nil
+	}
+	zone, ok := r.zones[account]
+	return zone, ok, nil
+}
+
 // stubMailSender is a stand-in mail seam. It records every message it was
 // handed, so a case can hold what reached the carrier: which fields the module
 // filled, which it deliberately left empty, and how many sends one delivery made.
@@ -486,6 +521,26 @@ func declareType(name string, spec notification.TypeSpec) core.Module {
 	}
 }
 
+// profileStandIn is a module that delivers an i18n.Profile. The token is
+// non-exclusive, so the provision is not either.
+func profileStandIn(name string, profile i18n.Profile) core.Module {
+	return core.Module{
+		Name:     name,
+		Provides: []core.Provision{{Token: (*i18n.Profile)(nil)}},
+		New:      func(context.Context, *core.Registry) (any, error) { return profile, nil },
+	}
+}
+
+// resourceStandIn is a module that declares resources a case borrows from
+// another module.
+func resourceStandIn(name string, resources []any) core.Module {
+	return core.Module{
+		Name:      name,
+		Resources: resources,
+		New:       func(context.Context, *core.Registry) (any, error) { return struct{}{}, nil },
+	}
+}
+
 // typeName is the type every case declares unless it declares another.
 const typeName = "billing.invoice_paid"
 
@@ -575,6 +630,17 @@ type host struct {
 	// capability, so a case can read what the module writes without going
 	// through a configured destination.
 	logger log.Logger
+	// realLocalizer keeps the assembly's real i18n engine as the localizer
+	// instead of replacing it with a stub, so a case can hold the text the
+	// engine renders rather than the text a stub answers.
+	realLocalizer bool
+	// profile delivers an i18n.Profile the engine's resolver reads a recipient's
+	// stored time zone from.
+	profile i18n.Profile
+	// resources are extra resources the assembly declares, so a case can register
+	// another module's catalogs and type declarations without that module's own
+	// dependencies.
+	resources []any
 	// meter delivers the metric capability when set, so a case can read the
 	// utilization gauge the module reports.
 	meter observability.MeterProvider
@@ -629,6 +695,7 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	if !h.noLocalizer {
 		modules = append(modules, standIn("stand-in.localizer", newStubLocalizer(), (*i18n.Localizer)(nil)))
 	}
+	modules = append(modules, standIn("stand-in.resolver", stubResolver{}, (*i18n.Resolver)(nil)))
 	if h.mail {
 		modules = append(modules, standIn("stand-in.mail", &stubMailSender{}, (*mail.Sender)(nil)))
 	}
@@ -763,10 +830,23 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 		standIn("stand-in.queue", queue, (*jobs.Queue)(nil), (*jobs.Handlers)(nil)),
 		standIn("stand-in.prefs", prefs, (*notification.Preferences)(nil)),
 		standIn("stand-in.inbox", inbox, (*notification.Inbox)(nil)),
-		standIn("stand-in.localizer", local, (*i18n.Localizer)(nil)),
 		standIn("stand-in.bus", bus, (*event.Bus)(nil)),
 		standIn("stand-in.accounts", accounts, (*authn.Accounts)(nil)),
 	)
+	if h.realLocalizer {
+		modules = append(modules, i18ncatalog.Module())
+	} else {
+		modules = append(modules,
+			standIn("stand-in.localizer", local, (*i18n.Localizer)(nil)),
+			standIn("stand-in.resolver", stubResolver{}, (*i18n.Resolver)(nil)),
+		)
+	}
+	if h.profile != nil {
+		modules = append(modules, profileStandIn("stand-in.profile", h.profile))
+	}
+	if len(h.resources) > 0 {
+		modules = append(modules, resourceStandIn("stand-in.resources", h.resources))
+	}
 	if h.meter != nil {
 		modules = append(modules, standIn("stand-in.meter", h.meter, (*observability.MeterProvider)(nil)))
 	}

@@ -8,7 +8,45 @@ import "context"
 type (
 	localeKey struct{}
 	zoneKey   struct{}
+	renderKey struct{}
 )
+
+// TimeRender is how a time segment is written by a render. It is a context
+// value rather than an argument on every call because it is a property of who
+// will read the text: a server that hands a title to a client writes a marker
+// for the client to resolve in the viewer's display zone, while a text the
+// server sends as it stands — an email, a log line, a translated string — is
+// formatted now.
+type TimeRender uint8
+
+const (
+	// TimeRenderFormatted writes a time segment as the formatted instant, in the
+	// zone the context carries. It is the zero value, so every caller that names
+	// no mode keeps the behaviour it had.
+	TimeRenderFormatted TimeRender = iota
+	// TimeRenderMarked writes a time segment as a MarkedTime marker carrying the
+	// parameter name, without reading the value or the zone. The reader resolves
+	// it, so one stored message renders in whatever zone and language the viewer
+	// has now.
+	TimeRenderMarked
+)
+
+// WithTimeRender returns a context carrying the render mode. ctx is unchanged,
+// and the formatted mode is not written: a context with nothing named reads as
+// TimeRenderFormatted.
+func WithTimeRender(ctx context.Context, mode TimeRender) context.Context {
+	if mode == TimeRenderFormatted {
+		return ctx
+	}
+	return context.WithValue(ctx, renderKey{}, mode)
+}
+
+// TimeRenderFromContext returns the mode this context carries, or
+// TimeRenderFormatted when it names none.
+func TimeRenderFromContext(ctx context.Context) TimeRender {
+	mode, _ := ctx.Value(renderKey{}).(TimeRender)
+	return mode
+}
 
 // WithLocale returns a context carrying locale. ctx is unchanged. An empty
 // locale is not written: a context with nothing named reads as carrying none,

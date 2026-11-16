@@ -2,7 +2,7 @@
 
 本[模块](../../../glossary.md)是通知能力的出站投递流水线：它校验一次派发、核对目的地归属与投递预算，把作业交给队列，并在消费时逐渠道发送、按渠道落账。它拥有提交接口 `notification.Dispatcher`、作业处理器与 `notification_sends` 表，不拥有通知类型、偏好矩阵、收件箱存储与作业队列的执行。读职责清单前应持有的一句话心智模型是：提交端只入队不出站，消费端按去重键把“至少一次”收敛成“每个渠道至多成功一次”。
 
-第一遍的次序是职责与非职责、外部接口契约、依赖与 UML 图、核心数据结构与核心算法与流程：职责与非职责给出边界，外部接口契约按“端到端流水线”“渠道可用性由装配决定”“渠道的条件特性”“去重键与幂等落账”“渲染按收件人的语言与类型声明”逐节展开，依赖与 UML 图给出接口关系；核心数据结构之后是核心算法与流程，走查先给一次派发的持久状态推进，提交、投递预算与消费与发送随后给出细则。错误与失败语义、并发与事务边界属查阅用，非保证与竞态情形是最后的自检项；扩展点与实现状态在主体之后回看。
+第一遍的次序是职责与非职责、外部接口契约、依赖与 UML 图、核心数据结构与核心算法与流程：职责与非职责给出边界，外部接口契约按“端到端流水线”“渠道可用性由装配决定”“渠道的条件特性”“去重键与幂等落账”“渲染按渠道的语言与时区”逐节展开，依赖与 UML 图给出接口关系；核心数据结构之后是核心算法与流程，走查先给一次派发的持久状态推进，提交、投递预算与消费与发送随后给出细则。错误与失败语义、并发与事务边界属查阅用，非保证与竞态情形是最后的自检项；扩展点与实现状态在主体之后回看。
 
 ## 职责
 
@@ -30,9 +30,9 @@
 
 | 登记单元 | 模块名 | 交付 | 构造期依赖 |
 |---|---|---|---|
-| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)`、`(*authn.TenantNameResolver)(nil)` |
+| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*i18n.Resolver)(nil)`、`(*authn.Accounts)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)`、`(*authn.TenantNameResolver)(nil)` |
 
-`budget.Store` 是共享短信台账，是硬依赖：没有它就无法在入队前核对并占用短信预算，而不能计数的预算会放行每一条短信，方向与要求相反。`kv.KV` 是邮件固定窗口计数器的存储，同样是硬依赖：没有它就无法在入队前核对并占用邮件预算，而不能计数的预算会放行每一封邮件，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取接口，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`db.Database` 还须带根密钥：收件人在台账的 `destination_mac` 与邮件计数器键上都经 `Database.BlindIndex` 折成带密钥摘要，`Start` 对没有根密钥的数据库以 `authn.ErrNoEncryptionKey` 终止启动，不写一个任何人可还原的无密钥摘要。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`observability.MeterProvider` 缺席则预算利用率仪表不上报；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见“渠道的条件特性”）；`authn.TenantNameResolver` 缺席时，参数里点名的租户渲染成空串，不回退成内部标识。**提交接口 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
+`budget.Store` 是共享短信台账，是硬依赖：没有它就无法在入队前核对并占用短信预算，而不能计数的预算会放行每一条短信，方向与要求相反。`kv.KV` 是邮件固定窗口计数器的存储，同样是硬依赖：没有它就无法在入队前核对并占用邮件预算，而不能计数的预算会放行每一封邮件，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取接口，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`i18n.Resolver` 同样是硬依赖：站内信不读它，邮件在消费作业时经 `Resolver.TimeZoneFor` 读收件人存下的时区，`{{name, time, layout}}` 才能展开成收件人的本地时刻；缺了它，邮件的时间参数只能落在 UTC。读取出错与“未设置”分开处理：未设置按 UTC 渲染，出错使该渠道失败并让作业重试。`db.Database` 还须带根密钥：收件人在台账的 `destination_mac` 与邮件计数器键上都经 `Database.BlindIndex` 折成带密钥摘要，`Start` 对没有根密钥的数据库以 `authn.ErrNoEncryptionKey` 终止启动，不写一个任何人可还原的无密钥摘要。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`observability.MeterProvider` 缺席则预算利用率仪表不上报；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见“渠道的条件特性”）；`authn.TenantNameResolver` 缺席时，参数里点名的租户渲染成空串，不回退成内部标识。**提交接口 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
 
 ### 交付的功能
 
@@ -140,9 +140,13 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 `notification_sends` 上 `(tenant_id, idempotency_key)` 唯一，落账即幂等：一个渠道发送前先按去重键查这一行，**命中 `succeeded` 或 `skipped` 行即用那一行的结果、不重复发送**，命中 `failed` 行或查不到行才发送、才写行。这使一次作业的重试只补没成功的渠道，也使一次崩溃后的重放不重复投递已成功的渠道。
 
-### 渲染按收件人的语言与类型声明
+### 渲染按渠道的语言与时区
 
-消息的文本由本模块在后端渲染，不交给客户端：一条 `notification.Message` 的 `Title` 与 `Body`、一封邮件的主题与正文、一条短信的参数，都按**收件人的语言**（`Dispatch.Locale`）与该**类型的声明**（`TypeSpec` 的键与 `RecipientVisibleParams`）渲染而成。渲染经 i18n 引擎（`i18n.Localizer`），目录键按通知命名空间与类型键拼出；`RecipientVisibleParams` 白名单之外的参数进不了渲染上下文，也进不了载荷（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。渲染是纯读取，不触达厂商。
+文本的渲染按渠道分开。三个渠道都按**收件人的语言**（`Dispatch.Locale`）与**类型的声明**（`TypeSpec` 的键与 `RecipientVisibleParams`）取目录条目，渲染经 i18n 引擎（`i18n.Localizer`），目录键按通知命名空间与类型键拼出；`RecipientVisibleParams` 白名单之外的参数进不了渲染上下文，也进不了载荷（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。渲染是纯读取，不触达厂商。
+
+- **`in_app` 的时间由客户端渲染。** 标题与正文在服务端只按收件人的语言渲染，`{{name, time, layout}}` 不展开成时刻，而写成标记：私用区字符 U+E000、`time:`、参数名、U+E001。标记只带参数名，不带时刻、布局或时区；客户端用消息的 `params` 与查看者当前的显示时区解析它，因此改显示时区或语言后，同一条旧消息重新渲染即变（[ADR-notification-inbox-time-render](../../../adr/adr-notification-inbox-time-render.md)）。本模块渲染时把字符串参数里的两个私用区字符去掉，免得不含花括号的标记与普通文本互相冒充；`link` 按普通文本渲染，它是客户端要打开的地址，不是展示文本。
+- **`email` 的时间在服务端定格。** 邮件是投递时定稿的产物，收件人无法重渲染，主题与正文按**收件人的时区**展开：消费作业时经 `i18n.Resolver.TimeZoneFor` 读一次收件人存下的时区，账户未存时区时按 UTC 渲染，布局自带偏移。读取出错与“未设置”是两回事：未设置按 UTC 渲染；出错不渲染任何文本，该渠道落 `failed`、记一条 Error（带类型键与原因，不带收件人），由作业重试，不按错误时区定格。
+- **`sms` 不渲染时间。** 短信只按语言解析出模板名，参数经字符串化走线路（见“短信参数的字符串化”）；模板参数里的时间按 UTC 秒级写出，不做本地化。
 
 **点名的租户按名称渲染。** 派发参数里名为 `tenant` 的值是租户的内部标识，渲染之前经可选的 `authn.TenantNameResolver` 换成名称：站内信的标题与正文、邮件的主题、纯文本与 HTML 正文、短信的模板变量都取名称。接口缺席、解析失败或解析不到时该参数渲染成空串，**绝不回退成内部标识**；解析失败另记 Error，不使这次投递失败。去重键与幂等落账不参与这次替换，它们按原值计算。
 
@@ -170,11 +174,11 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/notification` | 根包的类型、哨兵与接口（`Dispatcher`、`Dispatch`、`Preferences`、`Inbox`、`Channel`） |
 | `pkg/mail` | 可选：`email` 渠道的发送接口 `mail.Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本模块只引用这个接口，不设计它的内部 |
 | `pkg/sms` | 可选：`sms` 渠道的 `sms.Registry`（解模板）与 `sms.Sender`（发送） |
-| `pkg/i18n` | 把消息渲染成收件人语言的文本（`i18n.Localizer`，必需依赖） |
+| `pkg/i18n` | 按收件人语言渲染各渠道的文案：站内信把时间写成标记交客户端解析，邮件经 `i18n.Resolver` 按收件人时区展开时间参数，短信模板不渲染时间（`i18n.Localizer` 与 `i18n.Resolver`，都是必需依赖） |
 | `pkg/log` | 可选：外部发送的记录写在装配的日志能力上（`log.Logger`）；缺席时回退到进程默认 logger |
 | `pkg/feature` 根包 | 声明渠道的条件特性（`feature.Spec`）；`Init` 经 `core.Resolve` 可选取用 `feature.Board` 报告，不列入构造期依赖。根包只依赖标准库 |
 
-**偏好、收件箱、渲染、计数器与台账都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接口、`core.Resolve[notification.Inbox](reg)` 取收件箱接口、`core.Resolve[i18n.Localizer](reg)` 取渲染接口、`core.Resolve[kv.KV](reg)` 取邮件预算的计数器、`core.Resolve[budget.Store](reg)` 取共享短信台账；这些依赖都是必需依赖，列在“登记单元与名字”的依赖列里。
+**偏好、收件箱、渲染、计数器与台账都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接口、`core.Resolve[notification.Inbox](reg)` 取收件箱接口、`core.Resolve[i18n.Localizer](reg)` 取渲染接口、`core.Resolve[i18n.Resolver](reg)` 取时区解析接口、`core.Resolve[kv.KV](reg)` 取邮件预算的计数器、`core.Resolve[budget.Store](reg)` 取共享短信台账；这些依赖都是必需依赖，列在“登记单元与名字”的依赖列里。
 
 **依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/log`、`pkg/kv`、`pkg/sms/budget`、`pkg/settings`、`pkg/observability` 根包、`pkg/feature` 根包、`pkg/notification` 根包，并经 `pkg/authn` 根包取投递预算可重试拒绝的 `ThrottledError` 与 `ErrUnavailable`、目的地归属校验的 `Accounts`，以及租户参数渲染的 `TenantNameResolver`；也可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，不 import 认证能力目录内的任何实现子包（归属校验只经 `pkg/authn` 根包的 `Accounts` 接口），也不 import `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
 
@@ -340,8 +344,8 @@ classDiagram
 
 **逐渠道发送的次序与判据**：
 
-- **`in_app`**：渲染 `notification.Message`，经 `Inbox.Write` 写一行，落 `succeeded`。
-- **`email`**：`mail.Sender` 缺席即落 `skipped`；在场则取派发参数里的目的地、渲染主题与正文（纯文本与 HTML），经 `mail.Sender.Send` 发一次，回执即落 `succeeded`（受理，不是送达）、错误即落 `failed`，厂商回执标识落 `provider_receipt_id`。
+- **`in_app`**：按收件人的语言渲染 `notification.Message`，时间参数写成标记交由客户端解析；经 `Inbox.Write` 写一行，落 `succeeded`。
+- **`email`**：`mail.Sender` 缺席即落 `skipped`；在场则取派发参数里的目的地，在渲染之前读取一次收件人的时区。读取失败时该渠道落 `failed`、记一条 Error、返回错误让作业重试，不渲染也不发送；读取成功则渲染主题与正文（纯文本与 HTML），经 `mail.Sender.Send` 发一次，回执即落 `succeeded`（受理，不是送达）、错误即落 `failed`，厂商回执标识落 `provider_receipt_id`。
 - **`sms`**：`sms.Registry` 或 `sms.Sender` 缺席即落 `skipped`，并退还提交接口记下的台账行；在场则取派发参数里的目的地、字符串化参数（见下），经 `sms.Registry.Resolve` 解出模板，再经 `sms.Sender.Send` 发一次，回执即落 `succeeded`（受理，不是送达）、错误即落 `failed`，厂商回执标识落 `provider_receipt_id`。一条确定没有离开进程的短信（接口缺席、本站拒绝（缺目的地、参数为空、模板解不出）、载体限流、拒绝或送不到）退还提交接口记下的那一行，发送窗口不再计它；结果不确定与闭集之外的错误保留，因为消息可能已经发出。
 
 **每个渠道发送前先按去重键查账**：命中 `succeeded` 或 `skipped` 行即用那一行的结果、不重复发送；命中 `failed` 行即这一次重新发送（见“去重键与幂等落账”）。短信的台账行只在这一次消费里退还；一条作业被重试时，提交接口不会为它再写一行，所以一次真正发出的短信只占一次发送窗口。
@@ -362,7 +366,7 @@ classDiagram
 
 **`to` 同时是模板参数之一。** 它与其余参数一同进 `sms.Registry.Resolve` 的参数表，模板没有声明的参数会被拒，因此声明该类型的业务模块要在自己的短信模板参数表里列出 `to`；目的地取值与模板参数取的是同一个值。
 
-`sms.Message` 的参数是 `map[string]string`，而 `Dispatch.Params` 是 `map[string]any`。字符串化的判据是**只把有意义的值送上线路**：每个送进模板的参数都必须能字符串化成一个非空、稳定的文本：字符串原样、整数与布尔按十进制或小写文本、时间按约定的 RFC 3339（[REF-rfc3339](../../../references.md)）文本；**参数缺失、值为空、或值无法字符串化，一律使该渠道失败**（`ErrInvalidRequest`），不把空串或占位值送上线路。字符串化后的参数经 `sms.Registry.Resolve` 校验是否与模板声明的参数名表相等，缺项或多出都使该渠道失败。渲染与字符串化都在发送之前完成，任何一处失败都不触达厂商。
+`sms.Message` 的参数是 `map[string]string`，而 `Dispatch.Params` 是 `map[string]any`。字符串化的判据是**只把有意义的值送上线路**：每个送进模板的参数都必须能字符串化成一个非空、稳定的文本：字符串原样、整数与布尔按十进制或小写文本、时间按约定的 RFC 3339（[REF-rfc3339](../../../references.md)）文本；**参数缺失、值为空、或值无法字符串化，一律使该渠道失败**（`ErrInvalidRequest`），不把空串或占位值送上线路。时间参数写成 UTC、秒级：布局不带小数秒，Go 的 `Format` 因而省略纳秒，`09:30:00.123Z` 写成 `09:30:00Z`；若改走 JSON 字符串化会带出纳秒，这个形状是断言过的契约而非巧合。字符串化后的参数经 `sms.Registry.Resolve` 校验是否与模板声明的参数名表相等，缺项或多出都使该渠道失败。渲染与字符串化都在发送之前完成，任何一处失败都不触达厂商。
 
 ### 外部发送的记录
 
@@ -384,7 +388,7 @@ classDiagram
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 无动作 |
-| `New` | 取用队列与登记接口、数据库、租户名册、偏好接口、收件箱接口、渲染接口、账户存储、键值计数器、共享短信台账与在场的渠道接口；取可选 `settings.Store`、可选 `observability.MeterProvider` 与可选 `log.Logger`，后者以模块名绑定；收齐并校验分类法 |
+| `New` | 取用队列与登记接口、数据库、租户名册、偏好接口、收件箱接口、渲染接口、时区解析接口、账户存储、键值计数器、共享短信台账与在场的渠道接口；取可选 `settings.Store`、可选 `observability.MeterProvider` 与可选 `log.Logger`，后者以模块名绑定；收齐并校验分类法 |
 | `Migrate` | 数据库模块施加本模块声明的迁移集，建立 `notification_sends` 表 |
 | `Init` | 向 `jobs.Handlers` 登记处理器（`Type()` 返回本模块的作业类型名）；取得到 `feature.Board` 时按 `channelSeams` 报告渠道的条件特性。实例不是本模块的产物时，登记与报告都不做 |
 | `Start`、`Serve` | 无动作，消费由队列驱动 |
@@ -450,7 +454,7 @@ classDiagram
 - **新增一个渠道不是扩展点。** 渠道是通知能力声明的封闭平台词汇，扩一个渠道要改根包的 `Channel` 常量与 `KnownChannel`，并在本模块的发送循环里加一支；这是通知模块自己的变更（[ADR-notification-channels](../../../adr/adr-notification-channels.md)）。
 - **渠道接口是可替换的实现。** `mail.Sender` 与 `sms.Sender` 由各自的载体叶子排他交付，本模块只经接口取用；换一个厂商是换一个载体叶子，不改本模块。
 - **提交接口与处理器由本模块排他交付，不是可替换的后端。** 换一套投递策略是改本模块的代码。
-- **渲染接口接入一个目录不改变本模块的调用接口。** `i18n.Localizer` 是必需依赖；引擎对不受支持的语言回退到默认语言、再回退到键本身。
+- **渲染接口接入一个目录不改变本模块的调用接口。** `i18n.Localizer` 与 `i18n.Resolver` 都是必需依赖；引擎对不受支持的语言回退到默认语言、再回退到键本身，未存时区的账户按 UTC 渲染。
 
 ## 实现状态
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/notification"
@@ -11,14 +12,129 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
+// deliveryTimeMarker is the reserved object key that carries a time parameter
+// through the queue's JSON encoding. encoding/json writes a time.Time as a bare
+// RFC 3339 string and decodes it back as a string, losing the type the rendering
+// engine needs to expand a {{name, time, layout}} segment. The payload codec
+// replaces each time with an object under this key and restores it when the job
+// is read. A parameter map carrying this key is reserved to the codec.
+const deliveryTimeMarker = "$speed.time"
+
 // deliveryPayload is the job payload: the dispatch and, when an sms attempt was
 // charged, the ledger row that charge wrote. The consumer refunds the row when
 // the message certainly did not leave the process. The field is omitted when the
 // dispatch makes no sms attempt, so an in-app or email-only job carries no
 // ledger identifier at all.
+//
+// The type carries its own JSON codec so that a time parameter keeps its type
+// across the queue (see deliveryTimeMarker); the fields are otherwise encoded as
+// written.
 type deliveryPayload struct {
 	Dispatch notification.Dispatch `json:"dispatch"`
 	Attempt  int64                 `json:"attempt,omitempty"`
+}
+
+// MarshalJSON encodes the payload with every time parameter replaced by a marked
+// RFC 3339 string, so decoding can restore the type.
+func (p deliveryPayload) MarshalJSON() ([]byte, error) {
+	type wire struct {
+		Dispatch notification.Dispatch `json:"dispatch"`
+		Attempt  int64                 `json:"attempt,omitempty"`
+	}
+	d := p.Dispatch
+	d.Params = markDeliveryTimes(d.Params)
+	return json.Marshal(wire{Dispatch: d, Attempt: p.Attempt})
+}
+
+// UnmarshalJSON decodes the payload and restores every marked time parameter to
+// a time.Time.
+func (p *deliveryPayload) UnmarshalJSON(data []byte) error {
+	var w struct {
+		Dispatch notification.Dispatch `json:"dispatch"`
+		Attempt  int64                 `json:"attempt,omitempty"`
+	}
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	p.Dispatch = w.Dispatch
+	p.Dispatch.Params = unmarkDeliveryTimes(w.Dispatch.Params)
+	p.Attempt = w.Attempt
+	return nil
+}
+
+// markDeliveryTimes copies a parameter map with every time, including one nested
+// in a map or a slice, replaced by a marked string.
+func markDeliveryTimes(params map[string]any) map[string]any {
+	if params == nil {
+		return nil
+	}
+	out := make(map[string]any, len(params))
+	for name, value := range params {
+		out[name] = markDeliveryTime(value)
+	}
+	return out
+}
+
+// markDeliveryTime marks one parameter value.
+func markDeliveryTime(value any) any {
+	switch v := value.(type) {
+	case time.Time:
+		return map[string]any{deliveryTimeMarker: v.Format(time.RFC3339Nano)}
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for name, item := range v {
+			out[name] = markDeliveryTime(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = markDeliveryTime(item)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+// unmarkDeliveryTimes copies a decoded parameter map with every marked string
+// restored to a time.Time.
+func unmarkDeliveryTimes(params map[string]any) map[string]any {
+	if params == nil {
+		return nil
+	}
+	out := make(map[string]any, len(params))
+	for name, value := range params {
+		out[name] = unmarkDeliveryTime(value)
+	}
+	return out
+}
+
+// unmarkDeliveryTime restores one parameter value. An object is a marked time
+// only when it carries the marker key alone and the value parses as RFC 3339;
+// anything else is walked as the object or slice it is.
+func unmarkDeliveryTime(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		if len(v) == 1 {
+			if text, ok := v[deliveryTimeMarker].(string); ok {
+				if instant, err := time.Parse(time.RFC3339Nano, text); err == nil {
+					return instant
+				}
+			}
+		}
+		for name, item := range v {
+			v[name] = unmarkDeliveryTime(item)
+		}
+		return v
+	case []any:
+		for i, item := range v {
+			v[i] = unmarkDeliveryTime(item)
+		}
+		return v
+	default:
+		return value
+	}
 }
 
 // Dispatch validates, charges the delivery budgets and enqueues one dispatch and

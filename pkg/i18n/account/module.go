@@ -82,13 +82,14 @@ func (b *bridge) LocaleFor(ctx context.Context, account string) (i18n.Locale, bo
 	return i18n.Locale(value), true, nil
 }
 
-// TimeZoneFor returns the time zone stored for an account, and whether one is.
-// A store that cannot answer reads as none: every consumer renders an absent
-// zone as UTC, so no caller distinguishes a failed read from an absent one and
-// the seam does not offer the distinction.
-func (b *bridge) TimeZoneFor(ctx context.Context, account string) (string, bool) {
-	value, ok, _ := b.attribute(ctx, account, i18n.TimeZoneAttributeKey)
-	return value, ok
+// TimeZoneFor returns the time zone stored for an account, whether one is, and
+// the failure that kept the store from answering. A malformed identifier, a
+// missing account and an absent or empty attribute all read as "none, no
+// failure"; every other store failure is reported. The caller renders in UTC
+// for the first and retries for the second: collapsing them would freeze a
+// wrong instant into a message the recipient cannot re-render.
+func (b *bridge) TimeZoneFor(ctx context.Context, account string) (string, bool, error) {
+	return b.attribute(ctx, account, i18n.TimeZoneAttributeKey)
 }
 
 // attribute reads one attribute of an account. A malformed identifier, an

@@ -1,8 +1,10 @@
 package delivery
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/notification"
@@ -79,6 +81,12 @@ func (p *pipeline) validate(d notification.Dispatch) (notification.TypeSpec, err
 		return notification.TypeSpec{}, fmt.Errorf("%w: %q is not a declared notification type",
 			notification.ErrUnknownType, d.TypeKey)
 	}
+	// The parameter shape is checked before the whitelist, so a map carrying the
+	// codec's reserved key or a container the codec cannot walk is reported as
+	// the unreadable shape it is, not as an unlisted name.
+	if err := validateParams(d.Params); err != nil {
+		return notification.TypeSpec{}, err
+	}
 	if spec.RecipientVisibleParams != nil {
 		for name := range d.Params {
 			if !visible(spec.RecipientVisibleParams, name) {
@@ -88,6 +96,67 @@ func (p *pipeline) validate(d notification.Dispatch) (notification.TypeSpec, err
 		}
 	}
 	return spec, nil
+}
+
+// validateParams refuses the parameter shapes the queue codec cannot carry
+// unchanged. The codec walks map[string]any and []any, turning a time.Time into
+// a marked string at any depth and restoring it when the job is read; a typed
+// container, a pointer or a struct reaches the consumer as a different shape,
+// so it is refused where the dispatch is submitted and again where the job is
+// consumed. A bare time.Time is the one container the codec does handle, at any
+// depth.
+//
+// A scalar keeps no Go type across the queue: encoding/json decodes every
+// number as float64, so an integer parameter reaches the consumer as a whole
+// float64. That is admitted — the renderer reads a whole float as a number and
+// the sms stringifier writes it without a fraction — because the round trip
+// changes the scalar's Go type, not the value or the text it renders to. A
+// shape the codec cannot walk is refused instead: it would reach the consumer
+// as a different structure.
+//
+// The codec's own wire key is reserved: a producer-supplied map carrying it is
+// refused at every level, because accepting one would let a producer choose
+// what the consumer restores.
+func validateParams(params map[string]any) error {
+	return walkParamMap(params)
+}
+
+// walkParamMap checks one map and the values in it.
+func walkParamMap(params map[string]any) error {
+	for name, value := range params {
+		if name == deliveryTimeMarker {
+			return fmt.Errorf("%w: a parameter map carries the queue codec's reserved key %q",
+				notification.ErrInvalidRequest, deliveryTimeMarker)
+		}
+		if err := walkParamValue(name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkParamValue checks one parameter value, descending into the two containers
+// the codec walks.
+func walkParamValue(name string, value any) error {
+	switch v := value.(type) {
+	case nil, string, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, json.Number, time.Time:
+		return nil
+	case map[string]any:
+		return walkParamMap(v)
+	case []any:
+		for _, item := range v {
+			if err := walkParamValue(name, item); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: the parameter %q is a %T, a shape the queue codec cannot carry unchanged",
+			notification.ErrInvalidRequest, name, value)
+	}
 }
 
 // visible reports whether a name is in a type's parameter whitelist.

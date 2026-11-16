@@ -24,10 +24,15 @@ host-supplied event-stream opener (the assembled client's
 | `src/routes.tsx` | `notificationRoutes` |
 | `src/route.ts` | `NotificationRoute`, `NotificationRouteContext`, `NotificationRouteParams`, `NotificationRouteTable` |
 | `src/resources.ts` | `NOTIFICATION_UI_NAMESPACE`, `notificationUiResources` |
+| `src/internal/message-text.ts` | `resolveMessageText`, `FormatInstant` |
 
 `src/internal/` holds the family's shared pipeline (the tenant-keyed
 read/write hooks, the error-text resolver, the inline error banner, the
-date formatter and the translation hook) and is deliberately not exported.
+date formatter and the translation hook) and is not exported, with one
+exception: `src/internal/message-text.ts`'s `resolveMessageText`. A
+message's title and body carry time markers rather than instants, and
+`renderDetail` receives the raw message, so a host that renders the title
+or body itself resolves the markers through that same function.
 
 ## Quick start
 

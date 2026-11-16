@@ -155,6 +155,7 @@ func driveWithBoard(t *testing.T, on seams, supplied bool) []string {
 	register(standIn("stand-in.prefs", featurePrefs{}, (*notification.Preferences)(nil)))
 	register(standIn("stand-in.inbox", featureInbox{}, (*notification.Inbox)(nil)))
 	register(standIn("stand-in.localizer", featureLocalizer{}, (*i18n.Localizer)(nil)))
+	register(standIn("stand-in.resolver", stubResolver{}, (*i18n.Resolver)(nil)))
 	register(standIn("stand-in.accounts", newStubAccounts(), (*authn.Accounts)(nil)))
 	register(standIn("stand-in.router", router, (*speedhttp.Router)(nil)))
 	register(standIn("stand-in.authn-gate", openGate{}, (*authn.Gate)(nil)))

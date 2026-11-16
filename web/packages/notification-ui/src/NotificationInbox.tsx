@@ -64,6 +64,7 @@ import type {
   SectionCardHeadingLevel,
 } from '@speed/ui-kit'
 import { useNotificationUiErrorText } from './internal/error-text.js'
+import { resolveMessageText } from './internal/message-text.js'
 import { TenantAsyncSection } from './internal/tenant-section.js'
 import {
   type NotificationInbox as NotificationInboxPage,
@@ -154,6 +155,10 @@ export function NotificationInbox({
   // and the attempt that settles last is the one shown.
   const feedback = useWriteFeedback()
   const resolveError = useNotificationUiErrorText()
+  // The mark-read confirmation names the message it changed. A time marker in
+  // the title is resolved in the viewer's display zone here too, so the
+  // confirmation never repeats a marker the row already resolved.
+  const formatInstant = useFormatInstant()
   const resetFeedback = feedback.reset
   // One write in flight interlocks the scope's writes: the header action,
   // every row's action and the pager disable together, so two attempts
@@ -194,7 +199,9 @@ export function NotificationInbox({
     void feedback.run(async () => {
       await markRead.mutateAsync({ messageId: message.id })
       after?.()
-      return t('inbox.markReadDone', { title: message.title })
+      return t('inbox.markReadDone', {
+        title: resolveMessageText(message.title, message.params, formatInstant),
+      })
     })
   }
 
@@ -358,6 +365,11 @@ function NotificationRow({
   const { t } = useNotificationUiTranslation()
   const formatInstant = useFormatInstant()
   const unread = isUnread(message)
+  // The server writes a time segment as a marker naming the parameter; both
+  // the visible text and the action's accessible name carry the resolved
+  // instant, never the marker.
+  const title = resolveMessageText(message.title, message.params, formatInstant)
+  const body = resolveMessageText(message.body, message.params, formatInstant)
   return (
     <ListItem
       divider
@@ -370,7 +382,7 @@ function NotificationRow({
             size="small"
             disabled={markReadDisabled}
             loading={markReadDisabled}
-            aria-label={t('inbox.markReadAria', { title: message.title })}
+            aria-label={t('inbox.markReadAria', { title })}
             onClick={onMarkRead}
           >
             {t('inbox.markRead')}
@@ -404,7 +416,7 @@ function NotificationRow({
                   variant="subtitle1"
                   sx={{ fontWeight: unread ? 600 : 400 }}
                 >
-                  {message.title}
+                  {title}
                 </Typography>
               ) : (
                 <ButtonBase
@@ -417,7 +429,7 @@ function NotificationRow({
                     variant="subtitle1"
                     sx={{ fontWeight: unread ? 600 : 400 }}
                   >
-                    {message.title}
+                    {title}
                   </Typography>
                 </ButtonBase>
               )}
@@ -430,14 +442,14 @@ function NotificationRow({
           }
           secondary={
             <>
-              {message.body !== '' && (
+              {body !== '' && (
                 <Typography
                   component="span"
                   variant="body2"
                   color="text.secondary"
                   sx={{ display: 'block' }}
                 >
-                  {message.body}
+                  {body}
                 </Typography>
               )}
               <Typography

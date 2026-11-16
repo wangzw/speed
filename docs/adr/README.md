@@ -395,6 +395,7 @@
 | [渠道是封闭的平台词汇，可用性由装配决定，接口缺席时跳过而不失败](adr-notification-channels.md) |
 | [出站投递经持久队列异步进行，逐渠道一个去重键，notification_sends 是幂等与结果账，短信预算与认证共用台账，邮件预算留在键值计数器](adr-notification-delivery.md) |
 | [实时推送每副本一个 Hub，行先提交、事件后发，Hub 只值延迟](adr-notification-stream.md) |
+| [站内信的时间由客户端按查看者的显示时区渲染](adr-notification-inbox-time-render.md) |
 | [通知偏好路由按端名清单挂载，不挂在入口模块声明的每一个端上](adr-notification-endpoints.md) |
 
 ## 对象存储

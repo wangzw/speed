@@ -47,6 +47,36 @@ func driveLocalizer(t *testing.T) i18n.Localizer {
 	return localizer
 }
 
+// TestTheTransferRequestNoticeMarksItsExpiry holds the body the in-app channel
+// writes: the marked render replaces the time segment with a marker naming the
+// parameter and formats nothing, so the layout it carries has no effect on the
+// delivered text. The catalog's layout therefore names no offset: an offset
+// would suggest a zone decision this channel does not make, and the reader's
+// display zone decides it instead.
+func TestTheTransferRequestNoticeMarksItsExpiry(t *testing.T) {
+	localizer := driveLocalizer(t)
+	expires := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
+	for _, locale := range []i18n.Locale{"zh-CN", "en-US"} {
+		ctx := i18n.WithTimeRender(
+			i18n.WithLocale(t.Context(), locale),
+			i18n.TimeRenderMarked,
+		)
+		body := localizer.Localize(ctx, "tenant.owner.transfer_requested.in_app.body", i18n.Args{
+			"tenant":     i18n.String("acme"),
+			"expires_at": i18n.Time(expires),
+		})
+		if want := "time:expires_at"; !strings.Contains(body, want) {
+			t.Errorf("%s body = %q, want the expiry as the marker %q", locale, body, want)
+		}
+		if strings.Contains(body, "2026-11-20") {
+			t.Errorf("%s body = %q, want no formatted instant in the marked render", locale, body)
+		}
+		if strings.Contains(body, "+0000") || strings.Contains(body, "-0700") {
+			t.Errorf("%s body = %q, want no offset in the marked render", locale, body)
+		}
+	}
+}
+
 // TestTheTransferRequestNoticeRendersItsExpiry holds the request body in both
 // languages: the expiry parameter is a time.Time, which the engine interpolates
 // only through a {{name, time, layout}} segment, so a bare placeholder would

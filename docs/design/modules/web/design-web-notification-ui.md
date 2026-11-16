@@ -247,6 +247,8 @@ graph TD
 
 消息时间经 `@speed/ui-kit` 的 `useFormatInstant` 渲染：显示时区与活动语言都在这一个入口解析，宿主上下文、浏览器时区与 UTC 的链只在 `@speed/i18n` 一处，本包不固定时区，也不直接读浏览器时区。引擎解析不了的字段按原文渲染。
 
+标题与正文里的时间不是服务端定格的时刻，而是标记：U+E000、`time:`、参数名、U+E001。本包用 `internal/message-text` 的 `resolveMessageText` 按消息的 `params` 与同一个 `useFormatInstant` 入口替换每个标记，因此查看者改显示时区或语言后，已收到的旧消息重新渲染即变；服务端不按收件人时区为站内信定格时间（[ADR-notification-inbox-time-render](../../../adr/adr-notification-inbox-time-render.md)）。参数缺失、`null`、布尔、对象、数组与空串替换成空串；字符串无法解析时原样显示；任何情况都不把标记字符留在页面上。行标题、正文与“标记为已读”的可及名都走同一解析；`renderDetail` 仍收到原始消息，宿主若自行渲染标题或正文，需调用本包自包根导出的 `resolveMessageText` 走同一解析。
+
 ### 写入的反馈
 
 收件箱与偏好矩阵各是一个反馈作用域，按 [ui-kit](design-web-ui-kit.md) 的“写入的反馈”组织（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。

@@ -417,7 +417,9 @@ func (s stubReviewProfile) LocaleFor(context.Context, string) (i18n.Locale, bool
 	return s.locale, s.locale != "", nil
 }
 
-func (s stubReviewProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
+func (s stubReviewProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
 
 // failingReviewProfile is a profile whose preference read fails.
 type failingReviewProfile struct{}
@@ -426,7 +428,9 @@ func (failingReviewProfile) LocaleFor(context.Context, string) (i18n.Locale, boo
 	return "", false, errors.New("the account store is unavailable")
 }
 
-func (failingReviewProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
+func (failingReviewProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
 
 // TestReviewNoticeGoesOutInTheRecipientsStoredLanguage holds the language
 // source: the dispatch's locale is the recipient's stored preference, not the

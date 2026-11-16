@@ -44,7 +44,9 @@ func (unreadableProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, 
 	return "", false, errUnreadableLocale
 }
 
-func (unreadableProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
+func (unreadableProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
 
 // storedProfile is a profile that answers one stored preference for every
 // account.
@@ -54,7 +56,9 @@ func (p storedProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, er
 	return p.locale, p.locale != "", nil
 }
 
-func (storedProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
+func (storedProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
 
 // logRecorder keeps every record a case's module writes.
 type logRecorder struct {

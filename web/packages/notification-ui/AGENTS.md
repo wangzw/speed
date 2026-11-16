@@ -58,6 +58,19 @@ live stream through the assembled client's event-stream opener.
   zone when it is absent or unusable, then UTC. The surface never passes a
   literal zone and never rebuilds the chain; a value the engine cannot
   parse renders as its original text.
+- **A message's time arrives as a marker, not an instant.**
+  `NotificationInbox` resolves the title and body through
+  `src/internal/message-text.ts`'s `resolveMessageText`, which replaces
+  every U+E000 `time:<name>` U+E001 marker with the same `useFormatInstant`
+  entry's rendering of `message.params[name]`. The resolved title feeds the
+  visible text, the mark-read action's accessible name and its success
+  confirmation. A missing parameter, `null`, a boolean, an object, an array
+  and an empty string render empty; an unparseable string renders as
+  written; no marker character reaches the DOM. `renderDetail` still
+  receives the raw `NotificationMessage`: a host that renders the title or
+  body itself must call the same resolver, which the package exports
+  (`resolveMessageText` from the public entry), or it will show the
+  private-use characters.
 - **Feature presence is the host's fact, carried by context.**
   `NotificationPresenceProvider` takes whether the preference matrix is
   served and which optional channels exist; the package reads no feature

@@ -31,6 +31,7 @@ The dependencies the descriptor requires, non-optionally, are:
 | `(*notification.Preferences)(nil)` | `Effective` answers a recipient's channels. |
 | `(*notification.Inbox)(nil)` | the in-app channel writes through it. |
 | `(*i18n.Localizer)(nil)` | the message text is rendered through it. |
+| `(*i18n.Resolver)(nil)` | the email channel reads the recipient's stored time zone through it, so a time parameter renders at the recipient's local instant; the in-app channel writes a marker instead. |
 | `(*authn.Accounts)(nil)` | the recipient's identifiers are read through it, and the account a destination belongs to is looked up through it. |
 | `(*kv.KV)(nil)` | the fixed-window counters the email budgets are charged on. |
 | `(*budget.Store)(nil)` | the shared SMS attempt ledger: every sms attempt is written to it, and every sms budget is a count over its rows. |
@@ -51,7 +52,11 @@ capability and the shared SMS ledger are required and not optional: a delivery
 budget that cannot count would let the message through, which is the direction
 the requirement forbids — the key-value counters for email, the ledger for sms.
 The account store is required for the same reason: a destination that cannot be
-held against the recipient's own identifiers would be let through.
+held against the recipient's own identifiers would be let through. The resolver
+is required because the email handler runs on a context the queue created, which
+names no time zone: without it an email's `{{name, time, layout}}` parameter
+could only render in UTC rather than at the recipient's local instant. The
+in-app channel does not read it, so a zone read failure blocks email alone.
 
 The database's root key is required as well, although only `db.Database` names
 it. Every external delivery folds the recipient into a keyed digest through
@@ -259,8 +264,46 @@ settled channel twice, and only the channels that are not settled are made up.
 
 ## Rendering
 
-The message text is rendered in the backend, in the recipient's language
-(`Dispatch.Locale`), through `i18n.Localizer`. A part is keyed
+The channels render differently. `in_app` renders its title and body in the
+recipient's language and writes every `{{name, time, layout}}` segment as a
+marker naming the parameter — U+E000, `time:`, the name, U+E001 — not as a
+formatted instant. The client resolves it from the message's `Params` in the
+viewer's display zone, so changing the zone or language re-renders a message
+already delivered. A string parameter has the two delimiters removed, so a value
+carrying a private-use character cannot be mistaken for a marker. `link` renders
+as ordinary text: it is a URL the client opens, not display text.
+
+`email` renders on the server, in the recipient's language and stored time zone.
+The handler reads the zone once per job through `i18n.Resolver.TimeZoneFor`,
+before anything is rendered. "No zone stored" renders in UTC; a read failure
+records the channel `failed`, writes one Error line naming the type and the
+cause and no recipient, and returns the error so the job retries — a failed read
+must not freeze a wrong instant into a mail the recipient cannot re-render. The
+text is fixed at send time; a later zone change does not rewrite it.
+
+`sms` renders only the template identifier in the recipient's language. Its
+parameters are stringified: a string as it is, an integer or a boolean in its
+text, a time in UTC RFC 3339 at whole-second precision — Go's `Format` omits the
+sub-second part, so `09:30:00.123Z` becomes `09:30:00Z`. A parameter that is
+missing, empty or cannot be stringified fails the channel with
+`notification.ErrInvalidRequest`.
+
+**A producer passes a `time.Time`; the pipeline wraps it.** `renderValue` maps a
+`time.Time` parameter to `i18n.Time`, the engine's typed value: the marked
+in-app render needs only the parameter name, while the email render needs the
+type to expand the segment. The queue codec preserves that type across the job
+payload. `deliveryPayload`'s own JSON codec replaces every `time.Time` at any
+depth in `map[string]any` and `[]any` with an object under the reserved key
+`$speed.time`, and restores it when the job is read. A parameter map carrying
+that key at any level — the top level included — is refused with
+`notification.ErrInvalidRequest` where the dispatch is submitted; a decoded
+payload whose object under that key carries more than one member stays a map and
+is refused again, while a single-member object is the codec's own restore and
+comes back as a `time.Time`. The same sentinel refuses a shape the codec cannot
+walk: a `*time.Time`, a `[]time.Time`, a `map[string]time.Time`, or any other
+typed container. A bare `time.Time` at any depth is admitted.
+
+A part is keyed
 `<type_key>.<channel>.<part>` — `title` and `body` for `in_app`; `subject`,
 `body_text` and an optional `body_html` for `email`; and a template identifier for
 `sms` — and belongs to the business module that **declares** the type, not to this
@@ -287,10 +330,10 @@ only when the catalog carries them — `link` for `in_app`, and `body_html` for
 renders.
 
 Sms parameters are stringified before the vendor is reached: a string as it is,
-an integer or a boolean in its text, a time in RFC 3339. A parameter that is
-missing, empty or cannot be stringified fails the channel with
-`notification.ErrInvalidRequest` — no empty string and no placeholder goes onto
-the wire.
+an integer or a boolean in its text, a time in UTC RFC 3339 at second precision.
+A parameter that is missing, empty or cannot be stringified fails the channel
+with `notification.ErrInvalidRequest` — no empty string and no placeholder goes
+onto the wire.
 
 **An external channel's destination is a dispatch parameter.** A recipient is an
 account identifier, not a phone number and not an address, so the destination
@@ -312,7 +355,7 @@ package, and callers tell them apart with `errors.Is`:
 
 | Sentinel | When |
 |---|---|
-| `ErrInvalidRequest` | an unreadable shape, a destination the recipient does not own, a parameter that cannot be stringified, a payload that cannot be decoded |
+| `ErrInvalidRequest` | an unreadable shape, a destination the recipient does not own, a parameter that cannot be stringified, a parameter shape the queue codec cannot carry, a reserved `$speed.time` key, a payload that cannot be decoded |
 | `ErrUnknownType` | a type key that is not in the declared taxonomy |
 | `ErrParamsNotAllowed` | a parameter outside the type's whitelist |
 | `ErrInvalidConfig` | an inconsistent type declaration, or two modules declaring one key — `New` ends the startup |

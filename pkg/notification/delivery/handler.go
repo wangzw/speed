@@ -187,7 +187,23 @@ func (p *pipeline) sendEmail(ctx context.Context, d notification.Dispatch, spec 
 	if err != nil {
 		return p.localFailure(ctx, row, "notification.delivery.email-destination", err)
 	}
-	msg := p.emailMessage(ctx, d, spec, to, row.IdempotencyKey)
+	// The recipient's zone is read once, before anything is rendered: email
+	// text is fixed at send time, so the instant must be the recipient's local
+	// one. A failed read is not "no zone stored" — rendering in UTC would freeze
+	// the wrong instant into a mail the recipient cannot re-render — so the
+	// channel fails and the job retries. The email channel appears at most once
+	// in an effective set, and a settled channel is skipped before this point.
+	zone, _, err := p.resolver.TimeZoneFor(ctx, d.Recipient.UserID)
+	if err != nil {
+		row.Status = statusFailed
+		row.Error = textPtr(err.Error())
+		// The line names the type and the cause, never the recipient. It is what
+		// tells an operator that a persistent read failure is holding mail back.
+		p.logger.Error(ModuleName+": the recipient's time zone could not be read; the email was not rendered",
+			"type_key", d.TypeKey, "cause", err.Error())
+		return row, fmt.Errorf("%s: reading the recipient's time zone for the email of %q: %w", ModuleName, d.TypeKey, err)
+	}
+	msg := p.emailMessage(ctx, d, spec, to, row.IdempotencyKey, zone)
 	started := time.Now()
 	receipt, err := p.seams.mailer.Send(ctx, msg)
 	elapsed := time.Since(started)

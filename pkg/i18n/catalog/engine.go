@@ -385,17 +385,24 @@ func (e *engine) LocaleFor(ctx context.Context, account string) i18n.Locale {
 }
 
 // TimeZoneFor is the time zone for a named account: the context's when it
-// carries one, otherwise the account's stored preference, otherwise "".
-func (e *engine) TimeZoneFor(ctx context.Context, account string) string {
+// carries one, otherwise the account's stored preference, otherwise "". A
+// profile that cannot be read stops the walk and reports its failure rather
+// than reading as "no preference stored": the caller renders in UTC for the
+// latter, and a failed read must not freeze a wrong instant into a message.
+func (e *engine) TimeZoneFor(ctx context.Context, account string) (string, bool, error) {
 	if name, ok := i18n.TimeZoneFromContext(ctx); ok {
-		return name
+		return name, true, nil
 	}
 	for _, profile := range e.profiles {
-		if name, ok := profile.TimeZoneFor(ctx, account); ok {
-			return name
+		name, ok, err := profile.TimeZoneFor(ctx, account)
+		if err != nil {
+			return "", false, err
+		}
+		if ok {
+			return name, true, nil
 		}
 	}
-	return ""
+	return "", false, nil
 }
 
 // template is a message parsed into its literal text and its placeholders, in
@@ -624,13 +631,15 @@ func beginsBranch(s string) bool {
 // printer. A name with no value is left as written. A plural segment selects its
 // branch by its integer value's CLDR category for locale, and # in the branch
 // stands for the count formatted for locale. A time segment formats its instant
-// with its layout in the zone ctx names.
+// with its layout in the zone ctx names, or — under TimeRenderMarked — writes a
+// marker naming the parameter for the reader to resolve.
 func (e *engine) render(ctx context.Context, m *template, args i18n.Args, locale i18n.Locale) string {
 	// A message with no placeholder writes back the text it was parsed from, so
 	// nothing below runs for the common case.
 	if len(m.nodes) == 1 && m.nodes[0].arg == "" && m.nodes[0].group == nil && m.nodes[0].time == nil {
 		return m.nodes[0].text
 	}
+	mode := i18n.TimeRenderFromContext(ctx)
 	var b strings.Builder
 	for _, n := range m.nodes {
 		b.WriteString(n.text)
@@ -638,9 +647,9 @@ func (e *engine) render(ctx context.Context, m *template, args i18n.Args, locale
 		case n.group != nil:
 			b.WriteString(e.renderPlural(n.group, n.raw, args, locale))
 		case n.time != nil:
-			b.WriteString(e.renderTime(ctx, n.time, n.raw, args))
+			b.WriteString(e.renderTime(ctx, n.time, n.raw, args, mode))
 		case n.arg != "":
-			b.WriteString(e.renderArg(n.arg, n.raw, args, locale))
+			b.WriteString(e.renderArg(n.arg, n.raw, args, locale, mode))
 		}
 	}
 	return b.String()
@@ -648,21 +657,32 @@ func (e *engine) render(ctx context.Context, m *template, args i18n.Args, locale
 
 // renderArg renders one {{name}} placeholder. A name with no value is left as
 // written; a string is written verbatim; a number is formatted for locale. A
-// time has no layout here, so it renders only through a {{name, time, layout}}
-// segment and is left as written in a plain placeholder, like a value of any
-// other kind this form does not carry.
-func (e *engine) renderArg(name, raw string, args i18n.Args, locale i18n.Locale) string {
+// time has no layout here, so it is left as written in a plain placeholder in
+// the formatted mode; the marked mode writes the marker instead, since the
+// reader resolves the parameter without needing a layout. A string in the
+// marked mode has the marker delimiters removed first.
+func (e *engine) renderArg(name, raw string, args i18n.Args, locale i18n.Locale, mode i18n.TimeRender) string {
 	v, ok := args[name]
 	if !ok {
 		return raw
 	}
 	switch i18n.KindOf(v) {
 	case i18n.KindString:
+		if mode == i18n.TimeRenderMarked {
+			return i18n.StripTimeMarkerDelimiters(i18n.StringOf(v))
+		}
 		return i18n.StringOf(v)
 	case i18n.KindInt:
 		return e.formatInt(i18n.IntOf(v), locale)
 	case i18n.KindFloat:
 		return e.formatFloat(i18n.FloatOf(v), locale)
+	case i18n.KindTime:
+		// A plain placeholder carries no layout, so the marked mode is the one
+		// place a time can be written for a client to resolve: the client's
+		// formatter needs only the parameter name.
+		if mode == i18n.TimeRenderMarked {
+			return i18n.MarkedTime(name)
+		}
 	}
 	return raw
 }
@@ -689,8 +709,15 @@ func (e *engine) renderPlural(g *pluralGroup, raw string, args i18n.Args, locale
 // written, the rule a plural segment follows for a wrong-kind value. The instant
 // is formatted with the layout the message carries, in the zone ctx names: the
 // zone is the context's IANA name, read as UTC when the context names none or
-// when this process cannot load the name.
-func (e *engine) renderTime(ctx context.Context, tf *timeForm, raw string, args i18n.Args) string {
+// when this process cannot load the name. Under TimeRenderMarked the segment is
+// replaced by the marker instead, without reading the value or the zone.
+func (e *engine) renderTime(ctx context.Context, tf *timeForm, raw string, args i18n.Args, mode i18n.TimeRender) string {
+	if mode == i18n.TimeRenderMarked {
+		// The marker names the parameter and carries neither the instant nor the
+		// layout nor the zone: the reader resolves the value it already has in the
+		// display zone and language it has now, so a stored message follows both.
+		return i18n.MarkedTime(tf.arg)
+	}
 	v, ok := args[tf.arg]
 	if !ok || i18n.KindOf(v) != i18n.KindTime {
 		return raw

@@ -50,12 +50,12 @@ func TestTheModuleDeliversTheDispatcherExclusively(t *testing.T) {
 
 // The descriptor declares the dependencies the design fixes: the queue, the
 // handler registration face, the database, the tenant roster, the preferences
-// seam, the inbox seam, the localizer, the account store the destination rule
-// reads, the key-value counters the email budget is counted on and the shared
-// sms ledger are required; the settings store, the metric
-// capability, the logging capability, the mail sender, the two sms seams and
-// the tenant name resolver are optional, the last because an assembly with no
-// roster names no tenant rather than exposing the identifier. It declares
+// seam, the inbox seam, the localizer, the preference resolver, the account
+// store the destination rule reads, the key-value counters the email budget is
+// counted on and the shared sms ledger are required; the settings store, the
+// metric capability, the logging capability, the mail sender, the two sms seams
+// and the tenant name resolver are optional, the last because an assembly with
+// no roster names no tenant rather than exposing the identifier. It declares
 // nothing else — not an entry point, which this module mounts no route on, and
 // not an event bus, which it publishes nothing on.
 func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
@@ -68,6 +68,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 		(*notification.Preferences)(nil),
 		(*notification.Inbox)(nil),
 		(*i18n.Localizer)(nil),
+		(*i18n.Resolver)(nil),
 		(*authn.Accounts)(nil),
 		(*kv.KV)(nil),
 		(*budget.Store)(nil),

@@ -89,14 +89,17 @@ func TestLocaleForReadsTheStoredAttribute(t *testing.T) {
 	}
 }
 
-// TimeZoneFor reads the account's stored i18n.tz attribute, and reads none for
-// the same absent cases LocaleFor answers as none; a failed store read is not
-// distinguished here, because every consumer renders an absent zone as UTC.
+// TimeZoneFor reads the account's stored i18n.tz attribute. A malformed
+// identifier, an absent account and an attribute that is absent or empty all
+// read as "none, no failure": they are the same answer the caller falls back
+// from. A store failure is reported, because "the preference could not be
+// read" and "no preference is stored" must not collapse into one answer.
 func TestTimeZoneForReadsTheStoredAttribute(t *testing.T) {
 	full := authn.Account{Attributes: map[string]string{
 		i18n.LocaleAttributeKey:   "zh-CN",
 		i18n.TimeZoneAttributeKey: "Asia/Shanghai",
 	}}
+	storeErr := errors.New("the account store is unreachable")
 	cases := []struct {
 		name    string
 		id      string
@@ -104,20 +107,22 @@ func TestTimeZoneForReadsTheStoredAttribute(t *testing.T) {
 		getErr  error
 		want    string
 		wantOK  bool
+		wantErr error
 	}{
-		{"a stored zone reads back", "acct-1", full, nil, "Asia/Shanghai", true},
-		{"a malformed identifier reads as none", "not an id!", full, nil, "", false},
-		{"an absent account reads as none", "acct-1", full, authn.ErrAccountNotFound, "", false},
-		{"a failed store read reads as none", "acct-1", full, errors.New("the account store is unavailable"), "", false},
-		{"an absent attribute reads as none", "acct-1", authn.Account{}, nil, "", false},
-		{"an empty attribute reads as none", "acct-1", authn.Account{Attributes: map[string]string{i18n.TimeZoneAttributeKey: ""}}, nil, "", false},
+		{"a stored zone reads back", "acct-1", full, nil, "Asia/Shanghai", true, nil},
+		{"a malformed identifier reads as none", "not an id!", full, nil, "", false, nil},
+		{"an absent account reads as none", "acct-1", full, authn.ErrAccountNotFound, "", false, nil},
+		{"an absent attribute reads as none", "acct-1", authn.Account{}, nil, "", false, nil},
+		{"an empty attribute reads as none", "acct-1", authn.Account{Attributes: map[string]string{i18n.TimeZoneAttributeKey: ""}}, nil, "", false, nil},
+		{"a store failure is reported", "acct-1", full, storeErr, "", false, storeErr},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			b := &bridge{accounts: &fakeAccounts{account: c.account, err: c.getErr}}
-			got, ok := b.TimeZoneFor(context.Background(), c.id)
-			if got != c.want || ok != c.wantOK {
-				t.Errorf("TimeZoneFor(%q) = (%q, %v), want (%q, %v)", c.id, got, ok, c.want, c.wantOK)
+			got, ok, err := b.TimeZoneFor(context.Background(), c.id)
+			if got != c.want || ok != c.wantOK || !errors.Is(err, c.wantErr) {
+				t.Errorf("TimeZoneFor(%q) = (%q, %v, %v), want (%q, %v, %v)",
+					c.id, got, ok, err, c.want, c.wantOK, c.wantErr)
 			}
 		})
 	}

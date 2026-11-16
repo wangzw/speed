@@ -16,6 +16,7 @@ package i18n
 import (
 	"context"
 	"io/fs"
+	"strings"
 	"time"
 )
 
@@ -93,6 +94,39 @@ type Value struct {
 	tm   time.Time
 }
 
+// The two private-use characters that delimit a time marker. They are not part
+// of any catalog syntax, so a marker cannot be confused with a {{name}} or a
+// {{name, time, layout}} segment, and a marker carries no braces at all.
+const (
+	timeMarkerOpen  = "\uE000"
+	timeMarkerClose = "\uE001"
+)
+
+// MarkedTime is the marker a TimeRenderMarked render writes in place of a time
+// segment: the opening delimiter, "time:", the parameter name, and the closing
+// delimiter. The marker carries no instant, layout or zone, so a client that
+// resolves it renders the parameter's value in the viewer's display zone and
+// language at read time — changing either re-renders a message already stored.
+//
+// The name is the parameter name the segment already trimmed, which is the key
+// the dispatch's parameters carry.
+func MarkedTime(name string) string {
+	return timeMarkerOpen + "time:" + name + timeMarkerClose
+}
+
+// StripTimeMarkerDelimiters removes the two characters MarkedTime delimits a
+// marker with. A marked render passes every string parameter through it, so a
+// value that happens to carry a private-use character cannot be mistaken for a
+// marker by the client resolving the text.
+func StripTimeMarkerDelimiters(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\uE000' || r == '\uE001' {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // String returns a Value carrying s, interpolated into a message verbatim.
 func String(s string) Value { return Value{kind: KindString, text: s} }
 
@@ -166,9 +200,14 @@ type Resolver interface {
 	// preferences when the context carries none, and the value Default reports
 	// otherwise.
 	LocaleFor(ctx context.Context, account string) Locale
-	// TimeZoneFor is the time zone for a named account, or "" when none is
-	// stored.
-	TimeZoneFor(ctx context.Context, account string) string
+	// TimeZoneFor is the time zone for a named account: the context's zone when
+	// it carries one, otherwise the account's stored preference. It reports
+	// whether a zone was found and, when a profile could not be read, the
+	// failure. "No zone stored" and "the zone could not be read" lead to
+	// different behaviour at the caller — the first renders in UTC, the second
+	// must retry rather than freeze a wrong instant into text — so they are not
+	// collapsed into one answer.
+	TimeZoneFor(ctx context.Context, account string) (string, bool, error)
 }
 
 // Profile is the seam onto an account's stored language and time zone. It is
@@ -181,9 +220,12 @@ type Profile interface {
 	// otherwise tell a failed read from an absent preference. Both take the
 	// same fallback, and only the failed read leaves a warning.
 	LocaleFor(ctx context.Context, account string) (Locale, bool, error)
-	// TimeZoneFor returns the IANA time zone stored for an account, and whether
-	// one is.
-	TimeZoneFor(ctx context.Context, account string) (string, bool)
+	// TimeZoneFor returns the IANA time zone stored for an account, whether one
+	// is, and the failure that kept the store from answering. A missing account,
+	// a malformed identifier and an absent or empty attribute are all
+	// "no zone, no failure"; any other store failure is reported, so the engine
+	// can tell an unset preference from an unreadable one.
+	TimeZoneFor(ctx context.Context, account string) (string, bool, error)
 }
 
 // Catalog is the resource type a module declares its message files as. The

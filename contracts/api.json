@@ -18362,10 +18362,10 @@
         "type": "object"
       },
       "NotificationMessage": {
-        "description": "One in-app message as the inbox shows it. The title and body arrive already rendered, and the bookkeeping columns — tenant, recipient, dedupe key, expiry and update time — are not part of this view.",
+        "description": "One in-app message as the inbox shows it. The title and body arrive rendered in the delivery's language; a time segment arrives as a marker the client resolves from params in the viewer's display zone. The bookkeeping columns — tenant, recipient, dedupe key, expiry and update time — are not part of this view.",
         "properties": {
           "body": {
-            "description": "The rendered body, in the language the delivery pipeline rendered it in.",
+            "description": "The rendered body, in the language the delivery pipeline rendered it in. A time segment is a marker naming a parameter, not a formatted instant; the client resolves it from params in the viewer's display zone.",
             "type": "string"
           },
           "created_at": {
@@ -18387,7 +18387,7 @@
           },
           "params": {
             "additionalProperties": {},
-            "description": "The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none.",
+            "description": "The type's parameters after the allow-list filter, as an opaque JSON object the client resolves a time marker from; a time parameter is an RFC 3339 string. null when the message carries none.",
             "type": "object"
           },
           "read_at": {
@@ -18399,7 +18399,7 @@
             ]
           },
           "title": {
-            "description": "The rendered title, in the language the delivery pipeline rendered it in.",
+            "description": "The rendered title, in the language the delivery pipeline rendered it in. A time segment is a marker naming a parameter, not a formatted instant; the client resolves it from params in the viewer's display zone.",
             "type": "string"
           },
           "type_key": {

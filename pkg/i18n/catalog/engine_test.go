@@ -198,6 +198,71 @@ func TestRender(t *testing.T) {
 	}
 }
 
+// TestMarkedRenderWritesATimeMarker holds the marked render mode: a
+// {{name, time, layout}} segment becomes a marker carrying the parameter name,
+// without reading the value or the context's zone, so a client can render the
+// instant in the viewer's own display zone. A string parameter has the marker
+// delimiters removed, so a value carrying a private-use character cannot be
+// mistaken for a marker by that client.
+func TestMarkedRenderWritesATimeMarker(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.due":"Due {{at, time, 2006-01-02}}; {{name}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	instant := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
+	ctx := i18n.WithTimeRender(
+		i18n.WithTimeZone(context.Background(), "Asia/Shanghai"),
+		i18n.TimeRenderMarked,
+	)
+	got := e.Localize(ctx, "app.due", i18n.Args{
+		"at":   i18n.Time(instant),
+		"name": i18n.String("Acme \uE000time:forged\uE001 Ltd"),
+	})
+	want := "Due " + i18n.MarkedTime("at") + "; Acme time:forged Ltd"
+	if got != want {
+		t.Errorf("marked render = %q, want %q", got, want)
+	}
+	// The value's forged delimiters are gone: only the genuine marker's two
+	// delimiters remain.
+	if open := strings.Count(got, "\uE000"); open != 1 {
+		t.Errorf("marked render = %q carries %d opening delimiters, want the genuine marker's one", got, open)
+	}
+}
+
+// TestMarkedRenderLeavesTheFormattedModeDefault holds that the zero mode is the
+// formatted render: a context that names no mode still expands the instant in
+// the zone it carries, so existing callers are unchanged.
+func TestMarkedRenderLeavesTheFormattedModeDefault(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.due":"Due {{at, time, 2006-01-02}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	instant := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
+	got := e.Localize(i18n.WithTimeZone(context.Background(), "Asia/Shanghai"), "app.due",
+		i18n.Args{"at": i18n.Time(instant)})
+	if want := "Due 2026-11-20"; got != want {
+		t.Errorf("formatted render = %q, want %q", got, want)
+	}
+}
+
+// TestTranslateStaysFormatted holds that Translate, which runs on a background
+// context, never writes a marker: it is the call a caller makes for a text it
+// renders itself, and has no viewer to resolve a marker.
+func TestTranslateStaysFormatted(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.due":"Due {{at, time, 2006-01-02}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	instant := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
+	got, ok := e.Translate(localeEN, "app.due", i18n.Args{"at": i18n.Time(instant)})
+	if !ok {
+		t.Fatal("Translate did not find the key")
+	}
+	if want := "Due 2026-11-20"; got != want {
+		t.Errorf("Translate = %q, want %q", got, want)
+	}
+}
+
 // TestPluralSelectsByCount holds that a plural segment selects its branch by the
 // count's CLDR category: an English message renders "one" for a count of one and
 // "other" for any other count, and # in the branch is the count, grouped for the
@@ -727,17 +792,33 @@ func (p stubProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, erro
 	return p.locale, p.locale != "", nil
 }
 
-// failingProfile is an account preference the store cannot answer.
-type failingProfile struct{}
-
-func (failingProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
-	return "", false, errors.New("the account store is unavailable")
+func (p stubProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+	return p.zone, p.zone != "", nil
 }
 
-func (failingProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
+// failingProfile is an account preference the store cannot answer: it reports a
+// read failure for the language and the zone alike, so a case can hold that the
+// locale walk continues past it and that a zone failure is reported rather than
+// read as "no preference stored". A case that leaves err unset gets a generic
+// failure; a zone case names the error it expects back.
+type failingProfile struct {
+	err error
+}
 
-func (p stubProfile) TimeZoneFor(context.Context, string) (string, bool) {
-	return p.zone, p.zone != ""
+func (p failingProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
+	return "", false, p.readErr()
+}
+
+func (p failingProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+	return "", false, p.readErr()
+}
+
+// readErr is the failure this profile answers with.
+func (p failingProfile) readErr() error {
+	if p.err != nil {
+		return p.err
+	}
+	return errors.New("the account store is unavailable")
 }
 
 func TestLocaleFor(t *testing.T) {
@@ -772,19 +853,55 @@ func TestTimeZoneFor(t *testing.T) {
 		ctx      context.Context
 		profiles []i18n.Profile
 		want     string
+		wantOK   bool
 	}{
-		{"the context wins over a profile", i18n.WithTimeZone(context.Background(), "UTC"), []i18n.Profile{profile}, "UTC"},
-		{"the profile is used when the context names none", context.Background(), []i18n.Profile{profile}, "Asia/Shanghai"},
-		{"empty when there is no profile", context.Background(), nil, ""},
-		{"empty when no profile carries one", context.Background(), []i18n.Profile{stubProfile{}}, ""},
+		{"the context wins over a profile", i18n.WithTimeZone(context.Background(), "UTC"), []i18n.Profile{profile}, "UTC", true},
+		{"the profile is used when the context names none", context.Background(), []i18n.Profile{profile}, "Asia/Shanghai", true},
+		{"empty when there is no profile", context.Background(), nil, "", false},
+		{"empty when no profile carries one", context.Background(), []i18n.Profile{stubProfile{}}, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := mustEngine(t, nil, tt.profiles)
-			if got := e.TimeZoneFor(tt.ctx, "acct"); got != tt.want {
-				t.Errorf("TimeZoneFor = %q, want %q", got, tt.want)
+			got, ok, err := e.TimeZoneFor(tt.ctx, "acct")
+			if err != nil {
+				t.Fatalf("TimeZoneFor ended with %v, want no error", err)
+			}
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("TimeZoneFor = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.wantOK)
 			}
 		})
+	}
+}
+
+// TestTimeZoneForReportsAProfileReadFailure holds that a profile's failure is
+// reported rather than read as "no preference stored": the two answers lead to
+// different behaviour, since an unset zone renders in UTC while a failed read
+// must not freeze a wrong instant into a mail. The walk stops at the failing
+// profile and does not fall through to the next one.
+func TestTimeZoneForReportsAProfileReadFailure(t *testing.T) {
+	readErr := errors.New("the account store is unreachable")
+	e := mustEngine(t, nil, []i18n.Profile{
+		failingProfile{err: readErr},
+		stubProfile{zone: "Asia/Shanghai"},
+	})
+	got, ok, err := e.TimeZoneFor(context.Background(), "acct")
+	if !errors.Is(err, readErr) {
+		t.Fatalf("TimeZoneFor ended with %v, want the profile's own failure", err)
+	}
+	if got != "" || ok {
+		t.Errorf("TimeZoneFor = (%q, %v), want no value beside the failure", got, ok)
+	}
+}
+
+// TestTimeZoneForPrefersTheContextOverAFailingProfile holds that a context
+// that already names a zone never reads a profile, so a stored-preference
+// failure cannot override a zone the caller supplied.
+func TestTimeZoneForPrefersTheContextOverAFailingProfile(t *testing.T) {
+	e := mustEngine(t, nil, []i18n.Profile{failingProfile{err: errors.New("unreachable")}})
+	got, ok, err := e.TimeZoneFor(i18n.WithTimeZone(context.Background(), "UTC"), "acct")
+	if err != nil || got != "UTC" || !ok {
+		t.Fatalf("TimeZoneFor = (%q, %v, %v), want (UTC, true, nil)", got, ok, err)
 	}
 }
 

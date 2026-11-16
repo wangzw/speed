@@ -44,6 +44,7 @@ interface Row {
   read: boolean
   readonly link?: string
   readonly createdAt?: string
+  readonly params?: Record<string, unknown> | null
 }
 
 function message(row: Row): Record<string, unknown> {
@@ -53,7 +54,7 @@ function message(row: Row): Record<string, unknown> {
     group: 'demo',
     title: row.title,
     body: row.body,
-    params: null,
+    params: row.params ?? null,
     link: row.link ?? '',
     // The server's own shape: an unread message carries read_at as JSON
     // null (its view's *time.Time has no omitempty), a read one as an
@@ -620,6 +621,114 @@ describe('NotificationInbox', () => {
     expect(
       screen.queryByText(formatInstant(instant, 'zh-CN', { timeZone: 'UTC' })),
     ).toBeNull()
+  })
+
+  it('renders a server time marker in the viewer display zone and follows a zone change', async () => {
+    const instant = '2026-11-20T09:30:00.000Z'
+    // The server writes a time segment in the body as a marker carrying the
+    // parameter name; the moment is not formatted on the server. The
+    // viewer's display zone decides the rendered instant, so the same
+    // message reads differently after the provider changes.
+    const rows: Row[] = [
+      {
+        id: 'm1',
+        title: 'Ownership transfer',
+        body: 'Expires at \uE000time:expires_at\uE001.',
+        params: { expires_at: instant },
+        read: true,
+      },
+    ]
+    const rig = makeRealClientRigWithoutSession(inboxResponder(rows))
+    rig.store.set('access-1')
+
+    function ZoneSwitch() {
+      const [zone, setZone] = useState('Asia/Tokyo')
+      return (
+        <>
+          <button type="button" onClick={() => setZone('UTC')}>
+            switch zone
+          </button>
+          <DisplayTimeZoneProvider timeZone={zone}>
+            <NotificationInbox />
+          </DisplayTimeZoneProvider>
+        </>
+      )
+    }
+
+    renderWithProviders(<ZoneSwitch />)
+    const tokyo = formatInstant(instant, 'zh-CN', { timeZone: 'Asia/Tokyo' })
+    expect(
+      await screen.findByText(`Expires at ${tokyo}.`),
+    ).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('\uE000')
+    expect(document.body.textContent).not.toContain('\uE001')
+
+    await userEvent.click(screen.getByRole('button', { name: 'switch zone' }))
+    const utc = formatInstant(instant, 'zh-CN', { timeZone: 'UTC' })
+    expect(await screen.findByText(`Expires at ${utc}.`)).toBeInTheDocument()
+    expect(screen.queryByText(`Expires at ${tokyo}.`)).toBeNull()
+  })
+
+  it('renders a time marker in the title, including the mark-read action name', async () => {
+    const instant = '2026-11-20T09:30:00.000Z'
+    const rendered = formatInstant(instant, 'zh-CN', { timeZone: 'Asia/Tokyo' })
+    const rows: Row[] = [
+      {
+        id: 'm1',
+        title: `Transfer due \uE000time:expires_at\uE001`,
+        body: '',
+        params: { expires_at: instant },
+        read: false,
+      },
+    ]
+    const rig = makeRealClientRigWithoutSession(inboxResponder(rows))
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />, { timeZone: 'Asia/Tokyo' })
+
+    expect(
+      await screen.findByText(`Transfer due ${rendered}`),
+    ).toBeInTheDocument()
+    // The action's accessible name carries the rendered title too, never the
+    // marker character.
+    const action = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace(
+        '{{title}}',
+        `Transfer due ${rendered}`,
+      ),
+    })
+    expect(action).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('\uE000')
+  })
+
+  it('degrades a missing or unparseable time parameter without leaving a marker', async () => {
+    const rows: Row[] = [
+      {
+        id: 'm1',
+        title: 'Missing',
+        body: 'Expires at \uE000time:expires_at\uE001.',
+        params: {},
+        read: true,
+      },
+      {
+        id: 'm2',
+        title: 'Unparseable',
+        body: 'Expires at \uE000time:expires_at\uE001.',
+        params: { expires_at: 'not-a-time' },
+        read: true,
+      },
+    ]
+    const rig = makeRealClientRigWithoutSession(inboxResponder(rows))
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+
+    // A missing parameter and a value that carries no instant leave an empty
+    // slot and the original string respectively; neither leaves the marker.
+    expect(await screen.findByText('Expires at .')).toBeInTheDocument()
+    expect(
+      screen.getByText('Expires at not-a-time.'),
+    ).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('\uE000')
+    expect(document.body.textContent).not.toContain('\uE001')
   })
 
   it('renders an unparseable time as its original text', async () => {

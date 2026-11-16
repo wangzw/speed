@@ -417,7 +417,9 @@ func (s stubResolver) TimeZoneOf(context.Context) string { return "" }
 
 func (s stubResolver) LocaleFor(ctx context.Context, _ string) i18n.Locale { return s.LocaleOf(ctx) }
 
-func (s stubResolver) TimeZoneFor(context.Context, string) string { return "" }
+func (s stubResolver) TimeZoneFor(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
 
 var _ i18n.Resolver = stubResolver{}
 

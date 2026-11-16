@@ -150,10 +150,10 @@ type Message struct {
 | `pkg/notification` | 不登记 | 接口包与公共类型：`Channel`、`TypeSpec`、`Recipient`、`Dispatch`、`Preference`、`Message`、`Inbox`、`Preferences`、`Dispatcher` 与全部哨兵 | — | — |
 | `pkg/notification/inbox` | `notification.inbox` | 站内信收件箱：`in_app_messages` 表、写行、查、未读数、标记已读 | `(*notification.Inbox)(nil)` 排他 | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*event.Bus)(nil)`、`(*log.Logger)(nil)`、`(*http.Router)(nil)`、`(*i18n.Localizer)(nil)` |
 | `pkg/notification/preferences` | `notification.preferences` | 按类型的渠道偏好矩阵 + 类型分类法的消费点 | `(*notification.Preferences)(nil)` 排他 | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*http.Router)(nil)`、`(*log.Logger)(nil)`、`(*i18n.Localizer)(nil)` |
-| `pkg/notification/delivery` | `notification.delivery` | 出站投递流水线：`Dispatch` 校验、核对目的地归属、计投递预算并入队、消费 `jobs.Handler`、逐渠道发送、去重落账 | `(*notification.Dispatcher)(nil)` 排他 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*kv.KV)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
+| `pkg/notification/delivery` | `notification.delivery` | 出站投递流水线：`Dispatch` 校验、核对目的地归属、计投递预算并入队、消费 `jobs.Handler`、逐渠道发送、去重落账 | `(*notification.Dispatcher)(nil)` 排他 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*i18n.Resolver)(nil)`、`(*authn.Accounts)(nil)`、`(*kv.KV)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 | `pkg/notification/stream` | `notification.stream` | SSE 推送：每副本一个 Hub | 不交付功能接口（挂 `/stream` 路由） | 必需 `(*event.Bus)(nil)`；可选 `(*http.Router)(nil)`、`(*log.Logger)(nil)` |
 
-上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每个收件人的生效渠道（提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送），经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题（见“分类法与取材域”）；提交时另经 `(*authn.Accounts)(nil)` 读收件人的标识符，核对派发携带的目的地是否属于收件人。邮件的投递预算计数落在 `(*kv.KV)(nil)` 的固定窗口计数器上，短信的计数落在共享台账 `(*budget.Store)(nil)` 上，各上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的“投递预算”。
+上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每个收件人的生效渠道（提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送），经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题，并经 `(*i18n.Resolver)(nil)` 取收件人存下的时区，把邮件的时间参数展开成本地时刻（见“分类法与取材域”）；提交时另经 `(*authn.Accounts)(nil)` 读收件人的标识符，核对派发携带的目的地是否属于收件人。邮件的投递预算计数落在 `(*kv.KV)(nil)` 的固定窗口计数器上，短信的计数落在共享台账 `(*budget.Store)(nil)` 上，各上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的“投递预算”。
 
 ### 渠道与可用性
 
@@ -217,7 +217,7 @@ type Message struct {
 | `pkg/jobs` | 投递作业的提交接口 `Queue` 与执行接口 `Handlers`；派发经它入队、投递经它执行 |
 | `pkg/db` | 各模块的表与迁移集 |
 | `pkg/tenant` | 租户进入与语句过滤；每个模块的表内嵌租户模型，推送模块的路由经 `tenant.FromContext` 取请求的租户 |
-| `pkg/i18n` | 投递时按 `<type_key>.<channel>.<part>` 渲染标题、正文与主题；收件箱与偏好各自经 `i18n.Localizer` 按协商语言渲染自己写出的 `Problem` 的标题与正文 |
+| `pkg/i18n` | 投递时按 `<type_key>.<channel>.<part>` 渲染标题、正文与主题；邮件的时间参数按收件人时区展开，站内信写成标记交客户端按查看者显示时区解析；收件箱与偏好各自经 `i18n.Localizer` 按协商语言渲染自己写出的 `Problem` 的标题与正文 |
 | `pkg/mail` | `email` 渠道的发送接口 `Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本设计只引用这个接口，不设计它的内部 |
 | `pkg/sms` | `sms` 渠道的模板注册表 `Registry` 与发送接口 `Sender` |
 | `pkg/kv` | 投递预算的计数器：按窗口原子累加，键的过期时间即桶宽 |
@@ -229,7 +229,7 @@ type Message struct {
 
 **依赖方向。** 各模块都 import `pkg/core` 与根包；`notification.delivery` import `pkg/jobs`、`pkg/db`、`pkg/tenant` 的根包，`pkg/i18n`、`pkg/mail`、`pkg/sms`、`pkg/kv`、`pkg/settings` 的根包，并经 `pkg/authn` 根包取投递预算拒绝的 `ThrottledError`、`ErrUnavailable` 与目的地归属校验的 `Accounts`；`notification.inbox` import `pkg/db`、`pkg/tenant`、`pkg/event`、`pkg/i18n` 与 `pkg/authn`；`notification.stream` import `pkg/event`、`pkg/tenant`、`pkg/http` 与 `pkg/authn`；`notification.preferences` import `pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/config`。本能力**不 import 任何上层功能目录**，也不 import 任何业务模块：它位于底层，任何要发消息的模块引入它，不必背上对方。
 
-**渲染经由 i18n 引擎，文案目录归声明它的业务模块。** 一条文案的键形如 `<type_key>.<channel>.<part>`，由**声明该类型的业务模块**以 i18n 目录承载，装配期并入引擎；`notification.delivery` 在投递时按收件人语言经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题，引擎回退到默认语言、再回退到键本身，结果永不为空。渲染接口是投递模块的构造期必需依赖。文案的归属与 i18n 的“由产生消息的模块渲染”不冲突：目录归声明方，渲染发生在把文本写出的投递流水线（[design-i18n](../design-i18n.md)）。
+**渲染经由 i18n 引擎，文案目录归声明它的业务模块。** 一条文案的键形如 `<type_key>.<channel>.<part>`，由**声明该类型的业务模块**以 i18n 目录承载，装配期并入引擎；`notification.delivery` 在投递时按收件人语言经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题；邮件另经 `(*i18n.Resolver)(nil)` 取收件人存下的时区，把时间参数展开成本地时刻，站内信则把时间写成标记交客户端解析，不读时区；引擎回退到默认语言、再回退到键本身，结果永不为空。渲染接口与时区解析接口都是投递模块的构造期必需依赖。文案的归属与 i18n 的“由产生消息的模块渲染”不冲突：目录归声明方，渲染发生在把文本写出的投递流水线（[design-i18n](../design-i18n.md)）。
 
 **`notification.delivery` 取用 `notification.Preferences` 读分类法与偏好。** 投递需要“这个类型走哪些渠道”（分类法的默认渠道，被收件人偏好改写后）与“这条收件人的生效渠道”，两者都归偏好模块；投递因此把 `(*notification.Preferences)(nil)` 列为构造期必需依赖（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)）。
 
@@ -414,7 +414,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 5. **逐渠道投递。** 对每个生效渠道：
    1. **渠道可用性**：`in_app` 恒可用；`email` 需 `mail.Sender` 在场；`sms` 需 `sms.Registry` 与 `sms.Sender` 都在场。任一缺席即记一行 `skipped`（`duration_ms` 为零），进下一个渠道。
    2. **去重**：按去重键查 `notification_sends`；命中 `succeeded` 行即跳过该渠道；命中 `failed` 行则重试。
-   3. **渲染**：经 `i18n.Localizer` 按收件人语言渲染 `<type_key>.<channel>.<part>`：站内信渲染 `title` 与 `body`，邮件渲染 `subject` 与 `body_text`、目录里另有 `body_html` 时一并渲染出 HTML 正文，短信取模板标识而非自由文本。引擎对不受支持的语言回退到默认语言、再回退到键本身。
+   3. **渲染**：经 `i18n.Localizer` 按收件人语言渲染 `<type_key>.<channel>.<part>`：站内信渲染 `title` 与 `body`，邮件渲染 `subject` 与 `body_text`、目录里另有 `body_html` 时一并渲染出 HTML 正文，短信取模板标识而非自由文本。站内信的时间参数写成标记，由客户端按查看者的显示时区解析；邮件的时间参数经 `i18n.Resolver` 取收件人存下的时区展开成本地时刻。引擎对不受支持的语言回退到默认语言、再回退到键本身。
    4. **发送**：站内信经 `Inbox.Write`（`dedupeKey` 取去重键在 `channel = in_app` 下的值），写行本身不发布事件：`notification.inbox.created` 由收件箱在提交那一行之后发布，本模块不发布；邮件经 `mail.Sender.Send`；短信先经 `sms.Registry.Resolve` 解出模板与参数、再经 `sms.Sender.Send`。
    5. **落账**：按该渠道的结果写一行 `notification_sends`：`succeeded` 带回执标识与耗时，`failed` 带原因与耗时。
 6. **作业的终态。** 全部渠道处理完，若无渠道以失败告终，作业成功；有任一渠道失败则 handler 返回错误，作业按 `jobs.db` 的退避与重试规则重跑：重跑时已成功的渠道因去重键命中 `succeeded` 行而跳过，只补发失败的渠道。重试用尽即进死信（`dead_letter`），投递账上保留每次失败的原因。

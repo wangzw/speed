@@ -1786,15 +1786,15 @@ export interface MyTransferView {
 }
 
 /**
- * The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none.
+ * The type's parameters after the allow-list filter, as an opaque JSON object the client resolves a time marker from; a time parameter is an RFC 3339 string. null when the message carries none.
  */
 export type NotificationMessageParams = {[key: string]: unknown};
 
 /**
- * One in-app message as the inbox shows it. The title and body arrive already rendered, and the bookkeeping columns — tenant, recipient, dedupe key, expiry and update time — are not part of this view.
+ * One in-app message as the inbox shows it. The title and body arrive rendered in the delivery's language; a time segment arrives as a marker the client resolves from params in the viewer's display zone. The bookkeeping columns — tenant, recipient, dedupe key, expiry and update time — are not part of this view.
  */
 export interface NotificationMessage {
-  /** The rendered body, in the language the delivery pipeline rendered it in. */
+  /** The rendered body, in the language the delivery pipeline rendered it in. A time segment is a marker naming a parameter, not a formatted instant; the client resolves it from params in the viewer's display zone. */
   body: string;
   /** When the message was written, as an RFC 3339 instant in UTC. */
   created_at: string;
@@ -1804,14 +1804,14 @@ export interface NotificationMessage {
   id: string;
   /** The optional navigation target; the empty string when the message carries none. */
   link: string;
-  /** The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none. */
+  /** The type's parameters after the allow-list filter, as an opaque JSON object the client resolves a time marker from; a time parameter is an RFC 3339 string. null when the message carries none. */
   params: NotificationMessageParams;
   /**
      * The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set.
      * @nullable
      */
   read_at: string | null;
-  /** The rendered title, in the language the delivery pipeline rendered it in. */
+  /** The rendered title, in the language the delivery pipeline rendered it in. A time segment is a marker naming a parameter, not a formatted instant; the client resolves it from params in the viewer's display zone. */
   title: string;
   /** The notification type key the message was dispatched under, shaped like <module>.<entity>.<action>. */
   type_key: string;
