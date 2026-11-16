@@ -203,7 +203,7 @@ describe('PasswordSection', () => {
               identifier({
                 kind: 'email',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
               }),
             ],

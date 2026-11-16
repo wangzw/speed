@@ -397,14 +397,14 @@ export function TenantOwnership({
             </Typography>
             <Typography variant="body2">
               {t('tenantProfile.ownership.pending.requested', {
-                requested: formatInstant(pending.requestedAt, i18n.language, {
+                requested: formatInstant(pending.requested_at, i18n.language, {
                   timeZone: 'UTC',
                 }),
               })}
             </Typography>
             <Typography variant="body2">
               {t('tenantProfile.ownership.pending.expires', {
-                expires: formatInstant(pending.expiresAt, i18n.language, {
+                expires: formatInstant(pending.expires_at, i18n.language, {
                   timeZone: 'UTC',
                 }),
               })}

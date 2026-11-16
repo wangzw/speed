@@ -120,7 +120,7 @@ describe('ContactVerificationBanner', () => {
       name: new RegExp(demoEnUS.verificationBanner.region),
     })
 
-    profile.verification = { state: 'verified', email: 'ada@x.test', since: '' }
+    profile.verification = { state: 'verified', email: 'ada@x.test', since: null }
     await act(async () => {
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),

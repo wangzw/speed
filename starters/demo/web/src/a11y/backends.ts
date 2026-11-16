@@ -108,13 +108,6 @@ const NOT_FOUND = Symbol('scripted-not-found')
 /** An RFC 3339 instant, reused across the canned rows. */
 const INSTANT = '2026-01-01T00:00:00Z'
 
-/**
- * The zero instant (0001-01-01T00:00:00Z): the sentinel the administration
- * views read as "never" -- an impersonation still in force, an invitation not
- * yet accepted.
- */
-const ZERO_INSTANT = '0001-01-01T00:00:00Z'
-
 // --- The canned rows (data mode), typed against the generated shapes. -------
 
 const TENANT: TenantAdminTenant = {
@@ -126,7 +119,7 @@ const TENANT: TenantAdminTenant = {
   displayName: 'Acme Inc.',
   website: 'https://acme.example',
   ownerAccount: 'account-1',
-  createdAt: INSTANT,
+  created_at: INSTANT,
 }
 
 /** The scan tenant's organization profile, the same values its roster row
@@ -143,7 +136,7 @@ const TENANT_PROFILE: TenantProfileView = {
   ownerAccount: TENANT.ownerAccount,
   ownerDisplayName: 'Test User',
   ownerUsername: '',
-  createdAt: TENANT.createdAt,
+  created_at: TENANT.created_at,
 }
 
 const ACCOUNT: AuthnAdminAccount = {
@@ -190,7 +183,7 @@ const INVITATION_ROW: AuthnInviteInvitation = {
   status: 'pending',
   created_at: INSTANT,
   expires_at: INSTANT,
-  accepted_at: ZERO_INSTANT,
+  accepted_at: null,
 }
 
 /** One SSO provider of the scan tenant, with no claimed domain. */
@@ -351,6 +344,7 @@ const NOTIFICATION_MESSAGE: NotificationMessage = {
   body: 'Something happened.',
   params: {},
   link: '/',
+  read_at: null,
   created_at: INSTANT,
 }
 
@@ -366,8 +360,8 @@ const NOTIFICATION_TYPE: NotificationType = {
 const MY_TRANSFER: MyTransferView = {
   id: 'transfer-1',
   tenant: TENANT.name,
-  requestedAt: INSTANT,
-  expiresAt: '2026-01-08T00:00:00Z',
+  requested_at: INSTANT,
+  expires_at: '2026-01-08T00:00:00Z',
   status: 'pending',
 }
 
@@ -386,7 +380,7 @@ const PROFILE: AuthnProfileProfile = {
     { id: 'id-1', kind: 'email', value: 'user@example.com', proven: true, contact: true, default_contact: true, sign_in: true, verified_at: INSTANT, verified_via: 'email-code' },
   ],
   links: [],
-  verification: { state: 'pending', email: 'user@example.com', since: '' },
+  verification: { state: 'pending', email: 'user@example.com', since: null },
 }
 
 // --- The data-mode bodies, keyed by the endpoint they answer. ---------------
@@ -410,8 +404,7 @@ const IMPERSONATION_GRANT: AuthnImpersonationGrantEnvelope = {
 /**
  * The invitation a landing token points to, pending and unaccepted: the body
  * the accept screen's read (GET /api/v1/auth/invitations/:token) answers in
- * data mode. `accepted_at` is the zero sentinel, the value the screen reads as
- * "still redeemable".
+ * data mode. `accepted_at` is null while the invitation has not been accepted.
  */
 const INVITATION: AuthnInviteView = {
   state: 'pending',
@@ -423,14 +416,14 @@ const INVITATION: AuthnInviteView = {
     status: 'pending',
     created_at: INSTANT,
     expires_at: INSTANT,
-    accepted_at: ZERO_INSTANT,
+    accepted_at: null,
   },
 }
 
 /**
- * One impersonation record, in force: `ended_at` is the zero sentinel the
- * views read as "still active", so the record row renders its state column as
- * in force and offers the terminate action.
+ * One impersonation record, in force: `ended_at` is null while the record
+ * is still active, so the record row renders its state column as in force
+ * and offers the terminate action.
  */
 const IMPERSONATION_RECORD: AuthnAdminImpersonation = {
   id: 'imp-1',
@@ -440,7 +433,7 @@ const IMPERSONATION_RECORD: AuthnAdminImpersonation = {
   session_id: 'session-1',
   started_at: INSTANT,
   ends_at: INSTANT,
-  ended_at: ZERO_INSTANT,
+  ended_at: null,
 }
 
 interface RouteAnswer {
@@ -566,7 +559,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     links: [],
     // The empty state has no self-registration contact: `none` renders no
     // verification section and no banner.
-    verification: { state: 'none', email: '', since: '' },
+    verification: { state: 'none', email: '', since: null },
   } satisfies AuthnProfileProfile),
   // The account-level ownership transfer requests page: data mode lists one
   // pending request, empty mode lists none.

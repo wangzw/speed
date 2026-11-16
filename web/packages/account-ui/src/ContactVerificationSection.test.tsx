@@ -59,7 +59,7 @@ function profileVerification(
   email: string,
 ): Record<string, unknown> {
   return profileBody({
-    verification: { state, email, since: '' },
+    verification: { state, email, since: null },
   })
 }
 

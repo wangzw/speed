@@ -223,12 +223,12 @@ function RequestFacts({
     <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 3, rowGap: 0.5 }}>
       <Typography variant="body2">
         {t('transferRequests.requestedAt', {
-          requested: displayInstant(request.requestedAt, language, timeZone),
+          requested: displayInstant(request.requested_at, language, timeZone),
         })}
       </Typography>
       <Typography variant="body2">
         {t('transferRequests.expiresAt', {
-          expires: displayInstant(request.expiresAt, language, timeZone),
+          expires: displayInstant(request.expires_at, language, timeZone),
         })}
       </Typography>
     </Box>

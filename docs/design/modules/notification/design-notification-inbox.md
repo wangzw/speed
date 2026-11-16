@@ -84,7 +84,7 @@ type Inbox interface {
 | `POST /api/v1/notifications/messages/read-all` | 200，`{"read_count": N}` |
 | `POST /api/v1/notifications/messages/:messageId/read` | 204，无正文 |
 
-路由的响应体里，`Message` 视图逐字段从根包的 `Message` 构造：`id`、`type_key`、`group`、`title`、`body`、`params`、`link`、`read_at`、`created_at`，时间按 UTC 写出。
+路由的响应体里，`Message` 视图逐字段从根包的 `Message` 构造：`id`、`type_key`、`group`、`title`、`body`、`params`、`link`、`read_at`、`created_at`；`read_at` 为 `null` 表示未读，契约声明它可空，`created_at` 恒有值；时间按带 `Z` 的 UTC ISO 8601 写出（[ADR-api-time-format](../../../adr/adr-api-time-format.md)）。
 
 ### 对外接口
 

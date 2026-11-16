@@ -5,9 +5,12 @@
         "description": "One invitation as the management face shows it. It never carries the acceptance token.",
         "properties": {
           "accepted_at": {
-            "description": "The zero instant 0001-01-01T00:00:00Z when the invitation has not been accepted",
+            "description": "When the invitation was accepted, as an RFC 3339 instant in UTC; null while it has not been accepted.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "created_at": {
             "description": "RFC 3339 timestamp in UTC of issuance.",

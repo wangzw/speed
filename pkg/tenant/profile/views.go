@@ -45,7 +45,7 @@ type TenantProfileView struct {
 	OwnerUsername    string    `json:"ownerUsername" required:"true" description:"The owner's account username, read from the account store: unique and user-facing, and not the account identifier. Empty when the owner cannot be resolved or the account has none, and never an identifier."`
 	OwnerAccount     string    `json:"ownerAccount" required:"true" description:"The owning account's internal identifier, from the roster row's owner column. It is the key the ownership decision and the transfer-target exclusion use, and a client compares it to identify the owner; it is not displayed. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner."`
 	Status           string    `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
-	CreatedAt        time.Time `json:"createdAt" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
+	CreatedAt        time.Time `json:"created_at" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
 }
 
 // profileViewOf builds the view field by field from a root-package value.

@@ -1053,6 +1053,7 @@
       },
       "revoked": "已撤销",
       "active": "有效",
+      "neverExpires": "永不到期",
       "revoke": "撤销",
       "revokeAria": "撤销密钥 {{label}}",
       "revokeTitle": "撤销服务密钥",

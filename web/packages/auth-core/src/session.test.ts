@@ -1811,6 +1811,7 @@ describe('response guards reject a contract-violating 2xx', () => {
             last_login_at: '2026-01-04T00:00:00Z',
           },
           { id: 'l-2' },
+          { id: 'l-3', created_at: null },
         ],
       }),
     })
@@ -1851,7 +1852,8 @@ describe('response guards reject a contract-violating 2xx', () => {
           created_at: '2026-01-03T00:00:00Z',
           last_login_at: '2026-01-04T00:00:00Z',
         },
-        { id: 'l-2', provider: '', created_at: '' },
+        { id: 'l-2', provider: '', created_at: null },
+        { id: 'l-3', provider: '', created_at: null },
       ],
     })
   })

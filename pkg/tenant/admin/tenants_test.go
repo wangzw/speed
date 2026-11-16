@@ -108,7 +108,7 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	// The answer carries the creation instant the roster recorded, not the zero
 	// value of the value this call assembled.
 	if !got.Tenant.CreatedAt.Equal(provisionedAt) {
-		t.Errorf("createdAt = %v, want the roster's %v", got.Tenant.CreatedAt, provisionedAt)
+		t.Errorf("created_at = %v, want the roster's %v", got.Tenant.CreatedAt, provisionedAt)
 	}
 	calls := r.provisioner.recorded()
 	if len(calls) != 1 {
@@ -499,7 +499,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantStatus: "active",
 			wantKeys: []string{
 				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "createdAt",
+				"ownerAccount", "status", "created_at",
 			},
 		},
 		"disabled by an operator": {
@@ -510,7 +510,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "createdAt", "disabledBy",
+				"ownerAccount", "status", "created_at", "disabledBy",
 			},
 			disabledBy: "operator",
 		},
@@ -522,19 +522,19 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "createdAt", "disabledBy",
+				"ownerAccount", "status", "created_at", "disabledBy",
 			},
 			disabledBy: "account",
 		},
 		"deleted": {
 			row:        tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted, OwnerAccount: "acct-owner"},
 			wantStatus: "deleted",
-			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
+			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "created_at"},
 		},
 		"a tenant with no owner": {
 			row:        tenant.Tenant{ID: "t_system", Name: "system", Status: tenant.StatusActive},
 			wantStatus: "active",
-			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "createdAt"},
+			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "created_at"},
 		},
 		"a status this build does not know": {
 			row: tenant.Tenant{
@@ -544,7 +544,7 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantStatus: "disabled",
 			wantKeys: []string{
 				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "createdAt", "disabledBy",
+				"ownerAccount", "status", "created_at", "disabledBy",
 			},
 			disabledBy: "operator",
 		},

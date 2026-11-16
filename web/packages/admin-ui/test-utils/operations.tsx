@@ -357,7 +357,7 @@ export function makeAdminBackend(
         id: 'secret-1',
         label: 'label',
         secret: 'one-time',
-        expires_at: '0001-01-01T00:00:00Z',
+        expires_at: null,
       }),
 
     listImpersonations: () => Promise.resolve([]),
@@ -448,7 +448,7 @@ export function tenantFixture(
     ownerAccount: 'acc-1',
     status: 'active',
     contactEmail: '',
-    createdAt: '2026-10-15T12:00:00Z',
+    created_at: '2026-10-15T12:00:00Z',
     description: '',
     website: '',
     ...overrides,
@@ -470,7 +470,7 @@ export function profileFixture(
     ownerDisplayName: '',
     ownerUsername: '',
     status: 'active',
-    createdAt: '2026-10-15T12:00:00Z',
+    created_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
 }
@@ -483,8 +483,8 @@ export function transferFixture(
     id: 'transfer-1',
     targetDisplayName: 'Bob Stone',
     targetUsername: 'bob',
-    requestedAt: '2026-10-20T08:30:00Z',
-    expiresAt: '2026-10-27T08:30:00Z',
+    requested_at: '2026-10-20T08:30:00Z',
+    expires_at: '2026-10-27T08:30:00Z',
     status: 'pending',
     ...overrides,
   }
@@ -546,7 +546,7 @@ export function issuedInvitationFixture(
       status: 'pending',
       invited_by: 'staff-1',
       expires_at: '2099-01-01T00:00:00Z',
-      accepted_at: '0001-01-01T00:00:00Z',
+      accepted_at: null,
       created_at: '2026-10-15T12:00:00Z',
     },
     token: 'spd_inv_test_token',

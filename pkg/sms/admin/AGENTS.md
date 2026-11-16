@@ -143,8 +143,11 @@ express a permission and every route would refuse its caller.
   stands, so a field added later does not reach a client by being there. The
   template view carries `name`, `carrier`, `kind`, `source`, `params`, the
   effective locale set (`codes` ∪ `bodies`), `bodies`, `attributes`, the
-  per-language `approvals`, `enabled`, `version` and the timestamps; it carries
-  no vendor code — a code is the registry's own bookkeeping, and an operator
+  per-language `approvals`, `enabled`, `version` and the timestamps. A timestamp
+  is a UTC ISO 8601 instant ending in `Z`; one written by no source — a template
+  from the configuration source has no write instant — is `null` and the field is
+  declared nullable (ADR-api-time-format). The template view carries no vendor
+  code — a code is the registry's own bookkeeping, and an operator
   reading which templates are in force needs to know that one is, not what number
   the vendor filed it under. The carrier view carries `name`, `content`,
   `review`, `identities`, `countries`, `attribute_keys`, `max_body_runes` and

@@ -16,7 +16,7 @@ func secretViewOf(s authn.ServiceSecretInfo) AuthnAdminSecret {
 	return AuthnAdminSecret{
 		ID:        s.ID,
 		Label:     s.Label,
-		ExpiresAt: s.ExpiresAt.UTC(),
+		ExpiresAt: utcPtr(s.ExpiresAt),
 		Revoked:   !s.RevokedAt.IsZero(),
 	}
 }
@@ -89,9 +89,9 @@ func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, 
 		m.auditBestEffort(ctx, failedAudit(actionServiceKeyCreate, audit.AccountObject(string(accountID)), actionID))
 		return m.replyFailure(ctx, "creating a service secret", err)
 	}
-	expires := time.Time{}
+	var expires *time.Time
 	if in.ExpiresAt != nil {
-		expires = in.ExpiresAt.UTC()
+		expires = utcPtr(*in.ExpiresAt)
 	}
 	return speedhttp.JSONReply(201, AuthnAdminSecretCreated{
 		ID: secretID, Label: in.Label, Secret: secret, ExpiresAt: expires,

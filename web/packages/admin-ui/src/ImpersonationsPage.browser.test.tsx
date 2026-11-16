@@ -36,7 +36,7 @@ const RECORDS: readonly AdminImpersonation[] = [
     session_id: 'session-identifier-with-a-long-value-0001',
     started_at: '2026-10-15T12:00:00Z',
     ends_at: '2026-10-15T13:00:00Z',
-    ended_at: '0001-01-01T00:00:00Z',
+    ended_at: null,
   },
 ]
 

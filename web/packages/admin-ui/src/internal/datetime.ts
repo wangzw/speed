@@ -1,20 +1,18 @@
 /**
- * The zero-instant sentinel the administration views carry.
+ * The absent-instant sentinel the administration views carry.
  *
- * The views write Go's zero time (`0001-01-01T00:00:00Z`) for "never" -- an
- * impersonation still in force, an invitation not yet accepted -- or leave
- * the field empty. Timestamp rendering itself is @speed/i18n's
- * `formatInstant` with an explicit UTC zone; this module carries only the
- * sentinel test, which must not go through a timezone conversion.
+ * The views write `null` for "never" -- an impersonation still in force --
+ * and may leave the field out entirely. Timestamp rendering itself is
+ * @speed/i18n's `formatInstant` with an explicit UTC zone; this module
+ * carries only the sentinel test, which must not go through a timezone
+ * conversion.
  */
 
 /**
- * Whether an instant is the zero instant (0001-01-01T00:00:00Z), the
- * sentinel the administration views use for "never" (an impersonation
- * still in force, an invitation not yet accepted). The literal the Go
- * time package writes for the zero time is matched directly, so no
- * timezone conversion can mistake it for a real instant.
+ * Whether an administration record carries no instant, the sentinel the
+ * views use for "never" (an impersonation still in force). Both `null` and
+ * an absent field read as "never"; any other value is a real instant.
  */
-export function isZeroInstant(iso: string | undefined): boolean {
-  return iso === undefined || iso === '' || iso.startsWith('0001-01-01')
+export function isNullInstant(value: string | null | undefined): boolean {
+  return value === null || value === undefined
 }

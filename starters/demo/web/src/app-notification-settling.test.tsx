@@ -47,7 +47,7 @@ const PROFILE = {
   time_zone: 'UTC',
   identifiers: [],
   links: [],
-  verification: { state: 'none', email: '', since: '' },
+  verification: { state: 'none', email: '', since: null },
 } as const
 const STREAM_FEATURES = [
   'tenant.admin',

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -187,8 +188,8 @@ type AuthnLoginSession struct {
 type AuthnLoginSessionView struct {
 	_ struct{} `description:"The public facts of the session a login created. No token or secret is included."`
 
-	ID        string `json:"id" required:"true" description:"The session identifier; the browser client holds the session cookie written in the same response."`
-	ExpiresAt string `json:"expires_at" required:"true" description:"The session's expiry as an RFC 3339 instant, or empty"`
+	ID        string    `json:"id" required:"true" description:"The session identifier; the browser client holds the session cookie written in the same response."`
+	ExpiresAt time.Time `json:"expires_at" required:"true" description:"The session's expiry, as an RFC 3339 instant in UTC."`
 }
 
 // AuthnLoginToken is the answer of a login delivered as a token pair, and of a

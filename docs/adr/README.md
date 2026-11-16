@@ -371,7 +371,8 @@
 | [语言与时区偏好存账户属性集，不改 authn 表结构](adr-i18n-preferences-storage.md) |
 | [默认语言是配置项 i18n.default-locale，i18n 与 authn 取同一个](adr-i18n-default-locale.md) |
 | [受支持语言集由目录派生，默认语言是配置而非常量](adr-i18n-language-set.md) |
-| [消息按语言整体渲染，复数与时间段用自写语法，内嵌的日期时间按语言与时区渲染](adr-i18n-message-rendering.md) |
+| [消息按语言整体渲染，复数与时间段用自写语法，邮件与短信内嵌的日期时间按语言与时区渲染](adr-i18n-message-rendering.md) |
+| [接口的时刻以带 Z 的 UTC ISO 8601 时间串交出，显示时区与格式由前端渲染](adr-api-time-format.md) |
 
 ## 作业
 

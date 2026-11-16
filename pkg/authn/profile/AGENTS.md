@@ -141,7 +141,8 @@ configuration that is `/api/v1/auth`, so the two routes are `/api/v1/auth/me`.
   a field added to a record later does not reach a client by being there. The
   read view's external bindings carry no subject: the provider's own name for the
   person is no part of what the account's holder is shown. A time is written as
-  RFC 3339 in UTC, and a zero time as the empty string. The write view gives the
+  an RFC 3339 instant in UTC ending in `Z`; an absent time is `null`, and the
+  field is declared nullable (ADR-api-time-format). The write view gives the
   self-writable fields as they stand after the write.
 
 ## Running it

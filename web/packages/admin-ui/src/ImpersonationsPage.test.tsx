@@ -43,7 +43,6 @@ import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-const ZERO = '0001-01-01T00:00:00Z'
 const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
 
 /** The end-reason labels a test injects into the namespace. */
@@ -170,7 +169,7 @@ function record(overrides: Partial<AdminImpersonation> = {}): AdminImpersonation
     session_id: 'sess-1',
     started_at: '2026-10-15T12:00:00Z',
     ends_at: '2026-10-15T13:00:00Z',
-    ended_at: ZERO,
+    ended_at: null,
     ...overrides,
   }
 }

@@ -303,9 +303,12 @@
             "type": "string"
           },
           "created_at": {
-            "description": "When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template.",
+            "description": "When the record was first written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "enabled": {
             "description": "Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review.",
@@ -338,9 +341,12 @@
             "type": "string"
           },
           "updated_at": {
-            "description": "When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template.",
+            "description": "When the record was last written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "version": {
             "description": "The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version.",

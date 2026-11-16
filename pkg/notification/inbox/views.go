@@ -21,7 +21,7 @@ type NotificationMessage struct {
 	Body      string         `json:"body" required:"true" description:"The rendered body, in the language the delivery pipeline rendered it in."`
 	Params    map[string]any `json:"params" required:"true" description:"The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none."`
 	Link      string         `json:"link" required:"true" description:"The optional navigation target; the empty string when the message carries none."`
-	ReadAt    *time.Time     `json:"read_at" description:"The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set."`
+	ReadAt    *time.Time     `json:"read_at" nullable:"true" required:"true" description:"The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set."`
 	CreatedAt time.Time      `json:"created_at" required:"true" description:"When the message was written, as an RFC 3339 instant in UTC."`
 }
 

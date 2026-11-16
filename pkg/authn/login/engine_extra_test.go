@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -639,6 +640,32 @@ func TestTokenDeliveryIssuesATokenPair(t *testing.T) {
 	}
 	if exp, ok := body["expires_in"].(float64); !ok || exp < 0 {
 		t.Errorf("the token answer carries expires_in %v, want a non-negative number", body["expires_in"])
+	}
+}
+
+// TestASessionExpiryIsWrittenInUTC holds the wire rule for the login session
+// answer: the expiry leaves as a UTC instant whose text ends in Z, even when
+// the issued instant carries another zone.
+func TestASessionExpiryIsWrittenInUTC(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	r.sessions.expires = time.Date(2027, 3, 4, 5, 6, 7, 0, time.FixedZone("UTC+8", 8*60*60))
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the session completion answered %d: %s", done.Code, done.Body.String())
+	}
+	if body := done.Body.String(); !strings.Contains(body, `"expires_at":"2027-03-03T21:06:07Z"`) {
+		t.Errorf("the session answer is %s, want expires_at written in UTC ending in Z", body)
 	}
 }
 

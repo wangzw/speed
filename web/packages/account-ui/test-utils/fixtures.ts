@@ -25,7 +25,7 @@ export function profileBody(
     time_zone: '',
     identifiers: [],
     links: [],
-    verification: { state: 'none', email: '', since: '' },
+    verification: { state: 'none', email: '', since: null },
     ...overrides,
   }
 }

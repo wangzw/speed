@@ -598,7 +598,7 @@ describe('TenantDetailPage', () => {
               description: 'A canned organization.',
               contactEmail: 'ops@acme.example',
               website: 'https://acme.example',
-              createdAt,
+              created_at: createdAt,
             }),
           ),
       }),

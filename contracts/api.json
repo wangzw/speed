@@ -2657,7 +2657,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's email verification state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.",
+        "description": "The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's email verification state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is an RFC 3339 instant in UTC, written with a trailing Z; a time field with no value is null where the schema declares the field nullable, and last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.",
         "operationId": "authn.profile.get",
         "responses": {
           "200": {
@@ -15847,9 +15847,12 @@
             "type": "string"
           },
           "ended_at": {
-            "description": "The zero instant 0001-01-01T00:00:00Z while the record is still in force",
+            "description": "When the impersonation ended, as an RFC 3339 instant in UTC; null while the record is still in force.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "ends_at": {
             "description": "When the impersonation lapses, as an RFC 3339 instant in UTC.",
@@ -16283,9 +16286,12 @@
         "description": "One service secret as the listing shows it: identifier, label, expiry and revocation state, never the secret value.",
         "properties": {
           "expires_at": {
-            "description": "When the secret expires, as an RFC 3339 instant in UTC; the zero instant 0001-01-01T00:00:00Z means it never expires.",
+            "description": "When the secret expires, as an RFC 3339 instant in UTC; null when it never expires.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "id": {
             "description": "The secret's identifier, not the secret value.",
@@ -16328,9 +16334,12 @@
         "description": "A freshly minted service secret. The secret value appears in this response only.",
         "properties": {
           "expires_at": {
-            "description": "The zero instant 0001-01-01T00:00:00Z when the request named no expiry",
+            "description": "When the secret expires, as an RFC 3339 instant in UTC; null when the request named no expiry.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "id": {
             "description": "The new secret's identifier.",
@@ -16570,9 +16579,12 @@
         "description": "One invitation as the management face shows it. It never carries the acceptance token.",
         "properties": {
           "accepted_at": {
-            "description": "The zero instant 0001-01-01T00:00:00Z when the invitation has not been accepted",
+            "description": "When the invitation was accepted, as an RFC 3339 instant in UTC; null while it has not been accepted.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "created_at": {
             "description": "RFC 3339 timestamp in UTC of issuance.",
@@ -17061,7 +17073,8 @@
         "description": "The public facts of the session a login created. No token or secret is included.",
         "properties": {
           "expires_at": {
-            "description": "The session's expiry as an RFC 3339 instant, or empty",
+            "description": "The session's expiry, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
             "type": "string"
           },
           "id": {
@@ -17352,7 +17365,8 @@
             "type": "string"
           },
           "verified_at": {
-            "description": "RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification",
+            "description": "The instant the identifier's ownership was established, as an RFC 3339 instant in UTC; always present, as no identifier is stored awaiting verification",
+            "format": "date-time",
             "type": "string"
           },
           "verified_via": {
@@ -17377,8 +17391,12 @@
         "description": "One external identity bound to the account, as the account module keeps it; it carries no provider subject.",
         "properties": {
           "created_at": {
-            "description": "RFC 3339 in UTC, empty when the binding carries no creation instant",
-            "type": "string"
+            "description": "When the binding was created, as an RFC 3339 instant in UTC; null when the binding carries no creation instant",
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "email": {
             "description": "Absent when the provider gave no address",
@@ -17390,6 +17408,7 @@
           },
           "last_login_at": {
             "description": "Absent when the binding has never been used to sign in",
+            "format": "date-time",
             "type": "string"
           },
           "provider": {
@@ -17459,8 +17478,12 @@
             "type": "string"
           },
           "created_at": {
-            "description": "RFC 3339 in UTC, empty when the account carries no creation instant",
-            "type": "string"
+            "description": "When the account was created, as an RFC 3339 instant in UTC; null when the account carries no creation instant",
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "display_name": {
             "description": "The account's display name, empty when it carries none",
@@ -17530,8 +17553,12 @@
             "type": "string"
           },
           "since": {
-            "description": "RFC 3339 in UTC, the first instant the account reached verified; empty while it never did, and for none",
-            "type": "string"
+            "description": "When the account first reached verified, as an RFC 3339 instant in UTC; null while it never did, and for none",
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "state": {
             "description": "none, pending or verified. none means the account has no email address to verify; pending means it has an email address that has not been proved, whether the account itself, an administrator or an import wrote it; verified means an email address whose ownership was proved",
@@ -18295,7 +18322,7 @@
       "MyTransferView": {
         "description": "One owner-transfer request addressed to the caller.",
         "properties": {
-          "expiresAt": {
+          "expires_at": {
             "description": "When the confirmation window closes, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -18304,7 +18331,7 @@
             "description": "The request identifier.",
             "type": "string"
           },
-          "requestedAt": {
+          "requested_at": {
             "description": "When the request was made, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -18328,8 +18355,8 @@
         "required": [
           "id",
           "tenant",
-          "requestedAt",
-          "expiresAt",
+          "requested_at",
+          "expires_at",
           "status"
         ],
         "type": "object"
@@ -18366,7 +18393,10 @@
           "read_at": {
             "description": "The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "title": {
             "description": "The rendered title, in the language the delivery pipeline rendered it in.",
@@ -18385,6 +18415,7 @@
           "body",
           "params",
           "link",
+          "read_at",
           "created_at"
         ],
         "type": "object"
@@ -19060,9 +19091,12 @@
             "type": "string"
           },
           "created_at": {
-            "description": "When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template.",
+            "description": "When the record was first written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "enabled": {
             "description": "Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review.",
@@ -19095,9 +19129,12 @@
             "type": "string"
           },
           "updated_at": {
-            "description": "When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template.",
+            "description": "When the record was last written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "version": {
             "description": "The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version.",
@@ -19129,7 +19166,7 @@
             "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
             "type": "string"
           },
-          "createdAt": {
+          "created_at": {
             "description": "When the tenant was registered, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -19189,7 +19226,7 @@
           "website",
           "ownerAccount",
           "status",
-          "createdAt"
+          "created_at"
         ],
         "type": "object"
       },
@@ -19284,7 +19321,7 @@
             "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
             "type": "string"
           },
-          "createdAt": {
+          "created_at": {
             "description": "When the tenant was registered, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -19346,7 +19383,7 @@
           "ownerUsername",
           "ownerAccount",
           "status",
-          "createdAt"
+          "created_at"
         ],
         "type": "object"
       },
@@ -19381,7 +19418,7 @@
       "TenantTransferView": {
         "description": "One pending or finished owner-transfer request on the organization's own surface.",
         "properties": {
-          "expiresAt": {
+          "expires_at": {
             "description": "When the confirmation window closes, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -19390,7 +19427,7 @@
             "description": "The request identifier the target and the canonical paths address.",
             "type": "string"
           },
-          "requestedAt": {
+          "requested_at": {
             "description": "When the request was made, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -19419,8 +19456,8 @@
           "id",
           "targetDisplayName",
           "targetUsername",
-          "requestedAt",
-          "expiresAt",
+          "requested_at",
+          "expires_at",
           "status"
         ],
         "type": "object"

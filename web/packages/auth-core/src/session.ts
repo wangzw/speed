@@ -695,7 +695,7 @@ function parseVerification(value: unknown): AuthnProfileVerification {
   return {
     state: typeof typed.state === 'string' ? typed.state : 'none',
     email: typeof typed.email === 'string' ? typed.email : '',
-    since: typeof typed.since === 'string' ? typed.since : '',
+    since: typeof typed.since === 'string' ? typed.since : null,
   }
 }
 
@@ -704,7 +704,7 @@ function parseLink(value: unknown): AuthnLink {
   const link: AuthnLink = {
     id: requireString(rec.id, 'profile link carries no id'),
     provider: typeof rec.provider === 'string' ? rec.provider : '',
-    created_at: typeof rec.created_at === 'string' ? rec.created_at : '',
+    created_at: typeof rec.created_at === 'string' ? rec.created_at : null,
   }
   if (typeof rec.email === 'string') {
     link.email = rec.email
@@ -744,7 +744,7 @@ function parsePrincipal(body: unknown): AuthnPrincipal {
     display_name: typeof rec.display_name === 'string' ? rec.display_name : '',
     mfa_required: rec.mfa_required === true,
     password_set: rec.password_set === true,
-    created_at: typeof rec.created_at === 'string' ? rec.created_at : '',
+    created_at: typeof rec.created_at === 'string' ? rec.created_at : null,
     attributes: parseStringMap(rec.attributes),
     color_mode: typeof rec.color_mode === 'string' ? rec.color_mode : '',
     locale: typeof rec.locale === 'string' ? rec.locale : '',

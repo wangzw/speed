@@ -1539,7 +1539,9 @@ function AccountSecretsSection({
       priority: 'low',
       cellWrap: 'nowrap',
       cell: (row) =>
-        formatInstant(row.expires_at, i18n.language, { timeZone: 'UTC' }),
+        row.expires_at === null
+          ? t('accounts.secrets.neverExpires')
+          : formatInstant(row.expires_at, i18n.language, { timeZone: 'UTC' }),
     },
     {
       id: 'state',

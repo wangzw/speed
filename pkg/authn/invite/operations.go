@@ -31,14 +31,14 @@ const (
 type AuthnInviteInvitation struct {
 	_ struct{} `description:"One invitation as the management face shows it. It never carries the acceptance token."`
 
-	ID         string    `json:"id" required:"true" description:"The invitation's opaque identifier, used to revoke it."`
-	Tenant     string    `json:"tenant" required:"true" description:"The name of the tenant the invitation grants a membership in."`
-	Email      string    `json:"email" required:"true" description:"The normalized address"`
-	Status     string    `json:"status" required:"true" enum:"pending,accepted,revoked" description:"The stored state. Expiry is not stored: an expired pending invitation still reads pending."`
-	InvitedBy  string    `json:"invited_by" required:"true" description:"The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity."`
-	ExpiresAt  time.Time `json:"expires_at" required:"true" description:"RFC 3339 deadline in UTC; a pending invitation at or past it can no longer be accepted."`
-	AcceptedAt time.Time `json:"accepted_at" required:"true" description:"The zero instant 0001-01-01T00:00:00Z when the invitation has not been accepted"`
-	CreatedAt  time.Time `json:"created_at" required:"true" description:"RFC 3339 timestamp in UTC of issuance."`
+	ID         string     `json:"id" required:"true" description:"The invitation's opaque identifier, used to revoke it."`
+	Tenant     string     `json:"tenant" required:"true" description:"The name of the tenant the invitation grants a membership in."`
+	Email      string     `json:"email" required:"true" description:"The normalized address"`
+	Status     string     `json:"status" required:"true" enum:"pending,accepted,revoked" description:"The stored state. Expiry is not stored: an expired pending invitation still reads pending."`
+	InvitedBy  string     `json:"invited_by" required:"true" description:"The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity."`
+	ExpiresAt  time.Time  `json:"expires_at" required:"true" description:"RFC 3339 deadline in UTC; a pending invitation at or past it can no longer be accepted."`
+	AcceptedAt *time.Time `json:"accepted_at" nullable:"true" required:"true" description:"When the invitation was accepted, as an RFC 3339 instant in UTC; null while it has not been accepted."`
+	CreatedAt  time.Time  `json:"created_at" required:"true" description:"RFC 3339 timestamp in UTC of issuance."`
 }
 
 // AuthnInviteIssued is the answer of an issue: the invitation's view, the

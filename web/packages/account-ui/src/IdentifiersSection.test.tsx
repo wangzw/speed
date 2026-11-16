@@ -146,7 +146,7 @@ describe('IdentifiersSection', () => {
                 kind: 'phone',
                 value: '+14155550123',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
               }),
             ],
@@ -215,7 +215,7 @@ describe('IdentifiersSection', () => {
                     kind: 'email',
                     value: 'bea@x.test',
                     proven: false,
-                    verified_at: '',
+                    verified_at: '2026-01-01T00:00:00Z',
                     verified_via: 'admin',
                     sign_in: false,
                   }),
@@ -349,7 +349,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(
           200,
           profileBody({
-            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            verification: { state: 'verified', email: 'ada@x.test', since: null },
             identifiers: [
               identifier({ id: 'id-primary', kind: 'email', value: 'ada@x.test' }),
               identifier({
@@ -427,7 +427,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(
           200,
           profileBody({
-            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            verification: { state: 'verified', email: 'ada@x.test', since: null },
             identifiers: [
               identifier({ id: 'id-primary', kind: 'email', value: 'ada@x.test' }),
               identifier({
@@ -527,7 +527,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(
           200,
           profileBody({
-            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            verification: { state: 'verified', email: 'ada@x.test', since: null },
             identifiers: [
               identifier({
                 id: 'id-secondary',
@@ -614,7 +614,7 @@ describe('IdentifiersSection', () => {
               verification: {
                 state: 'verified',
                 email: 'ada@x.test',
-                since: '',
+                since: null,
               },
               identifiers: [
                 identifier({
@@ -622,7 +622,7 @@ describe('IdentifiersSection', () => {
                   kind: 'email',
                   value: 'ada@x.test',
                   proven: false,
-                  verified_at: '',
+                  verified_at: '2026-01-01T00:00:00Z',
                   verified_via: '',
                 }),
               ],
@@ -756,7 +756,7 @@ describe('IdentifiersSection', () => {
             verification: {
               state: 'verified',
               email: 'ada@x.test',
-              since: '',
+              since: null,
             },
             identifiers: [
               identifier({
@@ -764,7 +764,7 @@ describe('IdentifiersSection', () => {
                 kind: 'email',
                 value: 'ada@x.test',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
               }),
             ],
@@ -860,7 +860,7 @@ describe('IdentifiersSection', () => {
             verification: {
               state: 'pending',
               email: 'pending@x.test',
-              since: '',
+              since: null,
             },
             identifiers: [
               identifier({
@@ -928,7 +928,7 @@ describe('IdentifiersSection', () => {
                 kind: 'username',
                 value: 'ada',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: 'self',
               }),
             ],
@@ -990,7 +990,7 @@ describe('IdentifiersSection', () => {
                 kind: 'username',
                 value: 'ada',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: 'self',
               }),
               identifier({
@@ -998,7 +998,7 @@ describe('IdentifiersSection', () => {
                 kind: 'phone',
                 value: '+14155550123',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
               }),
             ],
@@ -1039,7 +1039,7 @@ describe('IdentifiersSection', () => {
                 kind: 'username',
                 value: 'ada',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: 'self',
               }),
               identifier({
@@ -1108,7 +1108,7 @@ describe('IdentifiersSection', () => {
             verification: {
               state: 'pending',
               email: 'ada@x.test',
-              since: '',
+              since: null,
             },
           }),
         )
@@ -1266,7 +1266,7 @@ describe('IdentifiersSection', () => {
                       kind: 'username',
                       value: 'ada',
                       proven: false,
-                      verified_at: '',
+                      verified_at: '2026-01-01T00:00:00Z',
                       verified_via: 'self',
                     }),
                     identifier({
@@ -2545,7 +2545,7 @@ describe('IdentifiersSection', () => {
             verification: {
               state: 'verified',
               email: 'ada@x.test',
-              since: '',
+              since: null,
             },
             identifiers: [
               identifier({
@@ -2762,7 +2762,7 @@ describe('IdentifiersSection', () => {
               verification: {
                 state: 'verified',
                 email: 'ada@x.test',
-                since: '',
+                since: null,
               },
               identifiers: [
                 identifier({
@@ -2923,7 +2923,7 @@ describe('IdentifiersSection', () => {
                 kind: 'username',
                 value: 'ada',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: 'self',
               }),
               identifier({
@@ -2945,7 +2945,7 @@ describe('IdentifiersSection', () => {
                 kind: 'phone',
                 value: '+14155550123',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
                 sign_in: false,
                 contact: false,
@@ -2995,7 +2995,7 @@ describe('IdentifiersSection', () => {
                 kind: 'username',
                 value: 'ada',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: 'self',
               }),
             ],
@@ -3034,7 +3034,7 @@ describe('IdentifiersSection', () => {
                 kind: 'phone',
                 value: '+14155550123',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
                 sign_in: false,
                 contact: false,
@@ -3348,7 +3348,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(
           200,
           profileBody({
-            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            verification: { state: 'verified', email: 'ada@x.test', since: null },
             identifiers: [
               identifier({ id: 'id-primary', kind: 'email', value: 'ada@x.test' }),
               identifier({
@@ -3826,7 +3826,7 @@ describe('IdentifiersSection', () => {
                 kind: 'username',
                 value: 'ada',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: 'self',
               }),
               identifier({
@@ -4158,7 +4158,7 @@ describe('IdentifiersSection', () => {
                 kind: 'email',
                 value: 'ada@x.test',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
               }),
             ],
@@ -4236,7 +4236,7 @@ describe('IdentifiersSection', () => {
                     kind: 'email',
                     value: 'ada@example.test',
                     proven: false,
-                    verified_at: '',
+                    verified_at: '2026-01-01T00:00:00Z',
                     verified_via: 'admin',
                   }),
                 ],
@@ -4312,7 +4312,7 @@ describe('IdentifiersSection', () => {
                     kind: 'phone',
                     value: '+14155550123',
                     proven: false,
-                    verified_at: '',
+                    verified_at: '2026-01-01T00:00:00Z',
                     verified_via: '',
                   }),
                 ],

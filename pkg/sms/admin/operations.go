@@ -100,8 +100,8 @@ type SmsAdminTemplate struct {
 	Approvals  map[string]SmsAdminApproval `json:"approvals" required:"true" description:"The vendor's review verdict per language, keyed by locale. A carrier that reviews each template approves per language; one with no such review answers not-required per language. A configured template carries an empty object because this process does not track its review."`
 	Enabled    bool                        `json:"enabled" required:"true" description:"Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review."`
 	Version    int64                       `json:"version" required:"true" description:"The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version."`
-	CreatedAt  time.Time                   `json:"created_at" required:"true" description:"When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template."`
-	UpdatedAt  time.Time                   `json:"updated_at" required:"true" description:"When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template."`
+	CreatedAt  *time.Time                  `json:"created_at" nullable:"true" required:"true" description:"When the record was first written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant."`
+	UpdatedAt  *time.Time                  `json:"updated_at" nullable:"true" required:"true" description:"When the record was last written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant."`
 }
 
 // SmsAdminApproval is the vendor's review verdict on one template in one

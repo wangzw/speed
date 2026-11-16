@@ -33,7 +33,7 @@
 两条路由都由 `speedhttp.TenantAdminRouteGuard` 包裹，该守卫由 `pkg/tenant/resolve` 交付：路径里的租户段被核对为请求解析到的租户，平台域被拒绝，核对不过答 404。挂载时缺少这个守卫的装配在启动期被拒绝。
 ### 视图
 
-`TenantProfileView` 逐字段从 `tenant.Tenant` 构造，字段是 `name`、`kind`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`ownerDisplayName`、`ownerUsername`、`status` 与 `createdAt`；内部标识不出现。`kind` 是 `business` 或 `personal`，由宿主的 `tenant.KindResolver` 给出；它是否决定页面渲染所有权控件，客户端按值分支，不看名称。四个描述字段为空串时照常出现；`createdAt` 每一行都有，不是可空字段；`status` 取 `active`、`disabled` 或 `deleted`。
+`TenantProfileView` 逐字段从 `tenant.Tenant` 构造，字段是 `name`、`kind`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`ownerDisplayName`、`ownerUsername`、`status` 与 `created_at`；内部标识不出现。`kind` 是 `business` 或 `personal`，由宿主的 `tenant.KindResolver` 给出；它是否决定页面渲染所有权控件，客户端按值分支，不看名称。四个描述字段为空串时照常出现；`created_at` 是带 `Z` 的 UTC ISO 8601 时刻，每一行都有，不是可空字段（[ADR-api-time-format](../../../adr/adr-api-time-format.md)）；`status` 取 `active`、`disabled` 或 `deleted`。
 
 `ownerAccount` 是名册行的所有者列，原样给出账户标识，是所有权判断与转移目标排除的内部键，界面不渲染它。业务组织携带一个；个人组织的所有者是账户本身；平台自身的租户没有所有者，该字段是空串但仍出现。**`ownerDisplayName` 与 `ownerUsername` 是所有者给人看的那一面**：前者是显示名，后者是账户的用户名：显示名不唯一，用户名唯一，界面据此把所有者指认到一个人。两者经可选的 `authn.Accounts` 解析（显示名取账户行，用户名取该账户的 `IdentifierUsername`）；接口缺席、账户不存在或没有对应用户名时为空串，读取失败答 503，**绝不回退成账户标识**。前端命名规则：两者都在时写“显示名（用户名）”，只有一个时写有值的那个，都没有时写中性的“组织所有者”文案。**所有者不在成员可读的视图里**：成员列表 `AuthnAdminMember` 携带成员关系自身的事实与角色，本人租户视图携带成员自己的 `name` 与 `kind`，两者都没有所有者字段。本视图的读路由需要 `tenant.profile.read`，没有该权限的普通成员在守卫处被拒，走不到视图构造。读与写两条路由答的是同一份 `TenantProfileView`：写路由要求 `tenant.profile.write`，持有该权限即属管理身份，写应答同样带 `ownerAccount`。普通成员两项权限都不持有，两条路由都在守卫处拒绝，看不到所有者。
 
@@ -100,7 +100,7 @@ sequenceDiagram
 
 | 结构 | 字段 | 说明 |
 |---|---|---|
-| `TenantProfileView` | `name`、`kind`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`ownerDisplayName`、`ownerUsername`、`status`、`createdAt` | 逐字段从 `tenant.Tenant` 构造，内部标识不出现；`kind` 是 `business` 或 `personal`；`ownerAccount` 取自行上的所有者列，没有所有者时是空串；`ownerDisplayName` 与 `ownerUsername` 是给界面指认所有者的名字，解析不到时为空串，不回退成标识 |
+| `TenantProfileView` | `name`、`kind`、`displayName`、`description`、`contactEmail`、`website`、`ownerAccount`、`ownerDisplayName`、`ownerUsername`、`status`、`created_at` | 逐字段从 `tenant.Tenant` 构造，内部标识不出现；`kind` 是 `business` 或 `personal`；`ownerAccount` 取自行上的所有者列，没有所有者时是空串；`ownerDisplayName` 与 `ownerUsername` 是给界面指认所有者的名字，解析不到时为空串，不回退成标识 |
 | `profileBody` | `profile` | 读与写共用的应答容器 |
 | `profileWriteInput` | `display_name`、`description`、`contact_email`、`website` | 写正文的四个成员，全部必填 |
 

@@ -442,7 +442,7 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
         status: 'pending',
         created_at: '2026-01-01T00:00:00Z',
         expires_at: '2027-01-01T00:00:00Z',
-        accepted_at: '0001-01-01T00:00:00Z',
+        accepted_at: null,
       },
     }
     const accepted: AuthnInviteAccept = {
@@ -526,7 +526,7 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
       time_zone: 'UTC',
       identifiers: [],
       links: [],
-      verification: { state: 'pending', email: '', since: '' },
+      verification: { state: 'pending', email: '', since: null },
     }
     const unscripted: string[] = []
     const data = createBackend('data', (url) => unscripted.push(url))

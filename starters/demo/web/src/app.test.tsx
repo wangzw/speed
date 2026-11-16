@@ -1799,7 +1799,7 @@ describe('a failed admin access read', () => {
         return Promise.resolve({
           account_id: 'account-1',
           identifiers: [],
-          verification: { state: 'verified', email: 'a@x.test', since: '' },
+          verification: { state: 'verified', email: 'a@x.test', since: null },
         } as T)
       }
       return backend(path, options) as Promise<T>

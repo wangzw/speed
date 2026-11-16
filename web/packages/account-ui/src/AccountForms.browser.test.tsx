@@ -100,7 +100,7 @@ describe('account-ui form geometry', () => {
         return jsonResponse(
           200,
           profileBody({
-            verification: { state: 'pending', email: 'ada@x.test', since: '' },
+            verification: { state: 'pending', email: 'ada@x.test', since: null },
           }),
         )
       }
@@ -142,7 +142,7 @@ describe('account-ui form geometry', () => {
         return jsonResponse(
           200,
           profileBody({
-            verification: { state: 'pending', email: '', since: '' },
+            verification: { state: 'pending', email: '', since: null },
           }),
         )
       }
@@ -355,7 +355,7 @@ describe('account-ui form geometry', () => {
                 kind: 'email',
                 value: 'ada@x.test',
                 proven: false,
-                verified_at: '',
+                verified_at: '2026-01-01T00:00:00Z',
                 verified_via: '',
               }),
             ],
@@ -404,8 +404,8 @@ describe('account-ui form geometry', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
-            { id: 'f-totp', kind: 'totp', label: 'App', status: 'active', created_at: '' },
-            { id: 'f-sms', kind: 'sms', label: 'Phone', status: 'active', created_at: '' },
+            { id: 'f-totp', kind: 'totp', label: 'App', status: 'active', created_at: null },
+            { id: 'f-sms', kind: 'sms', label: 'Phone', status: 'active', created_at: null },
           ],
         })
       }

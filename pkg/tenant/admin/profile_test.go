@@ -134,7 +134,7 @@ func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 		t.Errorf("the answer carries %+v, want the written profile %+v", got.Tenant, want)
 	}
 	if !got.Tenant.CreatedAt.Equal(created) {
-		t.Errorf("createdAt = %v, want %v", got.Tenant.CreatedAt, created)
+		t.Errorf("created_at = %v, want %v", got.Tenant.CreatedAt, created)
 	}
 }
 
@@ -294,7 +294,7 @@ func TestTheTenantViewCarriesTheProfileAndTheCreationTime(t *testing.T) {
 		t.Errorf("the view = %+v, want the profile fields", got.Tenant)
 	}
 	if !got.Tenant.CreatedAt.Equal(created) {
-		t.Errorf("createdAt = %v, want %v", got.Tenant.CreatedAt, created)
+		t.Errorf("created_at = %v, want %v", got.Tenant.CreatedAt, created)
 	}
 }
 

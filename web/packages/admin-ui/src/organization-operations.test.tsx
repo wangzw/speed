@@ -588,8 +588,8 @@ describe('the organization ownership writes', () => {
       id: 'transfer-1',
       targetDisplayName: 'Bob Stone',
       targetUsername: 'bob',
-      requestedAt: '2026-10-20T08:30:00Z',
-      expiresAt: '2026-10-27T08:30:00Z',
+      requested_at: '2026-10-20T08:30:00Z',
+      expires_at: '2026-10-27T08:30:00Z',
       status: 'pending',
     }
     let pending: typeof transfer | null = initialPending ? transfer : null

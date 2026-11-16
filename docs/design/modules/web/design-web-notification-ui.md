@@ -211,7 +211,7 @@ graph TD
 | 服务端事件 | `ServerSentEvent`（api-client） | 一帧：`event`（缺省 message）、`data`、可选 `id`/`retry` |
 | 事件流开启器 | `EventStreamOpener`（api-client） | `(path, options) => EventStreamHandle` |
 
-**消息的 `read_at` 在运行期可为 `null`。** 后端消息视图的 `read_at` 是无 omitempty 的 `*time.Time`，未读消息因而写出 JSON `null`，而生成的类型把该字段建模成可选字符串。界面把 `null`、`undefined` 与空串一律读成未读。
+**消息的 `read_at` 在运行期可为 `null`。** 后端消息视图的 `read_at` 没有值时写 JSON `null`；契约声明该字段可空，生成的类型是 `read_at?: string | null`。界面把 `null` 与缺席读成未读（[ADR-api-time-format](../../../adr/adr-api-time-format.md)）。
 
 ## 核心算法与流程
 

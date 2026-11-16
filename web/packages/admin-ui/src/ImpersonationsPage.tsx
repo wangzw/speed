@@ -61,12 +61,11 @@
  * A start or end refused for insufficient step-up hands over to the
  * elevation gate and leaves the scope empty; the replay is a new run.
  *
- * A record is in force while its `ended_at` is the zero instant (the
- * sentinel the view carries); the state column says so and the terminate
- * control is offered only then. Every account the page shows -- the record's
- * actor and target and the in-force panel's target -- renders through the
- * shared account identity unit, never by its opaque identifier. The
- * timestamps render in UTC through
+ * A record is in force while its `ended_at` is null; the state column says
+ * so and the terminate control is offered only then. Every account the page
+ * shows -- the record's actor and target and the in-force panel's target --
+ * renders through the shared account identity unit, never by its opaque
+ * identifier. The timestamps render in UTC through
  * Intl. The page opens with ui-kit's PageHeader.
  *
  * The tenant scope is optionally controlled: `tenant` locks the page to the
@@ -122,7 +121,7 @@ import {
 } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
-import { isZeroInstant } from './internal/datetime.js'
+import { isNullInstant } from './internal/datetime.js'
 import {
   useAdminImpersonationChange,
   type AdminImpersonationChange,
@@ -501,7 +500,7 @@ export function ImpersonationsPage({
       priority: 'medium',
       cellWrap: 'nowrap',
       cell: (record) =>
-        isZeroInstant(record.ended_at) ? (
+        isNullInstant(record.ended_at) ? (
           <Typography variant="body2" color="warning.main">
             {t('impersonations.inForce')}
           </Typography>
@@ -521,7 +520,7 @@ export function ImpersonationsPage({
       cell: (record) => (
         <TerminateButton
           record={record}
-          disabled={!isZeroInstant(record.ended_at) || recordsFeedback.pending}
+          disabled={!isNullInstant(record.ended_at) || recordsFeedback.pending}
           loading={recordsFeedback.pending}
           onTerminate={terminate}
         />

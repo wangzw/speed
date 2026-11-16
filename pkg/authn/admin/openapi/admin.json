@@ -345,9 +345,12 @@
             "type": "string"
           },
           "ended_at": {
-            "description": "The zero instant 0001-01-01T00:00:00Z while the record is still in force",
+            "description": "When the impersonation ended, as an RFC 3339 instant in UTC; null while the record is still in force.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "ends_at": {
             "description": "When the impersonation lapses, as an RFC 3339 instant in UTC.",
@@ -467,9 +470,12 @@
         "description": "One service secret as the listing shows it: identifier, label, expiry and revocation state, never the secret value.",
         "properties": {
           "expires_at": {
-            "description": "When the secret expires, as an RFC 3339 instant in UTC; the zero instant 0001-01-01T00:00:00Z means it never expires.",
+            "description": "When the secret expires, as an RFC 3339 instant in UTC; null when it never expires.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "id": {
             "description": "The secret's identifier, not the secret value.",
@@ -512,9 +518,12 @@
         "description": "A freshly minted service secret. The secret value appears in this response only.",
         "properties": {
           "expires_at": {
-            "description": "The zero instant 0001-01-01T00:00:00Z when the request named no expiry",
+            "description": "When the secret expires, as an RFC 3339 instant in UTC; null when the request named no expiry.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "id": {
             "description": "The new secret's identifier.",

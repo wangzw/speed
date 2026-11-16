@@ -36,8 +36,8 @@ of its own.
   name, the four descriptive fields, the owner shown by display name and
   username, the owner account, state and the creation time; it carries no
   tenant identifier. The creation time always exists — `created_at` is not
-  null — so the view renders it as an RFC 3339 instant in UTC with no omission
-  branch. It deliberately omits the disable source, which belongs to the
+  null — so the view renders it as a UTC ISO 8601 instant ending in `Z` with no
+  omission branch (ADR-api-time-format). It deliberately omits the disable source, which belongs to the
   platform management surface. The owner account is the roster row's owner
   column, always present and empty only for a tenant with no owner; it stays
   the internal ownership key and is not displayed. The owner is exposed behind

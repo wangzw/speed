@@ -720,7 +720,7 @@ export function TenantLifecycleActions({
             </Typography>
             <Typography variant="body2">
               {t('tenantLifecycle.transfer.pendingExpires', {
-                expires: formatInstant(pending.expiresAt, i18n.language, {
+                expires: formatInstant(pending.expires_at, i18n.language, {
                   timeZone: 'UTC',
                 }),
               })}

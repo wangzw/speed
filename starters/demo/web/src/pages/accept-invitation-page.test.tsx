@@ -105,7 +105,7 @@ const VIEW = {
     status: 'pending',
     invited_by: 'acc-1',
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    accepted_at: '0001-01-01T00:00:00Z',
+    accepted_at: null,
     created_at: '2026-10-15T12:00:00Z',
   },
 }
@@ -416,7 +416,7 @@ describe('the invitation landing', () => {
                 email: VIEW.invitation.email,
                 since: '2026-10-25T00:00:00Z',
               }
-            : { state: 'pending', email: VIEW.invitation.email, since: '' },
+            : { state: 'pending', email: VIEW.invitation.email, since: null },
         }),
       ['POST /api/v1/auth/identifiers']: () => ({
         state: 'pending',

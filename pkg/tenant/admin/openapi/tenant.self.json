@@ -4,7 +4,7 @@
       "MyTransferView": {
         "description": "One owner-transfer request addressed to the caller.",
         "properties": {
-          "expiresAt": {
+          "expires_at": {
             "description": "When the confirmation window closes, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -13,7 +13,7 @@
             "description": "The request identifier.",
             "type": "string"
           },
-          "requestedAt": {
+          "requested_at": {
             "description": "When the request was made, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -37,8 +37,8 @@
         "required": [
           "id",
           "tenant",
-          "requestedAt",
-          "expiresAt",
+          "requested_at",
+          "expires_at",
           "status"
         ],
         "type": "object"

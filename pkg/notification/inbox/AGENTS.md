@@ -29,7 +29,9 @@ It is deliberately narrow:
   is declared is the taxonomy consumption point's question, not this one's.
 - **No read-time rewrite.** `read_at` moves from empty to one instant and is
   never rewritten, so a first-read timestamp is stable. The HTTP surface changes
-  that column alone.
+  that column alone. The message view declares `read_at` nullable: an unread row
+  answers `null`, while `created_at` is always present, and every instant is a
+  UTC ISO 8601 string ending in `Z` (ADR-api-time-format).
 
 ## Boundaries
 

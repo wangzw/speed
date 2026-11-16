@@ -60,9 +60,10 @@ var getOperation = speedhttp.NewOperation[struct{}, AuthnProfileProfile](
 		"parameter or body names an account. An impersonating identity may reach this route and then "+
 		"reads the account it is impersonating. The answer also carries the account's email "+
 		"verification state, read on this request and never stored in a session or an access token, and each "+
-		"identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a "+
-		"zero instant in a time field other than last_login_at is the empty string; last_login_at is "+
-		"instead absent when the binding has never been used to sign in. The identity's own account "+
+		"identifier's proven flag. Every time that is present is an RFC 3339 instant in UTC, written "+
+		"with a trailing Z; a time field with no value is null where the schema declares the field "+
+		"nullable, and last_login_at is instead absent when the binding has never been used to sign "+
+		"in. The identity's own account "+
 		"being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request "+
 		"with no identity gets.",
 	nil,

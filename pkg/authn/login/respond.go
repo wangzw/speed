@@ -66,7 +66,7 @@ func writeComplete(c *call, rec record) {
 func writeSession(c *call, issued authn.Issued) {
 	c.wire(sessionReply{
 		State:   stateAuthenticated,
-		Session: sessionView{ID: string(issued.ID), ExpiresAt: rfc3339(issued.ExpiresAt)},
+		Session: sessionView{ID: string(issued.ID), ExpiresAt: issued.ExpiresAt.UTC()},
 	})
 }
 
@@ -188,14 +188,6 @@ func fieldViews(fields []authn.Field) []fieldView {
 		out[i] = fieldView{Name: f.Name, Kind: f.Kind, Required: f.Required, Secret: f.Secret}
 	}
 	return out
-}
-
-// rfc3339 is a time as the wire carries an instant. A zero time is written empty.
-func rfc3339(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.UTC().Format(time.RFC3339)
 }
 
 // methods answers GET flows with the descriptors of the methods taking part

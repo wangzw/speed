@@ -353,8 +353,11 @@ export interface AuthnAdminImpersonation {
   actor: string;
   /** Absent while the record is still in force */
   end_reason?: string;
-  /** The zero instant 0001-01-01T00:00:00Z while the record is still in force */
-  ended_at: string;
+  /**
+     * When the impersonation ended, as an RFC 3339 instant in UTC; null while the record is still in force.
+     * @nullable
+     */
+  ended_at: string | null;
   /** When the impersonation lapses, as an RFC 3339 instant in UTC. */
   ends_at: string;
   /** The record's identifier. */
@@ -570,8 +573,11 @@ export interface AuthnAdminRevoked {
  * One service secret as the listing shows it: identifier, label, expiry and revocation state, never the secret value.
  */
 export interface AuthnAdminSecret {
-  /** When the secret expires, as an RFC 3339 instant in UTC; the zero instant 0001-01-01T00:00:00Z means it never expires. */
-  expires_at: string;
+  /**
+     * When the secret expires, as an RFC 3339 instant in UTC; null when it never expires.
+     * @nullable
+     */
+  expires_at: string | null;
   /** The secret's identifier, not the secret value. */
   id: string;
   /** The label given to the secret when it was created. */
@@ -594,8 +600,11 @@ export interface AuthnAdminSecretCreate {
  * A freshly minted service secret. The secret value appears in this response only.
  */
 export interface AuthnAdminSecretCreated {
-  /** The zero instant 0001-01-01T00:00:00Z when the request named no expiry */
-  expires_at: string;
+  /**
+     * When the secret expires, as an RFC 3339 instant in UTC; null when the request named no expiry.
+     * @nullable
+     */
+  expires_at: string | null;
   /** The new secret's identifier. */
   id: string;
   /** The label given in the request. */
@@ -727,8 +736,11 @@ export const AuthnInviteInvitationStatus = {
  * One invitation as the management face shows it. It never carries the acceptance token.
  */
 export interface AuthnInviteInvitation {
-  /** The zero instant 0001-01-01T00:00:00Z when the invitation has not been accepted */
-  accepted_at: string;
+  /**
+     * When the invitation was accepted, as an RFC 3339 instant in UTC; null while it has not been accepted.
+     * @nullable
+     */
+  accepted_at: string | null;
   /** RFC 3339 timestamp in UTC of issuance. */
   created_at: string;
   /** The normalized address */
@@ -895,7 +907,7 @@ export interface AuthnLoginFlow {
  * The public facts of the session a login created. No token or secret is included.
  */
 export interface AuthnLoginSessionView {
-  /** The session's expiry as an RFC 3339 instant, or empty */
+  /** The session's expiry, as an RFC 3339 instant in UTC. */
   expires_at: string;
   /** The session identifier; the browser client holds the session cookie written in the same response. */
   id: string;
@@ -1215,7 +1227,7 @@ export interface AuthnProfileIdentifier {
   sign_in: boolean;
   /** The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits */
   value: string;
-  /** RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification */
+  /** The instant the identifier's ownership was established, as an RFC 3339 instant in UTC; always present, as no identifier is stored awaiting verification */
   verified_at: string;
   /** How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted */
   verified_via: string;
@@ -1225,8 +1237,11 @@ export interface AuthnProfileIdentifier {
  * One external identity bound to the account, as the account module keeps it; it carries no provider subject.
  */
 export interface AuthnProfileLink {
-  /** RFC 3339 in UTC, empty when the binding carries no creation instant */
-  created_at: string;
+  /**
+     * When the binding was created, as an RFC 3339 instant in UTC; null when the binding carries no creation instant
+     * @nullable
+     */
+  created_at: string | null;
   /** Absent when the provider gave no address */
   email?: string;
   /** The binding's own identifier */
@@ -1269,8 +1284,11 @@ export type AuthnProfileProfileAttributes = {[key: string]: string};
 export interface AuthnProfileVerification {
   /** The address of the state: for verified the proved address verified earliest, ties broken by identifier; for pending the earliest unproved address or reservation awaiting verification, ties broken by identifier; empty for none */
   email: string;
-  /** RFC 3339 in UTC, the first instant the account reached verified; empty while it never did, and for none */
-  since: string;
+  /**
+     * When the account first reached verified, as an RFC 3339 instant in UTC; null while it never did, and for none
+     * @nullable
+     */
+  since: string | null;
   /** none, pending or verified. none means the account has no email address to verify; pending means it has an email address that has not been proved, whether the account itself, an administrator or an import wrote it; verified means an email address whose ownership was proved */
   state: string;
 }
@@ -1285,8 +1303,11 @@ export interface AuthnProfileProfile {
   attributes: AuthnProfileProfileAttributes;
   /** Read out of the attribute set, empty when it carries none */
   color_mode: string;
-  /** RFC 3339 in UTC, empty when the account carries no creation instant */
-  created_at: string;
+  /**
+     * When the account was created, as an RFC 3339 instant in UTC; null when the account carries no creation instant
+     * @nullable
+     */
+  created_at: string | null;
   /** The account's display name, empty when it carries none */
   display_name: string;
   /** The account's identifiers; always an array, never null, and empty when the account has none. An email the account holds is among them even while it is unproved; a pending reservation is not an identifier and is not listed */
@@ -1753,11 +1774,11 @@ export const MyTransferViewStatus = {
  */
 export interface MyTransferView {
   /** When the confirmation window closes, as an RFC 3339 instant in UTC. */
-  expiresAt: string;
+  expires_at: string;
   /** The request identifier. */
   id: string;
   /** When the request was made, as an RFC 3339 instant in UTC. */
-  requestedAt: string;
+  requested_at: string;
   /** The request's state. Only pending requests can be confirmed or declined. */
   status: MyTransferViewStatus;
   /** The organization whose ownership the request is about, by its name. */
@@ -1785,8 +1806,11 @@ export interface NotificationMessage {
   link: string;
   /** The type's parameters after the allow-list filter, as an opaque JSON object the client renders into the message; null when the message carries none. */
   params: NotificationMessageParams;
-  /** The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set. */
-  read_at?: string;
+  /**
+     * The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set.
+     * @nullable
+     */
+  read_at: string | null;
   /** The rendered title, in the language the delivery pipeline rendered it in. */
   title: string;
   /** The notification type key the message was dispatched under, shaped like <module>.<entity>.<action>. */
@@ -2197,8 +2221,11 @@ export interface SmsAdminTemplate {
   bodies: SmsAdminTemplateBodies;
   /** The carrier this template belongs to. A database serves one carrier, and every record in it names that one. */
   carrier: string;
-  /** When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template. */
-  created_at: string;
+  /**
+     * When the record was first written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant.
+     * @nullable
+     */
+  created_at: string | null;
   /** Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review. */
   enabled: boolean;
   /** What the template is for: verification, notification or marketing. A template that named none when it was declared is a notification. */
@@ -2211,8 +2238,11 @@ export interface SmsAdminTemplate {
   params: string[];
   /** Where the template came from: config for one read from the configuration, runtime for one this process created. A config template is read-only at runtime, always enabled, and carries no approvals and no version. */
   source: string;
-  /** When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template. */
-  updated_at: string;
+  /**
+     * When the record was last written, as an RFC 3339 instant in UTC; null for a configured template, which carries no write instant.
+     * @nullable
+     */
+  updated_at: string | null;
   /** The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version. */
   version: number;
 }
@@ -2258,7 +2288,7 @@ export interface TenantAdminTenant {
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
   contactEmail: string;
   /** When the tenant was registered, as an RFC 3339 instant in UTC. */
-  createdAt: string;
+  created_at: string;
   /** The organization's description. Empty when its profile names none. */
   description: string;
   /** Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled. */
@@ -2344,7 +2374,7 @@ export interface TenantProfileView {
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
   contactEmail: string;
   /** When the tenant was registered, as an RFC 3339 instant in UTC. */
-  createdAt: string;
+  created_at: string;
   /** The organization's description. Empty when its profile names none. */
   description: string;
   /** The organization's display name. Empty when its profile names none; a surface falls back to the name then. */
@@ -2395,11 +2425,11 @@ export const TenantTransferViewStatus = {
  */
 export interface TenantTransferView {
   /** When the confirmation window closes, as an RFC 3339 instant in UTC. */
-  expiresAt: string;
+  expires_at: string;
   /** The request identifier the target and the canonical paths address. */
   id: string;
   /** When the request was made, as an RFC 3339 instant in UTC. */
-  requestedAt: string;
+  requested_at: string;
   /** The request's state. Only pending requests can be cancelled or confirmed. */
   status: TenantTransferViewStatus;
   /** The target account's display name. Empty when the account store does not resolve it. */
@@ -5123,7 +5153,7 @@ export const useAuthnSessionLogout = <TError = Problem,
     }
 
 /**
- * The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's email verification state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.
+ * The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's email verification state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is an RFC 3339 instant in UTC, written with a trailing Z; a time field with no value is null where the schema declares the field nullable, and last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.
  * @summary The caller's own profile
  */
 export const authnProfileGet = (

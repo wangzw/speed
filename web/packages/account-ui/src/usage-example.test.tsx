@@ -106,7 +106,7 @@ describe('the README quick start, exercised over a real api-client', () => {
             links: [
               { id: 'github-1', provider: 'github', email: 'ada@example.test' },
             ],
-            verification: { state: 'none', email: '', since: '' },
+            verification: { state: 'none', email: '', since: null },
           })
         case SESSIONS_PATH:
           return jsonResponse(200, {

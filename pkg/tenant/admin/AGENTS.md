@@ -322,8 +322,10 @@ key.
   `tenant.KindResolver`, absent meaning `business`), the four profile fields, its state spelled
   the way `tenant.Status` spells it — `active` or `disabled` — the creation time
   and the owner account read from the roster row. The creation time is always
-  present: `created_at` is not null, so the view renders it as an RFC 3339
-  instant in UTC and carries no omission branch. The owner account is always
+  present: `created_at` is not null, so the view renders it as a UTC ISO 8601
+  instant ending in `Z` and carries no omission branch. The owner-transfer view's
+  `requested_at` and `expires_at` are UTC ISO 8601 instants ending in `Z` too, and
+  both are always present (ADR-api-time-format). The owner account is always
   present too, empty for a tenant with no owner, such as the platform's own
   tenant. This view is the only platform-domain place the owner is exposed
   alongside `TenantProfileView`; the member list and the self tenant view carry

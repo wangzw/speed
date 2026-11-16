@@ -946,7 +946,7 @@ describe('AccountSettingsPage block consistency', () => {
           verified_via: 'sms',
         },
       ],
-      verification: { state: 'none', email: '', since: '' },
+      verification: { state: 'none', email: '', since: null },
     })
     renderAccount('?section=profile', {
       features: ['authn.phone'],
@@ -1007,7 +1007,7 @@ describe('AccountSettingsPage block consistency', () => {
           verified_via: 'sms',
         },
       ],
-      verification: { state: 'none', email: '', since: '' },
+      verification: { state: 'none', email: '', since: null },
     })
     return (async (path: string, requestOptions?: RequestOptions) => {
       if (

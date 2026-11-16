@@ -106,7 +106,7 @@ func TestTheSessionListDeclaresTheCurrentFlag(t *testing.T) {
 			Schemas map[string]struct {
 				Required   []string `json:"required"`
 				Properties map[string]struct {
-					Type string `json:"type"`
+					Type any `json:"type"`
 				} `json:"properties"`
 			} `json:"schemas"`
 		} `json:"components"`

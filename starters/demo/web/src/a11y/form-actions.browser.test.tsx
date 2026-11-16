@@ -237,7 +237,7 @@ describe('account form action rows in Chromium', () => {
               kind: 'webauthn',
               label: FACTOR_LABEL,
               status: 'active',
-              created_at: '',
+              created_at: null,
             },
           ],
         } as T)

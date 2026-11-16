@@ -131,7 +131,7 @@ The package ships one entry (`src/index.ts`, the export set in the
 README's "What ships") and no subpath. The organization surface's exports
 live in that same entry. Everything under `src/internal/`
 — the error-text resolver, the `InlineError` and `WriteFeedbackRegion`
-bindings, the translation hook, the tenant selector and the zero-instant
+bindings, the translation hook, the tenant selector and the absent-instant
 sentinel — is family plumbing and is deliberately not exported, except
 the type-only callback types (`AdminImpersonationStarting`,
 `AdminImpersonationChange`) a host
@@ -616,7 +616,7 @@ key-splitting helper); `routes` (the declarations' paths, permissions,
 `internal/error-text`, `internal/datetime`,
 `internal/async-section`, `internal/export-file` and
 `internal/write-feedback` (bundle key parity, whitelist pairing, the
-zero-instant sentinel, the export name and download handoff, the
+absent-instant sentinel, the export name and download handoff, the
 403/retry/stale split, and the region's resolver binding);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).

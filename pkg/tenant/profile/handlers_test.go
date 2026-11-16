@@ -53,7 +53,7 @@ func TestTheReadAnswersTheProfileWithoutTheDisableSource(t *testing.T) {
 		t.Errorf("profile = %+v, want %+v", got, want)
 	}
 	if !got.CreatedAt.Equal(sampleCreatedAt) {
-		t.Errorf("createdAt = %v, want %v", got.CreatedAt, sampleCreatedAt)
+		t.Errorf("created_at = %v, want %v", got.CreatedAt, sampleCreatedAt)
 	}
 
 	var raw map[string]json.RawMessage
@@ -486,8 +486,8 @@ func TestTheViewAlwaysCarriesTheCreationTime(t *testing.T) {
 		Profile map[string]json.RawMessage `json:"profile"`
 	}
 	decode(t, w, &body)
-	if _, present := body.Profile["createdAt"]; !present {
-		t.Error("the view omits createdAt, want the creation time every row carries")
+	if _, present := body.Profile["created_at"]; !present {
+		t.Error("the view omits created_at, want the creation time every row carries")
 	}
 }
 

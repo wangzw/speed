@@ -321,7 +321,7 @@ export function TenantDetailPage({
             />
             <DefinitionRow
               label={t('tenantProfile.field.createdAt')}
-              value={formatInstant(settled.createdAt, i18n.language, {
+              value={formatInstant(settled.created_at, i18n.language, {
                 timeZone: 'UTC',
               })}
             />

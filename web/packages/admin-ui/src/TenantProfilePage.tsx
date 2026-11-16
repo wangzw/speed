@@ -330,7 +330,7 @@ export function TenantProfilePage({
                   />
                   <ProfileField
                     label={t('tenantProfile.field.createdAt')}
-                    value={formatInstant(settledProfile.createdAt, i18n.language, {
+                    value={formatInstant(settledProfile.created_at, i18n.language, {
                       timeZone: 'UTC',
                     })}
                   />

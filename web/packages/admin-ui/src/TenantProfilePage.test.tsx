@@ -549,8 +549,8 @@ describe('TenantProfilePage ownership', () => {
     id: 'transfer-1',
     targetDisplayName: 'Bob Stone',
     targetUsername: 'bob',
-    requestedAt: '2026-10-20T08:30:00Z',
-    expiresAt: '2026-10-27T08:30:00Z',
+    requested_at: '2026-10-20T08:30:00Z',
+    expires_at: '2026-10-27T08:30:00Z',
     status: 'pending' as const,
   }
 
@@ -659,7 +659,7 @@ describe('TenantProfilePage ownership', () => {
       screen.getByText(
         zhCN.tenantProfile.ownership.pending.expires.replace(
           '{{expires}}',
-          formatInstant(PENDING.expiresAt, 'zh-CN', { timeZone: 'UTC' }),
+          formatInstant(PENDING.expires_at, 'zh-CN', { timeZone: 'UTC' }),
         ),
       ),
     ).toBeInTheDocument()

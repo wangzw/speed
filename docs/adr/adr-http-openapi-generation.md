@@ -36,7 +36,7 @@
 
 ## 决策
 
-采纳：**模块以 `http.Operation[In, Out]` 声明自己的 operation，片段由这些声明生成，声明同时绑定 handler。** 声明类型在 `pkg/http`，只依赖标准库；生成器在 `pkg/internal/openapigen`，是构建期依赖，不进任何宿主的运行时闭包。生成器用 `github.com/swaggest/openapi-go` 反射 DTO 与组装文档，并把输出规整成平台发布的结构（无 `null` 类型联合、参数 schema 不重复描述、响应头无默认 `style`、问题文档组件名为 `Problem`）。
+采纳：**模块以 `http.Operation[In, Out]` 声明自己的 operation，片段由这些声明生成，声明同时绑定 handler。** 声明类型在 `pkg/http`，只依赖标准库；生成器在 `pkg/internal/openapigen`，是构建期依赖，不进任何宿主的运行时闭包。生成器用 `github.com/swaggest/openapi-go` 反射 DTO 与组装文档，并把输出规整成平台发布的结构（`null` 类型联合只出现在显式标记 `nullable:"true"` 的指针字段上、参数 schema 不重复描述、响应头无默认 `style`、问题文档组件名为 `Problem`）。这条规整是平台发布的形状约定，不是某个下游工具的限制；显式标记的指针字段保留 `null` 联合，是因为那个字段确实可能没有值，未标记的字段仍按不可空发布。标记无法兑现时生成中止，而不是发布一个声明了却写不出的可空：非指针字段、以 `$ref` 发布的结构体指针，以及带 `omitempty`（只会省略键）的字段，都在这里被拒。
 
 **handler 的签名由声明给出**：`Operation.Handle` 只接受 `func(context.Context, In) (Out, error)`。入口模块从 `In` 的 `path`/`query`/`header`/`cookie` tag 绑定参数，从 `json` tag 解码请求体并拒绝未知成员，成功后按声明的状态与媒体类型写出 `Out`。handler 不再拿到请求，因而读不到声明没带的参数；它也写不出声明没描述的应答字段。
 

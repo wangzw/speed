@@ -164,7 +164,8 @@ not choose.
   `outcome`, `purpose` and `detail`; the list answer is `entries` and `next`.
   These names are the module's contract with a host and a front end. An empty
   `tenant` means the row belongs to no tenant — a platform operation or a
-  system-level one — and times are written in UTC.
+  system-level one — and times are written as UTC ISO 8601 instants ending in
+  `Z` (ADR-api-time-format).
 - **The export body and its headers are a response shape.** The 200's media type
   is `application/x-ndjson`: one record view per line, each line a JSON object
   ending in a newline. It carries `Content-Disposition: attachment` with the

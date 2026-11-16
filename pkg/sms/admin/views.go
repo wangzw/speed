@@ -1,6 +1,10 @@
 package admin
 
-import "github.com/vislake/speed/pkg/sms"
+import (
+	"time"
+
+	"github.com/vislake/speed/pkg/sms"
+)
 
 // The views the management routes answer with. Each is built field by field from
 // a root-package value and never handed through as it stands, so that a field
@@ -40,7 +44,17 @@ func templateViewOf(r sms.Record) templateView {
 		Approvals:  approvals,
 		Enabled:    r.Enabled,
 		Version:    r.Version,
-		CreatedAt:  r.CreatedAt.UTC(),
-		UpdatedAt:  r.UpdatedAt.UTC(),
+		CreatedAt:  utcPtr(r.CreatedAt),
+		UpdatedAt:  utcPtr(r.UpdatedAt),
 	}
+}
+
+// utcPtr is t as an RFC 3339 instant in UTC, and nil for the zero time, which
+// a configured template carries for its write instants.
+func utcPtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	at := t.UTC()
+	return &at
 }

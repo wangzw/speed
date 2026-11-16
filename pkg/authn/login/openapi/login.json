@@ -369,7 +369,8 @@
         "description": "The public facts of the session a login created. No token or secret is included.",
         "properties": {
           "expires_at": {
-            "description": "The session's expiry as an RFC 3339 instant, or empty",
+            "description": "The session's expiry, as an RFC 3339 instant in UTC.",
+            "format": "date-time",
             "type": "string"
           },
           "id": {

@@ -382,7 +382,7 @@ const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
     color_mode: '',
     identifiers: [],
     links: [],
-    verification: { state: 'none', email: '', since: '' },
+    verification: { state: 'none', email: '', since: null },
   },
   impersonating: false,
   permissionSets: { tenant: null, system: null },

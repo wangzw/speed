@@ -446,7 +446,7 @@ describe('the sign-in surface', () => {
                 email: 'ada@example.com',
                 since: '2026-10-25T00:00:00Z',
               }
-            : { state: 'pending', email: 'ada@example.com', since: '' },
+            : { state: 'pending', email: 'ada@example.com', since: null },
         }),
       ['POST /api/v1/auth/identifiers']: () => ({
         state: 'pending',

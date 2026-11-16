@@ -46,8 +46,8 @@ function requestFixture(
   return {
     id: 'transfer-1',
     tenant: 'acme-inc',
-    requestedAt: '2026-11-01T00:00:00Z',
-    expiresAt: '2026-11-08T00:00:00Z',
+    requested_at: '2026-11-01T00:00:00Z',
+    expires_at: '2026-11-08T00:00:00Z',
     status: 'pending',
     ...overrides,
   }

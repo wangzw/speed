@@ -26,7 +26,7 @@ type AuthnProfileProfile struct {
 	DisplayName  string                   `json:"display_name" required:"true" description:"The account's display name, empty when it carries none"`
 	MFARequired  bool                     `json:"mfa_required" required:"true" description:"Whether the account must register a factor"`
 	PasswordSet  bool                     `json:"password_set" required:"true" description:"Whether the account has a password credential set"`
-	CreatedAt    string                   `json:"created_at" required:"true" description:"RFC 3339 in UTC, empty when the account carries no creation instant"`
+	CreatedAt    *time.Time               `json:"created_at" nullable:"true" required:"true" description:"When the account was created, as an RFC 3339 instant in UTC; null when the account carries no creation instant"`
 	Attributes   map[string]string        `json:"attributes" required:"true" description:"Never null; the empty object when the account carries none"`
 	Locale       string                   `json:"locale" required:"true" description:"Read out of the attribute set, empty when it carries none"`
 	TimeZone     string                   `json:"time_zone" required:"true" description:"Read out of the attribute set, empty when it carries none"`
@@ -42,24 +42,24 @@ type AuthnProfileProfile struct {
 type AuthnProfileVerification struct {
 	_ struct{} `description:"How far the account's email verification has got, read on this request: none when it has no email address to verify, pending when it holds an address that has not been proved, verified when it holds one whose ownership was proved."`
 
-	State string `json:"state" required:"true" description:"none, pending or verified. none means the account has no email address to verify; pending means it has an email address that has not been proved, whether the account itself, an administrator or an import wrote it; verified means an email address whose ownership was proved"`
-	Email string `json:"email" required:"true" description:"The address of the state: for verified the proved address verified earliest, ties broken by identifier; for pending the earliest unproved address or reservation awaiting verification, ties broken by identifier; empty for none"`
-	Since string `json:"since" required:"true" description:"RFC 3339 in UTC, the first instant the account reached verified; empty while it never did, and for none"`
+	State string     `json:"state" required:"true" description:"none, pending or verified. none means the account has no email address to verify; pending means it has an email address that has not been proved, whether the account itself, an administrator or an import wrote it; verified means an email address whose ownership was proved"`
+	Email string     `json:"email" required:"true" description:"The address of the state: for verified the proved address verified earliest, ties broken by identifier; for pending the earliest unproved address or reservation awaiting verification, ties broken by identifier; empty for none"`
+	Since *time.Time `json:"since" nullable:"true" required:"true" description:"When the account first reached verified, as an RFC 3339 instant in UTC; null while it never did, and for none"`
 }
 
 // AuthnProfileIdentifier is one identifier of the caller's account.
 type AuthnProfileIdentifier struct {
 	_ struct{} `description:"One identifier bound to the account, with the way its ownership was established."`
 
-	ID             string `json:"id" required:"true" description:"The identifier's own identifier"`
-	Kind           string `json:"kind" required:"true" description:"The identifier kind: username, email or phone"`
-	Value          string `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits"`
-	VerifiedAt     string `json:"verified_at" required:"true" description:"RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification"`
-	VerifiedVia    string `json:"verified_via" required:"true" description:"How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted"`
-	Proven         bool   `json:"proven" required:"true" description:"Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self"`
-	SignIn         bool   `json:"sign_in" required:"true" description:"Whether the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used"`
-	Contact        bool   `json:"contact" required:"true" description:"Whether the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one"`
-	DefaultContact bool   `json:"default_contact" required:"true" description:"Whether this proved email address is the one notifications to the account go to; at most one identifier of an account carries it"`
+	ID             string    `json:"id" required:"true" description:"The identifier's own identifier"`
+	Kind           string    `json:"kind" required:"true" description:"The identifier kind: username, email or phone"`
+	Value          string    `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits"`
+	VerifiedAt     time.Time `json:"verified_at" required:"true" description:"The instant the identifier's ownership was established, as an RFC 3339 instant in UTC; always present, as no identifier is stored awaiting verification"`
+	VerifiedVia    string    `json:"verified_via" required:"true" description:"How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted"`
+	Proven         bool      `json:"proven" required:"true" description:"Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self"`
+	SignIn         bool      `json:"sign_in" required:"true" description:"Whether the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used"`
+	Contact        bool      `json:"contact" required:"true" description:"Whether the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one"`
+	DefaultContact bool      `json:"default_contact" required:"true" description:"Whether this proved email address is the one notifications to the account go to; at most one identifier of an account carries it"`
 }
 
 // AuthnProfileLink is one external binding of the caller's account. It has no
@@ -68,11 +68,11 @@ type AuthnProfileIdentifier struct {
 type AuthnProfileLink struct {
 	_ struct{} `description:"One external identity bound to the account, as the account module keeps it; it carries no provider subject."`
 
-	ID          string `json:"id" required:"true" description:"The binding's own identifier"`
-	Provider    string `json:"provider" required:"true" description:"The provider the binding was made through, as the provider is registered"`
-	Email       string `json:"email,omitempty" description:"Absent when the provider gave no address"`
-	CreatedAt   string `json:"created_at" required:"true" description:"RFC 3339 in UTC, empty when the binding carries no creation instant"`
-	LastLoginAt string `json:"last_login_at,omitempty" description:"Absent when the binding has never been used to sign in"`
+	ID          string     `json:"id" required:"true" description:"The binding's own identifier"`
+	Provider    string     `json:"provider" required:"true" description:"The provider the binding was made through, as the provider is registered"`
+	Email       string     `json:"email,omitempty" description:"Absent when the provider gave no address"`
+	CreatedAt   *time.Time `json:"created_at" nullable:"true" required:"true" description:"When the binding was created, as an RFC 3339 instant in UTC; null when the binding carries no creation instant"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty" description:"Absent when the binding has never been used to sign in"`
 }
 
 // AuthnProfilePatch is PATCH B/me's answer: the self-writable fields as they
@@ -113,7 +113,7 @@ func profileViewOf(account authn.Account, identifiers []authn.Identifier, links 
 			ID:             i.ID,
 			Kind:           string(i.Kind),
 			Value:          i.Value,
-			VerifiedAt:     instant(i.VerifiedAt),
+			VerifiedAt:     i.VerifiedAt.UTC(),
 			VerifiedVia:    i.VerifiedVia,
 			Proven:         authn.Verification{Via: i.VerifiedVia}.Proves(),
 			SignIn:         i.SignIn,
@@ -168,10 +168,12 @@ func signupStateName(s authn.SignupState) string {
 	}
 }
 
-// instant is t as RFC 3339 in UTC, and the empty string for the zero time.
-func instant(t time.Time) string {
+// instant is t as an RFC 3339 instant in UTC, and nil for the zero time, which
+// a view publishes as null.
+func instant(t time.Time) *time.Time {
 	if t.IsZero() {
-		return ""
+		return nil
 	}
-	return t.UTC().Format(time.RFC3339)
+	at := t.UTC()
+	return &at
 }

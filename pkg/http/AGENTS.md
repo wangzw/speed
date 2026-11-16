@@ -61,6 +61,12 @@ member the declaration does not describe is refused rather than dropped. A
 an undeclared one is answered 500. `pkg/internal/openapigen` generates the
 fragment from the same descriptor.
 
+**Every instant a published fragment carries is a UTC ISO 8601 string ending in
+`Z`.** The contract declares it `type: string, format: date-time`; an absent
+instant is `null`, and a field that can be absent is declared nullable. The
+format and the split between what the server renders and what the frontend
+renders are the decision recorded in ADR-api-time-format.
+
 **An operation declares the level of caller identity its route admits.**
 `Operation.Access` (and a reply operation's) is `AccessRequired` at its zero
 value, `AccessOptional` or `AccessPublic`, set through the `Public()` and

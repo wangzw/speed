@@ -202,7 +202,7 @@ const PENDING_INVITATION: AdminInvitation = {
   status: 'pending',
   created_at: '2026-11-01T10:00:00Z',
   expires_at: '2099-01-01T00:00:00Z',
-  accepted_at: '0001-01-01T00:00:00Z',
+  accepted_at: null,
 }
 
 const EXPIRED_INVITATION: AdminInvitation = {

@@ -37,7 +37,7 @@ type TenantAdminTenant struct {
 	Status       string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
 	// CreatedAt is when the roster recorded the registration. Every row carries
 	// one, so the field is always present and a surface needs no fallback.
-	CreatedAt time.Time `json:"createdAt" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
+	CreatedAt time.Time `json:"created_at" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
 	// DisabledBy is present only while Status is disabled. The field is left
 	// out otherwise, so a source never appears on a row whose state it does not
 	// describe.
@@ -86,8 +86,8 @@ type TenantTransferView struct {
 	ID                string    `json:"id" required:"true" description:"The request identifier the target and the canonical paths address."`
 	TargetDisplayName string    `json:"targetDisplayName" required:"true" description:"The target account's display name. Empty when the account store does not resolve it."`
 	TargetUsername    string    `json:"targetUsername" required:"true" description:"The target account's username. Empty when the account store does not resolve it."`
-	RequestedAt       time.Time `json:"requestedAt" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
-	ExpiresAt         time.Time `json:"expiresAt" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
+	RequestedAt       time.Time `json:"requested_at" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
+	ExpiresAt         time.Time `json:"expires_at" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
 	Status            string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be cancelled or confirmed."`
 }
 
@@ -99,8 +99,8 @@ type MyTransferView struct {
 
 	ID          string    `json:"id" required:"true" description:"The request identifier."`
 	Tenant      string    `json:"tenant" required:"true" description:"The organization whose ownership the request is about, by its name."`
-	RequestedAt time.Time `json:"requestedAt" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
-	ExpiresAt   time.Time `json:"expiresAt" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
+	RequestedAt time.Time `json:"requested_at" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
+	ExpiresAt   time.Time `json:"expires_at" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
 	Status      string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be confirmed or declined."`
 }
 

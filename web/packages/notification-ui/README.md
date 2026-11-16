@@ -140,8 +140,8 @@ the in-app column only.
 - Query keys are namespaced under the acting tenant (auth-core's
   `tenantQueryKey`), so a tenant switch never serves the previous tenant's
   rows.
-- The generated type for a message's `read_at` is an optional string, but
-  the server writes JSON `null` for an unread message; the surfaces treat
+- The generated type for a message's `read_at` is an optional `string | null`;
+  the server writes JSON `null` for an unread message, so the surfaces treat
   `null`, `undefined` and `""` alike as unread.
 - Times render through `@speed/i18n`'s `formatInstant` in the current UI
   language and the display zone supplied by `@speed/ui-kit`'s

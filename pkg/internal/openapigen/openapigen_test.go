@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +17,58 @@ import (
 // document is one answer body used by the cases.
 type document struct {
 	Items []string `json:"items" required:"true" description:"The items."`
+}
+
+// nullableFields declares one pointer explicitly marked nullable and one left to
+// the platform's default.
+type nullableFields struct {
+	Marked *time.Time `json:"marked" nullable:"true" description:"An explicitly nullable instant."`
+	Plain  *time.Time `json:"plain" description:"An instant published without a null union."`
+}
+
+// wronglyNullable marks a non-pointer field nullable, which is a declaration
+// defect.
+type wronglyNullable struct {
+	Value string `json:"value" nullable:"true" description:"A value that cannot be null."`
+}
+
+// nestedDocument is a named structure a property references by $ref.
+type nestedDocument struct {
+	Text string `json:"text" required:"true" description:"A field of the nested structure."`
+}
+
+// nullableStructPointer marks a pointer to a structure nullable. The library
+// publishes the structure as a $ref and removes the null it added for the
+// pointer, so the marker cannot take effect.
+type nullableStructPointer struct {
+	Nested *nestedDocument `json:"nested" nullable:"true" description:"A structure published by $ref."`
+}
+
+// nullableOmitEmpty marks an absent-able field nullable while its tag also
+// omits it, so the answer carries no key rather than null.
+type nullableOmitEmpty struct {
+	Marked *time.Time `json:"marked,omitempty" nullable:"true" description:"An instant the tag omits."`
+}
+
+// explicitNotNull keeps a slice out of a null union with the tag the library
+// reads for that purpose.
+type explicitNotNull struct {
+	Items []string `json:"items" required:"true" nullable:"false" description:"A slice that is never null."`
+}
+
+// pointerItems publishes a slice whose items are nullable pointers. No per-item
+// tag can declare the item nullable, so the item schema carries no null.
+type pointerItems struct {
+	Instants []*time.Time `json:"instants" required:"true" description:"Instants that are always present."`
+}
+
+// outerNestedFields carries an inlined object holding a marked and an unmarked
+// pointer.
+type outerNestedFields struct {
+	Inner struct {
+		Marked *time.Time `json:"marked" nullable:"true" description:"An explicitly nullable instant."`
+		Plain  *time.Time `json:"plain" description:"An instant published without a null union."`
+	} `json:"inner" required:"true" description:"The nested object."`
 }
 
 // query is one operation's parameters.
@@ -164,8 +217,8 @@ func TestResponseHeadersComeFromTheTags(t *testing.T) {
 	}
 }
 
-// TestNullIsDroppedFromTypes holds the platform's shape: no published field is
-// declared nullable even though a Go slice reflects as one.
+// TestNullIsDroppedFromTypes holds the platform's default shape: no published
+// field is declared nullable even though a Go slice reflects as one.
 func TestNullIsDroppedFromTypes(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -181,6 +234,156 @@ func TestNullIsDroppedFromTypes(t *testing.T) {
 	}
 	if items["type"] != "array" {
 		t.Errorf("the items type is %v, want array", items["type"])
+	}
+}
+
+// TestAnExplicitlyNullablePointerKeepsNull holds the one exception: a pointer
+// field marked nullable:"true" publishes the null union, while an unmarked
+// pointer does not, and no private marker reaches the fragment.
+func TestAnExplicitlyNullablePointerKeepsNull(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, nullableFields](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	properties := component(t, doc, "nullableFields")["properties"].(map[string]interface{})
+	marked := properties["marked"].(map[string]interface{})
+	types, ok := marked["type"].([]interface{})
+	if !ok {
+		t.Fatalf("the marked field's type is %v, want the [string null] union", marked["type"])
+	}
+	if !slices.Contains(types, "string") || !slices.Contains(types, "null") {
+		t.Errorf("the marked field's type is %v, want string and null", types)
+	}
+	if _, leaked := marked[nullableMarker]; leaked {
+		t.Errorf("the private nullable marker reaches the fragment: %v", marked)
+	}
+	plain := properties["plain"].(map[string]interface{})
+	if plain["type"] != "string" {
+		t.Errorf("the unmarked pointer's type is %v, want a single string", plain["type"])
+	}
+	if _, leaked := plain[nullableMarker]; leaked {
+		t.Errorf("the unmarked pointer carries the private marker: %v", plain)
+	}
+}
+
+// TestMarkingANonPointerNullableIsRefused holds that a nullable:"true" on a
+// value no null can represent stops the build instead of publishing a union.
+func TestMarkingANonPointerNullableIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, wronglyNullable](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted nullable:\"true\" on a non-pointer field")
+	}
+	if !strings.Contains(err.Error(), "non-pointer") {
+		t.Errorf("the error reads %v, want it to name the non-pointer field", err)
+	}
+}
+
+// TestMarkingAPointerToAStructNullableIsRefused holds that a marker which the
+// library would silently drop stops the build: a pointer to a named structure
+// is published as a $ref, and the null union added beside it is removed before
+// the fragment is written.
+func TestMarkingAPointerToAStructNullableIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, nullableStructPointer](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted nullable:\"true\" on a pointer to a structure published by $ref")
+	}
+	if !strings.Contains(err.Error(), "$ref") {
+		t.Errorf("the error reads %v, want it to name the $ref publication", err)
+	}
+}
+
+// TestMarkingANullableFieldOmitEmptyIsRefused holds that a marker on a field
+// whose tag omits it stops the build: the contract would declare null while the
+// answer only ever leaves the key out.
+func TestMarkingANullableFieldOmitEmptyIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, nullableOmitEmpty](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted nullable:\"true\" on a field with omitempty")
+	}
+	if !strings.Contains(err.Error(), "omitempty") {
+		t.Errorf("the error reads %v, want it to name omitempty", err)
+	}
+}
+
+// TestAnExplicitlyNonNullableSliceStaysAnArray holds the declaration the
+// library reads for a slice that must not join a null union.
+func TestAnExplicitlyNonNullableSliceStaysAnArray(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, explicitNotNull](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	items := component(t, doc, "explicitNotNull")["properties"].(map[string]interface{})["items"].(map[string]interface{})
+	if items["type"] != "array" {
+		t.Errorf("the marked slice's type is %v, want a single array", items["type"])
+	}
+}
+
+// TestArrayItemsCarryNoNullUnion holds that the null stripping reaches array
+// items: no per-item tag can declare an item nullable, so the item schema stays
+// a single type.
+func TestArrayItemsCarryNoNullUnion(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerItems](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	instants := component(t, doc, "pointerItems")["properties"].(map[string]interface{})["instants"].(map[string]interface{})
+	if instants["type"] != "array" {
+		t.Errorf("the property's type is %v, want a single array", instants["type"])
+	}
+	item := instants["items"].(map[string]interface{})
+	if types, union := item["type"].([]interface{}); union && slices.Contains(types, "null") {
+		t.Errorf("the item's type is the union %v, want no null member", types)
+	}
+}
+
+// TestANestedObjectKeepsItsMarkedNullUnion holds that the stripping recurses:
+// a marked pointer inside an inlined object keeps its null union and an
+// unmarked one does not.
+func TestANestedObjectKeepsItsMarkedNullUnion(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, outerNestedFields](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	inner := component(t, doc, "outerNestedFields")["properties"].(map[string]interface{})["inner"].(map[string]interface{})
+	properties := inner["properties"].(map[string]interface{})
+	marked := properties["marked"].(map[string]interface{})
+	types, ok := marked["type"].([]interface{})
+	if !ok || !slices.Contains(types, "null") {
+		t.Errorf("the nested marked field's type is %v, want the null union kept", marked["type"])
+	}
+	plain := properties["plain"].(map[string]interface{})
+	if plain["type"] != "string" {
+		t.Errorf("the nested unmarked field's type is %v, want a single string", plain["type"])
 	}
 }
 

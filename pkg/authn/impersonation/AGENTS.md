@@ -69,6 +69,10 @@ The API is the package's godoc.
   the internal identifier; the grant view and the audit detail answer the name
   through the optional `authn.TenantNameResolver`. An assembly with no resolver
   names no tenant rather than exposing the identifier.
+- **The grant view publishes an instant as a UTC ISO 8601 string ending in
+  `Z`.** Its `ended_at` is `null` while the record is in progress and carries
+  the instant once it is ended; the field is declared nullable
+  (ADR-api-time-format).
 - **The reason never leaves the record and the audit row.** It is not in an
   event payload, a log line or a response. The audit detail's key set is
   closed, and the session is written there as `sid`: `session`,

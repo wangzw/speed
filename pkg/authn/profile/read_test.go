@@ -62,8 +62,8 @@ func TestGetReturnsTheCallersOwnProfile(t *testing.T) {
 	if got.DisplayName != "Me" || got.Kind != "user" || !got.MFARequired || !got.PasswordSet {
 		t.Errorf("the account fields are wrong: %+v", got)
 	}
-	if got.CreatedAt != created.Format(time.RFC3339) {
-		t.Errorf("created_at = %q, want %q", got.CreatedAt, created.Format(time.RFC3339))
+	if got.CreatedAt == nil || !got.CreatedAt.Equal(created) {
+		t.Errorf("created_at = %v, want %v", got.CreatedAt, created)
 	}
 	if got.Locale != "zh-CN" || got.TimeZone != "Asia/Shanghai" || got.ColorMode != "dark" {
 		t.Errorf("locale/time_zone/color_mode = %q/%q/%q, want zh-CN/Asia/Shanghai/dark",
@@ -93,14 +93,14 @@ func TestGetCarriesNoSubjectInALink(t *testing.T) {
 	}
 }
 
-// TestGetZeroCreatedAtIsEmpty holds the instant rule: a zero time is written as
-// the empty string.
-func TestGetZeroCreatedAtIsEmpty(t *testing.T) {
+// TestGetZeroCreatedAtIsNull holds the instant rule: a zero time is written as
+// null, never as the zero instant or the empty string.
+func TestGetZeroCreatedAtIsNull(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
 	got := decodeProfile(t, rec)
-	if got.CreatedAt != "" {
-		t.Errorf("created_at = %q, want the empty string for a zero time", got.CreatedAt)
+	if got.CreatedAt != nil {
+		t.Errorf("created_at = %v, want null for a zero time", got.CreatedAt)
 	}
 }
 
@@ -208,26 +208,26 @@ func TestGetDependencyFailureIs503(t *testing.T) {
 func TestGetVerificationShowsEachState(t *testing.T) {
 	since := time.Date(2026, time.April, 5, 6, 7, 8, 0, time.UTC)
 	for _, c := range []struct {
-		name   string
-		status authn.SignupStatus
-		want   AuthnProfileVerification
+		name      string
+		status    authn.SignupStatus
+		wantState string
+		wantEmail string
+		wantSince time.Time
 	}{
 		{
-			name:   "none",
-			status: authn.SignupStatus{State: authn.SignupNone},
-			want:   AuthnProfileVerification{State: "none"},
+			name:      "none",
+			status:    authn.SignupStatus{State: authn.SignupNone},
+			wantState: "none",
 		},
 		{
-			name:   "pending",
-			status: authn.SignupStatus{State: authn.SignupPending, Email: "me@example.com"},
-			want:   AuthnProfileVerification{State: "pending", Email: "me@example.com"},
+			name:      "pending",
+			status:    authn.SignupStatus{State: authn.SignupPending, Email: "me@example.com"},
+			wantState: "pending", wantEmail: "me@example.com",
 		},
 		{
-			name:   "verified",
-			status: authn.SignupStatus{State: authn.SignupVerified, Email: "first@example.com", Since: since},
-			want: AuthnProfileVerification{
-				State: "verified", Email: "first@example.com", Since: since.Format(time.RFC3339),
-			},
+			name:      "verified",
+			status:    authn.SignupStatus{State: authn.SignupVerified, Email: "first@example.com", Since: since},
+			wantState: "verified", wantEmail: "first@example.com", wantSince: since,
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -237,8 +237,16 @@ func TestGetVerificationShowsEachState(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 			}
-			if got := decodeProfile(t, rec).Verification; got != c.want {
-				t.Errorf("verification = %+v, want %+v", got, c.want)
+			got := decodeProfile(t, rec).Verification
+			if got.State != c.wantState || got.Email != c.wantEmail {
+				t.Errorf("verification = %+v, want state %q and email %q", got, c.wantState, c.wantEmail)
+			}
+			if c.wantSince.IsZero() {
+				if got.Since != nil {
+					t.Errorf("since = %v, want null", got.Since)
+				}
+			} else if got.Since == nil || !got.Since.Equal(c.wantSince) {
+				t.Errorf("since = %v, want %v", got.Since, c.wantSince)
 			}
 			if r.verification.readCount() != 1 {
 				t.Errorf("the state was read %d times, want once per request", r.verification.readCount())

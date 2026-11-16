@@ -26,6 +26,6 @@ export function profileWithVerification(
     time_zone: 'UTC',
     identifiers: [],
     links: [],
-    verification: { state, email, since: '' },
+    verification: { state, email, since: null },
   }
 }

@@ -73,7 +73,7 @@ describe('MfaSection row overflow menu', () => {
                   kind: 'webauthn',
                   label: ROW_NAME,
                   status: 'active',
-                  created_at: '',
+                  created_at: null,
                 },
               ],
         })
@@ -182,7 +182,7 @@ describe('MfaSection rename editor', () => {
               kind: 'webauthn',
               label: rowLabel,
               status: 'active',
-              created_at: '',
+              created_at: null,
             },
           ],
         })

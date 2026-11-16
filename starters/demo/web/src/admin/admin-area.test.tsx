@@ -314,7 +314,7 @@ describe('AdminArea', () => {
             status: 'pending',
             invited_by: 'staff-1',
             expires_at: '2026-10-20T00:00:00Z',
-            accepted_at: '0001-01-01T00:00:00Z',
+            accepted_at: null,
             created_at: '2026-10-15T12:00:00Z',
           },
           token: 'spd_inv_x',

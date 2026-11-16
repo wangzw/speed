@@ -29,8 +29,12 @@ The declarations describe:
 Descriptions and schema constraints are struct tags read by
 `github.com/swaggest/jsonschema-go`: `description`, `required`, `format`,
 `pattern`, `minimum`, `maximum`, `enum` and the rest, plus `nullable:"false"`
-to keep a slice out of a null union. A struct-level description goes on a blank
-field:
+to keep a slice out of a null union. A pointer field a client may receive as
+`null` carries `nullable:"true"`; it is the only way a field is published
+nullable. Marking a non-pointer type, a pointer to a named structure (published
+as a `$ref`, where the library drops the null the marker adds) or a field with
+`omitempty` (which leaves the key out rather than writing `null`) stops the
+build. A struct-level description goes on a blank field:
 
 ```go
 _ struct{} `description:"..."`
@@ -81,8 +85,12 @@ The library's defaults are not the platform's shape, so `Generate` normalises:
 
 - `ProblemDocument` is published under the component name `Problem`, and every
   `$ref` with it, because the component is shared verbatim by every fragment;
-- `null` is dropped from type unions — no published fragment declares a
-  nullable field;
+- `null` is dropped from type unions, except for a pointer field marked
+  `nullable:"true"`, which keeps it. The marker that records the declaration is
+  removed before the fragment is written. The no-null rule is the platform's
+  published shape, not a limit of the library or of any consumer; the explicit
+  tag is the only way a field joins a null union, so every nullable field a
+  fragment publishes was declared that way;
 - a parameter's schema does not repeat the parameter's description;
 - response headers carry no `style`;
 - components are named by their Go type without the declaring package's prefix.

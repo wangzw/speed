@@ -406,7 +406,10 @@ type fakeSessions struct {
 	revoked   []authn.SessionID
 	status    authn.SessionStatus
 	statusErr error
-	elevated  []authn.Elevation
+	// expires, when set, is the instant a created session expires at; unset
+	// means one hour from now.
+	expires  time.Time
+	elevated []authn.Elevation
 	// elevatedFor records the session each elevation was written to.
 	elevatedFor []authn.SessionID
 	revokedAll  int
@@ -422,7 +425,11 @@ type fakeSessions struct {
 
 func (s *fakeSessions) Create(_ context.Context, in authn.NewSession) (authn.Issued, error) {
 	s.created = append(s.created, in)
-	issued := authn.Issued{ID: "sid-1", Token: "tok-1", ExpiresAt: time.Now().Add(time.Hour)}
+	expires := s.expires
+	if expires.IsZero() {
+		expires = time.Now().Add(time.Hour)
+	}
+	issued := authn.Issued{ID: "sid-1", Token: "tok-1", ExpiresAt: expires}
 	s.made = append(s.made, issued)
 	return issued, nil
 }

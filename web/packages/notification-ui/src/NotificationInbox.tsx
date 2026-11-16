@@ -98,10 +98,10 @@ export type NotificationInboxProps = {
 }
 
 /** Whether a message is still unread. The server writes `read_at` as JSON
- * `null` for an unread message (the route's view carries a `*time.Time`
- * with no omitempty), though the generated type models the field as an
- * optional string -- so a runtime `null` counts as unread alongside an
- * absent or empty value. */
+ * `null` for an unread message (the route's view carries a nullable
+ * `*time.Time` with no omitempty), and the generated type models the field
+ * as an optional `string | null` -- so a runtime `null` counts as unread
+ * alongside an absent or empty value. */
 function isUnread(message: NotificationMessage): boolean {
   const readAt: string | null | undefined = message.read_at
   return readAt === undefined || readAt === null || readAt === ''

@@ -17,6 +17,7 @@ import userEvent from '@testing-library/user-event'
 import { chipClasses } from '@mui/material/Chip'
 import { zhCN as muiZhCN } from '@mui/material/locale'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
+import { formatInstant } from '@speed/i18n'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { AccountsPage } from './AccountsPage.js'
 import { adminOperations } from './operations.js'
@@ -49,6 +50,7 @@ import {
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 /** Fills an i18n template's `{{name}}` slots with the given values. */
 function fill(
@@ -442,7 +444,7 @@ const USERNAME_IMMUTABLE_TEXT = zhCN.errors.authn.username_immutable
 const SECRET_ROW = {
   id: 'sec-1',
   label: 'ci',
-  expires_at: '0001-01-01T00:00:00Z',
+  expires_at: null,
   revoked: false,
 }
 
@@ -688,7 +690,7 @@ const FIELD_WRITES: readonly {
               id: 'secret-9',
               label: 'ci',
               secret: 'one-time-value',
-              expires_at: '0001-01-01T00:00:00Z',
+              expires_at: null,
             }),
     }),
     drive: async (user, panel) => {
@@ -717,7 +719,7 @@ describe('AccountsPage', () => {
           {
             id: 'sec-1',
             label: 'ci',
-            expires_at: '0001-01-01T00:00:00Z',
+            expires_at: null,
             revoked: false,
           },
         ]),
@@ -1668,7 +1670,7 @@ describe('AccountsPage', () => {
         Promise.resolve([{ kind: 'totp', label: 'Authenticator', status: 'active' }]),
       listAccountSecrets: () =>
         Promise.resolve([
-          { id: 'sec-1', label: 'ci', expires_at: '0001-01-01T00:00:00Z', revoked: false },
+          { id: 'sec-1', label: 'ci', expires_at: null, revoked: false },
         ]),
       listAccountSessions: () =>
         Promise.resolve([
@@ -1690,6 +1692,57 @@ describe('AccountsPage', () => {
     expect(await screen.findByText('Authenticator')).toBeInTheDocument()
     expect(screen.getByText('ci')).toBeInTheDocument()
     expect(screen.getByText('sess-1')).toBeInTheDocument()
+  })
+
+  it('shows a secret that never expires and renders a dated one in UTC', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      listAccountSecrets: () =>
+        Promise.resolve([
+          { id: 'sec-1', label: 'ci', expires_at: null, revoked: false },
+          {
+            id: 'sec-2',
+            label: 'deploy',
+            expires_at: '2026-11-20T12:00:00Z',
+            revoked: false,
+          },
+        ]),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    expect(
+      await screen.findByText(zhCN.accounts.secrets.neverExpires),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        formatInstant('2026-11-20T12:00:00Z', 'zh-CN', { timeZone: 'UTC' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the never-expires label in the active language', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      listAccountSecrets: () =>
+        Promise.resolve([
+          { id: 'sec-1', label: 'ci', expires_at: null, revoked: false },
+        ]),
+    })
+    renderWithProviders(<AccountsPage />, { operations, language: 'en-US' })
+    await user.type(
+      screen.getByLabelText(enUS.accounts.identifierLabel),
+      'ada',
+    )
+    await user.click(screen.getByRole('button', { name: enUS.accounts.search }))
+    await screen.findByText('Ada Lovelace')
+    await user.click(
+      screen.getByRole('button', {
+        name: fill(enUS.accounts.manageAria, { name: 'Ada Lovelace' }),
+      }),
+    )
+    expect(
+      await screen.findByText(enUS.accounts.secrets.neverExpires),
+    ).toBeInTheDocument()
   })
 
   it('surfaces a detail sub-read failure instead of an empty table', async () => {
@@ -1997,7 +2050,7 @@ describe('AccountsPage', () => {
     const operations = withAccounts({
       listAccountSecrets: () =>
         Promise.resolve([
-          { id: 'sec-1', label: 'ci', expires_at: '0001-01-01T00:00:00Z', revoked: false },
+          { id: 'sec-1', label: 'ci', expires_at: null, revoked: false },
         ]),
       listAccountSessions: () =>
         Promise.resolve([
@@ -2749,7 +2802,7 @@ describe('AccountsPage', () => {
           id: 'secret-9',
           label: 'ci',
           secret: 'one-time-value',
-          expires_at: '0001-01-01T00:00:00Z',
+          expires_at: null,
         }),
     })
     renderWithProviders(<AccountsPage />, { operations })
@@ -2802,7 +2855,7 @@ describe('AccountsPage', () => {
               id: 'secret-9',
               label: 'ci',
               secret: 'one-time-value',
-              expires_at: '0001-01-01T00:00:00Z',
+              expires_at: null,
             })
           : Promise.reject(FORBIDDEN)
       },
@@ -2837,7 +2890,7 @@ describe('AccountsPage', () => {
           id: 'secret-9',
           label: 'ci',
           secret: 'one-time-value',
-          expires_at: '0001-01-01T00:00:00Z',
+          expires_at: null,
         }),
     })
     renderWithProviders(<AccountsPage />, { operations })
@@ -3397,7 +3450,7 @@ describe('AccountsPage', () => {
           id: 'secret-9',
           label: input.label ?? '',
           secret: 'one-time-value',
-          expires_at: '0001-01-01T00:00:00Z',
+          expires_at: null,
         })
       },
     })
@@ -3568,7 +3621,7 @@ describe('AccountsPage', () => {
           id: 'secret-9',
           label: 'ci',
           secret: 'one-time-value',
-          expires_at: '0001-01-01T00:00:00Z',
+          expires_at: null,
         }),
     })
     renderWithProviders(<AccountsPage />, { operations })

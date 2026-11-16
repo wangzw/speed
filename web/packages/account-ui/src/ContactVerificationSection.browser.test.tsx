@@ -31,7 +31,7 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
         return jsonResponse(
           200,
           profileBody({
-            verification: { state: 'pending', email: 'ada@x.test', since: '' },
+            verification: { state: 'pending', email: 'ada@x.test', since: null },
           }),
         )
       }

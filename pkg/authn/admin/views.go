@@ -80,6 +80,16 @@ type AuthnAdminRemoved struct {
 	Removed int `json:"removed" required:"true" description:"The number of factors removed"`
 }
 
+// utcPtr is t as an RFC 3339 instant in UTC, and nil for the zero time, which
+// a view never publishes as 0001-01-01T00:00:00Z.
+func utcPtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	at := t.UTC()
+	return &at
+}
+
 // AuthnAdminSession is one session of an account, without any credential.
 type AuthnAdminSession struct {
 	_ struct{} `description:"One session of an account, without any credential a caller could use to take it over."`
@@ -114,10 +124,10 @@ type AuthnAdminRevoked struct {
 type AuthnAdminSecret struct {
 	_ struct{} `description:"One service secret as the listing shows it: identifier, label, expiry and revocation state, never the secret value."`
 
-	ID        string    `json:"id" required:"true" description:"The secret's identifier, not the secret value."`
-	Label     string    `json:"label" required:"true" description:"The label given to the secret when it was created."`
-	ExpiresAt time.Time `json:"expires_at" required:"true" description:"When the secret expires, as an RFC 3339 instant in UTC; the zero instant 0001-01-01T00:00:00Z means it never expires."`
-	Revoked   bool      `json:"revoked" required:"true" description:"True when the secret has been revoked."`
+	ID        string     `json:"id" required:"true" description:"The secret's identifier, not the secret value."`
+	Label     string     `json:"label" required:"true" description:"The label given to the secret when it was created."`
+	ExpiresAt *time.Time `json:"expires_at" nullable:"true" required:"true" description:"When the secret expires, as an RFC 3339 instant in UTC; null when it never expires."`
+	Revoked   bool       `json:"revoked" required:"true" description:"True when the secret has been revoked."`
 }
 
 // AuthnAdminSecretList is the service secrets of one account.
@@ -131,10 +141,10 @@ type AuthnAdminSecretList struct {
 type AuthnAdminSecretCreated struct {
 	_ struct{} `description:"A freshly minted service secret. The secret value appears in this response only."`
 
-	ID        string    `json:"id" required:"true" description:"The new secret's identifier."`
-	Label     string    `json:"label" required:"true" description:"The label given in the request."`
-	Secret    string    `json:"secret" required:"true" description:"The secret itself, handed out once and never again"`
-	ExpiresAt time.Time `json:"expires_at" required:"true" description:"The zero instant 0001-01-01T00:00:00Z when the request named no expiry"`
+	ID        string     `json:"id" required:"true" description:"The new secret's identifier."`
+	Label     string     `json:"label" required:"true" description:"The label given in the request."`
+	Secret    string     `json:"secret" required:"true" description:"The secret itself, handed out once and never again"`
+	ExpiresAt *time.Time `json:"expires_at" nullable:"true" required:"true" description:"When the secret expires, as an RFC 3339 instant in UTC; null when the request named no expiry."`
 }
 
 // AuthnAdminMember is one account's membership in one tenant.
@@ -219,15 +229,15 @@ type AuthnAdminVerifyToken struct {
 type AuthnAdminImpersonation struct {
 	_ struct{} `description:"One impersonation record. The reason never appears here; it is in the record and the audit row alone."`
 
-	ID        string    `json:"id" required:"true" description:"The record's identifier."`
-	Actor     string    `json:"actor" required:"true" description:"The identifier of the account that started the impersonation."`
-	Target    string    `json:"target" required:"true" description:"The identifier of the account being impersonated."`
-	Tenant    string    `json:"tenant" required:"true" description:"The name of the tenant the impersonation is confined to."`
-	SessionID string    `json:"session_id" required:"true" description:"The identifier of the actor's session that carries the impersonation."`
-	StartedAt time.Time `json:"started_at" required:"true" description:"When the impersonation started, as an RFC 3339 instant in UTC."`
-	EndsAt    time.Time `json:"ends_at" required:"true" description:"When the impersonation lapses, as an RFC 3339 instant in UTC."`
-	EndedAt   time.Time `json:"ended_at" required:"true" description:"The zero instant 0001-01-01T00:00:00Z while the record is still in force"`
-	EndReason string    `json:"end_reason,omitempty" description:"Absent while the record is still in force"`
+	ID        string     `json:"id" required:"true" description:"The record's identifier."`
+	Actor     string     `json:"actor" required:"true" description:"The identifier of the account that started the impersonation."`
+	Target    string     `json:"target" required:"true" description:"The identifier of the account being impersonated."`
+	Tenant    string     `json:"tenant" required:"true" description:"The name of the tenant the impersonation is confined to."`
+	SessionID string     `json:"session_id" required:"true" description:"The identifier of the actor's session that carries the impersonation."`
+	StartedAt time.Time  `json:"started_at" required:"true" description:"When the impersonation started, as an RFC 3339 instant in UTC."`
+	EndsAt    time.Time  `json:"ends_at" required:"true" description:"When the impersonation lapses, as an RFC 3339 instant in UTC."`
+	EndedAt   *time.Time `json:"ended_at" nullable:"true" required:"true" description:"When the impersonation ended, as an RFC 3339 instant in UTC; null while the record is still in force."`
+	EndReason string     `json:"end_reason,omitempty" description:"Absent while the record is still in force"`
 }
 
 // AuthnAdminImpersonationList is one page of impersonation records.

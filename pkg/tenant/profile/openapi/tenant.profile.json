@@ -38,7 +38,7 @@
             "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
             "type": "string"
           },
-          "createdAt": {
+          "created_at": {
             "description": "When the tenant was registered, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -100,7 +100,7 @@
           "ownerUsername",
           "ownerAccount",
           "status",
-          "createdAt"
+          "created_at"
         ],
         "type": "object"
       },

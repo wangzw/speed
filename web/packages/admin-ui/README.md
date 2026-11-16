@@ -332,7 +332,7 @@ bindings and account lookup.
 Everything else (`src/internal/`) is shared plumbing -- the error-text
 resolver, the `InlineError` and `WriteFeedbackRegion` bindings, the
 translation hook, the tenant selector, the account identity unit, the
-zero-instant sentinel and the package's internal contexts -- and is
+absent-instant sentinel and the package's internal contexts -- and is
 deliberately not exported. The callback types above and the session
 provider are the exceptions: the types are type-only exports, because a
 host annotating the shell's `onImpersonationStarting` or

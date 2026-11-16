@@ -29,10 +29,8 @@ func grantViewOf(g authn.ImpersonationGrant, tenantName string) AuthnAdminImpers
 		SessionID: string(g.SessionID),
 		StartedAt: g.StartedAt.UTC(),
 		EndsAt:    g.EndsAt.UTC(),
+		EndedAt:   utcPtr(g.EndedAt),
 		EndReason: g.EndReason,
-	}
-	if !g.EndedAt.IsZero() {
-		v.EndedAt = g.EndedAt.UTC()
 	}
 	return v
 }

@@ -38,7 +38,7 @@
             "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
             "type": "string"
           },
-          "createdAt": {
+          "created_at": {
             "description": "When the tenant was registered, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -98,7 +98,7 @@
           "website",
           "ownerAccount",
           "status",
-          "createdAt"
+          "created_at"
         ],
         "type": "object"
       },
@@ -176,7 +176,7 @@
       "TenantTransferView": {
         "description": "One pending or finished owner-transfer request on the organization's own surface.",
         "properties": {
-          "expiresAt": {
+          "expires_at": {
             "description": "When the confirmation window closes, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -185,7 +185,7 @@
             "description": "The request identifier the target and the canonical paths address.",
             "type": "string"
           },
-          "requestedAt": {
+          "requested_at": {
             "description": "When the request was made, as an RFC 3339 instant in UTC.",
             "format": "date-time",
             "type": "string"
@@ -214,8 +214,8 @@
           "id",
           "targetDisplayName",
           "targetUsername",
-          "requestedAt",
-          "expiresAt",
+          "requested_at",
+          "expires_at",
           "status"
         ],
         "type": "object"

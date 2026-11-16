@@ -282,7 +282,7 @@ describe('InvitationsPage', () => {
                 ownerAccount: UUID,
                 status: 'active',
                 contactEmail: '',
-                createdAt: '2026-10-15T12:00:00Z',
+                created_at: '2026-10-15T12:00:00Z',
                 description: '',
                 website: '',
               },
@@ -297,7 +297,7 @@ describe('InvitationsPage', () => {
                   status: 'pending',
                   invited_by: 'ghost-1',
                   expires_at: '2099-01-01T00:00:00Z',
-                  accepted_at: '0001-01-01T00:00:00Z',
+                  accepted_at: null,
                   created_at: '2026-10-15T12:00:00Z',
                 },
               ],
@@ -411,7 +411,7 @@ describe('ImpersonationsPage', () => {
       session_id: 'sess-1',
       started_at: '2026-10-15T12:00:00Z',
       ends_at: '2099-01-01T00:00:00Z',
-      ended_at: '0001-01-01T00:00:00Z',
+      ended_at: null,
     }
   }
 

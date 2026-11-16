@@ -87,6 +87,10 @@ The API is the package's godoc.
   the name for the same reason. Audit rows written by this module carry the
   name in `detail.tenant`. The owner still appears on no view an ordinary
   member can read.
+- **A published instant is a UTC ISO 8601 string ending in `Z`.** A service
+  secret's `expires_at` is `null` when the secret never expires, and an
+  impersonation record's `ended_at` is `null` while the record is in progress;
+  both fields are declared nullable (ADR-api-time-format).
 - **A member write may not suspend its own caller.** `PUT` with `active` false
   and the path's account the effective caller is a 409
   `cannot-suspend-self` (`urn:speed:authn:cannot-suspend-self`), decided in the

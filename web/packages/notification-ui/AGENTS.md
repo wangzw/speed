@@ -88,10 +88,10 @@ live stream through the assembled client's event-stream opener.
 - **No hand-written HTTP, no hand-written query keys.** Endpoint paths and
   response types come from `@speed/api-sdk`; the only path this package
   names is derived from the generated contract.
-- **`read_at` may be `null` at runtime.** The server's message view
-  carries a `*time.Time` with no omitempty, so an unread message's
-  `read_at` is JSON `null`; the generated type models the field as an
-  optional string. Treat `null`, `undefined` and `""` alike.
+- **`read_at` may be `null`.** The server's message view carries a
+  `*time.Time` with no omitempty, so an unread message's `read_at` is JSON
+  `null`; the contract declares the field nullable and the generated type is
+  `read_at?: string | null`. Treat `null`, `undefined` and `""` alike.
 - **The package never reads the session for the stream.** The `enabled`
   gate is the host's; this package keeps only the tenant read (auth-core's
   `useCurrentTenant`) that the query keys need.

@@ -114,6 +114,33 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 		}
 		return t.Name()
 	}))
+	// A pointer field explicitly marked nullable:"true" keeps the null union the
+	// library adds for it; every other null union is stripped by normalise. The
+	// marker carries the declaration to dropNullType and is removed before the
+	// fragment is written. Three declaration defects stop the build instead of
+	// publishing a schema that cannot keep what the marker declares: a
+	// non-pointer type has no null to carry, a pointer to a named structure is
+	// published as a $ref and the library drops the null beside it, and a field
+	// with omitempty leaves its key out rather than writing null.
+	r.DefaultOptions = append(r.DefaultOptions, jsonschema.InterceptProp(func(params jsonschema.InterceptPropParams) error {
+		if !params.Processed {
+			return nil
+		}
+		if value, declared := params.Field.Tag.Lookup("nullable"); !declared || value != "true" {
+			return nil
+		}
+		if params.Field.Type.Kind() != reflect.Pointer {
+			return fmt.Errorf("openapigen: the field %q marks a non-pointer type nullable", params.Name)
+		}
+		if params.PropertySchema.Ref != nil {
+			return fmt.Errorf("openapigen: the field %q marks a pointer to a structure published as a $ref nullable, which cannot carry a null union", params.Name)
+		}
+		if omitsEmpty(params.Field) {
+			return fmt.Errorf("openapigen: the field %q marks a nullable field omitempty, which leaves the key out instead of writing null", params.Name)
+		}
+		params.PropertySchema.WithExtraPropertiesItem(nullableMarker, true)
+		return nil
+	}))
 	r.Spec.Info.WithTitle(title).WithVersion(version)
 
 	bodyNames := map[string]string{}
@@ -1035,9 +1062,10 @@ func ginPathToOpenAPI(path string) string {
 	return strings.Join(segments, "/")
 }
 
-// normalise brings the library's output to the shape the platform publishes:
-// no null in type unions, no duplicated parameter descriptions, and no default
-// header style. It keeps every media type and binary format as generated.
+// normalise brings the library's output to the shape the platform publishes: no
+// null in a type union unless the declaration marks a pointer field
+// nullable:"true", no duplicated parameter descriptions, and no default header
+// style. It keeps every media type and binary format as generated.
 func normalise(raw []byte, bodyNames map[string]string, access map[string]speedhttp.Access) ([]byte, error) {
 	var doc map[string]interface{}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -1247,9 +1275,42 @@ func normaliseResponseHeaders(value interface{}) {
 	}
 }
 
+// omitsEmpty reports whether a field's json or form tag carries omitempty, the
+// option under which the field's key is left out rather than written as null.
+func omitsEmpty(field reflect.StructField) bool {
+	for _, key := range []string{"json", "form"} {
+		tag, declared := field.Tag.Lookup(key)
+		if !declared {
+			continue
+		}
+		for _, option := range strings.Split(tag, ",")[1:] {
+			if option == "omitempty" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// nullableMarker is the private schema keyword a declaration's nullable:"true"
+// is carried on from reflection to dropNullType. It never reaches the published
+// fragment.
+const nullableMarker = "x-openapigen-nullable"
+
 // dropNullType removes the null member from a type union: no fragment this
-// platform publishes declares a nullable field.
+// platform publishes declares a nullable field unless its declaration marks the
+// pointer field nullable:"true". The private marker recording that declaration
+// is removed here, so a marked field keeps its null member and no fragment
+// carries the marker.
 func dropNullType(node map[string]interface{}) {
+	keepNull := false
+	if marker, marked := node[nullableMarker]; marked {
+		delete(node, nullableMarker)
+		keepNull, _ = marker.(bool)
+	}
+	if keepNull {
+		return
+	}
 	types, ok := node["type"].([]interface{})
 	if !ok {
 		return

@@ -286,7 +286,7 @@ type Resolved struct {
 | 模板 | `DELETE /api/v1/system/sms/templates/:name` | `sms.template.manage` |
 | 载体 | `GET /api/v1/system/sms/carrier` | `sms.template.read` |
 
-**读的应答是 200 加一份视图，新建写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `sms.Record` 或 `sms.CarrierModel` 构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它存在就出现在应答里。模板视图的字段：`name`、`carrier`、`kind`、`source`、`params`、`locales`（有效语言集）、`bodies`、`attributes`、`approvals`（按语言）、`enabled`、`version`、`created_at`、`updated_at`，时间按 UTC 写出；它不带厂商编号：编号是注册表自己的记账，运维读“哪些模板生效”要知道的是生效与否，不是厂商把它编成几号。载体视图的字段：`name`、`content`、`review`、`identities`（名字、种类、值、国家、属性）、`countries`、`attribute_keys`、`max_body_runes`、`async_receipt`。列表分页按模板名，游标是上一页的最后一个名字。
+**读的应答是 200 加一份视图，新建写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `sms.Record` 或 `sms.CarrierModel` 构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它存在就出现在应答里。模板视图的字段：`name`、`carrier`、`kind`、`source`、`params`、`locales`（有效语言集）、`bodies`、`attributes`、`approvals`（按语言）、`enabled`、`version`、`created_at`、`updated_at`；时间按带 `Z` 的 UTC ISO 8601 写出，无值写 `null`，来自配置来源的模板没有写入时刻，这两个字段为 `null`（[ADR-api-time-format](../../adr/adr-api-time-format.md)）。它不带厂商编号：编号是注册表自己的记账，运维读“哪些模板生效”要知道的是生效与否，不是厂商把它编成几号。载体视图的字段：`name`、`content`、`review`、`identities`（名字、种类、值、国家、属性）、`countries`、`attribute_keys`、`max_body_runes`、`async_receipt`。列表分页按模板名，游标是上一页的最后一个名字。
 
 **回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:sms:bad-request`）：请求在格式上不可读（路径参数或正文）、注册表以一个跑不起来的配置或一条不符的消息拒绝（`ErrInvalidConfig`／`ErrRejected`）。409：点名一条来自配置的模板（`Problem.Type` 为 `urn:speed:sms:config-template`，与名字冲突的 `urn:speed:sms:conflict` 分开），或名字已被持有（`urn:speed:sms:conflict`）。404：注册表不持有该名。503：其余失败，以及没落地的强制档审计；503 不带 `Problem.Type`，成因只进日志。`ErrNotSendable` 与 `ErrUnroutable` 不在映射里：它们是发送路径的哨兵，没有一条管理面路由会触到它们，注册表若在这里答它们就是答错了问题，落到与未知失败同一个 503。
 

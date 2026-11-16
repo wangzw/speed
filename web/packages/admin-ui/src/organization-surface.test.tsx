@@ -495,7 +495,7 @@ describe('the organization pages address only the current tenant', () => {
     status: 'pending',
     created_at: '2026-01-01T00:00:00Z',
     expires_at: '2027-01-01T00:00:00Z',
-    accepted_at: '0001-01-01T00:00:00Z',
+    accepted_at: null,
   }
   const PROVIDER = {
     id: 'provider-1',

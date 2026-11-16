@@ -45,9 +45,19 @@ func invitationViewOf(v Invitation, tenantName string) AuthnInviteInvitation {
 		Status:     v.Status.String(),
 		InvitedBy:  string(v.InvitedBy),
 		ExpiresAt:  v.ExpiresAt.UTC(),
-		AcceptedAt: v.AcceptedAt.UTC(),
+		AcceptedAt: instant(v.AcceptedAt),
 		CreatedAt:  v.CreatedAt.UTC(),
 	}
+}
+
+// instant is t as an RFC 3339 instant in UTC, and nil for the zero time, which
+// a view publishes as null.
+func instant(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	at := t.UTC()
+	return &at
 }
 
 // issuedViewOf builds the answer of an issue: the invitation's view, the

@@ -29,7 +29,7 @@ const INVITATIONS: readonly AdminInvitation[] = [
     status: 'pending',
     invited_by: 'staff-1',
     expires_at: '2099-01-01T00:00:00Z',
-    accepted_at: '0001-01-01T00:00:00Z',
+    accepted_at: null,
     created_at: '2026-10-15T12:00:00Z',
   },
 ]

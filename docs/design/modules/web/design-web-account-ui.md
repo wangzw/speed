@@ -189,7 +189,7 @@ sequenceDiagram
 |---|---|---|
 | 时区链 | `resolveTimeZone` + ui-kit 上下文 | 存下的偏好优先，否则 ui-kit 的显示时区上下文（只替换“设备”一级），否则设备时区，否则 UTC；每个时间渲染都显式传 `timeZone` |
 | 渠道词表 | 发现文档的描述符 | 添加区取 `kind=redirect` 的方法名与 `label`，并以描述符的 `binding_providers` 判定方法是否已绑定；已绑定行按同一组 `binding_providers` 匹配（相等或以一项为前缀），缺该项时按方法名，仍匹配不到回退到本包自己的封闭词表 |
-| 注册验证状态 | `verification` | `GET /api/v1/auth/me` 的 `{state, email, since}`：`state` 取 `none`（没有邮箱，本规则不适用）、`pending`（有邮箱而没有一条已证明的）、`verified`（已有一条证明），判定与账户来源无关；`email` 是当前状态下的地址：`pending` 时是未证明标识或未证明预留中最早的一条，`none` 时为空；`since` 是首次证明时刻，从未证明过邮箱时为空串。`pending` 的 `email` 可能已经是登录标识（管理员或导入写下的邮箱），也可能只是一条未证明预留；界面只按地址发码，不假设它的来源 |
+| 注册验证状态 | `verification` | `GET /api/v1/auth/me` 的 `{state, email, since}`：`state` 取 `none`（没有邮箱，本规则不适用）、`pending`（有邮箱而没有一条已证明的）、`verified`（已有一条证明），判定与账户来源无关；`email` 是当前状态下的地址：`pending` 时是未证明标识或未证明预留中最早的一条，`none` 时为空；`since` 是首次证明时刻，从未证明过邮箱时为 `null`。`pending` 的 `email` 可能已经是登录标识（管理员或导入写下的邮箱），也可能只是一条未证明预留；界面只按地址发码，不假设它的来源 |
 | 标识的已证明性 | `proven`、`verified_via` | `proven` 对 `email-code`、`sms-code`、`invite` 与 `idp:<provider>` 为真，对 `admin`、`import-unverified` 与 `self` 为假。chip 只看 `proven`，二值：真读“已验证”，假读“未验证”；`verified_via` 不参与 chip 的取值，也不为未证明来源另造标签。用户名行不渲染归属 chip（登录名没有归属可证明）。`proven` 同时是选择的前提：只有已证明的邮箱与手机可以被选作登录方式，只有已证明的邮箱可以被选作默认联系地址（REQ-account-065、REQ-account-066） |
 | 联系方式与登录方式 | 档案读出的标识条目上的选择事实 | 每条已登记的邮箱与手机都是联系方式；是否作登录方式由持有人选择，邮箱另有它与默认联系地址的关系。未作登录方式的地址与号码仍列在联系方式中。未证明的邮箱或手机不能作登录方式，未证明的邮箱不能作默认联系地址（REQ-account-061、REQ-account-065、REQ-account-066）。验证只写归属，不改登录方式的位置（REQ-account-062）；默认联系地址在已登记并已证明的邮箱中恰好一条（REQ-account-063） |
 | 加强认证流程 | `StepUpFlow` | 一条 `purpose: 'step-up'` 流程的驱动；成功后重跑被门控的动作 |

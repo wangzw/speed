@@ -33,7 +33,10 @@
           "read_at": {
             "description": "The first-read instant as an RFC 3339 instant in UTC; null while the message is unread, and never rewritten once set.",
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "title": {
             "description": "The rendered title, in the language the delivery pipeline rendered it in.",
@@ -52,6 +55,7 @@
           "body",
           "params",
           "link",
+          "read_at",
           "created_at"
         ],
         "type": "object"
