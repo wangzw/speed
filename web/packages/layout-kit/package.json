@@ -4,7 +4,7 @@
   "description": "Speed layout kit: shared app chrome (AppShell) and route guarding, controlled and props-driven, with no auth-mechanism opinion",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

@@ -4,7 +4,7 @@
   "description": "Speed organization-create UI: the shared creation form and validation, and the self-service creation page, over the org.create operation -- with every built-in string in the bilingual org-create-ui namespace",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

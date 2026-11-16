@@ -4,7 +4,7 @@
   "description": "Speed theme presets: named, ready-made token overrides (default, classic, modern, compact, glass, ascii) as pure data above @speed/tokens, with no React, MUI or i18n dependency",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

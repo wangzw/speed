@@ -4,7 +4,7 @@
   "description": "Speed account UI: the signed-in account-management component family (session and login-history lists, social bindings, and step-up-gated two-factor setup) over an @speed/auth-core session and the generated authn operations, with every built-in string in the bilingual account-ui namespace",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

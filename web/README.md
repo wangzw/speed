@@ -212,11 +212,19 @@ rather than in the commit gate.
 - `"type": "module"`; **ESM-only** publish: `exports` maps point `types` and
   `import` at `dist/` `.d.ts`/`.js` pairs. NodeNext consumers import
   normally; no CJS twin ships.
-- `"files": ["dist", "README.md", "AGENTS.md"]` — the dist/ tree plus the
-  docs travel with the package.
+- `"files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"]` —
+  the dist/ tree plus the docs travel with the package; the negated entry
+  keeps the incremental build info out of the tarball (see below).
 - `tsconfig.json` (typecheck) extends `../../tsconfig.base.json` with
   `noEmit`; `tsconfig.build.json` emits declarations into `dist/` with
   `rootDir: src` so tests and `test-utils/` never leak into the artifact.
+  The build program is incremental: `incremental: true` with
+  `tsBuildInfoFile` at `dist/tsconfig.build.tsbuildinfo`. A build script
+  rebuilds the siblings it imports, so one `pnpm -r build` compiles a
+  sibling several times; the repeat runs read the build info and skip. The
+  build info lives inside `dist/` so a `dist` clean drops it together with
+  the output it describes, and the negated `files` entry above keeps it out
+  of the published package.
 - The build runs under `module`/`moduleResolution: nodenext`, which emits
   relative imports verbatim: **sources write explicit `.js` extensions on
   every relative import** (TS2835 otherwise), so the shipped `dist/` is

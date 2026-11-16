@@ -4,7 +4,7 @@
   "description": "Speed tenancy UI: the tenant-switch affordance (TenantSwitcher), a controlled component that reports the host's tenant pick through onSelect, with every built-in string in the bilingual tenancy-ui namespace",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

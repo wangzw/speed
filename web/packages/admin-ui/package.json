@@ -4,7 +4,7 @@
   "description": "Speed console UI: the platform-staff console component family -- the second shell, with no tenant switcher, that renders the tenant roster, settings and audit administration surfaces as route declarations collected through the declaration seam",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

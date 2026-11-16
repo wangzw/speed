@@ -6,6 +6,7 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "AGENTS.md"
   ],

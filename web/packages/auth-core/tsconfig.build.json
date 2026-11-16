@@ -19,7 +19,13 @@
     "noEmit": false,
     "declaration": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // Incremental emit: a build script rebuilds the workspace siblings it
+    // imports, so one clean `pnpm -r build` compiles a sibling several
+    // times; this turns the later rebuilds into no-ops. The build info sits
+    // in dist/ so a dist clean drops it with the output it describes.
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]

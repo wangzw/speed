@@ -4,7 +4,7 @@
   "description": "Speed auth core: the browser session lifecycle (the login flow's start/answer/current/abandon, the link, step-up and enroll flows, logout and silent refresh) as a memory-only state machine over the generated authn surface of @speed/api-sdk, with the in-memory access-token store as the bridge into @speed/api-client, hand-written response models with runtime guards, plus React hooks (useAuthState, useCurrentTenant, usePermission) reading one host-attached session and the tenant-scoped query-key convention",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

@@ -4,7 +4,7 @@
   "description": "Speed notification UI: the notification-center component family (the header bell with its unread badge, the inbox surface with per-message and mark-all read, the per-type channel preference matrix, and the live server-sent-event subscription) over the generated notification operations, with every built-in string in the bilingual notification-ui namespace",
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "AGENTS.md"],
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "AGENTS.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
