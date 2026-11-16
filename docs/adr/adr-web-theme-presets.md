@@ -34,7 +34,7 @@ token 树是一棵默认树加一次深合并，层数与层名由调用方决�
 - 预设可改的段排除 `breakpoints` 与 `zIndex`（`ThemePresetTokens = Omit<TokensOverride, 'breakpoints' | 'zIndex'>`），由类型排除并有测试守住随包预设。
 - 装配层序从低到高为 `defaultTokens`、预设、`projectTokens`、`tenantOverrides`：客户品牌色与项目级 token 压过预设，租户层最高。
 - `AppThemeProvider` 新增 `presets` 与 `defaultPreset`，新增 `useAppThemePreset()`；`createAppTheme` 的签名不变。活动预设是 provider 的局部状态，与明暗模式正交；`presets` 缺席或为空时不叠预设层；`defaultPreset` 不在列表内时取列表第一项，不抛错；没有 provider 时读取抛错。
-- 纯附加的 token 扩展：表面角色的 `opacity`（0～1）、排版的 `textGlow`（`text-shadow` 值）、背景的 `canvas`（明暗各一套 `from`/`to` 色标）。这些字段缺席时默认树逐字节不变。`opacity` 乘在已按模式解析的填充色上；`canvas` 只接受两套色标，是表面系统“本轮不引入背景图”边界的有意延伸。
+- 纯附加的 token 扩展：表面角色的 `opacity`（0～1）、排版的 `textGlow`（`text-shadow` 值）、背景的 `canvas`（明暗各一套 `from`/`to` 色标）。这些字段缺席时默认树逐字节不变。`opacity` 乘在已按模式解析的填充色上；`canvas` 只接受两套色标，是表面系统“不引入背景图”边界的有意延伸。
 - 新增取值的映射归 `ui-kit` 适配器：`surface.<角色>.opacity < 1` 时把填充色转成对应 alpha 的 rgba，明暗两种模式各自转换，非十六进制颜色原样保留；`MuiCssBaseline` 的 body 背景色取 `surface.page.fill`（缺省等于 `palette.background.default`，对现有宿主是 no-op）；`textGlow` 落到 body 的 `text-shadow`；`canvas` 落到 body 的 `background-image` 与 `background-attachment: fixed`，浅色取 `canvas.light`、深色取 `canvas.dark`。模糊、描边与阴影已由表面映射绘制，不需要新映射。
 - 随包预置 `classic`、`modern`、`compact`、`glass`、`ascii` 与基线 `default`。预设不持有文案，显示名归宿主 i18n；包不注册命名空间，也不 import i18n。
 - 切换入口在用户设置页，不占外壳 chrome；`account-ui` 交付受控的 `AppearanceSection`，预设列表与显示名由宿主提供。

@@ -40,7 +40,7 @@
 - **类型分类法登记接口。** 类型由业务模块以资源声明，本能力经 `core.Resources` 收齐并把 `/types` 与 `/preferences` 暴露出来。
 - **出站投递流水线。** `Dispatcher.Dispatch` 把这条投递入队为一条作业，消费时逐渠道发送、落账（`notification.delivery`）。
 - **SSE 实时推送。** 每副本一个 Hub，订阅收件箱创建事件，经 `/stream` 推给已连接客户端（`notification.stream`）。
-- **同意台账刻意后置。** `verified_contacts` 表、`contact_type_unsubscribes` 表、平台黑名单，以及 `POST /contacts`、`POST /contacts/:id/verify`、`POST /contacts/:id/resend`、`GET /contacts` 一组路由，本轮不落地。这一条是刻意的，不是漏项：`RecipientClass` 的 `external` 取值留在闭集里但本轮没有生产者，`notification.contact.*` 一组审计动作本轮不声明。
+- **同意台账刻意后置。** `verified_contacts` 表、`contact_type_unsubscribes` 表、平台黑名单，以及 `POST /contacts`、`POST /contacts/:id/verify`、`POST /contacts/:id/resend`、`GET /contacts` 一组路由，不落地。这一条是刻意的，不是漏项：`RecipientClass` 的 `external` 取值留在闭集里但没有生产者，`notification.contact.*` 一组审计动作不声明。
 - **不声明权限点。** 本能力的路由不带自有权限闸；谁可以读某个收件人的收件箱由宿主侧的授权决定。
 
 ## 后果
@@ -50,7 +50,7 @@
 **接受的代价：**
 
 - **后置的部分不落地，向外部联系人发消息的合规通路在本能力内不存在。** 需要它的宿主要在本能力之上另建一层，自行持有联系方式的验证与退订状态。
-- **`RecipientClass` 的 `external` 与 `notification.contact.*` 一组审计动作是本轮的死取值。** 它们在契约里定义、没有生产者，读者要读本记录才知道它们为何在。
+- **`RecipientClass` 的 `external` 与 `notification.contact.*` 一组审计动作是死取值。** 它们在契约里定义、没有生产者，读者要读本记录才知道它们为何在。
 - **不声明权限点，接入的每个宿主各自落地“谁可读收件箱”的授权。** 两个宿主可以给出不一致的答案，本能力不提供统一判定，也不拦截一个缺乏授权的接入。
 - **分组与过滤以类型词表为界，跨出该词表的通知不受本能力约束。** 一个不走类型分类法的通知没有可校验的类型，本能力无从记录它的偏好或去重。
 

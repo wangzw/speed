@@ -16,7 +16,7 @@
 - **不推送。** 把“刚写入一行”推给在线客户端是[推送模块](design-notification-stream.md)的事；本模块只写行、读行、发一条总线事件。
 - **不判定谁能读谁的收件箱。** 本模块不声明权限点，路由不带自有权限闸。谁可以读某个收件人的收件箱由宿主侧的授权决定（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不校验通知类型。** 一个 `type_key` 是不是已声明的类型，由[偏好与分类法](design-notification-preferences.md)这个消费点校验；本模块收下它并原样存下，不对照分类法。
-- **不接收非用户收件人。** 站内信的一行有一个账户收件人；外部联系人的同意台账本轮刻意后置（[ADR-notification-scope](../../../adr/adr-notification-scope.md)），因此没有生产者写到 `external` 类的收件人。
+- **不接收非用户收件人。** 站内信的一行有一个账户收件人；外部联系人的同意台账刻意后置（[ADR-notification-scope](../../../adr/adr-notification-scope.md)），因此没有生产者写到 `external` 类的收件人。
 - **不做已读以外的改写。** HTTP 接口只改 `read_at` 一列；行一旦写入，其余列不再变化。
 
 ## 外部接口契约

@@ -17,7 +17,7 @@
 - **不做授权判定。** 路由不带本模块自己的权限闸。谁可以读某个收件人的偏好、谁可以改它，由宿主侧的授权决定；本模块不声明任何权限点（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不解释参数。** 类型声明里的 `RecipientVisibleParams` 是参数白名单，本模块只保存它、交给投递侧核对；本模块不认识参数的含义，也不读参数的值。
 - **不持外部联系人的同意台账。** 该台账刻意后置（见 [notification](design-notification.md) 的范围一节）。
-- **不区分收件人类别。** 偏好只按用户收件人存；`RecipientClass` 为 `external` 的收件人本轮没有生产者。
+- **不区分收件人类别。** 偏好只按用户收件人存；`RecipientClass` 为 `external` 的收件人没有生产者。
 - **不做渠道的可用性判定。** 渠道是否可用由装配决定，归 [notification.delivery](design-notification-delivery.md)；本模块只据类型声明与偏好行算出渠道集合。邮件与短信渠道能否兑现，由 `notification.delivery` 以条件[特性](../../../glossary.md) `notification.channel.email`、`notification.channel.sms` 发布；本模块的应答不带渠道可用性，`PUT` 照常接受渠道闭集里的每个渠道，偏好的取值集不因装配增减（[ADR-notification-channels](../../../adr/adr-notification-channels.md)、[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 
 ## 术语表

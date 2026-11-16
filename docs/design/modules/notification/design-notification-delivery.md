@@ -43,7 +43,7 @@ type Dispatcher interface {
 }
 ```
 
-`Dispatcher.Dispatch` 是业务模块投递一条通知的唯一入口。它依次做**格式校验**（`TypeKey` 非空、`Recipient.Class` 为 `user`、`Recipient.UserID` 非空、`Locale` 非空；`external` 在闭集里但本轮无生产者，一律 `ErrInvalidRequest`）、**分类法校验**（`TypeKey` 在分类法里，`Params` 的键不越过该类型的 `RecipientVisibleParams` 白名单）、**目的地归属校验**（派发在参数里带了外部渠道的目的地时，经 `authn.Accounts` 核对它是否属于收件人，见“外部渠道的目的地与归属校验”）、**投递预算**（按收件人解析一次有效渠道；有效集含 `email` 且本装配能发邮件时计邮件预算，含 `sms` 且本装配能发短信时计短信预算，见“投递预算”）与**入队**（构造一条作业写进队列，返回作业标识；作业载荷带这次短信尝试的台账行标识）。它为判定预算读一次有效渠道，不渲染文本、不写 `notification_sends`，只在短信预算被计时写一行共享台账（邮件预算写键值计数器）。租户取自 `ctx`（`tenant.FromContext`），无租户即以租户的错误拒绝，与该队列自己的判据一致（[jobs](../jobs/design-jobs.md)）。
+`Dispatcher.Dispatch` 是业务模块投递一条通知的唯一入口。它依次做**格式校验**（`TypeKey` 非空、`Recipient.Class` 为 `user`、`Recipient.UserID` 非空、`Locale` 非空；`external` 在闭集里但无生产者，一律 `ErrInvalidRequest`）、**分类法校验**（`TypeKey` 在分类法里，`Params` 的键不越过该类型的 `RecipientVisibleParams` 白名单）、**目的地归属校验**（派发在参数里带了外部渠道的目的地时，经 `authn.Accounts` 核对它是否属于收件人，见“外部渠道的目的地与归属校验”）、**投递预算**（按收件人解析一次有效渠道；有效集含 `email` 且本装配能发邮件时计邮件预算，含 `sms` 且本装配能发短信时计短信预算，见“投递预算”）与**入队**（构造一条作业写进队列，返回作业标识；作业载荷带这次短信尝试的台账行标识）。它为判定预算读一次有效渠道，不渲染文本、不写 `notification_sends`，只在短信预算被计时写一行共享台账（邮件预算写键值计数器）。租户取自 `ctx`（`tenant.FromContext`），无租户即以租户的错误拒绝，与该队列自己的判据一致（[jobs](../jobs/design-jobs.md)）。
 
 **入队幂等。** 作业的幂等键取租户、`TypeKey`、收件人类别与收件人标识、`Locale`、`OccurrenceID` 与 `Params` 的组合，即逐渠道去重键去掉渠道维度：同一租户、同一类型、同一收件人、同一语言的同一逻辑事件的重发（同一个 `OccurrenceID`、同一批参数）收敛成一条作业，`Dispatcher.Dispatch` 的重复调用返回同一条作业的标识而不新增一条。
 

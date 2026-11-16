@@ -398,7 +398,7 @@
 
 | 记录 |
 |---|
-| [对象存储本轮交付核心功能、字节存储接口与 `fs`/`s3` 后端，复验净化与缩略图派生后置](adr-objectstore-scope.md) |
+| [对象存储交付核心功能、字节存储接口与 `fs`/`s3` 后端，复验净化与缩略图派生后置](adr-objectstore-scope.md) |
 | [对象存储的字节存储接口由根包声明，元数据接口与 `fs`/`s3` 后端各为一个排他模块](adr-objectstore-packaging.md) |
 | [对象以声明、上传、完成三步写入，内部键从不经 API 暴露](adr-objectstore-lifecycle.md) |
 | [对象存储记下调用方给的名字，入口规整一次后回显](adr-objectstore-object-name.md) |

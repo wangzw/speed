@@ -91,7 +91,7 @@
 
 **标题与描述由服务端本地化。** 读路由按请求语言取 `TitleKey` 与 `DescriptionKey`，词条缺失时回退到声明的英文 `Description`；前端不在自己的词包里再维护一份权威文案。
 
-**敏感项的值由本模块遮蔽。** 本模块按 `DeclaredItem.Sensitive` 把 `effective_value`、`platform_value` 与 `tenant_value` 换成设置能力导出的同一个遮蔽串再交出；遮蔽只覆盖文本，`has_row` 与 `source` 照常报出。写路由拒绝一个把该遮蔽串写回敏感项的请求，答 422 `urn:speed:settings:masked-value`；这样一次“把读到的值原样提交回去”的写不会把遮蔽串存成真实值。本轮两个准入项不敏感，机制保留给未来的敏感项。
+**敏感项的值由本模块遮蔽。** 本模块按 `DeclaredItem.Sensitive` 把 `effective_value`、`platform_value` 与 `tenant_value` 换成设置能力导出的同一个遮蔽串再交出；遮蔽只覆盖文本，`has_row` 与 `source` 照常报出。写路由拒绝一个把该遮蔽串写回敏感项的请求，答 422 `urn:speed:settings:masked-value`；这样一次“把读到的值原样提交回去”的写不会把遮蔽串存成真实值。当前的两个准入项不敏感，机制留给将来声明的敏感项。
 
 ### 宿主可见的接口
 

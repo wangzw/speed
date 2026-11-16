@@ -16,10 +16,10 @@
 
 - **不声明通知类型。** 一个类型是发出它的那个业务模块的声明，本能力只收齐这份声明并拿它当校验参照（见“分类法与取材域”）。本能力不定义任何类型，也不持有类型的词表。
 - **不声明任何权限点。** 本能力的路由不带自有权限闸：没有任何模块为本能力的路由声明权限，路由在中间件的声明表里按需认证、不带权限判定。谁可以读某个收件人的收件箱、谁可以改某个收件人的偏好，由**宿主侧的授权**决定：宿主在自己的链上另加一层判定，或按他自己的模型约束这些端。本能力因此不进入 `authz.PermissionSpec` 与 `authz.TranslationSpec` 的声明范围（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
-- **非用户外部联系人的同意台账刻意后置。** 给**非用户的外部联系人**（手机号、邮箱地址这类不属于本系统账户的联系人）发消息，需要一份独立的同意台账：`verified_contacts` 表、`contact_type_unsubscribes` 表、平台级黑名单，以及 `/contacts` 一组路由（`POST /contacts`、`POST /contacts/:id/verify`、`POST /contacts/:id/resend`、`GET /contacts`）。**本轮刻意后置，不是漏项**（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。因此 `RecipientClass` 的闭集里保留 `external` 取值，但本轮**没有生产者**，相关的 `notification.contact.*` 审计动作本轮也不声明。
+- **非用户外部联系人的同意台账刻意后置。** 给**非用户的外部联系人**（手机号、邮箱地址这类不属于本系统账户的联系人）发消息，需要一份独立的同意台账：`verified_contacts` 表、`contact_type_unsubscribes` 表、平台级黑名单，以及 `/contacts` 一组路由（`POST /contacts`、`POST /contacts/:id/verify`、`POST /contacts/:id/resend`、`GET /contacts`）。**刻意后置，不是漏项**（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。因此 `RecipientClass` 的闭集里保留 `external` 取值，但**没有生产者**，相关的 `notification.contact.*` 审计动作也不声明。
 - **不发送邮件与短信本身。** 出站的外部渠道各经一个接口：邮件交 `pkg/mail` 的 `Sender`，短信交 `pkg/sms` 的 `Registry` 与 `Sender`。本能力选择模板、渲染文本、构造请求，实际投递与载体交互归 `pkg/mail` 与 `pkg/sms`。
 - **不聚合同类消息，不限频。** 一次派发就落一条消息、发一次；把短时间内的同类型消息合并成一条、按收件人给发送设上限，都不在本能力内。面向收件人的发送上限由宿主经 `pkg/ratelimit` 另行设定。
-- **不产生平台域的行。** 本能力的每一行都属于一个租户：收件人是一个账户，账户属于租户。平台级广播与非用户外部联系人的同意台账同属一类：它们需要一个不属于任何租户的收件人，而本轮没有这样的收件人。
+- **不产生平台域的行。** 本能力的每一行都属于一个租户：收件人是一个账户，账户属于租户。平台级广播与非用户外部联系人的同意台账同属一类：它们需要一个不属于任何租户的收件人，而本能力没有这样的收件人。
 
 ## 外部接口契约
 
@@ -93,7 +93,7 @@ type RecipientClass string
 
 const (
     RecipientUser     RecipientClass = "user"     // 系统账户
-    RecipientExternal RecipientClass = "external" // 非用户外部联系人；本轮不做，见非职责
+    RecipientExternal RecipientClass = "external" // 非用户外部联系人；无生产者，见非职责
 )
 
 // Recipient 是一条消息的收件人。
@@ -135,7 +135,7 @@ type Message struct {
 
 **`TypeSpec.Key` 是全局唯一的类型名**，形如 `<模块>.<实体>.<动作>`；命名空间前缀是本能力对消费点的约定，用于诊断与去重，本能力不按前缀做任何判定。`Group` 是给收件箱按组过滤用的自由文本，本能力不解释它的取值。`DefaultChannels` 是未经偏好改写时这条类型走的渠道，元素是 `Channel` 闭集的子集，非空、不重复、每个取值都在闭集内。`Unsubscribable` 为 `false` 表示这条类型不可退订：验证码一类的类型把 `DefaultChannels` 定为它必须走的渠道（验证码走 `sms`），收件人改不了它；为 `true` 时收件人可以关掉某个渠道。`Unsubscribable` 只约束偏好写入：它为 `false` 的类型不落偏好行、写入以 `ErrNotUnsubscribable` 回绝；默认走哪些渠道与它无关，`DefaultChannels` 取 `in_app` 之外的渠道不构成不自洽。`RecipientVisibleParams` 非 `nil` 时是白名单：载荷里只有列出的参数名进得了最终消息，其余被拒（`ErrParamsNotAllowed`）；为 `nil` 表示不设白名单，全部参数可见。
 
-**`RecipientClass` 的闭集是 `user` 与 `external`。** `external` 取值留在闭集里以保证闭集稳定，但本轮没有生产者：没有任何一条派发的收件人是 `external`，给 `external` 的派发在本轮被拒（见非职责）。`Recipient.Class` 是收件人的种类，`Recipient.UserID` 在 `user` 类下是系统账户标识。
+**`RecipientClass` 的闭集是 `user` 与 `external`。** `external` 取值留在闭集里以保证闭集稳定，但没有生产者：没有任何一条派发的收件人是 `external`，给 `external` 的派发被拒（见非职责）。`Recipient.Class` 是收件人的种类，`Recipient.UserID` 在 `user` 类下是系统账户标识。
 
 **`Dispatch.Locale` 非空**，是一条 BCP 47（[REF-bcp47](../../../references.md)）标签。它决定渲染用哪种语言，也参与去重键；本能力不校验它是否受支持（受支持集由 i18n 目录派生，只有渲染引擎知道），一个不受支持而格式合法的标签在渲染时回退到默认语言。`Dispatch.OccurrenceID` 是同一逻辑事件的重发标识：同一个逻辑事件重发必须携带同一个值，它在去重键里区分“同一件事的两次投递”与“两件事”。
 
@@ -237,7 +237,7 @@ type Message struct {
 
 ## UML 图
 
-下图给出契约中的类型、接口与模块的关系。图看不出的约束：`Channel` 与 `RecipientClass` 是封闭集，`RecipientClass.external` 本轮无生产者；`TypeSpec` 是业务模块经 `Resources` 声明的资源类型、由 `notification.preferences` 与 `notification.delivery` 在各自 `New` 收齐；`Inbox`、`Preferences` 与 `Dispatcher` 各由对应模块排他交付；`notification.stream` 不经这些接口，它只订阅 `pkg/event` 上的一条事件。
+下图给出契约中的类型、接口与模块的关系。图看不出的约束：`Channel` 与 `RecipientClass` 是封闭集，`RecipientClass.external` 无生产者；`TypeSpec` 是业务模块经 `Resources` 声明的资源类型、由 `notification.preferences` 与 `notification.delivery` 在各自 `New` 收齐；`Inbox`、`Preferences` 与 `Dispatcher` 各由对应模块排他交付；`notification.stream` 不经这些接口，它只订阅 `pkg/event` 上的一条事件。
 
 ```mermaid
 classDiagram
@@ -377,7 +377,7 @@ sequenceDiagram
 
 这些表都是**租户作用域**，各内嵌租户模型（约定列名 `tenant_id`）；语句过滤由租户名册模块交付的 GORM（[REF-gorm](../../../references.md)）插件完成，上下文无租户时受约束模型的语句拒绝执行，跨租户必须在调用点字面写出。
 
-**投递账是租户作用域，不设平台行。** 一次投递的收件人要么是一个账户（`recipient_class = user`），要么是后置的外部联系人（`external`，本轮无生产者）；两种收件人都属于一个租户，因此每一行总有一个租户。平台级广播与平台级黑名单需要一个不属于任何租户的收件人，本能力在设计上排除了它们（见非职责）。
+**投递账是租户作用域，不设平台行。** 一次投递的收件人要么是一个账户（`recipient_class = user`），要么是后置的外部联系人（`external`，无生产者）；两种收件人都属于一个租户，因此每一行总有一个租户。平台级广播与平台级黑名单需要一个不属于任何租户的收件人，本能力在设计上排除了它们（见非职责）。
 
 **`notification_sends.status` 是闭集** `succeeded`、`failed`、`skipped`：渠道已受理、尝试后失败、因渠道接口缺席而跳过。`succeeded` 表示外部载体受理了这条消息并回了回执标识，**不表示收件人已收到**：带异步回执的载体在同步应答里只给消息标识，最终投递状态由载体另行报告，本模块不跟踪它；站内信的 `succeeded` 则表示那行已写进收件箱。`duration_ms` 是一次渠道调用的耗时，`provider_receipt_id` 是外部载体返回的回执标识（站内信为空），`error` 是失败原因文本，都不进上行的用户可见文本。
 
