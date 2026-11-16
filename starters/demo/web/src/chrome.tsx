@@ -1043,6 +1043,12 @@ function AccountMenuItems({
         <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0 }}>
           {t('userMenu.messages')}
         </Box>
+        {/* The label and the count are two text nodes. Without a separator
+            their text coalesces into one word ("Messages1"), which is not a
+            word of the row's accessible name and so fails WCAG 2.5.3's token
+            containment. A whitespace-only text node is not a flex item, so
+            neither child moves. */}
+        {notificationsShown ? ' ' : null}
         {notificationsShown ? (
           <Box
             component="span"

@@ -217,6 +217,14 @@ describe('route-level Label in Name in Chromium', () => {
     const user = userEvent.setup()
     await user.click(screen.getByTestId('account-entry-trigger'))
     const menu = await screen.findByRole('menu')
+    // The menu enters through MUI's Grow transition, whose paper starts at
+    // opacity 0. axe counts a zero-opacity ancestor as off screen, so a scan
+    // taken in the opening frame finds every item inapplicable and passes
+    // without judging one; scan the entered menu instead.
+    const paper = menu.parentElement as HTMLElement
+    await waitFor(() => {
+      expect(getComputedStyle(paper).opacity).toBe('1')
+    })
     // The menu items are the controls whose visible text must be inside their
     // accessible name; the page behind the open menu is aria-hidden, so the
     // menu itself is the meaningful scope.
@@ -229,6 +237,9 @@ describe('route-level Label in Name in Chromium', () => {
       )
     }
     expect(within(menu).getAllByRole('menuitem').length).toBeGreaterThan(0)
+    // The Messages row carries the unread count in its name, so the rule must
+    // have judged it rather than skipped the menu as inapplicable.
+    expect(evaluated, 'the rule judged no node in the open menu').toBeGreaterThan(0)
   })
 
   /**
