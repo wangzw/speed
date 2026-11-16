@@ -549,6 +549,75 @@ describe('AuditPage', () => {
     expect(exports[0]?.since).toBe('2026-11-01T06:30:00.000Z')
   })
 
+  it('keeps an applied upper bound when a regenerated draft reads the repeated hour', async () => {
+    const user = userEvent.setup()
+    const seen: Array<{ until?: string }> = []
+    const exports: AuditAdminRecordsExportParams[] = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          seen.push({ until: params?.until })
+          return Promise.resolve(page([record]))
+        },
+        exportRecords: (params) => {
+          exports.push(params ?? {})
+          return Promise.resolve(new Blob([]))
+        },
+      }),
+    )
+    renderWithProviders(
+      <ZoneSwitcher zones={['UTC', 'America/New_York']} />,
+      { operations },
+    )
+    await screen.findByText('tenant.create')
+    const until = screen.getByLabelText(zhCN.audit.filters.until)
+    const apply = screen.getByRole('button', { name: zhCN.audit.filters.apply })
+
+    // Apply 05:30Z, the first 01:30 of New York's fall-back overlap.
+    fireEvent.change(until, { target: { value: '2026-11-01T05:30' } })
+    await user.click(apply)
+    await vi.waitFor(() => {
+      expect(seen.at(-1)?.until).toBe('2026-11-01T05:30:00.000Z')
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'switch-display-zone' }),
+    )
+    // The applied instant reads back as 01:30 in New York, a wall clock that
+    // names both 05:30Z and 06:30Z. The draft was generated from the applied
+    // instant, so it must resolve to that instant rather than to the later
+    // occurrence the field would pick for a new reading.
+    await vi.waitFor(() => {
+      expect(until).toHaveValue('2026-11-01T01:30')
+    })
+    const control = screen.getByRole('button', {
+      name: zhCN.audit.export.label,
+    })
+    expect(control).toBeEnabled()
+    expect(
+      screen.queryByText(zhCN.audit.export.applyFirst),
+    ).not.toBeInTheDocument()
+
+    // Applying the unchanged draft keeps the bound; it must not move it an
+    // hour later. Re-read the list and observe the applied bound in the
+    // request, rather than waiting on the transient fetching flag.
+    const requestsBefore = seen.length
+    await user.click(apply)
+    await user.click(screen.getByRole('button', { name: COPY.refresh }))
+    await vi.waitFor(() => {
+      expect(seen.length).toBeGreaterThan(requestsBefore)
+      expect(seen.at(-1)?.until).toBe('2026-11-01T05:30:00.000Z')
+    })
+    expect(
+      seen
+        .slice(requestsBefore)
+        .filter((params) => params.until === '2026-11-01T06:30:00.000Z'),
+    ).toHaveLength(0)
+    await user.click(control)
+    await vi.waitFor(() => expect(exports).toHaveLength(1))
+    expect(exports[0]?.until).toBe('2026-11-01T05:30:00.000Z')
+  })
+
   it('regenerates the applied time drafts when the display zone changes', async () => {
     const user = userEvent.setup()
     const seen: { since?: string } = {}
@@ -1193,6 +1262,40 @@ describe('AuditPage', () => {
       expect(
         screen.queryByText(zhCN.errors.client.httpForbidden),
       ).toBeNull()
+    })
+
+    it('clears a previous export failure on reset', async () => {
+      const user = userEvent.setup()
+      const operations = createAdminOperations(
+        makeAdminBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: () =>
+            Promise.reject({ status: 403, code: 'client.http.403' }),
+        }),
+      )
+      renderWithProviders(<AuditPage />, {
+        operations,
+        timeZone: 'America/New_York',
+      })
+      await screen.findByText('tenant.create')
+
+      await user.click(
+        screen.getByRole('button', { name: zhCN.audit.export.label }),
+      )
+      expect(
+        await screen.findByText(zhCN.errors.client.httpForbidden),
+      ).toBeInTheDocument()
+
+      // Reset returns the toolbar to its empty state, so the failure of an
+      // export the operator abandoned must not outlive it.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.audit.filters.reset }),
+      )
+      await vi.waitFor(() => {
+        expect(
+          screen.queryByText(zhCN.errors.client.httpForbidden),
+        ).toBeNull()
+      })
     })
 
     it('saves the streamed export under its UTC instant', async () => {
