@@ -69,9 +69,9 @@ export function resolveTimeZone(stored?: string | null): string {
   if (preferred !== '' && isSupportedTimeZone(preferred)) {
     return preferred
   }
-  const device = browserTimeZone()
-  if (device !== null && isSupportedTimeZone(device)) {
-    return device
+  const browserZone = browserTimeZone()
+  if (browserZone !== null && isSupportedTimeZone(browserZone)) {
+    return browserZone
   }
   return FALLBACK_TIME_ZONE
 }
