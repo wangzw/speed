@@ -51,6 +51,20 @@ GATES := $(wildcard tools/check_*.py)
 
 PYTHON ?= python3
 
+# Go caches a passing test result and replays it while the test's inputs are
+# unchanged. Those inputs are the package's files, the environment variables
+# the test read and the files it opened under the module root; a file read
+# outside the module root is not tracked. Two things in this tree escape that.
+# The demo program's tests read the committed contracts under ../../../contracts,
+# so editing a contract leaves the cached result standing, and the unit legs run
+# that module uncached. The integration cases read the addresses of the backend
+# stack, and a reused stack on the same addresses replays the earlier run
+# instead of exercising the backends, so both integration legs run every module
+# uncached. The other modules read nothing outside their root and keep the cache
+# on the unit legs, where it is what makes a rerun cheap.
+UNCACHED_MODULES ?= ./starters/demo/server
+uncached = $$([[ ' $(UNCACHED_MODULES) ' == *" $$it "* ]] && echo -count=1)
+
 # The integration stack's state file and the script that maintains it. The
 # script allocates this checkout's ports and records them with its compose
 # project name; the two variables let a run point the state elsewhere and let
@@ -137,10 +151,10 @@ deps-down: ## Take this checkout's integration backends down
 # vet-integration below: a leg that stopped at "does not run" would let them rot
 # into not compiling at all.
 test: modules-present ## Test every module (unit cases only)
-	@failed=; $(call each,$(MODULES),test,go -C $$it test -timeout 30m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test,go -C $$it test $(uncached) -timeout 30m ./...); $(each-end)
 
 test-race: modules-present ## Test every module under the race detector (unit cases only)
-	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race -timeout 60m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race $(uncached) -timeout 60m ./...); $(each-end)
 
 # The integration cases: they need the backends above, they are slower by
 # orders of magnitude, and they are run on a schedule rather than on every
@@ -157,7 +171,7 @@ test-integration: modules-present deps-up ## Test every module's integration cas
 	fi; \
 	backend_env="$$($(BACKENDS) env --state '$(TEST_BACKENDS_STATE)')" || exit 1; \
 	set -a; eval "$$backend_env"; set +a; \
-	failed=; $(call each,$(MODULES),test integration,go -C $$it test -tags=integration -timeout 60m ./...); $(each-end)
+	failed=; $(call each,$(MODULES),test integration,go -C $$it test -count=1 -tags=integration -timeout 60m ./...); $(each-end)
 
 test-integration-race: modules-present deps-up ## Test every module's integration cases under the race detector
 	@if [ ! -f '$(TEST_BACKENDS_STATE)' ]; then \
@@ -166,7 +180,7 @@ test-integration-race: modules-present deps-up ## Test every module's integratio
 	fi; \
 	backend_env="$$($(BACKENDS) env --state '$(TEST_BACKENDS_STATE)')" || exit 1; \
 	set -a; eval "$$backend_env"; set +a; \
-	failed=; $(call each,$(MODULES),test integration -race,go -C $$it test -race -tags=integration -timeout 90m ./...); $(each-end)
+	failed=; $(call each,$(MODULES),test integration -race,go -C $$it test -count=1 -race -tags=integration -timeout 90m ./...); $(each-end)
 
 # Compiles the tagged files without running them, so the unit gate still says
 # whether they build. Without it a change that breaks an integration case

@@ -116,8 +116,8 @@ MODULE_LEGS: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {
     "build": [("go", "build", (), ""), ("go", "build", (), "off")],
     "test": [("go", "test", (), "")],
     "test-race": [("go", "test", ("-race",), "")],
-    "test-integration": [("go", "test", ("-tags=integration",), "")],
-    "test-integration-race": [("go", "test", ("-race", "-tags=integration"), "")],
+    "test-integration": [("go", "test", ("-count=1", "-tags=integration"), "")],
+    "test-integration-race": [("go", "test", ("-count=1", "-race", "-tags=integration"), "")],
     "vet-integration": [("go", "vet", ("-tags=integration",), "")],
     "fmt": [("golangci-lint", "fmt", (), "")],
     "lint": [("golangci-lint", "fmt", ("--diff",), ""), ("golangci-lint", "run", (), "")],
@@ -174,12 +174,14 @@ class LoopingLegTests(unittest.TestCase):
         state: str | pathlib.Path | None = None,
         repo: str | pathlib.Path = "green",
         shellcheck: str | pathlib.Path | None = None,
+        uncached: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
         env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
         env["STAND_IN_LOG"] = str(self.log)
         dirs = [str(self.scratch / name) for name in names]
         gates = [str(self.scratch / name / f"check_{name}.py") for name in names]
+        extra = [f"UNCACHED_MODULES={self.scratch / uncached}"] if uncached is not None else []
         return subprocess.run(
             [
                 "make",
@@ -195,6 +197,7 @@ class LoopingLegTests(unittest.TestCase):
                 f"REPO_ROOT={self.repos / repo}",
                 f"ACTIONLINT={self.bin / 'actionlint'}",
                 f"SHELLCHECK={shellcheck if shellcheck is not None else self.bin / 'shellcheck'}",
+                *extra,
             ],
             env=env,
             capture_output=True,
@@ -217,6 +220,42 @@ class LoopingLegTests(unittest.TestCase):
             and c["gowork"] == gowork
             for c in self.calls()
         )
+
+    def test_the_unit_legs_bypass_the_test_cache_only_for_a_module_that_reads_outside_its_root(
+        self,
+    ) -> None:
+        """The demo program's tests read ../../../contracts, which Go's test
+        cache does not track, so a cached pass would outlive an edit to a
+        contract. The module that does it runs uncached; the others keep the
+        cache."""
+        (self.scratch / "outside").mkdir(exist_ok=True)
+        for leg, flags in (("test", ()), ("test-race", ("-race",))):
+            with self.subTest(leg=leg):
+                self.log.unlink(missing_ok=True)
+                result = self.make(leg, "green", "outside", uncached="outside")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for name, cached in (("outside", False), ("green", True)):
+                    calls = [
+                        c
+                        for c in self.calls()
+                        if c["dir"] == name and c["tool"] == "go" and c["args"][:1] == ["test"]
+                    ]
+                    self.assertEqual(len(calls), 1, f"{leg} ran {name} {len(calls)} times")
+                    self.assertTrue(all(flag in calls[0]["args"] for flag in flags))
+                    self.assertEqual(
+                        "-count=1" in calls[0]["args"],
+                        not cached,
+                        f"{leg} in {name}: {calls[0]['args']}",
+                    )
+
+    def test_the_makefile_names_the_demo_program_as_the_uncached_module(self) -> None:
+        result = subprocess.run(
+            ["make", "-C", str(ROOT), "--no-print-directory", "-pn", "modules"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertIn("UNCACHED_MODULES = ./starters/demo/server", result.stdout)
 
     def test_a_red_module_hides_no_other_modules_result(self) -> None:
         for leg, passes in MODULE_LEGS.items():
