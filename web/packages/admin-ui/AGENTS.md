@@ -468,11 +468,18 @@ request body.
   display time zone (host provider, then browser zone, then UTC) and the
   active language, never a literal zone at the call site. The
   `src/internal/display-time-zone-guard.test.ts` suite scans every
-  package's `src` and the demo host's `src` (tests and the demo harness
-  excluded) and fails on a zone literal or a name bound to one in a
-  `timeZone` value or attribute, a raw `formatInstant` called without a
-  zone, `toLocale*String`, a bare `Intl.DateTimeFormat`, or a literal zone
-  passed to `instantToWallClock`/`wallClockToInstant`; only `@speed/i18n`'s
+  package's `src` and the demo host's `src` (test files and the demo host's
+  `src/test-utils` harness excluded) and fails on a zone literal or a name
+  bound to one in a `timeZone` value or attribute, a raw `formatInstant`
+  called without a zone, `toLocale*String`, a bare `Intl.DateTimeFormat`, or
+  a literal zone passed to `instantToWallClock`/`wallClockToInstant`. A
+  shorthand property in any member position (`{ style, timeZone }`) counts
+  as passing a tracked name. A name counts only when the same file directly
+  declares it as the first declarator in a `const`, `let` or `var`
+  statement; a name bound by destructuring, a later declarator in the same
+  statement, a zone constant imported from another file, and a quoted key
+  such as `{ 'timeZone': 'UTC' }` are invisible to the text scan, so each
+  stays a review obligation. Only `@speed/i18n`'s
   `time.ts` and `wall-clock.ts` and `@speed/ui-kit`'s
   `use-format-instant.ts` are exempt. This package keeps no copy of any of
   them.

@@ -11,10 +11,16 @@
  *
  * - a `timeZone` option whose value is a literal zone, or a literal
  *   fallback such as `zone ?? 'UTC'`, or a JSX `timeZone="GMT"` attribute;
- * - a name the file binds to an expression carrying a zone literal
- *   (`const zone = stored ?? 'UTC'`) and then passes as a zone, whether as
- *   the second argument of a wall-clock conversion or through the
- *   shorthand property `{ timeZone }`;
+ * - a name the file directly declares in a `const`, `let` or `var`
+ *   statement as its first declarator, bound to an expression carrying a
+ *   zone literal (`const zone = stored ?? 'UTC'`), and then passes as a
+ *   zone, whether as the second argument of a wall-clock conversion or
+ *   through a shorthand property, `{ timeZone }` or
+ *   `{ style, timeZone }`. Only that first declarator is tracked: a name
+ *   bound by destructuring, a later declarator in the same statement, a
+ *   constant imported from another file, and a quoted key such as
+ *   `{ 'timeZone': 'UTC' }` are not seen, so each stays a review
+ *   obligation;
  * - the raw `formatInstant(value, language)` imported from `@speed/i18n`
  *   -- named, aliased or reached through a namespace import -- called
  *   without a `timeZone` option, so the constructor silently takes the
@@ -756,13 +762,15 @@ function reportTimeZoneLiterals(
   }
 
   // The shorthand property: `formatInstant(v, l, { timeZone })`, where the
-  // name carries a zone literal from its declaration.
+  // name carries a zone literal from its declaration. It is a zone use in
+  // any member position, so `{ style: 'long', timeZone }` reports too.
   if (zoneNames.has('timeZone')) {
-    const shorthand = /\{\s*timeZone\s*(?=[,}])/g
+    const shorthand = /[{,]\s*timeZone\s*(?=[,}])/g
     while ((match = shorthand.exec(codeOnly)) !== null) {
+      const offset = match.index + match[0].indexOf('timeZone')
       findings.push({
         rule: RULES.hardCodedZone,
-        line: lineOf(codeOnly, match.index),
+        line: lineOf(codeOnly, offset),
       })
     }
   }
@@ -1209,6 +1217,57 @@ describe('the guard detector itself', () => {
     // A name resolved by the chain stays sanctioned through the shorthand.
     expect(
       rulesIn("const timeZone = resolveTimeZone(stored)\nconst o = { timeZone }"),
+    ).toEqual([])
+  })
+
+  it('reports a shorthand zone that follows another member', () => {
+    // The shorthand is a zone use wherever it sits in the object, not only
+    // as the first member.
+    expect(
+      rulesIn(
+        `${rawImport}const timeZone = stored ?? 'UTC'\n` +
+          "formatInstant(value, language, { style: 'long', timeZone })",
+      ),
+    ).toContain(RULES.hardCodedZone)
+  })
+
+  it('reports the shorthand at the identifier, not the preceding comma', () => {
+    // The object spans lines, so the comma before the shorthand and the
+    // shorthand itself sit on different ones: the finding must name the
+    // line of `timeZone`, which is where the zone use is.
+    expect(
+      findViolations(
+        `${rawImport}const timeZone = stored ?? 'UTC'\n` +
+          'formatInstant(value, language, {\n' +
+          "  style: 'long',\n" +
+          '  timeZone,\n' +
+          '})',
+      ),
+    ).toEqual([{ rule: RULES.hardCodedZone, line: 5 }])
+  })
+
+  it('reports a zone from an object destructuring default', () => {
+    // Name tracking does not see a destructured binding. These cases pass
+    // because the declaration line's own `timeZone` key is what the
+    // property and option rules catch, not the binding.
+    expect(
+      rulesIn(
+        `${rawImport}const { timeZone = 'UTC' } = props\n` +
+          'formatInstant(value, language, { timeZone })',
+      ),
+    ).toContain(RULES.hardCodedZone)
+    expect(
+      rulesIn(
+        `${rawImport}const { timeZone: zone = 'UTC' } = props\n` +
+          'formatInstant(value, language, { timeZone: zone })',
+      ),
+    ).toContain(RULES.hardCodedZone)
+    // A destructuring binding with no zone literal is not tainted.
+    expect(
+      rulesIn(
+        `${rawImport}const { timeZone: zone } = props\n` +
+          'formatInstant(value, language, { timeZone: zone })',
+      ),
     ).toEqual([])
   })
 
