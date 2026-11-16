@@ -133,6 +133,18 @@ The API is the package's godoc, the root package's and each subpackage's. Read
   reading that differs from SQLite's opens a shape nothing bounds, or a private
   database under a pool. The cases in `scope_test.go` hold both readings to
   what two real connections observe.
+- **A SQLite lock wait lasts the busy timeout on Linux, and the guarantee
+  lives in the dependency pins.** SQLite's busy handler sleeps in
+  `nanosleep(2)`, which a signal ends early, and the Go runtime signals threads
+  with SIGURG to preempt goroutines. `modernc.org/libc` resumes the sleep for
+  the time left after such a signal from v1.75.6 on, and nothing in this module
+  changes the sleep: the version `pkg/go.mod` pins is the whole mechanism, so
+  a downgrade of `modernc.org/libc` or `modernc.org/sqlite` below it brings
+  back a wait that gives up early under load. `sqlite/busywait_linux_test.go`
+  holds the pin by signalling the waiting thread every millisecond and
+  requiring the wait to last the busy timeout. It compiles on Linux only, so it
+  runs on the CI runners and not on a macOS checkout, and
+  `tools/check_test_tiers.py` checks that a workflow platform compiles it.
 - **The SQLite subpackage begins every transaction itself**
   (`transactionConn.BeginTx`, `beginStatement`): IMMEDIATE, unless the
   locator's `_txlock` names another mode; DEFERRED for one begun read-only, and
@@ -382,6 +394,8 @@ GOWORK=off go -C pkg/db build ./...   # the standalone leg, without the workspac
 ```
 
 The SQLite cases need nothing beyond the Go toolchain: that driver is pure Go.
+`sqlite/busywait_linux_test.go` is the one case that compiles on Linux only: a
+run on another platform does not build it, and the CI runners are where it runs.
 The PostgreSQL cases run against the server the repository's compose stack
 brings up, with a database of its own per case, and they carry the `integration`
 tag: a default run compiles none of them. An integration run that cannot reach
