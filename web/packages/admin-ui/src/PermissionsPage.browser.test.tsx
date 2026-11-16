@@ -37,6 +37,7 @@ const ROLES: readonly AdminRole[] = [
     can_manage: true,
     description: '',
     permission_count: 0,
+    member_count: null,
     created_at: '2026-10-15T12:00:00Z',
   },
   {
@@ -46,6 +47,7 @@ const ROLES: readonly AdminRole[] = [
     can_manage: true,
     description: '',
     permission_count: 0,
+    member_count: null,
     created_at: '2026-10-15T12:00:00Z',
   },
 ]
@@ -123,6 +125,7 @@ const LONG_ROLES: readonly AdminRole[] = [
     can_manage: true,
     description: LONG_DESCRIPTION,
     permission_count: 0,
+    member_count: null,
     created_at: '2026-10-15T12:00:00Z',
   },
 ]

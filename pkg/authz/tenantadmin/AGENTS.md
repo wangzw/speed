@@ -48,7 +48,8 @@ and in the anti-escalation rules they apply.
 - **The role usage read** (`GET /roles/:role/bindings`) pages the role's
   bindings by account cursor and reports each account's display name and
   activity from the same optional reader. Without it the name is empty and the
-  activity null; a reader that cannot answer is a 503.
+  activity null, as they are for an account the reader does not know; a reader
+  that cannot answer is a 503.
 - **The path tenant is reconciled with the resolved tenant by the tenant
   capability**, before any route runs. The resolving module delivers the
   identity rule as the `pkg/http` `RouteGuard` capability and the identity rule

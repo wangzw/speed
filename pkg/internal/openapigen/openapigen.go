@@ -115,13 +115,15 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 		return t.Name()
 	}))
 	// A pointer field explicitly marked nullable:"true" keeps the null union the
-	// library adds for it; every other null union is stripped by normalise. The
-	// marker carries the declaration to dropNullType and is removed before the
-	// fragment is written. Three declaration defects stop the build instead of
-	// publishing a schema that cannot keep what the marker declares: a
-	// non-pointer type has no null to carry, a pointer to a named structure is
-	// published as a $ref and the library drops the null beside it, and a field
-	// with omitempty leaves its key out rather than writing null.
+	// library adds for it; every other null union is stripped by normalise. A
+	// marked pointer to a named structure is published as the anyOf union of
+	// null and the $ref, because the library writes the structure as a $ref and
+	// a sibling null type cannot sit beside it. The marker carries a scalar
+	// declaration to dropNullType and is removed before the fragment is written.
+	// Two declaration defects stop the build instead of publishing a schema that
+	// cannot keep what the marker declares: a non-pointer type has no null to
+	// carry, and a field whose tag has omitempty or omitzero leaves its key out
+	// rather than writing null.
 	r.DefaultOptions = append(r.DefaultOptions, jsonschema.InterceptProp(func(params jsonschema.InterceptPropParams) error {
 		if !params.Processed {
 			return nil
@@ -132,11 +134,18 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 		if params.Field.Type.Kind() != reflect.Pointer {
 			return fmt.Errorf("openapigen: the field %q marks a non-pointer type nullable", params.Name)
 		}
-		if params.PropertySchema.Ref != nil {
-			return fmt.Errorf("openapigen: the field %q marks a pointer to a structure published as a $ref nullable, which cannot carry a null union", params.Name)
-		}
 		if omitsEmpty(params.Field) {
-			return fmt.Errorf("openapigen: the field %q marks a nullable field omitempty, which leaves the key out instead of writing null", params.Name)
+			return fmt.Errorf("openapigen: the field %q marks a nullable field omitempty or omitzero, which leaves the key out instead of writing null", params.Name)
+		}
+		if params.PropertySchema.Ref != nil {
+			ref := *params.PropertySchema.Ref
+			refSchema := jsonschema.Schema{Ref: &ref}
+			params.PropertySchema.Ref = nil
+			params.PropertySchema.WithAnyOf(
+				jsonschema.Null.ToSchemaOrBool(),
+				refSchema.ToSchemaOrBool(),
+			)
+			return nil
 		}
 		params.PropertySchema.WithExtraPropertiesItem(nullableMarker, true)
 		return nil
@@ -904,6 +913,9 @@ func addResponse(ctx openapi.OperationContext, operation speedhttp.OperationDesc
 		if structure == nil {
 			return fmt.Errorf("the %d response declares %s without a Structure", response.Status, mediaType)
 		}
+		if err := checkResponsePointers(structure, "", map[reflect.Type]bool{}); err != nil {
+			return err
+		}
 		// The library reflects an empty struct as an unconstrained string. The
 		// entry point writes it as the JSON object {}, so publish that instead.
 		if isEmptyStruct(structure) {
@@ -1275,18 +1287,131 @@ func normaliseResponseHeaders(value interface{}) {
 	}
 }
 
-// omitsEmpty reports whether a field's json or form tag carries omitempty, the
-// option under which the field's key is left out rather than written as null.
-func omitsEmpty(field reflect.StructField) bool {
-	for _, key := range []string{"json", "form"} {
-		tag, declared := field.Tag.Lookup(key)
-		if !declared {
+// checkResponsePointers holds the declaration rule for an answer structure: a
+// nil pointer is written as null unless the tag omits the key, so every pointer
+// a response reaches must either carry omitempty, omitzero or nullable:"true".
+// A pointer that does neither would publish a non-null schema for a value the
+// answer can send as null. The check walks the JSON fields a response structure
+// reaches, through pointers, slices, arrays and maps, and names the first field
+// it refuses. A pointer reached through a slice, array or map element is
+// refused outright: a nil element is written as null and no per-item tag can
+// mark it. Request bodies are not checked: a nil pointer there is a member the
+// caller left out, not a null the answer writes.
+func checkResponsePointers(t reflect.Type, path string, seen map[reflect.Type]bool) error {
+	switch t.Kind() {
+	case reflect.Pointer:
+		// The field's own pointer is judged by the field loop; the value behind
+		// it is what this call walks.
+		return checkResponseElements(t.Elem(), path, seen)
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return checkResponseElements(t.Elem(), path, seen)
+	case reflect.Struct:
+		return checkResponseStruct(t, path, seen)
+	default:
+		return nil
+	}
+}
+
+// checkResponseElements checks a type reached through a slice, array or map
+// element. A pointer there is written as null when nil and no tag can mark it,
+// so it stops the build; a nested container is unwrapped first.
+func checkResponseElements(t reflect.Type, path string, seen map[reflect.Type]bool) error {
+	for {
+		switch t.Kind() {
+		case reflect.Slice, reflect.Array, reflect.Map:
+			if seen[t] {
+				return nil
+			}
+			seen[t] = true
+			t = t.Elem()
+		case reflect.Pointer:
+			return fmt.Errorf("the response element %q is a pointer; a nil element is written as null and no per-item tag can mark it nullable", path)
+		case reflect.Struct:
+			return checkResponseStruct(t, path, seen)
+		default:
+			return nil
+		}
+	}
+}
+
+// checkResponseStruct walks one structure's JSON fields.
+func checkResponseStruct(t reflect.Type, path string, seen map[reflect.Type]bool) error {
+	if seen[t] {
+		return nil
+	}
+	seen[t] = true
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		name, named := jsonFieldName(field)
+		embedded := field.Type
+		if embedded.Kind() == reflect.Pointer {
+			embedded = embedded.Elem()
+		}
+		// An embedded struct no json tag names is inlined rather than published
+		// as a property: a nil embedded pointer contributes no keys, not null.
+		// encoding/json expands the exported fields of an embedded struct even
+		// when the embedded type is unexported, so an anonymous struct field is
+		// walked before the PkgPath skip; an embedded type that is not a struct
+		// and no tag names is published as a property named after the type.
+		// An unexported field that is not an embedded struct is ignored.
+		inline := field.Anonymous && !named && embedded.Kind() == reflect.Struct
+		if field.PkgPath != "" {
+			if !field.Anonymous || embedded.Kind() != reflect.Struct {
+				continue
+			}
+		}
+		// Only the tag "-" alone is the skip directive. A tag of "-," names a
+		// member literally called "-", which encoding/json publishes, so it is
+		// checked like any other field.
+		if tag, declared := field.Tag.Lookup("json"); declared && tag == "-" {
 			continue
 		}
-		for _, option := range strings.Split(tag, ",")[1:] {
-			if option == "omitempty" {
-				return true
+		fieldPath := path
+		if !inline {
+			if path != "" {
+				fieldPath = path + "." + name
+			} else {
+				fieldPath = name
 			}
+		}
+		if field.Type.Kind() == reflect.Pointer && !inline &&
+			!omitsEmpty(field) && field.Tag.Get("nullable") != "true" {
+			return fmt.Errorf("the response field %q is a pointer with no omitempty, no omitzero and no nullable:\"true\"; a nil pointer is written as null, so the contract cannot declare it non-null", fieldPath)
+		}
+		if err := checkResponsePointers(field.Type, fieldPath, seen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// jsonFieldName is the member name a field's json tag publishes, and whether the
+// tag names one. The Go field name stands in when the tag names none; a tag with
+// no name but options publishes the Go name.
+func jsonFieldName(field reflect.StructField) (string, bool) {
+	tag, declared := field.Tag.Lookup("json")
+	if !declared {
+		return field.Name, false
+	}
+	name := strings.Split(tag, ",")[0]
+	if name == "" {
+		return field.Name, false
+	}
+	return name, true
+}
+
+// omitsEmpty reports whether a field's json tag carries omitempty or omitzero,
+// the options under which the field's key is left out rather than written as
+// null. The form tag's options do not count: an answer is JSON encoded, and
+// encoding/json reads the json tag alone.
+func omitsEmpty(field reflect.StructField) bool {
+	tag, declared := field.Tag.Lookup("json")
+	if !declared {
+		return false
+	}
+	for _, option := range strings.Split(tag, ",")[1:] {
+		if option == "omitempty" || option == "omitzero" {
+			return true
 		}
 	}
 	return false

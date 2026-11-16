@@ -31,10 +31,24 @@ Descriptions and schema constraints are struct tags read by
 `pattern`, `minimum`, `maximum`, `enum` and the rest, plus `nullable:"false"`
 to keep a slice out of a null union. A pointer field a client may receive as
 `null` carries `nullable:"true"`; it is the only way a field is published
-nullable. Marking a non-pointer type, a pointer to a named structure (published
-as a `$ref`, where the library drops the null the marker adds) or a field with
-`omitempty` (which leaves the key out rather than writing `null`) stops the
-build. A struct-level description goes on a blank field:
+nullable. A marked pointer to a named structure is published as
+`anyOf: [null, $ref]`, because the library writes the structure as a `$ref` and
+a null type cannot sit beside it. Marking a non-pointer type or a field whose
+json tag carries `omitempty` or `omitzero` (which leaves the key out rather than
+writing `null`) stops the build; the form tag's options do not count, because
+an answer is JSON encoded and `encoding/json` reads the json tag alone.
+
+A pointer in a response structure that carries neither `nullable:"true"` nor a
+json tag option that omits it also stops the build and names the field, because
+a nil pointer there is written as `null`; a request pointer is exempt, since a
+nil one there means the caller left the member out. The walk follows the fields
+a response reaches through pointers, slices, arrays, maps and embedded structs,
+including an embedded struct of unexported type, whose exported fields
+`encoding/json` expands. A pointer reached through a slice, array or map
+element stops the build outright: a nil element is written as `null` and no
+per-item tag can mark it. A nil slice or map without `omitempty` or `omitzero`
+is written as `null` too, but that is the handler's responsibility to avoid;
+the check does not cover it. A struct-level description goes on a blank field:
 
 ```go
 _ struct{} `description:"..."`
@@ -86,11 +100,13 @@ The library's defaults are not the platform's shape, so `Generate` normalises:
 - `ProblemDocument` is published under the component name `Problem`, and every
   `$ref` with it, because the component is shared verbatim by every fragment;
 - `null` is dropped from type unions, except for a pointer field marked
-  `nullable:"true"`, which keeps it. The marker that records the declaration is
-  removed before the fragment is written. The no-null rule is the platform's
-  published shape, not a limit of the library or of any consumer; the explicit
-  tag is the only way a field joins a null union, so every nullable field a
-  fragment publishes was declared that way;
+  `nullable:"true"`, which keeps it. A marked pointer to a named structure
+  joins the null through an `anyOf` that holds the null type and the `$ref`,
+  since the reference cannot share a type union with it. The marker that
+  records a scalar declaration is removed before the fragment is written. The
+  no-null rule is the platform's published shape, not a limit of the library or
+  of any consumer; the explicit tag is the only way a field joins a null union,
+  so every nullable field a fragment publishes was declared that way;
 - a parameter's schema does not repeat the parameter's description;
 - response headers carry no `style`;
 - components are named by their Go type without the declaring package's prefix.

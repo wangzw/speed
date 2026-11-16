@@ -213,6 +213,17 @@ func TestTheRoleBindingPageReportsIdentityAndCursors(t *testing.T) {
 	if page.Bindings[0].DisplayName != "" || page.Bindings[0].Username != "" || page.Bindings[0].Active != nil {
 		t.Errorf("an account the reader does not know = %+v, want an empty name, an empty username and a null activity", page.Bindings[0])
 	}
+	var raw struct {
+		Bindings []map[string]json.RawMessage `json:"bindings"`
+	}
+	decodeInto(t, w.Body.String(), &raw)
+	if len(raw.Bindings) != 1 {
+		t.Fatalf("the answer carries %d binding maps, want one", len(raw.Bindings))
+	}
+	rawActive, present := raw.Bindings[0]["active"]
+	if !present || string(rawActive) != "null" {
+		t.Errorf("the unknown account's active = %s (present %v), want an explicit null on the wire", rawActive, present)
+	}
 
 	calls := r.manager.recorded()
 	last := calls[len(calls)-1]

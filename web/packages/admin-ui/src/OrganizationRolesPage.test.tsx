@@ -159,6 +159,7 @@ const HOLDER_UNKNOWN = {
   account: 'acc-3',
   display_name: '',
   username: '',
+  active: null,
   granted_at: '2026-10-21T09:00:00Z',
 }
 
@@ -364,14 +365,9 @@ describe('the role catalog', () => {
   })
 
   it('keeps the empty-value dash for a null member count in the role table', async () => {
-    // The wire can carry an explicit null; the generated type models the
-    // server's "no identity reader" as an absent member, so the fixture
-    // spells the runtime value.
     const { backend } = scripted({
       listTenantRoles: () =>
-        Promise.resolve([
-          role({ role: 'support', member_count: null as unknown as number }),
-        ]),
+        Promise.resolve([role({ role: 'support', member_count: null })]),
     })
     renderRolesPage(backend)
     const table = await screen.findByRole('table')
@@ -893,10 +889,7 @@ describe('the role usage section', () => {
   it('says member state is unavailable when the server reports no count', async () => {
     const user = userEvent.setup()
     const { backend } = scripted({
-      listTenantRoles: () =>
-        Promise.resolve([
-          role({ member_count: null as unknown as number }),
-        ]),
+      listTenantRoles: () => Promise.resolve([role({ member_count: null })]),
     })
     renderRolesPage(backend)
     await selectRole(user, ROLE_AUDITOR.role)

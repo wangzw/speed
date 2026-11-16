@@ -111,7 +111,10 @@
           },
           "active": {
             "description": "Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false.",
-            "type": "boolean"
+            "type": [
+              "null",
+              "boolean"
+            ]
           },
           "display_name": {
             "description": "The account's display name, as the host's account identity reader reports it. Empty when the assembly delivers no identity reader or the reader knows no name for the account.",
@@ -131,6 +134,7 @@
           "account",
           "display_name",
           "username",
+          "active",
           "granted_at"
         ],
         "type": "object"
@@ -157,7 +161,10 @@
           },
           "member_count": {
             "description": "How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero.",
-            "type": "integer"
+            "type": [
+              "null",
+              "integer"
+            ]
           },
           "permission_count": {
             "description": "How many permission grants the role holds within the tenant. A role holding none answers zero.",
@@ -178,6 +185,7 @@
           "builtin",
           "description",
           "permission_count",
+          "member_count",
           "can_manage",
           "created_at"
         ],

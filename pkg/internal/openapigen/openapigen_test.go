@@ -19,11 +19,32 @@ type document struct {
 	Items []string `json:"items" required:"true" description:"The items."`
 }
 
-// nullableFields declares one pointer explicitly marked nullable and one left to
-// the platform's default.
+// nullableFields declares one pointer explicitly marked nullable and one the
+// tag omits when it is nil, which publishes no null union.
 type nullableFields struct {
 	Marked *time.Time `json:"marked" nullable:"true" description:"An explicitly nullable instant."`
-	Plain  *time.Time `json:"plain" description:"An instant published without a null union."`
+	Plain  *time.Time `json:"plain,omitempty" description:"An instant the tag omits when it is nil."`
+}
+
+// unmarkedResponsePointer is a response field that is nil-able but declares
+// neither omitempty nor nullable:"true": a nil value would be written as null
+// under a non-null schema.
+type unmarkedResponsePointer struct {
+	Count *int `json:"count" description:"A count with no declaration for its absent state."`
+}
+
+// nestedUnmarkedPointer carries the same defect one level down, in an inlined
+// object.
+type nestedUnmarkedPointer struct {
+	Inner struct {
+		Count *int `json:"count" description:"A count with no declaration for its absent state."`
+	} `json:"inner" required:"true"`
+}
+
+// pointerInput declares an optional pointer request member: absent leaves the
+// stored value alone, which is not a null the answer writes.
+type pointerInput struct {
+	Enabled *bool `json:"enabled" description:"Absent leaves the flag as it is."`
 }
 
 // wronglyNullable marks a non-pointer field nullable, which is a declaration
@@ -38,8 +59,8 @@ type nestedDocument struct {
 }
 
 // nullableStructPointer marks a pointer to a structure nullable. The library
-// publishes the structure as a $ref and removes the null it added for the
-// pointer, so the marker cannot take effect.
+// publishes the structure as a $ref, so the generator wraps it in the anyOf
+// union of null and the reference.
 type nullableStructPointer struct {
 	Nested *nestedDocument `json:"nested" nullable:"true" description:"A structure published by $ref."`
 }
@@ -56,18 +77,133 @@ type explicitNotNull struct {
 	Items []string `json:"items" required:"true" nullable:"false" description:"A slice that is never null."`
 }
 
-// pointerItems publishes a slice whose items are nullable pointers. No per-item
-// tag can declare the item nullable, so the item schema carries no null.
+// pointerItems holds a slice whose items are pointers. A nil item is written as
+// null and no per-item tag can declare it nullable, so the response check
+// refuses the shape.
 type pointerItems struct {
 	Instants []*time.Time `json:"instants" required:"true" description:"Instants that are always present."`
 }
 
-// outerNestedFields carries an inlined object holding a marked and an unmarked
-// pointer.
+// pointerElementItems holds a slice whose items are pointers to a scalar.
+type pointerElementItems struct {
+	Counts []*int `json:"counts" required:"true" description:"Counts that may be nil."`
+}
+
+// pointerInMapValue reaches a pointer through a map value directly.
+type pointerInMapValue struct {
+	ByName map[string]*int `json:"by_name" required:"true" description:"Values that may be nil."`
+}
+
+// pointerInArray reaches a pointer through an array element.
+type pointerInArray struct {
+	Counts [3]*int `json:"counts" required:"true" description:"Counts reached through an array."`
+}
+
+// pointerInNestedSlice reaches a pointer through a slice of slices.
+type pointerInNestedSlice struct {
+	Counts [][]*int `json:"counts" required:"true" description:"Counts reached through nested slices."`
+}
+
+// pointerInMapOfSlices reaches a pointer through a map value that is a slice.
+type pointerInMapOfSlices struct {
+	ByName map[string][]*int `json:"by_name" required:"true" description:"Values reached through a map of slices."`
+}
+
+// inlineStruct is the structure an untagged anonymous pointer embeds. It holds
+// only non-pointer fields, so the inline exemption is what the case reads.
+type inlineStruct struct {
+	Text string `json:"text" required:"true" description:"An inlined field."`
+}
+
+// inlineAccepted embeds a pointer to a structure with no json tag: the pointer
+// is inlined, so a nil one contributes no keys and the response check accepts
+// it.
+type inlineAccepted struct {
+	*inlineStruct
+	Named string `json:"named" required:"true" description:"A named field."`
+}
+
+// dashedKeyPointer names its json member "-", which encoding/json publishes:
+// the skip directive is the tag "-" alone, not "-" followed by a comma. An
+// unmarked pointer under that key is written as null, so the response check
+// refuses it.
+type dashedKeyPointer struct {
+	Value *int `json:"-," description:"A value under the key -."` //nolint:staticcheck // SA5008 suggests json:"'-',", but encoding/json rejects that name and falls back to the Go field name; json:"-," is the only spelling that publishes "-".
+}
+
+// innerPointer is a structure reached through another field, carrying an
+// unmarked pointer of its own.
+type innerPointer struct {
+	Count *int `json:"count" description:"A count with no declaration for its absent state."`
+}
+
+// pointerInSlice reaches the unmarked pointer through a slice element.
+type pointerInSlice struct {
+	Items []innerPointer `json:"items" required:"true"`
+}
+
+// pointerBehindPointer reaches the unmarked pointer through a field pointer the
+// tag declares as omitted when nil.
+type pointerBehindPointer struct {
+	Inner *innerPointer `json:"inner,omitempty"`
+}
+
+// pointerInMap reaches the unmarked pointer through a map value.
+type pointerInMap struct {
+	ByName map[string]innerPointer `json:"by_name" required:"true"`
+}
+
+// embeddedUnexported embeds an unexported structure. encoding/json expands its
+// exported fields even though the embedded field itself is unexported.
+type embeddedUnexported struct {
+	innerPointer
+}
+
+// taggedEmbedded names an anonymous pointer with a json tag, so the pointer is
+// published as a property and a nil one is written as null.
+type taggedEmbedded struct {
+	*innerPointer `json:"inner"`
+}
+
+// EmbeddedScalar is an exported non-struct type. Embedded as a pointer with no
+// json tag, encoding/json publishes it as a property named after the type, so a
+// nil one is written as null rather than inlined away.
+type EmbeddedScalar int
+
+type embeddedScalarPointer struct {
+	*EmbeddedScalar
+}
+
+// sharedShape is one structure used as both a request body and a response body.
+// The response use is what the pointer check reads.
+type sharedShape struct {
+	Value *int `json:"value" description:"A value with no declaration for its absent state."`
+}
+
+// formOmitEmpty carries omitempty on the form tag only. The JSON encoder reads
+// the json tag and writes null.
+type formOmitEmpty struct {
+	Value *int `json:"value" form:"value,omitempty" description:"A value with no json omitempty."`
+}
+
+// omitZeroPointer leaves the key out when the pointer is nil, so no null is
+// written.
+type omitZeroPointer struct {
+	Value *int `json:"value,omitzero" description:"A value the tag omits when nil."`
+}
+
+// nullableOmitZero marks a field nullable while its tag omits the key when the
+// pointer is nil.
+type nullableOmitZero struct {
+	Value *int `json:"value,omitzero" nullable:"true" description:"An explicitly nullable value."`
+}
+
+// outerNestedFields carries an inlined object holding a marked pointer and one
+// the tag omits when it is nil.
 type outerNestedFields struct {
 	Inner struct {
 		Marked *time.Time `json:"marked" nullable:"true" description:"An explicitly nullable instant."`
-		Plain  *time.Time `json:"plain" description:"An instant published without a null union."`
+		Plain  *time.Time `json:"plain,omitempty" description:"An instant the tag omits when it is nil."`
 	} `json:"inner" required:"true" description:"The nested object."`
 }
 
@@ -287,12 +423,44 @@ func TestMarkingANonPointerNullableIsRefused(t *testing.T) {
 	}
 }
 
-// TestMarkingAPointerToAStructNullableIsRefused holds that a marker which the
-// library would silently drop stops the build: a pointer to a named structure
-// is published as a $ref, and the null union added beside it is removed before
-// the fragment is written.
-func TestMarkingAPointerToAStructNullableIsRefused(t *testing.T) {
-	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, nullableStructPointer](
+// TestMarkingAPointerToAStructNullablePublishesAnyOf holds that a marked
+// pointer to a named structure keeps its null: the library writes the structure
+// as a $ref, and a sibling null type cannot sit beside it, so the property is
+// the anyOf union of null and the reference.
+func TestMarkingAPointerToAStructNullablePublishesAnyOf(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, nullableStructPointer](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	nested := component(t, doc, "nullableStructPointer")["properties"].(map[string]interface{})["nested"].(map[string]interface{})
+	if _, carried := nested["$ref"]; carried {
+		t.Fatalf("the marked structure property is still a bare $ref: %v", nested)
+	}
+	anyOf, ok := nested["anyOf"].([]interface{})
+	if !ok || len(anyOf) != 2 {
+		t.Fatalf("the marked structure property's anyOf = %v, want null and the $ref", nested["anyOf"])
+	}
+	null := anyOf[0].(map[string]interface{})
+	if null["type"] != "null" {
+		t.Errorf("the anyOf's first member = %v, want the null type", null)
+	}
+	ref := anyOf[1].(map[string]interface{})
+	if ref["$ref"] != "#/components/schemas/nestedDocument" {
+		t.Errorf("the anyOf's second member = %v, want the nestedDocument $ref", ref)
+	}
+	if nested["description"] != "A structure published by $ref." {
+		t.Errorf("the wrapper's description = %v, want the tag's description on the outer schema", nested["description"])
+	}
+}
+
+// TestAnUnmarkedResponsePointerIsRefused holds the declaration rule for an
+// answer: a nil pointer is written as null, so a pointer with neither
+// omitempty nor nullable:"true" stops the build and names the field.
+func TestAnUnmarkedResponsePointerIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, unmarkedResponsePointer](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The fields",
@@ -300,10 +468,63 @@ func TestMarkingAPointerToAStructNullableIsRefused(t *testing.T) {
 		}},
 	)})
 	if err == nil {
-		t.Fatal("generating accepted nullable:\"true\" on a pointer to a structure published by $ref")
+		t.Fatal("generating accepted a response pointer with no omitempty and no nullable:\"true\"")
 	}
-	if !strings.Contains(err.Error(), "$ref") {
-		t.Errorf("the error reads %v, want it to name the $ref publication", err)
+	if !strings.Contains(err.Error(), "count") {
+		t.Errorf("the error reads %v, want it to name the count field", err)
+	}
+}
+
+// TestAnUnmarkedNestedResponsePointerIsRefused holds that the response walk
+// recurses: a pointer inside an inlined response object is refused too.
+func TestAnUnmarkedNestedResponsePointerIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, nestedUnmarkedPointer](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a nested response pointer with no omitempty and no nullable:\"true\"")
+	}
+	if !strings.Contains(err.Error(), "inner.count") {
+		t.Errorf("the error reads %v, want it to name the nested field", err)
+	}
+}
+
+// TestARequestPointerNeedsNoNullableDeclaration holds the boundary: a nil
+// pointer in a request body is a member the caller left out, not a null the
+// answer writes, so an unmarked request pointer is not refused.
+func TestARequestPointerNeedsNoNullableDeclaration(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[pointerInput, struct{}](
+		"the.module.write", http.MethodPost, "/items", "", "", requestBody("application/json"),
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
+	properties := requestContentOf(t, operationOfMethod(t, doc, "post"))["application/json"].(map[string]interface{})["schema"].(map[string]interface{})["properties"].(map[string]interface{})
+	enabled := properties["enabled"].(map[string]interface{})
+	if enabled["type"] != "boolean" {
+		t.Errorf("the request pointer's type = %v, want a single boolean", enabled["type"])
+	}
+}
+
+// TestRequestArrayItemsCarryNoNullUnion holds that the null stripping reaches
+// a request body's slice items too: a request body may carry []*T, the check
+// exempts it, and no per-item tag declares a member nullable, so the published
+// item schema stays a single type.
+func TestRequestArrayItemsCarryNoNullUnion(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[pointerItems, struct{}](
+		"the.module.write", http.MethodPost, "/items", "", "", requestBody("application/json"),
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
+	properties := requestContentOf(t, operationOfMethod(t, doc, "post"))["application/json"].(map[string]interface{})["schema"].(map[string]interface{})["properties"].(map[string]interface{})
+	instants := properties["instants"].(map[string]interface{})
+	if instants["type"] != "array" {
+		t.Errorf("the request property's type is %v, want a single array", instants["type"])
+	}
+	item := instants["items"].(map[string]interface{})
+	if types, union := item["type"].([]interface{}); union && slices.Contains(types, "null") {
+		t.Errorf("the request item's type is the union %v, want no null member", types)
 	}
 }
 
@@ -342,24 +563,337 @@ func TestAnExplicitlyNonNullableSliceStaysAnArray(t *testing.T) {
 	}
 }
 
-// TestArrayItemsCarryNoNullUnion holds that the null stripping reaches array
-// items: no per-item tag can declare an item nullable, so the item schema stays
-// a single type.
-func TestArrayItemsCarryNoNullUnion(t *testing.T) {
-	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerItems](
+// TestPointerSliceItemsAreRefused holds that a pointer element is refused: a
+// nil item is written as null and no per-item tag can declare it nullable, so
+// the answer cannot publish a non-null item schema.
+func TestPointerSliceItemsAreRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerItems](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The fields",
 			Body: &speedhttp.Body{MediaType: "application/json"},
 		}},
 	)})
-	instants := component(t, doc, "pointerItems")["properties"].(map[string]interface{})["instants"].(map[string]interface{})
-	if instants["type"] != "array" {
-		t.Errorf("the property's type is %v, want a single array", instants["type"])
+	if err == nil {
+		t.Fatal("generating accepted a slice whose element is a pointer")
 	}
-	item := instants["items"].(map[string]interface{})
-	if types, union := item["type"].([]interface{}); union && slices.Contains(types, "null") {
-		t.Errorf("the item's type is the union %v, want no null member", types)
+	if !strings.Contains(err.Error(), "instants") {
+		t.Errorf("the error reads %v, want it to name the instants field", err)
+	}
+}
+
+// TestAPointerElementInASliceIsRefused holds the same rule for a slice of
+// pointers to a scalar.
+func TestAPointerElementInASliceIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerElementItems](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a response containing []*int")
+	}
+	if !strings.Contains(err.Error(), "counts") {
+		t.Errorf("the error reads %v, want it to name the counts field", err)
+	}
+}
+
+// TestAPointerReachedThroughASliceIsRefused holds that the walk recurses into a
+// slice element structure: removing the traversal lets the bare pointer
+// through.
+func TestAPointerReachedThroughASliceIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInSlice](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a bare pointer inside a slice element")
+	}
+	if !strings.Contains(err.Error(), "items.count") {
+		t.Errorf("the error reads %v, want it to name items.count", err)
+	}
+}
+
+// TestAPointerReachedThroughAPointerIsRefused holds that the walk recurses
+// behind a declared field pointer.
+func TestAPointerReachedThroughAPointerIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerBehindPointer](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a bare pointer behind a field pointer")
+	}
+	if !strings.Contains(err.Error(), "inner.count") {
+		t.Errorf("the error reads %v, want it to name inner.count", err)
+	}
+}
+
+// TestAPointerReachedThroughAMapIsRefused holds that the walk recurses into a
+// map value.
+func TestAPointerReachedThroughAMapIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInMap](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a bare pointer inside a map value")
+	}
+	if !strings.Contains(err.Error(), "by_name.count") {
+		t.Errorf("the error reads %v, want it to name by_name.count", err)
+	}
+}
+
+// TestAPointerValueInAMapIsRefused holds the element rule for a map whose value
+// is a pointer: a nil value is written as null and no per-value tag can mark it.
+func TestAPointerValueInAMapIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInMapValue](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a map[K]*T value")
+	}
+	if !strings.Contains(err.Error(), "by_name") {
+		t.Errorf("the error reads %v, want it to name by_name", err)
+	}
+}
+
+// TestAPointerElementInAnArrayIsRefused holds the element rule for an array,
+// the container kind a slice-only walk would miss.
+func TestAPointerElementInAnArrayIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInArray](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted an array of pointers")
+	}
+	if !strings.Contains(err.Error(), "counts") {
+		t.Errorf("the error reads %v, want it to name counts", err)
+	}
+}
+
+// TestAPointerInANestedSliceIsRefused holds that the unwrapping repeats: a walk
+// that looks one level deep accepts a slice of slices of pointers.
+func TestAPointerInANestedSliceIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInNestedSlice](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a slice of slices of pointers")
+	}
+	if !strings.Contains(err.Error(), "counts") {
+		t.Errorf("the error reads %v, want it to name counts", err)
+	}
+}
+
+// TestAPointerInAMapOfSlicesIsRefused holds the unwrapping through two container
+// kinds at once: a map value that is a slice of pointers.
+func TestAPointerInAMapOfSlicesIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInMapOfSlices](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a map of slices of pointers")
+	}
+	if !strings.Contains(err.Error(), "by_name") {
+		t.Errorf("the error reads %v, want it to name by_name", err)
+	}
+}
+
+// TestAnUntaggedAnonymousStructPointerIsAcceptedInline holds the positive side
+// of the anonymous-field exemption: an anonymous pointer to a struct with no
+// json tag is inlined, so a nil one contributes no keys and no null to declare.
+// A walk that drops the exemption refuses a shape the contract can represent.
+func TestAnUntaggedAnonymousStructPointerIsAcceptedInline(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, inlineAccepted](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	properties := component(t, doc, "inlineAccepted")["properties"].(map[string]interface{})
+	if _, ok := properties["text"]; !ok {
+		t.Errorf("the inlined field is missing from the schema: %v", properties)
+	}
+	if _, ok := properties["named"]; !ok {
+		t.Errorf("the named field is missing from the schema: %v", properties)
+	}
+}
+
+// TestAFieldNamedDashIsChecked holds that only the tag "-" alone skips a field:
+// "-," publishes a member literally named "-", so an unmarked pointer under it
+// is written as null and refused.
+func TestAFieldNamedDashIsChecked(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, dashedKeyPointer](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a pointer published under the key -")
+	}
+	if !strings.Contains(err.Error(), `"-"`) {
+		t.Errorf("the error reads %v, want it to name the - field", err)
+	}
+}
+
+// TestAnUnexportedEmbeddedStructIsChecked holds that the walk checks an
+// anonymous embedded unexported structure: encoding/json expands its exported
+// fields, so a bare pointer inside is written as null.
+func TestAnUnexportedEmbeddedStructIsChecked(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, embeddedUnexported](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a bare pointer inside an unexported embedded struct")
+	}
+	if !strings.Contains(err.Error(), "count") {
+		t.Errorf("the error reads %v, want it to name the count field", err)
+	}
+}
+
+// TestATaggedAnonymousPointerIsRefused holds the reverse of the anonymous-field
+// exemption: a json tag names the pointer as a property, so a nil one is
+// written as null rather than inlined away.
+func TestATaggedAnonymousPointerIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, taggedEmbedded](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a tagged anonymous pointer with no nullable declaration")
+	}
+	if !strings.Contains(err.Error(), "inner") {
+		t.Errorf("the error reads %v, want it to name the inner field", err)
+	}
+}
+
+// TestAnAnonymousNonStructPointerIsRefused holds the other reverse of the
+// exemption: an embedded pointer to a non-struct is published as a property
+// named after the type, so a nil one is written as null.
+func TestAnAnonymousNonStructPointerIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, embeddedScalarPointer](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted an embedded pointer to a non-struct")
+	}
+	if !strings.Contains(err.Error(), "EmbeddedScalar") {
+		t.Errorf("the error reads %v, want it to name the embedded field", err)
+	}
+}
+
+// TestAStructureSharedByRequestAndResponseIsChecked holds that the same
+// structure used as a request body does not exempt its response use.
+func TestAStructureSharedByRequestAndResponseIsChecked(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[sharedShape, sharedShape](
+		"the.module.write", http.MethodPost, "/items", "", "", requestBody("application/json"),
+		[]speedhttp.Response{{
+			Status: 200, Description: "The value",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a shared structure whose pointer the response writes as null")
+	}
+	if !strings.Contains(err.Error(), "value") {
+		t.Errorf("the error reads %v, want it to name the value field", err)
+	}
+}
+
+// TestAFormTagOmitEmptyDoesNotSatisfyTheResponseCheck holds that only the json
+// tag counts: the form binder's omitempty says nothing about what the JSON
+// encoder writes.
+func TestAFormTagOmitEmptyDoesNotSatisfyTheResponseCheck(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, formOmitEmpty](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a response pointer whose omitempty is only on the form tag")
+	}
+	if !strings.Contains(err.Error(), "value") {
+		t.Errorf("the error reads %v, want it to name the value field", err)
+	}
+}
+
+// TestAPointerWithOmitZeroNeedsNoNullableDeclaration holds that omitzero is
+// understood: nil is the zero value, so the key is left out and no null is
+// written.
+func TestAPointerWithOmitZeroNeedsNoNullableDeclaration(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, omitZeroPointer](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	value := component(t, doc, "omitZeroPointer")["properties"].(map[string]interface{})["value"].(map[string]interface{})
+	if value["type"] != "integer" {
+		t.Errorf("the omitzero pointer's type is %v, want a single integer", value["type"])
+	}
+}
+
+// TestMarkingANullableFieldOmitZeroIsRefused holds that nullable plus omitzero
+// is refused like nullable plus omitempty: the key would be left out rather
+// than written as null.
+func TestMarkingANullableFieldOmitZeroIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, nullableOmitZero](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted nullable:\"true\" on a field with omitzero")
+	}
+	if !strings.Contains(err.Error(), "omitzero") {
+		t.Errorf("the error reads %v, want it to name omitzero", err)
 	}
 }
 

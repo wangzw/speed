@@ -35,7 +35,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import type { ObservedCall } from '../test-utils/request-rig.js'
 import { profileFixture } from '../test-utils/operations.js'
-import type { AdminMember } from './operations.js'
+import type { AdminMember, AdminRole } from './operations.js'
 
 const TENANT = 'acme'
 
@@ -552,12 +552,13 @@ describe('the organization settings wrapper', () => {
 })
 
 describe('the organization roles wrapper', () => {
-  const ROLE = {
+  const ROLE: AdminRole = {
     tenant: TENANT,
     role: 'tenant-operator',
     builtin: false,
     can_manage: true,
     description: '',
+    member_count: null,
     permission_count: 0,
     created_at: '2026-01-01T00:00:00Z',
   }

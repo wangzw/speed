@@ -61,7 +61,7 @@ type AuthzTenantAdminRoleView struct {
 
 	PermissionCount int `json:"permission_count" required:"true" description:"How many permission grants the role holds within the tenant. A role holding none answers zero."`
 
-	MemberCount *int `json:"member_count" description:"How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero."`
+	MemberCount *int `json:"member_count" required:"true" nullable:"true" description:"How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero."`
 
 	CanManage bool `json:"can_manage" required:"true" description:"True when the caller holds authz.tenant.role.manage in the tenant, which decides whether a client renders the grant and revoke controls."`
 
@@ -175,7 +175,7 @@ type AuthzTenantAdminRoleBindingView struct {
 
 	Username string `json:"username" required:"true" description:"The account's login username, as the host's account identity reader reports it: unique, user-facing, and not an identifier of the account. Empty when the assembly delivers no identity reader or the account has none; it is never a fallback to another login identifier."`
 
-	Active *bool `json:"active" description:"Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false."`
+	Active *bool `json:"active" required:"true" nullable:"true" description:"Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false."`
 
 	GrantedAt time.Time `json:"granted_at" required:"true" description:"When the binding was written, as an RFC 3339 instant in UTC."`
 }

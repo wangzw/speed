@@ -39,7 +39,7 @@ type (
 	// means the organization has none.
 	pendingTransferBody = struct {
 		_       struct{}            `description:"The organization's pending owner-transfer request, or null."`
-		Request *TenantTransferView `json:"request" required:"true" description:"The pending request, or null when the organization has none."`
+		Request *TenantTransferView `json:"request" nullable:"true" required:"true" description:"The pending request, or null when the organization has none."`
 	}
 
 	// myTransferListBody is the 200 answer of the target's listing.

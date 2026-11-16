@@ -101,6 +101,7 @@ const ROLE_OPERATOR: AdminTenantRole = {
   builtin: false,
   description: '',
   permission_count: 0,
+  member_count: null,
   can_manage: false,
   created_at: '2026-01-01T00:00:00Z',
 }
@@ -111,6 +112,7 @@ const ROLE_SUPER: AdminTenantRole = {
   builtin: false,
   description: '',
   permission_count: 0,
+  member_count: null,
   can_manage: false,
   created_at: '2026-01-01T00:00:00Z',
 }
@@ -180,6 +182,7 @@ const ROLE_GOVERNED: AdminTenantRole = {
   builtin: false,
   description: '',
   permission_count: 0,
+  member_count: null,
   can_manage: false,
   created_at: '2026-01-01T00:00:00Z',
 }

@@ -21,6 +21,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn } from '@speed/api-client'
+import type { AuthzTenantAdminRoleView } from './app-api/index.js'
 import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
 import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
@@ -75,15 +76,7 @@ interface PermissionAnswer {
 }
 
 /** One row of the tenant roles read, in the shape the generated view carries. */
-interface TenantRoleRow {
-  readonly role: string
-  readonly builtin: boolean
-  readonly tenant: string
-  readonly can_manage: boolean
-  readonly description: string
-  readonly permission_count: number
-  readonly created_at: string
-}
+type TenantRoleRow = AuthzTenantAdminRoleView
 
 /** A non-builtin, caller-manageable tenant role: the host's protected mark,
  * not the server's can_manage, is what must lock the row this suite renders. */
@@ -94,6 +87,7 @@ function tenantRole(role: string): TenantRoleRow {
     tenant: 'acme',
     can_manage: true,
     description: '',
+    member_count: null,
     permission_count: 0,
     created_at: '2026-10-01T00:00:00Z',
   }

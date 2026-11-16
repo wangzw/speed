@@ -1642,8 +1642,11 @@ export interface AuthzAdminRoleView {
   created_at: string;
   /** The role's description as a client shows it: the operator's free text for a role this surface created, or a builtin role's description key rendered in the request's language. With no message localizer assembled, a builtin role answers its key itself, the i18n fallback. */
   description: string;
-  /** How many active members hold the role. Null when the assembly delivers no account-identity reader: the count cannot be read, and the binding count is not a stand-in for it. */
-  member_count?: number;
+  /**
+     * How many active members hold the role. Null when the assembly delivers no account-identity reader: the count cannot be read, and the binding count is not a stand-in for it.
+     * @nullable
+     */
+  member_count: number | null;
   /** How many permission grants the role holds, from one grouped read of the tenant's grants. */
   permission_count: number;
   /** The role name within the tenant. */
@@ -1715,8 +1718,11 @@ export interface AuthzTenantAdminPermissionView {
 export interface AuthzTenantAdminRoleBindingView {
   /** The account the role is bound to. */
   account: string;
-  /** Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false. */
-  active?: boolean;
+  /**
+     * Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false.
+     * @nullable
+     */
+  active: boolean | null;
   /** The account's display name, as the host's account identity reader reports it. Empty when the assembly delivers no identity reader or the reader knows no name for the account. */
   display_name: string;
   /** When the binding was written, as an RFC 3339 instant in UTC. */
@@ -1737,8 +1743,11 @@ export interface AuthzTenantAdminRoleView {
   created_at: string;
   /** The role's description in the request's language: a builtin role's key is rendered through the message localizer (falling back to the key), and a role the management face created carries the operator's free text as written. */
   description: string;
-  /** How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero. */
-  member_count?: number;
+  /**
+     * How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero.
+     * @nullable
+     */
+  member_count: number | null;
   /** How many permission grants the role holds within the tenant. A role holding none answers zero. */
   permission_count: number;
   /** The role name within the tenant. A role is never renamed: the name is the key a binding holds. */
@@ -3245,7 +3254,7 @@ export type TenantAdminTenantsRequestTransfer201 = {
  */
 export type TenantAdminTenantsPendingTransfer200 = {
   /** The pending request, or null when the organization has none. */
-  request: TenantTransferView;
+  request: null | TenantTransferView;
 };
 
 /**
@@ -3373,7 +3382,7 @@ export type TenantAdminOwnerRequestTransfer201 = {
  */
 export type TenantAdminOwnerPendingTransfer200 = {
   /** The pending request, or null when the organization has none. */
-  request: TenantTransferView;
+  request: null | TenantTransferView;
 };
 
 /**

@@ -128,14 +128,18 @@ key.
   permission and admits only the row's owner, and both pass the caller as the
   observed owner (the platform route passes none). The target must be an active
   member whose account is active, one pending request per organization is
-  accepted, and the target is notified. Confirmation re-reads the request under
-  the lock, checks that the requester still owns the organization and that the
-  target is still an active member, grants `tenant-admin` when missing, writes
-  the owner column and marks the request confirmed in one transaction. The
-  previous owner stays an active member and keeps every binding it held. The
-  target's routes carry the caller's own identity and no tenant context; the
-  confirm route also carries the registration-verification gate, and a request
-  that does not exist and one addressed to another account are both a bare 404.
+  accepted, and the target is notified. The pending read answers an explicit
+  null `request` when the organization has none: the member is always present,
+  and null is the only spelling of "none". Confirmation re-reads the request
+  under the lock, checks that the requester still owns the organization and
+  that the target is still an active member, grants `tenant-admin` when
+  missing, writes the owner column and marks the request confirmed in one
+  transaction. The previous owner stays an active member and keeps every
+  binding it held.
+  The target's routes carry the caller's own identity and no tenant context;
+  the confirm route also carries the registration-verification gate, and a
+  request that does not exist and one addressed to another account are both a
+  bare 404.
   The mandatory audit row lands before each action with `surface=platform`,
   `surface=tenant` or `surface=target`; a refusal closes it with a linked failed
   row.

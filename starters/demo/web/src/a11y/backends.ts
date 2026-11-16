@@ -289,6 +289,7 @@ const TENANT_ROLE: AuthzTenantAdminRoleView = {
   created_at: INSTANT,
   description: '',
   permission_count: 0,
+  member_count: null,
   role: 'support',
   tenant: TENANT.name,
 }

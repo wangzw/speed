@@ -328,7 +328,14 @@
                   "description": "The organization's pending owner-transfer request, or null.",
                   "properties": {
                     "request": {
-                      "$ref": "#/components/schemas/TenantTransferView",
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/TenantTransferView"
+                        }
+                      ],
                       "description": "The pending request, or null when the organization has none."
                     }
                   },

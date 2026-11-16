@@ -66,7 +66,7 @@ type AuthzAdminRoleView struct {
 	Builtin         bool      `json:"builtin" required:"true" description:"True for a builtin role: the management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
 	Description     string    `json:"description" required:"true" description:"The role's description as a client shows it: the operator's free text for a role this surface created, or a builtin role's description key rendered in the request's language. With no message localizer assembled, a builtin role answers its key itself, the i18n fallback."`
 	PermissionCount int       `json:"permission_count" required:"true" description:"How many permission grants the role holds, from one grouped read of the tenant's grants."`
-	MemberCount     *int      `json:"member_count" description:"How many active members hold the role. Null when the assembly delivers no account-identity reader: the count cannot be read, and the binding count is not a stand-in for it."`
+	MemberCount     *int      `json:"member_count" required:"true" nullable:"true" description:"How many active members hold the role. Null when the assembly delivers no account-identity reader: the count cannot be read, and the binding count is not a stand-in for it."`
 	CanManage       bool      `json:"can_manage" required:"true" description:"True when the caller holds authz.role.manage in the platform domain, so a client renders the role, grant and binding controls. False hides them; the route guard still refuses a write the caller may not make."`
 	CreatedAt       time.Time `json:"created_at" required:"true" description:"When the role was written, as an RFC 3339 instant in UTC."`
 }
