@@ -58,10 +58,10 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useAuthState, usePermission } from '@speed/auth-core'
-import { formatInstant } from '@speed/i18n'
 import {
   ListSkeleton,
   SidePanel,
+  useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { AdminMember } from '../operations.js'
@@ -127,8 +127,9 @@ export function MemberPanel({
   onExited,
   onRemoved,
 }: MemberPanelProps) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
+  const formatTime = useFormatInstant()
   const auth = useAuthState()
   // The permission set itself is what the escalation check compares
   // against; a set that is absent or a session that is not authenticated
@@ -501,9 +502,7 @@ export function MemberPanel({
         <Typography variant="body2" sx={{ mt: 0.5 }}>
           {t('members.panel.field', {
             label: t('members.panel.joinedAt'),
-            value: formatInstant(member.joined_at, i18n.language, {
-              timeZone: 'UTC',
-            }),
+            value: formatTime(member.joined_at),
           })}
         </Typography>
       </Box>

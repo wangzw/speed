@@ -334,10 +334,10 @@
     },
     "timezone": {
       "label": "Time zone",
-      "notChosen": "Not chosen (use your device's time zone)",
-      "helper": "Times shown in your account use this time zone.",
+      "notChosen": "Not chosen (use your browser's time zone)",
+      "helper": "Times shown on every page use this time zone.",
       "saved": "Time zone set to {{value}}.",
-      "followsDevice": "Time zone now follows your device's time zone."
+      "followsDevice": "Time zone now follows your browser's time zone."
     },
     "error": {
       "title": "Could not load preferences",

@@ -76,6 +76,7 @@ import {
   OneTimeValuePanel,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
+  useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -94,7 +95,6 @@ import {
   invitationStatusOf,
   type InvitationStatus,
 } from './internal/invitation-status.js'
-import { formatInstant } from '@speed/i18n'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { useAdminHasFeature } from './internal/features.js'
 import { useAdminInvitationLink } from './internal/invitation-link.js'
@@ -208,6 +208,7 @@ export function InvitationsPage({
 }: InvitationsPageProps = {}) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const formatTime = useFormatInstant()
   const session = useAdminSession()
   const invitationLink = useAdminInvitationLink()
   const hasFeature = useAdminHasFeature()
@@ -555,10 +556,7 @@ export function InvitationsPage({
       header: t('invitations.column.expires'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (invitation) =>
-        formatInstant(invitation.expires_at, i18n.language, {
-          timeZone: 'UTC',
-        }),
+      cell: (invitation) => formatTime(invitation.expires_at),
     },
     {
       id: 'actions',

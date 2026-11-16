@@ -7,7 +7,7 @@
  * pure validators live in `@speed/i18n`, and a provider that rejected
  * values itself would be a second, divergent authority. Rendering
  * surfaces read the context through `useDisplayTimeZone` and fall back to
- * their own defaults (a device zone, a stored preference) when it is
+ * their own defaults (a browser zone, a stored preference) when it is
  * absent -- the default value is `undefined`, so a tree without the
  * provider renders exactly as before.
  *

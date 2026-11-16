@@ -24,6 +24,7 @@ describe('@speed/i18n main entry', () => {
       'createI18n',
       'defaultMissingKeyHandler',
       'formatInstant',
+      'instantToWallClock',
       'isSupportedTimeZone',
       'languageDisplayName',
       'matchSupportedLanguage',
@@ -35,6 +36,7 @@ describe('@speed/i18n main entry', () => {
       'switchLanguage',
       'useTranslation',
       'waitCountdownText',
+      'wallClockToInstant',
     ])
   })
 
@@ -55,6 +57,8 @@ describe('@speed/i18n main entry', () => {
     expect(typeof i18nModule.resolveTimeZone).toBe('function')
     expect(typeof i18nModule.isSupportedTimeZone).toBe('function')
     expect(typeof i18nModule.formatInstant).toBe('function')
+    expect(typeof i18nModule.instantToWallClock).toBe('function')
+    expect(typeof i18nModule.wallClockToInstant).toBe('function')
     expect(typeof i18nModule.languageDisplayName).toBe('function')
     expect(typeof i18nModule.overlayResources).toBe('function')
     expect(i18nModule.SESSION_LIFECYCLE_ERROR_CODES).toEqual([

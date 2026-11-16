@@ -62,11 +62,11 @@
 
 ### REQ-account-033
 
-系统必须允许账户持有人把时区保存为本人偏好；账户内时间按保存的时区显示。
+系统必须允许账户持有人把时区保存为本人偏好；全部页面上的时间按保存的时区显示。
 
-- **验收**：选择时区并保存后，重新读取账户资料得到该时区，账户内时间按该时区显示。
+- **验收**：选择时区并保存后，重新读取账户资料得到该时区，账户页、管理后台与其它入口的时间都按该时区显示。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`；`personalize-interface: the chosen time zone drives times on every surface`（覆盖管理后台）
 
 ### REQ-account-071
 
@@ -78,9 +78,9 @@
 
 ### REQ-account-034
 
-系统必须允许账户持有人清空语言或时区偏好；清空某项偏好只清除账户偏好，不改变设备语言或设备时区。
+系统必须允许账户持有人清空语言或时区偏好；清空某项偏好只清除账户偏好，不改变设备语言或浏览器时区。
 
-- **验收**：清空语言偏好后账户侧为空而界面回退到设备语言；清空时区偏好后账户侧为空而时间显示按设备时区。
+- **验收**：清空语言偏好后账户侧为空而界面回退到设备语言；清空时区偏好后账户侧为空而全部页面的时间显示按浏览器时区。
 - **状态**：已实现
 - **端到端测试**：未实现
 

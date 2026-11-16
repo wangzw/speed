@@ -33,6 +33,7 @@ export type CopyBundle =
   | 'orgCreateUi'
   | 'reviewNotice'
   | 'invitemail'
+  | 'ownershipNotice'
   | 'authzPermissions'
 
 /** The languages the deployment ships bundles for. */
@@ -60,6 +61,12 @@ const BUNDLES: Record<CopyBundle, string> = {
   // writes to the process log. Its keys carry dots as literal characters; read
   // them through `copyKey`.
   invitemail: '../../../../../pkg/authn/invitemail/locales',
+  // The ownership module's notification catalog. The delivery pipeline renders
+  // an in-app message from "<type_key>.<channel>.<part>" in the declaring
+  // module's own catalog, so a transfer request's title and body are shipped
+  // product strings. Its keys carry dots as literal characters; read them
+  // through `copyKey`.
+  ownershipNotice: '../../../../../pkg/tenant/ownership/locales',
   // The governed permission catalog's own descriptions, rendered by the
   // authorization surface in the request's language. The keys are the
   // permission codes with their separators turned into dashes; read them

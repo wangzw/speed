@@ -296,7 +296,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 | 依赖 | 用途 |
 |---|---|
 | `@speed/auth-core` | 组件驱动的 `AuthSession` 类型、它的流程操作，以及流程响应模型（`AuthnFlowState`、`AuthnStep`、`AuthnField` 等），后者是 auth-core 手写的响应模型并经它的入口再导出，本包从 auth-core 取用；`./otpauth` 子路径解析 `otpauth://` 登记 URI 并格式化 base32 密钥供手工输入，`./webauthn` 子路径提供通行密钥仪式的驱动 |
-| `@speed/ui-kit` | 表单骨架 `FormLayout`/`FormField`、空态 `EmptyState`、失败横幅 `InlineError` 与 `errorCodeOf`、`visuallyHiddenSx`、验证器应用的登记面板 `TotpEnrollmentPanel`，以及写入反馈的 `useWriteFeedback`、`WriteFeedbackRegion`、手机号缺省国家/地区上下文与显示时区上下文 |
+| `@speed/ui-kit` | 表单骨架 `FormLayout`/`FormField`、空态 `EmptyState`、失败横幅 `InlineError` 与 `errorCodeOf`、`visuallyHiddenSx`、验证器应用的登记面板 `TotpEnrollmentPanel`，以及写入反馈的 `useWriteFeedback`、`WriteFeedbackRegion`、手机号缺省国家/地区上下文与显示时区的时间格式化入口 `useFormatInstant` |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子 |
 | `react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/*`（[REF-emotion](../../../references.md)）、`react-hook-form`（[REF-react-hook-form](../../../references.md)） | 同为 peer（必需）：宿主拥有 React 与 MUI 树，表单库由本包的表面拉入 |
 
@@ -429,7 +429,7 @@ sequenceDiagram
 ### 邀请受理
 
 1. 挂载时经 `invitations.readInvitation(token)` 读一次令牌指向的邀请。读取中渲染一条 `role="status"` 通知；读取失败按失败形态分支（无此邀请 404 渲染“邀请不存在”文案、已失效 409 渲染“邀请已失效”文案、其余渲染该错误码的横幅加一个重试按钮，重试再读一次）。读取成功时先按应答的 `status` 与 `expires_at` 判定链接是否仍可兑现：状态不是 `pending`，或 `pending` 但期限已到（契约规定到点即不可受理），渲染与 409 相同的“邀请已失效”标题与说明，不展示邀请摘要与受理动作；仍可兑现时渲染邀请的租户、地址与期限与受理动作。
-2. 查看者以 `invitations.acceptInvitation(token)` 受理，受理不携带用户名、显示名或口令：接受不建账户，服务端也不读这些字段。被拒时按错误码分支：`authn.invitation_email_unproved` 打开证明步骤，说明要先证明被邀请地址，给出宿主 `onProveEmail` 的入口与一个再次受理的动作；其余错误渲染应答的错误码文本，受理动作保持可重试。受理落地后渲染受理成功文案并触发一次 `onAccepted`（抛出的宿主回调被包住，不改变受理已落定的事实）。页内标题按 `headingLevel` 渲染（缺省 `h1`，受理页通常就是整页），受理成功的小标题取它的下一级。期限按宿主提供的显示时区渲染（ui-kit 的显示时区上下文），缺席时用设备时区。
+2. 查看者以 `invitations.acceptInvitation(token)` 受理，受理不携带用户名、显示名或口令：接受不建账户，服务端也不读这些字段。被拒时按错误码分支：`authn.invitation_email_unproved` 打开证明步骤，说明要先证明被邀请地址，给出宿主 `onProveEmail` 的入口与一个再次受理的动作；其余错误渲染应答的错误码文本，受理动作保持可重试。受理落地后渲染受理成功文案并触发一次 `onAccepted`（抛出的宿主回调被包住，不改变受理已落定的事实）。页内标题按 `headingLevel` 渲染（缺省 `h1`，受理页通常就是整页），受理成功的小标题取它的下一级。期限经 ui-kit 的 `useFormatInstant` 按显示时区渲染（宿主上下文、浏览器时区、UTC 的解析链），时区非法或缺失时按该链回退，期限行照常渲染；只有期限值本身解析不出时该行才不渲染。
 
 ### 冒充横幅
 

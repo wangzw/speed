@@ -157,8 +157,8 @@ interface NotificationPresenceProviderProps {
 | `@speed/api-sdk` | 依赖 | 通知的生成 operation 与查询键构造器；响应类型；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName` |
 | `@speed/api-client` | 依赖 | 事件流开启器与帧的类型（`EventStreamOpener`、`EventStreamOptions`、`EventStreamHandle`、`ServerSentEvent`） |
 | `@speed/auth-core` | 依赖 | 当前租户（`useCurrentTenant`）与租户作用域查询键（`tenantQueryKey`、`useTenantQueryKey`）；准入层拒绝的判定（`isTenantAdmissionRefusal`） |
-| `@speed/i18n` | 依赖 | 命名空间翻译与错误码文本解析（`createErrorTextResolver`、会话生命周期与传输码）；时间的显示时区解析与格式化（`resolveTimeZone`、`formatInstant`） |
-| `@speed/ui-kit` | 依赖 | 页头、空态、列表骨架、四态分支、内联错误等受控组件；显示时区上下文（`useDisplayTimeZone`） |
+| `@speed/i18n` | 依赖 | 命名空间翻译与错误码文本解析（`createErrorTextResolver`、会话生命周期与传输码） |
+| `@speed/ui-kit` | 依赖 | 页头、空态、列表骨架、四态分支、内联错误等受控组件；显示时区的时间格式化（`useFormatInstant`） |
 | `react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/*`（[REF-emotion](../../../references.md)）、`@tanstack/react-query` | peer | 宿主持有的 React/MUI 树与查询客户端；单份使主题与查询上下文不分裂 |
 
 本包不 import 同层的其他能力 UI 包，也不同 `@speed/route-kit` 建边：`notificationRoutes` 的结构是复制的，不是 import 的。
@@ -191,11 +191,9 @@ graph TD
     useNotificationMessages --> tenantQueryKey
     NotificationBell --> ui-kit
     NotificationInbox --> ui-kit
-    NotificationInbox --> formatInstant
-    NotificationInbox --> useDisplayTimeZone
+    NotificationInbox --> useFormatInstant
     NotificationPreferences --> ui-kit
-    formatInstant --> i18n
-    useDisplayTimeZone --> ui-kit
+    useFormatInstant --> ui-kit
     openEventStream --> api-client
     tenantQueryKey --> auth-core
 ```
@@ -247,7 +245,7 @@ graph TD
 
 ### 时间的渲染
 
-消息时间经 `@speed/i18n` 的 `formatInstant` 渲染，语言取当前界面语言，时区取 `@speed/ui-kit` 的 `useDisplayTimeZone`；上下文缺席时按 `resolveTimeZone` 的时区链落到设备时区（环境无法回答时以 UTC 收尾）。宿主给出的时区未经本包校验，`resolveTimeZone` 拒绝引擎不认的值并继续沿链回退。引擎解析不了的字段按原文渲染。
+消息时间经 `@speed/ui-kit` 的 `useFormatInstant` 渲染：显示时区与活动语言都在这一个入口解析，宿主上下文、浏览器时区与 UTC 的链只在 `@speed/i18n` 一处，本包不固定时区，也不直接读浏览器时区。引擎解析不了的字段按原文渲染。
 
 ### 写入的反馈
 

@@ -98,7 +98,6 @@ import {
 import type { AuthnImpersonationGrant } from '@speed/api-sdk'
 import { useStepUpGate } from '@speed/auth-core'
 import type { StepUpGate } from '@speed/auth-core'
-import { formatInstant } from '@speed/i18n'
 import {
   DataTable,
   EmptyState,
@@ -109,6 +108,7 @@ import {
   SectionCard,
   httpStatusOf,
   pageRefreshRead,
+  useFormatInstant,
   usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -252,6 +252,7 @@ export function ImpersonationsPage({
 }: ImpersonationsPageProps = {}) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const formatTime = useFormatInstant()
   const queryClient = useQueryClient()
 
   const [innerTenant, setInnerTenant] = useState(
@@ -483,16 +484,14 @@ export function ImpersonationsPage({
       id: 'started',
       header: t('impersonations.column.started'),
       cellWrap: 'nowrap',
-      cell: (record) =>
-        formatInstant(record.started_at, i18n.language, { timeZone: 'UTC' }),
+      cell: (record) => formatTime(record.started_at),
     },
     {
       id: 'ends',
       header: t('impersonations.column.ends'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (record) =>
-        formatInstant(record.ends_at, i18n.language, { timeZone: 'UTC' }),
+      cell: (record) => formatTime(record.ends_at),
     },
     {
       id: 'state',
@@ -590,9 +589,7 @@ export function ImpersonationsPage({
                   </Typography>
                   <Typography variant="body2">
                     {t('impersonations.current.ends', {
-                      ends: formatInstant(settled.grant.ends_at, i18n.language, {
-                        timeZone: 'UTC',
-                      }),
+                      ends: formatTime(settled.grant.ends_at),
                     })}
                   </Typography>
                 </Stack>

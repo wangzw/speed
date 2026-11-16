@@ -27,11 +27,11 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { formatInstant } from '@speed/i18n'
 import {
   FORM_MAX_WIDTH,
   ListSkeleton,
   SectionCard,
+  useFormatInstant,
   useWriteFeedback,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -162,8 +162,9 @@ export function TenantProfilePage({
   onTenantUpdated,
   onOrganizationLeft,
 }: TenantProfilePageProps) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
+  const formatTime = useFormatInstant()
   const profile = operations.useTenantProfile(tenant)
   const write = operations.useTenantProfileWrite()
   // The profile card's one control group reports through one scope.
@@ -330,9 +331,7 @@ export function TenantProfilePage({
                   />
                   <ProfileField
                     label={t('tenantProfile.field.createdAt')}
-                    value={formatInstant(settledProfile.created_at, i18n.language, {
-                      timeZone: 'UTC',
-                    })}
+                    value={formatTime(settledProfile.created_at)}
                   />
                 </Box>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>

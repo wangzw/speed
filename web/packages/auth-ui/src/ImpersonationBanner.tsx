@@ -63,8 +63,7 @@ import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import type { Theme } from '@mui/material/styles'
-import { formatInstant } from '@speed/i18n'
-import { InlineSuccess, useDisplayTimeZone, visuallyHiddenSx } from '@speed/ui-kit'
+import { InlineSuccess, useFormatInstant, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 
@@ -250,18 +249,20 @@ function HideIcon(): ReactElement {
   )
 }
 
-/** Formats the expiry in the active language and the host's display time
- * zone (the device zone when none is provided); a malformed date, or a
- * zone the engine rejects, renders nothing rather than throwing out of
- * Intl. The host's zone is unvalidated by the provider, so a stale or
- * misspelled IANA name must degrade to "no expiry line", not crash the
- * render; the shared formatter owns that guard. */
-function formatExpiry(
-  expiresAt: Date,
-  language: string,
-  timeZone: string | undefined,
+/** The expiry line's text, or null when there is neither an instant nor a
+ * formatted value. The formatter resolves the display zone (the host's,
+ * then the browser's, then UTC) and the long tier names that zone beside
+ * the time, so an operator reading a deadline knows which clock it is on.
+ * It answers the empty string for a value that carries no instant -- a
+ * malformed date renders no dated label with an empty value beside it. */
+function expiryText(
+  formatTime: ReturnType<typeof useFormatInstant>,
+  expiresAt: Date | null | undefined,
 ): string | null {
-  const text = formatInstant(expiresAt, language, { timeZone })
+  if (expiresAt === undefined || expiresAt === null) {
+    return null
+  }
+  const text = formatTime(expiresAt, { style: 'long' })
   return text === '' ? null : text
 }
 
@@ -275,10 +276,10 @@ export function ImpersonationBanner({
   onDismiss,
   regionId,
 }: ImpersonationBannerProps) {
-  const { t, i18n } = useAuthUiTranslation()
-  // The host's display time zone when one is provided; absent, the device
-  // zone (the rendering before the provider existed).
-  const timeZone = useDisplayTimeZone()
+  const { t } = useAuthUiTranslation()
+  // The resolved display zone: the host's when usable, the browser's when
+  // not, UTC as the last resort.
+  const formatTime = useFormatInstant()
 
   // The announcement is committed one tick after the impersonation
   // appears. The live region is therefore already in the tree and empty
@@ -312,10 +313,7 @@ export function ImpersonationBanner({
   const settlement = successMessage ?? (ended ? t('impersonation.ended') : null)
   const liveText = settlement ?? announcement
 
-  const expiry =
-    impersonation?.expiresAt == null
-      ? null
-      : formatExpiry(impersonation.expiresAt, i18n.language ?? 'en-US', timeZone)
+  const expiry = expiryText(formatTime, impersonation?.expiresAt)
 
   return (
     <>

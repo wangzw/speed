@@ -22,6 +22,12 @@
  * Tests that exercise a language switch keep the returned instance and
  * act on it (await switchLanguage(i18n, 'en-US')); the provider's
  * 'languageChanged' subscription re-renders the tree.
+ *
+ * The tree renders under TestTimeZoneProvider, so a suite that names no
+ * zone formats times in the fixed TEST_TIME_ZONE instead of the
+ * machine's own -- a rendered time never depends on where the test runs.
+ * A case that exercises another zone passes `timeZone`, the way a host
+ * supplies the account's stored choice through the display context.
  */
 
 import { render } from '@testing-library/react'
@@ -34,6 +40,7 @@ import { UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
 import {
   createTestI18n,
   createTestQueryClient,
+  TestTimeZoneProvider,
 } from '@speed/test-utils/render'
 import type { RenderWithProvidersOptions } from '@speed/test-utils/render'
 import type { RenderWithProvidersResult as BaseResult } from '@speed/test-utils/render'
@@ -63,26 +70,28 @@ export function renderWithProviders(
   ui: ReactElement,
   options: RenderWithProvidersOptions = {},
 ): RenderWithProvidersResult {
-  const { language = 'zh-CN', i18n } = options
+  const { language = 'zh-CN', i18n, timeZone } = options
   const instance = i18n ?? createAccountUiI18n(language)
   const queryClient = createTestQueryClient()
   const result = render(
-    <I18nextProvider i18n={instance}>
-      <AppThemeProvider i18n={instance}>
-        <QueryClientProvider client={queryClient}>
-          {/* The account page every account-ui surface lives on: the
-              page's h1 above the section under test. Every axe scan in
-              the suite runs at the end of a behavioural test, and
-              page-has-heading-one is determinate in jsdom now (see
-              @speed/test-utils/axe's header) -- a section rendered with
-              no page heading context would fail the scan instead of
-              passing by indeterminacy. The section's own header is a
-              level-2 heading standing in under this h1. */}
-          <h1>Account</h1>
-          {ui}
-        </QueryClientProvider>
-      </AppThemeProvider>
-    </I18nextProvider>,
+    <TestTimeZoneProvider timeZone={timeZone}>
+      <I18nextProvider i18n={instance}>
+        <AppThemeProvider i18n={instance}>
+          <QueryClientProvider client={queryClient}>
+            {/* The account page every account-ui surface lives on: the
+                page's h1 above the section under test. Every axe scan in
+                the suite runs at the end of a behavioural test, and
+                page-has-heading-one is determinate in jsdom now (see
+                @speed/test-utils/axe's header) -- a section rendered with
+                no page heading context would fail the scan instead of
+                passing by indeterminacy. The section's own header is a
+                level-2 heading standing in under this h1. */}
+            <h1>Account</h1>
+            {ui}
+          </QueryClientProvider>
+        </AppThemeProvider>
+      </I18nextProvider>
+    </TestTimeZoneProvider>,
   )
   return { ...result, i18n: instance, queryClient }
 }

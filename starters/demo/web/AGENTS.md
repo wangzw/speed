@@ -215,7 +215,11 @@ program beside this directory embeds with `go:embed` and serves through
   `setPreference` and `persistColorModePreference`, so the account is the
   source of truth and `demo-web.color-mode` is only the first-paint mirror.
   A `ColorModeSync` in the tenant frame applies a stored account value that
-  differs from the current preference once the profile read lands. The phone write is
+  differs from the current preference once the profile read lands. A
+  `DisplayTimeZoneProvider` at the root of `DemoApp` passes the account's
+  stored `time_zone` to every page, so the admin frame and the tenant frame
+  share one clock; before the profile read lands, or when it fails, the
+  browser zone applies. The phone write is
   deliberately left out: its two routes are
   registered only when the deployment delivers an SMS code provider, which this
   skeleton's baseline does not (the SMS family needs a carrier's credentials, so

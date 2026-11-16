@@ -690,10 +690,12 @@ the signed-in account must prove it, points at the host's account surface
 through `onProveEmail` when supplied, and offers to accept again once the
 proof is in place. The invitation stays pending throughout. A refusal that
 is not the unproved email renders its code in the whole-attempt banner and
-leaves the accept action ready for another try. The expiry renders in the
-host's display time zone when the tree provides one (`ui-kit`'s
-display-time-zone context), else the device zone. `headingLevel` is the
-element the screen's titles render as (`'h1'` by default, the screen
+leaves the accept action ready for another try. The expiry renders through
+`ui-kit`'s `useFormatInstant`: the host's display time zone when the
+provider supplies a usable value, the browser's zone when it does not, then
+UTC. The line always renders; an unusable host zone is resolved, not
+hidden. `headingLevel` is the element the screen's titles render as
+(`'h1'` by default, the screen
 normally being the page); the accepted confirmation and the proof step take
 the level one below.
 
@@ -938,7 +940,7 @@ bilingual text of its states.
 | `react-hook-form` | peer (required, ^7) | every form is a controlled react-hook-form flow; RHF is the host's single instance |
 | `@speed/auth-core` | dependency | the session every component drives, its flow operations, the flow response models it re-exports from the generated surface, the `./otpauth` parser and secret formatting, and the `./webauthn` passkey driver |
 | `@speed/i18n` | dependency | the namespace registration and translation hook every component renders through |
-| `@speed/ui-kit` | dependency | the `FormLayout`/`FormField` form skeleton, `EmptyState` (the session-ended screen) and `TotpEnrollmentPanel` (the authenticator-app enrolment step) |
+| `@speed/ui-kit` | dependency | the `FormLayout`/`FormField` form skeleton, `EmptyState` (the session-ended screen), `TotpEnrollmentPanel` (the authenticator-app enrolment step) and `useFormatInstant` (the one display-time entry the expiry lines render through) |
 
 `@speed/api-sdk` and `@speed/api-client` are devDependencies: no public
 type of this package references them, and only the README's quick start

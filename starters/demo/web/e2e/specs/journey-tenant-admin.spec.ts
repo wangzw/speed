@@ -83,8 +83,12 @@
  * owner
  * account identifier never appears on the page, and the tenant's member and
  * invitation reads, whose account identifiers the identity surfaces must
- * likewise never render. Those tests learn the values from the response the
- * page itself received and assert the rendered surface carries neither.
+ * likewise never render, and the target's inbox read, whose expiry parameter
+ * the transfer notice's body must render as a time. Those tests learn the
+ * values from the response the page itself received: the identity tests assert
+ * the rendered surface carries neither identifier, and the notification test
+ * asserts the body carries the resolved time, not the delivery marker or the
+ * raw instant.
  */
 // @journey journey-tenant-admin.md
 // @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenant-admin-068, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-060, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
@@ -3216,6 +3220,72 @@ async function confirmOwnerTransfer(
   ).toBeVisible({ timeout: 15_000 })
 }
 
+/** The notification surface's inbox list. */
+function inboxList(page: Page): Locator {
+  return page.getByRole('list', {
+    name: copy('notificationUi', 'inbox.title'),
+  })
+}
+
+/** One in-app message as the notification surface's own read answers it. */
+interface InboxMessage {
+  readonly title: string
+  readonly body: string
+  readonly params: Record<string, unknown> | null
+}
+
+/**
+ * Open the notification centre from the account menu and return the inbox read
+ * that carries the notice titled `title`.
+ *
+ * The delivery worker writes an in-app message on the queue's own poll, so the
+ * first read after the page opens can land before the notice does. The live
+ * stream re-reads the list on each pushed frame; the predicate skips the
+ * answers that do not carry the notice rather than pinning the test to the
+ * first fetch.
+ */
+async function openNotificationCentre(
+  page: Page,
+  title: string,
+): Promise<InboxMessage> {
+  const answered = page.waitForResponse(
+    async (response) => {
+      if (response.request().method() !== 'GET') {
+        return false
+      }
+      if (
+        new URL(response.url()).pathname !== '/api/v1/notifications/messages'
+      ) {
+        return false
+      }
+      if (!response.ok()) {
+        return false
+      }
+      const body = (await response.json()) as {
+        messages?: readonly InboxMessage[]
+      }
+      return (body.messages ?? []).some((message) => message.title === title)
+    },
+    { timeout: 45_000 },
+  )
+  const menu = await openAccountMenu(page)
+  // The row's accessible name appends the unread count ("Messages, 1 unread")
+  // when one is known, so the lookup matches the name's opening words.
+  await menu
+    .getByRole('menuitem', { name: copy('demo', 'userMenu.messages') })
+    .click()
+  const body = (await (await answered).json()) as {
+    messages?: readonly InboxMessage[]
+  }
+  const message = (body.messages ?? []).find(
+    (candidate) => candidate.title === title,
+  )
+  if (message === undefined) {
+    throw new Error(`the inbox read carried no notice titled ${title}`)
+  }
+  return message
+}
+
 /**
  * Create an organization through the self-service page: the account menu's
  * organization row expands to the create entry, the form is filled, and the
@@ -3695,6 +3765,37 @@ test.describe('the organization profile page belongs to its owner', () => {
 
       await openOrganizationPage(page, 'profile')
       await requestOwnerTransfer(page, reviewInvitee)
+
+      // The target's own notification surface carries the request. Its body
+      // renders the request's expiry as a time in the viewer's display zone:
+      // the account stores no zone and this context pins UTC, so the expected
+      // rendering is the instant the inbox read answered, formatted for UTC.
+      // The row must carry that time -- not the marker the server writes in
+      // its place, and not the raw instant.
+      const transferTitle = copyKey(
+        'ownershipNotice',
+        'tenant.owner.transfer_requested.in_app.title',
+      )
+      const notice = await openNotificationCentre(invitee, transferTitle)
+      const expiresAt = notice.params?.['expires_at']
+      if (typeof expiresAt !== 'string') {
+        throw new Error('the transfer notice carries no expiry parameter')
+      }
+      const expiresText = new Intl.DateTimeFormat('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC',
+      }).format(new Date(expiresAt))
+      const noticeRow = inboxList(invitee)
+        .getByRole('listitem')
+        .filter({ hasText: transferTitle })
+      await expect(noticeRow).toHaveCount(1)
+      await expect(noticeRow).toContainText(expiresText)
+      // The delivery marker's delimiters frame the parameter name the client
+      // resolves; neither may reach the rendered row.
+      await expect(noticeRow).not.toContainText(String.fromCharCode(0xe000))
+      await expect(noticeRow).not.toContainText(String.fromCharCode(0xe001))
+      await expect(noticeRow).not.toContainText(expiresAt)
 
       // A request changes nothing yet: the caller stays on the
       // organization's own page and remains its owner.

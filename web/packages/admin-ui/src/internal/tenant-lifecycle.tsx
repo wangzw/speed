@@ -74,8 +74,12 @@ import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { usePermission } from '@speed/auth-core'
-import { formatInstant } from '@speed/i18n'
-import { ConfirmDialog, errorCodeOf, httpStatusOf } from '@speed/ui-kit'
+import {
+  ConfirmDialog,
+  errorCodeOf,
+  httpStatusOf,
+  useFormatInstant,
+} from '@speed/ui-kit'
 import { AccountSelector } from './account-selector.js'
 import { useAdminUiErrorText } from './error-text.js'
 import { accountUsername, identityLabel } from './account-identity.js'
@@ -567,8 +571,9 @@ export function TenantLifecycleActions({
   tenant,
   onSuccess,
 }: TenantLifecycleActionsProps) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const formatTime = useFormatInstant()
   const canManage = usePermission('system', TENANT_MANAGE)
   const canReadMembers = usePermission('tenant', MEMBERSHIP_MANAGE)
   const remove = operations.useDeleteTenant()
@@ -720,9 +725,7 @@ export function TenantLifecycleActions({
             </Typography>
             <Typography variant="body2">
               {t('tenantLifecycle.transfer.pendingExpires', {
-                expires: formatInstant(pending.expires_at, i18n.language, {
-                  timeZone: 'UTC',
-                }),
+                expires: formatTime(pending.expires_at),
               })}
             </Typography>
           </Box>

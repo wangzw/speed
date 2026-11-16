@@ -1708,7 +1708,7 @@ describe('AccountsPage', () => {
           },
         ]),
     })
-    renderWithProviders(<AccountsPage />, { operations })
+    renderWithProviders(<AccountsPage />, { operations, timeZone: 'UTC' })
     await openDetail(user)
     expect(
       await screen.findByText(zhCN.accounts.secrets.neverExpires),

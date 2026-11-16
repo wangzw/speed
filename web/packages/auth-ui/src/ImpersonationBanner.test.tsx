@@ -27,6 +27,7 @@ import {
   DisplayTimeZoneProvider,
 } from '@speed/ui-kit'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import {
   ImpersonationBanner,
   type ImpersonationBannerState,
@@ -51,7 +52,10 @@ const EXPIRY_ZH = zhCN.impersonation.expiresAt.replace(
   '{{expiresAt}}',
   new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'medium',
-    timeStyle: 'short',
+    timeStyle: 'long',
+    // The harness renders in its fixed TEST_TIME_ZONE; the fixture states
+    // the same zone explicitly so it does not read the machine's.
+    timeZone: TEST_TIME_ZONE,
   }).format(EXPIRES_AT),
 )
 
@@ -194,17 +198,19 @@ describe('ImpersonationBanner', () => {
   })
 
   it('render the expiry in the host’s display time zone', () => {
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
     const formatter = (timeZone: string): string =>
       new Intl.DateTimeFormat('zh-CN', {
         dateStyle: 'medium',
-        timeStyle: 'short',
+        timeStyle: 'long',
         timeZone,
       }).format(EXPIRES_AT)
-    // The two zones render the instant differently, so the assertion
-    // below discriminates the provider's effect.
-    expect(formatter('Asia/Shanghai')).not.toBe(formatter('UTC'))
+    // The host's zone differs from the browser's, so the assertions below
+    // discriminate the provider's effect: an implementation that ignored
+    // it and fell back to the browser zone would render the other string.
+    expect(formatter('Asia/Tokyo')).not.toBe(formatter(browserZone))
     renderWithProviders(
-      <DisplayTimeZoneProvider timeZone="Asia/Shanghai">
+      <DisplayTimeZoneProvider timeZone="Asia/Tokyo">
         <ImpersonationBanner
           impersonation={{ subject: SUBJECT, expiresAt: EXPIRES_AT }}
           onEnd={() => {}}
@@ -217,11 +223,57 @@ describe('ImpersonationBanner', () => {
     expect(notice).toHaveTextContent(
       zhCN.impersonation.expiresAt.replace(
         '{{expiresAt}}',
-        formatter('Asia/Shanghai'),
+        formatter('Asia/Tokyo'),
       ),
     )
     expect(notice).not.toHaveTextContent(
-      zhCN.impersonation.expiresAt.replace('{{expiresAt}}', formatter('UTC')),
+      zhCN.impersonation.expiresAt.replace(
+        '{{expiresAt}}',
+        formatter(browserZone),
+      ),
+    )
+  })
+
+  it('names the zone on the operator authorization expiry', () => {
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const longFormatter = (timeZone: string): string =>
+      new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'long',
+        timeZone,
+      }).format(EXPIRES_AT)
+    // The host's zone differs from the browser's, so the assertions below
+    // discriminate the provider's effect: an implementation that ignored
+    // it and fell back to the browser zone would render the other string.
+    // The suite pins the browser zone (auth-ui's vitest.config.ts), so a
+    // value equal to it would not tell the two apart.
+    expect(longFormatter('Europe/Berlin')).not.toBe(
+      longFormatter(browserZone),
+    )
+    renderWithProviders(
+      <DisplayTimeZoneProvider timeZone="Europe/Berlin">
+        <ImpersonationBanner
+          impersonation={{ subject: SUBJECT, expiresAt: EXPIRES_AT }}
+          onEnd={() => {}}
+        />
+      </DisplayTimeZoneProvider>,
+    )
+    const notice = screen.getByRole('region', {
+      name: zhCN.impersonation.regionLabel,
+    })
+    // The deadline carries its zone name, so the operator reading it can
+    // tell which clock it is on; the medium default omits the zone.
+    expect(notice).toHaveTextContent(
+      zhCN.impersonation.expiresAt.replace(
+        '{{expiresAt}}',
+        longFormatter('Europe/Berlin'),
+      ),
+    )
+    expect(notice).not.toHaveTextContent(
+      zhCN.impersonation.expiresAt.replace(
+        '{{expiresAt}}',
+        longFormatter(browserZone),
+      ),
     )
   })
 
@@ -338,10 +390,20 @@ describe('ImpersonationBanner', () => {
     ).toBeEnabled()
   })
 
-  it('renders the banner when the host’s display time zone is not an IANA name', () => {
+  it('falls back to the browser zone when the host’s display time zone is not an IANA name', () => {
     // The provider forwards the host's value unvalidated, and the engine
-    // rejects an unknown zone with a RangeError; the banner must survive
-    // it and simply omit the expiry line.
+    // rejects an unknown zone with a RangeError; the shared entry resolves
+    // the chain to the browser's zone instead, so the banner survives and
+    // keeps its expiry line. The suite's vitest config pins a non-UTC
+    // browser zone: on a UTC runner this case would also hold for an
+    // implementation that fell straight through to UTC.
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(browserZone).not.toBe('UTC')
+    const browserExpiry = new Intl.DateTimeFormat('zh-CN', {
+      dateStyle: 'medium',
+      timeStyle: 'long',
+      timeZone: browserZone,
+    }).format(EXPIRES_AT)
     renderWithProviders(
       <DisplayTimeZoneProvider timeZone="Asia/Shangai">
         <ImpersonationBanner
@@ -354,7 +416,9 @@ describe('ImpersonationBanner', () => {
       name: zhCN.impersonation.regionLabel,
     })
     expect(notice).toHaveTextContent(ACTING_AS_ZH)
-    expect(notice).not.toHaveTextContent(EXPIRY_LABEL_ZH)
+    expect(notice).toHaveTextContent(
+      zhCN.impersonation.expiresAt.replace('{{expiresAt}}', browserExpiry),
+    )
     expect(
       screen.getByRole('button', { name: zhCN.impersonation.end }),
     ).toBeEnabled()

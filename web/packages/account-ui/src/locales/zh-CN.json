@@ -334,10 +334,10 @@
     },
     "timezone": {
       "label": "时区",
-      "notChosen": "未选择（跟随设备时区）",
-      "helper": "账户中显示的时间使用该时区。",
+      "notChosen": "未选择（跟随浏览器时区）",
+      "helper": "所有页面显示的时间使用该时区。",
       "saved": "时区已设为 {{value}}。",
-      "followsDevice": "时区已设为跟随设备时区。"
+      "followsDevice": "时区已设为跟随浏览器时区。"
     },
     "error": {
       "title": "无法加载偏好设置",

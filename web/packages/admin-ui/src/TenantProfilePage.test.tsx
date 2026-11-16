@@ -21,6 +21,7 @@ import {
   type AdminTenantProfile,
 } from './organization-operations.js'
 import type { AdminMember } from './operations.js'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   createAdminOperations,
@@ -659,7 +660,7 @@ describe('TenantProfilePage ownership', () => {
       screen.getByText(
         zhCN.tenantProfile.ownership.pending.expires.replace(
           '{{expires}}',
-          formatInstant(PENDING.expires_at, 'zh-CN', { timeZone: 'UTC' }),
+          formatInstant(PENDING.expires_at, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
         ),
       ),
     ).toBeInTheDocument()

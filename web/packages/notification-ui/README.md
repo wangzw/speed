@@ -143,10 +143,10 @@ the in-app column only.
 - The generated type for a message's `read_at` is an optional `string | null`;
   the server writes JSON `null` for an unread message, so the surfaces treat
   `null`, `undefined` and `""` alike as unread.
-- Times render through `@speed/i18n`'s `formatInstant` in the current UI
-  language and the display zone supplied by `@speed/ui-kit`'s
-  `DisplayTimeZoneProvider`; with no provider the zone falls to the
-  device's own, then UTC.
+- Times render through `@speed/ui-kit`'s `useFormatInstant` in the current
+  UI language and the resolved display zone: the `DisplayTimeZoneProvider`
+  value when `Intl` accepts it, the browser's zone when it is absent or
+  unusable, then UTC.
 - A deployment without the stream simply mounts no opener (or `enabled`
   false): the surfaces still read their data on mount and when the tab
   becomes visible again, and real-time is an enhancement, never a

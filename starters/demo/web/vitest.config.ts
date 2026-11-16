@@ -14,6 +14,7 @@
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../../web/scripts/speed-aliases.mjs'
+import { TEST_BROWSER_TIME_ZONE } from '../../../web/vitest.shared.ts'
 
 export default defineConfig({
   resolve: {
@@ -22,6 +23,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-utils/setup.ts'],
+    // The assembled app renders times under the account's display zone and
+    // falls to the browser zone before a profile arrives; pinning the
+    // browser zone keeps every rendered time independent of the runner.
+    // See TEST_BROWSER_TIME_ZONE.
+    env: { TZ: TEST_BROWSER_TIME_ZONE },
     // The same per-case budget the workspace preset gives every package
     // (web/vitest.shared.ts). These cases drive the assembled program --
     // route changes, settles and announcements -- and vitest's 5s default

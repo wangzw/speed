@@ -533,8 +533,9 @@ describe('AcceptInvitationScreen', () => {
   })
 
   it('renders the expiry in the host’s display time zone', async () => {
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
     renderWithProviders(
-      <DisplayTimeZoneProvider timeZone="Asia/Shanghai">
+      <DisplayTimeZoneProvider timeZone="Asia/Tokyo">
         <AcceptInvitationScreen token="tok-1" invitations={operations()} />
       </DisplayTimeZoneProvider>,
     )
@@ -544,27 +545,37 @@ describe('AcceptInvitationScreen', () => {
         timeStyle: 'short',
         timeZone,
       }).format(new Date(INVITATION.expiresAt))
-    const shanghai = formatter('Asia/Shanghai')
-    const utc = formatter('UTC')
-    // The two zones really do render the instant differently, so the
-    // assertion below discriminates the provider's effect.
-    expect(shanghai).not.toBe(utc)
+    const tokyo = formatter('Asia/Tokyo')
+    const browser = formatter(browserZone)
+    // The host's zone differs from the browser's, so the assertions below
+    // discriminate the provider's effect: an implementation that ignored
+    // it and fell back to the browser zone would render the other string.
+    expect(tokyo).not.toBe(browser)
     expect(
       await screen.findByText(
-        zhCN.acceptInvitation.expires.replace('{{expires}}', shanghai),
+        zhCN.acceptInvitation.expires.replace('{{expires}}', tokyo),
       ),
     ).toBeInTheDocument()
     expect(
       screen.queryByText(
-        zhCN.acceptInvitation.expires.replace('{{expires}}', utc),
+        zhCN.acceptInvitation.expires.replace('{{expires}}', browser),
       ),
     ).not.toBeInTheDocument()
   })
 
-  it('omits the expiry line when the host’s display time zone is invalid', async () => {
+  it('falls back to the browser zone and keeps the expiry line when the host’s display time zone is invalid', async () => {
     // The host's zone is unvalidated: a stale or misspelled IANA name
-    // must degrade to no expiry line, never a label with no value
-    // beside it.
+    // resolves through the shared chain to the browser's zone, so the
+    // line still renders rather than disappearing. The suite's vitest
+    // config pins a non-UTC browser zone: on a UTC runner this case would
+    // also hold for an implementation that fell straight through to UTC.
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(browserZone).not.toBe('UTC')
+    const browserExpiry = new Intl.DateTimeFormat('zh-CN', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: browserZone,
+    }).format(new Date(INVITATION.expiresAt))
     renderWithProviders(
       <DisplayTimeZoneProvider timeZone="Asia/Shangai">
         <AcceptInvitationScreen token="tok-1" invitations={operations()} />
@@ -575,7 +586,32 @@ describe('AcceptInvitationScreen', () => {
         zhCN.acceptInvitation.invited.replace('{{tenant}}', 'Acme'),
       ),
     ).toBeInTheDocument()
-    const emptyExpiry = zhCN.acceptInvitation.expires.replace('{{expires}}', '')
-    expect(screen.queryByText(emptyExpiry)).not.toBeInTheDocument()
+    expect(
+      screen.getByText(
+        zhCN.acceptInvitation.expires.replace('{{expires}}', browserExpiry),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('omits the expiry line when the deadline carries no instant', async () => {
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({
+          readInvitation: () =>
+            Promise.resolve({ ...INVITATION, expiresAt: 'not-a-timestamp' }),
+        })}
+      />,
+    )
+    expect(
+      await screen.findByText(
+        zhCN.acceptInvitation.invited.replace('{{tenant}}', 'Acme'),
+      ),
+    ).toBeInTheDocument()
+    // The prefix is the whole line when the interpolated value is empty:
+    // its presence means the line rendered without a deadline.
+    expect(
+      screen.queryByText(zhCN.acceptInvitation.expires.replace('{{expires}}', '')),
+    ).not.toBeInTheDocument()
   })
 })

@@ -18,6 +18,7 @@ import type { AdminTenant } from './operations.js'
 import type { AdminRoute } from './route.js'
 import { AdminFeatureProvider } from './internal/features.js'
 import { AdminRouteTableProvider } from './internal/route-table.js'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { renderWithProviders } from '../test-utils/render.js'
 import type { RenderWithProvidersOptions } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -620,7 +621,7 @@ describe('TenantDetailPage', () => {
     ).toBeInTheDocument()
     expect(
       within(summary).getByText(
-        formatInstant(createdAt, 'zh-CN', { timeZone: 'UTC' }),
+        formatInstant(createdAt, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
       ),
     ).toBeInTheDocument()
   })

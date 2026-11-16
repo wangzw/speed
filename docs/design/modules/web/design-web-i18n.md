@@ -6,7 +6,7 @@ i18n 是前端包树的国际化层，位于依赖图的地板，被 ui-kit 与�
 
 本包为 web 包树提供国际化层，包裹 react-i18next（[REF-react-i18next](../../../references.md)）与 i18next（[REF-i18next](../../../references.md)）并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回退到另一种语言**。
 
-它把一个宿主需要的整套 i18n 接口收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI（[REF-mui](../../../references.md)）本地化辅助函数在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
+它把一个宿主需要的整套 i18n 接口收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、墙钟与时刻的互转（`instantToWallClock`、`wallClockToInstant` 与 `WallClock`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI（[REF-mui](../../../references.md)）本地化辅助函数在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
 
 react 绑定只从这里再导出，组件包与宿主不直接 import `react-i18next`：版本锁步使一个树里只有一个 react-i18next 副本，`useTranslation` 在交付出去的组件里因此安全。
 
@@ -41,6 +41,22 @@ export const CLIENT_TRANSPORT_ERROR_CODES: readonly string[]
 export function resolveTimeZone(stored?: string | null): string
 export function isSupportedTimeZone(zone: string): boolean
 export function formatInstant(value: string | number | Date, language: string, options?: { timeZone?: string; style?: 'short' | 'medium' | 'long' }): string
+export function instantToWallClock(value: string | number | Date, timeZone: string): WallClock | null
+export function wallClockToInstant(wallClock: WallClock, timeZone: string, options?: WallClockToInstantOptions): Date | null
+
+export interface WallClock {
+  readonly year: number
+  readonly month: number
+  readonly day: number
+  readonly hour: number
+  readonly minute: number
+  readonly second?: number
+}
+
+export interface WallClockToInstantOptions {
+  readonly overlap?: 'earlier' | 'later'
+}
+
 export function languageDisplayName(tag: string, uiLanguage: string, supportedLanguages?: readonly string[]): string
 
 export { I18nextProvider, useTranslation } from 'react-i18next'
@@ -59,7 +75,7 @@ export { I18nextProvider, useTranslation } from 'react-i18next'
 
 **`overlayResources` 的契约**：按语言接收部分 bundle 的覆盖层。已有语言逐叶子深合并，改写一个在 base 中不存在的叶子即抛错；base 没有的语言整份收下，其完整性（全部键与该语言所需的复数形）由 `registerNamespace` 照常校验。base 与 overlay 都不被修改。抛错是升级信号：宿主的覆盖按旧键集书写，平台包删掉或改名一个叶子后，注册要在启动时失败而不是多出一个无人使用的键。
 
-**显示辅助函数的契约**：`resolveTimeZone` 走三级链（宿主给的已存值、设备时区、`UTC`），每一级 Intl 构造受守卫，拒绝的值按空值跳过；`formatInstant` 只经 Intl 渲染，`short`/`medium`/`long` 三档各自映射到固定的 dateStyle/timeStyle 组合，按语言、档位与时区缓存格式化器，空串、无法解析的值与 Intl 拒绝的语言答空串；`languageDisplayName` 经 `Intl.DisplayNames` 取界面语言里的名字，取不到即回到原标签；名字按基础语言子标签取，只有当 `supportedLanguages` 里同一基础语言出现多个标签时才改用完整标签，使同一语言的地区变体在选项里可区分（[ADR-web-language-display-name](../../../adr/adr-web-language-display-name.md)）。三个函数都从不抛错。
+**显示辅助函数的契约**：`resolveTimeZone` 走三级链（宿主给的已存值、浏览器时区、`UTC`），每一级 Intl 构造受守卫，拒绝的值按空值跳过；`formatInstant` 只经 Intl 渲染，`short`/`medium`/`long` 三档各自映射到固定的 dateStyle/timeStyle 组合，按语言、档位与时区缓存格式化器，空串、无法解析的值与 Intl 拒绝的语言答空串；`languageDisplayName` 经 `Intl.DisplayNames` 取界面语言里的名字，取不到即回到原标签；名字按基础语言子标签取，只有当 `supportedLanguages` 里同一基础语言出现多个标签时才改用完整标签，使同一语言的地区变体在选项里可区分（[ADR-web-language-display-name](../../../adr/adr-web-language-display-name.md)）。`instantToWallClock` 与 `wallClockToInstant` 在指定时区里把时刻与墙钟读数互转，都无法表示时答 `null`。这些函数都从不抛错。
 
 ### 对外接口
 
@@ -151,9 +167,11 @@ sequenceDiagram
 
 ### 显示时区与时间格式化
 
-显示时区链由 `resolveTimeZone` 给出：宿主解析出的已存值（空或全空白视为未选）、设备时区、`UTC`，第一个被 Intl 接受的值胜出。链不落在本包的状态里。哪个界面用哪个时区是宿主与组件包的决定：管理后台与对象存储的表格固定使用显式 `UTC`；通知与登录界面、账户界面的目标口径是读 ui-kit 的显示时区上下文（通知与登录界面在上下文缺席时用设备时区；账户界面以存下的偏好优先，上下文只替换链中的设备一级）。这一划分随各组件包的改动落地，当前组件包都还没有读取该上下文：通知与登录界面用设备时区，账户界面只用存下的偏好。ui-kit 的显示时区上下文是宿主把已解析值交给组件的接口（见 [ui-kit](design-web-ui-kit.md)）。
+显示时区链由 `resolveTimeZone` 给出：宿主解析出的已存值（空或全空白视为未选）、浏览器时区、`UTC`，第一个被 Intl 接受的值胜出（[ADR-web-display-time-zone](../../../adr/adr-web-display-time-zone.md)）。链不落在本包的状态里。哪个界面用哪个时区不由各组件包各自决定：全部界面都经 ui-kit 的 `useFormatInstant` 与 `useResolvedTimeZone` 读这条链，不固定 UTC，也不直接读浏览器时区。宿主经 ui-kit 的显示时区上下文把账户存下的值交给组件（见 [ui-kit](design-web-ui-kit.md)）。
 
 `formatInstant` 只经 Intl 渲染：`short`、`medium`、`long` 三档各自映射到固定的 dateStyle/timeStyle 组合（`short` 为短日期短时间、`medium` 为中等日期短时间、`long` 为中等日期带时区名的长时间），按语言、档位与时区缓存格式化器，一屏多行共用一个。空串、无法解析的文本、无效日期与 `NaN` 答空串；Intl 拒绝的语言同样答空串：一个坏值或一种坏语言从不抛进渲染。`languageDisplayName` 经 `Intl.DisplayNames` 给出标签在界面语言里的名字，取不到即回到原标签。取名对象默认是标签的基础语言子标签；`supportedLanguages` 中同基础语言的标签多于一个时，改用完整标签，地区变体因此仍然可区分。
+
+**墙钟互转。** `instantToWallClock` 与 `wallClockToInstant` 是纯函数：前者把一个时刻按指定时区读成 `WallClock`（年、月、日、时、分、秒），后者把一份墙钟读数按指定时区换算成 `Date`。两端都逐字段校验，未知时区、无法解析的值、越界字段与不存在的日历读数（例如 2 月 31 日）答 `null`，不抛错、不静默归一。春季跳变的空档读数答 `null`；秋季重叠的重复一小时默认取较早的瞬间，`overlap` 为 `'later'` 时取较晚的瞬间。按整秒解析，`instantToWallClock` 丢掉亚秒。审计页把起止时间按显示时区解释时用这两个函数：下界取较早的瞬间，上界取较晚的瞬间，使筛选区间覆盖回拨时重复的两个小时；显示时区变化时用它把已应用的时刻重新读成墙钟，回填到输入框，已应用的时刻不变。
 
 ### 错误码到文本
 
@@ -220,7 +238,7 @@ sequenceDiagram
 | 注册前的资源覆盖 | 已实现 | `web/packages/i18n/src/overlay.ts` `overlayResources` |
 | 缺键纪律 | 已实现 | `web/packages/i18n/src/missing-key.ts` `defaultMissingKeyHandler`、`MissingKeyDetails` |
 | 错误码文本约定 | 已实现 | `web/packages/i18n/src/error-text.ts` `createErrorTextResolver`、`SESSION_LIFECYCLE_ERROR_CODES`、`CLIENT_TRANSPORT_ERROR_CODES` |
-| 显示时区与时间格式化 | 已实现 | `web/packages/i18n/src/time.ts` `resolveTimeZone`、`isSupportedTimeZone`、`formatInstant` |
+| 显示时区与时间格式化 | 已实现 | `web/packages/i18n/src/time.ts` `resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`；`web/packages/i18n/src/wall-clock.ts` `instantToWallClock`、`wallClockToInstant`、`WallClock` |
 | 语言名 | 已实现 | `web/packages/i18n/src/language-name.ts` `languageDisplayName` |
 | 语言名按基础语言命名，同基础语言多变体时保留地区名 | 已实现 | `web/packages/i18n/src/language-name.ts` `languageDisplayName` |
 | MUI 本地化映射 | 已实现 | `web/packages/i18n/src/mui-locale.ts` `muiLocaleFor`、`MuiLocale` |

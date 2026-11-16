@@ -17,6 +17,7 @@ convention the error surfaces resolve through (`createErrorTextResolver`
 plus the shared code families `SESSION_LIFECYCLE_ERROR_CODES` and
 `CLIENT_TRANSPORT_ERROR_CODES`), and the Intl-only display helpers
 (`resolveTimeZone`, `isSupportedTimeZone`, `formatInstant`,
+`instantToWallClock`, `wallClockToInstant`,
 `languageDisplayName`, which names a tag by its base language subtag
 unless the optional supported-set argument shows two regional variants of
 the same language).
@@ -133,13 +134,17 @@ catalog) and is non-negotiable here.
   duplicate key.
 - **Time and language names are formatted through Intl only.** The
   display-timezone chain lives in `resolveTimeZone` (stored value, then
-  device, then UTC) and every Intl construction is guarded, so one stale
+  browser, then UTC) and every Intl construction is guarded, so one stale
   value never crashes a render. `formatInstant` caches one formatter per
   language/style/zone and answers the empty string for a value that
   carries no instant. The package carries the helpers and holds no
   display-zone state: which zone a surface renders in (a caller-resolved
-  context value, an explicit UTC, a stored preference) is the host's
-  decision, exactly like the profile language.
+  context value, a stored preference) is the host's
+  decision, exactly like the profile language. `instantToWallClock` and
+  `wallClockToInstant` are the wall-clock pair a date-time input needs:
+  a spring-forward gap has no instant and answers null, a fall-back
+  overlap resolves to the earlier instant, and invalid fields, calendar
+  overflows and unknown zones answer null rather than throw or normalize.
 - **Instance options are internal to createI18n, and only some are pinned
   by tests.** i18next's option surface is an implementation detail here
   (v26 internals that shaped the code: `initAsync` defaults true and is

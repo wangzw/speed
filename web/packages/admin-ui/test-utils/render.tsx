@@ -3,9 +3,11 @@
  *
  * renderWithProviders mounts a unit under the tree a real host builds:
  * I18nextProvider (the pages' translations need) around AppThemeProvider
- * (theme + MUI locale linkage + CssBaseline) around QueryClientProvider
- * (the console operations bundle's hooks run on a query client) around an
- * optional AdminOperationsProvider. The client is fresh per call and
+ * (theme + MUI locale linkage + CssBaseline) around TestTimeZoneProvider
+ * (the display zone the pages format times in, TEST_TIME_ZONE unless the
+ * suite names another) around QueryClientProvider (the console operations bundle's
+ * hooks run on a query client) around an optional
+ * AdminOperationsProvider. The client is fresh per call and
  * retries nothing: an operation the test scripts to fail surfaces its
  * error on the first attempt, not after react-query default retries, and
  * a mutation must not outlive its test.
@@ -52,6 +54,7 @@ import {
 import {
   createTestI18n,
   createTestQueryClient,
+  TestTimeZoneProvider,
 } from '@speed/test-utils/render'
 import type {
   RenderWithProvidersOptions as BaseOptions,
@@ -115,6 +118,7 @@ export function renderWithProviders(
   const {
     language = 'zh-CN',
     i18n,
+    timeZone,
     operations,
     session,
     defaultMode,
@@ -138,7 +142,9 @@ export function renderWithProviders(
   const result = render(
     <I18nextProvider i18n={instance}>
       <AppThemeProvider i18n={instance} defaultMode={defaultMode}>
-        <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
+        <TestTimeZoneProvider timeZone={timeZone}>
+          <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
+        </TestTimeZoneProvider>
       </AppThemeProvider>
     </I18nextProvider>,
   )

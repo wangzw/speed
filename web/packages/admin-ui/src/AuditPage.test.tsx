@@ -2,20 +2,23 @@
  * AuditPage: the audit-query page.
  *
  * Its read renders the settled records as a table, the recorded time
- * through Intl in the current language and explicitly in UTC (the zone the
- * view carries), the actor column as a readable identity resolved through
+ * through the resolved display zone in the current language, the actor
+ * column as a readable identity resolved through
  * the account read (falling back to the recorded value, marked unresolved
  * when the read is refused), the server-side filters applied on submit,
  * cursor pagination, and a failed read settling into the retryable error
  * placeholder.
  */
 
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuditAdminRecordsExportParams } from '@speed/api-sdk'
+import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import { AuditPage } from './AuditPage.js'
 import type { AdminAuditRecord } from './operations.js'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureDownloads } from '../test-utils/download.js'
 import {
@@ -51,6 +54,32 @@ const page = (entries: readonly AdminAuditRecord[], next = '') => ({
   entries: [...entries],
   next,
 })
+
+/**
+ * Renders the page under a display zone the case can change. The zone
+ * switcher sits inside the harness's own provider, so its value wins for
+ * the page below it.
+ */
+function ZoneSwitcher({
+  zones,
+}: {
+  readonly zones: readonly string[]
+}) {
+  const [index, setIndex] = useState(0)
+  return (
+    <DisplayTimeZoneProvider timeZone={zones[index]}>
+      <button
+        type="button"
+        onClick={() =>
+          setIndex((current) => Math.min(current + 1, zones.length - 1))
+        }
+      >
+        switch-display-zone
+      </button>
+      <AuditPage />
+    </DisplayTimeZoneProvider>
+  )
+}
 
 describe('AuditPage', () => {
   it('raises its toolbar and pager actions to the 44px floor under a coarse pointer', async () => {
@@ -199,7 +228,7 @@ describe('AuditPage', () => {
     ).toEqual(new Map())
   })
 
-  it('formats the recorded time in UTC in the current language', async () => {
+  it("formats the recorded time in the harness's default display zone", async () => {
     const operations = createAdminOperations(
       makeAdminBackend({ listRecords: () => Promise.resolve(page([record])) }),
     )
@@ -208,9 +237,391 @@ describe('AuditPage', () => {
     const expected = new Intl.DateTimeFormat('zh-CN', {
       dateStyle: 'medium',
       timeStyle: 'short',
-      timeZone: 'UTC',
+      timeZone: TEST_TIME_ZONE,
     }).format(new Date(record.occurred_at))
     expect(screen.getByText(expected)).toBeInTheDocument()
+  })
+
+  it('formats the recorded time in a display zone other than the browser zone', async () => {
+    const operations = createAdminOperations(
+      makeAdminBackend({ listRecords: () => Promise.resolve(page([record])) }),
+    )
+    renderWithProviders(<AuditPage />, {
+      operations,
+      timeZone: 'Asia/Tokyo',
+    })
+    await screen.findByText('tenant.create')
+    const expected = new Intl.DateTimeFormat('zh-CN', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: 'Asia/Tokyo',
+    }).format(new Date(record.occurred_at))
+    expect(screen.getByText(expected)).toBeInTheDocument()
+  })
+
+  it('reads the since and until inputs in the display zone', async () => {
+    const user = userEvent.setup()
+    const seen: { since?: string; until?: string } = {}
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          seen.since = params?.since
+          seen.until = params?.until
+          return Promise.resolve(page([record]))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, {
+      operations,
+      timeZone: 'Asia/Tokyo',
+    })
+    await screen.findByText('tenant.create')
+    fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
+      target: { value: '2026-10-15T09:30' },
+    })
+    fireEvent.change(screen.getByLabelText(zhCN.audit.filters.until), {
+      target: { value: '2026-10-15T10:00' },
+    })
+    await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
+    await vi.waitFor(() => {
+      // 09:30 and 10:00 in Tokyo (UTC+9) are 00:30 and 01:00 UTC.
+      expect(seen.since).toBe('2026-10-15T00:30:00.000Z')
+      expect(seen.until).toBe('2026-10-15T01:00:00.000Z')
+    })
+  })
+
+  it('refuses a since reading the display zone skips instead of dropping the bound', async () => {
+    const user = userEvent.setup()
+    const seen: Array<{ since?: string }> = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          seen.push({ since: params?.since })
+          return Promise.resolve(page([record]))
+        },
+      }),
+    )
+    const { queryClient } = renderWithProviders(<AuditPage />, {
+      operations,
+      timeZone: 'America/New_York',
+    })
+    await screen.findByText('tenant.create')
+    const since = screen.getByLabelText(zhCN.audit.filters.since)
+    const apply = screen.getByRole('button', {
+      name: zhCN.audit.filters.apply,
+    })
+
+    // 03:30 local is after the 2026-03-08 spring-forward, so it names an
+    // instant: 07:30Z.
+    fireEvent.change(since, { target: { value: '2026-03-08T03:30' } })
+    await user.click(apply)
+    await vi.waitFor(() => {
+      expect(seen.at(-1)?.since).toBe('2026-03-08T07:30:00.000Z')
+    })
+
+    // 02:30 local falls in the hour the spring-forward skips: no instant
+    // exists. The apply must be refused on the field, and the read must
+    // keep the bound it already had instead of silently running unbounded.
+    const requestsBeforeRefusal = seen.length
+    fireEvent.change(since, { target: { value: '2026-03-08T02:30' } })
+    await user.click(apply)
+
+    expect(
+      await screen.findByText(zhCN.audit.filters.timeUnavailable),
+    ).toBeInTheDocument()
+    expect(since).toHaveAttribute('aria-invalid', 'true')
+    expect(since).toHaveFocus()
+    // The refusal starts no read at all; wait until the query is quiet so
+    // an erroneous request has had its chance to reach the backend.
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0))
+    expect(seen).toHaveLength(requestsBeforeRefusal)
+  })
+
+  it('reports an until reading the display zone skips on its own field', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({ listRecords: () => Promise.resolve(page([record])) }),
+    )
+    renderWithProviders(<AuditPage />, {
+      operations,
+      timeZone: 'America/New_York',
+    })
+    await screen.findByText('tenant.create')
+    const until = screen.getByLabelText(zhCN.audit.filters.until)
+    fireEvent.change(until, { target: { value: '2026-03-08T02:30' } })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+    )
+    expect(
+      await screen.findByText(zhCN.audit.filters.timeUnavailable),
+    ).toBeInTheDocument()
+    expect(until).toHaveAttribute('aria-invalid', 'true')
+    expect(until).toHaveFocus()
+    expect(screen.getByLabelText(zhCN.audit.filters.since)).not.toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+  })
+
+  it('names an out-of-range reading as out of range and focuses its field', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({ listRecords: () => Promise.resolve(page([record])) }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+    const since = screen.getByLabelText(zhCN.audit.filters.since)
+    const until = screen.getByLabelText(zhCN.audit.filters.until)
+
+    // A year outside the accepted range is not a time the zone skips; the
+    // field must say so rather than blaming the display zone.
+    fireEvent.change(since, { target: { value: '10000-01-01T00:00' } })
+    fireEvent.change(until, { target: { value: '2026-03-08T02:30' } })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+    )
+
+    expect(
+      await screen.findByText(zhCN.audit.filters.timeOutOfRange),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(zhCN.audit.filters.timeUnavailable),
+    ).toBeInTheDocument()
+    expect(since).toHaveAttribute('aria-invalid', 'true')
+    // The first refused field takes the focus, even though both are wrong.
+    expect(since).toHaveFocus()
+    expect(until).not.toHaveFocus()
+  })
+
+  it('translates a field refusal when it renders, not when it is set', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({ listRecords: () => Promise.resolve(page([record])) }),
+    )
+    const { i18n } = renderWithProviders(<AuditPage />, {
+      operations,
+      timeZone: 'America/New_York',
+    })
+    await screen.findByText('tenant.create')
+
+    fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
+      target: { value: '2026-03-08T02:30' },
+    })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+    )
+    expect(
+      await screen.findByText(zhCN.audit.filters.timeUnavailable),
+    ).toBeInTheDocument()
+
+    // The refusal was set under zh-CN; a language change must repaint it from
+    // the key rather than leave the text it was set with.
+    await act(async () => {
+      await i18n.changeLanguage('en-US')
+    })
+    expect(
+      await screen.findByText(enUS.audit.filters.timeUnavailable),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.audit.filters.timeUnavailable),
+    ).not.toBeInTheDocument()
+  })
+
+  it('resolves an overlapping since to the earlier instant', async () => {
+    const user = userEvent.setup()
+    const seen: { since?: string } = {}
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          seen.since = params?.since
+          return Promise.resolve(page([record]))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, {
+      operations,
+      timeZone: 'America/New_York',
+    })
+    await screen.findByText('tenant.create')
+
+    // 2026-11-01 01:30 happens twice in New York: EDT at 05:30Z and EST at
+    // 06:30Z. The lower bound reads as the earlier occurrence, so the
+    // range starts at the first 01:30.
+    fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
+      target: { value: '2026-11-01T01:30' },
+    })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+    )
+    await vi.waitFor(() => {
+      expect(seen.since).toBe('2026-11-01T05:30:00.000Z')
+    })
+  })
+
+  it('resolves an overlapping until to the later instant', async () => {
+    const user = userEvent.setup()
+    const seen: { until?: string } = {}
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          seen.until = params?.until
+          return Promise.resolve(page([record]))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, {
+      operations,
+      timeZone: 'America/New_York',
+    })
+    await screen.findByText('tenant.create')
+
+    // The upper bound reads as the second 01:30, so the range covers the
+    // repeated hour instead of stopping at its first occurrence.
+    fireEvent.change(screen.getByLabelText(zhCN.audit.filters.until), {
+      target: { value: '2026-11-01T01:30' },
+    })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+    )
+    await vi.waitFor(() => {
+      expect(seen.until).toBe('2026-11-01T06:30:00.000Z')
+    })
+  })
+
+  it('keeps the applied instant when a regenerated draft reads the repeated hour', async () => {
+    const user = userEvent.setup()
+    const seen: Array<{ since?: string }> = []
+    const exports: AuditAdminRecordsExportParams[] = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          seen.push({ since: params?.since })
+          return Promise.resolve(page([record]))
+        },
+        exportRecords: (params) => {
+          exports.push(params ?? {})
+          return Promise.resolve(new Blob([]))
+        },
+      }),
+    )
+    const { queryClient } = renderWithProviders(
+      <ZoneSwitcher zones={['UTC', 'America/New_York']} />,
+      { operations },
+    )
+    await screen.findByText('tenant.create')
+    const since = screen.getByLabelText(zhCN.audit.filters.since)
+    const apply = screen.getByRole('button', { name: zhCN.audit.filters.apply })
+
+    // Apply 06:30Z, the second 01:30 of New York's fall-back overlap.
+    fireEvent.change(since, { target: { value: '2026-11-01T06:30' } })
+    await user.click(apply)
+    await vi.waitFor(() => {
+      expect(seen.at(-1)?.since).toBe('2026-11-01T06:30:00.000Z')
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'switch-display-zone' }),
+    )
+    // The applied instant reads back as 01:30 in New York, a wall clock that
+    // names both 05:30Z and 06:30Z. The draft was generated from the applied
+    // instant, so it must resolve to that instant rather than to the earlier
+    // occurrence the field would pick for a new reading.
+    await vi.waitFor(() => {
+      expect(since).toHaveValue('2026-11-01T01:30')
+    })
+    const control = screen.getByRole('button', {
+      name: zhCN.audit.export.label,
+    })
+    expect(control).toBeEnabled()
+    expect(
+      screen.queryByText(zhCN.audit.export.applyFirst),
+    ).not.toBeInTheDocument()
+
+    // Applying the unchanged draft keeps the bound; it must not move it an
+    // hour earlier.
+    await user.click(apply)
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0))
+    expect(
+      seen.filter((params) => params.since === '2026-11-01T05:30:00.000Z'),
+    ).toHaveLength(0)
+    await user.click(control)
+    await vi.waitFor(() => expect(exports).toHaveLength(1))
+    expect(exports[0]?.since).toBe('2026-11-01T06:30:00.000Z')
+  })
+
+  it('regenerates the applied time drafts when the display zone changes', async () => {
+    const user = userEvent.setup()
+    const seen: { since?: string } = {}
+    const exports: AuditAdminRecordsExportParams[] = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          seen.since = params?.since
+          return Promise.resolve(page([record]))
+        },
+        exportRecords: (params) => {
+          exports.push(params ?? {})
+          return Promise.resolve(new Blob([]))
+        },
+      }),
+    )
+    renderWithProviders(<ZoneSwitcher zones={['America/New_York', 'Asia/Tokyo']} />, {
+      operations,
+    })
+    await screen.findByText('tenant.create')
+    const since = screen.getByLabelText(zhCN.audit.filters.since)
+    fireEvent.change(since, { target: { value: '2026-11-01T01:30' } })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+    )
+    await vi.waitFor(() => {
+      expect(seen.since).toBe('2026-11-01T05:30:00.000Z')
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'switch-display-zone' }),
+    )
+    // 05:30Z reads as 14:30 the same day in Tokyo. The applied instant is
+    // unchanged; the draft is regenerated from it, so the export still
+    // carries the instant the operator applied.
+    await vi.waitFor(() => {
+      expect(since).toHaveValue('2026-11-01T14:30')
+    })
+    const control = screen.getByRole('button', {
+      name: zhCN.audit.export.label,
+    })
+    expect(control).toBeEnabled()
+    await user.click(control)
+    await vi.waitFor(() => expect(exports).toHaveLength(1))
+    expect(exports[0]?.since).toBe('2026-11-01T05:30:00.000Z')
+  })
+
+  it('recomputes the unavailable marker against the new display zone', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({ listRecords: () => Promise.resolve(page([record])) }),
+    )
+    renderWithProviders(<ZoneSwitcher zones={['UTC', 'America/New_York']} />, {
+      operations,
+    })
+    await screen.findByText('tenant.create')
+    const since = screen.getByLabelText(zhCN.audit.filters.since)
+    // 02:30 exists as a wall clock in UTC, so nothing is flagged yet.
+    fireEvent.change(since, { target: { value: '2026-03-08T02:30' } })
+    expect(
+      screen.queryByText(zhCN.audit.filters.timeUnavailable),
+    ).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: 'switch-display-zone' }),
+    )
+    // The same reading falls in New York's spring-forward gap. The draft
+    // is not applied, so it survives the zone change and is re-checked.
+    expect(
+      await screen.findByText(zhCN.audit.filters.timeUnavailable),
+    ).toBeInTheDocument()
+    expect(since).toHaveAttribute('aria-invalid', 'true')
+    expect(since).toHaveValue('2026-03-08T02:30')
   })
 
   it('renders no time for a malformed timestamp', async () => {
@@ -446,7 +857,7 @@ describe('AuditPage', () => {
       new Intl.DateTimeFormat('zh-CN', {
         dateStyle: 'medium',
         timeStyle: 'long',
-        timeZone: 'UTC',
+        timeZone: TEST_TIME_ZONE,
       }).format(new Date(state!.state.dataUpdatedAt)),
     )
     const label = await within(header).findByText(expected)
@@ -620,7 +1031,7 @@ describe('AuditPage', () => {
       ).toBeNull()
     })
 
-    it('exports the applied filters, never the drafts or a page window', async () => {
+    it('gates the export on the applied filters, never on unapplied drafts', async () => {
       const user = userEvent.setup()
       const seen: AuditAdminRecordsExportParams[] = []
       const operations = createAdminOperations(
@@ -632,38 +1043,156 @@ describe('AuditPage', () => {
           },
         }),
       )
-      renderWithProviders(<AuditPage />, { operations })
+      renderWithProviders(<AuditPage />, {
+        operations,
+        timeZone: 'Asia/Tokyo',
+      })
       await screen.findByText('tenant.create')
       const control = screen.getByRole('button', {
         name: zhCN.audit.export.label,
       })
+      const since = screen.getByLabelText(zhCN.audit.filters.since)
+      const apply = screen.getByRole('button', {
+        name: zhCN.audit.filters.apply,
+      })
 
-      // A typed filter that was never applied does not reach the export.
-      await user.type(
-        screen.getByLabelText(zhCN.audit.filters.action),
-        'tenant.delete',
-      )
+      // Apply since=A. With the draft still showing A, the export goes out
+      // with the applied instant.
+      fireEvent.change(since, { target: { value: '2026-10-15T09:30' } })
+      await user.click(apply)
+      expect(control).toBeEnabled()
       await user.click(control)
       await vi.waitFor(() => expect(seen).toHaveLength(1))
-      expect(seen[0]).toEqual({})
+      expect(seen[0]).toEqual({ since: '2026-10-15T00:30:00.000Z' })
 
-      // Apply that filter, then change the drafts without applying again:
-      // the export carries the applied set, not the newer drafts.
-      await user.click(
-        screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+      // Changing the draft to C without applying makes the visible field
+      // disagree with the applied payload, so the export is refused: the
+      // operator sees the hint instead of exporting the older bound.
+      fireEvent.change(since, { target: { value: '2026-10-15T10:30' } })
+      expect(control).toBeDisabled()
+      expect(
+        screen.getByText(zhCN.audit.export.applyFirst),
+      ).toBeInTheDocument()
+      expect(control).toHaveAccessibleDescription(
+        `${zhCN.audit.export.note} ${zhCN.audit.export.applyFirst}`,
       )
-      await screen.findByText('tenant.create')
-      await user.clear(screen.getByLabelText(zhCN.audit.filters.action))
-      await user.type(
-        screen.getByLabelText(zhCN.audit.filters.action),
-        'tenant.remove',
-      )
+      fireEvent.click(control)
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(seen).toHaveLength(1)
+
+      // Applying C makes the draft and the payload agree again; the export
+      // now carries C.
+      await user.click(apply)
+      expect(control).toBeEnabled()
       await user.click(control)
       await vi.waitFor(() => expect(seen).toHaveLength(2))
-      expect(seen[1]).toEqual({ action: ['tenant.delete'] })
+      expect(seen[1]).toEqual({ since: '2026-10-15T01:30:00.000Z' })
       // An export is not a page: it carries no cursor and no page size.
       expect(seen[1]).not.toHaveProperty('cursor')
       expect(seen[1]).not.toHaveProperty('limit')
+
+      // Every draft field takes part in the gate, not only the time bounds:
+      // a set the toolbar shows and the applied payload does not is refused
+      // until it is applied.
+      for (const [label, value] of [
+        [zhCN.audit.filters.action, 'tenant.create'],
+        [zhCN.audit.filters.outcome, 'failed'],
+        [zhCN.audit.filters.actor, 'acc-1'],
+      ] as const) {
+        fireEvent.change(screen.getByLabelText(label), {
+          target: { value },
+        })
+        expect(control).toBeDisabled()
+        expect(
+          screen.getByText(zhCN.audit.export.applyFirst),
+        ).toBeInTheDocument()
+        await user.click(apply)
+        expect(control).toBeEnabled()
+      }
+    })
+
+    it('does not export while the since field holds a reading with no instant', async () => {
+      const user = userEvent.setup()
+      const seen: AuditAdminRecordsExportParams[] = []
+      const operations = createAdminOperations(
+        makeAdminBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: (params) => {
+            seen.push(params ?? {})
+            return Promise.resolve(new Blob([]))
+          },
+        }),
+      )
+      const { queryClient } = renderWithProviders(<AuditPage />, {
+        operations,
+        timeZone: 'America/New_York',
+      })
+      await screen.findByText('tenant.create')
+
+      // 02:30 local falls in the 2026-03-08 spring-forward gap: the field
+      // names no instant, so no read and no export may go out from it.
+      fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
+        target: { value: '2026-03-08T02:30' },
+      })
+      await user.click(
+        screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+      )
+      expect(
+        await screen.findByText(zhCN.audit.filters.timeUnavailable),
+      ).toBeInTheDocument()
+
+      const control = screen.getByRole('button', {
+        name: zhCN.audit.export.label,
+      })
+      expect(control).toBeDisabled()
+      expect(
+        screen.getByText(zhCN.audit.export.applyFirst),
+      ).toBeInTheDocument()
+      fireEvent.click(control)
+      // The export never runs without the lower bound the operator sees;
+      // wait for the query to go quiet so a stray request could surface.
+      await waitFor(() => expect(queryClient.isFetching()).toBe(0))
+      expect(seen).toHaveLength(0)
+    })
+
+    it('clears a previous export failure when a later apply is refused', async () => {
+      const user = userEvent.setup()
+      const operations = createAdminOperations(
+        makeAdminBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: () =>
+            Promise.reject({ status: 403, code: 'client.http.403' }),
+        }),
+      )
+      renderWithProviders(<AuditPage />, {
+        operations,
+        timeZone: 'America/New_York',
+      })
+      await screen.findByText('tenant.create')
+
+      await user.click(
+        screen.getByRole('button', { name: zhCN.audit.export.label }),
+      )
+      expect(
+        await screen.findByText(zhCN.errors.client.httpForbidden),
+      ).toBeInTheDocument()
+
+      // The old failure belongs to the export that already settled; a
+      // refused apply must not leave it standing beside the field error.
+      fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
+        target: { value: '2026-03-08T02:30' },
+      })
+      await user.click(
+        screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+      )
+      expect(
+        await screen.findByText(zhCN.audit.filters.timeUnavailable),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText(zhCN.errors.client.httpForbidden),
+      ).toBeNull()
     })
 
     it('saves the streamed export under its UTC instant', async () => {
@@ -722,7 +1251,7 @@ describe('AuditPage', () => {
           },
         }),
       )
-      renderWithProviders(<AuditPage />, { operations })
+      const { queryClient } = renderWithProviders(<AuditPage />, { operations })
       await screen.findByText('tenant.create')
       const control = screen.getByRole('button', {
         name: zhCN.audit.export.label,
@@ -733,7 +1262,10 @@ describe('AuditPage', () => {
       expect(control).toHaveAttribute('aria-busy', 'true')
 
       // A second activation while the first is in flight issues nothing.
+      // Let the queries go quiet first, so a stray call has had its chance
+      // to reach the backend before the count is asserted.
       fireEvent.click(control)
+      await waitFor(() => expect(queryClient.isFetching()).toBe(0))
       expect(calls).toBe(1)
 
       await act(async () => {

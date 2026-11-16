@@ -10,7 +10,24 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createTestQueryClient } from './render'
+import { TEST_BROWSER_TIME_ZONE } from '../../vitest.shared'
+import { TEST_TIME_ZONE, createTestQueryClient } from './render'
+
+describe('TEST_TIME_ZONE', () => {
+  it('is neither the terminal fallback nor the zone the suite actually runs in', () => {
+    // The zone is read from the engine rather than restated: comparing
+    // TEST_TIME_ZONE to TEST_BROWSER_TIME_ZONE alone is a comparison of
+    // two constants, which still holds when this suite's config stops
+    // pinning TZ and the process then runs in the host's zone. The first
+    // assertion is what fails when the pin is gone (GitHub's runners set
+    // TZ=UTC); the other two keep the default distinct from both tiers
+    // the display chain could reach by skipping the provider.
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(browserZone).toBe(TEST_BROWSER_TIME_ZONE)
+    expect(TEST_TIME_ZONE).not.toBe('UTC')
+    expect(TEST_TIME_ZONE).not.toBe(browserZone)
+  })
+})
 
 describe('createTestQueryClient', () => {
   it('writes the production read defaults out explicitly', () => {

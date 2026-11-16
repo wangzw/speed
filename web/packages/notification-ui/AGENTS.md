@@ -52,11 +52,12 @@ live stream through the assembled client's event-stream opener.
   the whitelist (`notification.bad_request`, `notification.message_not_found`,
   `notification.not_unsubscribable`, the session-lifecycle and transport
   codes) render `errors.unknown`, never a raw key.
-- **Times render through `@speed/i18n`'s `formatInstant`** in the current
-  UI language and the host's display time zone (`@speed/ui-kit`'s
-  `useDisplayTimeZone`); with no provider the zone chain falls to the
-  device's own zone, then UTC. A field the engine cannot parse renders
-  as-is.
+- **Times render through `@speed/ui-kit`'s `useFormatInstant`** in the
+  current UI language and the resolved display zone: the host's
+  `DisplayTimeZoneProvider` value when `Intl` accepts it, the browser's
+  zone when it is absent or unusable, then UTC. The surface never passes a
+  literal zone and never rebuilds the chain; a value the engine cannot
+  parse renders as its original text.
 - **Feature presence is the host's fact, carried by context.**
   `NotificationPresenceProvider` takes whether the preference matrix is
   served and which optional channels exist; the package reads no feature

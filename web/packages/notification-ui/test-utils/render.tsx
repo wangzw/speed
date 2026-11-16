@@ -21,6 +21,11 @@
  * Tests that exercise a language switch keep the returned instance and
  * act on it (await switchLanguage(i18n, 'en-US')); the provider's
  * 'languageChanged' subscription re-renders the tree.
+ *
+ * The tree renders under TestTimeZoneProvider, so a suite that names no
+ * zone formats times in the fixed TEST_TIME_ZONE instead of the
+ * machine's own -- a rendered time never depends on where the test runs.
+ * A case that exercises another zone passes `timeZone`.
  */
 
 import { render } from '@testing-library/react'
@@ -33,6 +38,7 @@ import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-ki
 import {
   createTestI18n,
   createTestQueryClient,
+  TestTimeZoneProvider,
 } from '@speed/test-utils/render'
 import type { RenderWithProvidersOptions } from '@speed/test-utils/render'
 import type { RenderWithProvidersResult as BaseResult } from '@speed/test-utils/render'
@@ -69,23 +75,25 @@ export function renderWithProviders(
   ui: ReactElement,
   options: RenderWithProvidersOptions = {},
 ): RenderWithProvidersResult {
-  const { language = 'zh-CN', i18n } = options
+  const { language = 'zh-CN', i18n, timeZone } = options
   const instance = i18n ?? createNotificationUiI18n(language)
   const queryClient = createTestQueryClient()
   const result = render(
-    <I18nextProvider i18n={instance}>
-      <AppThemeProvider i18n={instance}>
-        <QueryClientProvider client={queryClient}>
-          {/* The page heading the surfaces nest under: every axe scan in
-              the suite runs at the end of a behavioural test, and
-              page-has-heading-one needs a level-1 heading in the tree. */}
-          <TenantProvider tenantId={TEST_TENANT_ID}>
-            <h1>App</h1>
-            {ui}
-          </TenantProvider>
-        </QueryClientProvider>
-      </AppThemeProvider>
-    </I18nextProvider>,
+    <TestTimeZoneProvider timeZone={timeZone}>
+      <I18nextProvider i18n={instance}>
+        <AppThemeProvider i18n={instance}>
+          <QueryClientProvider client={queryClient}>
+            {/* The page heading the surfaces nest under: every axe scan in
+                the suite runs at the end of a behavioural test, and
+                page-has-heading-one needs a level-1 heading in the tree. */}
+            <TenantProvider tenantId={TEST_TENANT_ID}>
+              <h1>App</h1>
+              {ui}
+            </TenantProvider>
+          </QueryClientProvider>
+        </AppThemeProvider>
+      </I18nextProvider>
+    </TestTimeZoneProvider>,
   )
   return { ...result, i18n: instance, queryClient }
 }

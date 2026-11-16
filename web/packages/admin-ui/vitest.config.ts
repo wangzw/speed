@@ -17,7 +17,7 @@
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../scripts/speed-aliases.mjs'
-import { sharedTestOptions } from '../../vitest.shared.ts'
+import { sharedTestOptions, TEST_BROWSER_TIME_ZONE } from '../../vitest.shared.ts'
 
 export default defineConfig({
   resolve: {
@@ -26,5 +26,9 @@ export default defineConfig({
   test: sharedTestOptions({
     environment: 'jsdom',
     setupFiles: ['./test-utils/setup.ts'],
+    // The cases that render in a non-browser display zone need a browser
+    // zone that differs from the zone they pass; see
+    // TEST_BROWSER_TIME_ZONE.
+    env: { TZ: TEST_BROWSER_TIME_ZONE },
   }),
 })

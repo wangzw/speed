@@ -24,6 +24,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
 import { formatInstant } from '@speed/i18n'
+import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -97,11 +98,14 @@ function mount(
   options: {
     readonly returnPath?: string
     readonly profile?: Record<string, unknown>
+    /** The zone the host's DisplayTimeZoneProvider supplies; absent
+     * leaves the harness's fixed TEST_TIME_ZONE in place. */
+    readonly timeZone?: string
   } = {},
 ) {
-  // Every section that formats a time reads the profile for the account's
-  // stored zone; answer that read here unless the case wants a specific
-  // profile, so a case scripts only the calls it is about.
+  // The host resolves the account's stored zone and supplies it through
+  // the display context; answer the profile read here so a case scripts
+  // only the calls it is about.
   const rig = makeRealClientRig((call: RealCall) => {
     if (call.method === 'GET' && call.path === PROFILE_PATH) {
       return jsonResponse(200, options.profile ?? profileBody())
@@ -109,8 +113,17 @@ function mount(
     return respond(call)
   })
   rig.store.set('access-1')
+  const section = (
+    <MfaSection session={rig.session} returnPath={options.returnPath} />
+  )
   const rendered = renderWithProviders(
-    <MfaSection session={rig.session} returnPath={options.returnPath} />,
+    options.timeZone === undefined ? (
+      section
+    ) : (
+      <DisplayTimeZoneProvider timeZone={options.timeZone}>
+        {section}
+      </DisplayTimeZoneProvider>
+    ),
   )
   return { rig, ...rendered }
 }
@@ -1516,11 +1529,19 @@ describe('MfaSection', () => {
     ).toHaveLength(0)
   })
 
-  it('shows each row’s name and last use in the account time zone', async () => {
-    const timeZone = 'Asia/Shanghai'
+  it('shows each row’s name and last use in the host’s display time zone', async () => {
+    const timeZone = 'Asia/Tokyo'
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
     const lastUsed = formatInstant('2026-02-01T00:00:00Z', 'zh-CN', {
       timeZone,
     })
+    const browserLastUsed = formatInstant('2026-02-01T00:00:00Z', 'zh-CN', {
+      timeZone: browserZone,
+    })
+    // The host's zone differs from the browser's, so the assertions below
+    // discriminate the provider's effect: an implementation that ignored
+    // it and fell back to the browser zone would render the other string.
+    expect(lastUsed).not.toBe(browserLastUsed)
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['webauthn']))
@@ -1544,7 +1565,7 @@ describe('MfaSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    mount(respond, { profile: profileBody({ time_zone: timeZone }) })
+    mount(respond, { timeZone, profile: profileBody({ time_zone: timeZone }) })
 
     expect(await screen.findByText('Phone app')).toBeTruthy()
     expect(
@@ -1552,6 +1573,11 @@ describe('MfaSection', () => {
         zhCN.mfa.factor.lastUsedAt.replace('{{time}}', lastUsed),
       ),
     ).toBeTruthy()
+    expect(
+      screen.queryByText(
+        zhCN.mfa.factor.lastUsedAt.replace('{{time}}', browserLastUsed),
+      ),
+    ).toBeNull()
     // The unnamed row reads as its kind; the group heading is the only
     // other place that text appears.
     expect(screen.getAllByText(zhCN.mfa.factor.kind.webauthn)).toHaveLength(2)

@@ -36,13 +36,13 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
   primaryColumnMaxWidthSx,
   SectionCard,
+  useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
-import { formatInstant } from '@speed/i18n'
 import { identifierPrefix } from './internal/identifier-prefix.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { SelectorRow } from './internal/selector-row.js'
@@ -74,8 +74,9 @@ function assuranceKey(assurance: number): string {
 }
 
 export function SessionsPage() {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const formatTime = useFormatInstant()
 
   // The account the operator picked: choosing one issues its session read.
   const [selectedAccount, setSelectedAccount] = useState<AdminAccount | null>(
@@ -153,9 +154,7 @@ export function SessionsPage() {
         // actions out of a narrow container. The current-session mark
         // rides here rather than in the low-priority id column, so the
         // revoke-your-own-session warning is visible at every tier.
-        const formatted = formatInstant(session.created_at, i18n.language, {
-          timeZone: 'UTC',
-        })
+        const formatted = formatTime(session.created_at)
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
             <Typography
@@ -184,16 +183,14 @@ export function SessionsPage() {
       header: t('sessions.column.lastSeen'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (session) =>
-        formatInstant(session.last_seen_at, i18n.language, { timeZone: 'UTC' }),
+      cell: (session) => formatTime(session.last_seen_at),
     },
     {
       id: 'expires',
       header: t('sessions.column.expires'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (session) =>
-        formatInstant(session.expires_at, i18n.language, { timeZone: 'UTC' }),
+      cell: (session) => formatTime(session.expires_at),
     },
     {
       id: 'state',

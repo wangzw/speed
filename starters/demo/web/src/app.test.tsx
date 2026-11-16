@@ -16,6 +16,7 @@
  * apart.
  */
 
+import type { ReactNode } from 'react'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -46,13 +47,15 @@ import { renderDemoApp } from './test-utils/render.js'
 import { createBackend } from './a11y/backends.js'
 import { hasCoarsePointerTouchTarget } from './test-utils/emitted-css.js'
 import { mockMatchMedia } from './test-utils/matchMedia.js'
-import { AUTH_CALLBACK_PATH } from './routes.js'
+import { AUTH_CALLBACK_PATH, PASSWORD_RESET_PATH } from './routes.js'
+import { profileWithVerification } from './test-utils/profile.js'
 import {
   ANONYMOUS_SNAPSHOT,
   authenticatedSnapshot,
   createTestSession,
   readyFeatures,
 } from './test-utils/session.js'
+import { getAuthnProfileGetQueryKey } from './app-api/index.js'
 import {
   getCurrentTenant,
   initialThemePreset,
@@ -62,6 +65,38 @@ import {
 } from './chrome.js'
 import { PlatformPermissions } from './platform-permissions.js'
 import { clearSelfTenants, loadSelfTenants } from './tenant-self.js'
+
+/**
+ * The display time zone the app mounted, in render order. The provider carries
+ * a context and renders nothing, so the suite records the value the app hands
+ * it; the production provider still renders, so the surfaces below read the
+ * same context they read in the app.
+ */
+const displayTimeZones = vi.hoisted(() => ({
+  values: [] as (string | undefined)[],
+}))
+
+vi.mock('@speed/ui-kit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@speed/ui-kit')>()
+  const { createElement } = await import('react')
+  return {
+    ...actual,
+    DisplayTimeZoneProvider: ({
+      timeZone,
+      children,
+    }: {
+      readonly timeZone?: string
+      readonly children?: ReactNode
+    }) => {
+      displayTimeZones.values.push(timeZone)
+      return createElement(
+        actual.DisplayTimeZoneProvider,
+        { timeZone },
+        children,
+      )
+    },
+  }
+})
 
 /** The tenant the suite acts in: an identifier and the name the host has
  * recorded for it. The host now holds no default roster, so a case that
@@ -1885,5 +1920,109 @@ describe('a failed admin access read', () => {
     await waitFor(() =>
       expect(window.location.pathname).toBe('/account'),
     )
+  })
+})
+
+/**
+ * The display time zone the host hands the surfaces: the profile's stored
+ * zone, one value over both shells, and none for a visitor without a session.
+ * The formatting itself is the packages' business; this suite asserts the
+ * wiring the demo owns.
+ */
+describe('the display time zone', () => {
+  beforeEach(() => {
+    displayTimeZones.values.length = 0
+  })
+
+  /** A scripted backend whose profile carries the given stored zone. */
+  function backendWithTimeZone(zone: string) {
+    const backend = createBackend('data')
+    return <T,>(path: string, options?: RequestOptions): Promise<T> => {
+      if (path !== '/api/v1/auth/me') {
+        return backend<T>(path, options)
+      }
+      return backend<T>(path, options).then(
+        (body) =>
+          ({
+            ...(body as unknown as Record<string, unknown>),
+            time_zone: zone,
+          }) as T,
+      )
+    }
+  }
+
+  /** The value of the most recent render of the app's provider. */
+  function lastDisplayTimeZone(): string | undefined {
+    return displayTimeZones.values.at(-1)
+  }
+
+  it('carries the profile’s stored zone into the tenant and the admin shells', async () => {
+    bindRequestFn(backendWithTimeZone('Asia/Tokyo'))
+
+    const tenant = renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+    })
+    await waitFor(() => expect(lastDisplayTimeZone()).toBe('Asia/Tokyo'))
+    tenant.unmount()
+
+    // The admin area is the other shell over the same route table: the same
+    // profile value has to reach it.
+    displayTimeZones.values.length = 0
+    window.history.replaceState({}, '', '/admin/tenants')
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
+    expect(
+      await screen.findByRole('navigation', { name: tAdmin('shell.navLabel') }),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(lastDisplayTimeZone()).toBe('Asia/Tokyo'))
+  })
+
+  it('re-renders when the stored zone changes, and leaves an unset zone to the browser', async () => {
+    bindRequestFn(backendWithTimeZone('Asia/Tokyo'))
+    const { queryClient } = renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+    })
+    await waitFor(() => expect(lastDisplayTimeZone()).toBe('Asia/Tokyo'))
+
+    // A save on the account page writes the same profile key; the provider
+    // re-renders every surface below it.
+    act(() => {
+      queryClient.setQueryData(getAuthnProfileGetQueryKey(), {
+        ...profileWithVerification('none', ''),
+        time_zone: 'Europe/Berlin',
+      })
+    })
+    await waitFor(() => expect(lastDisplayTimeZone()).toBe('Europe/Berlin'))
+
+    // The empty string is the account's "no zone stored"; the host carries no
+    // value, so the formatting seam falls back to the browser's zone.
+    act(() => {
+      queryClient.setQueryData(getAuthnProfileGetQueryKey(), {
+        ...profileWithVerification('none', ''),
+        time_zone: '',
+      })
+    })
+    await waitFor(() => expect(lastDisplayTimeZone()).toBeUndefined())
+  })
+
+  it('reads no profile on an anonymous public page and leaves the zone to the browser', async () => {
+    const requested: string[] = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      requested.push(path)
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    window.history.replaceState({}, '', PASSWORD_RESET_PATH)
+    renderDemoApp()
+
+    // The public page renders before a session exists: the provider carries
+    // no value, and the disabled profile query spends no /me request.
+    expect(displayTimeZones.values.length).toBeGreaterThan(0)
+    expect(displayTimeZones.values.every((value) => value === undefined)).toBe(
+      true,
+    )
+    expect(requested).not.toContain('/api/v1/auth/me')
   })
 })

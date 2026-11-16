@@ -129,27 +129,31 @@ function Greeting() {
 The package carries the Intl-only helpers a surface formats timestamps and
 language labels with; it holds no display-zone state, so which zone a
 surface renders in stays the host's decision (a preferences store, a
-context provider, or an explicit `'UTC'`).
+display-time-zone context provider).
 
 ```ts
 import {
   formatInstant,
+  instantToWallClock,
   isSupportedTimeZone,
   languageDisplayName,
   resolveTimeZone,
+  wallClockToInstant,
 } from '@speed/i18n'
 
-resolveTimeZone(storedPreference) // stored when Intl accepts it, else device, else 'UTC'
+resolveTimeZone(storedPreference) // stored when Intl accepts it, else browser, else 'UTC'
 isSupportedTimeZone('Asia/Tokyo') // true; an unknown zone answers false, never throws
 formatInstant('2026-10-19T08:30:00Z', 'en-US', { timeZone: 'UTC' }) // medium date, short time
 formatInstant(Date.now(), 'en-US', { timeZone: 'UTC', style: 'long' }) // medium date, long time with zone name
+instantToWallClock('2026-10-19T08:30:00Z', 'Asia/Tokyo') // { year: 2026, month: 10, day: 19, hour: 17, minute: 30, second: 0 }
+wallClockToInstant({ year: 2026, month: 10, day: 19, hour: 17, minute: 30 }, 'Asia/Tokyo') // 2026-10-19T08:30:00.000Z
 languageDisplayName('zh-CN', 'en-US') // the language's name in the UI language
 languageDisplayName('en-US', 'en-US', ['zh-CN', 'en-US']) // 'English' -- no region name for a lone variant
 ```
 
 The display-timezone chain is three tiers, first usable one wins: the
 stored value the host resolved (an empty or whitespace-only value means
-"not chosen"), the device zone, then `'UTC'`. Every Intl construction is
+"not chosen"), the browser zone, then `'UTC'`. Every Intl construction is
 guarded: a value the engine rejects is skipped like an empty one, so one
 stale preference never crashes the page that renders a session list. The
 formatting styles map to one documented Intl pair each -- `short` (short
@@ -158,6 +162,17 @@ date and time), `medium` (medium date, short time; the default) and `long`
 per language, style and zone. A value that carries no instant (empty
 string, unparseable text, invalid `Date`, `NaN`) renders as the empty
 string, and so does a language the engine refuses.
+
+`instantToWallClock` and `wallClockToInstant` convert between a zone's wall
+clock and an instant, the pair a date-time input needs: the input carries a
+calendar-and-clock reading with no zone of its own, and the API carries an
+instant. Both are guarded and answer `null` for an unknown zone, an
+unparseable value, an out-of-range or fractional field, and a calendar
+overflow such as 31 February. The two daylight-saving shapes are
+deliberate: a reading inside a spring-forward gap never happens and answers
+`null`, while a reading inside a fall-back overlap denotes two instants and
+resolves to the earlier one, so the answer is deterministic. Resolution is
+whole-second, and a `WallClock`'s absent `second` reads as 0.
 
 `languageDisplayName` resolves through `Intl.DisplayNames` and falls back
 to the raw tag when the engine cannot name it, so a language picker never

@@ -58,10 +58,10 @@ import Skeleton from '@mui/material/Skeleton'
 import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import { usePermission } from '@speed/auth-core'
-import { formatInstant } from '@speed/i18n'
 import {
   ListSkeleton,
   SectionCard,
+  useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
@@ -199,8 +199,9 @@ export function TenantDetailPage({
   sections,
   aside,
 }: TenantDetailPageProps) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const formatTime = useFormatInstant()
   const tenant = operations.useTenant({ name })
   const setStatus = operations.useSetTenantStatus()
   // The status control reports through its own scope and region. The profile
@@ -321,9 +322,7 @@ export function TenantDetailPage({
             />
             <DefinitionRow
               label={t('tenantProfile.field.createdAt')}
-              value={formatInstant(settled.created_at, i18n.language, {
-                timeZone: 'UTC',
-              })}
+              value={formatTime(settled.created_at)}
             />
           </Box>
         </SectionCard>

@@ -52,6 +52,7 @@ import {
   LONG_TEXT_COLUMN_MAX_WIDTH,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
+  useFormatInstant,
 } from '@speed/ui-kit'
 import type { DataTableColumn, PageRefresh } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
@@ -61,7 +62,6 @@ import {
   isAccountObject,
 } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
-import { formatInstant } from '@speed/i18n'
 import { RefreshButton } from '@speed/ui-kit'
 import { RefreshStatus } from './internal/refresh-status.js'
 import { useAdminUiTranslation } from './internal/translation.js'
@@ -402,8 +402,9 @@ function DashboardWithAudit({
   readonly rootHref?: string
   readonly children?: ReactNode
 }) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const formatTime = useFormatInstant()
   const tenants = operations.useTenants()
   const records = operations.useAuditRecords({ limit: RECENT_LIMIT })
 
@@ -453,8 +454,7 @@ function DashboardWithAudit({
       id: 'time',
       header: t('dashboard.recent.column.time'),
       cellWrap: 'nowrap',
-      cell: (record) =>
-        formatInstant(record.occurred_at, i18n.language, { timeZone: 'UTC' }),
+      cell: (record) => formatTime(record.occurred_at),
     },
     {
       id: 'action',

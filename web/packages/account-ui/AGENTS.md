@@ -90,17 +90,17 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   `undefined` — the caller's error variant — and never as an empty list,
   so "no sessions" is only ever claimed for an answer that genuinely
   listed none.
-- **Display times carry the account's timezone chain, explicitly.**
-  Every timestamp a surface renders is formatted with an explicit
-  `timeZone` through `@speed/i18n`'s `formatInstant` — never Intl's
-  implicit process-local default, which would render one account
-  differently depending on which machine ran the code. The chain is the
-  stored `time_zone`, then the host's `DisplayTimeZoneProvider` context
-  (which replaces only the device tier), then the device zone, then UTC;
-  every candidate is validated through `isSupportedTimeZone`/
-  `resolveTimeZone`. The profile tier reads `GET /api/v1/auth/me`; the
-  query is shared and deduped across the sections by react-query, so
-  adding another time-rendering surface costs no extra request.
+- **Display times carry the host's resolved zone, explicitly.** Every
+  timestamp a surface renders is formatted with an explicit `timeZone`
+  through `@speed/i18n`'s `formatInstant` — never Intl's implicit
+  process-local default, which would render one account differently
+  depending on which machine ran the code. The zone comes from
+  `useAccountTimeZone`, a delegate of `@speed/ui-kit`'s
+  `useResolvedTimeZone`: the host's `DisplayTimeZoneProvider` value when
+  `Intl` accepts it, the browser's zone when it is absent or unusable,
+  then UTC. The host reads the account's stored `time_zone` and supplies
+  it through the provider; this package keeps no second chain and reads
+  no profile preference of its own.
 - **Every built-in string is bilingual and bundled.** All text renders
   from the `account-ui` namespace (`ACCOUNT_UI_NAMESPACE`, one
   `zh-CN.json` and one `en-US.json` under `src/locales/`, identical leaf
@@ -238,8 +238,8 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   removal alone. A passkey row shows its label (the kind name when the
   label is empty); an authenticator row shows the kind name alone, whatever
   label the list carries. Both show their last successful verification (a
-  row that has never passed one says so), through the same account timezone
-  chain as every other surface. The passkey row's trailing overflow menu
+  row that has never passed one says so), through the same display-time
+  entry as every other surface. The passkey row's trailing overflow menu
   holds rename and removal; the authenticator row offers removal alone. The
   inline editor puts its name field on a line of its own at the editor's
   text-column width, with the cancel-and-save action row beneath it closed

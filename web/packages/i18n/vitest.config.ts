@@ -5,8 +5,12 @@
  * coverage come from the workspace preset (web/vitest.shared.ts).
  */
 import { defineConfig } from 'vitest/config'
-import { sharedTestOptions } from '../../vitest.shared.ts'
+import { sharedTestOptions, TEST_BROWSER_TIME_ZONE } from '../../vitest.shared.ts'
 
 export default defineConfig({
-  test: sharedTestOptions(),
+  test: sharedTestOptions({
+    // The fallback-chain cases need a browser zone that differs from the
+    // terminal tier; see TEST_BROWSER_TIME_ZONE.
+    env: { TZ: TEST_BROWSER_TIME_ZONE },
+  }),
 })

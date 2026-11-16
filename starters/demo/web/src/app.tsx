@@ -68,7 +68,11 @@ import {
   organizationAdminOperations,
 } from '@speed/admin-ui'
 import { ProductShell } from '@speed/product-shell'
-import { useAppThemeMode, WriteFeedbackPageProvider } from '@speed/ui-kit'
+import {
+  DisplayTimeZoneProvider,
+  useAppThemeMode,
+  WriteFeedbackPageProvider,
+} from '@speed/ui-kit'
 import {
   presentDeclarations,
   RouteProvider,
@@ -254,35 +258,53 @@ export function DemoApp({
     clearSelfTenants()
     void loadSelfTenants()
   }, [authenticated, principalId, impersonating])
+  // The account's display time zone: every page renders its instants in it.
+  // The read is the profile one the admin gate and ColorModeSync already share
+  // -- one query key, one request -- and it is enabled only while the session
+  // is authenticated. The public surfaces (the invitation landing, the
+  // password reset) run before a session exists, so they must not spend a
+  // /me request; they also get no value, which leaves the formatting seam on
+  // the browser's own zone. An account that stored no zone (the empty string)
+  // takes the same path.
+  const profile = useAuthnProfileGet({ query: { enabled: authenticated } })
+  const storedTimeZone = authenticated ? (profile.data?.time_zone ?? '') : ''
+  const displayTimeZone = storedTimeZone === '' ? undefined : storedTimeZone
   return (
-    // The page's one feedback result: every write-feedback scope below
-    // this point clears its siblings' slots when it starts or settles a
-    // write, so the sign-in surface, the account panes, the admin pages
-    // and the impersonation banner never show two results at once.
-    <WriteFeedbackPageProvider>
-      <RouteProvider
-        table={routes}
-        fallback={(context: RouteContext) => <NotFoundPage path={context.path} />}
-        presence={presence}
-        pending={() => <RoutePresencePending />}
-        failed={() => <RoutePresenceFailed />}
-      >
-        {/* The identity-change action both areas report to: a start or end
-            swaps whose identity every cached row, the session, the attached
-            permission set, the current tenant and the live subscription
-            belong to (src/impersonation). */}
-        <IdentityChangeProvider>
-          {/* Above the shell switch: an accepted invitation and a departure
-              from an organization both announce a confirmation on their way
-              to the tenant home (inside the tenant frame) from a page that
-              unmounts on the way, so the confirmation has to outlive that
-              route change (src/app-notice.tsx). */}
-          <AppNoticeHost>
-            <AppFrame presence={presence} shellLayout={shellLayout} />
-          </AppNoticeHost>
-        </IdentityChangeProvider>
-      </RouteProvider>
-    </WriteFeedbackPageProvider>
+    // The display zone covers both shells: the admin area and the tenant area
+    // are two frames over one route table, and a viewer moving between them
+    // must not see the clock change.
+    <DisplayTimeZoneProvider timeZone={displayTimeZone}>
+      {/* The page's one feedback result: every write-feedback scope below
+          this point clears its siblings' slots when it starts or settles a
+          write, so the sign-in surface, the account panes, the admin pages
+          and the impersonation banner never show two results at once. */}
+      <WriteFeedbackPageProvider>
+        <RouteProvider
+          table={routes}
+          fallback={(context: RouteContext) => (
+            <NotFoundPage path={context.path} />
+          )}
+          presence={presence}
+          pending={() => <RoutePresencePending />}
+          failed={() => <RoutePresenceFailed />}
+        >
+          {/* The identity-change action both areas report to: a start or end
+              swaps whose identity every cached row, the session, the attached
+              permission set, the current tenant and the live subscription
+              belong to (src/impersonation). */}
+          <IdentityChangeProvider>
+            {/* Above the shell switch: an accepted invitation and a departure
+                from an organization both announce a confirmation on their way
+                to the tenant home (inside the tenant frame) from a page that
+                unmounts on the way, so the confirmation has to outlive that
+                route change (src/app-notice.tsx). */}
+            <AppNoticeHost>
+              <AppFrame presence={presence} shellLayout={shellLayout} />
+            </AppNoticeHost>
+          </IdentityChangeProvider>
+        </RouteProvider>
+      </WriteFeedbackPageProvider>
+    </DisplayTimeZoneProvider>
   )
 }
 

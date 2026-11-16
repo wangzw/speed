@@ -112,7 +112,6 @@ import { useForm } from 'react-hook-form'
 import type { SubmitHandler, UseFormReturn } from 'react-hook-form'
 import type { UseMutationResult } from '@tanstack/react-query'
 import { useStepUpGate } from '@speed/auth-core'
-import { formatInstant } from '@speed/i18n'
 import {
   ConfirmDialog,
   DataTable,
@@ -127,6 +126,7 @@ import {
   errorCodeOf,
   pageRefreshRead,
   primaryColumnMaxWidthSx,
+  useFormatInstant,
   usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -266,6 +266,7 @@ export function AccountsPage({
   attributeFields,
 }: AccountsPageProps = {}) {
   const { t, i18n } = useAdminUiTranslation()
+  const formatTime = useFormatInstant()
   // The paging footer is ui-kit's own footer, rendered by this page (see
   // the list card's footer): its wording stays in the ui-kit namespace the
   // host already registers beside this one.
@@ -810,9 +811,7 @@ export function AccountsPage({
         // The primary identity also carries the current-session mark:
         // this column never hides, so the safety hint survives every
         // tier instead of disappearing with the low-priority id column.
-        const formatted = formatInstant(row.created_at, i18n.language, {
-          timeZone: 'UTC',
-        })
+        const formatted = formatTime(row.created_at)
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
             <Typography
@@ -1514,7 +1513,8 @@ function AccountSecretsSection({
   readonly confirm: PendingConfirmState
   readonly onRevoke: (row: AdminAccountSecret) => Promise<void>
 }) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
+  const formatTime = useFormatInstant()
   const operations = useAdminOperations()
   const secrets = operations.useAccountSecrets({ id: accountId })
   const columns: DataTableColumn<AdminAccountSecret>[] = [
@@ -1541,7 +1541,7 @@ function AccountSecretsSection({
       cell: (row) =>
         row.expires_at === null
           ? t('accounts.secrets.neverExpires')
-          : formatInstant(row.expires_at, i18n.language, { timeZone: 'UTC' }),
+          : formatTime(row.expires_at),
     },
     {
       id: 'state',

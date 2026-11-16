@@ -15,6 +15,11 @@
  * Tests that exercise a language switch keep the returned instance and
  * act on it (await switchLanguage(i18n, 'en-US')); the provider's
  * 'languageChanged' subscription re-renders the tree.
+ *
+ * The tree renders under TestTimeZoneProvider, so a suite that names no
+ * zone formats times in the fixed TEST_TIME_ZONE instead of the
+ * machine's own -- a rendered time never depends on where the test runs.
+ * A case that exercises another zone passes `timeZone`.
  */
 
 import { render } from '@testing-library/react'
@@ -23,7 +28,7 @@ import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
 import { AppThemeProvider } from '@speed/ui-kit'
 import { UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
-import { createTestI18n } from '@speed/test-utils/render'
+import { createTestI18n, TestTimeZoneProvider } from '@speed/test-utils/render'
 import type { RenderWithProvidersOptions } from '@speed/test-utils/render'
 import type { RenderWithProvidersResult } from '@speed/test-utils/render'
 import { AUTH_UI_NAMESPACE, authUiResources } from '../src/resources.js'
@@ -42,12 +47,14 @@ export function renderWithProviders(
   ui: ReactElement,
   options: RenderWithProvidersOptions = {},
 ): RenderWithProvidersResult {
-  const { language = 'zh-CN', i18n } = options
+  const { language = 'zh-CN', i18n, timeZone } = options
   const instance = i18n ?? createAuthUiI18n(language)
   const result = render(
-    <I18nextProvider i18n={instance}>
-      <AppThemeProvider i18n={instance}>{ui}</AppThemeProvider>
-    </I18nextProvider>,
+    <TestTimeZoneProvider timeZone={timeZone}>
+      <I18nextProvider i18n={instance}>
+        <AppThemeProvider i18n={instance}>{ui}</AppThemeProvider>
+      </I18nextProvider>
+    </TestTimeZoneProvider>,
   )
   return { ...result, i18n: instance }
 }

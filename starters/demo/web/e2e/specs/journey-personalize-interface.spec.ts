@@ -47,6 +47,14 @@
  * -- is the browser's own rendering of that option, so these assertions
  * likewise do not depend on Node and Chromium sharing a CLDR snapshot.
  *
+ * The second test carries the stored zone across the shell switch: the
+ * operator sets Asia/Tokyo on its account, enters the console, and the audit
+ * page renders the sign-in it just recorded in that zone. The browser stays
+ * pinned to UTC, so a surface that fixed the display to UTC would show a
+ * different hour. The check mirrors the session row's: the rendered fields
+ * must match an instant of the sign-in window formatted in Asia/Tokyo
+ * (REQ-presentation-009).
+ *
  * REQ-account-004, REQ-account-034, REQ-account-058, REQ-presentation-005 and
  * REQ-presentation-006 are listed by the journey document but deliberately
  * absent from `@covers`: they describe a refused write, a cleared preference,
@@ -62,11 +70,17 @@
  * document's full list.
  */
 // @journey journey-personalize-interface.md
-// @covers REQ-account-003, REQ-account-033, REQ-presentation-003, REQ-presentation-004, REQ-presentation-007, REQ-presentation-008, REQ-presentation-010, REQ-presentation-030, REQ-security-022
+// @covers REQ-account-003, REQ-account-033, REQ-presentation-003, REQ-presentation-004, REQ-presentation-007, REQ-presentation-008, REQ-presentation-009, REQ-presentation-010, REQ-presentation-030, REQ-security-022
 import type { Locator, Page } from '@playwright/test'
 
-import { reviewMember } from '../fixtures/config'
+import { reviewMember, smsRolloutOperator } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
+import { waitForVerificationCode } from '../fixtures/log'
+import {
+  adminEntry,
+  openAccountMenu,
+  switchOrganization,
+} from '../helpers/account-menu'
 import {
   expandAccountRows,
   openAccountSection,
@@ -82,7 +96,7 @@ test.use({ seedMember: true })
 /** The interface language chosen by the journey; the browser starts en-US. */
 const CHOSEN_LOCALE: CopyLocale = 'zh-CN'
 
-/** The time zone chosen by the journey; the browser's device zone is UTC. */
+/** The time zone chosen by the journey; the browser zone is UTC. */
 const CHOSEN_ZONE = 'Asia/Tokyo'
 
 /**
@@ -272,6 +286,35 @@ function renderedInstantIn(
 }
 
 /**
+ * Whether `rendered` is exactly one of the window's instants rendered in
+ * `language` and `timeZone`.
+ *
+ * Used where the locale spells the month, so the numeric-field key above
+ * cannot describe the rendered string. The comparison runs the same Intl
+ * call the product makes; the window is a few seconds wide, so either side
+ * of a minute boundary is accepted.
+ */
+function renderedTimeIn(
+  rendered: string,
+  language: string,
+  timeZone: string,
+  from: number,
+  to: number,
+): boolean {
+  const formatter = new Intl.DateTimeFormat(language, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone,
+  })
+  for (let instant = from; instant <= to; instant += 1_000) {
+    if (formatter.format(instant) === rendered) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
  * The rendered activity instant of the current session row. The row is
  * located by its current-session marker so a change in row order cannot point
  * this at another device; a fresh session has no coalesced touch yet, so its
@@ -310,7 +353,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
   await test.step('the member signs in and opens the account settings page', async () => {
     // The precondition is an enabled, signed-in member with no stored
     // preference. The browser context is en-US/UTC, so the starting interface
-    // and device zone are the ones the journey moves away from.
+    // and browser zone are the ones the journey moves away from.
     signInFrom = Date.now() - CLOCK_SKEW_MS
     await accounts.signIn({
       identifier: reviewMember.username,
@@ -623,5 +666,171 @@ test('personalize-interface: the color mode applies at once, follows the device 
     await expect(colorModeSelect(page, 'en-US')).toHaveText(
       colorModeOptionLabel('system', 'en-US'),
     )
+  })
+})
+
+/** The admin shell's navigation landmark, named as the shell names it. */
+function adminNav(page: Page): Locator {
+  return page.getByRole('navigation', {
+    name: copy('adminUi', 'shell.navLabel'),
+    exact: true,
+  })
+}
+
+/** The standing "verify your address" notice for the given address. */
+function verificationBanner(page: Page, email: string): Locator {
+  return page.getByRole('region', {
+    name: `${copy('demo', 'verificationBanner.region')}: ${copy(
+      'demo',
+      'verificationBanner.pending',
+      { email },
+    )}`,
+    exact: true,
+  })
+}
+
+/** The account page's email-verification section. */
+function verificationSection(page: Page): Locator {
+  return page.getByRole('region', {
+    name: copy('accountUi', 'verification.title'),
+    exact: true,
+  })
+}
+
+test('personalize-interface: the chosen time zone drives times on every surface', async ({
+  demo,
+}) => {
+  const { page, server, accounts } = demo
+
+  // The window the operator's sign-in falls in: the audit page names that
+  // instant, and the rendered time must be its value in the account's zone.
+  let signInFrom = 0
+  let signInTo = 0
+
+  await test.step('the operator signs in, proves the account email and stores Asia/Tokyo', async () => {
+    signInFrom = Date.now() - CLOCK_SKEW_MS
+    // The seeded address is a contact, not a sign-in way: the account signs
+    // in by username, as the SMS-rollout journey does.
+    await accounts.signIn({
+      identifier: smsRolloutOperator.username,
+      password: smsRolloutOperator.password,
+    })
+    signInTo = Date.now() + CLOCK_SKEW_MS
+
+    // The seed writes the operator's address unproved, and the console admits
+    // only a proved account: the journey proves it the way a person does,
+    // through the standing notice and the code the review carrier received.
+    const banner = verificationBanner(page, smsRolloutOperator.identifier)
+    await expect(banner).toBeVisible()
+    const beforeCode = server.log.mark()
+    await banner
+      .getByRole('link', {
+        name: copy('demo', 'verificationBanner.verify'),
+        exact: true,
+      })
+      .click()
+    const section = verificationSection(page)
+    await expect(section).toBeVisible()
+    const codeField = section.getByLabel(
+      copy('accountUi', 'verification.codeLabel'),
+      { exact: true },
+    )
+    const { code } = await waitForVerificationCode(
+      server.log,
+      'mail',
+      smsRolloutOperator.identifier,
+      { after: beforeCode },
+    )
+    await codeField.fill(code)
+    await section
+      .getByRole('button', {
+        name: copy('accountUi', 'verification.verify'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByRole('region', {
+        name: copy('accountUi', 'verification.verifiedTitle'),
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(banner).toHaveCount(0)
+
+    await openAccountSection(page, 'preferences')
+    await expandAccountRows(page)
+    const preferences = preferencesSection(page, 'en-US')
+    const timeZone = timeZoneSelect(page, 'en-US')
+    await timeZone.click()
+    await page
+      .getByRole('option', { name: CHOSEN_ZONE, exact: true })
+      .click()
+    // The save confirmation lands first: the select shows the chosen value as
+    // soon as it is picked, but the audit page below must read the zone the
+    // server stored, not one whose write is still in flight.
+    await expect(
+      preferences.getByText(
+        copy(
+          'accountUi',
+          'preferences.timezone.saved',
+          { value: CHOSEN_ZONE },
+          'en-US',
+        ),
+        { exact: true },
+      ),
+    ).toBeVisible()
+    await expect(timeZone).toHaveText(CHOSEN_ZONE)
+  })
+
+  await test.step('the audit page renders the recorded sign-in in Asia/Tokyo', async () => {
+    // The admin entry is offered only while the platform's own organization
+    // is current.
+    await switchOrganization(page, 'system')
+    await openAccountMenu(page)
+    await adminEntry(page).click()
+    await expect(adminNav(page)).toBeVisible()
+
+    await adminNav(page)
+      .getByRole('link', {
+        name: copy('adminUi', 'audit.title'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('adminUi', 'audit.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // The writes this journey makes after signing in push the sign-in off
+    // the newest records, so the action filter brings it into view.
+    await page
+      .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
+      .fill('authn.login')
+    await page
+      .getByRole('button', {
+        name: copy('adminUi', 'audit.filters.apply'),
+        exact: true,
+      })
+      .click()
+
+    const table = page.getByRole('table')
+    const loginRow = table
+      .getByRole('link', { name: 'authn.login', exact: true })
+      .first()
+      .locator('xpath=ancestor::tr[1]')
+    await expect(loginRow).toBeVisible()
+    const timeCell = loginRow.getByRole('cell').first()
+    await expect(timeCell).toHaveText(/\d/)
+    const rendered = ((await timeCell.textContent()) ?? '').trim()
+
+    // The browser's own zone is UTC; a surface that ignored the stored zone
+    // would render the UTC hour instead of Tokyo's.
+    expect(
+      renderedTimeIn(rendered, 'en-US', CHOSEN_ZONE, signInFrom, signInTo),
+      `the audit time ${JSON.stringify(rendered)} is not the sign-in ` +
+        `instant in ${CHOSEN_ZONE}`,
+    ).toBe(true)
   })
 })

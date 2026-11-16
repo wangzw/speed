@@ -245,6 +245,11 @@ export {
   type DisplayTimeZoneProviderProps,
 } from './display-time-zone.js'
 export {
+  useFormatInstant,
+  useResolvedTimeZone,
+  type UseFormatInstantOptions,
+} from './use-format-instant.js'
+export {
   PhoneCountryDefaultProvider,
   usePhoneCountryDefault,
   type PhoneCountryDefaultProviderProps,

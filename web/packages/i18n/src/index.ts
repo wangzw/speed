@@ -34,6 +34,12 @@ export {
   resolveTimeZone,
   type FormatInstantOptions,
 } from './time.js'
+export {
+  instantToWallClock,
+  wallClockToInstant,
+  type WallClock,
+  type WallClockToInstantOptions,
+} from './wall-clock.js'
 export { languageDisplayName } from './language-name.js'
 export {
   DEFAULT_LANGUAGE,

@@ -22,16 +22,29 @@
  *   values are stated here rather than shared through that export.
  * - RenderWithProvidersOptions / RenderWithProvidersResult: the option
  *   and result shapes the harnesses extend (the shared options are the
- *   language and a caller-owned instance; the shared result carries the
- *   instance the tree renders with, so language-switch tests act on it
- *   and the provider's 'languageChanged' subscription re-renders the
- *   tree).
+ *   language, a caller-owned instance and the display time zone; the
+ *   shared result carries the instance the tree renders with, so
+ *   language-switch tests act on it and the provider's 'languageChanged'
+ *   subscription re-renders the tree).
+ * - TestTimeZoneProvider: the display-time-zone context a harness wraps
+ *   its tree in, defaulting to TEST_TIME_ZONE. A suite that says nothing
+ *   renders in a fixed zone instead of the machine's own, so a rendered
+ *   time does not depend on where the test runs.
  */
 
+import type { ReactNode } from 'react'
 import type { RenderResult } from '@testing-library/react'
 import { QueryClient } from '@tanstack/react-query'
 import { createI18n } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
+import { DisplayTimeZoneProvider } from '@speed/ui-kit'
+
+/** The zone a harness renders in unless it passes another one. It is
+ * neither the chain's terminal fallback (UTC) nor the browser zone the
+ * packages pin (TEST_BROWSER_TIME_ZONE): either value would let an
+ * implementation that skipped the provider pass every default
+ * expectation unnoticed. */
+export const TEST_TIME_ZONE = 'America/New_York'
 
 export interface RenderWithProvidersOptions {
   /** Start language of the fresh instance; defaults to zh-CN. */
@@ -42,6 +55,30 @@ export interface RenderWithProvidersOptions {
    * on the same instance throws by design).
    */
   readonly i18n?: I18nInstance
+  /**
+   * The display time zone the tree renders in; defaults to
+   * TEST_TIME_ZONE when the harness passes it to TestTimeZoneProvider.
+   */
+  readonly timeZone?: string
+}
+
+export interface TestTimeZoneProviderProps {
+  /** An IANA zone name; defaults to TEST_TIME_ZONE. */
+  readonly timeZone?: string
+  readonly children?: ReactNode
+}
+
+/** Wraps a harness's provider tree in the display-time-zone context, with
+ * the fixed default a suite gets when it names no zone. */
+export function TestTimeZoneProvider({
+  timeZone = TEST_TIME_ZONE,
+  children,
+}: TestTimeZoneProviderProps) {
+  return (
+    <DisplayTimeZoneProvider timeZone={timeZone}>
+      {children}
+    </DisplayTimeZoneProvider>
+  )
 }
 
 export interface RenderWithProvidersResult extends RenderResult {

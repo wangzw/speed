@@ -3,13 +3,14 @@
  * completion region.
  *
  * The update time renders only once a read has settled, in the active
- * language and explicitly in UTC with seconds and the zone name. The
- * `role="status"` region is mounted empty and fills when a refresh has
- * completed.
+ * language and the harness's default display zone, with seconds and the
+ * zone name. The `role="status"` region is mounted empty and fills when a
+ * refresh has completed.
  */
 
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { RefreshStatus } from './refresh-status.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -26,12 +27,12 @@ const EN = enUS.common as {
 
 const SETTLED_AT = Date.UTC(2026, 9, 15, 12, 0, 0)
 
-/** The long UTC form the label renders. */
+/** The long form the label renders in the harness's default zone. */
 function longTime(language: string): string {
   return new Intl.DateTimeFormat(language, {
     dateStyle: 'medium',
     timeStyle: 'long',
-    timeZone: 'UTC',
+    timeZone: TEST_TIME_ZONE,
   }).format(new Date(SETTLED_AT))
 }
 
@@ -49,7 +50,7 @@ describe('RefreshStatus', () => {
     { language: 'zh-CN', copy: ZH },
     { language: 'en-US', copy: EN },
   ])(
-    'formats the update time in $language with seconds and UTC',
+    "formats the update time in $language with seconds in the harness's default zone",
     ({ language, copy }) => {
       renderWithProviders(
         <RefreshStatus updatedAt={SETTLED_AT} announcements={0} />,

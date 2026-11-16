@@ -16,6 +16,7 @@ import type { FeatureName } from '@speed/api-sdk/features'
 import { DashboardPage } from './DashboardPage.js'
 import type { DashboardPageProps } from './DashboardPage.js'
 import { AdminFeatureProvider } from './internal/features.js'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { renderWithProviders } from '../test-utils/render.js'
 import type { RenderWithProvidersOptions } from '../test-utils/render.js'
 import {
@@ -601,7 +602,7 @@ describe('DashboardPage', () => {
       new Intl.DateTimeFormat('zh-CN', {
         dateStyle: 'medium',
         timeStyle: 'long',
-        timeZone: 'UTC',
+        timeZone: TEST_TIME_ZONE,
       }).format(new Date(oldest)),
     )
     const header = screen.getByRole('banner')

@@ -500,11 +500,12 @@ interface SessionsSectionProps {
 }
 ```
 
-Row times render through the account's time-zone chain: the stored
-profile `time_zone` wins, then the host's `DisplayTimeZoneProvider`
-context (which replaces only the device tier), then the device zone, then
-UTC. The formatter is `@speed/i18n`'s `formatInstant`, so the zone is
-always explicit and never the engine's process-local default.
+Row times render through the host's resolved display zone: the
+`DisplayTimeZoneProvider` value when `Intl` accepts it, the browser's zone
+when it is absent or unusable, then UTC. The host fills that provider from
+the account's stored `time_zone`; this package keeps no second chain. The
+formatter is `@speed/i18n`'s `formatInstant`, so the zone is always
+explicit and never the engine's process-local default.
 
 ## SocialBindingsSection
 
@@ -593,7 +594,7 @@ label but still starts that kind's own flow.
 Each row shows the name the server stored (the kind name when the label
 is empty), its status, its creation time and its last successful
 verification (a row that has never passed one says so); both times are
-formatted with the account's display-timezone chain.
+formatted through the shared display-time entry.
 
 - Enroll. The entry first shows a name form, prefilled with the
   browser/OS summary the session rows show and editable; an empty name is
@@ -750,8 +751,8 @@ is `test-utils/real-client.ts`, the render harness
 |---|---|---|
 | `@speed/auth-core` | dependency | the `AuthSession` type, the flow operations (`startAuthenticatedFlow`, `answerFlow`, `readFlow`), the shared `useStepUpGate`, the `./otpauth` parser and secret formatting, and the `./webauthn` passkey driver |
 | `@speed/api-sdk` | dependency | the generated react-query hooks, mutations and query-key constructors |
-| `@speed/ui-kit` | dependency | `ConfirmDialog`, `EmptyState`, `AsyncSection`, `InlineError`/`errorCodeOf`, `InlineSuccess`, `ListSkeleton`, `TotpEnrollmentPanel`, `useDisplayTimeZone`, `usePhoneCountryDefault` |
-| `@speed/i18n` | dependency | namespace registration, the translation hooks, `languageDisplayName`, `formatInstant`, `resolveTimeZone`/`isSupportedTimeZone` |
+| `@speed/ui-kit` | dependency | `ConfirmDialog`, `EmptyState`, `AsyncSection`, `InlineError`/`errorCodeOf`, `InlineSuccess`, `ListSkeleton`, `TotpEnrollmentPanel`, `useResolvedTimeZone`, `usePhoneCountryDefault` |
+| `@speed/i18n` | dependency | namespace registration, the translation hooks, `languageDisplayName`, `formatInstant` |
 | `@tanstack/react-query` | peer | the host's QueryClient and its hooks |
 | `react`, `react-dom`, `@mui/material`, `@emotion/*` | peer | the host's React/MUI tree |
 | `@speed/api-client` | devDependency | public types do not reference it; only the test fixtures bind a real client |

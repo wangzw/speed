@@ -3,7 +3,7 @@
  *
  * The views write `null` for "never" -- an impersonation still in force --
  * and may leave the field out entirely. Timestamp rendering itself is
- * @speed/i18n's `formatInstant` with an explicit UTC zone; this module
+ * ui-kit's `useFormatInstant` in the resolved display zone; this module
  * carries only the sentinel test, which must not go through a timezone
  * conversion.
  */

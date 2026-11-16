@@ -43,6 +43,7 @@ interface Row {
   readonly body: string
   read: boolean
   readonly link?: string
+  readonly createdAt?: string
 }
 
 function message(row: Row): Record<string, unknown> {
@@ -58,7 +59,7 @@ function message(row: Row): Record<string, unknown> {
     // null (its view's *time.Time has no omitempty), a read one as an
     // instant string.
     read_at: row.read ? '2026-08-01T02:00:00.000Z' : null,
-    created_at: '2026-08-01T01:00:00.000Z',
+    created_at: row.createdAt ?? '2026-08-01T01:00:00.000Z',
   }
 }
 
@@ -619,6 +620,19 @@ describe('NotificationInbox', () => {
     expect(
       screen.queryByText(formatInstant(instant, 'zh-CN', { timeZone: 'UTC' })),
     ).toBeNull()
+  })
+
+  it('renders an unparseable time as its original text', async () => {
+    mount([
+      {
+        id: 'm1',
+        title: 'One',
+        body: '',
+        read: false,
+        createdAt: 'not-a-timestamp',
+      },
+    ])
+    expect(await screen.findByText('not-a-timestamp')).toBeInTheDocument()
   })
 
   it('renders the empty placeholder when there are no messages', async () => {

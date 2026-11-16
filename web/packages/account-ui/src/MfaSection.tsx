@@ -120,9 +120,10 @@
  * carries a muted "disabled" marker. Every row shows
  * its name (the label, else the kind) and the instant it last passed a
  * verification, which says so when it has never passed one; the instant is
- * formatted with the account's timezone chain -- the stored preference, the
- * host's display-timezone context, the device zone, then UTC -- the same
- * chain every other surface uses. A row ends in its own actions -- rename
+ * formatted through the shared display-time entry (`useAccountTimeZone`,
+ * ui-kit's resolved zone) -- the host's resolved provider value, the
+ * browser's zone when unusable, then UTC -- the same entry every other
+ * surface uses. A row ends in its own actions -- rename
  * and removal when the row can be renamed, removal alone otherwise -- the
  * same direct row actions the identifiers surface uses.
  *

@@ -601,7 +601,8 @@
     "export": {
       "label": "Export",
       "busy": "Exporting…",
-      "note": "The export includes every record matching the applied filters, not just the current page."
+      "note": "The export includes every record matching the applied filters, not just the current page.",
+      "applyFirst": "The filters have unapplied changes. Apply them before exporting."
     },
     "column": {
       "time": "Time",
@@ -618,6 +619,8 @@
       "outcome": "Outcome filter",
       "actor": "Actor filter",
       "valuePlaceholder": "Comma- or space-separated",
+      "timeUnavailable": "This time doesn't exist in the current time zone. Choose another time.",
+      "timeOutOfRange": "This time is out of the accepted range. Check the date and time.",
       "apply": "Apply",
       "reset": "Reset"
     },
@@ -976,7 +979,7 @@
     "createSecret": {
       "labelLabel": "Label",
       "expiresLabel": "Expires",
-      "expiresHelper": "A time like 2027-01-31T09:00:00Z, or empty for no expiry",
+      "expiresHelper": "Enter a date and time with a time zone offset, for example 2027-01-31T09:00:00+08:00 for 9:00 a.m. Beijing time; a value ending in Z means UTC, for example 2027-01-31T01:00:00Z; leave empty for no expiry",
       "submit": "Create secret",
       "handedOver": "Service secret \"{{label}}\" (shown once):",
       "copy": "Copy service secret",

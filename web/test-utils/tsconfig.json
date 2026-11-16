@@ -17,7 +17,11 @@
       "@speed/api-sdk": ["../packages/api-sdk/src/index.ts"],
       "@speed/api-client": ["../packages/api-client/src/index.ts"],
       "@speed/auth-core": ["../packages/auth-core/src/index.ts"],
-      "@speed/i18n": ["../packages/i18n/src/index.ts"]
+      "@speed/i18n/mui-locale": ["../packages/i18n/src/mui-locale.ts"],
+      "@speed/i18n": ["../packages/i18n/src/index.ts"],
+      "@speed/theme-presets": ["../packages/theme-presets/src/index.ts"],
+      "@speed/tokens": ["../packages/tokens/src/index.ts"],
+      "@speed/ui-kit": ["../packages/ui-kit/src/index.ts"]
     }
   }
 }

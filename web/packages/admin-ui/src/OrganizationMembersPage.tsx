@@ -41,10 +41,10 @@ import {
   OneTimeValuePanel,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
+  useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
-import { formatInstant } from '@speed/i18n'
 import { AdminPageHeader } from './internal/page-header.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { AccountsIcon, InvitationsIcon } from './internal/icons.js'
@@ -261,6 +261,7 @@ export function OrganizationMembersPage({
 }: OrganizationMembersPageProps) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
+  const formatTime = useFormatInstant()
   const invitationLink = useAdminInvitationLink()
   const resolveErrorText = useAdminUiErrorText()
   const session = useAdminSession()
@@ -745,8 +746,7 @@ export function OrganizationMembersPage({
       // timestamp wraps at that floor instead of forcing the table wider.
       priority: 'high',
       cellWrap: 'wrap',
-      cell: (member) =>
-        formatInstant(member.joined_at, i18n.language, { timeZone: 'UTC' }),
+      cell: (member) => formatTime(member.joined_at),
     },
     {
       id: 'actions',
@@ -820,20 +820,14 @@ export function OrganizationMembersPage({
       // The timestamp wraps at that floor instead of forcing a scroll.
       priority: 'high',
       cellWrap: 'wrap',
-      cell: (invitation) =>
-        formatInstant(invitation.expires_at, i18n.language, {
-          timeZone: 'UTC',
-        }),
+      cell: (invitation) => formatTime(invitation.expires_at),
     },
     {
       id: 'created',
       header: t('invitations.column.created'),
       priority: 'high',
       cellWrap: 'wrap',
-      cell: (invitation) =>
-        formatInstant(invitation.created_at, i18n.language, {
-          timeZone: 'UTC',
-        }),
+      cell: (invitation) => formatTime(invitation.created_at),
     },
     {
       id: 'actions',
@@ -1151,11 +1145,7 @@ export function OrganizationMembersPage({
                     sx={{ display: 'block', mt: 0.5 }}
                   >
                     {t('invitations.issued.expiresAt', {
-                      time: formatInstant(
-                        issued.invitation.expires_at,
-                        i18n.language,
-                        { timeZone: 'UTC' },
-                      ),
+                      time: formatTime(issued.invitation.expires_at),
                     })}
                   </Typography>
                   <Typography

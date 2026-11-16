@@ -3,7 +3,7 @@
  *
  * The display-timezone chain, highest tier first: a stored preference the
  * host resolved (the profile's `time_zone` -- empty means "not chosen"),
- * the device's own timezone, then UTC as the terminal fallback. A stored
+ * the browser zone, then UTC as the terminal fallback. A stored
  * choice outranks the environment's guess, and the terminal tier closes the
  * chain so a renderer always has an explicit zone -- never the engine's
  * silent process-local default, which would make the same account render
@@ -43,12 +43,12 @@ export function isSupportedTimeZone(zone: string): boolean {
 }
 
 /**
- * The device's own IANA timezone, or null when the environment cannot
+ * The browser zone's IANA name, or null when the environment cannot
  * answer (an empty answer, an engine that refuses to construct). The read
  * is guarded for the same reason the chain guards its constructors: a
  * resolution failure must degrade to the next tier, never crash a render.
  */
-function deviceTimeZone(): string | null {
+function browserTimeZone(): string | null {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
     return zone === '' ? null : (zone ?? null)
@@ -59,7 +59,7 @@ function deviceTimeZone(): string | null {
 
 /**
  * Resolves the display timezone through the three-tier chain: the stored
- * value when present and accepted by the engine, else the device timezone
+ * value when present and accepted by the engine, else the browser zone
  * when the environment answers, else UTC. The returned value is always
  * usable as an `Intl.DateTimeFormat` `timeZone` option -- the chain's
  * guards have rejected everything the engine would refuse.
@@ -69,7 +69,7 @@ export function resolveTimeZone(stored?: string | null): string {
   if (preferred !== '' && isSupportedTimeZone(preferred)) {
     return preferred
   }
-  const device = deviceTimeZone()
+  const device = browserTimeZone()
   if (device !== null && isSupportedTimeZone(device)) {
     return device
   }

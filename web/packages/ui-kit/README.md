@@ -26,8 +26,9 @@ shared style recipes (`visuallyHiddenSx` for hidden elements,
 not reach). Beside them ship the refresh pair (`RefreshButton` +
 `usePageRefresh`), the clipboard and one-time-value pair (`CopyButton`,
 `OneTimeValuePanel`), the TOTP enrolment pair (`TotpQrCode`,
-`TotpEnrollmentPanel`) and the display-preference contexts
-(`DisplayTimeZoneProvider`, `PhoneCountryDefaultProvider`). Every
+`TotpEnrollmentPanel`), the display-preference contexts
+(`DisplayTimeZoneProvider`, `PhoneCountryDefaultProvider`) and the one
+time-formatting entry (`useFormatInstant` / `useResolvedTimeZone`). Every
 built-in user-facing
 string lives in the bilingual `ui-kit` namespace registered through
 `@speed/i18n` -- components never ship text in code, and the workspace's
@@ -66,6 +67,7 @@ reads no bundle of its own.
 | `components/TotpQrCode.tsx` | `TotpQrCode`, `TotpQrCodeProps` |
 | `components/TotpEnrollmentPanel.tsx` | `TotpEnrollmentPanel`, `TotpEnrollmentPanelProps`, `TotpEnrollmentParameter`, `TotpEnrollmentSecret` |
 | `display-time-zone.tsx` | `DisplayTimeZoneProvider`, `DisplayTimeZoneProviderProps`, `useDisplayTimeZone` |
+| `use-format-instant.ts` | `useFormatInstant`, `useResolvedTimeZone`, `UseFormatInstantOptions` |
 | `phone-country-default.tsx` | `PhoneCountryDefaultProvider`, `PhoneCountryDefaultProviderProps`, `usePhoneCountryDefault` |
 | `components/WriteFeedbackRegion.tsx` | `WriteFeedbackRegion`, `WriteFeedbackRegionProps` |
 | `write-feedback.ts` | `useWriteFeedback`, `WriteFeedback`, `WriteOutcome` |
@@ -1445,14 +1447,35 @@ validating it:
 
 - `DisplayTimeZoneProvider({ timeZone })` / `useDisplayTimeZone()` carry
   an IANA time zone name or `undefined`. The pure validators live in
-  `@speed/i18n`; rendering surfaces apply their own fallback (a device
-  zone, a stored preference) when the context is absent. The default is
-  `undefined`, so a tree without the provider is unchanged.
+  `@speed/i18n`; the context value reaches a timestamp through
+  `useFormatInstant` / `useResolvedTimeZone` below. The default is
+  `undefined`, so a tree without the provider renders in the browser's
+  zone.
 - `PhoneCountryDefaultProvider({ country })` / `usePhoneCountryDefault()`
   carry a preferred ISO alpha-2 starting country; the hook returns it
   when present and the existing `defaultPhoneCountry()` answer otherwise.
 
 Neither provider holds state: the host owns the value and re-renders.
+
+### Time formatting (useFormatInstant)
+
+`useFormatInstant()` returns the formatter a surface renders timestamps
+with: the resolved display zone and the active UI language.
+
+```tsx
+const formatInstant = useFormatInstant()
+formatInstant(session.last_seen_at) // medium date, short time
+formatInstant(session.expires_at, { style: 'long' })
+```
+
+The resolved zone is `resolveTimeZone(useDisplayTimeZone())` -- the
+provider value when `Intl` accepts it, else the browser's zone, else
+`UTC` -- so an unusable or absent value still renders in a defined zone.
+The returned function answers the empty string for a value that carries
+no instant, and never throws for a bad language or zone.
+`useResolvedTimeZone()` exposes that zone on its own, for a surface that
+interprets a wall clock (a date-time input) instead of formatting an
+instant.
 
 ### visuallyHiddenSx (the hidden-element recipe)
 

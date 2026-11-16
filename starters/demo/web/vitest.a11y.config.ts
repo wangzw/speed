@@ -14,6 +14,7 @@
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../../web/scripts/speed-aliases.mjs'
+import { TEST_BROWSER_TIME_ZONE } from '../../../web/vitest.shared.ts'
 
 export default defineConfig({
   resolve: {
@@ -22,6 +23,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-utils/setup.ts'],
+    // The sweep renders every route of the app, times included; pinning the
+    // browser zone keeps a rendered time independent of the runner, the
+    // same as the demo's unit leg (vitest.config.ts). See
+    // TEST_BROWSER_TIME_ZONE.
+    env: { TZ: TEST_BROWSER_TIME_ZONE },
     include: ['src/a11y/**/*.test.tsx'],
     // Vitest's own defaults are restated because naming `exclude` replaces
     // them rather than extending them. e2e/** is the Playwright tier and is

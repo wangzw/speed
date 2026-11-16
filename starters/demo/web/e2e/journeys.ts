@@ -408,6 +408,7 @@ export const journeys: readonly JourneyEntry[] = [
       'REQ-presentation-006',
       'REQ-presentation-007',
       'REQ-presentation-008',
+      'REQ-presentation-009',
       'REQ-presentation-010',
       'REQ-presentation-030',
       'REQ-security-022',

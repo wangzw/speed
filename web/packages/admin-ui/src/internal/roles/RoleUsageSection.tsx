@@ -17,8 +17,12 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { formatInstant } from '@speed/i18n'
-import { DataTable, ListSkeleton, PRIMARY_COLUMN_MAX_WIDTH } from '@speed/ui-kit'
+import {
+  DataTable,
+  ListSkeleton,
+  PRIMARY_COLUMN_MAX_WIDTH,
+  useFormatInstant,
+} from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import type {
   AdminTenantRole,
@@ -64,7 +68,8 @@ export function RoleUsageSection({
   onPrevious,
   onNext,
 }: RoleUsageSectionProps) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
+  const formatTime = useFormatInstant()
   const rows = bindings.data?.bindings
   const nextCursor = bindings.data?.next_cursor ?? ''
 
@@ -111,8 +116,7 @@ export function RoleUsageSection({
       header: t('permissions.usage.column.grantedAt'),
       priority: 'low',
       cellWrap: 'nowrap',
-      cell: (binding) =>
-        formatInstant(binding.granted_at, i18n.language, { timeZone: 'UTC' }),
+      cell: (binding) => formatTime(binding.granted_at),
     },
   ]
 

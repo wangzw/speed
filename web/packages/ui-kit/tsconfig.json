@@ -14,12 +14,18 @@
     // onto the siblings' sources. Emitted dist/ keeps the bare specifier,
     // which consumers resolve against the real published packages. Keep the
     // two patterns in lockstep with what src/ imports (the workspace alias
-    // suite pins this section against the shared package map).
+    // suite pins this section against the shared package map). The
+    // @speed/ui-kit entry is this package's own: the shared
+    // @speed/test-utils/render primitive imports the display time-zone
+    // provider by its published specifier, and this program compiles that
+    // source through test-utils/, so the specifier resolves here exactly as
+    // it does in every consumer's program.
     "paths": {
       "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
       "@speed/i18n": ["../i18n/src/index.ts"],
       "@speed/theme-presets": ["../theme-presets/src/index.ts"],
       "@speed/tokens": ["../tokens/src/index.ts"],
+      "@speed/ui-kit": ["./src/index.ts"],
       "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
       "@speed/test-utils/emitted-css": ["../../test-utils/src/emitted-css.ts"],
       "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],

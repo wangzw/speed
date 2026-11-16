@@ -22,6 +22,20 @@ import type { ViteUserConfig } from 'vitest/config'
 export type TestOptions = NonNullable<ViteUserConfig['test']>
 
 /**
+ * The browser time zone the packages that exercise the display-time-zone
+ * chain's middle tier pin. GitHub's runners set TZ=UTC, where "an absent
+ * or unusable preference falls to the browser zone" and "it falls to UTC"
+ * produce the same resolved zone and the same rendered time, so a test
+ * asserting the fallback cannot tell a correct implementation from one
+ * that skips the middle tier. A non-UTC zone makes the two outcomes
+ * distinguishable; the suites derive the expected zone from
+ * `Intl.DateTimeFormat().resolvedOptions()` at run time and assert it is
+ * not UTC, so a config that stopped pinning this value fails loudly
+ * instead of passing vacuously.
+ */
+export const TEST_BROWSER_TIME_ZONE = 'Asia/Shanghai'
+
+/**
  * Coverage: v8 over src/** only, so aliased sibling sources never count
  * toward a package's numbers; text-summary for the console and json-summary
  * for a machine-readable total beside it. The floors are 80% statements and

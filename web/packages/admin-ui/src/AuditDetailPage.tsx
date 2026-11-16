@@ -35,14 +35,17 @@ import { useMemo } from 'react'
 import Box from '@mui/material/Box'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { ListSkeleton, SectionCard } from '@speed/ui-kit'
+import {
+  ListSkeleton,
+  SectionCard,
+  useFormatInstant,
+} from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
 import {
   AccountIdentity,
   auditDetailNamesAccount,
   AuditObjectIdentity,
 } from './internal/account-identity.js'
-import { formatInstant } from '@speed/i18n'
 import { AdminLink } from './internal/navigation.js'
 import { DefinitionRow, DetailLayout } from './internal/layout.js'
 import { RefreshButton } from '@speed/ui-kit'
@@ -59,8 +62,9 @@ export interface AuditDetailPageProps {
 }
 
 export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
+  const formatTime = useFormatInstant()
   const record = operations.useAuditRecord({ id })
 
   // The detail map's entries, in a stable order, so the rendered list does
@@ -87,9 +91,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
   ]
 
   const main = (settled: AdminAuditRecord) => {
-    const occurred = formatInstant(settled.occurred_at, i18n.language, {
-      timeZone: 'UTC',
-    })
+    const occurred = formatTime(settled.occurred_at)
     return (
       <SectionCard title={t('auditDetail.summary')}>
         <Box component="dl" sx={{ margin: 0 }}>

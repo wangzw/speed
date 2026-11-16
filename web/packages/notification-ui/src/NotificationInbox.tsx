@@ -56,14 +56,13 @@ import {
   PageLayout,
   SectionCard,
   WriteFeedbackRegion,
-  useDisplayTimeZone,
+  useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type {
   EmptyStateHeadingLevel,
   SectionCardHeadingLevel,
 } from '@speed/ui-kit'
-import { formatDateTime } from './internal/datetime.js'
 import { useNotificationUiErrorText } from './internal/error-text.js'
 import { TenantAsyncSection } from './internal/tenant-section.js'
 import {
@@ -125,8 +124,7 @@ export function NotificationInbox({
   variant = 'page',
   headingLevel = 'h2',
 }: NotificationInboxProps = {}) {
-  const { t, i18n } = useNotificationUiTranslation()
-  const timeZone = useDisplayTimeZone()
+  const { t } = useNotificationUiTranslation()
   // The page index belongs to the list context it was chosen in: when the
   // host changes the group or page size, the new list is read from its
   // first page during this very render, so no request goes out at the
@@ -278,8 +276,6 @@ export function NotificationInbox({
               <NotificationRow
                 key={message.id}
                 message={message}
-                locale={i18n.language}
-                timeZone={timeZone}
                 markReadDisabled={writePending}
                 onMarkRead={() => markOneRead(message)}
                 onOpen={
@@ -348,22 +344,19 @@ export function NotificationInbox({
  * row's activation control. */
 function NotificationRow({
   message,
-  locale,
-  timeZone,
   markReadDisabled,
   onMarkRead,
   onOpen,
   renderDetail,
 }: {
   readonly message: NotificationMessage
-  readonly locale: string
-  readonly timeZone: string | undefined
   readonly markReadDisabled: boolean
   readonly onMarkRead: () => void
   readonly onOpen: (() => void) | undefined
   readonly renderDetail: ((message: NotificationMessage) => ReactNode) | undefined
 }) {
   const { t } = useNotificationUiTranslation()
+  const formatInstant = useFormatInstant()
   const unread = isUnread(message)
   return (
     <ListItem
@@ -453,7 +446,7 @@ function NotificationRow({
                 color="text.secondary"
                 sx={{ display: 'block', mt: 0.5 }}
               >
-                {formatDateTime(message.created_at, locale, timeZone)}
+                {formatInstant(message.created_at) || message.created_at}
               </Typography>
             </>
           }

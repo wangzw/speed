@@ -36,7 +36,8 @@ transport), the clipboard and hand-off pair (`CopyButton`,
 `TotpEnrollmentPanel`, both fed by values the host parsed and translated),
 the display-preference contexts
 (`DisplayTimeZoneProvider` / `useDisplayTimeZone` and
-`PhoneCountryDefaultProvider` / `usePhoneCountryDefault`) and the shared
+`PhoneCountryDefaultProvider` / `usePhoneCountryDefault`), the
+time-formatting entry (`useFormatInstant` / `useResolvedTimeZone`) and the shared
 state primitives (`errorCodeOf`, `httpStatusOf`, the
 `visuallyHiddenSx` clip recipe, and the `touchTargetSx` recipe as the
 fallback floor for interactive elements the theme does not reach). `FileUploader` is no carve-out: the queue renders from
@@ -146,6 +147,17 @@ plumbing and deliberately not exported.
   the host passes its own handles. The same rule keeps `httpStatusOf`
   structural: it reads `status` / `client.http.<n>` and never imports
   the transport.
+
+- **A timestamp renders through `useFormatInstant`, never a fixed zone.**
+  The hook resolves `DisplayTimeZoneProvider`'s value through
+  `@speed/i18n`'s chain (provider value, then browser zone, then UTC) and
+  formats in the active UI language, so an account's display choice and a
+  language switch both reach the rendered time. A surface that needs the
+  zone itself -- a date-time input that interprets a wall clock -- reads
+  `useResolvedTimeZone()`; it never rebuilds the chain and never passes a
+  literal zone to `formatInstant`. A surface package that exposes the zone
+  under its own name delegates to `useResolvedTimeZone()`; it is not a
+  second chain.
 
 - **New display/preference props default to their previous behaviour.**
   `AsyncSection.refusedState`, `DataTable.ariaLabel` /

@@ -14,9 +14,9 @@
  * flight; and the settled states split -- an answer listing zero sessions renders
  * the empty state, a load that failed (and an answer omitting the
  * sessions key) renders the error state with a retry. The display-timezone
- * cases pin the chain: a stored profile time zone outranks the host's
- * display-timezone context, and with no stored preference the context
- * replaces the device tier.
+ * cases pin the single resolved tier: the host supplies the account's
+ * stored choice through DisplayTimeZoneProvider, the section renders that
+ * value, and with no provider the harness's fixed TEST_TIME_ZONE applies.
  */
 
 import { useState } from 'react'
@@ -36,6 +36,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { SessionsSection } from './SessionsSection.js'
@@ -119,13 +120,9 @@ function rowDetail(address: string, time: string): string {
     .replace('{{time}}', time)
 }
 
-/** The instant rendered in `zone` (the engine's own zone when absent). */
-function renderedInstant(instant: string, zone?: string): string {
-  return formatInstant(
-    instant,
-    'zh-CN',
-    zone === undefined ? {} : { timeZone: zone },
-  )
+/** The instant rendered in `zone`; the harness's fixed zone when absent. */
+function renderedInstant(instant: string, zone: string = TEST_TIME_ZONE): string {
+  return formatInstant(instant, 'zh-CN', { timeZone: zone })
 }
 
 /** The default row's sign-in instant rendered in `zone`. */
@@ -137,8 +134,8 @@ function renderedIn(zone?: string): string {
  * A zone whose rendering of the row's instant reads differently from
  * `reference`. Picking it from the rendering, not from the zone name,
  * keeps the assertion able to tell the two apart on any machine (two
- * zone names can share an offset at one instant, and the device's own
- * zone is whatever the test host happens to set).
+ * zone names can share an offset at one instant, and the browser zone is
+ * whatever the test host happens to set).
  */
 function zoneRenderingDifferentlyFrom(reference: string): string {
   const zone = [
@@ -288,11 +285,13 @@ describe('SessionsSection', () => {
     await expectNoAxeViolations()
   })
 
-  it('prefers the profile timezone over the host display timezone', async () => {
-    // The chain's top tier: a stored preference outranks the host's
-    // display-timezone context. The two zones are chosen by their
-    // rendering of this instant, so the expected text cannot coincide
-    // with the other tier's (or with the device's own zone).
+  it('renders in the host display timezone, not the profile’s stored zone', async () => {
+    // The host owns the resolution: it reads the account's stored choice
+    // and supplies it through DisplayTimeZoneProvider. The section renders
+    // that value and keeps no second chain over the profile, so a stored
+    // zone the host did not provide has no effect here. The two zones are
+    // chosen by their rendering of this instant, so the expected text
+    // cannot coincide with the other's.
     const storedZone = zoneRenderingDifferentlyFrom(renderedIn())
     const hostZone = zoneRenderingDifferentlyFrom(renderedIn(storedZone))
     const respond: RealResponder = (call: RealCall) => {
@@ -314,18 +313,48 @@ describe('SessionsSection', () => {
     )
 
     expect(
-      await screen.findByText(rowDetail('198.51.100.4', renderedIn(storedZone))),
+      await screen.findByText(rowDetail('198.51.100.4', renderedIn(hostZone))),
     ).toBeTruthy()
-    // The host context did not replace the stored tier.
+    // The profile's stored zone is not a second source of truth.
     expect(
-      screen.queryByText(rowDetail('198.51.100.4', renderedIn(hostZone))),
+      screen.queryByText(rowDetail('198.51.100.4', renderedIn(storedZone))),
     ).toBeNull()
   })
 
-  it('falls back to the host display timezone when the profile stores none', async () => {
-    // The context replaces only the device tier: with no stored
-    // preference, rows render in the host's zone, not the device's.
-    const hostZone = zoneRenderingDifferentlyFrom(renderedIn())
+  it('renders the harness’s fixed zone when the host supplies none', async () => {
+    // With no provider the tree renders in TestTimeZoneProvider's fixed
+    // zone, and the profile's stored zone still does not reach the row:
+    // the account surfaces read the host's resolved value only.
+    const storedZone = zoneRenderingDifferentlyFrom(renderedIn())
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return jsonResponse(200, { time_zone: storedZone })
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [session({ id: 'session-2', user_agent: '' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+
+    expect(
+      await screen.findByText(rowDetail('198.51.100.4', renderedIn())),
+    ).toBeTruthy()
+    expect(
+      screen.queryByText(rowDetail('198.51.100.4', renderedIn(storedZone))),
+    ).toBeNull()
+  })
+
+  it('renders in the browser zone when the account’s time zone is empty', async () => {
+    // The host forwards an unset account preference to the provider as an
+    // empty value, overriding the harness's fixed zone. The section must
+    // land on the browser's zone, not the terminal UTC tier. The suite's
+    // vitest config pins a non-UTC browser zone so the two differ.
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(browserZone).not.toBe('UTC')
+    expect(renderedIn(browserZone)).not.toBe(renderedIn('UTC'))
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -339,17 +368,18 @@ describe('SessionsSection', () => {
     }
     mountSection(
       respond,
-      <DisplayTimeZoneProvider timeZone={hostZone}>
+      <DisplayTimeZoneProvider timeZone="">
         <SessionsSection />
       </DisplayTimeZoneProvider>,
     )
 
     expect(
-      await screen.findByText(rowDetail('198.51.100.4', renderedIn(hostZone))),
+      await screen.findByText(
+        rowDetail('198.51.100.4', renderedIn(browserZone)),
+      ),
     ).toBeTruthy()
-    // The device tier was not consulted while the host supplied a zone.
     expect(
-      screen.queryByText(rowDetail('198.51.100.4', renderedIn())),
+      screen.queryByText(rowDetail('198.51.100.4', renderedIn('UTC'))),
     ).toBeNull()
   })
 

@@ -48,7 +48,6 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { formatInstant } from '@speed/i18n'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
@@ -59,6 +58,7 @@ import {
   ConfirmDialog,
   httpStatusOf,
   SectionCard,
+  useFormatInstant,
   useWriteFeedback,
   WriteFeedbackRegion,
 } from '@speed/ui-kit'
@@ -157,8 +157,9 @@ export function TenantOwnership({
   onTenantUpdated,
   onOrganizationLeft,
 }: TenantOwnershipProps): ReactElement | null {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
+  const formatTime = useFormatInstant()
   const snapshot = useAuthState()
   const request = operations.useTenantOwnerRequest()
   const cancel = operations.useTenantOwnerCancel()
@@ -397,16 +398,12 @@ export function TenantOwnership({
             </Typography>
             <Typography variant="body2">
               {t('tenantProfile.ownership.pending.requested', {
-                requested: formatInstant(pending.requested_at, i18n.language, {
-                  timeZone: 'UTC',
-                }),
+                requested: formatTime(pending.requested_at),
               })}
             </Typography>
             <Typography variant="body2">
               {t('tenantProfile.ownership.pending.expires', {
-                expires: formatInstant(pending.expires_at, i18n.language, {
-                  timeZone: 'UTC',
-                }),
+                expires: formatTime(pending.expires_at),
               })}
             </Typography>
           </Box>

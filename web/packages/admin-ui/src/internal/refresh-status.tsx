@@ -4,8 +4,8 @@
  *
  * The update time is static text before the refresh control: the oldest
  * successful settle time among the page's body reads, formatted in the
- * active language and explicitly in UTC with seconds and the zone name. It
- * renders nothing until a read has settled.
+ * active language and the resolved display zone with seconds and the zone
+ * name. It renders nothing until a read has settled.
  *
  * The announcement is one visually hidden `role="status"` region mounted
  * with the page. It is emptied when the refresh action is clicked and
@@ -16,8 +16,7 @@
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import { formatInstant } from '@speed/i18n'
-import { visuallyHiddenSx } from '@speed/ui-kit'
+import { useFormatInstant, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './translation.js'
 
 export type RefreshStatusProps = {
@@ -32,16 +31,14 @@ export function RefreshStatus({
   updatedAt,
   announcements,
 }: RefreshStatusProps) {
-  const { t, i18n } = useAdminUiTranslation()
+  const { t } = useAdminUiTranslation()
+  const formatTime = useFormatInstant()
   return (
     <>
       {updatedAt === undefined ? null : (
         <Typography component="span" variant="body2" color="text.secondary">
           {t('common.updatedAt', {
-            time: formatInstant(updatedAt, i18n.language, {
-              timeZone: 'UTC',
-              style: 'long',
-            }),
+            time: formatTime(updatedAt, { style: 'long' }),
           })}
         </Typography>
       )}

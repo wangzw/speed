@@ -40,6 +40,7 @@ import type {
   AdminTenantPermission,
   AdminTenantRole,
 } from './organization-operations.js'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   createAdminOperations,
@@ -388,6 +389,7 @@ function renderPage(
   options: {
     readonly language?: string
     readonly defaultMode?: 'light' | 'dark' | 'system'
+    readonly timeZone?: string
   } = {},
 ) {
   return renderWithProviders(
@@ -512,7 +514,7 @@ describe('the page structure', () => {
     ).toBeInTheDocument()
     expect(
       within(row).getByText(
-        formatInstant(ADA.joined_at, 'zh-CN', { timeZone: 'UTC' }),
+        formatInstant(ADA.joined_at, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
       ),
     ).toBeInTheDocument()
     // The two columns are ordinary row information, not fine-print detail.
@@ -521,6 +523,22 @@ describe('the page structure', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByRole('columnheader', { name: zhCN.members.column.joinedAt }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the joined-at time in the display zone, not the browser zone', async () => {
+    const { backend } = scripted()
+    renderPage(backend, { timeZone: 'Asia/Tokyo' })
+
+    const row = rowOf(await screen.findByText(ADA.display_name))
+    expect(
+      within(row).getByText(
+        new Intl.DateTimeFormat('zh-CN', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'Asia/Tokyo',
+        }).format(new Date(ADA.joined_at)),
+      ),
     ).toBeInTheDocument()
   })
 

@@ -30,9 +30,11 @@
  *
  * The screen's titles render as `headingLevel` (default h1, the screen
  * normally being the page), and the accepted confirmation and the proof step
- * take the level one below. The expiry renders in the host's display time
- * zone when one is provided (ui-kit's display-time-zone context), else the
- * device zone.
+ * take the level one below. The expiry renders through ui-kit's
+ * `useFormatInstant`: the host's display time zone when the provider supplies
+ * a usable one, the browser's zone when it does not, and UTC as the last
+ * resort. The line is never hidden -- an unusable zone is resolved, not
+ * dropped.
  *
  * The read's view is judged before it is shown: the acceptView contract
  * returns the stored state even when the link can no longer be redeemed, so a
@@ -54,8 +56,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
-import { formatInstant } from '@speed/i18n'
-import { errorCodeOf, useDisplayTimeZone, visuallyHiddenSx } from '@speed/ui-kit'
+import { errorCodeOf, useFormatInstant, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { RetryAction } from './internal/retry-action.js'
@@ -168,10 +169,11 @@ export function AcceptInvitationScreen({
   onProveEmail,
   headingLevel = 'h1',
 }: AcceptInvitationScreenProps) {
-  const { t, i18n } = useAuthUiTranslation()
-  // The host's display time zone when one is provided; absent, the device
-  // zone (the same rendering as before the provider existed).
-  const timeZone = useDisplayTimeZone()
+  const { t } = useAuthUiTranslation()
+  // The resolved display zone: the host's when usable, the browser's when
+  // not, UTC as the last resort. The formatter never receives an unusable
+  // zone, so the expiry line always has a value.
+  const formatInstant = useFormatInstant()
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<ScreenState>({ status: 'loading' })
   const [accepting, setAccepting] = useState(false)
@@ -295,9 +297,7 @@ export function AcceptInvitationScreen({
   // the proof step or the acceptance confirmation.
   const { invitation } = state
   const accepted = state.status === 'accepted'
-  const expiry = formatInstant(invitation.expiresAt, i18n.language, {
-    timeZone,
-  })
+  const expiry = formatInstant(invitation.expiresAt)
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       <Typography component={headingLevel} variant="h5">
@@ -309,10 +309,9 @@ export function AcceptInvitationScreen({
       <Typography color="text.secondary">
         {t('acceptInvitation.email', { email: invitation.email })}
       </Typography>
-      {/* The host's display zone is unvalidated, and the shared
-          formatter degrades a zone the engine rejects to an empty
-          string: an empty result means no expiry line, never a dated
-          label with no value beside it. */}
+      {/* A deadline the formatter cannot resolve has no text of its own:
+          the line renders only when it produced one. An unusable host zone
+          is not this case, since the formatter resolves it first. */}
       {expiry !== '' && (
         <Typography color="text.secondary">
           {t('acceptInvitation.expires', { expires: expiry })}

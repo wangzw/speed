@@ -457,8 +457,18 @@ request body.
   from `@speed/auth-core/webauthn` and the `otpauth://` parser from
   `@speed/auth-core/otpauth`; the step-up gate from `@speed/auth-core`
   (called with `session.isStepUpShortfall` as the discriminator); instant
-  formatting from `@speed/i18n`'s `formatInstant`, fixed to UTC. This
-  package keeps no copy of any of them.
+  formatting from `@speed/ui-kit`'s `useFormatInstant`, which resolves the
+  display time zone (host provider, then browser zone, then UTC) and the
+  active language, never a literal zone at the call site. The
+  `src/internal/display-time-zone-guard.test.ts` suite scans every
+  package's `src` and the demo host's `src` (tests and the demo harness
+  excluded) and fails on a zone literal or a name bound to one in a
+  `timeZone` value or attribute, a raw `formatInstant` called without a
+  zone, `toLocale*String`, a bare `Intl.DateTimeFormat`, or a literal zone
+  passed to `instantToWallClock`/`wallClockToInstant`; only `@speed/i18n`'s
+  `time.ts` and `wall-clock.ts` and `@speed/ui-kit`'s
+  `use-format-instant.ts` are exempt. This package keeps no copy of any of
+  them.
 - **The step renderer has two siblings.** `src/internal/flow-step.tsx` is
   one of three copies (`auth-ui`, `account-ui`, `admin-ui`) kept in
   lockstep by hand: a change to how a step renders lands in all three in

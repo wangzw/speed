@@ -43,8 +43,9 @@ whole map.
 
 This package's own `@speed` imports (the session harness drives
 `@speed/auth-core` sessions over `@speed/api-client` and the
-`@speed/api-sdk` runtime seam; the render layer builds on `@speed/i18n`)
-resolve through the same alias map and resolve in `tsc` through this
+`@speed/api-sdk` runtime seam; the render layer builds on `@speed/i18n`
+and on `@speed/ui-kit`'s display-time-zone provider) resolve through the
+same alias map and resolve in `tsc` through this
 package's `paths`, and are deliberately **not** declared in this
 manifest: a declared edge onto a package that declares this one back --
 auth-core, whose tests drive the harness -- would make the workspace
@@ -65,9 +66,16 @@ through `node_modules` rather than the map.
   deterministic bilingual `createTestI18n` base, the
   retries-nothing `createTestQueryClient`, and the shared
   `RenderWithProvidersOptions` / `RenderWithProvidersResult` shapes.
-  Each package's `test-utils/render.tsx` keeps its own provider tree
-  (which providers a package's units need is package policy) and builds
-  it on these primitives.
+  The render options carry the display time zone as well, and
+  `TestTimeZoneProvider` wraps a tree in the display-time-zone context
+  at `TEST_TIME_ZONE` unless the suite names another zone — a rendered
+  time then does not depend on the machine's own zone. That default is
+  neither the chain's terminal fallback (`UTC`) nor the browser zone the
+  packages pin, so a suite that names no zone still tells the provider's
+  effect apart from an implementation that skips it. Each
+  package's `test-utils/render.tsx` keeps its own provider tree (which
+  providers a package's units need is package policy) and builds it on
+  these primitives.
 - `setup.ts` — the vitest setup side effect every suite shares: jest-dom
   matchers plus the explicit RTL cleanup (vitest exposes no global
   `afterEach`, and RTL's automatic cleanup fires only off one).
