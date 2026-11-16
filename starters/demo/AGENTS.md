@@ -845,11 +845,13 @@ operations endpoint's `GET /ready` on port 8083, declared as a top-level check
 because the operations listener is not a service; top-level checks report
 Machine health and gate no routing.
 
-**Deploying.** `.github/workflows/deploy.yml` has a `decide` job and a `deploy`
-job. `decide` runs when the `check` workflow has completed successfully for a
-push to `main`, and on a manual dispatch on `main`; a dispatch from another
-branch skips both jobs, and a dispatch does not wait for `check`. It resolves
-the commit to deploy (the completed `check` run's head commit, or the
+**Deploying.** `.github/workflows/deploy.yml` has a `refuse` job, a `decide` job
+and a `deploy` job. `decide` runs when the `check` workflow has completed successfully for a
+push to `main`, and on a manual dispatch on `main`; a dispatch does not wait
+for `check`. A dispatch on any other ref runs only a `refuse` job, which fails
+with an error naming the ref and asking for a dispatch on `main`; `decide` and
+`deploy` do not run for it, so the run ends red rather than skipped. `decide`
+resolves the commit to deploy (the completed `check` run's head commit, or the
 dispatched commit) and compares it with the current tip of `main`, which it
 reads from the public origin. It has no secret, no environment and no
 concurrency group. When `main` no longer points at that commit it ends with a
@@ -868,7 +870,9 @@ concurrency group is declared on this job, so only a run whose commit `decide`
 found at the tip can take a place in it and replace a waiting deploy. Its first
 step reads the tip again, because the job may have waited behind a running
 deploy, and skips every later step with a notice when `main` no longer points at
-that commit. It then installs the pinned flyctl and runs `make fly`, which
+that commit. It then installs go alone through the setup action's `tools` input
+(the Makefile runs `go work edit` while it is parsed, and `make fly` uses no other
+tool `.mise.toml` pins), installs the pinned flyctl and runs `make fly`, which
 builds the image on Fly's remote builder.
 
 The `deploy` job runs in the `production` environment, and `FLY_API_TOKEN` is a

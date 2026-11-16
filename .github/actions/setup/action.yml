@@ -1,18 +1,27 @@
 # The toolchain every workflow job starts from.
 #
 # The tools come from .mise.toml, so a pin bumped there is the pin CI runs, and
-# no workflow carries a tool version of its own. The whole set is installed
-# rather than the subset a job uses: the Makefile runs `go work edit` while it
-# is parsed, so any job that calls make needs go on PATH, and mise-action caches
-# the installed set between runs.
+# no workflow carries a tool version of its own. The whole set is installed by
+# default: the Makefile runs `go work edit` while it is parsed, so any job that
+# calls make needs go on PATH, and mise-action caches the installed set between
+# runs. A job that needs only a few of the tools names them in `tools`, and only
+# those are installed and put on PATH.
 #
-# The one input adds what a job needs on top of the toolchain, and is off by
-# default: a job that runs only Go and repository checks installs none of it.
+# The playwright input adds what a job needs on top of the toolchain, and is off
+# by default: a job that runs only Go and repository checks installs none of it.
 
 name: setup
-description: Install the .mise.toml toolchain, and optionally the frontend dependencies and Playwright Chromium
+description: Install the .mise.toml toolchain, or a named subset of it, and optionally the frontend dependencies and Playwright's Chromium and WebKit
 
 inputs:
+  tools:
+    description: >-
+      The tools to install, as a space-separated list of names from .mise.toml
+      (for example `go`). Empty installs every tool .mise.toml lists. A tool
+      not named is neither installed nor put on PATH, and mise does not warn
+      about it as missing.
+    required: false
+    default: ""
   playwright:
     description: >-
       Install Playwright's Chromium and WebKit with the system libraries they
@@ -29,8 +38,20 @@ inputs:
 runs:
   using: composite
   steps:
+    # MISE_ENABLE_TOOLS limits mise to the named tools, so the ones .mise.toml
+    # lists beyond them are not reported as missing. It is set only when tools
+    # are named: an empty value would enable none.
+    - name: Limit mise to the named tools
+      if: inputs.tools != ''
+      shell: bash
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: echo "MISE_ENABLE_TOOLS=${TOOLS// /,}" >> "${GITHUB_ENV}"
+
     - name: Install the toolchain from .mise.toml
       uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+      with:
+        install_args: ${{ inputs.tools }}
 
     - name: Install the frontend dependencies Playwright runs from
       if: inputs.playwright == 'true'

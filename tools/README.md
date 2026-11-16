@@ -54,6 +54,12 @@ with stand-ins for `go`, `golangci-lint`, `actionlint` and `shellcheck` first
 on `PATH` and a stand-in for `backends.py` supplied through the `BACKENDS`
 variable, so it needs `make` and nothing else.
 
+`test_deploy_workflow.py` is likewise no script's suite: it holds
+`.github/workflows/deploy.yml` to failing a manual dispatch outside `main`
+(it runs the `refuse` job's script and requires a non-zero exit and an error
+naming the ref), to keeping `decide` on `main`, and to installing go alone
+through the setup action's `tools` input.
+
 ## The integration stack
 
 `backends.py` is not a gate and takes no part in `make repo-check`. It brings

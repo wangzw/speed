@@ -5,9 +5,12 @@
 # push itself: a deploy starts only for a commit that has passed the gate, and
 # it ships that commit's own tree (workflow_run.head_sha), not whatever main
 # holds when the runner picks the job up. A run requested by hand does not wait
-# for the gate: it ships the commit it was dispatched on.
+# for the gate: it ships the commit it was dispatched on. A request made on any
+# other ref fails in the `refuse` job with an error naming the ref: a dispatch that
+# would deploy nothing is a failed run, not a skipped one.
 #
-# Two jobs. `decide` resolves the commit and compares it with the tip of main,
+# Three jobs. `refuse` fails a dispatch outside main and has no other effect.
+# `decide` resolves the commit and compares it with the tip of main,
 # which it reads from the public origin with git ls-remote, so it needs no
 # credential. It declares no concurrency group, no environment and no secret, so
 # its runs do not queue behind one another and none of them can touch the
@@ -33,9 +36,9 @@
 # The work is one Makefile target (`make fly`); this file installs the one tool
 # that target calls. flyctl is deployment machinery rather than a build input, so
 # .mise.toml does not pin it and this file does. The image is built by Fly's
-# remote builder, so the runner needs no Docker daemon. The setup action still
-# provides the toolchain, because the Makefile runs `go work edit` while it is
-# parsed. The app, its volume and the three secrets the entrypoint reads are
+# remote builder, so the runner needs no Docker daemon. The setup action installs
+# go alone: the Makefile runs `go work edit` while it is parsed, and nothing else
+# the Makefile pins is used by `make fly`. The app, its volume and the three secrets the entrypoint reads are
 # created once, by hand (starters/demo/AGENTS.md, "Deploying to Fly.io").
 
 name: deploy
@@ -55,6 +58,18 @@ defaults:
     shell: bash
 
 jobs:
+  refuse:
+    if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Refuse a dispatch outside main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          echo "::error::deploy ships the tip of main only: dispatched on ${REF}; dispatch it on main"
+          exit 1
+
   decide:
     if: >-
       (github.event_name == 'workflow_run' &&
@@ -140,9 +155,11 @@ jobs:
           ref: ${{ needs.decide.outputs.commit }}
           persist-credentials: false
 
-      - name: Set up the toolchain
+      - name: Set up go
         if: steps.tip.outputs.is_tip == 'true'
         uses: ./.github/actions/setup
+        with:
+          tools: go
 
       # Tag 1.6 has no GitHub Release: the latest release, 1.5, declares the
       # node20 runtime and 1.6 declares node24. The major tag v1 points at the
