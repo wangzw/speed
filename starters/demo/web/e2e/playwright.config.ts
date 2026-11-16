@@ -8,15 +8,18 @@
  * `speed/no-e2e-bypass` over this directory and by `tools/check_e2e_honesty.py`
  * over the tree.
  *
- * Four workers, and no parallelism inside a file: every spec starts its own
- * backend in its own temporary directory, with its own sqlite file and its own
- * ports, and signs its own accounts in, so journeys share no state. Files
- * therefore run side by side, while the tests inside one file stay serial
- * (fullyParallel is off) because they drive one page against one server.
- * Probing for free ports can still hand two workers the same port; the fixture
- * retries a failed bind with fresh ports, so the width costs a retry rather
- * than a journey. Four files at a time keeps the run near the length of its
- * longest journey, which no width shortens.
+ * The worker count is not fixed here: `make e2e` passes --workers from
+ * GATE_JOBS, the CPU share the run was given, so the width is the caller's to
+ * allocate and nothing probes the host's core count. There is no parallelism
+ * inside a file: every spec starts its own backend in its own temporary
+ * directory, with its own sqlite file and its own ports, and signs its own
+ * accounts in, so journeys share no state. Files therefore run side by side,
+ * while the tests inside one file stay serial (fullyParallel is off) because
+ * they drive one page against one server. Probing for free ports can still
+ * hand two workers the same port; the fixture retries a failed bind with fresh
+ * ports, so the width costs a retry rather than a journey. A width near the
+ * number of files keeps the run near the length of its longest journey, which
+ * no width shortens.
  *
  * Artifacts and the binaries the fixtures start land under the run's own /tmp
  * root, never beside the source: a failure screenshot or trace is for the
@@ -45,10 +48,9 @@ export default defineConfig({
   // bound therefore covers one server's seed and startup, the operations
   // probes and a journey's clicks; the fixture bounds below stay strictly
   // inside it so the harness's own diagnostics (log tail, stderr) win over a
-  // bare Playwright timeout. The width is the header's: several files at once,
-  // one journey at a time within a file.
+  // bare Playwright timeout. The width is the entry point's (--workers from
+  // GATE_JOBS): several files at once, one journey at a time within a file.
   timeout: 120_000,
-  workers: 4,
   fullyParallel: false,
   outputDir: `${ARTIFACT_ROOT}/artifacts`,
   reporter: [

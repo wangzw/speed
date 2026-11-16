@@ -50,10 +50,12 @@ change spends most of its time on the side that did not move.
 - **Frontend only** (`web/`, `starters/demo/web/`): iterate with the
   touched package's own `pnpm -C web/packages/<name> test` (or
   `pnpm -C web --filter demo-web ...` for the demo host), plus `lint` and
-  `typecheck`; then `make web-check` for the whole frontend. The heavy
-  legs are `make web-browser` when geometry, focus order or focusability
-  is the subject, and `make e2e` when the change is user-visible (copy,
-  layout, assembly, a default).
+  `typecheck`; then `make web-check` for the whole frontend, or
+  `make web-check-static` for only its install, lint, typecheck and rule
+  tests (`make web-check-test` and `make web-check-build` are its other two
+  phases). The heavy legs are `make web-browser` when geometry, focus order
+  or focusability is the subject, and `make e2e` when the change is
+  user-visible (copy, layout, assembly, a default).
 - **Backend only** (`pkg/`, `starters/demo/server/`): iterate with
   `go -C <module> test ./<package>`, then `make build test lint
   tidy-check repo-check`. The heavy legs are `make test-race` and
@@ -66,6 +68,25 @@ change spends most of its time on the side that did not move.
   `document-standards` checker and render every diagram in it.
 
 A change that crosses the boundary is two changes: run each side's gate.
+
+**The gate's CPU budget is `GATE_JOBS`**, default 4. Every tool a gate leg
+calls that takes a width setting is told that width explicitly — go build,
+go test and go vet (`-p` and `GOMAXPROCS`; tests also `-parallel`),
+golangci-lint (`--concurrency`), vitest (`--maxWorkers`), Playwright
+(`--workers`) and pnpm -r (`--workspace-concurrency`) — so none of them
+probes the host's core count, which is wrong inside a container because the
+process sees the node's cores rather than the share it was given. Three carry
+no width this repository can set and run at whatever their runtime decides:
+`golangci-lint fmt`, tsc, and the rolldown thread pool behind `vite build`.
+Set it to the CPU share this run may use. A leg that nests two of those
+widths — pnpm -r starting one vitest process per package — keeps the product
+within the budget, not just each factor: the frontend test segment runs its
+packages one at a time (`--workspace-concurrency=1`) and gives each vitest
+process the whole `GATE_JOBS`, so the product is `GATE_JOBS` rather than its
+square. `web-a11y` and `web-browser` start a single vitest process, so their
+`--maxWorkers` is already the budget. `make -j N check` multiplies it: up to
+N segments run at once, each able to use `GATE_JOBS` cores, so a caller
+running segments in parallel divides its budget between the two.
 
 **Gate stages.** A fix round re-runs only the touched packages' tests and the
 generated-artifact checks below. The whole-side gate — the gate commands the

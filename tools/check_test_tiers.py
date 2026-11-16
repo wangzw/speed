@@ -155,8 +155,17 @@ GATED_TAGS_RE = re.compile(r"^GATED_TEST_TAGS\s*:?=\s*(.*)$", re.MULTILINE)
 # A target line, and the recipe under it. `:=`, `?=` and `+=` are variable
 # assignments and not targets, so the colon is only a target separator when
 # no assignment operator follows it.
-TARGET_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s*:(?!\s*[?+]?=)")
-MAKE_CALL_RE = re.compile(r"\$\(MAKE\)\s+([A-Za-z0-9_.-]+)")
+TARGET_RE = re.compile(r"^([A-Za-z0-9_.-]+)\s*:(?!\s*[?+]?=)(.*)$")
+
+# A sub-make call and the goal it names. A goal may be preceded by flags, and
+# `--no-print-directory` is one this Makefile passes on every sub-make, so the
+# flags are skipped rather than read as the goal.
+MAKE_CALL_RE = re.compile(r"\$\(MAKE\)(?:\s+--?[A-Za-z0-9-]+)*\s+([A-Za-z0-9_.-]+)")
+
+# A prerequisite that names a target. A variable reference (`$(MAKE)`) or the
+# order-only separator is not one; the separator is dropped before the split,
+# and a reference is skipped because this parser does not expand variables.
+PREREQUISITE_RE = re.compile(r"[A-Za-z0-9_.-]+")
 
 # A recipe that runs test binaries: `go test`, or `go -C <dir> test`. A vet
 # leg compiles without running and is not one of them.
@@ -328,13 +337,47 @@ def targets_of(text: str) -> dict[str, str]:
     return targets
 
 
-def reachable_from(targets: dict[str, str], start: str) -> set[str]:
-    """Return every target the `start` target reaches through `$(MAKE)`.
+def prerequisites_of(text: str) -> dict[str, list[str]]:
+    """Return each target's prerequisite names, in the order written.
 
-    A sub-make is how `check` names each leg, so the walk follows exactly
-    those calls; a target no reachable recipe calls is not part of the
-    commit gate.
+    Prerequisites are how `check` names its segments, so the walk in
+    reachable_from needs them as well as the recipes. `|` introduces
+    order-only prerequisites, which still order a build and are kept; a
+    variable reference is skipped, since this parser does not expand
+    variables and a name it cannot read is not one it should invent.
     """
+    prerequisites: dict[str, list[str]] = {}
+    current = None
+    # A prerequisite list may be wrapped with a trailing backslash; the list is
+    # one statement to make, so it is one statement here too.
+    for line in text.replace("\\\n", " ").splitlines():
+        match = TARGET_RE.match(line)
+        if match:
+            current = match.group(1)
+            value = match.group(2).split("#", 1)[0].replace("|", " ")
+            prerequisites[current] = [
+                name for name in PREREQUISITE_RE.findall(value) if not name.startswith("$")
+            ]
+            continue
+        if line.startswith("\t") or not line.strip():
+            continue
+        current = None
+    return prerequisites
+
+
+def reachable_from(
+    targets: dict[str, str],
+    start: str,
+    prerequisites: dict[str, list[str]] | None = None,
+) -> set[str]:
+    """Return every target the `start` target reaches.
+
+    The walk follows both ways a target names another: a sub-make call in its
+    recipe, and a prerequisite. `check` declares its segments as
+    prerequisites, each of which calls its leg through `$(MAKE)`; a target
+    neither reaches is not part of the commit gate.
+    """
+    prerequisites = prerequisites or {}
     seen: set[str] = set()
     stack = [start]
     while stack:
@@ -343,6 +386,7 @@ def reachable_from(targets: dict[str, str], start: str) -> set[str]:
             continue
         seen.add(name)
         stack.extend(MAKE_CALL_RE.findall(targets[name]))
+        stack.extend(prerequisites.get(name, ()))
     return seen
 
 
@@ -686,7 +730,7 @@ def main(argv: list[str] | None = None) -> int:
     # read from the recipe rather than restated here, so a renamed target or a
     # changed pattern arrives with the case it covers.
     targets = targets_of(text)
-    reached = reachable_from(targets, "check")
+    reached = reachable_from(targets, "check", prerequisites_of(text))
     gated_legs: dict[str, list[tuple[str, str | None]]] = {tag: [] for tag in gated}
     for name in sorted(reached):
         recipe = targets[name]

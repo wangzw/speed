@@ -66,7 +66,20 @@ every item and failing at the end, and the `actionlint` leg to its file roster
 and its failure paths, driving the real `Makefile` over scratch directories
 with stand-ins for `go`, `golangci-lint`, `actionlint` and `shellcheck` first
 on `PATH` and a stand-in for `backends.py` supplied through the `BACKENDS`
-variable, so it needs `make` and nothing else.
+variable, so it needs `make` and nothing else. It also holds `check` to its
+segment set and order — every segment exactly once, lint before the tests,
+each announcing the time it starts — to the product dependencies that let a
+parallel run reach the same segments (the frontend build that writes the
+embedded bundle, ordered after every Go leg that compiles it), and
+`web-check` to the three phases it splits into, whose commands together are
+the frontend gate. Every tool that takes a width setting is held to
+`GATE_JOBS` there as well: go build, go test and go vet, golangci-lint,
+vitest, Playwright and pnpm -r must receive the width, default 4 and
+following an override, so none falls back to the host's core count. The
+cases for the gate's structure read the `Makefile` rather than drive it: a
+segment dropped from the gate runs nowhere else, so the expectation is
+written out in the test instead of derived from the file. The width cases
+drive the legs under the stand-ins and read what each tool was handed.
 
 `test_deploy_workflow.py` is likewise no script's suite: it holds
 `.github/workflows/deploy.yml` to failing a manual dispatch outside `main`

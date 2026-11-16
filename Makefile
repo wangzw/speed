@@ -56,6 +56,59 @@ GATES := $(wildcard tools/check_*.py)
 
 PYTHON ?= python3
 
+# The CPU budget one gate run may use, in cores, as a number the caller gives
+# it. Every tool the gate runs that offers a width setting is told this width
+# instead of working one out from the host: go build, go vet and go test take
+# -p and GOMAXPROCS (tests also -parallel), golangci-lint run takes
+# --concurrency and its internal go list follows GOMAXPROCS, vitest takes
+# --maxWorkers, Playwright takes --workers and pnpm -r takes
+# --workspace-concurrency. Three tools carry no width this file can set:
+# `golangci-lint fmt` has no flag for it, tsc is single-threaded, and the
+# rolldown thread pool `vite build` runs on offers no documented setting (its
+# only knob is the runtime's RAYON_NUM_THREADS, which no rolldown API
+# promises), so those take whatever the runtime decides. A scan of the
+# machine is wrong where it matters most: inside a container or a pod a
+# process sees the node's cores, not the share it was given. There is no
+# probing and no host-derived default; pass the share by variable or by
+# environment variable of the same name.
+#
+# Where a leg nests two of those widths, the product is what must stay within
+# the budget, not either factor alone. pnpm -r starting several package scripts
+# and each script starting its own vitest process is the case in this tree: a
+# workspace concurrency of GATE_JOBS with a GATE_JOBS-wide vitest behind each
+# package would use GATE_JOBS squared. Such a leg runs its packages one at a
+# time (--workspace-concurrency=1) and gives each process the whole budget
+# (--maxWorkers=$(GATE_JOBS)). A leg that starts a single process (web-a11y,
+# web-browser) has no package width to multiply, so its per-process worker
+# count is already the budget.
+#
+# `make -j N` and this number multiply. With -j N up to N segments run at
+# once, each able to use GATE_JOBS cores, so a caller that runs parallel
+# segments divides its CPU budget between the two. Without -j the segments run
+# one at a time and GATE_JOBS is the whole width.
+#
+# In go test, -p bounds package binaries in flight, -parallel bounds cases in
+# flight inside one binary (only cases calling t.Parallel count) and
+# GOMAXPROCS bounds the threads each binary schedules. The three multiply in
+# principle, so all three take the same number and the product stays near it
+# in this tree: the module with many packages (pkg) has few parallel cases,
+# and the module whose suite is genuinely parallel (the demo server) has a
+# handful of packages, only one of which carries that suite. GATE_JOBS is that
+# one number.
+#
+# The same -p bounds the compile phase, which is why build and the vet legs
+# take it too: a test or build run compiles that many packages at once, and
+# each compile is a process of its own that GOMAXPROCS bounds, so the two
+# together are the width of the compile as well.
+#
+# The demo program's cases start their child processes through childEnv, which
+# drops only the test prefix and the OpenTelemetry variables, so a child
+# inherits GOMAXPROCS=$(GATE_JOBS) and schedules up to that width itself. A
+# case that starts several children, or several such cases running at once,
+# therefore uses this width times the children in flight; the number is a
+# per-process budget, not a ceiling on the leg.
+GATE_JOBS ?= 4
+
 # Go caches a passing test result and replays it while the test's inputs are
 # unchanged. Those inputs are the package's files, the environment variables
 # the test read and the files it opened under the module root; a file read
@@ -100,9 +153,25 @@ SHELLCHECK ?= shellcheck
 each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$failed; }$(2) $$it"; done
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
+# A check segment announces itself with the clock time it starts, so a log of
+# a run shows how long each segment took without timing the run by hand. The
+# timestamp is read by the shell when the line runs, not when the Makefile is
+# parsed.
+mark = @echo "== $(1) $$(date '+%H:%M:%S')"
+
+# A check segment's output is prefixed with the segment's name, so segments
+# running at once can still be told apart in one log. GNU Make 3.81 has no
+# --output-sync; awk is here because its fflush is portable where an
+# unbuffered sed is not, and the pipe keeps the child's own exit status
+# through `set -o pipefail`.
+segment-output = 2>&1 | awk '{ printf "[$(1)] %s\n", $$0; fflush() }'
+
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
         vet-integration vet-review vet-web-bundle test-review fmt lint tidy tidy-check actionlint repo-check tools-test check python-version \
-        modules-present web-check web-a11y web-browser e2e e2e-install dev fly
+        modules-present web-check web-check-static web-check-test web-check-build web-a11y web-browser e2e e2e-install dev fly \
+        check-announce check-lint check-tidy-check check-repo-check check-tools-test check-vet-web-bundle \
+        check-web-check-static check-web-check-build check-build check-vet-integration check-vet-review \
+        check-test check-web-check-test check-test-review check-test-race
 
 # A target name may carry a digit (web-a11y, e2e), so the name pattern admits
 # one; the old [a-z-] pattern silently dropped every such entry point from the
@@ -114,8 +183,8 @@ modules: modules-present ## Print the module directories derived from go.work
 	@for m in $(MODULES); do echo $$m; done
 
 build: modules-present ## Build every module, both in the workspace and standalone
-	@failed=; $(call each,$(MODULES),build,go -C $$it build ./...); \
-	  $(call each,$(MODULES),build standalone,GOWORK=off go -C $$it build ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),build,GOMAXPROCS=$(GATE_JOBS) go -C $$it build -p=$(GATE_JOBS) ./...); \
+	  $(call each,$(MODULES),build standalone,GOWORK=off GOMAXPROCS=$(GATE_JOBS) go -C $$it build -p=$(GATE_JOBS) ./...); $(each-end)
 
 # The API document is a build product: a module's fragment comes from its
 # operation declarations, and the merged contract comes from the fragments.
@@ -156,10 +225,10 @@ deps-down: ## Take this checkout's integration backends down
 # vet-integration below: a leg that stopped at "does not run" would let them rot
 # into not compiling at all.
 test: modules-present ## Test every module (unit cases only)
-	@failed=; $(call each,$(MODULES),test,go -C $$it test $(uncached) -timeout 30m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) $(uncached) -timeout 30m ./...); $(each-end)
 
 test-race: modules-present ## Test every module under the race detector (unit cases only)
-	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race $(uncached) -timeout 60m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test -race,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -race -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) $(uncached) -timeout 60m ./...); $(each-end)
 
 # The integration cases: they need the backends above, they are slower by
 # orders of magnitude, and they are run on a schedule rather than on every
@@ -176,7 +245,7 @@ test-integration: modules-present deps-up ## Test every module's integration cas
 	fi; \
 	backend_env="$$($(BACKENDS) env --state '$(TEST_BACKENDS_STATE)')" || exit 1; \
 	set -a; eval "$$backend_env"; set +a; \
-	failed=; $(call each,$(MODULES),test integration,go -C $$it test -count=1 -tags=integration -timeout 60m ./...); $(each-end)
+	failed=; $(call each,$(MODULES),test integration,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -count=1 -tags=integration -timeout 60m ./...); $(each-end)
 
 test-integration-race: modules-present deps-up ## Test every module's integration cases under the race detector
 	@if [ ! -f '$(TEST_BACKENDS_STATE)' ]; then \
@@ -185,13 +254,13 @@ test-integration-race: modules-present deps-up ## Test every module's integratio
 	fi; \
 	backend_env="$$($(BACKENDS) env --state '$(TEST_BACKENDS_STATE)')" || exit 1; \
 	set -a; eval "$$backend_env"; set +a; \
-	failed=; $(call each,$(MODULES),test integration -race,go -C $$it test -count=1 -race -tags=integration -timeout 90m ./...); $(each-end)
+	failed=; $(call each,$(MODULES),test integration -race,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -count=1 -race -tags=integration -timeout 90m ./...); $(each-end)
 
 # Compiles the tagged files without running them, so the unit gate still says
 # whether they build. Without it a change that breaks an integration case
 # compiles at every commit and is only found on the scheduled run.
 vet-integration: modules-present ## Compile every module's integration cases, running nothing
-	@failed=; $(call each,$(MODULES),vet integration,go -C $$it vet -tags=integration ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),vet integration,GOMAXPROCS=$(GATE_JOBS) go -C $$it vet -p=$(GATE_JOBS) -tags=integration ./...); $(each-end)
 
 # The review build is the default build plus the demo program's test controls and
 # loopback guard: its files carry the `review` tag and no leg above compiles
@@ -199,7 +268,7 @@ vet-integration: modules-present ## Compile every module's integration cases, ru
 # gives the tag the leg the test-tier gate requires of every tag written in the
 # tree.
 vet-review: modules-present ## Compile the review build, running nothing
-	@failed=; $(call each,$(MODULES),vet review,go -C $$it vet -tags=review ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),vet review,GOMAXPROCS=$(GATE_JOBS) go -C $$it vet -p=$(GATE_JOBS) -tags=review ./...); $(each-end)
 
 # The end-to-end tier's binaries embed a web bundle of their own rather than
 # the dev tree's dist: the `e2e` tag switches the embedded directory to
@@ -210,7 +279,7 @@ vet-review: modules-present ## Compile the review build, running nothing
 # the demo program carries the tag, so the leg runs from that module rather
 # than over every module in the workspace.
 vet-web-bundle: ## Compile the e2e-tagged build that embeds dist-e2e, running nothing
-	@go -C starters/demo/server vet -tags=e2e ./...
+	@GOMAXPROCS=$(GATE_JOBS) go -C starters/demo/server vet -p=$(GATE_JOBS) -tags=e2e ./...
 
 # The cases compiled only under the review tag are executed here: vet-review
 # above only builds them, so deleting or breaking the review guard would leave
@@ -222,19 +291,20 @@ test-review: modules-present ## Test the cases compiled only under the review ta
 	  echo "no module carries a review-tagged Go file: the review cases are gone, which is not a pass." >&2; \
 	  exit 1; \
 	fi
-	@failed=; $(call each,$(REVIEW_MODULES),test review,go -C $$it test -tags=review -run '^TestReview' -timeout 10m ./...); $(each-end)
+	@failed=; $(call each,$(REVIEW_MODULES),test review,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -tags=review -run '^TestReview' -timeout 10m ./...); $(each-end)
 
 # `golangci-lint run` takes a process-wide lock by default, so two checkouts
 # running the gate at once make one of them die with "parallel golangci-lint
-# is running" — indistinguishable from a code failure. The flag lets
-# concurrent runs proceed; the cost is contention, not a wrong answer. `fmt`
-# takes no lock and rejects the flag.
+# is running" — indistinguishable from a code failure. `--allow-parallel-runners`
+# removes that lock; the cost is contention, not a wrong answer. The width of
+# the analysis itself is `--concurrency`, which the gate sets from GATE_JOBS;
+# `fmt` has no such flag and takes no lock, so it runs one file set at a time.
 fmt: modules-present ## Format every module in place
 	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)
 
 lint: modules-present ## Report formatting drift and static-analysis findings
 	@failed=; $(call each,$(MODULES),lint fmt --diff,env -C $$it golangci-lint fmt --diff ./...); \
-	  $(call each,$(MODULES),lint run,env -C $$it golangci-lint run --allow-parallel-runners ./...); $(each-end)
+	  $(call each,$(MODULES),lint run,GOMAXPROCS=$(GATE_JOBS) env -C $$it golangci-lint run --allow-parallel-runners --concurrency=$(GATE_JOBS) ./...); $(each-end)
 
 tidy: modules-present ## Tidy every module's go.mod and go.sum in place
 	@failed=; $(call each,$(MODULES),tidy,GOWORK=off go -C $$it mod tidy); $(each-end)
@@ -318,30 +388,57 @@ python-version:
 # The eslint-rules unit tests and the workspace configuration guards are their
 # own leg for the same reason web/ is its own workspace root: they live outside
 # every package, so the root vitest (not any workspace member's `test` script)
-# is what runs them. Without this line the rules' own tests have no automatic
+# is what runs them. Without this step the rules' own tests have no automatic
 # execution path -- the lint leg exercises the rules only over the code that
 # happens to exist -- and the guard that every test-running package spreads the
 # shared test preset (web/scripts/workspace-test-config.test.mjs) would not run
 # at all.
 #
-# The build leg runs its package scripts one at a time. Each package's script
+# The build leg runs its package scripts one at a time, and that serial width
+# is a correctness property, not a load decision: each package's script
 # rebuilds the workspace siblings it imports before compiling itself, so a
 # concurrent -r run has several packages writing the same sibling's dist/ at
 # once, and a compiler that reads a half-written declaration file fails with
 # "is not a module". The redundancy is the package scripts' own (a standalone
-# package build has to bring its dependencies along); serialising the run is
-# what makes the gate repeatable.
+# package build has to bring its dependencies along); running the build at
+# width one is what makes the gate repeatable.
+#
+# The unit-test leg is also serial at the package level, but for the budget
+# rather than correctness: each package's `test` script starts its own vitest
+# process, and pnpm -r's --workspace-concurrency and that process's
+# --maxWorkers multiply. Running the packages one at a time with
+# --workspace-concurrency=1 lets each vitest process take the whole GATE_JOBS
+# budget, so the product stays GATE_JOBS instead of GATE_JOBS squared. The lint
+# and typecheck legs start one process per package and carry no second width,
+# so they keep GATE_JOBS. The a11y sweep and the browser tier each start a
+# single vitest process, so their --maxWorkers is already the budget.
+#
+# The frontend gate is three phases, so `check` can run each at the point its
+# cost belongs: the static phase rejects most changes in a fraction of a run,
+# the build writes the bundle the demo program embeds, and the tests read what
+# the static phase installs. `web-check` runs all three in order and is the
+# whole frontend gate; the phase targets are the entry point for running one
+# part of it.
 web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule tests, test, a11y, build)
+	@$(MAKE) web-check-static
+	@$(MAKE) web-check-test
+	@$(MAKE) web-check-build
+
+web-check-static: ## Install the frontend dependencies and run its static checks
 	@pnpm -C web install --frozen-lockfile
-	@pnpm -C web -r lint
-	@pnpm -C web -r typecheck
-	@pnpm -C web exec vitest run eslint-rules/ scripts/
-	@pnpm -C web -r test
+	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) lint
+	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) typecheck
+	@pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/
+
+web-check-test: ## Run the frontend's unit tests and route-level accessibility sweep
+	@pnpm -C web -r --workspace-concurrency=1 test --maxWorkers=$(GATE_JOBS)
 	@$(MAKE) web-a11y
+
+web-check-build: ## Build every frontend package
 	@pnpm -C web -r --workspace-concurrency=1 build
 
 web-a11y: ## Run the frontend's route-level accessibility sweep
-	@pnpm -C web --filter demo-web --fail-if-no-match run test:a11y
+	@pnpm -C web --filter demo-web --fail-if-no-match run test:a11y --maxWorkers=$(GATE_JOBS)
 
 # The browser tier: the cases whose subject is real geometry, focus order
 # or focusability, in Chromium through Vitest's browser mode. Chromium is
@@ -351,7 +448,7 @@ web-a11y: ## Run the frontend's route-level accessibility sweep
 # not part of `make check`; a scheduled workflow calls this same entry
 # (see .github/workflows/browser.yml).
 web-browser: ## Run the frontend's browser tier in Chromium (geometry, focus order, focusability)
-	@pnpm -C web exec vitest run --config vitest.browser.config.ts
+	@pnpm -C web exec vitest run --config vitest.browser.config.ts --maxWorkers=$(GATE_JOBS)
 
 # The end-to-end tier: Playwright drives the built demo binary through a real
 # browser, against a real sqlite file and real HTTP. It is deliberately not
@@ -369,7 +466,7 @@ e2e-install: ## Install the Chromium and WebKit builds the end-to-end tier drive
 
 e2e: ## Run the end-to-end journey specs against the built demo binary
 	@pnpm -C web --filter demo-web --fail-if-no-match run typecheck:e2e
-	@pnpm -C web --filter demo-web --fail-if-no-match exec playwright test --config e2e/playwright.config.ts
+	@pnpm -C web --filter demo-web --fail-if-no-match exec playwright test --config e2e/playwright.config.ts --workers=$(GATE_JOBS)
 
 # The local development loop: the frontend's vite dev server in the background
 # and the Go program under air in the foreground. Air builds the default binary
@@ -409,17 +506,100 @@ dev: ## Run the demo locally: vite dev server plus the default build under air
 fly: ## Build and release the demo program to Fly.io
 	@flyctl deploy . --config starters/demo/fly.toml --remote-only
 
+# The commit gate. Its segments are prerequisites, so a plain `make check`
+# runs them one at a time in the order listed and `make -j N check` runs up to
+# N of them at once. Either way the set of segments is the same: what may run
+# together is a product dependency, not a schedule. The frontend build writes
+# the bundle the demo program embeds (go:embed) and waits for every Go leg
+# that compiles it, and the frontend's test and build phases read the
+# dependencies its static phase installs.
+#
+# The frontend build waits for those Go legs rather than preceding them on
+# purpose. Running it first would let them compile the bundle this run wrote,
+# but the tests read nothing from the bundle's contents, so the freshness buys
+# nothing and the ordering costs the Go tests the length of the frontend
+# build. Waiting for them instead keeps the two from overlapping under -j,
+# which is the property that matters: a Go leg reading dist while pnpm writes
+# it is the hazard, not a dist left from an earlier run.
+#
+# The order is fastest-failing first: the static checks take a fraction of a
+# run and reject most changes, so a red one is reported minutes in rather than
+# after every test has run. vet-web-bundle compiles the e2e-tagged build and
+# consumes nothing, so it keeps its place before the frontend work. The build,
+# then the compile-only vet legs, then the tests, the review cases and the
+# race detector, and the frontend build last. A segment prints the time it
+# starts, and every line of its output carries the segment's name, so a log of
+# a concurrent run still shows where the time went and which segment said what.
+#
+# check-announce prints GATE_JOBS once before any segment runs; every segment
+# depends on it. GATE_JOBS is the width each segment's tools take, and `-j N`
+# multiplies it (see its definition above), so the caller allocates both.
+#
+# The `##` doc belongs on a line of its own here: `make help` reads it from a
+# line that starts with the target's name, and the prerequisite list below is
+# wrapped, so its last line starts with a segment name instead.
 check: ## Run everything a commit is gated on (no external service needed)
-	@echo "check: run one gate per machine at a time — the lint leg now tolerates a concurrent runner, but two full gates starve the test processes and fail them on the clock, not on an assertion"
-	@$(MAKE) build
-	@$(MAKE) test
-	@$(MAKE) test-race
-	@$(MAKE) vet-integration
-	@$(MAKE) vet-review
-	@$(MAKE) vet-web-bundle
-	@$(MAKE) test-review
-	@$(MAKE) lint
-	@$(MAKE) tidy-check
-	@$(MAKE) repo-check
-	@$(MAKE) tools-test
-	@$(MAKE) web-check
+check: check-lint check-tidy-check check-repo-check check-tools-test \
+       check-vet-web-bundle check-web-check-static \
+       check-build check-vet-integration check-vet-review check-test \
+       check-web-check-test check-test-review check-test-race \
+       check-web-check-build
+
+check-announce:
+	@echo "== check GATE_JOBS=$(GATE_JOBS) $$(date '+%H:%M:%S') -- the CPU share this run may use; set GATE_JOBS (default 4) to what was allocated to it"
+
+check-lint: check-announce
+	$(call mark,lint)
+	@set -o pipefail; $(MAKE) --no-print-directory lint $(call segment-output,lint)
+
+check-tidy-check: check-announce
+	$(call mark,tidy-check)
+	@set -o pipefail; $(MAKE) --no-print-directory tidy-check $(call segment-output,tidy-check)
+
+check-repo-check: check-announce
+	$(call mark,repo-check)
+	@set -o pipefail; $(MAKE) --no-print-directory repo-check $(call segment-output,repo-check)
+
+check-tools-test: check-announce
+	$(call mark,tools-test)
+	@set -o pipefail; $(MAKE) --no-print-directory tools-test $(call segment-output,tools-test)
+
+check-vet-web-bundle: check-announce
+	$(call mark,vet-web-bundle)
+	@set -o pipefail; $(MAKE) --no-print-directory vet-web-bundle $(call segment-output,vet-web-bundle)
+
+check-web-check-static: check-announce
+	$(call mark,web-check-static)
+	@set -o pipefail; $(MAKE) --no-print-directory web-check-static $(call segment-output,web-check-static)
+
+check-web-check-build: check-announce | check-web-check-static check-build check-vet-integration check-vet-review check-test check-test-review check-test-race
+	$(call mark,web-check-build)
+	@set -o pipefail; $(MAKE) --no-print-directory web-check-build $(call segment-output,web-check-build)
+
+check-build: check-announce
+	$(call mark,build)
+	@set -o pipefail; $(MAKE) --no-print-directory build $(call segment-output,build)
+
+check-vet-integration: check-announce
+	$(call mark,vet-integration)
+	@set -o pipefail; $(MAKE) --no-print-directory vet-integration $(call segment-output,vet-integration)
+
+check-vet-review: check-announce
+	$(call mark,vet-review)
+	@set -o pipefail; $(MAKE) --no-print-directory vet-review $(call segment-output,vet-review)
+
+check-test: check-announce
+	$(call mark,test)
+	@set -o pipefail; $(MAKE) --no-print-directory test $(call segment-output,test)
+
+check-web-check-test: check-announce | check-web-check-static
+	$(call mark,web-check-test)
+	@set -o pipefail; $(MAKE) --no-print-directory web-check-test $(call segment-output,web-check-test)
+
+check-test-review: check-announce
+	$(call mark,test-review)
+	@set -o pipefail; $(MAKE) --no-print-directory test-review $(call segment-output,test-review)
+
+check-test-race: check-announce
+	$(call mark,test-race)
+	@set -o pipefail; $(MAKE) --no-print-directory test-race $(call segment-output,test-race)

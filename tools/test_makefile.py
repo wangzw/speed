@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cases for the root Makefile's legs that loop over a list, and for the
-actionlint leg that `repo-check` runs beside them.
+actionlint leg that `repo-check` runs beside them, and for the order of the
+segments `check` runs.
 
 Each leg that loops over the modules go.work lists, or over the gates in
 tools/, runs every item even after an earlier one failed, and fails at the
@@ -12,6 +13,18 @@ file the integration legs export. A stand-in records the directory it ran in
 and its subcommand, and fails in a directory named red. The actionlint leg
 runs against scratch repository roots through stand-ins for actionlint and
 shellcheck, so no real linter is involved.
+
+The cases for `check` read the Makefile rather than run it: the segment set,
+its order, the product dependencies between segments and the three phase
+targets `web-check` splits into are held to written-out expectations, so a
+segment dropped from the gate or a command dropped from a phase fails here
+instead of running less somewhere else.
+
+Every tool the gate calls that takes a width setting is also held to
+GATE_JOBS: the cases drive the legs under stand-ins and check that go build,
+go test and go vet, golangci-lint, vitest, Playwright and pnpm -r receive the
+width, defaulting to 4 and following an override, so none of them falls back
+to the host's core count.
 
 Stdlib-only (unittest, subprocess, tempfile). Run directly:
 
@@ -28,10 +41,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from check_pnpm_filters import workspace_package_names  # noqa: E402
+from check_test_tiers import MAKE_CALL_RE, prerequisites_of, targets_of  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -52,6 +67,7 @@ with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
         "dir": os.path.basename(where),
         "args": args,
         "gowork": os.environ.get("GOWORK", ""),
+        "gomaxprocs": os.environ.get("GOMAXPROCS", ""),
         "backend_env": {{
             name: os.environ[name]
             for name in os.environ
@@ -60,6 +76,14 @@ with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
         }},
     }}) + "\\n")
 sys.exit(1 if os.path.basename(where) == "red" else 0)
+"""
+
+# Stands in for a tool that always fails, whichever directory it runs in, so a
+# case can read a wrapper target's exit status without a module deciding it.
+ALWAYS_FAILS = """\
+#!{python}
+import sys
+sys.exit(1)
 """
 
 # Stands in for a gate: it records the directory it lives in and fails
@@ -146,8 +170,96 @@ sys.exit(1)
 """
 
 # Variables a parent make exports to its children. A case run by `make
-# tools-test` would otherwise hand them to the make it starts.
-MAKE_ENVIRONMENT = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "GNUMAKEFLAGS", "GOWORK")
+# tools-test` would otherwise hand them to the make it starts. GATE_JOBS is
+# one of them: GNU make exports a variable set on its own command line, so
+# `make check GATE_JOBS=8` puts the width in this process's environment and
+# every case that expects the default 4 would read 8 instead.
+MAKE_ENVIRONMENT = (
+    "MAKEFLAGS",
+    "MFLAGS",
+    "MAKELEVEL",
+    "MAKEOVERRIDES",
+    "GNUMAKEFLAGS",
+    "GOWORK",
+    "GATE_JOBS",
+)
+
+# The segments `check` runs, in the order a plain `make check` runs them: the
+# fast, commonly failing checks first, then the Go build and compile-only vet
+# legs, then the tests, the review cases and the race detector, with the
+# frontend build last. The tuple is written out rather than derived, so a
+# segment deleted from `check` fails this case instead of shrinking the gate
+# silently. `web-check` itself is not here: it splits into the three phase
+# targets, and the whole frontend gate is their three commands.
+CHECK_SEGMENTS = (
+    "lint",
+    "tidy-check",
+    "repo-check",
+    "tools-test",
+    "vet-web-bundle",
+    "web-check-static",
+    "build",
+    "vet-integration",
+    "vet-review",
+    "test",
+    "web-check-test",
+    "test-review",
+    "test-race",
+    "web-check-build",
+)
+
+# The Go legs that compile the demo program, and so read the bundle the
+# frontend build writes into starters/demo/server/dist through go:embed. The
+# frontend build runs after all of them and declares them as prerequisites,
+# so the two never overlap, including under -j; ordering it first would only
+# hand them a fresher bundle, which none of them reads the contents of.
+EMBEDS_FRONTEND_BUILD = (
+    "build",
+    "vet-integration",
+    "vet-review",
+    "test",
+    "test-review",
+    "test-race",
+)
+
+# The three phases `web-check` splits into, in order, and the commands each
+# carries. Together they are the whole frontend gate -- install, lint,
+# typecheck and the rule tests; the unit tests and the route-level sweep; the
+# build -- with the width every command takes from GATE_JOBS. Two commands are
+# exceptions to GATE_JOBS as a workspace width. The build's package scripts
+# write one sibling's dist/ each, so its serial width is a correctness
+# property and stays at 1. The test leg's package scripts each start their own
+# vitest process, so its workspace width is also 1 and each process takes the
+# whole GATE_JOBS: the product of the two widths is what the budget bounds,
+# not either factor alone.
+WEB_CHECK_PHASES = {
+    "web-check-static": (
+        "pnpm -C web install --frozen-lockfile",
+        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) lint",
+        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) typecheck",
+        "pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/",
+    ),
+    "web-check-test": (
+        "pnpm -C web -r --workspace-concurrency=1 test --maxWorkers=$(GATE_JOBS)",
+        "$(MAKE) web-a11y",
+    ),
+    "web-check-build": ("pnpm -C web -r --workspace-concurrency=1 build",),
+}
+
+WEB_CHECK_PHASE_ORDER = ("web-check-static", "web-check-test", "web-check-build")
+
+
+def recipe_commands(recipe: str) -> list[str]:
+    """The command of every recipe line, with the tab and a leading `@` gone."""
+    commands = []
+    for line in recipe.splitlines():
+        command = line.strip()
+        if not command:
+            continue
+        if command.startswith("@"):
+            command = command[1:].strip()
+        commands.append(command)
+    return commands
 
 
 class LoopingLegTests(unittest.TestCase):
@@ -167,6 +279,15 @@ class LoopingLegTests(unittest.TestCase):
             path = self.bin / tool
             path.write_text(STAND_IN.format(python=sys.executable), encoding="utf-8")
             path.chmod(0o755)
+        # A second roster of the same tools, each of which always fails: no
+        # module directory decides it, so a wrapper target's own exit status
+        # is what a case reads.
+        self.failing_bin = self.scratch / "failing-bin"
+        self.failing_bin.mkdir()
+        for tool in ("go", "golangci-lint", "pnpm"):
+            path = self.failing_bin / tool
+            path.write_text(ALWAYS_FAILS.format(python=sys.executable), encoding="utf-8")
+            path.chmod(0o755)
         self.backends = self.scratch / "backends"
         self.backends.write_text(BACKENDS.format(python=sys.executable), encoding="utf-8")
         self.backends.chmod(0o755)
@@ -175,6 +296,12 @@ class LoopingLegTests(unittest.TestCase):
         for name in ("red", "green"):
             (self.scratch / name).mkdir()
             (self.scratch / name / f"check_{name}.py").write_text(GATE, encoding="utf-8")
+            # The review leg runs only in modules that carry a review-tagged Go
+            # file; the scratch roster carries one so the leg has a subject and
+            # its GATE_JOBS mapping can be observed.
+            (self.scratch / name / "tagged.go").write_text(
+                "//go:build review\n\npackage scratch\n", encoding="utf-8"
+            )
         # Repository roots for the actionlint leg. Each carries workflow files
         # of both extensions, a file GitHub does not run as a workflow, and a
         # nested workflow file GitHub does not read either.
@@ -198,13 +325,18 @@ class LoopingLegTests(unittest.TestCase):
         repo: str | pathlib.Path = "green",
         shellcheck: str | pathlib.Path | None = None,
         uncached: str | None = None,
+        gate_jobs: str | None = None,
+        failing_tools: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
-        env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
+        first = self.failing_bin if failing_tools else self.bin
+        env["PATH"] = f"{first}{os.pathsep}{self.bin}{os.pathsep}{env.get('PATH', '')}"
         env["STAND_IN_LOG"] = str(self.log)
         dirs = [str(self.scratch / name) for name in names]
         gates = [str(self.scratch / name / f"check_{name}.py") for name in names]
         extra = [f"UNCACHED_MODULES={self.scratch / uncached}"] if uncached is not None else []
+        if gate_jobs is not None:
+            extra.append(f"GATE_JOBS={gate_jobs}")
         return subprocess.run(
             [
                 "make",
@@ -548,11 +680,367 @@ class LoopingLegTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertRegex(result.stdout, r"(?m)^  actionlint\s+\S")
 
+    def test_help_lists_the_commit_gate(self) -> None:
+        # `check` is the entry point every other one serves. help reads a
+        # target's doc from a line that starts with its name, and check's
+        # prerequisite list is wrapped, so a doc left at the end of the list
+        # falls on a line that starts with a segment name and is not read.
+        env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        result = subprocess.run(
+            ["make", "-C", str(ROOT), "--no-print-directory", "help"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertRegex(result.stdout, r"(?m)^  check\s+\S")
+
     def test_every_leg_passes_when_every_item_passes(self) -> None:
         for leg in [*MODULE_LEGS, "repo-check"]:
             with self.subTest(leg=leg):
                 result = self.make(leg, "green")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def leg_calls(self, leg: str, gate_jobs: str | None = None) -> list[dict]:
+        self.log.unlink(missing_ok=True)
+        result = self.make(leg, "green", gate_jobs=gate_jobs)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return self.calls()
+
+    def pnpm_call(self, calls: list[dict], token: str) -> dict:
+        for call in calls:
+            if call["tool"] == "pnpm" and token in call["args"]:
+                return call
+        raise AssertionError(f"no pnpm invocation carries {token!r}: {calls}")
+
+    def test_every_go_leg_takes_its_width_from_gate_jobs(self) -> None:
+        # go test: -p bounds package binaries, -parallel bounds cases inside
+        # one, GOMAXPROCS bounds its threads. All three are GATE_JOBS; none is
+        # left to the host's core count. (The three multiply in principle;
+        # each is a cap, and this tree's parallel suite is in one package of
+        # a small module while its many-package module has few parallel
+        # cases.)
+        for leg in ("test", "test-race", "test-integration", "test-integration-race", "test-review"):
+            for gate_jobs, width in ((None, "4"), ("7", "7")):
+                with self.subTest(leg=leg, gate_jobs=gate_jobs):
+                    calls = self.leg_calls(leg, gate_jobs)
+                    tests = [
+                        call
+                        for call in calls
+                        if call["tool"] == "go" and call["args"][:1] == ["test"]
+                    ]
+                    self.assertTrue(tests, f"{leg} ran no go test:\n{calls}")
+                    for call in tests:
+                        self.assertIn(f"-p={width}", call["args"], f"{leg}: {call['args']}")
+                        self.assertIn(
+                            f"-parallel={width}", call["args"], f"{leg}: {call['args']}"
+                        )
+                        self.assertEqual(call["gomaxprocs"], width, f"{leg}: GOMAXPROCS")
+
+    def test_the_go_build_leg_takes_its_width_from_gate_jobs(self) -> None:
+        # A build run compiles -p packages at once and each compile is itself
+        # multi-threaded up to GOMAXPROCS, so both follow GATE_JOBS; the
+        # standalone pass is the same build with GOWORK off.
+        for gate_jobs, width in ((None, "4"), ("7", "7")):
+            with self.subTest(gate_jobs=gate_jobs):
+                calls = self.leg_calls("build", gate_jobs)
+                builds = [
+                    call
+                    for call in calls
+                    if call["tool"] == "go" and call["args"][:1] == ["build"]
+                ]
+                self.assertTrue(builds, f"build ran no go build:\n{calls}")
+                self.assertEqual(
+                    sorted(call["gowork"] for call in builds),
+                    ["", "off"],
+                    "build no longer runs both the workspace and standalone pass",
+                )
+                for call in builds:
+                    self.assertIn(f"-p={width}", call["args"], f"{call['args']}")
+                    self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
+
+    def test_every_go_vet_leg_takes_its_width_from_gate_jobs(self) -> None:
+        # go vet runs no cases, so it takes -p and GOMAXPROCS but not
+        # -parallel, which it rejects.
+        for leg in ("vet-integration", "vet-review", "vet-web-bundle"):
+            for gate_jobs, width in ((None, "4"), ("7", "7")):
+                with self.subTest(leg=leg, gate_jobs=gate_jobs):
+                    calls = self.leg_calls(leg, gate_jobs)
+                    vets = [
+                        call
+                        for call in calls
+                        if call["tool"] == "go" and call["args"][:1] == ["vet"]
+                    ]
+                    self.assertTrue(vets, f"{leg} ran no go vet:\n{calls}")
+                    for call in vets:
+                        self.assertIn(f"-p={width}", call["args"], f"{leg}: {call['args']}")
+                        self.assertNotIn("-parallel", " ".join(call["args"]))
+                        self.assertEqual(call["gomaxprocs"], width, f"{leg}: GOMAXPROCS")
+
+    def test_the_linter_takes_its_width_from_gate_jobs(self) -> None:
+        # --concurrency bounds golangci-lint's own analysis; the go list it
+        # runs inside the process follows GOMAXPROCS, so that is set too.
+        for gate_jobs, width in ((None, "4"), ("7", "7")):
+            with self.subTest(gate_jobs=gate_jobs):
+                calls = self.leg_calls("lint", gate_jobs)
+                runs = [
+                    call
+                    for call in calls
+                    if call["tool"] == "golangci-lint" and call["args"][:1] == ["run"]
+                ]
+                self.assertTrue(runs, f"lint ran no golangci-lint run:\n{calls}")
+                for call in runs:
+                    self.assertIn(f"--concurrency={width}", call["args"], f"{call['args']}")
+                    self.assertIn("--allow-parallel-runners", call["args"])
+                    self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
+
+    def test_every_frontend_leg_takes_its_width_from_gate_jobs(self) -> None:
+        for gate_jobs, width in ((None, "4"), ("7", "7")):
+            with self.subTest(leg="web-check-static", gate_jobs=gate_jobs):
+                calls = self.leg_calls("web-check-static", gate_jobs)
+                for script in ("lint", "typecheck"):
+                    call = self.pnpm_call(calls, script)
+                    self.assertIn(f"--workspace-concurrency={width}", call["args"])
+                self.assertIn(f"--maxWorkers={width}", self.pnpm_call(calls, "vitest")["args"])
+            with self.subTest(leg="web-check-test", gate_jobs=gate_jobs):
+                # The product of the package width and the per-process worker
+                # count is what the budget bounds. The packages run one at a
+                # time and each vitest process takes the whole GATE_JOBS, so
+                # the product is GATE_JOBS, not its square.
+                calls = self.leg_calls("web-check-test", gate_jobs)
+                test_call = self.pnpm_call(calls, "test")
+                self.assertIn("--workspace-concurrency=1", test_call["args"])
+                self.assertNotIn(f"--workspace-concurrency={width}", test_call["args"])
+                self.assertIn(f"--maxWorkers={width}", test_call["args"])
+                self.assertIn(
+                    f"--maxWorkers={width}", self.pnpm_call(calls, "test:a11y")["args"]
+                )
+            with self.subTest(leg="web-check-build", gate_jobs=gate_jobs):
+                # The build's serial width is a correctness property: several
+                # package scripts write one sibling's dist/. GATE_JOBS does not
+                # widen it.
+                calls = self.leg_calls("web-check-build", gate_jobs)
+                build_call = self.pnpm_call(calls, "build")
+                self.assertIn("--workspace-concurrency=1", build_call["args"])
+                self.assertNotIn(f"--workspace-concurrency={width}", build_call["args"])
+            with self.subTest(leg="web-browser", gate_jobs=gate_jobs):
+                calls = self.leg_calls("web-browser", gate_jobs)
+                self.assertIn(f"--maxWorkers={width}", self.pnpm_call(calls, "vitest")["args"])
+            with self.subTest(leg="e2e", gate_jobs=gate_jobs):
+                calls = self.leg_calls("e2e", gate_jobs)
+                self.assertIn(
+                    f"--workers={width}", self.pnpm_call(calls, "playwright")["args"]
+                )
+
+    def test_a_wrapper_target_fails_when_its_segment_does(self) -> None:
+        # A wrapper pipes its segment through awk to prefix the lines, and a
+        # pipeline's status is awk's unless `set -o pipefail` is in force. A
+        # wrapper that lost it (or grew an `|| true`) would report a failed
+        # segment as a pass while the leg's own cases stayed green.
+        for wrapper, segment in (
+            ("check-lint", "lint"),
+            ("check-vet-review", "vet-review"),
+            ("check-tidy-check", "tidy-check"),
+        ):
+            with self.subTest(wrapper=wrapper):
+                self.log.unlink(missing_ok=True)
+                result = self.make(wrapper, "green", failing_tools=True)
+                self.assertNotEqual(
+                    result.returncode,
+                    0,
+                    f"{wrapper} passed with a failing segment:\n{result.stdout}{result.stderr}",
+                )
+                self.assertIn(
+                    f"[{segment}]",
+                    result.stdout,
+                    "the segment's output did not reach the log with its prefix",
+                )
+
+    def test_check_announces_the_gate_width_before_any_segment(self) -> None:
+        for gate_jobs, width in ((None, "4"), ("9", "9")):
+            with self.subTest(gate_jobs=gate_jobs):
+                env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+                extra = [f"GATE_JOBS={gate_jobs}"] if gate_jobs is not None else []
+                result = subprocess.run(
+                    [
+                        "make",
+                        "-C",
+                        str(ROOT),
+                        "--no-print-directory",
+                        "-n",
+                        "check-announce",
+                        *extra,
+                    ],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(f"GATE_JOBS={width}", result.stdout)
+
+    def test_the_callers_gate_width_does_not_reach_the_case(self) -> None:
+        # GNU make exports a variable given on its command line, so running
+        # `make check GATE_JOBS=8` puts 8 in this process's environment and in
+        # the environment of every make a case starts. The harness drops it
+        # with the make variables above, which is what keeps the default-4
+        # expectation above an assertion about the Makefile's default.
+        with mock.patch.dict(os.environ, {"GATE_JOBS": "8"}):
+            for gate_jobs, width in ((None, "4"), ("9", "9")):
+                with self.subTest(gate_jobs=gate_jobs):
+                    env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+                    extra = [f"GATE_JOBS={gate_jobs}"] if gate_jobs is not None else []
+                    result = subprocess.run(
+                        [
+                            "make",
+                            "-C",
+                            str(ROOT),
+                            "--no-print-directory",
+                            "-n",
+                            "check-announce",
+                            *extra,
+                        ],
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(f"GATE_JOBS={width}", result.stdout)
+
+
+class CheckSegmentTests(unittest.TestCase):
+    """The structure of `check`, the segments it runs and `web-check`'s phases.
+
+    The cases read the Makefile instead of running the target: `check` is the
+    commit gate, and a segment that no longer runs there runs nowhere else, so
+    the segment set is held to a written-out expectation rather than derived
+    from the file it is checking. The product dependencies between segments
+    and the timestamp marks are read from the same text.
+    """
+
+    def setUp(self) -> None:
+        text = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.targets = targets_of(text)
+        self.prerequisites = prerequisites_of(text)
+
+    def segments(self) -> list[str]:
+        return [
+            name.removeprefix("check-")
+            for name in self.prerequisites.get("check", [])
+            if name.startswith("check-")
+        ]
+
+    def test_check_runs_every_segment_once_in_the_fail_fast_order(self) -> None:
+        self.assertEqual(
+            self.segments(),
+            list(CHECK_SEGMENTS),
+            "check's segments changed; one dropped runs nowhere else, so the "
+            "expectation is written out in CHECK_SEGMENTS",
+        )
+        self.assertEqual(
+            len(self.segments()),
+            len(set(self.segments())),
+            "check lists a segment twice",
+        )
+
+    def test_check_runs_lint_before_the_tests(self) -> None:
+        # Lint rejects more changes than any test leg and costs a fraction of
+        # a run; running it after them spends the tests before it reports.
+        segments = self.segments()
+        self.assertIn("lint", segments, "check no longer runs lint")
+        for leg in ("test", "test-race"):
+            self.assertLess(
+                segments.index("lint"),
+                segments.index(leg),
+                f"check runs lint after {leg}, so a lint error is reported only "
+                "after that leg's whole run",
+            )
+
+    def test_the_frontend_build_runs_after_every_go_leg_that_embeds_it(self) -> None:
+        # The build writes starters/demo/server/dist, which the demo program's
+        # go:embed reads at compile time, so the two must not overlap under
+        # -j. The Go legs do not read the bundle's contents, so the build runs
+        # after them and declares them as prerequisites; a position in a
+        # serial list alone would let -j start it beside them.
+        segments = self.segments()
+        self.assertIn("web-check-build", segments)
+        self.assertEqual(
+            segments[-1], "web-check-build", "the frontend build is no longer the last segment"
+        )
+        for leg in EMBEDS_FRONTEND_BUILD:
+            with self.subTest(leg=leg):
+                self.assertIn(f"check-{leg}", self.prerequisites["check"])
+                self.assertIn(
+                    f"check-{leg}",
+                    self.prerequisites["check-web-check-build"],
+                    f"check-web-check-build may start beside check-{leg}, which "
+                    "reads the dist it writes",
+                )
+                self.assertLess(
+                    segments.index(leg),
+                    segments.index("web-check-build"),
+                    f"check runs the frontend build before {leg}",
+                )
+
+    def test_the_frontend_test_and_build_phases_install_first(self) -> None:
+        # Both phases run pnpm, and pnpm needs the dependencies the static
+        # phase installs. Expressed as a prerequisite so -j cannot reorder it.
+        for leg in ("web-check-test", "web-check-build"):
+            with self.subTest(leg=leg):
+                self.assertIn(
+                    "check-web-check-static",
+                    self.prerequisites[f"check-{leg}"],
+                    f"check-{leg} may start before the frontend install",
+                )
+
+    def test_a_parallel_run_reaches_the_same_segments(self) -> None:
+        # -j changes only when a segment starts. The roster is the prerequisite
+        # list above, and each wrapper calls its own target and nothing else,
+        # so no segment can be skipped, doubled or redirected when they overlap.
+        for segment in CHECK_SEGMENTS:
+            with self.subTest(segment=segment):
+                self.assertEqual(
+                    MAKE_CALL_RE.findall(self.targets[f"check-{segment}"]),
+                    [segment],
+                    f"check-{segment} no longer runs exactly its own segment",
+                )
+
+    def test_web_check_runs_its_three_phases_and_their_commands(self) -> None:
+        # A standalone `make web-check` is the whole frontend gate: the three
+        # phases, in order. Their commands are the frontend gate's own, each
+        # carrying the GATE_JOBS width, so the phase targets cover the frontend
+        # gate completely and add nothing to it.
+        self.assertEqual(
+            MAKE_CALL_RE.findall(self.targets["web-check"]),
+            list(WEB_CHECK_PHASE_ORDER),
+            "web-check no longer runs its three phases in order",
+        )
+        for phase in WEB_CHECK_PHASE_ORDER:
+            with self.subTest(phase=phase):
+                self.assertEqual(
+                    recipe_commands(self.targets[phase]),
+                    list(WEB_CHECK_PHASES[phase]),
+                    f"{phase} no longer carries its own commands",
+                )
+
+    def test_every_check_segment_announces_its_start_time(self) -> None:
+        # A log of a run has to show where the time went; the timestamp is
+        # read when the segment starts, not when the Makefile is parsed.
+        for segment in CHECK_SEGMENTS:
+            with self.subTest(segment=segment):
+                recipe = self.targets[f"check-{segment}"]
+                self.assertIn(f"$(call mark,{segment})", recipe)
+                self.assertNotIn("$(shell date", recipe)
+
+    def test_every_segment_depends_on_the_announcement(self) -> None:
+        # GATE_JOBS is printed once, before any segment starts, whether or not
+        # the segments run at once.
+        for segment in CHECK_SEGMENTS:
+            with self.subTest(segment=segment):
+                self.assertIn("check-announce", self.prerequisites[f"check-{segment}"])
+        self.assertIn("GATE_JOBS=$(GATE_JOBS)", self.targets["check-announce"])
 
 
 class EntryPointTests(unittest.TestCase):
