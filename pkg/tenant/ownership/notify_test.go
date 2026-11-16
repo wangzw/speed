@@ -6,6 +6,8 @@ package ownership_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -50,9 +52,7 @@ func driveLocalizer(t *testing.T) i18n.Localizer {
 // TestTheTransferRequestNoticeMarksItsExpiry holds the body the in-app channel
 // writes: the marked render replaces the time segment with a marker naming the
 // parameter and formats nothing, so the layout it carries has no effect on the
-// delivered text. The catalog's layout therefore names no offset: an offset
-// would suggest a zone decision this channel does not make, and the reader's
-// display zone decides it instead.
+// delivered text.
 func TestTheTransferRequestNoticeMarksItsExpiry(t *testing.T) {
 	localizer := driveLocalizer(t)
 	expires := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
@@ -71,8 +71,46 @@ func TestTheTransferRequestNoticeMarksItsExpiry(t *testing.T) {
 		if strings.Contains(body, "2026-11-20") {
 			t.Errorf("%s body = %q, want no formatted instant in the marked render", locale, body)
 		}
-		if strings.Contains(body, "+0000") || strings.Contains(body, "-0700") {
-			t.Errorf("%s body = %q, want no offset in the marked render", locale, body)
+	}
+}
+
+// TestTheTransferRequestNoticeCatalogLayoutCarriesNoOffset holds the catalog
+// text itself. The marked render never reads the layout, and the formatted
+// render in the next case only asserts that a date appears, so neither can
+// tell a layout with a zone token from one without. A zone token in the layout
+// would make the writer decide a zone this channel does not decide; the
+// reader's display zone owns that decision.
+func TestTheTransferRequestNoticeCatalogLayoutCarriesNoOffset(t *testing.T) {
+	const segmentOpen = "{{expires_at, time, "
+	for _, locale := range []i18n.Locale{"zh-CN", "en-US"} {
+		path := filepath.Join("locales", string(locale)+".json")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		text := string(raw)
+		start := strings.Index(text, segmentOpen)
+		if start == -1 {
+			t.Fatalf("%s carries no time segment for expires_at", path)
+		}
+		rest := text[start+len(segmentOpen):]
+		end := strings.Index(rest, "}}")
+		if end == -1 {
+			t.Fatalf("%s leaves the expires_at time segment unterminated", path)
+		}
+		layout := rest[:end]
+		// Every reference-layout spelling of a zone: the abbreviation and
+		// the numeric offset, signed or Z-suffixed, at any precision. A
+		// zone token here would make the writer decide a zone this
+		// channel does not decide.
+		for _, token := range []string{
+			"MST",
+			"-070000", "-07:00:00", "-0700", "-07:00", "-07",
+			"Z070000", "Z07:00:00", "Z0700", "Z07:00", "Z07",
+		} {
+			if strings.Contains(layout, token) {
+				t.Errorf("%s layout = %q, want no zone token %q", path, layout, token)
+			}
 		}
 	}
 }
