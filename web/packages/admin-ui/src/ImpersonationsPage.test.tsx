@@ -43,7 +43,7 @@ import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
 /** The end-reason labels a test injects into the namespace. */
 const END_REASON_LABELS = { revoked: 'end-reason-revoked' } as const
@@ -841,7 +841,7 @@ describe('ImpersonationsPage', () => {
             listTenants: () =>
               Promise.resolve([
                 TENANT,
-                tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
+                tenantFixture({ name: 'globex', display_name: 'Globex', status: 'active' }),
               ]),
             listImpersonations,
           }),

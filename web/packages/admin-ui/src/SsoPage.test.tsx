@@ -36,7 +36,7 @@ import { createStepUpSession } from '../test-utils/session.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
 /** Fills a locale template's `{{name}}` placeholders. */
 function text(template: string, values: Record<string, string>): string {
@@ -1543,7 +1543,7 @@ describe('SsoPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
+            tenantFixture({ name: 'globex', display_name: 'Globex', status: 'active' }),
           ]),
         listSsoProviders,
       })

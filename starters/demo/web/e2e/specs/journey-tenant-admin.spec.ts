@@ -3017,9 +3017,9 @@ function definitionValue(page: Page, label: string): Locator {
 
 /** The owner fields one organization-profile read answers with. */
 interface ProfileOwner {
-  readonly ownerAccount: string
-  readonly ownerDisplayName: string
-  readonly ownerUsername: string
+  readonly owner_account: string
+  readonly owner_display_name: string
+  readonly owner_username: string
 }
 
 /**
@@ -3497,17 +3497,17 @@ test.describe('the organization profile page belongs to its owner', () => {
     await expect(owner).toHaveText(
       `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
     )
-    expect(profileOwner.ownerDisplayName).toBe(reviewTenantAdmin.displayName)
-    expect(profileOwner.ownerUsername).toBe(reviewTenantAdmin.username)
+    expect(profileOwner.owner_display_name).toBe(reviewTenantAdmin.displayName)
+    expect(profileOwner.owner_username).toBe(reviewTenantAdmin.username)
     expect(
-      profileOwner.ownerAccount,
+      profileOwner.owner_account,
       'the profile names no owner account',
     ).not.toBe('')
     // The internal account identifier appears nowhere on the page: not as
     // text and not in an attribute. The username above is the only identity
     // the owner row exposes beside the display name.
-    await expect(page.getByText(profileOwner.ownerAccount)).toHaveCount(0)
-    expect(await page.content()).not.toContain(profileOwner.ownerAccount)
+    await expect(page.getByText(profileOwner.owner_account)).toHaveCount(0)
+    expect(await page.content()).not.toContain(profileOwner.owner_account)
     // The status chip shares the value cell with the name, so the name is
     // asserted as the cell's leading text rather than the whole cell.
     await expect(

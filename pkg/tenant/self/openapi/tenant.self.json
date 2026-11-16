@@ -54,7 +54,7 @@
                       "description": "The tenants whose membership is active and whose roster row is active, in the membership read's order. Empty when the caller holds none.",
                       "items": {
                         "properties": {
-                          "displayName": {
+                          "display_name": {
                             "description": "The organization's display name, empty when its profile names none. A surface falls back to the name then.",
                             "type": "string"
                           },
@@ -73,7 +73,7 @@
                         },
                         "required": [
                           "name",
-                          "displayName",
+                          "display_name",
                           "kind"
                         ],
                         "type": "object"

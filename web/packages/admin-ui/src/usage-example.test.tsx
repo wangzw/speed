@@ -77,7 +77,7 @@ describe('README quick start', () => {
   it('renders the console with its navigation and its first page', async () => {
     bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/tenants') {
-        return { tenants: [{ name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }] }
+        return { tenants: [{ name: 'acme', display_name: 'Acme', kind: 'business', status: 'active' }] }
       }
       // The first page is the console dashboard, which also reads the
       // newest audit activity.

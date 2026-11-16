@@ -50,7 +50,7 @@
 
 **判据在名册里。** 宿主调 `SetStatusByAccount` 就能得到这条性质，不必自己先读状态、再决定写什么；第二个宿主重复的是调用，不是规则。
 
-**管理面的视图渲染来源。** 停用的租户在视图里带 `disabledBy`（`operator` 或 `account`），其余状态不带（[tenant.admin](../design/modules/tenant/design-tenant-admin.md)）。
+**管理面的视图渲染来源。** 停用的租户在视图里带 `disabled_by`（`operator` 或 `account`），其余状态不带（[tenant.admin](../design/modules/tenant/design-tenant-admin.md)）。
 
 ## 后果
 

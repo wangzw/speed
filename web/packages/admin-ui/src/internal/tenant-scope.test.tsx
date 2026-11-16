@@ -22,7 +22,7 @@ import {
 import type { AdminTenant } from '../operations.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-const TENANT: AdminTenant = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT: AdminTenant = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 const TENANT_LABEL = zhCN.common.tenant
 
 /** A host holding the selection, as the pages do. */

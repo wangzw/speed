@@ -3,7 +3,7 @@
  * controls on the organization profile page.
  *
  * The organization profile is read by every tenant administrator, but only
- * the account named in the profile's `ownerAccount` may ask for ownership to
+ * the account named in the profile's `owner_account` may ask for ownership to
  * be handed on or delete the organization. A personal organization has no
  * owner controls at all: it is the account's own space, not an organization
  * with a transferable owner. The package hides the controls for every other
@@ -191,7 +191,7 @@ export function TenantOwnership({
     !personal &&
     profile.status !== 'deleted' &&
     currentAccount !== '' &&
-    currentAccount === profile.ownerAccount
+    currentAccount === profile.owner_account
   // The pending read is the owner's; a caller the controls are hidden from
   // never issues it, so an administrator who is not the owner makes no
   // request the server would refuse.
@@ -334,7 +334,7 @@ export function TenantOwnership({
   const pendingTarget =
     pending === null
       ? ''
-      : (identityLabel(pending.targetDisplayName, pending.targetUsername) ??
+      : (identityLabel(pending.target_display_name, pending.target_username) ??
         t('common.accountUnavailable'))
 
   return (
@@ -430,7 +430,7 @@ export function TenantOwnership({
         <TransferOwnershipDialog
           tenant={tenant}
           organizationName={displayName}
-          ownerAccount={profile.ownerAccount}
+          ownerAccount={profile.owner_account}
           busy={feedback.pending}
           onCancel={() => setTransferOpen(false)}
           onConfirm={(account, label) => {

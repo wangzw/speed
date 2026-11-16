@@ -42,9 +42,9 @@ const COPY = zhCN.common as {
 /** The marker a refused account read leaves on the recent-activity actor. */
 
 const TENANTS = [
-  tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
-  tenantFixture({ name: 'beta', displayName: 'Beta', status: 'active' }),
-  tenantFixture({ name: 'old', displayName: 'Old', status: 'disabled' }),
+  tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
+  tenantFixture({ name: 'beta', display_name: 'Beta', status: 'active' }),
+  tenantFixture({ name: 'old', display_name: 'Old', status: 'disabled' }),
 ]
 
 /**
@@ -81,7 +81,7 @@ describe('DashboardPage', () => {
     // total instead of leaving a tombstone unaccounted for.
     const tenants = [
       ...TENANTS,
-      tenantFixture({ name: 'gone', displayName: 'Gone', status: 'deleted' }),
+      tenantFixture({ name: 'gone', display_name: 'Gone', status: 'deleted' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),

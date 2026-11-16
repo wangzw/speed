@@ -14,7 +14,7 @@ caller and not about one tenant.
 ## The answer
 
 ```json
-{ "tenants": [ { "name": "Acme", "displayName": "", "kind": "business" }, { "name": "alice", "displayName": "", "kind": "personal" } ] }
+{ "tenants": [ { "name": "Acme", "display_name": "", "kind": "business" }, { "name": "alice", "display_name": "", "kind": "personal" } ] }
 ```
 
 A membership enters the answer when it is itself active (`Membership.Active`) and

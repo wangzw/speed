@@ -479,7 +479,7 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 
 // The view carries the fields the design names, per state, spelled the way
 // tenant.Status and tenant.DisabledBy spell them: the name, the kind, the owner
-// account and the state's name on every row, and disabledBy only on a disabled
+// account and the state's name on every row, and disabled_by only on a disabled
 // one. It carries no identifier. A field added to a record later does not reach a
 // client by being there, and a source never appears on a row whose state is not
 // disabled.
@@ -498,8 +498,8 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "active",
 			wantKeys: []string{
-				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "created_at",
+				"name", "kind", "display_name", "description", "contact_email", "website",
+				"owner_account", "status", "created_at",
 			},
 		},
 		"disabled by an operator": {
@@ -509,8 +509,8 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "created_at", "disabledBy",
+				"name", "kind", "display_name", "description", "contact_email", "website",
+				"owner_account", "status", "created_at", "disabled_by",
 			},
 			disabledBy: "operator",
 		},
@@ -521,20 +521,20 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "created_at", "disabledBy",
+				"name", "kind", "display_name", "description", "contact_email", "website",
+				"owner_account", "status", "created_at", "disabled_by",
 			},
 			disabledBy: "account",
 		},
 		"deleted": {
 			row:        tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted, OwnerAccount: "acct-owner"},
 			wantStatus: "deleted",
-			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "created_at"},
+			wantKeys:   []string{"name", "kind", "display_name", "description", "contact_email", "website", "owner_account", "status", "created_at"},
 		},
 		"a tenant with no owner": {
 			row:        tenant.Tenant{ID: "t_system", Name: "system", Status: tenant.StatusActive},
 			wantStatus: "active",
-			wantKeys:   []string{"name", "kind", "displayName", "description", "contactEmail", "website", "ownerAccount", "status", "created_at"},
+			wantKeys:   []string{"name", "kind", "display_name", "description", "contact_email", "website", "owner_account", "status", "created_at"},
 		},
 		"a status this build does not know": {
 			row: tenant.Tenant{
@@ -543,8 +543,8 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			},
 			wantStatus: "disabled",
 			wantKeys: []string{
-				"name", "kind", "displayName", "description", "contactEmail", "website",
-				"ownerAccount", "status", "created_at", "disabledBy",
+				"name", "kind", "display_name", "description", "contact_email", "website",
+				"owner_account", "status", "created_at", "disabled_by",
 			},
 			disabledBy: "operator",
 		},
@@ -570,8 +570,8 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 					t.Errorf("the view is missing %q", want)
 				}
 			}
-			if owner, _ := got["ownerAccount"].(string); owner != tc.row.OwnerAccount {
-				t.Errorf("ownerAccount = %q, want %q", owner, tc.row.OwnerAccount)
+			if owner, _ := got["owner_account"].(string); owner != tc.row.OwnerAccount {
+				t.Errorf("owner_account = %q, want %q", owner, tc.row.OwnerAccount)
 			}
 			if status, _ := got["status"].(string); status != tc.wantStatus {
 				t.Errorf("status = %q, want %q", status, tc.wantStatus)
@@ -580,11 +580,11 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 				t.Errorf("kind = %q, want business with no kind resolver assembled", kind)
 			}
 			if tc.disabledBy == "" {
-				if _, ok := got["disabledBy"]; ok {
-					t.Errorf("disabledBy is on a row whose state is %q: %v", tc.wantStatus, got)
+				if _, ok := got["disabled_by"]; ok {
+					t.Errorf("disabled_by is on a row whose state is %q: %v", tc.wantStatus, got)
 				}
-			} else if source, _ := got["disabledBy"].(string); source != tc.disabledBy {
-				t.Errorf("disabledBy = %q, want %q", source, tc.disabledBy)
+			} else if source, _ := got["disabled_by"].(string); source != tc.disabledBy {
+				t.Errorf("disabled_by = %q, want %q", source, tc.disabledBy)
 			}
 		})
 	}
@@ -608,7 +608,7 @@ func TestThePlatformDetailCarriesTheOwner(t *testing.T) {
 		Tenant map[string]any `json:"tenant"`
 	}
 	decode(t, w, &got)
-	if owner, _ := got.Tenant["ownerAccount"].(string); owner != "acct-owner" {
-		t.Errorf("ownerAccount = %q, want acct-owner", owner)
+	if owner, _ := got.Tenant["owner_account"].(string); owner != "acct-owner" {
+		t.Errorf("owner_account = %q, want acct-owner", owner)
 	}
 }

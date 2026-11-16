@@ -51,7 +51,7 @@ function text(
 
 const TENANT = tenantFixture({
   name: 'acme',
-  displayName: 'Acme Corporation',
+  display_name: 'Acme Corporation',
   status: 'active',
 })
 

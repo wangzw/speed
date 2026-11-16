@@ -53,12 +53,12 @@ describe('profileWire', () => {
     })
   })
 
-  it('reads the fields from a view in either surface spelling', () => {
+  it("reads the fields from a view's spelling into the form's", () => {
     expect(
       profileFieldsOf({
-        displayName: 'Acme',
+        display_name: 'Acme',
         description: '',
-        contactEmail: '',
+        contact_email: '',
         website: '',
       }),
     ).toEqual({

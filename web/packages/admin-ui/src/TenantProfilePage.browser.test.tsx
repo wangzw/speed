@@ -61,9 +61,9 @@ function renderPage({
         Promise.resolve(
           profileFixture({
             name: 'acme-inc',
-            displayName: 'Acme Incorporated',
+            display_name: 'Acme Incorporated',
             description: 'A canned organization the fixture answers with.',
-            contactEmail: 'ops@acme.example',
+            contact_email: 'ops@acme.example',
             website: 'https://acme.example',
           }),
         ),

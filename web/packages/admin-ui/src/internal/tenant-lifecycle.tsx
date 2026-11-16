@@ -363,7 +363,7 @@ function TransferOwnerDialog({
   const [failure, setFailure] = useState<string | null>(null)
   // The dialog's heading names the organization the way its profile does;
   // the request and its controls use the name.
-  const name = displayNameOf(tenant.displayName, tenant.name)
+  const name = displayNameOf(tenant.display_name, tenant.name)
 
   // The dialog belongs to one tenant and one target path. A close, a
   // tenant change or a path change withdraws the draft and its result.
@@ -581,7 +581,7 @@ export function TenantLifecycleActions({
 
   const deleted = tenant.status === 'deleted'
   const personal = isPersonalTenant(tenant.kind)
-  const organizationName = displayNameOf(tenant.displayName, tenant.name)
+  const organizationName = displayNameOf(tenant.display_name, tenant.name)
   // The pending read is the lifecycle surface's; a caller the controls are
   // hidden from never issues it.
   const pendingRead = operations.usePendingTenantOwner(
@@ -657,7 +657,7 @@ export function TenantLifecycleActions({
   const pendingTarget =
     pending === null
       ? ''
-      : (identityLabel(pending.targetDisplayName, pending.targetUsername) ??
+      : (identityLabel(pending.target_display_name, pending.target_username) ??
         t('common.accountUnavailable'))
 
   return (

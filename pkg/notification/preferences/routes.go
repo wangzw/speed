@@ -65,7 +65,7 @@ func effectiveChannels(spec notification.TypeSpec, stored map[string][]notificat
 	return canonicalChannels(spec.DefaultChannels), false
 }
 
-// setPreference answers PUT /preferences/:typeKey/:channel: it turns one
+// setPreference answers PUT /preferences/:type_key/:channel: it turns one
 // channel on or off for one type and returns that type's effective set.
 //
 // The decision order is fixed. The entry point binds the body before the

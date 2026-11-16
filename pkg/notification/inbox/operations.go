@@ -21,7 +21,7 @@ const (
 	pathMessagesFragment    = "/notifications/messages"
 	pathUnreadCountFragment = "/notifications/messages/unread-count"
 	pathReadAllFragment     = "/notifications/messages/read-all"
-	pathMessageReadFragment = "/notifications/messages/:messageId/read"
+	pathMessageReadFragment = "/notifications/messages/:message_id/read"
 )
 
 // ListMessagesInput is the request of the listing: the group filter and the
@@ -37,7 +37,7 @@ type ListMessagesInput struct {
 // MarkMessageReadInput is the request of the per-message marking: the
 // identifier the listing returned.
 type MarkMessageReadInput struct {
-	MessageID string `path:"messageId" description:"The message identifier, as returned in the listing. An identifier this recipient cannot see is answered as not found."`
+	MessageID string `path:"message_id" description:"The message identifier, as returned in the listing. An identifier this recipient cannot see is answered as not found."`
 }
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -134,7 +134,7 @@ var markAllMessagesReadOperation = speedhttp.NewOperation[struct{}, readAllBody]
 )
 
 // markMessageReadOperation declares POST
-// /notifications/messages/:messageId/read: one message is marked read.
+// /notifications/messages/:message_id/read: one message is marked read.
 var markMessageReadOperation = speedhttp.NewOperation[MarkMessageReadInput, struct{}](
 	"notification.inbox.markMessageRead",
 	http.MethodPost,

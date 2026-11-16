@@ -268,7 +268,7 @@ export function TenantDetailPage({
   // The header and breadcrumb name the tenant the way its profile does: the
   // display name, or the name when the profile names none. Before the read
   // settles only the name is known, so the route's own name stands in.
-  const tenantLabel = displayNameOf(tenant.data?.displayName ?? '', name)
+  const tenantLabel = displayNameOf(tenant.data?.display_name ?? '', name)
 
   const crumbs = [
     { label: t('shell.title') },
@@ -295,7 +295,7 @@ export function TenantDetailPage({
             <DefinitionRow label={t('tenantDetail.field.name')} value={settled.name} />
             <DefinitionRow
               label={t('tenantProfile.field.displayName')}
-              value={displayNameOf(settled.displayName, settled.name)}
+              value={displayNameOf(settled.display_name, settled.name)}
             />
             <DefinitionRow
               label={t('tenantDetail.field.status')}
@@ -304,7 +304,7 @@ export function TenantDetailPage({
             {disabled && (
               <DefinitionRow
                 label={t('tenantDetail.field.disabledBy')}
-                value={disabledByLabel(settled.disabledBy, t)}
+                value={disabledByLabel(settled.disabled_by, t)}
               />
             )}
             <DefinitionRow
@@ -313,7 +313,7 @@ export function TenantDetailPage({
             />
             <DefinitionRow
               label={t('tenantProfile.field.contactEmail')}
-              value={settled.contactEmail || t('common.emptyValue')}
+              value={settled.contact_email || t('common.emptyValue')}
             />
             <DefinitionRow
               label={t('tenantProfile.field.website')}

@@ -798,7 +798,7 @@ function TenantFrame({
         }
         setTenantNames(
           new Map(
-            answer.tenants.map((tenant) => [tenant.name, tenant.displayName]),
+            answer.tenants.map((tenant) => [tenant.name, tenant.display_name]),
           ),
         )
         setRosterFailed(false)

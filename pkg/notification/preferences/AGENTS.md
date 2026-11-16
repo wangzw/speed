@@ -116,7 +116,7 @@ decision.
 |---|---|---|
 | `GET` | `/api/v1/notifications/types` | 200, `{"types": [{key, group, default_channels, unsubscribable, recipient_visible_params}]}` |
 | `GET` | `/api/v1/notifications/preferences` | 200, `{"preferences": [{type_key, group, channels, explicit}]}` |
-| `PUT` | `/api/v1/notifications/preferences/:typeKey/:channel` | 200, `{"type_key", "channels"}` |
+| `PUT` | `/api/v1/notifications/preferences/:type_key/:channel` | 200, `{"type_key", "channels"}` |
 
 The two `GET` routes carry `Vary: Accept-Language`: their bodies do not vary by
 language, but this module's error responses do, so the endpoint keys its

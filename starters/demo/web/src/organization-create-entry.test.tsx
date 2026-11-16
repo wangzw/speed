@@ -66,13 +66,13 @@ function bindSelfTenants(): void {
           {
             id: 'personal-1',
             name: 'tester',
-            displayName: '',
+            display_name: '',
             kind: 'personal',
           },
           {
             id: 'acme',
             name: 'acme',
-            displayName: 'Acme Inc',
+            display_name: 'Acme Inc',
             kind: 'business',
           },
         ],
@@ -230,7 +230,7 @@ describe('the self-service creation success flow', () => {
     let tenants = [
       {
         name: 'tester',
-        displayName: '',
+        display_name: '',
         kind: 'personal',
       },
     ]
@@ -241,7 +241,7 @@ describe('the self-service creation success flow', () => {
       if (path === '/api/v1/orgs' && options?.method === 'POST') {
         const created = {
           name: 'team',
-          displayName: 'E2E Team',
+          display_name: 'E2E Team',
           description: '',
           status: 'active',
         }
@@ -249,7 +249,7 @@ describe('the self-service creation success flow', () => {
           ...tenants,
           {
             name: created.name,
-            displayName: created.displayName,
+            display_name: created.display_name,
             kind: 'business',
           },
         ]

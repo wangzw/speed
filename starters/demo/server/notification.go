@@ -31,10 +31,10 @@ var notificationRoutes = []struct {
 	{http.MethodGet, "/api/v1/notifications/messages"},
 	{http.MethodGet, "/api/v1/notifications/messages/unread-count"},
 	{http.MethodPost, "/api/v1/notifications/messages/read-all"},
-	{http.MethodPost, "/api/v1/notifications/messages/:messageId/read"},
+	{http.MethodPost, "/api/v1/notifications/messages/:message_id/read"},
 	{http.MethodGet, "/api/v1/notifications/types"},
 	{http.MethodGet, "/api/v1/notifications/preferences"},
-	{http.MethodPut, "/api/v1/notifications/preferences/:typeKey/:channel"},
+	{http.MethodPut, "/api/v1/notifications/preferences/:type_key/:channel"},
 	{http.MethodGet, "/api/v1/notifications/stream"},
 }
 

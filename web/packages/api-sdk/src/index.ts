@@ -1045,7 +1045,7 @@ export interface OrganizationCreatedTenant {
   /** The organization's description, trimmed. */
   description: string;
   /** The organization's display name, trimmed. */
-  displayName: string;
+  display_name: string;
   /** The request-surface name the caller chose; unique across the roster and immutable after creation. */
   name: string;
   /** The organization's state; a self-service organization starts active. */
@@ -1756,21 +1756,21 @@ export const TenantAdminTenantStatus = {
  */
 export interface TenantAdminTenant {
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
-  contactEmail: string;
+  contact_email: string;
   /** When the tenant was registered, as an RFC 3339 instant in UTC. */
   created_at: string;
   /** The organization's description. Empty when its profile names none. */
   description: string;
   /** Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled. */
-  disabledBy?: TenantAdminTenantDisabledBy;
+  disabled_by?: TenantAdminTenantDisabledBy;
   /** The organization's display name. Empty when its profile names none; a surface falls back to the name then. */
-  displayName: string;
+  display_name: string;
   /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name. */
   kind: TenantAdminTenantKind;
   /** The name the request surface addresses the tenant by, and the one every view and path uses. */
   name: string;
   /** The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it. */
-  ownerAccount: string;
+  owner_account: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
   status: TenantAdminTenantStatus;
   /** The organization's absolute http or https address. Empty when its profile names none. */
@@ -1876,9 +1876,9 @@ export interface TenantTransferView {
   /** The request's state. Only pending requests can be cancelled or confirmed. */
   status: TenantTransferViewStatus;
   /** The target account's display name. Empty when the account store does not resolve it. */
-  targetDisplayName: string;
+  target_display_name: string;
   /** The target account's username. Empty when the account store does not resolve it. */
-  targetUsername: string;
+  target_username: string;
 }
 
 export interface TenantAdminTenantProfileWrite {
@@ -2092,23 +2092,23 @@ export const TenantProfileViewStatus = {
  */
 export interface TenantProfileView {
   /** The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity. */
-  contactEmail: string;
+  contact_email: string;
   /** When the tenant was registered, as an RFC 3339 instant in UTC. */
   created_at: string;
   /** The organization's description. Empty when its profile names none. */
   description: string;
   /** The organization's display name. Empty when its profile names none; a surface falls back to the name then. */
-  displayName: string;
+  display_name: string;
   /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name. */
   kind: TenantProfileViewKind;
   /** The name the request surface addresses the tenant by. */
   name: string;
   /** The owning account's internal identifier, from the roster row's owner column. It is the key the ownership decision and the transfer-target exclusion use, and a client compares it to identify the owner; it is not displayed. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner. */
-  ownerAccount: string;
+  owner_account: string;
   /** The owner's display name, read from the account store. It is not the account identifier. Empty when the owner cannot be resolved, and never an identifier. */
-  ownerDisplayName: string;
+  owner_display_name: string;
   /** The owner's account username, read from the account store: unique and user-facing, and not the account identifier. Empty when the owner cannot be resolved or the account has none, and never an identifier. */
-  ownerUsername: string;
+  owner_username: string;
   /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
   status: TenantProfileViewStatus;
   /** The organization's absolute http or https address. Empty when its profile names none. */
@@ -2663,7 +2663,7 @@ export const TenantSelfTenantsList200TenantsItemKind = {
 
 export type TenantSelfTenantsList200TenantsItem = {
   /** The organization's display name, empty when its profile names none. A surface falls back to the name then. */
-  displayName: string;
+  display_name: string;
   /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the name. */
   kind: TenantSelfTenantsList200TenantsItemKind;
   /** The tenant's name, which the request surface addresses it by. */

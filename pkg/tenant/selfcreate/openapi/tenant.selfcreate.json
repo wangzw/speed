@@ -43,7 +43,7 @@
             "description": "The organization's description, trimmed.",
             "type": "string"
           },
-          "displayName": {
+          "display_name": {
             "description": "The organization's display name, trimmed.",
             "type": "string"
           },
@@ -61,7 +61,7 @@
         },
         "required": [
           "name",
-          "displayName",
+          "display_name",
           "description",
           "status"
         ],

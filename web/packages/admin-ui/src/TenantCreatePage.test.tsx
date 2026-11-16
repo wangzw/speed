@@ -96,9 +96,9 @@ describe('TenantCreatePage', () => {
           return Promise.resolve(
             tenantFixture({
               name: input.name,
-              displayName: input.displayName,
+              display_name: input.displayName,
               description: input.description,
-              contactEmail: input.contactEmail,
+              contact_email: input.contactEmail,
               website: input.website,
               status: 'active',
             }),
@@ -130,7 +130,7 @@ describe('TenantCreatePage', () => {
     })
     expect(onCreated.mock.calls[0]?.[0]).toMatchObject({
       name: 'acme',
-      displayName: 'Acme Ltd',
+      display_name: 'Acme Ltd',
     })
   })
 
@@ -167,7 +167,7 @@ describe('TenantCreatePage', () => {
           return Promise.resolve(
             tenantFixture({
               name: input.name,
-              displayName: input.displayName,
+              display_name: input.displayName,
             }),
           )
         },

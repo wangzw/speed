@@ -303,9 +303,9 @@ export function makeAdminBackend(
       Promise.resolve(
         tenantFixture({
           name: input.name,
-          displayName: input.displayName,
+          display_name: input.displayName,
           description: input.description,
-          contactEmail: input.contactEmail,
+          contact_email: input.contactEmail,
           website: input.website,
           status: 'active',
         }),
@@ -443,11 +443,11 @@ export function tenantFixture(
 ): AdminTenant {
   return {
     name: 'acme',
-    displayName: 'Acme',
+    display_name: 'Acme',
     kind: 'business',
-    ownerAccount: 'acc-1',
+    owner_account: 'acc-1',
     status: 'active',
-    contactEmail: '',
+    contact_email: '',
     created_at: '2026-10-15T12:00:00Z',
     description: '',
     website: '',
@@ -462,13 +462,13 @@ export function profileFixture(
   return {
     name: 'acme',
     kind: 'business',
-    displayName: '',
+    display_name: '',
     description: '',
-    contactEmail: '',
+    contact_email: '',
     website: '',
-    ownerAccount: 'acc-1',
-    ownerDisplayName: '',
-    ownerUsername: '',
+    owner_account: 'acc-1',
+    owner_display_name: '',
+    owner_username: '',
     status: 'active',
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
@@ -481,8 +481,8 @@ export function transferFixture(
 ): AdminTenantTransfer {
   return {
     id: 'transfer-1',
-    targetDisplayName: 'Bob Stone',
-    targetUsername: 'bob',
+    target_display_name: 'Bob Stone',
+    target_username: 'bob',
     requested_at: '2026-10-20T08:30:00Z',
     expires_at: '2026-10-27T08:30:00Z',
     status: 'pending',

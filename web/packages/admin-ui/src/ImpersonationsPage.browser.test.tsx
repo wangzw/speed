@@ -25,7 +25,7 @@ import type { AdminImpersonation } from './operations.js'
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS = [tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })]
+const TENANTS = [tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })]
 
 const RECORDS: readonly AdminImpersonation[] = [
   {

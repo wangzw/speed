@@ -22,9 +22,9 @@
 
 /** The four descriptive fields in the spelling the views carry. */
 export interface TenantProfileSource {
-  readonly displayName: string
+  readonly display_name: string
   readonly description: string
-  readonly contactEmail: string
+  readonly contact_email: string
   readonly website: string
 }
 
@@ -66,9 +66,9 @@ export interface TenantProfileFieldErrors {
 /** The fields in the form's spelling from a view that carries them. */
 export function profileFieldsOf(source: TenantProfileSource): TenantProfileFields {
   return {
-    displayName: source.displayName,
+    displayName: source.display_name,
     description: source.description,
-    contactEmail: source.contactEmail,
+    contactEmail: source.contact_email,
     website: source.website,
   }
 }

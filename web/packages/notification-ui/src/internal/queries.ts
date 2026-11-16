@@ -190,7 +190,7 @@ export function useMarkAllNotificationsRead() {
 }
 
 /** Turns one channel on or off for one type (PUT
- * /notifications/preferences/:typeKey/:channel) and refreshes the matrix. */
+ * /notifications/preferences/:type_key/:channel) and refreshes the matrix. */
 export function useSetNotificationPreference() {
   const invalidate = useInvalidateNotifications()
   return useNotificationPreferencesUpdatePreference({

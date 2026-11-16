@@ -267,7 +267,7 @@ describe('TenantDetailPage', () => {
 
   it('renders the tenant fields read by name', async () => {
     const getTenant = vi.fn(() =>
-      Promise.resolve(tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })),
+      Promise.resolve(tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })),
     )
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
     renderWithProviders(<TenantDetailPage name="acme" />, { operations })
@@ -465,7 +465,7 @@ describe('TenantDetailPage', () => {
       return calls === 1
         ? Promise.reject({ status: 404, code: 'client.http.404' })
         : Promise.resolve(
-            tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
           )
     })
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
@@ -488,7 +488,7 @@ describe('TenantDetailPage', () => {
       calls += 1
       return calls === 1
         ? Promise.resolve(
-            tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
           )
         : Promise.reject({ status: 404, code: 'client.http.404' })
     })
@@ -525,9 +525,9 @@ describe('TenantDetailPage', () => {
         getTenant: () =>
           Promise.resolve(
             tenantFixture({
-              name: 'acme', displayName: 'Acme',
+              name: 'acme', display_name: 'Acme',
               status: 'disabled',
-              disabledBy: 'account',
+              disabled_by: 'account',
             }),
           ),
       }),
@@ -546,9 +546,9 @@ describe('TenantDetailPage', () => {
         getTenant: () =>
           Promise.resolve(
             tenantFixture({
-              name: 'acme', displayName: 'Acme',
+              name: 'acme', display_name: 'Acme',
               status: 'disabled',
-              disabledBy: 'operator',
+              disabled_by: 'operator',
             }),
           ),
       }),
@@ -565,7 +565,7 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () =>
-          Promise.resolve(tenantFixture({ name: 'acme', displayName: 'Acme', status: 'disabled' })),
+          Promise.resolve(tenantFixture({ name: 'acme', display_name: 'Acme', status: 'disabled' })),
       }),
     )
     renderWithProviders(<TenantDetailPage name="acme" />, { operations })
@@ -576,7 +576,7 @@ describe('TenantDetailPage', () => {
   it('shows no disable source on a tenant that is not disabled', async () => {
     const operations = createAdminOperations(
       makeAdminBackend({
-        getTenant: () => Promise.resolve(tenantFixture({ name: 'acme', displayName: 'Acme' })),
+        getTenant: () => Promise.resolve(tenantFixture({ name: 'acme', display_name: 'Acme' })),
       }),
     )
     renderWithProviders(<TenantDetailPage name="acme" />, { operations })
@@ -594,9 +594,9 @@ describe('TenantDetailPage', () => {
           Promise.resolve(
             tenantFixture({
               name: 'acme-inc',
-              displayName: 'Acme Incorporated',
+              display_name: 'Acme Incorporated',
               description: 'A canned organization.',
-              contactEmail: 'ops@acme.example',
+              contact_email: 'ops@acme.example',
               website: 'https://acme.example',
               created_at: createdAt,
             }),
@@ -634,7 +634,7 @@ describe('TenantDetailPage', () => {
           Promise.resolve(
             tenantFixture({
               name: 'acme-inc',
-              displayName: 'Acme',
+              display_name: 'Acme',
               description: 'Old description',
             }),
           ),
@@ -681,7 +681,7 @@ describe('TenantDetailPage', () => {
       makeAdminBackend({
         getTenant: () =>
           Promise.resolve(
-            tenantFixture({ name: 'acme-inc', displayName: '' }),
+            tenantFixture({ name: 'acme-inc', display_name: '' }),
           ),
         setTenantProfile: () => Promise.reject({ code: 'tenant.conflict' }),
       }),
@@ -710,7 +710,7 @@ describe('TenantDetailPage', () => {
       makeAdminBackend({
         getTenant: () =>
           Promise.resolve(
-            tenantFixture({ name: 'gone', displayName: 'Gone Co', status: 'deleted' }),
+            tenantFixture({ name: 'gone', display_name: 'Gone Co', status: 'deleted' }),
           ),
       }),
     )

@@ -71,7 +71,7 @@ function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-const TENANT = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
+const TENANT = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
@@ -462,7 +462,7 @@ describe('PermissionsPage', () => {
         listTenants: () =>
           Promise.resolve([
             TENANT,
-            tenantFixture({ name: 'globex', displayName: 'Globex', status: 'active' }),
+            tenantFixture({ name: 'globex', display_name: 'Globex', status: 'active' }),
           ]),
       })
       renderWithProviders(

@@ -997,7 +997,7 @@ func TestCreateGeneratesTheIdentifier(t *testing.T) {
 		t.Error("the generated identifier equals the caller's name")
 	}
 	if reply.Tenant.DisplayName != "Acme" {
-		t.Errorf("displayName = %q, want the trimmed value", reply.Tenant.DisplayName)
+		t.Errorf("display_name = %q, want the trimmed value", reply.Tenant.DisplayName)
 	}
 	if reply.Tenant.Status != tenant.StatusActive.String() {
 		t.Errorf("status = %q, want active", reply.Tenant.Status)

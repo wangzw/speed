@@ -99,7 +99,7 @@ func (s *inboxStore) markAllRead(ctx context.Context, _ struct{}) (readAllBody, 
 }
 
 // markMessageRead answers POST
-// /api/v1/notifications/messages/:messageId/read: it marks one message read and
+// /api/v1/notifications/messages/:message_id/read: it marks one message read and
 // answers 204, or 404 when the message is not one this recipient can see.
 func (s *inboxStore) markMessageRead(ctx context.Context, in MarkMessageReadInput) (struct{}, error) {
 	recipient, err := s.caller(ctx)

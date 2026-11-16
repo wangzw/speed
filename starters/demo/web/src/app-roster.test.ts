@@ -47,7 +47,7 @@ describe('who spends the platform roster read', () => {
       }
       if (path === '/api/v1/system/tenants') {
         return {
-          tenants: [{ name: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'acme', display_name: 'Acme Inc.', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)
@@ -102,7 +102,7 @@ describe('the announced tenant, once the roster is read', () => {
       }
       if (path === '/api/v1/system/tenants') {
         return {
-          tenants: [{ name: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'acme', display_name: 'Acme Inc.', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)
@@ -143,7 +143,7 @@ describe('the announced tenant, once the roster is read', () => {
       }
       if (path === '/api/v1/system/tenants') {
         return {
-          tenants: [{ name: 'aaa', displayName: 'AAA', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'aaa', display_name: 'AAA', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)
@@ -188,7 +188,7 @@ describe('a failed roster read', () => {
           throw new Error('the roster service is unavailable')
         }
         return {
-          tenants: [{ name: 'acme', displayName: 'Acme Inc.', kind: 'business', status: 'active' }],
+          tenants: [{ name: 'acme', display_name: 'Acme Inc.', kind: 'business', status: 'active' }],
         } as T
       }
       throw new Error(`the suite binds only the tenant reads: ${path}`)

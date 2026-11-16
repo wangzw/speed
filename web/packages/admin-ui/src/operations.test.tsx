@@ -31,7 +31,7 @@ describe('useAdminOperations', () => {
   it('falls back to the shipped bundle when no provider is mounted', async () => {
     const calls = bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/tenants') {
-        return { tenants: [{ name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }] }
+        return { tenants: [{ name: 'acme', display_name: 'Acme', kind: 'business', status: 'active' }] }
       }
       throw new Error(`unexpected request: ${call.path}`)
     })
@@ -58,7 +58,7 @@ describe('adminOperations', () => {
   it('reads the roster from the generated tenant endpoint', async () => {
     const calls = bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/tenants') {
-        return { tenants: [{ name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' }] }
+        return { tenants: [{ name: 'acme', display_name: 'Acme', kind: 'business', status: 'active' }] }
       }
       throw new Error(`unexpected request: ${call.path}`)
     })
@@ -118,11 +118,11 @@ describe('adminOperations', () => {
               name: 'acme',
               kind: 'business',
               status: 'active',
-              displayName: 'Acme Ltd',
+              display_name: 'Acme Ltd',
               description: '',
-              contactEmail: '',
+              contact_email: '',
               website: '',
-              ownerAccount: '',
+              owner_account: '',
               created_at: '2026-10-15T12:00:00Z',
             },
           }
@@ -242,7 +242,7 @@ describe('adminOperations', () => {
   it('reads a single tenant from the generated detail endpoint', async () => {
     const calls = bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/tenants/acme') {
-        return { tenant: { name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' } }
+        return { tenant: { name: 'acme', display_name: 'Acme', kind: 'business', status: 'active' } }
       }
       throw new Error(`unexpected request: ${call.path}`)
     })
@@ -396,7 +396,7 @@ describe('adminOperations', () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/system/tenants/acme') {
-        return { tenant: { name: 'acme', displayName: 'Acme', kind: 'business', status: 'active' } }
+        return { tenant: { name: 'acme', display_name: 'Acme', kind: 'business', status: 'active' } }
       }
       if (call.method === 'POST' && call.path === '/api/v1/system/tenants/acme/status') {
         return undefined

@@ -586,8 +586,8 @@ describe('the organization ownership writes', () => {
   ): (call: ObservedCall) => unknown {
     const transfer = {
       id: 'transfer-1',
-      targetDisplayName: 'Bob Stone',
-      targetUsername: 'bob',
+      target_display_name: 'Bob Stone',
+      target_username: 'bob',
       requested_at: '2026-10-20T08:30:00Z',
       expires_at: '2026-10-27T08:30:00Z',
       status: 'pending',

@@ -277,11 +277,11 @@ describe('InvitationsPage', () => {
             Promise.resolve([
               {
                 name: TENANT,
-                displayName: 'Acme',
+                display_name: 'Acme',
                 kind: 'business',
-                ownerAccount: UUID,
+                owner_account: UUID,
                 status: 'active',
-                contactEmail: '',
+                contact_email: '',
                 created_at: '2026-10-15T12:00:00Z',
                 description: '',
                 website: '',

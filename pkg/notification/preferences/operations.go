@@ -19,7 +19,7 @@ const (
 const (
 	pathTypesFragment             = "/notifications/types"
 	pathPreferencesFragment       = "/notifications/preferences"
-	pathPreferenceChannelFragment = "/notifications/preferences/:typeKey/:channel"
+	pathPreferenceChannelFragment = "/notifications/preferences/:type_key/:channel"
 )
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -51,7 +51,7 @@ type (
 // told apart from one naming false.
 type SetPreferenceInput struct {
 	_       struct{} `description:"The body of a single-channel preference update."`
-	TypeKey string   `path:"typeKey" description:"The notification type key, as listed by GET /notifications/types; a key not in the taxonomy is answered 400."`
+	TypeKey string   `path:"type_key" description:"The notification type key, as listed by GET /notifications/types; a key not in the taxonomy is answered 400."`
 	Channel string   `path:"channel" enum:"in_app,email,sms" description:"The channel to turn on or off: one of in_app, email, sms. Any other value is answered 400 before the no-op check."`
 	Enabled *bool    `json:"enabled" required:"true" description:"The target state of the channel; a body naming none is told apart from one naming false"`
 }
@@ -117,7 +117,7 @@ var listPreferencesOperation = speedhttp.NewOperation[struct{}, preferencesBody]
 	},
 )
 
-// updatePreferenceOperation declares PUT /preferences/:typeKey/:channel: one
+// updatePreferenceOperation declares PUT /preferences/:type_key/:channel: one
 // channel is turned on or off and the type's effective set is answered.
 var updatePreferenceOperation = speedhttp.NewOperation[SetPreferenceInput, preferenceSetBody](
 	"notification.preferences.updatePreference",

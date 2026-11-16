@@ -294,13 +294,13 @@ export function TenantRosterPage({
       header: t('tenantProfile.field.displayName'),
       cellWrap: 'nowrap',
       cellFullValue: (tenant) =>
-        displayNameOf(tenant.displayName, tenant.name),
+        displayNameOf(tenant.display_name, tenant.name),
       // The display name is the page's primary label; the shared cap bounds
       // the cell content and its copy control together, and the complete
       // value stays reachable through the title and the control.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (tenant) => {
-        const name = displayNameOf(tenant.displayName, tenant.name)
+        const name = displayNameOf(tenant.display_name, tenant.name)
         return basePath === undefined ? (
           <Typography variant="body2">{name}</Typography>
         ) : (
@@ -346,7 +346,7 @@ export function TenantRosterPage({
               color="text.secondary"
               sx={{ display: 'block' }}
             >
-              {disabledByLabel(tenant.disabledBy, t)}
+              {disabledByLabel(tenant.disabled_by, t)}
             </Typography>
           )}
         </Box>

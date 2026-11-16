@@ -123,7 +123,7 @@ handler reads the caller's identity from the request context; no identity is a
 | `GET /api/v1/notifications/messages` | 200, `{"messages": [Message...], "total": N}`; `group` filters, `limit` defaults to 50 and is refused outside 0..200, a negative offset is refused, all whole |
 | `GET /api/v1/notifications/messages/unread-count` | 200, `{"unread": N}` |
 | `POST /api/v1/notifications/messages/read-all` | 200, `{"read_count": N}` |
-| `POST /api/v1/notifications/messages/:messageId/read` | 204, no body; 404 for a message this recipient cannot see |
+| `POST /api/v1/notifications/messages/:message_id/read` | 204, no body; 404 for a message this recipient cannot see |
 
 A refused request writes a problem-details object whose `type` is under
 `urn:speed:notification:` — `bad-request` for a request whose shape cannot be

@@ -138,7 +138,7 @@ afterEach(() => {
 })
 
 describe('platform tenant lifecycle entries', () => {
-  const acme = tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })
+  const acme = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
   it('shows the transfer and delete entries only with tenant.manage', async () => {
     const operations = createAdminOperations(
@@ -176,9 +176,9 @@ describe('platform tenant lifecycle entries', () => {
 
   it('shows no entry on a personal organization or a tombstone', async () => {
     const tenants: AdminTenant[] = [
-      tenantFixture({ name: 'personal-alice', displayName: 'Alice', kind: 'personal', status: 'active' }),
-      tenantFixture({ name: 'gone', displayName: 'Gone Co', status: 'deleted' }),
-      tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+      tenantFixture({ name: 'personal-alice', display_name: 'Alice', kind: 'personal', status: 'active' }),
+      tenantFixture({ name: 'gone', display_name: 'Gone Co', status: 'deleted' }),
+      tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
     ]
     const operations = createAdminOperations(
       makeAdminBackend({ listTenants: () => Promise.resolve(tenants) }),
@@ -298,8 +298,8 @@ describe('platform tenant lifecycle entries', () => {
   it('shows the pending request with its target and lets platform staff cancel it', async () => {
     const user = userEvent.setup()
     let pending: ReturnType<typeof transferFixture> | null = transferFixture({
-      targetDisplayName: 'Ada Lovelace',
-      targetUsername: 'ada',
+      target_display_name: 'Ada Lovelace',
+      target_username: 'ada',
     })
     const cancelled: Array<{ name: string; request: string }> = []
     const operations = createAdminOperations(
@@ -522,7 +522,7 @@ describe('platform tenant deletion', () => {
   it('deletes through the two-step confirmation and refreshes the roster', async () => {
     const user = userEvent.setup()
     let tenants: AdminTenant[] = [
-      tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+      tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
     ]
     let reads = 0
     const deletes: string[] = []
@@ -573,7 +573,7 @@ describe('platform tenant deletion', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
           ]),
       }),
     )
@@ -611,7 +611,7 @@ describe('platform tenant deletion', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
           ]),
         deleteTenant: () =>
           Promise.reject({ status: 409, code: 'tenant.conflict' }),
@@ -644,7 +644,7 @@ describe('platform tenant deletion', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
           ]),
         deleteTenant: () =>
           Promise.reject({ status: 404, code: 'client.http.404' }),
@@ -673,7 +673,7 @@ describe('platform tenant deletion', () => {
       makeAdminBackend({
         listTenants: () =>
           Promise.resolve([
-            tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
           ]),
         deleteTenant: () =>
           Promise.reject({ status: 403, code: 'tenant.protected' }),
@@ -703,7 +703,7 @@ describe('tenant detail lifecycle', () => {
         Promise.resolve(
           tenantFixture({
             name: query.name ?? 'acme',
-            displayName: query.name === 'personal-alice' ? 'Alice' : 'Acme',
+            display_name: query.name === 'personal-alice' ? 'Alice' : 'Acme',
             kind: query.name === 'personal-alice' ? 'personal' : 'business',
           }),
         ),
@@ -781,7 +781,7 @@ describe('tenant detail lifecycle', () => {
         getTenant: () => {
           reads += 1
           return Promise.resolve(
-            tenantFixture({ name: 'acme', displayName: 'Acme' }),
+            tenantFixture({ name: 'acme', display_name: 'Acme' }),
           )
         },
         getPendingTenantOwner: () => Promise.resolve(pending),
@@ -790,8 +790,8 @@ describe('tenant detail lifecycle', () => {
         requestTenantOwner: (input) => {
           writes.push(input)
           pending = transferFixture({
-            targetDisplayName: 'Ada Lovelace',
-            targetUsername: 'ada',
+            target_display_name: 'Ada Lovelace',
+            target_username: 'ada',
           })
           return Promise.resolve(pending)
         },
@@ -840,7 +840,7 @@ describe('tenant detail lifecycle', () => {
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () =>
-          Promise.resolve(tenantFixture({ name: 'acme', displayName: 'Acme', status })),
+          Promise.resolve(tenantFixture({ name: 'acme', display_name: 'Acme', status })),
         deleteTenant: () => {
           status = 'deleted'
           return Promise.resolve()

@@ -44,7 +44,7 @@ export function OrganizationCreateRoute(): ReactElement {
         const tenant = answer.tenant
         return {
           name: tenant.name,
-          displayName: tenant.displayName,
+          displayName: tenant.display_name,
           description: tenant.description,
         }
       }}

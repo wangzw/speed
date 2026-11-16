@@ -24,9 +24,9 @@ import type { AdminAuditRecord } from './operations.js'
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
 const TENANTS = [
-  tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' }),
-  tenantFixture({ name: 'Beta', displayName: '', status: 'active' }),
-  tenantFixture({ name: 'Old', displayName: '', status: 'disabled' }),
+  tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
+  tenantFixture({ name: 'Beta', display_name: '', status: 'active' }),
+  tenantFixture({ name: 'Old', display_name: '', status: 'disabled' }),
 ]
 
 /** The shipped en-US dashboard strings the overview assertions read. */

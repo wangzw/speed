@@ -62,7 +62,7 @@ func TestTheReadAnswersTheProfileWithoutTheDisableSource(t *testing.T) {
 	if err := json.Unmarshal(raw["profile"], &profile); err != nil {
 		t.Fatalf("decoding the profile object: %v", err)
 	}
-	if _, present := profile["disabledBy"]; present {
+	if _, present := profile["disabled_by"]; present {
 		t.Error("the tenant profile view carries disabledBy, which belongs to the platform management surface")
 	}
 
@@ -138,8 +138,8 @@ func TestTheProfileViewCarriesTheOwner(t *testing.T) {
 		Profile map[string]any `json:"profile"`
 	}
 	decode(t, w, &body)
-	if owner, _ := body.Profile["ownerAccount"].(string); owner != "acct-owner" {
-		t.Errorf("ownerAccount = %q, want acct-owner", owner)
+	if owner, _ := body.Profile["owner_account"].(string); owner != "acct-owner" {
+		t.Errorf("owner_account = %q, want acct-owner", owner)
 	}
 }
 
@@ -157,7 +157,7 @@ func TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner(t *testing.T) {
 	}
 	var body map[string]any
 	decode(t, w, &body)
-	if _, present := body["ownerAccount"]; present {
+	if _, present := body["owner_account"]; present {
 		t.Errorf("the 403 carries ownerAccount, want no owner: body %q", w.Body.String())
 	}
 	if calls := r.catalog.recorded(); len(calls) != 0 {

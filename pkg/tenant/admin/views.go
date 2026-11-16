@@ -29,11 +29,11 @@ type TenantAdminTenant struct {
 
 	Name         string `json:"name" required:"true" description:"The name the request surface addresses the tenant by, and the one every view and path uses."`
 	Kind         string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name."`
-	DisplayName  string `json:"displayName" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the name then."`
+	DisplayName  string `json:"display_name" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the name then."`
 	Description  string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
-	ContactEmail string `json:"contactEmail" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
+	ContactEmail string `json:"contact_email" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
 	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
-	OwnerAccount string `json:"ownerAccount" required:"true" description:"The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it."`
+	OwnerAccount string `json:"owner_account" required:"true" description:"The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it."`
 	Status       string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
 	// CreatedAt is when the roster recorded the registration. Every row carries
 	// one, so the field is always present and a surface needs no fallback.
@@ -41,7 +41,7 @@ type TenantAdminTenant struct {
 	// DisabledBy is present only while Status is disabled. The field is left
 	// out otherwise, so a source never appears on a row whose state it does not
 	// describe.
-	DisabledBy string `json:"disabledBy,omitempty" enum:"operator,account" description:"Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled."`
+	DisabledBy string `json:"disabled_by,omitempty" enum:"operator,account" description:"Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled."`
 }
 
 // tenantView is the name the handlers and their tests use for the view. It is an
@@ -84,8 +84,8 @@ type TenantTransferView struct {
 	_ struct{} `description:"One pending or finished owner-transfer request on the organization's own surface."`
 
 	ID                string    `json:"id" required:"true" description:"The request identifier the target and the canonical paths address."`
-	TargetDisplayName string    `json:"targetDisplayName" required:"true" description:"The target account's display name. Empty when the account store does not resolve it."`
-	TargetUsername    string    `json:"targetUsername" required:"true" description:"The target account's username. Empty when the account store does not resolve it."`
+	TargetDisplayName string    `json:"target_display_name" required:"true" description:"The target account's display name. Empty when the account store does not resolve it."`
+	TargetUsername    string    `json:"target_username" required:"true" description:"The target account's username. Empty when the account store does not resolve it."`
 	RequestedAt       time.Time `json:"requested_at" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
 	ExpiresAt         time.Time `json:"expires_at" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
 	Status            string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be cancelled or confirmed."`

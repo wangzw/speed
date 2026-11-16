@@ -114,11 +114,11 @@ const TENANT: TenantAdminTenant = {
   name: 'acme',
   kind: 'business',
   status: 'active',
-  contactEmail: 'ops@acme.example',
+  contact_email: 'ops@acme.example',
   description: 'The canned organization the fixture answers with.',
-  displayName: 'Acme Inc.',
+  display_name: 'Acme Inc.',
   website: 'https://acme.example',
-  ownerAccount: 'account-1',
+  owner_account: 'account-1',
   created_at: INSTANT,
 }
 
@@ -129,13 +129,13 @@ const TENANT_PROFILE: TenantProfileView = {
   name: TENANT.name,
   kind: TENANT.kind,
   status: TENANT.status,
-  contactEmail: TENANT.contactEmail,
+  contact_email: TENANT.contact_email,
   description: TENANT.description,
-  displayName: TENANT.displayName,
+  display_name: TENANT.display_name,
   website: TENANT.website,
-  ownerAccount: TENANT.ownerAccount,
-  ownerDisplayName: 'Test User',
-  ownerUsername: '',
+  owner_account: TENANT.owner_account,
+  owner_display_name: 'Test User',
+  owner_username: '',
   created_at: TENANT.created_at,
 }
 
@@ -468,7 +468,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
         {
           name: TENANT.name,
           kind: 'business',
-          displayName: TENANT.displayName,
+          display_name: TENANT.display_name,
         },
       ],
     } satisfies TenantSelfTenantsList200,
@@ -481,7 +481,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
         {
           name: TENANT.name,
           kind: 'business',
-          displayName: TENANT.displayName,
+          display_name: TENANT.display_name,
         },
       ],
     } satisfies TenantSelfTenantsList200,

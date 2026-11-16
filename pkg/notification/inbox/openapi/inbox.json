@@ -313,7 +313,7 @@
         "summary": "The number of the caller's unread, unexpired messages"
       }
     },
-    "/notifications/messages/{messageId}/read": {
+    "/notifications/messages/{message_id}/read": {
       "post": {
         "description": "Marks one message read and answers 204 with no body. Marking a message that is already read is a successful no-op that leaves its first-read timestamp alone. An identifier that is unknown, belongs to another account, or belongs to another tenant is answered with the same 404, so the route does not reveal which messages exist. A request without an identity is answered 401, and a store failure is answered 503.",
         "operationId": "notification.inbox.markMessageRead",
@@ -321,7 +321,7 @@
           {
             "description": "The message identifier, as returned in the listing. An identifier this recipient cannot see is answered as not found.",
             "in": "path",
-            "name": "messageId",
+            "name": "message_id",
             "required": true,
             "schema": {
               "type": "string"

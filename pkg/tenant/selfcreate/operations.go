@@ -79,7 +79,7 @@ type OrganizationCreatedTenant struct {
 	_ struct{} `description:"The created organization: the caller's name and profile, and the active state. The generated identifier is internal and never appears."`
 
 	Name        string `json:"name" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
-	DisplayName string `json:"displayName" required:"true" description:"The organization's display name, trimmed."`
+	DisplayName string `json:"display_name" required:"true" description:"The organization's display name, trimmed."`
 	Description string `json:"description" required:"true" description:"The organization's description, trimmed."`
 	Status      string `json:"status" required:"true" enum:"active" description:"The organization's state; a self-service organization starts active."`
 }

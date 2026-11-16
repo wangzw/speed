@@ -138,9 +138,9 @@ func newRigOver(t *testing.T, accounts authn.Accounts) *rig {
 
 // ownerFields is the part of the profile view the owner cases read.
 type ownerFields struct {
-	OwnerAccount     string `json:"ownerAccount"`
-	OwnerDisplayName string `json:"ownerDisplayName"`
-	OwnerUsername    string `json:"ownerUsername"`
+	OwnerAccount     string `json:"owner_account"`
+	OwnerDisplayName string `json:"owner_display_name"`
+	OwnerUsername    string `json:"owner_username"`
 }
 
 func ownerOf(t *testing.T, w *httptest.ResponseRecorder) ownerFields {
@@ -157,10 +157,10 @@ func ownerOf(t *testing.T, w *httptest.ResponseRecorder) ownerFields {
 func assertNoAccountID(t *testing.T, owner ownerFields) {
 	t.Helper()
 	if owner.OwnerDisplayName == ownerAccountID {
-		t.Errorf("ownerDisplayName = %q, want a display name, never the account identifier", owner.OwnerDisplayName)
+		t.Errorf("owner_display_name = %q, want a display name, never the account identifier", owner.OwnerDisplayName)
 	}
 	if owner.OwnerUsername == ownerAccountID {
-		t.Errorf("ownerUsername = %q, want a username, never the account identifier", owner.OwnerUsername)
+		t.Errorf("owner_username = %q, want a username, never the account identifier", owner.OwnerUsername)
 	}
 }
 
@@ -177,13 +177,13 @@ func TestTheReadShowsTheOwnerByDisplayNameAndUsername(t *testing.T) {
 	}
 	owner := ownerOf(t, w)
 	if owner.OwnerAccount != ownerAccountID {
-		t.Errorf("ownerAccount = %q, want %q", owner.OwnerAccount, ownerAccountID)
+		t.Errorf("owner_account = %q, want %q", owner.OwnerAccount, ownerAccountID)
 	}
 	if owner.OwnerDisplayName != ownerName {
-		t.Errorf("ownerDisplayName = %q, want %q", owner.OwnerDisplayName, ownerName)
+		t.Errorf("owner_display_name = %q, want %q", owner.OwnerDisplayName, ownerName)
 	}
 	if owner.OwnerUsername != ownerUser {
-		t.Errorf("ownerUsername = %q, want %q", owner.OwnerUsername, ownerUser)
+		t.Errorf("owner_username = %q, want %q", owner.OwnerUsername, ownerUser)
 	}
 	assertNoAccountID(t, owner)
 }
@@ -200,13 +200,13 @@ func TestTheWriteShowsTheOwnerByDisplayNameAndUsername(t *testing.T) {
 	}
 	owner := ownerOf(t, w)
 	if owner.OwnerAccount != ownerAccountID {
-		t.Errorf("ownerAccount = %q, want %q", owner.OwnerAccount, ownerAccountID)
+		t.Errorf("owner_account = %q, want %q", owner.OwnerAccount, ownerAccountID)
 	}
 	if owner.OwnerDisplayName != ownerName {
-		t.Errorf("ownerDisplayName = %q, want %q", owner.OwnerDisplayName, ownerName)
+		t.Errorf("owner_display_name = %q, want %q", owner.OwnerDisplayName, ownerName)
 	}
 	if owner.OwnerUsername != ownerUser {
-		t.Errorf("ownerUsername = %q, want %q", owner.OwnerUsername, ownerUser)
+		t.Errorf("owner_username = %q, want %q", owner.OwnerUsername, ownerUser)
 	}
 	assertNoAccountID(t, owner)
 }
@@ -238,7 +238,7 @@ func TestWithNoAccountSeamTheOwnerNamesAreEmpty(t *testing.T) {
 					owner.OwnerDisplayName, owner.OwnerUsername)
 			}
 			if owner.OwnerAccount != ownerAccountID {
-				t.Errorf("ownerAccount = %q, want %q", owner.OwnerAccount, ownerAccountID)
+				t.Errorf("owner_account = %q, want %q", owner.OwnerAccount, ownerAccountID)
 			}
 			assertNoAccountID(t, owner)
 		})
@@ -375,10 +375,10 @@ func TestAnOwnerWithoutAUsernameHasOnlyTheDisplayName(t *testing.T) {
 	}
 	owner := ownerOf(t, w)
 	if owner.OwnerDisplayName != ownerName {
-		t.Errorf("ownerDisplayName = %q, want %q", owner.OwnerDisplayName, ownerName)
+		t.Errorf("owner_display_name = %q, want %q", owner.OwnerDisplayName, ownerName)
 	}
 	if owner.OwnerUsername != "" {
-		t.Errorf("ownerUsername = %q, want empty for an account with no username", owner.OwnerUsername)
+		t.Errorf("owner_username = %q, want empty for an account with no username", owner.OwnerUsername)
 	}
 	assertNoAccountID(t, owner)
 }

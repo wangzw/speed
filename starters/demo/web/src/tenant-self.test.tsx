@@ -78,8 +78,8 @@ describe('the caller tenant list store', () => {
   it('replaces the list and marks it settled on a successful read', async () => {
     bindSelf(() => ({
       tenants: [
-        { name: 'acme-inc', displayName: '', kind: 'business' },
-        { name: 'my-space', displayName: '', kind: 'personal' },
+        { name: 'acme-inc', display_name: '', kind: 'business' },
+        { name: 'my-space', display_name: '', kind: 'personal' },
       ],
     }))
 
@@ -102,12 +102,12 @@ describe('the caller tenant list store', () => {
       tenants: [
         {
           name: 'acme-inc',
-          displayName: 'Acme Incorporated',
+          display_name: 'Acme Incorporated',
           kind: 'business',
         },
         {
           name: 'my-space',
-          displayName: '',
+          display_name: '',
           kind: 'personal',
         },
       ],
@@ -123,7 +123,7 @@ describe('the caller tenant list store', () => {
 
   it('keeps the settled rows and marks the list unsettled when a read fails', async () => {
     bindSelf(() => ({
-      tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
+      tenants: [{ name: 'acme-inc', display_name: '', kind: 'business' }],
     }))
     await loadSelfTenants()
 
@@ -181,7 +181,7 @@ describe('the caller tenant list store', () => {
       return calls === 1
         ? older
         : {
-            tenants: [{ name: 'acme-inc', displayName: '', kind: 'business' }],
+            tenants: [{ name: 'acme-inc', display_name: '', kind: 'business' }],
           }
     })
 
@@ -348,7 +348,7 @@ describe('the tenant switcher over the self list', () => {
           tenants: [
             {
               name: 'globex-renamed',
-              displayName: 'Globex Renamed',
+              display_name: 'Globex Renamed',
               kind: 'business',
               status: 'active',
             },

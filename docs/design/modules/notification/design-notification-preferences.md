@@ -6,7 +6,7 @@
 
 ## 职责
 
-本模块交付**按通知类型的渠道偏好矩阵**，并作为**通知类型分类法的消费点**。它把各业务模块声明的通知类型（`notification.TypeSpec`）收成一份只读分类法，据以校验一次偏好写入点名的类型是否在册；它持有每个收件人对每个类型的渠道集合，回答“这个收件人、这个类型，走哪些渠道”。它在入口模块的登记接口上挂 `/types`、`/preferences` 与 `PUT /preferences/:typeKey/:channel`。
+本模块交付**按通知类型的渠道偏好矩阵**，并作为**通知类型分类法的消费点**。它把各业务模块声明的通知类型（`notification.TypeSpec`）收成一份只读分类法，据以校验一次偏好写入点名的类型是否在册；它持有每个收件人对每个类型的渠道集合，回答“这个收件人、这个类型，走哪些渠道”。它在入口模块的登记接口上挂 `/types`、`/preferences` 与 `PUT /preferences/:type_key/:channel`。
 
 类型不是本模块声明的：一个类型是**发出它的那个业务模块的声明**。业务模块把 `notification.TypeSpec` 放进自己的 `Resources`，本模块在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，构成分类法。本模块排他交付 `(*notification.Preferences)(nil)`（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)）。
 
@@ -76,7 +76,7 @@ type Preferences interface {
 |---|---|---|
 | `GET /api/v1/notifications/types` | 200，分类法视图 | 是 |
 | `GET /api/v1/notifications/preferences` | 200，调用方的偏好矩阵 | 是 |
-| `PUT /api/v1/notifications/preferences/:typeKey/:channel` | 200，该类型的有效集 | 否 |
+| `PUT /api/v1/notifications/preferences/:type_key/:channel` | 200，该类型的有效集 | 否 |
 
 **端名清单必填，因为本模块的路由不能落在每一个端上。** 一个已被通配路由（gin 的 `/*path`，[REF-gin](../../../references.md)）独占路径空间的端不能再承载具体路由：路由引擎在同一方法树上拒绝这一对，入口模块在组装链时以路由冲突终止启动。**前端与 API 同进程**是既定拓扑之一，而前端模块正是在它拿到的那个端上挂通配路由，所以两种路由必须分端；本模块的路由落在 `notification.preferences.endpoints` 点名的那些端上。取舍见 [ADR-notification-endpoints](../../../adr/adr-notification-endpoints.md)。
 
@@ -98,7 +98,7 @@ type Preferences interface {
 
 ### PUT 的判定顺序
 
-`PUT /preferences/:typeKey/:channel` 的正文是 `{ "enabled": true | false }`。判定顺序固定，收口在一处：
+`PUT /preferences/:type_key/:channel` 的正文是 `{ "enabled": true | false }`。判定顺序固定，收口在一处：
 
 1. **正文可读**：入口模块在 handler 之前绑定正文。`Content-Type` 缺失或不是 `application/json` 答 415；正文为空答 400（PUT 的正文声明为必需）；正文不是 JSON 对象（字面量 `null` 除外，它按空对象绑定）、`enabled` 是 `null` 之外的其它非布尔值、或带声明之外的成员也答 400。这些拒绝是入口模块的答案：`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail。字面量 `null` 绑定成空对象后与缺少 `enabled` 一致，因此与“正文没有 `enabled`、或 `enabled` 是 `null`”一道由本模块的 handler 答 400 `urn:speed:notification:bad-request`，标题与 detail 由本模块的消息目录渲染。两种情况都不触达存储。
 2. **渠道已知**：`KnownChannel(channel)` 为 false 即 `ErrUnknownChannel`，先于任何 no-op 分支拒绝。
@@ -142,7 +142,7 @@ flowchart TD
 ### 对外接口
 
 - `notification.Preferences` 的方法集，以及 `notification.TypeSpec`、`notification.Preference`、`notification.Channel`、`notification.KnownChannel` 的字段与取值，是本模块与其他模块之间的接口；本模块的包导出的 `ModuleName` 同属接口，改名会让命令树上的纳入静默失配。
-- **宿主可见的接口**：模块名 `notification.preferences`，配置键 `notification.preferences.endpoints`，路由 `GET /api/v1/notifications/types`、`GET /api/v1/notifications/preferences`、`PUT /api/v1/notifications/preferences/:typeKey/:channel`，`Problem.Type` 前缀 `urn:speed:notification:` 及其下的码。改动它们是宿主可见的破坏性变更。
+- **宿主可见的接口**：模块名 `notification.preferences`，配置键 `notification.preferences.endpoints`，路由 `GET /api/v1/notifications/types`、`GET /api/v1/notifications/preferences`、`PUT /api/v1/notifications/preferences/:type_key/:channel`，`Problem.Type` 前缀 `urn:speed:notification:` 及其下的码。改动它们是宿主可见的破坏性变更。
 - 特性名 `notification.preferences`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 表 `notification_preferences` 属于本模块，宿主不读写它；它的列供运维查看，不在对外接口内。
 

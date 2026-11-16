@@ -100,7 +100,7 @@ function announcementRegion(): HTMLElement {
   return regions[0]!
 }
 
-const TENANT = { name: 'acme', displayName: 'Acme', kind: 'business' as const, status: 'active' as const }
+const TENANT = { name: 'acme', display_name: 'Acme', kind: 'business' as const, status: 'active' as const }
 
 interface GrantFixture {
   readonly id: string

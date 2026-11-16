@@ -27,7 +27,7 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-const TENANTS = [tenantFixture({ name: 'acme', displayName: 'Acme', status: 'active' })]
+const TENANTS = [tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })]
 
 const ROLES: readonly AdminRole[] = [
   {

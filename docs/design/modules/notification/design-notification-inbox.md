@@ -75,14 +75,14 @@ type Inbox interface {
 
 ### 路由
 
-基路径 `/api/v1/notifications`，本模块在 `Init` 里把路由挂在入口模块的登记接口上，端取自配置项 `notification.inbox.endpoints` 点名的那些端，路径取 gin（[REF-gin](../../../references.md)）写法。每条路由点名一个路径参数 `:messageId` 或不分页参数，**不带自有权限闸**：路由本身的访问控制由宿主侧的授权决定。下表是路由的全集（封闭集），列出方法、路径与成功应答。
+基路径 `/api/v1/notifications`，本模块在 `Init` 里把路由挂在入口模块的登记接口上，端取自配置项 `notification.inbox.endpoints` 点名的那些端，路径取 gin（[REF-gin](../../../references.md)）写法。每条路由点名一个路径参数 `:message_id` 或不分页参数，**不带自有权限闸**：路由本身的访问控制由宿主侧的授权决定。下表是路由的全集（封闭集），列出方法、路径与成功应答。
 
 | 方法 路径 | 成功应答 |
 |---|---|
 | `GET /api/v1/notifications/messages` | 200，`{"messages": [Message...], "total": N}` |
 | `GET /api/v1/notifications/messages/unread-count` | 200，`{"unread": N}` |
 | `POST /api/v1/notifications/messages/read-all` | 200，`{"read_count": N}` |
-| `POST /api/v1/notifications/messages/:messageId/read` | 204，无正文 |
+| `POST /api/v1/notifications/messages/:message_id/read` | 204，无正文 |
 
 路由的响应体里，`Message` 视图逐字段从根包的 `Message` 构造：`id`、`type_key`、`group`、`title`、`body`、`params`、`link`、`read_at`、`created_at`；`read_at` 为 `null` 表示未读，契约声明它可空，`created_at` 恒有值；时间按带 `Z` 的 UTC ISO 8601 写出（[ADR-api-time-format](../../../adr/adr-api-time-format.md)）。
 
@@ -181,7 +181,7 @@ classDiagram
 
 1. 投递流水线调 `Write(ctx, "u1", m, "K")`。收件箱在自己的短事务里插入一行，`dedupe_key` 为 `K`，`read_at` 为空；提交之后发布 `notification.inbox.created`。持久状态：表里一行，事件的载荷带这一行的 `message_id`、`tenant_id`、`recipient_user_id` 与 `type_key`。
 2. 同一个 `K` 再次调用 `Write`。插入撞上 `dedupe_key` 的唯一索引，`Write` 读回既有行并返回它的视图，不新建行、不发事件。持久状态不变。
-3. `POST /messages/:messageId/read` 命中这一行：`read_at` 从空写成一个时刻，答 204。再发一次：语句匹配 0 行，再取一次本收件人范围内的 id，存在即返回成功、不写库，首读时间戳不变。
+3. `POST /messages/:message_id/read` 命中这一行：`read_at` 从空写成一个时刻，答 204。再发一次：语句匹配 0 行，再取一次本收件人范围内的 id，存在即返回成功、不写库，首读时间戳不变。
 4. `POST /messages/read-all` 只匹配 `read_at IS NULL` 的行；这一次匹配 0 行，答 `{read_count: 0}` 且成功。持久状态不变。
 5. 行的 `expires_at` 到期之后，它不再出现在 `GET /messages` 的列表里、也不再计入未读数，但它的 `read_at` 仍可被标记。
 6. 装配里没有事件总线，或事件发布失败时，那次写入的行照样在表里；推送拿不到提示，收件人回读那一行。
@@ -195,7 +195,7 @@ classDiagram
 | `GET /messages` | 取身份（缺即 401）→ 解析 `group`（可选）、`limit`、`offset`：`limit` 缺省或 0 取 50，`<0` 或 `>200` 即 400，`offset<0` 即 400 → `List` | 200；参数越界 400 |
 | `GET /messages/unread-count` | 取身份（缺即 401）→ `UnreadCount` | 200 |
 | `POST /messages/read-all` | 取身份（缺即 401）→ `ReadAll` | 200 |
-| `POST /messages/:messageId/read` | 取身份（缺即 401）→ `MarkRead(messageID)`：命中即 204，未命中即 404 | 204；404 |
+| `POST /messages/:message_id/read` | 取身份（缺即 401）→ `MarkRead(messageID)`：命中即 204，未命中即 404 | 204；404 |
 
 **越界是整页拒绝，不静默截断。** `limit` 超过上限或 `offset` 为负时，路由答 400 而不取一个被夹住的值；一个越界的请求要么按原样答错，要么整页缺失，本模块取按原样答错这一条。
 
@@ -227,7 +227,7 @@ classDiagram
 |---|---|
 | 请求上下文没有身份 | 401；本模块不设权限闸，身份用来确定收件人 |
 | `GET /messages` 的 `limit<0`、`limit>200` 或 `offset<0` | 400，`Problem.Type` 为 `urn:speed:notification:bad-request`，整页拒绝 |
-| `POST /messages/:messageId/read` 点名未知 id、他人或他租户的行 | 404，`Problem.Type` 为 `urn:speed:notification:message-not-found`，一律相同 |
+| `POST /messages/:message_id/read` 点名未知 id、他人或他租户的行 | 404，`Problem.Type` 为 `urn:speed:notification:message-not-found`，一律相同 |
 | `Write` 的 `dedupeKey` 或 `recipient` 为空 | 调用方缺陷，`Write` 返回 `ErrInvalidRequest`，不写行 |
 | 路由能力在场而 `notification.inbox.endpoints` 为空 | 终止启动，以完整路径点名这一项 |
 | 装配里没有总线 | `Write` 不发布事件，行照常落库，不报错 |

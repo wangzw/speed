@@ -7,7 +7,7 @@
  * in-app column is always present; the optional columns come from
  * NotificationPresenceProvider's `channels` (email, sms), ordered by the
  * platform's closed channel vocabulary (in_app, email, sms -- the set
- * PUT /notifications/preferences/:typeKey/:channel accepts). Without a
+ * PUT /notifications/preferences/:type_key/:channel accepts). Without a
  * provider no optional channel is offered: the matrix renders the in-app
  * column alone. Toggling a cell writes that one channel's target state and
  * re-reads the matrix, so the checkboxes always show the server's answer

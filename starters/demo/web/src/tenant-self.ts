@@ -136,12 +136,12 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
     const answer = await tenantSelfTenantsList()
     if (applies()) {
       publish({
-        tenants: answer.tenants.map(({ name, displayName, kind }) => ({
+        tenants: answer.tenants.map(({ name, display_name, kind }) => ({
           name,
           // The generated answer carries the field, but a suite's scripted
           // rows predating it may not: an absent name is the same fact as an
           // empty one, and no surface may throw on it.
-          displayName: typeof displayName === 'string' ? displayName : '',
+          displayName: typeof display_name === 'string' ? display_name : '',
           kind,
         })),
         settled: true,

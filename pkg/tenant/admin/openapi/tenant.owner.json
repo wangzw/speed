@@ -72,19 +72,19 @@
             ],
             "type": "string"
           },
-          "targetDisplayName": {
+          "target_display_name": {
             "description": "The target account's display name. Empty when the account store does not resolve it.",
             "type": "string"
           },
-          "targetUsername": {
+          "target_username": {
             "description": "The target account's username. Empty when the account store does not resolve it.",
             "type": "string"
           }
         },
         "required": [
           "id",
-          "targetDisplayName",
-          "targetUsername",
+          "target_display_name",
+          "target_username",
           "requested_at",
           "expires_at",
           "status"

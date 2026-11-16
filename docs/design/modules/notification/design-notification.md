@@ -176,13 +176,13 @@ type Message struct {
 | inbox | `GET /messages` | 无（宿主侧授权） |
 | inbox | `GET /messages/unread-count` | 无 |
 | inbox | `POST /messages/read-all` | 无 |
-| inbox | `POST /messages/:messageId/read` | 无 |
+| inbox | `POST /messages/:message_id/read` | 无 |
 | preferences | `GET /types` | 无 |
 | preferences | `GET /preferences` | 无 |
-| preferences | `PUT /preferences/:typeKey/:channel` | 无 |
+| preferences | `PUT /preferences/:type_key/:channel` | 无 |
 | stream | `GET /stream`（SSE） | 无 |
 
-`GET /messages` 的过滤参数只有 `group`；分页为 `limit`（缺省 50、上限 200）加 `offset`，参数越界**整页拒绝**、不静默截断；排序 `created_at DESC, id DESC`。`POST /messages/read-all` 的幂等由谓词给出：`WHERE recipient_user_id = ? AND read_at IS NULL`，重复调用匹配 0 行、答 `{read_count: 0}` 且成功；标记已读不以过期与否为条件。`POST /messages/:messageId/read` 命中已读行直接返回 204 且不写库，保留首读时间戳；未知 id、他人、他租户三合一，一律 `ErrMessageNotFound`，不做泄露存在性的区分。`GET /messages/unread-count` 只计未读且未过期的行。`GET /stream` 的语义见“SSE 推送”。
+`GET /messages` 的过滤参数只有 `group`；分页为 `limit`（缺省 50、上限 200）加 `offset`，参数越界**整页拒绝**、不静默截断；排序 `created_at DESC, id DESC`。`POST /messages/read-all` 的幂等由谓词给出：`WHERE recipient_user_id = ? AND read_at IS NULL`，重复调用匹配 0 行、答 `{read_count: 0}` 且成功；标记已读不以过期与否为条件。`POST /messages/:message_id/read` 命中已读行直接返回 204 且不写库，保留首读时间戳；未知 id、他人、他租户三合一，一律 `ErrMessageNotFound`，不做泄露存在性的区分。`GET /messages/unread-count` 只计未读且未过期的行。`GET /stream` 的语义见“SSE 推送”。
 
 收件人来源随路由而分：inbox 与 stream 的 handler 经认证根包的读取接口（`pkg/authn` `FromContext` 返回的 `Identity` 的账户）取已认定的身份，以其账户标识为收件人；preferences 的 handler 不从身份解析收件人，它的收件人取值来自请求上下文里的一个值，由宿主的身份与授权侧给出（[notification-preferences](design-notification-preferences.md)）。本能力不给路由挂权限闸，因此“这个身份能不能读这个收件人的收件箱”不在本能力的路由上判定。
 

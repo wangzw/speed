@@ -243,10 +243,10 @@ func TestRoutesReadTheIdentitysInbox(t *testing.T) {
 // The descriptor's route set is the closed four, and every one of them mounts.
 func TestTheRouteSetIsClosedAndMounts(t *testing.T) {
 	want := map[mountedRoute]bool{
-		{http.MethodGet, "/api/v1/notifications/messages"}:                  true,
-		{http.MethodGet, "/api/v1/notifications/messages/unread-count"}:     true,
-		{http.MethodPost, "/api/v1/notifications/messages/read-all"}:        true,
-		{http.MethodPost, "/api/v1/notifications/messages/:messageId/read"}: true,
+		{http.MethodGet, "/api/v1/notifications/messages"}:                   true,
+		{http.MethodGet, "/api/v1/notifications/messages/unread-count"}:      true,
+		{http.MethodPost, "/api/v1/notifications/messages/read-all"}:         true,
+		{http.MethodPost, "/api/v1/notifications/messages/:message_id/read"}: true,
 	}
 	got := (&inboxStore{}).routes()
 	if len(got) != len(want) {

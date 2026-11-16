@@ -198,7 +198,7 @@
         "summary": "The caller's preference matrix, one row per type in the taxonomy"
       }
     },
-    "/notifications/preferences/{typeKey}/{channel}": {
+    "/notifications/preferences/{type_key}/{channel}": {
       "put": {
         "description": "Applies the body's enabled to the channel named in the path and answers with the type's effective channel set after the change. true adds the channel to the current effective set, false removes it; the result is deduplicated and stably ordered. When the target set equals the current effective set the call answers 200 without writing a row, so repeating it is harmless. Only that one channel changes; the type's other channels keep their effective value. Checks run in a fixed order — body, channel, type, unsubscribability — so an unknown channel is never taken for a no-op.",
         "operationId": "notification.preferences.updatePreference",
@@ -206,7 +206,7 @@
           {
             "description": "The notification type key, as listed by GET /notifications/types; a key not in the taxonomy is answered 400.",
             "in": "path",
-            "name": "typeKey",
+            "name": "type_key",
             "required": true,
             "schema": {
               "type": "string"

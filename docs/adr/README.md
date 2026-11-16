@@ -83,6 +83,7 @@
 | [operation 声明覆盖完整的 HTTP 输入与应答形态](adr-http-request-response-kinds.md) |
 | [管理面路径以作用域段开头，普通路由不带段](adr-http-api-path-scopes.md) |
 | [契约文档承载分组、鉴权与顶层元数据，访问级别由 operation 声明](adr-http-contract-metadata.md) |
+| [接口字段统一用下划线命名](adr-api-field-naming.md) |
 | [Stop 关闭监听器并等在途请求排空结束](adr-http-shutdown.md) |
 | [请求路径的 panic 兜底由入口模块内建，每端唯一](adr-http-recovery.md) |
 | [入口模块定义默认的错误响应结构，并经可选接口接受定制](adr-http-errors.md) |

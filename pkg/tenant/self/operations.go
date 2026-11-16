@@ -29,7 +29,7 @@ const pathTenantsFragment = "/auth/me/tenants"
 // served.
 type tenantSelfTenant = struct {
 	Name        string `json:"name" required:"true" description:"The tenant's name, which the request surface addresses it by."`
-	DisplayName string `json:"displayName" required:"true" description:"The organization's display name, empty when its profile names none. A surface falls back to the name then."`
+	DisplayName string `json:"display_name" required:"true" description:"The organization's display name, empty when its profile names none. A surface falls back to the name then."`
 	Kind        string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the name."`
 }
 

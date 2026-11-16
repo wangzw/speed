@@ -323,8 +323,8 @@ export function TenantProfilePage({
                   <ProfileField
                     label={t('tenantProfile.field.owner')}
                     value={ownerLabelOf(
-                      settledProfile.ownerDisplayName,
-                      settledProfile.ownerUsername,
+                      settledProfile.owner_display_name,
+                      settledProfile.owner_username,
                       t('tenantProfile.owner.unnamed'),
                     )}
                   />
@@ -361,7 +361,7 @@ export function TenantProfilePage({
                     <ProfileField
                       label={t('tenantProfile.field.displayName')}
                       value={displayNameOf(
-                        settledProfile.displayName,
+                        settledProfile.display_name,
                         settledProfile.name,
                       )}
                     />
@@ -371,7 +371,7 @@ export function TenantProfilePage({
                     />
                     <ProfileField
                       label={t('tenantProfile.field.contactEmail')}
-                      value={settledProfile.contactEmail || t('common.emptyValue')}
+                      value={settledProfile.contact_email || t('common.emptyValue')}
                     />
                     <ProfileField
                       label={t('tenantProfile.field.website')}
@@ -398,7 +398,7 @@ export function TenantProfilePage({
                 tenant={tenant}
                 profile={settledProfile}
                 displayName={displayNameOf(
-                  settledProfile.displayName,
+                  settledProfile.display_name,
                   settledProfile.name,
                 )}
                 onTenantUpdated={onTenantUpdated}

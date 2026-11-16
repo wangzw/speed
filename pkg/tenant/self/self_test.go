@@ -182,7 +182,7 @@ func TestTheReadCarriesTheOrganizationDisplayName(t *testing.T) {
 	var body struct {
 		Tenants []struct {
 			ID          string `json:"id"`
-			DisplayName string `json:"displayName"`
+			DisplayName string `json:"display_name"`
 		} `json:"tenants"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {

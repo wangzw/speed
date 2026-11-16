@@ -34,7 +34,7 @@
       "TenantAdminTenant": {
         "description": "One tenant as the management routes render it: the name, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled.",
         "properties": {
-          "contactEmail": {
+          "contact_email": {
             "description": "The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity.",
             "type": "string"
           },
@@ -47,7 +47,7 @@
             "description": "The organization's description. Empty when its profile names none.",
             "type": "string"
           },
-          "disabledBy": {
+          "disabled_by": {
             "description": "Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled.",
             "enum": [
               "operator",
@@ -55,7 +55,7 @@
             ],
             "type": "string"
           },
-          "displayName": {
+          "display_name": {
             "description": "The organization's display name. Empty when its profile names none; a surface falls back to the name then.",
             "type": "string"
           },
@@ -71,7 +71,7 @@
             "description": "The name the request surface addresses the tenant by, and the one every view and path uses.",
             "type": "string"
           },
-          "ownerAccount": {
+          "owner_account": {
             "description": "The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it.",
             "type": "string"
           },
@@ -92,11 +92,11 @@
         "required": [
           "name",
           "kind",
-          "displayName",
+          "display_name",
           "description",
-          "contactEmail",
+          "contact_email",
           "website",
-          "ownerAccount",
+          "owner_account",
           "status",
           "created_at"
         ],
@@ -201,19 +201,19 @@
             ],
             "type": "string"
           },
-          "targetDisplayName": {
+          "target_display_name": {
             "description": "The target account's display name. Empty when the account store does not resolve it.",
             "type": "string"
           },
-          "targetUsername": {
+          "target_username": {
             "description": "The target account's username. Empty when the account store does not resolve it.",
             "type": "string"
           }
         },
         "required": [
           "id",
-          "targetDisplayName",
-          "targetUsername",
+          "target_display_name",
+          "target_username",
           "requested_at",
           "expires_at",
           "status"

@@ -9,7 +9,7 @@ notification-ui 是站内通知在浏览器里的界面，位于能力 UI 包这
 - **未读铃铛**：`NotificationBell` 读调用方的未读数（`GET /api/v1/notifications/messages/unread-count`），渲染为图标按钮。**未读为零时不渲染徽标**：没有未读就没有数字，也不留一个可见的 `0`；未读数尚未读出或读取失败时同样不渲染徽标，此刻它不知道有没有未读，摆一个 `0` 是把未知说成没有；计数非零时徽标字形对无障碍树隐藏，计数落在按钮的可及名上（前端规范的图标按钮规则），读屏只播报一次。它受控：`onClick` 是宿主的导航，铃铛本身不含路由。
 - **未读计数**：`useNotificationUnread` 把同一份未读数交给任何要带徽标的控件：计数本身、徽标要印的文本、可及名要加的短语，各自一件；`enabled` 为假时不发这条读。`NOTIFICATION_BADGE_MAX` 是徽标印制的上限。铃铛仍由本包交付；宿主不挂铃铛时，可以用这个钩子把未读数放在自己的控件上。
 - **收件箱界面**：`NotificationInbox` 读一页消息（`GET /api/v1/notifications/messages`），逐行渲染标题、正文、时间与未读/已读标记，未读行提供“标记为已读”（`POST /api/v1/notifications/messages/:id/read`），页头提供“全部标记为已读”（`POST /api/v1/notifications/messages/read-all`）。可选入参让宿主按分组过滤、按页大小翻页、在每行附上详情、把带链接的行交给宿主打开，并以嵌入形态去掉页头、改在指定层级渲染标题。
-- **偏好矩阵**：`NotificationPreferences` 读按类型的渠道矩阵（`GET /api/v1/notifications/preferences`）与类型分类法（`GET /api/v1/notifications/types`，取每类型是否可退订），写入单个渠道的目标态（`PUT /api/v1/notifications/preferences/:typeKey/:channel`）。渠道列是 `in_app` 加宿主给出的、特性在场的可选渠道。
+- **偏好矩阵**：`NotificationPreferences` 读按类型的渠道矩阵（`GET /api/v1/notifications/preferences`）与类型分类法（`GET /api/v1/notifications/types`，取每类型是否可退订），写入单个渠道的目标态（`PUT /api/v1/notifications/preferences/:type_key/:channel`）。渠道列是 `in_app` 加宿主给出的、特性在场的可选渠道。
 - **通知界面**：`NotificationCenter` 是默认组合：收件箱与其下的偏好矩阵；特性 `notification.preferences` 缺席时只有收件箱。
 - **实时订阅**：`NotificationStreamProvider` 经宿主交来的开启器打开 `GET /api/v1/notifications/stream`，每来一帧 `message` 即失效当前租户的未读数与消息列表。
 - **特性在场的接收**：`NotificationPresenceProvider` 接收宿主给出的特性在场事实（偏好界面是否在场与各可选渠道）使后代组件据此决定是否渲染偏好界面、显示哪些可选渠道。

@@ -111,7 +111,7 @@ the in-app column only.
   (`GET /notifications/preferences`) and the type taxonomy
   (`GET /notifications/types`, for the per-type unsubscribable flag), and
   PUTs one channel's target state (`PUT
-  /notifications/preferences/:typeKey/:channel`). The in-app column is
+  /notifications/preferences/:type_key/:channel`). The in-app column is
   always present; the optional `email` and `sms` columns come from the
   presence provider, in the closed vocabulary's order. `typeLabel`
   relabels a type and `groupLabel` groups the rows (grouping renders only

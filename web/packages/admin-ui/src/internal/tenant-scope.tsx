@@ -139,7 +139,7 @@ export function TenantScope({
       {value !== '' && !listed && <MenuItem value={value}>{value}</MenuItem>}
       {options.map((tenant) => (
         <MenuItem key={tenant.name} value={tenant.name}>
-          {displayNameOf(tenant.displayName, tenant.name)}
+          {displayNameOf(tenant.display_name, tenant.name)}
         </MenuItem>
       ))}
     </TextField>

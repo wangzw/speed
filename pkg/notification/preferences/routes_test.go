@@ -16,9 +16,9 @@ import (
 
 // wantRoutes is the closed route set.
 var wantRoutes = map[mountedRoute]bool{
-	{http.MethodGet, "/api/v1/notifications/types"}:                         true,
-	{http.MethodGet, "/api/v1/notifications/preferences"}:                   true,
-	{http.MethodPut, "/api/v1/notifications/preferences/:typeKey/:channel"}: true,
+	{http.MethodGet, "/api/v1/notifications/types"}:                          true,
+	{http.MethodGet, "/api/v1/notifications/preferences"}:                    true,
+	{http.MethodPut, "/api/v1/notifications/preferences/:type_key/:channel"}: true,
 }
 
 // TestTheModuleMountsItsWholeRouteSet holds that every route in the closed set is

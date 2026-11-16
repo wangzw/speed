@@ -259,6 +259,22 @@ func TestThePendingTransferRead(t *testing.T) {
 			got.Request.Status != "pending" {
 			t.Errorf("the answer is %+v, want the pending request", got.Request)
 		}
+		// The target's names are wire fields in the underscore spelling; the
+		// view carries no camelCase spelling.
+		var raw struct {
+			Request map[string]any `json:"request"`
+		}
+		decode(t, w, &raw)
+		for _, key := range []string{"target_display_name", "target_username", "requested_at", "expires_at"} {
+			if _, present := raw.Request[key]; !present {
+				t.Errorf("the transfer view is missing %q: %v", key, raw.Request)
+			}
+		}
+		for _, key := range []string{"targetDisplayName", "targetUsername"} {
+			if _, present := raw.Request[key]; present {
+				t.Errorf("the transfer view carries %q, want the underscore spelling: %v", key, raw.Request)
+			}
+		}
 	})
 	t.Run("no pending request", func(t *testing.T) {
 		r := newRig(t)
