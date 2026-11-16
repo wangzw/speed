@@ -363,13 +363,21 @@ func (e *engine) TimeZoneOf(ctx context.Context) string {
 }
 
 // LocaleFor is the locale for a named account: the context's when it carries
-// one, otherwise the account's stored preference, otherwise the default.
+// one, otherwise the first stored preference a profile answers, otherwise the
+// default. Every profile is asked even after one reports a failed read: the
+// error is swallowed and the next profile answers, because one profile's
+// failure says nothing about another's answer and a preference a later one
+// stores is still the account's. When no profile answers, the default decides.
 func (e *engine) LocaleFor(ctx context.Context, account string) i18n.Locale {
 	if locale, ok := i18n.FromContext(ctx); ok {
 		return locale
 	}
 	for _, profile := range e.profiles {
-		if locale, ok := profile.LocaleFor(ctx, account); ok {
+		locale, ok, err := profile.LocaleFor(ctx, account)
+		if err != nil {
+			continue
+		}
+		if ok {
 			return locale
 		}
 	}

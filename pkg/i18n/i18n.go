@@ -176,8 +176,11 @@ type Resolver interface {
 // core.ResolveAll and falls back to the run's default when there is none. The
 // bridge to pkg/authn's accounts implements it.
 type Profile interface {
-	// LocaleFor returns the locale stored for an account, and whether one is.
-	LocaleFor(ctx context.Context, account string) (Locale, bool)
+	// LocaleFor returns the locale stored for an account, and whether one is. An
+	// error reports a preference that could not be read: a caller cannot
+	// otherwise tell a failed read from an absent preference. Both take the
+	// same fallback, and only the failed read leaves a warning.
+	LocaleFor(ctx context.Context, account string) (Locale, bool, error)
 	// TimeZoneFor returns the IANA time zone stored for an account, and whether
 	// one is.
 	TimeZoneFor(ctx context.Context, account string) (string, bool)

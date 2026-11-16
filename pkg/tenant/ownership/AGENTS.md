@@ -65,13 +65,31 @@ pending and resolved requests.
   tenant context, so it cannot depend on one. The store therefore exposes no
   method that lists every row: each read and write carries an explicit
   `tenant_id` or `to_account` predicate.
-- **Notifications are best effort.** A request notifies the target and a
-  confirmation, decline or expiry notifies the requester through the optional
-  `notification.Dispatcher`; a missing dispatcher, an unenterable tenant or a
-  failed dispatch is a warning and never a failed write. The four notification
-  types are declared in this module's `Resources`, with their text in its own
-  locale catalogs, and go out in-app only: a target need not have a proved email
+- **Notifications are best effort.** A request notifies the target, and a
+  confirmation or decline notifies the owner the request recorded at request
+  time (`row.FromAccount`; platform staff may have made the request, in which
+  case the two differ) through the optional `notification.Dispatcher`; a missing
+  dispatcher, an unenterable tenant or a failed dispatch is a warning and never
+  a failed write.
+  The four notification types are declared in this module's `Resources` — the
+  expiry type declared, never dispatched — with their text in its own locale
+  catalogs, and go out in-app only: a target need not have a proved email
   address, and the target page is the authoritative entry either way.
+- **A notice goes out in its recipient's language.** The locale is the
+  recipient's stored preference, read through every optional `i18n.Profile` the
+  assembly provides, and the deployment's configured default, read from the
+  optional `i18n.Resolver`, when no profile stores one. A preference a profile
+  cannot read is a separate state from an absent one: it leaves one warning
+  naming the notice's type and tenant, without the recipient's identifier, and
+  the remaining profiles are still asked; an answer a later profile gives wins,
+  and the default answers only when none does. The language of the caller's
+  context never decides it:
+  a confirmation or decline is answered by one account and delivered to another.
+  An assembly with neither a stored preference nor a resolver has no language to
+  send in, so the notice is skipped with a warning rather than sent in a fixed
+  one. That state is reachable only in a host that assembles the dispatcher and
+  this module without the i18n engine: a full deployment always carries the
+  engine, so it never reaches the skip.
 - **The deletion writes the tombstone and cleans the core relations.** It
   writes the roster tombstone, deletes the tenant's grants, bindings and roles,
   deletes its memberships and cancels its pending transfer requests, all in that
@@ -128,3 +146,11 @@ the transfer and keeps the previous owner's member row and binding, declining an
 cancelling leave the owner unchanged, an expired request cannot be confirmed, a
 target that left or was suspended is refused, deletion cancels the pending row,
 and the target receives the notice.
+
+`notify_locale_test.go` holds the language the notices go out in: the
+recipient's stored preference beats the requester's request language, an absent
+preference falls back to the configured default silently, a failed read falls
+back to the same default and leaves one warning naming the notice's type and
+tenant, an assembly with no default reachable either skips the notice rather
+than sending one in a fixed language, and the write the notice describes stands
+in every case.

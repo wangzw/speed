@@ -150,8 +150,9 @@ type Resolver interface {
 // Profile 是通往账户所存语言与时区的一个扩展点。它非排他且可选：引擎用
 // core.ResolveAll 取用每一个实现，一个都没有时回退到配置的默认语言。
 type Profile interface {
-    // LocaleFor 返回一个账户所存的语言，以及是否存过。
-    LocaleFor(ctx context.Context, account string) (Locale, bool)
+    // LocaleFor 返回一个账户所存的语言，以及是否存过；读不到偏好时报错，
+    // 调用方据此区分“读取失败”与“没有偏好”。
+    LocaleFor(ctx context.Context, account string) (Locale, bool, error)
     // TimeZoneFor 返回一个账户所存的 IANA 时区名，以及是否存过。
     TimeZoneFor(ctx context.Context, account string) (string, bool)
 }
@@ -266,7 +267,7 @@ classDiagram
     }
     class Profile {
         <<interface>>
-        +LocaleFor(ctx, account) Locale, bool
+        +LocaleFor(ctx, account) Locale, bool, error
         +TimeZoneFor(ctx, account) string, bool
     }
     class Catalog {
@@ -361,7 +362,7 @@ sequenceDiagram
 | 二 | 账户偏好 | 上下文无语言而身份的属性集带 `i18n.locale` |
 | 三 | 配置的默认语言 | 两者都没有 |
 
-**解析链在 `Resolver` 上收口。** `Default` 报告配置的默认语言；`LocaleOf` 读上下文，未携带时给 `Default`；`LocaleFor(ctx, account)` 在上下文无语言时，经取用的每一个 `Profile` 读该账户存储的语言。两级回退都归引擎，前两级都不报告失败：“没有指名”视为落到 `Default`，而不是一次错误。
+**解析链在 `Resolver` 上收口。** `Default` 报告配置的默认语言；`LocaleOf` 读上下文，未携带时给 `Default`；`LocaleFor(ctx, account)` 在上下文无语言时，经取用的每一个 `Profile` 读该账户存储的语言。`Resolver` 这三条都不报告失败：“没有指名”与“读不到偏好”都落到 `Default`。**`Profile` 这一层把两者分开**：`LocaleFor` 用一个 `error` 报告读取失败，与“账户没有存过偏好”是两个答案。直接读 `Profile` 的模块据此记一条 Warn（几个 Profile 都读取失败也只记一条），然后继续问其余 Profile；没有 Profile 给出答案时，它与“没有存过偏好”落到同一个默认语言，区别只在有没有那条 Warn。时区不做这个区分：读不到时区与没有时区都渲染成 UTC，没有调用方需要分辨。
 
 ### 协商
 

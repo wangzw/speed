@@ -723,9 +723,18 @@ type stubProfile struct {
 	zone   string
 }
 
-func (p stubProfile) LocaleFor(context.Context, string) (i18n.Locale, bool) {
-	return p.locale, p.locale != ""
+func (p stubProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
+	return p.locale, p.locale != "", nil
 }
+
+// failingProfile is an account preference the store cannot answer.
+type failingProfile struct{}
+
+func (failingProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
+	return "", false, errors.New("the account store is unavailable")
+}
+
+func (failingProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
 
 func (p stubProfile) TimeZoneFor(context.Context, string) (string, bool) {
 	return p.zone, p.zone != ""
@@ -743,6 +752,8 @@ func TestLocaleFor(t *testing.T) {
 		{"the profile is used when the context names none", context.Background(), []i18n.Profile{profile}, localeZH},
 		{"the default when there is no profile", context.Background(), nil, localeEN},
 		{"the default when no profile carries one", context.Background(), []i18n.Profile{stubProfile{}}, localeEN},
+		{"the default when a profile's read fails", context.Background(), []i18n.Profile{failingProfile{}}, localeEN},
+		{"a later profile answers after an earlier one fails", context.Background(), []i18n.Profile{failingProfile{}, profile}, localeZH},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

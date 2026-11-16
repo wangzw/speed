@@ -126,6 +126,8 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 			{Token: (*notification.Dispatcher)(nil), Optional: true},
 			{Token: (*tenant.Catalog)(nil), Optional: true},
+			{Token: (*i18n.Profile)(nil), Optional: true},
+			{Token: (*i18n.Resolver)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*tenant.OrganizationWriter)(nil), Exclusive: true},
@@ -169,6 +171,16 @@ type product struct {
 	// write its in-app row even when the organization is disabled. It is
 	// optional for the same reason.
 	roster tenant.Catalog
+	// profiles read a recipient's stored language preference. They are optional
+	// and non-exclusive: an assembly that carries none still notifies in the
+	// deployment's default language when it carries the resolver below, and
+	// skips the notice when it carries neither.
+	profiles []i18n.Profile
+	// resolver answers the deployment's configured default language. It is
+	// optional: a notice needs a language, so an assembly that carries neither a
+	// stored preference nor this resolver has none to send in and skips the
+	// notice rather than guessing one.
+	resolver i18n.Resolver
 }
 
 var (
@@ -257,6 +269,14 @@ func (p *product) wire(reg *core.Registry) error {
 	}
 	if rosterFound {
 		p.roster = roster
+	}
+	p.profiles = core.ResolveAll[i18n.Profile](reg)
+	resolver, resolverFound, err := optional[i18n.Resolver](reg, "the i18n resolver")
+	if err != nil {
+		return err
+	}
+	if resolverFound {
+		p.resolver = resolver
 	}
 	return nil
 }

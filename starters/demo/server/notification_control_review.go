@@ -122,7 +122,7 @@ func (n *reviewNotifier) handleControl(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "the review notice control is for the tenant's members"})
 		return
 	}
-	plan, ok, err := n.notify(ctx, identity.Account(), uuid.NewString())
+	plan, ok, err := n.notify(ctx, tenantID, identity.Account(), uuid.NewString())
 	if err != nil {
 		n.logger.Error(reviewNotificationModuleName+": the control could not dispatch the notice",
 			"tenant", string(tenantID), "account", string(identity.Account()), "error", err)

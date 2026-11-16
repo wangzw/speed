@@ -206,14 +206,14 @@ var _ jobs.Handler = (*reviewNotifier)(nil)
 // reviewNotificationModule is the fixture's descriptor.
 //
 // The dispatcher, the account store, the membership store, the preference
-// matrix, the SMS template registry, the locale resolver and the handler
-// registration face are required: without them the fixture has nowhere to
-// submit a dispatch, no member to address, no recipient-aware channel set to
-// write, no way to tell whether the sms channel can carry the type's template
-// in the recipient's language, no language to render it in and no place to
-// register its job. The logger is optional, as it is for every module, and the
-// host's default logger carries the fixture's diagnostics when none is
-// delivered.
+// matrix, the SMS template registry, the account profile seam, the locale
+// resolver and the handler registration face are required: without them the
+// fixture has nowhere to submit a dispatch, no member to address, no
+// recipient-aware channel set to write, no way to tell whether the sms channel
+// can carry the type's template in the recipient's language, no stored language
+// to render it in, no default to fall back to and no place to register its job.
+// The logger is optional, as it is for every module, and the host's default
+// logger carries the fixture's diagnostics when none is delivered.
 //
 // The review-only dispatch control's feature is contributed by
 // reviewControlResources, which answers nothing in a default build. The module
@@ -240,6 +240,7 @@ func reviewNotificationModule() core.Module {
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*sms.Registry)(nil)},
+			{Token: (*i18n.Profile)(nil)},
 			{Token: (*i18n.Resolver)(nil)},
 			{Token: (*jobs.Handlers)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
@@ -301,6 +302,7 @@ type reviewNotifier struct {
 	accounts   authn.Accounts
 	members    authn.Memberships
 	templates  reviewSMSTemplates
+	profiles   []i18n.Profile
 	resolver   i18n.Resolver
 	logger     *slog.Logger
 }
@@ -347,6 +349,7 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 		accounts:   accounts,
 		members:    members,
 		templates:  templates,
+		profiles:   core.ResolveAll[i18n.Profile](reg),
 		resolver:   resolver,
 		logger:     logger,
 	}, nil
@@ -359,10 +362,10 @@ func (*reviewNotifier) Type() string { return reviewNotificationJobType }
 // tenant the job belongs to. The scheduler entered the tenant before handing
 // the job over, so the context already carries it.
 //
-// Each dispatch renders in the recipient's own language: the account's stored
-// preference when it has one, and the platform default when it does not. The
-// resolver reads the preference off the account, so two members of one tenant
-// receive the same notice in the languages each of them chose.
+// Each dispatch renders in the recipient's own language: the profiles read the
+// account's stored preference, and the resolver supplies the platform default
+// when no profile stores one. Two members of one tenant receive the same notice
+// in the languages each of them chose.
 //
 // A member this fixture cannot address — one with no proved phone and no email
 // address — is skipped with a log line rather than failed: the type's default
@@ -370,8 +373,8 @@ func (*reviewNotifier) Type() string { return reviewNotificationJobType }
 // destination as a failed channel, which would retry the whole job for one
 // unaddressable member. A dispatch that fails is joined into the returned
 // error, so the job retries; the per-recipient dedupe key of the dispatch makes
-// the members already submitted converge on one delivery job, and a retry
-// writes no second message.
+// the members already submitted converge on one delivery job, so a retry adds
+// no second message once the language is stable.
 func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn) (jobs.Result, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
@@ -393,7 +396,7 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 		if !member.Active {
 			continue
 		}
-		plan, ok, err := n.notify(ctx, member.Account, string(job.ID))
+		plan, ok, err := n.notify(ctx, id, member.Account, string(job.ID))
 		if err != nil {
 			failures = append(failures, fmt.Errorf("dispatching to %q: %w", member.Account, err))
 			continue
@@ -414,10 +417,11 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 }
 
 // notify addresses one recipient on the channels their account can be reached
-// on and submits one dispatch. It resolves the account's identifiers into a
-// plan, writes the recipient-aware channel set through the preference seam so
-// the delivery pipeline reads the same set when it consumes the job, and
-// submits the dispatch under occurrenceID.
+// on and submits one dispatch, rendered in the recipient's language. It
+// resolves the account's identifiers into a plan, writes the recipient-aware
+// channel set through the preference seam so the delivery pipeline reads the
+// same set when it consumes the job, and submits the dispatch under
+// occurrenceID.
 //
 // The sms channel is offered to the plan only after the SMS template registry
 // reports that it holds the type's template for the recipient's language, so a
@@ -429,13 +433,15 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 // recipient's proved phone, which the plan itself selects.
 //
 // The second result is false when the account has neither a proved phone nor an
-// email address; the caller reports that as a skip, not a failure.
-func (n *reviewNotifier) notify(ctx context.Context, id authn.AccountID, occurrenceID string) (reviewNoticePlan, bool, error) {
+// email address; the caller reports that as a skip, not a failure. The tenant is
+// the caller's to name: both callers read it before calling, and the warning a
+// failed language read leaves names it.
+func (n *reviewNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.AccountID, occurrenceID string) (reviewNoticePlan, bool, error) {
 	identifiers, err := n.accounts.Identifiers(ctx, id)
 	if err != nil {
 		return reviewNoticePlan{}, false, fmt.Errorf("listing the identifiers of %q: %w", id, err)
 	}
-	locale := string(n.resolver.LocaleFor(ctx, string(id)))
+	locale := string(n.localeFor(ctx, tenantID, id))
 	plan, ok := planReviewNotice(identifiers, n.smsAddressable(locale, identifiers))
 	if !ok {
 		return reviewNoticePlan{}, false, nil
@@ -463,6 +469,36 @@ func (n *reviewNotifier) notify(ctx context.Context, id authn.AccountID, occurre
 		return reviewNoticePlan{}, true, fmt.Errorf("dispatching the notice of %q: %w", id, err)
 	}
 	return plan, true, nil
+}
+
+// localeFor answers the language a notice to id goes out in: the account's
+// stored preference, and the run's configured default when it stores none. It
+// does not read the language of ctx. The worker runs with no request at all and
+// the review control runs under the recipient's own request, and one rule
+// serves both: the notice belongs to the account, not to the request that
+// triggered it. A preference a profile cannot read leaves one warning and does
+// not end the search: the remaining profiles are asked, because one seam's
+// failed read says nothing about another's answer. The warning names the
+// notice's type and tenant, never the recipient.
+func (n *reviewNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id authn.AccountID) i18n.Locale {
+	readFailed := false
+	for _, profile := range n.profiles {
+		locale, ok, err := profile.LocaleFor(ctx, string(id))
+		if err != nil {
+			if !readFailed {
+				readFailed = true
+				n.logger.Warn(reviewNotificationModuleName+": the recipient's language preference could not be "+
+					"read through one profile; the notice takes the next answer, or the default language when "+
+					"none answers",
+					"type", reviewNotificationTypeKey, "tenant", string(tenantID), "cause", err.Error())
+			}
+			continue
+		}
+		if ok && locale != "" {
+			return locale
+		}
+	}
+	return n.resolver.Default()
 }
 
 // smsAddressable reports whether the type's sms template is one the registry

@@ -12,7 +12,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -213,7 +217,7 @@ func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 		resolver:  stubReviewResolver{locale: reviewChineseLocale},
 	}
 
-	plan, ok, err := notifier.notify(context.Background(), "acct-1", "occurrence-1")
+	plan, ok, err := notifier.notify(context.Background(), "acme", "acct-1", "occurrence-1")
 	if err != nil {
 		t.Fatalf("notify: %v", err)
 	}
@@ -277,7 +281,7 @@ func TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
 		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
 	}
 
-	plan, ok, err := notifier.notify(context.Background(), "acct-3", "occurrence-3")
+	plan, ok, err := notifier.notify(context.Background(), "acme", "acct-3", "occurrence-3")
 	if err != nil {
 		t.Fatalf("notify: %v", err)
 	}
@@ -320,7 +324,7 @@ func TestReviewNoticeSendsSMSWithASendableTemplate(t *testing.T) {
 		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
 	}
 
-	plan, ok, err := notifier.notify(context.Background(), "acct-2", "occurrence-2")
+	plan, ok, err := notifier.notify(context.Background(), "acme", "acct-2", "occurrence-2")
 	if err != nil {
 		t.Fatalf("notify: %v", err)
 	}
@@ -395,14 +399,254 @@ func (s *stubReviewDispatcher) Dispatch(_ context.Context, d notification.Dispat
 	return "job-1", nil
 }
 
-// stubReviewResolver answers the recipient's language.
+// stubReviewResolver answers the run's default language.
 type stubReviewResolver struct {
 	i18n.Resolver
 	locale string
 }
 
-func (s stubReviewResolver) LocaleFor(context.Context, string) i18n.Locale {
-	return i18n.Locale(s.locale)
+func (s stubReviewResolver) Default() i18n.Locale { return i18n.Locale(s.locale) }
+
+// stubReviewProfile answers the language an account carries.
+type stubReviewProfile struct {
+	i18n.Profile
+	locale i18n.Locale
+}
+
+func (s stubReviewProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
+	return s.locale, s.locale != "", nil
+}
+
+func (s stubReviewProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
+
+// failingReviewProfile is a profile whose preference read fails.
+type failingReviewProfile struct{}
+
+func (failingReviewProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
+	return "", false, errors.New("the account store is unavailable")
+}
+
+func (failingReviewProfile) TimeZoneFor(context.Context, string) (string, bool) { return "", false }
+
+// TestReviewNoticeGoesOutInTheRecipientsStoredLanguage holds the language
+// source: the dispatch's locale is the recipient's stored preference, not the
+// language of the request context. The worker runs with no request at all and
+// the review control runs under the recipient's own request, so a shared rule
+// that read the request language would send the notice in the browser's
+// language instead of the account's.
+func TestReviewNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
+	dispatcher := &stubReviewDispatcher{}
+	notifier := &reviewNotifier{
+		dispatcher: dispatcher,
+		prefs: &stubReviewPrefs{
+			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		},
+		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		}},
+		templates: &stubReviewSMSTemplates{},
+		profiles:  []i18n.Profile{stubReviewProfile{locale: reviewChineseLocale}},
+		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
+	}
+	ctx := i18n.WithLocale(context.Background(), reviewDefaultLocale)
+
+	if _, ok, err := notifier.notify(ctx, "acme", "acct-locale", "occurrence-locale"); err != nil || !ok {
+		t.Fatalf("notify: ok=%t err=%v", ok, err)
+	}
+	if dispatcher.dispatch == nil {
+		t.Fatalf("notify submitted no dispatch")
+	}
+	if got := dispatcher.dispatch.Locale; got != reviewChineseLocale {
+		t.Errorf("the dispatch's locale is %q, want the recipient's stored %q, not the request's %q",
+			got, reviewChineseLocale, reviewDefaultLocale)
+	}
+}
+
+// TestReviewNoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference holds
+// the other side: an account that stores no preference receives the notice in
+// the run's default, still regardless of the request's language. The default is
+// a third language, neither the request's nor "en-US", so an implementation
+// that hard-coded English fails this case.
+func TestReviewNoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *testing.T) {
+	dispatcher := &stubReviewDispatcher{}
+	notifier := &reviewNotifier{
+		dispatcher: dispatcher,
+		prefs: &stubReviewPrefs{
+			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		},
+		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		}},
+		templates: &stubReviewSMSTemplates{},
+		profiles:  []i18n.Profile{stubReviewProfile{}},
+		resolver:  stubReviewResolver{locale: reviewThirdLocale},
+	}
+	ctx := i18n.WithLocale(context.Background(), reviewChineseLocale)
+
+	if _, ok, err := notifier.notify(ctx, "acme", "acct-default", "occurrence-default"); err != nil || !ok {
+		t.Fatalf("notify: ok=%t err=%v", ok, err)
+	}
+	if dispatcher.dispatch == nil {
+		t.Fatalf("notify submitted no dispatch")
+	}
+	if got := dispatcher.dispatch.Locale; got != reviewThirdLocale {
+		t.Errorf("the dispatch's locale is %q, want the run's default %q, not the request's %q "+
+			"and not a fixed %q", got, reviewThirdLocale, reviewChineseLocale, reviewDefaultLocale)
+	}
+}
+
+// recordingLogs keeps the records the notifier writes.
+type recordingLogs struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (*recordingLogs) Enabled(context.Context, slog.Level) bool { return true }
+
+func (r *recordingLogs) Handle(_ context.Context, rec slog.Record) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.records = append(r.records, rec.Clone())
+	return nil
+}
+
+func (r *recordingLogs) WithAttrs([]slog.Attr) slog.Handler { return r }
+func (r *recordingLogs) WithGroup(string) slog.Handler      { return r }
+
+// TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails holds the
+// state a failed read is: the notice goes out in the run's default, the
+// dispatch still happens, and a warning names the notice's declared type and
+// tenant without the recipient's identifier anywhere in its fields. The default
+// is a third language, so a hard-coded "en-US" fails this case too.
+func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) {
+	dispatcher := &stubReviewDispatcher{}
+	logs := &recordingLogs{}
+	notifier := &reviewNotifier{
+		dispatcher: dispatcher,
+		prefs: &stubReviewPrefs{
+			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		},
+		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		}},
+		templates: &stubReviewSMSTemplates{},
+		profiles:  []i18n.Profile{failingReviewProfile{}},
+		resolver:  stubReviewResolver{locale: reviewThirdLocale},
+		logger:    slog.New(logs),
+	}
+	ctx := i18n.WithLocale(context.Background(), reviewChineseLocale)
+
+	if _, ok, err := notifier.notify(ctx, "acme", "acct-unreadable", "occurrence-unreadable"); err != nil || !ok {
+		t.Fatalf("notify: ok=%t err=%v", ok, err)
+	}
+	if dispatcher.dispatch == nil {
+		t.Fatalf("notify submitted no dispatch")
+	}
+	if got := dispatcher.dispatch.Locale; got != reviewThirdLocale {
+		t.Errorf("the dispatch's locale is %q, want the run's default %q after a failed read",
+			got, reviewThirdLocale)
+	}
+	logs.mu.Lock()
+	records := append([]slog.Record(nil), logs.records...)
+	logs.mu.Unlock()
+	var warned []slog.Record
+	for _, rec := range records {
+		if rec.Level == slog.LevelWarn && strings.Contains(rec.Message, "language preference could not be read") {
+			warned = append(warned, rec)
+		}
+	}
+	if len(warned) != 1 {
+		t.Fatalf("a failed preference read wrote %d warning(s), want one", len(warned))
+	}
+	attrValue := func(rec slog.Record, key string) (string, bool) {
+		var value string
+		var found bool
+		rec.Attrs(func(a slog.Attr) bool {
+			if a.Key == key {
+				value = a.Value.String()
+				found = true
+				return false
+			}
+			return true
+		})
+		return value, found
+	}
+	if got, _ := attrValue(warned[0], "type"); got != reviewNotificationTypeKey {
+		t.Errorf("the warning names type %q, want %q", got, reviewNotificationTypeKey)
+	}
+	// The tenant the call was made for is the one the line names, and it never
+	// falls back to the recipient.
+	if tenant, found := attrValue(warned[0], "tenant"); !found || tenant != "acme" {
+		t.Errorf("the warning names tenant %q found=%t, want the tenant the notice was dispatched for, %q",
+			tenant, found, "acme")
+	}
+	if _, found := attrValue(warned[0], "account"); found {
+		t.Errorf("the warning carries the recipient's identifier; the line names the notice, not the person")
+	}
+	// The identifier stays out of every field, not just the one it used to sit
+	// in: cause and recipient carry values too.
+	warned[0].Attrs(func(attribute slog.Attr) bool {
+		if strings.Contains(attribute.Value.String(), "acct-unreadable") {
+			t.Errorf("the warning's %q attribute carries the recipient's identifier", attribute.Key)
+		}
+		return true
+	})
+}
+
+// TestReviewNoticeAsksEveryProfileAfterAFailedRead holds that a failed read in
+// one profile does not end the search: a later profile's stored preference
+// decides the dispatch, and exactly one warning is written. The fallback is a
+// third language, so answering with the resolver's default fails this case too.
+func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
+	dispatcher := &stubReviewDispatcher{}
+	logs := &recordingLogs{}
+	notifier := &reviewNotifier{
+		dispatcher: dispatcher,
+		prefs: &stubReviewPrefs{
+			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		},
+		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		}},
+		templates: &stubReviewSMSTemplates{},
+		profiles: []i18n.Profile{
+			failingReviewProfile{},
+			stubReviewProfile{locale: reviewChineseLocale},
+		},
+		resolver: stubReviewResolver{locale: reviewThirdLocale},
+		logger:   slog.New(logs),
+	}
+	ctx := i18n.WithLocale(context.Background(), reviewThirdLocale)
+
+	if _, ok, err := notifier.notify(ctx, "acme", "acct-two-profiles", "occurrence-two-profiles"); err != nil || !ok {
+		t.Fatalf("notify: ok=%t err=%v", ok, err)
+	}
+	if dispatcher.dispatch == nil {
+		t.Fatalf("notify submitted no dispatch")
+	}
+	if got := dispatcher.dispatch.Locale; got != reviewChineseLocale {
+		t.Errorf("the dispatch's locale is %q, want the second profile's stored %q: "+
+			"one profile's failed read says nothing about the next", got, reviewChineseLocale)
+	}
+
+	logs.mu.Lock()
+	records := append([]slog.Record(nil), logs.records...)
+	logs.mu.Unlock()
+	var warned []slog.Record
+	for _, rec := range records {
+		if rec.Level == slog.LevelWarn && strings.Contains(rec.Message, "language preference could not be read") {
+			warned = append(warned, rec)
+		}
+	}
+	if len(warned) != 1 {
+		t.Fatalf("the failed read wrote %d warning(s), want exactly one for one failing profile", len(warned))
+	}
+	warned[0].Attrs(func(attribute slog.Attr) bool {
+		if strings.Contains(attribute.Value.String(), "acct-two-profiles") {
+			t.Errorf("the warning's %q attribute carries the recipient's identifier", attribute.Key)
+		}
+		return true
+	})
 }
 
 // TestReviewNoticePrunesOnlyUnaddressableChannels holds the write the fixture

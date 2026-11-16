@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -47,8 +48,10 @@ func TestModuleDescriptorNamesTheStoreAndTheTwoSeams(t *testing.T) {
 }
 
 // LocaleFor reads the account's stored i18n.locale attribute. A malformed
-// identifier, an absent account and an attribute that is absent or empty all
-// read as none.
+// identifier, an account that does not exist, and an attribute that is absent
+// or empty read as none. Any other store failure is reported as an error, which
+// is how a caller tells a failed read from an account that stores no
+// preference.
 func TestLocaleForReadsTheStoredAttribute(t *testing.T) {
 	// The account the fake answers with carries both preferences, so a case
 	// that must read as "none" fails whenever the bridge skipped the step that
@@ -65,26 +68,30 @@ func TestLocaleForReadsTheStoredAttribute(t *testing.T) {
 		getErr  error
 		want    i18n.Locale
 		wantOK  bool
+		wantErr bool
 	}{
-		{"a stored locale reads back", "acct-1", full, nil, i18n.Locale("zh-CN"), true},
-		{"a malformed identifier reads as none", "not an id!", full, nil, "", false},
-		{"an absent account reads as none", "acct-1", full, authn.ErrAccountNotFound, "", false},
-		{"an absent attribute reads as none", "acct-1", authn.Account{}, nil, "", false},
-		{"an empty attribute reads as none", "acct-1", authn.Account{Attributes: map[string]string{i18n.LocaleAttributeKey: ""}}, nil, "", false},
+		{"a stored locale reads back", "acct-1", full, nil, i18n.Locale("zh-CN"), true, false},
+		{"a malformed identifier reads as none", "not an id!", full, nil, "", false, false},
+		{"an absent account reads as none", "acct-1", full, authn.ErrAccountNotFound, "", false, false},
+		{"a store failure reports a failed read", "acct-1", full, errors.New("the account store is unavailable"), "", false, true},
+		{"an absent attribute reads as none", "acct-1", authn.Account{}, nil, "", false, false},
+		{"an empty attribute reads as none", "acct-1", authn.Account{Attributes: map[string]string{i18n.LocaleAttributeKey: ""}}, nil, "", false, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			b := &bridge{accounts: &fakeAccounts{account: c.account, err: c.getErr}}
-			got, ok := b.LocaleFor(context.Background(), c.id)
-			if got != c.want || ok != c.wantOK {
-				t.Errorf("LocaleFor(%q) = (%q, %v), want (%q, %v)", c.id, got, ok, c.want, c.wantOK)
+			got, ok, err := b.LocaleFor(context.Background(), c.id)
+			if got != c.want || ok != c.wantOK || (err != nil) != c.wantErr {
+				t.Errorf("LocaleFor(%q) = (%q, %v, %v), want (%q, %v, err=%t)",
+					c.id, got, ok, err, c.want, c.wantOK, c.wantErr)
 			}
 		})
 	}
 }
 
 // TimeZoneFor reads the account's stored i18n.tz attribute, and reads none for
-// the same three ways LocaleFor does.
+// the same absent cases LocaleFor answers as none; a failed store read is not
+// distinguished here, because every consumer renders an absent zone as UTC.
 func TestTimeZoneForReadsTheStoredAttribute(t *testing.T) {
 	full := authn.Account{Attributes: map[string]string{
 		i18n.LocaleAttributeKey:   "zh-CN",
@@ -101,6 +108,7 @@ func TestTimeZoneForReadsTheStoredAttribute(t *testing.T) {
 		{"a stored zone reads back", "acct-1", full, nil, "Asia/Shanghai", true},
 		{"a malformed identifier reads as none", "not an id!", full, nil, "", false},
 		{"an absent account reads as none", "acct-1", full, authn.ErrAccountNotFound, "", false},
+		{"a failed store read reads as none", "acct-1", full, errors.New("the account store is unavailable"), "", false},
 		{"an absent attribute reads as none", "acct-1", authn.Account{}, nil, "", false},
 		{"an empty attribute reads as none", "acct-1", authn.Account{Attributes: map[string]string{i18n.TimeZoneAttributeKey: ""}}, nil, "", false},
 	}

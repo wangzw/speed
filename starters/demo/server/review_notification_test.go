@@ -49,6 +49,10 @@ const (
 const (
 	reviewChineseLocale = "zh-CN"
 	reviewDefaultLocale = "en-US"
+	// reviewThirdLocale is the run's default in the cases that hold the
+	// fallback itself. It is neither the language a member stores nor the one a
+	// request carries, so a hard-coded "en-US" fails those cases.
+	reviewThirdLocale = "fr-FR"
 )
 
 // notificationTypeView is one entry of GET /notifications/types.

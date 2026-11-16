@@ -28,8 +28,12 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
+	"github.com/vislake/speed/pkg/i18n"
+	i18naccount "github.com/vislake/speed/pkg/i18n/account"
+	i18ncatalog "github.com/vislake/speed/pkg/i18n/catalog"
 	"github.com/vislake/speed/pkg/internal/configtest"
 	"github.com/vislake/speed/pkg/jobs"
+	speedlog "github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/tenant"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
@@ -63,6 +67,7 @@ type assembly struct {
 	invitations *recordingInvitationRevoker
 	target      tenant.OwnershipTarget
 	dispatcher  *recordingDispatcher
+	logs        *logRecorder
 	handle      *gorm.DB
 }
 
@@ -112,11 +117,52 @@ func (d *recordingDispatcher) reset() {
 	d.dispatched = nil
 }
 
+// testDefaultLocale is the deployment default every case assembles with. It is
+// deliberately not "en-US": a case expecting "en-US" could not tell a fallback
+// to the configured default from the value the module used to fall back to.
+const testDefaultLocale = "zh-CN"
+
 func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
+	t.Helper()
+	withI18nProfile(t, i18naccount.Module(), body)
+}
+
+// withI18nProfile assembles the same modules with profile standing in for the
+// i18n account bridge, so a case can hold what the ownership module does with a
+// preference it cannot read.
+func withI18nProfile(t *testing.T, profile core.Module, body func(t *testing.T, a *assembly)) {
+	t.Helper()
+	withI18nProfiles(t, []core.Module{profile}, body)
+}
+
+// withI18nProfiles assembles the same modules with several profiles, so a case
+// can hold which of them answers and which one fails.
+func withI18nProfiles(t *testing.T, profiles []core.Module, body func(t *testing.T, a *assembly)) {
+	t.Helper()
+	modules := append([]core.Module{i18ncatalog.Module()}, profiles...)
+	withI18n(t, modules, testDefaultLocale, body)
+}
+
+// withNoI18nEngine assembles the same modules without the catalog engine, so a
+// notice has no default language to fall back to.
+func withNoI18nEngine(t *testing.T, body func(t *testing.T, a *assembly)) {
+	t.Helper()
+	withI18n(t, []core.Module{i18naccount.Module()}, "", body)
+}
+
+// withI18n assembles the same modules with the i18n modules a case needs. A
+// non-empty defaultLocale declares the i18n configuration item the catalog
+// engine owns; a case that assembles no engine declares no such item.
+func withI18n(t *testing.T, i18nModules []core.Module, defaultLocale string, body func(t *testing.T, a *assembly)) {
 	t.Helper()
 	dsn := "file:" + filepath.Join(t.TempDir(), "ownership.db")
 	configuration := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)
+	if defaultLocale != "" {
+		configuration = fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"i18n":{"default-locale":%q}}`,
+			dsn, defaultLocale)
+	}
 	dispatcher := &recordingDispatcher{}
+	logs := newLogRecorder()
 
 	modules := []core.Module{
 		sqlite.Module(),
@@ -134,7 +180,11 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 		// exclude each other the way a deployment's database lock does.
 		standIn("stand-in.tenant-lock", authz.NewInProcessTenantLock(), (*authz.TenantLock)(nil)),
 		standIn("stand-in.dispatcher", dispatcher, (*notification.Dispatcher)(nil)),
+		standIn("stand-in.logger", recordingLogger{handler: logs}, (*speedlog.Logger)(nil)),
 	}
+	// The engine answers the deployment default and resolves a recipient's
+	// stored preference through the profile.
+	modules = append(modules, i18nModules...)
 	reader := configtest.Reader(t, configuration, modules...)
 
 	reg := core.New()
@@ -149,7 +199,7 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 		Depth:        core.StageInit,
 		Participants: names,
 		Action: func(_ context.Context, reg *core.Registry) error {
-			body(t, resolve(t, reg, dispatcher))
+			body(t, resolve(t, reg, dispatcher, logs))
 			return nil
 		},
 	})
@@ -158,7 +208,7 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 	}
 }
 
-func resolve(t *testing.T, reg *core.Registry, dispatcher *recordingDispatcher) *assembly {
+func resolve(t *testing.T, reg *core.Registry, dispatcher *recordingDispatcher, logs *logRecorder) *assembly {
 	t.Helper()
 	database, err := core.Resolve[db.Database](reg)
 	if err != nil {
@@ -220,6 +270,7 @@ func resolve(t *testing.T, reg *core.Registry, dispatcher *recordingDispatcher) 
 		invitations: recorded,
 		target:      target,
 		dispatcher:  dispatcher,
+		logs:        logs,
 		handle:      database.DB(),
 	}
 }
@@ -229,6 +280,16 @@ func standIn(name string, instance any, token core.Token) core.Module {
 		Name:     name,
 		Provides: []core.Provision{{Token: token, Exclusive: true}},
 		New:      func(context.Context, *core.Registry) (any, error) { return instance, nil },
+	}
+}
+
+// profileStandIn supplies one i18n profile without claiming the capability
+// exclusively, so a case can assemble more than one and hold which one answers.
+func profileStandIn(name string, profile i18n.Profile) core.Module {
+	return core.Module{
+		Name:     name,
+		Provides: []core.Provision{{Token: (*i18n.Profile)(nil)}},
+		New:      func(context.Context, *core.Registry) (any, error) { return profile, nil },
 	}
 }
 

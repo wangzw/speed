@@ -12,6 +12,7 @@ package account
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -65,34 +66,52 @@ type bridge struct {
 	accounts authn.Accounts
 }
 
-// LocaleFor returns the language stored for an account, and whether one is.
-func (b *bridge) LocaleFor(ctx context.Context, account string) (i18n.Locale, bool) {
-	value, ok := b.attribute(ctx, account, i18n.LocaleAttributeKey)
-	if !ok {
-		return "", false
+// LocaleFor returns the language stored for an account, and whether one is. An
+// account that does not exist stores no preference: the store's answer is
+// definite, so it reads as "none" rather than as a failed read. A store that
+// cannot answer is reported as an error rather than folded into "no
+// preference": a caller that logs a fallback needs to tell the two apart.
+func (b *bridge) LocaleFor(ctx context.Context, account string) (i18n.Locale, bool, error) {
+	value, ok, err := b.attribute(ctx, account, i18n.LocaleAttributeKey)
+	if err != nil {
+		return "", false, err
 	}
-	return i18n.Locale(value), true
+	if !ok {
+		return "", false, nil
+	}
+	return i18n.Locale(value), true, nil
 }
 
 // TimeZoneFor returns the time zone stored for an account, and whether one is.
+// A store that cannot answer reads as none: every consumer renders an absent
+// zone as UTC, so no caller distinguishes a failed read from an absent one and
+// the seam does not offer the distinction.
 func (b *bridge) TimeZoneFor(ctx context.Context, account string) (string, bool) {
-	return b.attribute(ctx, account, i18n.TimeZoneAttributeKey)
+	value, ok, _ := b.attribute(ctx, account, i18n.TimeZoneAttributeKey)
+	return value, ok
 }
 
 // attribute reads one attribute of an account. A malformed identifier, an
-// absent account and an absent attribute all read as "none", so a preference a
-// profile cannot reach falls back rather than failing the caller.
-func (b *bridge) attribute(ctx context.Context, account, key string) (string, bool) {
+// account that does not exist, and an absent or empty attribute read as "none",
+// so a preference a profile cannot reach falls back rather than failing the
+// caller. Any other store error is returned: the account read failed, which is
+// not the same answer as an account that stores nothing.
+func (b *bridge) attribute(ctx context.Context, account, key string) (string, bool, error) {
 	id, err := authn.ParseAccountID(account)
 	if err != nil {
-		return "", false
+		return "", false, nil
 	}
 	acct, err := b.accounts.Get(ctx, id)
+	if errors.Is(err, authn.ErrAccountNotFound) {
+		// A deleted or never-created account is a definite answer from the
+		// store, not a read that failed: there is no preference to find.
+		return "", false, nil
+	}
 	if err != nil {
-		return "", false
+		return "", false, err
 	}
 	value, ok := acct.Attributes[key]
-	return value, ok && value != ""
+	return value, ok && value != "", nil
 }
 
 // Provision seeds the language and time zone the request carried into the

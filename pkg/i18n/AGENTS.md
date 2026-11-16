@@ -167,7 +167,13 @@ message.
   run has one set of languages, taken by `core.Resolve`, and two engines fail in
   resolution. `Profile` is non-exclusive and optional — the engine takes every
   implementation with `core.ResolveAll`, and none is a legal configuration in
-  which the resolution chain falls through to the configured default.
+  which the resolution chain falls through to the configured default. A profile's
+  `LocaleFor` reports a failed read as an error, which is a different answer from
+  an account that stores no preference: the `Resolver` folds both into the
+  default, while a module reading `Profile` directly can leave a warning for the
+  failed read and go on to ask the next profile. Both end at the same default
+  when no profile answers; only the warning differs. `TimeZoneFor` keeps the two-in-one shape, because every consumer
+  renders an absent zone as UTC.
 - **`pkg/http` imports this package's root only, and the `pkg/authn` root
   package does not import it at all.** `pkg/http` takes the root package up to
   render the four refusals it writes itself — the no-route 404, the
