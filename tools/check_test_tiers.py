@@ -108,8 +108,10 @@ PLATFORM_TERMS = GOOS | GOARCH
 # since this gate would otherwise guess the platform its legs run on.
 RUNNER_PLATFORMS = {
     "ubuntu-latest": ("linux", "amd64"),
+    "ubuntu-26.04": ("linux", "amd64"),
     "ubuntu-24.04": ("linux", "amd64"),
     "ubuntu-22.04": ("linux", "amd64"),
+    "ubuntu-26.04-arm": ("linux", "arm64"),
     "ubuntu-24.04-arm": ("linux", "arm64"),
     "ubuntu-22.04-arm": ("linux", "arm64"),
 }

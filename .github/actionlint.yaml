@@ -1,0 +1,6 @@
+# ubuntu-26.04 is a GitHub-hosted runner label, not a self-hosted one. It is
+# declared here only because the label list built into actionlint 1.7.12 ends
+# at ubuntu-24.04 and reports any later label as unknown.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

@@ -46,7 +46,7 @@ defaults:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       SPEED_E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-e2e00000

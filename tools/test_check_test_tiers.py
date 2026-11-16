@@ -289,6 +289,39 @@ class TestAPlatformIsNotATierTag(GateCase):
         code, out, err = self.run_gate()
         self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
 
+    def test_the_ubuntu_26_04_runner_is_a_linux_amd64_platform(self):
+        self.tree(
+            **{
+                ".github/workflows/ci.yml": WORKFLOW.replace("ubuntu-latest", "ubuntu-26.04"),
+                "pkg/busywait_linux_test.go": case_file("//go:build linux"),
+                "pkg/atomic_amd64_test.go": case_file(""),
+            }
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
+    def test_the_ubuntu_26_04_runner_does_not_run_an_arm64_file(self):
+        self.tree(
+            **{
+                ".github/workflows/ci.yml": WORKFLOW.replace("ubuntu-latest", "ubuntu-26.04"),
+                "pkg/atomic_arm64_test.go": case_file(""),
+            }
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("pkg/atomic_arm64_test.go", out)
+
+    def test_the_ubuntu_26_04_arm_runner_is_a_linux_arm64_platform(self):
+        self.tree(
+            **{
+                ".github/workflows/ci.yml": WORKFLOW.replace("ubuntu-latest", "ubuntu-26.04"),
+                "pkg/atomic_arm64_test.go": case_file(""),
+            }
+        )
+        self.write(".github/workflows/arm.yml", WORKFLOW.replace("ubuntu-latest", "ubuntu-26.04-arm"))
+        code, out, err = self.run_gate()
+        self.assertEqual(0, code, f"stdout={out!r} stderr={err!r}")
+
     def test_a_tree_whose_workflows_name_no_runner_runs_a_platform_file_nowhere(self):
         self.tree(
             **{
