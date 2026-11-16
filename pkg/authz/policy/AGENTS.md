@@ -13,7 +13,17 @@ transaction-aware `TxManager` beside `Manager`, and implements
 and any refusal refuses). It also implements the optional `authn.MemberRoleReader`
 the member listing reads: one bulk answer of each account's role names in a
 tenant, built over the manager's own binding listing, and delivered beside the
-lifecycle hooks rather than exclusively. `SubjectPermissions.Held` reads the same snapshot a
+lifecycle hooks rather than exclusively. The invitation capability's two seams
+are delivered the same way: `authn.InviteRolePolicy` answers whether an account
+may grant a role and whether an invitation's role may still be bound (both over
+`Manager.RoleSubsetHeld`, the first also asks the host `WriteGuard`, and the
+second also reads the inviter's active membership through the assembled
+`authz.MembershipChecker`; without that checker an account-issued role-bearing
+invitation is refused at both ends, so an invitation that could never be
+accepted is never written), and
+`provisioning.RoleBinder` writes a binding inside an acceptance's transaction.
+`Manager.RoleSubsetHeld` is the one implementation of the anti-escalation subset
+rule the tenant management surface and the invitation judgement share. `SubjectPermissions.Held` reads the same snapshot a
 decision reads and maps each held (object, action) pair back through the
 catalog's reverse lookup; a pair no declared permission translates to is left
 out of the answer.
@@ -96,10 +106,12 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   clear-and-rewrite would drop a write that landed between its read and its
   write. A host that wants a different store shape is the shape to reject.
 - **`TxManager` joins a caller's transaction.** `PutRoleTx`, `DeleteRoleTx`,
-  `SeedGrantsTx`, `PutBindingTx` and `ClearAccountBindingsTx` are the same
-  writes inside a `*gorm.DB` the caller already holds — an account's creation,
-  where a new organization's roles, grants and bindings are written in the
-  account's transaction. They write through that handle and nothing else, and
+  `SeedGrantsTx`, `PutBindingTx`, `ClearAccountBindingsTx` and
+  `DeleteTenantPolicyTx` are the same writes inside a `*gorm.DB` the caller
+  already holds — an account's creation, where a new organization's roles,
+  grants and bindings are written in the account's transaction, an ownership
+  transfer's administrator binding, an organization deletion's policy teardown,
+  and an invitation's role binding. They write through that handle and nothing else, and
   return the snapshot reload and change event as a closure for after the
   caller's commit: a reload inside the transaction would not see the write, and
   the event would announce a change that may still roll back. The capability is

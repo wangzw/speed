@@ -712,6 +712,8 @@ export interface AuthnInviteAccept {
   account: string;
   /** Whether the membership is active; a suspended membership is refused rather than reactivated. */
   active: boolean;
+  /** The role the acceptance bound to the account in the tenant. Absent when the invitation carried no role, never null. */
+  role?: string;
   /** The membership's source: invite when this acceptance created it, the source it already had when it was there. */
   source: string;
   /** Whether the membership is exempt from SSO enforcement; an existing exemption is preserved. */
@@ -719,6 +721,42 @@ export interface AuthnInviteAccept {
   /** The name of the tenant the membership was written in. */
   tenant: string;
 }
+
+/**
+ * The state the read judges, the same judgement the public read makes.
+ */
+export type AuthnInviteEligibilityState = typeof AuthnInviteEligibilityState[keyof typeof AuthnInviteEligibilityState];
+
+
+export const AuthnInviteEligibilityState = {
+  pending: 'pending',
+  expired: 'expired',
+  accepted: 'accepted',
+  revoked: 'revoked',
+} as const;
+
+/**
+ * The answer of the eligibility read: the invitation's state and whether the signed-in account has proved the invited address.
+ */
+export interface AuthnInviteEligibility {
+  /** Whether the signed-in account holds the invited address as a proven email identifier, the condition acceptance requires. False for an account that holds the address only through an unproved channel or through an invitation. */
+  email_proved: boolean;
+  /** The state the read judges, the same judgement the public read makes. */
+  state: AuthnInviteEligibilityState;
+}
+
+/**
+ * The state the server judges with the same clock the listing's status filter uses: pending, expired, accepted or revoked. A client shows this and never derives expiry from its own clock.
+ */
+export type AuthnInviteInvitationState = typeof AuthnInviteInvitationState[keyof typeof AuthnInviteInvitationState];
+
+
+export const AuthnInviteInvitationState = {
+  pending: 'pending',
+  expired: 'expired',
+  accepted: 'accepted',
+  revoked: 'revoked',
+} as const;
 
 /**
  * The stored state. Expiry is not stored: an expired pending invitation still reads pending.
@@ -749,8 +787,25 @@ export interface AuthnInviteInvitation {
   expires_at: string;
   /** The invitation's opaque identifier, used to revoke it. */
   id: string;
-  /** The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity. */
+  /** The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity. During an impersonation it is the impersonated account. */
   invited_by: string;
+  /** The display name of the account that issued the invitation. Absent when a host command issued it, the account no longer exists, or the account read fails; during an impersonation it is the impersonated account's name. */
+  invited_by_name?: string;
+  /** The username of the account that issued the invitation. Absent when a host command issued it, the account no longer exists, the account has no username, or the account read fails; during an impersonation it is the impersonated account's username. */
+  invited_by_username?: string;
+  /** RFC 3339 timestamp in UTC of the most recent send. Issuance always writes it, so it is never null. */
+  last_sent_at: string;
+  /**
+     * When the invitation was revoked, as an RFC 3339 instant in UTC; null while it has not been revoked.
+     * @nullable
+     */
+  revoked_at: string | null;
+  /** The role the invitation grants beside the membership. Absent when the invitation grants no role, never null. A resend keeps it unchanged. */
+  role?: string;
+  /** How many times the invitation was sent: the first issuance counts as one and every resend adds one. */
+  send_count: number;
+  /** The state the server judges with the same clock the listing's status filter uses: pending, expired, accepted or revoked. A client shows this and never derives expiry from its own clock. */
+  state: AuthnInviteInvitationState;
   /** The stored state. Expiry is not stored: an expired pending invitation still reads pending. */
   status: AuthnInviteInvitationStatus;
   /** The name of the tenant the invitation grants a membership in. */
@@ -770,7 +825,7 @@ export const AuthnInviteIssuedEmailDelivery = {
 } as const;
 
 /**
- * The answer of an issue: the invitation's view, the outcome of the notice, and the one-time acceptance token only when the notice did not reach the address.
+ * The answer of an issue or a resend: the invitation's view, the outcome of the notice, and the one-time acceptance token only when the notice did not reach the address.
  */
 export interface AuthnInviteIssued {
   /** How the acceptance notice ended: sent when the carrier accepted it, failed when delivery failed or its outcome is unknown, and not_configured when the assembly delivers no mail. A failed notice does not undo the invitation, and the token beside it is still the one-time link; a sent notice carries no token in this answer. */
@@ -782,17 +837,35 @@ export interface AuthnInviteIssued {
 }
 
 /**
+ * What an invitation link shows the person holding it: the organization, the inviter's display name, the masked invited address and the deadline, limited to the state the link is in.
+ */
+export interface AuthnInviteLink {
+  /** The invited address masked on the server, for example a***@demo.test, so the recipient recognizes it without the link disclosing the whole address. Present only for a pending invitation. */
+  email?: string;
+  /** RFC 3339 deadline in UTC. Present only for a pending invitation, the only state in which the link still grants anything. */
+  expires_at?: string;
+  /** The display name of the account that issued the invitation, present only for a pending invitation that an account issued. It is never the issuer's account identifier. */
+  invited_by_name?: string;
+  /** The role the invitation grants beside the membership, present only for a pending invitation that carries one. Absent when the invitation grants no role, never null. */
+  role?: string;
+  /** The tenant's name, present for a pending and an accepted invitation: the client shows it when the organization carries no display name, and an accepted link uses it to address the organization the caller now belongs to. */
+  tenant?: string;
+  /** The organization's display name, the free text its administrators chose; empty when the roster carries none, in which case the client falls back to tenant. */
+  tenant_display_name: string;
+}
+
+/**
  * One page of a tenant's invitations together with the cursor of the next page.
  */
 export interface AuthnInvitePage {
-  /** The invitations of this page, ordered by status ascending (pending, accepted, revoked) and then newest first with the identifier as the tie-break. */
+  /** The invitations of this page, in four groups: unexpired pending, expired pending, accepted, revoked. Each group is newest first with the identifier as the tie-break. A row that crosses its deadline between pages can change group. */
   invitations: AuthnInviteInvitation[];
   /** The cursor of the next page, empty on the last page */
   next_cursor: string;
 }
 
 /**
- * The state the read judges. Only pending carries the invitation summary: expired, accepted and revoked answer the state alone, without the invited address, the tenant's name or the deadline.
+ * The state the read judges. Pending carries the organization's name and display name, the inviter, the masked address and the deadline; accepted carries the organization's name and display name; expired and revoked answer the state alone.
  */
 export type AuthnInviteViewState = typeof AuthnInviteViewState[keyof typeof AuthnInviteViewState];
 
@@ -805,12 +878,12 @@ export const AuthnInviteViewState = {
 } as const;
 
 /**
- * The answer of the acceptance read: the invitation's state, and its summary only while it can still be redeemed.
+ * The answer of the acceptance read: the invitation's state, and the link's summary for the states that may show one.
  */
 export interface AuthnInviteView {
-  /** The invitation summary, present only for a pending invitation that can still be redeemed. */
-  invitation?: AuthnInviteInvitation;
-  /** The state the read judges. Only pending carries the invitation summary: expired, accepted and revoked answer the state alone, without the invited address, the tenant's name or the deadline. */
+  /** The link's summary, present for a pending invitation and for an accepted one, absent for an expired or a revoked invitation. */
+  invitation?: AuthnInviteLink;
+  /** The state the read judges. Pending carries the organization's name and display name, the inviter, the masked address and the deadline; accepted carries the organization's name and display name; expired and revoked answer the state alone. */
   state: AuthnInviteViewState;
 }
 
@@ -3237,7 +3310,7 @@ export type AuthnInviteListParams = {
  */
 limit?: number;
 /**
- * Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page.
+ * Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value this build did not mint, including one in an earlier format or carrying an unknown version, is refused with 400 rather than served as the first page.
  */
 after?: string;
 /**
@@ -3262,8 +3335,10 @@ export const AuthnInviteListStatus = {
 export type AuthnInviteIssueBody = {
   /** The invited address as given; it is trimmed, lower-cased and must be printable ASCII with exactly one @, at most 254 bytes. */
   email: string;
-  /** Absolute deadline in RFC 3339. Omitted or the zero instant takes the configured lifetime; a value not later than the current time is refused with 400. */
+  /** Absolute deadline in RFC 3339. Omitted or null takes the configured lifetime; the zero instant, or a value not later than the current time, is refused with 400. */
   expires_at?: string;
+  /** The role to grant beside the membership. Omitted grants no role. The role must exist in the tenant, the caller must hold authz.tenant.role.manage, every permission the role carries must be within the caller's held set, and it may not be platform-admin. */
+  role?: string;
 };
 
 export type AuthnAdminMembersListParams = {
@@ -4773,7 +4848,7 @@ export const useAuthnImpersonationStart = <TError = Problem,
     }
 
 /**
- * Resolves the token's SHA-256 to an invitation and returns its view so a client can show what it is about to accept. The route is public and the token is the whole credential; the response never carries a token. An unknown token is 404. The view reflects the stored state even when the invitation can no longer be accepted, so the client should read status and expires_at rather than assume the link is redeemable.
+ * Resolves the token's SHA-256 to an invitation and returns its view so a client can show what it is about to accept. The route is public and the token is the whole credential; the response never carries a token. An unknown token is 404. A pending invitation answers the organization's display name, the inviter's display name, the invited address masked on the server and the deadline; an accepted one answers the organization's name and display name; an expired or revoked one answers its state alone. The full address and the issuer's account identifier never reach this answer. The view reflects the stored state even when the invitation can no longer be accepted, so the client reads state and, for a pending invitation, invitation.expires_at rather than assuming the link is redeemable.
  * @summary Read the invitation a token points to
  */
 export const authnInviteAcceptView = (
@@ -4867,7 +4942,7 @@ export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authn
 
 
 /**
- * Redeems the invitation and writes a membership for the authenticated caller. The caller must hold the invited address as a proven email identifier; holding the link is not enough, because the inviter holds it too. When the caller has not proved it, the answer is 403 invitation-email-unproved and the client shows the proof step; the invitation stays pending. Acceptance never creates an account and never makes the invited address a sign-in identifier. A membership that already exists keeps its source and its SSO exemption; a suspended one is refused with 409 membership-inactive and the invitation is revoked. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.
+ * Redeems the invitation and writes a membership for the authenticated caller. The caller must hold the invited address as a proven email identifier; holding the link is not enough, because the inviter holds it too. When the caller has not proved it, the answer is 403 invitation-email-unproved and the client shows the proof step; the invitation stays pending. A caller that is not a user account is refused with 403 invitation-target-invalid: an invitation grants a membership to a person, and a service account signs in with a service secret, while a subject with no account row such as a static password-table subject has no account to grant it to. A read of the caller's account that fails answers 503 and leaves the invitation pending. Acceptance never creates an account and never makes the invited address a sign-in identifier. A membership that already exists keeps its source and its SSO exemption; a suspended one is refused with 409 membership-inactive and the invitation is revoked. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted, or whose role can no longer be granted, is 409.
  * @summary Redeem an invitation for the signed-in account that proves the invited address
  */
 export const authnInviteAccept = (
@@ -4931,6 +5006,100 @@ export const useAuthnInviteAccept = <TError = Problem | void,
       > => {
       return useMutation(getAuthnInviteAcceptMutationOptions(options), queryClient);
     }
+
+/**
+ * Resolves the token's SHA-256 to an invitation and answers its state together with whether the signed-in caller holds the invited address as a proven email identifier, so a client can show the proof step on arrival instead of on the first attempt to accept. The route is guarded: a request without a usable credential is 401. The answer never carries the invited address, the inviter or the organization, and an unknown token is 404. The probe budget is charged exactly as the public read charges it, by token and by client, before the token is looked up.
+ * @summary Read whether the signed-in account could accept the invitation a token points to
+ */
+export const authnInviteEligibility = (
+    token: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnInviteEligibility>(
+      {url: `/api/v1/auth/invitations/${token}/eligibility`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnInviteEligibilityQueryKey = (token: string,) => {
+    return [
+    `/api/v1/auth/invitations/${token}/eligibility`
+    ] as const;
+    }
+
+
+export const getAuthnInviteEligibilityQueryOptions = <TData = Awaited<ReturnType<typeof authnInviteEligibility>>, TError = Problem | void>(token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteEligibility>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnInviteEligibilityQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnInviteEligibility>>> = ({ signal }) => authnInviteEligibility(token, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnInviteEligibility>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnInviteEligibilityQueryResult = NonNullable<Awaited<ReturnType<typeof authnInviteEligibility>>>
+export type AuthnInviteEligibilityQueryError = Problem | void
+
+
+export function useAuthnInviteEligibility<TData = Awaited<ReturnType<typeof authnInviteEligibility>>, TError = Problem | void>(
+ token: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteEligibility>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnInviteEligibility>>,
+          TError,
+          Awaited<ReturnType<typeof authnInviteEligibility>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnInviteEligibility<TData = Awaited<ReturnType<typeof authnInviteEligibility>>, TError = Problem | void>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteEligibility>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnInviteEligibility>>,
+          TError,
+          Awaited<ReturnType<typeof authnInviteEligibility>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnInviteEligibility<TData = Awaited<ReturnType<typeof authnInviteEligibility>>, TError = Problem | void>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteEligibility>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read whether the signed-in account could accept the invitation a token points to
+ */
+
+export function useAuthnInviteEligibility<TData = Awaited<ReturnType<typeof authnInviteEligibility>>, TError = Problem | void>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteEligibility>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnInviteEligibilityQueryOptions(token,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 /**
  * The public halves of the keys loaded at startup, each with its RFC 7638 thumbprint as `kid`, its algorithm and `use` of `sig`; no private field is included. The body is fixed for the life of the process and holds no secret, so this is the one authn response with a public cache: `Cache-Control: public, max-age=300`, the window a key rotation waits out before switching the signing key.
@@ -12441,7 +12610,7 @@ export const useAuthzTenantadminBindingsPut = <TError = Problem,
     }
 
 /**
- * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The status query narrows the page: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states; an absent status lists every state, and a value outside the set is refused with 400. Expiry is derived from the deadline, not stored, so an expired row still reads status pending. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. A read writes no audit row.
+ * Returns one page of the tenant's invitations in four groups: unexpired pending first, then expired pending, then accepted, then revoked. Each group is ordered by creation time descending with the identifier as the tie-break, and the cursor carries the group so the next page resumes after it; a row that crosses its deadline between two pages moves to a later group and can therefore be repeated at the boundary, never skipped, because the clock only moves a row forward. The status query narrows the page: pending is a pending invitation whose deadline has not passed, expired is a pending invitation whose deadline has passed, and accepted and revoked are the terminal stored states; an absent status lists every state, and a value outside the set is refused with 400. Expiry is derived from the deadline, not stored, so an expired row still reads status pending. The cursor is opaque: pass the previous page's next_cursor as after to resume, and a cursor this build did not mint, including one in an earlier format or carrying an unknown version, is refused with 400 rather than served as the first page. A read writes no audit row.
  * @summary One page of a tenant's invitations
  */
 export const authnInviteList = (
@@ -12543,7 +12712,7 @@ export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInvite
 
 
 /**
- * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201, with its one-time token only when the notice was not sent. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
+ * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. The address cannot be a service account's, cannot already be a member of the tenant (active or suspended), and cannot already hold an unexpired pending invitation; the system tenant cannot be invited into. expires_at is optional: omitted or null takes the configured lifetime (168 hours by default); the zero instant, or a deadline not later than the current time, is refused with 400, and one later than 90 days after issuance is refused. An expired pending invitation for the same tenant and address is superseded: the old row stays expired and a new invitation takes the live slot. An optional role grants that role beside the membership: it must exist in the tenant (400 invitation-role-unknown), the caller must hold authz.tenant.role.manage, and the role must be one the caller may grant (403 invitation-role-protected for platform-admin, a permission the caller does not hold, or the host write guard's refusal). When the assembly has an invitation notifier, the acceptance notice is delivered to the address and email_delivery reports sent, failed or not_configured; a failed notice does not undo the invitation, which is still answered 201, with its one-time token only when the notice was not sent. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
  * @summary Issue an invitation to an address in a tenant
  */
 export const authnInviteIssue = (
@@ -12609,7 +12778,7 @@ export const useAuthnInviteIssue = <TError = Problem,
     }
 
 /**
- * Revokes a pending invitation and voids its token; the invitation identifier also serves as the decision's target. Revoking an already revoked invitation succeeds idempotently, while revoking an accepted one answers 409 because removing a membership is not this route's job. Failure to write the mandatory audit row answers 503 without revoking.
+ * Revokes a pending invitation that has not expired and voids its token; the invitation identifier also serves as the decision's target. Revoking an already revoked invitation succeeds idempotently, while an expired or accepted one answers 409 invitation-terminal: removing a membership is not this route's job, and an expired link no longer grants anything. Failure to write the mandatory audit row answers 503 without revoking.
  * @summary Revoke a pending invitation
  */
 export const authnInviteRevoke = (
@@ -12670,6 +12839,70 @@ export const useAuthnInviteRevoke = <TError = Problem | void,
         TContext
       > => {
       return useMutation(getAuthnInviteRevokeMutationOptions(options), queryClient);
+    }
+
+/**
+ * Resends a pending invitation that has not expired. The same row keeps its identity and its deadline; a new token replaces the old one, which stops working. send_count counts every send, the first issuance as one, and last_sent_at is the moment of the latest. The admission order is the issue route's: sign-in, the signup gate, the authn.membership.manage decision with the invitation identifier as its target, and the mandatory resend audit row on that identifier. The domain call then charges the issuing account's send budget before the terminal check, so a terminal row still costs the operator, and the address's and the deployment's budgets after it, counting those two only when the write lands. An expired, accepted or revoked invitation answers 409 invitation-terminal, and an identifier naming no invitation of the tenant is a bare 404. The notice and the one-time link follow the issue answer: sent carries no token, failed and not_configured carry one.
+ * @summary Resend a pending invitation
+ */
+export const authnInviteResend = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnInviteIssued>(
+      {url: `/api/v1/tenants/${tenant}/invitations/${id}/resend`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnInviteResendMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteResend>>, TError,{tenant: string;id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnInviteResend>>, TError,{tenant: string;id: string}, TContext> => {
+
+const mutationKey = ['authnInviteResend'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnInviteResend>>, {tenant: string;id: string}> = (props) => {
+          const {tenant,id} = props ?? {};
+
+          return  authnInviteResend(tenant,id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnInviteResendMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteResend>>>
+
+    export type AuthnInviteResendMutationError = Problem | void
+
+    /**
+ * @summary Resend a pending invitation
+ */
+export const useAuthnInviteResend = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteResend>>, TError,{tenant: string;id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnInviteResend>>,
+        TError,
+        {tenant: string;id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnInviteResendMutationOptions(options), queryClient);
     }
 
 /**

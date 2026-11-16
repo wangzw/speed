@@ -96,6 +96,7 @@ import {
   tenantProfileUpdate,
 } from '@speed/api-sdk'
 import type {
+  AuthnInviteIssueBody,
   AuthzTenantAdminBindingView,
   AuthzTenantAdminGrantView,
   AuthzTenantAdminPermissionView,
@@ -110,6 +111,7 @@ import type {
   TenantTransferView,
 } from '@speed/api-sdk'
 import { tenantQueryKey } from '@speed/auth-core'
+import { errorCodeOf } from '@speed/ui-kit'
 import type {
   AdminClaimSsoDomainInput,
   AdminCreateSsoProviderInput,
@@ -123,6 +125,7 @@ import type {
   AdminWriteMemberInput,
   AdminWriteSsoProviderInput,
 } from './operations.js'
+import { INVITATION_TERMINAL_CODE, useResendInvitationMutation } from './operations.js'
 import { profileWriteOf } from './TenantProfileFields.js'
 import type { TenantProfileFields } from './TenantProfileFields.js'
 
@@ -263,6 +266,7 @@ export interface OrganizationAdminOperations
     | 'useInvitations'
     | 'useIssueInvitation'
     | 'useRevokeInvitation'
+    | 'useResendInvitation'
     | 'useMembers'
     | 'useRemoveMember'
     | 'useWriteMember'
@@ -441,13 +445,16 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
   useIssueInvitation: () => {
     const queryClient = useQueryClient()
     return useMutation({
-      mutationFn: (input: AdminIssueInvitationInput) =>
-        authnInviteIssue(input.tenant, {
+      mutationFn: (input: AdminIssueInvitationInput) => {
+        const body: AuthnInviteIssueBody = {
           email: input.email,
           ...(input.expiresAt === undefined
             ? {}
             : { expires_at: input.expiresAt }),
-        }),
+          ...(input.role === undefined ? {} : { role: input.role }),
+        }
+        return authnInviteIssue(input.tenant, body)
+      },
       onSuccess: (_answer, input) => {
         invalidateTenantInvitations(queryClient, input.tenant)
       },
@@ -462,8 +469,19 @@ export const organizationAdminOperations: OrganizationAdminOperations = {
       onSuccess: (_answer, input) => {
         invalidateTenantInvitations(queryClient, input.tenant)
       },
+      // A row another operator already moved answers 409 invitation-terminal.
+      // The list has not been re-read, so it still shows the old state;
+      // invalidating lets the server's judgement reach the row.
+      onError: (error, input) => {
+        if (errorCodeOf(error) === INVITATION_TERMINAL_CODE) {
+          invalidateTenantInvitations(queryClient, input.tenant)
+        }
+      },
     })
   },
+
+  useResendInvitation: () =>
+    useResendInvitationMutation(invalidateTenantInvitations),
 
   // --- Membership surface (tenant-scoped) -------------------------------
 

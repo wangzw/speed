@@ -115,6 +115,17 @@ export const ERROR_TEXT_CODES = [
   'authn.contact_required',
   'authn.forbidden',
   'authn.impersonation_restricted',
+  // The invitation surface's own refusals: the addresses the issue route
+  // refuses, the deadline it caps, the terminal rows resend and revoke are
+  // answered with, and the two role refusals an invitation carrying a role
+  // can meet.
+  'authn.invitation_target_invalid',
+  'authn.invitation_expiry_too_long',
+  'authn.invitation_member',
+  'authn.invitation_pending',
+  'authn.invitation_terminal',
+  'authn.invitation_role_unknown',
+  'authn.invitation_role_protected',
   // The 409 an account deletion is refused with when the account is the
   // last administrator of an active business organization. The copy tells
   // the operator to transfer the role before deleting the account.

@@ -128,6 +128,75 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
     }
   })
 
+  it('sends the issue role and resends on the invitation route', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest(
+      (call) => {
+        if (
+          call.method === 'POST' &&
+          call.path === `/api/v1/tenants/${TENANT}/invitations`
+        ) {
+          return {}
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === `/api/v1/tenants/${TENANT}/invitations/inv-1/resend`
+        ) {
+          return {}
+        }
+        throw new Error(`unexpected request: ${call.method} ${call.path}`)
+      },
+      { recordBody: true },
+    )
+    function InvitationWrites() {
+      const issue = organizationAdminOperations.useIssueInvitation()
+      const resend = organizationAdminOperations.useResendInvitation()
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              issue.mutate({
+                tenant: TENANT,
+                email: 'a@b.co',
+                expiresAt: undefined,
+                role: 'tenant-operator',
+              })
+            }
+          >
+            issueRole
+          </button>
+          <button
+            type="button"
+            onClick={() => resend.mutate({ tenant: TENANT, id: 'inv-1' })}
+          >
+            resend
+          </button>
+        </>
+      )
+    }
+    renderWithProviders(<InvitationWrites />)
+
+    await user.click(screen.getByRole('button', { name: 'issueRole' }))
+    await user.click(screen.getByRole('button', { name: 'resend' }))
+    await waitFor(() => {
+      // The role rides in the issue body; the resend addresses the
+      // invitation's own route and carries no body of its own.
+      expect(calls).toContainEqual({
+        method: 'POST',
+        path: `/api/v1/tenants/${TENANT}/invitations`,
+        query: undefined,
+        body: expect.objectContaining({ role: 'tenant-operator' }),
+      })
+      expect(calls).toContainEqual({
+        method: 'POST',
+        path: `/api/v1/tenants/${TENANT}/invitations/inv-1/resend`,
+        query: undefined,
+        body: undefined,
+      })
+    })
+  })
+
   it('writes and removes a tenant setting at the tenant paths', async () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest((call) => {

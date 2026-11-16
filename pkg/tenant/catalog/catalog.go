@@ -39,6 +39,11 @@ const ModuleName = "tenant.catalog"
 // module's own name, the way a registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
+// systemTenant is the identifier of the platform's own tenant. Every other row
+// is an organization: the policy domain reserved for platform operations is the
+// system tenant's identifier, which is what makes it one.
+var systemTenant = tenant.ID(authz.PlatformDomain)
+
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers. It names the capability directory
 // rather than the module, and the module follows it in the line itself.
@@ -97,6 +102,7 @@ func Module() core.Module {
 			{Token: (*authn.TenantNameResolver)(nil), Exclusive: true},
 			{Token: (*authn.TenantDirectory)(nil), Exclusive: true},
 			{Token: (*authn.TenantStateResolver)(nil), Exclusive: true},
+			{Token: (*authn.TenantDescriptionResolver)(nil), Exclusive: true},
 			{Token: (*authz.TenantNameResolver)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newFilter()}},

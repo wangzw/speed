@@ -34,30 +34,28 @@
  * on the account page with the account it just opened. Every other outcome
  * leaves the viewer in the app the session flip already opened.
  *
- * An invitation link is the exception: a registration or sign-in made on one
- * has to end on that link's accept page, not on the register mode's landing.
- * The landing declaration is feature-gated, and the feature document is
- * readable only to an authenticated caller, so an anonymous visitor at that
- * URL meets this surface through the tenant shell rather than through the
- * landing page itself. A completed SMS registration therefore stays where
- * the URL already is, and the declaration matches once the login commit
- * makes the document readable; the sign-in lane never navigates, so it
- * reaches the same page the same way. A password registration takes the
- * verification detour instead and keeps the landing in the tab's session
- * storage (src/invitation-return.ts). A redirect or enterprise provider
- * replaces the document for its round trip, so the landing is remembered
- * before the provider takes over and the callback route sends the viewer
- * back to it.
+ * An invitation link is the exception: the landing page opens this surface in
+ * place from its own sign-in and create-account actions, so a registration or
+ * sign-in made there ends on that link's accept page, not on the register
+ * mode's landing. The URL does not change: the session flip re-renders the
+ * landing as its signed-in surface. A password registration still takes the
+ * verification detour and keeps the landing in the tab's session storage
+ * (src/invitation-return.ts). A redirect or enterprise provider replaces the
+ * document for its round trip, so the landing is remembered before the
+ * provider takes over and the callback route sends the viewer back to it.
  *
  * A surface that embeds this view inside a flow of its own passes
  * `keepLanding`: the invitation landing and the admin area's session gate
  * sign the viewer in place, so a registration completed there leaves the
  * invitation token in the URL or the admin path the viewer asked for. The
  * session flip itself re-renders those surfaces; navigating away would lose
- * what the URL carried.
+ * what the URL carried. The password channel's verification detour is not
+ * that landing: it happens wherever the registration was hosted, because the
+ * opened account cannot use the tenant area before its address is proved.
  */
 
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import { SignInScreen } from '@speed/auth-ui'
 import type {
   SignInContext,
@@ -69,10 +67,7 @@ import { useLocationPath, useNavigate } from '@speed/route-kit'
 import { useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useAppServices } from '../app-services.js'
-import {
-  isInvitationLanding,
-  rememberInvitationLanding,
-} from '../invitation-return.js'
+import { rememberInvitationLanding } from '../invitation-return.js'
 import {
   ACCOUNT_PATH,
   AUTH_CALLBACK_PATH,
@@ -104,6 +99,9 @@ function socialSignIn(pathname: string): SocialSignInOptions {
 
 export function SignInView({
   keepLanding = false,
+  initialMode = 'sign-in',
+  onBack,
+  onSignedIn: onSignedInCallback,
 }: {
   /**
    * Whether the surface embedding this view owns the landing: true leaves
@@ -113,6 +111,19 @@ export function SignInView({
    * own sign-in page leaves it false and lands by the register mode.
    */
   readonly keepLanding?: boolean
+  /** The mode the surface starts in; the viewer can still switch. */
+  readonly initialMode?: SignInMode
+  /**
+   * Reports the way back to the embedding surface. Rendered above the
+   * channels; absent, the surface offers none.
+   */
+  readonly onBack?: () => void
+  /**
+   * Reports a settled sign-in or registration after this view's own landing
+   * decision. The invitation landing uses it to close the sign-in surface it
+   * opened in place.
+   */
+  readonly onSignedIn?: () => void
 } = {}): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
@@ -122,7 +133,7 @@ export function SignInView({
   // The mode the screen presents. Giving `onModeChange` makes the screen
   // controlled, so this state is the single source of what the surface asks
   // for; the page title above the screen follows it.
-  const [mode, setMode] = useState<SignInMode>('sign-in')
+  const [mode, setMode] = useState<SignInMode>(initialMode)
   // A refused social callback lands here with its code in the URL fragment,
   // and, when the refusal was link-required, the masked address whose
   // account collided. The hook reads it on the first render -- the read
@@ -146,7 +157,22 @@ export function SignInView({
   // runs before React re-renders, so a render-time value would still be the
   // anonymous one.
   const onSignedIn = (context: SignInContext): void => {
+    // The host's own observer runs whatever this view decides about the
+    // landing: an embedding page closes the surface it opened in place.
+    onSignedInCallback?.()
     if (context.mode !== 'register') {
+      return
+    }
+    if (context.channel === 'password') {
+      // A password registration lands on the account page's verification
+      // section whatever the deployment's personal-tenant policy and whatever
+      // surface hosted it: the account exists but its email address is not
+      // proved yet, and that section is where it is proved. A visitor who
+      // registered from an invitation link keeps that landing for the way
+      // back: the token stays out of the URL, every request and every
+      // server-side record, held in the tab instead.
+      rememberInvitationLanding(pathname)
+      navigate(`${ACCOUNT_PATH}?verify=1`)
       return
     }
     if (keepLanding) {
@@ -155,27 +181,7 @@ export function SignInView({
       // admin gate onto the admin) and no navigation may take it away.
       return
     }
-    if (context.channel === 'password') {
-      // A password registration lands on the account page's verification
-      // section whatever the deployment's personal-tenant policy: the account
-      // exists but its email address is not proved yet, and that section is
-      // where it is proved. A visitor who registered from an invitation link
-      // keeps that landing for the way back: the token stays out of the URL,
-      // every request and every server-side record, held in the tab instead.
-      rememberInvitationLanding(pathname)
-      navigate(`${ACCOUNT_PATH}?verify=1`)
-      return
-    }
     if (context.channel !== 'sms') {
-      return
-    }
-    if (isInvitationLanding(pathname)) {
-      // The viewer registered from an invitation link. This surface is the
-      // tenant shell's own gate at that URL -- the landing declaration cannot
-      // match until the login commit makes the feature document readable --
-      // so the register mode's landing would take the token away. Staying in
-      // place keeps it in the URL, and the declaration matches on the next
-      // render.
       return
     }
     const features = session.getSnapshot().features
@@ -215,6 +221,17 @@ export function SignInView({
           onModeChange={setMode}
           onSignedIn={onSignedIn}
           social={social}
+          slots={
+            onBack === undefined
+              ? undefined
+              : {
+                  aboveChannels: (
+                    <Button type="button" onClick={onBack}>
+                      {t('signIn.back')}
+                    </Button>
+                  ),
+                }
+          }
           initialError={initialError}
           initialErrorEmail={initialErrorEmail}
           // The screen clears the landing refusal when the viewer starts

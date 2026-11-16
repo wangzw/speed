@@ -190,22 +190,45 @@
   "acceptInvitation": {
     "title": "Accept invitation",
     "loading": "Loading the invitation…",
-    "invited": "You have been invited to join the organization \"{{tenant}}\".",
+    "invitedByWithRole": "{{inviter}} invited you to join \"{{tenant}}\" as \"{{role}}\".",
+    "invitedBy": "{{inviter}} invited you to join \"{{tenant}}\".",
+    "invitedWithRole": "You have been invited to join \"{{tenant}}\" as \"{{role}}\".",
+    "invited": "You have been invited to join \"{{tenant}}\".",
     "email": "Invitation sent to: {{email}}",
     "expires": "Expires: {{expires}}",
     "accept": "Accept",
+    "signIn": "Sign in",
+    "createAccount": "Create account",
     "retry": "Retry",
     "accepted": {
       "title": "Invitation accepted",
       "description": "You are now a member of the organization."
     },
+    "member": {
+      "title": "You are already a member of \"{{tenant}}\"",
+      "description": "This invitation has already been used to join the organization.",
+      "open": "Open organization"
+    },
+    "used": {
+      "title": "This invitation has already been used",
+      "description": "This invitation has already been accepted."
+    },
+    "expired": {
+      "title": "This invitation has expired",
+      "description": "Contact the person who invited you to send a new one."
+    },
+    "revoked": {
+      "title": "This invitation has been revoked",
+      "description": "Contact the person who invited you to send a new one."
+    },
     "missing": {
       "title": "Invitation not found",
-      "description": "This invitation link is invalid or no longer exists."
+      "description": "This invitation link is invalid or no longer exists.",
+      "hint": "If you received several invitation emails, use the most recent one."
     },
     "unavailable": {
       "title": "Invitation no longer valid",
-      "description": "This invitation has expired, been revoked, or already been accepted."
+      "description": "This invitation can no longer be accepted."
     },
     "error": {
       "title": "The invitation could not be loaded"
@@ -215,6 +238,10 @@
       "description": "Accepting requires the signed-in account to prove that \"{{email}}\" belongs to you. Add and verify this email in your account settings, then come back here to accept again. This only confirms you are the invited person; it does not make the address a way to sign in.",
       "manageAccount": "Go to account settings",
       "retry": "Accept again after verifying"
+    },
+    "tenantInactive": {
+      "title": "This organization is disabled",
+      "description": "The organization that invited you is disabled, so you cannot join right now. Contact the person who invited you."
     }
   },
   "impersonation": {
@@ -256,7 +283,9 @@
       "unavailable": "The service is temporarily unavailable. Please try again later.",
       "human_verification_required": "Please confirm you are human, then try again.",
       "invitation_email_unproved": "Prove that the invited email address belongs to you in your account settings before accepting the invitation.",
-      "membership_inactive": "Your membership in this organization is suspended, so you cannot accept the invitation. Contact an organization administrator."
+      "membership_inactive": "Your membership in this organization is suspended, so you cannot accept the invitation. Contact an organization administrator.",
+      "invitation_target_invalid": "This account cannot accept the invitation.",
+      "invitation_terminal": "This invitation cannot be accepted right now. Try again later or contact the inviter."
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",

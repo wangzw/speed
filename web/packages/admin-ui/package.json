@@ -41,6 +41,7 @@
     "@mui/material": "^9.5.0",
     "@speed/api-client": "workspace:*",
     "@speed/test-utils": "workspace:*",
+    "@speed/theme-presets": "workspace:*",
     "@tanstack/react-query": "^5.107.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

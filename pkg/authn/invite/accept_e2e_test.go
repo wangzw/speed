@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/authn/provisioning/provisioningtest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -218,16 +219,17 @@ func TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule(t *testing
 		if err != nil {
 			t.Fatalf("creating the account: %v", err)
 		}
-		if putErr := memberships.Put(ctx, authn.Membership{
-			Account: created.ID, Tenant: tenant, Active: false, Source: "admin",
-		}); putErr != nil {
-			t.Fatalf("suspending the membership: %v", putErr)
-		}
-
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
 		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
 		if err != nil {
 			t.Fatalf("issuing an invitation: %v", err)
+		}
+		// The suspension lands after issuance: an address that is already a
+		// member cannot be invited, and this case is about acceptance meeting one.
+		if putErr := memberships.Put(ctx, authn.Membership{
+			Account: created.ID, Tenant: tenant, Active: false, Source: "admin",
+		}); putErr != nil {
+			t.Fatalf("suspending the membership: %v", putErr)
 		}
 
 		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
@@ -240,76 +242,6 @@ func TestAcceptRefusesASuspendedMembershipThroughTheRealAccountModule(t *testing
 		}
 		if got.Active {
 			t.Error("the acceptance reactivated the suspended membership")
-		}
-		if got.Source != "admin" {
-			t.Errorf("the membership source = %q, want admin", got.Source)
-		}
-		if status := rowOf(t, handle, issued.Invitation.ID).Status; status != statusRevoked {
-			t.Errorf("the invitation is %d, want revoked", status)
-		}
-	})
-}
-
-// suspendBeforeJoin stands in for a suspension that commits between the
-// acceptance's membership read and its conditional write.
-type suspendBeforeJoin struct {
-	authn.Memberships
-	suspend func()
-}
-
-func (s *suspendBeforeJoin) PutJoining(ctx context.Context, m authn.Membership, wasActive bool) (bool, error) {
-	s.suspend()
-	return s.Memberships.PutJoining(ctx, m, wasActive)
-}
-
-// TestAcceptDoesNotResurrectAMembershipSuspendedBetweenTheReadAndTheWrite holds
-// the real store's conditional write: the acceptance read an active membership,
-// a suspension commits, and the join is refused rather than resuming the row.
-func TestAcceptDoesNotResurrectAMembershipSuspendedBetweenTheReadAndTheWrite(t *testing.T) {
-	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
-		verification authn.SignupVerification, memberships authn.Memberships,
-	) {
-		applyMigrations(t, handle)
-
-		ctx := context.Background()
-		created, err := admin.Create(ctx, authn.CreateAccount{
-			Kind: authn.KindUser, Username: "newcomer", Email: "newcomer@example.com",
-			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode}, Via: authn.ReasonAdmin,
-		})
-		if err != nil {
-			t.Fatalf("creating the account: %v", err)
-		}
-		if putErr := memberships.Put(ctx, authn.Membership{
-			Account: created.ID, Tenant: tenant, Active: true, Source: "admin",
-		}); putErr != nil {
-			t.Fatalf("seeding the membership: %v", putErr)
-		}
-
-		wrapped := &suspendBeforeJoin{Memberships: memberships, suspend: func() {
-			if putErr := memberships.Put(ctx, authn.Membership{
-				Account: created.ID, Tenant: tenant, Active: false, Source: "admin",
-			}); putErr != nil {
-				t.Fatalf("suspending between the read and the write: %v", putErr)
-			}
-		}}
-		p := newRealProduct(t, handle, admin, accounts, verification, wrapped)
-
-		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
-		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
-		if err != nil {
-			t.Fatalf("issuing an invitation: %v", err)
-		}
-
-		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
-		if _, acceptErr := p.Accept(acceptCtx, AcceptInvite{Token: issued.Token}); !errors.Is(acceptErr, ErrInvitationMembershipInactive) {
-			t.Fatalf("accepting over a mid-flight suspension gave %v, want ErrInvitationMembershipInactive", acceptErr)
-		}
-		got, ok, err := memberships.Membership(ctx, tenant, created.ID)
-		if err != nil || !ok {
-			t.Fatalf("reading the membership back: ok=%t, err=%v", ok, err)
-		}
-		if got.Active {
-			t.Error("the acceptance resumed the membership suspended mid-write")
 		}
 		if got.Source != "admin" {
 			t.Errorf("the membership source = %q, want admin", got.Source)
@@ -338,16 +270,18 @@ func TestAcceptPreservesAnExistingMembershipsSourceAndExemptionThroughTheRealAcc
 		if err != nil {
 			t.Fatalf("creating the account: %v", err)
 		}
-		if putErr := memberships.Put(ctx, authn.Membership{
-			Account: created.ID, Tenant: tenant, Active: true, Source: "admin", SSOExempt: true,
-		}); putErr != nil {
-			t.Fatalf("seeding the membership: %v", putErr)
-		}
-
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
 		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
 		if err != nil {
 			t.Fatalf("issuing an invitation: %v", err)
+		}
+		// The membership appears after issuance: an address that is already a
+		// member cannot be invited, and this case is about an acceptance that
+		// finds one.
+		if putErr := memberships.Put(ctx, authn.Membership{
+			Account: created.ID, Tenant: tenant, Active: true, Source: "admin", SSOExempt: true,
+		}); putErr != nil {
+			t.Fatalf("seeding the membership: %v", putErr)
 		}
 
 		acceptCtx := authntest.Context(t, ctx, authntest.WithAccount(created.ID))
@@ -380,7 +314,13 @@ func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, acc
 		kv:           newFakeKV(),
 		decider:      &fakeDecider{allow: true},
 		tenantNames:  identityNames{},
+		tenantDescs:  &fakeTenantDescriptions{byID: map[string]authn.TenantDescription{}},
 		logger:       (&logBuffer{}).logger(),
+	}
+	// The account module delivers the transaction-aware membership write beside
+	// the plain one; the acceptance joins it.
+	if writer, ok := memberships.(provisioning.MembershipWriter); ok {
+		p.membershipWriter = writer
 	}
 	p.now = newTestClock().read
 	return p

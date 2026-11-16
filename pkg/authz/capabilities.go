@@ -136,6 +136,16 @@ type Manager interface {
 	Roles(ctx context.Context, tenant string) ([]RoleRecord, error)
 	// Grants returns every grant a role holds within a tenant.
 	Grants(ctx context.Context, tenant string, role Role) ([]GrantRecord, error)
+	// RoleSubsetHeld reports whether every permission the role holds is within
+	// held. It is the anti-escalation rule a caller applies before handing a role
+	// to someone else: a caller may grant only what it holds itself. A grant the
+	// catalog cannot map to a declared permission is one the held set cannot
+	// contain, so it refuses too.
+	//
+	// The second result is false for a refusal and true for a role within the
+	// held set. A non-nil error means the grants could not be read: it is the
+	// judgement being unavailable, never a pass or a refusal.
+	RoleSubsetHeld(ctx context.Context, tenant string, role Role, held map[Permission]bool) (bool, error)
 	// Bindings returns every binding of a tenant.
 	Bindings(ctx context.Context, tenant string) ([]Binding, error)
 	// BindingsOf returns every binding a subject holds within a tenant.

@@ -78,6 +78,7 @@ import {
   WriteFeedbackRegion,
 } from './write-feedback.js'
 import { useAdminUiErrorText } from './error-text.js'
+import { useRoleEscalationCheck } from './role-escalation.js'
 
 /** The role permission tier the caller holds in this tenant. */
 type RoleTier = 'none' | 'read' | 'manage'
@@ -131,18 +132,7 @@ export function MemberPanel({
   const operations = useOrganizationAdminOperations()
   const formatTime = useFormatInstant()
   const auth = useAuthState()
-  // The permission set itself is what the escalation check compares
-  // against; a set that is absent or a session that is not authenticated
-  // reads as the empty set, which fails every grant closed.
-  const permissionSet =
-    auth.state === 'authenticated' ? auth.permissionSets.tenant : null
-  const callerPermissions = useMemo(
-    () => new Set(permissionSet ?? []),
-    [permissionSet],
-  )
   const canReadRoles = usePermission('tenant', 'authz.tenant.role.read')
-  const canManageRoles = usePermission('tenant', 'authz.tenant.role.manage')
-  const tier = roleTierOf(canReadRoles, canManageRoles)
   const selfAccount = auth.principal?.account_id
   const isSelf = selfAccount === member.account
   // The host names the role a caller may not take away from itself; the
@@ -151,6 +141,16 @@ export function MemberPanel({
   const protectedRoles = useOrganizationAdminProtectedRoles()
 
   const [selectedRole, setSelectedRole] = useState('')
+  const {
+    canManageRoles,
+    roleSelected,
+    grants,
+    grantsPending,
+    grantsFailed,
+    grantPermissionUnconfirmed,
+    escalationBlocked,
+  } = useRoleEscalationCheck(tenant, selectedRole)
+  const tier = roleTierOf(canReadRoles, canManageRoles)
   const bindings = operations.useTenantAccountBindings(
     canReadRoles ? tenant : '',
     member.account,
@@ -158,10 +158,6 @@ export function MemberPanel({
   // The role list exists only where the role control does; the session's
   // permission answer is the gate, not the read's failure.
   const roles = operations.useTenantRoles(canManageRoles ? tenant : '')
-  const grants = operations.useTenantGrants(
-    canManageRoles ? tenant : '',
-    selectedRoleOrUndefined(canManageRoles, selectedRole),
-  )
   // A role the member already holds is not offered again. The exclusion
   // reads only a settled bindings answer: a pending or failed read leaves
   // every role available rather than presenting a wrong subset as truth.
@@ -199,35 +195,6 @@ export function MemberPanel({
     ? t('members.status.active')
     : t('members.status.suspended')
 
-  const roleSelected = selectedRole !== ''
-  // `isPending` alone is the loading signal: an errored query also has
-  // `data === undefined`, so testing the data would keep the panel in its
-  // checking state after the read already failed.
-  const grantsPending = canManageRoles && roleSelected && grants.isPending
-  const grantsFailed =
-    canManageRoles && roleSelected && !grantsPending && grants.isError
-  // A grant carrying no permission code is one this process cannot translate
-  // back to a permission. There is nothing to compare with the caller's set,
-  // so the panel cannot prove the bind is safe: it says so and fails closed.
-  const grantPermissionUnconfirmed =
-    canManageRoles &&
-    roleSelected &&
-    !grantsPending &&
-    !grantsFailed &&
-    (grants.data ?? []).some((grant) => grant.permission === '')
-  // Every grant the selected role carries must already be in the caller's
-  // set. A grant whose server-reported permission the caller does not hold
-  // blocks the bind, so the surface never offers to hand out more than its
-  // operator has.
-  const escalationBlocked =
-    canManageRoles &&
-    roleSelected &&
-    !grantsPending &&
-    !grantsFailed &&
-    (grants.data ?? []).some(
-      (grant) =>
-        grant.permission === '' || !callerPermissions.has(grant.permission),
-    )
   const bindDisabled =
     feedback.pending ||
     !member.active ||
@@ -767,12 +734,4 @@ export function MemberPanel({
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </SidePanel>
   )
-}
-
-/** The empty string while the role control is unavailable, so the grants read stays disabled. */
-function selectedRoleOrUndefined(
-  canManage: boolean,
-  selectedRole: string,
-): string | undefined {
-  return canManage && selectedRole !== '' ? selectedRole : undefined
 }

@@ -256,16 +256,20 @@ func TestAThrottleEventCarriesAnAccountOnlyForTheScopesThatHaveOne(t *testing.T)
 var reasonClasses = []string{
 	"admin", "self", "password-change", "factor-reset", "refresh-reuse",
 	"expired", "account-disabled", "account-deleted", "evicted", "throttled",
+	"invitation-membership-inactive", "invitation-tenant-deleted", "invitation-role-withdrawn",
 }
 
-// TestTheReasonClassesAreTheDesignsTen holds the closed set against the design
+// TestTheReasonClassesAreTheDesignsSet holds the closed set against the design
 // and against the source, and that a value outside it is refused.
-func TestTheReasonClassesAreTheDesignsTen(t *testing.T) {
+func TestTheReasonClassesAreTheDesignsSet(t *testing.T) {
 	consts := map[string]string{
 		"ReasonAdmin": ReasonAdmin, "ReasonSelf": ReasonSelf, "ReasonPasswordChange": ReasonPasswordChange,
 		"ReasonFactorReset": ReasonFactorReset, "ReasonRefreshReuse": ReasonRefreshReuse,
 		"ReasonExpired": ReasonExpired, "ReasonAccountDisabled": ReasonAccountDisabled,
 		"ReasonAccountDeleted": ReasonAccountDeleted, "ReasonEvicted": ReasonEvicted, "ReasonThrottled": ReasonThrottled,
+		"ReasonInvitationMembershipInactive": ReasonInvitationMembershipInactive,
+		"ReasonInvitationTenantDeleted":      ReasonInvitationTenantDeleted,
+		"ReasonInvitationRoleWithdrawn":      ReasonInvitationRoleWithdrawn,
 	}
 	var got []string
 	for _, v := range consts {

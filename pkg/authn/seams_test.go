@@ -78,6 +78,10 @@ var seamSignatures = map[string][]string{
 	"MemberRoleReader": {
 		"MemberRoles(ctx context.Context, tenant string) (map[AccountID][]string, error)",
 	},
+	"InviteRolePolicy": {
+		"Grantable(ctx context.Context, tenant, account, role string) error",
+		"StillGrantable(ctx context.Context, tenant, role, inviter string) error",
+	},
 	"TenantNameResolver": {
 		"TenantNameOf(ctx context.Context, id string) (string, error)",
 	},
@@ -86,6 +90,9 @@ var seamSignatures = map[string][]string{
 	},
 	"TenantStateResolver": {
 		"TenantStateOf(ctx context.Context, id string) (TenantState, error)",
+	},
+	"TenantDescriptionResolver": {
+		"TenantDescriptionOf(ctx context.Context, id string) (TenantDescription, error)",
 	},
 	"TenantMFARequirement": {
 		"RequiresMFA(ctx context.Context, id AccountID) (bool, error)",

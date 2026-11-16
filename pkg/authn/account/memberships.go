@@ -237,6 +237,32 @@ func (p *product) PutJoining(ctx context.Context, m authn.Membership, wasActive 
 	return joined, nil
 }
 
+// PutJoiningTx writes a joining membership in the transaction it is handed,
+// with PutJoining's rules. The after closure publishes the events staged in that
+// transaction; the caller runs it once the transaction has committed. A call
+// that changed nothing returns a nil closure.
+func (p *product) PutJoiningTx(ctx context.Context, tx *gorm.DB, m authn.Membership, wasActive bool) (bool, func(context.Context) error, error) {
+	status, err := checkMembership(m)
+	if err != nil {
+		return false, nil, err
+	}
+	if status != membershipActive {
+		return false, nil, invalid("a joining membership must be active")
+	}
+	b := &batch{}
+	joined, err := p.putJoiningIn(ctx, tx, m, status, wasActive, b)
+	if err != nil {
+		return false, nil, failed("writing a joining membership", err)
+	}
+	if !joined {
+		return false, nil, nil
+	}
+	return true, func(afterCtx context.Context) error {
+		p.publish(afterCtx, b)
+		return nil
+	}, nil
+}
+
 // putJoiningIn writes a joining membership inside the transaction it is handed
 // and reports whether the account is an active member after the call.
 //

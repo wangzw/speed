@@ -22,6 +22,13 @@
       "last_login_method": "This is the account's only remaining way to sign in. Give it a password or another sign-in way before removing this one.",
       "username_immutable": "A username cannot be changed or removed.",
       "contact_required": "Verify your email address on the account verification page before continuing.",
+      "invitation_member": "That email address is already a member of this organization, so no invitation is needed.",
+      "invitation_pending": "That email address already has a pending invitation. Resend it from the invitations list.",
+      "invitation_target_invalid": "That address cannot be invited.",
+      "invitation_expiry_too_long": "An invitation can be valid for at most 90 days.",
+      "invitation_terminal": "This invitation has ended and can no longer be resent or revoked.",
+      "invitation_role_unknown": "That role does not exist in this organization. Refresh the role list and try again.",
+      "invitation_role_protected": "You cannot grant that role. Choose a role no higher than your own.",
       "forbidden": "You do not have permission to do that.",
       "impersonation_restricted": "This can't be done: the target must be an enabled, unprotected member of the organization, and you must not be impersonating another account right now.",
       "factor_not_seasoned": "This requires a non-SMS verification method (an authenticator app or a passkey) that has been active for the required period. A newly added method must wait first.",
@@ -1217,15 +1224,19 @@
     },
     "issue": {
       "emailLabel": "Email address",
-      "expiresLabel": "Expires",
-      "expiresHelper": "Chosen in your local time zone; leave blank to use the default expiry.",
       "quickLabel": "Valid for",
       "submit": "Send invitation",
       "oneDay": "1 day",
       "sevenDays": "7 days",
       "thirtyDays": "30 days",
-      "defaultExpiry": "Default expiry: {{days}} days",
-      "invalidExpiry": "The expiry must be later than the current time."
+      "roleLabel": "Role",
+      "roleNone": "No role",
+      "roleChecking": "Checking the role's permissions…",
+      "roleBlocked": "This role contains permissions you cannot grant, so it cannot be attached.",
+      "roleUnconfirmed": "A grant of this role carries no permission code, so its permissions cannot be confirmed and the role cannot be attached.",
+      "roleFailed": "The role's permissions could not be checked, so it cannot be attached right now.",
+      "roleRetry": "Retry",
+      "rolesError": "This organization's roles could not be loaded."
     },
     "loading": "Loading invitations",
     "empty": {
@@ -1242,9 +1253,10 @@
     "column": {
       "email": "Email",
       "status": "Status",
+      "role": "Role",
       "invitedBy": "Invited by",
-      "expires": "Expires",
-      "created": "Created",
+      "expires": "Valid until",
+      "created": "Issued",
       "actions": "Actions"
     },
     "status": {
@@ -1252,6 +1264,19 @@
       "expired": "Expired",
       "accepted": "Accepted",
       "revoked": "Revoked"
+    },
+    "statusSince": {
+      "accepted": "Accepted {{time}}",
+      "expired": "Expired {{time}}",
+      "revoked": "Revoked {{time}}"
+    },
+    "expires": {
+      "remainingHours": "{{hours}}h left",
+      "remainingMinutes": "{{minutes}} min left"
+    },
+    "created": {
+      "resent": "Resent {{count}} times, latest {{time}}",
+      "resentOnce": "Resent once, latest {{time}}"
     },
     "filter": {
       "label": "Status",
@@ -1264,10 +1289,9 @@
     "actionsAria": "Actions for invitation {{email}}",
     "resend": "Resend",
     "resendTitle": "Resend invitation",
-    "resendMessage": "Resending immediately invalidates the previous link sent to \"{{email}}\" and sends a new invitation with a {{days}}-day validity.",
+    "resendMessage": "Resending immediately invalidates the previous link sent to \"{{email}}\". The deadline does not change; the invitation expires at {{time}}.",
     "resent": "Invitation to \"{{email}}\" resent",
     "copyLink": "Copy link",
-    "copyLinkUnavailable": "Only the most recently issued or resent invitation has a link to copy.",
     "issued": {
       "confirm": "Invitation sent to \"{{email}}\"",
       "link": "Hand this acceptance link to {{email}}:",
@@ -1285,7 +1309,6 @@
       "closeMessage": "The link is shown only once. After closing it cannot be copied again, so make sure it has been saved.",
       "keepOpen": "Keep the link",
       "delivery": {
-        "label": "Invitation email",
         "sent": "The invitation email was sent.",
         "failed": "The invitation email could not be sent. The invitation exists; copy the link to pass it on another way.",
         "not_configured": "This deployment does not send invitation email. Copy the link and give it to the invited person."

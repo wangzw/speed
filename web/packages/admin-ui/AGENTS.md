@@ -88,12 +88,18 @@ organization-only `OrganizationMembersPage` with the current tenant: the
 page carries the members table and the invitations table, each with
 cursor pagination; the members section filters by a role drawn from the
 tenant's role list; and each member row opens a management panel that
-owns bind/unbind, suspend/resume and remove. The inviter identity resolves
-from the members read's `display_name` rather than a platform account
-read, the member table's name column takes `display_name` while its
-account column shows the recorded account identifier without resolving
-it, and an inviter that read cannot resolve renders its recorded
-identifier with the unresolved note. The roles wrapper mounts the
+owns bind/unbind, suspend/resume and remove. The invitations section opens
+on pending invitations, reads the server-judged `state` rather than
+deriving expiry from the browser clock, and renders both tables' states
+through the shared `internal/status-tag.tsx` component; a terminal
+invitation writes when it reached its state and offers no actions. The
+issue form offers a role chosen from the tenant's roles, only for a caller
+holding `authz.tenant.role.manage`, and runs the member panel's escalation
+pre-check before issuing. The inviter identity comes from the invitation
+row's own `invited_by_name` and `invited_by_username`: the cell shows the
+display name and puts "display name (username)" in its hover title, so it
+needs no member or platform account read. Resend calls the invitation's
+own resend route and replaces the token on the same row. The roles wrapper mounts the
 organization-only `OrganizationRolesPage`: a role table with each role's
 description, permission count and active-member count, a create form and a
 description editor, the selected role's grants, a read-only usage section
@@ -357,9 +363,10 @@ What the pages reach through the bundle, grouped by surface:
 |---|---|
 | `useTenants`, `useTenant`, `useCreateTenant`, `useSetTenantStatus`, `useSetTenantProfile`, `useTransferTenantOwner`, `useDeleteTenant` | `/api/v1/system/tenants[/:id]` (list / get / create), `/api/v1/system/tenants/:id/status`, `/api/v1/system/tenants/:id/profile`, `/api/v1/system/tenants/:id/owner`, `DELETE /api/v1/system/tenants/:id` |
 | `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/api/v1/system/permissions`, `/api/v1/system/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/api/v1/system/tenants/:tenant/bindings[/:account[/:role]]` |
+| `useTenantRoles` | `/api/v1/tenants/:tenant/roles` (the target tenant's role view, with the server's per-role `can_manage`; the platform invitation page gates its role control on that tenant-domain answer) |
 | `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useCreateAccount`, `usePatchAccount`, `useSetAccountStatus`, `useSetMFARequired`, `useResetPassword`, `useAddIdentifier`, `useCreateSecret`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/api/v1/system/auth/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions|/status|/mfa-required|/password|/identifiers]]`, `/api/v1/system/auth/sessions/:id` |
 | `useImpersonations`, `useRevokeImpersonation` | `/api/v1/system/tenants/{tenant}/impersonations[/:id]` |
-| `useInvitations`, `useIssueInvitation`, `useRevokeInvitation`, `useMembers`, `useWriteMember`, `useSetMemberSsoExempt`, `useRemoveMember` | `/api/v1/tenants/:tenant/invitations[/:id]`, `/api/v1/tenants/:tenant/members[/:account[/sso-exempt]]` |
+| `useInvitations`, `useIssueInvitation`, `useRevokeInvitation`, `useResendInvitation`, `useMembers`, `useWriteMember`, `useSetMemberSsoExempt`, `useRemoveMember` | `/api/v1/tenants/:tenant/invitations[/:id[/resend]]`, `/api/v1/tenants/:tenant/members[/:account[/sso-exempt]]` |
 | `useSsoProviders`, `useSsoProvider`, `useCreateSsoProvider`, `useUpdateSsoProvider`, `useClaimSsoDomain`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/api/v1/tenants/:tenant/sso/providers`, `/api/v1/tenants/{tenant}/sso/providers/:id[/domains[/:domain[/verify]]|/metadata/refresh|/reverify-domains]` |
 | `useSettings`, `useSetSetting`, `useRemoveSetting` | `/api/v1/system/settings[/:namespace[/:key]]` |
 | `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/api/v1/system/sms/templates[/submissions|/:name[/enabled]]` |
@@ -642,9 +649,15 @@ generated bundle: every URL those pages issue is recorded, none may target
 `/api/v1/system`, every tenant-addressed read carries the current tenant,
 and the platform roster is never read. The invitations
 suite additionally covers tenant mode: the member write form absent, the
-inviter identity resolved from the members read, the member account
-column showing the recorded identifier, and an inviter that read cannot
-resolve left marked. The security page's suite covers the two declared
+inviter identity resolved from the invitation view's own names, the member
+account column showing the member record's username, and an invitation
+with no inviter name left blank. The platform `InvitationsPage.test.tsx`
+covers the platform invitation page: the pending default and status filter,
+cursor paging, resend and revoke row actions, terminal moments under the
+shared status tag, the fixed 1/7/30-day lifetimes, the role control's
+target-tenant `can_manage` gate, the one-time panel's close
+confirmation (and the sent panel closing directly), and that the inviter
+renders from the invitation view without a platform account read. The security page's suite covers the two declared
 policies only, the platform-enforced read-only switch, the two-step
 confirmation before turning a policy off, optimistic save and rollback on
 refusal, the protected tenant's switch-less read-only page, both
@@ -671,8 +684,8 @@ permission code.
 ## Deferrals (recorded, do not re-open silently)
 
 - **Batched account-identity resolution.** The account identity unit (an
-  audit record's actor, an impersonation record's actor and target, an
-  invitation's inviter, and the platform permissions page's binding account)
+  audit record's actor, an impersonation record's actor and target, and the
+  platform permissions page's binding account)
   resolves each distinct account id through
   `GET /api/v1/system/auth/accounts/:id`
   (react-query caches by id, so rows sharing an account share one read and a

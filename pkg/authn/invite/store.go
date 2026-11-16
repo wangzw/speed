@@ -25,24 +25,34 @@ const (
 // invitationRow is one row of authn_invitations. The two time columns the
 // database module's model path would fill itself are switched off: every time
 // is written explicitly, in UTC, through internal/clock. accepted_at is NULL
-// until the invitation is accepted.
+// until the invitation is accepted and revoked_at NULL until it is revoked;
+// last_sent_at is written by the issuance itself, so it is never NULL.
+// superseded_at records when a later invitation replaced this one; it never
+// reaches a client view. role is the role the invitation grants
+// beside the membership, empty for none.
 type invitationRow struct {
-	ID          string     `gorm:"column:id;primaryKey"`
-	TenantID    string     `gorm:"column:tenant_id"`
-	Email       string     `gorm:"column:email"`
-	TokenDigest string     `gorm:"column:token_digest"`
-	Status      int16      `gorm:"column:status"`
-	InvitedBy   string     `gorm:"column:invited_by"`
-	ExpiresAt   time.Time  `gorm:"column:expires_at"`
-	AcceptedAt  *time.Time `gorm:"column:accepted_at"`
-	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime:false"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
+	ID           string     `gorm:"column:id;primaryKey"`
+	TenantID     string     `gorm:"column:tenant_id"`
+	Email        string     `gorm:"column:email"`
+	TokenDigest  string     `gorm:"column:token_digest"`
+	Status       int16      `gorm:"column:status"`
+	InvitedBy    string     `gorm:"column:invited_by"`
+	Role         string     `gorm:"column:role"`
+	ExpiresAt    time.Time  `gorm:"column:expires_at"`
+	AcceptedAt   *time.Time `gorm:"column:accepted_at"`
+	RevokedAt    *time.Time `gorm:"column:revoked_at"`
+	LastSentAt   time.Time  `gorm:"column:last_sent_at"`
+	SendCount    int        `gorm:"column:send_count"`
+	SupersededAt *time.Time `gorm:"column:superseded_at"`
+	CreatedAt    time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt    time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
 }
 
 func (invitationRow) TableName() string { return tableInvitations }
 
-// toInvitation is the view a row stands for. accepted_at's NULL reads as the
-// zero time.
+// toInvitation is the view a row stands for. A NULL column stays absent, so a
+// caller reads "not accepted", "not revoked" and "never sent" as nil rather than
+// as the zero instant, which is a real moment to everything downstream.
 func toInvitation(r invitationRow) Invitation {
 	s := InvitationPending
 	switch r.Status {
@@ -52,23 +62,29 @@ func toInvitation(r invitationRow) Invitation {
 		s = InvitationRevoked
 	}
 	return Invitation{
-		ID:         r.ID,
-		Tenant:     r.TenantID,
-		Email:      r.Email,
-		Status:     s,
-		InvitedBy:  authn.AccountID(r.InvitedBy),
-		ExpiresAt:  clock.UTC(r.ExpiresAt),
-		AcceptedAt: timeOf(r.AcceptedAt),
-		CreatedAt:  clock.UTC(r.CreatedAt),
+		ID:           r.ID,
+		Tenant:       r.TenantID,
+		Email:        r.Email,
+		Status:       s,
+		InvitedBy:    authn.AccountID(r.InvitedBy),
+		Role:         r.Role,
+		ExpiresAt:    clock.UTC(r.ExpiresAt),
+		AcceptedAt:   nullableUTC(r.AcceptedAt),
+		RevokedAt:    nullableUTC(r.RevokedAt),
+		LastSentAt:   clock.UTC(r.LastSentAt),
+		SendCount:    r.SendCount,
+		SupersededAt: nullableUTC(r.SupersededAt),
+		CreatedAt:    clock.UTC(r.CreatedAt),
 	}
 }
 
-// timeOf is a nullable column read as the zero time when it is NULL.
-func timeOf(t *time.Time) time.Time {
+// nullableUTC renders a nullable column in UTC, keeping NULL as absent.
+func nullableUTC(t *time.Time) *time.Time {
 	if t == nil {
-		return time.Time{}
+		return nil
 	}
-	return clock.UTC(*t)
+	at := clock.UTC(*t)
+	return &at
 }
 
 // utc is a time as the database stores and compares it.

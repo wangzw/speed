@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net/url"
 	"strings"
 	"time"
@@ -220,38 +221,62 @@ func (p *product) acceptURL(token string) string {
 	return p.baseURL + acceptancePath + url.PathEscape(token)
 }
 
-// render draws the three messages for one notice in the language it names. A
-// locale the catalog does not carry falls back by primary subtag and then to
-// English, so a request for a language the deployment does not translate still
-// reaches the recipient with a usable link rather than the message key. The
-// error it answers names the subject key and the locale, never the token or the
-// link.
+// render draws the messages for one notice in the language it names. A locale
+// the catalog does not carry falls back by primary subtag and then to English,
+// so a request for a language the deployment does not translate still reaches
+// the recipient with a usable link rather than the message key. The error it
+// answers names the subject key and the locale, never the token or the link.
+//
+// The body names the inviter when the notice carries a display name and falls
+// back to the impersonal form when it does not. The deadline is rendered by the
+// message's own time segment: the notice is not a page, and the recipient may
+// have no account and no time zone, so the layout says UTC and Translate renders
+// with no zone, which reads as UTC. The request's time zone is never consulted,
+// and a notice whose caller does not know the deadline omits the sentence.
+//
+// The HTML body and the HTML deadline line interpolate HTML-escaped values: the
+// tenant name and the inviter's display name are free text a person typed, and
+// the acceptance link is built from configuration and a token, so none of them
+// may reach the markup as markup. The plain-text body and the subject carry the
+// same values as written, because neither is parsed as HTML.
 func (p *product) render(notice authn.InviteNotice, acceptURL string) (string, string, string, error) {
 	args := i18n.Args{
 		"tenant":     i18n.String(notice.Tenant),
+		"inviter":    i18n.String(notice.Inviter),
 		"accept_url": i18n.String(acceptURL),
-		"expires_at": i18n.String(formatExpiry(notice.ExpiresAt)),
+	}
+	htmlArgs := i18n.Args{
+		"tenant":     i18n.String(html.EscapeString(notice.Tenant)),
+		"inviter":    i18n.String(html.EscapeString(notice.Inviter)),
+		"accept_url": i18n.String(html.EscapeString(acceptURL)),
+	}
+	bodyKey, bodyHTMLKey := textKey, htmlKey
+	if notice.Inviter != "" {
+		bodyKey, bodyHTMLKey = textByKey, htmlByKey
+	}
+	hasDeadline := !notice.ExpiresAt.IsZero()
+	if hasDeadline {
+		args["expires_at"] = i18n.Time(notice.ExpiresAt.UTC())
+		htmlArgs["expires_at"] = i18n.Time(notice.ExpiresAt.UTC())
 	}
 	for _, candidate := range localesFor(notice.Locale) {
 		subject, ok := p.localizer.Translate(candidate, subjectKey, args)
 		if !ok {
 			continue
 		}
-		text, _ := p.localizer.Translate(candidate, textKey, args)
-		html, _ := p.localizer.Translate(candidate, htmlKey, args)
-		return subject, text, html, nil
+		text, _ := p.localizer.Translate(candidate, bodyKey, args)
+		bodyHTML, _ := p.localizer.Translate(candidate, bodyHTMLKey, htmlArgs)
+		if hasDeadline {
+			if line, ok := p.localizer.Translate(candidate, expiryTextKey, args); ok {
+				text += "\n\n" + line
+			}
+			if line, ok := p.localizer.Translate(candidate, expiryHTMLKey, htmlArgs); ok {
+				bodyHTML += line
+			}
+		}
+		return subject, text, bodyHTML, nil
 	}
 	return "", "", "", fmt.Errorf("%s: no catalog carries %q for %q", ModuleName, subjectKey, notice.Locale)
-}
-
-// formatExpiry renders the invitation's deadline in UTC, the unit the messages
-// interpolate. The zero time means the caller does not know it, and renders
-// empty rather than an invented instant.
-func formatExpiry(at time.Time) string {
-	if at.IsZero() {
-		return ""
-	}
-	return at.UTC().Format(time.RFC3339)
 }
 
 // localesFor lists the locales to try for a request, most specific first: the

@@ -26,7 +26,8 @@
     "heading": "Sign in",
     "subtitle": "Use your account to continue.",
     "registerHeading": "Create an account",
-    "registerSubtitle": "Create your account with one of the methods below."
+    "registerSubtitle": "Create your account with one of the methods below.",
+    "back": "Back"
   },
   "home": {
     "heading": "Get started",

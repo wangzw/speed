@@ -129,7 +129,7 @@ starters/demo/
 
 **日志邮件与短信承载注册验证的走查。** `mail.log` 实现 `pkg/mail.Sender`，把渲染后的邮件写进进程日志，验证码落在 `verification_code` 字段（同样避开已登记的敏感键名 `code`）。审查走查链是：登录页切到注册模式，提交用户名、邮箱与口令后自动登录，落在 `/account?verify=1`（账户页的邮箱验证节；应用栏之下的验证提示也指向那里），从 `mail.log` 的日志读邮箱验证码，提交验证，`verification.state` 变为 `verified`，注册限制解除。个人租户在账户创建时已由 `AccountCreated` 钩子建立，不依赖这次验证。手机走查仍可在账户页经 `sms.log` 的日志读码验证手机，但手机验证不解除注册限制，只作为登录方式与额外安全因素。
 
-**邀请通知不经日志邮件走查。** `authn.invitemail` 把 tenant、接受链接与期限渲染成主题、纯文本与 HTML，但日志邮件载体不把消息交给收件人：邀请通道把它当作未配置，签发应答因此报告 `not_configured` 并交出令牌，管理面的一次性面板显示接受链接。通知不写进进程日志，令牌也不进入日志。走查从面板取得链接，打开它落到 `<accept-base-url>/invitations/<token>`。重发产生一条新邀请，旧链接随之失效。接受页是前端声明 `/invitations/:token`，不是 API 路由。
+**邀请通知不经日志邮件走查。** `authn.invitemail` 把 tenant、接受链接与期限渲染成主题、纯文本与 HTML，但日志邮件载体不把消息交给收件人：邀请通道把它当作未配置，签发应答因此报告 `not_configured` 并交出令牌，管理面的一次性面板显示接受链接。通知不写进进程日志，令牌也不进入日志。走查从面板取得链接，打开它落到 `<accept-base-url>/invitations/<token>`。重发在同一行换令牌，旧链接随之失效。接受页是前端声明 `/invitations/:token`，不是 API 路由。
 
 **匿名口令重置在审查装配里打开。** `review/sqlite.yaml` 把 `authn.login.password-reset` 写为 `open`，并在 `sms.registry.templates` 里声明 `authn.code.reset`；邮箱重置由 `authn.emailcode` 的 `EmailResetCodeSender` 提供，码仍落在 `mail.log` 的 `verification_code`。邮箱走查链是：注册并证明邮箱，退出，进登录页的“忘记口令”，选邮箱，从日志读码，设新口令，再用新口令登录。短信走查链在邮箱链之前加一步“在账户页添加并验证手机”（经 `sms.log` 的日志读码），否则该账户没有 `sms-code` 手机，短信分支只会走抑制路径。第二个浏览器上下文的旧会话在本副本立即失效，其他副本最多一个 `check-ttl` 之后失效。基线不打开该设置，也没有投递载体，发现文档因此不发布该能力。Fly 部署把该设置写为 `open`，邮件由 `mail.smtp` 投递；短信这一类不在部署里，部署只有邮箱渠道。
 
@@ -207,12 +207,13 @@ starters/demo/
 | `/account` | 无 | 示范 |
 | `/transfer-requests`、`/transfer-requests/:request` | 无 | 示范 |
 | `/notifications` | `notification.inbox` | notification-ui 的 `notificationRoutes`（[notification-ui](web/design-web-notification-ui.md)） |
-| `/invitations/:token` | `authn.invitations` | 示范 |
+| `/invitations/:token` | 无 | 示范 |
 | `/sign-in/callback`、`/account/callback` | 无 | 示范 |
 
 `/transfer-requests` 是账户级路由，不进任何外壳的租户作用域：请求指向登录的人，不指向组织，目标不需要组织权限，也不要求该组织是当前租户；列表页由账户菜单进入，详情地址是通知链接的落点。`/sign-in/callback` 与 `/account/callback` 依赖的是登录前的事实（部署有没有重定向类与企业类登录方式），它不在特性文档里，部署没有这类登录方式时它们怎样呈现，见“租户框架与回调落点”。管理后台区的声明由 admin-ui 导出，示范把它们挂在 `/admin` 前缀下，`requires` 与权限码随声明自带（[admin-ui](web/design-web-admin-ui.md)）。
 
 - **页面表里的每个 `requires` 都属于 `@speed/api-sdk/features` 的 `FEATURE_NAMES`**，含 admin-ui 与 notification-ui 的声明：示范的测试逐项断言，示范自己的声明以 `satisfies` 收紧到 `FeatureName`（[ADR-feature-vocabulary](../../adr/adr-feature-vocabulary.md)）。
+- **邀请落点不带 `requires`。** 特性文档只对已认证调用者可读，匿名访客读不到 `authn.invitations`，带门控的声明会恰好把链接指向的匿名访问者挡在门外。页面自己读公开邀请；装配没有邀请面时，公开读取的 404 落成页面的链接无效状态。
 - **页面路径不落在 `backend-prefixes.json` 里任何前缀之下**，由测试守住，见“端点集合”（[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。
 
 ## 依赖
@@ -317,7 +318,7 @@ flowchart TD
 
 1. **回调落点先于任何会话门。** 路径是 `/sign-in/callback` 时，不论会话状态，直接渲染回调页（`AuthCallbackPage`）：重定向类与企业类登录的回调到达时会话尚不存在，回调处理器自己完成在途流程、渲染宿主给的 `absent` 视图或显示横幅（见“租户框架与回调落点”）。开户步骤（社交首登取用户名与口令，短信首登取用户名、可选的显示名与口令，企业即时开通只取用户名）渲染在与登录页**同一张卡片**里：相同的品牌与页面标题版式，步骤只提供卡片内的内容，因此首次社交登录看到的不是一张自成一体、缺少设计的页面。**这张卡片在回调路由上不带登录页那句副标题**：开户步骤自带的两句就是这一屏的说明，再叠一句“使用你的账户继续”会把同一件事说两遍，而那两句正是为取代它写的。
 2. **区域按路径前缀判定。** 路径在 `/admin` 前缀下的进管理后台区，其余进租户区。区域与哪些页面特性在场无关。
-3. **租户区**：路径是邀请落点、且 `useMatch()` 命中邀请声明时，渲染接受邀请页；只有已认证、特性态为 `ready` 且特性 `authn.invitations` 在场时才会命中。受理应答只带被接受租户的标识，不带名称，宿主因此随后读一次本人租户读取解析它的名称：解析到即把该租户设为当前租户，并落到它的租户区首页（REQ-tenancy-021）；解析不到（读失败，或已落定的清单不含该标识）仍落到租户区首页，但不写当前租户：无法命名的租户会让每个租户域请求带着一个没有来源的名称发出。其余情况进租户框架 `TenantFrame`：匿名者首访看到登录页，会话中途结束后看到会话结束页，已认证者进入存在性判定。`/account/callback` 在这里不拦截，它是租户区的一条普通声明。
+3. **租户区**：路径是邀请落点时，`useMatch()` 命中的邀请声明渲染接受邀请页；该声明不带特性门，匿名访客也命中，因为特性文档对匿名调用者不可读。页面自己读公开邀请：匿名渲染邀请摘要与登录、注册两个入口；宿主报告已登录时另读资格，未证明受邀地址时直接渲染证明步骤，已接受且当前会话已是该组织成员时给出“进入组织”。接受应答带被接受租户的名称，宿主以它为目标，另读一次本人租户读取取得显示名并落定选择器：两者都对上时把该租户设为当前租户，并落到它的租户区首页（REQ-tenancy-021）；读失败或已落定的清单不含该名称时仍落到租户区首页，但不写当前租户：无法命名的租户会让每个租户域请求带着一个没有来源的名称发出。其余情况进租户框架 `TenantFrame`：匿名者首访看到登录页，会话中途结束后看到会话结束页，已认证者进入存在性判定。`/account/callback` 在这里不拦截，它是租户区的一条普通声明。
 4. **管理后台区**先确保当前租户已落定：未知时按**本人租户读取**落定：`GET /api/v1/auth/me/tenants` 对任何已认证者可读、且不需要租户名，首选其中不是个人租户的第一项，没有这样的项时取其第一项；冒充期间服务端把它的应答收窄到授予租户。这条读对所有身份都成立，因此**没有一次注定被拒的请求**，当前租户也不会因为某次读被拒而停在未知。当前租户落定后读两域权限集（该端点受租户解析守护，需要租户名）。**平台名册只在平台权限集持有 `tenant.read` 时读**，用于名称与租户切换器；平台权限集不含它时不发这条请求。随后依次判定，先成立的分支即结果：
    - 匿名则进登录页（`SessionGate`）；
    - 特性态为 `pending` 则进无框架的等待；为 `failed` 则进无框架的失败视图，带重试；
@@ -340,7 +341,7 @@ flowchart TD
 - **租户先由本人租户读取落定，权限读取因此总有租户名。** 两域权限集的读取走受租户解析守护的端点，没有租户名的请求在 handler 之前被答 404；当前租户未知时宿主先用本人租户读取（任何已认证者可读、不需要租户名）落定它，再发起权限读取，没有一次注定被拒的读。冒充期间本人租户读取的应答收窄到授予租户，身份因此照样落得下来。**平台名册只在平台权限集持有 `tenant.read` 时读**：成员看不到这条请求，也没有一次以 403 收场的探测；平台的拒绝不承担判定职责，读失败只作为故障呈现。**权限读取失败不等于没有权限**：传输失败或服务端故障时两域权限集保持未知，管理后台区据此停在等待或失败视图并给出重试；只有读到的文档（哪怕两域都为空）才附着权限集。把一次失败读成空集，会让一次瞬时故障把员工当成成员重定向出去，与“拒绝不承担判定职责”相悖。
 - **权限码不经前缀继承。** 未命中任何管理后台声明的路径渲染 `NotFoundPage`，与调用者持有哪些权限码无关；没有导航标签的管理后台详情声明因此各自带权限码（[admin-ui](web/design-web-admin-ui.md)）。
 
-**组织管理面的面包屑有三层。** `AppFrame` 为组织管理面的页头构造“当前组织、组织管理、页面”的轨迹：中间一层取宿主自己的 `nav.organizationAdmin` 文案，不是页面声明的一部分；页面标签只在命中一条声明时追加。轨迹经 `OrganizationAdminBreadcrumbProvider` 交给页头，所以每个组织管理页拿到同一条中间层，新增页面不必各自记得加，也不会把页面显示成直接挂在组织之下。
+**组织管理面的面包屑有两层。** `AppFrame` 为组织管理面的页头构造“当前组织、页面”的轨迹：页面标签只在命中一条声明时追加，没有页面标签的声明只留组织一层。轨迹经 `OrganizationAdminBreadcrumbProvider` 交给页头，所以每个组织管理页拿到同一条第一层，新增页面不必各自记得加。
 
 ### 租户框架与回调落点
 
@@ -408,11 +409,11 @@ flowchart TD
 
 决策见 [ADR-authn-signup](../../adr/adr-authn-signup.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真，且 `signup.password.enabled` 为真或至少一个可见方法带 `opens_account` 时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
 
-- **口令注册成功后落在账户页的验证节（REQ-signup-028）。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account?verify=1`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、管理后台会话门的登录屏登录之后留在原地址。注册屏位于邀请链接上时（匿名访客在邀请路径上看到的是租户区的登录页，见“前端的组合次序”），`SignInView` 在导航前把该邀请路径记进本标签页的会话存储；账户页在 `?verify=1` 落地、档案为 `verified` 时清掉记录并回到该路径，邀请仍可受理。邀请令牌是链接的持有凭据，只存在会话存储里，不进 URL 查询、请求、日志或任何服务端记录。其它位置的口令注册没有可回的目标，验证完成后停在账户页。
+- **口令注册成功后落在账户页的验证节（REQ-signup-028）。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account?verify=1`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点与登录屏所在的落点无关：嵌入邀请落点、管理后台会话门的登录屏同样把刚建成的账户带去账户页，因为地址尚未证明，验证节就是证明它的地方。注册屏由邀请落点就地打开时，`SignInView` 在导航前把该邀请路径记进本标签页的会话存储；账户页在 `?verify=1` 落地、档案为 `verified` 时清掉记录并回到该路径，邀请仍可受理。邀请令牌是链接的持有凭据，只存在会话存储里，不进 URL 查询、请求、日志或任何服务端记录。其它位置的口令注册没有可回的目标，验证完成后停在账户页。
 - **账户页的验证节与持续验证提示。** `/account` 自身没有页面：它落地为重定向，带着来访者的查询跳到档案分页 `/account/profile`（`?section=` 指定其它分页时跳该分页），档案分页因此承载 account-ui 的 `ContactVerificationSection`，受会话门保护；`?verify=1` 落地时给它传 `autoSend`：未验证且有目标邮箱时自动发送一次验证码；`?change=email` 落地即展开更换表单，不自动发送；普通访问不传 `autoSend`，只在用户点击时发送。`verification.state` 是账户注册验证状态的读取接口，不是 `signup_state` 列的投影：`none` 是没有邮箱、`pending` 是有邮箱而没有一条已证明的、`verified` 是已有一条证明。判定与账户来源无关，所以管理员预置的 operator 带着未证明邮箱时同样读 `pending`。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失。“去验证”落在 `/account?verify=1`，从验证码一步开始；“更换邮箱”落在 `/account?change=email`，账户页据此让验证节直接展开更换邮箱表单。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示；验证状态与注册入口无关，管理员预置的账户也在其中。
 - **未验证账户与个人租户。** `verification.state` 为 `pending` 时账户创建之后同样建立个人租户（见“个人租户”），同时在应用栏之下显示持续验证提示；验证状态只限制账户在空间内可用的能力，不决定空间是否存在。验证通过后提示消失，租户与名称不变。未启用个人租户时不为账户建立个人租户：口令注册落在账户页的验证节 `/account?verify=1`，与个人租户特性是否启用无关；短信开户启用个人租户时落在租户区首页，未启用时落在账户页 `/account`。
 - **邮箱解除限制，手机不解除（REQ-signup-026）。** 邮箱验证走标识节的自助回路（`POST /api/v1/auth/identifiers` 与 `/verify`）；手机验证走手机节的两步。手机是登录方式与额外安全因素，验证手机不解除注册限制：只有邮箱被证明才把注册验证状态转为已验证。
-- **短信与社交开户的落点，以及邀请链接的例外。** 注册模式下经短信渠道登录成功时，启用个人租户的部署落在租户区首页，未启用的落在账户页 `/account`；这个落点只在登录屏是应用登录页本身时生效。登录屏位于邀请链接上时（匿名访客在邀请路径上看到的是租户区的登录页，见“前端的组合次序”），短信注册与短信登录都不导航，留在原地址，等登录提交把特性文档带进来后由邀请声明接管并渲染接受页。重定向与企业方法要替换整个文档去做一次往返：出发前把邀请路径记进本标签页的会话存储（令牌不进 URL 查询），`AuthCallbackPage` 收到成功回调时清掉记录并回到该路径，其它出发地的回调落租户区首页。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
+- **短信与社交开户的落点，以及邀请链接的例外。** 注册模式下经短信渠道登录成功时，启用个人租户的部署落在租户区首页，未启用的落在账户页 `/account`；这个落点只在登录屏是应用登录页本身时生效。登录屏由邀请落点就地打开时，短信注册与短信登录都不导航，留在原地址；会话翻转把落点页重新渲染成已登录的形态，邀请仍可受理。重定向与企业方法要替换整个文档去做一次往返：出发前把邀请路径记进本标签页的会话存储（令牌不进 URL 查询），`AuthCallbackPage` 收到成功回调时清掉记录并回到该路径，其它出发地的回调落租户区首页。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
 - **注册建立账户，不建立业务租户的成员关系。** 开户不建任何业务租户的成员关系（[authn-account](authn/design-authn-account.md) 的“首登开户”），账户创建事务为它建好个人租户（见“个人租户”）；业务组织的自助创建由公共模块 `tenant.selfcreate` 提供，示范只装配它的配置与依赖，加入一个既有业务租户仍由管理员或邀请授予。
 - **注册的可用性随装配。** 口令注册需要设置项 `authn.account.password-signup` 为 `open`，并装配邮箱验证通道（`authn.emailcode` 与一个 `pkg/mail.Sender`）；短信开户另需 `authn.account.signup` 为 `open` 与可用的短信载体。基线的装配与种子设置里这些都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
 
@@ -432,7 +433,7 @@ flowchart TD
 | 本人有效租户的读取（`TenantFrame`） | 已认证时读一次（冒充期间也读，服务端收窄到授予租户），身份变更、补齐个人租户后与邀请受理成功后重读；不受特性门控；任何失败（含部署没有纳入 `tenant.self` 时答的 404）沿用该读自己的失败呈现，当前租户保持未知，不回退到占位清单 |
 | 管理后台区的当前租户落定（`AdminAreaGate`） | 已认证且当前租户未定时读名册，落定其中第一个启用且不是个人租户的行，供两域权限集的读取带上租户名；读被拒、失败或名册没有这样的行时当前租户保持未知（冒充身份例外：改取本人租户读取的第一项，即授予租户），区域照常按平台权限集判定 |
 | 个人租户的展示（`TenantFrame`） | 本人租户清单里的 `kind` 与账户显示名决定个人组织那一行的文案；框架不触发建户，也没有失败后的建户重试；注册验证状态不是判据 |
-| 注册模式下短信登录之后的落点（`SignInView`） | 启用个人租户的部署去租户区首页，未启用的去账户页 `/account`；登录屏在邀请链接上时留在原地址，等特性文档可读后由邀请声明接管 |
+| 注册模式下短信登录之后的落点（`SignInView`） | 启用个人租户的部署去租户区首页，未启用的去账户页 `/account`；登录屏由邀请落点就地打开时留在原地址，会话翻转把落点页重新渲染成已登录的形态 |
 | 短信登录的落点（`SignInView`） | 不导航：会话翻转后当前地址自行渲染（租户区首页，或邀请声明命中的接受页） |
 | 口令注册之后的落点（`SignInView`） | 一律去 `/account?verify=1` 的账户页验证节，与个人租户特性无关；注册屏在邀请链接上时该邀请路径记入本标签页的会话存储，验证完成后账户页回到它 |
 | 重定向与企业方法的回调落点（`AuthCallbackPage`） | 从邀请链接出发的往返成功后回到该邀请路径（记录在本标签页会话存储，读走即清）；其它出发地落租户区首页 |
@@ -462,7 +463,7 @@ flowchart TD
   - 管理后台区：`/admin/sms` 特性缺席与 `/admin` 下一条不存在的路径，都在管理后台框架内渲染 `NotFoundPage`；管理后台声明全部特性缺席时，两者都落到租户区的 404。
   - 回调落点：见“租户框架与回调落点”。
   - 合一拓扑下，不落在 `/` 以外任何认领前缀之下、末段不带扩展名的深链接在 HTTP 层得到入口文档与 200（[webui](design-webui.md)），404 完全由前端渲染。
-- **匿名访问者在两个区里看到什么只取决于区域与会话史，与特性无关**：租户区（含邀请落点，以及渲染 `absent` 视图的回调落点）首访是登录页，会话中途结束后是会话结束页；管理后台区是登录页。
+- **匿名访问者在两个区里看到什么只取决于区域与会话史，与特性无关**：租户区首访是登录页，会话中途结束后是会话结束页；管理后台区是登录页。邀请落点是租户区之外的自有落点页，匿名访问者看到邀请摘要与登录、注册入口；渲染 `absent` 视图的回调落点仍在租户区里。
 - **部署前提**：同一个源背后的全部 `serve` 副本跑同一条命令、同一份配置。`serve` 纳入日志功能，每个 `serve` 进程在 `Start` 写出一行特性集摘要，供运维逐副本比对；副本间不一致时的表现见 [feature](design-feature.md) 的非保证。
 
 ## 扩展点
@@ -516,7 +517,7 @@ flowchart TD
 | 口令注册成功落地 `/account?verify=1` 的档案分页验证节与持续验证提示 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
 | 首次进入 `/account?verify=1` 自动发送一次验证码，更换邮箱落地不发送 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
 | 从邀请链接发起的口令注册在验证完成后回到该邀请链接，令牌只存在本标签页会话存储 | 已实现 | `starters/demo/web/src/invitation-return.ts` `rememberInvitationLanding`、`pendingInvitationLanding`、`forgetInvitationLanding`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage` |
-| 邀请链接上的短信注册与短信登录留在原地址，由邀请声明接管 | 已实现 | `starters/demo/web/src/invitation-return.ts` `isInvitationLanding`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` |
+| 邀请链接上的短信注册与短信登录留在原地址，会话翻转把落点页重新渲染成已登录的形态 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/pages/accept-invitation-page.tsx` `AcceptInvitationPage`；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` |
 | 从邀请链接出发的重定向与企业方法往返，回调成功后回到该邀请 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`、`socialSignIn`；`starters/demo/web/src/pages/auth-callback-page.tsx` `AuthCallbackPage`；`starters/demo/web/src/invitation-return.ts` `pendingInvitationLanding`、`forgetInvitationLanding` |
 | 账户事务内为每个用户账户建立个人租户（单人、不可停用删除退出、不能邀请） | 已实现 | `pkg/tenant/personal/provisioning.go` `(*product).ProvisionAccount`；`pkg/tenant/personal/lifecycle.go` `(*product).AccountCreated`；`pkg/tenant/personal/ensure.go` `(*product).ensure`；`pkg/tenant/personal/lifecycle_test.go` `TestAccountCreatedBuildsThePersonalTenant`、`pkg/tenant/personal/ensure_test.go` `TestEnsureIsIdempotent` |
 | 未验证账户同样在创建时得到个人租户；验证提示由账户页单独呈现 | 已实现 | `pkg/tenant/personal/lifecycle.go` `(*product).AccountCreated`（不读注册验证状态）；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
@@ -537,7 +538,7 @@ flowchart TD
 | 颜色模式入口在账户偏好页，账户值为权威、设备镜像只做首屏；两个页头不提供颜色模式按钮 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/app.tsx` `ColorModeSync`；`starters/demo/web/src/chrome.tsx` `readStoredColorModePreference`、`persistColorModePreference`、`initialColorModePreference`；`starters/demo/web/src/main.tsx` `demoThemeOptions` |
 | 全部页面的显示时区取账户存下的时区，管理后台与租户区同按一个时区渲染，档案未落定或读取失败时按浏览器时区 | 已实现 | `starters/demo/web/src/app.tsx` `DemoApp`（`DisplayTimeZoneProvider`）；`web/packages/ui-kit/src/display-time-zone.tsx` `DisplayTimeZoneProvider`；`web/packages/i18n/src/time.ts` `resolveTimeZone` |
 | 租户切换的确认文本只播报、不在页头绘制 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitchAnnouncement.tsx` `TenantSwitchAnnouncement`；`starters/demo/web/src/chrome.tsx` `UserMenu`、`AccountEntry` |
-| 邀请受理成功后以应答的租户标识为当前租户，名称经本人租户读取解析，解析不到时仍落到租户区首页但不写当前租户 | 已实现 | `starters/demo/web/src/pages/accept-invitation-page.tsx` `AcceptInvitationPage`；`starters/demo/web/src/tenant-self.ts` `loadSelfTenants` |
+| 邀请受理成功后以应答的租户名称为当前租户，显示名经本人租户读取解析，解析不到时仍落到租户区首页但不写当前租户；已接受链接在会话已是成员时给出“进入组织” | 已实现 | `starters/demo/web/src/pages/accept-invitation-page.tsx` `AcceptInvitationPage`；`starters/demo/web/src/tenant-self.ts` `loadSelfTenants`、`selfTenantName`、`useSelfTenantState` |
 | 启用个人租户时注册完成后落在租户区首页 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | `backend` 监听上各端的认领前缀（平台默认文档给出的固定命名空间表） | 已实现 | `starters/demo/server/defaults.go` `http.endpoints`；`starters/demo/server/claims_test.go` `claimsFromFile`、`readEffective`（经 `config.Load` 读文件与默认文档合并后的生效配置） |
@@ -552,4 +553,4 @@ flowchart TD
 | `platform-admin` 全量与 `tenant-admin` 治理集的种入分流，存量 builtin `tenant-admin` 经 `authz.Reconciler` 收敛 | 已实现 | `starters/demo/server/seed.go` `seedRosterAdministration`、`seedAdministration`、`reconcileTenantAdminGrants`；`starters/demo/server/tenancy.go` `declaredGrants`、`governedGrants`、`retiredTenantAdminGrants`；`pkg/authz/policy/reconciler.go` `(*product).ReconcileGrants` |
 | 两个租户管理面模块的装配：`authz.tenantadmin`、`settings.tenantadmin` 的端点配置、`baselineServe` 点名、静态特性与契约再生成 | 已实现 | `starters/demo/server/defaults.go` `platformDefaultsDocument`；`starters/demo/server/main.go` `baselineServe`；`starters/demo/server/tenancy.go` `settingsWriteGuardModule`、`settingsWriteGuard.Denied`；`contracts/features.json`；`web/packages/api-sdk/src/features.ts` |
 | 邀请通知的邮件渲染器编入每次构建，审查与本地配置给出接受来源并选日志邮件载体 | 已实现 | `starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/server/review/sqlite.yaml`（`authn.invitemail.accept-base-url`、`mail.carrier`）；`starters/demo/server/local.yaml.example`；`starters/demo/server/capabilities_test.go` `TestTheDefaultBuildCarriesTheInvitationNotifier` |
-| 组织管理面页头的三层面包屑（组织 → 组织管理 → 页面） | 已实现 | `starters/demo/web/src/app.tsx` `AppFrame`；`starters/demo/web/src/locales/zh-CN.json`、`en-US.json` `nav.organizationAdmin` |
+| 组织管理面页头的两层面包屑（组织 → 页面） | 已实现 | `starters/demo/web/src/app.tsx` `AppFrame`；`starters/demo/web/src/locales/zh-CN.json`、`en-US.json` `nav.organizationAdmin` |

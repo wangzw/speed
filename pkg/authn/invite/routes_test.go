@@ -51,6 +51,37 @@ func (h *harness) rowCount() int64 {
 	return n
 }
 
+// TestTheAcceptanceRoutesKeepTheirDeclaredAccessLevels holds the registration
+// split the design depends on: the acceptance read is Public so an anonymous
+// visitor reaches the landing page even with a stale credential, the acceptance
+// write is Optional so a caller who has one carries an identity, and the
+// eligibility read is Guarded because its answer is about an account. A read
+// turned Optional would answer 401 to an expired cookie and break the landing
+// page; an eligibility read turned Optional would let the handler answer an
+// anonymous caller it has nothing to say about.
+func TestTheAcceptanceRoutesKeepTheirDeclaredAccessLevels(t *testing.T) {
+	h := newHarness(t)
+	cases := []struct {
+		method string
+		path   string
+		want   mounttest.Kind
+	}{
+		{http.MethodGet, "/api/v1/auth/invitations/:token", mounttest.Public},
+		{http.MethodPost, "/api/v1/auth/invitations/:token", mounttest.Optional},
+		{http.MethodGet, "/api/v1/auth/invitations/:token/eligibility", mounttest.Guarded},
+	}
+	for _, c := range cases {
+		reg, ok := h.mounter.Registered(c.method, c.path)
+		if !ok {
+			t.Errorf("%s %s is not registered", c.method, c.path)
+			continue
+		}
+		if reg.Kind != c.want {
+			t.Errorf("%s %s is %s, want %s", c.method, c.path, reg.Kind, c.want)
+		}
+	}
+}
+
 func TestIssueRouteAnswers201AndAuditsBeforeTheAction(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -154,6 +185,44 @@ func TestIssueRouteRefusesAMalformedAddress(t *testing.T) {
 	}
 }
 
+// TestIssueRouteAnswersAnUnreadableBodyAsBadRequest holds the problem type of
+// the binding refusal. The route answers several 400s, and the declaration
+// keeps one response per status, so the type a request refused before the
+// handler runs must be the one on that response rather than the last 400 the
+// operation names.
+func TestIssueRouteAnswersAnUnreadableBodyAsBadRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body io.Reader
+	}{
+		{name: "no body", body: nil},
+		{name: "not a JSON object", body: strings.NewReader("not json")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.asAdmin()
+			req := httptest.NewRequest(http.MethodPost, pathAdmin, tc.body)
+			req.Header.Set("Content-Type", "application/json")
+			w := h.mounter.Do(req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+			}
+			var problem struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("decoding the problem: %v", err)
+			}
+			if want := typePrefix + "bad-request"; problem.Type != want {
+				t.Errorf("problem type = %q, want %q", problem.Type, want)
+			}
+			if h.rowCount() != 0 {
+				t.Errorf("a row was written for a body that could not be read")
+			}
+		})
+	}
+}
+
 func TestListAndRevokeRoutes(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
@@ -186,6 +255,9 @@ func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 	w := h.request(http.MethodDelete, "/api/v1/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 revoking an accepted invitation", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "urn:speed:authn:invitation-terminal") {
+		t.Errorf("body %s does not carry invitation-terminal", w.Body.String())
 	}
 }
 
@@ -225,44 +297,95 @@ func TestAcceptFaceReadIsPublicAndWriteNeedsAnIdentity(t *testing.T) {
 	}
 }
 
-// TestTheAcceptViewAnswersOnlyTheStateOnceTheTokenIsDead holds that a token
-// past its deadline, revoked or already accepted answers its state alone: the
-// invited address, the tenant's name and the deadline are not disclosed by a
-// link that grants nothing.
-func TestTheAcceptViewAnswersOnlyTheStateOnceTheTokenIsDead(t *testing.T) {
+// TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization holds the three
+// shapes of the public read: a pending link names the organization and the
+// inviter by their display names and the address in the server's masked form,
+// never the full address or the issuer's account identifier; an accepted link
+// names the organization and shows neither the address nor the inviter; and an
+// expired or revoked link answers its state alone.
+func TestTheAcceptViewShowsTheMaskedLinkAndThenTheOrganization(t *testing.T) {
 	h := newHarness(t)
+	h.tenantDescs.byID["tenant-a"] = authn.TenantDescription{Name: "acme", DisplayName: "Acme Org"}
+	h.accounts.named(adminID, "Demo Operator")
+
+	// A status request against a token, decoded into the members the public read
+	// may publish.
+	read := func(token string) (string, map[string]any, string) {
+		t.Helper()
+		w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+token, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("view status = %d, want 200: %s", w.Code, w.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
+		}
+		state, _ := body["state"].(string)
+		link, _ := body["invitation"].(map[string]any)
+		return state, link, w.Body.String()
+	}
+
 	h.mounter.AsAnonymous()
-
 	pending := h.issue("tenant-a", "alice@example.com")
-	w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+pending.Token, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("pending view status = %d, want 200: %s", w.Code, w.Body.String())
+	state, link, raw := read(pending.Token)
+	if state != viewStatePending {
+		t.Fatalf("pending state = %q, want %q", state, viewStatePending)
 	}
-	var live map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &live); err != nil {
-		t.Fatalf("the pending body %q is not JSON: %v", w.Body.String(), err)
+	if got, _ := link["tenant_display_name"].(string); got != "Acme Org" {
+		t.Errorf("tenant_display_name = %q, want the organization's display name", got)
 	}
-	if got, _ := live["state"].(string); got != viewStatePending {
-		t.Fatalf("pending state = %q, want %q", got, viewStatePending)
+	if got, _ := link["tenant"].(string); got != "acme" {
+		t.Errorf("tenant = %q, want the organization's name beside the display name", got)
 	}
-	if _, ok := live["invitation"]; !ok {
-		t.Fatal("a redeemable invitation carries no summary")
+	if got, _ := link["invited_by_name"].(string); got != "Demo Operator" {
+		t.Errorf("invited_by_name = %q, want the inviter's display name", got)
+	}
+	if got, _ := link["email"].(string); got != "a***@example.com" {
+		t.Errorf("email = %q, want the server-masked a***@example.com", got)
+	}
+	if _, ok := link["expires_at"]; !ok {
+		t.Error("a pending link carries no deadline")
+	}
+	if _, ok := link["invited_by"]; ok {
+		t.Error("the public read carries the issuer's account identifier")
+	}
+	for _, leaked := range []string{"alice@example.com", string(adminID)} {
+		if strings.Contains(raw, leaked) {
+			t.Errorf("the public read carries %q: %s", leaked, raw)
+		}
 	}
 
+	// Accepted: the organization's name and display name, no address or inviter.
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+pending.Token, map[string]string{})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("accepting: %d: %s", w.Code, w.Body.String())
+	}
+	h.mounter.AsAnonymous()
+	state, link, raw = read(pending.Token)
+	if state != viewStateAccepted {
+		t.Fatalf("accepted state = %q, want %q", state, viewStateAccepted)
+	}
+	if got, _ := link["tenant"].(string); got != "acme" {
+		t.Errorf("accepted tenant = %q, want the organization's name", got)
+	}
+	if got, _ := link["tenant_display_name"].(string); got != "Acme Org" {
+		t.Errorf("accepted tenant_display_name = %q, want the organization's display name", got)
+	}
+	for _, absent := range []string{"email", "invited_by_name", "expires_at"} {
+		if _, ok := link[absent]; ok {
+			t.Errorf("an accepted link carries %q", absent)
+		}
+	}
+	if strings.Contains(raw, "alice@example.com") {
+		t.Errorf("the accepted read carries the invited address: %s", raw)
+	}
+
+	// Revoked and expired: the state alone.
 	for _, held := range []struct {
 		name  string
 		setup func(Issued)
 	}{
-		{
-			name: "accepted",
-			setup: func(issued Issued) {
-				h.acceptAsHTTP("acct-accepted", "accepted@example.com")
-				if accepted := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
-					map[string]string{}); accepted.Code != http.StatusCreated {
-					t.Fatalf("accepting: %d: %s", accepted.Code, accepted.Body.String())
-				}
-			},
-		},
 		{
 			name: "revoked",
 			setup: func(issued Issued) {
@@ -286,26 +409,55 @@ func TestTheAcceptViewAnswersOnlyTheStateOnceTheTokenIsDead(t *testing.T) {
 			h.mounter.AsAnonymous()
 			held.setup(issued)
 
-			w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+issued.Token, nil)
-			if w.Code != http.StatusOK {
-				t.Fatalf("view status = %d, want 200: %s", w.Code, w.Body.String())
+			state, link, raw := read(issued.Token)
+			if state != held.name {
+				t.Errorf("state = %q, want %q", state, held.name)
 			}
-			var body map[string]any
-			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-				t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
-			}
-			if got, _ := body["state"].(string); got != held.name {
-				t.Errorf("state = %q, want %q", got, held.name)
-			}
-			if _, ok := body["invitation"]; ok {
+			if link != nil {
 				t.Error("a dead token's answer carries an invitation summary")
 			}
-			for _, member := range []string{"email", "tenant", "expires_at", "accepted_at", "created_at"} {
-				if strings.Contains(w.Body.String(), member) {
-					t.Errorf("a dead token's answer carries %q: %s", member, w.Body.String())
+			for _, member := range []string{`"email"`, `"tenant"`, `"expires_at"`, `"invited_by_name"`} {
+				if strings.Contains(raw, member) {
+					t.Errorf("a dead token's answer carries %q: %s", member, raw)
 				}
 			}
 		})
+	}
+}
+
+// TestTheAcceptViewCarriesTheTenantNameWhenTheDisplayNameIsEmpty covers an
+// organization that never chose a display name, such as a seeded one: the
+// pending link still names it, because the name is what the landing page falls
+// back to. Without the name the invitee's page would say they were invited to
+// join "".
+func TestTheAcceptViewCarriesTheTenantNameWhenTheDisplayNameIsEmpty(t *testing.T) {
+	h := newHarness(t)
+	h.tenantDescs.byID["tenant-a"] = authn.TenantDescription{Name: "acme"}
+
+	issued := h.issue("tenant-a", "alice@example.com")
+	h.mounter.AsAnonymous()
+	w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+issued.Token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("view status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		State      string `json:"state"`
+		Invitation struct {
+			Tenant            string `json:"tenant"`
+			TenantDisplayName string `json:"tenant_display_name"`
+		} `json:"invitation"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
+	}
+	if body.State != viewStatePending {
+		t.Fatalf("state = %q, want %q", body.State, viewStatePending)
+	}
+	if body.Invitation.Tenant != "acme" {
+		t.Errorf("tenant = %q, want the organization's name so the landing can name it", body.Invitation.Tenant)
+	}
+	if body.Invitation.TenantDisplayName != "" {
+		t.Errorf("tenant_display_name = %q, want empty for an organization that chose none", body.Invitation.TenantDisplayName)
 	}
 }
 
@@ -343,8 +495,10 @@ func TestAnUnprovedCallerOnAcceptanceAnswers403OfItsOwn(t *testing.T) {
 func TestASuspendedMemberOnAcceptanceAnswers409OfItsOwn(t *testing.T) {
 	h := newHarness(t)
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
-	h.members.hold(authn.Membership{Account: "acct-alice", Tenant: "tenant-a", Active: false})
 	issued := h.issue("tenant-a", "alice@example.com")
+	// The suspension lands after issuance: an address that is already a member
+	// cannot be invited, and this case is about acceptance meeting one.
+	h.members.hold(authn.Membership{Account: "acct-alice", Tenant: "tenant-a", Active: false})
 
 	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
 	if w.Code != http.StatusConflict {
@@ -381,6 +535,131 @@ func TestAFailingMembershipStoreOnAcceptanceAnswers503(t *testing.T) {
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
 		t.Errorf("status after the 503 = %d, want back to pending", got)
+	}
+}
+
+// TestAcceptanceWithoutItsRequiredCapabilitiesFailsClosed holds the assembly
+// rule at the HTTP layer: every acceptance writes through the transaction-aware
+// membership writer, and an invitation that carries a role needs the policy to
+// re-judge it and the binder to write it. With one absent the request answers
+// 503 and the invitation stays pending, so an assembly that gains the capability
+// leaves the same token redeemable.
+func TestAcceptanceWithoutItsRequiredCapabilitiesFailsClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		issue  func(*harness) Issued
+		remove func(*product)
+	}{
+		{
+			name:   "the membership writer",
+			issue:  func(h *harness) Issued { return h.issue(tenant, "alice@example.com") },
+			remove: func(p *product) { p.membershipWriter = nil },
+		},
+		{
+			name:   "the role policy",
+			issue:  func(h *harness) Issued { return h.issueRole(tenant, "alice@example.com", "editor") },
+			remove: func(p *product) { p.rolePolicy = nil },
+		},
+		{
+			name:   "the role binder",
+			issue:  func(h *harness) Issued { return h.issueRole(tenant, "alice@example.com", "editor") },
+			remove: func(p *product) { p.roleBinder = nil },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			issued := tc.issue(h)
+			h.acceptAsHTTP("acct-alice", "alice@example.com")
+			tc.remove(h.p)
+
+			w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("accept status = %d, want 503 without %s: %s", w.Code, tc.name, w.Body.String())
+			}
+			if got := problemTypeOf(t, w); got != typePrefix+"unavailable" {
+				t.Errorf("problem type = %q, want %s", got, typePrefix+"unavailable")
+			}
+			if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+				t.Errorf("status after the 503 = %d, want pending", got)
+			}
+		})
+	}
+}
+
+// TestTerminalInvitationsOnAcceptanceAnswerInvitationTerminal holds the
+// acceptance face's terminal refusal: a token whose invitation is already
+// accepted, revoked or expired answers 409 invitation-terminal, the code a
+// client reads as "this link no longer grants anything".
+func TestTerminalInvitationsOnAcceptanceAnswerInvitationTerminal(t *testing.T) {
+	// redeem sends one acceptance through the route as the proven holder of the
+	// invited address.
+	redeem := func(h *harness, token string) *httptest.ResponseRecorder {
+		h.t.Helper()
+		h.acceptAsHTTP("acct-alice", "alice@example.com")
+		return h.request(http.MethodPost, "/api/v1/auth/invitations/"+token, map[string]string{})
+	}
+	for _, tc := range []struct {
+		name  string
+		setup func(*harness, Issued)
+	}{
+		{
+			name: "already accepted",
+			setup: func(h *harness, issued Issued) {
+				if w := redeem(h, issued.Token); w.Code != http.StatusCreated {
+					h.t.Fatalf("the first acceptance = %d, want 201: %s", w.Code, w.Body.String())
+				}
+			},
+		},
+		{
+			name: "revoked",
+			setup: func(h *harness, issued Issued) {
+				h.asAdmin()
+				w := h.request(http.MethodDelete, pathAdmin+"/"+issued.Invitation.ID, nil)
+				if w.Code != http.StatusNoContent {
+					h.t.Fatalf("revoking = %d, want 204: %s", w.Code, w.Body.String())
+				}
+			},
+		},
+		{
+			name:  "expired",
+			setup: func(h *harness, _ Issued) { h.clock.advance(DefaultTTL + time.Hour) },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			issued := h.issue(tenant, "alice@example.com")
+			tc.setup(h, issued)
+
+			w := redeem(h, issued.Token)
+			if w.Code != http.StatusConflict {
+				t.Fatalf("accept status = %d, want 409: %s", w.Code, w.Body.String())
+			}
+			if got := problemTypeOf(t, w); got != typePrefix+"invitation-terminal" {
+				t.Errorf("problem type = %q, want %s", got, typePrefix+"invitation-terminal")
+			}
+		})
+	}
+}
+
+// TestADisabledTenantOnAcceptanceAnswers409OfItsOwn holds the refusal direction
+// the design gives a suspended organization: the acceptance answers 409
+// invitation-tenant-inactive, not the terminal conflict, and the invitation
+// stays pending, so enabling the tenant makes the same token redeemable again.
+func TestADisabledTenantOnAcceptanceAnswers409OfItsOwn(t *testing.T) {
+	h := newHarness(t)
+	issued := h.issue(tenant, "alice@example.com")
+	h.tenantStates.states[tenant] = authn.TenantDisabled
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
+
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("accept status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+	if got := problemTypeOf(t, w); got != typePrefix+"invitation-tenant-inactive" {
+		t.Errorf("problem type = %q, want %s", got, typePrefix+"invitation-tenant-inactive")
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("status after the 409 = %d, want pending so enabling the tenant restores the token", got)
 	}
 }
 

@@ -335,10 +335,21 @@ func TestNoCarrierStandsTheModuleDown(t *testing.T) {
 	}
 }
 
+// The inviter's display name a notice is rendered with.
+const inviter = "Demo Operator"
+
+// The deadline each language renders for expiresAt: the catalog's layout, in
+// UTC, not the RFC 3339 instant the message used to interpolate.
+var renderedExpiry = map[string]string{
+	"en-US": "Nov 12, 2026 17:30 UTC",
+	"zh-CN": "2026年11月12日 17:30 UTC",
+}
+
 // TestTheNoticeRendersInBothLanguages holds the whole send: the message reaches
 // the carrier addressed to the invitee, its subject and both bodies are the
-// catalog's text interpolated with the tenant, the acceptance link and the
-// deadline, and the two languages differ so a case that always answered one
+// catalog's text interpolated with the tenant, the inviter and the acceptance
+// link, the deadline is a readable UTC date and time rather than an RFC 3339
+// instant, and the two languages differ so a case that always answered one
 // could not pass.
 func TestTheNoticeRendersInBothLanguages(t *testing.T) {
 	sender := &recordingSender{}
@@ -346,9 +357,14 @@ func TestTheNoticeRendersInBothLanguages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assembling the module: %v", err)
 	}
+	// The request carries a time zone of its own; the notice must still render
+	// the deadline in UTC, because a recipient may have no account and no time
+	// zone and the mail is not a page.
+	ctx := i18n.WithTimeZone(t.Context(), "Asia/Tokyo")
 	for _, locale := range []string{"zh-CN", "en-US"} {
-		delivery, err := notifier.Notify(t.Context(), authn.InviteNotice{
-			Tenant: tenant, Email: address, Token: testToken, ExpiresAt: expiresAt, Locale: locale,
+		delivery, err := notifier.Notify(ctx, authn.InviteNotice{
+			Tenant: tenant, Inviter: inviter, Email: address, Token: testToken,
+			ExpiresAt: expiresAt, Locale: locale,
 		})
 		if err != nil {
 			t.Fatalf("Notify(%s): %v", locale, err)
@@ -362,11 +378,10 @@ func TestTheNoticeRendersInBothLanguages(t *testing.T) {
 		t.Fatalf("the carrier received %d message(s), want two", len(sent))
 	}
 	link := baseURL + "/invitations/" + testToken
-	deadline := formatExpiry(expiresAt)
 	args := map[string]string{
 		"tenant":     tenant,
+		"inviter":    inviter,
 		"accept_url": link,
-		"expires_at": deadline,
 	}
 	for i, locale := range []string{"zh-CN", "en-US"} {
 		entries := readCatalog(t, i18n.Locale(locale))
@@ -377,25 +392,127 @@ func TestTheNoticeRendersInBothLanguages(t *testing.T) {
 		if want := interpolate(entries[string(subjectKey)], args); got.Subject != want {
 			t.Errorf("%s: Subject = %q, want %q", locale, got.Subject, want)
 		}
-		if want := interpolate(entries[string(textKey)], args); got.Text != want {
-			t.Errorf("%s: Text = %q, want %q", locale, got.Text, want)
+		wantText := interpolate(entries[string(textByKey)], args)
+		if !strings.HasPrefix(got.Text, wantText) {
+			t.Errorf("%s: Text = %q, want it to start with %q", locale, got.Text, wantText)
 		}
-		if want := interpolate(entries[string(htmlKey)], args); got.HTML != want {
-			t.Errorf("%s: HTML = %q, want %q", locale, got.HTML, want)
+		wantHTML := interpolate(entries[string(htmlByKey)], args)
+		if !strings.HasPrefix(got.HTML, wantHTML) {
+			t.Errorf("%s: HTML = %q, want it to start with %q", locale, got.HTML, wantHTML)
 		}
 		if !strings.Contains(got.Subject, tenant) {
 			t.Errorf("%s: the subject does not carry the tenant %q: %s", locale, tenant, got.Subject)
 		}
+		deadline := renderedExpiry[locale]
 		for name, body := range map[string]string{"text": got.Text, "html": got.HTML} {
-			for _, want := range []string{tenant, link, deadline} {
+			for _, want := range []string{tenant, inviter, link, deadline} {
 				if !strings.Contains(body, want) {
 					t.Errorf("%s: the %s does not carry %q: %s", locale, name, want, body)
 				}
+			}
+			if strings.Contains(body, expiresAt.Format(time.RFC3339)) {
+				t.Errorf("%s: the %s still carries the RFC 3339 deadline: %s", locale, name, body)
 			}
 		}
 	}
 	if sent[0].Subject == sent[1].Subject {
 		t.Errorf("both languages rendered the same subject %q", sent[0].Subject)
+	}
+}
+
+// TestTheHTMLBodyEscapesTheInterpolatedText holds the injection boundary: a
+// display name and a tenant name are free text a person typed, so the HTML
+// body carries them escaped while the plain-text body and the subject carry
+// them as written. The catalog's own markup is untouched; only the values
+// interpolated into it change.
+func TestTheHTMLBodyEscapesTheInterpolatedText(t *testing.T) {
+	const (
+		markedInviter = `Mallory <b>&amp;</b>`
+		markedTenant  = `R&D <team>`
+	)
+	sender := &recordingSender{}
+	notifier, err := driveInviteMail(t, configuredBody, sender)
+	if err != nil {
+		t.Fatalf("assembling the module: %v", err)
+	}
+	if _, err := notifier.Notify(t.Context(), authn.InviteNotice{
+		Tenant: markedTenant, Inviter: markedInviter, Email: address, Token: testToken,
+		ExpiresAt: expiresAt, Locale: "en-US",
+	}); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	got := sender.sent()[0]
+	for _, want := range []string{
+		`Mallory &lt;b&gt;&amp;amp;&lt;/b&gt;`,
+		`R&amp;D &lt;team&gt;`,
+	} {
+		if !strings.Contains(got.HTML, want) {
+			t.Errorf("the HTML body does not carry the escaped value %q: %s", want, got.HTML)
+		}
+	}
+	for _, raw := range []string{`<b>`, `</b>`, `R&D`, `<team>`} {
+		if strings.Contains(got.HTML, raw) {
+			t.Errorf("the HTML body carries %q unescaped: %s", raw, got.HTML)
+		}
+	}
+	if !strings.Contains(got.Subject, markedTenant) {
+		t.Errorf("the subject does not carry the tenant as written: %s", got.Subject)
+	}
+	for _, want := range []string{markedInviter, markedTenant} {
+		if !strings.Contains(got.Text, want) {
+			t.Errorf("the plain-text body does not carry %q as written: %s", want, got.Text)
+		}
+	}
+}
+
+// TestANoticeWithoutAnInviterUsesTheImpersonalBody holds the host-issued case:
+// an invitation with no account behind it names no inviter, so the notice
+// renders the impersonal body with no dangling placeholder or verb.
+func TestANoticeWithoutAnInviterUsesTheImpersonalBody(t *testing.T) {
+	sender := &recordingSender{}
+	notifier, err := driveInviteMail(t, configuredBody, sender)
+	if err != nil {
+		t.Fatalf("assembling the module: %v", err)
+	}
+	if _, err := notifier.Notify(t.Context(), authn.InviteNotice{
+		Tenant: tenant, Email: address, Token: testToken, ExpiresAt: expiresAt, Locale: "en-US",
+	}); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	got := sender.sent()[0]
+	for name, body := range map[string]string{"text": got.Text, "html": got.HTML} {
+		for _, unwanted := range []string{"{{inviter}}", "invited you", "  invited"} {
+			if strings.Contains(body, unwanted) {
+				t.Errorf("the %s names an absent inviter (%q): %s", name, unwanted, body)
+			}
+		}
+	}
+	entries := readCatalog(t, "en-US")
+	want := interpolate(entries[string(textKey)], map[string]string{"tenant": tenant, "accept_url": baseURL + "/invitations/" + testToken})
+	if !strings.HasPrefix(got.Text, want) {
+		t.Errorf("Text = %q, want it to start with the impersonal body %q", got.Text, want)
+	}
+}
+
+// TestANoticeWithoutADeadlineOmitsTheSentence holds the defensive case the seam
+// documents: a caller that does not know the deadline gets no invented instant
+// and no dangling time segment.
+func TestANoticeWithoutADeadlineOmitsTheSentence(t *testing.T) {
+	sender := &recordingSender{}
+	notifier, err := driveInviteMail(t, configuredBody, sender)
+	if err != nil {
+		t.Fatalf("assembling the module: %v", err)
+	}
+	if _, err := notifier.Notify(t.Context(), authn.InviteNotice{
+		Tenant: tenant, Email: address, Token: testToken, Locale: "en-US",
+	}); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	got := sender.sent()[0]
+	for name, body := range map[string]string{"text": got.Text, "html": got.HTML} {
+		if strings.Contains(body, "works until") || strings.Contains(body, "{{expires_at") {
+			t.Errorf("the %s carries a deadline the caller did not give: %s", name, body)
+		}
 	}
 }
 
@@ -440,8 +557,8 @@ func TestAnUnknownLocaleFallsBack(t *testing.T) {
 	link := baseURL + "/invitations/" + testToken
 	args := map[string]string{
 		"tenant":     tenant,
+		"inviter":    inviter,
 		"accept_url": link,
-		"expires_at": formatExpiry(expiresAt),
 	}
 	for _, tc := range cases {
 		sender := &recordingSender{}
@@ -450,7 +567,8 @@ func TestAnUnknownLocaleFallsBack(t *testing.T) {
 			t.Fatalf("%q: assembling the module: %v", tc.locale, err)
 		}
 		if _, err := notifier.Notify(t.Context(), authn.InviteNotice{
-			Tenant: tenant, Email: address, Token: testToken, ExpiresAt: expiresAt, Locale: tc.locale,
+			Tenant: tenant, Inviter: inviter, Email: address, Token: testToken,
+			ExpiresAt: expiresAt, Locale: tc.locale,
 		}); err != nil {
 			t.Fatalf("%q: Notify: %v", tc.locale, err)
 		}
@@ -458,6 +576,9 @@ func TestAnUnknownLocaleFallsBack(t *testing.T) {
 		got := sender.sent()[0]
 		if want := interpolate(entries[string(subjectKey)], args); got.Subject != want {
 			t.Errorf("%q: Subject = %q, want %q", tc.locale, got.Subject, want)
+		}
+		if want := interpolate(entries[string(textByKey)], args); !strings.HasPrefix(got.Text, want) {
+			t.Errorf("%q: Text = %q, want it to start with the %s body %q", tc.locale, got.Text, tc.from, want)
 		}
 	}
 }
@@ -539,12 +660,26 @@ func TestTheCatalogCarriesTheSameLeavesInBothLanguages(t *testing.T) {
 				t.Errorf("%s carries no %q", locale, key)
 				continue
 			}
-			if key == subjectKey {
-				continue
-			}
-			for _, param := range []string{"{{tenant}}", "{{accept_url}}", "{{expires_at}}"} {
-				if !strings.Contains(text, param) {
-					t.Errorf("%s %q does not interpolate %s", locale, key, param)
+			switch key {
+			case subjectKey:
+				if !strings.Contains(text, "{{tenant}}") {
+					t.Errorf("%s %q does not interpolate {{tenant}}", locale, key)
+				}
+			case textKey, htmlKey:
+				for _, param := range []string{"{{tenant}}", "{{accept_url}}"} {
+					if !strings.Contains(text, param) {
+						t.Errorf("%s %q does not interpolate %s", locale, key, param)
+					}
+				}
+			case textByKey, htmlByKey:
+				for _, param := range []string{"{{tenant}}", "{{inviter}}", "{{accept_url}}"} {
+					if !strings.Contains(text, param) {
+						t.Errorf("%s %q does not interpolate %s", locale, key, param)
+					}
+				}
+			case expiryTextKey, expiryHTMLKey:
+				if !strings.Contains(text, "{{expires_at, time, ") || !strings.Contains(text, " UTC}}") {
+					t.Errorf("%s %q does not render the deadline with a UTC time segment: %s", locale, key, text)
 				}
 			}
 		}

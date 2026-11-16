@@ -10,7 +10,9 @@ import (
 // best-effort row a failed notice leaves. A read writes no audit row of its own.
 const (
 	actionIssue   = "authn.invitation.issue"
+	actionResend  = "authn.invitation.resend"
 	actionRevoke  = "authn.invitation.revoke"
+	actionAccept  = "authn.invitation.accept"
 	actionDeliver = "authn.invitation.deliver"
 )
 
@@ -25,8 +27,11 @@ const (
 // The detail keys this module writes, drawn from the capability's closed set.
 // No address and no token ever enters one.
 const (
-	detailActionID = "action_id"
-	detailTenant   = "tenant"
+	detailActionID  = "action_id"
+	detailTenant    = "tenant"
+	detailRole      = "role"
+	detailInvitedBy = "invited_by"
+	detailReason    = "reason_class"
 )
 
 // newActionID mints the action identifier a write's audit rows are linked by. It

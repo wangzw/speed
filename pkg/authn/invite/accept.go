@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
@@ -21,96 +20,243 @@ import (
 const VerifiedViaInvite = "invite"
 
 // maxClaimAttempts bounds how many times Accept re-reads and re-attempts the
-// conditional write before giving up on contention. A winner that settles a
-// lost race back to pending is what makes more than one attempt possible.
+// conditional write before giving up on contention. A failed claim is the only
+// retried outcome: every write of the acceptance shares one transaction, so a
+// write that fails rolls the claim back with it.
 const maxClaimAttempts = 3
+
+// The two control-flow outcomes of one redemption attempt. Neither reaches a
+// caller: the claim losing its race makes Accept re-read and try again, and a
+// join the store refuses is answered as the inactive membership it stands for
+// after the transaction has rolled back.
+var (
+	errClaimLost   = errors.New("invite: the conditional claim matched no live row")
+	errJoinRefused = errors.New("invite: the membership write refused the join")
+)
+
+// membershipWriterTx is the part of the account module's transaction-aware
+// membership surface an acceptance joins: the read that holds the account's row
+// and the conditional join. The account module delivers the whole
+// provisioning.MembershipWriter, which this narrower interface is satisfied by;
+// the acceptance takes only what it writes.
+type membershipWriterTx interface {
+	MembershipTx(ctx context.Context, tx *gorm.DB, tenant string, account authn.AccountID) (authn.Membership, bool, error)
+	PutJoiningTx(ctx context.Context, tx *gorm.DB, m authn.Membership, wasActive bool) (bool, func(context.Context) error, error)
+}
 
 // Accept redeems an invitation with its token.
 //
 // The caller must be authenticated: the token grants a membership, and the
-// requesting account is the one the membership is written for. The holder of the
-// token alone is not enough — the inviter holds it too — so the caller must also
-// hold the invited address as a proven email identifier. An account without that
-// proof is refused with ErrInvitationEmailUnproved so the client can show the
-// proof step; acceptance never creates an account and never makes the invited
-// address a sign-in identifier.
+// requesting account is the one the membership is written for. The account must
+// be a user account: a service account signs in with a service secret and has
+// no acceptable membership, and a subject with no account row has no account to
+// grant it to, so both are refused with ErrInvitationTargetInvalid before the
+// token is read. The holder of the token alone is not enough — the inviter holds
+// it too — so the caller must also hold the invited address as a proven email
+// identifier. An account without that proof is refused with
+// ErrInvitationEmailUnproved so the client can show the proof step; acceptance
+// never creates an account and never makes the invited address a sign-in
+// identifier.
 //
-// It reads the row by the token's digest, reports a terminal state, checks the
-// caller and the existing membership, and then wins the row with a conditional
-// write; two concurrent acceptances of one token leave at most one winner, and a
-// loser writes nothing. A membership that already exists but is suspended is
-// refused with ErrInvitationMembershipInactive and the pending invitation is
-// revoked, so a suspended member cannot use a live token. An existing active
-// membership keeps its source and its SSO exemption. A write failure after the
-// row was won is settled by a second conditional write: a transient failure
-// returns the row to pending, and only a failure no retry can complete revokes it.
-func (p *product) Accept(ctx context.Context, in AcceptInvite) (authn.Membership, error) {
+// The acceptance is one transaction: the row is won with a conditional write
+// that includes the presented digest, the membership is written through the
+// account module's transaction-aware join, and the role the invitation carries
+// is bound through the policy module's transaction-aware write. Any of the three
+// failing rolls all three back, so the invitation stays pending and neither the
+// membership nor the binding is written. The transaction is what makes the
+// invitation's acceptance and the membership it grants one fact.
+//
+// Everything that judges rather than writes runs before the transaction opens.
+// The role review is the reason: it reads the policy tables through the policy
+// module, and a read that took a second connection could wait on the transaction
+// forever where the database has one writer.
+//
+// A membership that already exists keeps its source and its SSO exemption: an
+// acceptance adds a member, it does not rewrite how the member came to be one,
+// and it still binds the invitation's role. A membership that is suspended is
+// refused with ErrInvitationMembershipInactive and the invitation is revoked, so
+// a suspended member cannot use a live token.
+func (p *product) Accept(ctx context.Context, in AcceptInvite) (Accepted, error) {
 	caller, ok := authn.FromContext(ctx)
 	if !ok {
-		return authn.Membership{}, fmt.Errorf("%w", ErrInvitationUnauthenticated)
+		return Accepted{}, fmt.Errorf("%w", ErrInvitationUnauthenticated)
+	}
+	if callerErr := p.requireUserCaller(ctx, caller); callerErr != nil {
+		return Accepted{}, callerErr
 	}
 	if in.Token == "" {
-		return authn.Membership{}, fmt.Errorf("%w", ErrInvitationNotFound)
+		return Accepted{}, fmt.Errorf("%w", ErrInvitationNotFound)
 	}
 	digest := tokenDigest(in.Token)
 	now := p.at()
 
-	var held invitationRow
-	var existing authn.Membership
-	var exists bool
-	claimed := false
-	for attempt := 0; attempt < maxClaimAttempts && !claimed; attempt++ {
+	auditedID := ""
+	actionID := ""
+	succeeded := false
+	// A mandatory row written for an attempt that then failed is closed with a
+	// failed row sharing its action identifier. The row is written once, before
+	// the first transaction; a retry does not write another.
+	defer func() {
+		if actionID != "" && !succeeded {
+			p.acceptFailed(ctx, auditedID, actionID)
+		}
+	}()
+	for attempt := 0; attempt < maxClaimAttempts; attempt++ {
 		row, found, err := p.findByDigest(p.conn(ctx), digest)
 		if err != nil {
-			return authn.Membership{}, err
+			return Accepted{}, err
 		}
 		if !found {
-			return authn.Membership{}, fmt.Errorf("%w", ErrInvitationNotFound)
+			return Accepted{}, fmt.Errorf("%w", ErrInvitationNotFound)
 		}
 		if terr := terminalState(row, now); terr != nil {
-			return authn.Membership{}, terr
+			return Accepted{}, terr
 		}
 		if stateErr := p.refuseUnservedTenant(ctx, row); stateErr != nil {
-			return authn.Membership{}, stateErr
+			return Accepted{}, stateErr
 		}
 		if proofErr := p.requireProvenInvitedEmail(ctx, caller.Account(), row.Email); proofErr != nil {
-			return authn.Membership{}, proofErr
+			return Accepted{}, proofErr
 		}
-		existing, exists, err = p.memberships.Membership(ctx, row.TenantID, caller.Account())
-		if err != nil {
-			return authn.Membership{}, failed("reading a membership", err)
+		if roleErr := p.requireRoleStillGrantable(ctx, row); roleErr != nil {
+			return Accepted{}, roleErr
+		}
+		if actionID == "" {
+			actionID, err = p.acceptAudit(ctx, row)
+			if err != nil {
+				return Accepted{}, err
+			}
+			auditedID = row.ID
+		}
+
+		accepted, after, redeemErr := p.redeem(ctx, caller, row, digest, now)
+		switch {
+		case errors.Is(redeemErr, errClaimLost):
+			// Another acceptance or a resend changed the row between the read
+			// and the claim. Re-read and judge it again.
+			continue
+		case errors.Is(redeemErr, errJoinRefused):
+			p.revokePending(ctx, row, authn.ReasonInvitationMembershipInactive)
+			return Accepted{}, fmt.Errorf("%w", ErrInvitationMembershipInactive)
+		case redeemErr != nil:
+			return Accepted{}, redeemErr
+		}
+		p.runAfter(ctx, after)
+		succeeded = true
+		return accepted, nil
+	}
+	return Accepted{}, failed("redeeming an invitation", authn.ErrUnavailable)
+}
+
+// redeem runs one acceptance's write transaction. The claim, the membership
+// write and the role binding commit together or not at all; the returned
+// closures are the work the two module writes owe after that commit.
+func (p *product) redeem(ctx context.Context, caller authn.Identity, row invitationRow, digest string, now time.Time) (Accepted, []func(context.Context) error, error) {
+	if p.membershipWriter == nil {
+		return Accepted{}, nil, fmt.Errorf("%w: accepting an invitation needs the transaction-aware "+
+			"membership writer", authn.ErrUnavailable)
+	}
+	var accepted Accepted
+	var after []func(context.Context) error
+	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		won, claimErr := p.claim(tx, row.ID, digest, now)
+		if claimErr != nil {
+			return claimErr
+		}
+		if !won {
+			return errClaimLost
+		}
+		existing, exists, readErr := p.membershipWriter.MembershipTx(ctx, tx, row.TenantID, caller.Account())
+		if readErr != nil {
+			return failed("reading a membership", readErr)
 		}
 		if exists && !existing.Active {
-			p.revokePending(ctx, row.ID)
-			return authn.Membership{}, fmt.Errorf("%w", ErrInvitationMembershipInactive)
+			return errJoinRefused
 		}
-		won, err := p.claim(p.conn(ctx), row.ID, now)
-		if err != nil {
-			return authn.Membership{}, err
+		mem := acceptedMembership(caller.Account(), row.TenantID, existing, exists)
+		joined, membershipAfter, joinErr := p.membershipWriter.PutJoiningTx(ctx, tx, mem, exists)
+		if joinErr != nil {
+			return failed("writing a membership", joinErr)
 		}
-		if won {
-			held = row
-			claimed = true
+		if !joined {
+			return errJoinRefused
 		}
-	}
-	if !claimed {
-		return authn.Membership{}, failed("redeeming an invitation", authn.ErrUnavailable)
-	}
-
-	mem := acceptedMembership(caller.Account(), held.TenantID, existing, exists)
-	joined, err := p.memberships.PutJoining(ctx, mem, exists)
+		if membershipAfter != nil {
+			after = append(after, membershipAfter)
+		}
+		accepted = Accepted{Membership: mem}
+		if row.Role == "" {
+			return nil
+		}
+		if p.roleBinder == nil {
+			return fmt.Errorf("%w: an invitation that grants a role needs the transaction-aware role "+
+				"binder", authn.ErrUnavailable)
+		}
+		bindingAfter, bindErr := p.roleBinder.BindRoleTx(ctx, tx, row.TenantID, string(caller.Account()), row.Role)
+		if bindErr != nil {
+			return failed("writing the invitation's role", bindErr)
+		}
+		if bindingAfter != nil {
+			after = append(after, bindingAfter)
+		}
+		accepted.Role = row.Role
+		return nil
+	})
 	if err != nil {
-		p.settle(ctx, held, err)
-		return authn.Membership{}, failed("writing a membership", err)
+		return Accepted{}, nil, err
 	}
-	if !joined {
-		// The membership was suspended or removed between the read and the
-		// conditional write. The invitation is settled as revoked, so the token
-		// cannot be tried again against a membership that is no longer active.
-		p.withdraw(ctx, held.ID)
-		return authn.Membership{}, fmt.Errorf("%w", ErrInvitationMembershipInactive)
+	return accepted, after, nil
+}
+
+// acceptAudit writes the acceptance's mandatory audit row and answers the action
+// identifier its failed row would share. It runs after every refusal that is
+// about the invitation or the caller and before the transaction, so a refused
+// acceptance leaves no success row, and a row that cannot land means the
+// acceptance does not happen. The detail names the tenant, the role when the
+// invitation carries one, and the inviter; the object is the invitation
+// identifier.
+func (p *product) acceptAudit(ctx context.Context, row invitationRow) (string, error) {
+	tenantName, err := p.nameOf(ctx, row.TenantID)
+	if err != nil {
+		return "", p.cause("reading the tenant's name", err)
 	}
-	return mem, nil
+	actionID := newActionID()
+	detail := map[string]string{
+		detailActionID:  actionID,
+		detailTenant:    tenantName,
+		detailInvitedBy: string(row.InvitedBy),
+	}
+	if row.Role != "" {
+		detail[detailRole] = row.Role
+	}
+	if err := p.auditRequired(ctx, mandatory(actionAccept, row.ID, detail)); err != nil {
+		return "", err
+	}
+	return actionID, nil
+}
+
+// acceptFailed closes a success audit row an attempt did not live up to: the
+// attempt wrote its mandatory row and then lost the race or failed its write.
+// With no action identifier there is no row to close, and nothing is written.
+func (p *product) acceptFailed(ctx context.Context, invitationID, actionID string) {
+	if actionID == "" {
+		return
+	}
+	p.auditBestEffort(ctx, failedAudit(actionAccept, invitationID, actionID))
+}
+
+// runAfter runs the closures the transaction-aware writes returned, once the
+// acceptance's transaction has committed.
+func (p *product) runAfter(ctx context.Context, after []func(context.Context) error) {
+	for _, fn := range after {
+		if fn == nil {
+			continue
+		}
+		if err := fn(ctx); err != nil {
+			p.logger.Error(ModuleName+": the work an acceptance owed after its commit failed",
+				"cause", err.Error())
+		}
+	}
 }
 
 // refuseUnservedTenant refuses an acceptance into a tenant that is deleted or
@@ -132,34 +278,71 @@ func (p *product) refuseUnservedTenant(ctx context.Context, row invitationRow) e
 	case authn.TenantDisabled:
 		return fmt.Errorf("%w", ErrInvitationTenantInactive)
 	default:
-		p.revokePending(ctx, row.ID)
+		p.revokePending(ctx, row, authn.ReasonInvitationTenantDeleted)
 		return fmt.Errorf("%w", ErrInvitationNotFound)
 	}
 }
 
-// requireProvenInvitedEmail reports whether the account holds the invited
-// address as a proven email identifier. Both values are normalized, so equality
-// is the comparison. An account that does not exist, or that holds the address
-// only through an unproved channel or through an invitation, is not a holder:
-// the caller must prove the address first. A read failure is not a refusal and
-// is left unavailable.
+// requireUserCaller refuses an acceptance attempted by anything other than a
+// user account. An invitation grants a membership to a person; a service
+// account signs in with a service secret and has no acceptable membership, and
+// a subject with no account row — a static password-table subject — has no
+// account to grant it to. Both are refused as an invalid acceptance target (403
+// invitation-target-invalid), not as an unauthenticated request: the caller is
+// authenticated, and a 401 would make a client refresh and retry a permanent
+// refusal. A read that fails is the judgement being unavailable, never a pass.
+func (p *product) requireUserCaller(ctx context.Context, caller authn.Identity) error {
+	account, err := p.accounts.Get(ctx, caller.Account())
+	switch {
+	case errors.Is(err, authn.ErrAccountNotFound):
+		return fmt.Errorf("%w: the caller's account does not exist", ErrInvitationTargetInvalid)
+	case err != nil:
+		return failed("reading the accepting account", err)
+	}
+	if account.Kind != authn.KindUser {
+		return fmt.Errorf("%w: the caller's account is not a user account", ErrInvitationTargetInvalid)
+	}
+	return nil
+}
+
+// requireProvenInvitedEmail refuses a caller who does not hold the invited
+// address as a proven email identifier. It is the acceptance's use of the same
+// question the eligibility read answers: the invitation stays pending, and the
+// client shows the proof step.
 func (p *product) requireProvenInvitedEmail(ctx context.Context, id authn.AccountID, email string) error {
+	proved, err := p.provesInvitedEmail(ctx, id, email)
+	if err != nil {
+		return failed("reading the account's identifiers", err)
+	}
+	if !proved {
+		return fmt.Errorf("%w", ErrInvitationEmailUnproved)
+	}
+	return nil
+}
+
+// provesInvitedEmail reports whether the account holds the invited address as a
+// proven email identifier. Both values are normalized, so equality is the
+// comparison. An account that does not exist, or that holds the address only
+// through an unproved channel or through an invitation, is not a holder: the
+// caller must prove the address first. A read failure is not a refusal and is
+// left to the caller as unavailable.
+func (p *product) provesInvitedEmail(ctx context.Context, id authn.AccountID, email string) (bool, error) {
 	identifiers, err := p.accounts.Identifiers(ctx, id)
 	if err != nil {
 		if errors.Is(err, authn.ErrAccountNotFound) {
-			return fmt.Errorf("%w", ErrInvitationEmailUnproved)
+			return false, nil
 		}
-		return failed("reading the account's identifiers", err)
+		return false, err
 	}
 	for _, identifier := range identifiers {
 		if identifier.Kind != authn.IdentifierEmail || identifier.Value != email {
 			continue
 		}
 		if (authn.Verification{Via: identifier.VerifiedVia}).Proves() {
-			return nil
+			return true, nil
 		}
 	}
-	return fmt.Errorf("%w", ErrInvitationEmailUnproved)
+	return false, nil
 }
 
 // acceptedMembership is the membership an acceptance stands for. A membership
@@ -191,11 +374,17 @@ func terminalState(row invitationRow, now time.Time) error {
 }
 
 // claim is the conditional write that wins a pending invitation: the row is
-// flipped to accepted only while it is still pending and not expired.
-// RowsAffected of one is the win.
-func (p *product) claim(tx *gorm.DB, id string, now time.Time) (bool, error) {
+// flipped to accepted only while it is still pending, not expired, not
+// superseded by a later invitation and still carries the digest of the token
+// presented. The digest is part of the condition because a resend issued while
+// the acceptance was in flight replaces the token: the old token no longer
+// resolves, and the stale acceptance must not redeem the row the resend just
+// refreshed. A superseded row is never a live slot, so the condition excludes it
+// even when its deadline is still ahead. RowsAffected of one is the win.
+func (p *product) claim(tx *gorm.DB, id, digest string, now time.Time) (bool, error) {
 	res := tx.Model(&invitationRow{}).
-		Where("id = ? AND status = ? AND expires_at > ?", id, statusPending, now).
+		Where("id = ? AND token_digest = ? AND status = ? AND expires_at > ? AND superseded_at IS NULL",
+			id, digest, statusPending, now).
 		Updates(map[string]any{"status": statusAccepted, "accepted_at": now, "updated_at": now})
 	if res.Error != nil {
 		return false, failed("redeeming an invitation", res.Error)
@@ -203,91 +392,47 @@ func (p *product) claim(tx *gorm.DB, id string, now time.Time) (bool, error) {
 	return res.RowsAffected == 1, nil
 }
 
-// revokePending revokes one pending invitation. It is the settlement of an
-// invitation a suspended member can no longer redeem: the token is void from
-// here on and a retry answers the same terminal state. The write is conditional
-// on the row still being pending, and its own failure is an Error line that
-// changes nothing about the answer handed back.
-func (p *product) revokePending(ctx context.Context, id string) {
+// revokePending revokes one pending invitation that has not expired. It is the
+// settlement of an invitation a suspended member can no longer redeem, of one
+// whose tenant is gone and of one whose role can no longer be granted: the
+// token is void from here on and a retry answers the same terminal state. The
+// write is conditional on the row still being pending and live, so a row that
+// expired between the terminal check and the settlement keeps reading expired
+// rather than becoming revoked. Its own failure is an Error line that changes
+// nothing about the answer handed back.
+//
+// A revocation that actually changed the row leaves one best-effort revoke
+// audit row, so a token that was withdrawn without an administrator asking for
+// it is still traceable. The row carries the reason class that made the
+// acceptance settle it, drawn from the closed set; its actor is the account
+// attempting the acceptance, the request the revocation happened in, not the
+// invitation's issuer. The row is best effort because the refusal it settles is
+// the answer the caller needs; an audit store that is down must not turn it
+// into a different failure. A tenant name that cannot be read does not suppress
+// the row: the tenant identifier stands in for the name.
+func (p *product) revokePending(ctx context.Context, row invitationRow, reason string) {
 	now := p.at()
 	res := p.conn(ctx).Model(&invitationRow{}).
-		Where("id = ? AND status = ?", id, statusPending).
-		Updates(map[string]any{"status": statusRevoked, "updated_at": now})
+		Where("id = ? AND status = ? AND expires_at > ?", row.ID, statusPending, now).
+		Updates(map[string]any{"status": statusRevoked, "revoked_at": now, "updated_at": now})
 	if res.Error != nil {
-		p.logger.Error(ModuleName+": revoking the invitation of a suspended member failed",
-			slog.String("cause", res.Error.Error()))
+		p.logger.Error(ModuleName+": revoking a pending invitation failed",
+			"cause", res.Error.Error())
+		return
 	}
-}
-
-// settle closes a won invitation whose redemption failed. A transient failure
-// returns the row to pending, so a retry is not locked out; only a failure that
-// no retry can complete revokes it, so a token that can never be redeemed does
-// not stay live until its deadline. Returning a row to pending must not collide
-// with a newer pending invitation for the same address: a resend issued while
-// the acceptance held the old row has already written one, so the old row is
-// revoked instead, and a collision that still happens is settled the same way.
-// Every write is conditional on the row still being accepted and never
-// overwrites it unconditionally; its own failure is an Error line and changes
-// nothing about the error handed back.
-func (p *product) settle(ctx context.Context, row invitationRow, cause error) {
-	if !permanent(cause) {
-		fresh, err := p.pendingExists(ctx, row.TenantID, row.Email)
-		if err != nil {
-			p.logger.Error(ModuleName+": the settlement of an invitation that could not be redeemed failed",
-				slog.String("cause", err.Error()))
-			return
-		}
-		if !fresh {
-			now := p.at()
-			res := p.conn(ctx).Model(&invitationRow{}).
-				Where("id = ? AND status = ?", row.ID, statusAccepted).
-				Updates(map[string]any{"status": statusPending, "accepted_at": nil, "updated_at": now})
-			if res.Error == nil {
-				return
-			}
-			if !duplicate(res.Error) {
-				p.logger.Error(ModuleName+": the settlement of an invitation that could not be redeemed failed",
-					slog.String("cause", res.Error.Error()))
-				return
-			}
-		}
+	if res.RowsAffected == 0 {
+		return
 	}
-	p.withdraw(ctx, row.ID)
-}
-
-// pendingExists reports whether a pending invitation for the tenant and address
-// exists. It is the newer row a resend writes while an acceptance holds the old
-// one.
-func (p *product) pendingExists(ctx context.Context, tenant, email string) (bool, error) {
-	var n int64
-	err := p.conn(ctx).Model(&invitationRow{}).
-		Where("tenant_id = ? AND email = ? AND status = ?", tenant, email, statusPending).
-		Count(&n).Error
+	tenantName, err := p.nameOf(ctx, row.TenantID)
 	if err != nil {
-		return false, err
+		// The settlement's audit row does not depend on the name read: a
+		// revocation the acceptance performed is traceable even when the
+		// tenant cannot be named, so the identifier stands in for the name.
+		tenantName = row.TenantID
 	}
-	return n > 0, nil
-}
-
-// withdraw revokes a won invitation whose redemption failed. The write is
-// conditional on the row still being accepted; its own failure is an Error line
-// and changes nothing about the error handed back.
-func (p *product) withdraw(ctx context.Context, id string) {
-	res := p.conn(ctx).Model(&invitationRow{}).
-		Where("id = ? AND status = ?", id, statusAccepted).
-		Updates(map[string]any{"status": statusRevoked, "updated_at": p.at()})
-	if res.Error != nil {
-		p.logger.Error(ModuleName+": the withdrawal of an invitation that could not be redeemed failed",
-			slog.String("cause", res.Error.Error()))
-	}
-}
-
-// permanent reports whether a redemption failure is one no retry can complete. A
-// membership store that reports a contact or binding another account holds, or
-// an account that no longer exists, are such failures. A membership store that
-// is merely unavailable is not: the accepting party still holds the token and
-// can retry.
-func permanent(cause error) bool {
-	return errors.Is(cause, authn.ErrContactTaken) || errors.Is(cause, authn.ErrBindingConflict) ||
-		errors.Is(cause, authn.ErrAccountNotFound)
+	p.auditBestEffort(ctx, mandatory(actionRevoke, row.ID, map[string]string{
+		detailActionID: newActionID(),
+		detailTenant:   tenantName,
+		detailReason:   reason,
+	}))
 }

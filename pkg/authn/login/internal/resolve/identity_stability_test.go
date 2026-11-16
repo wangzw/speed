@@ -553,6 +553,15 @@ type standInAudit struct{}
 
 func (standInAudit) Record(context.Context, audit.Entry) error { return nil }
 
+// standInTenantDescriptions answers a tenant as an ordinary organization named
+// after its identifier. The invitation module requires the seam, and no case
+// here invites into the system tenant or reads an organization's display name.
+type standInTenantDescriptions struct{}
+
+func (standInTenantDescriptions) TenantDescriptionOf(_ context.Context, id string) (authn.TenantDescription, error) {
+	return authn.TenantDescription{Name: id}, nil
+}
+
 // noopMounter is the route surface the invitation module requires. No case here
 // sends a request, so a registration is a no-op and the handlers are never
 // reached.
@@ -596,6 +605,8 @@ func withRealAccountStore(t *testing.T, use func(context.Context, *core.Registry
 		sqlite.Module(), account.Module(), provisioningtest.Module(), invite.Module(), kvmemory.Module(),
 		module("stand-in.identity-settings", (*settings.Store)(nil), func() (any, error) { return standInSettings{}, nil }),
 		module("stand-in.identity-audit", (*audit.Audit)(nil), func() (any, error) { return standInAudit{}, nil }),
+		module("stand-in.identity-tenant-descriptions", (*authn.TenantDescriptionResolver)(nil),
+			func() (any, error) { return standInTenantDescriptions{}, nil }),
 		module("stand-in.identity-mounter", (*mountinternal.Mounter)(nil), func() (any, error) { return noopMounter{}, nil }),
 	}
 	reader := authntest.ConfigReaderAll(t, string(body), modules...)

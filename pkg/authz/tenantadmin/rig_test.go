@@ -77,7 +77,7 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 	}
 	r := &rig{
 		t:          t,
-		manager:    &stubManager{},
+		manager:    &stubManager{catalog: catalog},
 		catalog:    catalog,
 		subject:    &stubSubjectPermissions{},
 		membership: &stubMembership{member: true},

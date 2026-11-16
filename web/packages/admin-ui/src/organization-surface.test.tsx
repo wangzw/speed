@@ -415,6 +415,7 @@ describe('OrganizationAdminProvider', () => {
         'useRefreshSsoMetadata',
         'useRemoveMember',
         'useRemoveSsoDomain',
+        'useResendInvitation',
         'useReverifySsoDomains',
         'useRevokeInvitation',
         'useSetMemberSsoExempt',
@@ -496,6 +497,10 @@ describe('the organization pages address only the current tenant', () => {
     created_at: '2026-01-01T00:00:00Z',
     expires_at: '2027-01-01T00:00:00Z',
     accepted_at: null,
+    revoked_at: null,
+    last_sent_at: '2026-01-01T00:00:00Z',
+    send_count: 1,
+    state: 'pending',
   }
   const PROVIDER = {
     id: 'provider-1',

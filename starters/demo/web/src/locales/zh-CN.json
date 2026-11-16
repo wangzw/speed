@@ -26,7 +26,8 @@
     "heading": "登录",
     "subtitle": "使用你的账户继续。",
     "registerHeading": "创建账户",
-    "registerSubtitle": "用下面的任一方式创建你的账户。"
+    "registerSubtitle": "用下面的任一方式创建你的账户。",
+    "back": "返回"
   },
   "home": {
     "heading": "开始使用",

@@ -33,12 +33,125 @@ func TestIssueNormalizesTheAddressAndStoresOnlyTheDigest(t *testing.T) {
 	if got, want := issued.Invitation.ExpiresAt, h.clock.read().Add(DefaultTTL); !got.Equal(want) {
 		t.Errorf("expires_at = %v, want the configured default %v", got, want)
 	}
+	if got := issued.Invitation.SendCount; got != 1 {
+		t.Errorf("send_count = %d, want the first issuance counted as one", got)
+	}
+	if got := issued.Invitation.LastSentAt; !got.Equal(h.clock.read()) {
+		t.Errorf("last_sent_at = %v, want the issuance instant %v", got, h.clock.read())
+	}
 	row := h.row(issued.Invitation.ID)
 	if row.TokenDigest != tokenDigest(issued.Token) {
 		t.Errorf("stored digest = %q, want the SHA-256 of the token", row.TokenDigest)
 	}
 	if row.TokenDigest == issued.Token {
 		t.Error("the token plaintext reached the table")
+	}
+}
+
+// TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsBudget
+// holds the issuer the invitation records and the issuer budget it spends. The
+// impersonation's effective account is the one impersonated, so the invitation
+// names that account as its issuer while the audit keeps the operator. The
+// budget is keyed by the identity's Key, which is the operator, so the allowance
+// spent is the operator's and the impersonated account's own stays free.
+func TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsBudget(t *testing.T) {
+	h := newHarness(t)
+	h.store.set(issueAddressPath, 100)
+	h.store.set(issueIssuerPath, 1)
+	h.store.set(issueGlobalPath, 100)
+	ctx := authntest.Context(t, context.Background(),
+		authntest.WithAccount("acct-target"),
+		authntest.WithActor("acct-operator"),
+		authntest.WithSession(authn.SessionID("session-1")),
+		authntest.WithScope(tenant),
+	)
+	issued, err := h.p.Issue(ctx, IssueInvite{Tenant: tenant, Email: "alice@example.com"})
+	if err != nil {
+		t.Fatalf("issuing during impersonation: %v", err)
+	}
+	if got := issued.Invitation.InvitedBy; got != authn.AccountID("acct-target") {
+		t.Errorf("invited_by = %q, want the impersonated account acct-target", got)
+	}
+
+	// Key reads the operator, so the operator's one-unit allowance is spent and
+	// the impersonated account's is not.
+	if got := h.budgetCount(budgetIssueIssuer, "acct-operator"); got != 1 {
+		t.Errorf("the issuer count under the operator = %v, want 1", got)
+	}
+	if got := h.budgetCount(budgetIssueIssuer, "acct-target"); got != 0 {
+		t.Errorf("the issuer count under the impersonated account = %v, want none", got)
+	}
+
+	// A second issuance through the same operator, even impersonating another
+	// account, spends the operator's spent allowance and is refused.
+	again := authntest.Context(t, context.Background(),
+		authntest.WithAccount("acct-other-target"),
+		authntest.WithActor("acct-operator"),
+		authntest.WithSession(authn.SessionID("session-2")),
+		authntest.WithScope(tenant),
+	)
+	if _, err := h.p.Issue(again, IssueInvite{Tenant: tenant, Email: "bob@example.com"}); err == nil {
+		t.Fatal("a second impersonation by the same operator was let through, want its spent allowance to throttle")
+	} else {
+		throttleOf(t, err)
+	}
+
+	// The impersonated account's own key is a separate budget and still issues.
+	own := authntest.Context(t, context.Background(), authntest.WithAccount("acct-target"))
+	if _, err := h.p.Issue(own, IssueInvite{Tenant: tenant, Email: "carol@example.com"}); err != nil {
+		t.Errorf("the impersonated account's own issuance gave %v, want its own allowance to let it through", err)
+	}
+}
+
+// TestResendDoesNotRecheckTheTarget holds the rule that a resend is not a new
+// issuance: the target was judged when the invitation was issued, and the row
+// keeps its deadline and identity. A membership, a system tenant or a service
+// account's address that appears afterwards does not turn the resend into a
+// refusal, which would leave the caller unable to send the invitation it owns
+// again or to cancel it.
+func TestResendDoesNotRecheckTheTarget(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(*harness)
+	}{
+		{
+			name: "the target becomes a member",
+			change: func(h *harness) {
+				h.accounts.put("member@example.com", "acct-member")
+				h.members.hold(authn.Membership{Tenant: tenant, Account: "acct-member", Active: true})
+			},
+		},
+		{
+			name: "the tenant becomes a system tenant",
+			change: func(h *harness) {
+				h.tenantDescs.byID[tenant] = authn.TenantDescription{Name: tenant, System: true}
+			},
+		},
+		{
+			name: "the target address becomes a service account's",
+			change: func(h *harness) {
+				h.accounts.put("member@example.com", "acct-service")
+				h.accounts.kinds["acct-service"] = authn.KindService
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t)
+			issued := h.issue(tenant, "member@example.com")
+			c.change(h)
+
+			resent, err := h.p.Resend(context.Background(), tenant, issued.Invitation.ID)
+			if err != nil {
+				t.Fatalf("resending after %s gave %v, want it let through", c.name, err)
+			}
+			if got := resent.Invitation.SendCount; got != 2 {
+				t.Errorf("send_count = %d, want 2", got)
+			}
+			if row := h.row(issued.Invitation.ID); row.TokenDigest != tokenDigest(resent.Token) {
+				t.Error("the row does not hold the resent token's digest")
+			}
+		})
 	}
 }
 
@@ -59,21 +172,33 @@ func TestIssueRefusesAMalformedAddress(t *testing.T) {
 	}
 }
 
-func TestIssueSupersedesAPendingInvitation(t *testing.T) {
+// TestIssueReplacesAnExpiredInvitation holds the one replacement an issuance
+// still makes: an expired pending invitation for the same address leaves the
+// live slot to the new one. The old row keeps its stored pending state, so it
+// still reads expired, and only superseded_at records that a later invitation
+// took its place. Its token still resolves, but to the expired state, so it
+// grants nothing; the new token is the one that reads pending.
+func TestIssueReplacesAnExpiredInvitation(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue(tenant, "alice@example.com")
-	h.clock.advance(time.Minute)
+	h.clock.advance(DefaultTTL + time.Minute)
 	second := h.issue(tenant, "ALICE@example.com")
 
-	if got := h.row(first.Invitation.ID).Status; got != statusRevoked {
-		t.Errorf("the superseded row's status = %d, want revoked", got)
+	old := h.row(first.Invitation.ID)
+	if old.Status != statusPending {
+		t.Errorf("the replaced row's status = %d, want pending so it still reads expired", old.Status)
+	}
+	if old.SupersededAt == nil {
+		t.Error("the replaced row carries no superseded_at")
 	}
 	if got := h.row(second.Invitation.ID).Status; got != statusPending {
 		t.Errorf("the new row's status = %d, want pending", got)
 	}
-	ctx := h.acceptCtx("acct-alice", "alice@example.com")
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: first.Token, DisplayName: "Alice"}); !errors.Is(err, ErrInvitationRevoked) {
-		t.Errorf("accepting the superseded token gave %v, want ErrInvitationRevoked", err)
+	if _, state, err := h.p.viewToken(context.Background(), first.Token); err != nil || state != viewStateExpired {
+		t.Errorf("the replaced token reads %q (%v), want expired", state, err)
+	}
+	if _, state, err := h.p.viewToken(context.Background(), second.Token); err != nil || state != viewStatePending {
+		t.Errorf("the new token reads %q (%v), want pending", state, err)
 	}
 }
 
@@ -220,6 +345,7 @@ func TestAcceptRefusesASuspendedMembershipAndRevokesTheInvitation(t *testing.T) 
 	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
 		t.Errorf("row status = %d, want revoked so the token cannot be retried", got)
 	}
+	assertRevokedAudit(t, h, issued.Invitation.ID, authn.ReasonInvitationMembershipInactive)
 }
 
 func TestAcceptReportsTerminalStates(t *testing.T) {
@@ -270,7 +396,10 @@ func TestAcceptRefusesAnExpiredToken(t *testing.T) {
 	}
 }
 
-func TestAcceptSettlesATransientFailureBackToPending(t *testing.T) {
+// TestAcceptRollsBackWhenTheMembershipWriteFails holds the one-transaction
+// rule: a write that fails rolls the claim back with it, so the invitation is
+// still pending and the same token can be tried again once the store answers.
+func TestAcceptRollsBackWhenTheMembershipWriteFails(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = errors.New("the membership store is down")
 	issued := h.issue(tenant, "grace@example.com")
@@ -280,11 +409,14 @@ func TestAcceptSettlesATransientFailureBackToPending(t *testing.T) {
 		t.Fatalf("accepting over a failing membership store gave %v, want ErrUnavailable", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
-		t.Errorf("status after a transient failure = %d, want back to pending", got)
+		t.Errorf("status after a failed membership write = %d, want pending: the claim rolled back", got)
 	}
 }
 
-func TestAcceptSettlesAPermanentFailureAsRevoked(t *testing.T) {
+// TestAcceptLeavesTheInvitationPendingOnAPermanentWriteFailure holds that even a
+// failure no retry can complete is a rolled-back transaction, not an invitation
+// settled as revoked: the whole acceptance is undone together.
+func TestAcceptLeavesTheInvitationPendingOnAPermanentWriteFailure(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrBindingConflict
 	issued := h.issue(tenant, "heidi@example.com")
@@ -293,16 +425,18 @@ func TestAcceptSettlesAPermanentFailureAsRevoked(t *testing.T) {
 	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrBindingConflict) {
 		t.Fatalf("accepting over a conflicting binding gave %v, want ErrBindingConflict", err)
 	}
-	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
-		t.Errorf("status after a permanent failure = %d, want revoked", got)
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("status after a refused write = %d, want pending: the claim rolled back", got)
+	}
+	if h.members.count != 0 {
+		t.Errorf("the failed acceptance wrote %d membership(s), want none", h.members.count)
 	}
 }
 
-// TestAcceptSettlesATakenContactAsRevoked holds that a membership write the
-// store refuses because another account holds the contact is a permanent
-// failure: the invitation is revoked rather than left pending for a retry that
-// cannot work.
-func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
+// TestAcceptRollsBackATakenContact holds that a membership write the store
+// refuses because another account holds the contact leaves the invitation
+// pending: nothing of the acceptance is written.
+func TestAcceptRollsBackATakenContact(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrContactTaken
 	issued := h.issue(tenant, "judy@example.com")
@@ -311,14 +445,15 @@ func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
 	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrContactTaken) {
 		t.Fatalf("accepting over a reserved contact gave %v, want ErrContactTaken", err)
 	}
-	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
-		t.Errorf("status after a taken contact = %d, want revoked", got)
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("status after a taken contact = %d, want pending", got)
 	}
 }
 
 // TestAcceptPropagatesACleanupIncomplete holds that a failure the membership
 // store reports is handed back as it is and not merged into ErrUnavailable, and
-// that it returns the invitation to pending so a retry is not locked out.
+// that the transaction leaves the invitation pending so a retry is not locked
+// out.
 func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrCleanupIncomplete
@@ -333,7 +468,7 @@ func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
 		t.Error("the cleanup failure was merged into ErrUnavailable instead of being propagated")
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
-		t.Errorf("status after a cleanup failure = %d, want back to pending: the retry finishes the cleanup", got)
+		t.Errorf("status after a cleanup failure = %d, want pending: the retry finishes the cleanup", got)
 	}
 }
 
@@ -391,27 +526,33 @@ func TestAcceptDoesNotResurrectAMembershipSuspendedDuringTheWrite(t *testing.T) 
 	}
 }
 
-// A resend issued while an acceptance holds the old row writes a new pending
-// invitation. Settling the failed acceptance must not collide with it: the old
-// row is revoked and the new one stays pending.
-func TestSettlingAfterAResendRevokesTheOldRow(t *testing.T) {
+// A superseded expired row is not a newer pending invitation. The live
+// invitation's acceptance fails, its transaction rolls back, and the live row
+// stays pending; the older row keeps its stored pending state and its
+// superseded_at, so it still reads expired.
+func TestAFailedAcceptanceLeavesTheLiveRowPending(t *testing.T) {
 	h := newHarness(t)
-	issued := h.issue(tenant, "nora@example.com")
+	first := h.issue(tenant, "nora@example.com")
+	h.clock.advance(DefaultTTL + time.Minute)
+	live := h.issue(tenant, "nora@example.com")
 	ctx := h.acceptCtx("acct-nora", "nora@example.com")
 	h.members.err = errors.New("the membership store is down")
-	var resent Issued
-	h.members.duringJoin = func() {
-		resent = h.issue(tenant, "nora@example.com")
-	}
 
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrUnavailable) {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: live.Token}); !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("accepting over a failing membership store gave %v, want ErrUnavailable", err)
 	}
-	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
-		t.Errorf("the old row's status = %d, want revoked so it does not collide with the resend", got)
+	if got := h.row(live.Invitation.ID).Status; got != statusPending {
+		t.Errorf("the live row's status = %d, want pending", got)
 	}
-	if got := h.row(resent.Invitation.ID).Status; got != statusPending {
-		t.Errorf("the resent row's status = %d, want pending", got)
+	old := h.row(first.Invitation.ID)
+	if old.Status != statusPending {
+		t.Errorf("the superseded row's stored status = %d, want pending so it still reads expired", old.Status)
+	}
+	if old.SupersededAt == nil {
+		t.Error("the superseded row lost its superseded_at")
+	}
+	if _, state, err := h.p.viewToken(context.Background(), first.Token); err != nil || state != viewStateExpired {
+		t.Errorf("the superseded token reads %q (%v), want expired", state, err)
 	}
 }
 
@@ -459,6 +600,7 @@ func TestAcceptRefusesADeletedTenantAndWithdrawsTheRow(t *testing.T) {
 	if h.members.count != 0 {
 		t.Errorf("a deleted tenant accepted %d membership(s), want none", h.members.count)
 	}
+	assertRevokedAudit(t, h, issued.Invitation.ID, authn.ReasonInvitationTenantDeleted)
 }
 
 func TestRevokeTenantInvitationsWithdrawsOnlyThatTenantsPendingRows(t *testing.T) {

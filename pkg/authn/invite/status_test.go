@@ -135,7 +135,8 @@ func (h *harness) seed(id, tenant, email string, status int16, createdAt time.Ti
 	row := invitationRow{
 		ID: id, TenantID: tenant, Email: email, TokenDigest: "digest-" + id,
 		Status: status, ExpiresAt: utc(createdAt.Add(time.Hour)),
-		CreatedAt: utc(createdAt), UpdatedAt: utc(createdAt),
+		LastSentAt: utc(createdAt),
+		CreatedAt:  utc(createdAt), UpdatedAt: utc(createdAt),
 	}
 	if err := h.handle.Create(&row).Error; err != nil {
 		h.t.Fatalf("seeding %s: %v", id, err)
@@ -161,14 +162,14 @@ func TestACursorPageKeepsTheTenantAndTheFilter(t *testing.T) {
 	h.seed("a1", "tenant-a", "a1@example.com", statusPending, base.Add(2*time.Minute))
 	h.seed("b1", "tenant-b", "b1@example.com", statusPending, base.Add(1*time.Minute))
 
-	first, cursor, err := h.p.list(context.Background(), "tenant-a", authn.Page{Limit: 1}, listPending)
+	first, cursor, err := h.p.list(context.Background(), "tenant-a", authn.Page{Limit: 1}, listPending, base)
 	if err != nil {
 		t.Fatalf("listing the first page: %v", err)
 	}
 	if got := identifiersOf(first); !sameIdentifiers(got, []string{"a2"}) {
 		t.Fatalf("first page = %v, want a2", got)
 	}
-	second, _, err := h.p.list(context.Background(), "tenant-a", authn.Page{Limit: 10, After: cursor}, listPending)
+	second, _, err := h.p.list(context.Background(), "tenant-a", authn.Page{Limit: 10, After: cursor}, listPending, base)
 	if err != nil {
 		t.Fatalf("listing the second page: %v", err)
 	}

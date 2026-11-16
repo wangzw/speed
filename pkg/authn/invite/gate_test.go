@@ -10,8 +10,8 @@ import (
 )
 
 // TestManagementWritesAreRefusedForAnUnverifiedAccount holds the signup gate of
-// the management face: issuing (which also supersedes a pending invitation) and
-// revoking answer 403 contact-required for a pending self-registration, ask no
+// the management face: issuing and revoking answer 403 contact-required for a
+// pending self-registration, ask no
 // Decider, write no audit row and write no invitation row. Listing is a read and
 // is not gated, and an account that never registered or has proved its address
 // issues as before.
@@ -80,11 +80,10 @@ func TestManagementWritesAreRefusedForAnUnverifiedAccount(t *testing.T) {
 	}
 }
 
-// TestResendingIsRefusedForAnUnverifiedAccount holds the superseding issue: a
-// second issuance for the same tenant and address replaces the first, and an
-// unverified account is refused before the superseding write as well. The old
-// invitation stays pending and live.
-func TestResendingIsRefusedForAnUnverifiedAccount(t *testing.T) {
+// TestASecondIssuanceIsRefusedForAnUnverifiedAccount holds the gate on the
+// issue route: an unverified operator is refused before the pending-address
+// check and writes nothing. The first invitation stays pending and live.
+func TestASecondIssuanceIsRefusedForAnUnverifiedAccount(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue("tenant-a", "alice@example.com")
 	h.verification.state = authn.SignupStatus{State: authn.SignupPending}

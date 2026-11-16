@@ -65,6 +65,9 @@ var codeTable = []struct {
 	{"username-reserved", 400},
 	{"username-invalid", 400},
 	{"unsupported-region", 400},
+	{"invitation-target-invalid", 400},
+	{"invitation-expiry-too-long", 400},
+	{"invitation-role-unknown", 400},
 	{"login-failed", 401},
 	{"flow-invalid", 401},
 	{"link-required", 401},
@@ -81,6 +84,7 @@ var codeTable = []struct {
 	{"password-reset-closed", 403},
 	{"password-reset-unavailable", 403},
 	{"invitation-email-unproved", 403},
+	{"invitation-role-protected", 403},
 	{"factor-not-found", 404},
 	{"conflict", 409},
 	{"account-last-tenant-admin", 409},
@@ -91,6 +95,10 @@ var codeTable = []struct {
 	{"username-taken", 409},
 	{"email-taken", 409},
 	{"membership-inactive", 409},
+	{"invitation-terminal", 409},
+	{"invitation-member", 409},
+	{"invitation-pending", 409},
+	{"invitation-tenant-inactive", 409},
 	{"unsupported-media-type", 415},
 	{"throttled", 429},
 	{"unavailable", 503},
@@ -125,14 +133,16 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	}
 	// The constants are the texts.
 	consts := []string{
-		CodeBadRequest, CodeUsernameReserved, CodeUsernameInvalid, CodeUnsupportedRegion, CodeLoginFailed,
+		CodeBadRequest, CodeUsernameReserved, CodeUsernameInvalid, CodeUnsupportedRegion,
+		CodeInvitationTargetInvalid, CodeInvitationExpiryTooLong, CodeInvitationRoleUnknown, CodeLoginFailed,
 		CodeFlowInvalid, CodeLinkRequired,
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
 		CodeContactRequired, CodePhoneRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,
-		CodePasswordResetUnavailable, CodeInvitationEmailUnproved, CodeFactorNotFound, CodeConflict,
+		CodePasswordResetUnavailable, CodeInvitationEmailUnproved, CodeInvitationRoleProtected, CodeFactorNotFound, CodeConflict,
 		CodeAccountLastTenantAdmin, CodeAccountOrganizationOwner, CodeLoginIdentifierRequired,
 		CodeLastLoginMethod, CodeUsernameImmutable, CodeUsernameTaken, CodeEmailTaken, CodeMembershipInactive,
+		CodeInvitationTerminal, CodeInvitationMember, CodeInvitationPending, CodeInvitationTenantInactive,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
 	for i, c := range codeTable {

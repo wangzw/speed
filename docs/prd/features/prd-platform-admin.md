@@ -855,11 +855,19 @@
 
 ### REQ-platform-admin-032
 
-系统必须在签发邀请时填写被邀请邮箱；过期时间可填写，留空取服务端默认。
+系统必须在签发邀请时填写被邀请邮箱，并从 1 天、7 天、30 天三个固定有效期中选择一个，缺省 7 天。
 
-- **验收**：只填邮箱即可签发成功；填写过期时间时该邀请按所填时间过期。
+- **验收**：只填邮箱即可签发成功，邀请按缺省的 7 天有效期到期；改选 1 天或 30 天后签发的邀请按所选天数到期。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
+
+### REQ-platform-admin-122
+
+系统必须让平台运营者在签发邀请时为该租户选择一个角色，或选择不带角色；角色选项来自所选租户的角色列表，只在运营者持有该租户的角色管理权限时出现，所选角色的每条授予都必须在运营者自己的持有集内。
+
+- **验收**：运营者持有该租户的角色管理权限时，签发表单出现角色选择，选项是该租户的角色与“不带角色”；选中一个角色签发后，邀请行显示该角色，受邀人接受后在该租户持有该角色；运营者没有该租户的角色管理权限时，表单不出现角色选择；所选角色含运营者自己无权授予的权限时，签发被拒绝且不产生邀请；不带角色签发时，邀请行没有角色。
+- **状态**：已实现
+- **端到端测试**：未实现
 
 ### REQ-platform-admin-096
 
@@ -887,17 +895,41 @@
 
 ### REQ-platform-admin-033
 
-系统必须让运营者查看所选租户的邀请列表，列出邮箱、状态、邀请人与过期时间。
+系统必须让运营者查看所选租户的邀请列表，逐行列出邮箱、状态、角色、邀请人、有效期至与发出时间；终态邀请在状态标签下写明接受、过期或撤销的时刻，重发过的邀请在发出时间下写明已重发次数与最近一次发送时间。
 
-- **验收**：选定租户后列表逐行显示邮箱、状态、邀请人与过期时间。
+- **验收**：选定租户后列表逐行显示邮箱、状态、角色、邀请人与发出时间；待接受的邀请另显示有效期至；已接受的邀请在状态下显示接受时刻，已过期的显示过期时刻，已撤销的显示撤销时刻；重发过的邀请在发出时间下显示重发次数与最近发送时间。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-platform-admin-099
 
-撤销一条邀请前必须要求单次确认。
+系统必须让运营者撤销一条待接受的邀请，并在撤销前要求单次确认；终态邀请不提供撤销。
 
-- **验收**：撤销一条邀请只弹出一次确认，确认后其状态变为已撤销。
+- **验收**：待接受邀请的撤销只弹出一次确认，确认后其状态变为已撤销；已接受、已过期与已撤销的邀请不显示操作。
+- **状态**：已实现
+- **端到端测试**：未实现
+
+### REQ-platform-admin-119
+
+系统必须让平台运营者在待接受行上重发邀请：在同一条邀请上换令牌重新投递，不新增邀请行，有效期与角色不变，旧链接失效；终态邀请没有重发入口。
+
+- **验收**：对一条待接受邀请执行重发，列表不新增行，该邀请的有效期与角色不变，页面给出新的接受链接，旧链接打开时说明邀请不存在；终态邀请不显示重发入口。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖重发不新增行、有效期不变、换新链接与旧链接失效；角色不变与终态无重发入口未由 e2e 驱动）
+
+### REQ-platform-admin-120
+
+系统必须让平台运营者按状态筛选所选租户的邀请列表，取值为全部、待接受、已过期、已接受与已撤销；打开时默认待接受，没有匹配时显示与当前筛选对应的空态。
+
+- **验收**：邀请列表默认只显示待接受；切到每个状态后列表只含该状态的邀请；选择全部时列出所有状态的邀请；没有匹配时显示与当前筛选对应的空态，而不是整个租户没有邀请。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`（覆盖待接受与已接受的筛选与空态；已过期与已撤销的筛选未由 e2e 驱动）
+
+### REQ-platform-admin-121
+
+系统必须让平台运营者翻页遍历所选租户的邀请列表，翻页后的内容不与上一页重复，最后一页不提供下一页。
+
+- **验收**：邀请多于一页时下一页可用，翻页后列表内容是下一页而不是第一页；到最后一页后下一页不可用；切换租户或改变状态筛选后回到第一页，列表显示当前条件下的第一页内容，而不是切换前翻到的位置。
 - **状态**：已实现
 - **端到端测试**：未实现
 

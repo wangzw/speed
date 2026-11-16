@@ -145,6 +145,8 @@ func newSettingsAssembly(t *testing.T) *settingsAssembly {
 	supplyModule(t, reg, "test.account-admin", (*authn.AccountAdmin)(nil), &fakeAccountAdmin{})
 	supplyModule(t, reg, "test.signup-state", (*authn.SignupVerification)(nil), &fakeSignupVerification{})
 	supplyModule(t, reg, "test.memberships", (*authn.Memberships)(nil), &fakeMemberships{})
+	supplyModule(t, reg, "test.tenant-descriptions", (*authn.TenantDescriptionResolver)(nil),
+		&fakeTenantDescriptions{byID: map[string]authn.TenantDescription{}})
 	supplyModule(t, reg, "test.audit", (*audit.Audit)(nil), h.audit)
 	supplyModule(t, reg, "test.settings", (*settings.Store)(nil), h.store)
 	supplyModule(t, reg, "test.event", (*event.Bus)(nil), h.bus)

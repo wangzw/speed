@@ -31,6 +31,8 @@ import { selectClasses } from '@mui/material/Select'
 import { cdp, page } from 'vitest/browser'
 import { AppShell } from '@speed/layout-kit'
 import { attachSession } from '@speed/auth-core'
+import { themePresets } from '@speed/theme-presets'
+import type { ThemePreset } from '@speed/theme-presets'
 import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
 import { OrganizationMembersPage } from './OrganizationMembersPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -88,13 +90,50 @@ const INVITATION_ADA: AdminInvitation = {
   tenant: TENANT,
   email: 'ada@example.com',
   invited_by: SELF,
+  invited_by_name: ADA.display_name,
+  invited_by_username: 'ada',
   status: 'pending',
+  state: 'pending',
   created_at: '2026-10-15T12:00:00Z',
   expires_at: '2099-01-01T00:00:00Z',
   accepted_at: null,
+  revoked_at: null,
+  last_sent_at: '2026-10-15T12:00:00Z',
+  send_count: 1,
 }
 
 const INVITATIONS: readonly AdminInvitation[] = [INVITATION_ADA]
+
+/** One invitation per stored state, so a case can read every status tag the
+ * table renders. The terminal rows carry the instant their state reads. */
+const SETTLED_AT = '2026-06-01T12:00:00Z'
+const STATE_INVITATIONS: readonly AdminInvitation[] = [
+  { ...INVITATION_ADA, id: 'inv-pending', email: 'pending@example.com' },
+  {
+    ...INVITATION_ADA,
+    id: 'inv-expired',
+    email: 'expired@example.com',
+    status: 'pending',
+    state: 'expired',
+    expires_at: '2020-01-01T00:00:00Z',
+  },
+  {
+    ...INVITATION_ADA,
+    id: 'inv-accepted',
+    email: 'accepted@example.com',
+    status: 'accepted',
+    state: 'accepted',
+    accepted_at: SETTLED_AT,
+  },
+  {
+    ...INVITATION_ADA,
+    id: 'inv-revoked',
+    email: 'revoked@example.com',
+    status: 'revoked',
+    state: 'revoked',
+    revoked_at: SETTLED_AT,
+  },
+]
 
 const SUPPORT_ROLE: AdminTenantRole = {
   tenant: TENANT,
@@ -135,6 +174,8 @@ function backend(
 function renderPage(
   options: {
     readonly defaultMode?: 'light' | 'dark' | 'system'
+    readonly presets?: readonly ThemePreset[]
+    readonly defaultPreset?: string
   } = {},
   probe?: ReactNode,
   scripted: AdminBackend = backend(),
@@ -188,15 +229,16 @@ function renderShellPage(scripted: AdminBackend = backend()) {
   )
 }
 
-/** A probe that reports the assembled theme's color mode and default
- * surface, so a dark-mode assertion compares against the theme rather than
- * against a color written into this test. */
+/** A probe that reports the assembled theme's color mode, default surface
+ * and radius, so a mode or preset assertion compares against the theme
+ * rather than against a color or number written into this test. */
 function ThemeProbe() {
   const theme = useTheme()
   return (
     <div
       data-testid="theme-probe"
       data-mode={theme.palette.mode}
+      data-radius={theme.shape.borderRadius}
       style={{ backgroundColor: theme.palette.background.default }}
     />
   )
@@ -265,6 +307,138 @@ function bodyCellWith(container: HTMLElement, value: string): HTMLElement {
     throw new Error(`no body cell carries "${value}"`)
   }
   return cell
+}
+
+interface Rgba {
+  readonly r: number
+  readonly g: number
+  readonly b: number
+  readonly a: number
+}
+
+/** Parse a CSS `rgb()`/`rgba()` color, the form getComputedStyle returns. */
+function parseRgba(value: string): Rgba {
+  const match = /^rgba?\(([^)]+)\)$/.exec(value.trim())
+  if (match === null) {
+    throw new Error(`unexpected computed color "${value}"`)
+  }
+  const parts = match[1]!.split(/[\s,/]+/).filter(Boolean).map(Number)
+  if (parts.length < 3) {
+    throw new Error(`unexpected computed color "${value}"`)
+  }
+  return {
+    r: parts[0]!,
+    g: parts[1]!,
+    b: parts[2]!,
+    a: parts[3] === undefined ? 1 : parts[3],
+  }
+}
+
+/** Composite a translucent layer over an opaque backdrop. */
+function compositeLayer(front: Rgba, back: Rgba): Rgba {
+  const blend = (f: number, b: number): number =>
+    Math.round(front.a * f + (1 - front.a) * b)
+  return {
+    r: blend(front.r, back.r),
+    g: blend(front.g, back.g),
+    b: blend(front.b, back.b),
+    a: 1,
+  }
+}
+
+/** The opaque color an element's text actually sits on: every translucent
+ * ancestor background composited over the first opaque one. The table
+ * cells are transparent over the page surface, and a preset may paint that
+ * surface as a translucent overlay, so the walk composes the layers. */
+function flattenedBackground(element: Element): Rgba {
+  const layers: Rgba[] = []
+  for (
+    let node: Element | null = element;
+    node !== null;
+    node = node.parentElement
+  ) {
+    const color = parseRgba(getComputedStyle(node).backgroundColor)
+    if (color.a > 0) {
+      layers.push(color)
+      if (color.a >= 1) break
+    }
+  }
+  let result: Rgba = { r: 255, g: 255, b: 255, a: 1 }
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    result = compositeLayer(layers[index]!, result)
+  }
+  return result
+}
+
+/** A `#rrggbb` token as the opaque color the compositor would paint. */
+function hexRgba(value: string): Rgba {
+  const hex = value.replace(/^#/, '')
+  return {
+    r: Number.parseInt(hex.slice(0, 2), 16),
+    g: Number.parseInt(hex.slice(2, 4), 16),
+    b: Number.parseInt(hex.slice(4, 6), 16),
+    a: 1,
+  }
+}
+
+/**
+ * The opaque color `element`'s text sits on when the page's own backdrop is
+ * `base`: every translucent ancestor background between the element and the
+ * body is composited over `base`, and the body's own color is not, because
+ * a canvas gradient paints above it.
+ */
+function flattenedOver(element: Element, base: Rgba): Rgba {
+  const layers: Rgba[] = []
+  for (
+    let node: Element | null = element;
+    node !== null && node !== document.body;
+    node = node.parentElement
+  ) {
+    const color = parseRgba(getComputedStyle(node).backgroundColor)
+    if (color.a > 0) {
+      layers.push(color)
+      if (color.a >= 1) break
+    }
+  }
+  let result = base
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    result = compositeLayer(layers[index]!, result)
+  }
+  return result
+}
+
+/** One sRGB channel as WCAG relative luminance sees it. */
+function linearChannel(channel: number): number {
+  const value = channel / 255
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+function luminance(color: Rgba): number {
+  return (
+    0.2126 * linearChannel(color.r) +
+    0.7152 * linearChannel(color.g) +
+    0.0722 * linearChannel(color.b)
+  )
+}
+
+/** The WCAG 2.1 contrast ratio between two opaque colors. */
+function contrastRatio(first: Rgba, second: Rgba): number {
+  const a = luminance(first)
+  const b = luminance(second)
+  const lighter = Math.max(a, b)
+  const darker = Math.min(a, b)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+/** The status tag chip that carries `label` inside the invitation table. */
+function statusChip(label: string): HTMLElement {
+  const table = tableFor(enUS.invitations.column.email).container
+  const labelNode = within(table).getByText(label, { exact: true })
+  const chip = labelNode.closest<HTMLElement>('.MuiChip-root')
+  if (chip === null) {
+    throw new Error(`the "${label}" status has no chip`)
+  }
+  return chip
 }
 
 /**
@@ -502,6 +676,9 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
   const LONG_INVITATION: AdminInvitation = {
     ...INVITATION_ADA,
     email: LONG_EMAIL,
+    invited_by: LONG_ACCOUNT,
+    invited_by_name: LONG_DISPLAY_NAME,
+    invited_by_username: LONG_USERNAME,
   }
 
   it('caps over-long member and invitation values at the 900px tier and keeps each full value reachable', async () => {
@@ -530,19 +707,34 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     ] as const) {
       const cell = bodyCellWith(container, value)
       const copy = within(cell).queryByRole('button')
+      // The display-name cell carries no copy control and no title of its
+      // own: the full value is the title on the inner Typography that the
+      // cap truncates. The username and email columns hand the value out
+      // through their copy control instead.
+      const titled = cell.querySelector<HTMLElement>('[title]')
       expect(
-        cell.getAttribute('title') === value || copy !== null,
+        titled?.getAttribute('title') === value || copy !== null,
         `the over-long value "${value}" has no full-value channel`,
       ).toBe(true)
     }
+
+    // The truncated display name still answers its complete value on hover.
+    expect(
+      bodyCellWith(members.container, LONG_DISPLAY_NAME)
+        .querySelector<HTMLElement>('[title]')
+        ?.getAttribute('title'),
+    ).toBe(LONG_DISPLAY_NAME)
   })
 
-  // The status column is nowrap and its label is the only cell in the row
-  // whose width changes with the stored state. "Accepted" is the longest
-  // label, so a pending row is the narrowest case, not the worst one: every
-  // stored status has to fit the sm floor with both identity columns at
-  // their whole cap. `expired` is the derived fourth label a stored pending
-  // invitation takes once its deadline passes.
+  // The status column wraps: the chip holds the label on one line and a
+  // terminal row's caption wraps beneath it inside the column. "Accepted" is
+  // the longest label, so the chip's width changes with the state. Every
+  // state has to fit the sm floor with both identity columns at their whole
+  // cap. `expired` is the derived fourth label a stored pending invitation
+  // takes once its deadline passes. A terminal row also carries the caption
+  // naming when it settled, so each terminal fixture sets the instant its
+  // state reads; without it the row would hide the caption line that makes it
+  // the widest one at this floor.
   for (const status of [
     'pending',
     'expired',
@@ -559,10 +751,13 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
         ...LONG_INVITATION,
         invited_by: LONG_ACCOUNT,
         status: status === 'expired' ? 'pending' : status,
+        state: status,
         expires_at:
           status === 'expired'
             ? '2020-01-01T00:00:00Z'
             : LONG_INVITATION.expires_at,
+        accepted_at: status === 'accepted' ? SETTLED_AT : null,
+        revoked_at: status === 'revoked' ? SETTLED_AT : null,
       }
       renderPage({}, undefined, backend([LONG_MEMBER], [invitation]))
 
@@ -572,6 +767,21 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
       // containment box is pinned to every tier floor and the visible
       // columns must fit without the scroll fallback.
       await expectNoHorizontalOverflow()
+
+      // Measured in Chromium at the 600px floor with both identity
+      // columns at their whole cap, the terminal rows' captions included:
+      // pending 559.2px, expired 523.7px, accepted 533.8px, revoked
+      // 531.0px. Accepted is the widest terminal row; every row keeps the
+      // tier headroom rather than only passing containment at the edge.
+      const invitations = tableFor(enUS.invitations.column.email)
+      expect(
+        requiredWidthAtFloor(
+          invitations.containment,
+          invitations.container,
+          SM_FLOOR,
+        ),
+        `the ${status} row leaves less than the tier headroom inside the 600px floor`,
+      ).toBeLessThanOrEqual(SM_FLOOR - TIER_HEADROOM)
     })
   }
 
@@ -602,56 +812,118 @@ describe('OrganizationMembersPage over-long cell values in Chromium', () => {
     ).toBeLessThanOrEqual(SM_FLOOR - TIER_HEADROOM)
   })
 
-  // Issuing or resending an invitation adds the copy-link control to that
-  // row, and the actions column widens from the Actions menu trigger's
-  // 93.8px to the copy control's 105.1px. The widest reachable
-  // invitation is therefore an accepted row that also carries the copy
-  // link: "Accepted" is the longest status label, and the extra control
-  // widens the actions column on top of it. Revoked is the other stored
-  // status a row can carry while it still holds the copy link. Both are
-  // measured at the 600px floor; with both identity caps at 120px the
-  // accepted row requires 580px in the pinned font, 20px inside the floor.
-  for (const status of ['accepted', 'revoked'] as const) {
-    it(`keeps the invitation table inside the 600px tier floor when the copy-link action is present (${status})`, async () => {
-      await page.viewport(600, 900)
-      const invitation: AdminInvitation = {
-        ...LONG_INVITATION,
-        invited_by: LONG_ACCOUNT,
-        status,
-      }
-      renderPage({}, undefined, backend([LONG_MEMBER], [invitation]))
+  // Issuing or resending an invitation adds a third action to that row --
+  // the copy-link control -- and the actions column widens from the two
+  // menu actions to the copy control. Only a pending row carries actions,
+  // so the pending row holding the copy link is the widest reachable
+  // invitation at the 600px floor.
+  it('keeps the invitation table inside the 600px tier floor when the copy-link action is present', async () => {
+    await page.viewport(600, 900)
+    const invitation: AdminInvitation = {
+      ...LONG_INVITATION,
+      status: 'pending',
+      state: 'pending',
+    }
+    renderPage({}, undefined, backend([LONG_MEMBER], [invitation]))
 
-      await screen.findAllByText(LONG_DISPLAY_NAME)
-      await screen.findAllByText(LONG_EMAIL)
+    await screen.findAllByText(LONG_DISPLAY_NAME)
+    await screen.findAllByText(LONG_EMAIL)
 
-      // The copy link belongs to the row just issued or resent. Issuing
-      // through the form places it on the scripted row, which the list read
-      // after the issue keeps on screen.
-      const user = userEvent.setup()
-      await user.type(
-        screen.getByRole('textbox', {
-          name: enUS.invitations.issue.emailLabel,
-        }),
-        'someone@example.com',
-      )
-      await user.click(
-        screen.getByRole('button', { name: enUS.invitations.issue.submit }),
-      )
-      await screen.findByRole('button', { name: enUS.invitations.copyLink })
+    // The copy link belongs to the row just issued or resent. Issuing
+    // through the form places it on the scripted row, which the list read
+    // after the issue keeps on screen.
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByRole('textbox', {
+        name: enUS.invitations.issue.emailLabel,
+      }),
+      'someone@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: enUS.invitations.issue.submit }),
+    )
+    await screen.findByRole('button', { name: enUS.invitations.copyLink })
 
-      // The strict per-tier check, then the margin the stretch hides.
-      await expectNoHorizontalOverflow()
+    // The strict per-tier check, then the margin the stretch hides.
+    await expectNoHorizontalOverflow()
 
-      const invitations = tableFor(enUS.invitations.column.email)
-      expect(
-        requiredWidthAtFloor(
-          invitations.containment,
-          invitations.container,
-          SM_FLOOR,
-        ),
-        'the copy-link row leaves less than the tier headroom inside the 600px floor',
-      ).toBeLessThanOrEqual(SM_FLOOR - TIER_HEADROOM)
-    })
+    const invitations = tableFor(enUS.invitations.column.email)
+    expect(
+      requiredWidthAtFloor(
+        invitations.containment,
+        invitations.container,
+        SM_FLOOR,
+      ),
+      'the copy-link row leaves less than the tier headroom inside the 600px floor',
+    ).toBeLessThanOrEqual(SM_FLOOR - TIER_HEADROOM)
+  })
+})
+
+describe('OrganizationMembersPage status tag readability in Chromium', () => {
+  // The invitation table's four states render through the shared status tag:
+  // pending reads info, accepted success, and expired and revoked the neutral
+  // default. The preset shelf moves the semantic palette, so each tone's text
+  // has to clear WCAG AA against the surface it sits on in every preset and
+  // both modes. The glass preset paints a body gradient rather than a flat
+  // color, so its tag text is checked against both stops -- the backdrop a
+  // cell can actually sit on -- and every case first proves the requested
+  // preset and mode reached the theme.
+  const DEFAULT_RADIUS = 8
+  for (const preset of themePresets) {
+    for (const mode of ['light', 'dark'] as const) {
+      it(`keeps the four state tags readable under the ${preset.id} preset in ${mode} mode`, async () => {
+        await page.viewport(1280, 900)
+        renderPage(
+          {
+            defaultMode: mode,
+            presets: themePresets,
+            defaultPreset: preset.id,
+          },
+          <ThemeProbe />,
+          backend(MEMBERS, STATE_INVITATIONS),
+        )
+
+        await screen.findAllByText('pending@example.com')
+        const probe = screen.getByTestId('theme-probe')
+        expect(probe.getAttribute('data-mode')).toBe(mode)
+        expect(Number(probe.getAttribute('data-radius'))).toBe(
+          preset.tokens.shape?.borderRadius ?? DEFAULT_RADIUS,
+        )
+
+        // The glass canvas is a gradient painted above the body color, so the
+        // text sits on either stop; the other presets paint a flat surface.
+        const canvas = preset.tokens.color?.background?.canvas?.[mode]
+        const backdrops =
+          canvas === undefined
+            ? [flattenedBackground(statusChip(enUS.invitations.status.pending))]
+            : [hexRgba(canvas.from), hexRgba(canvas.to)]
+        if (canvas !== undefined) {
+          const backgroundImage = getComputedStyle(document.body).backgroundImage
+          for (const stop of [canvas.from, canvas.to]) {
+            const { r, g, b } = hexRgba(stop)
+            expect(
+              backgroundImage,
+              `${preset.id} ${mode}: the body paints the ${stop} stop`,
+            ).toContain(`rgb(${r}, ${g}, ${b})`)
+          }
+        }
+
+        for (const state of ['pending', 'expired', 'accepted', 'revoked'] as const) {
+          const chip = statusChip(enUS.invitations.status[state])
+          const text = parseRgba(getComputedStyle(chip).color)
+          for (const backdrop of backdrops) {
+            const ratio = contrastRatio(
+              text,
+              canvas === undefined ? backdrop : flattenedOver(chip, backdrop),
+            )
+            expect(
+              ratio,
+              `${preset.id} ${mode}: the ${state} status text`,
+            ).toBeGreaterThanOrEqual(4.5)
+          }
+        }
+      })
+    }
   }
 })
 
@@ -683,6 +955,8 @@ describe('OrganizationMembersPage single-token identity values in Chromium', () 
   const INVITATION: AdminInvitation = {
     ...INVITATION_ADA,
     invited_by: INVITER_ACCOUNT,
+    invited_by_name: INVITER_NAME,
+    invited_by_username: 'demo',
   }
 
   it('keeps a single-token display name and inviter on one line in the 1024px shell', async () => {

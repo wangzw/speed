@@ -21,42 +21,46 @@
  * already -- and the review log masks every `spd_inv_` token, so a test that
  * must open the link itself cannot read it from the notice. The panel's copy
  * control and explicit close are asserted, and the link is gone from the page
- * after the close. Issuing to the same address again is the supersede path the
- * product offers as resend: the old link stops being acceptable, the list keeps
- * the old row as revoked beside a new pending one, and the replacement answer
- * carries the new link. The invitation list then shows the pending row with
- * its address, status, inviter and expiry.
+ * after the close. Issuing to the same address again is refused as
+ * `invitation-pending`: the address already holds an unexpired pending
+ * invitation, so no second row or link appears and the operator keeps the one
+ * already handed out. A resend instead acts on the existing row through
+ * `/invitations/{id}/resend`, replacing the token without adding a row; this
+ * journey leaves resend to the tenant-admin journey, which drives it. The
+ * invitation list then shows the pending row with its address, status,
+ * inviter and expiry.
  *
  * The recipient opens the link in a second browser context with no session and
- * meets the sign-in surface, not the invitation summary. The token grants
- * joining; it does not prove the invited address, so the recipient registers
- * an account with that address through the same surface. A password
- * registration lands on the account page's verification section and sends one
- * code to the address; the code comes from the process log (the second non-UI
- * read). Verifying the address returns the visitor to the remembered invitation
- * link, where the accept screen shows the tenant, the invited address and the
- * expiry the issue carried. Accepting then lands on the tenant home with the
- * membership confirmation, the invited tenant as the current one, and its row
- * in the tenant switcher. The operator's refreshed page then shows the
- * invitation accepted and the invitee in the member table with the invitation
- * source.
+ * meets the invitation landing: the inviter's display name, the organization,
+ * the masked invited address and the deadline, with sign-in and create-account
+ * actions. The token grants joining; it does not prove the invited address, so
+ * the recipient registers an account with that address through the landing's
+ * create-account action. A password registration lands on the account page's
+ * verification section and sends one code to the address; the code comes from
+ * the process log (the second non-UI read). Verifying the address returns the
+ * visitor to the remembered invitation link, where the accept screen shows the
+ * inviter, the tenant, the masked invited address and the expiry the issue
+ * carried. Accepting then lands on the tenant home with the membership
+ * confirmation, the invited tenant as the current one, and its row in the
+ * tenant switcher. The operator's refreshed page then shows the invitation
+ * accepted and the invitee in the member table with the invitation source.
  *
  * A second case drives the inviter-held-token path: another visitor registers
  * on the same link with a different address, proves that address through its
- * own email code, and is still refused when accepting. The refusal names the
- * invited address and writes no membership; the operator's page keeps the
- * invitation pending and the member table unchanged.
+ * own email code, and meets the proof step on arrival because the eligibility
+ * read names the mismatch. The retry is refused the same way and writes no
+ * membership; the operator's page keeps the invitation pending and the member
+ * table unchanged.
  *
  * The document's alternate path for a re-opened link is driven after the
- * acceptance: the invitee returns to the same link and meets the "invitation
- * no longer valid" state, with neither the summary nor an accept action, so a
- * second acceptance cannot be started from it. REQ-tenancy-013 is claimed for
- * that "cannot be redeemed" facet -- the missing-link facet and the 409
- * failure state are the component tier's -- and REQ-tenancy-020 for the
- * repeated-redemption observation: the consumed link's second open produces
- * no second membership, and the operator's refreshed member table still holds
- * the one joined row. REQ-tenancy-020's concurrent-redemption clause is not
- * driven by this spec.
+ * acceptance: the invitee returns to the same link and meets the member
+ * terminal state, which names the organization the viewer already belongs to
+ * and offers the way in, with neither the summary nor an accept action, so a
+ * second acceptance cannot be started from it. REQ-tenancy-013 is that read
+ * path, and REQ-tenancy-020 is claimed for the repeated-redemption
+ * observation: the consumed link's second open produces no second membership,
+ * and the operator's refreshed member table still holds the one joined row.
+ * REQ-tenancy-020's concurrent-redemption clause is not driven by this spec.
  *
  * STEP 10's IN-APP HALF IS NOT REACHABLE FROM THE TENANT AREA. The document
  * asks for in-app navigation from the tenant area to a admin path quietly
@@ -99,7 +103,7 @@
  * itself received and asserts neither section carries one.
  */
 // @journey journey-invitation-to-tenant.md
-// @covers REQ-platform-admin-001, REQ-platform-admin-032, REQ-platform-admin-033, REQ-signin-030, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-017, REQ-tenancy-018, REQ-tenancy-019, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-035, REQ-tenancy-043, REQ-tenancy-057, REQ-tenancy-058
+// @covers REQ-platform-admin-001, REQ-platform-admin-032, REQ-platform-admin-033, REQ-signin-030, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-017, REQ-tenancy-018, REQ-tenancy-019, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-035, REQ-tenancy-043, REQ-tenancy-057, REQ-tenancy-078
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { reviewInvitee } from '../fixtures/config'
@@ -112,6 +116,10 @@ import {
   organizationRow,
 } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
+import {
+  expiryChoices,
+  expectOneOfText,
+} from '../helpers/invitation-expiry'
 import {
   collectTenantAccountIds,
   expectNoAccountIds,
@@ -146,6 +154,9 @@ const OPERATOR = {
 /** The seeded tenant the invitation is addressed to. Its id is its name. */
 const TENANT = 'acme'
 
+/** The invited address as the public read renders it: first character and domain. */
+const MASKED_INVITEE = 'i***@demo.test'
+
 /** The member the tenant already holds before the journey starts. */
 const EXISTING_MEMBER = 'Demo Member'
 
@@ -163,32 +174,6 @@ const OUTSIDER = {
   password: 'outsider-review-secret',
   displayName: 'Invitation Outsider',
 } as const
-
-/**
- * The expiry the operator types into the issue form: two days out, truncated
- * to the minute. Two days is inside the server's lifetime domain and far from
- * the configured default, so an expiry the product ignored would render a
- * different day and fail the assertions below.
- */
-const EXPIRY_INSTANT = (() => {
-  const instant = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
-  instant.setUTCSeconds(0, 0)
-  return instant
-})()
-
-/** The `datetime-local` value the browser (pinned to UTC) reads as the instant. */
-const EXPIRY_INPUT = EXPIRY_INSTANT.toISOString().slice(0, 16)
-
-/**
- * The instant as the product's own formatter renders it: ui-kit's default
- * tier is Intl's medium date and short time, and the invitation list pins the
- * zone to UTC.
- */
-const EXPECTED_EXPIRY = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-}).format(EXPIRY_INSTANT)
 
 /** Escape the characters a regular expression reads as syntax. */
 function escapeRegExp(text: string): string {
@@ -407,24 +392,38 @@ async function openTenantInvitations(page: Page): Promise<void> {
   await page.getByRole('option', { name: TENANT, exact: true }).click()
 }
 
-/** Fill the issue form and wait for the confirmation naming the address. */
-async function issueInvitation(page: Page, email: string): Promise<void> {
+/** Fill the issue form and submit it, without waiting for the answer. */
+async function submitInvitation(page: Page, email: string): Promise<void> {
   await page
     .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
       exact: true,
     })
     .fill(email)
+  // REQ-platform-admin-032: the expiry is a fixed lifetime choice, not a
+  // free-form time. Thirty days is far from the seven-day default, so a
+  // lifetime the product ignored would render a different deadline.
   await page
-    .getByLabel(copy('adminUi', 'invitations.issue.expiresLabel'), {
+    .getByLabel(copy('adminUi', 'invitations.issue.quickLabel'), {
       exact: true,
     })
-    .fill(EXPIRY_INPUT)
+    .click()
+  await page
+    .getByRole('option', {
+      name: copy('adminUi', 'invitations.issue.thirtyDays'),
+      exact: true,
+    })
+    .click()
   await page
     .getByRole('button', {
       name: copy('adminUi', 'invitations.issue.submit'),
       exact: true,
     })
     .click()
+}
+
+/** Fill the issue form and wait for the confirmation naming the address. */
+async function issueInvitation(page: Page, email: string): Promise<void> {
+  await submitInvitation(page, email)
   await expect(
     page.getByText(
       copy('adminUi', 'invitations.issued.confirm', { email }),
@@ -476,14 +475,25 @@ async function takeAcceptanceLink(
     new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
   )
 
-  // The panel stays until the operator closes it, and after the close the page
-  // offers the link no more.
+  // The panel stays until the operator closes it. Closing drops the sole copy,
+  // so it asks first; the link is gone only once the close is confirmed.
   await panel
     .getByRole('button', {
       name: copy('adminUi', 'invitations.issued.closeAria', {
         tenant: TENANT,
         email,
       }),
+      exact: true,
+    })
+    .click()
+  const closeDialog = page.getByRole('dialog', {
+    name: copy('adminUi', 'invitations.issued.closeTitle'),
+    exact: true,
+  })
+  await expect(closeDialog).toBeVisible()
+  await closeDialog
+    .getByRole('button', {
+      name: copy('adminUi', 'invitations.issued.close'),
       exact: true,
     })
     .click()
@@ -514,25 +524,28 @@ async function registerAndProve(
   const invitationPath = new URL(link).pathname
 
   await page.goto(link)
+  // The anonymous viewer meets the invitation landing, not a generic sign-in
+  // page: the inviter, the masked address and the two account actions.
   await expect(
     page.getByRole('heading', {
       level: 1,
-      name: copy('demo', 'signIn.heading'),
-      exact: true,
-    }),
-  ).toBeVisible()
-  // No invitation summary reaches an anonymous viewer.
-  await expect(
-    page.getByRole('heading', {
       name: copy('authUi', 'acceptInvitation.title'),
       exact: true,
     }),
-  ).toHaveCount(0)
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      copy('authUi', 'acceptInvitation.email', { email: MASKED_INVITEE }),
+      { exact: true },
+    ),
+  ).toBeVisible()
   expect(new URL(page.url()).pathname).toBe(invitationPath)
 
+  // The create-account action opens the host's registration surface in
+  // place, so the token stays in the URL across the session flip.
   await page
     .getByRole('button', {
-      name: copy('authUi', 'mode.registerEntry'),
+      name: copy('authUi', 'acceptInvitation.createAccount'),
       exact: true,
     })
     .click()
@@ -615,7 +628,7 @@ async function registerAndProve(
   return page
 }
 
-/** One invitation row in a given status, for an address the journey invites twice. */
+/** One invitation row in a given status, for the address the journey invites. */
 function invitationRowInStatus(page: Page, statusKey: string): Locator {
   return invitationRow(page).filter({
     hasText: copy('adminUi', statusKey),
@@ -636,7 +649,11 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
   let inviteeContext: BrowserContext | undefined
   let inviteePage: Page | undefined
   let acceptanceLink = ''
-  let supersededLink = ''
+  // The instants around the issue, the origin of the chosen lifetime.
+  let issuedAt = 0
+  let issuedAtConfirmed = 0
+  // The expiry strings the chosen lifetime can render.
+  let expectedExpiry: string[] = []
 
   try {
     await test.step('precondition: the operator signs in and proves the account email', async () => {
@@ -653,13 +670,14 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // the platform's own organization is current.
       await openTenantInvitations(page)
 
-      // The tenant has no invitation yet, and its member list holds the
+      // The page opens on pending invitations, and the tenant holds none, so
+      // the list renders its filtered empty state. Its member list holds the
       // seeded member and the platform operator, each carrying the source the
       // seed wrote. The member's own row is what the journey names, so the
       // source is read inside that row.
       await expect(
-        page.getByRole('heading', {
-          name: copy('adminUi', 'invitations.empty.title'),
+        invitationSection(page).getByRole('heading', {
+          name: copy('adminUi', 'invitations.empty.filteredTitle'),
           exact: true,
         }),
       ).toBeVisible()
@@ -700,8 +718,13 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       await expectNoAccountIds(memberSection(page), ids)
     })
 
-    await test.step('step 2: the operator invites the address with an expiry and sees the confirmation', async () => {
+    await test.step('step 2: the operator invites the address with a chosen lifetime and sees the confirmation', async () => {
+      // The deadline the product must write is measured from this instant, so
+      // a chosen lifetime the implementation ignored cannot pass on both the
+      // list and the accept screen agreeing with each other.
+      issuedAt = Date.now()
       await issueInvitation(page, reviewInvitee.identifier)
+      issuedAtConfirmed = Date.now()
     })
 
     await test.step('step 3: the one-time panel hands out the acceptance link until it is closed', async () => {
@@ -712,18 +735,30 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       )
     })
 
-    await test.step('step 4: issuing to the same address again supersedes the old link', async () => {
-      await issueInvitation(page, reviewInvitee.identifier)
-      supersededLink = acceptanceLink
-      acceptanceLink = await takeAcceptanceLink(
-        page,
-        server,
-        reviewInvitee.identifier,
+    await test.step('step 4: issuing to the same address again is refused as invitation-pending', async () => {
+      // The address already holds an unexpired pending invitation, so the
+      // second issue is a conflict rather than a replacement. The response is
+      // observed directly: the panel's error text is the shared fallback, while
+      // the problem type is what names this refusal.
+      const refused = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/v1/tenants/${TENANT}/invitations`,
       )
-      expect(acceptanceLink).not.toBe(supersededLink)
+      await submitInvitation(page, reviewInvitee.identifier)
+      const answer = await refused
+      expect(answer.status()).toBe(409)
+      const problem = (await answer.json()) as { type?: string }
+      expect(problem.type).toBe('urn:speed:authn:invitation-pending')
+      await expect(invitationSection(page).getByRole('alert')).toBeVisible()
+      // The one invitation and the link already handed out are unchanged.
+      await expect(
+        invitationRowInStatus(page, 'invitations.status.pending'),
+      ).toHaveCount(1)
     })
 
-    await test.step('step 5: the list shows the revoked superseded row and the pending replacement', async () => {
+    await test.step('step 5: the list shows the one pending invitation', async () => {
       const table = invitationSection(page).getByRole('table')
       await expect(table).toBeVisible()
 
@@ -739,23 +774,52 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         ).toBeVisible()
       }
 
-      // The first invitation was superseded: it stays as a revoked row, and
-      // the replacement is the pending one.
+      // The refused second issue created no row: the list holds the one
+      // pending invitation. A superseded old row would read expired rather
+      // than revoked, so this flow produces no revoked row either.
       const pending = invitationRowInStatus(page, 'invitations.status.pending')
       await expect(pending).toHaveCount(1)
       await expect(
         pending.getByText(reviewInvitee.identifier, { exact: true }),
       ).toBeVisible()
+      // The inviter cell shows the display name alone; the complete
+      // "display name (username)" is its hover title.
+      const invitedByColumn = await columnIndex(
+        table,
+        copy('adminUi', 'invitations.column.invitedBy'),
+      )
+      const invitedByCell = pending.getByRole('cell').nth(invitedByColumn)
+      await expect(invitedByCell).toHaveText(OPERATOR.displayName)
+      // The complete label is the cell content's own hover title, so the
+      // element carrying it inside the cell is what has to show it.
+      await expect(
+        invitedByCell.getByTitle(
+          `${OPERATOR.displayName} (${OPERATOR.username})`,
+          { exact: true },
+        ),
+      ).toBeVisible()
       await expect(
         pending.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
           exact: true,
         }),
-      ).toBeVisible()
-      // The typed expiry is the instant the list renders, not the default.
-      await expect(pending).toContainText(EXPECTED_EXPIRY)
+      ).toHaveCount(0)
+
+      // The deadline the list renders must lie thirty days from the issue,
+      // not merely agree between the list and the accept screen. The expected
+      // strings are computed from the chosen lifetime and the instants around
+      // the issue, so a lifetime the product ignored fails here.
+      expectedExpiry = expiryChoices(issuedAt, issuedAtConfirmed)
+      const expiryColumn = await columnIndex(
+        table,
+        copy('adminUi', 'invitations.column.expires'),
+      )
+      await expectOneOfText(
+        pending.getByRole('cell').nth(expiryColumn),
+        expectedExpiry,
+      )
       await expect(
         invitationRowInStatus(page, 'invitations.status.revoked'),
-      ).toHaveCount(1)
+      ).toHaveCount(0)
     })
 
     await test.step('step 6: the invitee registers through the link and proves the invited address', async () => {
@@ -778,61 +842,45 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         },
         server,
       )
-      const invitee = inviteePage
-
-      // The superseded link no longer redeems. A signed-in viewer sees the
-      // status judgment (an anonymous one meets the sign-in surface first), so
-      // this runs after the sign-in above: the old invitation is revoked and
-      // its landing is the terminal "no longer available" state.
-      await invitee.goto(supersededLink)
-      await expect(
-        invitee.getByRole('heading', {
-          name: copy('authUi', 'acceptInvitation.unavailable.title'),
-          exact: true,
-        }),
-      ).toBeVisible({ timeout: 15_000 })
-      await expect(
-        invitee.getByRole('button', {
-          name: copy('authUi', 'acceptInvitation.accept'),
-          exact: true,
-        }),
-      ).toHaveCount(0)
-
-      // Back to the replacement, whose summary the next step reads.
-      await invitee.goto(acceptanceLink)
-      await expect(
-        invitee.getByRole('heading', {
-          name: copy('authUi', 'acceptInvitation.title'),
-          exact: true,
-        }),
-      ).toBeVisible({ timeout: 15_000 })
+      // The registration returned to the one link already handed out; the
+      // refused second issue produced no alternative to compare against.
     })
 
-    await test.step('step 7: the accept screen shows the tenant, the invited address and the expiry', async () => {
+    await test.step('step 7: the accept screen shows the tenant, the masked invited address and the expiry', async () => {
       if (inviteePage === undefined) {
         throw new Error('the invitee page was never opened')
       }
       const invitee = inviteePage
       await expect(
         invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT }),
+          copy('authUi', 'acceptInvitation.invitedBy', {
+            inviter: OPERATOR.displayName,
+            tenant: TENANT,
+          }),
           { exact: true },
         ),
       ).toBeVisible()
       await expect(
         invitee.getByText(
-          copy('authUi', 'acceptInvitation.email', {
-            email: reviewInvitee.identifier,
-          }),
+          copy('authUi', 'acceptInvitation.email', { email: MASKED_INVITEE }),
           { exact: true },
         ),
       ).toBeVisible()
-      // The same instant the operator's list rendered, in the display zone the
-      // browser is pinned to.
+      // The public read masks the address on the server, so the full address
+      // never reaches the page.
+      await expect(
+        invitee.getByText(reviewInvitee.identifier, { exact: true }),
+      ).toHaveCount(0)
+      // The deadline the test computed from the chosen thirty-day lifetime,
+      // in the display zone the browser is pinned to -- not a value the
+      // operator page rendered.
       const expiryLine = invitee.getByText(
         new RegExp(`^${escapeRegExp(EXPIRY_PREFIX)}`),
       )
-      await expect(expiryLine).toHaveText(`${EXPIRY_PREFIX}${EXPECTED_EXPIRY}`)
+      await expectOneOfText(
+        expiryLine,
+        expectedExpiry.map((text) => `${EXPIRY_PREFIX}${text}`),
+      )
     })
 
     await test.step('step 8: the invitee accepts, lands on the tenant home and sees the confirmation', async () => {
@@ -951,39 +999,41 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       }
     })
 
-    await test.step('step 10: the invitee re-opens the accepted link and meets the invalid state', async () => {
+    await test.step('step 10: the invitee re-opens the accepted link and meets the member state', async () => {
       if (inviteePage === undefined) {
         throw new Error('the invitee page was never opened')
       }
       const invitee = inviteePage
 
-      // The used link's read still returns the stored view; the screen judges
-      // its status before showing anything, so the summary and the accept
-      // action are gone and the link cannot be redeemed a second time.
+      // The accepted link names the organization the viewer already belongs
+      // to and offers the way in; the summary and the accept action are gone,
+      // so the link cannot be redeemed a second time.
       await invitee.goto(acceptanceLink)
       await expect(
         invitee.getByRole('heading', {
-          name: copy('authUi', 'acceptInvitation.unavailable.title'),
+          name: copy('authUi', 'acceptInvitation.member.title', {
+            tenant: TENANT,
+          }),
           exact: true,
         }),
       ).toBeVisible({ timeout: 15_000 })
       await expect(
-        invitee.getByText(
-          copy('authUi', 'acceptInvitation.unavailable.description'),
-          { exact: true },
-        ),
+        invitee.getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.member.open'),
+          exact: true,
+        }),
       ).toBeVisible()
-      await expect(
-        invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT }),
-          { exact: true },
-        ),
-      ).toHaveCount(0)
       await expect(
         invitee.getByRole('button', {
           name: copy('authUi', 'acceptInvitation.accept'),
           exact: true,
         }),
+      ).toHaveCount(0)
+      await expect(
+        invitee.getByText(
+          copy('authUi', 'acceptInvitation.email', { email: MASKED_INVITEE }),
+          { exact: true },
+        ),
       ).toHaveCount(0)
     })
 
@@ -997,6 +1047,20 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
           exact: true,
         }),
       ).toBeVisible()
+      // The list opens on the pending state, so the accepted invitation is
+      // read under its own filter. The refresh re-reads the list the filter
+      // narrows.
+      await page
+        .getByLabel(copy('adminUi', 'invitations.filter.label'), {
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('option', {
+          name: copy('adminUi', 'invitations.status.accepted'),
+          exact: true,
+        })
+        .click()
       await page
         .getByRole('button', {
           name: copy('adminUi', 'common.refresh'),
@@ -1004,14 +1068,14 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         })
         .click()
 
-      // The replacement invitation's terminal state is now the accepted one;
-      // the superseded row from the resend stays revoked.
+      // The one invitation's terminal state is now the accepted one; the
+      // refused second issue never created a superseded row.
       await expect(
         invitationRowInStatus(page, 'invitations.status.accepted'),
       ).toHaveCount(1, { timeout: 15_000 })
       await expect(
         invitationRowInStatus(page, 'invitations.status.revoked'),
-      ).toHaveCount(1)
+      ).toHaveCount(0)
 
       // The member table gained exactly one row: the invited account, active,
       // and sourced from the invitation. The tenant's earlier members -- the
@@ -1114,14 +1178,10 @@ test('invitation-to-tenant: an account that proves a different address cannot ac
       )
 
       // The token grants joining; it does not prove the invited address. The
-      // account proved a different one, so the acceptance is refused and the
-      // screen answers with the proof step instead of a membership.
-      await outsider
-        .getByRole('button', {
-          name: copy('authUi', 'acceptInvitation.accept'),
-          exact: true,
-        })
-        .click()
+      // account proved a different one, so the eligibility read shows the
+      // proof step on arrival: no plain accept action is offered. The
+      // refusal the retry reaches is the same unproved-email refusal, and no
+      // membership is written.
       await expect(
         outsider.getByRole('heading', {
           name: copy('authUi', 'acceptInvitation.unproved.title'),
@@ -1131,7 +1191,7 @@ test('invitation-to-tenant: an account that proves a different address cannot ac
       await expect(
         outsider.getByText(
           copy('authUi', 'acceptInvitation.unproved.description', {
-            email: reviewInvitee.identifier,
+            email: MASKED_INVITEE,
           }),
           { exact: true },
         ),
@@ -1142,6 +1202,32 @@ test('invitation-to-tenant: an account that proves a different address cannot ac
           exact: true,
         }),
       ).toHaveCount(0)
+      // Wait for the acceptance answer itself: the proof step is already on
+      // screen before the click, so re-asserting it would pass without the
+      // request having been made at all.
+      const inviteToken = new URL(acceptanceLink).pathname.split('/').pop()
+      const refused = outsider.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/v1/auth/invitations/${inviteToken ?? ''}`,
+      )
+      await outsider
+        .getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.unproved.retry'),
+          exact: true,
+        })
+        .click()
+      const answer = await refused
+      expect(answer.status()).toBe(403)
+      const problem = (await answer.json()) as { type?: string }
+      expect(problem.type).toBe('urn:speed:authn:invitation-email-unproved')
+      await expect(
+        outsider.getByRole('heading', {
+          name: copy('authUi', 'acceptInvitation.unproved.title'),
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 15_000 })
     })
 
     await test.step('step 3: the invitation stays pending and no membership is written', async () => {

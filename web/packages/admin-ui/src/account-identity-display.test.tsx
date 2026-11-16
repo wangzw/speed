@@ -268,7 +268,7 @@ describe('OrganizationMembersPage', () => {
 })
 
 describe('InvitationsPage', () => {
-  it('renders the neutral copy for an unresolved inviter and offers no id copy', async () => {
+  it('leaves an unresolved inviter blank and offers no id copy', async () => {
     window.history.replaceState({}, '', '/admin/invitations?tenant=acme')
     try {
       const operations = createAdminOperations(
@@ -295,9 +295,13 @@ describe('InvitationsPage', () => {
                   tenant: TENANT,
                   email: 'new@example.com',
                   status: 'pending',
+                  state: 'pending',
                   invited_by: 'ghost-1',
                   expires_at: '2099-01-01T00:00:00Z',
                   accepted_at: null,
+                  revoked_at: null,
+                  last_sent_at: '2026-10-15T12:00:00Z',
+                  send_count: 1,
                   created_at: '2026-10-15T12:00:00Z',
                 },
               ],
@@ -307,10 +311,15 @@ describe('InvitationsPage', () => {
         }),
       )
       renderWithProviders(<InvitationsPage />, { operations })
-      expect(await screen.findByText('new@example.com')).toBeInTheDocument()
-      expect(
-        screen.getAllByText(zhCN.common.accountUnavailable).length,
-      ).toBeGreaterThan(0)
+      const row = (await screen.findByText('new@example.com')).closest('tr')
+      expect(row).not.toBeNull()
+      const invitedByHeader = screen.getByRole('columnheader', {
+        name: zhCN.invitations.column.invitedBy,
+      })
+      const invitedByCell =
+        row!.children[(invitedByHeader as HTMLTableCellElement).cellIndex]!
+      // No inviter name is a blank cell, as on the organization page.
+      expect(invitedByCell.textContent?.trim()).toBe('')
       expect(screen.queryByText('ghost-1')).toBeNull()
       expect(
         screen.queryByRole('button', {

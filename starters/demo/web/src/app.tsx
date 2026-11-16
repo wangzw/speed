@@ -31,9 +31,9 @@
  * A URL no declaration matches renders the fallback page inside the tenant area.
  * The auth callback route (a provider's round trip) renders outside both frames,
  * with no session gate: it lands before a session exists and finishes the flow
- * itself. The invitation landing, too, renders outside both frames -- but only
- * when the route layer matched its (feature-gated) declaration; otherwise it
- * falls through to the tenant area like any other gated path.
+ * itself. The invitation landing, too, renders outside both frames and carries
+ * no feature gate, because an invitee arrives before any session exists and the
+ * feature document is unreadable to an anonymous caller.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -351,9 +351,9 @@ function AppFrame({
   const selfTenants = useSelfTenantState()
 
   // The invitation landing renders outside both shells: an invitee arrives
-  // before any session exists. Only a matched (present, ready) declaration
-  // reaches it; a deployment that does not serve authn.invitations falls
-  // through to the tenant area, where the gated declaration is a 404.
+  // before any session exists. The declaration is ungated, so an anonymous
+  // visitor matches it; a deployment that does not mount the invitation
+  // module answers the page's public read with its invalid-link state.
   if (match !== undefined && match.declaration === invitationRoutes[0]) {
     return <AcceptInvitationPage token={match.context.params.token ?? ''} />
   }

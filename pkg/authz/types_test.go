@@ -206,6 +206,7 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 				"PutBinding func(context.Context, authz.Binding) error",
 				"PutGrant func(context.Context, authz.GrantRecord) error",
 				"PutRole func(context.Context, authz.RoleRecord) error",
+				"RoleSubsetHeld func(context.Context, string, authz.Role, map[authz.Permission]bool) (bool, error)",
 				"Roles func(context.Context, string) ([]authz.RoleRecord, error)",
 			},
 		},

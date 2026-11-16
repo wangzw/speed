@@ -33,6 +33,7 @@ import {
 } from './test-utils/session-harness.js'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
+import { authUiResources } from '@speed/auth-ui'
 import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
 import {
   NOTIFICATION_UI_NAMESPACE,
@@ -620,33 +621,89 @@ describe('the account page mounts only the sections its document serves', () => 
   })
 })
 
-describe('the invitation landing follows its gated declaration', () => {
-  it('renders the not-found fallback when the deployment serves no invitations', async () => {
+describe('the invitation landing is ungated', () => {
+  const authEn = authUiResources['en-US'] as unknown as {
+    readonly acceptInvitation: {
+      readonly title: string
+      readonly missing: { readonly title: string; readonly hint: string }
+    }
+  }
+  const pendingView = {
+    state: 'pending',
+    invitation: {
+      tenant: 'acme',
+      tenant_display_name: 'Acme',
+      invited_by_name: 'Ada Lovelace',
+      email: 'i***@demo.test',
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  }
+
+  it('renders the landing to an anonymous viewer whatever the feature document says', async () => {
+    // The feature document is readable only to an authenticated caller, so a
+    // declaration gated on authn.invitations would withhold the landing from
+    // exactly the anonymous visitor the link is for.
+    bindRequestFn((async (path: string) => {
+      if (path === '/api/v1/auth/invitations/token-1') {
+        return pendingView
+      }
+      return undefined
+    }) as RequestFn)
     window.history.replaceState({}, '', '/invitations/token-1')
-    renderDemoApp({ session: sessionWith(readyFeatures('notification.inbox')) })
+    renderDemoApp()
 
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.notFound.heading,
+        name: authEn.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
+    // The landing renders outside both shells.
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
 
-  it('renders the accept landing when the feature is served', async () => {
+  it('renders the landing when the feature is served, outside both shells', async () => {
+    bindRequestFn((async (path: string) => {
+      if (path === '/api/v1/auth/invitations/token-1') {
+        return pendingView
+      }
+      return undefined
+    }) as RequestFn)
     window.history.replaceState({}, '', '/invitations/token-1')
     renderDemoApp({ session: sessionWith(readyFeatures('authn.invitations')) })
 
-    // The landing renders outside both shells: no navigation frame, and the
-    // invitation's own surface is asked to read the token.
-    await waitFor(() =>
-      expect(screen.queryByRole('navigation')).not.toBeInTheDocument(),
-    )
     expect(
-      screen.queryByRole('heading', {
+      await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.notFound.heading,
+        name: authEn.acceptInvitation.title,
       }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+  })
+
+  it('renders the invalid-link state when the invitation module is not mounted', async () => {
+    // A deployment without the invitation module answers the public read with
+    // a bare 404. The declaration is ungated, so the anonymous visitor still
+    // lands on the invitation page, which renders its invalid-link state
+    // instead of falling through to the generic sign-in surface.
+    bindRequestFn((async (path: string) => {
+      if (path === '/api/v1/auth/invitations/token-1') {
+        throw { status: 404, code: 'client.http.404' }
+      }
+      return undefined
+    }) as RequestFn)
+    window.history.replaceState({}, '', '/invitations/token-1')
+    renderDemoApp()
+
+    expect(
+      await screen.findByText(authEn.acceptInvitation.missing.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(authEn.acceptInvitation.missing.hint),
+    ).toBeInTheDocument()
+    // The landing, not the generic sign-in surface.
+    expect(
+      screen.queryByRole('heading', { name: demoEnUS.signIn.heading }),
     ).not.toBeInTheDocument()
   })
 })

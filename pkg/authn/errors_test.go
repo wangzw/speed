@@ -59,6 +59,7 @@ var designSentinels = map[string]error{
 	"ErrDomainClaimed": ErrDomainClaimed, "ErrAssertionReplay": ErrAssertionReplay,
 	"ErrProviderNotFound": ErrProviderNotFound,
 	"ErrUnavailable":      ErrUnavailable, "ErrBusy": ErrBusy,
+	"ErrRoleUnknown": ErrRoleUnknown, "ErrRoleProtected": ErrRoleProtected,
 	"ErrEmailUncertain": ErrEmailUncertain, "ErrHumanVerificationRequired": ErrHumanVerificationRequired,
 	"ErrHumanProofTooLong": ErrHumanProofTooLong,
 }

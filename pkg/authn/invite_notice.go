@@ -37,6 +37,11 @@ type InviteNotice struct {
 	// the external name a recipient can read. It is never the tenant's internal
 	// identifier; an issuer that cannot resolve a name leaves it empty.
 	Tenant string
+	// Inviter is the display name of the account that issued the invitation, so
+	// the notice can say who invited the recipient. It is never the issuer's
+	// account identifier, and it is empty for an invitation a host command issued
+	// without an account behind it.
+	Inviter string
 	// Email is the invited address in the normalized form the invitation stores:
 	// trimmed and lower-cased. It is the recipient.
 	Email string

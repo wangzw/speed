@@ -85,21 +85,29 @@ func (a tenantAssembly) drive(t *testing.T, depth core.Stage, action func(ctx co
 	names := []string{ModuleName}
 	reg.Register(module)
 
+	var manager authz.Manager
 	if !a.noManager {
-		m := a.manager
-		if m == nil {
-			m = &stubManager{}
+		manager = a.manager
+		if manager == nil {
+			manager = &stubManager{}
 		}
-		reg.Register(standIn("stand-in.manager", m, (*authz.Manager)(nil)))
+		reg.Register(standIn("stand-in.manager", manager, (*authz.Manager)(nil)))
 		names = append(names, "stand-in.manager")
 	}
+	var catalog authz.Catalog
 	if !a.noCatalog {
-		c := a.catalog
-		if c == nil {
-			c = newStubCatalog(authz.PermissionTenantRoleRead)
+		catalog = a.catalog
+		if catalog == nil {
+			catalog = newStubCatalog(authz.PermissionTenantRoleRead)
 		}
-		reg.Register(standIn("stand-in.catalog", c, (*authz.Catalog)(nil)))
+		reg.Register(standIn("stand-in.catalog", catalog, (*authz.Catalog)(nil)))
 		names = append(names, "stand-in.catalog")
+	}
+	// The subset judgement reads the role's grants through the manager and maps
+	// them through the catalog, so the stand-in manager is handed the stand-in
+	// catalog the product takes up.
+	if stub, ok := manager.(*stubManager); ok {
+		stub.catalog = catalog
 	}
 	if !a.noSubject {
 		s := a.subject

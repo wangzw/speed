@@ -404,6 +404,16 @@ implements it beside `TenantNameResolver`, and the impersonation start and the
 platform settings layer take it up optionally. A surface with no directory
 cannot resolve a name and refuses it; the name is never read as an identifier.
 
+**`TenantDescriptionResolver` is the name-and-display-name-and-system seam.** One
+read answers what a tenant is called, what it is shown by, and whether it is the
+system tenant rather than an organization; a view that shows an invitation needs
+all three together, and the system tenant is one nothing can be invited into. The
+roster module implements it beside the other tenant seams, and the invitation
+capability declares it as a required dependency: an assembly without the catalog
+that delivers it fails the startup, rather than serving a view that names no
+tenant and cannot refuse the system tenant. An identifier no tenant carries
+answers the zero description with no error.
+
 ## Shape of a backend
 
 A backend is a module that delivers `Verifier` non-exclusively. It reports a

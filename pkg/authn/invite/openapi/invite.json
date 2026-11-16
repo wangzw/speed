@@ -12,6 +12,10 @@
             "description": "Whether the membership is active; a suspended membership is refused rather than reactivated.",
             "type": "boolean"
           },
+          "role": {
+            "description": "The role the acceptance bound to the account in the tenant. Absent when the invitation carried no role, never null.",
+            "type": "string"
+          },
           "source": {
             "description": "The membership's source: invite when this acceptance created it, the source it already had when it was there.",
             "type": "string"
@@ -34,74 +38,73 @@
         ],
         "type": "object"
       },
-      "AuthnInviteInvitation": {
-        "description": "One invitation as the management face shows it. It never carries the acceptance token.",
+      "AuthnInviteEligibility": {
+        "description": "The answer of the eligibility read: the invitation's state and whether the signed-in account has proved the invited address.",
         "properties": {
-          "accepted_at": {
-            "description": "When the invitation was accepted, as an RFC 3339 instant in UTC; null while it has not been accepted.",
-            "format": "date-time",
-            "type": [
-              "null",
-              "string"
-            ]
+          "email_proved": {
+            "description": "Whether the signed-in account holds the invited address as a proven email identifier, the condition acceptance requires. False for an account that holds the address only through an unproved channel or through an invitation.",
+            "type": "boolean"
           },
-          "created_at": {
-            "description": "RFC 3339 timestamp in UTC of issuance.",
-            "format": "date-time",
-            "type": "string"
-          },
-          "email": {
-            "description": "The normalized address",
-            "type": "string"
-          },
-          "expires_at": {
-            "description": "RFC 3339 deadline in UTC; a pending invitation at or past it can no longer be accepted.",
-            "format": "date-time",
-            "type": "string"
-          },
-          "id": {
-            "description": "The invitation's opaque identifier, used to revoke it.",
-            "type": "string"
-          },
-          "invited_by": {
-            "description": "The account identifier of the issuer; empty when a host command issued the invitation without an HTTP identity.",
-            "type": "string"
-          },
-          "status": {
-            "description": "The stored state. Expiry is not stored: an expired pending invitation still reads pending.",
+          "state": {
+            "description": "The state the read judges, the same judgement the public read makes.",
             "enum": [
               "pending",
+              "expired",
               "accepted",
               "revoked"
             ],
             "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "email_proved"
+        ],
+        "type": "object"
+      },
+      "AuthnInviteLink": {
+        "description": "What an invitation link shows the person holding it: the organization, the inviter's display name, the masked invited address and the deadline, limited to the state the link is in.",
+        "properties": {
+          "email": {
+            "description": "The invited address masked on the server, for example a***@demo.test, so the recipient recognizes it without the link disclosing the whole address. Present only for a pending invitation.",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "RFC 3339 deadline in UTC. Present only for a pending invitation, the only state in which the link still grants anything.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "invited_by_name": {
+            "description": "The display name of the account that issued the invitation, present only for a pending invitation that an account issued. It is never the issuer's account identifier.",
+            "type": "string"
+          },
+          "role": {
+            "description": "The role the invitation grants beside the membership, present only for a pending invitation that carries one. Absent when the invitation grants no role, never null.",
+            "type": "string"
           },
           "tenant": {
-            "description": "The name of the tenant the invitation grants a membership in.",
+            "description": "The tenant's name, present for a pending and an accepted invitation: the client shows it when the organization carries no display name, and an accepted link uses it to address the organization the caller now belongs to.",
+            "type": "string"
+          },
+          "tenant_display_name": {
+            "description": "The organization's display name, the free text its administrators chose; empty when the roster carries none, in which case the client falls back to tenant.",
             "type": "string"
           }
         },
         "required": [
-          "id",
-          "tenant",
-          "email",
-          "status",
-          "invited_by",
-          "expires_at",
-          "accepted_at",
-          "created_at"
+          "tenant_display_name"
         ],
         "type": "object"
       },
       "AuthnInviteView": {
-        "description": "The answer of the acceptance read: the invitation's state, and its summary only while it can still be redeemed.",
+        "description": "The answer of the acceptance read: the invitation's state, and the link's summary for the states that may show one.",
         "properties": {
           "invitation": {
-            "$ref": "#/components/schemas/AuthnInviteInvitation",
-            "description": "The invitation summary, present only for a pending invitation that can still be redeemed."
+            "$ref": "#/components/schemas/AuthnInviteLink",
+            "description": "The link's summary, present for a pending invitation and for an accepted one, absent for an expired or a revoked invitation."
           },
           "state": {
-            "description": "The state the read judges. Only pending carries the invitation summary: expired, accepted and revoked answer the state alone, without the invited address, the tenant's name or the deadline.",
+            "description": "The state the read judges. Pending carries the organization's name and display name, the inviter, the masked address and the deadline; accepted carries the organization's name and display name; expired and revoked answer the state alone.",
             "enum": [
               "pending",
               "expired",
@@ -156,7 +159,7 @@
   "paths": {
     "/auth/invitations/{token}": {
       "get": {
-        "description": "Resolves the token's SHA-256 to an invitation and returns its view so a client can show what it is about to accept. The route is public and the token is the whole credential; the response never carries a token. An unknown token is 404. The view reflects the stored state even when the invitation can no longer be accepted, so the client should read status and expires_at rather than assume the link is redeemable.",
+        "description": "Resolves the token's SHA-256 to an invitation and returns its view so a client can show what it is about to accept. The route is public and the token is the whole credential; the response never carries a token. An unknown token is 404. A pending invitation answers the organization's display name, the inviter's display name, the invited address masked on the server and the deadline; an accepted one answers the organization's name and display name; an expired or revoked one answers its state alone. The full address and the issuer's account identifier never reach this answer. The view reflects the stored state even when the invitation can no longer be accepted, so the client reads state and, for a pending invitation, invitation.expires_at rather than assuming the link is redeemable.",
         "operationId": "authn.invite.acceptView",
         "parameters": [
           {
@@ -191,7 +194,7 @@
                 }
               }
             },
-            "description": "A send or acceptance-probe budget is spent; Retry-After names the seconds until the window opens again",
+            "description": "A send or acceptance-probe budget is spent (urn:speed:authn:throttled); Retry-After names the seconds until the window opens again",
             "headers": {
               "Retry-After": {
                 "description": "The number of seconds until the counting window opens again",
@@ -209,14 +212,14 @@
                 }
               }
             },
-            "description": "A dependency could not answer"
+            "description": "A dependency could not answer (urn:speed:authn:unavailable)"
           }
         },
         "security": [],
         "summary": "Read the invitation a token points to"
       },
       "post": {
-        "description": "Redeems the invitation and writes a membership for the authenticated caller. The caller must hold the invited address as a proven email identifier; holding the link is not enough, because the inviter holds it too. When the caller has not proved it, the answer is 403 invitation-email-unproved and the client shows the proof step; the invitation stays pending. Acceptance never creates an account and never makes the invited address a sign-in identifier. A membership that already exists keeps its source and its SSO exemption; a suspended one is refused with 409 membership-inactive and the invitation is revoked. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.",
+        "description": "Redeems the invitation and writes a membership for the authenticated caller. The caller must hold the invited address as a proven email identifier; holding the link is not enough, because the inviter holds it too. When the caller has not proved it, the answer is 403 invitation-email-unproved and the client shows the proof step; the invitation stays pending. A caller that is not a user account is refused with 403 invitation-target-invalid: an invitation grants a membership to a person, and a service account signs in with a service secret, while a subject with no account row such as a static password-table subject has no account to grant it to. A read of the caller's account that fails answers 503 and leaves the invitation pending. Acceptance never creates an account and never makes the invited address a sign-in identifier. A membership that already exists keeps its source and its SSO exemption; a suspended one is refused with 409 membership-inactive and the invitation is revoked. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted, or whose role can no longer be granted, is 409.",
         "operationId": "authn.invite.accept",
         "parameters": [
           {
@@ -275,7 +278,7 @@
                 }
               }
             },
-            "description": "The body or an argument is malformed"
+            "description": "The body or an argument is malformed (urn:speed:authn:bad-request)"
           },
           "401": {
             "content": {
@@ -303,7 +306,7 @@
                 }
               }
             },
-            "description": "The caller does not hold the invited address as a proven email identifier"
+            "description": "The caller does not hold the invited address as a proven email identifier (urn:speed:authn:invitation-email-unproved); the caller is not a user account, such as a service account or a subject with no account row (urn:speed:authn:invitation-target-invalid)"
           },
           "404": {
             "description": "No such invitation"
@@ -316,7 +319,7 @@
                 }
               }
             },
-            "description": "The caller's membership in the tenant is suspended"
+            "description": "The invitation is expired, revoked or already accepted, or its role can no longer be granted and the invitation was revoked (urn:speed:authn:invitation-terminal); the tenant is disabled and the invitation stays pending (urn:speed:authn:invitation-tenant-inactive); the caller's membership in the tenant is suspended (urn:speed:authn:membership-inactive)"
           },
           "413": {
             "content": {
@@ -346,7 +349,7 @@
                 }
               }
             },
-            "description": "A send or acceptance-probe budget is spent; Retry-After names the seconds until the window opens again",
+            "description": "A send or acceptance-probe budget is spent (urn:speed:authn:throttled); Retry-After names the seconds until the window opens again",
             "headers": {
               "Retry-After": {
                 "description": "The number of seconds until the counting window opens again",
@@ -364,7 +367,7 @@
                 }
               }
             },
-            "description": "A dependency could not answer"
+            "description": "A dependency could not answer (urn:speed:authn:unavailable)"
           }
         },
         "security": [
@@ -377,6 +380,93 @@
           }
         ],
         "summary": "Redeem an invitation for the signed-in account that proves the invited address"
+      }
+    },
+    "/auth/invitations/{token}/eligibility": {
+      "get": {
+        "description": "Resolves the token's SHA-256 to an invitation and answers its state together with whether the signed-in caller holds the invited address as a proven email identifier, so a client can show the proof step on arrival instead of on the first attempt to accept. The route is guarded: a request without a usable credential is 401. The answer never carries the invited address, the inviter or the organization, and an unknown token is 404. The probe budget is charged exactly as the public read charges it, by token and by client, before the token is looked up.",
+        "operationId": "authn.invite.eligibility",
+        "parameters": [
+          {
+            "description": "The acceptance token, prefixed spd_inv_, which identifies the invitation. The route is guarded, so only a signed-in caller reaches it and the answer is about that caller alone.",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnInviteEligibility"
+                }
+              }
+            },
+            "description": "The invitation's state and whether the caller has proved the invited address"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No usable credential",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such invitation"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A send or acceptance-probe budget is spent (urn:speed:authn:throttled); Retry-After names the seconds until the window opens again",
+            "headers": {
+              "Retry-After": {
+                "description": "The number of seconds until the counting window opens again",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer (urn:speed:authn:unavailable)"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read whether the signed-in account could accept the invitation a token points to"
       }
     }
   }

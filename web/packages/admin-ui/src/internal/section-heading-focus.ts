@@ -1,0 +1,54 @@
+/**
+ * Programmatic focus for a section card's heading.
+ *
+ * A write that removes the row its action menu lived in takes that control
+ * out of the document, so focus would fall back to the page body. The
+ * invitation sections give focus to their own heading instead: it names the
+ * section the result belongs to and is a stable landmark the write did not
+ * remove.
+ *
+ * `SectionCard` renders its title as the section's labelled heading and
+ * exposes no ref for it, so the heading is resolved through the section's
+ * `aria-labelledby`: the section's root ref is forwarded from the card, and
+ * the label id names the heading element inside it. The heading takes a
+ * negative tabindex so it accepts focus without entering the tab order; the
+ * ref callback applies it when the section mounts. The platform invitation
+ * page mounts the section when a tenant is first chosen (the empty-scope page
+ * has no section) and keeps it mounted as the chosen tenant changes, so a
+ * tenant switch does not remount it; the tabindex persists for the life of
+ * the mount.
+ */
+
+import { useCallback, useRef } from 'react'
+import type { RefCallback } from 'react'
+
+export interface SectionHeadingFocus {
+  /** Attach to the section card's root (`SectionCard` forwards the ref). */
+  readonly sectionRef: RefCallback<HTMLElement>
+  /** Move focus to the section's heading; a no-op with no heading mounted. */
+  readonly focusHeading: () => void
+}
+
+/** The heading `section` names through `aria-labelledby`, when it has one. */
+function headingOf(section: HTMLElement | null): HTMLElement | null {
+  const id = section?.getAttribute('aria-labelledby') ?? ''
+  return id === '' ? null : document.getElementById(id)
+}
+
+export function useSectionHeadingFocus(): SectionHeadingFocus {
+  const sectionRef = useRef<HTMLElement | null>(null)
+
+  const setSection = useCallback<RefCallback<HTMLElement>>((element) => {
+    sectionRef.current = element
+    const heading = headingOf(element)
+    if (heading !== null) {
+      heading.tabIndex = -1
+    }
+  }, [])
+
+  const focusHeading = useCallback(() => {
+    headingOf(sectionRef.current)?.focus()
+  }, [])
+
+  return { sectionRef: setSection, focusHeading }
+}

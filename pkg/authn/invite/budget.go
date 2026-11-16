@@ -3,6 +3,7 @@ package invite
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -45,26 +46,59 @@ type probeBudget struct {
 	client int
 }
 
-// chargeIssue applies the three issuance budgets in order: the invited address,
-// the issuing account and the deployment. The increment happens before the
-// decision, so a refused issuance still spends what it was charged against; the
-// first budget over its limit stops the check and the later ones are not read.
+// chargeIssuer charges the issuing account's send budget. It runs before the
+// target checks, so an attempt the checks refuse still spends the account that
+// made it: a caller cannot walk addresses or tenants for free. It is skipped
+// when the context carries no identity, which is a host command issuing an
+// invitation without an HTTP caller; the address and deployment budgets still
+// bound that path.
 //
-// The issuer budget is skipped when the context carries no identity, which is a
-// host command issuing an invitation without an HTTP caller: the address and
-// deployment budgets still bound it.
-func (p *product) chargeIssue(ctx context.Context, email string, now time.Time) error {
+// The increment happens before the decision, so a throttled issuance still
+// spends what it was charged against.
+func (p *product) chargeIssuer(ctx context.Context, now time.Time) error {
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return nil
+	}
+	b := p.issueBudget()
+	return p.charge(ctx, budgetIssueIssuer, id.Key(), b.window, b.issuer, now)
+}
+
+// chargeAttempt charges the invited address and the deployment. It runs only
+// after every target check has passed. The address is counted in its canonical
+// inbox form; the deployment budget is the ceiling no operator can pass.
+//
+// A count stands for a send, and a send is only one that writes its row, so the
+// release function gives both counts back when the write does not land. The
+// deployment refusal itself takes the address count back here, because the
+// address was counted first and the refusal means nothing was sent.
+func (p *product) chargeAttempt(ctx context.Context, email string, now time.Time) (release func(), err error) {
 	b := p.issueBudget()
 	subject := budgetalias.Canonical(email)
 	if err := p.charge(ctx, budgetIssueAddress, subject, b.window, b.address, now); err != nil {
-		return err
+		return nil, err
 	}
-	if id, ok := authn.FromContext(ctx); ok {
-		if err := p.charge(ctx, budgetIssueIssuer, id.Key(), b.window, b.issuer, now); err != nil {
-			return err
-		}
+	if err := p.charge(ctx, budgetIssueGlobal, "", b.window, b.global, now); err != nil {
+		p.uncharge(ctx, budgetIssueAddress, subject, b.window, now)
+		return nil, err
 	}
-	return p.charge(ctx, budgetIssueGlobal, "", b.window, b.global, now)
+	return func() {
+		p.uncharge(ctx, budgetIssueAddress, subject, b.window, now)
+		p.uncharge(ctx, budgetIssueGlobal, "", b.window, now)
+	}, nil
+}
+
+// uncharge takes back one count chargeAttempt added. A count that cannot be
+// taken back is an Error line: the write it stood for did not happen, and the
+// caller's answer is already decided, so nothing else changes.
+func (p *product) uncharge(ctx context.Context, kind, subject string, window time.Duration, now time.Time) {
+	if p.kv == nil {
+		return
+	}
+	if _, err := p.kv.IncrByFloatWithTTL(ctx, budgetKey(kind, subject, window, now), -1, 2*window); err != nil {
+		p.logger.Error(ModuleName+": returning an unused send budget failed",
+			slog.String("budget", kind), slog.String("cause", err.Error()))
+	}
 }
 
 // chargeProbe applies the acceptance probe budgets: one keyed by the token's

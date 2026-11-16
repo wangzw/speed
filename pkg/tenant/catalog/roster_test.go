@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/tenant"
@@ -445,6 +446,38 @@ func TestTenantIDOfAnswersTheIdentifierByName(t *testing.T) {
 	}
 	if id, found, err := r.TenantIDOf(ctx, "ghost"); err != nil || found || id != "" {
 		t.Errorf("TenantIDOf(ghost) = %q, %v, %v, want no identifier, false and no error", id, found, err)
+	}
+}
+
+// TestTenantDescriptionOfAnswersTheNameTheDisplayNameAndTheSystemFlag holds
+// the description seam: one read answers what a view names a tenant and whether
+// it is the system tenant, and an identifier no row carries answers the zero
+// description.
+func TestTenantDescriptionOfAnswersTheNameTheDisplayNameAndTheSystemFlag(t *testing.T) {
+	r := rosterOver(t,
+		"INSERT INTO tenants (id, name, status, display_name) VALUES ('t_acme', 'acme', 1, 'Acme Corporation')",
+		"INSERT INTO tenants (id, name, status) VALUES ('system', 'system', 1)",
+	)
+	ctx := context.Background()
+	if err := r.read(ctx); err != nil {
+		t.Fatalf("reading a conforming roster: %v", err)
+	}
+	got, err := r.TenantDescriptionOf(ctx, "t_acme")
+	if err != nil {
+		t.Fatalf("reading the description: %v", err)
+	}
+	if got != (authn.TenantDescription{Name: "acme", DisplayName: "Acme Corporation"}) {
+		t.Errorf("TenantDescriptionOf(t_acme) = %+v, want acme and Acme Corporation, not system", got)
+	}
+	system, err := r.TenantDescriptionOf(ctx, "system")
+	if err != nil {
+		t.Fatalf("reading the system tenant's description: %v", err)
+	}
+	if !system.System || system.Name != "system" {
+		t.Errorf("TenantDescriptionOf(system) = %+v, want the system flag and the name system", system)
+	}
+	if missing, err := r.TenantDescriptionOf(ctx, "t_ghost"); err != nil || missing != (authn.TenantDescription{}) {
+		t.Errorf("TenantDescriptionOf(t_ghost) = %+v, %v, want the zero description and no error", missing, err)
 	}
 }
 

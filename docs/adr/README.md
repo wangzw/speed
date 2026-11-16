@@ -167,6 +167,8 @@
 | 记录 |
 |---|
 | [邀请以自持状态与不透明令牌成立](adr-authn-invitation.md) |
+| [重发在同一条邀请上换令牌](adr-authn-invitation-resend.md) |
+| [邀请授予一个角色，接受与角色绑定同处一个事务](adr-authn-invitation-role.md) |
 | [只做邀请，不做组织树](adr-org-invitation.md) |
 
 ## 账户与凭据

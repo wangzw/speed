@@ -28,7 +28,7 @@ var auditDetailKeys = []string{
 	"method", "delivery", "reason_class", "sid", "peer", "identifier_mac", "factor_id",
 	"kind", "scope", "by", "channel", "tenant", "change", "provider", "ttl_seconds",
 	"parent_sid", "secret_id", "source", "on_behalf_of", "impersonation_scope",
-	"session", "grant_id", "action_id",
+	"session", "grant_id", "action_id", "role", "invited_by",
 }
 
 // metricAttributeKeys is the union of the attribute keys of the design's

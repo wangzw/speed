@@ -171,9 +171,9 @@ const MEMBER: AuthnAdminMember = {
 }
 
 /**
- * One pending invitation of the scan tenant. Its inviter is the same account
- * the member read carries, so the organization page resolves the inviter from
- * the member read rather than the platform account read.
+ * One pending invitation of the scan tenant. It carries the inviter's display
+ * name and username on the row itself, the pair the organization page renders;
+ * no member or platform account read resolves the inviter.
  */
 const INVITATION_ROW: AuthnInviteInvitation = {
   id: 'invite-1',
@@ -182,9 +182,55 @@ const INVITATION_ROW: AuthnInviteInvitation = {
   invited_by: ACCOUNT.id,
   status: 'pending',
   created_at: INSTANT,
-  expires_at: INSTANT,
+  expires_at: '2099-01-01T00:00:00Z',
   accepted_at: null,
+  revoked_at: null,
+  last_sent_at: INSTANT,
+  send_count: 1,
+  state: 'pending',
+  invited_by_name: ACCOUNT.display_name,
+  invited_by_username: 'test-user',
 }
+
+/**
+ * The other three stored states the invitation table renders, so the sweep
+ * reaches all four states: pending takes the informational tone, accepted
+ * the success tone, and expired and revoked the neutral tone. Each terminal
+ * row carries the instant its state reads.
+ */
+const EXPIRED_INVITATION_ROW: AuthnInviteInvitation = {
+  ...INVITATION_ROW,
+  id: 'invite-expired',
+  email: 'expired-invitee@example.com',
+  state: 'expired',
+  expires_at: '2020-01-01T00:00:00Z',
+}
+
+const ACCEPTED_INVITATION_ROW: AuthnInviteInvitation = {
+  ...INVITATION_ROW,
+  id: 'invite-accepted',
+  email: 'accepted-invitee@example.com',
+  status: 'accepted',
+  state: 'accepted',
+  accepted_at: '2026-06-01T12:00:00Z',
+}
+
+const REVOKED_INVITATION_ROW: AuthnInviteInvitation = {
+  ...INVITATION_ROW,
+  id: 'invite-revoked',
+  email: 'revoked-invitee@example.com',
+  status: 'revoked',
+  state: 'revoked',
+  revoked_at: '2026-06-01T12:00:00Z',
+}
+
+/** Every stored invitation state, for the scan tenant's data mode. */
+const INVITATION_ROWS: readonly AuthnInviteInvitation[] = [
+  INVITATION_ROW,
+  EXPIRED_INVITATION_ROW,
+  ACCEPTED_INVITATION_ROW,
+  REVOKED_INVITATION_ROW,
+]
 
 /** One SSO provider of the scan tenant, with no claimed domain. */
 const SSO_PROVIDER: AuthnAdminProvider = {
@@ -404,19 +450,17 @@ const IMPERSONATION_GRANT: AuthnImpersonationGrantEnvelope = {
 /**
  * The invitation a landing token points to, pending and unaccepted: the body
  * the accept screen's read (GET /api/v1/auth/invitations/:token) answers in
- * data mode. `accepted_at` is null while the invitation has not been accepted.
+ * data mode. The link carries the organization's display name, the inviter's
+ * display name, the invited address masked on the server and the deadline;
+ * the full address, the issuer's identifier and the token never reach it.
  */
 const INVITATION: AuthnInviteView = {
   state: 'pending',
   invitation: {
-    id: 'invite-1',
-    tenant: 'acme',
-    email: 'invitee@example.com',
-    invited_by: 'account-1',
-    status: 'pending',
-    created_at: INSTANT,
+    tenant_display_name: TENANT.display_name,
+    invited_by_name: 'Test User',
+    email: 'i***@example.com',
     expires_at: INSTANT,
-    accepted_at: null,
   },
 }
 
@@ -675,9 +719,21 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
     answer(INVITATION, NOT_FOUND),
   ],
   [
+    /^\/api\/v1\/auth\/invitations\/[^/]+\/eligibility$/,
+    // The landing page asks, for the signed-in scan session, whether the
+    // invited address is proved; the scan renders the landing either way.
+    answer(
+      { state: 'pending', email_proved: true },
+      { state: 'pending', email_proved: true },
+    ),
+  ],
+  [
     /^\/api\/v1\/tenants\/[^/]+\/invitations$/,
     answer(
-      { invitations: [INVITATION_ROW], next_cursor: '' } satisfies AuthnInvitePage,
+      {
+        invitations: [...INVITATION_ROWS],
+        next_cursor: '',
+      } satisfies AuthnInvitePage,
       { invitations: [], next_cursor: '' } satisfies AuthnInvitePage,
     ),
   ],

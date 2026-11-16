@@ -435,14 +435,10 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     const view: AuthnInviteView = {
       state: 'pending',
       invitation: {
-        id: 'invite-1',
-        tenant: 'acme',
-        email: 'invitee@example.com',
-        invited_by: 'account-1',
-        status: 'pending',
-        created_at: '2026-01-01T00:00:00Z',
+        tenant_display_name: 'Acme',
+        invited_by_name: 'Test User',
+        email: 'i***@example.com',
         expires_at: '2027-01-01T00:00:00Z',
-        accepted_at: null,
       },
     }
     const accepted: AuthnInviteAccept = {
@@ -460,6 +456,9 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
         return Promise.resolve(
           ((options?.method ?? 'GET') === 'POST' ? accepted : view) as T,
         )
+      }
+      if (url === `${invitationPath}/eligibility`) {
+        return Promise.resolve({ state: 'pending', email_proved: true } as T)
       }
       return base<T>(url, options)
     }

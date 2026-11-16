@@ -77,7 +77,7 @@
 
 | 字段 | 出现于 | 取值域 |
 |---|---|---|
-| `reason_class` | `authn.account.status-changed`、`authn.session.revoked`，以及失败退避开始的那一行日志 | 封闭集合，见下文 |
+| `reason_class` | `authn.account.status-changed`、`authn.session.revoked`、接受结算的邀请撤销审计行，以及失败退避开始的那一行日志 | 封闭集合，见下文 |
 | `from`、`to` | `authn.account.status-changed` | 账户状态的名字，状态的定义见 [design-authn-account](design-authn-account.md) |
 | `kind` | `authn.account.created` | 账户种类 `user`、`service` |
 | `kind` | `authn.identifier.changed` | 标识种类，见 [design-authn-account](design-authn-account.md) |
@@ -105,6 +105,9 @@
 | `account-deleted` | 账户被删除 |
 | `evicted` | 超出每账户会话上限，最久未使用的会话被撤销 |
 | `throttled` | 失败退避开始：一个键越过自由次数而进入等待；只出现在退避那一行日志，不进事件载荷与审计明细 |
+| `invitation-membership-inactive` | 接受时被邀请人的成员关系已停用，待接受邀请被撤销 |
+| `invitation-tenant-deleted` | 接受时租户已删除，待接受邀请被撤销 |
+| `invitation-role-withdrawn` | 接受时邀请携带的角色已不可授予，待接受邀请被撤销 |
 
 `throttled` 是退避那一行日志专有的类别。根包给出两个判定把它与其余取值分开：`ValidReasonClass` 对闭集全部取值为真（含 `throttled`），供日志与核对“是不是一个类别名”使用；`ValidPayloadReasonClass` 排除 `throttled`，写事件载荷与审计明细的模块用后者，把 `throttled` 挡在载荷与明细之外。
 
@@ -135,7 +138,7 @@
 - 匿名注册没有身份：成功时以新账户标识作 `actor`，与登录引擎同一做法，派生的上下文只交给这一次 `Record`；失败时 `actor` 为空。注册的审计行不带邮箱明文与验证码。
 - 匿名口令重置的 `attempted`、`success` 与 `denied` 行都以被重置的账户标识作 `actor`，派生的上下文只交给这一次 `Record`；每行的明细带 `channel` 与 `action_id`。不合格与抑制目标不写审计行。审计行不带邮箱、手机、验证码、新旧口令与重置令牌。
 
-**明细键名**是下列封闭集合：`method`、`delivery`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`channel`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`。明细键名不得取的名字有两部分：[design-audit](../audit/design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
+**明细键名**是下列封闭集合：`method`、`delivery`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`channel`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`、`role`、`invited_by`。明细键名不得取的名字有两部分：[design-audit](../audit/design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
 
 - `identifier_mac` 是保留键，本实现不写它：带密钥的摘要的前 16 个十六进制字符原本用来关联同一标识的多次失败而不存标识，本实现不写任何标识值。
 - `grant_id` 是冒充开始的动作标识，在 `Decide` 通过之后、审计写入之前预先生成。
@@ -156,12 +159,18 @@
 | `authn.settings.relaxed` | 设置键名 | `relaxed` | 尽力（只含键名与方向，不含值） |
 | `authn.account.create`、`authn.account.disable`、`authn.account.delete`、`authn.account.update` | 账户标识 | `success`、`denied` | 强制 |
 | `authn.membership.set`、`authn.membership.remove` | 账户标识 | `success`、`denied` | 强制 |
+| `authn.invitation.issue` | 邀请标识 | `success`、`failed` | 强制 |
+| `authn.invitation.accept` | 邀请标识 | `success`、`failed` | 强制 |
+| `authn.invitation.resend`、`authn.invitation.revoke` | 邀请标识 | `success`、`failed` | 强制（接受结算的撤销为尽力） |
+| `authn.invitation.deliver` | 邀请标识 | `failed` | 尽力 |
 | `authn.idp.put`、`authn.idp.delete`、`authn.idp.domain` | IdP 标识 | `success`、`denied` | 强制 |
 | `authn.secret.create`、`authn.secret.revoke` | 服务账户标识 | `success` | 强制 |
 | `authn.impersonation.start` | 目标账户标识 | `granted`、`denied`、`failed` | 强制；`Purpose` 是理由 |
 | `authn.impersonation.end`、`authn.impersonation.revoke` | 目标账户标识 | `success` | 尽力；结束总是允许 |
 | `authn.token.refresh-reuse` | 会话标识 | `detected` | 尽力 |
 | `authn.sso.reject` | IdP 标识 | `signature`、`audience`、`time`、`replay`、`in-response-to`、`issuer`、`destination`、`other` | 尽力 |
+
+**邀请的写行都带 `action_id` 与 `tenant`，签发另带 `role`，接受另带 `role` 与 `invited_by`。** `authn.invitation.issue`、`authn.invitation.accept`、`authn.invitation.resend`、`authn.invitation.revoke` 与 `authn.invitation.deliver` 的对象都是邀请标识。签发带角色时明细写 `role`，邀请没有角色时不写这个键；接受写实际绑定角色，有就写，并写邀请人的账户标识。接受结算的三处系统撤销——接受遇到已停用的成员关系、接受遇到已删除的租户、接受时角色复核失败——各写一条尽力档撤销行，明细在 `action_id` 与 `tenant` 之外带 `reason_class`，取上表对应的 `invitation-*` 类别；这些行的 `actor` 是正在接受邀请的账户，即请求上下文的责任键，不是邀请人或管理员。强制档的成功行与通知失败的尽力档行在明细里带 `action_id` 与 `tenant`；动作失败时补写的行明细只带 `action_id`，以它关联同一次动作的成功行。明细都不带地址与令牌。
 
 **`authn.signup` 的明细只带 `method=password`**。 注册不把邮箱、用户名或验证码写进明细：邮箱是个人信息，验证码是凭据；本实现不写 `identifier_mac`，同一地址的多次尝试目前不经审计关联。
 

@@ -42,8 +42,20 @@ func (p *product) deliverInvite(ctx context.Context, issued Issued, actionID str
 	// that cannot answer, the notice names no tenant: the identifier must not
 	// stand in for the name.
 	tenantName, _ := p.nameOf(ctx, issued.Invitation.Tenant)
+	// The inviter is named by the display name they are recognized by. A read
+	// that fails does not stop the notice: an invitation without a named inviter
+	// is still the link the recipient needs. The public token read is the one
+	// caller that answers unavailable instead; the management views omit the two
+	// name keys.
+	inviter, inviterErr := p.inviterNameOf(ctx, issued.Invitation.InvitedBy)
+	if inviterErr != nil {
+		p.logger.Error(ModuleName+": the inviter's display name could not be read, so the notice names no inviter",
+			slog.String("invitation", issued.Invitation.ID),
+			slog.String("cause", inviterErr.Error()))
+	}
 	notice := authn.InviteNotice{
 		Tenant:    tenantName,
+		Inviter:   inviter,
 		Email:     issued.Invitation.Email,
 		Token:     issued.Token,
 		ExpiresAt: issued.Invitation.ExpiresAt,

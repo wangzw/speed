@@ -95,12 +95,15 @@ type (
 	verifier         struct{ authn.Verifier }
 	tokens           struct{ authn.Tokens }
 	decider          struct{ authn.Decider }
-	smsCodes         struct{ authn.SMSCodes }
-	emailCodeSender  struct{ authn.EmailCodeSender }
-	humanVerifier    struct{ authn.HumanVerifier }
-	auditCap         struct{ audit.Audit }
-	settingsStore    struct{ settings.Store }
-	keyValue         struct{ kv.KV }
+	tenantDescs      struct {
+		authn.TenantDescriptionResolver
+	}
+	smsCodes        struct{ authn.SMSCodes }
+	emailCodeSender struct{ authn.EmailCodeSender }
+	humanVerifier   struct{ authn.HumanVerifier }
+	auditCap        struct{ audit.Audit }
+	settingsStore   struct{ settings.Store }
+	keyValue        struct{ kv.KV }
 )
 
 // impersonation carries the read the administration module asserts an
@@ -207,6 +210,9 @@ var standIns = map[core.Token]func() core.Module{
 	(*audit.Audit)(nil):    func() core.Module { return standIn("audit", &auditCap{}, (*audit.Audit)(nil)) },
 	(*settings.Store)(nil): func() core.Module { return standIn("settings-store", &settingsStore{}, (*settings.Store)(nil)) },
 	(*kv.KV)(nil):          func() core.Module { return standIn("key-value", &keyValue{}, (*kv.KV)(nil)) },
+	(*authn.TenantDescriptionResolver)(nil): func() core.Module {
+		return standIn("tenant-descriptions", &tenantDescs{}, (*authn.TenantDescriptionResolver)(nil))
+	},
 }
 
 // Seams is the stand-in set for exactly the capabilities named, which are the

@@ -48,12 +48,20 @@ func openDatabase(t *testing.T) *gorm.DB {
 // the order the database module applies them, a statement at a time.
 func applyMigrations(t testing.TB, handle *gorm.DB) {
 	t.Helper()
-	entries, err := fs.ReadDir(migrationsFS, string(db.SQLite))
+	applyMigrationsFor(t, handle, string(db.SQLite))
+}
+
+// applyMigrationsFor runs every migration file this module ships for one
+// dialect, in the order the database module applies them, a statement at a
+// time.
+func applyMigrationsFor(t testing.TB, handle *gorm.DB, dialect string) {
+	t.Helper()
+	entries, err := fs.ReadDir(migrationsFS, dialect)
 	if err != nil {
-		t.Fatalf("listing the migrations: %v", err)
+		t.Fatalf("listing the %s migrations: %v", dialect, err)
 	}
 	for _, entry := range entries {
-		text, err := fs.ReadFile(migrationsFS, string(db.SQLite)+"/"+entry.Name())
+		text, err := fs.ReadFile(migrationsFS, dialect+"/"+entry.Name())
 		if err != nil {
 			t.Fatalf("reading %s: %v", entry.Name(), err)
 		}
@@ -118,16 +126,91 @@ func (b *logBuffer) logger() *slog.Logger {
 // case says otherwise.
 type fakeAccounts struct {
 	authn.Accounts
-	mu       sync.Mutex
-	byEmail  map[string]authn.AccountID
-	kinds    map[authn.AccountID]authn.AccountKind
-	via      string
-	lookupEr error
-	getEr    error
+	mu        sync.Mutex
+	byEmail   map[string]authn.AccountID
+	kinds     map[authn.AccountID]authn.AccountKind
+	names     map[authn.AccountID]string
+	usernames map[authn.AccountID]string
+	missing   map[authn.AccountID]bool
+	statuses  map[authn.AccountID]authn.AccountStatus
+	via       string
+	lookupEr  error
+	// failID and failIDErr make Get answer failIDErr for that one account, so a
+	// case can fail a single inviter's read without scripting call counts.
+	failID    authn.AccountID
+	failIDErr error
+	// manyErr makes the bulk identifier read fail on its own.
+	manyErr error
+	// getsByID counts the Get reads of each account, so a case can assert that a
+	// particular account (an inviter, say) was never read while the acceptance
+	// read the caller's own account.
+	getsByID map[authn.AccountID]int
 }
 
 func newAccounts() *fakeAccounts {
-	return &fakeAccounts{byEmail: map[string]authn.AccountID{}, kinds: map[authn.AccountID]authn.AccountKind{}}
+	return &fakeAccounts{
+		byEmail:   map[string]authn.AccountID{},
+		kinds:     map[authn.AccountID]authn.AccountKind{},
+		names:     map[authn.AccountID]string{},
+		usernames: map[authn.AccountID]string{},
+		missing:   map[authn.AccountID]bool{},
+		statuses:  map[authn.AccountID]authn.AccountStatus{},
+		getsByID:  map[authn.AccountID]int{},
+	}
+}
+
+// named records the display name Get answers for an account.
+func (a *fakeAccounts) named(id authn.AccountID, name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.names[id] = name
+}
+
+// user records the username the account holds, as its username identifier.
+func (a *fakeAccounts) user(id authn.AccountID, username string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.usernames[id] = username
+}
+
+// gone records that the account is a tombstone: Get answers
+// authn.ErrAccountNotFound and the identifier read has no entry for it.
+func (a *fakeAccounts) gone(id authn.AccountID) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.missing[id] = true
+}
+
+// getCountOf reports how many Get reads the named account answered.
+func (a *fakeAccounts) getCountOf(id authn.AccountID) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.getsByID[id]
+}
+
+// disabled records that the account is not active, as the account store would
+// report it after an administrator disabled it.
+func (a *fakeAccounts) disabled(id authn.AccountID) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.statuses[id] = authn.StatusDisabled
+}
+
+// failsFor records that Get answers err for this account alone, so a case can
+// fail one inviter's read while every other read, including the acting
+// account's, still answers.
+func (a *fakeAccounts) failsFor(id authn.AccountID, err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.failID = id
+	a.failIDErr = err
+}
+
+// failsMany records that the bulk identifier read answers err.
+func (a *fakeAccounts) failsMany(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.manyErr = err
 }
 
 func (a *fakeAccounts) put(email string, id authn.AccountID) {
@@ -141,14 +224,22 @@ func (a *fakeAccounts) put(email string, id authn.AccountID) {
 func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.getEr != nil {
-		return authn.Account{}, a.getEr
+	a.getsByID[id]++
+	if a.failIDErr != nil && id == a.failID {
+		return authn.Account{}, a.failIDErr
+	}
+	if a.missing[id] {
+		return authn.Account{}, authn.ErrAccountNotFound
 	}
 	kind := authn.KindUser
 	if k, ok := a.kinds[id]; ok {
 		kind = k
 	}
-	return authn.Account{ID: id, Kind: kind, Status: authn.StatusActive}, nil
+	status := authn.StatusActive
+	if s, ok := a.statuses[id]; ok {
+		status = s
+	}
+	return authn.Account{ID: id, Kind: kind, Status: status, DisplayName: a.names[id]}, nil
 }
 
 func (a *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value string) (authn.AccountID, error) {
@@ -183,6 +274,35 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 		if account == id {
 			out = append(out, authn.Identifier{Kind: authn.IdentifierEmail, Value: email, VerifiedVia: via})
 		}
+	}
+	if username := a.usernames[id]; username != "" {
+		out = append(out, authn.Identifier{Kind: authn.IdentifierUsername, Value: username, VerifiedVia: authn.VerifiedViaSelf})
+	}
+	return out, nil
+}
+
+// IdentifiersMany answers the identifiers of each live account in one read. A
+// tombstone has no entry, as the real surface promises.
+func (a *fakeAccounts) IdentifiersMany(ctx context.Context, ids []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
+	a.mu.Lock()
+	manyErr := a.manyErr
+	a.mu.Unlock()
+	if manyErr != nil {
+		return nil, manyErr
+	}
+	out := make(map[authn.AccountID][]authn.Identifier, len(ids))
+	for _, id := range ids {
+		a.mu.Lock()
+		missing := a.missing[id]
+		a.mu.Unlock()
+		if missing {
+			continue
+		}
+		list, err := a.Identifiers(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = list
 	}
 	return out, nil
 }
@@ -246,6 +366,9 @@ type fakeMemberships struct {
 	count   int
 	err     error
 	readErr error
+	// duringRead runs before the membership read answers, so a case can move the
+	// clock between the terminal check and the suspension settlement.
+	duringRead func()
 	// duringJoin runs after the acceptance read the membership and before the
 	// conditional write, so a case can interleave a suspension or a resend.
 	duringJoin func()
@@ -272,6 +395,9 @@ func (f *fakeMemberships) hold(m authn.Membership) {
 }
 
 func (f *fakeMemberships) Membership(_ context.Context, tenant string, id authn.AccountID) (authn.Membership, bool, error) {
+	if f.duringRead != nil {
+		f.duringRead()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.readErr != nil {
@@ -291,6 +417,23 @@ func (f *fakeMemberships) Put(_ context.Context, m authn.Membership) error {
 	f.count++
 	f.held[membershipKey(m.Tenant, m.Account)] = m
 	return nil
+}
+
+// MembershipTx answers the same membership as Membership. The stand-in keeps
+// its rows in memory rather than in the transaction handle, so a case that has
+// to see a rollback drives the real account module instead.
+func (f *fakeMemberships) MembershipTx(ctx context.Context, _ *gorm.DB, tenant string, id authn.AccountID) (authn.Membership, bool, error) {
+	return f.Membership(ctx, tenant, id)
+}
+
+// PutJoiningTx is PutJoining with the after-commit closure the transaction-aware
+// write returns. The stand-in publishes nothing, so the closure is nil.
+func (f *fakeMemberships) PutJoiningTx(ctx context.Context, _ *gorm.DB, m authn.Membership, wasActive bool) (bool, func(context.Context) error, error) {
+	joined, err := f.PutJoining(ctx, m, wasActive)
+	if err != nil || !joined {
+		return joined, nil, err
+	}
+	return true, nil, nil
 }
 
 // PutJoining models the account module's conditional write: an inactive row is
@@ -318,6 +461,89 @@ func (f *fakeMemberships) PutJoining(_ context.Context, m authn.Membership, wasA
 	return true, nil
 }
 
+// roleJudgement is one call the role policy stand-in answered.
+type roleJudgement struct {
+	Tenant  string
+	Account string
+	Role    string
+}
+
+// fakeRolePolicy is the invitation role policy stand-in: it answers what a case
+// scripts and records the questions it was asked.
+type fakeRolePolicy struct {
+	mu         sync.Mutex
+	grantErr   error
+	stillErr   error
+	granted    []roleJudgement
+	stillAsked []roleJudgement
+	// stillErrFor names the inviter whose judgement fails; empty fails nobody.
+	stillErrFor string
+}
+
+func (f *fakeRolePolicy) Grantable(_ context.Context, tenant, account, role string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.granted = append(f.granted, roleJudgement{Tenant: tenant, Account: account, Role: role})
+	return f.grantErr
+}
+
+func (f *fakeRolePolicy) StillGrantable(_ context.Context, tenant, role, inviter string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stillAsked = append(f.stillAsked, roleJudgement{Tenant: tenant, Account: inviter, Role: role})
+	if f.stillErrFor != "" && f.stillErrFor == inviter {
+		return f.stillErr
+	}
+	return nil
+}
+
+func (f *fakeRolePolicy) issueCalls() []roleJudgement {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]roleJudgement(nil), f.granted...)
+}
+
+func (f *fakeRolePolicy) acceptCalls() []roleJudgement {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]roleJudgement(nil), f.stillAsked...)
+}
+
+// boundRole is one binding the role binder stand-in wrote.
+type boundRole struct {
+	Tenant  string
+	Account string
+	Role    string
+}
+
+// fakeRoleBinder is the transaction-aware role binder stand-in. It records the
+// bindings it was asked to write and can be told to fail, which is how a case
+// drives a write failure through the acceptance's transaction.
+type fakeRoleBinder struct {
+	mu       sync.Mutex
+	bindings []boundRole
+	err      error
+	// txSeen records whether the call was handed a transaction handle.
+	txSeen bool
+}
+
+func (f *fakeRoleBinder) BindRoleTx(_ context.Context, tx *gorm.DB, tenant, account, role string) (func(context.Context) error, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.txSeen = tx != nil
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.bindings = append(f.bindings, boundRole{Tenant: tenant, Account: account, Role: role})
+	return nil, nil
+}
+
+func (f *fakeRoleBinder) written() []boundRole {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]boundRole(nil), f.bindings...)
+}
+
 // fakeTenantStates answers the tenant state the authentication face reads. A
 // tenant a case did not name is serving.
 type fakeTenantStates struct {
@@ -340,20 +566,56 @@ func (f *fakeTenantStates) TenantStateOf(_ context.Context, id string) (authn.Te
 	return authn.TenantServing, nil
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail.
-type recordingAudit struct {
+// fakeTenantDescriptions answers the tenant description seam. A tenant a case
+// did not name is an ordinary organization whose name doubles as its display
+// name.
+type fakeTenantDescriptions struct {
 	mu   sync.Mutex
-	rows []audit.Entry
+	byID map[string]authn.TenantDescription
 	err  error
 }
 
-func (a *recordingAudit) Record(_ context.Context, e audit.Entry) error {
+func (f *fakeTenantDescriptions) TenantDescriptionOf(_ context.Context, id string) (authn.TenantDescription, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return authn.TenantDescription{}, f.err
+	}
+	if description, ok := f.byID[id]; ok {
+		return description, nil
+	}
+	return authn.TenantDescription{Name: id, DisplayName: id}, nil
+}
+
+// auditRecord is one audit row as it was recorded: the entry the module supplied
+// and the identity the journal reads out of the context.
+type auditRecord struct {
+	entry   audit.Entry
+	actor   authn.AccountID
+	account authn.AccountID
+}
+
+// recordingAudit keeps the rows it was asked to write and can be told to fail.
+type recordingAudit struct {
+	mu      sync.Mutex
+	rows    []audit.Entry
+	records []auditRecord
+	err     error
+}
+
+func (a *recordingAudit) Record(ctx context.Context, e audit.Entry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.err != nil {
 		return a.err
 	}
 	a.rows = append(a.rows, e)
+	record := auditRecord{entry: e}
+	if id, ok := authn.FromContext(ctx); ok {
+		record.actor = id.Actor()
+		record.account = id.Account()
+	}
+	a.records = append(a.records, record)
 	return nil
 }
 
@@ -361,6 +623,12 @@ func (a *recordingAudit) entries() []audit.Entry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return append([]audit.Entry(nil), a.rows...)
+}
+
+func (a *recordingAudit) recorded() []auditRecord {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]auditRecord(nil), a.records...)
 }
 
 func (a *recordingAudit) fails(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
@@ -403,8 +671,11 @@ type harness struct {
 	admin        *fakeAccountAdmin
 	members      *fakeMemberships
 	tenantStates *fakeTenantStates
+	tenantDescs  *fakeTenantDescriptions
 	audit        *recordingAudit
 	decider      *fakeDecider
+	rolePolicy   *fakeRolePolicy
+	roleBinder   *fakeRoleBinder
 	mounter      *mounttest.Mounter
 	store        *fakeSettingsStore
 	counters     *fakeKV
@@ -413,7 +684,13 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	handle := openDatabase(t)
+	return newHarnessOn(t, openDatabase(t))
+}
+
+// newHarnessOn builds the harness over a handle the case opened, so a case on
+// another engine reuses every stand-in the SQLite cases use.
+func newHarnessOn(t *testing.T, handle *gorm.DB) *harness {
+	t.Helper()
 	h := &harness{
 		t:            t,
 		handle:       handle,
@@ -423,26 +700,33 @@ func newHarness(t *testing.T) *harness {
 		admin:        &fakeAccountAdmin{},
 		members:      newMemberships(),
 		tenantStates: &fakeTenantStates{states: map[string]authn.TenantState{}},
+		tenantDescs:  &fakeTenantDescriptions{byID: map[string]authn.TenantDescription{}},
 		audit:        &recordingAudit{},
 		decider:      &fakeDecider{allow: true},
+		rolePolicy:   &fakeRolePolicy{},
+		roleBinder:   &fakeRoleBinder{},
 		mounter:      mounttest.New(t),
 		store:        &fakeSettingsStore{values: map[string]any{}, errs: map[string]error{}},
 		counters:     newFakeKV(),
 		logs:         &logBuffer{},
 	}
 	p := &product{
-		handle:       handle,
-		accounts:     h.accounts,
-		verification: h.verification,
-		memberships:  h.members,
-		mounter:      h.mounter,
-		audit:        h.audit,
-		kv:           h.counters,
-		store:        h.store,
-		decider:      h.decider,
-		tenantNames:  identityNames{},
-		tenantState:  h.tenantStates,
-		logger:       h.logs.logger(),
+		handle:           handle,
+		accounts:         h.accounts,
+		verification:     h.verification,
+		memberships:      h.members,
+		membershipWriter: h.members,
+		rolePolicy:       h.rolePolicy,
+		roleBinder:       h.roleBinder,
+		mounter:          h.mounter,
+		audit:            h.audit,
+		kv:               h.counters,
+		store:            h.store,
+		decider:          h.decider,
+		tenantNames:      identityNames{},
+		tenantDescs:      h.tenantDescs,
+		tenantState:      h.tenantStates,
+		logger:           h.logs.logger(),
 	}
 	p.now = h.clock.read
 	h.p = p
@@ -454,8 +738,20 @@ func newHarness(t *testing.T) *harness {
 // carries the administrator's identity.
 func (h *harness) issue(tenant, email string) Issued {
 	h.t.Helper()
-	ctx := authntest.Context(h.t, context.Background(), authntest.WithAccount(adminID))
-	issued, err := h.p.Issue(ctx, IssueInvite{Tenant: tenant, Email: email})
+	return h.issueAs(adminID, tenant, email, "")
+}
+
+// issueRole issues an invitation that grants a role.
+func (h *harness) issueRole(tenant, email, role string) Issued {
+	h.t.Helper()
+	return h.issueAs(adminID, tenant, email, role)
+}
+
+// issueAs issues an invitation as the named account, optionally with a role.
+func (h *harness) issueAs(account authn.AccountID, tenant, email, role string) Issued {
+	h.t.Helper()
+	ctx := authntest.Context(h.t, context.Background(), authntest.WithAccount(account))
+	issued, err := h.p.Issue(ctx, IssueInvite{Tenant: tenant, Email: email, Role: role})
 	if err != nil {
 		h.t.Fatalf("issuing an invitation for %s: %v", email, err)
 	}
@@ -501,6 +797,28 @@ func (h *harness) row(id string) invitationRow {
 		h.t.Fatalf("no row %s", id)
 	}
 	return rows[0]
+}
+
+// supersede records that a later invitation replaced rowID without touching the
+// row's deadline: the shape a second instance with a skewed clock can leave
+// behind, where the replaced row is still ahead of its deadline.
+func (h *harness) supersede(rowID string) {
+	h.t.Helper()
+	if err := h.handle.Model(&invitationRow{}).Where("id = ?", rowID).
+		Update("superseded_at", h.clock.read()).Error; err != nil {
+		h.t.Fatalf("superseding %s: %v", rowID, err)
+	}
+}
+
+// budgetCount reads the count one budget kind holds for subject in the window
+// the clock is in.
+func (h *harness) budgetCount(kind, subject string) float64 {
+	h.t.Helper()
+	key := budgetKey(kind, subject, h.p.issueBudget().window, h.clock.read())
+	h.counters.mu.Lock()
+	defer h.counters.mu.Unlock()
+	v, _ := h.counters.live(key)
+	return v
 }
 
 const adminID = authn.AccountID("acct-admin")
@@ -567,6 +885,10 @@ type fakeKV struct {
 	values map[string]float64
 	expiry map[string]time.Time
 	err    error
+	// onIncr runs before a count is applied, letting a case interleave a write
+	// between the charge and the caller's next step, or hold two chargers at the
+	// same point. It runs outside the lock, so it may block.
+	onIncr func(key string, delta float64)
 }
 
 var _ kv.KV = (*fakeKV)(nil)
@@ -632,6 +954,9 @@ func (k *fakeKV) IncrByFloat(ctx context.Context, key string, delta float64) (fl
 }
 
 func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
+	if k.onIncr != nil {
+		k.onIncr(key, delta)
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.err != nil {

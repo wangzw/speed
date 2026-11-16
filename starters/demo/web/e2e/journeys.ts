@@ -270,6 +270,7 @@ export const journeys: readonly JourneyEntry[] = [
       'REQ-tenancy-021',
       'REQ-tenancy-035',
       'REQ-tenancy-043',
+      'REQ-tenancy-078',
     ],
   },
   {
@@ -363,6 +364,8 @@ export const journeys: readonly JourneyEntry[] = [
       'REQ-platform-admin-055',
       'REQ-platform-admin-058',
       'REQ-platform-admin-118',
+      'REQ-platform-admin-119',
+      'REQ-platform-admin-120',
       'REQ-tenancy-001',
       'REQ-tenancy-002',
       'REQ-tenancy-005',

@@ -16,6 +16,8 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { accountUiResources } from '@speed/account-ui'
 import { authUiResources } from '@speed/auth-ui'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
+import type { RequestFn } from '@speed/api-client'
 import type { AuthnFlowState, AuthnMethodList, AuthSession } from '@speed/auth-core'
 import {
   LOGIN_ANSWER,
@@ -85,6 +87,7 @@ function redirectSession(): { session: AuthSession; startFlow: ReturnType<typeof
  * real bundle, so a renamed label fails here rather than in a selector.
  */
 const authEn = authUiResources['en-US'] as unknown as {
+  readonly acceptInvitation: { readonly signIn: string }
   readonly mode: {
     readonly registerEntry: string
     readonly signInEntry: string
@@ -279,14 +282,39 @@ describe('the sign-in surface', () => {
   it('remembers an invitation landing before leaving for a provider', async () => {
     // A provider replaces the document for its round trip, so the URL that
     // carried the invitation token is gone by the time the callback route
-    // renders. The surface records the landing before the provider takes
-    // over; the callback route reads it back and returns the viewer.
+    // renders. The landing opens its sign-in surface in place, and the
+    // surface records the landing before the provider takes over; the
+    // callback route reads it back and returns the viewer.
     const landing = `${INVITATION_PREFIX}/tok-invite`
     window.history.replaceState({}, '', landing)
+    // The landing's public read answers a pending invitation, so its sign-in
+    // action is on screen; the provider flow below is the session's own.
+    bindRequestFn((async (path: string) => {
+      if (path === '/api/v1/auth/invitations/tok-invite') {
+        return {
+          state: 'pending',
+          invitation: {
+            tenant: 'acme',
+            tenant_display_name: 'Acme',
+            invited_by_name: 'Ada Lovelace',
+            email: 'i***@demo.test',
+            expires_at: new Date(
+              Date.now() + 24 * 60 * 60 * 1000,
+            ).toISOString(),
+          },
+        }
+      }
+      return undefined
+    }) as RequestFn)
     const { session } = redirectSession()
     renderDemoApp({ session })
 
     const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.signIn,
+      }),
+    )
     await user.click(await screen.findByRole('button', { name: 'GitHub' }))
 
     await waitFor(() =>
@@ -700,6 +728,65 @@ describe('the sign-in surface', () => {
       ).toBeNull(),
     )
     expect(window.location.pathname).toBe('/admin')
+  })
+
+  it('takes a password registration from the admin session gate to the verification page', async () => {
+    // The admin gate embeds the same surface, and the password channel's
+    // verification detour is not the landing the gate keeps: the just-opened
+    // account cannot use the app before its address is proved, so the detour
+    // happens here too rather than leaving the viewer on an admin path the
+    // account has no permission to use. No invitation landing is recorded,
+    // because this registration did not start from one.
+    window.history.replaceState({}, '', '/admin')
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({ features: ['tenant.admin'] }),
+      [LOGIN_METHODS]: () =>
+        methodList([{ name: 'password', kind: 'form' }], {
+          signup: true,
+          signupPassword: true,
+        }),
+      [REGISTER]: () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: 'ada@example.com' },
+      }),
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderDemoApp({ session: harness.session })
+
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.usernameLabel),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.emailLabel),
+      'ada@example.com',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.passwordLabel),
+      's3cret-pass',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.confirmPasswordLabel),
+      's3cret-pass',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authRegisterEn.register.submit }),
+    )
+
+    // The detour landed on the verification section, exactly as it does from
+    // the application's own sign-in page.
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile)
+      expect(window.location.search).toBe('?verify=1')
+    })
+    expect(pendingInvitationLanding()).toBeNull()
   })
 
   it('lands a refused callback with the refusal and its masked address', async () => {

@@ -114,6 +114,15 @@ type MembershipWriter interface {
 	// PutMembershipTx writes a membership, and writing the same one again is no
 	// change. It is Put's rules without the transaction Put opens.
 	PutMembershipTx(ctx context.Context, tx *gorm.DB, m authn.Membership) (after func(context.Context) error, err error)
+	// PutJoiningTx writes a joining membership in the transaction it is handed,
+	// with PutJoining's rules: the account ends as an active member only when it
+	// had no membership or its membership is still active. wasActive says the
+	// caller read an active membership. The second result reports whether the
+	// account is an active member after the call; a suspended membership is
+	// never resumed and a membership removed since the read is not written
+	// again. The after closure publishes the events staged in the transaction,
+	// and is nil when the call changed nothing.
+	PutJoiningTx(ctx context.Context, tx *gorm.DB, m authn.Membership, wasActive bool) (joined bool, after func(context.Context) error, err error)
 	// RemoveMembershipTx deletes a membership. One that is not there is already
 	// removed and returns a nil closure. It is RemoveMembershipForDeletion's
 	// rules without the transaction that method opens.
@@ -124,6 +133,26 @@ type MembershipWriter interface {
 	// tombstone, so no guard is asked and no lifecycle hook is called. A tenant
 	// with no membership returns a nil closure.
 	RemoveTenantMembershipsTx(ctx context.Context, tx *gorm.DB, tenant string) (after func(context.Context) error, err error)
+}
+
+// RoleBinder is the transaction-aware role-binding write an acceptance joins.
+// The acceptance writes the membership and the role the invitation carries in
+// one transaction, so the binding has to be written through the transaction
+// handle rather than through a manager method that opens its own. The policy
+// module delivers it beside the lifecycle hooks rather than exclusively: a host
+// that holds policy of its own may deliver its own, and the registry resolves
+// the one the assembly provides.
+//
+// The tenant, account and role are plain strings because the authentication
+// capability holds no authorization value type. The binding is the same one the
+// tenant management surface writes: the role must exist in the tenant, and the
+// platform administrator may not be bound outside the platform domain. The after
+// closure is the policy module's work after the caller's commit — the snapshot
+// reread and the change event — and is nil when the call changed nothing.
+type RoleBinder interface {
+	// BindRoleTx binds role to account within tenant in the transaction it is
+	// handed.
+	BindRoleTx(ctx context.Context, tx *gorm.DB, tenant, account, role string) (after func(context.Context) error, err error)
 }
 
 // afterCommitKey is the context key of an AfterCommit collector.

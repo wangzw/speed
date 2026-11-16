@@ -542,6 +542,25 @@ func (r *roster) TenantStateOf(_ context.Context, id string) (authn.TenantState,
 	}
 }
 
+// TenantDescriptionOf implements authn.TenantDescriptionResolver. It reads the
+// name, the display name and the system flag from the snapshot, like every
+// other read; an identifier no row carries answers the zero description.
+func (r *roster) TenantDescriptionOf(_ context.Context, id string) (authn.TenantDescription, error) {
+	s, err := r.current()
+	if err != nil {
+		return authn.TenantDescription{}, err
+	}
+	t, ok := s.byID[tenant.ID(id)]
+	if !ok {
+		return authn.TenantDescription{}, nil
+	}
+	return authn.TenantDescription{
+		Name:        t.Name,
+		DisplayName: t.Profile.DisplayName,
+		System:      t.ID == systemTenant,
+	}, nil
+}
+
 // List implements tenant.Catalog. The slice is a copy, so a caller sorting or
 // trimming it cannot disturb what the next caller sees.
 func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {

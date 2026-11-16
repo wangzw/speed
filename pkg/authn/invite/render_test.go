@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
@@ -96,6 +97,43 @@ func TestTheRenderedInvitationEmailCarriesTheNameNeverTheIdentifier(t *testing.T
 		}
 		if strings.Contains(body, "tenant-a") {
 			t.Errorf("the %s carries the internal identifier: %s", name, body)
+		}
+	}
+}
+
+// TestTheRenderedInvitationEmailNamesTheInviterAndTheDeadlineInUTC holds the two
+// pieces the issue path contributes to the rendered message: the inviter is
+// named by the display name they are recognized by, never by the account
+// identifier, and the deadline is the readable UTC form the catalog renders
+// rather than the RFC 3339 instant.
+func TestTheRenderedInvitationEmailNamesTheInviterAndTheDeadlineInUTC(t *testing.T) {
+	h := newHarness(t)
+	sender := &renderedMail{}
+	h.p.notifier = renderingNotifier(t, sender)
+	h.p.tenantNames = fakeNames{"tenant-a": "acme"}
+	h.accounts.named(adminID, "Demo Operator")
+
+	answered := h.issueOverRoute("alice@example.com")
+	if got := answered.EmailDelivery; got != authn.InviteSent.String() {
+		t.Fatalf("email_delivery = %q, want sent", got)
+	}
+	if len(sender.messages) != 1 {
+		t.Fatalf("the carrier received %d message(s), want one", len(sender.messages))
+	}
+	message := sender.messages[0]
+	instant := answered.Invitation.ExpiresAt.Format(time.RFC3339)
+	for name, body := range map[string]string{"text": message.Text, "html": message.HTML} {
+		if !strings.Contains(body, "Demo Operator") {
+			t.Errorf("the %s does not carry the inviter's display name: %s", name, body)
+		}
+		if strings.Contains(body, string(adminID)) {
+			t.Errorf("the %s carries the inviter's account identifier: %s", name, body)
+		}
+		if !strings.Contains(body, "UTC") {
+			t.Errorf("the %s does not mark the deadline as UTC: %s", name, body)
+		}
+		if strings.Contains(body, instant) {
+			t.Errorf("the %s still carries the RFC 3339 deadline %q: %s", name, instant, body)
 		}
 	}
 }

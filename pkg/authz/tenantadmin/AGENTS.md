@@ -97,7 +97,9 @@ the manager; a refusal writes no `success` row and reaches no table.
 - A caller may not grant a permission it does not hold (403 `protected`); an
   unreadable held set is 503.
 - A binding may not hand out a role holding a permission the caller does not
-  hold (403 `protected`).
+  hold (403 `protected`). The rule itself is `Manager.RoleSubsetHeld`, one
+  implementation shared with the invitation role judgement; this surface maps
+  its refusal to `protected`, and a read that fails to 503.
 - A binding account must be an active member of the tenant (400
   `bad-request`; a checker that cannot answer is 503).
 - The last tenant-administrator binding cannot be removed (409 `conflict`).

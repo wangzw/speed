@@ -279,7 +279,7 @@ type AccountProvisioning interface {
 
 - **调用位置。** `Create` 与 `Signups.Register` 在账户行、标识与凭据写入之后、创建事件暂存之前调用 `ProvisionAccount`；`Delete` 与未验证账户清扫在 `eraseAccount` 之后、事务返回之前调用 `ProvisionAccountDeletion`。`SetStatus` 不调用二者：停用与启用不建立或结束账户固有的数据。
 - **facts 的取值。** `Kind` 与 `Status` 是账户行的原值；`Username` 是规范化后的用户名标识，服务账户为空；删除时 `Username` 与 `DisplayName` 在 `eraseAccount` 抹除之前读出，事实因此仍是账户被抹除前的内容。
-- **只走传入的 tx。** 实现方的每一条读写都在传入的 `*gorm.DB` 上执行；自取连接写下的行会在账户回滚后存活，或让已提交的账户缺少它应有的数据。实现自检依赖的能力由本模块经注册表交付：事务内读写成员关系用 `MembershipWriter`（`MembershipTx` 先取账户行锁再读，写方法同样先取那一行），事务内写租约名册与授权策略分别用 `tenant.catalog` 的 `TxCatalog` 与 `authz.policy` 的 `TxManager`。
+- **只走传入的 tx。** 实现方的每一条读写都在传入的 `*gorm.DB` 上执行；自取连接写下的行会在账户回滚后存活，或让已提交的账户缺少它应有的数据。实现自检依赖的能力由本模块经注册表交付：事务内读写成员关系用 `MembershipWriter`（`MembershipTx` 先取账户行锁再读，写方法同样先取那一行；`PutJoiningTx` 是 `PutJoining` 的事务内形式，邀请接受用它把成员关系的加入与角色绑定放进同一个事务），事务内写租约名册与授权策略分别用 `tenant.catalog` 的 `TxCatalog` 与 `authz.policy` 的 `TxManager`。
 - **提交后的工作。** 事务内写返回的快照重读与事件发布闭包，由实现方经 `provisioning.AfterCommitOf(ctx)` 交给本模块，本模块在事务提交之后运行；事务内不做整表重读，也不发布事件。
 - **失败方向。** 两个方法返回的任一错误使账户事务整体回滚，并作为调用结果返回；本模块不重试，也不吞掉错误。
 

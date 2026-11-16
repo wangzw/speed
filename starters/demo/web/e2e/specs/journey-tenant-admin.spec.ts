@@ -91,7 +91,7 @@
  * raw instant.
  */
 // @journey journey-tenant-admin.md
-// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenant-admin-068, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-060, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
+// @covers REQ-tenant-admin-001, REQ-tenant-admin-002, REQ-tenant-admin-003, REQ-tenant-admin-004, REQ-tenant-admin-006, REQ-tenant-admin-008, REQ-tenant-admin-009, REQ-tenant-admin-010, REQ-tenant-admin-011, REQ-tenant-admin-012, REQ-tenant-admin-013, REQ-tenant-admin-014, REQ-tenant-admin-015, REQ-tenant-admin-016, REQ-tenant-admin-017, REQ-tenant-admin-018, REQ-tenant-admin-022, REQ-tenant-admin-023, REQ-tenant-admin-025, REQ-tenant-admin-026, REQ-tenant-admin-027, REQ-tenant-admin-028, REQ-tenant-admin-029, REQ-tenant-admin-030, REQ-tenant-admin-031, REQ-tenant-admin-034, REQ-tenant-admin-041, REQ-tenant-admin-042, REQ-tenant-admin-043, REQ-tenant-admin-046, REQ-tenant-admin-048, REQ-tenant-admin-050, REQ-tenant-admin-051, REQ-tenant-admin-052, REQ-tenant-admin-053, REQ-tenant-admin-055, REQ-tenant-admin-056, REQ-tenant-admin-057, REQ-tenant-admin-058, REQ-tenant-admin-059, REQ-tenant-admin-060, REQ-tenant-admin-061, REQ-tenant-admin-062, REQ-tenant-admin-063, REQ-tenant-admin-064, REQ-tenant-admin-065, REQ-tenant-admin-066, REQ-tenant-admin-068, REQ-tenancy-008, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-060, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064, REQ-tenancy-080, REQ-tenancy-081
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import {
@@ -210,11 +210,26 @@ function permissionDescription(permission: string): string {
 /** The address of an invitation used to exercise resend and revoke. */
 const RESENT_INVITEE = 'resent-invitee@demo.test'
 
-/** The status cell's text of one invitation row. */
+/** The address and account a role-bearing invitation is accepted with: the
+ * journey registers it through the link, because no seeded account is a
+ * non-member of the organization. */
+const ROLE_INVITEE = 'role-invitee@demo.test'
+const ROLE_INVITEE_IDENTITY = {
+  email: ROLE_INVITEE,
+  username: 'role-invitee',
+  displayName: 'Role Invitee',
+  password: 'role-invitee-secret',
+} as const
+
+/** The status tag's text of one invitation row. A terminal row stacks the
+ * tag over a note naming the instant it settled, so the cell's first line is
+ * the tag's own label; the lookup reads the cell's text instead of a
+ * presentation class name. */
 async function invitationStatus(page: Page, email: string): Promise<string> {
   const table = invitationsSection(page).getByRole('table')
   const index = await columnIndex(table, copy('adminUi', 'invitations.column.status'))
-  return (await cell(invitationRow(page, email), index).innerText()).trim()
+  const text = await cell(invitationRow(page, email), index).innerText()
+  return text.split('\n')[0]!.trim()
 }
 
 /** The one-time panel that hands out the issued invitation's acceptance link. */
@@ -368,6 +383,9 @@ const OPERATOR = {
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
+
+/** The invited address as the server masks it on the public read. */
+const MASKED_INVITEE = 'i***@demo.test'
 
 /** The operator's authenticator seed, fixed by the review fixture. */
 const TOTP_SEED = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
@@ -663,13 +681,6 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           })
           .fill(reviewInvitee.identifier)
-        // The form carries the default validity beside its choice.
-        await expect(
-          page.getByText(
-            copy('adminUi', 'invitations.issue.defaultExpiry', { days: 7 }),
-            { exact: true },
-          ),
-        ).toBeVisible()
         await page
           .getByRole('button', {
             name: copy('adminUi', 'invitations.issue.submit'),
@@ -777,11 +788,10 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
+        // The inviter column shows the display name; the username is the
+        // hover title, not a second visible value.
         await expect(
-          row.getByText(
-            `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
-            { exact: true },
-          ),
+          row.getByText(reviewTenantAdmin.displayName, { exact: true }),
         ).toBeVisible()
         const expiryColumn = await columnIndex(
           invitationsSection(page).getByRole('table'),
@@ -808,9 +818,41 @@ test.describe('the tenant administrator manages the organization', () => {
         const invitee = inviteePage
         const invitationPath = new URL(acceptanceLink).pathname
 
-        // REQ-tenancy-016: an anonymous viewer meets the sign-in surface, not
-        // the invitation summary.
+        // REQ-tenancy-016: an anonymous viewer meets the invitation landing,
+        // with the summary and the two account actions, not a generic sign-in
+        // page.
         await invitee.goto(acceptanceLink)
+        await expect(
+          invitee.getByRole('heading', {
+            level: 1,
+            name: copy('authUi', 'acceptInvitation.title'),
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(
+          invitee.getByText(
+            copy('authUi', 'acceptInvitation.invitedBy', {
+              inviter: reviewTenantAdmin.displayName,
+              tenant: TENANT,
+            }),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await expect(
+          invitee.getByRole('button', {
+            name: copy('authUi', 'acceptInvitation.signIn'),
+            exact: true,
+          }),
+        ).toBeVisible()
+        expect(new URL(invitee.url()).pathname).toBe(invitationPath)
+
+        // The sign-in action opens the host's surface in place.
+        await invitee
+          .getByRole('button', {
+            name: copy('authUi', 'acceptInvitation.signIn'),
+            exact: true,
+          })
+          .click()
         await expect(
           invitee.getByRole('heading', {
             level: 1,
@@ -818,13 +860,6 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toBeVisible()
-        await expect(
-          invitee.getByRole('heading', {
-            name: copy('authUi', 'acceptInvitation.title'),
-            exact: true,
-          }),
-        ).toHaveCount(0)
-        expect(new URL(invitee.url()).pathname).toBe(invitationPath)
 
         await invitee
           .getByRole('textbox', {
@@ -846,7 +881,7 @@ test.describe('the tenant administrator manages the organization', () => {
           .click()
 
         // Signing in through the landing keeps the address; the summary names
-        // the tenant, the invited address and the expiry.
+        // the inviter, the tenant, the masked invited address and the expiry.
         await expect(
           invitee.getByRole('heading', {
             name: copy('authUi', 'acceptInvitation.title'),
@@ -856,14 +891,17 @@ test.describe('the tenant administrator manages the organization', () => {
         expect(new URL(invitee.url()).pathname).toBe(invitationPath)
         await expect(
           invitee.getByText(
-            copy('authUi', 'acceptInvitation.invited', { tenant: TENANT }),
+            copy('authUi', 'acceptInvitation.invitedBy', {
+              inviter: reviewTenantAdmin.displayName,
+              tenant: TENANT,
+            }),
             { exact: true },
           ),
         ).toBeVisible()
         await expect(
           invitee.getByText(
             copy('authUi', 'acceptInvitation.email', {
-              email: reviewInvitee.identifier,
+              email: MASKED_INVITEE,
             }),
             { exact: true },
           ),
@@ -932,15 +970,24 @@ test.describe('the tenant administrator manages the organization', () => {
           ).toHaveCount(0)
         }
 
-        // REQ-tenancy-013: an accepted link cannot be redeemed again; the
-        // terminal state is the shared "no longer available" one.
+        // REQ-tenancy-013: an accepted link cannot be redeemed again. The
+        // current session is already a member of the invited tenant, so the
+        // terminal state says so and offers the way into the organization.
         await invitee.goto(acceptanceLink)
         await expect(
           invitee.getByRole('heading', {
-            name: copy('authUi', 'acceptInvitation.unavailable.title'),
+            name: copy('authUi', 'acceptInvitation.member.title', {
+              tenant: TENANT,
+            }),
             exact: true,
           }),
         ).toBeVisible({ timeout: 15_000 })
+        await expect(
+          invitee.getByRole('button', {
+            name: copy('authUi', 'acceptInvitation.member.open'),
+            exact: true,
+          }),
+        ).toBeVisible()
         await expect(
           invitee.getByRole('button', {
             name: copy('authUi', 'acceptInvitation.accept'),
@@ -953,10 +1000,19 @@ test.describe('the tenant administrator manages the organization', () => {
         // The page carries no refresh control: the browser reload is the
         // reader's own re-read, and the accepted state lands with it.
         await page.reload()
+        // The page opens on pending invitations. The acceptance left no
+        // pending invitation, so the list renders its filtered empty state
+        // until the accepted filter is chosen below.
         await expect(
-          invitationsSection(page).getByRole('table'),
+          invitationsSection(page).getByRole('heading', {
+            name: copy('adminUi', 'invitations.empty.filteredTitle'),
+            exact: true,
+          }),
         ).toBeVisible()
 
+        // The page opens on pending invitations; the accepted row is history,
+        // reached through its filter.
+        await chooseInvitationStatus(page, 'invitations.status.accepted')
         // The invitation reached its accepted terminal state.
         await expect
           .poll(() => invitationStatus(page, reviewInvitee.identifier), {
@@ -1598,7 +1654,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await page.keyboard.press('Escape')
       })
 
-      await test.step('step 16: the invitation resend replaces the link and the status filter narrows the list', async () => {
+      await test.step('step 16: the administrator issues a role-bearing invitation, resends it, and the status filter narrows the list', async () => {
         await openOrganizationPage(page, 'invitations')
 
         // REQ-tenant-admin-060: issue a second invitation the journey can
@@ -1608,6 +1664,19 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           })
           .fill(RESENT_INVITEE)
+        // REQ-tenant-admin-009: the caller holds the tenant's role-management
+        // permission, so the issue form offers the tenant's own roles. The
+        // role created in step 10 is the one chosen; the builtin tenant-admin
+        // role is left alone, so the tenant keeps its single administrator.
+        await page
+          .getByRole('combobox', {
+            name: copy('adminUi', 'invitations.issue.roleLabel'),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('option', { name: ROLE, exact: true })
+          .click()
         await page
           .getByRole('button', {
             name: copy('adminUi', 'invitations.issue.submit'),
@@ -1645,7 +1714,18 @@ test.describe('the tenant administrator manages the organization', () => {
           .click()
         await expect(firstPanel).toHaveCount(0)
 
-        // Resend asks first, states the new validity, and replaces the
+        // REQ-tenant-admin-009: the issued row carries the role the form
+        // handed it in its role column. The table is re-read when the panel
+        // closes, so the row is awaited before its header is located.
+        const issuedRow = invitationRow(page, RESENT_INVITEE)
+        await expect(issuedRow).toHaveCount(1)
+        const roleColumn = await columnIndex(
+          invitationsSection(page).getByRole('table'),
+          copy('adminUi', 'invitations.column.role'),
+        )
+        await expect(cell(issuedRow, roleColumn)).toHaveText(ROLE)
+
+        // Resend asks first, states the unchanged deadline, and replaces the
         // one-time link; the log carrier delivers nothing, so the panel is
         // the only place the new link appears.
         const resentRow = invitationRow(page, RESENT_INVITEE)
@@ -1668,13 +1748,14 @@ test.describe('the tenant administrator manages the organization', () => {
           exact: true,
         })
         await expect(resendDialog).toBeVisible()
+        // The confirmation names the deadline that will not change, not a
+        // validity the resend would grant.
         await expect(
           resendDialog.getByText(
-            copy('adminUi', 'invitations.resendMessage', {
-              email: RESENT_INVITEE,
-              days: 7,
+            copyPattern('adminUi', 'invitations.resendMessage', {
+              email: escapeRegExp(RESENT_INVITEE),
+              time: '.+',
             }),
-            { exact: true },
           ),
         ).toBeVisible()
         await resendDialog
@@ -1720,9 +1801,99 @@ test.describe('the tenant administrator manages the organization', () => {
           .click()
         await expect(secondPanel).toHaveCount(0)
 
-        // REQ-tenant-admin-058: each filter narrows the server read. The
-        // superseded invitation is already a revoked row, so the revoked
-        // filter lists it while the replacement stays pending.
+        // Resend replaced the token on the same invitation: no second row
+        // appeared, and the row now says it was resent once with the latest
+        // send's instant.
+        await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
+        await expect(
+          invitationRow(page, RESENT_INVITEE).getByText(
+            copyPattern('adminUi', 'invitations.created.resentOnce', {
+              time: '.+',
+            }),
+          ),
+        ).toBeVisible()
+        // A resend keeps the invitation's role unchanged.
+        await expect(
+          cell(invitationRow(page, RESENT_INVITEE), roleColumn),
+        ).toHaveText(ROLE)
+
+        // REQ-tenancy-081: the invitation grants its role on acceptance. A new
+        // address registers through the link, proves the address, accepts, and
+        // the member table then names the role beside the new member.
+        await page
+          .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
+            exact: true,
+          })
+          .fill(ROLE_INVITEE)
+        await page
+          .getByRole('combobox', {
+            name: copy('adminUi', 'invitations.issue.roleLabel'),
+            exact: true,
+          })
+          .click()
+        await page.getByRole('option', { name: ROLE, exact: true }).click()
+        await page
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issue.submit'),
+            exact: true,
+          })
+          .click()
+        const rolePanel = invitationLinkPanel(page, ROLE_INVITEE)
+        await expect(rolePanel).toBeVisible()
+        const roleLink = (
+          (await rolePanel
+            .getByText(new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`))
+            .textContent()) ?? ''
+        ).trim()
+        await rolePanel
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.closeAria', {
+              tenant: TENANT,
+              email: ROLE_INVITEE,
+            }),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('dialog', {
+            name: copy('adminUi', 'invitations.issued.closeTitle'),
+            exact: true,
+          })
+          .getByRole('button', {
+            name: copy('adminUi', 'invitations.issued.close'),
+            exact: true,
+          })
+          .click()
+        await expect(rolePanel).toHaveCount(0)
+
+        const roleContext = await browser.newContext({
+          locale: 'en-US',
+          timezoneId: 'UTC',
+          viewport: page.viewportSize(),
+        })
+        try {
+          const roleInvitee = await roleContext.newPage()
+          await registerAndAcceptThroughLink(roleInvitee, roleLink, server)
+        } finally {
+          await roleContext.close()
+        }
+
+        // The acceptance wrote the role beside the new membership, read back
+        // after a reload because the roster is the admin page's own read.
+        await page.reload()
+        const memberTable = membersSection(page).getByRole('table')
+        const roleMember = memberTable
+          .locator('tbody tr')
+          .filter({ hasText: ROLE_INVITEE_IDENTITY.username })
+        await expect(roleMember).toHaveCount(1)
+        const memberRolesColumn = await columnIndex(
+          memberTable,
+          copy('adminUi', 'members.column.roles'),
+        )
+        await expect(cell(roleMember, memberRolesColumn)).toHaveText(ROLE)
+        await chooseInvitationStatus(page, 'invitations.filter.all')
+
+        // REQ-tenant-admin-058: each filter narrows the server read.
         await chooseInvitationStatus(page, 'invitations.status.accepted')
         await expect(invitationRow(page, reviewInvitee.identifier)).toHaveCount(1)
         await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(0)
@@ -1731,29 +1902,26 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
         await expect(invitationRow(page, reviewInvitee.identifier)).toHaveCount(0)
 
-        await chooseInvitationStatus(page, 'invitations.status.revoked')
-        await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
-        await expect(
-          invitationRow(page, RESENT_INVITEE).getByText(
-            copy('adminUi', 'invitations.status.revoked'),
-            { exact: true },
-          ),
-        ).toBeVisible()
-
-        // No invitation has expired, so that filter's empty result names the
-        // filter rather than reporting an empty organization.
-        await chooseInvitationStatus(page, 'invitations.status.expired')
-        await expect(
-          invitationsSection(page).getByText(
-            copy('adminUi', 'invitations.empty.filteredDescription', {
-              status: copy('adminUi', 'invitations.status.expired'),
-            }),
-            { exact: true },
-          ),
-        ).toBeVisible()
+        // Nothing has been revoked or expired yet, so each of those filters
+        // names its own empty result rather than reporting an empty
+        // organization.
+        for (const status of [
+          'invitations.status.revoked',
+          'invitations.status.expired',
+        ] as const) {
+          await chooseInvitationStatus(page, status)
+          await expect(
+            invitationsSection(page).getByText(
+              copy('adminUi', 'invitations.empty.filteredDescription', {
+                status: copy('adminUi', status),
+              }),
+              { exact: true },
+            ),
+          ).toBeVisible()
+        }
 
         // REQ-tenant-admin-010: revoking the pending invitation is a terminal
-        // state the revoked filter then lists beside the superseded row.
+        // state the revoked filter then lists, with no actions left on it.
         await chooseInvitationStatus(page, 'invitations.status.pending')
         await invitationRow(page, RESENT_INVITEE)
           .filter({
@@ -1791,7 +1959,22 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
 
         await chooseInvitationStatus(page, 'invitations.status.revoked')
-        await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(2)
+        const revokedRow = invitationRow(page, RESENT_INVITEE)
+        await expect(revokedRow).toHaveCount(1)
+        await expect(
+          revokedRow.getByText(copy('adminUi', 'invitations.status.revoked'), {
+            exact: true,
+          }),
+        ).toBeVisible()
+        // A terminal invitation has nothing left to act on.
+        await expect(
+          revokedRow.getByRole('button', {
+            name: copy('adminUi', 'invitations.actionsAria', {
+              email: RESENT_INVITEE,
+            }),
+            exact: true,
+          }),
+        ).toHaveCount(0)
         await chooseInvitationStatus(page, 'invitations.filter.all')
       })
 
@@ -3395,6 +3578,21 @@ async function acceptInvitationAsInvitee(
   } = reviewInvitee,
 ): Promise<void> {
   await invitee.goto(link)
+  // The landing shows the invitation summary first; signing in is the
+  // landing's own action, and it opens the host's surface in place.
+  await expect(
+    invitee.getByRole('heading', {
+      level: 1,
+      name: copy('authUi', 'acceptInvitation.title'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await invitee
+    .getByRole('button', {
+      name: copy('authUi', 'acceptInvitation.signIn'),
+      exact: true,
+    })
+    .click()
   await expect(
     invitee.getByRole('heading', {
       level: 1,
@@ -3422,6 +3620,113 @@ async function acceptInvitationAsInvitee(
     .click()
   await expect(
     invitee.getByRole('heading', {
+      name: copy('authUi', 'acceptInvitation.title'),
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 15_000 })
+  await invitee
+    .getByRole('button', {
+      name: copy('authUi', 'acceptInvitation.accept'),
+      exact: true,
+    })
+    .click()
+  await expect(homeHeading(invitee)).toBeVisible({ timeout: 15_000 })
+}
+
+/**
+ * Register a new account through an invitation link, prove its address with the
+ * code the account page sends, and accept the invitation. The registration's
+ * product landing is the account page's verification section, and the
+ * remembered landing returns the viewer to the link once the address is
+ * proved.
+ */
+async function registerAndAcceptThroughLink(
+  invitee: Page,
+  link: string,
+  server: ReviewServer,
+): Promise<void> {
+  const invitationPath = new URL(link).pathname
+  await invitee.goto(link)
+  await expect(
+    invitee.getByRole('heading', {
+      level: 1,
+      name: copy('authUi', 'acceptInvitation.title'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await invitee
+    .getByRole('button', {
+      name: copy('authUi', 'acceptInvitation.createAccount'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    invitee.getByRole('heading', {
+      level: 1,
+      name: copy('demo', 'signIn.registerHeading'),
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  await invitee
+    .getByLabel(copy('authUi', 'register.usernameLabel'), { exact: true })
+    .fill(ROLE_INVITEE_IDENTITY.username)
+  await invitee
+    .getByLabel(copy('authUi', 'register.displayNameLabel'), { exact: true })
+    .fill(ROLE_INVITEE_IDENTITY.displayName)
+  await invitee
+    .getByLabel(copy('authUi', 'register.emailLabel'), { exact: true })
+    .fill(ROLE_INVITEE_IDENTITY.email)
+  await invitee
+    .getByLabel(copy('authUi', 'register.passwordLabel'), { exact: true })
+    .fill(ROLE_INVITEE_IDENTITY.password)
+  await invitee
+    .getByLabel(copy('authUi', 'register.confirmPasswordLabel'), {
+      exact: true,
+    })
+    .fill(ROLE_INVITEE_IDENTITY.password)
+
+  // Registration sends no mail; the one code that follows is the account
+  // page's verification send, so the cursor before the submit is enough.
+  const beforeCode = server.log.mark()
+  await invitee
+    .getByRole('button', {
+      name: copy('authUi', 'register.submit'),
+      exact: true,
+    })
+    .click()
+
+  await expect(
+    invitee.getByRole('region', {
+      name: copy('accountUi', 'verification.title'),
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 15_000 })
+  const section = verificationSection(invitee)
+  const { code } = await waitForVerificationCode(
+    server.log,
+    'mail',
+    ROLE_INVITEE_IDENTITY.email,
+    { after: beforeCode },
+  )
+  await section
+    .getByLabel(copy('accountUi', 'verification.codeLabel'), { exact: true })
+    .fill(code)
+  await section
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+
+  // The remembered landing returns the proved viewer to the link, which now
+  // offers the acceptance; the arrival itself proves the settled proof.
+  await expect
+    .poll(() => new URL(invitee.url()).pathname, { timeout: 15_000 })
+    .toBe(invitationPath)
+  await expect(
+    invitee.getByRole('heading', {
+      level: 1,
       name: copy('authUi', 'acceptInvitation.title'),
       exact: true,
     }),

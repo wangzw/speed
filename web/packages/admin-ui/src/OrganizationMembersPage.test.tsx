@@ -23,8 +23,10 @@ import { attachSession } from '@speed/auth-core'
 import { formatInstant } from '@speed/i18n'
 import { uiKitResources } from '@speed/ui-kit'
 import { OrganizationAdminProvider } from './OrganizationAdminProvider.js'
+import { organizationAdminOperations } from './organization-operations.js'
+import { organizationAdminRoutes } from './organization-routes.js'
+import { bindAdminRequest } from '../test-utils/request-rig.js'
 import { OrganizationMembersPage } from './OrganizationMembersPage.js'
-import { invitationStatusOf } from './internal/invitation-status.js'
 import { SEARCH_DEBOUNCE_MS } from './internal/use-debounced-value.js'
 import type {
   AdminInvitation,
@@ -52,6 +54,7 @@ import {
   createStepUpSession,
 } from '../test-utils/session.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { cellOf } from '../test-utils/table.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 /** Fills a locale template's placeholders with the values under test. */
@@ -200,16 +203,25 @@ const PENDING_INVITATION: AdminInvitation = {
   tenant: TENANT,
   email: 'pending@example.com',
   invited_by: ADA.account,
+  invited_by_name: ADA.display_name,
+  invited_by_username: ADA.username,
   status: 'pending',
+  state: 'pending',
+  role: ROLE_OPERATOR.role,
   created_at: '2026-11-01T10:00:00Z',
   expires_at: '2099-01-01T00:00:00Z',
   accepted_at: null,
+  revoked_at: null,
+  last_sent_at: '2026-11-01T10:00:00Z',
+  send_count: 1,
 }
 
 const EXPIRED_INVITATION: AdminInvitation = {
   ...PENDING_INVITATION,
   id: 'inv-expired',
   email: 'expired@example.com',
+  state: 'expired',
+  role: undefined,
   created_at: '2026-01-01T10:00:00Z',
   expires_at: '2026-02-01T00:00:00Z',
 }
@@ -219,6 +231,9 @@ const ACCEPTED_INVITATION: AdminInvitation = {
   id: 'inv-accepted',
   email: 'accepted@example.com',
   status: 'accepted',
+  state: 'accepted',
+  role: undefined,
+  expires_at: '2026-11-09T10:00:00Z',
   accepted_at: '2026-11-02T10:00:00Z',
 }
 
@@ -227,6 +242,10 @@ const REVOKED_INVITATION: AdminInvitation = {
   id: 'inv-revoked',
   email: 'revoked@example.com',
   status: 'revoked',
+  state: 'revoked',
+  role: undefined,
+  expires_at: '2026-11-09T10:00:00Z',
+  revoked_at: '2026-11-03T10:00:00Z',
 }
 
 const ALL_INVITATIONS = [
@@ -273,7 +292,8 @@ interface Recorder {
   readonly unbinds: AdminTenantBindingRef[]
   readonly writes: Array<{ tenant: string; account: string; active?: boolean }>
   readonly removes: Array<{ tenant: string; account: string }>
-  readonly issues: Array<{ tenant: string; email: string }>
+  readonly issues: Array<{ tenant: string; email: string; role?: string }>
+  readonly resends: Array<{ tenant: string; id: string }>
   readonly revokes: Array<{ tenant: string; id: string }>
   readonly accountBindingReads: string[]
   readonly roleReads: string[]
@@ -295,6 +315,7 @@ function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
     writes: [],
     removes: [],
     issues: [],
+    resends: [],
     revokes: [],
     accountBindingReads: [],
     roleReads: [],
@@ -313,7 +334,7 @@ function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
           status === undefined
             ? ALL_INVITATIONS
             : ALL_INVITATIONS.filter(
-                (invitation) => invitationStatusOf(invitation) === status,
+                (invitation) => invitation.state === status,
               ),
         next_cursor: '',
       })
@@ -355,6 +376,10 @@ function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
       recorder.revokes.push(input)
       return Promise.resolve()
     },
+    resendInvitation: (input) => {
+      recorder.resends.push(input)
+      return Promise.resolve(issuedFixture(PENDING_INVITATION.email))
+    },
     ...overrides,
   })
   return { backend, recorder }
@@ -390,6 +415,7 @@ function renderPage(
     readonly language?: string
     readonly defaultMode?: 'light' | 'dark' | 'system'
     readonly timeZone?: string
+    readonly session?: ReturnType<typeof createStepUpSession>
   } = {},
 ) {
   return renderWithProviders(
@@ -397,6 +423,7 @@ function renderPage(
       tenant={TENANT}
       operations={createAdminOperations(backend)}
       hasFeature={() => true}
+      session={options.session}
       breadcrumbs={[
         { label: 'Acme' },
         { label: zhCN.invitations.title },
@@ -422,6 +449,44 @@ function rowOf(target: string | HTMLElement): HTMLElement {
     throw new Error(`no row for ${String(target)}`)
   }
   return row
+}
+
+/** The invitation table's body rows, top to bottom, as the page rendered
+ * them -- the order the server returned, which the client never re-sorts. */
+function invitationRowsInOrder(): HTMLElement[] {
+  const table = screen.getAllByRole('table').find((candidate) =>
+    within(candidate).queryByRole('columnheader', {
+      name: zhCN.invitations.column.email,
+    }),
+  )
+  if (table === undefined) {
+    throw new Error('the page rendered no invitation table')
+  }
+  return Array.from(table.querySelectorAll<HTMLElement>('tbody tr'))
+}
+
+/**
+ * The shared status tag of one row: the chip plus any caption the note
+ * renders under it, as the single unit the row's status cell holds. Found
+ * through the status label so the assertion does not depend on the note's
+ * wording.
+ */
+function statusTagOf(row: HTMLElement, label: string): HTMLElement {
+  const chip = within(row).getByText(label).closest('.MuiChip-root')
+  const tag = chip?.parentElement
+  if (!(tag instanceof HTMLElement)) {
+    throw new Error(`no status tag labelled ${label}`)
+  }
+  return tag
+}
+
+/** The chip a row's status tag renders, found through its label. */
+function statusChipOf(row: HTMLElement, label: string): HTMLElement {
+  const chip = within(row).getByText(label).closest('.MuiChip-root')
+  if (!(chip instanceof HTMLElement)) {
+    throw new Error(`no status chip labelled ${label}`)
+  }
+  return chip
 }
 
 /** The member's composed identity, as the row's Manage control names it. */
@@ -486,7 +551,7 @@ describe('the page structure', () => {
     const { backend } = scripted()
     renderPage(backend)
 
-    expect(await screen.findByText(ADA.display_name)).toBeInTheDocument()
+    expect((await screen.findAllByText(ADA.display_name)).length).toBeGreaterThan(0)
     // The page opens with the members-and-invitations title, and the two
     // sections follow it as h2s.
     expect(
@@ -508,7 +573,7 @@ describe('the page structure', () => {
     const { backend } = scripted()
     renderPage(backend)
 
-    const row = rowOf(await screen.findByText(ADA.display_name))
+    const row = rowOf((await screen.findAllByText(ADA.display_name))[0]!)
     expect(
       within(row).getByText('tenant-operator'),
     ).toBeInTheDocument()
@@ -519,18 +584,25 @@ describe('the page structure', () => {
     ).toBeInTheDocument()
     // The two columns are ordinary row information, not fine-print detail.
     expect(
-      screen.getByRole('columnheader', { name: zhCN.members.column.roles }),
-    ).toBeInTheDocument()
+      screen.getAllByRole('columnheader', { name: zhCN.members.column.roles })
+        .length,
+    ).toBeGreaterThan(0)
     expect(
       screen.getByRole('columnheader', { name: zhCN.members.column.joinedAt }),
     ).toBeInTheDocument()
+    // The copy control belongs to the username and email identity columns
+    // only; the display name and the role list are read, not copied.
+    const displayCell = within(row).getByText(ADA.display_name).closest('td')
+    const roleCell = within(row).getByText('tenant-operator').closest('td')
+    expect(displayCell?.querySelector('button')).toBeNull()
+    expect(roleCell?.querySelector('button')).toBeNull()
   })
 
   it('shows the joined-at time in the display zone, not the browser zone', async () => {
     const { backend } = scripted()
     renderPage(backend, { timeZone: 'Asia/Tokyo' })
 
-    const row = rowOf(await screen.findByText(ADA.display_name))
+    const row = rowOf((await screen.findAllByText(ADA.display_name))[0]!)
     expect(
       within(row).getByText(
         new Intl.DateTimeFormat('zh-CN', {
@@ -547,7 +619,7 @@ describe('the page structure', () => {
     async (defaultMode) => {
       const { backend } = scripted()
       renderPage(backend, { defaultMode })
-      expect(await screen.findByText(ADA.display_name)).toBeInTheDocument()
+      expect((await screen.findAllByText(ADA.display_name)).length).toBeGreaterThan(0)
       expect(
         screen.getByRole('heading', { name: zhCN.members.title }),
       ).toBeInTheDocument()
@@ -560,7 +632,7 @@ describe('the page structure', () => {
   it('has no axe violations', async () => {
     const { backend } = scripted()
     renderPage(backend)
-    await screen.findByText(ADA.display_name)
+    await screen.findAllByText(ADA.display_name)
     await expectNoAxeViolations()
   })
 })
@@ -600,7 +672,7 @@ describe('the member search and paging', () => {
     })
     const { backend, recorder } = scripted()
     renderPage(backend)
-    await screen.findByText(ADA.display_name)
+    await screen.findAllByText(ADA.display_name)
 
     const input = screen.getByLabelText(zhCN.members.search.label)
     await user.type(input, 'ada')
@@ -633,7 +705,7 @@ describe('the member search and paging', () => {
       },
     })
     renderPage(backend)
-    await screen.findByText(ADA.display_name)
+    await screen.findAllByText(ADA.display_name)
     expect(screen.queryByText(BOB.display_name)).toBeNull()
 
     await user.click(
@@ -664,7 +736,7 @@ describe('the member search and paging', () => {
       },
     })
     renderPage(backend)
-    await screen.findByText(ADA.display_name)
+    await screen.findAllByText(ADA.display_name)
 
     const next = screen.getByRole('button', { name: zhCN.common.pager.next })
     await user.click(next)
@@ -720,7 +792,7 @@ describe('the member search and paging', () => {
     }
     renderWithProviders(<SwitchTenant />)
 
-    await screen.findByText(ADA.display_name)
+    await screen.findAllByText(ADA.display_name)
     await user.click(
       screen.getByRole('button', { name: zhCN.common.pager.next }),
     )
@@ -1708,27 +1780,115 @@ describe('the bind escalation check', () => {
 })
 
 describe('the invitation section', () => {
-  it('derives the four statuses and filters the server read', async () => {
+  it('opens on pending, reads the server state, and filters the server read', async () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()
     renderPage(backend)
 
+    // The page opens on the state an operator acts on; history is a filter
+    // away. The first read already names that state.
     const pendingRow = rowOf(await screen.findByText(PENDING_INVITATION.email))
     expect(
       within(pendingRow).getByText(zhCN.invitations.status.pending),
     ).toBeInTheDocument()
-    const expiredRow = rowOf(screen.getByText(EXPIRED_INVITATION.email))
+    expect(screen.queryByText(EXPIRED_INVITATION.email)).toBeNull()
+    expect(screen.queryByText(ACCEPTED_INVITATION.email)).toBeNull()
+    expect(screen.queryByText(REVOKED_INVITATION.email)).toBeNull()
+    expect(recorder.invitationParams).toContainEqual({
+      limit: 50,
+      status: 'pending',
+    })
+
+    // "All" lists every state in the order the server groups them, and each
+    // terminal row says when it reached that state.
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
+    )
+    await user.click(screen.getByRole('option', { name: zhCN.invitations.filter.all }))
+    expect(
+      await screen.findByText(EXPIRED_INVITATION.email),
+    ).toBeInTheDocument()
+    // The list renders the rows in the order the server sent them. The
+    // grouping is the server's; a client-side re-sort would silently break
+    // the cursor contract the filter pages under.
+    expect(
+      invitationRowsInOrder().map(
+        (row) =>
+          ALL_INVITATIONS.find((invitation) =>
+            row.textContent?.includes(invitation.email),
+          )?.email,
+      ),
+    ).toEqual(ALL_INVITATIONS.map((invitation) => invitation.email))
+    const expiredRow = rowOf(EXPIRED_INVITATION.email)
     expect(
       within(expiredRow).getByText(zhCN.invitations.status.expired),
     ).toBeInTheDocument()
-    const acceptedRow = rowOf(screen.getByText(ACCEPTED_INVITATION.email))
     expect(
-      within(acceptedRow).getByText(zhCN.invitations.status.accepted),
+      within(expiredRow).getByText(
+        fill(zhCN.invitations.statusSince.expired, {
+          time: formatInstant(EXPIRED_INVITATION.expires_at, 'zh-CN', {
+            timeZone: TEST_TIME_ZONE,
+          }),
+        }),
+      ),
     ).toBeInTheDocument()
-    const revokedRow = rowOf(screen.getByText(REVOKED_INVITATION.email))
+    const acceptedRow = rowOf(ACCEPTED_INVITATION.email)
     expect(
-      within(revokedRow).getByText(zhCN.invitations.status.revoked),
+      within(acceptedRow).getByText(
+        fill(zhCN.invitations.statusSince.accepted, {
+          time: formatInstant(
+            ACCEPTED_INVITATION.accepted_at ?? '',
+            'zh-CN',
+            { timeZone: TEST_TIME_ZONE },
+          ),
+        }),
+      ),
     ).toBeInTheDocument()
+    const revokedRow = rowOf(REVOKED_INVITATION.email)
+    expect(
+      within(revokedRow).getByText(
+        fill(zhCN.invitations.statusSince.revoked, {
+          time: formatInstant(REVOKED_INVITATION.revoked_at ?? '', 'zh-CN', {
+            timeZone: TEST_TIME_ZONE,
+          }),
+        }),
+      ),
+    ).toBeInTheDocument()
+
+    // Each state's chip carries the tone the shared mapping gives it: the
+    // waiting state is informational, the accepted end is success, and both
+    // terminal states stay neutral rather than reading as faults.
+    expect(
+      statusChipOf(rowOf(PENDING_INVITATION.email), zhCN.invitations.status.pending),
+    ).toHaveClass('MuiChip-colorInfo')
+    expect(
+      statusChipOf(rowOf(EXPIRED_INVITATION.email), zhCN.invitations.status.expired),
+    ).toHaveClass('MuiChip-colorDefault')
+    expect(
+      statusChipOf(rowOf(ACCEPTED_INVITATION.email), zhCN.invitations.status.accepted),
+    ).toHaveClass('MuiChip-colorSuccess')
+    expect(
+      statusChipOf(rowOf(REVOKED_INVITATION.email), zhCN.invitations.status.revoked),
+    ).toHaveClass('MuiChip-colorDefault')
+
+    // Only a pending row has a deadline to act on; every terminal row leaves
+    // the deadline cell empty instead of rendering the one it carries.
+    expect(
+      cellOf(
+        rowOf(PENDING_INVITATION.email),
+        zhCN.invitations.column.expires,
+      ).textContent,
+    ).not.toBe('')
+    for (const invitation of [
+      EXPIRED_INVITATION,
+      ACCEPTED_INVITATION,
+      REVOKED_INVITATION,
+    ]) {
+      expect(
+        cellOf(rowOf(invitation.email), zhCN.invitations.column.expires)
+          .textContent?.trim(),
+      ).toBe('')
+    }
 
     await user.click(
       screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
@@ -1748,15 +1908,452 @@ describe('the invitation section', () => {
     expect(screen.queryByText(PENDING_INVITATION.email)).toBeNull()
   })
 
-  it('resends through the issue route and exposes the new one-time link', async () => {
+  it('renders the rows with the contract fields and hides actions on terminal rows', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted()
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
+    )
+    await user.click(screen.getByRole('option', { name: zhCN.invitations.filter.all }))
+
+    const pendingRow = rowOf(await screen.findByText(PENDING_INVITATION.email))
+    // The inviter renders the display name; the username rides on hover.
+    const inviter = within(pendingRow).getByText(ADA.display_name)
+    expect(inviter).toHaveAttribute(
+      'title',
+      `${ADA.display_name} (${ADA.username})`,
+    )
+    // The role the invitation grants is its own column, and the pending row
+    // shows its deadline.
+    expect(
+      within(pendingRow).getByText(ROLE_OPERATOR.role),
+    ).toBeInTheDocument()
+    expect(
+      within(pendingRow).queryByRole('button', {
+        name: zhCN.invitations.actionsAria.replace(
+          '{{email}}',
+          PENDING_INVITATION.email,
+        ),
+      }),
+    ).toBeInTheDocument()
+
+    // Accepted and revoked rows have nothing left to act on; expired rows
+    // show the deadline they passed, not a remaining time.
+    for (const invitation of [EXPIRED_INVITATION, ACCEPTED_INVITATION, REVOKED_INVITATION]) {
+      const row = rowOf(invitation.email)
+      expect(
+        within(row).queryByRole('button', {
+          name: zhCN.invitations.actionsAria.replace('{{email}}', invitation.email),
+        }),
+      ).toBeNull()
+    }
+  })
+
+  it('attaches a role the caller may grant and hides the choice without role management', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    const view = renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+
+    const role = screen.getByRole('combobox', {
+      name: zhCN.invitations.issue.roleLabel,
+    })
+    await user.click(role)
+    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.invitations.issue.roleChecking),
+      ).toBeNull(),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'role@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    await waitFor(() =>
+      expect(recorder.issues).toEqual([
+        {
+          tenant: TENANT,
+          email: 'role@example.com',
+          expiresAt: expect.any(String),
+          role: ROLE_OPERATOR.role,
+        },
+      ]),
+    )
+    view.unmount()
+
+    // Without the tenant role-management permission the form offers no role
+    // at all: the caller cannot hand out what it cannot manage.
+    attachTenantPermissions(['authn.membership.manage'])
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    expect(
+      screen.queryByRole('combobox', {
+        name: zhCN.invitations.issue.roleLabel,
+      }),
+    ).toBeNull()
+  })
+
+  it('clears a chosen role when the role-management permission leaves', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted()
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+
+    const role = screen.getByRole('combobox', {
+      name: zhCN.invitations.issue.roleLabel,
+    })
+    await user.click(role)
+    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.invitations.issue.roleChecking),
+      ).toBeNull(),
+    )
+
+    // The permission leaves while the page is mounted: the control goes with
+    // it, and the value chosen while it was visible must not survive.
+    attachTenantPermissions(['authn.membership.manage'])
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('combobox', {
+          name: zhCN.invitations.issue.roleLabel,
+        }),
+      ).toBeNull(),
+    )
+
+    // The control returns from a clean choice rather than from the value the
+    // operator picked under an earlier permission set.
+    attachTenantPermissions(FULL_TENANT_PERMISSIONS, 'acc-admin')
+    const restored = await screen.findByRole('combobox', {
+      name: zhCN.invitations.issue.roleLabel,
+    })
+    expect(restored).not.toHaveTextContent(ROLE_OPERATOR.role)
+  })
+
+  it('blocks attaching a role whose grants exceed the caller', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'blocked@example.com',
+    )
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.invitations.issue.roleLabel,
+      }),
+    )
+    await user.click(screen.getByRole('option', { name: ROLE_SUPER.role }))
+
+    expect(
+      await screen.findByText(zhCN.invitations.issue.roleBlocked),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    ).toBeDisabled()
+    expect(recorder.issues).toEqual([])
+  })
+
+  it('shows the checking state while the selected role grants load', async () => {
+    const user = userEvent.setup()
+    let resolveGrants: (grants: readonly AdminTenantGrant[]) => void = () => {}
+    const { backend } = scripted({
+      listTenantGrants: () =>
+        new Promise((resolve) => {
+          resolveGrants = resolve
+        }),
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'checking@example.com',
+    )
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.invitations.issue.roleLabel,
+      }),
+    )
+    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+
+    // A read that has not settled is neither a pass nor a failure: the form
+    // says it is checking and refuses the write until the answer arrives.
+    expect(
+      screen.getByText(zhCN.invitations.issue.roleChecking),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    ).toBeDisabled()
+
+    await act(async () => {
+      resolveGrants([])
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.invitations.issue.roleChecking),
+      ).toBeNull(),
+    )
+  })
+
+  it('fails closed and offers a retry when the role grants cannot be read', async () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted({
-      issueInvitation: (input) => {
-        recorder.issues.push(input)
+      listTenantGrants: () => Promise.reject(new Error('grants unavailable')),
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'failed@example.com',
+    )
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.invitations.issue.roleLabel,
+      }),
+    )
+    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+
+    // A failed read is not an empty grant list: the form cannot prove the
+    // role is safe, so it blocks the write and offers the retry.
+    expect(
+      await screen.findByText(zhCN.invitations.issue.roleFailed),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.invitations.issue.roleRetry }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    ).toBeDisabled()
+    expect(recorder.issues).toEqual([])
+  })
+
+  it('fails closed when a grant carries no permission code', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted({
+      listTenantGrants: () =>
+        Promise.resolve([
+          {
+            tenant: TENANT,
+            role: ROLE_OPERATOR.role,
+            permission: '',
+            resource: 'unknown',
+            action: 'unknown',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+        ]),
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'unconfirmed@example.com',
+    )
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.invitations.issue.roleLabel,
+      }),
+    )
+    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+
+    // There is no code to compare with the caller's set, so the form cannot
+    // vouch for the grant and refuses rather than assuming it is safe.
+    expect(
+      await screen.findByText(zhCN.invitations.issue.roleUnconfirmed),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    ).toBeDisabled()
+    expect(recorder.issues).toEqual([])
+  })
+
+  it("starts the issue form's role clean when the host switches tenant", async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted()
+    function SwitchTenant() {
+      const [tenant, setTenant] = useState(TENANT)
+      return (
+        <OrganizationAdminProvider
+          tenant={tenant}
+          operations={createAdminOperations(backend)}
+          hasFeature={() => true}
+          protectedRoles={[TENANT_ADMIN_ROLE]}
+        >
+          <button type="button" onClick={() => setTenant('globex')}>
+            switch
+          </button>
+          <OrganizationMembersPage tenant={tenant} />
+        </OrganizationAdminProvider>
+      )
+    }
+    renderWithProviders(<SwitchTenant />)
+    await screen.findAllByText(ADA.display_name)
+
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.invitations.issue.roleLabel,
+      }),
+    )
+    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+    expect(
+      screen.getByRole('combobox', {
+        name: zhCN.invitations.issue.roleLabel,
+      }),
+    ).toHaveTextContent(ROLE_OPERATOR.role)
+
+    await user.click(screen.getByRole('button', { name: 'switch' }))
+    // The role belonged to the roles the previous tenant listed; carrying
+    // the name into another tenant would attach a role that tenant may not
+    // have. The select reads back an empty value in the same render the new
+    // tenant arrives, before its roles read answers.
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('combobox', {
+            name: zhCN.invitations.issue.roleLabel,
+          })
+          .closest('.MuiInputBase-root')
+          ?.querySelector('input')
+          ?.getAttribute('value'),
+      ).toBe(''),
+    )
+  })
+
+  it('offers the enterprise re-login exit for an SSO refusal on an invitation write', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const logout = vi.spyOn(session, 'logout').mockResolvedValue(undefined)
+    const { backend } = scripted({
+      issueInvitation: () =>
+        Promise.reject({ status: 401, code: 'authn.sso_required' }),
+    })
+    renderPage(backend, { session })
+    await screen.findAllByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'sso@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+
+    // The tenant admission layer's refusal cannot be retried away: the
+    // region names the enterprise sign-in and offers the session exit, as
+    // the platform page's invitation writes do.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.stepUp.relogin }),
+    )
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks a deadline within a day with the time left', async () => {
+    const soon: AdminInvitation = {
+      ...PENDING_INVITATION,
+      id: 'inv-soon',
+      email: 'soon@example.com',
+      expires_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    }
+    const { backend } = scripted({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [soon], next_cursor: '' }),
+    })
+    renderPage(backend)
+    const row = rowOf(await screen.findByText(soon.email))
+    expect(
+      within(row).getByText(
+        zhCN.invitations.expires.remainingHours.replace('{{hours}}', '1'),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the resend count and the latest send beside the time', async () => {
+    const resent: AdminInvitation = {
+      ...PENDING_INVITATION,
+      id: 'inv-resent',
+      email: 'resent@example.com',
+      send_count: 3,
+      last_sent_at: '2026-11-10T09:30:00Z',
+    }
+    const { backend } = scripted({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [resent], next_cursor: '' }),
+    })
+    renderPage(backend)
+    const row = rowOf(await screen.findByText(resent.email))
+    // The issued time stays the row's own; the resend count and the latest
+    // send sit beneath it rather than replacing it.
+    expect(
+      within(row).getByText(
+        formatInstant(resent.created_at, 'zh-CN', {
+          timeZone: TEST_TIME_ZONE,
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(row).getByText(
+        fill(zhCN.invitations.created.resent, {
+          count: '2',
+          time: formatInstant('2026-11-10T09:30:00Z', 'zh-CN', {
+            timeZone: TEST_TIME_ZONE,
+          }),
+        }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('leaves a missing inviter and a null terminal instant blank', async () => {
+    const user = userEvent.setup()
+    const nameless: AdminInvitation = {
+      ...PENDING_INVITATION,
+      id: 'inv-nameless',
+      email: 'nameless@example.com',
+      status: 'accepted',
+      state: 'accepted',
+      invited_by_name: undefined,
+      invited_by_username: undefined,
+      accepted_at: null,
+    }
+    const { backend } = scripted({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [nameless], next_cursor: '' }),
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
+    )
+    await user.click(screen.getByRole('option', { name: zhCN.invitations.filter.all }))
+    const row = rowOf(await screen.findByText(nameless.email))
+    expect(
+      within(row).getByText(zhCN.invitations.status.accepted),
+    ).toBeInTheDocument()
+    // A null instant produces no note: the status tag is its chip alone, so
+    // the whole tag reads as the status label. Comparing the unit's text
+    // rather than a fragment of the note's copy keeps the assertion
+    // discriminating when that wording changes. A missing inviter name
+    // leaves the cell empty rather than showing a placeholder or throwing.
+    expect(statusTagOf(row, zhCN.invitations.status.accepted).textContent).toBe(
+      zhCN.invitations.status.accepted,
+    )
+    expect(within(row).queryByText(ADA.display_name)).toBeNull()
+  })
+
+  it('resends the same invitation and exposes the new one-time link', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted({
+      resendInvitation: (input) => {
+        recorder.resends.push(input)
         return Promise.resolve({
-          ...issuedFixture(input.email),
+          ...issuedFixture(PENDING_INVITATION.email),
           invitation: {
-            ...issuedFixture(input.email).invitation,
+            ...issuedFixture(PENDING_INVITATION.email).invitation,
             id: PENDING_INVITATION.id,
           },
         })
@@ -1772,15 +2369,16 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    await waitFor(() => {
-      expect(recorder.issues).toHaveLength(1)
-      expect(recorder.issues[0]).toMatchObject({
-        tenant: TENANT,
-        email: PENDING_INVITATION.email,
-      })
-    })
+    await waitFor(() =>
+      expect(recorder.resends).toEqual([
+        { tenant: TENANT, id: PENDING_INVITATION.id },
+      ]),
+    )
+    // Resend names the invitation, not a new address; the issue route is
+    // never used for it.
+    expect(recorder.issues).toEqual([])
     // The new token is shown once, and the row it belongs to now offers
-    // the copy action while the other rows do not.
+    // the copy action.
     expect(
       await screen.findByText(
         `${window.location.origin}/invitations/spd_inv_new_token`,
@@ -1791,58 +2389,40 @@ describe('the invitation section', () => {
         name: zhCN.invitations.copyLink,
       }),
     ).toBeInTheDocument()
-    expect(
-      within(rowOf(ACCEPTED_INVITATION.email)).queryByRole('button', {
-        name: zhCN.invitations.copyLink,
-      }),
-    ).toBeNull()
   })
 
-  it('names the new validity before resending', async () => {
+  it('states the unchanged deadline before resending', async () => {
     const user = userEvent.setup()
     const { backend } = scripted()
     renderPage(backend)
     await screen.findByText(PENDING_INVITATION.email)
 
-    // The issue form's expiry choice also sets the resend's validity. Ask for
-    // the confirmation under two choices and read what it says: the sentence
-    // must state the validity this resend will give, so the two cannot read
-    // the same. The text is read from the dialog, not compared against a
-    // literal, so a host's own wording keeps the case meaningful.
-    const confirmTextFor = async (choice: string): Promise<string> => {
-      await user.click(
-        screen.getByRole('combobox', {
-          name: zhCN.invitations.issue.quickLabel,
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.resend,
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.invitations.resendTitle,
+    })
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.invitations.resendMessage, {
+          email: PENDING_INVITATION.email,
+          time: formatInstant(PENDING_INVITATION.expires_at, 'zh-CN', {
+            timeZone: TEST_TIME_ZONE,
+          }),
         }),
-      )
-      await user.click(screen.getByRole('option', { name: choice }))
-      await chooseInvitationAction(
-        user,
-        PENDING_INVITATION.email,
-        zhCN.invitations.resend,
-      )
-      const dialog = await screen.findByRole('dialog', {
-        name: zhCN.invitations.resendTitle,
-      })
-      const text = dialog.textContent ?? ''
-      await user.click(
-        within(dialog).getByRole('button', { name: zhCN.common.cancel }),
-      )
-      return text
-    }
-
-    const oneDay = await confirmTextFor(zhCN.invitations.issue.oneDay)
-    const thirtyDays = await confirmTextFor(zhCN.invitations.issue.thirtyDays)
-    expect(oneDay).not.toBe(thirtyDays)
+        { exact: true },
+      ),
+    ).toBeInTheDocument()
   })
 
   it('clears an earlier failed row marker when a later issue succeeds', async () => {
     const user = userEvent.setup()
     const { backend } = scripted({
-      issueInvitation: (input) =>
-        input.email === PENDING_INVITATION.email
-          ? Promise.reject(new Error('invite write refused'))
-          : Promise.resolve(issuedFixture(input.email)),
+      resendInvitation: () =>
+        Promise.reject(new Error('invite write refused')),
     })
     renderPage(backend)
     await screen.findByText(PENDING_INVITATION.email)
@@ -1879,7 +2459,7 @@ describe('the invitation section', () => {
   it('clears the invitation scope and row marker when the status filter changes', async () => {
     const user = userEvent.setup()
     const { backend } = scripted({
-      issueInvitation: () =>
+      resendInvitation: () =>
         Promise.reject(new Error('invite write refused')),
     })
     renderPage(backend)
@@ -1901,13 +2481,13 @@ describe('the invitation section', () => {
     expect(failureText).not.toBe('')
 
     // The filter change is a new scope, like the member filter: the failure
-    // above the table and the row marker must both go. The pending row stays
-    // visible under the pending filter, so a marker that survived would.
+    // above the table and the row marker must both go. "All" still lists the
+    // pending row, so a marker that survived would.
     await user.click(
       screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
     )
     await user.click(
-      screen.getByRole('option', { name: zhCN.invitations.status.pending }),
+      screen.getByRole('option', { name: zhCN.invitations.filter.all }),
     )
     await screen.findByText(PENDING_INVITATION.email)
     expect(invitationErrorOf(PENDING_INVITATION.email)).toBeNull()
@@ -1932,13 +2512,113 @@ describe('the invitation section', () => {
         { tenant: TENANT, id: PENDING_INVITATION.id },
       ]),
     )
+    // The pending-only list drops the row, so its action menu leaves the
+    // document. Focus moves to the invitation section's heading, which stays,
+    // and the success text is announced through the section's live region.
+    const heading = screen.getByRole('heading', {
+      name: zhCN.invitations.section.title,
+    })
+    const invitationSection = heading.closest('section')
+    expect(invitationSection).not.toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(heading))
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    expect(
+      within(invitationSection as HTMLElement)
+        .getByText(
+          fill(zhCN.invitations.revoked, { email: PENDING_INVITATION.email }),
+        )
+        .closest('[role="status"]'),
+    ).not.toBeNull()
+  })
+
+  it('re-reads the list when a revoke answers invitation-terminal', async () => {
+    const user = userEvent.setup()
+    let terminal = false
+    const expired: AdminInvitation = {
+      ...PENDING_INVITATION,
+      state: 'expired',
+      expires_at: '2026-02-01T00:00:00Z',
+    }
+    // The shipped bundle drives the generated surface, so the refusal and
+    // the re-read are the ones the package ships, not a scripted stand-in.
+    bindAdminRequest((call) => {
+      if (
+        call.method === 'GET' &&
+        call.path === `/api/v1/tenants/${TENANT}/members`
+      ) {
+        return { members: [], next_cursor: '' }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === `/api/v1/tenants/${TENANT}/roles`
+      ) {
+        return { roles: [] }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === `/api/v1/tenants/${TENANT}/invitations`
+      ) {
+        return {
+          invitations: [terminal ? expired : PENDING_INVITATION],
+          next_cursor: '',
+        }
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path ===
+          `/api/v1/tenants/${TENANT}/invitations/${PENDING_INVITATION.id}`
+      ) {
+        // The row moved between this list's read and the click, so the
+        // server refuses the write without changing anything.
+        terminal = true
+        throw { status: 409, code: 'authn.invitation_terminal' }
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    renderWithProviders(
+      <OrganizationAdminProvider
+        tenant={TENANT}
+        operations={organizationAdminOperations}
+        hasFeature={() => true}
+        routes={organizationAdminRoutes}
+        protectedRoles={[TENANT_ADMIN_ROLE]}
+      >
+        <OrganizationMembersPage tenant={TENANT} />
+      </OrganizationAdminProvider>,
+    )
+    await screen.findByText(PENDING_INVITATION.email)
+    // The "all" filter keeps the moved row on screen, so its new label is
+    // observable rather than the row dropping out of the pending list.
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.invitations.filter.all }),
+    )
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.revoke,
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+    // No further operator action: the refused write re-reads the list, and
+    // the server's judgement replaces the stale pending label.
+    await waitFor(() =>
+      expect(
+        within(rowOf(PENDING_INVITATION.email)).getByText(
+          zhCN.invitations.status.expired,
+        ),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('asks before closing the one-time panel and only then clears it', async () => {
     const user = userEvent.setup()
     const { backend } = scripted()
     renderPage(backend)
-    await screen.findByText(ADA.display_name)
+    await screen.findAllByText(ADA.display_name)
 
     await user.type(
       screen.getByLabelText(zhCN.invitations.issue.emailLabel),
@@ -1987,6 +2667,44 @@ describe('the invitation section', () => {
     )
   })
 
+  it('closes a delivered panel without asking, since it holds no link', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      issueInvitation: (input) =>
+        Promise.resolve(issuedFixture(input.email, 'sent')),
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'delivery@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    const emailed = await screen.findByText(
+      fill(zhCN.invitations.issued.emailed, {
+        email: 'delivery@example.com',
+      }),
+    )
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.invitations.issued.closeAria
+          .replace('{{tenant}}', TENANT)
+          .replace('{{email}}', 'delivery@example.com'),
+      }),
+    )
+    // There is no link in this panel, so closing drops nothing: no
+    // confirmation stands between the operator and the close.
+    expect(
+      screen.queryByRole('dialog', {
+        name: zhCN.invitations.issued.closeTitle,
+      }),
+    ).toBeNull()
+    await waitFor(() => expect(emailed).not.toBeInTheDocument())
+  })
+
   it.each(['failed', 'not_configured'] as const)(
     'renders the %s delivery outcome beside the one-time value',
     async (delivery) => {
@@ -1996,7 +2714,7 @@ describe('the invitation section', () => {
           Promise.resolve(issuedFixture(input.email, delivery)),
       })
       renderPage(backend)
-      await screen.findByText(ADA.display_name)
+      await screen.findAllByText(ADA.display_name)
       await user.type(
         screen.getByLabelText(zhCN.invitations.issue.emailLabel),
         'delivery@example.com',
@@ -2024,7 +2742,7 @@ describe('the invitation section', () => {
         Promise.resolve(issuedFixture(input.email, 'sent')),
     })
     renderPage(backend)
-    await screen.findByText(ADA.display_name)
+    await screen.findAllByText(ADA.display_name)
     await user.type(
       screen.getByLabelText(zhCN.invitations.issue.emailLabel),
       'delivery@example.com',
@@ -2073,6 +2791,7 @@ describe('the invitation section', () => {
     ).toBeInTheDocument()
     expect(recorder.invitationParams).toContainEqual({
       limit: 50,
+      status: 'pending',
       after: 'inv-pending',
     })
   })

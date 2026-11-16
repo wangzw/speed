@@ -44,6 +44,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	wantRequired := []core.Token{
 		(*db.Database)(nil), (*mount.Mounter)(nil), (*kv.KV)(nil), (*authn.Accounts)(nil),
 		(*authn.SignupVerification)(nil), (*authn.Memberships)(nil),
+		(*authn.TenantDescriptionResolver)(nil),
 		(*audit.Audit)(nil),
 	}
 	var required []core.Token
@@ -67,6 +68,28 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 	if !optionalLogger {
 		t.Error("the logger is not the one optional requirement")
+	}
+}
+
+// TestTheDescriptorRequiresTheTenantDescriptionResolver holds the dependency:
+// the issuance refuses the system tenant and the public link names the
+// organization through this one read, so an assembly without it cannot serve
+// the module's contract. The roster's catalog delivers it exclusively, so it is
+// a required capability rather than one taken up optionally.
+func TestTheDescriptorRequiresTheTenantDescriptionResolver(t *testing.T) {
+	found := false
+	for _, r := range Module().Requires {
+		if r.Token != (*authn.TenantDescriptionResolver)(nil) {
+			continue
+		}
+		found = true
+		if r.Optional {
+			t.Error("the tenant description resolver is optional, but the module cannot refuse the " +
+				"system tenant or name an organization without it")
+		}
+	}
+	if !found {
+		t.Error("Requires does not name authn.TenantDescriptionResolver")
 	}
 }
 

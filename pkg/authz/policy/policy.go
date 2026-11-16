@@ -6,7 +6,10 @@
 // It delivers the enforcement engine, the subject-permission read, the catalog,
 // the manager, the seeding surface and the converging surface, each exclusively,
 // and implements the authentication capability's account lifecycle hook,
-// membership lifecycle hook and membership guard. The Casbin engine and the database it reads live here and nowhere else,
+// membership lifecycle hook and membership guard. It also implements and
+// delivers the invitation's role judgement and its transaction-aware binding
+// write, and the member-role read, beside those hooks rather than exclusively:
+// a host that holds policy of its own may deliver its own. The Casbin engine and the database it reads live here and nowhere else,
 // so a host that only guards routes carries no policy store.
 package policy
 
@@ -24,6 +27,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/internal/policy"
 	"github.com/vislake/speed/pkg/authz/internal/translation"
@@ -113,6 +117,13 @@ func Module() core.Module {
 			// policy of its own may deliver one too, and the listing takes the
 			// one the registry resolves.
 			{Token: (*authn.MemberRoleReader)(nil)},
+			// The invitation's role judgement and the acceptance's in-transaction
+			// binding write. Both stand beside the lifecycle hooks for the same
+			// reason MemberRoleReader does: the invitation module takes up the one
+			// the registry resolves, and a host that holds policy of its own may
+			// deliver its own.
+			{Token: (*authn.InviteRolePolicy)(nil)},
+			{Token: (*provisioning.RoleBinder)(nil)},
 		},
 		Resources: []any{
 			permissions,
@@ -209,6 +220,8 @@ var (
 	_ authn.MembershipLifecycle = (*product)(nil)
 	_ authn.MembershipGuard     = (*product)(nil)
 	_ authn.MemberRoleReader    = (*product)(nil)
+	_ authn.InviteRolePolicy    = (*product)(nil)
+	_ provisioning.RoleBinder   = (*product)(nil)
 )
 
 // product is this module's product and the implementation of the enforcement

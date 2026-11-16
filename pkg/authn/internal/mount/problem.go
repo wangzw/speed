@@ -20,12 +20,18 @@ const typePrefix = "urn:speed:authn:"
 // The problem codes, the closed set of what a handler of this capability
 // answers with in Problem.Type, after typePrefix. The set only grows; a code is
 // never renamed or reused. Each code belongs to one status, which Status reads,
-// so that a handler names the code and cannot pair it with another status.
+// so that a handler names the code and cannot pair it with another status. The
+// exception is invitation-target-invalid: the issuing face refuses a target with
+// 400 and the acceptance face refuses a caller with 403, each by naming the code
+// in a handler fault, so Status reports the issuing face's 400.
 const (
 	CodeBadRequest                     = "bad-request"                      // 400
 	CodeUsernameReserved               = "username-reserved"                // 400
 	CodeUsernameInvalid                = "username-invalid"                 // 400
 	CodeUnsupportedRegion              = "unsupported-region"               // 400
+	CodeInvitationTargetInvalid        = "invitation-target-invalid"        // 400
+	CodeInvitationExpiryTooLong        = "invitation-expiry-too-long"       // 400
+	CodeInvitationRoleUnknown          = "invitation-role-unknown"          // 400
 	CodeLoginFailed                    = "login-failed"                     // 401
 	CodeFlowInvalid                    = "flow-invalid"                     // 401
 	CodeLinkRequired                   = "link-required"                    // 401
@@ -42,6 +48,7 @@ const (
 	CodePasswordResetClosed            = "password-reset-closed"            // 403
 	CodePasswordResetUnavailable       = "password-reset-unavailable"       // 403
 	CodeInvitationEmailUnproved        = "invitation-email-unproved"        // 403
+	CodeInvitationRoleProtected        = "invitation-role-protected"        // 403
 	CodeFactorNotFound                 = "factor-not-found"                 // 404
 	CodeConflict                       = "conflict"                         // 409
 	CodeAccountLastTenantAdmin         = "account-last-tenant-admin"        // 409
@@ -52,6 +59,10 @@ const (
 	CodeUsernameTaken                  = "username-taken"                   // 409
 	CodeEmailTaken                     = "email-taken"                      // 409
 	CodeMembershipInactive             = "membership-inactive"              // 409
+	CodeInvitationTerminal             = "invitation-terminal"              // 409
+	CodeInvitationMember               = "invitation-member"                // 409
+	CodeInvitationPending              = "invitation-pending"               // 409
+	CodeInvitationTenantInactive       = "invitation-tenant-inactive"       // 409
 	CodeUnsupportedMediaType           = "unsupported-media-type"           // 415
 	CodeThrottled                      = "throttled"                        // 429
 	CodeUnavailable                    = "unavailable"                      // 503
@@ -62,6 +73,9 @@ var statusOf = map[string]int{
 	CodeUsernameReserved:               http.StatusBadRequest,
 	CodeUsernameInvalid:                http.StatusBadRequest,
 	CodeUnsupportedRegion:              http.StatusBadRequest,
+	CodeInvitationTargetInvalid:        http.StatusBadRequest,
+	CodeInvitationExpiryTooLong:        http.StatusBadRequest,
+	CodeInvitationRoleUnknown:          http.StatusBadRequest,
 	CodeLoginFailed:                    http.StatusUnauthorized,
 	CodeFlowInvalid:                    http.StatusUnauthorized,
 	CodeLinkRequired:                   http.StatusUnauthorized,
@@ -78,6 +92,7 @@ var statusOf = map[string]int{
 	CodePasswordResetClosed:            http.StatusForbidden,
 	CodePasswordResetUnavailable:       http.StatusForbidden,
 	CodeInvitationEmailUnproved:        http.StatusForbidden,
+	CodeInvitationRoleProtected:        http.StatusForbidden,
 	CodeFactorNotFound:                 http.StatusNotFound,
 	CodeConflict:                       http.StatusConflict,
 	CodeAccountLastTenantAdmin:         http.StatusConflict,
@@ -88,6 +103,10 @@ var statusOf = map[string]int{
 	CodeUsernameTaken:                  http.StatusConflict,
 	CodeEmailTaken:                     http.StatusConflict,
 	CodeMembershipInactive:             http.StatusConflict,
+	CodeInvitationTerminal:             http.StatusConflict,
+	CodeInvitationMember:               http.StatusConflict,
+	CodeInvitationPending:              http.StatusConflict,
+	CodeInvitationTenantInactive:       http.StatusConflict,
 	CodeUnsupportedMediaType:           http.StatusUnsupportedMediaType,
 	CodeThrottled:                      http.StatusTooManyRequests,
 	CodeUnavailable:                    http.StatusServiceUnavailable,
@@ -210,8 +229,8 @@ func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 // Forbidden writes a 403. code is method-disabled, account-unavailable,
 // impersonation-restricted, factor-not-seasoned, forbidden, signup-closed,
 // contact-required, phone-required, human-verification-required,
-// password-reset-closed, password-reset-unavailable or invitation-email-unproved,
-// the twelve that this
+// password-reset-closed, password-reset-unavailable, invitation-email-unproved
+// or invitation-role-protected, the thirteen that this
 // capability's own handlers may answer: the gateway and the admission layer
 // never write a 403. Any other code panics.
 func Forbidden(c *gin.Context, code string) {

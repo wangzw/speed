@@ -65,3 +65,32 @@ type TenantStateResolver interface {
 	// TenantStateOf answers the state of the tenant with this identifier.
 	TenantStateOf(ctx context.Context, id string) (TenantState, error)
 }
+
+// TenantDescription is what an authentication path needs to name a tenant to a
+// visitor and to judge whether it is an organization at all.
+type TenantDescription struct {
+	// Name is the name the tenant is addressed by. The empty string names no
+	// tenant.
+	Name string
+	// DisplayName is the name the organization is shown by, free text its
+	// administrators chose. It is empty for a tenant that carries none.
+	DisplayName string
+	// System reports whether this is the system tenant, the platform's own
+	// domain rather than an organization. Nothing can be invited into it.
+	System bool
+}
+
+// TenantDescriptionResolver answers what a tenant is called and whether it is
+// the system tenant, in one read. It carries the facts the tenant capability
+// holds, declared here because no package of this directory imports the tenant
+// directory.
+//
+// The seam is required by the invitation capability: it refuses the system
+// tenant and names an organization in every public link, neither of which a
+// view can leave out, so an assembly without it fails the startup. An
+// identifier no tenant carries answers the zero description with no error.
+type TenantDescriptionResolver interface {
+	// TenantDescriptionOf answers the description of the tenant with this
+	// identifier.
+	TenantDescriptionOf(ctx context.Context, id string) (TenantDescription, error)
+}

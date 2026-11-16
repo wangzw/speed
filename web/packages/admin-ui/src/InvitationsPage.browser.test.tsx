@@ -27,9 +27,13 @@ const INVITATIONS: readonly AdminInvitation[] = [
     tenant: 'acme',
     email: 'ada.lovelace@example.com',
     status: 'pending',
+    state: 'pending',
     invited_by: 'staff-1',
     expires_at: '2099-01-01T00:00:00Z',
     accepted_at: null,
+    revoked_at: null,
+    last_sent_at: '2026-10-15T12:00:00Z',
+    send_count: 1,
     created_at: '2026-10-15T12:00:00Z',
   },
 ]

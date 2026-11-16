@@ -18,16 +18,16 @@ auth-ui 是登录组件族，位于 ui-kit 与 auth-core 之上，由[宿主](..
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
 - `useFlowDriver` 是族内共享的步进引擎，重试语义与服务的“拒绝不推进序号”配套：被拒的一步保留它停驻的步与序号，下一次提交带同一个序号；收到下一步（含 `next.kind = complete`）时先把新步与新序号落入驱动，再发 `complete`，`complete` 失败时用该序号重试 `complete` 或重读流程，绝不退回到上一个答复的旧步。一次答复已提交登录而随后读主体失败时，驱动按读取失败上报其自身错误码（不报登录失败，也不保留可重发的步）；会话已经提交，宿主按会话状态重渲染（见 [auth-core](design-web-auth-core.md)）。
 - `SessionEndedScreen` 是宿主挂在一处已认证视图刚翻成匿名时的占位屏。它的文案不陈述成因：显式登出与会话死亡在快照上是同一个翻转，本包区分不了，所以屏上的话对两者都成立：已退出，或登录状态已失效，再次登录即可继续。
-- `AcceptInvitationScreen` 渲染邀请受理页：读取令牌指向的邀请（acceptView）并受理它（accept）。它驱动的不是会话操作，而是宿主交给它的两个邀请操作。
+- `AcceptInvitationScreen` 渲染邀请受理页：读取令牌指向的邀请（acceptView）；宿主报告会话已登录时再读当前账户的资格（eligibility），让未证明受邀地址的访问者在打开页面时就见到证明步骤；受理走 accept。它驱动的不是会话操作，而是宿主交给它的三个邀请操作。落地页对匿名访客公开：邀请人显示名、受邀角色、组织、打码地址与期限，加宿主给的两个入口，不落成通用登录页。
 - `PasswordResetScreen` 渲染匿名口令重置页：用户选择部署提供的邮箱或短信渠道，提交该渠道的标识，取得验证码后提交验证码与新口令。它驱动的不是会话操作，而是宿主交给它的重置操作；成功不建立会话，屏幕只报告完成，由宿主导航回登录页。**短信渠道的标识用与登录页相同的两部分控件**：国家/地区由选择器选定、本地号码单独输入，提交时组装为 E.164（[REF-itu-t-e164](../../../references.md)）（[ui-kit](design-web-ui-kit.md) 的 `PhoneNumberField` 与 `toE164`）；邮箱渠道是普通邮箱字段。两者都不要求用户自己敲国际区号。“返回登录”在表单阶段（选择渠道、提交标识、验证码与新口令以及“已发送”的等待态）与提交键**同一行**，紧邻提交键左侧，与登录页的“忘记口令”一致；完成态它是唯一的主操作，不可用态它是唯一的次要操作。
 - `ImpersonationBanner` 渲染冒充期间应用壳顶部栏之下的横幅：谁被冒充、租户、到期时刻与“结束冒充”，并带一个隐藏控件。`ImpersonationIndicator` 是顶部栏里的身份指示，冒充期间始终渲染，同时是横幅的显示开关。`ImpersonationEndMenuItem` 是宿主账户菜单里的“结束冒充”项。`ImpersonationNoticeProvider` 把 `ImpersonationBanner`、`ImpersonationIndicator` 与 `ImpersonationEndMenuItem` 连到同一个隐藏状态与宿主的同一次结束尝试。`ImpersonationNoticeBanner` 与 `ImpersonationNoticeIndicator` 是读提供者的同名绑定：宿主不必手工把受控属性逐项接上。这些部件都不驱动会话，也不发请求，结束操作由宿主交给提供者。
 
-驱动会话的组件各持有一个 `session` 属性，会话由宿主传入；`AcceptInvitationScreen` 不驱动会话，它的两个操作经属性的 `invitations` 取用；`PasswordResetScreen` 也不驱动会话，它的重置操作经属性的 `operations` 取用，`session` 只用于取得人机证明（见“外部接口契约”）。组件不消费 auth-core 的**钩子**（`useAuthState`、`usePermission`），只经属性调用会话的**操作**：发现读取（`listMethods`、`discoverSso`）即在其列（见“非职责”）。内建文案一律取自 `auth-ui` 命名空间；品牌名（提供方自己的名字）由发现文档带，不进命名空间。
+驱动会话的组件各持有一个 `session` 属性，会话由宿主传入；`AcceptInvitationScreen` 不驱动会话，它的三个操作经属性的 `invitations` 取用；`PasswordResetScreen` 也不驱动会话，它的重置操作经属性的 `operations` 取用，`session` 只用于取得人机证明（见“外部接口契约”）。组件不消费 auth-core 的**钩子**（`useAuthState`、`usePermission`），只经属性调用会话的**操作**：发现读取（`listMethods`、`discoverSso`）即在其列（见“非职责”）。内建文案一律取自 `auth-ui` 命名空间；品牌名（提供方自己的名字）由发现文档带，不进命名空间。
 
 ### 非职责
 
 - **不拥有会话状态机。** 流程的推进、会话的建立与撤销归 `@speed/auth-core`（[authn 登录](../authn/design-authn-login.md)）；本包渲染的会话契约的每一项都是 auth-core 交付的操作。要在本包见不到的操作里做点别的，那是 auth-core 契约该长的地方，不是本包里的第二次 HTTP。
-- **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不自行判定令牌是否存在或能否兑现：不存在由读取的 404 给出，不可兑现由读取应答体的 `status` 与 `expires_at` 给出；受理时不可兑现才是 409。受理页只按读取应答携带的 `status` 与 `expires_at` 决定是否提供受理动作，不据此写入任何东西。令牌授予加入，不是全部凭据：受理请求由已登录账户发出，成员关系落到该账户，前提是该账户持有被邀请地址的已证明邮箱（REQ-tenancy-017）；地址不必是该账户的登录方式。未证明时后端以 `authn.invitation_email_unproved` 拒绝，屏幕展示证明步骤并给出宿主 `onProveEmail` 的入口，邀请保持待接受。宿主可在受理页前渲染它自己的登录页（先登录或注册再受理是宿主的组合），本包不内建这道门禁。
+- **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取、资格读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不自行判定令牌是否存在或能否兑现：不存在由读取的 404 给出，四态由读取应答体的 `state` 给出，过期由服务端按期限判出；受理时不可兑现才是 409。受理页按四态决定界面：待接受渲染落地页，已过期、已撤销与已接受各自说明。资格读取只在宿主报告已登录时调用，回答受邀地址是否已证明；它的 401 按未登录处理，其他失败不改变界面，受理仍由服务端把关。令牌授予加入，不是全部凭据：受理请求由已登录账户发出，成员关系落到该账户，前提是该账户持有被邀请地址的已证明邮箱（REQ-tenancy-017）；地址不必是该账户的登录方式。未证明时后端以 `authn.invitation_email_unproved` 拒绝，屏幕展示证明步骤并给出宿主 `onProveEmail` 的入口，邀请保持待接受。落地页对匿名访客渲染邀请摘要与宿主给的两个入口；宿主可在落地页前渲染它自己的登录页，本包不内建这道门禁。
 - **不拥有匿名口令重置状态机。** 重置的发送、验证码核验与口令写入由服务端完成，宿主把生成的 SDK 操作绑定成 `PasswordResetOperations` 交给 `PasswordResetScreen`；本包不发重置的 HTTP、不把 `@speed/api-sdk` 的类型带上公开接口，也不判定某账户是否具备重置条件：宿主按发现文档的 `password_reset.methods` 取得渠道，经 `channels` 交给屏幕；合格与不合格目标的服务端应答一致。
 - **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。屏幕不主动改写 URL：宿主在需要保留当前页时把登录页挂在原 URL 上，登录完成的会话翻转由宿主重新渲染该页，加强认证要求重新登录时，当事人因而回到发起那一页（[account-ui](design-web-account-ui.md) 的加强认证恢复记录负责续做待办操作）。
 - **不拥有注册状态机，但内建注册表单。** 自助注册是 `@speed/auth-core` 的 `session.register` 操作，一次请求建号，不建立会话、不发送邮件（[authn-account](../authn/design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。本包渲染 `PasswordRegisterForm` 并驱动该操作；字段规范化、口令策略、用户名占用与邮箱预留的写入都在服务端。注册成功后的会话仍由既有口令登录流程建立，本包不自行铸造会话；建号与自动登录都经 auth-core 的会话操作，本包不在它之外发请求。`SignInScreen` 在部署开放口令注册时给出这个渠道，开户仍由服务端完成。
@@ -38,7 +38,7 @@ auth-ui 是登录组件族，位于 ui-kit 与 auth-core 之上，由[宿主](..
 
 ## 外部接口契约
 
-`@speed/auth-ui` 的公开接口是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`PasswordRegisterForm` 连同 `PasswordRegisterFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`）、`PasswordResetScreen`（连同 `PasswordResetScreenProps`、`PasswordResetOperations`、`PasswordResetRequest`、`PasswordResetChannel`（从 `@speed/auth-core` 再导出）、`PasswordResetSent`、`PasswordResetVerified`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的辅助模块（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)。
+`@speed/auth-ui` 的公开接口是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`PasswordRegisterForm` 连同 `PasswordRegisterFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`、`InvitationEligibility`）、`PasswordResetScreen`（连同 `PasswordResetScreenProps`、`PasswordResetOperations`、`PasswordResetRequest`、`PasswordResetChannel`（从 `@speed/auth-core` 再导出）、`PasswordResetSent`、`PasswordResetVerified`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的辅助模块（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)。
 
 ### 受控组件的结构
 
@@ -152,18 +152,26 @@ interface SocialCallbackHandlerProps {
   readonly frame?: (content: ReactNode) => ReactNode // 宿主的卡片：把本处理器的内容包进登录页同一张卡片；absent 视图不套卡片
 }
 
-// AcceptInvitationScreen：读取一张邀请并受理它。两个邀请操作由宿主经
-// `invitations` 绑定，故本包不含 HTTP、公开接口不引用生成契约的类型。
+// AcceptInvitationScreen：读取一张邀请、读当前账户的资格并受理它。三个邀请
+// 操作由宿主经 `invitations` 绑定，故本包不含 HTTP、公开接口不引用生成契约
+// 的类型。`signedIn` 是本包读不到、由宿主报告的事实：只有它为真时才调用资格
+// 读取，也只有它为假时才渲染登录与注册入口。
 interface AcceptInvitationScreenProps {
   readonly token: string
   readonly invitations: InvitationOperations
+  readonly signedIn?: boolean
   readonly onAccepted?: () => void
   readonly onProveEmail?: () => void // 打开宿主的账户页证明被邀请地址；缺席时证明步骤只说明做法
-  readonly headingLevel?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' // 标题元素，缺省 h1；受理成功与证明步骤的小标题取下一级
+  readonly onSignIn?: () => void // 匿名访问者的登录入口
+  readonly onRegister?: () => void // 匿名访问者的注册入口
+  readonly onOpenTenant?: (tenant: string) => void // 已接受链接且当前会话已是成员时的“进入组织”
+  readonly isMemberOf?: (tenant: string) => boolean | undefined // 当前会话是否已是该组织的成员；undefined 表示宿主尚未落定
+  readonly headingLevel?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' // 标题元素，缺省 h1；确认、终态与证明步骤的小标题取下一级
 }
 
 interface InvitationOperations {
   readonly readInvitation: (token: string) => Promise<InvitationSummary>
+  readonly readEligibility?: (token: string) => Promise<InvitationEligibility> // 必须登录；401 按未登录处理
   readonly acceptInvitation: (token: string) => Promise<void>
 }
 
@@ -248,7 +256,7 @@ interface ImpersonationNoticeBannerProps {
 function ImpersonationNoticeIndicator(): ReactElement | null
 ```
 
-`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。注册入口的可见性由 `discovery.signup.enabled` 决定，并要求 `discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`。注册模式下屏上的登录渠道（表单渠道条、重定向类、企业类与通行密钥）都只列带 `opens_account` 的方法；`signup.password.enabled` 为真时另加入一个合成的“口令注册”渠道，它渲染 `PasswordRegisterForm` 并默认选中。合成渠道不来自方法描述符，password 描述符仍不带 `opens_account`；没有合成渠道时，表单渠道默认选中第一个。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用，注册模式落到它自己的默认渠道。说明文字因此不再对“所用的方式能否创建账户”设条件。标题、说明与切换按钮按模式命名（注册模式的标题是“选择登录方式”，切回去的按钮是“已有账户？登录”），两种模式下没有同名的按钮。登录模式下，`signup.enabled` 为真、屏上有带 `opens_account` 的短信渠道、且**当前选中的表单渠道就是短信**时，短信渠道下给一句说明：未登记的手机号会创建账户，这句话对每个号码都一样，不泄露号码是否已登记。它点名手机号，因此只在短信渠道下出现：选中的是口令或其它表单渠道时不渲染，没有这样的短信渠道时也不渲染。短信验证码步骤的拒绝用该步骤自己的文案（验证码有误或已失效，可重新输入或重新获取），不用口令渠道的通用句；手机号在本地校验不过时，焦点移到手机号字段，错误文字进入 live region，每次被拒的提交各播报一次，同一段文字重复被拒时也重新播报。`onSignedIn` 带一个 `context`：登录成功时屏幕所处的模式与走通的渠道，宿主据此区分一次注册与一次登录：注册模式下经口令注册之后宿主引导验证邮箱；经短信渠道登录之后，启用个人租户的部署落到租户区首页，未启用的落到账户页 `/account`；经社交或企业提供方开户的会话由回调路由落到租户区首页；登录屏位于邀请链接上时宿主不导航，留在原地址等邀请声明接管。新开户的账户在建号前已取得用户名与口令（社交首登），或取得用户名、可选的显示名与口令（短信首登），或只取得用户名（企业即时开通），首个口令只在账户页设置（[starters](../design-starters.md)、[account-ui](design-web-account-ui.md)，[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。屏幕自己驱动到完成的渠道（口令、短信、通行密钥与描述符表单）报出方法名，注册渠道报 `password`、模式为 `register`；重定向类与企业类渠道经回调路由完成，不经本屏，也就不带上下文；单个渠道表单与回调处理器的 `onSignedIn` 结构不变。`initialError` 是宿主从屏幕之外带回的错误码，渲染在渠道之上、走与各渠道相同的内联错误与白名单：一次被拒的社交回调由服务端以 `303` 落到应用内并在 URL 片段里带机器码（[authn-login](../authn/design-authn-login.md)），宿主读出、按 api-client 的推导归一成 `authn.<码>` 后交给它；屏幕不读 URL，也不管码从哪里来。`link-required` 不是登录成功，也不是开户：它是“用自己的登录方式登录该账户，再在账户页显式绑定提供方”的结果（REQ-signin-017、REQ-signup-049）。屏幕把这个结果与冲突地址渲染在同一条横幅里，不提供进入该账户或新建账户的路径；提供方声明的地址不作登录名（REQ-signin-038）。决策见 [ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)。`initialErrorEmail` 是 `link-required` 落地片段里 `authn_email` 带出的冲突地址，屏幕经 ui-kit `InlineError` 的 `detail` 在拒绝句下方渲染一行 `social.linkRequiredEmail`，文案取自 bundle 的 `social` 段、`{{email}}` 取该值；地址已由服务端掩码，屏幕按原样显示，不再次处理。只有 `link-required` 带这个 prop，其他码不渲染该行。地址行属于同一条 `role=alert` 横幅，读屏在横幅出现时把拒绝句与地址一并播报。宿主带入的错误不占住屏幕：切换模式或渠道以及任意一次起手，屏幕都把它从界面上撤下，并触发一次 `onInitialErrorDismiss`，宿主据此丢弃已呈现的落地。宿主撤下之后重新带回的落地照常呈现；这条拒绝因此不会与某渠道自己的失败横幅并列。未知 `kind` 不渲染也不崩；方法显示名先按方法名取 `auth-ui` 命名空间里区分模式的词条（同一品牌经多种方式到达部署时，`wechat.mp` 与 `wechat.web` 的专属文案彼此可辨，且就是各自按钮的可及名），没有专属词条时取描述符的 `label`，再缺失时按方法名取通用词条，最后退回方法名本身。
+`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。注册入口的可见性由 `discovery.signup.enabled` 决定，并要求 `discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`。注册模式下屏上的登录渠道（表单渠道条、重定向类、企业类与通行密钥）都只列带 `opens_account` 的方法；`signup.password.enabled` 为真时另加入一个合成的“口令注册”渠道，它渲染 `PasswordRegisterForm` 并默认选中。合成渠道不来自方法描述符，password 描述符仍不带 `opens_account`；没有合成渠道时，表单渠道默认选中第一个。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用，注册模式落到它自己的默认渠道。说明文字因此不再对“所用的方式能否创建账户”设条件。标题、说明与切换按钮按模式命名（注册模式的标题是“选择登录方式”，切回去的按钮是“已有账户？登录”），两种模式下没有同名的按钮。登录模式下，`signup.enabled` 为真、屏上有带 `opens_account` 的短信渠道、且**当前选中的表单渠道就是短信**时，短信渠道下给一句说明：未登记的手机号会创建账户，这句话对每个号码都一样，不泄露号码是否已登记。它点名手机号，因此只在短信渠道下出现：选中的是口令或其它表单渠道时不渲染，没有这样的短信渠道时也不渲染。短信验证码步骤的拒绝用该步骤自己的文案（验证码有误或已失效，可重新输入或重新获取），不用口令渠道的通用句；手机号在本地校验不过时，焦点移到手机号字段，错误文字进入 live region，每次被拒的提交各播报一次，同一段文字重复被拒时也重新播报。`onSignedIn` 带一个 `context`：登录成功时屏幕所处的模式与走通的渠道，宿主据此区分一次注册与一次登录：注册模式下经口令注册之后宿主引导验证邮箱；经短信渠道登录之后，启用个人租户的部署落到租户区首页，未启用的落到账户页 `/account`；经社交或企业提供方开户的会话由回调路由落到租户区首页；登录屏由邀请落点就地打开时，口令注册仍由宿主带到账户页的验证节并记下邀请路径，短信注册不导航，由落点页的会话翻转重新渲染成已登录的形态。新开户的账户在建号前已取得用户名与口令（社交首登），或取得用户名、可选的显示名与口令（短信首登），或只取得用户名（企业即时开通），首个口令只在账户页设置（[starters](../design-starters.md)、[account-ui](design-web-account-ui.md)，[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。屏幕自己驱动到完成的渠道（口令、短信、通行密钥与描述符表单）报出方法名，注册渠道报 `password`、模式为 `register`；重定向类与企业类渠道经回调路由完成，不经本屏，也就不带上下文；单个渠道表单与回调处理器的 `onSignedIn` 结构不变。`initialError` 是宿主从屏幕之外带回的错误码，渲染在渠道之上、走与各渠道相同的内联错误与白名单：一次被拒的社交回调由服务端以 `303` 落到应用内并在 URL 片段里带机器码（[authn-login](../authn/design-authn-login.md)），宿主读出、按 api-client 的推导归一成 `authn.<码>` 后交给它；屏幕不读 URL，也不管码从哪里来。`link-required` 不是登录成功，也不是开户：它是“用自己的登录方式登录该账户，再在账户页显式绑定提供方”的结果（REQ-signin-017、REQ-signup-049）。屏幕把这个结果与冲突地址渲染在同一条横幅里，不提供进入该账户或新建账户的路径；提供方声明的地址不作登录名（REQ-signin-038）。决策见 [ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)。`initialErrorEmail` 是 `link-required` 落地片段里 `authn_email` 带出的冲突地址，屏幕经 ui-kit `InlineError` 的 `detail` 在拒绝句下方渲染一行 `social.linkRequiredEmail`，文案取自 bundle 的 `social` 段、`{{email}}` 取该值；地址已由服务端掩码，屏幕按原样显示，不再次处理。只有 `link-required` 带这个 prop，其他码不渲染该行。地址行属于同一条 `role=alert` 横幅，读屏在横幅出现时把拒绝句与地址一并播报。宿主带入的错误不占住屏幕：切换模式或渠道以及任意一次起手，屏幕都把它从界面上撤下，并触发一次 `onInitialErrorDismiss`，宿主据此丢弃已呈现的落地。宿主撤下之后重新带回的落地照常呈现；这条拒绝因此不会与某渠道自己的失败横幅并列。未知 `kind` 不渲染也不崩；方法显示名先按方法名取 `auth-ui` 命名空间里区分模式的词条（同一品牌经多种方式到达部署时，`wechat.mp` 与 `wechat.web` 的专属文案彼此可辨，且就是各自按钮的可及名），没有专属词条时取描述符的 `label`，再缺失时按方法名取通用词条，最后退回方法名本身。
 
 屏幕的装配接口由宿主决定，缺省不放宽也不收窄：
 
@@ -346,8 +354,9 @@ sequenceDiagram
 | 社交渠道配置 | `SocialProviderConfig` | 一个方法加它的品牌标签、宿主回调地址与可选图标 |
 | 一步 | `AuthnStep` | auth-core 手写的流程步模型，步进渲染器按 `kind` 分派 |
 | 首登开户步 | 流程的 `challenge` 步 | 服务端在 `next` 里给出字段与可选的 `provided_email`：社交首登是完整的开户界面（居中的身份句与要求句、用户名、只读邮箱、口令与确认口令；用户名与两道口令必填，`provided_email` 缺省时不渲染邮箱字段），短信首登是用户名、可选的显示名、口令与确认口令，企业即时开通只有用户名。标签取本族字段词表；确认口令只在本地比较；答复经 `session.answerFlow` 发出，服务端在建号前判定格式、保留字、唯一性与口令策略 |
-| 邀请视图 | `InvitationSummary` | 受理页渲染的邀请字段：租户、地址、状态、期限 |
-| 邀请操作 | `InvitationOperations` | 宿主绑定的两个邀请操作：读取与受理 |
+| 邀请视图 | `InvitationSummary` | 受理页渲染的邀请字段：组织名称与显示名、打码地址、服务端判出的四态、期限、邀请人显示名、受邀角色；后四项可缺 |
+| 资格视图 | `InvitationEligibility` | 当前账户的资格：服务端判出的四态与受邀地址是否已证明；不含地址、邀请人与组织 |
+| 邀请操作 | `InvitationOperations` | 宿主绑定的邀请操作：公开读取、必须登录的资格读取（可缺）与受理 |
 | 受理入参 | 令牌 | 受理只带令牌：接受不建账户，也不读显示名或口令，被邀请地址的证明由账户自己的验证路径完成 |
 | 命名空间 | `authUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同；注册表单的文案在顶层 `register` 节，匿名口令重置的文案在顶层 `passwordReset` 节 |
 
@@ -428,8 +437,9 @@ sequenceDiagram
 
 ### 邀请受理
 
-1. 挂载时经 `invitations.readInvitation(token)` 读一次令牌指向的邀请。读取中渲染一条 `role="status"` 通知；读取失败按失败形态分支（无此邀请 404 渲染“邀请不存在”文案、已失效 409 渲染“邀请已失效”文案、其余渲染该错误码的横幅加一个重试按钮，重试再读一次）。读取成功时先按应答的 `status` 与 `expires_at` 判定链接是否仍可兑现：状态不是 `pending`，或 `pending` 但期限已到（契约规定到点即不可受理），渲染与 409 相同的“邀请已失效”标题与说明，不展示邀请摘要与受理动作；仍可兑现时渲染邀请的租户、地址与期限与受理动作。
-2. 查看者以 `invitations.acceptInvitation(token)` 受理，受理不携带用户名、显示名或口令：接受不建账户，服务端也不读这些字段。被拒时按错误码分支：`authn.invitation_email_unproved` 打开证明步骤，说明要先证明被邀请地址，给出宿主 `onProveEmail` 的入口与一个再次受理的动作；其余错误渲染应答的错误码文本，受理动作保持可重试。受理落地后渲染受理成功文案并触发一次 `onAccepted`（抛出的宿主回调被包住，不改变受理已落定的事实）。页内标题按 `headingLevel` 渲染（缺省 `h1`，受理页通常就是整页），受理成功的小标题取它的下一级。期限经 ui-kit 的 `useFormatInstant` 按显示时区渲染（宿主上下文、浏览器时区、UTC 的解析链），时区非法或缺失时按该链回退，期限行照常渲染；只有期限值本身解析不出时该行才不渲染。
+1. 挂载时经 `invitations.readInvitation(token)` 读一次令牌指向的邀请。读取中渲染一条 `role="status"` 通知；读取失败按失败形态分支（无此邀请 404 渲染“邀请不存在”文案与“收到过多封邀请时使用最新的一封”提示、读取答 409 渲染“邀请已失效”文案、其余渲染该错误码的横幅加一个重试按钮，重试再读一次）。读取成功后按应答的四态决定界面：已过期渲染“邀请已过期，请联系邀请人重新邀请”；已撤销渲染“邀请已被撤销”；已接受的链接在 `isMemberOf(tenant)` 为真时渲染“你已是「组织」的成员”与“进入组织”，为假时渲染“该邀请已被使用”，为 `undefined`（宿主尚未落定）时渲染等待通知而不是猜成“已被使用”。这三种终态都不展示邀请摘要与受理动作。
+2. 待接受的链接渲染落地页：邀请人显示名与受邀角色（各自可缺，按有无组合成句）、组织显示名（缺时取组织名称）、打码地址与期限。宿主报告 `signedIn` 为真时，另经 `invitations.readEligibility(token)` 读一次资格；它的 401 按未登录处理，其他失败不改变界面。资格为待接受且受邀地址未证明时，落地页直接渲染证明步骤，不等一次被拒的受理；已证明或资格读不出结果时渲染受理动作；资格给出终态时按读取应答的终态说明渲染。匿名访问者渲染摘要与宿主给的登录、注册两个入口。
+3. 查看者以 `invitations.acceptInvitation(token)` 受理，受理不携带用户名、显示名或口令：接受不建账户，服务端也不读这些字段。被拒时按错误码分支：`authn.invitation_email_unproved` 打开证明步骤，说明要先证明被邀请地址，给出宿主 `onProveEmail` 的入口与一个再次受理的动作；`authn.invitation_tenant_inactive`（409）在落地页说明该组织已停用、暂时无法加入并请查看者联系邀请人，邀请保持待接受，受理动作保留；`authn.membership_inactive`（409）渲染该码的横幅，说明成员身份已停用并请查看者联系组织管理员，不重新读取邀请，因为后端在拒绝的同时撤销邀请，重读只会显示已撤销，而停用成员无法被再次邀请；`authn.invitation_terminal`（409）重新读一次邀请，按读取应答的终态说明渲染，重读仍为待接受时渲染该码的横幅；其余错误渲染应答的错误码文本，受理动作保持可重试。证明步骤里的“验证完成后重新接受”同样是一次受理，同样的错误码横幅与停用组织说明在该步骤中出现。受理落地后，页内长期挂载的 `role="status"` 区域填入受理成功文案，并触发一次 `onAccepted`（抛出的宿主回调被包住，不改变受理已落定的事实）。页内标题按 `headingLevel` 渲染（缺省 `h1`，受理页通常就是整页），确认、终态与证明步骤的小标题取它的下一级。期限经 ui-kit 的 `useFormatInstant` 按显示时区渲染（宿主上下文、浏览器时区、UTC 的解析链），时区非法或缺失时按该链回退，期限行照常渲染；只有期限值本身解析不出时该行才不渲染。
 
 ### 冒充横幅
 
@@ -485,11 +495,19 @@ sequenceDiagram
 | 回跳路由上读不到流程 | 终态说明“这次登录已过期或已在别处完成，请重新登录。”与唯一的“重新登录”动作（触发 `onSignIn`）；宿主没给 `onSignIn` 时退回一条横幅加一个重跑 `session.readFlow` 的重试按钮 |
 | 回跳路由上读回流程的请求失败（传输失败、5xx） | 一条横幅渲染该错误码文本，加一个重试按钮（重跑一次 `session.readFlow`） |
 | 回跳路由上读不到流程或重入，宿主给了 `absent`，且发现文档里没有 redirect 类与 enterprise 类方法 | 渲染 `absent`，不渲染横幅，不触发 `onSignedIn` |
-| 读取应答的邀请不可再兑现（状态非 `pending`，或 `pending` 而已到期） | 受理页渲染“邀请已失效”的标题与说明，不展示邀请摘要与受理动作 |
-| 邀请令牌不指向任何邀请（404） | 受理页渲染“邀请不存在”的标题与说明 |
-| 邀请已过期、已撤销或已被接受（409） | 受理页渲染“邀请已失效”的标题与说明 |
+| 读取应答的 `state` 为已过期（服务端按期限判出，含存储为待接受而期限已过） | 受理页渲染“邀请已过期”的标题与“请联系邀请人重新邀请”的说明，不展示邀请摘要与受理动作 |
+| 读取应答的邀请已撤销 | 受理页渲染“邀请已被撤销”的标题与说明，不展示邀请摘要与受理动作 |
+| 读取应答的邀请已接受，当前会话已是该组织成员 | 受理页渲染“你已是「组织」的成员”与“进入组织”，不展示邀请摘要与受理动作 |
+| 读取应答的邀请已接受，当前会话不是该组织成员 | 受理页渲染“该邀请已被使用”的标题与说明，不展示邀请摘要与受理动作 |
+| 资格读取被拒为 401 | 按未登录处理：落地页渲染邀请摘要与宿主给的登录、注册入口 |
+| 资格读取为待接受且受邀地址未证明 | 落地页直接渲染证明步骤，不渲染受理动作 |
+| 邀请令牌不指向任何邀请（404） | 受理页渲染“邀请不存在”的标题、说明与“收到过多封邀请时使用最新的一封”提示 |
+| 邀请读取答 409 | 受理页渲染“邀请已失效”的标题与说明 |
 | 邀请读取的其它失败 | 一条 `role="alert"` 横幅渲染应答的错误码文本，加一个重试按钮（重跑一次读取） |
-| 邀请受理被拒 | 一条 `role="alert"` 横幅渲染应答的错误码文本，受理动作保持可重试 |
+| 邀请受理被拒为 409 `invitation-tenant-inactive` | 组织已停用而邀请保持待接受：受理页说明该组织已停用、暂时无法加入并请查看者联系邀请人，受理动作保留；不重新读取邀请，因为重读只会再次答待接受 |
+| 邀请受理被拒为 409 `membership-inactive` | 一条 `role="alert"` 横幅渲染该码文本，说明成员身份已停用并请查看者联系组织管理员；不重新读取邀请，因为后端在拒绝的同时撤销邀请，而停用成员无法被再次邀请 |
+| 邀请受理被拒为 409 `invitation-terminal` | 重新读取一次邀请，按读取应答的终态说明渲染；重读仍为待接受时，一条 `role="alert"` 横幅渲染该码文本 |
+| 邀请受理被拒（其余码） | 一条 `role="alert"` 横幅渲染应答的错误码文本，受理动作保持可重试 |
 | 冒充的结束被拒或传输失败（任一结束入口发起） | 横幅内一条 `role="alert"` 渲染应答的错误码文本，结束控件保持可重试；横幅此刻被隐藏时先复位隐藏状态使它出现 |
 | 冒充的结束尝试兑现 | 渲染“冒充已结束”的成功文案；横幅随宿主把 `impersonation` 置空而消失，文案留在仍挂载的区域里 |
 | 隐藏横幅 | 横幅本体卸载，焦点移到顶部栏的身份指示；常驻 live region 与身份指示保留 |
@@ -525,7 +543,8 @@ sequenceDiagram
 | 登录屏的装配接口：组次序与首组文案、宿主内容位、提供方图标、标题层级、受控模式、起手门 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`、`SignInScreenProps`、`SignInStartContext`；`web/packages/auth-ui/src/internal/start-gate.ts`；`web/packages/auth-ui/src/internal/group-heading.ts` |
 | 会话结束屏的文案对主动退出与会话失效都成立，不陈述成因 | 已实现 | `web/packages/auth-ui/src/SessionEndedScreen.tsx`；`web/packages/auth-ui/src/locales/en-US.json`、`web/packages/auth-ui/src/locales/zh-CN.json` 的 `sessionEnded.description` |
 | 邀请受理页 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
-| 邀请受理的证明步骤、标题层级与显示时区 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps` |
+| 邀请落地的匿名摘要与登录、注册入口 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps`（`signedIn`、`onSignIn`、`onRegister`） |
+| 邀请受理的资格预检、证明步骤、终态分开说明、受理遇 409 重读、标题层级与显示时区 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps`、`InvitationEligibility`；`web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json` 的 `acceptInvitation` 节 |
 | 短信通道读取手机号缺省国家/地区 | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm` |
 | 短信渠道的人机验证块与 `human_proof`（首次发送、重发与短信第二因素） | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`、`SMSSignInFormProps`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
 | 各渠道表单停留步骤的人机验证块与 `human_proof`（短信第二因素、声明手机号的挑战） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `HumanGatedFlowStep`；`web/packages/auth-ui/src/internal/flow.ts` `answerSends`、`stepMaySend`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver` |

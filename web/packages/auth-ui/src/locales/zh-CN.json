@@ -190,22 +190,45 @@
   "acceptInvitation": {
     "title": "接受邀请",
     "loading": "正在读取邀请…",
-    "invited": "你被邀请加入组织「{{tenant}}」。",
+    "invitedByWithRole": "{{inviter}} 邀请你以「{{role}}」身份加入「{{tenant}}」。",
+    "invitedBy": "{{inviter}} 邀请你加入「{{tenant}}」。",
+    "invitedWithRole": "有人邀请你以「{{role}}」身份加入「{{tenant}}」。",
+    "invited": "有人邀请你加入「{{tenant}}」。",
     "email": "邀请发送至：{{email}}",
     "expires": "有效期至：{{expires}}",
     "accept": "接受",
+    "signIn": "登录",
+    "createAccount": "创建账户",
     "retry": "重试",
     "accepted": {
       "title": "邀请已接受",
       "description": "你已成为该组织的成员。"
     },
+    "member": {
+      "title": "你已是「{{tenant}}」的成员",
+      "description": "这条邀请已经用于加入该组织。",
+      "open": "进入组织"
+    },
+    "used": {
+      "title": "该邀请已被使用",
+      "description": "这条邀请已经接受过了。"
+    },
+    "expired": {
+      "title": "邀请已过期",
+      "description": "请联系邀请人重新邀请。"
+    },
+    "revoked": {
+      "title": "邀请已被撤销",
+      "description": "请联系邀请人重新邀请。"
+    },
     "missing": {
       "title": "邀请不存在",
-      "description": "该邀请链接无效或已被删除。"
+      "description": "该邀请链接无效或已被删除。",
+      "hint": "如果你收到过多封邀请邮件，请使用最新的一封。"
     },
     "unavailable": {
       "title": "邀请已失效",
-      "description": "该邀请已过期、已撤销或已被接受。"
+      "description": "这条邀请已无法再接受。"
     },
     "error": {
       "title": "邀请读取失败"
@@ -215,6 +238,10 @@
       "description": "接受邀请需要当前登录的账户先证明「{{email}}」属于你。请前往账户设置添加并验证这个邮箱，然后回到这里重新接受。这只是确认你的受邀身份，不会把这个邮箱设为登录方式。",
       "manageAccount": "前往账户设置",
       "retry": "验证完成后重新接受"
+    },
+    "tenantInactive": {
+      "title": "该组织已停用",
+      "description": "邀请你的组织已停用，暂时无法加入。请联系邀请人。"
     }
   },
   "impersonation": {
@@ -256,7 +283,9 @@
       "unavailable": "服务暂时不可用，请稍后重试。",
       "human_verification_required": "请先完成人机验证，然后重试。",
       "invitation_email_unproved": "接受邀请前，请先在账户设置中证明被邀请的邮箱地址属于你。",
-      "membership_inactive": "你在这个组织中的成员身份已停用，无法接受邀请。请联系组织管理员。"
+      "membership_inactive": "你在这个组织中的成员身份已停用，无法接受邀请。请联系组织管理员。",
+      "invitation_target_invalid": "该账户不能接受邀请。",
+      "invitation_terminal": "这条邀请暂时无法接受，请稍后重试或联系邀请人。"
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",

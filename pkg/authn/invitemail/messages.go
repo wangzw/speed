@@ -13,17 +13,27 @@ import (
 
 // The message keys this module renders. They are namespaced by the module so
 // no other module's catalog can collide with one. One invitation notice is a
-// subject and a plain-text and an HTML body, all three interpolating the tenant
-// the invitation grants, the acceptance link and the invitation's deadline.
+// subject and a plain-text and an HTML body, both bodies interpolating the
+// tenant the invitation grants and the acceptance link. The body comes in two
+// forms: one naming the inviter, chosen when the notice carries a display name,
+// and one for an invitation a host command issued with no inviter to name. The
+// deadline is a separate pair of lines so a notice whose caller does not know it
+// omits the sentence rather than rendering an invented instant.
 const (
-	subjectKey i18n.Key = "authn.invitemail.subject"
-	textKey    i18n.Key = "authn.invitemail.body_text"
-	htmlKey    i18n.Key = "authn.invitemail.body_html"
+	subjectKey    i18n.Key = "authn.invitemail.subject"
+	textKey       i18n.Key = "authn.invitemail.body_text"
+	htmlKey       i18n.Key = "authn.invitemail.body_html"
+	textByKey     i18n.Key = "authn.invitemail.body_text_by"
+	htmlByKey     i18n.Key = "authn.invitemail.body_html_by"
+	expiryTextKey i18n.Key = "authn.invitemail.expiry_text"
+	expiryHTMLKey i18n.Key = "authn.invitemail.expiry_html"
 )
 
 // messageKeys is the full set of messages one notice renders, in the order the
 // startup check reads them.
-var messageKeys = []i18n.Key{subjectKey, textKey, htmlKey}
+var messageKeys = []i18n.Key{
+	subjectKey, textKey, htmlKey, textByKey, htmlByKey, expiryTextKey, expiryHTMLKey,
+}
 
 // localesFS carries this module's message catalog: one file per language, each
 // naming the subject and the two bodies of an invitation notice. It is declared

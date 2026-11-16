@@ -7,7 +7,7 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// handleAcceptView answers GET /invitations/:token: it reads the invitation a
+// handleAcceptView answers GET /api/v1/auth/invitations/:token: it reads the invitation a
 // token points to, so a client can show what it is about to accept. The route is
 // public and the token is the whole credential. An unknown token is a bare 404,
 // which the handler builds.
@@ -23,21 +23,35 @@ func (p *product) handleAcceptView(ctx context.Context, in acceptViewInput, meta
 	if err != nil {
 		return p.acceptAnswerReply("reading an invitation", err)
 	}
-	if state != viewStatePending {
-		// A token that can no longer be redeemed answers its state alone: the
-		// address, the tenant's name and the deadline are not shown once the
-		// link no longer grants anything.
-		return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{State: state}), nil
+	switch state {
+	case viewStatePending:
+		description, descErr := p.descriptionOf(ctx, inv.Tenant)
+		if descErr != nil {
+			return p.acceptAnswerReply("reading the tenant's description", descErr)
+		}
+		inviter, inviterErr := p.inviterNameOf(ctx, inv.InvitedBy)
+		if inviterErr != nil {
+			return p.acceptAnswerReply("reading the inviter's name", inviterErr)
+		}
+		link := pendingLinkOf(inv, description, inviter)
+		return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{State: state, Invitation: &link}), nil
+	case viewStateAccepted:
+		// An accepted link names the organization the caller may now belong to,
+		// so the client can offer it; it shows neither the address nor the
+		// inviter.
+		description, descErr := p.descriptionOf(ctx, inv.Tenant)
+		if descErr != nil {
+			return p.acceptAnswerReply("reading the tenant's description", descErr)
+		}
+		link := acceptedLinkOf(description)
+		return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{State: state, Invitation: &link}), nil
 	}
-	tenantName, nameErr := p.nameOf(ctx, inv.Tenant)
-	if nameErr != nil {
-		return p.acceptAnswerReply("reading the tenant's name", nameErr)
-	}
-	view := invitationViewOf(inv, tenantName)
-	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{State: state, Invitation: &view}), nil
+	// An expired or revoked token answers its state alone: the address, the
+	// organization and the deadline are not shown once the link grants nothing.
+	return speedhttp.JSONReply(http.StatusOK, AuthnInviteView{State: state}), nil
 }
 
-// handleAccept answers POST /invitations/:token: it redeems the invitation and
+// handleAccept answers POST /api/v1/auth/invitations/:token: it redeems the invitation and
 // writes the membership for the authenticated caller. The route is optional
 // rather than public, so a request that carries a credential gets its identity;
 // the handler refuses one that carries none, because the token is not proof of
@@ -58,21 +72,24 @@ func (p *product) handleAccept(ctx context.Context, in acceptInput, meta *speedh
 	if meta.ContentLength == 0 {
 		return nil, p.badRequest()
 	}
-	mem, err := p.Accept(ctx, AcceptInvite{Token: in.Token})
+	accepted, err := p.Accept(ctx, AcceptInvite{Token: in.Token})
 	if err != nil {
 		return p.acceptAnswerReply("accepting an invitation", err)
 	}
-	tenantName, nameErr := p.nameOf(ctx, mem.Tenant)
+	tenantName, nameErr := p.nameOf(ctx, accepted.Tenant)
 	if nameErr != nil {
 		return p.acceptAnswerReply("reading the tenant's name", nameErr)
 	}
-	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(mem, tenantName)), nil
+	return speedhttp.JSONReply(http.StatusCreated, acceptViewOf(accepted, tenantName)), nil
 }
 
 // viewToken reads the invitation a token points to and the state the read
 // judges: pending while the link is redeemable, and expired, accepted or
-// revoked once it is not. It is the read side of the acceptance face, which is
-// not part of the Invites capability.
+// revoked once it is not. It answers the whole row view whatever the state; the
+// handlers decide field by field what a given state may publish, so a state
+// that must not show the address is enforced by the view built for it rather
+// than by dropping data here. It is the read side of the acceptance face, which
+// is not part of the Invites capability.
 func (p *product) viewToken(ctx context.Context, token string) (Invitation, string, error) {
 	if token == "" {
 		return Invitation{}, "", ErrInvitationNotFound
@@ -84,9 +101,5 @@ func (p *product) viewToken(ctx context.Context, token string) (Invitation, stri
 	if !found {
 		return Invitation{}, "", ErrInvitationNotFound
 	}
-	state := readState(row, p.at())
-	if state != viewStatePending {
-		return Invitation{Status: toInvitation(row).Status}, state, nil
-	}
-	return toInvitation(row), state, nil
+	return toInvitation(row), readState(row, p.at()), nil
 }

@@ -11,25 +11,30 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FeatureName } from '@speed/api-sdk/features'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { formatInstant } from '@speed/i18n'
 import { InvitationsPage } from './InvitationsPage.js'
 import { adminOperations } from './operations.js'
 import type {
   AdminAccount,
-  AdminInvitation,
+  AdminIssueInvitationInput,
   AdminMember,
   AdminMemberPage,
   AdminOperations,
   AdminSetMemberSSOExemptInput,
   AdminWriteMemberInput,
 } from './operations.js'
+import type { AdminTenantRole } from './organization-operations.js'
+import type { AuthnInviteInvitation } from '@speed/api-sdk'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import {
   columnVisibility,
   containerMaxWidthOf,
 } from '../test-utils/container-visibility.js'
 import { renderWithProviders, createAdminUiI18n } from '../test-utils/render.js'
+import { TEST_TIME_ZONE } from '@speed/test-utils/render'
 import { ADMIN_UI_NAMESPACE } from './resources.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
+import { cellOf } from '../test-utils/table.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import {
@@ -87,15 +92,27 @@ function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-function invitation(overrides: Partial<AdminInvitation> = {}): AdminInvitation {
+/**
+ * The fixture's shape is the generated row itself: the server-judged `state`,
+ * the optional role and inviter names, and the nullable terminal instants.
+ */
+function invitation(
+  overrides: Partial<AuthnInviteInvitation> = {},
+): AuthnInviteInvitation {
   return {
     id: 'inv-1',
     tenant: 'acme',
     email: 'ada@example.com',
     status: 'pending',
+    state: 'pending',
     invited_by: 'staff-1',
+    invited_by_name: 'Demo Operator',
+    invited_by_username: 'operator',
     expires_at: '2099-01-01T00:00:00Z',
     accepted_at: null,
+    revoked_at: null,
+    last_sent_at: '2026-10-15T12:00:00Z',
+    send_count: 1,
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
@@ -113,6 +130,19 @@ function member(overrides: Partial<AdminMember> = {}): AdminMember {
     roles: [],
     joined_at: '2026-10-15T12:00:00Z',
     ...overrides,
+  }
+}
+
+/** One role of a tenant, as the tenant-domain read reports it. */
+function tenantRole(tenant: string, role: string): AdminTenantRole {
+  return {
+    builtin: false,
+    can_manage: true,
+    created_at: '2026-10-15T12:00:00Z',
+    description: role,
+    permission_count: 0,
+    role,
+    tenant,
   }
 }
 
@@ -137,6 +167,24 @@ function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getByLabelText(zhCN.common.tenant))
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
+}
+
+/**
+ * Opens one pending invitation row's action menu and selects an item. The
+ * row's writes live behind the shared menu trigger, named for the row.
+ */
+async function chooseInvitationAction(
+  user: ReturnType<typeof userEvent.setup>,
+  email: string,
+  action: string,
+): Promise<HTMLElement> {
+  const inviteSection = section(zhCN.invitations.section.title)
+  const trigger = within(inviteSection).getByRole('button', {
+    name: fill(zhCN.invitations.actionsAria, { email }),
+  })
+  await user.click(trigger)
+  await user.click(await screen.findByRole('menuitem', { name: action }))
+  return trigger
 }
 
 /** The titled section a heading opens, which holds its group's region. */
@@ -286,19 +334,18 @@ describe('InvitationsPage', () => {
       Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
     )
     const listMembers = vi.fn(() =>
-      Promise.resolve([member({ sso_exempt: false })]),
+      Promise.resolve([
+        member({ display_name: 'Member One', sso_exempt: false }),
+      ]),
     )
     const operations = withTenant({
       listInvitations,
       listMembers,
-      getAccount: () =>
-        Promise.resolve(accountFixture({ display_name: 'Member One' })),
       setMemberSsoExempt: () => pending.promise,
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    // The same display name resolves for the invitation's inviter and the
-    // member row; both reads have settled when it appears.
+    // The member row carries the display name the member read answers.
     await screen.findAllByText('Member One')
     const invitationReads = listInvitations.mock.calls.length
     const memberReads = listMembers.mock.calls.length
@@ -330,7 +377,10 @@ describe('InvitationsPage', () => {
       expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.invitations.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
-      expect(listInvitations).toHaveBeenCalledWith('acme')
+      expect(listInvitations).toHaveBeenCalledWith(
+        'acme',
+        expect.objectContaining({ limit: 50, status: 'pending' }),
+      )
       expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
     } finally {
       window.history.replaceState({}, '', '/')
@@ -344,52 +394,313 @@ describe('InvitationsPage', () => {
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
       listMembers: () =>
         Promise.resolve([member({ display_name: 'Member One' })]),
-      getAccount: ({ id }) =>
-        Promise.resolve(
-          accountFixture({
-            id,
-            display_name: id === 'staff-1' ? 'Staff One' : 'Member One',
-          }),
-        ),
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
-    expect(screen.getByText(zhCN.invitations.status.pending)).toBeInTheDocument()
-    // The inviter resolves through the platform account read; the member row
-    // carries its own display name.
-    expect(screen.getByText('Staff One')).toBeInTheDocument()
+    const inviteTable = within(
+      section(zhCN.invitations.section.title),
+    ).getByRole('table')
+    expect(
+      within(inviteTable).getByText(zhCN.invitations.status.pending),
+    ).toBeInTheDocument()
+    // The invitation answers its inviter's readable identity itself; the
+    // cell shows the display name and keeps the full identity on hover. The
+    // member row carries its own display name.
+    const inviter = screen.getByText('Demo Operator')
+    expect(inviter).toBeInTheDocument()
+    expect(inviter).toHaveAttribute('title', 'Demo Operator (operator)')
     expect(screen.getByText('Member One')).toBeInTheDocument()
   })
 
-  it("shows the inviter's display name, or the recorded id marked unresolved when the lookup is refused", async () => {
+  it('pins the invitation actions column when the table overflows', async () => {
     const user = userEvent.setup()
-    const resolving = withTenant({
+    const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
-      getAccount: () =>
-        Promise.resolve(accountFixture({ display_name: 'Staff One' })),
+      listMembers: () => Promise.resolve([]),
+    })
+    // jsdom lays nothing out, so the pin's measurement is supplied: the
+    // table is wider than its scroll container.
+    const scrollWidth = vi
+      .spyOn(Element.prototype, 'scrollWidth', 'get')
+      .mockReturnValue(600)
+    const clientWidth = vi
+      .spyOn(Element.prototype, 'clientWidth', 'get')
+      .mockReturnValue(300)
+    try {
+      renderWithProviders(<InvitationsPage />, { operations })
+      await pickTenant(user)
+      const inviteTable = within(
+        section(zhCN.invitations.section.title),
+      ).getByRole('table')
+      const headers = inviteTable.querySelectorAll('thead th')
+      expect(headers[headers.length - 1]).toHaveStyle({
+        position: 'sticky',
+        right: '0px',
+      })
+    } finally {
+      scrollWidth.mockRestore()
+      clientWidth.mockRestore()
+    }
+  })
+
+  it('clears the chosen role when the tenant changes', async () => {
+    const user = userEvent.setup()
+    const globex = tenantFixture({
+      name: 'globex',
+      display_name: 'Globex',
+      status: 'active',
+    })
+    const issueInvitation = vi.fn((input: AdminIssueInvitationInput) => {
+      const issued = issuedInvitationFixture()
+      return Promise.resolve({
+        ...issued,
+        invitation: {
+          ...issued.invitation,
+          tenant: input.tenant,
+          email: input.email,
+        },
+      })
+    })
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([TENANT, globex]),
+        listTenantRoles: (tenant) =>
+          Promise.resolve([
+            tenantRole(tenant, tenant === 'acme' ? 'admin' : 'viewer'),
+          ]),
+        listInvitations: () =>
+          Promise.resolve({ invitations: [], next_cursor: '' }),
+        listMembers: () => Promise.resolve([]),
+        issueInvitation,
+      }),
+    )
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    await user.click(
+      await screen.findByLabelText(zhCN.invitations.issue.roleLabel),
+    )
+    await user.click(await screen.findByRole('option', { name: 'admin' }))
+
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+
+    // The role name belongs to the tenant it was chosen in; the next tenant
+    // starts from no grant, so the control no longer carries the old name
+    // and the issue body names no role at all.
+    await vi.waitFor(() => {
+      expect(
+        screen.getByLabelText(zhCN.invitations.issue.roleLabel),
+      ).not.toHaveTextContent('admin')
+    })
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    await vi.waitFor(() => {
+      expect(issueInvitation).toHaveBeenCalledTimes(1)
+    })
+    expect(issueInvitation.mock.calls[0]?.[0]).not.toHaveProperty('role')
+  })
+
+  it('drops a role chosen before the tenant stopped reporting role management', async () => {
+    const user = userEvent.setup()
+    let canManage = true
+    const issueInvitation = vi.fn((input: AdminIssueInvitationInput) => {
+      const issued = issuedInvitationFixture()
+      return Promise.resolve({
+        ...issued,
+        invitation: {
+          ...issued.invitation,
+          tenant: input.tenant,
+          email: input.email,
+        },
+      })
+    })
+    const operations = withTenant({
+      listTenantRoles: (tenant) =>
+        Promise.resolve([{ ...tenantRole(tenant, 'tenant-inviter'), can_manage: canManage }]),
+      listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
+      issueInvitation,
+    })
+    const { queryClient } = renderWithProviders(<InvitationsPage />, {
+      operations,
+    })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByLabelText(zhCN.invitations.issue.roleLabel),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'tenant-inviter' }),
+    )
+
+    // The same tenant's role read now reports no role management: the control
+    // leaves the form, but the role chosen while it was visible must not be
+    // sent behind the operator's back.
+    canManage = false
+    await act(async () => {
+      await queryClient.refetchQueries()
+    })
+    await vi.waitFor(() => {
+      expect(
+        screen.queryByLabelText(zhCN.invitations.issue.roleLabel),
+      ).toBeNull()
+    })
+
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    await vi.waitFor(() => {
+      expect(issueInvitation).toHaveBeenCalledTimes(1)
+    })
+    expect(issueInvitation.mock.calls[0]?.[0]).not.toHaveProperty('role')
+  })
+
+  it('offers no role control while the tenant roles are still being read', async () => {
+    const user = userEvent.setup()
+    const listTenantRoles = vi.fn(() => new Promise<readonly AdminTenantRole[]>(() => {}))
+    const operations = withTenant({
+      listTenantRoles,
+      listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await vi.waitFor(() => expect(listTenantRoles).toHaveBeenCalledWith('acme'))
+    // Until the read answers, whether the caller may grant roles is unknown, and
+    // a control that offered every role would be a guess.
+    expect(
+      screen.queryByLabelText(zhCN.invitations.issue.roleLabel),
+    ).toBeNull()
+  })
+
+  it('offers no role control when the tenant roles cannot be read', async () => {
+    const user = userEvent.setup()
+    const listTenantRoles = vi.fn(() => Promise.reject(new Error('forbidden')))
+    const operations = withTenant({
+      listTenantRoles,
+      listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await vi.waitFor(() => expect(listTenantRoles).toHaveBeenCalledWith('acme'))
+    await vi.waitFor(() => {
+      expect(
+        screen.queryByLabelText(zhCN.invitations.issue.roleLabel),
+      ).toBeNull()
+    })
+  })
+
+  it('shows only the inviter display name and keeps the full identity on hover', async () => {
+    const user = userEvent.setup()
+    const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
+    const named = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [
+            invitation({
+              invited_by_name: 'Staff One',
+              invited_by_username: 'staff',
+            }),
+          ],
+          next_cursor: '',
+        }),
+      getAccount,
     })
     const first = renderWithProviders(<InvitationsPage />, {
-      operations: resolving,
+      operations: named,
     })
     await pickTenant(user)
-    expect(await screen.findByText('Staff One')).toBeInTheDocument()
+    const namedCell = (await screen.findByText('Staff One')).closest('td')
+    expect(namedCell).not.toBeNull()
+    // The cell carries the display name alone; the complete identity is the
+    // hover title.
+    expect(namedCell).not.toHaveTextContent('(staff)')
+    expect(screen.getByText('Staff One')).toHaveAttribute(
+      'title',
+      'Staff One (staff)',
+    )
+    // The inviter is a name to read, not an identifier to reuse: the cell
+    // offers no copy control, matching the organization page.
+    expect(within(namedCell as HTMLElement).queryAllByRole('button')).toHaveLength(
+      0,
+    )
     first.unmount()
 
-    const refused = withTenant({
+    const unnamed = withTenant({
       listInvitations: () =>
-        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
-      getAccount: () => Promise.reject(new Error('forbidden')),
+        Promise.resolve({
+          invitations: [
+            invitation({
+              invited_by_name: undefined,
+              invited_by_username: undefined,
+            }),
+          ],
+          next_cursor: '',
+        }),
+      getAccount,
     })
-    renderWithProviders(<InvitationsPage />, { operations: refused })
+    renderWithProviders(<InvitationsPage />, { operations: unnamed })
     await pickTenant(user)
-    // The cell renders the neutral copy with the unresolved note; the
-    // recorded id never becomes the visible fallback.
-    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
-    expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
-    expect(cell).not.toHaveTextContent('staff-1')
-    expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
+    // An invitation with no inviter name leaves the cell blank, matching the
+    // organization page; it never says the account is unavailable.
+    const inviteSection = section(zhCN.invitations.section.title)
+    const row = (await within(inviteSection).findByText('ada@example.com')).closest(
+      'tr',
+    )
+    expect(row).not.toBeNull()
+    const invitedByHeader = within(inviteSection).getByRole('columnheader', {
+      name: zhCN.invitations.column.invitedBy,
+    })
+    const invitedByCell =
+      row!.children[(invitedByHeader as HTMLTableCellElement).cellIndex]!
+    expect(invitedByCell.textContent?.trim()).toBe('')
+    expect(invitedByCell).not.toHaveAttribute('title')
+    expect(
+      within(inviteSection).queryByText(zhCN.common.accountUnavailable),
+    ).toBeNull()
+    expect(invitedByCell).not.toHaveTextContent('staff-1')
+    // Neither render issued a platform account read: the invitation row
+    // carries the identity it shows.
+    expect(getAccount).not.toHaveBeenCalled()
+  })
+
+  it('leaves the role cell blank when the invitation names no role', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [invitation({ role: undefined })],
+          next_cursor: '',
+        }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    const row = (await within(inviteSection).findByText('ada@example.com')).closest(
+      'tr',
+    )
+    expect(row).not.toBeNull()
+    const roleHeader = within(inviteSection).getByRole('columnheader', {
+      name: zhCN.invitations.column.role,
+    })
+    const roleCell =
+      row!.children[(roleHeader as HTMLTableCellElement).cellIndex]!
+    // No role is a blank cell, as on the organization page; the table never
+    // prints a stand-in label.
+    expect(roleCell.textContent?.trim()).toBe('')
+    expect(
+      within(inviteSection).queryByText(zhCN.invitations.issue.roleNone),
+    ).toBeNull()
   })
 
   it('names the platform member by the member read, never a lookup or the account id', async () => {
@@ -759,58 +1070,236 @@ describe('InvitationsPage', () => {
     }
   })
 
-  it('keeps a first-page member name as an inviter after paging to the second page', async () => {
+  it('pages the invitation list through every invitation', async () => {
     const user = userEvent.setup()
-    const firstPage = Array.from({ length: 100 }, (_, index) =>
-      member({
-        account: `acc-${String(index).padStart(3, '0')}`,
-        display_name: `Member ${index}`,
-      }),
-    )
-    const operations = withTenant({
-      listInvitations: () =>
-        Promise.resolve({
-          invitations: [invitation({ invited_by: 'acc-099' })],
-          next_cursor: '',
-        }),
-      listMembers: (
+    const listInvitations = vi.fn(
+      (
         _tenant: string,
-        params?: Parameters<AdminOperations['useMembers']>[1],
+        params?: Parameters<AdminOperations['useInvitations']>[1],
       ) =>
         Promise.resolve(
-          params?.after === undefined
-            ? { members: firstPage, next_cursor: 'cursor-1' }
-            : {
-                members: [
-                  member({ account: 'acc-100', display_name: 'Next Page Member' }),
+          params?.after === 'invitations-cursor-2'
+            ? {
+                invitations: [
+                  invitation({
+                    id: 'inv-2',
+                    email: 'grace@example.com',
+                  }),
                 ],
                 next_cursor: '',
+              }
+            : {
+                invitations: [invitation()],
+                next_cursor: 'invitations-cursor-2',
               },
         ),
-    })
-    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
-      operations,
-    })
+    )
+    const operations = withTenant({ listInvitations })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
 
-    const memberSection = section(zhCN.members.title)
-    await within(memberSection).findByText('Member 0')
-    const invitationSection = section(zhCN.invitations.section.title)
-    expect(
-      await within(invitationSection).findByText('Member 99 (ada)'),
-    ).toBeInTheDocument()
-
+    const inviteSection = section(zhCN.invitations.section.title)
+    await within(inviteSection).findByText('ada@example.com')
+    // The server reported a next page, so the list must offer the step to it;
+    // reading only the first page would leave the rest of the tenant's
+    // invitations unreachable.
     await user.click(
-      within(memberSection).getByRole('button', {
+      within(inviteSection).getByRole('button', {
         name: zhCN.common.pager.next,
       }),
     )
     expect(
-      await within(memberSection).findByText('Next Page Member'),
+      await within(inviteSection).findByText('grace@example.com'),
     ).toBeInTheDocument()
-    // The member who invited is not on the page now shown, but the name the
-    // read resolved on page one still names the inviter.
-    expect(within(memberSection).queryByText('Member 99')).toBeNull()
-    expect(within(invitationSection).getByText('Member 99 (ada)')).toBeInTheDocument()
+    expect(listInvitations).toHaveBeenLastCalledWith(
+      'acme',
+      expect.objectContaining({ after: 'invitations-cursor-2' }),
+    )
+  })
+
+  it('returns the invitation list to the first page with an empty cursor', async () => {
+    const user = userEvent.setup()
+    const listInvitations = vi.fn(
+      (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useInvitations']>[1],
+      ) =>
+        Promise.resolve(
+          params?.after === 'invitations-cursor-2'
+            ? {
+                invitations: [
+                  invitation({ id: 'inv-2', email: 'grace@example.com' }),
+                ],
+                next_cursor: '',
+              }
+            : {
+                invitations: [invitation()],
+                next_cursor: 'invitations-cursor-2',
+              },
+        ),
+    )
+    const operations = withTenant({ listInvitations })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    await within(inviteSection).findByText('ada@example.com')
+    await user.click(
+      within(inviteSection).getByRole('button', {
+        name: zhCN.common.pager.next,
+      }),
+    )
+    expect(
+      await within(inviteSection).findByText('grace@example.com'),
+    ).toBeInTheDocument()
+
+    await user.click(
+      within(inviteSection).getByRole('button', {
+        name: zhCN.common.pager.previous,
+      }),
+    )
+    expect(
+      await within(inviteSection).findByText('ada@example.com'),
+    ).toBeInTheDocument()
+    // The first page is read again by no cursor at all, not by the cursor the
+    // second page left on the stack.
+    await vi.waitFor(() =>
+      expect(listInvitations).toHaveBeenLastCalledWith('acme', {
+        limit: 50,
+        status: 'pending',
+      }),
+    )
+  })
+
+  it('starts a switched tenant with no invitation cursor', async () => {
+    const user = userEvent.setup()
+    const globex = tenantFixture({ name: 'globex', display_name: 'Globex', status: 'active' })
+    const listInvitations = vi.fn(
+      (
+        tenant: string,
+        params?: Parameters<AdminOperations['useInvitations']>[1],
+      ) =>
+        Promise.resolve(
+          tenant === 'globex'
+            ? { invitations: [], next_cursor: '' }
+            : params?.after === 'invitations-cursor-2'
+              ? {
+                  invitations: [
+                    invitation({ id: 'inv-2', email: 'grace@example.com' }),
+                  ],
+                  next_cursor: '',
+                }
+              : {
+                  invitations: [invitation()],
+                  next_cursor: 'invitations-cursor-2',
+                },
+        ),
+    )
+    const operations = withTenant({
+      listTenants: () => Promise.resolve([TENANT, globex]),
+      listInvitations,
+    })
+    renderWithProviders(<InvitationsPage defaultTenant="acme" />, {
+      operations,
+    })
+
+    const inviteSection = section(zhCN.invitations.section.title)
+    await within(inviteSection).findByText('ada@example.com')
+    await user.click(
+      within(inviteSection).getByRole('button', {
+        name: zhCN.common.pager.next,
+      }),
+    )
+    expect(
+      await within(inviteSection).findByText('grace@example.com'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+
+    // The new tenant's first read carries no cursor: the stack belonged to the
+    // tenant the viewer left, and no frame may hand its cursor to the new one.
+    await vi.waitFor(() => {
+      expect(
+        listInvitations.mock.calls.some(([tenant]) => tenant === 'globex'),
+      ).toBe(true)
+    })
+    for (const [tenant, params] of listInvitations.mock.calls) {
+      if (tenant === 'globex') {
+        expect(params).toEqual({ limit: 50, status: 'pending' })
+      }
+    }
+  })
+
+  it('filters the invitation list by status and returns to the first page', async () => {
+    const user = userEvent.setup()
+    const listInvitations = vi.fn(
+      (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useInvitations']>[1],
+      ) => {
+        if (params?.status === 'accepted') {
+          return Promise.resolve({
+            invitations: [
+              invitation({
+                id: 'inv-accepted',
+                email: 'grace@example.com',
+                status: 'accepted',
+                state: 'accepted',
+                accepted_at: '2026-11-01T12:00:00Z',
+              }),
+            ],
+            next_cursor: '',
+          })
+        }
+        return Promise.resolve(
+          params?.after === 'cursor-2'
+            ? {
+                invitations: [
+                  invitation({ id: 'inv-2', email: 'second@example.com' }),
+                ],
+                next_cursor: '',
+              }
+            : {
+                invitations: [invitation()],
+                next_cursor: 'cursor-2',
+              },
+        )
+      },
+    )
+    const operations = withTenant({ listInvitations })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    // The list opens on the pending state, so the operator's live work is
+    // what the table shows without a filter change.
+    await screen.findByText('ada@example.com')
+    expect(listInvitations).toHaveBeenCalledWith(
+      'acme',
+      expect.objectContaining({ limit: 50, status: 'pending' }),
+    )
+
+    await user.click(
+      within(section(zhCN.invitations.section.title)).getByRole('button', {
+        name: zhCN.common.pager.next,
+      }),
+    )
+    await screen.findByText('second@example.com')
+
+    // A filter change is a new first page: the cursor collected under the
+    // previous filter is not carried into the new one.
+    await user.click(screen.getByLabelText(zhCN.invitations.filter.label))
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.invitations.status.accepted,
+      }),
+    )
+    expect(
+      await screen.findByText('grace@example.com'),
+    ).toBeInTheDocument()
+    const filtered = listInvitations.mock.lastCall?.[1]
+    expect(filtered).toMatchObject({ status: 'accepted' })
+    expect(filtered).not.toHaveProperty('after')
   })
 
   it('leaves the name cell empty and names the username when the member has no display name', async () => {
@@ -843,12 +1332,17 @@ describe('InvitationsPage', () => {
     expect(usernameCell).not.toHaveTextContent('acc-1')
   })
 
-  it('tenant mode drops the platform account picker and resolves identities from members', async () => {
+  it('tenant mode drops the platform account picker and renders the invitation inviter names', async () => {
     const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({
-          invitations: [invitation({ invited_by: 'acc-1' })],
+          invitations: [
+            invitation({
+              invited_by_name: 'Ada Lovelace',
+              invited_by_username: 'ada',
+            }),
+          ],
           next_cursor: '',
         }),
       listMembers: () =>
@@ -861,18 +1355,15 @@ describe('InvitationsPage', () => {
       operations,
     })
 
-    // The member row and the invitation's inviter both resolve to the one
-    // display name and username pair the member read carries.
+    // The invitation's inviter comes from the invitation record's own
+    // resolved names; the member row carries its own display name.
     const memberSection = section(zhCN.members.title)
     expect(
       (await within(memberSection).findAllByText('Ada Lovelace')).length,
     ).toBeGreaterThan(0)
     const invitationSection = section(zhCN.invitations.section.title)
-    expect(
-      (
-        await within(invitationSection).findAllByText('Ada Lovelace (ada)')
-      ).length,
-    ).toBeGreaterThan(0)
+    const inviter = await within(invitationSection).findByText('Ada Lovelace')
+    expect(inviter).toHaveAttribute('title', 'Ada Lovelace (ada)')
     // The member write form searches the platform account roster, so tenant
     // mode does not render it.
     expect(screen.queryByLabelText(zhCN.members.write.accountLabel)).toBeNull()
@@ -880,12 +1371,18 @@ describe('InvitationsPage', () => {
     expect(getAccount).not.toHaveBeenCalled()
   })
 
-  it('tenant mode marks an account the member read cannot resolve', async () => {
+  it('tenant mode leaves the inviter cell blank when the invitation names no inviter', async () => {
     const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({
-          invitations: [invitation({ invited_by: 'ghost-1' })],
+          invitations: [
+            invitation({
+              invited_by: 'ghost-1',
+              invited_by_name: undefined,
+              invited_by_username: undefined,
+            }),
+          ],
           next_cursor: '',
         }),
       listMembers: () =>
@@ -897,28 +1394,44 @@ describe('InvitationsPage', () => {
     })
 
     const invitationSection = section(zhCN.invitations.section.title)
-    // An inviter the member read cannot resolve renders the neutral copy,
+    // An invitation that carries no inviter names leaves the cell blank,
     // never the recorded identifier and never a platform lookup.
+    const row = (await within(invitationSection).findByText('ada@example.com')).closest(
+      'tr',
+    )
+    expect(row).not.toBeNull()
+    const invitedByHeader = within(invitationSection).getByRole(
+      'columnheader',
+      { name: zhCN.invitations.column.invitedBy },
+    )
+    const invitedByCell =
+      row!.children[(invitedByHeader as HTMLTableCellElement).cellIndex]!
+    expect(invitedByCell.textContent?.trim()).toBe('')
     expect(
-      await within(invitationSection).findByText(
-        zhCN.common.accountUnavailable,
-      ),
-    ).toBeInTheDocument()
+      within(invitationSection).queryByText(zhCN.common.accountUnavailable),
+    ).toBeNull()
     expect(within(invitationSection).queryByText('ghost-1')).toBeNull()
     expect(getAccount).not.toHaveBeenCalled()
   })
 
-  it('reads a repeated account once across rows', async () => {
+  it("renders each row's inviter from its own invitation record", async () => {
     const user = userEvent.setup()
-    const getAccount = vi.fn(() =>
-      Promise.resolve(accountFixture({ display_name: 'Staff One' })),
-    )
+    const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({
           invitations: [
-            invitation({ id: 'inv-1', invited_by: 'staff-9' }),
-            invitation({ id: 'inv-2', invited_by: 'staff-9' }),
+            invitation({
+              id: 'inv-1',
+              invited_by_name: 'Staff One',
+              invited_by_username: 'staff-one',
+            }),
+            invitation({
+              id: 'inv-2',
+              email: 'grace@example.com',
+              invited_by_name: 'Staff Two',
+              invited_by_username: 'staff-two',
+            }),
           ],
           next_cursor: '',
         }),
@@ -926,9 +1439,38 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    expect(await screen.findAllByText('Staff One')).toHaveLength(2)
-    expect(getAccount).toHaveBeenCalledTimes(1)
-    expect(getAccount).toHaveBeenCalledWith({ id: 'staff-9' })
+    const first = await screen.findByText('Staff One')
+    const second = screen.getByText('Staff Two')
+    // Each row shows its own inviter's display name, with the full identity
+    // on hover.
+    expect(first).toHaveAttribute('title', 'Staff One (staff-one)')
+    expect(second).toHaveAttribute('title', 'Staff Two (staff-two)')
+    expect(getAccount).not.toHaveBeenCalled()
+  })
+
+  it('shows an inviter that has a display name but no username', async () => {
+    const user = userEvent.setup()
+    const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [
+            invitation({
+              invited_by_name: 'Staff One',
+              invited_by_username: undefined,
+            }),
+          ],
+          next_cursor: '',
+        }),
+      getAccount,
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    const inviter = await screen.findByText('Staff One')
+    // The display name is the whole identity here: no empty parentheses
+    // stand in for the username the account does not have.
+    expect(inviter).toHaveAttribute('title', 'Staff One')
+    expect(getAccount).not.toHaveBeenCalled()
   })
 
   it('declares the designed priorities and caps for invitations and members', async () => {
@@ -938,19 +1480,17 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({
-          invitations: [invitation({ email })],
+          invitations: [
+            invitation({
+              email,
+              invited_by_name: invitedByName,
+              invited_by_username: 'operator',
+            }),
+          ],
           next_cursor: '',
         }),
       listMembers: () =>
         Promise.resolve([member({ display_name: 'Operator', username: '' })]),
-      getAccount: (query) =>
-        Promise.resolve(
-          accountFixture({
-            id: query.id,
-            display_name:
-              query.id === 'staff-1' ? invitedByName : 'Operator',
-          }),
-        ),
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
@@ -959,47 +1499,64 @@ describe('InvitationsPage', () => {
     const header = (scope: HTMLElement, label: string): Element =>
       within(scope).getByRole('columnheader', { name: label })
 
-    // The invitation table: the email is the primary identity with the
-    // shared cap, status stays to `sm`, the inviter to `md`, expiry the
-    // first to go, and the row actions never hide.
+    // The invitation table keeps the email as the primary identity and every
+    // other fact from the sm floor up: status, inviter, expiry and the
+    // sent-at time are what the operator judges an invitation by, so none of
+    // them yields before the table's own primary identity. The role is the
+    // secondary fact both invitation tables state at the md tier.
     const inviteSection = section(zhCN.invitations.section.title)
     expect(columnVisibility(header(inviteSection, zhCN.invitations.column.email))).toBeNull()
-    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.status))).toEqual({
-      hiddenAt: 0,
-      visibleFrom: 600,
-    })
-    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.invitedBy))).toEqual({
+    for (const label of [
+      zhCN.invitations.column.status,
+      zhCN.invitations.column.invitedBy,
+      zhCN.invitations.column.expires,
+      zhCN.invitations.column.created,
+    ]) {
+      expect(columnVisibility(header(inviteSection, label))).toEqual({
+        hiddenAt: 0,
+        visibleFrom: 600,
+      })
+    }
+    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.role))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
-    })
-    expect(columnVisibility(header(inviteSection, zhCN.invitations.column.expires))).toEqual({
-      hiddenAt: 0,
-      visibleFrom: 1200,
     })
     expect(columnVisibility(header(inviteSection, zhCN.invitations.column.actions))).toBeNull()
     const emailCell = screen.getByText(email).closest('td')
     expect(emailCell).toHaveAttribute('title', email)
     expect(containerMaxWidthOf(emailCell!.firstElementChild!)).toEqual(
       new Map([
-        [0, 160],
+        [0, 120],
         [900, 200],
       ]),
     )
     // The inviter is a long-text column, not the primary identity: the
-    // flat 160 cap bounds the whole cell (name and copy control), so a
-    // long display name cannot push the table past the md floor.
-    const invitedByIdentity = await within(inviteSection).findByText(
-      invitedByName,
-    )
+    // whole-cell cap -- 120px below md, the shared long-text cap from md up
+    // -- bounds it so a long display name cannot push the table past the sm
+    // floor; the complete "display name (username)" is the cell's title.
+    const invitedByIdentity =
+      await within(inviteSection).findByText(invitedByName)
     const invitedByCell = invitedByIdentity.closest('td')
     expect(invitedByCell).not.toBeNull()
-    // No copy control offers the recorded account id.
+    expect(invitedByIdentity).toHaveAttribute(
+      'title',
+      `${invitedByName} (operator)`,
+    )
+    // The cell offers no copy control, matching the organization page, and
+    // never renders the recorded account id.
     expect(
-      within(invitedByCell as HTMLElement).queryByRole('button'),
+      within(invitedByCell as HTMLElement).queryAllByRole('button'),
+    ).toHaveLength(0)
+    expect(
+      within(invitedByCell as HTMLElement).queryByText('staff-1'),
     ).toBeNull()
     const invitedByWrapper = invitedByCell!.firstElementChild as HTMLElement
-    expect(invitedByWrapper).toHaveStyle({ maxWidth: '160px' })
-    expect(containerMaxWidthOf(invitedByWrapper)).toEqual(new Map())
+    expect(containerMaxWidthOf(invitedByWrapper)).toEqual(
+      new Map([
+        [0, 120],
+        [900, 160],
+      ]),
+    )
 
     // The members table keeps the display name as the always-visible primary
     // identity; the account identifier beside it survives from sm, active
@@ -1044,7 +1601,9 @@ describe('InvitationsPage', () => {
     await screen.findByText('ada@example.com')
     const gated = [
       screen.getByRole('button', { name: zhCN.common.refresh }),
-      screen.getByRole('button', { name: zhCN.invitations.revoke }),
+      screen.getByRole('button', {
+        name: fill(zhCN.invitations.actionsAria, { email: 'ada@example.com' }),
+      }),
       screen.getByRole('button', { name: zhCN.members.ssoExemptSet }),
       screen.getByRole('button', { name: zhCN.members.remove }),
     ]
@@ -1071,7 +1630,7 @@ describe('InvitationsPage', () => {
     })
   })
 
-  it('takes the invitation expiry from a date-time field and sends the instant', async () => {
+  it('offers fixed invitation lifetimes and sends the chosen one', async () => {
     const user = userEvent.setup()
     const expiresSent: (string | undefined)[] = []
     const operations = withTenant({
@@ -1082,17 +1641,191 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    // The expiry is a date-time control, not a free-text box.
-    const expires = screen.getByLabelText(zhCN.invitations.issue.expiresLabel)
-    expect(expires).toHaveAttribute('type', 'datetime-local')
-    fireEvent.change(expires, { target: { value: '2026-11-01T12:00' } })
-    await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
-    await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
+    const inviteSection = section(zhCN.invitations.section.title)
+    // The expiry is a fixed choice, not a free-form time or date-time field.
+    expect(
+      inviteSection.querySelector('input[type="datetime-local"]'),
+    ).toBeNull()
+    const lifetime = screen.getByLabelText(zhCN.invitations.issue.quickLabel)
+    await user.click(lifetime)
+    await user.click(
+      await screen.findByRole('option', {
+        name: zhCN.invitations.issue.oneDay,
+      }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    const before = Date.now()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
     await vi.waitFor(() => {
-      expect(expiresSent).toEqual([
-        new Date('2026-11-01T12:00').toISOString(),
+      expect(expiresSent).toHaveLength(1)
+    })
+    const sent = expiresSent[0]
+    expect(sent).toBeDefined()
+    const left = Date.parse(sent as string) - before
+    // One day from the request, not the form's seven-day default.
+    expect(left).toBeGreaterThan(23 * 60 * 60 * 1000)
+    expect(left).toBeLessThan(25 * 60 * 60 * 1000)
+  })
+
+  it('sends the thirty-day lifetime when it is chosen', async () => {
+    const frozen = new Date('2026-03-01T00:00:00Z').getTime()
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+      const expiresSent: (string | undefined)[] = []
+      const operations = withTenant({
+        issueInvitation: (input) => {
+          expiresSent.push(input.expiresAt)
+          return Promise.resolve(issuedInvitationFixture())
+        },
+      })
+      renderWithProviders(<InvitationsPage />, { operations })
+      await pickTenant(user)
+      await user.click(
+        screen.getByLabelText(zhCN.invitations.issue.quickLabel),
+      )
+      await user.click(
+        await screen.findByRole('option', {
+          name: zhCN.invitations.issue.thirtyDays,
+        }),
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+        'new@example.com',
+      )
+      vi.setSystemTime(frozen)
+      fireEvent.click(
+        screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+      )
+      await vi.waitFor(() => {
+        expect(expiresSent).toHaveLength(1)
+      })
+      // Thirty days from the request, not the form's seven-day default.
+      expect(expiresSent[0]).toBe(
+        new Date(frozen + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('issues an invitation with the default lifetime when none is chosen', async () => {
+    // The default lifetime is a property of the request body, not of the
+    // form's copy. Pin the clock so the expected expiry is the default
+    // itself, and the assertion fails for any other default instead of
+    // tracking whatever time the suite happens to run at.
+    const frozen = new Date('2026-03-01T00:00:00Z').getTime()
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+      const expiresSent: (string | undefined)[] = []
+      const operations = withTenant({
+        issueInvitation: (input) => {
+          expiresSent.push(input.expiresAt)
+          return Promise.resolve(issuedInvitationFixture())
+        },
+      })
+      renderWithProviders(<InvitationsPage />, { operations })
+      await pickTenant(user)
+      await user.type(
+        screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+        'new@example.com',
+      )
+      // The issue handler reads the clock synchronously, so freezing it
+      // immediately before the click makes the expected instant exact.
+      vi.setSystemTime(frozen)
+      fireEvent.click(
+        screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+      )
+      await vi.waitFor(() => {
+        expect(expiresSent).toHaveLength(1)
+      })
+      expect(expiresSent[0]).toBe(
+        new Date(frozen + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('issues an invitation with the role chosen for the target tenant', async () => {
+    const user = userEvent.setup()
+    const issued: { email: string; role?: string }[] = []
+    const operations = withTenant({
+      listTenantRoles: () =>
+        Promise.resolve([
+          {
+            role: 'tenant-inviter',
+            tenant: 'acme',
+            description: '',
+            builtin: false,
+            can_manage: true,
+            permission_count: 0,
+            created_at: '2026-10-15T12:00:00Z',
+          },
+        ]),
+      issueInvitation: (input) => {
+        issued.push({ email: input.email, ...(input.role === undefined ? {} : { role: input.role }) })
+        return Promise.resolve(issuedInvitationFixture())
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    await user.click(
+      await screen.findByLabelText(zhCN.invitations.issue.roleLabel),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'tenant-inviter' }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    await vi.waitFor(() => {
+      expect(issued).toEqual([
+        { email: 'new@example.com', role: 'tenant-inviter' },
       ])
     })
+  })
+
+  it('offers no role control when the target tenant reports no role management', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<InvitationsPage />, {
+      operations: withTenant({
+        listInvitations: () =>
+          Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+        listTenantRoles: () =>
+          Promise.resolve([
+            {
+              role: 'tenant-inviter',
+              tenant: 'acme',
+              description: '',
+              builtin: false,
+              can_manage: false,
+              permission_count: 0,
+              created_at: '2026-10-15T12:00:00Z',
+            },
+          ]),
+      }),
+    })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+    expect(
+      screen.queryByLabelText(zhCN.invitations.issue.roleLabel),
+    ).toBeNull()
   })
 
   it('shows the acceptance link for the invitation just issued', async () => {
@@ -1268,7 +2001,7 @@ describe('InvitationsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows the acceptance value in a named, closable live region', async () => {
+  it('shows the acceptance value in a named live region and asks before dropping it', async () => {
     const user = userEvent.setup()
     const operations = withTenant()
     renderWithProviders(<InvitationsPage />, { operations })
@@ -1287,11 +2020,64 @@ describe('InvitationsPage', () => {
         email: 'ada@example.com',
       }),
     })
+    // The panel carries the only copy of the link, so closing it asks first.
     await user.click(close)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.invitations.issued.keepOpen,
+      }),
+    )
+    expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
+
+    await user.click(close)
+    const confirming = await screen.findByRole('dialog')
+    await user.click(
+      within(confirming).getByRole('button', {
+        name: zhCN.invitations.issued.close,
+      }),
+    )
     expect(screen.queryByText('spd_inv_test_token')).toBeNull()
     // The scope's success confirmation stands beside the display and is not
     // the display: closing the display leaves it in place.
     expect(screen.getByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }))).toBeInTheDocument()
+  })
+
+  it('closes a delivered panel directly, since it holds no link', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      issueInvitation: () =>
+        Promise.resolve(issuedInvitationFixture({ email_delivery: 'sent' })),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+
+    const emailed = await screen.findByText(
+      fill(zhCN.invitations.issued.emailed, { email: 'ada@example.com' }),
+    )
+    const panel = emailed.closest('[role="status"]') as HTMLElement
+    const close = within(panel).getByRole('button', {
+      name: fill(zhCN.invitations.issued.closeAria, {
+        tenant: 'acme',
+        email: 'ada@example.com',
+      }),
+    })
+    // Nothing is dropped when the delivery reached the address, so the panel
+    // closes without a confirmation.
+    await user.click(close)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(
+      screen.queryByText(
+        fill(zhCN.invitations.issued.emailed, { email: 'ada@example.com' }),
+      ),
+    ).toBeNull()
   })
 
   it('keeps the acceptance value through a reset of the creating scope', async () => {
@@ -1336,12 +2122,423 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('ada@example.com')
-    await user.click(screen.getByRole('button', { name: zhCN.invitations.revoke }))
+    await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.revoke,
+    )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     await vi.waitFor(() => {
       expect(revoked).toEqual(['inv-1'])
     })
+    // The revoked row's menu is gone; focus lands on the invitation section's
+    // heading, and the success text is announced through its live region.
+    const invitationSection = section(zhCN.invitations.section.title)
+    const heading = within(invitationSection).getByRole('heading', {
+      name: zhCN.invitations.section.title,
+    })
+    await vi.waitFor(() => expect(document.activeElement).toBe(heading))
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    expect(
+      within(invitationSection)
+        .getByText(fill(zhCN.invitations.revoked, { email: 'ada@example.com' }))
+        .closest('[role="status"]'),
+    ).not.toBeNull()
+  })
+
+  it('re-reads the list when a revoke answers invitation-terminal', async () => {
+    const user = userEvent.setup()
+    let terminal = false
+    // The shipped bundle drives the generated surface, so the refusal and
+    // the re-read are the ones the package ships, not a scripted stand-in.
+    bindAdminRequest((call) => {
+      if (call.method === 'GET' && call.path === '/api/v1/system/tenants') {
+        return { tenants: [TENANT] }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === '/api/v1/tenants/acme/invitations'
+      ) {
+        return {
+          invitations: [
+            terminal
+              ? invitation({
+                  state: 'expired',
+                  expires_at: '2026-02-01T00:00:00Z',
+                })
+              : invitation(),
+          ],
+          next_cursor: '',
+        }
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/tenants/acme/members') {
+        return { members: [], next_cursor: '' }
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/tenants/acme/roles') {
+        return { roles: [] }
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/tenants/acme/invitations/inv-1'
+      ) {
+        // The row moved between the read and the click: the server refuses
+        // the write without changing anything.
+        terminal = true
+        throw { status: 409, code: 'authn.invitation_terminal' }
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    renderWithProviders(<InvitationsPage />, { operations: adminOperations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+    // The "all" filter keeps the moved row on screen, so its new label is
+    // observable instead of the row dropping out of the pending list.
+    await user.click(screen.getByLabelText(zhCN.invitations.filter.label))
+    await user.click(
+      await screen.findByRole('option', { name: zhCN.invitations.filter.all }),
+    )
+    await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.revoke,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
+    // No further operator action: the refused write re-reads the list, and
+    // the server's judgement replaces the stale pending label.
+    await vi.waitFor(() =>
+      expect(
+        within(section(zhCN.invitations.section.title)).getByText(
+          zhCN.invitations.status.expired,
+        ),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('moves focus to the invitation heading when a terminal revoke empties the filter', async () => {
+    const user = userEvent.setup()
+    let terminal = false
+    // The shipped bundle drives the generated surface, so the refusal and
+    // the re-read are the ones the package ships, not a scripted stand-in.
+    bindAdminRequest((call) => {
+      if (call.method === 'GET' && call.path === '/api/v1/system/tenants') {
+        return { tenants: [TENANT] }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === '/api/v1/tenants/acme/invitations'
+      ) {
+        // The server filters by status: the terminal row drops out of the
+        // default pending read, so the re-read removes it from the table.
+        if (terminal && call.query?.status === 'pending') {
+          return { invitations: [], next_cursor: '' }
+        }
+        return {
+          invitations: [
+            terminal
+              ? invitation({
+                  state: 'expired',
+                  expires_at: '2026-02-01T00:00:00Z',
+                })
+              : invitation(),
+          ],
+          next_cursor: '',
+        }
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/tenants/acme/members') {
+        return { members: [], next_cursor: '' }
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/tenants/acme/roles') {
+        return { roles: [] }
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/tenants/acme/invitations/inv-1'
+      ) {
+        terminal = true
+        throw { status: 409, code: 'authn.invitation_terminal' }
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    renderWithProviders(<InvitationsPage />, { operations: adminOperations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+    // The default filter is pending: the re-read drops the now-terminal row,
+    // taking the menu that started the write with it.
+    await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.revoke,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
+    const heading = within(section(zhCN.invitations.section.title)).getByRole(
+      'heading',
+      { name: zhCN.invitations.section.title },
+    )
+    await vi.waitFor(() => expect(screen.queryByText('ada@example.com')).toBeNull())
+    await vi.waitFor(() => expect(document.activeElement).toBe(heading))
+    expect(heading).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('resends a pending invitation on the same row and hands out the new link', async () => {
+    const user = userEvent.setup()
+    const resent: string[] = []
+    const sentAt = '2026-11-10T09:00:00Z'
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      resendInvitation: (input) => {
+        resent.push(`${input.tenant}:${input.id}`)
+        return Promise.resolve(
+          issuedInvitationFixture({
+            invitation: {
+              ...issuedInvitationFixture().invitation,
+              send_count: 2,
+              last_sent_at: sentAt,
+            },
+          }),
+        )
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+
+    await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.resend,
+    )
+    const dialog = await screen.findByRole('dialog')
+    // The confirmation says the old link stops working and the expiry stays
+    // put; it no longer speaks of a lifetime in days.
+    expect(dialog).toHaveTextContent(
+      fill(zhCN.invitations.resendMessage, {
+        email: 'ada@example.com',
+        time: formatInstant('2099-01-01T00:00:00Z', 'zh-CN', {
+          timeZone: TEST_TIME_ZONE,
+        }),
+      }),
+    )
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+    await vi.waitFor(() => {
+      expect(resent).toEqual(['acme:inv-1'])
+    })
+    // The resend answer carries the new one-time value, so the page shows it
+    // exactly as it does for a fresh issuance.
+    expect(
+      await screen.findByText('spd_inv_test_token'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        fill(zhCN.invitations.resent, { email: 'ada@example.com' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('re-reads the list when a resend answers invitation-terminal', async () => {
+    const user = userEvent.setup()
+    let terminal = false
+    // The shipped bundle drives the generated surface, so the refusal and
+    // the re-read are the ones the package ships, not a scripted stand-in.
+    bindAdminRequest((call) => {
+      if (call.method === 'GET' && call.path === '/api/v1/system/tenants') {
+        return { tenants: [TENANT] }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === '/api/v1/tenants/acme/invitations'
+      ) {
+        return {
+          invitations: [
+            terminal
+              ? invitation({
+                  state: 'expired',
+                  expires_at: '2026-02-01T00:00:00Z',
+                })
+              : invitation(),
+          ],
+          next_cursor: '',
+        }
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/tenants/acme/members') {
+        return { members: [], next_cursor: '' }
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/tenants/acme/roles') {
+        return { roles: [] }
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/tenants/acme/invitations/inv-1/resend'
+      ) {
+        // The row moved between the read and the click: the server refuses
+        // the resend without changing anything, so the list still shows the
+        // stale pending row until it is read again.
+        terminal = true
+        throw { status: 409, code: 'authn.invitation_terminal' }
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    renderWithProviders(<InvitationsPage />, { operations: adminOperations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+    // The "all" filter keeps the moved row on screen, so its new label is
+    // observable instead of the row dropping out of the pending list.
+    await user.click(screen.getByLabelText(zhCN.invitations.filter.label))
+    await user.click(
+      await screen.findByRole('option', { name: zhCN.invitations.filter.all }),
+    )
+    await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.resend,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
+    // No further operator action: the refused write re-reads the list, and
+    // the server's judgement replaces the stale pending label.
+    await vi.waitFor(() =>
+      expect(
+        within(section(zhCN.invitations.section.title)).getByText(
+          zhCN.invitations.status.expired,
+        ),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('shows the role, the sent count and the near-expiry remainder', async () => {
+    const user = userEvent.setup()
+    const lastSentAt = '2026-11-10T09:00:00Z'
+    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [
+            invitation({
+              role: 'tenant-inviter',
+              send_count: 3,
+              last_sent_at: lastSentAt,
+              expires_at: expiresAt,
+            }),
+          ],
+          next_cursor: '',
+        }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+
+    expect(screen.getByText('tenant-inviter')).toBeInTheDocument()
+    // The issued time stays the row's own; the resend count and the latest
+    // send sit beneath it rather than replacing it.
+    expect(
+      screen.getByText(
+        formatInstant('2026-10-15T12:00:00Z', 'zh-CN', {
+          timeZone: TEST_TIME_ZONE,
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        fill(zhCN.invitations.created.resent, {
+          count: '2',
+          time: formatInstant(lastSentAt, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        fill(zhCN.invitations.expires.remainingHours, { hours: '1' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows terminal moments under the status and offers no actions', async () => {
+    const user = userEvent.setup()
+    const acceptedAt = '2026-11-05T10:00:00Z'
+    const revokedAt = '2026-11-06T10:00:00Z'
+    const expiredAt = '2026-01-01T00:00:00Z'
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [
+            invitation({
+              id: 'inv-accepted',
+              email: 'accepted@example.com',
+              status: 'accepted',
+              state: 'accepted',
+              expires_at: '2026-11-09T10:00:00Z',
+              accepted_at: acceptedAt,
+            }),
+            invitation({
+              id: 'inv-revoked',
+              email: 'revoked@example.com',
+              status: 'revoked',
+              state: 'revoked',
+              expires_at: '2026-11-09T10:00:00Z',
+              revoked_at: revokedAt,
+            }),
+            invitation({
+              id: 'inv-expired',
+              email: 'expired@example.com',
+              status: 'pending',
+              state: 'expired',
+              expires_at: expiredAt,
+            }),
+          ],
+          next_cursor: '',
+        }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('accepted@example.com')
+
+    expect(
+      screen.getByText(
+        fill(zhCN.invitations.statusSince.accepted, {
+          time: formatInstant(acceptedAt, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        fill(zhCN.invitations.statusSince.revoked, {
+          time: formatInstant(revokedAt, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        fill(zhCN.invitations.statusSince.expired, {
+          time: formatInstant(expiredAt, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
+        }),
+      ),
+    ).toBeInTheDocument()
+    // A terminal invitation accepts no management action.
+    const inviteSection = section(zhCN.invitations.section.title)
+    for (const email of [
+      'accepted@example.com',
+      'revoked@example.com',
+      'expired@example.com',
+    ]) {
+      expect(
+        within(inviteSection).queryByRole('button', {
+          name: fill(zhCN.invitations.actionsAria, { email }),
+        }),
+      ).toBeNull()
+      // Only a pending row has a deadline to act on: the terminal rows leave
+      // the deadline cell empty even though their records carry one.
+      const row = within(inviteSection)
+        .getByText(email)
+        .closest('tr') as HTMLElement
+      expect(
+        cellOf(row, zhCN.invitations.column.expires).textContent?.trim(),
+      ).toBe('')
+    }
   })
 
   it('removes a membership through the bundle', async () => {
@@ -1854,7 +3051,8 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       listInvitations: () =>
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
-      listMembers: () => Promise.resolve([member()]),
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Operator' })]),
       issueInvitation: () => Promise.reject({ code: 'authn.conflict' }),
       removeMember: () => Promise.reject({ code: 'authn.forbidden' }),
     })
@@ -2026,8 +3224,12 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    const revoke = await screen.findByRole('button', { name: zhCN.invitations.revoke })
-    await user.click(revoke)
+    await screen.findByText('ada@example.com')
+    const trigger = await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.revoke,
+    )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
 
@@ -2036,8 +3238,8 @@ describe('InvitationsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
-    expect(revoke).toHaveAttribute('aria-invalid', 'true')
-    const hintId = revoke.getAttribute('aria-describedby')
+    expect(trigger).toHaveAttribute('aria-invalid', 'true')
+    const hintId = trigger.getAttribute('aria-describedby')
     expect(hintId).not.toBeNull()
     expect(document.getElementById(hintId as string)?.textContent).toBe(
       screen.getByRole('alert').textContent,
@@ -2058,10 +3260,12 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    const revoke = await screen.findByRole('button', {
-      name: zhCN.invitations.revoke,
-    })
-    await user.click(revoke)
+    await screen.findByText('ada@example.com')
+    const trigger = await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.revoke,
+    )
     const dialog = await screen.findByRole('dialog')
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
@@ -2069,7 +3273,7 @@ describe('InvitationsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
-    expect(revoke).toHaveAttribute('aria-invalid', 'true')
+    expect(trigger).toHaveAttribute('aria-invalid', 'true')
 
     // The issue and the revoke share the invitation scope: a new attempt
     // starts from a clean result, so the refused row's marker and its inline
@@ -2086,7 +3290,7 @@ describe('InvitationsPage', () => {
         fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }),
       ),
     ).toBeInTheDocument()
-    expect(revoke).toHaveAttribute('aria-invalid', 'false')
+    expect(trigger).toHaveAttribute('aria-invalid', 'false')
   })
 
   it('names the changed object on each landed write', async () => {
@@ -2220,7 +3424,10 @@ describe('InvitationsPage', () => {
       renderWithProviders(<InvitationsPage tenant="acme" />, { operations })
 
       await vi.waitFor(() => {
-        expect(listInvitations).toHaveBeenCalledWith('acme')
+        expect(listInvitations).toHaveBeenCalledWith(
+          'acme',
+          expect.objectContaining({ limit: 50, status: 'pending' }),
+        )
       })
       expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
       expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
@@ -2253,7 +3460,10 @@ describe('InvitationsPage', () => {
       )
 
       await vi.waitFor(() => {
-        expect(listInvitations).toHaveBeenCalledWith('acme')
+        expect(listInvitations).toHaveBeenCalledWith(
+          'acme',
+          expect.objectContaining({ status: 'pending' }),
+        )
       })
       await vi.waitFor(() => {
         expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent(
@@ -2265,7 +3475,10 @@ describe('InvitationsPage', () => {
       await user.click(await screen.findByRole('option', { name: 'Globex' }))
       expect(onTenantChange).toHaveBeenCalledWith('globex')
       await vi.waitFor(() => {
-        expect(listInvitations).toHaveBeenCalledWith('globex')
+        expect(listInvitations).toHaveBeenCalledWith(
+          'globex',
+          expect.objectContaining({ status: 'pending' }),
+        )
       })
     } finally {
       window.history.replaceState({}, '', '/')

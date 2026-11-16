@@ -12,13 +12,16 @@
  * escalation check live in `internal/member-panel.tsx`.
  *
  * Invitations: an issue form with a one-day / seven-day / thirty-day expiry
- * choice, the one-time acceptance panel, a server-side status filter and a
- * table with resend, revoke and the current item's copy-link action. Expiry
- * is derived from the deadline (`internal/invitation-status.ts`); the server
- * filters by the same four-value vocabulary. The one-time panel is page
- * state, so a scope reset or a later failure cannot drop the only copy; its
- * close control asks for confirmation before clearing it, and only the
- * invitation that was just issued or resent offers a row copy-link action.
+ * choice and, for a caller who may manage roles, a role choice whose grants
+ * are checked against the caller's own permission set before the write. The
+ * list opens on pending invitations, filters by the server's four-value
+ * status, and renders the server-judged `state` rather than deriving expiry
+ * from the local clock (`internal/invitation-status.ts`). Terminal rows say
+ * when they reached that state; only pending rows offer resend and revoke.
+ * The one-time panel is page state, so a scope reset or a later failure
+ * cannot drop the only copy; its close control asks for confirmation only
+ * when it actually holds a link, and only the invitation that was just
+ * issued or resent offers a row copy-link action.
  *
  * Every read and write runs through the organization operations bundle,
  * so the page builds no client and writes no query key.
@@ -36,6 +39,7 @@ import {
   ConfirmDialog,
   CopyButton,
   DataTable,
+  errorCodeOf,
   ListSkeleton,
   LONG_TEXT_COLUMN_MAX_WIDTH,
   OneTimeValuePanel,
@@ -48,21 +52,24 @@ import type { DataTableColumn } from '@speed/ui-kit'
 import { AdminPageHeader } from './internal/page-header.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { AccountsIcon, InvitationsIcon } from './internal/icons.js'
-import {
-  identityLabel,
-  TenantAccountIdentity,
-} from './internal/account-identity.js'
+import { identityLabel } from './internal/account-identity.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { CursorPager } from './internal/cursor-pager.js'
+import { INVITATION_IDENTITY_MAX_WIDTH } from './internal/invitation-columns.js'
 import { useAdminInvitationLink } from './internal/invitation-link.js'
 import {
   INVITATION_STATUS_FILTERS,
-  invitationStatusOf,
-  type InvitationStatus,
+  remainingText,
+  statusLabel,
+  statusTone,
+  terminalNote,
   type InvitationStatusFilter,
 } from './internal/invitation-status.js'
+import { StatusTag } from './internal/status-tag.js'
+import { useRoleEscalationCheck } from './internal/role-escalation.js'
 import { MemberPanel } from './internal/member-panel.js'
 import { RowActionMenu } from './internal/row-action-menu.js'
+import { useSectionHeadingFocus } from './internal/section-heading-focus.js'
 import { useAdminUiErrorText } from './internal/error-text.js'
 import { useAdminSession } from './internal/session.js'
 import { useAdminUiTranslation } from './internal/translation.js'
@@ -74,6 +81,7 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { useOrganizationAdminOperations } from './organization-operations.js'
+import { INVITATION_TERMINAL_CODE } from './operations.js'
 import type {
   AdminInvitation,
   AdminIssuedInvitation,
@@ -91,9 +99,6 @@ const DEFAULT_EXPIRY_DAYS = 7
 
 /** The expiry choices the issue form offers, in days. */
 const EXPIRY_CHOICES = [1, 7, 30] as const
-
-/** No member identities resolved yet, for a tenant no page has been read for. */
-const EMPTY_MEMBER_IDENTITIES: ReadonlyMap<string, AdminMember> = new Map()
 
 /**
  * The two tables carry five high-priority columns from the `sm` container
@@ -125,43 +130,15 @@ const MEMBER_IDENTITY_MAX_WIDTH = {
   fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
 } as const
 
-/**
- * The content cap the invitation table's two nowrap identity columns take
- * below `md`. The email column shares the primary cap and the inviter the
- * long-text cap; both stay on one line, so each contributes its whole cap
- * to the row's unbreakable width. At the 600px `sm` floor those two shared
- * caps (160px each) together with the status, both timestamps and the
- * actions column exceed the floor. Two facts widen the worst case: the
- * status column has no cap of its own and "Accepted" is the longest label,
- * and a row that was just issued or resent carries the copy-link control
- * beside the Actions menu trigger. The actions column is the widest control
- * plus the cell's 8px padding on each side: 93.8px for the trigger alone
- * (77.8px), 105.1px when the copy-link control (89.1px) wraps beneath it.
- * Widths here and below are in the browser tier's pinned font.
- * The widest reachable row is therefore an accepted (or revoked) row that
- * holds the copy link. With both identity caps at 120px that row requires
- * 580.0px in the browser tier's pinned font, 20.0px inside the floor, and the
- * revoked row 576.9px; the complete values remain reachable through the title
- * and the copy control. From `md` up each column returns
- * to its shared cap: 200px for the email, 160px for the inviter.
- */
-const INVITATION_IDENTITY_MAX_WIDTH = {
-  email: {
-    belowMd: 120,
-    fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
-  },
-  invitedBy: {
-    belowMd: 120,
-    fromMd: LONG_TEXT_COLUMN_MAX_WIDTH,
-  },
-} as const
-
 /** The sources the surface names itself; a `jit:<id>` value names a provider. */
 const MEMBER_SOURCES = new Set<string>(['admin', 'initial', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
 
 /** The invitation just issued or resent, held with the tenant it belongs to. */
-type IssuedInvitation = AdminIssuedInvitation & { readonly tenant: string }
+interface IssuedNotice {
+  readonly answer: AdminIssuedInvitation
+  readonly tenant: string
+}
 
 /**
  * One list's cursor stack tagged with the tenant it was collected for. A
@@ -225,19 +202,6 @@ export interface OrganizationMembersPageProps {
   readonly tenant: string
 }
 
-/** One invitation status's label through the shared admin-ui namespace. */
-function statusLabel(
-  status: InvitationStatus,
-  t: (key: string) => string,
-): string {
-  return t(`invitations.status.${status}`)
-}
-
-/** The status a row displays, derived once from its deadline. */
-function displayedStatus(invitation: AdminInvitation): InvitationStatus {
-  return invitationStatusOf(invitation)
-}
-
 /** The absolute RFC 3339 instant `days` from now, the issue form's expiry. */
 function expiryInstant(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
@@ -261,6 +225,8 @@ export function OrganizationMembersPage({
 }: OrganizationMembersPageProps) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
+  // Every invitation instant renders through the one entry, in the viewer's
+  // display zone; the pure helpers below take it as an argument.
   const formatTime = useFormatInstant()
   const invitationLink = useAdminInvitationLink()
   const resolveErrorText = useAdminUiErrorText()
@@ -318,39 +284,6 @@ export function OrganizationMembersPage({
   useEffect(() => {
     setMemberCursorState(firstCursorPage(tenant))
   }, [tenant])
-
-  // The inviter identity on the organization surface resolves from the same
-  // member reads the table uses; identities accumulate across pages, so an
-  // inviter resolved on an earlier page stays named after paging past it.
-  // The member row itself is kept, so the inviter renders the same display
-  // name and username pair the member table shows.
-  const [memberIdentitiesByTenant, setMemberIdentitiesByTenant] = useState<
-    Readonly<Record<string, ReadonlyMap<string, AdminMember>>>
-  >({})
-  const memberIdentities =
-    memberIdentitiesByTenant[tenant] ?? EMPTY_MEMBER_IDENTITIES
-  useEffect(() => {
-    if (memberRows === undefined) {
-      return
-    }
-    setMemberIdentitiesByTenant((previous) => {
-      const current = previous[tenant] ?? EMPTY_MEMBER_IDENTITIES
-      const next = new Map(current)
-      let changed = false
-      for (const row of memberRows) {
-        const recorded = next.get(row.account)
-        if (
-          recorded === undefined ||
-          recorded.display_name !== row.display_name ||
-          recorded.username !== row.username
-        ) {
-          next.set(row.account, row)
-          changed = true
-        }
-      }
-      return changed ? { ...previous, [tenant]: next } : previous
-    })
-  }, [memberRows, tenant])
 
   const [panelMember, setPanelMember] = useState<AdminMember | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -451,8 +384,53 @@ export function OrganizationMembersPage({
 
   const [email, setEmail] = useState('')
   const [expiryDays, setExpiryDays] = useState<number>(DEFAULT_EXPIRY_DAYS)
+  // The role an invitation grants, if any. The choice is tagged with the
+  // tenant whose catalog offered it: a switch derives an empty choice in the
+  // same render, so no role name reaches a tenant whose roles read has not
+  // answered yet. The control renders only for a caller holding the tenant
+  // role-management permission.
+  const [issueRoleState, setIssueRoleState] = useState({
+    tenant,
+    role: '',
+  })
+  const issueRole = issueRoleState.tenant === tenant ? issueRoleState.role : ''
+  const setIssueRole = (role: string) => setIssueRoleState({ tenant, role })
+  // The issue form's escalation pre-check reads the selected role's grants
+  // and compares each with the caller's own set, through the same shared
+  // check the member panel's bind control uses.
+  const {
+    canManageRoles,
+    roleSelected: issueRoleSelected,
+    grants: issueGrants,
+    grantsPending: issueGrantsPending,
+    grantsFailed: issueGrantsFailed,
+    grantPermissionUnconfirmed: issueGrantUnconfirmed,
+    escalationBlocked: issueEscalationBlocked,
+  } = useRoleEscalationCheck(tenant, issueRole)
+  // The role choice belongs to the control that offered it. Without the
+  // tenant role-management permission the control is absent, so a value
+  // chosen earlier must not survive to be sent behind the operator's back
+  // when the permission returns.
+  useEffect(() => {
+    if (!canManageRoles) {
+      setIssueRoleState((previous) =>
+        previous.role === '' ? previous : { ...previous, role: '' },
+      )
+    }
+  }, [canManageRoles])
+  // The list opens on the state an operator came to act on; history is one
+  // filter choice away.
   const [statusFilter, setStatusFilter] =
-    useState<InvitationStatusFilter>('all')
+    useState<InvitationStatusFilter>('pending')
+  // A revoke moves focus to the invitation section's heading: the row may
+  // leave the filtered list, taking the menu that started the write with
+  // it, while the heading stays put and names the section the result
+  // belongs to. A terminal refusal (409) also re-reads the list; when that
+  // leaves the row out of the current filter, focus follows the same path.
+  const {
+    sectionRef: invitationSectionRef,
+    focusHeading: focusInvitationHeading,
+  } = useSectionHeadingFocus()
   const [invitationCursorState, setInvitationCursorState] =
     useState<CursorFrame>(() => firstCursorPage(tenant))
   const invitationCursorFrame =
@@ -482,11 +460,12 @@ export function OrganizationMembersPage({
     setInvitationCursorState(firstCursorPage(tenant))
   }, [tenant])
 
-  const [issued, setIssued] = useState<IssuedInvitation | null>(null)
+  const [issued, setIssued] = useState<IssuedNotice | null>(null)
   const [closeIssuedOpen, setCloseIssuedOpen] = useState(false)
 
   const issueInvitation = operations.useIssueInvitation()
   const revokeInvitation = operations.useRevokeInvitation()
+  const resendInvitation = operations.useResendInvitation()
 
   const invitationFeedback = useWriteFeedback()
   const invitationRegionRef = useFailureScroll(invitationFeedback.outcome)
@@ -495,6 +474,13 @@ export function OrganizationMembersPage({
     invitationFeedback.outcome,
     resolveErrorText,
   )
+  const issueDisabled =
+    invitationFeedback.pending ||
+    email.trim() === '' ||
+    issueGrantsPending ||
+    issueGrantsFailed ||
+    issueGrantUnconfirmed ||
+    issueEscalationBlocked
   const confirm = usePendingConfirm()
 
   const resetPageFeedback = useCallback(() => {
@@ -509,7 +495,10 @@ export function OrganizationMembersPage({
 
   // A notice whose delivery succeeded carries no token: the recipient holds
   // the link already, so the panel only says the invitation was emailed.
-  const issuedToken = issued?.token
+  const issuedToken = issued?.answer.token
+  // Only a panel that holds a link loses something when it closes; a notice
+  // the carrier accepted carries no token, so its panel closes directly.
+  const issuedHasValue = issuedToken !== undefined
   const issuedValue =
     issuedToken === undefined
       ? ''
@@ -532,9 +521,11 @@ export function OrganizationMembersPage({
         tenant,
         email: address,
         expiresAt: expiryInstant(expiryDays),
+        ...(canManageRoles && issueRole !== '' ? { role: issueRole } : {}),
       })
       setEmail('')
-      setIssued({ ...answer, tenant })
+      setIssueRole('')
+      setIssued({ answer, tenant })
       return t('invitations.issued.confirm', {
         email: answer.invitation.email,
       })
@@ -546,19 +537,20 @@ export function OrganizationMembersPage({
       title: t('invitations.resendTitle'),
       message: t('invitations.resendMessage', {
         email: invitation.email,
-        days: expiryDays,
+        time: formatTime(invitation.expires_at),
       }),
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedInvitation(null)
         void invitationFeedback.run(async () => {
           try {
-            const answer = await issueInvitation.mutateAsync({
+            // Resend replaces the token on this invitation; it neither
+            // extends the deadline nor creates another row.
+            const answer = await resendInvitation.mutateAsync({
               tenant,
-              email: invitation.email,
-              expiresAt: expiryInstant(expiryDays),
+              id: invitation.id,
             })
-            setIssued({ ...answer, tenant })
+            setIssued({ answer, tenant })
             return t('invitations.resent', {
               email: answer.invitation.email,
             })
@@ -584,9 +576,23 @@ export function OrganizationMembersPage({
               tenant,
               id: invitation.id,
             })
+            // The row leaves the filtered list; keep focus on the section's
+            // heading, which stays visible and names the section the result
+            // belongs to.
+            focusInvitationHeading()
             return t('invitations.revoked', { email: invitation.email })
           } catch (error) {
             setFailedInvitation(invitation.id)
+            // A terminal refusal leaves the row out of the current filter
+            // too, so focus does not fall back to the body when the re-read
+            // drops it. An "all" filter keeps the row, so its menu keeps
+            // focus there.
+            if (
+              statusFilter !== 'all' &&
+              errorCodeOf(error) === INVITATION_TERMINAL_CODE
+            ) {
+              focusInvitationHeading()
+            }
             throw error
           }
         })
@@ -656,13 +662,21 @@ export function OrganizationMembersPage({
       header: t('members.column.displayName'),
       // The display name is the row's identity: a short one must never be
       // split mid-token by a squeezed column. It stays on one line and
-      // truncates inside the cap; the complete value is reachable through
-      // the title and the copy control `cellFullValue` adds.
+      // truncates inside the cap. Only the username and email columns carry
+      // a copy control; the display name is read, not copied.
       cellWrap: 'nowrap',
-      cellFullValue: (member) =>
-        member.display_name === '' ? undefined : member.display_name,
       contentMaxWidth: MEMBER_IDENTITY_MAX_WIDTH,
-      cell: (member) => member.display_name,
+      // A truncated name stays reachable by hover; the copy control belongs
+      // to the username and email columns only.
+      cell: (member) => (
+        <Typography
+          variant="body2"
+          noWrap
+          title={member.display_name === '' ? undefined : member.display_name}
+        >
+          {member.display_name}
+        </Typography>
+      ),
     },
     {
       id: 'username',
@@ -691,8 +705,8 @@ export function OrganizationMembersPage({
       // viewport (280px sidebar, ~640px of content) still shows it.
       priority: 'high',
       cellWrap: 'wrap',
-      cellFullValue: (member) =>
-        member.roles.length === 0 ? undefined : member.roles.join(', '),
+      // The role names are read, not copied; the copy control stays on the
+      // username and email columns.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (member) =>
         member.roles.length === 0 ? (
@@ -718,15 +732,13 @@ export function OrganizationMembersPage({
       priority: 'high',
       cellWrap: 'nowrap',
       cell: (member) => (
-        <Chip
-          size="small"
-          variant="outlined"
-          color={member.active ? 'success' : 'default'}
+        <StatusTag
           label={
             member.active
               ? t('members.status.active')
               : t('members.status.suspended')
           }
+          tone={member.active ? 'success' : 'default'}
         />
       ),
     },
@@ -788,46 +800,114 @@ export function OrganizationMembersPage({
       id: 'status',
       header: t('invitations.column.status'),
       priority: 'high',
+      // The tag is one short word and stays whole; the caption under a
+      // terminal tag names the instant it settled and wraps inside the
+      // column instead of forcing the row wider than the sm floor.
+      cellWrap: 'wrap',
+      cell: (invitation) => {
+        const state = invitation.state
+        return (
+          <StatusTag
+            label={statusLabel(state, t)}
+            tone={statusTone(state)}
+            note={terminalNote(invitation, state, t, formatTime)}
+          />
+        )
+      },
+    },
+    {
+      id: 'role',
+      header: t('invitations.column.role'),
+      // A role is secondary to the address and its state: the column yields
+      // at the narrow floor and returns from the md container tier.
+      priority: 'medium',
       cellWrap: 'nowrap',
-      cell: (invitation) => statusLabel(displayedStatus(invitation), t),
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
+      cell: (invitation) =>
+        invitation.role === undefined || invitation.role === '' ? null : (
+          <Chip size="small" variant="outlined" label={invitation.role} />
+        ),
     },
     {
       id: 'invitedBy',
       header: t('invitations.column.invitedBy'),
       priority: 'high',
-      // The resolved inviter is a row identity too: a short name stays on
-      // one line and truncates inside its cap at the high floor. An inviter
-      // the member read does not resolve -- not a member any more, or
-      // issued by a host command -- renders the neutral copy, and no copy
-      // control offers a recorded identifier.
+      // The invitation carries the inviter's display name; the username is
+      // only the hover title behind a truncated name, never a second visible
+      // value. An invitation a host command issued, or whose inviter is gone,
+      // carries neither key and leaves the cell empty.
       cellWrap: 'nowrap',
       contentMaxWidth: INVITATION_IDENTITY_MAX_WIDTH.invitedBy,
       cell: (invitation) => {
-        const inviter = memberIdentities.get(invitation.invited_by)
+        const name = invitation.invited_by_name
+        if (name === undefined || name === '') {
+          return null
+        }
+        const full =
+          invitation.invited_by_username === undefined ||
+          invitation.invited_by_username === ''
+            ? name
+            : `${name} (${invitation.invited_by_username})`
         return (
-          <TenantAccountIdentity
-            name={inviter?.display_name}
-            username={inviter?.username}
-          />
+          <Typography variant="body2" noWrap title={full}>
+            {name}
+          </Typography>
         )
       },
     },
     {
       id: 'expires',
       header: t('invitations.column.expires'),
-      // Expiry is one of the reasons an operator opens this table, so it
-      // stays at the high floor rather than dropping out at common widths.
-      // The timestamp wraps at that floor instead of forcing a scroll.
+      // Only a pending invitation has a deadline the operator can still act
+      // on; terminal rows leave the cell empty. A deadline within a day says
+      // how long is left.
       priority: 'high',
       cellWrap: 'wrap',
-      cell: (invitation) => formatTime(invitation.expires_at),
+      cell: (invitation) => {
+        if (invitation.state !== 'pending') {
+          return null
+        }
+        const remaining = remainingText(invitation.expires_at, t)
+        return (
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <span>{formatTime(invitation.expires_at)}</span>
+            {remaining !== undefined && (
+              <Typography variant="caption" color="text.secondary">
+                {remaining}
+              </Typography>
+            )}
+          </Box>
+        )
+      },
     },
     {
       id: 'created',
       header: t('invitations.column.created'),
+      // The issued time is the row's `created_at` and does not move on a
+      // resend; a resent row adds the count and the latest send beneath it.
       priority: 'high',
       cellWrap: 'wrap',
-      cell: (invitation) => formatTime(invitation.created_at),
+      cell: (invitation) => (
+        <Box>
+          {formatTime(invitation.created_at)}
+          {invitation.send_count > 1 && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mt: 0.5 }}
+            >
+              {invitation.send_count - 1 === 1
+                ? t('invitations.created.resentOnce', {
+                    time: formatTime(invitation.last_sent_at),
+                  })
+                : t('invitations.created.resent', {
+                    count: String(invitation.send_count - 1),
+                    time: formatTime(invitation.last_sent_at),
+                  })}
+            </Typography>
+          )}
+        </Box>
+      ),
     },
     {
       id: 'actions',
@@ -835,10 +915,16 @@ export function OrganizationMembersPage({
       header: t('invitations.column.actions'),
       cellWrap: 'nowrap',
       cell: (invitation) => {
+        // A terminal invitation has nothing left to act on: its link no
+        // longer works, and the server refuses both writes with 409.
+        if (invitation.state !== 'pending') {
+          return null
+        }
         const failed = failedInvitation === invitation.id
         const errorId = `invitation-error-${encodeURIComponent(invitation.id)}`
         const pending = invitationFeedback.pending
-        const current = issued !== null && issued.invitation.id === invitation.id
+        const current =
+          issued !== null && issued.answer.invitation.id === invitation.id
         return (
           <Box>
             <Box
@@ -867,7 +953,7 @@ export function OrganizationMembersPage({
                     key: 'revoke',
                     label: t('invitations.revoke'),
                     onSelect: () => requestRevoke(invitation),
-                    disabled: invitation.status !== 'pending' || pending,
+                    disabled: pending,
                   },
                 ]}
               />
@@ -1036,6 +1122,7 @@ export function OrganizationMembersPage({
                   })
                 : t('members.empty.description'),
           }}
+          ssoRelogin={session === null ? undefined : relogin}
           mfaRelogin={session === null ? undefined : relogin}
         >
           {(settled) => (
@@ -1058,11 +1145,16 @@ export function OrganizationMembersPage({
           />
         )}
         <Box ref={membersRegionRef} sx={{ mt: 2 }}>
-          <WriteFeedbackRegion outcome={membersFeedback.outcome} />
+          <WriteFeedbackRegion
+            outcome={membersFeedback.outcome}
+            ssoRelogin={session === null ? undefined : relogin}
+            mfaRelogin={session === null ? undefined : relogin}
+          />
         </Box>
       </SectionCard>
 
       <SectionCard
+        ref={invitationSectionRef}
         title={t('invitations.section.title')}
         icon={<InvitationsIcon size={24} />}
         contentAligned={false}
@@ -1103,40 +1195,87 @@ export function OrganizationMembersPage({
               </MenuItem>
             ))}
           </TextField>
+          {/* A caller without the tenant role-management permission cannot
+              grant a role, so the choice is absent rather than refused. */}
+          {canManageRoles && (
+            <TextField
+              select
+              size="small"
+              value={issueRole}
+              onChange={(event) => setIssueRole(event.target.value)}
+              label={t('invitations.issue.roleLabel')}
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="">{t('invitations.issue.roleNone')}</MenuItem>
+              {roleOptions.map((role) => (
+                <MenuItem key={role.role} value={role.role}>
+                  {role.role}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
           <Button
             type="button"
             variant="contained"
-            disabled={invitationFeedback.pending || email.trim() === ''}
+            disabled={issueDisabled}
             onClick={issue}
           >
             {t('invitations.issue.submit')}
           </Button>
         </Box>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: 'block', mb: 2 }}
-        >
-          {t('invitations.issue.defaultExpiry', { days: expiryDays })}
-        </Typography>
+        {canManageRoles && issueRoleSelected && (
+          <Box sx={{ mb: 2 }}>
+            {issueGrantsPending && (
+              <Typography variant="body2" color="text.secondary">
+                {t('invitations.issue.roleChecking')}
+              </Typography>
+            )}
+            {issueGrantsFailed && (
+              <>
+                <Typography variant="body2" color="error">
+                  {t('invitations.issue.roleFailed')}
+                </Typography>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="outlined"
+                  onClick={() => void issueGrants.refetch()}
+                >
+                  {t('invitations.issue.roleRetry')}
+                </Button>
+              </>
+            )}
+            {issueGrantUnconfirmed ? (
+              <Typography variant="body2" color="error">
+                {t('invitations.issue.roleUnconfirmed')}
+              </Typography>
+            ) : (
+              issueEscalationBlocked && (
+                <Typography variant="body2" color="error">
+                  {t('invitations.issue.roleBlocked')}
+                </Typography>
+              )
+            )}
+          </Box>
+        )}
 
         {issued !== null && (
           <OneTimeValuePanel
             message={
-              issued.token === undefined ? (
+              issued.answer.token === undefined ? (
                 // The notice reached the address, so there is no link to pass
                 // on and no expiry or risk to describe.
                 t('invitations.issued.emailed', {
-                  email: issued.invitation.email,
+                  email: issued.answer.invitation.email,
                 })
               ) : (
                 <>
                   {issuedHasBuilder
                     ? t('invitations.issued.link', {
-                        email: issued.invitation.email,
+                        email: issued.answer.invitation.email,
                       })
                     : t('invitations.issued.token', {
-                        email: issued.invitation.email,
+                        email: issued.answer.invitation.email,
                       })}
                   <Typography
                     component="span"
@@ -1145,7 +1284,7 @@ export function OrganizationMembersPage({
                     sx={{ display: 'block', mt: 0.5 }}
                   >
                     {t('invitations.issued.expiresAt', {
-                      time: formatTime(issued.invitation.expires_at),
+                      time: formatTime(issued.answer.invitation.expires_at),
                     })}
                   </Typography>
                   <Typography
@@ -1160,20 +1299,20 @@ export function OrganizationMembersPage({
                     component="span"
                     variant="body2"
                     color={
-                      issued.email_delivery === 'failed'
+                      issued.answer.email_delivery === 'failed'
                         ? 'error'
                         : 'text.secondary'
                     }
                     sx={{ display: 'block', mt: 0.5 }}
                   >
                     {t(
-                      `invitations.issued.delivery.${issued.email_delivery}`,
+                      `invitations.issued.delivery.${issued.answer.email_delivery}`,
                     )}
                   </Typography>
                 </>
               )
             }
-            {...(issued.token === undefined
+            {...(issued.answer.token === undefined
               ? {}
               : {
                   value: issuedValue,
@@ -1184,9 +1323,15 @@ export function OrganizationMembersPage({
             closeLabel={t('invitations.issued.close')}
             closeAriaLabel={t('invitations.issued.closeAria', {
               tenant: issued.tenant,
-              email: issued.invitation.email,
+              email: issued.answer.invitation.email,
             })}
-            onClose={() => setCloseIssuedOpen(true)}
+            onClose={() => {
+              if (issuedHasValue) {
+                setCloseIssuedOpen(true)
+              } else {
+                setIssued(null)
+              }
+            }}
           />
         )}
 
@@ -1253,6 +1398,7 @@ export function OrganizationMembersPage({
                     status: statusLabel(statusFilter, t),
                   }),
           }}
+          ssoRelogin={session === null ? undefined : relogin}
           mfaRelogin={session === null ? undefined : relogin}
         >
           {(settled) => (
@@ -1275,7 +1421,11 @@ export function OrganizationMembersPage({
           />
         )}
         <Box ref={invitationRegionRef} sx={{ mt: 2 }}>
-          <WriteFeedbackRegion outcome={invitationFeedback.outcome} />
+          <WriteFeedbackRegion
+            outcome={invitationFeedback.outcome}
+            ssoRelogin={session === null ? undefined : relogin}
+            mfaRelogin={session === null ? undefined : relogin}
+          />
         </Box>
       </SectionCard>
 
@@ -1292,8 +1442,9 @@ export function OrganizationMembersPage({
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
 
-      {/* The one-time value is cleared only after the operator confirms:
-          closing the panel is the only moment the sole copy is dropped. */}
+      {/* A panel that holds a link is cleared only after the operator
+          confirms: closing it is the only moment the sole copy is dropped.
+          A panel for a delivered notice holds no link and closes directly. */}
       <ConfirmDialog
         open={closeIssuedOpen}
         title={t('invitations.issued.closeTitle')}

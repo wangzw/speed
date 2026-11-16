@@ -48,10 +48,14 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   queued on the `provisioning.AfterCommit` collector the module puts on the
   context, and the module runs it once the transaction has committed.
 - **`provisioning.MembershipWriter` is the transaction-aware membership
-  surface.** `PutMembershipTx` and `RemoveMembershipTx` take the caller's
-  `*gorm.DB` and return the publication for after its commit; they are what a
-  provisioning implementation calls to write the creator's membership in the
-  account's transaction. `MembershipTx` reads one membership in that
+  surface.** `PutMembershipTx`, `PutJoiningTx` and `RemoveMembershipTx` take
+  the caller's `*gorm.DB` and return the publication for after its commit; they
+  are what a provisioning implementation calls to write a membership in the
+  account's transaction. `PutJoiningTx` is `PutJoining`'s in-transaction form:
+  the account ends as an active member only when it had no membership or its
+  membership is still active, a suspension is never resumed, and the
+  invitation's acceptance uses it to put the join and the role binding in one
+  transaction. `MembershipTx` reads one membership in that
   transaction after taking the account's row — the lock a membership write
   takes — so a caller acting on the answer is not overtaken by a concurrent
   suspension. The `Memberships` surface opens a transaction of its own and is

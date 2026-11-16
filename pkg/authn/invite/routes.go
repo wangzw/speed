@@ -19,7 +19,9 @@ import (
 // decided by the effective account's permissions there. The acceptance read is
 // public: it only shows what a token points to. The acceptance write is
 // optional: it needs a signed-in caller, and the handler refuses one without an
-// identity because the token alone grants a membership no more.
+// identity because the token alone grants a membership no more. The eligibility
+// read is guarded: it answers, for the signed-in caller alone, whether this
+// account has proved the invited address.
 func (p *product) mountRoutes() {
 	g := func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
 		mount.Declared(p.mounter, operation, rel, h, append(opts, mount.InScope(speedhttp.ScopeTenants), mount.Impersonable())...)
@@ -27,12 +29,14 @@ func (p *product) mountRoutes() {
 	g(issueOperation, p.route(issueOperation.Path), issueOperation.Handle(p.handleIssue))
 	g(listOperation, p.route(listOperation.Path), listOperation.Handle(p.handleList))
 	g(revokeOperation, p.route(revokeOperation.Path), revokeOperation.Handle(p.handleRevoke))
+	g(resendOperation, p.route(resendOperation.Path), resendOperation.Handle(p.handleResend))
 
-	pub := func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
+	ordinary := func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
 		mount.Declared(p.mounter, operation, rel, h, opts...)
 	}
-	pub(acceptViewOperation, p.route(acceptViewOperation.Path), acceptViewOperation.Handle(p.handleAcceptView))
-	pub(acceptOperation, p.route(acceptOperation.Path), acceptOperation.Handle(p.handleAccept))
+	ordinary(acceptViewOperation, p.route(acceptViewOperation.Path), acceptViewOperation.Handle(p.handleAcceptView))
+	ordinary(acceptOperation, p.route(acceptOperation.Path), acceptOperation.Handle(p.handleAccept))
+	ordinary(eligibilityOperation, p.route(eligibilityOperation.Path), eligibilityOperation.Handle(p.handleEligibility))
 }
 
 // route turns a route the declaration writes against the module's API root into

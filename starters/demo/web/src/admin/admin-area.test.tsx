@@ -16,7 +16,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { toolbarClasses } from '@mui/material/Toolbar'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -46,6 +46,36 @@ import { AdminArea } from './admin-area.js'
 
 afterEach(() => {
   window.history.replaceState({}, '', '/')
+})
+
+/**
+ * Every case renders under a missing-translation guard. A fixture that omits
+ * a contract-required field makes a page render an interpolated key such as
+ * "invitations.issued.delivery.undefined"; i18n reports that through a
+ * console warning and renders the key itself. The warning is an issue, not
+ * noise: collecting it for the whole file means the case that rendered the
+ * deficient fixture fails, rather than the warning scrolling past.
+ */
+let warnCalls: readonly unknown[][] = []
+beforeEach(() => {
+  warnCalls = []
+  const warn = console.warn.bind(console)
+  vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    warnCalls = [...warnCalls, args]
+    // Keep the warning visible: the guard fails the case that emitted it,
+    // and the original line stays in the run's output.
+    warn(...args)
+  })
+})
+afterEach(() => {
+  const missing = warnCalls.filter(([message]) =>
+    String(message).includes('[speed-i18n] missing translation key'),
+  )
+  vi.restoreAllMocks()
+  expect(
+    missing.map(([message]) => String(message)),
+    'the case rendered a missing translation key',
+  ).toEqual([])
 })
 
 /**
@@ -312,12 +342,17 @@ describe('AdminArea', () => {
             tenant: 'acme',
             email: 'new@example.com',
             status: 'pending',
+            state: 'pending',
             invited_by: 'staff-1',
             expires_at: '2026-10-20T00:00:00Z',
             accepted_at: null,
+            revoked_at: null,
+            last_sent_at: '2026-10-15T12:00:00Z',
+            send_count: 1,
             created_at: '2026-10-15T12:00:00Z',
           },
           token: 'spd_inv_x',
+          email_delivery: 'not_configured',
         } as T)
       }
       // The page's list reads: answered so react-query never receives an
@@ -327,6 +362,21 @@ describe('AdminArea', () => {
         method === 'GET'
       ) {
         return Promise.resolve({ invitations: [], next_cursor: '' } as T)
+      }
+      if (path === '/api/v1/tenants/acme/roles' && method === 'GET') {
+        return Promise.resolve({
+          roles: [
+            {
+              builtin: false,
+              can_manage: true,
+              created_at: '2026-10-15T12:00:00Z',
+              description: 'Administrator',
+              permission_count: 0,
+              role: 'admin',
+              tenant: 'acme',
+            },
+          ],
+        } as T)
       }
       if (path === '/api/v1/tenants/acme/members' && method === 'GET') {
         return Promise.resolve({ members: [], next_cursor: '' } as T)
@@ -361,6 +411,84 @@ describe('AdminArea', () => {
     expect(
       screen.getByText(
         `${window.location.origin}${invitationPath('spd_inv_x')}`,
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the delivery outcome of an issued invitation without a missing key', async () => {
+    const requestFn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
+      const method = options?.method ?? 'GET'
+      if (path === '/api/v1/system/tenants' && method === 'GET') {
+        return Promise.resolve({
+          tenants: [
+            { name: 'acme', display_name: 'Acme', kind: 'business', status: 'active' },
+          ],
+        } as T)
+      }
+      if (path === '/api/v1/tenants/acme/invitations' && method === 'POST') {
+        // Contract §1: email_delivery is required on the issue answer.
+        return Promise.resolve({
+          invitation: {
+            id: 'inv-1',
+            tenant: 'acme',
+            email: 'new@example.com',
+            status: 'pending',
+            state: 'pending',
+            invited_by: 'staff-1',
+            expires_at: '2026-10-20T00:00:00Z',
+            accepted_at: null,
+            revoked_at: null,
+            last_sent_at: '2026-10-15T12:00:00Z',
+            send_count: 1,
+            created_at: '2026-10-15T12:00:00Z',
+          },
+          token: 'spd_inv_x',
+          email_delivery: 'not_configured',
+        } as T)
+      }
+      if (path === '/api/v1/tenants/acme/invitations' && method === 'GET') {
+        return Promise.resolve({ invitations: [], next_cursor: '' } as T)
+      }
+      if (path === '/api/v1/tenants/acme/roles' && method === 'GET') {
+        return Promise.resolve({
+          roles: [
+            {
+              builtin: false,
+              can_manage: true,
+              created_at: '2026-10-15T12:00:00Z',
+              description: 'Administrator',
+              permission_count: 0,
+              role: 'admin',
+              tenant: 'acme',
+            },
+          ],
+        } as T)
+      }
+      if (path === '/api/v1/tenants/acme/members' && method === 'GET') {
+        return Promise.resolve({ members: [], next_cursor: '' } as T)
+      }
+      return Promise.reject(new Error(`unanswered ${method} ${path}`))
+    }
+    bindRequestFn(requestFn)
+    const user = userEvent.setup()
+    renderAdminArea(<InvitationsPage />)
+
+    await user.click(screen.getByLabelText(tAdmin('common.tenant')))
+    await user.click(await screen.findByRole('option', { name: 'Acme' }))
+    await user.type(
+      await screen.findByLabelText(tAdmin('invitations.issue.emailLabel')),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: tAdmin('invitations.issue.submit'),
+      }),
+    )
+    // The outcome renders its own copy; the file-level afterEach guard
+    // fails this case if the rendered key had a missing segment.
+    expect(
+      await screen.findByText(
+        tAdmin('invitations.issued.delivery.not_configured'),
       ),
     ).toBeInTheDocument()
   })

@@ -162,7 +162,8 @@ type IDPChanged struct {
 
 // The classes of reason a state change or a revocation carries. The set is
 // closed and a reason handed to SetStatus, Delete, Sessions.Revoke or
-// Sessions.RevokeAccount is one of these, so that a reason is never free text.
+// Sessions.RevokeAccount is one of these, as is the reason an acceptance's
+// system revocation records, so that a reason is never free text.
 const (
 	ReasonAdmin           = "admin"            // an administrator started the change or revoked
 	ReasonSelf            = "self"             // the account holder: logging out, or revoking the other sessions after a change of their own
@@ -174,6 +175,12 @@ const (
 	ReasonAccountDeleted  = "account-deleted"  // the account was deleted
 	ReasonEvicted         = "evicted"          // over the per-account session limit, the least recently used was revoked
 	ReasonThrottled       = "throttled"        // a back-off began: only in the log line of the back-off, never in an event payload or an audit detail
+
+	// The classes an acceptance's system revocation records: the invitation could
+	// no longer be redeemed, so it was revoked rather than refused alone.
+	ReasonInvitationMembershipInactive = "invitation-membership-inactive" // the invitee's membership in the tenant is suspended
+	ReasonInvitationTenantDeleted      = "invitation-tenant-deleted"      // the tenant no longer exists
+	ReasonInvitationRoleWithdrawn      = "invitation-role-withdrawn"      // the role the invitation grants can no longer be granted
 )
 
 // ValidReasonClass reports whether s is one of the Reason constants above, the closed
@@ -181,7 +188,8 @@ const (
 func ValidReasonClass(s string) bool {
 	switch s {
 	case ReasonAdmin, ReasonSelf, ReasonPasswordChange, ReasonFactorReset, ReasonRefreshReuse,
-		ReasonExpired, ReasonAccountDisabled, ReasonAccountDeleted, ReasonEvicted, ReasonThrottled:
+		ReasonExpired, ReasonAccountDisabled, ReasonAccountDeleted, ReasonEvicted, ReasonThrottled,
+		ReasonInvitationMembershipInactive, ReasonInvitationTenantDeleted, ReasonInvitationRoleWithdrawn:
 		return true
 	}
 	return false

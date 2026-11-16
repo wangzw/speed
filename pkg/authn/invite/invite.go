@@ -11,10 +11,10 @@
 // writes the membership through Memberships with invite as the source of a new
 // one. Those rules stay with the account module.
 //
-// The issuance face, under the base path's /admin tree, is decided in the
-// handler by the Decider seam, with the action authn.membership.manage, and a
-// write lands its mandatory audit row before the action. The acceptance read,
-// under the base path's /invitations, is public: it only shows what a token
+// The management face, under /api/v1/tenants/{tenant}/invitations, is decided in
+// the handler by the Decider seam, with the action authn.membership.manage, and
+// a write lands its mandatory audit row before the action. The acceptance read,
+// under /api/v1/auth/invitations/{token}, is public: it only shows what a token
 // points to. The acceptance write is optional: it needs a signed-in caller who
 // proves the invited address, and a request without an identity is refused.
 //
@@ -41,6 +41,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/authn/provisioning"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
@@ -132,20 +133,30 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Module is the descriptor a host registers.
 //
 // The database, the route mounter, the key-value store, the account read and
-// write surfaces, the signup verification reads, the membership writes and the
-// audit capability are required, and each is
+// write surfaces, the signup verification reads, the membership writes, the
+// tenant description read and the audit capability are required, and each is
 // delivered exclusively by another module, so the closure of a command that
 // takes this one in does not pull them in: the host writes them down. The audit
 // capability being required is what makes an assembly without one fail before
 // any instance is built, rather than at the first write; the key-value store is
 // required because the issuance and acceptance-probe budgets count through it,
 // and a budget that silently disappeared with its dependency would leave the
-// invitation faces unbounded. The decision seam, the settings store, the event
-// bus, the invitation notifier and the logger are
-// taken up in Init and none is required: the absence of a Decider is a legal
-// assembly in which every management request is refused, without the settings
-// the lifetime and the budget limits read as their declared defaults, and
-// without a notifier the issue answer reports the notice as not_configured.
+// invitation faces unbounded. The tenant description read is required because
+// the module cannot refuse the system tenant or name an organization without
+// it: both are part of the contract it serves, not a view that can be left
+// nameless. The decision seam, the settings store, the event bus, the invitation
+// notifier, the tenant name read and the tenant state read are taken up in Init
+// and none is required: the absence of a Decider is a legal assembly in which
+// every management request is refused, without the settings the lifetime and the
+// budget limits read as their declared defaults, and without a notifier the
+// issue answer reports the notice as not_configured. The invitation role policy
+// and the two transaction-aware writes an acceptance joins are taken up in Init
+// as well and none is required, because an assembly that only issues, lists,
+// revokes and resends invitations is legal. The two role seams are needed only
+// when an invitation carries a role; the membership writer is needed by every
+// acceptance, so an assembly without it answers 503 on acceptance while the
+// rest of the surface stays available. An assembly that meets a role without
+// the capability it needs fails closed instead of skipping the check.
 //
 // The stance is StateEnabled and never StateAuto: whether to mount the
 // invitation routes is a decision on the command tree, not a conclusion a
@@ -160,6 +171,7 @@ func Module() core.Module {
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authn.TenantDescriptionResolver)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
@@ -231,6 +243,10 @@ type product struct {
 	accounts     authn.Accounts
 	verification authn.SignupVerification
 	memberships  authn.Memberships
+	// tenantDescs answers what a tenant is called, what it is shown by and
+	// whether it is the system tenant. It is required: the module refuses the
+	// system tenant and names an organization in every public link.
+	tenantDescs authn.TenantDescriptionResolver
 
 	mounter mount.Mounter
 	audit   audit.Audit
@@ -250,7 +266,18 @@ type product struct {
 	notifier    authn.InviteNotifier
 	tenantNames authn.TenantNameResolver
 	tenantState authn.TenantStateResolver
-	logger      *slog.Logger
+	// rolePolicy answers whether a role may be granted, and whether an
+	// invitation's role may still be bound. The membership writer and the role
+	// binder are the transaction-aware writes an acceptance joins. None is
+	// required by the descriptor: rolePolicy and roleBinder are needed only
+	// when an invitation carries a role, while membershipWriter is needed by
+	// every acceptance, so an assembly without it answers 503 when an
+	// invitation is accepted. A needed capability that is absent fails closed
+	// instead of letting the check be skipped.
+	rolePolicy       authn.InviteRolePolicy
+	membershipWriter membershipWriterTx
+	roleBinder       provisioning.RoleBinder
+	logger           *slog.Logger
 
 	// mu guards reported, which holds for each fault the one last written, so
 	// that a setting read on every issuance is reported once and not on each.
@@ -284,6 +311,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the membership writes: %w", ModuleName, err)
 	}
+	tenantDescs, err := core.Resolve[authn.TenantDescriptionResolver](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the tenant description resolver: %w", ModuleName, err)
+	}
 	auditor, err := core.Resolve[audit.Audit](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the audit capability: %w", ModuleName, err)
@@ -293,6 +324,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 		accounts:     accounts,
 		verification: verification,
 		memberships:  memberships,
+		tenantDescs:  tenantDescs,
 		mounter:      mounter,
 		audit:        auditor,
 		kv:           counters,
@@ -340,6 +372,17 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.tenantState, err = optional[authn.TenantStateResolver](reg, "the tenant state resolver"); err != nil {
+		return err
+	}
+	if p.rolePolicy, err = optional[authn.InviteRolePolicy](reg, "the invitation role policy"); err != nil {
+		return err
+	}
+	if writer, writerErr := optional[provisioning.MembershipWriter](reg, "the transaction-aware membership writer"); writerErr != nil {
+		return writerErr
+	} else if writer != nil {
+		p.membershipWriter = writer
+	}
+	if p.roleBinder, err = optional[provisioning.RoleBinder](reg, "the transaction-aware role binder"); err != nil {
 		return err
 	}
 	if p.bus != nil && p.store != nil {

@@ -63,6 +63,38 @@ type stubManager struct {
 	grants   []authz.GrantRecord
 	bindings []authz.Binding
 	err      error
+	// catalog maps a grant back to a permission, the way the product's catalog
+	// does. The rig sets it to the catalog the product takes up.
+	catalog authz.Catalog
+}
+
+// RoleSubsetHeld is the anti-escalation judgement the binding route asks the
+// manager for. It maps the role's grants through the catalog the rig delivered,
+// so a case holds the same answer the policy module gives.
+func (m *stubManager) RoleSubsetHeld(_ context.Context, tenant string, role authz.Role,
+	held map[authz.Permission]bool,
+) (bool, error) {
+	m.record(managerCall{op: "RoleSubsetHeld", tenant: tenant, role: role})
+	if err := m.errNow(); err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	grants := append([]authz.GrantRecord(nil), m.grants...)
+	catalog := m.catalog
+	m.mu.Unlock()
+	for _, grant := range grants {
+		if grant.Tenant != tenant || grant.Role != role {
+			continue
+		}
+		if catalog == nil {
+			return false, nil
+		}
+		permission, ok := catalog.PermissionOf(grant.Resource, grant.Action)
+		if !ok || !held[permission] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (m *stubManager) record(call managerCall) {

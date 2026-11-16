@@ -43,6 +43,7 @@ var tenantManagementRoutes = []struct {
 	{http.MethodGet, "/api/v1/tenants/:tenant/invitations"},
 	{http.MethodPost, "/api/v1/tenants/:tenant/invitations"},
 	{http.MethodDelete, "/api/v1/tenants/:tenant/invitations/:id"},
+	{http.MethodPost, "/api/v1/tenants/:tenant/invitations/:id/resend"},
 	{http.MethodGet, "/api/v1/tenants/:tenant/sso/providers"},
 	{http.MethodPost, "/api/v1/tenants/:tenant/sso/providers"},
 	{http.MethodGet, "/api/v1/tenants/:tenant/sso/providers/:id"},

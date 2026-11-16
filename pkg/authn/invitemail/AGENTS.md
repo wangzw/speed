@@ -3,11 +3,12 @@
 The optional email channel of the invitation capability, registered as
 `authn.invitemail`. It adapts the root package's `InviteNotifier` to the
 top-level `pkg/mail` capability: it renders one invitation notice — the tenant
-the invitation grants, the acceptance link and the invitation's deadline — into
-the `authn.invitemail` messages, and hands the finished message to a mail
-carrier. The tenant the notice names is the tenant's name, which the invitation
-module resolves before it calls the seam; this package renders `InviteNotice.Tenant`
-as given and never derives a name of its own. It delivers
+the invitation grants, the inviter's display name, the acceptance link and the
+invitation's deadline — into the `authn.invitemail` messages, and hands the
+finished message to a mail carrier. The tenant the notice names is the tenant's
+name, which the invitation module resolves before it calls the seam; this
+package renders `InviteNotice.Tenant` as given and never derives a name of its
+own. It delivers
 `authn.InviteNotifier` exclusively, so a command tree names this module or
 supplies its own notifier; two providers in one run fail in resolution.
 
@@ -51,10 +52,24 @@ what the seam does.
   exists, so the module states `StateDisabled` with the selection's reason
   instead of failing the assembly over an unmet requirement. The base URL is
   not judged on a run that sends nothing.
-- **The deadline is rendered in UTC.** `InviteNotice.ExpiresAt` is the one
-  deadline the invitation has. It is interpolated as an RFC 3339 instant in
-  UTC; the zero time means the caller does not know it and renders empty rather
-  than an invented instant.
+- **The notice names the inviter when it has one.** `InviteNotice.Inviter` is
+  the display name the invitation module read from the issuing account, never
+  the account identifier. A notice that carries one renders the body variant
+  interpolating `{{inviter}}`; an invitation a host command issued without an
+  account renders the impersonal variant, so the message never says " invited
+  you" with nobody in front of it.
+- **The HTML body interpolates escaped values.** The tenant name, the inviter's
+  display name and the acceptance link reach the HTML body and the HTML expiry
+  line HTML-escaped, so free text a person typed cannot introduce markup. The
+  plain-text body and the subject carry the same values as written, because
+  neither is parsed as HTML.
+- **The deadline is a readable UTC date and time.** `InviteNotice.ExpiresAt` is
+  the one deadline the invitation has. The message's own time segment renders it
+  with a layout that ends in `UTC`, and `Localizer.Translate` formats with no
+  time zone, which reads as UTC: the recipient may have no account and no time
+  zone, and the request's time zone is never consulted. The date goes in a
+  separate expiry line so the zero time means the caller does not know it and the
+  sentence is omitted rather than an invented instant rendered.
 - **The language is the request's, and a language the catalog lacks falls
   back.** The requested tag is tried as written, then by primary subtag
   (`zh-HK` to zh-CN, `en-GB` to en-US), then English, so a recipient in a

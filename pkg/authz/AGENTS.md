@@ -9,7 +9,7 @@ writes the policy data, the host's seeding and reconciliation surfaces, and the
 account lifecycle cleanup — `pkg/authz/guard`, the module that implements the
 authentication capability's decision seam, `pkg/authz/admin`, the platform
 management surface, `pkg/authz/tenantadmin`, the tenant-scoped management
-surface (a skeleton that mounts no route yet), `pkg/authz/self`, the module that
+surface, `pkg/authz/self`, the module that
 answers the caller's own permissions, and `pkg/authz/authztest`, the fixtures a
 test of this directory drives. The
 thin adapter the engine stores its policy through, the snapshot holder, and the
@@ -18,9 +18,8 @@ directory can import.
 
 The platform management surface is `authz.admin`: it mounts its routes under
 `/api/v1/system/*` and delivers nothing of its own. The tenant management surface
-is `authz.tenantadmin`, a skeleton that mounts no route yet: when its handlers
-land it mounts its routes under `/api/v1/tenants/{tenant}/*`, decides in the
-tenant's own policy domain,
+is `authz.tenantadmin`: it mounts its routes under
+`/api/v1/tenants/{tenant}/*`, decides in the tenant's own policy domain,
 and delivers nothing of its own.
 `authz.self` mounts the caller's permission read under
 `/api/v1/authz/me/permissions` and delivers nothing of its own either.
@@ -91,7 +90,7 @@ implementation.
   name.
 - **`pkg/authz/policy` registers `authz.policy`; `pkg/authz/guard` registers
   `authz.guard`; `pkg/authz/admin` registers `authz.admin`; `pkg/authz/tenantadmin`
-  registers `authz.tenantadmin` (a skeleton that mounts no route yet); `pkg/authz/self` registers
+  registers `authz.tenantadmin`; `pkg/authz/self` registers
   `authz.self`.** Each registering package exports its own `ModuleName`, and that
   same value is its configuration namespace, its static feature name and its
   OpenAPI tag; every segment of the name is a lower-case letter, a digit or a
@@ -108,7 +107,7 @@ implementation.
   enforcement module's namespace is `authz.guard`; it declares the input items
   `authz.guard.endpoints` and `authz.guard.undeclared`. `authz.admin` declares
   `authz.admin.endpoints`; `authz.self` declares `authz.self.endpoints`.
-  `authz.tenantadmin` is a skeleton that mounts no route yet; its namespace is
+  `authz.tenantadmin`'s namespace is
   `authz.tenantadmin`, its endpoint list declares
   `authz.tenantadmin.endpoints` and defaults to `["api"]`. Each list names
   concrete endpoints and refuses `*`; the tenant management module's default
@@ -194,9 +193,8 @@ implementation.
   `authz.tenant.role.manage` and `settings.tenant.read`/`settings.tenant.write`
   for the tenant surface; the two pairs translate to different (object, action)
   pairs.
-- **`authz.tenantadmin` is a skeleton that mounts no route yet.** When its
-  handlers land it decides in the tenant domain and enforces the anti-escalation
-  rules itself. It takes
+- **`authz.tenantadmin` decides in the tenant domain and enforces the
+  anti-escalation rules itself.** It takes
   `Manager`, `Catalog`, `SubjectPermissions`, `MembershipChecker`, `guard.Guard`,
   `audit.Audit` and
   `authn.SignupVerification`, and only `Manager` of the policy writers. It
@@ -211,6 +209,24 @@ implementation.
   no-self-removal rules. The host mounts a path-tenant-equals-resolved-tenant
   middleware on every `ScopeTenants` route group; the module assumes it and does
   not re-implement it.
+- **The anti-escalation subset rule has one implementation.** `Manager.RoleSubsetHeld`
+  reads a role's grants, maps each through the catalog and answers whether every
+  one is within the caller's held set. The tenant management surface's binding
+  write and the invitation role judgement both call it; each maps a refusal to
+  its own problem code. The rule keeps `tenant-admin` bindable but not free: the
+  role holds the governed set whole, so only a caller holding it may bind it.
+  The invitation's judgement is delivered as `authn.InviteRolePolicy` (the
+  grant-time and accept-time questions) and its binding write as
+  `provisioning.RoleBinder`; both are declared in the authentication capability
+  and implemented here, so the invitation module imports no package of this
+  directory. `Grantable` asks the host `WriteGuard` with `WriteBinding`;
+  `StillGrantable` replays the inviter's held set and checks only the role's
+  existence when no account issued the invitation. Both judges need the
+  assembled `authz.MembershipChecker`: an account's invitation is accepted only
+  after the inviter's active membership is replayed, so an assembly without the
+  checker refuses an account-issued role-bearing invitation rather than writing
+  one that could never be accepted, and `StillGrantable` answers an unavailable
+  judgement without it.
 - **The management surfaces' write guards are host seams, not capabilities.**
   `authz.WriteGuard` and its closed `WriteOp` set live in the root package
   because the host implements it and both management surfaces take it up. A

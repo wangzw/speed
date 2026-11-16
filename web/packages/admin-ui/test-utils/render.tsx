@@ -60,6 +60,7 @@ import type {
   RenderWithProvidersOptions as BaseOptions,
   RenderWithProvidersResult as BaseResult,
 } from '@speed/test-utils/render'
+import type { ThemePreset } from '@speed/theme-presets'
 import { ADMIN_UI_NAMESPACE, adminUiResources } from '../src/resources.js'
 import { AdminOperationsProvider } from '../src/operations.js'
 import type { AdminOperations } from '../src/operations.js'
@@ -92,6 +93,10 @@ export interface RenderWithProvidersOptions extends BaseOptions {
    * A suite that renders both modes passes the mode it wants.
    */
   readonly defaultMode?: 'light' | 'dark' | 'system'
+  /** The preset shelf the theme provider may switch between. */
+  readonly presets?: readonly ThemePreset[]
+  /** The preset id the provider starts at. */
+  readonly defaultPreset?: string
 }
 
 export interface RenderWithProvidersResult extends BaseResult {
@@ -122,6 +127,8 @@ export function renderWithProviders(
     operations,
     session,
     defaultMode,
+    presets,
+    defaultPreset,
   } = options
   const hasFeature =
     options.hasFeature === undefined ? () => true : options.hasFeature
@@ -141,7 +148,12 @@ export function renderWithProviders(
   }
   const result = render(
     <I18nextProvider i18n={instance}>
-      <AppThemeProvider i18n={instance} defaultMode={defaultMode}>
+      <AppThemeProvider
+        i18n={instance}
+        presets={presets}
+        defaultPreset={defaultPreset}
+        defaultMode={defaultMode}
+      >
         <TestTimeZoneProvider timeZone={timeZone}>
           <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
         </TestTimeZoneProvider>

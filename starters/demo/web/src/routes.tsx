@@ -247,12 +247,14 @@ export const authCallbackRoutes: RouteTable = [
  * The invite-acceptance route: the public landing an invitation link points
  * at, `/invitations/<token>`. It is unlabelled (it adds no navigation entry)
  * and the app renders its page outside both shells (src/app.tsx), because an
- * invitee arrives before any session exists. It is inert until an
- * administrator issues an invitation.
+ * invitee arrives before any session exists.
  *
- * The declaration is gated on the invite module's feature: a deployment
- * without authn.invite serves no invitation operations, so the landing is a
- * 404 like any unregistered path (and the shell switch stops pre-empting it).
+ * The declaration carries no feature gate. The feature document is readable
+ * only to an authenticated caller, so a gated declaration would withhold the
+ * landing from exactly the anonymous visitor the link is for; a deployment
+ * that does not mount the invitation module answers the public read with a
+ * 404, which the landing renders as its invalid-link state. The route is
+ * inert until an administrator issues an invitation.
  */
 export const invitationRoutes: RouteTable = [
   {
@@ -260,7 +262,6 @@ export const invitationRoutes: RouteTable = [
     view: (context) => (
       <AcceptInvitationPage token={context.params.token ?? ''} />
     ),
-    requires: ['authn.invitations'],
   },
 ] satisfies readonly HostRouteDeclaration[]
 

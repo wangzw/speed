@@ -137,13 +137,16 @@ describe('the route table', () => {
     expect(authCallbackRoutes[0]?.label).toBeUndefined()
   })
 
-  it('mounts the invite-acceptance route under its prefix, unlabelled', () => {
+  it('mounts the invite-acceptance route under its prefix, unlabelled and ungated', () => {
     expect(invitationRoutes.map((route) => route.path)).toEqual([
       `${INVITATION_PREFIX}/:token`,
     ])
     // Unlabelled, so it adds no navigation entry; the app renders its page
-    // outside both shells (src/app.tsx).
+    // outside both shells (src/app.tsx). It carries no feature gate: the
+    // feature document is unreadable to an anonymous caller, and the landing
+    // is exactly what the anonymous invitee arrives for.
     expect(invitationRoutes[0]?.label).toBeUndefined()
+    expect(invitationRoutes[0]?.requires).toBeUndefined()
   })
 
   it('mounts the anonymous reset route at its own path, unlabelled', () => {

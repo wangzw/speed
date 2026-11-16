@@ -77,6 +77,7 @@ import {
   authnAdminSsoProvidersUpdate,
   authnAdminSsoProvidersVerifyDomain,
   authnInviteIssue,
+  authnInviteResend,
   authnInviteRevoke,
   authzAdminBindingsDelete,
   authzAdminBindingsPut,
@@ -116,6 +117,7 @@ import {
   getAuthzAdminPermissionsListQueryOptions,
   getAuthzAdminRolesListQueryKey,
   getAuthzAdminRolesListQueryOptions,
+  getAuthzTenantadminRolesListQueryOptions,
   getSettingsAdminSettingsListNamespaceQueryKey,
   getSettingsAdminSettingsListNamespaceQueryOptions,
   getSettingsAdminSettingsListQueryKey,
@@ -171,6 +173,7 @@ import type {
   AuthnAdminSession,
   AuthnAdminVerifyToken,
   AuthnInviteInvitation,
+  AuthnInviteIssueBody,
   AuthnInviteIssued,
   AuthnInviteListParams,
   AuthnInvitePage,
@@ -187,7 +190,9 @@ import type {
   TenantAdminTenantsSetStatusBodyStatus,
   TenantTransferView,
 } from '@speed/api-sdk'
+import { errorCodeOf } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './internal/translation.js'
+import type { AdminTenantRole } from './organization-operations.js'
 import { profileWriteOf } from './TenantProfileFields.js'
 import type { TenantProfileFields } from './TenantProfileFields.js'
 
@@ -230,7 +235,7 @@ export interface AdminAuditRecordQuery {
 /** One page of accounts: the rows and the next-page cursor. */
 export type AdminAccountPage = AuthnAdminAccountList
 
-/** One page of invitations: the rows and the next-page cursor. */
+/** One page of a tenant's invitations, as the contract names each row. */
 export type AdminInvitationPage = AuthnInvitePage
 
 /** One page of tenant members: the rows and the next-page cursor. */
@@ -488,25 +493,31 @@ export type AdminCreateSecretInput = AuthnAdminSecretCreate & {
 
 // --- Invitation and membership surface (tenant-scoped) ------------------
 
-/** One invitation of a tenant (GET .../tenants/:tenant/invitations). */
+/**
+ * One invitation of a tenant (GET .../tenants/:tenant/invitations): the
+ * generated row itself, with the server-judged `state`, the granted role,
+ * the inviter's resolved names and the nullable terminal instants.
+ */
 export type AdminInvitation = AuthnInviteInvitation
 
-/** The one-time handover an invitation issue answers with (POST .../invitations):
- * the invitation view plus the acceptance token, which is handed out once. */
+/** The one-time handover an invitation issue or resend answers with: the
+ * invitation view plus the acceptance token, which is handed out once. */
 export type AdminIssuedInvitation = AuthnInviteIssued
 
 /** One tenant member (GET .../tenants/:tenant/members). */
 export type AdminMember = AuthnAdminMember
 
-/** POST .../invitations body: the address to invite, optional expiry. */
+/** POST .../invitations body: the address to invite, optional expiry and role. */
 export interface AdminIssueInvitationInput {
   readonly tenant: string
   readonly email: string
   /** RFC 3339 expiry, or undefined for the module's default. */
   readonly expiresAt: string | undefined
+  /** The role the invitation grants on acceptance; absent grants none. */
+  readonly role?: string
 }
 
-/** DELETE .../invitations/:id target. */
+/** DELETE .../invitations/:id and POST .../invitations/:id/resend target. */
 export interface AdminInvitationRef {
   readonly tenant: string
   readonly id: string
@@ -932,6 +943,23 @@ export interface AdminOperations {
     unknown,
     AdminInvitationRef
   >
+  /** POST .../tenants/:tenant/invitations/:id/resend -- replace a pending
+   * invitation's token with a fresh one and deliver it again. The invitation
+   * keeps its id, deadline and role; the answer carries the one-time token. */
+  readonly useResendInvitation: () => UseMutationResult<
+    AdminIssuedInvitation,
+    unknown,
+    AdminInvitationRef
+  >
+  /**
+   * GET /api/v1/tenants/:tenant/roles -- the target tenant's roles, with the
+   * server's per-role `can_manage` answer for that tenant. The platform
+   * invitation page reads it to gate its role control on the tenant the
+   * invitation names.
+   */
+  readonly useTenantRoles: (
+    tenant: string,
+  ) => UseQueryResult<readonly AdminTenantRole[], unknown>
 
   // --- Membership surface (tenant-scoped) -------------------------------
 
@@ -1045,6 +1073,43 @@ export interface AdminOperations {
     unknown,
     { readonly name: string }
   >
+}
+
+/**
+ * The problem code a resend or revoke answers when the invitation already
+ * moved to a terminal state (expired, revoked or accepted). The write did not
+ * land, but the row's state has changed, so the list is re-read.
+ */
+export const INVITATION_TERMINAL_CODE = 'authn.invitation_terminal'
+
+/**
+ * The resend mutation both invitation surfaces share. The invitation keeps its
+ * row and deadline; only the token changes, so the list is re-read rather than
+ * rewritten and the answer's token reaches the page for the one-time panel. The
+ * surface supplies how its list is re-read, because the tenant-scoped queries
+ * carry a tenant prefix the platform ones do not.
+ */
+export function useResendInvitationMutation(
+  invalidate: (
+    queryClient: ReturnType<typeof useQueryClient>,
+    tenant: string,
+  ) => void,
+) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: AdminInvitationRef) =>
+      authnInviteResend(input.tenant, input.id),
+    onSuccess: (_answer, input) => {
+      invalidate(queryClient, input.tenant)
+    },
+    // A terminal invitation answers 409 without resending; the list still
+    // shows it pending, so the re-read lets the server's state replace it.
+    onError: (error, input) => {
+      if (errorCodeOf(error) === INVITATION_TERMINAL_CODE) {
+        invalidate(queryClient, input.tenant)
+      }
+    },
+  })
 }
 
 /**
@@ -1686,13 +1751,16 @@ export const adminOperations: AdminOperations = {
       // The answer carries the acceptance token, which the page reads to
       // show the invitee's link; it is handed out only once, so it must not
       // be discarded here.
-      mutationFn: (input: AdminIssueInvitationInput) =>
-        authnInviteIssue(input.tenant, {
+      mutationFn: (input: AdminIssueInvitationInput) => {
+        const body: AuthnInviteIssueBody = {
           email: input.email,
           ...(input.expiresAt === undefined
             ? {}
             : { expires_at: input.expiresAt }),
-        }),
+          ...(input.role === undefined ? {} : { role: input.role }),
+        }
+        return authnInviteIssue(input.tenant, body)
+      },
       onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
           queryKey: getAuthnInviteListQueryKey(input.tenant),
@@ -1711,8 +1779,31 @@ export const adminOperations: AdminOperations = {
           queryKey: getAuthnInviteListQueryKey(input.tenant),
         })
       },
+      // A terminal invitation answers 409 without being revoked; the list
+      // still shows it pending until the server's state is read again.
+      onError: (error, input) => {
+        if (errorCodeOf(error) === INVITATION_TERMINAL_CODE) {
+          void queryClient.invalidateQueries({
+            queryKey: getAuthnInviteListQueryKey(input.tenant),
+          })
+        }
+      },
     })
   },
+
+  useResendInvitation: () =>
+    useResendInvitationMutation((queryClient, tenant) => {
+      void queryClient.invalidateQueries({
+        queryKey: getAuthnInviteListQueryKey(tenant),
+      })
+    }),
+
+  useTenantRoles: (tenant) =>
+    useQuery({
+      ...getAuthzTenantadminRolesListQueryOptions(tenant),
+      select: (page) => page.roles,
+      enabled: tenant !== '',
+    }),
 
   // --- Membership surface (tenant-scoped) -------------------------------
 

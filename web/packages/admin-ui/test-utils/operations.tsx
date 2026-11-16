@@ -209,6 +209,9 @@ export interface AdminBackend {
     input: AdminIssueInvitationInput,
   ) => Promise<AdminIssuedInvitation>
   revokeInvitation: (input: AdminInvitationRef) => Promise<void>
+  resendInvitation: (
+    input: AdminInvitationRef,
+  ) => Promise<AdminIssuedInvitation>
   /**
    * A test may answer with the server's page envelope (to exercise the next
    * cursor) or with the bare rows this fixture used before paging existed;
@@ -366,6 +369,7 @@ export function makeAdminBackend(
     listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
     issueInvitation: () => Promise.resolve(issuedInvitationFixture()),
     revokeInvitation: () => Promise.resolve(),
+    resendInvitation: () => Promise.resolve(issuedInvitationFixture()),
     listMembers: () => Promise.resolve({ members: [], next_cursor: '' }),
     removeMember: () => Promise.resolve(),
     writeMember: () => Promise.resolve(),
@@ -544,10 +548,16 @@ export function issuedInvitationFixture(
       tenant: 'acme',
       email: 'ada@example.com',
       status: 'pending',
+      state: 'pending',
       invited_by: 'staff-1',
+      invited_by_name: 'Operator',
+      invited_by_username: 'operator',
       expires_at: '2099-01-01T00:00:00Z',
       accepted_at: null,
       created_at: '2026-10-15T12:00:00Z',
+      revoked_at: null,
+      last_sent_at: '2026-10-15T12:00:00Z',
+      send_count: 1,
     },
     token: 'spd_inv_test_token',
     email_delivery: 'not_configured',
@@ -1096,6 +1106,17 @@ export function createAdminOperations(
         },
       })
     },
+    useResendInvitation: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminInvitationRef) =>
+          backend.resendInvitation(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: invitationsKey(input.tenant) })
+        },
+      })
+    },
+
 
     useMembers: (tenant, params) =>
       useQuery({

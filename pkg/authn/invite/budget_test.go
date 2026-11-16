@@ -34,7 +34,9 @@ func issueAs(h *harness, account authn.AccountID, email string) (Issued, error) 
 // TestThePerAddressIssueBudgetAnswersThrottled holds the first send budget: one
 // invited address receives no more than its window allows, a resend counts like
 // any other issuance, and the address is folded to its canonical inbox form so a
-// plus suffix cannot multiply the allowance.
+// plus suffix cannot multiply the allowance. Each issuance is revoked before the
+// next, because a live pending invitation is refused by the target checks before
+// the address budget is consulted.
 func TestThePerAddressIssueBudgetAnswersThrottled(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 2)
@@ -42,8 +44,12 @@ func TestThePerAddressIssueBudgetAnswersThrottled(t *testing.T) {
 	h.store.set(issueGlobalPath, 100)
 
 	for i, address := range []string{"alice+one@example.com", "Alice+two@example.com"} {
-		if _, err := issueAs(h, adminID, address); err != nil {
+		issued, err := issueAs(h, adminID, address)
+		if err != nil {
 			t.Fatalf("issuance %d to the same inbox gave %v, want it let through", i+1, err)
+		}
+		if err := h.p.Revoke(context.Background(), tenant, issued.Invitation.ID); err != nil {
+			t.Fatalf("revoking issuance %d: %v", i+1, err)
 		}
 	}
 	if _, err := issueAs(h, adminID, "alice@example.com"); err == nil {
@@ -106,7 +112,11 @@ func TestTheGlobalIssueBudgetAnswersThrottled(t *testing.T) {
 // capability's throttled code and whose Retry-After names the wait.
 func TestTheIssueRouteAnswers429WithRetryAfter(t *testing.T) {
 	h := newHarness(t)
-	h.store.set(issueAddressPath, 1)
+	// The issuing account's budget is the one charged before the target checks,
+	// so it is the budget the second request spends.
+	h.store.set(issueIssuerPath, 1)
+	h.store.set(issueAddressPath, 100)
+	h.store.set(issueGlobalPath, 100)
 	h.asAdmin()
 
 	w := h.request(http.MethodPost, pathAdmin, map[string]string{"email": "alice@example.com"})
@@ -213,20 +223,73 @@ func TestTheBudgetsFallBackToTheirDefaultsWhenTheStoreFails(t *testing.T) {
 }
 
 // TestAThrottledIssuanceWritesNoRow holds that the budget is charged before the
-// action: an over-budget issuance leaves no invitation row behind.
+// action: an over-budget issuance leaves no invitation row behind. The first
+// invitation is revoked so that the target checks do not refuse the second one
+// before the address budget is consulted.
 func TestAThrottledIssuanceWritesNoRow(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 1)
-	if _, err := issueAs(h, adminID, "alice@example.com"); err != nil {
+	first, err := issueAs(h, adminID, "alice@example.com")
+	if err != nil {
 		t.Fatalf("the first issuance gave %v", err)
 	}
+	if revokeErr := h.p.Revoke(context.Background(), tenant, first.Invitation.ID); revokeErr != nil {
+		t.Fatalf("revoking the first issuance: %v", revokeErr)
+	}
 	before := h.rowCount()
-	if _, err := issueAs(h, adminID, "alice@example.com"); err == nil {
+	_, err = issueAs(h, adminID, "alice@example.com")
+	if err == nil {
 		t.Fatal("the second issuance was let through")
 	}
+	throttleOf(t, err)
 	if got := h.rowCount(); got != before {
 		t.Errorf("the throttled issuance changed the row count from %d to %d", before, got)
 	}
+}
+
+// TestAnAttemptTheChecksRefuseSpendsOnlyTheIssuersBudget holds the order of the
+// send budgets: the issuing account is charged first, so an attempt the target
+// checks refuse still costs the operator, and the address and the deployment are
+// charged only once every check has passed. A refused attempt therefore cannot
+// spend an invited address's allowance, so a resend of that address's live
+// invitation still goes out.
+func TestAnAttemptTheChecksRefuseSpendsOnlyTheIssuersBudget(t *testing.T) {
+	t.Run("refused attempts against one address do not spend its budget", func(t *testing.T) {
+		h := newHarness(t)
+		issued := h.issue(tenant, "alice@example.com")
+		h.asAdmin()
+		// The address already holds a live invitation, so each of these is
+		// refused before anything is written.
+		for i := 0; i < 4; i++ {
+			if w := h.request(http.MethodPost, pathAdmin, map[string]string{"email": "alice@example.com"}); w.Code != http.StatusConflict {
+				t.Fatalf("refused attempt %d answered %d, want 409: %s", i+1, w.Code, w.Body.String())
+			}
+		}
+		if w := h.request(http.MethodPost, pathAdmin+"/"+issued.Invitation.ID+"/resend", nil); w.Code != http.StatusOK {
+			t.Fatalf("the resend answered %d, want 200: the address budget must not have been spent by "+
+				"attempts that wrote nothing: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("another tenant's refused attempt does not spend the address", func(t *testing.T) {
+		h := newHarness(t)
+		h.store.set(issueAddressPath, 2)
+		h.store.set(issueIssuerPath, 100)
+		h.store.set(issueGlobalPath, 100)
+		issued := h.issue(tenant, "alice@example.com")
+
+		h.accounts.put("alice@example.com", "acct-alice")
+		h.members.hold(authn.Membership{Tenant: "tenant-b", Account: "acct-alice", Active: true})
+		ctx := authntest.Context(t, context.Background(), authntest.WithAccount(adminID))
+		if _, err := h.p.Issue(ctx, IssueInvite{Tenant: "tenant-b", Email: "alice@example.com"}); !errors.Is(err, ErrInvitationMember) {
+			t.Fatalf("the refusal in the other tenant gave %v, want ErrInvitationMember", err)
+		}
+
+		if _, err := h.p.Resend(context.Background(), tenant, issued.Invitation.ID); err != nil {
+			t.Fatalf("resending after another tenant's refused attempt gave %v, want it let through: "+
+				"the address budget is shared wide and must not be spent by an attempt that wrote nothing", err)
+		}
+	})
 }
 
 // TestTheSettingsSchemaDeclaresTheBudgetKeys holds the declaration the budgets

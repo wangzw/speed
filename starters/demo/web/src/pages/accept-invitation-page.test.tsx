@@ -2,15 +2,17 @@
  * The invitation landing (/invitations/:token): the public route an
  * invitee's link points at.
  *
- * The host gates the landing on a session: an anonymous viewer meets the
- * host's sign-in surface, and a signed-in viewer meets the accept screen,
- * whose two invitation operations reach the backend through the app's
- * generated SDK surface (src/app-api). The token read is public, but the
- * acceptance needs the signed-in account to hold the invited address as a
- * proven email. The suite binds a scripted
+ * The landing renders the public invitation to everyone: an anonymous viewer
+ * sees the inviter, the organization, the masked address and the host's
+ * sign-in / create-account actions, and a signed-in viewer meets the accept
+ * screen whose operations reach the backend through the app's generated SDK
+ * surface (src/app-api). The token read is public, but the acceptance needs
+ * the signed-in account to hold the invited address as a proven email; the
+ * signed-in surface reads the guarded eligibility operation on arrival so the
+ * proof step appears before a refused acceptance. The suite binds a scripted
  * request function over the api-sdk runtime seam so the real generated
- * operations run against responses it controls; accepting then navigates
- * the viewer home.
+ * operations run against responses it controls; accepting then navigates the
+ * viewer home.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -54,6 +56,21 @@ const authEn = authUiResources['en-US'] as unknown as {
   readonly acceptInvitation: {
     readonly title: string
     readonly accept: string
+    readonly invited: string
+    readonly invitedBy: string
+    readonly invitedByWithRole: string
+    readonly email: string
+    readonly signIn: string
+    readonly createAccount: string
+    readonly expired: { readonly title: string }
+    readonly revoked: { readonly title: string }
+    readonly used: { readonly title: string }
+    readonly member: {
+      readonly title: string
+      readonly open: string
+    }
+    readonly missing: { readonly title: string; readonly hint: string }
+    readonly unproved: { readonly title: string }
   }
   readonly mode: {
     readonly registerEntry: string
@@ -87,9 +104,8 @@ const TOKEN = 'tok-123'
 const PATH = `${INVITATION_PREFIX}/${TOKEN}`
 
 /** The tenant the acceptance reports, and the different name the caller
- * tenant read carries for it: the accept answer has no name, so the landing
- * resolves one from that read and must announce the read's value, never the
- * identifier. */
+ * tenant read carries for it: the landing resolves the switcher's row from
+ * that read and must announce the read's value, never the identifier. */
 const INVITED_TENANT_NAME = 'acme-renamed'
 
 /** The acceptView answer for a pending invitation: pending and still ahead of
@@ -99,31 +115,58 @@ const INVITED_TENANT_NAME = 'acme-renamed'
 const VIEW = {
   state: 'pending',
   invitation: {
-    id: 'inv-1',
-    tenant: 'Acme',
+    tenant: 'acme',
+    tenant_display_name: 'Acme',
+    invited_by_name: 'Ada Lovelace',
     email: 'invitee@example.com',
-    status: 'pending',
-    invited_by: 'acc-1',
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+}
+
+/** A pending invitation that carries a role. */
+const VIEW_WITH_ROLE = {
+  state: 'pending',
+  invitation: {
+    ...VIEW.invitation,
+    role: 'tenant-admin',
+  },
+}
+
+/** The same pending answer for an organization that never chose a display
+ * name, as the demo seed's organization does. */
+const VIEW_WITHOUT_DISPLAY_NAME = {
+  state: 'pending',
+  invitation: {
+    tenant: 'acme',
+    tenant_display_name: '',
+    invited_by_name: 'Ada Lovelace',
+    email: 'invitee@example.com',
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     accepted_at: null,
     created_at: '2026-10-15T12:00:00Z',
   },
 }
 
-/**
- * The scripted invitation endpoints: a GET answers the pending invitation
+/** The eligibility answer a signed-in account that proved the address reads. */
+const PROVED = { state: 'pending', email_proved: true }
+
+/** The scripted invitation endpoints: a GET answers the pending invitation
  * and a POST accepts it (recording that it was redeemed). The caller tenant
  * read answers `selfBefore` until the acceptance commits and `selfAfter`
  * from then on, so a case can tell the landing's own read from the one the
- * app issued on mount.
- */
+ * app issued on mount. The eligibility endpoint answers `eligibility`
+ * (proved by default) whenever the signed-in surface asks. */
 function makeInvitationBackend(
   options: {
     readonly selfBefore?: () => unknown
     readonly selfAfter?: () => unknown
+    readonly view?: unknown
+    readonly viewError?: unknown
+    readonly eligibility?: () => unknown
   } = {},
 ) {
   const accepted: string[] = []
+  const eligibilityReads: string[] = []
   const selfReads: ('before' | 'after')[] = []
   let acceptedOnce = false
   const fn: RequestFn = <T,>(path: string, requestOptions?: RequestOptions) => {
@@ -138,8 +181,17 @@ function makeInvitationBackend(
       }
       return Promise.resolve(answer as T)
     }
+    if (path === `/api/v1/auth/invitations/${TOKEN}/eligibility` && method === 'GET') {
+      eligibilityReads.push(TOKEN)
+      return Promise.resolve(
+        (options.eligibility ?? (() => PROVED))() as T,
+      )
+    }
     if (path === `/api/v1/auth/invitations/${TOKEN}` && method === 'GET') {
-      return Promise.resolve(VIEW as T)
+      if (options.viewError !== undefined) {
+        return Promise.reject(options.viewError)
+      }
+      return Promise.resolve((options.view ?? VIEW) as T)
     }
     if (path === `/api/v1/auth/invitations/${TOKEN}` && method === 'POST') {
       accepted.push(TOKEN)
@@ -154,7 +206,7 @@ function makeInvitationBackend(
     }
     return Promise.resolve(undefined as T)
   }
-  return { fn, accepted, selfReads }
+  return { fn, accepted, eligibilityReads, selfReads }
 }
 
 beforeEach(() => {
@@ -165,18 +217,149 @@ beforeEach(() => {
 })
 
 describe('the invitation landing', () => {
-  it('shows the host sign-in surface to an anonymous viewer', () => {
+  it('shows the invitation to an anonymous viewer, not a generic sign-in page', async () => {
+    // The feature document is readable only to an authenticated caller, so
+    // the landing declaration carries no gate: an anonymous visitor sees the
+    // invitation itself rather than falling through to the generic sign-in
+    // surface.
+    const backend = makeInvitationBackend()
+    bindRequestFn(backend.fn)
     renderDemoApp()
 
-    // The host gates the landing on a session: an anonymous viewer meets
-    // the sign-in / register surface, never the accept screen.
     expect(
-      screen.getByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
+      await screen.findByRole('heading', {
+        level: 1,
+        name: authEn.acceptInvitation.title,
+      }),
+    ).toBeInTheDocument()
+    // The landing renders outside both shells.
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expect(
+      screen.getByText(
+        authEn.acceptInvitation.invitedBy.replace(
+          '{{inviter}}',
+          'Ada Lovelace',
+        ).replace('{{tenant}}', 'Acme'),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        authEn.acceptInvitation.email.replace(
+          '{{email}}',
+          'invitee@example.com',
+        ),
+      ),
+    ).toBeInTheDocument()
+    // The two entries replace the generic sign-in surface, which is not on
+    // screen until one of them is used.
+    expect(
+      screen.getByRole('button', { name: authEn.acceptInvitation.signIn }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: authEn.acceptInvitation.createAccount,
+      }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('opens the sign-in surface in place and returns to the landing', async () => {
+    const backend = makeInvitationBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderDemoApp()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.signIn,
+      }),
+    )
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).toBeInTheDocument()
+    // The URL and its token survived the switch.
+    expect(window.location.pathname).toBe(PATH)
+
+    await user.click(screen.getByRole('button', { name: demoEnUS.signIn.back }))
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
         name: authEn.acceptInvitation.title,
       }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the invited role in the landing sentence', async () => {
+    const backend = makeInvitationBackend({ view: VIEW_WITH_ROLE })
+    bindRequestFn(backend.fn)
+    renderDemoApp()
+
+    expect(
+      await screen.findByText(
+        authEn.acceptInvitation.invitedByWithRole
+          .replace('{{inviter}}', 'Ada Lovelace')
+          .replace('{{role}}', 'tenant-admin')
+          .replace('{{tenant}}', 'Acme'),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the expired and revoked terminal states apart', async () => {
+    const expired = makeInvitationBackend({
+      view: { state: 'expired' },
+    })
+    bindRequestFn(expired.fn)
+    const first = renderDemoApp()
+    expect(
+      await screen.findByText(authEn.acceptInvitation.expired.title),
+    ).toBeInTheDocument()
+    first.unmount()
+
+    const revoked = makeInvitationBackend({
+      view: { state: 'revoked' },
+    })
+    bindRequestFn(revoked.fn)
+    renderDemoApp()
+    expect(
+      await screen.findByText(authEn.acceptInvitation.revoked.title),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the invalid-link hint for an unknown token', async () => {
+    const backend = makeInvitationBackend({
+      viewError: { status: 404, code: 'client.http.404' },
+    })
+    bindRequestFn(backend.fn)
+    renderDemoApp()
+    expect(
+      await screen.findByText(authEn.acceptInvitation.missing.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(authEn.acceptInvitation.missing.hint),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the proof step on arrival for a signed-in viewer who has not proved the address', async () => {
+    const backend = makeInvitationBackend({
+      eligibility: () => ({ state: 'pending', email_proved: false }),
+    })
+    bindRequestFn(backend.fn)
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    expect(
+      await screen.findByText(authEn.acceptInvitation.unproved.title),
+    ).toBeInTheDocument()
+    expect(backend.eligibilityReads).toEqual([TOKEN])
+    expect(
+      screen.queryByRole('button', { name: authEn.acceptInvitation.accept }),
     ).not.toBeInTheDocument()
   })
 
@@ -194,6 +377,14 @@ describe('the invitation landing', () => {
         name: authEn.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
+    // The organization's display name is what the viewer sees when it is set.
+    expect(
+      screen.getByText(
+        authEn.acceptInvitation.invitedBy
+          .replace('{{inviter}}', 'Ada Lovelace')
+          .replace('{{tenant}}', 'Acme'),
+      ),
+    ).toBeInTheDocument()
 
     await user.click(
       screen.getByRole('button', { name: authEn.acceptInvitation.accept }),
@@ -208,6 +399,82 @@ describe('the invitation landing', () => {
         name: demoEnUS.home.heading,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('falls back to the tenant name when the organization set no display name', async () => {
+    const backend = makeInvitationBackend({
+      view: VIEW_WITHOUT_DISPLAY_NAME,
+    })
+    bindRequestFn(backend.fn)
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The display name is free text an organization need not have chosen; the
+    // name is always there, and the landing must not address the viewer with
+    // an empty organization.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: authEn.acceptInvitation.title,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        authEn.acceptInvitation.invitedBy
+          .replace('{{inviter}}', 'Ada Lovelace')
+          .replace('{{tenant}}', 'acme'),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('offers the organization when a member opens an accepted link again', async () => {
+    const backend = makeInvitationBackend({
+      view: {
+        state: 'accepted',
+        invitation: { tenant: 'acme', tenant_display_name: 'Acme' },
+      },
+      selfBefore: () => ({
+        tenants: [{ name: 'acme', displayName: 'Acme' }],
+      }),
+    })
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    expect(
+      await screen.findByText(
+        authEn.acceptInvitation.member.title.replace('{{tenant}}', 'Acme'),
+      ),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: authEn.acceptInvitation.member.open }),
+    )
+    // The organization became current and the viewer landed in it.
+    expect(getCurrentTenant()).toBe('acme')
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('says the accepted link was used when the session is not a member', async () => {
+    const backend = makeInvitationBackend({
+      view: {
+        state: 'accepted',
+        invitation: { tenant: 'acme', tenant_display_name: 'Acme' },
+      },
+      selfBefore: () => ({ tenants: [] }),
+    })
+    bindRequestFn(backend.fn)
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    expect(
+      await screen.findByText(authEn.acceptInvitation.used.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: authEn.acceptInvitation.member.open }),
+    ).not.toBeInTheDocument()
   })
 
   it('lands in the invited tenant and resolves its name from the caller tenant read', async () => {
@@ -233,10 +500,8 @@ describe('the invitation landing', () => {
       name: demoEnUS.home.heading,
     })
 
-    // The acceptance names the tenant by identifier only. The name is read
-    // from the caller tenant list after it, and the two diverge here: a
-    // landing that announced the identifier (or fell back to an unrelated
-    // tenant) would fail this assertion.
+    // The acceptance names the tenant; the display-name source is the caller
+    // tenant list, which the landing reads after it and the switcher keeps.
     expect(backend.selfReads).toContain('after')
     expect(getCurrentTenant()).toBe(INVITED_TENANT_NAME)
     expect(getCurrentTenantName()).toBe(INVITED_TENANT_NAME)
@@ -385,12 +650,11 @@ describe('the invitation landing', () => {
   })
 
   it('returns a password registration to the invitation after its address is verified', async () => {
-    // An anonymous visitor on the invitation URL has no feature document yet
-    // (it is readable only to an authenticated caller), so the landing route
-    // is not matched and the tenant shell's own sign-in surface renders. A
-    // password registration there must first prove the address on the account
-    // page, and the invitation token has to survive that detour: the visitor
-    // comes back to the link and can accept it.
+    // An anonymous visitor on the invitation URL sees the landing, and its
+    // create-account action opens the host's registration surface in place. A
+    // password registration must first prove the address on the account page,
+    // and the invitation token has to survive that detour: the visitor comes
+    // back to the link and can accept it.
     let verified = false
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
@@ -428,6 +692,7 @@ describe('the invitation landing', () => {
         return { state: 'verified' }
       },
       [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
       [`POST /api/v1/auth/invitations/${TOKEN}`]: () => ({
         account: 'acc-1',
         tenant: INVITED_TENANT_NAME,
@@ -442,9 +707,11 @@ describe('the invitation landing', () => {
     const user = userEvent.setup()
     renderDemoApp({ session: harness.session })
 
-    // The anonymous surface the visitor meets at the invitation URL.
+    // The anonymous landing's create-account action.
     await user.click(
-      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.createAccount,
+      }),
     )
     await user.type(
       screen.getByLabelText(authEn.register.usernameLabel),
@@ -500,15 +767,10 @@ describe('the invitation landing', () => {
   })
 
   it('returns an SMS registration made on the invitation URL to its accept page', async () => {
-    // The feature document is readable only to an authenticated caller, so
-    // the anonymous visitor who follows the invitation link has none yet: the
-    // invitation declaration is not matched and the tenant shell's own
-    // sign-in surface renders at this URL. That surface is not embedded in
-    // the landing page, so its register mode would take the just-opened
-    // account to the tenant home (or the account page) and drop the invitation
-    // -- the case the forced feature document used to hide. The registration
-    // has to leave the URL in place so the declaration matches once the login
-    // commit brings the document with it.
+    // The create-account action opens the host's sign-in surface in place, so
+    // its register mode must leave the URL alone: the session flip re-renders
+    // the landing onto its signed-in surface, with the token still in the
+    // path.
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
         features: ['authn.invitations', 'org.personal'],
@@ -535,23 +797,15 @@ describe('the invitation landing', () => {
           : completeFlow(2),
       [PROFILE_GET]: () => principal(),
       [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
     })
     const user = userEvent.setup()
     renderDemoApp({ session: harness.session })
 
-    // The real anonymous path: the host's sign-in surface, not the accept
-    // screen, because the invitation declaration still lacks its feature
-    // document.
-    expect(
-      await screen.findByRole('heading', {
-        level: 1,
-        name: demoEnUS.signIn.heading,
-      }),
-    ).toBeInTheDocument()
-
+    // The anonymous landing, then the register mode of the in-place surface.
     await user.click(
       await screen.findByRole('button', {
-        name: authEn.mode.registerEntry,
+        name: authEn.acceptInvitation.createAccount,
       }),
     )
     await user.type(
@@ -587,8 +841,7 @@ describe('the invitation landing', () => {
     // The ordinary sign-in path: no register entry is picked, and the
     // deployment's SMS method opens an account for a number it does not know.
     // The sign-in lane never takes the register mode's landing, so the
-    // invitation URL must survive the session flip and re-match the
-    // declaration on its own.
+    // invitation URL must survive the session flip.
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
         features: ['authn.invitations', 'org.personal'],
@@ -615,10 +868,16 @@ describe('the invitation landing', () => {
           : completeFlow(2),
       [PROFILE_GET]: () => principal(),
       [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
     })
     const user = userEvent.setup()
     renderDemoApp({ session: harness.session })
 
+    await user.click(
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.signIn,
+      }),
+    )
     await user.type(
       await screen.findByLabelText(authEn.smsSignIn.phoneLabel),
       '+14155550123',

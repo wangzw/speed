@@ -244,6 +244,18 @@ func (m *managerStub) BindingsOf(_ context.Context, tenant, account string) ([]a
 	return nil, m.errNow()
 }
 
+// RoleSubsetHeld records the judgement. This surface never asks it: the tenant
+// management surface and the invitation role judgement are its callers.
+func (m *managerStub) RoleSubsetHeld(_ context.Context, tenant string, role authz.Role,
+	_ map[authz.Permission]bool,
+) (bool, error) {
+	m.note(managerCall{op: "RoleSubsetHeld", tenant: tenant, role: role})
+	if err := m.errNow(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (m *managerStub) PutRole(_ context.Context, r authz.RoleRecord) error {
 	m.note(managerCall{op: "PutRole", tenant: r.Tenant, role: r.Role})
 	return m.errNow()

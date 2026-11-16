@@ -34,16 +34,11 @@
  * immutable after creation, so the detail page shows it read-only and offers
  * no rename control.
  *
- * THE DOCUMENT'S STEP-10 RE-OPENED LINK IS NOT RENDERED BY THE PRODUCT, so this
- * spec leaves it undriven and reports the gap. The accept-view read returns an
- * invitation's stored state even after acceptance, and the accept screen
- * ignores that state: a link opened again renders the invitation summary with
- * an Accept action rather than the "no longer valid" result the document
- * requires. A second acceptance click is refused, but only with the generic
- * authn-conflict text, not the terminal accepted result. REQ-tenancy-013 is
- * exactly that read path and REQ-tenancy-020's second-redemption observation
- * depends on it, so both stay out of `@covers`. The same divergence is already
- * reported by the invitation-to-tenant spec.
+ * THE DOCUMENT'S STEP-10 RE-OPENED LINK RENDERS THE MEMBER TERMINAL STATE. An
+ * accepted link opened again names the organization the viewer already belongs
+ * to and offers the way in, with neither the summary nor a second accept
+ * action. REQ-tenancy-013 is that read path, and REQ-tenancy-020's
+ * second-redemption observation depends on it; both are driven below.
  *
  * `@covers` is narrower than the document's list in other ways.
  * REQ-tenancy-006 (the roster's read decided in the platform domain) is not
@@ -66,9 +61,12 @@
  * roster's, and the PRD marks that requirement's end-to-end case unimplemented.
  * REQ-tenancy-008 is claimed narrowly too: the creator's member list
  * and the list after the acceptance are driven, while paging is not.
- * REQ-tenancy-011's malformed-address refusal and REQ-platform-admin-032's
- * blank-expiry default are not driven; the typed expiry is what both the issuer
- * and the invitee read. REQ-platform-admin-006 is claimed narrowly to the
+ * REQ-tenancy-011's malformed-address refusal is not driven. REQ-platform-admin-032
+ * is claimed narrowly: the chosen lifetime and the deadline both the issuer
+ * and the invitee read are driven, while the seven-day default is not named.
+ * The platform invitation list's multi-page case is covered by
+ * `web/packages/admin-ui/src/InvitationsPage.test.tsx`, because this journey
+ * holds one invitation. REQ-platform-admin-006 is claimed narrowly to the
  * grouped navigation this assembly renders: the shell renders a group holding a
  * single entry as that entry alone, and this deployment serves one page in the
  * overview, tenant and audit sections (the SMS administration module is not
@@ -80,7 +78,7 @@
  * code from the review process log (fixtures/log.ts).
  */
 // @journey journey-operator-onboards-tenant.md
-// @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-platform-admin-050, REQ-platform-admin-051, REQ-platform-admin-055, REQ-platform-admin-118, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-022, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
+// @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-platform-admin-050, REQ-platform-admin-051, REQ-platform-admin-055, REQ-platform-admin-118, REQ-platform-admin-119, REQ-platform-admin-120, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-016, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-022, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { reviewInvitee, reviewOrdinaryMember } from '../fixtures/config'
@@ -97,6 +95,8 @@ import {
 } from '../helpers/account-menu'
 import type { Accounts } from '../helpers/accounts'
 import { copy, copyPattern } from '../helpers/i18n'
+import { expiryChoices, expectOneOfText } from '../helpers/invitation-expiry'
+import { columnIndex } from '../helpers/organization-admin'
 
 // The admin tables carry low-priority columns and the admin sidebar takes
 // part of the width, so the desktop viewport has to be wide enough for the
@@ -110,6 +110,9 @@ const OPERATOR = {
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
+
+/** The invited address as the server masks it on the public read. */
+const MASKED_INVITEE = 'i***@demo.test'
 
 /**
  * The tenant the seed registers. The seed gives it no display name, so the
@@ -139,32 +142,6 @@ const TENANT_WEBSITE = 'https://globex.test'
  */
 const ROLE = 'tenant-inviter'
 const PERMISSION = 'authn.membership.manage'
-
-/**
- * The expiry the operator types into the issue form: two days out, truncated
- * to the minute. Two days is inside the server's lifetime domain and far from
- * the configured default, so an expiry the product ignored would render a
- * different day and fail the assertions below.
- */
-const EXPIRY_INSTANT = (() => {
-  const instant = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
-  instant.setUTCSeconds(0, 0)
-  return instant
-})()
-
-/** The `datetime-local` value the browser (pinned to UTC) reads as the instant. */
-const EXPIRY_INPUT = EXPIRY_INSTANT.toISOString().slice(0, 16)
-
-/**
- * The instant as the product's own formatter renders it: ui-kit's default
- * tier is Intl's medium date and short time, and both the invitation list and
- * the accept summary pin the zone to UTC.
- */
-const EXPECTED_EXPIRY = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-}).format(EXPIRY_INSTANT)
 
 /** Escape the characters a regular expression reads as syntax. */
 function escapeRegExp(text: string): string {
@@ -373,6 +350,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
   let inviteeContext: BrowserContext | undefined
   let inviteePage: Page | undefined
   let acceptanceLink = ''
+  /** The instants around the issue, the origin of the chosen lifetime. */
+  let issuedAt = 0
+  let issuedAtConfirmed = 0
+  /** The expiry strings the chosen lifetime can render. */
+  let expectedExpiry: string[] = []
 
   try {
     await test.step('precondition: the operator signs in and proves the account email', async () => {
@@ -877,9 +859,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(invitationSection(page)).toHaveCount(0)
       await expect(memberSection(page)).toHaveCount(0)
 
-      // After choosing it, the new tenant's invitation list is empty. Its
-      // member list holds the operator: opening a tenant binds its creator as
-      // the first tenant-admin, and a tenant-admin is a member as well.
+      // After choosing it, the invitation list opens on the pending filter
+      // and the new tenant has no pending invitation, so the filtered empty
+      // state is what shows. Its member list holds the operator: opening a
+      // tenant binds its creator as the first tenant-admin, and a tenant-admin
+      // is a member as well.
       await tenantSelector(page).click()
       await page
         .getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true })
@@ -887,7 +871,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(
         invitationSection(page)
           .getByRole('heading', {
-            name: copy('adminUi', 'invitations.empty.title'),
+            name: copy('adminUi', 'invitations.empty.filteredTitle'),
             exact: true,
           }),
       ).toBeVisible()
@@ -909,11 +893,23 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .fill(reviewInvitee.identifier)
+      // REQ-platform-admin-032: the expiry is a fixed lifetime choice, not a
+      // free-form time.
       await page
-        .getByLabel(copy('adminUi', 'invitations.issue.expiresLabel'), {
+        .getByLabel(copy('adminUi', 'invitations.issue.quickLabel'), {
           exact: true,
         })
-        .fill(EXPIRY_INPUT)
+        .click()
+      await page
+        .getByRole('option', {
+          name: copy('adminUi', 'invitations.issue.thirtyDays'),
+          exact: true,
+        })
+        .click()
+      // The deadline the product must write is measured from this instant, so
+      // a chosen lifetime the implementation ignored cannot pass on both
+      // pages agreeing with each other.
+      issuedAt = Date.now()
       await page
         .getByRole('button', {
           name: copy('adminUi', 'invitations.issue.submit'),
@@ -929,16 +925,18 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           { exact: true },
         ),
       ).toBeVisible()
+      issuedAtConfirmed = Date.now()
 
       // REQ-platform-admin-033: the list row carries the address, the status,
-      // the inviter and the expiry. REQ-platform-admin-032: the expiry is the
-      // instant the operator typed, not the configured default.
+      // the role, the inviter, the expiry and the sent-at time.
       const table = invitationSection(page).getByRole('table')
       for (const header of [
         copy('adminUi', 'invitations.column.email'),
         copy('adminUi', 'invitations.column.status'),
+        copy('adminUi', 'invitations.column.role'),
         copy('adminUi', 'invitations.column.invitedBy'),
         copy('adminUi', 'invitations.column.expires'),
+        copy('adminUi', 'invitations.column.created'),
       ]) {
         await expect(
           table.getByRole('columnheader', { name: header, exact: true }),
@@ -954,12 +952,66 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toBeVisible()
+      const roleColumn = await columnIndex(
+        table,
+        copy('adminUi', 'invitations.column.role'),
+      )
+      const invitedByColumn = await columnIndex(
+        table,
+        copy('adminUi', 'invitations.column.invitedBy'),
+      )
+      // No role is a blank cell, as on the organization page: the table
+      // prints no stand-in label.
+      await expect(row.getByRole('cell').nth(roleColumn)).toHaveText('')
+      // The inviter cell shows the display name alone; the complete
+      // "display name (username)" is its hover title.
+      const invitedByCell = row.getByRole('cell').nth(invitedByColumn)
+      await expect(invitedByCell).toHaveText(OPERATOR.displayName)
+      // The cell shows the display name alone; the complete reference is the
+      // hover title on the element inside the cell.
+      await expect(invitedByCell.locator('p[title]')).toHaveAttribute(
+        'title',
+        `${OPERATOR.displayName} (${OPERATOR.username})`,
+      )
       await expect(
         row.getByText(`${OPERATOR.displayName} (${OPERATOR.username})`, {
           exact: true,
         }),
+      ).toHaveCount(0)
+
+      // REQ-platform-admin-120: the list opens on the pending state and the
+      // filter narrows it to another state.
+      await page
+        .getByRole('combobox', {
+          name: copy('adminUi', 'invitations.filter.label'),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('option', {
+          name: copy('adminUi', 'invitations.status.accepted'),
+          exact: true,
+        })
+        .click()
+      await expect(
+        invitationSection(page).getByRole('heading', {
+          name: copy('adminUi', 'invitations.empty.filteredTitle'),
+          exact: true,
+        }),
       ).toBeVisible()
-      await expect(row).toContainText(EXPECTED_EXPIRY)
+      await page
+        .getByRole('combobox', {
+          name: copy('adminUi', 'invitations.filter.label'),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('option', {
+          name: copy('adminUi', 'invitations.status.pending'),
+          exact: true,
+        })
+        .click()
+      await expect(invitationRow(page)).toBeVisible()
 
       // REQ-tenancy-011's one-time handover: the panel carries the acceptance
       // link and a copy control, and neither survives the panel's close.
@@ -986,8 +1038,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
       )
       await expect(value).toBeVisible()
-      acceptanceLink = ((await value.textContent()) ?? '').trim()
+      const firstLink = ((await value.textContent()) ?? '').trim()
 
+      // The panel carries the only copy of the link, so closing it asks first.
       await panel
         .getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
@@ -997,10 +1050,123 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .click()
+      const closeDialog = page.getByRole('dialog')
+      await expect(closeDialog).toBeVisible()
+      await closeDialog
+        .getByRole('button', {
+          name: copy('adminUi', 'invitations.issued.close'),
+          exact: true,
+        })
+        .click()
       await expect(panel).toHaveCount(0)
       await expect(
-        page.getByText(acceptanceLink, { exact: true }),
+        page.getByText(firstLink, { exact: true }),
       ).toHaveCount(0)
+
+      // REQ-platform-admin-119: resending keeps the row and its deadline but
+      // replaces the link, so the old one stops working.
+      await invitationSection(page)
+        .getByRole('button', {
+          name: copy('adminUi', 'invitations.actionsAria', {
+            email: reviewInvitee.identifier,
+          }),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('menuitem', {
+          name: copy('adminUi', 'invitations.resend'),
+          exact: true,
+        })
+        .click()
+      const resendDialog = page.getByRole('dialog')
+      await expect(resendDialog).toBeVisible()
+      await resendDialog
+        .getByRole('button', {
+          name: copy('adminUi', 'common.confirm'),
+          exact: true,
+        })
+        .click()
+
+      const resentPanel = invitationLinkPanel(page, reviewInvitee.identifier)
+      await expect(resentPanel).toBeVisible()
+      const resentValue = resentPanel.getByText(
+        new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
+      )
+      await expect(resentValue).toBeVisible()
+      acceptanceLink = ((await resentValue.textContent()) ?? '').trim()
+      expect(acceptanceLink).not.toBe(firstLink)
+      // Resending does not add a row: the same invitation now carries the new
+      // link.
+      await expect(invitationSection(page).getByRole('table').locator('tbody tr')).toHaveCount(1)
+      // Resending keeps the row's deadline. The expected strings are computed
+      // from the chosen lifetime and the instants around the issue, so a
+      // lifetime the product ignored cannot pass by both pages agreeing.
+      expectedExpiry = expiryChoices(issuedAt, issuedAtConfirmed)
+      const expiryColumn = await columnIndex(
+        table,
+        copy('adminUi', 'invitations.column.expires'),
+      )
+      await expectOneOfText(
+        invitationRow(page).getByRole('cell').nth(expiryColumn),
+        expectedExpiry,
+      )
+
+      await resentPanel
+        .getByRole('button', {
+          name: copy('adminUi', 'invitations.issued.closeAria', {
+            tenant: TENANT_NAME,
+            email: reviewInvitee.identifier,
+          }),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('dialog')
+        .getByRole('button', {
+          name: copy('adminUi', 'invitations.issued.close'),
+          exact: true,
+        })
+        .click()
+      await expect(resentPanel).toHaveCount(0)
+
+      // REQ-platform-admin-119: the replaced link stops working. A visitor
+      // opens the old link with no session and reads the invalid-link
+      // landing, not the invitation summary: the token no longer names an
+      // invitation, so no accept action is offered.
+      const staleContext = await browser.newContext({
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        viewport: page.viewportSize(),
+      })
+      try {
+        const stalePage = await staleContext.newPage()
+        await stalePage.goto(firstLink)
+        await expect(
+          stalePage.getByRole('heading', {
+            level: 1,
+            name: copy('authUi', 'acceptInvitation.missing.title'),
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(
+          stalePage.getByText(
+            copy('authUi', 'acceptInvitation.missing.description'),
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await expect(
+          stalePage.getByRole('button', {
+            name: copy('authUi', 'acceptInvitation.accept'),
+            exact: true,
+          }),
+        ).toHaveCount(0)
+      } finally {
+        await staleContext.close().catch(() => undefined)
+      }
+
+      // The list pages by cursor. This journey holds one invitation, so the
+      // multi-page case is covered by the platform page's unit suite.
     })
 
     await test.step('step 7: the operator hands the acceptance link to the invitee', async () => {
@@ -1025,9 +1191,57 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       const invitee = inviteePage
       const invitationPath = new URL(acceptanceLink).pathname
 
-      // REQ-tenancy-016: an anonymous viewer meets the sign-in surface first,
-      // and no invitation summary reaches it.
+      // REQ-tenancy-016: an anonymous viewer sees the invitation itself on
+      // the landing -- the inviter, the organization, the masked address and
+      // the two account actions -- instead of a generic sign-in page.
       await invitee.goto(acceptanceLink)
+      await expect(
+        invitee.getByRole('heading', {
+          level: 1,
+          name: copy('authUi', 'acceptInvitation.title'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        invitee.getByText(
+          copy('authUi', 'acceptInvitation.invitedBy', {
+            inviter: OPERATOR.displayName,
+            tenant: TENANT_DISPLAY_NAME,
+          }),
+          { exact: true },
+        ),
+      ).toBeVisible()
+      await expect(
+        invitee.getByText(
+          copy('authUi', 'acceptInvitation.email', {
+            email: MASKED_INVITEE,
+          }),
+          { exact: true },
+        ),
+      ).toBeVisible()
+      await expect(
+        invitee.getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.signIn'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        invitee.getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.createAccount'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      expect(new URL(invitee.url()).pathname).toBe(invitationPath)
+
+      // The sign-in action opens the host's surface in place; signing in
+      // stays on the link, so the session flip re-renders the accept screen
+      // at the same address.
+      await invitee
+        .getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.signIn'),
+          exact: true,
+        })
+        .click()
       await expect(
         invitee.getByRole('heading', {
           level: 1,
@@ -1035,23 +1249,6 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toBeVisible()
-      await expect(
-        invitee.getByRole('heading', {
-          name: copy('authUi', 'acceptInvitation.title'),
-          exact: true,
-        }),
-      ).toHaveCount(0)
-      await expect(
-        invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_NAME }),
-          { exact: true },
-        ),
-      ).toHaveCount(0)
-      expect(new URL(invitee.url()).pathname).toBe(invitationPath)
-
-      // Signing in through the surface stays on the link: the host keeps the
-      // landing for this flow, so the session flip re-renders the accept
-      // screen at the same address.
       await invitee
         .getByRole('textbox', {
           name: copy('authUi', 'passwordSignIn.identifierLabel'),
@@ -1079,18 +1276,21 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible({ timeout: 15_000 })
       expect(new URL(invitee.url()).pathname).toBe(invitationPath)
 
-      // The summary names the tenant by name, the invited address and the
-      // expiry the issue carried.
+      // The summary names the inviter and the tenant by its display name, the
+      // masked invited address and the expiry the issue carried.
       await expect(
         invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT_NAME }),
+          copy('authUi', 'acceptInvitation.invitedBy', {
+            inviter: OPERATOR.displayName,
+            tenant: TENANT_DISPLAY_NAME,
+          }),
           { exact: true },
         ),
       ).toBeVisible()
       await expect(
         invitee.getByText(
           copy('authUi', 'acceptInvitation.email', {
-            email: reviewInvitee.identifier,
+            email: MASKED_INVITEE,
           }),
           { exact: true },
         ),
@@ -1098,7 +1298,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       const expiryLine = invitee.getByText(
         new RegExp(`^${escapeRegExp(EXPIRY_PREFIX)}`),
       )
-      await expect(expiryLine).toHaveText(`${EXPIRY_PREFIX}${EXPECTED_EXPIRY}`)
+      await expectOneOfText(
+        expiryLine,
+        expectedExpiry.map((text) => `${EXPIRY_PREFIX}${text}`),
+      )
     })
 
     await test.step('step 9: the invitee accepts, lands on the tenant home and sees the confirmation', async () => {
@@ -1185,12 +1388,46 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
       await closeAccountMenu(invitee)
 
-      // The document's re-opened-link sub-step is not driven: the product
-      // renders the accepted invitation's summary again instead of the
-      // terminal result the document requires, so REQ-tenancy-013 and
-      // REQ-tenancy-020 are left out of `@covers` and reported as a gap. The
-      // invitation-to-tenant spec documents the same divergence.
-      //
+      // The document's re-opened-link sub-step: the accepted link opens
+      // again into the member terminal state. It names the organization the
+      // viewer already belongs to and offers the way in; the summary and a
+      // second accept action are gone. REQ-tenancy-013 and REQ-tenancy-020.
+      await invitee.goto(acceptanceLink)
+      await expect(
+        invitee.getByRole('heading', {
+          name: copy('authUi', 'acceptInvitation.member.title', {
+            tenant: TENANT_DISPLAY_NAME,
+          }),
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        invitee.getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.member.open'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        invitee.getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.accept'),
+          exact: true,
+        }),
+      ).toHaveCount(0)
+      // The way in lands on the tenant home without a second acceptance.
+      await invitee
+        .getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.member.open'),
+          exact: true,
+        })
+        .click()
+      await expect(
+        invitee.getByRole('heading', {
+          level: 1,
+          name: copy('demo', 'home.heading'),
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 15_000 })
+
       // REQ-platform-admin-001's member facet: a plain member is offered
       // neither the account menu's admin entry nor the start page's admin
       // card. The card is read with the menu closed; the menu entry with it
@@ -1215,6 +1452,20 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         }),
       ).toBeVisible()
+      // The list opens on the pending state, so the accepted invitation is
+      // read under its own filter.
+      await page
+        .getByRole('combobox', {
+          name: copy('adminUi', 'invitations.filter.label'),
+          exact: true,
+        })
+        .click()
+      await page
+        .getByRole('option', {
+          name: copy('adminUi', 'invitations.status.accepted'),
+          exact: true,
+        })
+        .click()
       await page
         .getByRole('button', {
           name: copy('adminUi', 'common.refresh'),

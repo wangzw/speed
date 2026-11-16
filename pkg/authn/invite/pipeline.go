@@ -190,10 +190,12 @@ func (p *product) cause(op string, err error) error {
 
 // answer maps a failure the capability returned to the response it belongs to.
 // The mapping is closed and fail-closed: a malformed address or a bad argument
-// is a 400, revoking an accepted invitation is a 409, and any other failure is a
-// 503 whose cause stays in the log. A missing invitation is a bare 404, which a
-// simple operation cannot write; answerReply handles it for the routes that
-// declare one.
+// is a 400, an ineligible target or a deadline past the longest lifetime is the
+// 400 of its own, a pending address or an address that is already a member is
+// the 409 of its own, a terminal invitation is the management face's 409
+// invitation-terminal, and any other failure is a 503 whose cause stays in the
+// log. A missing invitation is a bare 404, which a simple operation cannot
+// write; answerReply handles it for the routes that declare one.
 func (p *product) answer(op string, err error) error {
 	switch {
 	case errors.Is(err, authn.ErrThrottled):
@@ -205,8 +207,23 @@ func (p *product) answer(op string, err error) error {
 		return p.badRequest()
 	case errors.Is(err, authn.ErrUsernameReserved):
 		return p.reservedRequest()
-	case errors.Is(err, ErrInvitationAlreadyAccepted):
-		return inviteFailure(http.StatusConflict, mount.CodeConflict)
+	case errors.Is(err, ErrInvitationTargetInvalid):
+		return inviteFailure(http.StatusBadRequest, mount.CodeInvitationTargetInvalid)
+	case errors.Is(err, ErrInvitationExpiryTooLong):
+		return inviteFailure(http.StatusBadRequest, mount.CodeInvitationExpiryTooLong)
+	case errors.Is(err, authn.ErrRoleUnknown):
+		return inviteFailure(http.StatusBadRequest, mount.CodeInvitationRoleUnknown)
+	case errors.Is(err, authn.ErrRoleProtected):
+		return inviteFailure(http.StatusForbidden, mount.CodeInvitationRoleProtected)
+	case errors.Is(err, authn.ErrForbidden):
+		return inviteFailure(http.StatusForbidden, mount.CodeForbidden)
+	case errors.Is(err, ErrInvitationMember):
+		return inviteFailure(http.StatusConflict, mount.CodeInvitationMember)
+	case errors.Is(err, ErrInvitationPending):
+		return inviteFailure(http.StatusConflict, mount.CodeInvitationPending)
+	case errors.Is(err, ErrInvitationExpired), errors.Is(err, ErrInvitationRevoked),
+		errors.Is(err, ErrInvitationAlreadyAccepted):
+		return inviteFailure(http.StatusConflict, mount.CodeInvitationTerminal)
 	default:
 		return p.cause(op, err)
 	}
@@ -225,15 +242,22 @@ func (p *product) answerReply(op string, err error) (speedhttp.Reply, error) {
 
 // acceptAnswerReply maps a failure of the acceptance face. A token that points
 // at no invitation is the declared bare 404, a request with no caller is a 401
-// with the capability's challenge, a caller who has not proved the invited
-// address is a 403 of its own, a suspended member is a 409 of its own, one that
-// can no longer be redeemed — expired, revoked or already accepted — is the
-// generic 409, a bad argument is a 400, and any other failure is a 503 whose
-// cause stays in the log. The acceptance face tells those terminal states apart
-// from the management face, which only meets an accepted invitation when it
-// revokes one.
+// with the capability's challenge, a caller who is not a user account is a 403
+// invitation-target-invalid, a caller who has not proved the invited address is
+// a 403 of its own, a suspended member is a 409 of its own, a
+// disabled tenant is the 409 of its own, one that can no longer be redeemed —
+// expired, revoked, already accepted, or carrying a role that can no longer be
+// granted — is 409 invitation-terminal, a bad argument is a 400, and any other
+// failure is a 503 whose cause stays in the log. The acceptance face tells those
+// terminal states apart from the management face, which only meets an accepted
+// invitation when it revokes one.
 func (p *product) acceptAnswerReply(op string, err error) (speedhttp.Reply, error) {
+	var fault speedhttp.Fault
 	switch {
+	case errors.As(err, &fault):
+		// A fault the acceptance already built, such as the 503 of an audit row
+		// that could not be written, is answered as it stands.
+		return nil, fault
 	case errors.Is(err, ErrInvitationNotFound):
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
 	case errors.Is(err, ErrInvitationUnauthenticated):
@@ -246,15 +270,21 @@ func (p *product) acceptAnswerReply(op string, err error) (speedhttp.Reply, erro
 		}
 	case errors.Is(err, ErrInvitationEmailUnproved):
 		return nil, inviteFailure(http.StatusForbidden, mount.CodeInvitationEmailUnproved)
+	case errors.Is(err, ErrInvitationTargetInvalid):
+		// The caller is authenticated but is not a user account. The code is the
+		// issuing face's "this target cannot be invited", answered 400 there and
+		// 403 here: at acceptance the caller is known, so the refusal is about the
+		// account, not about the credential.
+		return nil, inviteFailure(http.StatusForbidden, mount.CodeInvitationTargetInvalid)
 	case errors.Is(err, ErrInvitationMembershipInactive):
 		return nil, inviteFailure(http.StatusConflict, mount.CodeMembershipInactive)
 	case errors.Is(err, ErrInvitationTenantInactive):
-		return nil, inviteFailure(http.StatusConflict, mount.CodeConflict)
+		return nil, inviteFailure(http.StatusConflict, mount.CodeInvitationTenantInactive)
 	case errors.Is(err, authn.ErrThrottled):
 		return nil, p.throttledFailure(err)
 	case errors.Is(err, ErrInvitationExpired), errors.Is(err, ErrInvitationRevoked),
-		errors.Is(err, ErrInvitationAlreadyAccepted):
-		return nil, inviteFailure(http.StatusConflict, mount.CodeConflict)
+		errors.Is(err, ErrInvitationAlreadyAccepted), errors.Is(err, ErrInvitationRoleWithdrawn):
+		return nil, inviteFailure(http.StatusConflict, mount.CodeInvitationTerminal)
 	case authn.IsUsernameShape(err):
 		return nil, p.invalidUsername()
 	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier):

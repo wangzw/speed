@@ -564,6 +564,7 @@ function TenantReads() {
 function TenantWrites() {
   const issue = adminOperations.useIssueInvitation()
   const revoke = adminOperations.useRevokeInvitation()
+  const resend = adminOperations.useResendInvitation()
   const writeMember = adminOperations.useWriteMember()
   const setMemberSsoExempt = adminOperations.useSetMemberSsoExempt()
   const removeMember = adminOperations.useRemoveMember()
@@ -579,6 +580,7 @@ function TenantWrites() {
     <>
       <button onClick={() => issue.mutate({ tenant: 'acme', email: 'a@b.co', expiresAt: undefined })}>issue</button>
       <button onClick={() => revoke.mutate({ tenant: 'acme', id: 'inv-1' })}>revokeInvite</button>
+      <button onClick={() => resend.mutate({ tenant: 'acme', id: 'inv-1' })}>resendInvite</button>
       <button onClick={() => writeMember.mutate({ tenant: 'acme', account: 'acc-1', active: true, sso_exempt: false })}>writeMember</button>
       <button onClick={() => setMemberSsoExempt.mutate({ tenant: 'acme', account: 'acc-1', sso_exempt: true })}>setMemberSsoExempt</button>
       <button onClick={() => removeMember.mutate({ tenant: 'acme', account: 'acc-1' })}>removeMember</button>
@@ -727,12 +729,13 @@ describe('adminOperations administration surfaces', () => {
     const user = userEvent.setup()
     const calls = bindAdminRequest(answer)
     renderWithProviders(<TenantWrites />, { operations: adminOperations })
-    for (const name of ['issue', 'revokeInvite', 'writeMember', 'setMemberSsoExempt', 'removeMember', 'createProvider', 'updateProvider', 'claimDomain', 'deleteProvider', 'removeDomain', 'verifyDomain', 'refresh', 'reverify']) {
+    for (const name of ['issue', 'revokeInvite', 'resendInvite', 'writeMember', 'setMemberSsoExempt', 'removeMember', 'createProvider', 'updateProvider', 'claimDomain', 'deleteProvider', 'removeDomain', 'verifyDomain', 'refresh', 'reverify']) {
       await user.click(screen.getByRole('button', { name }))
     }
     await waitFor(() => {
       expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/invitations' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/tenants/acme/invitations/inv-1' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/invitations/inv-1/resend' })
       expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/tenants/acme/members/acc-1' })
       expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/tenants/acme/members/acc-1/sso-exempt' })
       expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers' })
@@ -744,6 +747,39 @@ describe('adminOperations administration surfaces', () => {
       expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers/idp-1/domains/acme.com/verify' })
       expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers/idp-1/metadata/refresh' })
       expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers/idp-1/reverify-domains' })
+    })
+  })
+
+  it('sends the issue role in the invitation issue body', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest(answer, { recordBody: true })
+    function IssueWithRole() {
+      const issue = adminOperations.useIssueInvitation()
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            issue.mutate({
+              tenant: 'acme',
+              email: 'a@b.co',
+              expiresAt: undefined,
+              role: 'tenant-operator',
+            })
+          }
+        >
+          issueWithRole
+        </button>
+      )
+    }
+    renderWithProviders(<IssueWithRole />, { operations: adminOperations })
+    await user.click(screen.getByRole('button', { name: 'issueWithRole' }))
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        method: 'POST',
+        path: '/api/v1/tenants/acme/invitations',
+        query: undefined,
+        body: expect.objectContaining({ role: 'tenant-operator' }),
+      })
     })
   })
 

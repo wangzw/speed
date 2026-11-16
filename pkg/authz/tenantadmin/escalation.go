@@ -90,24 +90,21 @@ func (p *product) requireMembership(ctx context.Context, tenant, account string)
 }
 
 // requireRoleSubset refuses a binding of a role that holds a permission the
-// caller does not hold. The role's grants are read from the manager and mapped
-// back to permission names through the catalog; a grant the catalog cannot map
-// is one the caller's held set cannot contain, so it refuses too. A read that
-// fails is a 503.
+// caller does not hold. The rule itself lives in the policy module, where the
+// invitation's role judgement reads it too; this surface maps its two outcomes
+// to its own answers. A read that fails is a 503; a role outside the held set is
+// the protected refusal.
 //
 // The rule is what makes binding tenant-admin allowed but not free: the role
 // holds the whole governed set, so only a caller that holds the whole governed
 // set — the tenant's own administrator — may bind it.
 func (p *product) requireRoleSubset(ctx context.Context, tenant string, role authz.Role, held map[authz.Permission]bool) error {
-	grants, err := p.manager.Grants(ctx, tenant, role)
+	within, err := p.manager.RoleSubsetHeld(ctx, tenant, role, held)
 	if err != nil {
 		return p.failureOf("reading the role's grants", err)
 	}
-	for _, grant := range grants {
-		permission, ok := p.catalog.PermissionOf(grant.Resource, grant.Action)
-		if !ok || !held[permission] {
-			return protected()
-		}
+	if !within {
+		return protected()
 	}
 	return nil
 }
