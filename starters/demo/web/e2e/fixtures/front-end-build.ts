@@ -6,7 +6,9 @@
  * pnpm locates its workspace by walking up from the directory it runs in, so
  * a build started in the host's own directory installs it as a standalone
  * project and asks the registry for the unpublished @speed packages. The build
- * runs in the workspace root and selects the host by its package name.
+ * runs in the workspace root and selects the host by its package name. A
+ * filter that matches no package makes pnpm exit 0 having built nothing, and
+ * the flag, which pnpm reads only before the command word, makes it fail.
  */
 import { WEB_WORKSPACE_DIR } from './paths'
 
@@ -19,6 +21,7 @@ export const FRONT_END_BUILD_ARGS: readonly string[] = [
   WEB_WORKSPACE_DIR,
   '--filter',
   FRONT_END_PACKAGE,
+  '--fail-if-no-match',
   'run',
   'build',
 ]

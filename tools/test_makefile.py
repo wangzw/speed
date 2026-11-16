@@ -20,7 +20,6 @@ Stdlib-only (unittest, subprocess, tempfile). Run directly:
 
 from __future__ import annotations
 
-import glob
 import json
 import os
 import pathlib
@@ -29,6 +28,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from check_pnpm_filters import workspace_package_names  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -125,30 +128,6 @@ MODULE_LEGS: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {
 # Variables a parent make exports to its children. A case run by `make
 # tools-test` would otherwise hand them to the make it starts.
 MAKE_ENVIRONMENT = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "GNUMAKEFLAGS", "GOWORK")
-
-
-def workspace_package_names(workspace_root: pathlib.Path) -> set[str]:
-    """The package.json names of the members a pnpm-workspace.yaml lists.
-
-    The member globs are the `- <glob>` entries under `packages:`, read up
-    to the next key; each glob resolves against the workspace root, as pnpm
-    resolves it, and a member outside the root (`../...`) counts like any
-    other.
-    """
-    lines = (workspace_root / "pnpm-workspace.yaml").read_text(encoding="utf-8").splitlines()
-    start = next(i for i, line in enumerate(lines) if line.strip() == "packages:")
-    names: set[str] = set()
-    for line in lines[start + 1 :]:
-        entry = re.match(r"^\s+-\s+(\S+)", line)
-        if entry is None:
-            if line.strip() and not line.strip().startswith("#"):
-                break
-            continue
-        for member in glob.glob(str(workspace_root / entry.group(1))):
-            manifest = pathlib.Path(member) / "package.json"
-            if manifest.is_file():
-                names.add(json.loads(manifest.read_text(encoding="utf-8"))["name"])
-    return names
 
 
 class LoopingLegTests(unittest.TestCase):

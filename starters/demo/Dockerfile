@@ -39,9 +39,11 @@ RUN pnpm -C /src/web install --frozen-lockfile
 # is created here rather than left to the bundler. The build is selected from
 # the workspace root: the demo host is an external member, so pnpm resolves its
 # dependencies against the workspace's one lockfile only when the root is the
-# directory pnpm runs from.
+# directory pnpm runs from. A filter that matches no package makes pnpm exit 0
+# having built nothing, so the flag turns that into a failed build rather than
+# an image with an empty bundle directory.
 RUN mkdir -p /src/starters/demo/server/dist \
-    && pnpm -C /src/web --filter demo-web run build
+    && pnpm -C /src/web --filter demo-web --fail-if-no-match run build
 
 FROM golang:1.27.4-bookworm AS build
 

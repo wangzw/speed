@@ -37,6 +37,7 @@ python3 tools/check_observability_readiness.py
 python3 tools/check_test_tiers.py
 python3 tools/check_e2e_honesty.py
 python3 tools/check_platform_errors.py
+python3 tools/check_pnpm_filters.py
 ```
 
 Their own test suites run together, from the repository root:
@@ -223,3 +224,19 @@ what is wrong with it), 2 infrastructure error (the root is not a
 directory, a backend root or the locale directory is missing, a Go file
 cannot be read, a helper's call sites named no code, or the derivation
 found nothing at all).
+
+`check_pnpm_filters.py` — holds every pnpm command that filters to the rule
+that a filter matching nothing must fail. When every `--filter` selector
+misses, pnpm prints "No projects matched the filters" and exits 0, so a
+renamed package turns a build or a test run into a no-op under a green leg.
+`--fail-if-no-match` makes the same command exit 1, but pnpm reads it only
+before the command word, and only when all selectors miss. The gate reads the
+Makefile recipes, the Dockerfile `RUN` instructions (continuations joined,
+`&&` and `;` split), the `scripts` of every `package.json` and the `run:`
+blocks of the workflows and composite actions, and fails a call that filters
+without the flag, one with the flag after the command word, and one whose
+selector names no member of `web/pnpm-workspace.yaml` (a name, a glob that
+matches a member, or a path selector, with the `...` and `^` markers and a
+leading `!` removed). Exit codes: 0 clean, 1 a finding (each with file, line
+and the call), 2 infrastructure error (the root is not a directory, or the
+workspace file is missing or lists no member).

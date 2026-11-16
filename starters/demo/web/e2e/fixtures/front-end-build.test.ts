@@ -75,4 +75,13 @@ describe('the front-end build command', () => {
     expect(valueOf(FRONT_END_BUILD_ARGS, '--filter')).toBe(FRONT_END_PACKAGE)
     expect(FRONT_END_BUILD_ARGS.at(-1)).toBe('build')
   })
+
+  it('fails when the filter matches no package', () => {
+    // pnpm reads the flag only before the command word; after it the flag
+    // reaches the script, and a missed filter exits 0 having built nothing.
+    const flag = FRONT_END_BUILD_ARGS.indexOf('--fail-if-no-match')
+    const command = FRONT_END_BUILD_ARGS.indexOf('run')
+    expect(flag, 'the build carries --fail-if-no-match').toBeGreaterThan(-1)
+    expect(flag, 'the flag stands before the command word').toBeLessThan(command)
+  })
 })
