@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json",
     "test": "vitest run",
-    "build": "pnpm --filter @speed/api-client --filter @speed/api-sdk --filter @speed/auth-core --filter @speed/ui-kit --filter @speed/i18n build && tsc -p tsconfig.build.json"
+    "build": "pnpm --filter @speed/api-client --filter @speed/api-sdk --filter @speed/auth-core --filter @speed/ui-kit --filter @speed/i18n --fail-if-no-match run build && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@speed/api-client": "workspace:*",

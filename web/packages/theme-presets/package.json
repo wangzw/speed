@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "build": "pnpm --filter @speed/tokens build && tsc -p tsconfig.build.json"
+    "build": "pnpm --filter @speed/tokens --fail-if-no-match run build && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@speed/tokens": "workspace:*"
