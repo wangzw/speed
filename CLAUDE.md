@@ -43,30 +43,48 @@ from `mise install`, which reads `.mise.toml`. `.github/workflows/ci.yml`
 runs `make check`; the browser, end-to-end and integration tiers are
 separate workflows with targets of their own.
 
-**Iterate at the smallest useful scope, and run the whole of the changed
-side before calling the work done.** `make check` is the commit gate and
-runs the Go and frontend legs both, so using it for a one-sided change
-spends most of its time on the side that did not move.
+**Iterate at the smallest useful scope.** `make check` is the commit
+gate and runs the Go and frontend legs both, so using it for a one-sided
+change spends most of its time on the side that did not move.
 
 - **Frontend only** (`web/`, `starters/demo/web/`): iterate with the
   touched package's own `pnpm -C web/packages/<name> test` (or
   `pnpm -C web --filter demo-web ...` for the demo host), plus `lint` and
-  `typecheck`; then `make web-check` for the whole frontend. Add
-  `make web-browser` when geometry, focus order or focusability is the
-  subject, and `make e2e` when the change is user-visible (copy, layout,
-  assembly, a default).
+  `typecheck`; then `make web-check` for the whole frontend. The heavy
+  legs are `make web-browser` when geometry, focus order or focusability
+  is the subject, and `make e2e` when the change is user-visible (copy,
+  layout, assembly, a default).
 - **Backend only** (`pkg/`, `starters/demo/server/`): iterate with
-  `go -C <module> test ./<package>`, then `make build test test-race lint
-  tidy-check repo-check`. Add `make test-integration` when the change
-  reaches a backend `compose.yaml` provides.
-- **Contract change** (API schema, generated client): regenerate the
-  contract and the client (`make api-docs`, then `starters/demo/web`'s own
-  `api:gen`), and run both sides.
+  `go -C <module> test ./<package>`, then `make build test lint
+  tidy-check repo-check`. The heavy legs are `make test-race` and
+  `make test-integration` when the change reaches a backend
+  `compose.yaml` provides.
+- **Contract change** (API schema, generated client): regenerate and run
+  both sides, per the first item under "Before asking for review" below.
 - **Docs, workflows, deployment files, the Makefile**: `make repo-check`
   and `make tools-test`. When the change touches a document, also run the
   `document-standards` checker and render every diagram in it.
 
 A change that crosses the boundary is two changes: run each side's gate.
+
+**Gate stages.** A fix round re-runs only the touched packages' tests and the
+generated-artifact checks below. The whole-side gate — the gate commands the
+change's own bullet above lists, or `make check` when the change crosses the
+boundary — and the heavy legs run once, on the final HEAD, before the merge:
+`make test-race` (the demo server alone takes about ten minutes),
+`make test-integration`, `make web-browser`, `make e2e`. A unit compiled into a
+local integration branch runs neither when it merges there; the integration
+branch runs both once after its last unit lands.
+
+**Before asking for review**, also check:
+- A change to an OpenAPI declaration or fragment regenerates all three
+  artifacts in the same commit (`make api-docs`, then `api:gen` in `web` and in
+  `starters/demo/web`) and runs the demo server's `TestCommittedMergedDocument`,
+  which compares the merged contract byte for byte.
+- Requirements documents state external behaviour only: no problem codes,
+  routes or field names (the document-standards skill).
+- An incompatible change to an exported Go signature, a published API shape or
+  a problem code is marked breaking in the commit (the commit-convention skill).
 
 `starters/demo` carries a Makefile of its own. That one is the copyable
 skeleton's entry point — what a tree lifted out of this repository runs —
