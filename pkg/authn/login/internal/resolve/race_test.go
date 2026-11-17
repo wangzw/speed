@@ -2,6 +2,7 @@ package resolve
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -10,7 +11,9 @@ import (
 )
 
 // A9: the same identity logging in for the first time twice at once ends in one
-// account and one binding, and the login that lost reads the winner's.
+// account and one binding. The request that lost the binding reads the winner's;
+// one that lost an address the winner's creation took is refused that address,
+// which the engine answers as link-required (A3).
 
 type answer struct {
 	res Result
@@ -87,11 +90,44 @@ func TestConcurrentFirstLoginMakesOneAccount(t *testing.T) {
 }
 
 func TestConcurrentFirstLoginWithAnAddressMakesOneAccount(t *testing.T) {
+	// Both logins look the address up before either writes, so the address is
+	// what decides: it is written in the same transaction as the account, before
+	// any binding exists. Exactly one account is opened; the request that loses
+	// the address is refused it, which the engine answers as link-required.
 	e := newEnv(t, withSignup(SignupOpen))
 	gate := newRendezvous(2)
 	e.s.beforeCreate = func(authn.CreateAccount) { gate.wait() }
 	answers := resolveTogether(e, 2, social("google", "g1", "ann@home.org", true))
-	checkOneAccount(t, e, answers, 1)
+	var created, refused int
+	for i, a := range answers {
+		switch {
+		case a.err == nil && a.res.Outcome == OutcomeCreated:
+			created++
+		case errors.Is(a.err, authn.ErrContactTaken):
+			refused++
+		default:
+			t.Errorf("login %d: %+v, %v; want one opened account and one refused address", i, a.res, a.err)
+		}
+	}
+	if created != 1 || refused != 1 {
+		t.Errorf("%d created and %d refused the address, want one of each", created, refused)
+	}
+	live := e.s.live()
+	if len(live) != 1 {
+		t.Fatalf("accounts = %v, want one", live)
+	}
+	if owner, ok := e.s.boundTo("google", "g1"); !ok || owner != live[0] {
+		t.Errorf("the identity is bound to %q, want the surviving account %s", owner, live[0])
+	}
+	held := false
+	for _, idf := range e.s.identifiersOf(live[0]) {
+		if idf.Kind == authn.IdentifierEmail && idf.Value == "ann@home.org" {
+			held = true
+		}
+	}
+	if !held {
+		t.Errorf("the surviving account does not hold the address: %+v", e.s.identifiersOf(live[0]))
+	}
 }
 
 func TestConcurrentFirstLoginOfAPhoneMakesOneAccount(t *testing.T) {

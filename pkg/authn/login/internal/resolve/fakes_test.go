@@ -14,8 +14,11 @@ import (
 
 // store is an in-memory account store with the uniqueness semantics the real one
 // has: an identifier value is held by one account, an external key is bound to
-// one account, and a deleted account holds nothing. The interfaces it does not
-// serve are left nil, so a call the resolver should not make panics.
+// one account, and a deleted account holds nothing. An email address another
+// account holds is authn.ErrContactTaken, because the real store writes its
+// contact reservation in the same transaction; a username or phone another
+// account holds is authn.ErrAccountExists. The interfaces it does not serve are
+// left nil, so a call the resolver should not make panics.
 type store struct {
 	mu sync.Mutex
 
@@ -318,6 +321,9 @@ func (v adminView) create(in authn.CreateAccount) (authn.Account, error) {
 		}
 		k := ikey(kind, n)
 		if _, taken := s.identifier[k]; taken {
+			if kind == authn.IdentifierEmail {
+				return authn.ErrContactTaken
+			}
 			return authn.ErrAccountExists
 		}
 		keys = append(keys, k)
