@@ -292,7 +292,9 @@ func TestASuppliedBackendIsReleasedByTheAssembler(t *testing.T) {
 // the timeout is its time, stated to DeclaredAgainst against the ceiling. The
 // correct implementation never waits for the timeout: the flush context carries
 // the shutdown bound, and the cutoff ends the export inside that bound. The
-// other stop cases set no metric timeout and keep the reader's default.
+// release case is the other case that states a wrong time; it sets this timeout
+// to its own wrong time, and the remaining stop cases leave the reader's
+// default.
 const metricExportTimeoutPastTheCeiling = 2 * time.Minute
 
 // boundedConfig gives this module a service name and a short shutdown bound,
@@ -832,9 +834,11 @@ func (hangingMetrics) Shutdown(ctx context.Context) error {
 
 // releaseWrongTimeout is the time a wrong release needs in
 // TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded: one that bounds
-// the release with the batch export timeout instead of the module's own bound
-// takes that timeout. The case configures it far past the release bound, so
-// the wrong time is its own to set rather than a constant no test can move.
+// the release with an export timeout instead of the module's own bound takes
+// that timeout. The case configures both export timeouts -- the batch's and
+// the metric reader's -- to it, so whichever one a wrong implementation reads,
+// the wrong time is the same and is the case's own to set rather than a
+// constant no test can move.
 const releaseWrongTimeout = 3 * time.Minute
 
 // TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded pins that the
@@ -849,7 +853,11 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	done := make(chan outcome, 1)
 	go func() {
 		elapsed, err := driveOverMetricBackend(
-			boundedConfig{bound: 50 * time.Millisecond, exportTimeout: releaseWrongTimeout},
+			boundedConfig{
+				bound:         50 * time.Millisecond,
+				exportTimeout: releaseWrongTimeout,
+				metricTimeout: releaseWrongTimeout,
+			},
 			metricBackend("observability.test-hanging", hangingMetrics{}))
 		done <- outcome{elapsed, err}
 	}()
@@ -861,9 +869,9 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	// with no bound never returns, and the wait below is its guard; a release
 	// reusing the expired flush context returns before the lower bound. A
 	// release bounded far too long is the finite wrong implementation: one
-	// that takes its bound from the batch export timeout takes that timeout,
-	// while the module's release bound is a few seconds. That export timeout is
-	// the wrong time stated to DeclaredAgainst.
+	// that takes its bound from an export timeout takes that timeout, while
+	// the module's release bound is a few seconds. That timeout is the wrong
+	// time stated to DeclaredAgainst.
 	ceiling := coretest.DeclaredAgainst(t, 0, 6*time.Second, releaseWrongTimeout)
 	select {
 	case got := <-done:
@@ -872,10 +880,15 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 		}
 		if got.elapsed < time.Second || got.elapsed > ceiling {
 			t.Errorf("the stop took %v, want between 1s and %v: the release bounded at the module's %v, "+
-				"not at the batch export timeout of %v", got.elapsed, ceiling, otel.ReleaseTimeout,
+				"not at an export timeout of %v", got.elapsed, ceiling, otel.ReleaseTimeout,
 				releaseWrongTimeout)
 		}
-	case <-time.After(ceiling + coretest.Scale(24*time.Second)):
+	// The wait covers the wrong time as well, so the elapsed check above is
+	// what a finite wrong implementation reports. Ending it sooner would call
+	// that implementation unbounded, which is not the reason this case
+	// distinguishes; an implementation with no bound at all still trips this
+	// guard, a little later.
+	case <-time.After(releaseWrongTimeout + coretest.Scale(24*time.Second)):
 		t.Fatal("the stop did not return: the release of an exporter that waits for its context is unbounded")
 	}
 }
