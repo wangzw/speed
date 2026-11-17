@@ -117,7 +117,7 @@ export interface AuthnAdminIdentifier {
   default_contact: boolean;
   /** The identifier kind: username, email or phone. */
   kind: AuthnAdminIdentifierKind;
-  /** True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge. */
+  /** True only when the identifier's ownership was proved: sms-code, email-code or idp:<provider>. False for invite, admin, import-unverified and self, which only record a fact an invitation's link was delivered and presented, an administrator, an import or the account's own holder asserted, and are never grounds for automatic linking or an enterprise merge. */
   proven: boolean;
   /** True when the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used. */
   sign_in: boolean;
@@ -1294,7 +1294,7 @@ export interface AuthnProfileIdentifier {
   id: string;
   /** The identifier kind: username, email or phone */
   kind: string;
-  /** Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self */
+  /** Whether the way of verification proves ownership: true for sms-code, email-code and idp:<provider>, false for invite, admin, import-unverified and self */
   proven: boolean;
   /** Whether the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used */
   sign_in: boolean;
@@ -1302,7 +1302,7 @@ export interface AuthnProfileIdentifier {
   value: string;
   /** The instant the identifier's ownership was established, as an RFC 3339 instant in UTC; always present, as no identifier is stored awaiting verification */
   verified_at: string;
-  /** How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted */
+  /** How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. sms-code, email-code and idp:<provider> prove ownership; invite, admin, import-unverified and self only record a fact an invitation's link was delivered and presented, an administrator, an import or the account's own holder asserted */
   verified_via: string;
 }
 

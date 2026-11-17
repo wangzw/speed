@@ -10,9 +10,9 @@
  * names the kind (email, phone or username, mapped through a guarded
  * vocabulary, a value outside it rendering the generic identifier label) and
  * the value, with the server's `proven` answer (the ways of establishing
- * ownership that actually prove it -- email-code, sms-code, invite,
- * idp:<provider> -- versus the ones that only record an assertion: admin,
- * import-unverified, self). `verified_at` cannot answer that question: every
+ * ownership that actually prove it -- email-code, sms-code,
+ * idp:<provider> -- versus the ones that only record an assertion: invite,
+ * admin, import-unverified, self). `verified_at` cannot answer that question: every
  * stored identifier carries one, including a username written at
  * registration as `self`. A username is a login name with no ownership to
  * prove, so its row carries no ownership chip. An email or phone row carries

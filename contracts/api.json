@@ -16031,7 +16031,7 @@
             "type": "string"
           },
           "proven": {
-            "description": "True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:\u003cprovider\u003e. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge.",
+            "description": "True only when the identifier's ownership was proved: sms-code, email-code or idp:\u003cprovider\u003e. False for invite, admin, import-unverified and self, which only record a fact an invitation's link was delivered and presented, an administrator, an import or the account's own holder asserted, and are never grounds for automatic linking or an enterprise merge.",
             "type": "boolean"
           },
           "sign_in": {
@@ -17707,7 +17707,7 @@
             "type": "string"
           },
           "proven": {
-            "description": "Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:\u003cprovider\u003e, false for admin, import-unverified and self",
+            "description": "Whether the way of verification proves ownership: true for sms-code, email-code and idp:\u003cprovider\u003e, false for invite, admin, import-unverified and self",
             "type": "boolean"
           },
           "sign_in": {
@@ -17724,7 +17724,7 @@
             "type": "string"
           },
           "verified_via": {
-            "description": "How the identifier's ownership was established: sms-code, email-code, invite, idp:\u003cprovider\u003e (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted",
+            "description": "How the identifier's ownership was established: sms-code, email-code, invite, idp:\u003cprovider\u003e (followed by the provider's identifier), admin, import-unverified or self. sms-code, email-code and idp:\u003cprovider\u003e prove ownership; invite, admin, import-unverified and self only record a fact an invitation's link was delivered and presented, an administrator, an import or the account's own holder asserted",
             "type": "string"
           }
         },

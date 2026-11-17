@@ -211,8 +211,8 @@ func TestTheAccountViewOrdersIdentifiersByKindThenValue(t *testing.T) {
 }
 
 // TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership holds the proven rule:
-// a proof (sms-code, email-code, invite, idp:<provider>) reads true and an
-// assertion (admin, import-unverified, self) reads false.
+// a proof (sms-code, email-code, idp:<provider>) reads true and an
+// assertion (invite, admin, import-unverified, self) reads false.
 func TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,

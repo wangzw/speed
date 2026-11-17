@@ -17,7 +17,7 @@
 | [authn-sso](design-authn-sso.md) | 企业单点登录：租户自有身份提供方的登记、邮箱域所有权与发现、SAML（[REF-saml2](../../../references.md)）与企业 OIDC（[REF-openid-connect-core](../../../references.md)）的校验 |
 | [authn-impersonation](design-authn-impersonation.md) | 冒充：有期限的冒充记录、结构性限制、有效性判定、审计先于动作 |
 | [authn-admin](design-authn-admin.md) | 对授权的承诺：判定接口、管理面模块、自助范围的判据、403 的收窄 |
-| [authn-invite](design-authn-invite.md) | 邀请：自持状态机与不透明令牌、接受即兑现的账户与成员关系创建、被邀请地址只登记为已证明邮箱 |
+| [authn-invite](design-authn-invite.md) | 邀请：自持状态机与不透明令牌、接受即兑现的成员关系创建、被邀请地址须由接受人自己证明 |
 | [authn-profile](design-authn-profile.md) | 用户档案自服务接口：身份取自上下文、路径不带账户标识的读改路由、联系方式与登录方式的读出 |
 | [authn-config](design-authn-config.md) | 认证的配置键、设置键与秘密的存放、放宽开关、启动期自检 |
 | [authn-events](design-authn-events.md) | 认证的事件、审计、日志与指标：名字、载荷与属性的全集 |

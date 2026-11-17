@@ -280,7 +280,7 @@
             "type": "string"
           },
           "proven": {
-            "description": "True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge.",
+            "description": "True only when the identifier's ownership was proved: sms-code, email-code or idp:<provider>. False for invite, admin, import-unverified and self, which only record a fact an invitation's link was delivered and presented, an administrator, an import or the account's own holder asserted, and are never grounds for automatic linking or an enterprise merge.",
             "type": "boolean"
           },
           "sign_in": {
