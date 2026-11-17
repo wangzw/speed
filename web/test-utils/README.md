@@ -70,7 +70,9 @@ through `node_modules` rather than the map.
   pressing Tab and Shift+Tab through the overlay's focus trap — a trap
   that holds resolves the rule with no report, an escape fails the scan.
   Overlays Tab would dismiss (Menu, Select) keep their report, which
-  names that reason.
+  names that reason. That report is an accepted known limitation, recorded
+  in `docs/design/modules/web/design-web-ui-kit.md` under
+  "非模态浮层的焦点空档".
 - `render.tsx` — the render-primitive layer: `TEST_LANGUAGES`, the
   deterministic bilingual `createTestI18n` base, the
   retries-nothing `createTestQueryClient`, and the shared

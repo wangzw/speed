@@ -473,7 +473,10 @@ function reportNonCriticalIncomplete(
     // header comment) and is not on the PAGE_CONTEXT_RULES list that must
     // fail when indeterminate. An aria-hidden-focus report under a menu
     // or select says why the focus trap was not exercised; a real
-    // dialog/drawer's trap was, and never reaches here.
+    // dialog/drawer's trap was, and never reaches here. For a MUI
+    // non-modal overlay this is an accepted known limitation -- the first
+    // Tab spends a step outside the overlay with no visible focus; see
+    // docs/design/modules/web/design-web-ui-kit.md, "非模态浮层的焦点空档".
     const untestedTrap =
       rule.id === 'aria-hidden-focus' &&
       overlay !== null &&
@@ -643,7 +646,10 @@ async function runAxeAssertions(
     // itself leaves the modal case incomplete -- measured in both jsdom
     // and Chromium). Under a really open overlay such a violation is
     // reported, not asserted; without one (nothing to trap focus) it
-    // fails the scan like any other violation.
+    // fails the scan like any other violation. For a MUI non-modal
+    // overlay this is an accepted known limitation -- the first Tab spends
+    // a step outside the overlay with no visible focus; see
+    // docs/design/modules/web/design-web-ui-kit.md, "非模态浮层的焦点空档".
     const focusTrapDependent = result.violations.filter(
       (rule) => rule.id === 'aria-hidden-focus' && topOverlay !== null,
     )
