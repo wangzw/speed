@@ -79,12 +79,15 @@ budget.
 TS/JS sources are read through a hand-written mask, not a parser.
 `mask_javascript` blanks comments, string contents, template literals and
 regex bodies while keeping their delimiters. JSX is recognised to the
-extent a token scan can: `</` before a tag name or `>`, and a `/>` that
-follows an attribute-ending `}`, identifier or quote, are markup rather
-than a regex start, and an apostrophe directly after an identifier is JSX
-text (`<p>it's</p>`), not a string opener. A `/` after a regex preceder
-such as `(` still opens a regex, so `.replace(/>/g, ...)` masks its regex
-as a unit.
+extent a token scan can: `</` before a tag name or `>` and a `/>` that
+follows an attribute-ending `}`, identifier or quote are markup rather
+than a regex start, and `//` in JSX text is literal characters
+(`<p>http://x</p>`), not a line comment. An apostrophe directly after an
+identifier is JSX text (`<p>it's</p>`) unless the identifier is a keyword
+that takes an expression with no space (`x as'user'`), and a `/` after a
+regex preceder such as `(` still opens a regex, so `.replace(/>/g, ...)`
+masks its regex as a unit. A `<` that ends an operand on the same line is
+a comparison, not a tag start, so `s</re/.test(t)` is `s < /re/`.
 
 A mispaired delimiter still hides text, up to the next closing delimiter,
 which may be on a later line: a quote at the start of JSX text
@@ -94,6 +97,17 @@ the preceder rule does not recognise, so a quote inside or after it pairs
 with the next quote. Fail-closed only guarantees that such a misread cannot
 swallow to end of file: a string, template literal, regex or block comment
 still open there is an infrastructure error naming the file.
+
+Two boundary shapes appear only when deliberately constructed and are
+pinned by a test in each direction, not fixed. False positive: a real line
+comment whose `//` is followed by a `<` on the same line, where the nearest
+`>` before it closes a type-assertion or generic `<T>` that starts an
+expression, is read as JSX text, so the comment is not masked and a name
+inside it can be reported (`const y = foo(<T>bar) // os.cpus() <b>`). Miss:
+an `as` directly followed by an apostrophe in JSX text (`as'x`) opens a
+string that runs to the next quote, which may be on the next line inside a
+wait's arguments, so that wait's call name is hidden and its timeout goes
+unreported.
 
 The frontend's guards do not replace this scan.
 `web/scripts/workspace-test-config.test.mjs` (run by `make web-check`,
@@ -111,8 +125,11 @@ and are a reviewer's obligation, not the gate's: a dot import of `runtime`
 constant passed as a budget (`const ms = 5_000; it('x', { timeout: ms })`)
 is not a literal; a budget built from a variable or from a longer expression
 than constant arithmetic; a width returned by a helper; a `findBy*`/`waitFor`
-timeout passed through a variable; an `os` member reached through a binding
-the scan does not model (`const m = require('os'); m['cpus']()`); and a
+timeout passed through a variable; a `//` on a later line of a multi-line
+JSX text run, or after a nested closing tag on the same line, which is read
+as a comment and hides the rest of that line; an `os` member reached
+through a binding the scan does not model (`const m = require('os');
+m['cpus']()`); and a
 function that saves one name twice, which the per-body pairing judges
 together, so a clean save can be reported because its same-named sibling in
 a nested block escaped -- naming the two saves differently, or moving one to
@@ -702,8 +719,9 @@ REGEX_PRECEDER_WORDS = {
 }
 
 # Keywords that can be followed by a string literal with no space between
-# them (`return'x'`, `case'x':`, `from'./mod'`). Every other identifier
-# right before an apostrophe is JSX text, where `it's` must not open one.
+# them (`return'x'`, `case'x':`, `from'./mod'`, `x as'user'`). Every other
+# identifier right before an apostrophe is JSX text, where `it's` must not
+# open one.
 STRING_PRECEDER_KEYWORDS = REGEX_PRECEDER_WORDS | {
     "throw",
     "instanceof",
@@ -711,11 +729,18 @@ STRING_PRECEDER_KEYWORDS = REGEX_PRECEDER_WORDS | {
     "default",
     "import",
     "from",
+    "as",
 }
 
 
 def _is_identifier_char(char: str) -> bool:
     return char.isalnum() or char in "_$"
+
+
+# The characters that can end an operand just before a `<`: a call's or an
+# index's closing bracket and a literal's closing quote. An identifier
+# character is tested separately.
+OPERAND_END_CHARS = set(")]'\"`")
 
 
 def closes_condition_clause(text: str, close: int) -> bool:
@@ -750,6 +775,70 @@ def closes_condition_clause(text: str, close: int) -> bool:
     return False
 
 
+def operand_ends_before(text: str, index: int) -> bool:
+    """Whether an operand ends just before `index`, on the same line.
+
+    Only spaces and tabs are skipped, so a `<` at the start of a line (after
+    indentation) has no operand before it: a closing tag may break the line,
+    while a comparison cannot. The characters that end an operand are an
+    identifier character, a call's or an index's closing bracket, and a
+    literal's closing quote.
+    """
+    previous = index - 1
+    while previous >= 0 and text[previous] in " \t":
+        previous -= 1
+    if previous < 0 or text[previous] == "\n":
+        return False
+    return (
+        _is_identifier_char(text[previous])
+        or text[previous] in OPERAND_END_CHARS
+    )
+
+
+def in_jsx_text(text: str, index: int) -> bool:
+    """Whether `index` sits in JSX text on its line, not in code or a tag.
+
+    The nearest markup before the position must be a complete opening tag
+    that starts where an expression can, and a `<` must follow at or after
+    it before the newline, so the text run is closed on the same line. An
+    unmatched `{` after the opening `>` puts the position inside an
+    expression container, which is code. A TypeScript type assertion or
+    generic (`<T>x`) has no `<` later on the line, and a comparison chain
+    (`a<b>c`) does not start where an expression can, so the `//` after
+    either stays a comment. A `//` or `</` on a later line of a multi-line
+    text run is not recognised, and a `//` after a nested closing tag on the
+    same line is not either.
+    """
+    line_start = text.rfind("\n", 0, index) + 1
+    line_end = text.find("\n", index)
+    if line_end == -1:
+        line_end = len(text)
+    if text.find("<", index, line_end) == -1:
+        return False
+    before = text[line_start:index]
+    tag_end = before.rfind(">")
+    if tag_end == -1:
+        return False
+    tag_start = before.rfind("<", 0, tag_end)
+    if tag_start == -1:
+        return False
+    # A JSX element starts where an expression can (`(`, `=`, `?`, `&&`, a
+    # `=>`, a keyword such as `return`, or the start of a line); a type
+    # argument or a comparison (`a<b>c`) does not.
+    previous = line_start + tag_start - 1
+    while previous >= line_start and text[previous] in " \t":
+        previous -= 1
+    if previous >= line_start and not regex_can_start(text, previous + 1):
+        return False
+    tag = before[tag_start + 1 : tag_end]
+    if tag.startswith("/") or tag.endswith("/"):
+        return False
+    if tag and not _is_identifier_char(tag[0]):
+        return False
+    rest = before[tag_end + 1 :]
+    return rest.count("{") <= rest.count("}")
+
+
 # The characters that can end a JSX attribute right before `/>`: the `}` of
 # an expression container and an attribute value's closing quote. An
 # identifier also ends an attribute (`<Br />`) and is tested separately.
@@ -759,11 +848,14 @@ JSX_TAG_END_PRECEDERS = set("}\"'")
 def jsx_tag_slash(text: str, index: int) -> bool:
     """Whether the `/` at `index` is part of a JSX tag, not a regex start.
 
-    `</` opens a closing tag (`</name>`, `</>`), so it never starts a regex.
-    A `<` immediately before the slash is otherwise a comparison whose right
-    operand can be a regex, as in `x</[a-z]/.test(s)`; the tag reading is
-    taken only when a tag name or `>` follows the slash, so a regex that
-    starts with anything else, such as `x</`/.test(s)`, is still a regex.
+    `</name>` and `</>` close a JSX element, but a `<` can also be the
+    comparison operator whose right operand is a regex (`s</re/.test(t)` is
+    `s < /re/`). When an operand ends just before the `<` and the position
+    is not JSX text, the `<` is that operator and the slash starts a regex,
+    as it also does when anything but a tag-name character or `>` follows
+    the slash (`x</[a-z]/.test(s)`, `x</`/.test(s)`). JSX text keeps the
+    markup reading although its last character is an identifier character,
+    so `render(<Link>a</Link>)` still closes the element.
 
     `/>` closes a self-closing tag only when the last character before it
     can end an attribute: the `}` of an expression container, a closing
@@ -787,7 +879,14 @@ def jsx_tag_slash(text: str, index: int) -> bool:
         char = text[previous]
         return char in JSX_TAG_END_PRECEDERS or _is_identifier_char(char)
     if index > 0 and text[index - 1] == "<":
-        return following == ">" or following.isalpha() or following in "_$"
+        if following == ">":
+            return True
+        if not (following.isalpha() or following in "_$"):
+            return False
+        return not (
+            operand_ends_before(text, index - 1)
+            and not in_jsx_text(text, index - 1)
+        )
     return False
 
 
@@ -850,7 +949,7 @@ def mask_javascript(text: str) -> str:
     chars = list(text)
     index, size = 0, len(text)
     while index < size:
-        if text.startswith("//", index):
+        if text.startswith("//", index) and not in_jsx_text(text, index):
             end = text.find("\n", index)
             end = size if end == -1 else end
             for at in range(index, end):

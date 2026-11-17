@@ -335,10 +335,14 @@ bodies masked, so a token in prose is not a finding; an inline or dynamic
 only when its keyword survives the mask, so a `require('os')` named inside a
 string stays prose. The TS/JS mask is hand-written, not a parser. It reads
 `</` before a tag name or `>`, a `/>` after an attribute-ending `}`,
-identifier or quote, and an apostrophe directly after an identifier
-(`<p>it's</p>`) as JSX, so neither the slash nor the apostrophe opens a
-regex or a string. A `/` after a regex preceder such as `(` still opens a
-regex, so `.replace(/>/g, ...)` masks its regex as a unit. A delimiter can
+identifier or quote, and `//` in JSX text (`<p>http://x</p>`) as markup,
+not a regex or a comment. An apostrophe directly after an identifier is
+JSX text (`<p>it's</p>`) unless the identifier is a keyword that takes an
+expression with no space (`x as'user'`). A `<` that ends an operand on the
+same line is a comparison, not a tag start, so `s</re/.test(t)` is
+`s < /re/`, while `render(<Link>a</Link>)` still closes the element. A `/`
+after a regex preceder such as `(` still opens a regex, so
+`.replace(/>/g, ...)` masks its regex as a unit. A delimiter can
 still be mispaired, and then the mask hides text up to the next closing
 delimiter, which may be on a later line: a quote at the start of JSX text
 pairs with the next quote, a `/*` written in JSX text pairs with a `*/` on a
@@ -362,11 +366,22 @@ import of
 constant passed as a budget (`const ms = 5_000; it('x', { timeout: ms })`);
 a budget built from a variable or from a longer expression than constant
 arithmetic; a width returned by a helper; a `findBy*`/`waitFor` timeout
-passed through a variable; an `os` member reached through a binding the
-scan does not model (`const m = require('os'); m['cpus']()`); and a
+passed through a variable; a `//` on a later line of a multi-line JSX text
+run, or after a nested closing tag on the same line, which is read as a
+comment and hides the rest of that line; an `os` member reached through a
+binding the scan does not model (`const m = require('os'); m['cpus']()`); and a
 function that saves one name twice, which the per-body pairing judges
 together, so a clean save can be reported because its same-named sibling in
-a nested block escaped. Exit codes: 0 clean, 1 a finding (file, line and
+a nested block escaped. Two further shapes appear only when deliberately
+constructed and are pinned by a test each, in opposite directions. A real
+line comment whose `//` is followed by a `<` on the same line, when the
+nearest `>` before it closes a type-assertion or generic `<T>` at the start
+of an expression (`const y = foo(<T>bar) // os.cpus() <b>`), is read as JSX
+text, so the comment is not masked and a name inside it can be a false
+finding. An `as` directly followed by an apostrophe in JSX text (`as'x`)
+opens a string that runs to the next quote, which can sit on the next line
+inside a wait, hiding that wait's call name and its timeout: a missed
+finding. Exit codes: 0 clean, 1 a finding (file, line and
 what it is), 2 infrastructure error (the root is not a directory, nothing
 test-shaped was found, a shared default or one of its floors is missing,
 unreadable or not a positive finite number,

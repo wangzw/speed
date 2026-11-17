@@ -1189,6 +1189,114 @@ class TestTheJavascriptMask(GateCase):
     def test_a_regex_after_a_comparison_slash_keeps_scanning(self) -> None:
         self.assert_shape_reports("x</`/.test(s);\n")
 
+    def test_a_double_slash_in_jsx_text_is_not_a_line_comment(self) -> None:
+        # `<p>http://x</p>` writes a URL in JSX text, where `//` is literal
+        # characters, not a comment. Reading it as a comment blanks the rest
+        # of the line, including the findBy wait that sits on it.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it, screen } from 'vitest'\n"
+            "it('adds', async () => {\n"
+            "  render(<p>http://x</p>); await screen.findByText('x', "
+            "{ timeout: 500 })\n"
+            "})\n",
+        )
+        self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
+
+    def test_a_regex_on_the_right_of_a_less_than_is_not_code(self) -> None:
+        # `s</re/.test(t)` is `s < /re/.test(t)`: the `<` is a comparison
+        # whose right operand is a regex, so the regex is masked and its
+        # content is not read as code.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  if (s</os.cpus()/.test(t)) {}\n"
+            "})\n",
+        )
+        self.assert_clean()
+
+    def test_a_closing_tag_after_jsx_text_is_still_markup(self) -> None:
+        # The same `</` shape inside JSX text closes an element; the text
+        # before it is not an operand of a comparison.
+        self.assert_shape_reports("render(<Link>a</Link>);\n")
+
+    def test_a_less_than_chain_keeps_its_comment(self) -> None:
+        # `a<b>c` is `(a < b) > c`, not markup, so the `//` still starts a
+        # comment and a token named in it is prose.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  const ok = a<b>c // names os.cpus()\n"
+            "})\n",
+        )
+        self.assert_clean()
+
+    def test_a_string_after_as_is_masked(self) -> None:
+        # A type assertion may have no space before its string
+        # (`x as'user'`). The apostrophe opens a string, so its contents are
+        # masked and the scan continues instead of failing closed on the
+        # closing quote.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it, screen } from 'vitest'\n"
+            "it('adds', async () => {\n"
+            "  const k = x as'os.cpus()'\n"
+            "  await screen.findByText('x', { timeout: 500 })\n"
+            "})\n",
+        )
+        out = self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
+        self.assertNotIn("os.cpus", out)
+
+    def test_a_string_after_as_does_not_fail_closed(self) -> None:
+        # Without the keyword, the opening apostrophe is read as JSX text,
+        # the closing one opens a string, and the scan reaches end of file
+        # inside it: exit 2 instead of reading the file.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  const k = x as'os.cpus()'\n"
+            "})\n",
+        )
+        self.assert_clean()
+
+    def test_a_comment_after_a_type_assertion_before_a_less_than_is_reported(
+        self,
+    ) -> None:
+        # False positive, deliberately constructed and pinned rather than
+        # fixed: a real `//` comment whose line also carries a `<`, where the
+        # nearest `>` before it closes the type assertion `foo(<T>...)` at
+        # the start of an expression, is read as JSX text. The comment is
+        # not masked, so a name inside it is reported.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  const y = foo(<T>bar) // os.cpus() <b>\n"
+            "})\n",
+        )
+        self.assert_finding("web/packages/alpha/src/alpha.test.ts", "os.cpus")
+
+    def test_as_before_an_apostrophe_in_jsx_text_hides_the_next_wait(
+        self,
+    ) -> None:
+        # Miss, deliberately constructed and pinned rather than fixed: in
+        # JSX text `as` directly before an apostrophe opens a string that
+        # runs to the next quote, which here is on the next line inside the
+        # wait's arguments. The wait's call name is masked, so its 500ms
+        # timeout is never read.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it, screen } from 'vitest'\n"
+            "it('adds', async () => {\n"
+            "  render(<p>as'x</p>);\n"
+            "  await screen.findByText('x', { timeout: 500 })\n"
+            "})\n",
+        )
+        self.assert_clean()
+
     def test_an_unclosed_construct_raises_rather_than_blanking(self) -> None:
         for source in (
             "const s = 'unclosed\n",
