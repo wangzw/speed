@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"sync/atomic"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -202,6 +203,12 @@ type journal struct {
 	logger    *slog.Logger
 	signal    *signal
 	accepting atomic.Bool
+	// connectWithin is how long a row this module writes itself waits for a
+	// connection of the delivered pool. It is connectionWait unless a test
+	// widens it, which is how a case holds apart a wrong implementation that
+	// applies this wait to a lock from the engine's busy timeout that really
+	// bounds it.
+	connectWithin time.Duration
 }
 
 // newJournal builds the product. It holds configuration and nothing derived
@@ -209,10 +216,11 @@ type journal struct {
 // have been taken up.
 func newJournal(set settings, handle *gorm.DB, logger *slog.Logger) *journal {
 	return &journal{
-		settings: set,
-		handle:   handle,
-		logger:   logger,
-		signal:   newSignal(),
+		settings:      set,
+		handle:        handle,
+		logger:        logger,
+		signal:        newSignal(),
+		connectWithin: connectionWait,
 	}
 }
 

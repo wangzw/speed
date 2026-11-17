@@ -14,7 +14,7 @@
 - **查询**：凡注册表自己持有的东西都可被问到：描述符按名称、实例按功能、资源按类型、启用结果按名称，以及遍历全部已登记模块。具体方法见外部接口契约一节，那里是权威。
 - **生命周期管理**：按固定阶段驱动模块的回调，并在需要顺序的阶段按依赖关系排序；停机时入口先于其余模块停止。
 
-除模块机制外，`core` 还承载被多个模块共用、且不引入第三方依赖的基础类型与工具。零第三方依赖是这部分内容的准入边界。
+除模块机制外，`core` 还承载被多个模块共用、且不引入第三方依赖的基础类型与工具。零第三方依赖是这部分内容的准入边界。测试共用的时间倍率也在这里：`pkg/core/coretest` 的 `Scale` 按竞态因子与 `GATE_TIME_SCALE` 放大等待类上界，`Declared` 只按 `GATE_TIME_SCALE` 放大检测行为的上界。该夹具只取标准库，非测试代码不得导入，由 `pkg/core/deps_test.go` 的规则守护。
 
 ### 非职责
 
@@ -786,3 +786,4 @@ flowchart LR
 | 启动诊断 | 已实现 | `pkg/core/diagnostics.go` |
 | 哨兵错误 | 已实现 | `pkg/core/errors.go` |
 | 纳入分级与参与结果查询 | 已实现 | `pkg/core/query.go` `(*Registry).Participating`、`(*Registry).Declaring`、`(*Registry).AllResourcesInForce`，`pkg/core/run.go` `(*Registry).recordDeclarationSets`、`(*Registry).withSupplied` |
+| 测试时间倍率夹具 `coretest` | 已实现 | `pkg/core/coretest/coretest.go` `Scale`、`Declared`；`pkg/core/deps_test.go` `TestNoProductionCodeImportsCoretest` |

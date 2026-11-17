@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -29,7 +30,7 @@ func TestPublishDoesNotBlockOnAFullBuffer(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(coretest.Scale(30 * time.Second)):
 		t.Fatal("Publish blocked on a full buffer instead of dropping the frame")
 	}
 	if got := len(conn.ch); got != bufferDepth {

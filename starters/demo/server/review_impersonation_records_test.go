@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 // The review fixture's target tenant and its tenant administrator. The operator
@@ -45,7 +44,7 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	// The platform administrator is not a member of acme and still reads the
 	// tenant's records, because the decision is made in the platform domain and
 	// the tenant is the data the records are confined to.
-	listed := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+	listed := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations", nil, operatorAuth)
 	if listed.status != http.StatusOK {
 		t.Fatalf("the platform administrator was refused the tenant's records with %d:\n%s",
@@ -55,7 +54,7 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 		t.Errorf("the page does not hold the record %s just started:\n%s", grantID, listed.body)
 	}
 
-	revoked := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodDelete,
+	revoked := send(t, &http.Client{Timeout: probeTimeout}, http.MethodDelete,
 		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations/"+grantID, nil, operatorAuth)
 	if revoked.status != http.StatusNoContent {
 		t.Fatalf("the platform administrator could not revoke the record: %d\n%s",
@@ -67,13 +66,13 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	// action is a platform permission, decided in the platform domain.
 	tenantAuth := map[string]string{"Authorization": "Bearer " +
 		signIn(t, base, reviewTargetIdentifier, reviewTargetPassword)}
-	refusedList := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+	refusedList := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations", nil, tenantAuth)
 	if refusedList.status != http.StatusForbidden {
 		t.Errorf("the tenant administrator reached the tenant's records with %d, want 403:\n%s",
 			refusedList.status, refusedList.body)
 	}
-	refusedRevoke := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodDelete,
+	refusedRevoke := send(t, &http.Client{Timeout: probeTimeout}, http.MethodDelete,
 		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations/"+grantID, nil, tenantAuth)
 	if refusedRevoke.status != http.StatusForbidden {
 		t.Errorf("the tenant administrator revoked a record with %d, want 403:\n%s",
@@ -83,7 +82,7 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	// The target-membership condition is structural: an enabled account outside
 	// the tenant is refused even for the platform administrator.
 	outsider := reviewCreateAccount(t, base, operatorAuth, "outsider")
-	refusedStart := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+	refusedStart := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/auth/impersonation", map[string]any{
 			"account": outsider, "tenant": reviewTargetTenant, "reason": "not a member",
 		}, operatorAuth)
@@ -117,7 +116,7 @@ func reviewRecordsServer(t *testing.T) (base, token string) {
 // platform account list, the read the console uses to resolve an account.
 func reviewAccountID(t *testing.T, base string, headers map[string]string, kind, value string) string {
 	t.Helper()
-	listed := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+	listed := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 		base+"/api/v1/system/auth/accounts?identifier_kind="+kind+"&identifier_prefix="+value,
 		nil, headers)
 	if listed.status != http.StatusOK {
@@ -150,7 +149,7 @@ func reviewAccountID(t *testing.T, base string, headers map[string]string, kind,
 // tenant and answers the record's identifier.
 func reviewStartImpersonation(t *testing.T, base string, headers map[string]string, account string) string {
 	t.Helper()
-	started := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+	started := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/auth/impersonation", map[string]any{
 			"account": account, "tenant": reviewTargetTenant, "reason": "a support case",
 		}, headers)
@@ -175,7 +174,7 @@ func reviewStartImpersonation(t *testing.T, base string, headers map[string]stri
 // answers its identifier.
 func reviewCreateAccount(t *testing.T, base string, headers map[string]string, username string) string {
 	t.Helper()
-	created := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+	created := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
 			"kind": "user", "username": username, "password": "outsider-dev-secret",
 		}, headers)

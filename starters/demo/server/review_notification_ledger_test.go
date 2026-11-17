@@ -71,7 +71,7 @@ func TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	token := signInWithTOTP(t, base, reviewOperatorUsername, reviewOperatorPassword, secret)
 	auth := map[string]string{"Authorization": "Bearer " + token}
 

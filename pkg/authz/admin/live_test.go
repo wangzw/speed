@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
@@ -72,7 +73,7 @@ const listeningMsg = "an HTTP listener is listening"
 // waitLimit bounds every request and every wait, so that a request or a startup
 // that never answers fails the case with a message and not the binary at the
 // global timeout.
-const waitLimit = 10 * time.Second
+var waitLimit = coretest.Scale(60 * time.Second)
 
 // reply is what a client got back.
 type reply struct {

@@ -12,13 +12,14 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
 // connectionTimer is how long a case waits for a call that should give up on
 // a connection within connectionWait, before reporting it as still waiting.
-const connectionTimer = connectionWait + 3*time.Second
+var connectionTimer = connectionWait + coretest.Scale(3*time.Second)
 
 // storeOnOneConnection builds a loaded store over the in-memory database the
 // database module delivers for :memory:, which it holds to a single connection,
@@ -154,6 +155,13 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 			applyMigration(t, handle, "sqlite/0001_settings.sql")
 			bus := newRecordingBus()
 			s := storeOn(t, handle, db.SQLite, demoTable(t), bus)
+			// A wrong implementation applies the connection wait where the
+			// engine's busy timeout bounds the lock, so widening it makes that
+			// implementation need an hour while the right one still gives up
+			// after the locator's second. The upper bound below is three
+			// seconds through GATE_TIME_SCALE alone, so the two stay apart
+			// until the caller's scale reaches about eighteen hundred.
+			s.connectWithin = time.Hour
 			if err := s.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 3}); err != nil {
 				t.Fatalf("seeding the row: %v", err)
 			}
@@ -183,7 +191,7 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 				if took < lockBusyTimeout {
 					t.Errorf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
 				}
-				if limit := lockBusyTimeout + 2*time.Second; took > limit {
+				if limit := lockBusyTimeout + coretest.Declared(2*time.Second); took > limit {
 					t.Errorf("%s gave up after %v, well past the busy timeout of %v", name, took, lockBusyTimeout)
 				}
 			case <-time.After(connectionTimer):

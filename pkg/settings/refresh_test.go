@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -93,7 +94,7 @@ func TestStoppingTheRefreshWaitsAndReportsNoFailure(t *testing.T) {
 	store.startRefresh(context.Background())
 	select {
 	case <-entered:
-	case <-time.After(5 * time.Second):
+	case <-time.After(coretest.Scale(5 * time.Second)):
 		t.Fatal("no refresh started")
 	}
 	store.stopRefresh()

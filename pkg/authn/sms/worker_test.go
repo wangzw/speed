@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/sms"
 )
 
@@ -190,7 +191,7 @@ func TestTheWorkersDrainQueuedMessagesOffTheRequestPath(t *testing.T) {
 	}
 	select {
 	case <-delivered:
-	case <-time.After(5 * time.Second):
+	case <-time.After(coretest.Scale(5 * time.Second)):
 		t.Fatal("the worker never called the carrier")
 	}
 }

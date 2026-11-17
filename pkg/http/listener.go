@@ -61,6 +61,10 @@ type listener struct {
 	// the server creates carries it, and Draining hands it to a handler.
 	draining chan struct{}
 
+	// drainBegan is closed when the background drain begins waiting for the
+	// in-flight requests. It exists so that a test proving the drains of
+	// several endpoints overlap can read each drain's start as well as its end.
+	drainBegan chan struct{}
 	// drained is closed when the background drain has finished, and drainErr
 	// holds what it came back with. close waits on the channel rather than
 	// draining itself, because the drain starts in stop.
@@ -180,6 +184,7 @@ func (l *listener) start(s listenerSettings, h nethttp.Handler, logger *slog.Log
 	l.bound = true
 	l.accepting = true
 	l.draining = draining
+	l.drainBegan = make(chan struct{})
 	l.drained = make(chan struct{})
 	l.acceptDone = make(chan struct{})
 	l.logger = logger
@@ -256,7 +261,7 @@ func (l *listener) stop(ctx context.Context) error {
 	l.stopping = true
 	l.accepting = false
 	name, server, socket := l.name, l.server, l.socket
-	draining, drained, timeout := l.draining, l.drained, l.drainTimeout
+	draining, began, drained, timeout := l.draining, l.drainBegan, l.drained, l.drainTimeout
 	l.mu.Unlock()
 
 	closeErr := socket.Close()
@@ -264,7 +269,7 @@ func (l *listener) stop(ctx context.Context) error {
 	// its response on it cannot be followed by a request the listener still
 	// accepted.
 	close(draining)
-	go l.drain(ctx, server, drained, timeout)
+	go l.drain(ctx, server, began, drained, timeout)
 	if closeErr != nil {
 		return fmt.Errorf("http: listener %q could not close its listening socket: %w", name, closeErr)
 	}
@@ -279,13 +284,17 @@ func (l *listener) stop(ctx context.Context) error {
 // does not return the instant the host cancels. The clock starts here, where
 // the draining really begins, so the time the module spends closing its other
 // endpoints does not eat into this endpoint's drain budget.
-func (l *listener) drain(ctx context.Context, server *nethttp.Server, drained chan struct{}, timeout time.Duration) {
+func (l *listener) drain(ctx context.Context, server *nethttp.Server, began, drained chan struct{}, timeout time.Duration) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 
+	// The drain begins here, where it starts waiting for the requests still in
+	// flight; a test reads this to see whether several endpoints drained at
+	// once.
+	close(began)
 	err := server.Shutdown(ctx)
 	if err == nil {
 		// Shutdown has waited for every connection it still tracks, which

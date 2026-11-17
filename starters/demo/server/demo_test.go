@@ -24,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/ops/openapi"
 )
@@ -48,26 +49,23 @@ var reviewHostBinary string
 
 // The bounds a case waits within. Exceeding one means the program hung, and the
 // case says so with the output attached rather than with a timeout of the test
-// binary.
+// binary. They are generous on purpose and go through coretest.Scale, so a
+// loaded machine or a run with several gates at once makes the program slower
+// rather than failing the case.
 var (
-	startLimit   = scaledForRace(60 * time.Second)
-	stopLimit    = scaledForRace(30 * time.Second)
-	commandLimit = scaledForRace(60 * time.Second)
+	startLimit   = coretest.Scale(60 * time.Second)
+	stopLimit    = coretest.Scale(30 * time.Second)
+	commandLimit = coretest.Scale(60 * time.Second)
 )
+
+// probeTimeout bounds one request of a running program. It is a wait for an
+// answer, so it is generous: a passing case returns as soon as the answer does.
+var probeTimeout = coretest.Scale(30 * time.Second)
 
 // raceWarning starts every report the race detector writes. A child that writes
 // one has a data race in the program or in a module it runs, and the case fails
 // naming it, whatever its exit status says.
 const raceWarning = "WARNING: DATA RACE"
-
-// scaledForRace lengthens a bound for a binary built with the race detector,
-// which runs several times slower.
-func scaledForRace(d time.Duration) time.Duration {
-	if raceEnabled {
-		return 3 * d
-	}
-	return d
-}
 
 func TestMain(m *testing.M) {
 	// A differential case re-executes this binary as the program, naming the
@@ -649,7 +647,7 @@ type response struct {
 // answer.
 func get(t *testing.T, url string) response {
 	t.Helper()
-	return send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, url, nil, nil)
+	return send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet, url, nil, nil)
 }
 
 // rawResponse is one answer with its headers, for the cases that compare two
@@ -667,7 +665,7 @@ func getRaw(t *testing.T, url string) rawResponse {
 	if err != nil {
 		t.Fatalf("building GET %s: %v", url, err)
 	}
-	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	res, err := (&http.Client{Timeout: probeTimeout}).Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
@@ -782,7 +780,7 @@ func signIn(t *testing.T, accountBase, identifier, password string) string {
 	if err != nil {
 		t.Fatalf("building a cookie jar: %v", err)
 	}
-	client := &http.Client{Timeout: 10 * time.Second, Jar: jar}
+	client := &http.Client{Timeout: probeTimeout, Jar: jar}
 	credentials := map[string]any{
 		"method":   "password",
 		"delivery": "token",
@@ -1007,7 +1005,7 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	// One guarded endpoint per gateway chain: the account endpoint, the admin
 	// endpoint and the api endpoint, whose chain also carries tenant resolution
 	// and the authorization guard.
@@ -1422,7 +1420,7 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		if tenant := tenantOfPath(path); tenant != "" {
 			headers = withTenant(headers, tenant)
 		}
-		return send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+		return send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 			adminBase+path, nil, headers)
 	}
 
@@ -1855,7 +1853,7 @@ func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 	operator := signIn(t, base, seedIdentifier, seedPassword)
 	headers := map[string]string{"Authorization": "Bearer " + operator}
 
-	created := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+	created := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
 			"kind":               "user",
 			"username":           "unproved",
@@ -1869,7 +1867,7 @@ func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 	}
 
 	gated := signIn(t, base, "unproved", "unproved-password")
-	refused := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+	refused := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
 			"kind": "user", "username": "another",
 		}, map[string]string{"Authorization": "Bearer " + gated})
@@ -1903,7 +1901,7 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	token := signIn(t, accountBase, seedIdentifier, seedPassword)
 	for _, tenant := range []string{demoTenant, secondTenant} {
 		// The SSO provider group is not here for the reason the tenant-admin
@@ -1941,7 +1939,7 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	token := signIn(t, base, seedIdentifier, seedPassword)
 	auth := map[string]string{"Authorization": "Bearer " + token}
 
@@ -2035,7 +2033,7 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	operator := signIn(t, base, seedIdentifier, seedPassword)
 	auth := map[string]string{"Authorization": "Bearer " + operator}
 
@@ -2107,7 +2105,7 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	// baseline runs in the same process: the withdrawal is eventual, bounded by
 	// the relay's poll interval, so the case waits for it rather than reading
 	// once.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(coretest.Scale(30 * time.Second))
 	for rolesOf()[string(authz.PlatformAdminRole)] && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -2155,7 +2153,7 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 		"/api/v1/notifications/preferences",
 		"/api/v1/notifications/types",
 	} {
-		res := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, base+path, nil, headers)
+		res := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet, base+path, nil, headers)
 		if res.status != http.StatusOK {
 			t.Errorf("GET %s answered %d, want 200:\n%s", path, res.status, res.body)
 		}
@@ -2165,7 +2163,7 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 	// and the event-stream content type before the first frame, so the client's
 	// Do returns once the connection is admitted and the case reads both without
 	// waiting for an event; cancelling the request's context ends the read.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), coretest.Scale(30*time.Second))
 	defer cancel()
 	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/notifications/stream", nil)
 	if err != nil {
@@ -2212,7 +2210,7 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, seedIdentifier, seedPassword)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"X-Tenant":      demoTenant,
@@ -2282,7 +2280,7 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 		return n
 	}
 	var entries []record
-	for deadline := time.Now().Add(scaledForRace(5 * time.Second)); ; {
+	for deadline := time.Now().Add(coretest.Scale(30 * time.Second)); ; {
 		entries = readJournal()
 		if count(entries, "seam", "authn.account.create", "") > 0 || time.Now().After(deadline) {
 			break

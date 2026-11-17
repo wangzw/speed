@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -161,27 +162,49 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 		return authn.Denied(nil)
 	}
 
-	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: 2 * time.Second, inFlight: 1}, blocking)
+	// The call budget is an hour, far past the bound this case allows: a gate
+	// that queued behind the backend and then gave up when the budget ran out
+	// would need up to that hour, while a gate that refuses at once needs none
+	// of it. The bound on the refusal below carries the caller's scale alone
+	// and not the race factor, so an implementation that pauses a fixed few
+	// seconds before refusing is seen here as well.
+	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: time.Hour, inFlight: 1}, blocking)
 	sealed(t, g, routerWith("public"))
 
 	go run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
 	<-admitted
 	defer close(release)
 
-	// The one slot is taken. A second request does not queue behind it.
+	// The one slot is taken. A second request does not queue behind it: the
+	// refusal has to come back while the first request still holds the slot.
+	// That is the structural difference. A gate that queued would wait for the
+	// first request, which the case holds inside the backend until it ends, so
+	// the second one answers at all only because it did not queue.
+	refused := make(chan struct{})
+	var w *httptest.ResponseRecorder
+	var seen *arrival
 	started := time.Now()
-	w, seen := run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
-	waited := time.Since(started)
+	go func() {
+		w, seen = run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
+		close(refused)
+	}()
+	select {
+	case <-refused:
+	case <-time.After(coretest.Scale(30 * time.Second)):
+		t.Fatal("a request past the full in-flight gate did not answer while the one slot was " +
+			"held: it queued behind the backend that stopped answering")
+	}
+	if waited, limit := time.Since(started), coretest.Declared(time.Second); waited > limit {
+		t.Errorf("the request waited %s before being refused, past the %s an immediate refusal gets: "+
+			"a gate that pauses before refusing still holds the request while the backend has stopped answering",
+			waited, limit)
+	}
 
 	if w.Code != nethttp.StatusServiceUnavailable {
 		t.Errorf("a request past the in-flight gate answered %d, want %d", w.Code, nethttp.StatusServiceUnavailable)
 	}
 	if seen.reached {
 		t.Error("the layer behind the gateway was reached by a request no backend answered")
-	}
-	if waited > time.Second {
-		t.Errorf("the request waited %s before being refused; past the gate it has to end "+
-			"straight away rather than queue behind a backend that stopped answering", waited)
 	}
 	if got := w.Header().Get("Retry-After"); got != "" {
 		t.Errorf("the refusal carries Retry-After %q: a full gate promises nothing about when to come back", got)
@@ -283,24 +306,43 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 		return authn.Denied(nil)
 	}
 
-	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: 20 * time.Millisecond, inFlight: 2}, stuck)
+	const budget = 20 * time.Millisecond
+	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: budget, inFlight: 2}, stuck)
 	sealed(t, g, routerWith("public"))
 
 	go run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
 	<-admitted
 	g.stop()
 
+	// The drain runs on the configured 20ms budget, not the package default of
+	// five seconds; the backend never answers. Waiting in a goroutine separates
+	// a bounded drain (which returns at once) from an unbounded one (which
+	// waits for the backend the case holds until it ends). The elapsed bound
+	// below is what tells the configured budget from the default: it carries
+	// GATE_TIME_SCALE alone, and the default is five seconds, so the two stay
+	// apart until the caller's scale reaches about five.
+	drained := make(chan error, 1)
 	started := time.Now()
-	err := g.drain(context.Background())
-	waited := time.Since(started)
-
-	if !errors.Is(err, authn.ErrDrainTimeout) {
-		t.Errorf("draining returned %v while a call was still inside a backend, want a failure "+
-			"wrapping %v: a shutdown that reports nothing looks like a clean one", err, authn.ErrDrainTimeout)
-	}
-	if waited > time.Second {
-		t.Errorf("draining waited %s for a backend that had stopped answering, and the whole "+
-			"shutdown waited with it", waited)
+	go func() { drained <- g.drain(context.Background()) }()
+	select {
+	case err := <-drained:
+		if !errors.Is(err, authn.ErrDrainTimeout) {
+			t.Errorf("draining returned %v while a call was still inside a backend, want a failure "+
+				"wrapping %v: a shutdown that reports nothing looks like a clean one", err, authn.ErrDrainTimeout)
+		}
+		took := time.Since(started)
+		if took < budget {
+			t.Errorf("draining returned after %s, before the configured budget of %s: it did not "+
+				"wait for the call inside the backend", took, budget)
+		}
+		if limit := coretest.Declared(budget + time.Second); took > limit {
+			t.Errorf("draining returned after %s, past the limit of %s the configured budget of %s "+
+				"allows: it ran on the default call budget of five seconds rather than the configured one",
+				took, limit, budget)
+		}
+	case <-time.After(coretest.Scale(30 * time.Second)):
+		t.Fatal("draining did not return within its budget while a call was still inside a " +
+			"backend: the whole shutdown waited for a backend that had stopped answering")
 	}
 }
 

@@ -222,12 +222,13 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger, tracer e
 		return nil, fmt.Errorf("%s: taking this replica's starting point: %w", ModuleName, err)
 	}
 	return &bus{
-		pool:    pool,
-		listen:  listen,
-		logger:  logger,
-		replica: replica.Name(),
-		origin:  origin,
-		table:   dispatch.New("event/postgres", systemName, logger, tracer, tracing.Propagator()),
+		pool:      pool,
+		listen:    listen,
+		logger:    logger,
+		replica:   replica.Name(),
+		origin:    origin,
+		pollEvery: pollInterval,
+		table:     dispatch.New("event/postgres", systemName, logger, tracer, tracing.Propagator()),
 	}, nil
 }
 
@@ -365,6 +366,11 @@ type bus struct {
 	// lastRetire is when the retention pass last ran. Only the read goroutine
 	// touches it, so it needs no lock of its own.
 	lastRetire time.Time
+	// pollEvery is how long this replica waits for a notification before
+	// looking at the table anyway. It is pollInterval unless a test replaces
+	// it, and the read goroutine reads it once it starts; a test sets it
+	// before begin.
+	pollEvery time.Duration
 }
 
 // Subscribe registers a handler for one event type, under the name its
@@ -464,14 +470,14 @@ func (b *bus) read(reading, handling context.Context) {
 			select {
 			case <-reading.Done():
 				return
-			case <-time.After(pollInterval):
+			case <-time.After(b.pollEvery):
 			}
 			continue
 		}
 		if reading.Err() != nil {
 			return
 		}
-		waitCtx, cancel := context.WithTimeout(reading, pollInterval)
+		waitCtx, cancel := context.WithTimeout(reading, b.pollEvery)
 		_, waitErr := b.listen.WaitForNotification(waitCtx)
 		cancel()
 		// The waiting connection is how this replica learns that something was
@@ -504,7 +510,7 @@ func (b *bus) read(reading, handling context.Context) {
 		select {
 		case <-reading.Done():
 			return
-		case <-time.After(pollInterval):
+		case <-time.After(b.pollEvery):
 		}
 	}
 }

@@ -116,7 +116,7 @@ func (j *journal) Record(ctx context.Context, e audit.Entry) error {
 // A lock the engine gave up on fails the write with ErrWriteFailed and the
 // engine's refusal.
 func (j *journal) write(ctx context.Context, r row) error {
-	err := db.Connection(ctx, j.handle, connectionWait, func(session *gorm.DB) error {
+	err := db.Connection(ctx, j.handle, j.connectWithin, func(session *gorm.DB) error {
 		return insert(session, r)
 	})
 	if err != nil && !errors.Is(err, audit.ErrWriteFailed) {

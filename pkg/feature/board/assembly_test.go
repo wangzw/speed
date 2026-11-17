@@ -19,6 +19,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/feature"
 	featureboard "github.com/vislake/speed/pkg/feature/board"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -37,9 +38,10 @@ const (
 	// is bound, the only place outside the process that says which port the
 	// operating system picked for a listener configured on port 0.
 	listening = "an HTTP listener is listening"
-	// requestBound bounds each request, so one that would hang fails the case.
-	requestBound = 5 * time.Second
 )
+
+// requestBound bounds each request, so one that would hang fails the case.
+var requestBound = coretest.Scale(5 * time.Second)
 
 // memory is a log handler that keeps what it is handed, so a case can read back
 // where the entry point bound itself.

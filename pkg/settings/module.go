@@ -155,11 +155,12 @@ func Module() core.Module {
 // newSettingsStore builds the product.
 func newSettingsStore(keys *keyTable, database db.Database, bus event.Bus, cfg moduleSettings) *settingsStore {
 	s := &settingsStore{
-		keys:   keys,
-		handle: database.DB(),
-		bus:    bus,
-		config: cfg,
-		logger: log.Default(),
+		keys:          keys,
+		handle:        database.DB(),
+		bus:           bus,
+		config:        cfg,
+		logger:        log.Default(),
+		connectWithin: connectionWait,
 	}
 	// The snapshot stays unset until the first load: a store that has read
 	// nothing from the table refuses a read rather than answering from the

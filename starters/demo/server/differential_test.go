@@ -1375,7 +1375,7 @@ func runDifferential(t *testing.T, topo topology) {
 	// own answers follow. A prefix the table says belongs to a guarded endpoint
 	// answers 401 in that endpoint's realm, so the probes below really are
 	// judged against the endpoint they are expected to reach.
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	for prefix, endpoint := range expectedOwners {
 		if !guarded[endpoint] {
 			continue

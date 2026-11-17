@@ -26,6 +26,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 )
@@ -595,7 +596,7 @@ func listenForFirstBytes(t *testing.T) *firstBytes {
 				return
 			}
 			first := make([]byte, 1)
-			_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(coretest.Scale(time.Second)))
 			if n, _ := conn.Read(first); n == 1 {
 				fb.mu.Lock()
 				fb.bytes = append(fb.bytes, first[0])

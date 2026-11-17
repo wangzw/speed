@@ -26,6 +26,11 @@ func registerRig(t *testing.T) *rig {
 const registerBody = `{"username":"alice","email":"alice@example.com","password":"alice-password","` +
 	`display_name":"Alice","locale":"zh-CN","time_zone":"Asia/Shanghai"}`
 
+// fixedClock is a reading inside one wall-clock minute and one wall-clock hour.
+// A case that counts a budget bucket pins the product to it, so that the pair
+// of requests it sends cannot be split by a bucket boundary.
+var fixedClock = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
+
 // registerFrom posts a registration from the source address given, which the
 // test engine trusts as a proxy and reads out of the forwarded header.
 func (r *rig) registerFrom(ip, body string) *httptest.ResponseRecorder {
@@ -231,6 +236,11 @@ func TestARegistrationMapsTheModulesRefusals(t *testing.T) {
 // does not outlast the bucket.
 func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 	r := registerRig(t)
+	// The budget counts a source address's registrations in the wall-clock
+	// minute the request reads. A pair of requests that straddled a minute
+	// boundary would see two fresh budgets, and the case would be decided by
+	// when it ran; the clock is pinned inside one minute instead.
+	r.p.clock = fixedClock
 	r.p.settings = readerWith(map[string]string{
 		passwordSignupPath: signupOpen,
 		signupIPLimitPath:  "1",
@@ -271,6 +281,9 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 // they spend, so the refusal can only be the deployment-wide bucket's.
 func TestTheGlobalBudgetStopsARegistration(t *testing.T) {
 	r := registerRig(t)
+	// The hour bucket is a wall-clock one too; the clock is pinned inside it
+	// for the same reason as the minute bucket above.
+	r.p.clock = fixedClock
 	r.p.settings = readerWith(map[string]string{
 		passwordSignupPath:     signupOpen,
 		signupGlobalHourlyPath: "1",

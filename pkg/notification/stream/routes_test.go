@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/core/coretest"
 )
 
 // The route answers the stream content type. Its identity and flusher are
@@ -68,7 +69,7 @@ func TestTheHeadersAreFlushedBeforeTheFirstEvent(t *testing.T) {
 
 	conn.ch <- frame{event: frameEventName, data: []byte(`{"message_id":"message-1"}`)}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(coretest.Scale(30 * time.Second))
 	for recorder.snapshot().writes == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("the stream wrote no event")
@@ -88,7 +89,7 @@ func TestTheHeadersAreFlushedBeforeTheFirstEvent(t *testing.T) {
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(coretest.Scale(30 * time.Second)):
 		t.Fatal("the stream did not end after the request context was cancelled")
 	}
 }
@@ -131,14 +132,14 @@ func TestTheFrameIsAnEventNamedMessageWithJsonData(t *testing.T) {
 		if got != want {
 			t.Errorf("the frame is %q, want %q", got, want)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(coretest.Scale(30 * time.Second)):
 		t.Fatal("the stream flushed no frame")
 	}
 
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(coretest.Scale(30 * time.Second)):
 		t.Fatal("the stream did not end after the request context was cancelled")
 	}
 }

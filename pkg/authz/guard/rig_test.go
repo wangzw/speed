@@ -24,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
@@ -1069,7 +1070,7 @@ func TestStartupWritesTheGuardedEndpointsAndWarnsWhenOpen(t *testing.T) {
 // waitLimit bounds every wait in the live case, so a startup that never reaches
 // Serve fails the case with a message rather than the binary at the global
 // timeout.
-const waitLimit = 10 * time.Second
+var waitLimit = coretest.Scale(60 * time.Second)
 
 // liveBody is the configuration the live assembly loads: one endpoint, the
 // resolution layer guarding it with the header extractor, and this module

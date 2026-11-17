@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/core/coretest"
 )
 
 // refused is the error a dial gets while nothing listens on the published port
@@ -113,7 +115,7 @@ func TestTheWaitEndsAtItsBound(t *testing.T) {
 	if attempts < 2 {
 		t.Errorf("the wait dialled %d times, want more than once before the bound ended it", attempts)
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
+	if elapsed := time.Since(start); elapsed > coretest.Scale(time.Second) {
 		t.Errorf("the wait ran for %s, want it to stop near its 50ms bound", elapsed)
 	}
 }

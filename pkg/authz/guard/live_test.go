@@ -39,6 +39,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
@@ -69,7 +70,7 @@ const (
 // waitLimit bounds every wait and every request, so a startup or a request that
 // never answers fails the case with a message and not the binary at the global
 // timeout.
-const waitLimit = 10 * time.Second
+var waitLimit = coretest.Scale(60 * time.Second)
 
 // record is one log record a case reads back.
 type record struct {

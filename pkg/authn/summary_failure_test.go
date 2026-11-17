@@ -43,6 +43,7 @@ import (
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
@@ -58,7 +59,7 @@ import (
 const summaryListening = "an HTTP listener is listening"
 
 // summaryRequestBound bounds each request a case sends.
-const summaryRequestBound = 5 * time.Second
+var summaryRequestBound = coretest.Scale(5 * time.Second)
 
 // unknownSessionToken is a value shaped like a session token that no session
 // carries. It is short enough that the session backend looks it up rather than

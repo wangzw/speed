@@ -37,6 +37,7 @@ import (
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -54,8 +55,10 @@ const (
 	chainPublicURL = "http://127.0.0.1"
 	chainBase      = "/api/v1/auth"
 	chainListening = "an HTTP listener is listening"
-	chainBound     = 5 * time.Second
 )
+
+// chainBound bounds each request the chain sends.
+var chainBound = coretest.Scale(5 * time.Second)
 
 // The parts of the bounce page the chain reads back.
 var (

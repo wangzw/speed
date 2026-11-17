@@ -22,6 +22,7 @@ import (
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
@@ -35,7 +36,7 @@ const listeningMsg = "an HTTP listener is listening"
 // waitLimit bounds every wait in these cases, so a startup that never reaches
 // Serve fails the case with a message instead of the whole binary at the
 // global timeout.
-const waitLimit = 10 * time.Second
+var waitLimit = coretest.Scale(60 * time.Second)
 
 // host is one assembly that is serving.
 type host struct {

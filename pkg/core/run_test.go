@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 )
 
 // Reader stands in for the configuration reading face a host supplies.
@@ -46,7 +47,7 @@ func (p *probe) has(event string) bool {
 
 func (p *probe) waitFor(t *testing.T, event string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(coretest.Scale(5 * time.Second))
 	for !p.has(event) {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %q; recorded %v", event, p.snapshot())
@@ -196,7 +197,7 @@ func runUntilServed(t *testing.T, reg *core.Registry, p *probe, events ...string
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(coretest.Scale(5 * time.Second)):
 		t.Fatal("Run did not return after the context was cancelled")
 		return nil
 	}
@@ -215,7 +216,7 @@ func runToFailure(t *testing.T, reg *core.Registry) error {
 			t.Fatal("Run succeeded where a startup failure was expected")
 		}
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(coretest.Scale(5 * time.Second)):
 		t.Fatal("Run blocked where a startup failure was expected")
 		return nil
 	}
@@ -243,7 +244,7 @@ func driveUntilServed(t *testing.T, reg *core.Registry, p *probe, d core.Drive, 
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(coretest.Scale(5 * time.Second)):
 		t.Fatal("Drive did not return after the context was cancelled")
 		return nil
 	}
@@ -264,7 +265,7 @@ func driveToEnd(t *testing.T, reg *core.Registry, d core.Drive) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(coretest.Scale(5 * time.Second)):
 		t.Fatal("the drive blocked where it had nothing left to do")
 		return nil
 	}

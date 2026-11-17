@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
@@ -34,7 +35,7 @@ import (
 const listeningMsg = "an HTTP listener is listening"
 
 // waitBound bounds every request these cases send.
-const waitBound = 5 * time.Second
+var waitBound = coretest.Scale(5 * time.Second)
 
 // fakeVerifier is a credential-verifying backend that answers from a function.
 type fakeVerifier struct {

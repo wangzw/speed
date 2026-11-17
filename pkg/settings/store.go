@@ -50,6 +50,11 @@ type settingsStore struct {
 	// as done.
 	reloadMu sync.Mutex
 	snapshot atomic.Pointer[snapshot]
+	// connectWithin is how long a call's statements wait for a connection of
+	// the delivered pool. It is connectionWait unless a test widens it, which
+	// is how a case holds apart a wrong implementation that applies this wait
+	// to a lock from the engine's busy timeout that really bounds it.
+	connectWithin time.Duration
 }
 
 // Get serves a read out of the snapshot.
@@ -445,7 +450,7 @@ func (s *settingsStore) commit(ctx context.Context, statement func(tx *gorm.DB) 
 // connection holds the reload lock meanwhile, which is why a write takes its
 // connection before anything that waits on that lock.
 func (s *settingsStore) onConnection(ctx context.Context, fn func(session *gorm.DB) error) error {
-	return db.Connection(ctx, s.handle, connectionWait, fn)
+	return db.Connection(ctx, s.handle, s.connectWithin, fn)
 }
 
 // connectionWait is how long the statements a caller's call issues wait for a

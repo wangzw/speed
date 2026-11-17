@@ -18,6 +18,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -573,7 +574,7 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 
 // waitLimit bounds every wait, so a startup that never reaches Serve fails the
 // case with a message and not the binary at the global timeout.
-const waitLimit = 10 * time.Second
+var waitLimit = coretest.Scale(60 * time.Second)
 
 // statusOf sends a GET and returns the status code.
 func statusOf(t *testing.T, url string) int {

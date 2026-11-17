@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -39,28 +40,56 @@ func newTable() *Table {
 // stage. A subscriber still running when the grace runs out is handed a
 // cancelled context, and the stage reports that it cut something short rather
 // than returning as if the stop had been clean.
+//
+// The subscriber stays running after its cancellation, so the case holds the
+// stop stage to its own grace rather than to the subscriber finishing. A stop
+// stage that waited for the subscriber would wait as long as the case holds it.
+// A stop stage that used the package default grace instead of the configured
+// one is made to need an hour here: the default is widened before the table is
+// built, so that implementation's own time grows with nothing the bound
+// carries. The configured grace and the moment it gives a cancelled subscriber
+// need about 1.1 seconds, and the bound is 2.1 seconds through GATE_TIME_SCALE
+// alone, far below the hour at any scale a caller declares.
 func TestAStopWhoseGraceRunsOutCancelsTheSubscribers(t *testing.T) {
+	previousGrace := Grace
+	Grace = time.Hour
+	t.Cleanup(func() { Grace = previousGrace })
+
 	tbl := newTable()
-	tbl.grace = 100 * time.Millisecond
+	const grace = 100 * time.Millisecond
+	tbl.grace = grace
+	released := make(chan struct{})
+	defer close(released)
 	sawCancel := make(chan error, 1)
 	tbl.Subscribe("t", "test", func(ctx context.Context, _ event.Event) error {
 		<-ctx.Done()
 		sawCancel <- ctx.Err()
+		<-released
 		return nil
 	})
 	tbl.Freeze(context.Background())
 	tbl.Go(func(_, handling context.Context) { tbl.Deliver(handling, event.Event{Type: "t"}) })
 
-	began := time.Now()
-	err := tbl.Stop()
+	bound := coretest.Declared(grace + settle + time.Second)
+	stopped := make(chan error, 1)
+	go func() { stopped <- tbl.Stop() }()
+	var err error
+	select {
+	case err = <-stopped:
+	case <-time.After(bound):
+		t.Fatalf("the stop stage had not returned within %v, past its grace and the moment it gives a "+
+			"cancelled subscriber", bound)
+	}
 	if err == nil {
 		t.Fatal("a stop whose subscribers outlived the grace reported a clean stop")
 	}
-	if !errors.Is(<-sawCancel, context.Canceled) {
+	select {
+	case cancelled := <-sawCancel:
+		if !errors.Is(cancelled, context.Canceled) {
+			t.Fatalf("the subscriber running past the grace was handed %v, want a cancelled context", cancelled)
+		}
+	case <-time.After(bound):
 		t.Fatal("the subscriber running past the grace was not handed a cancelled context")
-	}
-	if took := time.Since(began); took > 100*time.Millisecond+settle+time.Second {
-		t.Fatalf("the stop stage took %v, past its grace and the moment it gives a cancelled subscriber", took)
 	}
 	if again := tbl.Stop(); again == nil || again.Error() != err.Error() {
 		t.Fatalf("a second Stop reported %v, want what the first reported: %v", again, err)

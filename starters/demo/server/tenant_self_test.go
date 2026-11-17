@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/vislake/speed/pkg/tenant"
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
@@ -32,7 +31,7 @@ func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, hashIdentifier, seedPassword)
 
-	read := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+	read := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 		base+"/api/v1/auth/me/tenants", nil,
 		map[string]string{"Authorization": "Bearer " + token})
 	if read.status != http.StatusOK {
@@ -91,7 +90,7 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	// account reads its own personal tenant, which the account's creation
 	// transaction built before the first request arrives.
 	base, token := seededServe(t, "")
-	read := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+	read := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 		base+"/api/v1/auth/me/tenants", nil,
 		map[string]string{"Authorization": "Bearer " + token})
 	if read.status != http.StatusOK {

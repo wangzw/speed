@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
@@ -22,11 +23,21 @@ import (
 //
 // Each event is published while the replica is waiting for a notification,
 // so it arrives promptly only if a live session is listening: a replica left
-// polling picks it up a poll interval later.
+// polling picks it up a poll interval later. The case sets that interval to a
+// minute, far past the bound it allows: a wrong implementation needs up to a
+// minute for each event, while a notification takes milliseconds, and the
+// bound of two seconds carries GATE_TIME_SCALE alone. The two stay apart until
+// the caller's scale reaches about thirty; under the race detector the margin
+// is smaller, about twelve, because the notification the bound is compared
+// against is slowed there while the bound itself is not.
 func TestALostListeningConnectionIsTakenAgain(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
 	b := openBus(t, dsn)
+	// The wrong implementation this case detects is one that delivers by
+	// polling the table. Its poll interval is what its delivery costs, so it
+	// is widened here rather than compared against its production value.
+	b.pollEvery = time.Minute
 	publisher := openBus(t, dsn)
 	arrived := make(chan time.Time, 16)
 	b.Subscribe("listen", "test", func(context.Context, event.Event) error {
@@ -49,7 +60,7 @@ func TestALostListeningConnectionIsTakenAgain(t *testing.T) {
 	if _, err := admin.Exec(ctx, `SELECT pg_terminate_backend($1)`, pid); err != nil {
 		t.Fatalf("terminating the listening session: %v", err)
 	}
-	time.Sleep(time.Second)
+	time.Sleep(coretest.Scale(time.Second))
 
 	for i := range 3 {
 		sent := time.Now()
@@ -58,11 +69,11 @@ func TestALostListeningConnectionIsTakenAgain(t *testing.T) {
 		}
 		select {
 		case at := <-arrived:
-			if took := at.Sub(sent); took > pollInterval/3 {
+			if took := at.Sub(sent); took > coretest.Declared(2*time.Second) {
 				t.Fatalf("event %d took %v to arrive after the listening session was terminated: the "+
 					"replica is delivering by polling the table, not by notification", i, took)
 			}
-		case <-time.After(10 * time.Second):
+		case <-time.After(coretest.Scale(2 * time.Minute)):
 			t.Fatalf("event %d never arrived", i)
 		}
 		time.Sleep(300 * time.Millisecond)

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 )
@@ -194,11 +195,31 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 		openPasswordSignup(t, h)
 		writeASetting(t, h.ctx, h.store, testSignupIPLimitKey, 1)
 
+		aliceMinute := time.Now().Truncate(time.Minute)
 		first := h.registerOne("alice", "alice@example.com", "alice-password")
 		if first.status != http.StatusCreated {
 			t.Fatalf("the first registration answered %d: %s", first.status, first.body)
 		}
-		second := h.registerOne("bob", "bob@example.com", "bob-password")
+		// The budget counts a source address's registrations in the wall-clock
+		// minute the request reads. A pair split by a minute boundary sees two
+		// budgets, so a correct implementation may admit the second request at
+		// the start of a new minute; that is the only way it may. An admission
+		// inside one minute is the budget being wrong (off by one, or a counter
+		// that did not move), so the retry is allowed only when the two requests
+		// straddle the boundary; otherwise the case fails as the bug it is.
+		refusedName := "bob"
+		bobMinute := time.Now().Truncate(time.Minute)
+		second := h.registerOne(refusedName, "bob@example.com", "bob-password")
+		if second.status == http.StatusCreated {
+			if aliceMinute.Equal(bobMinute) {
+				t.Fatalf("a second registration from one source in the same wall-clock minute answered %d: "+
+					"the per-source budget of one admitted it", second.status)
+			}
+			// The boundary gave bob a fresh budget that his own request then
+			// spent, so a retry in the same new minute must be refused.
+			refusedName = "carol"
+			second = h.registerOne(refusedName, "carol@example.com", "carol-password")
+		}
 		if second.status != http.StatusTooManyRequests {
 			t.Fatalf("a registration past the per-source budget answered %d, want 429: %s",
 				second.status, second.body)
@@ -206,7 +227,7 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 		if wait := second.header.Get("Retry-After"); wait == "" {
 			t.Error("the 429 past the per-source budget carries no Retry-After")
 		}
-		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "bob"); err == nil {
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, refusedName); err == nil {
 			t.Error("a registration past the budget opened the username")
 		}
 	})

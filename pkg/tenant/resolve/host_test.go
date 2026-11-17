@@ -19,6 +19,7 @@ import (
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
@@ -34,7 +35,7 @@ import (
 // waitLimit bounds every wait in these cases, so that a startup which never
 // reaches Serve fails the case with a message instead of the whole binary at the
 // global timeout.
-const waitLimit = 10 * time.Second
+var waitLimit = coretest.Scale(60 * time.Second)
 
 // guardedEndpoint is the one endpoint every assembly declares and the layer
 // guards.

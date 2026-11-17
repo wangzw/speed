@@ -32,12 +32,16 @@ import (
 
 // Grace bounds how long the stop stage waits for the subscribers already
 // running when it begins. A subscriber still running then is handed a
-// cancelled context, which is what lets one that honours its context return;
-// settle is how much longer the stage waits for it to do so.
-const (
-	Grace  = 10 * time.Second
-	settle = time.Second
-)
+// cancelled context, which is what lets one that honours its context return.
+//
+// It is a variable so that a test can widen the default a wrong implementation
+// falls back to, far past the bound the case allows; the table a caller builds
+// takes its own copy at construction.
+var Grace = 10 * time.Second
+
+// settle is how much longer the stage waits for a cancelled subscriber to
+// return.
+const settle = time.Second
 
 // stage is where a bus is in its lifecycle, as far as publishing and
 // subscribing are concerned.

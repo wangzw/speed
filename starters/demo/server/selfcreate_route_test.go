@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"slices"
 	"testing"
-	"time"
 
 	_ "github.com/vislake/speed/pkg/db/sqlite" // registers the sqlite driver these cases read the assembly's rows through
 	tenantselfcreate "github.com/vislake/speed/pkg/tenant/selfcreate"
@@ -25,7 +24,7 @@ import (
 func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	// The seeded business tenant already carries the name, and the roster's one
@@ -76,7 +75,7 @@ func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
 func TestTheSelfServiceCreationRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "org:\n  create:\n    enabled: false\n")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	absent := send(t, client, http.MethodPost, base+"/api/v1/orgs",
@@ -120,7 +119,7 @@ var creationTables = []string{
 func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
 	t.Parallel()
 	base, token, dsn := seededServeWithDatabase(t, "")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	headers := map[string]string{"Authorization": "Bearer " + token}
 	create := func(name string) response {
 		t.Helper()
@@ -212,7 +211,7 @@ func assertRowCounts(t *testing.T, dsn string, before map[string]int64, what str
 func TestThePersonalRouteIsNotMounted(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	res := send(t, client, http.MethodPost, base+"/api/v1/orgs/personal", nil,
 		map[string]string{"Authorization": "Bearer " + token})
 	if res.status != http.StatusNotFound {

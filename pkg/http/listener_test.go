@@ -456,6 +456,24 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 		waitFor(t, gate.entered, "a request to reach the handler")
 	}
 
+	// The start and end of each drain are recorded as they happen, by watchers
+	// per endpoint started before any stop, so the overlap assertion below
+	// reads the real interval of each drain rather than the moment the caller
+	// got round to it. A drain queued behind a package-level lock closes its
+	// began channel only once it reaches the waiting it is serialised on.
+	starts := make([]chan time.Time, endpoints)
+	ends := make([]chan time.Time, endpoints)
+	for i, l := range bound {
+		start, end := make(chan time.Time, 1), make(chan time.Time, 1)
+		starts[i], ends[i] = start, end
+		go func(l *listener, start, end chan<- time.Time) {
+			<-l.drainBegan
+			start <- time.Now()
+			<-l.drained
+			end <- time.Now()
+		}(l, start, end)
+	}
+
 	// Every endpoint stops before any of them is waited on, which is the
 	// order the module's Stop uses: every socket is closed before any drain
 	// is waited for.
@@ -465,7 +483,52 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 		}
 	}
 
-	started := time.Now()
+	// The drains have to be running already, and this holds them without a
+	// clock judgment: a drain started in close instead of in stop leaves its
+	// drained channel open until its own close is called, and no close has been
+	// called yet. A drain that is running finishes on its own budget whatever
+	// the caller does next, so waiting for all of them here separates the two
+	// designs without comparing elapsed times.
+	began, ended := make([]time.Time, 0, endpoints), make([]time.Time, 0, endpoints)
+	for i := range bound {
+		select {
+		case at := <-ends[i]:
+			ended = append(ended, at)
+		case <-time.After(waitDeadline):
+			t.Fatalf("the drain of endpoint-%d had not finished within %s of the endpoint "+
+				"stopping, with no close called: each drain has to run from the moment its own "+
+				"socket closed, not start when the caller waits", i, waitDeadline)
+		}
+		select {
+		case at := <-starts[i]:
+			began = append(began, at)
+		case <-time.After(waitDeadline):
+			t.Fatalf("the drain of endpoint-%d never began", i)
+		}
+	}
+
+	// The endpoints drained together exactly when the latest beginning is
+	// still before the earliest end: all of their intervals share that window.
+	// A shutdown that started each drain only after the previous one finished,
+	// or that queued them behind a package-level lock, has a beginning after an
+	// end, and is seen here.
+	lastBegan, earliestEnd := began[0], ended[0]
+	for _, at := range began {
+		if at.After(lastBegan) {
+			lastBegan = at
+		}
+	}
+	for _, at := range ended {
+		if at.Before(earliestEnd) {
+			earliestEnd = at
+		}
+	}
+	if !lastBegan.Before(earliestEnd) {
+		t.Errorf("the last drain began at %v and the first ended at %v: the drains ran one after "+
+			"another, so a shutdown costs the sum of the budgets rather than the longest",
+			lastBegan, earliestEnd)
+	}
+
 	for i, l := range bound {
 		name := fmt.Sprintf("endpoint-%d", i)
 		err := l.close(context.Background())
@@ -473,17 +536,6 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 			t.Fatalf("the drain of %s ran out of time without reporting ErrDrainTimeout: %v", name, err)
 		}
 		mustContain(t, err.Error(), `"`+name+`"`, "the endpoint whose drain ran out of time")
-	}
-	elapsed := time.Since(started)
-
-	// Drains that overlap cost the longest budget; drains that are started
-	// one at a time cost their sum. The bound sits between the two, far
-	// enough from either that a loaded machine does not decide it.
-	if elapsed >= 2*budget {
-		t.Errorf("waiting on %d endpoints with a drain budget of %s each took %s, which is the "+
-			"cost of draining them one after another. Each drain has to have been running "+
-			"since its own socket closed, so waiting on them in turn costs the longest budget",
-			endpoints, budget, elapsed)
 	}
 }
 

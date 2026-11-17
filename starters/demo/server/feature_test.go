@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/feature"
@@ -160,7 +159,7 @@ func authenticatedGet(t *testing.T, url, token string) rawResponse {
 		t.Fatalf("building GET %s: %v", url, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	res, err := (&http.Client{Timeout: probeTimeout}).Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}

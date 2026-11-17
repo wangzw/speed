@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/event"
 	speedredis "github.com/vislake/speed/pkg/internal/redis"
 	"github.com/vislake/speed/pkg/internal/redis/redistest"
@@ -41,8 +42,15 @@ func TestPublishDoesNotWaitOnBlockedReaders(t *testing.T) {
 		}
 	}
 	// A publish is one round trip to a local server; the bound leaves room for
-	// a loaded machine and is still a small fraction of one blocked read.
-	if each := time.Since(began) / publishes; each > readBlock/5 {
+	// a loaded machine and is still a small fraction of one blocked read. It
+	// tells the right implementation from one that waits for a connection, so
+	// it carries the caller's scale alone: the race factor slows the program
+	// under test, not the difference between one round trip and a blocked
+	// reader's read. The wrong implementation needs about one blocked read per
+	// reader past the pool's size, so the bound stays below one blocked read
+	// until the caller's scale reaches five, where the two meet and the case
+	// stops telling them apart.
+	if each := time.Since(began) / publishes; each > coretest.Declared(readBlock/5) {
 		t.Fatalf("a publish took %v on average with %d readers on a pool of %d connections: it "+
 			"waited for a connection a blocked reader was holding", each, types, speedredis.Defaults().PoolSize)
 	}

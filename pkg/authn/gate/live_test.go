@@ -19,6 +19,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/identity"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -37,7 +38,7 @@ const listeningMsg = "an HTTP listener is listening"
 
 // waitBound bounds every request these cases send, so that a request that
 // would hang fails the case instead of holding the binary.
-const waitBound = 5 * time.Second
+var waitBound = coretest.Scale(5 * time.Second)
 
 // liveRoute names a route, or an exemption, on one endpoint.
 type liveRoute struct {

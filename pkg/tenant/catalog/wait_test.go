@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
@@ -29,7 +30,7 @@ import (
 
 // connectionTimer is how long a case waits for a call bounded by
 // connectionWait before it reports the call as still waiting.
-const connectionTimer = connectionWait + 3*time.Second
+var connectionTimer = connectionWait + coretest.Scale(3*time.Second)
 
 // heldToOneConnection is enteringRoster over a pool of one connection, the
 // shape pkg/db delivers an in-memory database in.
@@ -295,6 +296,12 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			r := rosterOverALockedFile(t, "?_pragma=busy_timeout(1000)")
+			// A wrong implementation applies the connection wait where the
+			// engine's busy timeout bounds the lock, so widening it makes that
+			// implementation need an hour while the right one still gives up
+			// after the locator's second. The bound below is the busy timeout
+			// plus two seconds through GATE_TIME_SCALE alone.
+			r.connectWithin = time.Hour
 			most := time.Duration(c.waitsFor) * lockBusyTimeout
 			done := make(chan error, 1)
 			started := time.Now()
@@ -312,7 +319,7 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 				if took < lockBusyTimeout {
 					t.Fatalf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
 				}
-				if limit := most + 2*time.Second; took > limit {
+				if limit := most + coretest.Declared(2*time.Second); took > limit {
 					t.Fatalf("%s gave up after %v, past a busy timeout of %v for each of its %d statements",
 						name, took, lockBusyTimeout, c.waitsFor)
 				}
@@ -349,32 +356,55 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeo
 			t.Parallel()
 			r := rosterOn(t, openHandleAt(t, filepath.Join(t.TempDir(), "roster.db")+"?_pragma=busy_timeout(1000)"),
 				"sqlite", insert("t_acme", "acme"), "INSERT INTO tenants (id, name, status) VALUES ('t_paused', 'paused', 0)")
+			// A wrong implementation applies the connection wait where the
+			// engine's busy timeout bounds the lock, so widening it makes that
+			// implementation need an hour while the right one still gives up
+			// after the locator's second. The bound below is the busy timeout
+			// plus two seconds through GATE_TIME_SCALE alone.
+			r.connectWithin = time.Hour
 			if err := r.read(context.Background()); err != nil {
 				t.Fatalf("reading the roster: %v", err)
 			}
-			var took time.Duration
-			var entered error
-			err := r.handle.Transaction(func(tx *gorm.DB) error {
-				if err := tx.Exec("UPDATE tenants SET name = 'acme2' WHERE id = 't_acme'").Error; err != nil {
-					return err
-				}
-				started := time.Now()
-				werr := write(r)
-				took = time.Since(started)
-				_, entered = r.Enter(context.Background(), "t_paused")
-				return werr
-			})
-			requireNoAnswer(t, name, err)
-			if !strings.Contains(err.Error(), "SQLITE_BUSY") {
-				t.Fatalf("%s gave %v, want SQLite's refusal of the lock", name, err)
+			type written struct {
+				took    time.Duration
+				err     error
+				entered error
 			}
-			if took < lockBusyTimeout {
-				t.Fatalf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
+			done := make(chan written, 1)
+			go func() {
+				var res written
+				res.err = r.handle.Transaction(func(tx *gorm.DB) error {
+					if err := tx.Exec("UPDATE tenants SET name = 'acme2' WHERE id = 't_acme'").Error; err != nil {
+						return err
+					}
+					started := time.Now()
+					werr := write(r)
+					res.took = time.Since(started)
+					_, res.entered = r.Enter(context.Background(), "t_paused")
+					return werr
+				})
+				done <- res
+			}()
+			limit := lockBusyTimeout + coretest.Declared(2*time.Second)
+			var res written
+			select {
+			case res = <-done:
+			case <-time.After(limit):
+				t.Fatalf("%s had not given up on the lock within %v: it is waiting on the connection's %v "+
+					"bound rather than on the busy timeout of %v", name, limit, r.connectWithin, lockBusyTimeout)
 			}
-			if limit := lockBusyTimeout + 2*time.Second; took > limit {
+			requireNoAnswer(t, name, res.err)
+			if !strings.Contains(res.err.Error(), "SQLITE_BUSY") {
+				t.Fatalf("%s gave %v, want SQLite's refusal of the lock", name, res.err)
+			}
+			if res.took < lockBusyTimeout {
+				t.Fatalf("%s gave up after %v, before the busy timeout of %v", name, res.took, lockBusyTimeout)
+			}
+			if res.took > limit {
 				t.Fatalf("%s gave up after %v, past the one busy timeout of %v its BEGIN waits for",
-					name, took, lockBusyTimeout)
+					name, res.took, lockBusyTimeout)
 			}
+			entered := res.entered
 			if !errors.Is(entered, tenant.ErrTenantDisabled) {
 				t.Fatalf("an entry inside the same transaction gave %v, want ErrTenantDisabled from the table", entered)
 			}

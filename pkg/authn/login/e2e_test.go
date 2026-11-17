@@ -31,6 +31,7 @@ import (
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -45,7 +46,7 @@ import (
 const listening = "an HTTP listener is listening"
 
 // requestBound bounds each request a case sends.
-const requestBound = 5 * time.Second
+var requestBound = coretest.Scale(5 * time.Second)
 
 // capture is a log handler that keeps what it is handed, so that a case can read
 // back where the entry point bound itself.

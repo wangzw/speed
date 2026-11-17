@@ -73,7 +73,7 @@ func TestReviewImpersonationTOTPFactorIsSeasonedAndSignsIn(t *testing.T) {
 	}
 	// The sign-in already exercised the seeded secret; a second, authenticated
 	// read holds the session it produced.
-	res := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+	res := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 		base+"/api/v1/auth/me", nil, map[string]string{"Authorization": "Bearer " + token})
 	if res.status != http.StatusOK {
 		t.Fatalf("reading the signed-in profile answered %d:\n%s", res.status, res.body)
@@ -86,7 +86,7 @@ func TestReviewImpersonationTOTPFactorIsSeasonedAndSignsIn(t *testing.T) {
 func TestReviewImpersonationStepUpOffersSMS(t *testing.T) {
 	t.Parallel()
 	base, token := reviewImpersonationSession(t)
-	res := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+	res := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/auth/flows/authenticated",
 		map[string]any{"purpose": "step-up"},
 		map[string]string{"Authorization": "Bearer " + token})

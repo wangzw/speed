@@ -39,6 +39,13 @@ type roster struct {
 	// snapshot whose contents it never observed being written.
 	snap atomic.Pointer[snapshot]
 
+	// connectWithin is how long a statement of the roster's waits for a
+	// connection of the delivered pool. It is connectionWait unless a test
+	// widens it, which is how a case holds apart a wrong implementation that
+	// applies this wait to a lock from the engine's busy timeout that really
+	// bounds it.
+	connectWithin time.Duration
+
 	// reading is held by the one read of the table in flight. It is a channel
 	// of one slot rather than a mutex so that a read waiting for it gives up
 	// when its context ends.
@@ -61,10 +68,11 @@ type roster struct {
 // exist until Migrate has run, which is after every product is constructed.
 func newRoster(set settings, database db.Database) *roster {
 	return &roster{
-		handle:  database.DB(),
-		refresh: set.refresh,
-		reading: make(chan struct{}, 1),
-		logger:  log.Default(),
+		handle:        database.DB(),
+		refresh:       set.refresh,
+		reading:       make(chan struct{}, 1),
+		logger:        log.Default(),
+		connectWithin: connectionWait,
 	}
 }
 
@@ -226,7 +234,7 @@ func (r *roster) readHeld(ctx context.Context) error {
 // failure to take a connection is reported as it stands.
 func (r *roster) onConnection(ctx context.Context, fn func(session *gorm.DB) error) (bool, error) {
 	ran := false
-	err := db.Connection(ctx, r.handle, connectionWait, func(session *gorm.DB) error {
+	err := db.Connection(ctx, r.handle, r.connectWithin, func(session *gorm.DB) error {
 		ran = true
 		return fn(session)
 	})

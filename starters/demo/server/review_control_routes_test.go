@@ -23,7 +23,6 @@ package main
 import (
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/vislake/speed/pkg/sms"
 )
@@ -43,7 +42,7 @@ const (
 func TestReviewOnlyControlRoutesAreMounted(t *testing.T) {
 	t.Parallel()
 	base, token := reviewImpersonationSession(t)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	verdict := send(t, client, http.MethodPost, base+reviewSMSControlPath, map[string]string{

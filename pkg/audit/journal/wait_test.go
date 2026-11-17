@@ -18,6 +18,7 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
@@ -33,11 +34,11 @@ const deliveredBusyTimeout = 1500 * time.Millisecond
 // selfWaitTimer is how long a case lets a write run before it counts the write
 // as waiting on itself: past the delivered connections' busy timeout and past
 // openedRowWait, with room for a loaded machine.
-const selfWaitTimer = deliveredBusyTimeout + 3*time.Second
+var selfWaitTimer = deliveredBusyTimeout + coretest.Scale(3*time.Second)
 
 // connectionTimer is the same for a row this module writes itself, which waits
 // for a connection within connectionWait.
-const connectionTimer = connectionWait + 3*time.Second
+var connectionTimer = connectionWait + coretest.Scale(3*time.Second)
 
 // within runs write on a goroutine of its own and reports what it returned, or
 // that it had not returned when the limit ran out. None of the writes carries a
@@ -134,7 +135,7 @@ func requireRefusedForTheLock(t *testing.T, err error, took time.Duration) {
 		t.Errorf("the write failed after %v, before the delivered connection's busy timeout of %v",
 			took, deliveredBusyTimeout)
 	}
-	if limit := deliveredBusyTimeout + 2*time.Second; took > limit {
+	if limit := deliveredBusyTimeout + coretest.Declared(2*time.Second); took > limit {
 		t.Errorf("the write failed after %v, well past the delivered connection's busy timeout of %v",
 			took, deliveredBusyTimeout)
 	}
@@ -196,6 +197,13 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T
 					return errCaseFailed
 				}
 				if shape.lock {
+					// The upper bound in requireRefusedForTheLock is the delivered
+					// busy timeout plus two seconds through GATE_TIME_SCALE alone,
+					// and the timer around this write carries the race factor as
+					// well. A wrong implementation that applies the connection wait
+					// here answers before the busy timeout, so the unscaled lower
+					// bound catches it; the upper bound is the backstop for one that
+					// waits past the busy timeout.
 					requireRefusedForTheLock(t, err, took)
 				} else {
 					requireRefusedForWaiting(t, err)
@@ -276,6 +284,9 @@ func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsOnceTheBu
 				"still waiting after %v", selfWaitTimer)
 			return errCaseFailed
 		}
+		// The same bound as the call site above: the delivered busy timeout plus
+		// two seconds through GATE_TIME_SCALE alone for the upper bound, and the
+		// unscaled busy timeout for the lower one that catches a connection wait.
 		requireRefusedForTheLock(t, err, took)
 		requireBusyTimeoutsAsOpened(ctx, t, handle)
 		return nil
@@ -491,6 +502,12 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses
 	}
 	applyMigrations(t, handle, auditDialect)
 	j := newTestJournal(handle, settings{})
+	// A wrong implementation applies the connection wait where the engine's
+	// busy timeout bounds the lock, so widening it makes that implementation
+	// need an hour while the right one still gives up after the delivered
+	// connection's 1.5 seconds. The bound in requireRefusedForTheLock is that
+	// timeout plus two seconds through GATE_TIME_SCALE alone.
+	j.connectWithin = time.Hour
 	holding, err := dbtest.SQLite(t, file, nil).DB().DB()
 	if err != nil {
 		t.Fatalf("reaching the holding pool: %v", err)

@@ -164,7 +164,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 
 	// The member registers, signs in, proves an email address and ensures a
 	// tenant. The account needs an email identifier for the email channel's
@@ -333,7 +333,7 @@ func TestReviewNotificationRendersInTheRecipientsLanguage(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 
 	token := registerReviewMember(t, client, base, serve,
 		reviewNotifyChineseUsername, reviewNotifyChineseEmail, reviewNotifyChinesePassword)

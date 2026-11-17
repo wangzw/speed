@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -174,7 +175,7 @@ func discardLogger() *slog.Logger {
 // own goroutine.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(coretest.Scale(time.Second))
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)

@@ -22,6 +22,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -255,7 +256,7 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 }
 
 // waitDeadline bounds every wait in this package's tests.
-const waitDeadline = 5 * time.Second
+var waitDeadline = coretest.Scale(30 * time.Second)
 
 // testSettings is one endpoint's settings: the claims that select it, the body
 // limit and the proxy settings that belong to an endpoint's chain rather than

@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
@@ -148,7 +149,13 @@ func requireRowRefusedWithoutAConnection(t *testing.T, handle *gorm.DB) {
 		rows[name] = row
 	}
 
-	const deadline = 2 * time.Second
+	// A refused Row that took a connection would wait for the one the
+	// transaction holds and only answer once the context ran out, so the clock
+	// stays: the error type alone does not tell the two apart, because the
+	// refusal is written on the statement either way. The deadline and the half
+	// of it the answer is allowed are both widened, so a loaded machine cannot
+	// decide the case.
+	deadline := coretest.Scale(30 * time.Second)
 	for name, row := range rows {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), deadline)
@@ -158,8 +165,7 @@ func requireRowRefusedWithoutAConnection(t *testing.T, handle *gorm.DB) {
 			err := noPanic(t, func() error { return row(handle.WithContext(ctx)).Scan(&n) })
 			took := time.Since(start)
 			if !errors.Is(err, tenant.ErrNoTenantInContext) {
-				t.Fatalf("a refused Row on a held pool gave %v after %s, want ErrNoTenantInContext",
-					err, took)
+				t.Fatalf("a refused Row on a held pool gave %v, want ErrNoTenantInContext", err)
 			}
 			if took >= deadline/2 {
 				t.Fatalf("the refused Row took %s to answer, want it answered without waiting for a connection",

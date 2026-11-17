@@ -17,6 +17,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/observability/otel"
@@ -356,10 +357,10 @@ func TestAShutdownPastItsBoundFailsTheStop(t *testing.T) {
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("a flush past its bound ended the drive with %v, want the deadline", err)
 		}
-		if elapsed := time.Since(start); elapsed > 5*time.Second {
+		if elapsed := time.Since(start); elapsed > coretest.Scale(5*time.Second) {
 			t.Errorf("the stop took %v against a bound of 50ms", elapsed)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(coretest.Scale(30 * time.Second)):
 		t.Fatal("the stop did not return: the tracer provider's shutdown is not held to the bound")
 	}
 }
@@ -457,7 +458,7 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 			span.End()
 			select {
 			case <-held.began:
-			case <-time.After(10 * time.Second):
+			case <-time.After(coretest.Scale(10 * time.Second)):
 				return errors.New("the processor started no export while the process served")
 			}
 			stopBegan = time.Now()
@@ -476,13 +477,21 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 			t.Errorf("the export in flight ended with %v, want the cancellation of the cutoff", end.err)
 		}
 		took := end.at.Sub(stopBegan)
-		if took >= inFlightBound {
+		// The window is a behaviour criterion: it tells a cutoff placed at nine
+		// tenths of the bound from one placed at its start or not at all, so it
+		// carries GATE_TIME_SCALE alone. The wrong implementations need up to
+		// inFlightExportTimeout (a minute), far past the bound at any scale a
+		// caller declares.
+		if took >= coretest.Declared(inFlightBound) {
 			t.Errorf("the export in flight ended %v into the stop, want inside the bound of %v", took, inFlightBound)
 		}
 		// The cutoff sits a tenth of the bound before its end, so an export that
 		// ends before inFlightCutoffEarliest was cut sooner than the stop needs. The
 		// window is written as a time of its own rather than derived from the
-		// module's margin, so a margin that drifts turns the case red.
+		// module's margin, so a margin that drifts turns the case red. A lower
+		// bound carries no scaler: a slow machine only makes it easier to
+		// satisfy, and scaling it would stop it from holding the cutoff to
+		// having waited at all.
 		if took < inFlightCutoffEarliest {
 			t.Errorf("the export in flight ended %v into the stop, want no sooner than %v: the cutoff "+
 				"leaves the exports nine tenths of the bound", took, inFlightCutoffEarliest)
@@ -491,7 +500,7 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 		t.Errorf("the export in flight had not ended when the drive returned after %v: it runs on to "+
 			"batch.export-timeout (%v) unless the stop cuts it", stopped, inFlightExportTimeout)
 	}
-	if stopped > inFlightBound+otel.ReleaseTimeout+releaseSlack {
+	if stopped > coretest.Declared(inFlightBound+otel.ReleaseTimeout+releaseSlack) {
 		t.Errorf("the stop took %v, want at most %v", stopped, inFlightBound+otel.ReleaseTimeout+releaseSlack)
 	}
 	if !strings.Contains(logged.String(), "telemetry export failed") {
@@ -782,17 +791,24 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 		done <- outcome{elapsed, err}
 	}()
 
+	// The window is in absolute terms on purpose: a ceiling built from the
+	// bound's own constant would follow the constant wherever it was set.
+	// The lower bound stays fixed -- a slow machine only makes the stop take
+	// longer -- while the ceiling carries the caller's scale alone, because it
+	// tells a release bounded to a few seconds from one bounded far longer.
+	// The case's own wait is always wider than the ceiling, whatever factor
+	// the run carries.
+	ceiling := coretest.Declared(6 * time.Second)
 	select {
 	case got := <-done:
 		if !errors.Is(got.err, context.DeadlineExceeded) {
 			t.Errorf("a release that waited for its context ended the drive with %v, want the deadline", got.err)
 		}
-		// The window is in absolute terms on purpose: a ceiling built from the
-		// bound's own constant would follow the constant wherever it was set.
-		if got.elapsed < time.Second || got.elapsed > 6*time.Second {
-			t.Errorf("the stop took %v, want between 1s and 6s: a release bound of a few seconds", got.elapsed)
+		if got.elapsed < time.Second || got.elapsed > ceiling {
+			t.Errorf("the stop took %v, want between 1s and %v: a release bound of a few seconds",
+				got.elapsed, ceiling)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(ceiling + coretest.Scale(24*time.Second)):
 		t.Fatal("the stop did not return: the release of an exporter that waits for its context is unbounded")
 	}
 }

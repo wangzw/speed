@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
@@ -134,7 +133,7 @@ func TestReviewProtectedTenantIsReadOnlyOnTheSettingsSurface(t *testing.T) {
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, protectedReviewAdminLogin, protectedReviewAdminPassword)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 	auth := map[string]string{"Authorization": "Bearer " + token}
 
 	// The tenant's administrator reaches the organization management surface:

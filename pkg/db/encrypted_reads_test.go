@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/vislake/speed/pkg/core/coretest"
 )
 
 // These cases cover the reads that do not land a sealed column in a model field.
@@ -263,14 +265,14 @@ func TestARefusedRowTakesNoConnection(t *testing.T) {
 	writtenRow(t, product)
 
 	err := product.DB().Transaction(func(*gorm.DB) error {
-		waiting, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		// The deadline only bounds the wait for a wrong implementation: one
+		// that takes a connection before refusing waits for the one this
+		// transaction holds and answers the pool's deadline error instead of
+		// the refusal naming the field.
+		waiting, cancel := context.WithTimeout(t.Context(), coretest.Scale(10*time.Second))
 		defer cancel()
-		started := time.Now()
 		var email string
 		err := product.DB().WithContext(waiting).Model(&encryptedModel{}).Select("email").Row().Scan(&email)
-		if took := time.Since(started); took > time.Second {
-			t.Errorf("the refused Row took %v to answer, waiting for the connection the transaction holds", took)
-		}
 		if err == nil || !strings.Contains(err.Error(), "Email") {
 			t.Errorf("the refused Row gave %v, want the refusal naming the field", err)
 		}

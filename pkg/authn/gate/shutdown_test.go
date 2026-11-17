@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/observability"
 )
 
@@ -131,7 +132,7 @@ func TestAGateThatRefusedForCapacityStillServesTheNextCall(t *testing.T) {
 		if code != nethttp.StatusOK {
 			t.Errorf("the call after the slot was freed answered %d, want 200", code)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(coretest.Scale(5 * time.Second)):
 		t.Fatal("the next call never returned: the refusal for capacity left the lock held")
 	}
 }

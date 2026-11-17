@@ -112,7 +112,7 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: probeTimeout}
 
 	// The review build advertises the register entry the baseline does not.
 	methods := get(t, base+"/api/v1/auth/methods")
