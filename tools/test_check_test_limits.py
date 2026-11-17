@@ -1132,6 +1132,88 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assertIn("vitest.config.ts:4", out)
 
 
+class TestTheJavascriptMask(GateCase):
+    """The hand-written mask reads JSX and fails closed at end of file.
+
+    Each shape is a line a token scan can misread as an unterminated
+    string, template or regex. The line below it is a wait that must still
+    be seen: a mask that swallows the rest of the file passes the gate
+    silently instead.
+    """
+
+    def assert_shape_reports(self, shape: str) -> None:
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it, screen } from 'vitest'\n"
+            "it('adds', async () => {\n"
+            f"  {shape}"
+            "  await screen.findByText('x', { timeout: 500 })\n"
+            "})\n",
+        )
+        self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
+
+    def test_jsx_self_closing_tag_with_attributes_keeps_scanning(self) -> None:
+        self.assert_shape_reports("render(<A p={x} />);\n")
+
+    def test_jsx_self_closing_after_an_identifier_keeps_scanning(self) -> None:
+        self.assert_shape_reports("render(<Br />);\n")
+
+    def test_jsx_self_closing_after_a_quoted_attribute_keeps_scanning(self) -> None:
+        self.assert_shape_reports('render(<A p="x" />);\n')
+
+    def test_a_regex_starting_with_a_self_closing_slash_is_masked(self) -> None:
+        # `.replace(/>/g, ...)` is the shape in the demo's SAML fixture. The
+        # slash after `(` opens a regex, so its `>` is masked with the regex
+        # body. Reading `/>` as a tag end instead leaves the `>` in the mask
+        # and lets the scan fall through to the next slash.
+        self.assertEqual(
+            ".replace(/ /g, '    ')\n",
+            m.mask_javascript(".replace(/>/g, '&gt;')\n"),
+        )
+
+    def test_the_saml_replace_shape_keeps_scanning(self) -> None:
+        self.assert_shape_reports("value.replace(/>/g, '&gt;');\n")
+
+    def test_jsx_text_apostrophe_keeps_scanning(self) -> None:
+        self.assert_shape_reports("render(<p>it's here</p>);\n")
+
+    def test_jsx_closing_tag_before_a_template_keeps_scanning(self) -> None:
+        self.assert_shape_reports("render(<Link>a</Link>); f(`/a/${id}`);\n")
+
+    def test_jsx_self_closing_before_a_template_keeps_scanning(self) -> None:
+        self.assert_shape_reports("render(<A p={x} />); f(`/a/${id}`);\n")
+
+    def test_a_regex_after_an_if_header_keeps_scanning(self) -> None:
+        self.assert_shape_reports("if (x) /`/.test(s);\n")
+
+    def test_a_regex_after_a_comparison_slash_keeps_scanning(self) -> None:
+        self.assert_shape_reports("x</`/.test(s);\n")
+
+    def test_an_unclosed_construct_raises_rather_than_blanking(self) -> None:
+        for source in (
+            "const s = 'unclosed\n",
+            'const s = "unclosed\n',
+            "const s = `unclosed\n  still open\n",
+            "const re = /unclosed",
+            "/* unclosed\n",
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(m.UnterminatedSource):
+                    m.mask_javascript(source)
+
+    def test_an_unclosed_template_exits_2_naming_the_file(self) -> None:
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  const s = `unclosed\n"
+            "})\n",
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(2, code, f"stdout={out!r} stderr={err!r}")
+        self.assertIn("web/packages/alpha/src/alpha.test.ts", err)
+
+
 class TestTheWaitConditionExemption(GateCase):
     """The wrapper takes the larger value, so its timeout is not a limit.
 

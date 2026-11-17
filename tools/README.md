@@ -323,8 +323,31 @@ The read is a text heuristic with comments, string contents and regex
 bodies masked, so a token in prose is not a finding; an inline or dynamic
 `os` import is matched on a copy that keeps its module specifier, then kept
 only when its keyword survives the mask, so a `require('os')` named inside a
-string stays prose. Its known blind spots are a reviewer's obligation, not
-the gate's, and a clean run does not stand for them: a dot import of
+string stays prose. The TS/JS mask is hand-written, not a parser. It reads
+`</` before a tag name or `>`, a `/>` after an attribute-ending `}`,
+identifier or quote, and an apostrophe directly after an identifier
+(`<p>it's</p>`) as JSX, so neither the slash nor the apostrophe opens a
+regex or a string. A `/` after a regex preceder such as `(` still opens a
+regex, so `.replace(/>/g, ...)` masks its regex as a unit. A delimiter can
+still be mispaired, and then the mask hides text up to the next closing
+delimiter, which may be on a later line: a quote at the start of JSX text
+pairs with the next quote, a `/*` written in JSX text pairs with a `*/` on a
+later line, and a `/` after `throw` opens a regex the preceder rule does not
+recognise, so a quote inside or after it pairs with the next quote.
+Fail-closed guarantees only that such a misread cannot swallow to end of
+file: a string, template literal, regex or block comment still open there
+makes the gate exit 2 naming the file, so it surfaces rather than passing
+silently. The frontend's guards do not replace this scan: the structural
+guard in `web/scripts/workspace-test-config.test.mjs` parses every test
+source with the TypeScript compiler and walks the syntax tree, so it is not
+a second mask; it covers the workspace's test wiring and the shared floors.
+The custom rules under `web/eslint-rules/` are a separate set, walking the
+TypeScript syntax tree for their own subjects (i18n text, direct HTTP, HTML
+sinks, e2e bypass, feedback regions). The Python gate is the only
+whole-repository reader that does not need Node, so the budget and
+core-count checks stay here. Its known blind spots are a reviewer's
+obligation, not the gate's, and a clean run does not stand for them: a dot
+import of
 `runtime` (`import . "runtime"`) makes `NumCPU()` unqualified; a named
 constant passed as a budget (`const ms = 5_000; it('x', { timeout: ms })`);
 a budget built from a variable or from a longer expression than constant
@@ -336,9 +359,11 @@ together, so a clean save can be reported because its same-named sibling in
 a nested block escaped. Exit codes: 0 clean, 1 a finding (file, line and
 what it is), 2 infrastructure error (the root is not a directory, nothing
 test-shaped was found, a shared default or one of its floors is missing,
-unreadable or not a positive finite number, or
+unreadable or not a positive finite number,
 `web/test-utils/src/wait.ts` is missing, unreadable or no longer takes the
-larger of the caller's timeout and the shared async budget).
+larger of the caller's timeout and the shared async budget, or a TS/JS test
+source cannot be parsed because the mask reaches end of file inside a
+string, template, regex or block comment).
 
 `check_platform_errors.py` — holds the platform error-copy bundle
 (`web/packages/i18n/src/platform-errors/locales/{zh-CN,en-US}.json`) to

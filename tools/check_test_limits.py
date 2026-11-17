@@ -76,6 +76,35 @@ files (fixtures, helpers, global setup) are all read for Playwright case
 budgets, and only Vitest-shaped `*.test.*` files there take the Vitest
 budget.
 
+TS/JS sources are read through a hand-written mask, not a parser.
+`mask_javascript` blanks comments, string contents, template literals and
+regex bodies while keeping their delimiters. JSX is recognised to the
+extent a token scan can: `</` before a tag name or `>`, and a `/>` that
+follows an attribute-ending `}`, identifier or quote, are markup rather
+than a regex start, and an apostrophe directly after an identifier is JSX
+text (`<p>it's</p>`), not a string opener. A `/` after a regex preceder
+such as `(` still opens a regex, so `.replace(/>/g, ...)` masks its regex
+as a unit.
+
+A mispaired delimiter still hides text, up to the next closing delimiter,
+which may be on a later line: a quote at the start of JSX text
+(`<p>'quoted'</p>`) pairs with the next quote; a `/*` written in JSX text
+pairs with a `*/` on a later line; and a `/` after `throw` opens a regex
+the preceder rule does not recognise, so a quote inside or after it pairs
+with the next quote. Fail-closed only guarantees that such a misread cannot
+swallow to end of file: a string, template literal, regex or block comment
+still open there is an infrastructure error naming the file.
+
+The frontend's guards do not replace this scan.
+`web/scripts/workspace-test-config.test.mjs` (run by `make web-check`,
+which needs Node) holds the workspace's test wiring and shared floors with
+a parse of every test source by the TypeScript compiler, not a mask. The
+custom rules under `web/eslint-rules/` are a separate set: they walk the
+TypeScript syntax tree for the subjects they own (i18n text, direct HTTP,
+HTML sinks, e2e bypass, feedback regions). The Python gate is the
+whole-repository reader that runs without Node, so the budget and
+core-count checks stay here.
+
 A text scan cannot catch every shape. These are the gate's known blind spots
 and are a reviewer's obligation, not the gate's: a dot import of `runtime`
 (`import . "runtime"`) makes `NumCPU()` unqualified and invisible; a named
@@ -94,9 +123,11 @@ Exit codes: 0 = clean; 1 = at least one finding, each reported as
 file:line with what it is; 2 = infrastructure error -- the root is not a
 directory, no test file or configuration was found, a shared default or
 its floor (needed to judge a case limit) is missing, unreadable or not a
-positive finite number, or the `waitForCondition` wrapper whose exemption
+positive finite number, the `waitForCondition` wrapper whose exemption
 the async wait rule relies on is missing, unreadable or no longer takes the
-larger of the caller's value and the shared async budget. Paths in the
+larger of the caller's value and the shared async budget, or a TS/JS test
+source cannot be parsed because the mask reaches end of file inside a
+string, template literal, regex or block comment. Paths in the
 report are relative to --root.
 """
 
@@ -630,6 +661,26 @@ def go_top_level_scopes(masked: str) -> list[tuple[int, int]]:
     return scopes
 
 
+class UnterminatedSource(Exception):
+    """The mask reached end of file inside a construct it cannot close.
+
+    A string, template literal, regular expression or block comment that is
+    never closed leaves every later line hidden from the scan. The caller
+    turns this into an infrastructure error naming the file, so a misread
+    can hide at most the text before the next delimiter, never the rest of
+    the file.
+    """
+
+    def __init__(self, kind: str, offset: int) -> None:
+        super().__init__(f"unterminated {kind}")
+        self.kind = kind
+        self.offset = offset
+
+
+class GateError(Exception):
+    """The tree cannot be judged; `main` prints the message and exits 2."""
+
+
 # The characters after which a JavaScript `/` opens a regular expression
 # rather than dividing, and the keywords that do the same. A regex literal
 # is masked as a unit so an apostrophe inside one (`/instance's/`) does not
@@ -650,6 +701,111 @@ REGEX_PRECEDER_WORDS = {
     "await",
 }
 
+# Keywords that can be followed by a string literal with no space between
+# them (`return'x'`, `case'x':`, `from'./mod'`). Every other identifier
+# right before an apostrophe is JSX text, where `it's` must not open one.
+STRING_PRECEDER_KEYWORDS = REGEX_PRECEDER_WORDS | {
+    "throw",
+    "instanceof",
+    "export",
+    "default",
+    "import",
+    "from",
+}
+
+
+def _is_identifier_char(char: str) -> bool:
+    return char.isalnum() or char in "_$"
+
+
+def closes_condition_clause(text: str, close: int) -> bool:
+    """Whether the `)` at `close` ends an `if`/`while`/`for`/`with` header.
+
+    A regex literal is the only expression that can open there, so `/`
+    after such a `)` is a regex even though a `)` before `/` is normally a
+    division (`(a + b) / 2`). Without this, `if (x) /`/.test(s)` reads the
+    backtick inside the regex as a template literal and hides the rest of
+    the file.
+    """
+    depth = 0
+    for index in range(close, -1, -1):
+        char = text[index]
+        if char == ")":
+            depth += 1
+        elif char == "(":
+            depth -= 1
+            if depth == 0:
+                before = index - 1
+                while before >= 0 and text[before] in " \t\r\n":
+                    before -= 1
+                start = before
+                while start >= 0 and _is_identifier_char(text[start]):
+                    start -= 1
+                return text[start + 1 : before + 1] in {
+                    "if",
+                    "while",
+                    "for",
+                    "with",
+                }
+    return False
+
+
+# The characters that can end a JSX attribute right before `/>`: the `}` of
+# an expression container and an attribute value's closing quote. An
+# identifier also ends an attribute (`<Br />`) and is tested separately.
+JSX_TAG_END_PRECEDERS = set("}\"'")
+
+
+def jsx_tag_slash(text: str, index: int) -> bool:
+    """Whether the `/` at `index` is part of a JSX tag, not a regex start.
+
+    `</` opens a closing tag (`</name>`, `</>`), so it never starts a regex.
+    A `<` immediately before the slash is otherwise a comparison whose right
+    operand can be a regex, as in `x</[a-z]/.test(s)`; the tag reading is
+    taken only when a tag name or `>` follows the slash, so a regex that
+    starts with anything else, such as `x</`/.test(s)`, is still a regex.
+
+    `/>` closes a self-closing tag only when the last character before it
+    can end an attribute: the `}` of an expression container, a closing
+    quote, or an identifier (`<A p={x} />`, `<A p="x" />`, `<Br />`). After
+    a regex preceder such as `(`, as in `.replace(/>/g, ...)`, the slash
+    still opens a regex, so its `>` is masked with the regex instead of
+    read as a tag end.
+    """
+    next_index = index + 1
+    if next_index >= len(text):
+        return False
+    following = text[next_index]
+    if following == ">":
+        if index > 0 and text[index - 1] == "<":
+            return True
+        previous = index - 1
+        while previous >= 0 and text[previous] in " \t\r\n":
+            previous -= 1
+        if previous < 0:
+            return False
+        char = text[previous]
+        return char in JSX_TAG_END_PRECEDERS or _is_identifier_char(char)
+    if index > 0 and text[index - 1] == "<":
+        return following == ">" or following.isalpha() or following in "_$"
+    return False
+
+
+def apostrophe_starts_string(text: str, index: int) -> bool:
+    """Whether the `'` at `index` opens a string rather than JSX text.
+
+    JSX text writes contractions directly (`<p>it's</p>`), and an
+    apostrophe right after an identifier character is that text, not a
+    delimiter. A keyword that takes an expression can still be followed by
+    a string with no space (`return'x'`), so those keep the string reading.
+    """
+    if index == 0 or not _is_identifier_char(text[index - 1]):
+        return True
+    start = index - 1
+    while start >= 0 and _is_identifier_char(text[start]):
+        start -= 1
+    return text[start + 1 : index] in STRING_PRECEDER_KEYWORDS
+
 
 def regex_can_start(text: str, index: int) -> bool:
     previous = index - 1
@@ -658,6 +814,8 @@ def regex_can_start(text: str, index: int) -> bool:
     if previous < 0:
         return True
     if text[previous] in REGEX_PRECEDER_CHARS:
+        return True
+    if text[previous] == ")" and closes_condition_clause(text, previous):
         return True
     start = previous
     while start >= 0 and (text[start].isalnum() or text[start] in "_$"):
@@ -673,6 +831,21 @@ def mask_javascript(text: str) -> str:
     literal's substitutions are blanked with the rest of it, which is the
     text-heuristic cost this gate accepts. A regex literal is masked as a
     whole, so an apostrophe inside it is not a string delimiter.
+
+    JSX is recognised to the extent a token scan can: `</` before a tag name
+    or `>`, and a `/>` that follows an attribute-ending `}`, identifier or
+    quote, are markup rather than a regex start, and an apostrophe directly
+    after an identifier is JSX text (`<p>it's</p>`) rather than a string
+    opener. A quote at the start of JSX text still opens a string that pairs
+    with the next quote, a `/*` in JSX text still pairs with a `*/` on a
+    later line, and a `/` after `throw` opens a regex the preceder rule does
+    not recognise, so a quote after it pairs with the next quote. A mispair
+    hides text up to that closing delimiter, which may be on a later line.
+
+    The scan is fail-closed: a string, template literal, regex or block
+    comment still open at end of file raises `UnterminatedSource` instead
+    of blanking the rest of the file, so an unrecognised construct stops
+    the gate with an infrastructure error rather than silently passing.
     """
     chars = list(text)
     index, size = 0, len(text)
@@ -685,7 +858,9 @@ def mask_javascript(text: str) -> str:
             index = end
         elif text.startswith("/*", index):
             end = text.find("*/", index + 2)
-            end = size if end == -1 else end + 2
+            if end == -1:
+                raise UnterminatedSource("block comment", index)
+            end += 2
             for at in range(index, end):
                 if chars[at] != "\n":
                     chars[at] = " "
@@ -694,6 +869,7 @@ def mask_javascript(text: str) -> str:
             text[index] == "/"
             and index + 1 < size
             and text[index + 1] not in "/*"
+            and not jsx_tag_slash(text, index)
             and regex_can_start(text, index)
         ):
             end = index + 1
@@ -719,9 +895,14 @@ def mask_javascript(text: str) -> str:
                 index = end + 1
                 while index < size and text[index].isalpha():
                     index += 1
+            elif end >= size:
+                raise UnterminatedSource("regular expression", index)
             else:
                 index += 1
         elif text[index] in ('"', "'", "`"):
+            if text[index] == "'" and not apostrophe_starts_string(text, index):
+                index += 1
+                continue
             quote = text[index]
             end = index + 1
             while end < size:
@@ -731,7 +912,10 @@ def mask_javascript(text: str) -> str:
                 if text[end] == quote:
                     break
                 end += 1
-            for at in range(index + 1, min(end, size)):
+            if end >= size:
+                kind = "template literal" if quote == "`" else "string"
+                raise UnterminatedSource(kind, index)
+            for at in range(index + 1, end):
                 if chars[at] != "\n":
                     chars[at] = " "
             index = end + 1
@@ -1261,7 +1445,20 @@ class Gate:
                     file=sys.stderr,
                 )
                 return 2
-            if not wait_condition_takes_larger_timeout(wait_condition_text):
+            try:
+                premise_holds = wait_condition_takes_larger_timeout(
+                    wait_condition_text
+                )
+            except UnterminatedSource as exc:
+                print(
+                    "test-limits: web/test-utils/src/wait.ts cannot be parsed; "
+                    f"the mask reaches end of file inside a {exc.kind} that is "
+                    "never closed, so the waitForCondition exemption's premise "
+                    "cannot be checked",
+                    file=sys.stderr,
+                )
+                return 2
+            if not premise_holds:
                 print(
                     "test-limits: waitForCondition in "
                     "web/test-utils/src/wait.ts no longer takes the larger of "
@@ -1286,7 +1483,17 @@ class Gate:
                 return 2
             with open(config, encoding="utf-8") as handle:
                 source = handle.read()
-            default = playwright_default_timeout(source)
+            try:
+                default = playwright_default_timeout(source)
+            except UnterminatedSource as exc:
+                print(
+                    "test-limits: starters/demo/web/e2e/playwright.config.ts "
+                    "cannot be parsed; the mask reaches end of file inside a "
+                    f"{exc.kind} that is never closed, so a case budget has "
+                    "no shared default to be judged against",
+                    file=sys.stderr,
+                )
+                return 2
             if default is None:
                 print(
                     "test-limits: the Playwright config names no top-level "
@@ -1304,51 +1511,62 @@ class Gate:
     def findings(self) -> list[str]:
         problems: list[str] = []
         for relative, text in self.files:
-            problems.extend(self.core_count_findings(relative, text))
-            if not is_javascript(relative):
-                continue
-            source = mask_javascript(text)
-            problems.extend(self.percentage_width_findings(relative, text))
-            if is_playwright_spec(relative) or is_e2e_support(relative):
-                # Both a spec and its support files (fixtures, helpers,
-                # global setup) can name a Playwright case bound; a helper
-                # that lowered one would narrow every case that used it.
-                if self.playwright_default is not None:
-                    problems.extend(
-                        self.limit_findings(
-                            relative,
-                            source,
-                            playwright_budgets(source),
-                            self.playwright_default,
-                        )
-                    )
-                continue
-            if self.vitest_default is not None:
-                problems.extend(
-                    self.limit_findings(
-                        relative, source, case_budgets(source), self.vitest_default
-                    )
-                )
-                if JS_TEST_CONFIG.search(relative) or JS_SHARED_CONFIG.search(relative):
-                    problems.extend(
-                        self.limit_findings(
-                            relative,
-                            source,
-                            config_budgets(source),
-                            self.vitest_default,
-                        )
-                    )
-                if self.async_default is not None:
-                    problems.extend(
-                        self.async_limit_findings(
-                            relative,
-                            source,
-                            async_budgets(source),
-                            self.async_default,
-                        )
-                    )
+            try:
+                self.scan_file(relative, text, problems)
+            except UnterminatedSource as exc:
+                line = line_of(text, exc.offset)
+                raise GateError(
+                    f"{relative}:{line}: cannot parse this test source; the "
+                    f"mask reaches end of file inside a {exc.kind} that is "
+                    "never closed"
+                ) from None
         problems.extend(self.shared_default_findings())
         return problems
+
+    def scan_file(self, relative: str, text: str, problems: list[str]) -> None:
+        problems.extend(self.core_count_findings(relative, text))
+        if not is_javascript(relative):
+            return
+        source = mask_javascript(text)
+        problems.extend(self.percentage_width_findings(relative, text))
+        if is_playwright_spec(relative) or is_e2e_support(relative):
+            # Both a spec and its support files (fixtures, helpers,
+            # global setup) can name a Playwright case bound; a helper
+            # that lowered one would narrow every case that used it.
+            if self.playwright_default is not None:
+                problems.extend(
+                    self.limit_findings(
+                        relative,
+                        source,
+                        playwright_budgets(source),
+                        self.playwright_default,
+                    )
+                )
+            return
+        if self.vitest_default is not None:
+            problems.extend(
+                self.limit_findings(
+                    relative, source, case_budgets(source), self.vitest_default
+                )
+            )
+            if JS_TEST_CONFIG.search(relative) or JS_SHARED_CONFIG.search(relative):
+                problems.extend(
+                    self.limit_findings(
+                        relative,
+                        source,
+                        config_budgets(source),
+                        self.vitest_default,
+                    )
+                )
+            if self.async_default is not None:
+                problems.extend(
+                    self.async_limit_findings(
+                        relative,
+                        source,
+                        async_budgets(source),
+                        self.async_default,
+                    )
+                )
 
     @staticmethod
     def percentage_width_findings(relative: str, text: str) -> list[str]:
@@ -1657,7 +1875,11 @@ def main(argv: list[str] | None = None) -> int:
     if failed is not None:
         return failed
 
-    problems = gate.findings()
+    try:
+        problems = gate.findings()
+    except GateError as exc:
+        print(f"test-limits: {exc}", file=sys.stderr)
+        return 2
     for problem in problems:
         print(problem)
     if problems:
