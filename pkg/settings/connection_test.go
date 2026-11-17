@@ -158,9 +158,9 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 			// A wrong implementation applies the connection wait where the
 			// engine's busy timeout bounds the lock, so widening it makes that
 			// implementation need an hour while the right one still gives up
-			// after the locator's second. The upper bound below is three
-			// seconds through GATE_TIME_SCALE alone, so the two stay apart
-			// until the caller's scale reaches about eighteen hundred.
+			// after the locator's second. The upper bound is that unscaled second
+			// plus two seconds through GATE_TIME_SCALE alone; the hour is the
+			// wrong time stated to DeclaredAgainst.
 			s.connectWithin = time.Hour
 			if err := s.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 3}); err != nil {
 				t.Fatalf("seeding the row: %v", err)
@@ -191,7 +191,7 @@ func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 				if took < lockBusyTimeout {
 					t.Errorf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
 				}
-				if limit := lockBusyTimeout + coretest.Declared(2*time.Second); took > limit {
+				if limit := coretest.DeclaredAgainst(t, lockBusyTimeout, 2*time.Second, time.Hour); took > limit {
 					t.Errorf("%s gave up after %v, well past the busy timeout of %v", name, took, lockBusyTimeout)
 				}
 			case <-time.After(connectionTimer):
