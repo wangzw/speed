@@ -299,10 +299,9 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 			// A wrong implementation applies the connection wait where the
 			// engine's busy timeout bounds the lock, so widening it makes that
 			// implementation need an hour while the right one still gives up
-			// after the locator's second. The bound below is the busy timeout
-			// plus two seconds through GATE_TIME_SCALE alone, and the hour meets
-			// it at a caller's scale of about eighteen hundred: at or past that
-			// scale the case stops telling the two apart.
+			// after the locator's second. The bound is the busy timeout plus two
+			// seconds through GATE_TIME_SCALE alone; the hour is the wrong time
+			// stated to DeclaredAgainst.
 			r.connectWithin = time.Hour
 			most := time.Duration(c.waitsFor) * lockBusyTimeout
 			done := make(chan error, 1)
@@ -321,7 +320,7 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 				if took < lockBusyTimeout {
 					t.Fatalf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
 				}
-				if limit := most + coretest.Declared(2*time.Second); took > limit {
+				if limit := coretest.DeclaredAgainst(t, most, 2*time.Second, time.Hour); took > limit {
 					t.Fatalf("%s gave up after %v, past a busy timeout of %v for each of its %d statements",
 						name, took, lockBusyTimeout, c.waitsFor)
 				}
@@ -361,10 +360,9 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeo
 			// A wrong implementation applies the connection wait where the
 			// engine's busy timeout bounds the lock, so widening it makes that
 			// implementation need an hour while the right one still gives up
-			// after the locator's second. The bound below is the busy timeout
-			// plus two seconds through GATE_TIME_SCALE alone, and the hour meets
-			// it at a caller's scale of about eighteen hundred: at or past that
-			// scale the case stops telling the two apart.
+			// after the locator's second. The bound is the busy timeout plus two
+			// seconds through GATE_TIME_SCALE alone; the hour is the wrong time
+			// stated to DeclaredAgainst.
 			r.connectWithin = time.Hour
 			if err := r.read(context.Background()); err != nil {
 				t.Fatalf("reading the roster: %v", err)
@@ -389,7 +387,7 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeo
 				})
 				done <- res
 			}()
-			limit := lockBusyTimeout + coretest.Declared(2*time.Second)
+			limit := coretest.DeclaredAgainst(t, lockBusyTimeout, 2*time.Second, time.Hour)
 			var res written
 			select {
 			case res = <-done:
