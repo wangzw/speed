@@ -70,11 +70,21 @@ A change that crosses the boundary is two changes: run each side's gate.
 **Gate stages.** A fix round re-runs only the touched packages' tests and the
 generated-artifact checks below. The whole-side gate — the gate commands the
 change's own bullet above lists, or `make check` when the change crosses the
-boundary — and the heavy legs run once, on the final HEAD, before the merge:
-`make test-race` (the demo server alone takes about ten minutes),
-`make test-integration`, `make web-browser`, `make e2e`. A unit compiled into a
-local integration branch runs neither when it merges there; the integration
-branch runs both once after its last unit lands.
+boundary — runs once, on the final HEAD: the landable candidate after review
+has approved it, which is the tip of the merge train before `main`
+fast-forwards to it (the procedure is the commit-convention skill's "Landing
+a branch"). What a change sends for review carries the fix round's targeted
+tests and generated-artifact checks, not a whole-side run. When the
+whole-side gate is `make check`, `make test-race` is already one of its steps
+(the demo server alone takes about ten minutes there); run `make test-race`
+separately only with the backend-only whole-side gate, `make build test lint
+tidy-check repo-check`. The heavy legs run apart from it: `make
+test-integration`, `make web-browser`, `make e2e`. A gate failure on the
+final HEAD with a small fix is fixed, rerun and landed, with its diff
+reported to the reviewer for an after-the-fact check; one that needs rework
+goes back to review. A unit compiled into a local integration branch runs
+neither when it merges there; the integration branch runs both once after
+its last unit lands.
 
 **Before asking for review**, also check:
 - A change to an OpenAPI declaration or fragment regenerates all three
@@ -134,7 +144,9 @@ through `go.work` like every other.
   the capability directory the change touches** — `fix(config): reject a
   manifest with two mounts on one path`.
 - **Rebase onto the target branch and fast-forward.** History stays
-  linear. Before landing, fold each correction into the commit it
+  linear. `main` always passes the gate: a landing of several commits is
+  gated on its final commit, and its intermediate commits need not pass
+  on their own. Before landing, fold each correction into the commit it
   corrects (fixup plus autosquash), and one logical change lands as one
   commit; the procedure is the commit-convention skill's "Landing a
   branch" section.
