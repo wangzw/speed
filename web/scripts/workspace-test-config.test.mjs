@@ -706,6 +706,23 @@ function setupAsyncBudgetScale(path) {
 /** The expressions that carry the caller's scale into a setup. */
 const SCALE_SOURCE = /^(?:gateTimeScale\(\)|__SPEED_GATE_TIME_SCALE__)$/
 
+/** The scales a setups list names, in order. A setup that names no budget,
+ * pins a literal, or cannot be parsed throws with its own path. */
+function setupScales(setups) {
+  return setups.map((path) => {
+    const scale = setupAsyncBudgetScale(path)
+    if (scale === null) {
+      throw new Error(`${path} names no async budget for the guard to check`)
+    }
+    if (!SCALE_SOURCE.test(scale)) {
+      throw new Error(
+        `${path} pins the async budget instead of taking the caller's scale`,
+      )
+    }
+    return scale
+  })
+}
+
 /** The source extensions a scan reads. */
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/
 
@@ -900,22 +917,13 @@ describe('workspace test configuration', () => {
     // unscaled, like the preset's test budget. The floor compared against is
     // the one the floor file names.
     expect(asyncBudgetsBelowFloor(TIME_FLOORS)).toEqual([])
-    const setups = [
-      join(webRoot, 'test-utils/src/setup.ts'),
-      join(webRoot, 'test-utils/src/browser-setup.ts'),
-      join(demoWebRoot, 'src/test-utils/setup.ts'),
-    ]
-    for (const path of setups) {
-      const scale = setupAsyncBudgetScale(path)
-      expect(
-        scale,
-        `${path} names no async budget for the guard to check`,
-      ).not.toBeNull()
-      expect(
-        scale,
-        `${path} pins the async budget instead of taking the caller's scale`,
-      ).toMatch(SCALE_SOURCE)
-    }
+    expect(
+      setupScales([
+        join(webRoot, 'test-utils/src/setup.ts'),
+        join(webRoot, 'test-utils/src/browser-setup.ts'),
+        join(demoWebRoot, 'src/test-utils/setup.ts'),
+      ]),
+    ).toHaveLength(3)
   })
 
   it('names the setup file it cannot parse', () => {
@@ -928,7 +936,8 @@ describe('workspace test configuration', () => {
     try {
       const path = join(dir, 'setup.ts')
       writeFileSync(path, 'configure({ asyncUtilTimeout: asyncBudgetMs(')
-      expect(() => setupAsyncBudgetScale(path)).toThrow(path)
+      const setups = [join(webRoot, 'test-utils/src/setup.ts'), path]
+      expect(() => setupScales(setups)).toThrow(path)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
