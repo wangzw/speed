@@ -1260,6 +1260,95 @@ class TestTheJavascriptMask(GateCase):
         masked = m.mask_javascript("render(<p>see <b>http://y</b></p>)\n")
         self.assertIn("http://y", masked)
 
+    def assert_keyword_shape_keeps_text_and_wait(self, shape: str) -> None:
+        self.assertIn("http://y", m.mask_javascript(shape))
+        self.assert_shape_reports(shape)
+
+    def test_a_return_before_jsx_keeps_its_text_and_wait(self) -> None:
+        # `return` ends in identifier characters but is not an operand, so
+        # `return <p>` opens an element: the `//` in the URL is text and the
+        # wait on the next line keeps its 500ms timeout.
+        self.assert_keyword_shape_keeps_text_and_wait(
+            "return <p>http://y</p>\n"
+        )
+
+    def test_a_return_before_jsx_text_with_an_apostrophe_keeps_the_wait(
+        self,
+    ) -> None:
+        # The apostrophe in `as'x` is JSX text, not a string opener, so it
+        # does not swallow the next line's query.
+        self.assert_keyword_shape_keeps_text_and_wait(
+            "return <p>as'x http://y</p>\n"
+        )
+
+    def test_an_await_before_jsx_keeps_its_text_and_wait(self) -> None:
+        self.assert_keyword_shape_keeps_text_and_wait("await <p>http://y</p>\n")
+
+    def test_an_awaited_parenthesised_jsx_element_keeps_its_text(self) -> None:
+        self.assert_keyword_shape_keeps_text_and_wait(
+            "await (<p>http://y</p>)\n"
+        )
+
+    def test_a_ternary_branch_jsx_element_keeps_its_text_and_wait(self) -> None:
+        self.assert_keyword_shape_keeps_text_and_wait(
+            "const v = x ? <p>http://y</p> : y\n"
+        )
+
+    def test_a_comparison_after_a_keyword_is_still_code(self) -> None:
+        # The keyword rule reads the word right before `<` only: in
+        # `return a < b` the operand is `a`, so the `//` is a comment and a
+        # name in it is prose.
+        masked = m.mask_javascript(
+            "function f() { return a < b } // os.cpus()\n"
+        )
+        self.assertNotIn("os.cpus", masked)
+
+    def test_a_string_in_an_expression_container_is_masked(self) -> None:
+        # A `{` in JSX text enters code: the string inside is masked, so a
+        # token in it is prose.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  render(<p>{'os.cpus()'}</p>)\n"
+            "})\n",
+        )
+        self.assert_clean()
+
+    def test_a_comment_in_an_expression_container_is_masked(self) -> None:
+        # The same entry makes a `//` inside the container a comment.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  render(<p>{x // os.cpus()}</p>)\n"
+            "})\n",
+        )
+        self.assert_clean()
+
+    def test_text_resumes_after_an_expression_container_closes(self) -> None:
+        # The `}` that closes the container returns to text, so the `//` in
+        # the URL after it is text, not a comment.
+        masked = m.mask_javascript("render(<p>{x} http://y</p>)\n")
+        self.assertIn("http://y", masked)
+
+    def test_a_type_parameter_misread_reports_the_name_between_the_tags(
+        self,
+    ) -> None:
+        # `foo(<T>bar)` is a type assertion, but a `</T>` in a later comment
+        # makes the scan read it as an element. Text blanks nothing, so the
+        # `os.cpus()` in the comment is visible and reported: the misread
+        # costs a false finding rather than a missed one.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  const y = foo(<T>bar) // os.cpus()\n"
+            "  // </T>\n"
+            "})\n",
+        )
+        self.assert_finding("web/packages/alpha/src/alpha.test.ts", "os.cpus")
+
     def test_a_type_argument_in_a_tag_does_not_end_the_tag(self) -> None:
         # `<FormField<FormValues, 'name'> ... />` is one opening tag: the
         # `>` that closes the type argument must not end it, or the trailing

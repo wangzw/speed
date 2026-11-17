@@ -335,10 +335,11 @@ bodies masked, so a token in prose is not a finding; an inline or dynamic
 only when its keyword survives the mask, so a `require('os')` named inside a
 string stays prose. The TS/JS mask is hand-written, not a parser. It reads
 JSX with a state machine over the whole source: `<name` at an expression
-position opens a tag, `/>` closes that tag without opening an element, `>`
-opens the element's text when a matching `</name>` follows, `{` in text
-enters code until the matching `}`, and `</name>` returns to the parent's
-text. Inside text `//`, quotes and `/` are literal, so `<p>http://x</p>`
+position -- after `(`, `=`, `?`, `&&`, `=>`, a keyword such as `return`,
+`await`, `case` or `yield`, or at the start of a line -- opens a tag, `/>`
+closes that tag without opening an element, `>` opens the element's text
+when a matching `</name>` follows, `{` in text enters code until the
+matching `}`, and `</name>` returns to the parent's text. Inside text `//`, quotes and `/` are literal, so `<p>http://x</p>`
 keeps its URL on any line and after a nested child; "`//` in JSX text is
 markup, not a comment" holds. An apostrophe directly after an identifier is
 still not a string opener (`<p>it's</p>`), while a keyword that takes an
@@ -346,9 +347,9 @@ expression with no space (`x as'user'`) keeps the string reading. A `<` that
 ends an operand on the same line is a comparison, not a tag start, so
 `s</re/.test(t)` is `s < /re/`, while `render(<Link>a</Link>)` still closes
 the element. A `/` after a regex preceder such as `(` still opens a regex,
-so `.replace(/>/g, ...)` masks its regex as a unit. A type-level `<T>` has
-no `</T>` and is not an element, so a generic arrow or a type assertion does
-not turn the following code into text. A delimiter can still be mispaired
+so `.replace(/>/g, ...)` masks its regex as a unit. A type-level `<T>` is not
+an element when no `</T>` follows, so a generic arrow or a type assertion
+does not turn the following code into text. A delimiter can still be mispaired
 in code or a tag, and then the mask hides text up to the next closing
 delimiter, which may be on a later line: a quote inside a string or
 attribute pairs with the next quote, and a `/` after `throw` opens a regex
@@ -376,12 +377,16 @@ passed through a variable; an `os` member reached through a binding the
 scan does not model (`const m = require('os'); m['cpus']()`); and a
 function that saves one name twice, which the per-body pairing judges
 together, so a clean save can be reported because its same-named sibling in
-a nested block escaped. A type-level `<T>` is read as an element when a
-`</T>` appears later in prose. Inside a comment that misread blanks the
-lines between them, so a budget there is invisible. Inside a string it
-fails closed: the element text swallows the opening quote, the closing
-quote lands in code as an unterminated string, and the gate exits 2
-naming the file. Exit codes: 0 clean, 1 a finding (file, line and
+a nested block escaped. A JSX element after a keyword the
+expression-position set does not carry (`export default <p>`,
+`throw <p>`) is read as code, so a `//` in its text starts a comment
+and the rest of the line is hidden. A type-level `<T>` is read as an
+element when a `</T>` appears later in prose. That misread opens a text
+state, where nothing is blanked, so a name or budget between the two tags
+is read as code and reported: the cost is a false finding, not a missed
+one. When the text state swallows an opening quote, the closing quote lands
+in code as an unterminated string, and the gate exits 2 naming the file.
+Exit codes: 0 clean, 1 a finding (file, line and
 what it is), 2 infrastructure error (the root is not a directory, nothing
 test-shaped was found, a shared default or one of its floors is missing,
 unreadable or not a positive finite number,

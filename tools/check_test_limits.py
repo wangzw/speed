@@ -79,18 +79,20 @@ budget.
 TS/JS sources are read through a hand-written mask, not a parser.
 `mask_javascript` blanks comments, string contents, template literals and
 regex bodies while keeping their delimiters. JSX is read with a state
-machine over the whole source: `<name` at an expression position opens a
-tag, `/>` closes that tag without opening an element, `>` opens the
-element's text when a matching `</name>` follows, a `{` in text enters a
-code expression that ends at the matching `}`, and `</name>` closes the
+machine over the whole source: `<name` at an expression position -- after
+`(`, `=`, `?`, `&&`, `=>`, a keyword such as `return` or `await`, or at the
+start of a line -- opens a tag, `/>` closes that tag without opening an
+element, `>` opens the element's text when a matching `</name>` follows,
+a `{` in text enters a code expression that ends at the matching `}`, and
+`</name>` closes the
 element and returns to its parent's text. Inside text `//`, quotes and `/`
 are literal characters, so `<p>http://x</p>` keeps its URL on any line and
 after a nested child. A `<` that ends an operand on the same line is a
 comparison, not a tag start, so `s</re/.test(t)` is `s < /re/`; a `/`
 after a regex preceder such as `(` still opens a regex, so
-`.replace(/>/g, ...)` masks its regex as a unit. A type-level `<T>` has no
-`</T>` and is not an element, so a generic arrow or a type assertion does
-not turn the following code into text.
+`.replace(/>/g, ...)` masks its regex as a unit. A type-level `<T>` is not
+an element when no `</T>` follows, so a generic arrow or a type assertion
+does not turn the following code into text.
 
 A mispaired delimiter in code or a tag still hides text, up to the next
 closing delimiter, which may be on a later line: a quote inside a string
@@ -123,13 +125,17 @@ the scan does not model (`const m = require('os'); m['cpus']()`); and a
 function that saves one name twice, which the per-body pairing judges
 together, so a clean save can be reported because its same-named sibling in
 a nested block escaped -- naming the two saves differently, or moving one to
-another function, keeps them apart. A type-level `<T>` is read as an element
-when a `</T>` appears later in prose. Inside a comment that misread blanks
-the lines between them, so a budget there is invisible. Inside a string it
-fails closed: the element text swallows the opening quote, the closing
-quote lands in code as an unterminated string, and the gate is an
-infrastructure error naming the file. Product runtime code is out of scope: a
-Go file outside the three shapes above is not read.
+another function, keeps them apart. A JSX element after a keyword the
+expression-position set does not carry (`export default <p>`,
+`throw <p>`) is read as code, so a `//` in its text starts a comment
+and the rest of the line is hidden. A type-level `<T>` is read as an
+element when a `</T>` appears later in prose. That misread opens a text
+state, where nothing is blanked, so a name or budget between the two tags
+is read as code and reported: the cost is a false finding, not a missed
+one. When the text state swallows an opening quote, the closing quote lands
+in code as an unterminated string, and the gate is an infrastructure error
+naming the file. Product runtime code is out of scope: a Go file outside
+the three shapes above is not read.
 
 Exit codes: 0 = clean; 1 = at least one finding, each reported as
 file:line with what it is; 2 = infrastructure error -- the root is not a
@@ -807,15 +813,33 @@ def _jsx_name_end(text: str, start: int) -> int:
     return end
 
 
+def _word_before(text: str, index: int) -> str:
+    """The identifier that ends just before `index`, skipping spaces.
+
+    Empty when the character before the run of spaces is not an identifier
+    character, so a closing bracket or a quote yields no word.
+    """
+    previous = index - 1
+    while previous >= 0 and text[previous] in " \t":
+        previous -= 1
+    end = previous
+    while previous >= 0 and _is_identifier_char(text[previous]):
+        previous -= 1
+    return text[previous + 1 : end + 1]
+
+
 def starts_jsx_element(text: str, index: int) -> bool:
     """Whether the `<` at `index`, in code, opens a JSX element.
 
     A JSX element starts where an expression can: after `(`, `=`, `?`,
-    `&&`, a `=>`, a keyword such as `return`, or at the start of a line.
-    A `<` that ends an operand on the same line is the comparison operator,
-    so `s</re/.test(t)` is `s < /re/` and `a<b>c` is `(a < b) > c`, not
-    markup. A following character that can start neither a tag name nor a
-    fragment's `>` is not markup either (`a < b`, `x <= y`).
+    `&&`, a `=>`, an expression-position keyword such as `return` or
+    `await`, or at the start of a line. A `<` that ends an operand on the
+    same line is the comparison operator, so `s</re/.test(t)` is
+    `s < /re/` and `a<b>c` is `(a < b) > c`, not markup. A keyword ends in
+    identifier characters but is not an operand, so `return <p>` and
+    `await <p>` open an element. A following character that can start
+    neither a tag name nor a fragment's `>` is not markup either
+    (`a < b`, `x <= y`).
     """
     next_index = index + 1
     if next_index >= len(text):
@@ -823,7 +847,9 @@ def starts_jsx_element(text: str, index: int) -> bool:
     following = text[next_index]
     if following != ">" and not (following.isalpha() or following in "_$"):
         return False
-    return not operand_ends_before(text, index)
+    if not operand_ends_before(text, index):
+        return True
+    return _word_before(text, index) in REGEX_PRECEDER_WORDS
 
 
 def jsx_closing_name(text: str, index: int) -> str | None:
@@ -937,10 +963,12 @@ def mask_javascript(text: str) -> str:
     whole, so an apostrophe inside it is not a string delimiter.
 
     JSX is read with a state machine over the whole source, not a
-    single-line heuristic: a `<name` at an expression position opens a tag,
-    `/>` closes that tag without opening an element, `>` opens the element's
-    text, a `{` in text enters a code expression that ends at the matching
-    `}`, and `</name>` closes the element and returns to its parent's text.
+    single-line heuristic: a `<name` at an expression position -- after
+    `(`, `=`, `?`, `&&`, `=>`, a keyword such as `return` or `await`, or at
+    the start of a line -- opens a tag, `/>` closes that tag without opening
+    an element, `>` opens the element's text, a `{` in text enters a code
+    expression that ends at the matching `}`, and `</name>` closes the
+    element and returns to its parent's text.
     Inside text `//`, quotes and `/` are literal characters, so
     `<p>http://x</p>` keeps its URL even on a later line or after a nested
     child. A `<` that ends an operand on the same line is the comparison
