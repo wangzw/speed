@@ -87,10 +87,12 @@ drive the legs under the stand-ins and read what each tool was handed.
 `.github/workflows/deploy.yml` to running only on a manual dispatch, to failing
 a dispatch outside `main` (it runs the `refuse` job's script and requires a
 non-zero exit and an error naming the ref), to keeping `decide` on `main`, and
-to refusing a commit whose push `check` did not succeed (it runs the gate
+to refusing a commit whose `check` did not succeed (it runs the gate
 against a stubbed Actions API with failed, cancelled, queued or in-progress,
-empty and successful run sets, and with a failing query), to reading only
-`event=push` runs and granting `actions: read` to `decide` alone, to the gate
+empty and successful run sets, and with a failing query), to counting a
+successful push run or a run dispatched on `main` and to refusing a
+pull-request run or a run on another branch, to granting `actions: read` to
+`decide` alone, to the gate
 step carrying no `continue-on-error` and only the tip guard that lets it run,
 and to installing go alone through the setup action's `tools` input.
 

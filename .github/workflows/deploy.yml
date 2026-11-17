@@ -2,17 +2,20 @@
 #
 # It runs only when dispatched by hand on main. A dispatch ships the commit it
 # was dispatched on (github.sha), and only after that commit's `check` workflow
-# has concluded successfully: `decide` reads the runs the commit's push to main
-# triggered (event=push) through the Actions API and refuses the run when none
-# of them succeeded, so a tree the gate has not passed is never deployed. A
+# has concluded successfully: `decide` reads that commit's runs through the
+# Actions API and accepts a successful run made by a push to main or by a
+# dispatch of the check workflow on main, since both test the commit itself. A
+# pull-request run tests the merge commit, not this one, and never counts. A
 # request made on any other ref fails in the `refuse` job with an error naming
 # the ref: a dispatch that would deploy nothing is a failed run, not a skipped
 # one.
 #
 # Nothing deploys on a push. A tip whose check failed, was cancelled or was
-# replaced stays undeployed. A commit pushed with [skip ci] gets no push run of
-# the check workflow at all, so it cannot be deployed itself; a later push that
-# passes check is deployed instead.
+# replaced stays undeployed until a check run of it succeeds, whether by
+# re-running the push run or by dispatching the check workflow on main. A
+# commit pushed with [skip ci] gets no push run at all; dispatching the check
+# workflow on main for it supplies the verdict, and the deploy is dispatched
+# afterwards.
 #
 # Three jobs. `refuse` fails a dispatch outside main and has no other effect.
 # `decide` resolves the commit, requires a successful check run for it, and
@@ -97,10 +100,12 @@ jobs:
             echo "is_tip=false" >> "${GITHUB_OUTPUT}"
           fi
 
-      # The commit is immutable, but its verdict is not: the commit's push to
-      # main may have no check run at all, that run may still be running, or it
-      # may have concluded anything but success. Only a successful push run
-      # deploys the tree.
+      # The commit is immutable, but its verdict is not: the commit may have no
+      # check run at all, that run may still be running, or it may have
+      # concluded anything but success. Only a successful run made by a push to
+      # main or by a dispatch of the check workflow on main deploys the tree;
+      # a pull-request run tests the merge commit and is not a verdict on this
+      # one.
       - name: Refuse a commit whose check did not succeed
         if: steps.tip.outputs.is_tip == 'true'
         env:
@@ -110,16 +115,16 @@ jobs:
           if ! response="$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT}&event=push&per_page=100")"; then
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT}&per_page=100")"; then
             echo "::error::could not list the check workflow runs for ${COMMIT} through the Actions API"
             exit 1
           fi
-          succeeded="$(printf '%s' "${response}" | jq '[.workflow_runs[] | select(.conclusion == "success")] | length')"
+          succeeded="$(printf '%s' "${response}" | jq '[.workflow_runs[] | select(.head_branch == "main" and (.event == "push" or .event == "workflow_dispatch") and .conclusion == "success")] | length')"
           if [ "${succeeded}" -gt 0 ]; then
             exit 0
           fi
           runs="$(printf '%s' "${response}" | jq -r '.workflow_runs | if length == 0 then "none" else map(.conclusion // .status) | join(", ") end')"
-          echo "::error::deploy requires a successful check run for ${COMMIT}: its check workflow runs are ${runs}; dispatch the check workflow on main for that commit, and deploy again after it passes"
+          echo "::error::deploy requires a successful check run for ${COMMIT} from a push or a dispatch on main: its check workflow runs are ${runs}; dispatch the check workflow on main for that commit (or re-run its push run), and deploy again after it passes"
           exit 1
 
   deploy:
@@ -142,10 +147,11 @@ jobs:
       # This job may have waited in the group behind a deploy that was running,
       # and main may point at another commit by then, so the tip is read again
       # before anything is set up or deployed. The check verdict is not read
-      # again: the commit is immutable, so a success recorded for it cannot be
-      # withdrawn by time passing, and a re-run adds a run rather than removing
-      # one. The trade-off is that a success deleted by hand between `decide`
-      # and here is not seen; a queued run's verdict is otherwise unchanged.
+      # again: `decide` read the runs as they stood when it ran, and a re-run of
+      # a check run keeps its run id, so its conclusion changes with the latest
+      # attempt. A verdict that changes after `decide` is therefore not seen
+      # here; that trade-off keeps the deploy from re-querying the API and from
+      # stopping once it has started.
       - name: Check that the commit is still the tip of main
         id: tip
         env:

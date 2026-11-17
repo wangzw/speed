@@ -52,11 +52,14 @@
 # enters the same group and replaces a waiting push run of main's tip.
 #
 # Nothing deploys on a push. The deploy workflow is dispatched by hand on main,
-# and it refuses a commit whose push check did not succeed: a run concludes
-# successfully only when no job failed or was cancelled. A tip whose push run
-# failed, was cancelled or was replaced therefore stays undeployed until that
-# run is re-run and passes. A commit pushed with [skip ci] gets no push run at
-# all, so it cannot be deployed itself; a later push that passes check is.
+# and it refuses a commit whose check did not succeed: a run concludes
+# successfully only when no job failed or was cancelled, and the deploy counts a
+# push run or a run of this workflow dispatched on main, both of which test the
+# commit itself. A tip whose push run failed, was cancelled or was replaced
+# therefore stays undeployed until a check run of it succeeds, either by
+# re-running that push run or by dispatching this workflow on main for that
+# commit. A commit pushed with [skip ci] gets no push run at all; a dispatch on
+# main supplies the verdict it needs.
 
 name: check
 

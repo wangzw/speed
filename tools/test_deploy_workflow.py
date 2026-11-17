@@ -158,7 +158,26 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
             stub = pathlib.Path(scratch)
             curl = '#!/bin/sh\necho "curl: (22) HTTP 500" >&2\nexit 22\n'
             if not curl_fails:
-                curl = '#!/bin/sh\ncat "${FIXTURE}"\n'
+                # The Actions API filters the runs by the query string it is
+                # given, so the stub filters by `event=` too: a fixture run is
+                # returned only when its event matches the request. Without
+                # that, the gate's request would be invisible to the fixture
+                # and a gate that asked for the wrong event would still pass.
+                curl = (
+                    '#!/bin/sh\n'
+                    'for arg in "$@"; do url="$arg"; done\n'
+                    'event=""\n'
+                    'case "$url" in\n'
+                    '  *event=*) event="${url#*event=}"; event="${event%%&*}";;\n'
+                    'esac\n'
+                    'if [ -n "$event" ]; then\n'
+                    '  jq --arg event "$event" '
+                    "'{workflow_runs: [.workflow_runs[] | select(.event == $event)]}' "
+                    '"${FIXTURE}"\n'
+                    'else\n'
+                    '  cat "${FIXTURE}"\n'
+                    'fi\n'
+                )
             (stub / "curl").write_text(curl, encoding="utf-8")
             (stub / "curl").chmod(0o755)
             payload = stub / "payload.json"
@@ -192,30 +211,75 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         for job in ("refuse", "deploy"):
             self.assertNotIn("actions: read", job_block(self.text, job))
 
-    def test_the_gate_reads_only_the_push_runs(self) -> None:
+    def test_the_gate_reads_push_and_dispatched_runs_on_main(self) -> None:
         script = run_script_of_step(
             step_block(self.decide, "Refuse a commit whose check did not succeed")
         )
         self.assertIn(
-            "actions/workflows/ci.yml/runs?head_sha=${COMMIT}&event=push", script
+            "actions/workflows/ci.yml/runs?head_sha=${COMMIT}&per_page=100", script
         )
+        self.assertNotIn("event=push", script)
+        self.assertIn(
+            '(.event == "push" or .event == "workflow_dispatch")', script
+        )
+        self.assertIn('.head_branch == "main"', script)
         self.assertIn("Authorization: Bearer ${GITHUB_TOKEN}", script)
         self.assertIn("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", self.decide)
 
     def test_a_successful_check_lets_the_run_through(self) -> None:
         result = self.run_gate(
-            '{"workflow_runs":[{"conclusion":"failure"},{"conclusion":"success"}]}'
+            '{"workflow_runs":['
+            '{"event":"push","head_branch":"main","conclusion":"failure"},'
+            '{"event":"push","head_branch":"main","conclusion":"success"}]}'
         )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_a_failed_check_refuses_the_run(self) -> None:
+    def test_a_run_dispatched_on_main_lets_the_run_through(self) -> None:
+        # A commit with no push run, or one whose push run failed, gets its
+        # verdict from a check dispatched on main: that run tests the commit
+        # itself, exactly as a push run does.
         result = self.run_gate(
-            '{"workflow_runs":[{"conclusion":"failure"},'
-            '{"conclusion":null,"status":"in_progress"}]}'
+            '{"workflow_runs":[{"event":"workflow_dispatch",'
+            '"head_branch":"main","conclusion":"success"}]}'
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_a_pull_request_run_does_not_count(self) -> None:
+        # A pull-request run tests the merge commit, not this one, so its
+        # success is not a verdict on the commit being deployed.
+        result = self.run_gate(
+            '{"workflow_runs":[{"event":"pull_request",'
+            '"head_branch":"main","conclusion":"success"}]}'
         )
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
-            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "::error::deploy requires a successful check run for 0123456789abcdef "
+            "from a push or a dispatch on main: its check workflow runs are success;",
+            result.stdout,
+        )
+
+    def test_a_run_on_another_branch_does_not_count(self) -> None:
+        result = self.run_gate(
+            '{"workflow_runs":[{"event":"workflow_dispatch",'
+            '"head_branch":"feature","conclusion":"success"}]}'
+        )
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "::error::deploy requires a successful check run for 0123456789abcdef "
+            "from a push or a dispatch on main: its check workflow runs are success;",
+            result.stdout,
+        )
+
+    def test_a_failed_check_refuses_the_run(self) -> None:
+        result = self.run_gate(
+            '{"workflow_runs":['
+            '{"event":"push","head_branch":"main","conclusion":"failure"},'
+            '{"event":"push","head_branch":"main","conclusion":null,"status":"in_progress"}]}'
+        )
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "::error::deploy requires a successful check run for 0123456789abcdef "
+            "from a push or a dispatch on main: "
             "its check workflow runs are failure, in_progress;",
             result.stdout,
         )
@@ -224,28 +288,34 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         result = self.run_gate('{"workflow_runs":[]}')
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
-            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "::error::deploy requires a successful check run for 0123456789abcdef "
+            "from a push or a dispatch on main: "
             "its check workflow runs are none;",
             result.stdout,
         )
 
     def test_only_cancelled_runs_refuse_the_run(self) -> None:
-        result = self.run_gate('{"workflow_runs":[{"conclusion":"cancelled"}]}')
+        result = self.run_gate(
+            '{"workflow_runs":[{"event":"push","head_branch":"main","conclusion":"cancelled"}]}'
+        )
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
-            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "::error::deploy requires a successful check run for 0123456789abcdef "
+            "from a push or a dispatch on main: "
             "its check workflow runs are cancelled;",
             result.stdout,
         )
 
     def test_only_queued_or_in_progress_runs_refuse_the_run(self) -> None:
         result = self.run_gate(
-            '{"workflow_runs":[{"conclusion":null,"status":"queued"},'
-            '{"conclusion":null,"status":"in_progress"}]}'
+            '{"workflow_runs":['
+            '{"event":"push","head_branch":"main","conclusion":null,"status":"queued"},'
+            '{"event":"push","head_branch":"main","conclusion":null,"status":"in_progress"}]}'
         )
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
-            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "::error::deploy requires a successful check run for 0123456789abcdef "
+            "from a push or a dispatch on main: "
             "its check workflow runs are queued, in_progress;",
             result.stdout,
         )
