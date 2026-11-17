@@ -288,15 +288,11 @@ func TestASuppliedBackendIsReleasedByTheAssembler(t *testing.T) {
 // the one stop case that tells a right implementation from a wrong one by how
 // long the stop took: the stop over two backends whose exports wait for their
 // context. The wrong implementation lets the first reader's final export run to
-// that timeout instead of the cutoff ending it inside the shutdown bound. The
-// ceiling there is the shutdown bound, the release bound and the slack, nine
-// seconds, so the two minutes meet it at a caller's scale of about thirteen and
-// a third: below that the scaled ceiling stays under the timeout and the wrong
-// implementation fails it, and at or past that scale the two are equal and the
-// case stops telling them apart. The correct implementation never waits for the
-// timeout: the flush context carries the shutdown bound, and the cutoff ends the
-// export inside that bound. The other stop cases set no metric timeout and keep
-// the reader's default.
+// that timeout instead of the cutoff ending it inside the shutdown bound, so
+// the timeout is its time, stated to DeclaredAgainst against the ceiling. The
+// correct implementation never waits for the timeout: the flush context carries
+// the shutdown bound, and the cutoff ends the export inside that bound. The
+// other stop cases set no metric timeout and keep the reader's default.
 const metricExportTimeoutPastTheCeiling = 2 * time.Minute
 
 // boundedConfig gives this module a service name and a short shutdown bound,
@@ -394,8 +390,12 @@ func TestAShutdownPastItsBoundFailsTheStop(t *testing.T) {
 type inFlightConfig struct{}
 
 const (
-	inFlightBound         = time.Second
-	inFlightExportTimeout = time.Minute
+	inFlightBound = time.Second
+	// inFlightExportTimeout is the batch export timeout the case configures,
+	// far past the bound so that nothing but the cutoff ends the export in
+	// flight. It is also the time a stop that waited for that export would take,
+	// so it is stated to DeclaredAgainst against the stop ceiling.
+	inFlightExportTimeout = 3 * time.Minute
 	// inFlightCutoffEarliest is the earliest an export in flight may be cut
 	// under inFlightBound: the cutoff falls at nine tenths of it, and this
 	// leaves room below that for nothing but a cutoff placed too early.
@@ -501,12 +501,10 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 		took := end.at.Sub(stopBegan)
 		// The window is a behaviour criterion: it tells a cutoff placed at nine
 		// tenths of the bound from one placed at its start or not at all, so it
-		// carries GATE_TIME_SCALE alone. The wrong implementations need up to
-		// inFlightExportTimeout (a minute), and the minute meets the one-second
-		// bound at a caller's scale of sixty: below that the scaled bound stays
-		// under the wrong time, and the case stops telling them apart at or past
-		// it.
-		if scaledBound := coretest.Declared(inFlightBound); took >= scaledBound {
+		// carries GATE_TIME_SCALE alone. The wrong implementation lets the export
+		// run to inFlightExportTimeout, the batch export timeout the case
+		// configures; that is its time, stated to DeclaredAgainst.
+		if scaledBound := coretest.DeclaredAgainst(t, 0, inFlightBound, inFlightExportTimeout); took >= scaledBound {
 			t.Errorf("the export in flight ended %v into the stop, want inside the bound of %v", took, scaledBound)
 		}
 		// The cutoff sits a tenth of the bound before its end, so an export that
@@ -524,11 +522,11 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 		t.Errorf("the export in flight had not ended when the drive returned after %v: it runs on to "+
 			"batch.export-timeout (%v) unless the stop cuts it", stopped, inFlightExportTimeout)
 	}
-	// The stop ceiling is nine seconds, the bound, the release bound and the
-	// slack, and a shutdown that waited for the uncut export would take the
-	// batch export timeout, a minute; the two meet at a caller's scale of about
-	// six and two thirds.
-	ceiling := coretest.Declared(inFlightBound + otel.ReleaseTimeout + releaseSlack)
+	// The stop ceiling is the bound, the release bound and the slack. A shutdown
+	// that waited for the uncut export would take inFlightExportTimeout, the
+	// batch export timeout the case configures; that is the wrong time stated to
+	// DeclaredAgainst.
+	ceiling := coretest.DeclaredAgainst(t, 0, inFlightBound+otel.ReleaseTimeout+releaseSlack, inFlightExportTimeout)
 	if stopped > ceiling {
 		t.Errorf("the stop took %v, want at most %v", stopped, ceiling)
 	}
@@ -740,12 +738,11 @@ func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 	// The ceiling is a behaviour criterion: it tells a stop that ends inside
 	// the bound and the release bound from one that runs to the metric
 	// reader's own export timeout. That timeout is
-	// metricExportTimeoutPastTheCeiling here, two minutes against this ceiling
-	// of nine seconds, so the two meet at a caller's scale of about thirteen
-	// and a third and the case tells them apart below it. The bound goes
-	// through Declared because the race factor belongs to the program under
-	// test, not to the difference this bound measures.
-	ceiling := coretest.Declared(bound + otel.ReleaseTimeout + releaseSlack)
+	// metricExportTimeoutPastTheCeiling, the wrong time stated to
+	// DeclaredAgainst. The bound carries no race factor because the race
+	// factor belongs to the program under test, not to the difference this
+	// bound measures.
+	ceiling := coretest.DeclaredAgainst(t, 0, bound+otel.ReleaseTimeout+releaseSlack, metricExportTimeoutPastTheCeiling)
 	if elapsed > ceiling {
 		t.Errorf("the stop took %v, want at most %v", elapsed, ceiling)
 	}
@@ -846,21 +843,23 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	// The window is in absolute terms on purpose: a ceiling built from the
 	// bound's own constant would follow the constant wherever it was set. The
 	// lower bound stays fixed -- a slow machine only makes the stop take
-	// longer -- while the ceiling carries the caller's scale alone. The wrong
-	// implementations this case rules out give the elapsed ceiling no finite
-	// time to meet: a release with no bound never returns and is caught by the
-	// wait below, and a release reusing the expired flush context returns
-	// before the lower bound. The wait is therefore the hang guard, and the
-	// ceiling keeps it finite across the scale a run declares.
-	ceiling := coretest.Declared(6 * time.Second)
+	// longer -- while the ceiling carries the caller's scale alone. A release
+	// with no bound never returns, and the wait below is its guard; a release
+	// reusing the expired flush context returns before the lower bound. A
+	// release bounded far too long is the finite wrong implementation: one that
+	// reuses the SDK's default export timeout for its bound takes that timeout,
+	// while the module's release bound is a few seconds. That export timeout is
+	// the wrong time stated to DeclaredAgainst.
+	ceiling := coretest.DeclaredAgainst(t, 0, 6*time.Second, time.Duration(sdktrace.DefaultExportTimeout)*time.Millisecond)
 	select {
 	case got := <-done:
 		if !errors.Is(got.err, context.DeadlineExceeded) {
 			t.Errorf("a release that waited for its context ended the drive with %v, want the deadline", got.err)
 		}
 		if got.elapsed < time.Second || got.elapsed > ceiling {
-			t.Errorf("the stop took %v, want between 1s and %v: a release bound of a few seconds",
-				got.elapsed, ceiling)
+			t.Errorf("the stop took %v, want between 1s and %v: the release bounded at the module's %v, "+
+				"not at the SDK's default export timeout of %v", got.elapsed, ceiling, otel.ReleaseTimeout,
+				time.Duration(sdktrace.DefaultExportTimeout)*time.Millisecond)
 		}
 	case <-time.After(ceiling + coretest.Scale(24*time.Second)):
 		t.Fatal("the stop did not return: the release of an exporter that waits for its context is unbounded")
