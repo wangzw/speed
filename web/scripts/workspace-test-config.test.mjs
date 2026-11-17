@@ -52,7 +52,8 @@
  * budget.
  *
  * Four shapes are outside what a static read of the syntax tree can
- * follow: a key held in a variable (`vi[name]`), a `vi` reached through a
+ * follow: a key that is not a literal (`vi[name]`, a concatenation, or a
+ * template literal with a substitution), a `vi` reached through a
  * namespace import or a dynamic import (`import * as vitest`), a `vi`
  * passed into a helper that is free to access it, and a shadowed local
  * named `vi` (read as Vitest's, a false positive rather than a bypass).
