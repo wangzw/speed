@@ -254,9 +254,14 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
             "::error::deploy requires a successful check run for 0123456789abcdef "
-            "from a push or a dispatch on main: its check workflow runs are success;",
+            "from a push or a dispatch on main: its check workflow runs are "
+            "success (pull_request on main);",
             result.stdout,
         )
+        # A successful run is exactly the puzzling case: the error has to name
+        # the event that made it ineligible, or the reader sees "success" and
+        # no reason to refuse it.
+        self.assertIn("pull_request", result.stdout)
 
     def test_a_run_on_another_branch_does_not_count(self) -> None:
         result = self.run_gate(
@@ -266,7 +271,8 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
             "::error::deploy requires a successful check run for 0123456789abcdef "
-            "from a push or a dispatch on main: its check workflow runs are success;",
+            "from a push or a dispatch on main: its check workflow runs are "
+            "success (workflow_dispatch on feature);",
             result.stdout,
         )
 
@@ -280,7 +286,8 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertIn(
             "::error::deploy requires a successful check run for 0123456789abcdef "
             "from a push or a dispatch on main: "
-            "its check workflow runs are failure, in_progress;",
+            "its check workflow runs are "
+            "failure (push on main), in_progress (push on main);",
             result.stdout,
         )
 
@@ -302,7 +309,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertIn(
             "::error::deploy requires a successful check run for 0123456789abcdef "
             "from a push or a dispatch on main: "
-            "its check workflow runs are cancelled;",
+            "its check workflow runs are cancelled (push on main);",
             result.stdout,
         )
 
@@ -316,7 +323,8 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertIn(
             "::error::deploy requires a successful check run for 0123456789abcdef "
             "from a push or a dispatch on main: "
-            "its check workflow runs are queued, in_progress;",
+            "its check workflow runs are "
+            "queued (push on main), in_progress (push on main);",
             result.stdout,
         )
 

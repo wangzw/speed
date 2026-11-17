@@ -123,7 +123,7 @@ jobs:
           if [ "${succeeded}" -gt 0 ]; then
             exit 0
           fi
-          runs="$(printf '%s' "${response}" | jq -r '.workflow_runs | if length == 0 then "none" else map(.conclusion // .status) | join(", ") end')"
+          runs="$(printf '%s' "${response}" | jq -r '.workflow_runs | if length == 0 then "none" else map("\(.conclusion // .status) (\(.event) on \(.head_branch // "no branch"))") | join(", ") end')"
           echo "::error::deploy requires a successful check run for ${COMMIT} from a push or a dispatch on main: its check workflow runs are ${runs}; dispatch the check workflow on main for that commit (or re-run its push run), and deploy again after it passes"
           exit 1
 
