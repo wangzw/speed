@@ -43,6 +43,7 @@
       "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
       "@speed/test-utils/session-harness": ["../../test-utils/src/session-harness.ts"],
       "@speed/test-utils/turnstile": ["../../test-utils/src/turnstile.ts"],
+      "@speed/test-utils/wait": ["../../test-utils/src/wait.ts"],
       "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
     }
   }

@@ -1191,11 +1191,16 @@ describe('the tenant area header controls', () => {
     // header carries its account menu only -- the organization switcher rides
     // inside that menu now -- so a second menu trigger is what a removed
     // language switch would be.
-    const [banner] = await screen.findAllByRole('banner')
-    const menus = within(banner as HTMLElement)
-      .getAllByRole('button')
-      .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(1)
+    // The header may render before its menus do, so the count is asserted
+    // inside the wait rather than once after the first banner appears.
+    await waitFor(() => {
+      const [banner] = screen.getAllByRole('banner')
+      const menus = within(banner as HTMLElement)
+        .getAllByRole('button')
+        .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
+      expect(menus).toHaveLength(1)
+    })
+    const [banner] = screen.getAllByRole('banner')
     expect(
       within(banner as HTMLElement).getByTestId('user-menu-trigger'),
     ).toBeInTheDocument()

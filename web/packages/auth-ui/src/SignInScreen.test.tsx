@@ -32,6 +32,7 @@ import {
   ssoProviders,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { waitForCondition } from '@speed/test-utils/wait'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
@@ -299,9 +300,15 @@ describe('SignInScreen', () => {
       screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
     )
 
-    const alerts = await screen.findAllByRole('alert')
-    expect(alerts).toHaveLength(1)
-    expect(alerts[0]).toHaveTextContent(zhCN.errors.authn.unavailable)
+    // The landing refusal is dismissed and the channel's banner raised in the
+    // same attempt. Reading the alerts once, after the first one appears, can
+    // catch the render before the dismissal removes the other, so the count
+    // and the text are both asserted inside the wait.
+    await waitForCondition(() => {
+      const alerts = screen.getAllByRole('alert')
+      expect(alerts).toHaveLength(1)
+      expect(alerts[0]).toHaveTextContent(zhCN.errors.authn.unavailable)
+    })
     expect(
       screen.queryByText(zhCN.errors.authn.link_required),
     ).toBeNull()
