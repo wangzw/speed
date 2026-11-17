@@ -2382,6 +2382,10 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
+    // While the confirmation is on screen the rest of the page is
+    // aria-hidden, so the row's copy action is readable only after the
+    // dialog has left. Wait for that rather than for the write alone.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() =>
       expect(recorder.resends).toEqual([
         { tenant: TENANT, id: PENDING_INVITATION.id },
@@ -2447,6 +2451,10 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
+    // While the confirmation is on screen the rest of the page is
+    // aria-hidden, so the submit button is readable only after the dialog
+    // has left.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const failedMarker = await waitFor(() => {
       const marker = invitationErrorOf(PENDING_INVITATION.email)
       expect(marker).not.toBeNull()
@@ -2485,6 +2493,10 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
+    // While the confirmation is on screen the rest of the page is
+    // aria-hidden, so the status filter is readable only after the dialog
+    // has left.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const failedMarker = await waitFor(() => {
       const marker = invitationErrorOf(PENDING_INVITATION.email)
       expect(marker).not.toBeNull()
@@ -2746,6 +2758,10 @@ describe('the invitation section', () => {
         name: zhCN.invitations.issued.keepOpen,
       }),
     )
+    // While the confirmation is on screen the rest of the page is
+    // aria-hidden, so the panel's close button is readable only after the
+    // dialog has left.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     // Cancelling keeps the only copy.
     expect(
       screen.getByText(`${window.location.origin}/invitations/spd_inv_new_token`),

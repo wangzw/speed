@@ -627,6 +627,14 @@ describe('TenantProfilePage ownership', () => {
     await waitFor(() =>
       expect(requests).toEqual([{ tenant: TENANT, account: OTHER_ACCOUNT }]),
     )
+    // While the transfer dialog is on screen the page behind it is
+    // aria-hidden, so its buttons are readable only after the dialog has
+    // left.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: transferTitle() }),
+      ).toBeNull(),
+    )
     expect(
       await screen.findByText(
         zhCN.tenantProfile.ownership.transfer.requested.replace(
@@ -710,6 +718,16 @@ describe('TenantProfilePage ownership', () => {
       within(dialog).getByRole('button', {
         name: zhCN.tenantProfile.ownership.pending.cancelConfirm,
       }),
+    )
+    // While the confirmation is on screen the ownership card behind it is
+    // aria-hidden, so the controls are readable only after the dialog has
+    // left.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', {
+          name: zhCN.tenantProfile.ownership.pending.cancelTitle,
+        }),
+      ).toBeNull(),
     )
 
     await waitFor(() =>
