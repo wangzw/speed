@@ -284,14 +284,36 @@ func TestASuppliedBackendIsReleasedByTheAssembler(t *testing.T) {
 	}
 }
 
-// boundedConfig gives this module a service name and a short shutdown bound.
-type boundedConfig struct{ bound time.Duration }
+// metricExportTimeoutPastTheCeiling is the metric reader's export timeout in
+// the one stop case that tells a right implementation from a wrong one by how
+// long the stop took: the stop over two backends whose exports wait for their
+// context. The wrong implementation lets the first reader's final export run to
+// that timeout instead of the cutoff ending it inside the shutdown bound. The
+// ceiling there is the shutdown bound, the release bound and the slack, nine
+// seconds, so the two minutes meet it at a caller's scale of about thirteen and
+// a third: below that the scaled ceiling stays under the timeout and the wrong
+// implementation fails it, and at or past that scale the two are equal and the
+// case stops telling them apart. The correct implementation never waits for the
+// timeout: the flush context carries the shutdown bound, and the cutoff ends the
+// export inside that bound. The other stop cases set no metric timeout and keep
+// the reader's default.
+const metricExportTimeoutPastTheCeiling = 2 * time.Minute
+
+// boundedConfig gives this module a service name and a short shutdown bound,
+// and optionally a metric export timeout for the stop cases that need one.
+type boundedConfig struct {
+	bound         time.Duration
+	metricTimeout time.Duration
+}
 
 func (c boundedConfig) Decode(namespace string, target any) error {
 	if namespace == otel.ModuleName {
 		cfg := target.(*otel.Config)
 		cfg.ServiceName = "orders"
 		cfg.ShutdownTimeout = c.bound
+		if c.metricTimeout > 0 {
+			cfg.Metric.Timeout = c.metricTimeout
+		}
 	}
 	return nil
 }
@@ -480,10 +502,12 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 		// The window is a behaviour criterion: it tells a cutoff placed at nine
 		// tenths of the bound from one placed at its start or not at all, so it
 		// carries GATE_TIME_SCALE alone. The wrong implementations need up to
-		// inFlightExportTimeout (a minute), far past the bound at any scale a
-		// caller declares.
-		if took >= coretest.Declared(inFlightBound) {
-			t.Errorf("the export in flight ended %v into the stop, want inside the bound of %v", took, inFlightBound)
+		// inFlightExportTimeout (a minute), and the minute meets the one-second
+		// bound at a caller's scale of sixty: below that the scaled bound stays
+		// under the wrong time, and the case stops telling them apart at or past
+		// it.
+		if scaledBound := coretest.Declared(inFlightBound); took >= scaledBound {
+			t.Errorf("the export in flight ended %v into the stop, want inside the bound of %v", took, scaledBound)
 		}
 		// The cutoff sits a tenth of the bound before its end, so an export that
 		// ends before inFlightCutoffEarliest was cut sooner than the stop needs. The
@@ -500,8 +524,13 @@ func TestAnExportInFlightAtTheStopIsCutShort(t *testing.T) {
 		t.Errorf("the export in flight had not ended when the drive returned after %v: it runs on to "+
 			"batch.export-timeout (%v) unless the stop cuts it", stopped, inFlightExportTimeout)
 	}
-	if stopped > coretest.Declared(inFlightBound+otel.ReleaseTimeout+releaseSlack) {
-		t.Errorf("the stop took %v, want at most %v", stopped, inFlightBound+otel.ReleaseTimeout+releaseSlack)
+	// The stop ceiling is nine seconds, the bound, the release bound and the
+	// slack, and a shutdown that waited for the uncut export would take the
+	// batch export timeout, a minute; the two meet at a caller's scale of about
+	// six and two thirds.
+	ceiling := coretest.Declared(inFlightBound + otel.ReleaseTimeout + releaseSlack)
+	if stopped > ceiling {
+		t.Errorf("the stop took %v, want at most %v", stopped, ceiling)
 	}
 	if !strings.Contains(logged.String(), "telemetry export failed") {
 		t.Errorf("the module logged no export failure:\n%s\nwant the wrapper's line for the export it cut", logged)
@@ -615,19 +644,20 @@ func metricBackend(name string, exporter sdkmetric.Exporter) core.Module {
 }
 
 // driveOverMetricBackend runs one command with a shutdown bound of the given
-// length over the one backend, records a data point while it is up, and returns
-// what the drive returned and how long it took.
-func driveOverMetricBackend(bound time.Duration, backend core.Module) (time.Duration, error) {
-	return driveOverMetricBackends(bound, &bytes.Buffer{}, backend)
+// length and an optional metric export timeout over the one backend, records a
+// data point while it is up, and returns what the drive returned and how long it
+// took. A zero timeout keeps the reader's default.
+func driveOverMetricBackend(bound, metricTimeout time.Duration, backend core.Module) (time.Duration, error) {
+	return driveOverMetricBackends(bound, metricTimeout, &bytes.Buffer{}, backend)
 }
 
 // driveOverMetricBackends is driveOverMetricBackend over every backend given,
 // with the module's lines written to logged.
-func driveOverMetricBackends(bound time.Duration, logged io.Writer, backends ...core.Module) (time.Duration, error) {
+func driveOverMetricBackends(bound, metricTimeout time.Duration, logged io.Writer, backends ...core.Module) (time.Duration, error) {
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(log.Module())
-	reg.Supply(boundedConfig{bound: bound}, config.ModuleName)
+	reg.Supply(boundedConfig{bound: bound, metricTimeout: metricTimeout}, config.ModuleName)
 	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(logged, nil))}, log.ModuleName)
 	reg.Register(otel.Module())
 	participants := []string{otel.ModuleName}
@@ -663,19 +693,21 @@ func driveOverMetricBackends(bound time.Duration, logged io.Writer, backends ...
 // with its error would fail the stop for that wait alone.
 func TestTheReleaseDoesNotReuseTheContextTheFlushExpired(t *testing.T) {
 	const bound = 100 * time.Millisecond
-	elapsed, err := driveOverMetricBackend(bound,
+	elapsed, err := driveOverMetricBackend(bound, 0,
 		metricBackend("observability.test-overrunning", overrunningMetrics{takes: 3 * bound}))
 	if err != nil {
 		t.Errorf("a stop whose final export outlasted the bound ended the drive with %v, want nil: the "+
 			"release must not be handed the expired context", err)
 	}
-	// The ceiling is a behaviour criterion: it tells a release bounded to a
-	// few seconds from one bounded far longer, so it carries the caller's
-	// scale alone. The race detector slows the program under test rather than
-	// the difference this bound measures, and widening it by the race factor
-	// would let a release that runs to batch.export-timeout pass.
-	if elapsed > coretest.Declared(5*time.Second) {
-		t.Errorf("the stop took %v against a shutdown bound of 100ms", elapsed)
+	// The theme is the error above: a release that reused the expired flush
+	// context would answer the stop with that context's error, and a release
+	// with a bound of its own answers nil. The elapsed ceiling cannot tell a
+	// right implementation from a wrong one; it only guards against a stop that
+	// never returns, so it goes through Scale, the way every wait for an event
+	// does.
+	ceiling := coretest.Scale(5 * time.Second)
+	if elapsed > ceiling {
+		t.Errorf("the stop took %v against a shutdown bound of 100ms, want at most %v", elapsed, ceiling)
 	}
 }
 
@@ -697,7 +729,7 @@ func (waitingMetrics) Export(ctx context.Context, _ *metricdata.ResourceMetrics)
 func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 	const bound = time.Second
 	logged := &lockedBuffer{}
-	elapsed, err := driveOverMetricBackends(bound, logged,
+	elapsed, err := driveOverMetricBackends(bound, metricExportTimeoutPastTheCeiling, logged,
 		metricBackend("observability.test-waiting-first", waitingMetrics{}),
 		metricBackend("observability.test-waiting-second", waitingMetrics{}))
 	if err != nil {
@@ -705,12 +737,17 @@ func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 			"want nil: each final export is cut inside the bound and its failure absorbed\n"+
 			"the module logged:\n%s", err, logged)
 	}
-	// The ceiling tells a stop that ends inside the bound and the release
-	// bound from one that runs to the batch export's own timeout, so it goes
-	// through Declared: the race factor belongs to the program under test, not
-	// to the difference this bound measures.
-	if elapsed > coretest.Declared(bound+otel.ReleaseTimeout+releaseSlack) {
-		t.Errorf("the stop took %v, want at most %v", elapsed, bound+otel.ReleaseTimeout+releaseSlack)
+	// The ceiling is a behaviour criterion: it tells a stop that ends inside
+	// the bound and the release bound from one that runs to the metric
+	// reader's own export timeout. That timeout is
+	// metricExportTimeoutPastTheCeiling here, two minutes against this ceiling
+	// of nine seconds, so the two meet at a caller's scale of about thirteen
+	// and a third and the case tells them apart below it. The bound goes
+	// through Declared because the race factor belongs to the program under
+	// test, not to the difference this bound measures.
+	ceiling := coretest.Declared(bound + otel.ReleaseTimeout + releaseSlack)
+	if elapsed > ceiling {
+		t.Errorf("the stop took %v, want at most %v", elapsed, ceiling)
 	}
 	if got := strings.Count(logged.String(), "telemetry export failed"); got != 2 {
 		t.Errorf("the module logged %d export failures:\n%s\nwant one line from each backend's wrapper: "+
@@ -760,15 +797,18 @@ func TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	)
 	slow := slowMetrics{takes: bound / 5, mu: &mu, delivered: &delivered}
 
-	elapsed, err := driveOverMetricBackend(bound, metricBackend("observability.test-slow-metrics", slow))
+	elapsed, err := driveOverMetricBackend(bound, 0, metricBackend("observability.test-slow-metrics", slow))
 	if err != nil {
 		t.Errorf("a stop whose final metric export fits inside the bound ended the drive with %v, want nil", err)
 	}
-	// The ceiling tells a stop that ends within the bound and the release
-	// bound from one that runs on to an export's own timeout, so it carries
-	// the caller's scale alone.
-	if elapsed > coretest.Declared(bound+otel.ReleaseTimeout+releaseSlack) {
-		t.Errorf("the stop took %v, want at most %v", elapsed, bound+otel.ReleaseTimeout+releaseSlack)
+	// The theme is the delivery below: a cutoff placed at or near the start of
+	// the stop would cut the export and lose the batch. Whether the stop fits
+	// inside a time bound does not tell a right implementation from a wrong
+	// one, so this ceiling only guards against a stop that never returns and
+	// goes through Scale, the way every wait for an event does.
+	ceiling := coretest.Scale(bound + otel.ReleaseTimeout + releaseSlack)
+	if elapsed > ceiling {
+		t.Errorf("the stop took %v, want at most %v", elapsed, ceiling)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -798,18 +838,20 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		elapsed, err := driveOverMetricBackend(50*time.Millisecond,
+		elapsed, err := driveOverMetricBackend(50*time.Millisecond, 0,
 			metricBackend("observability.test-hanging", hangingMetrics{}))
 		done <- outcome{elapsed, err}
 	}()
 
 	// The window is in absolute terms on purpose: a ceiling built from the
-	// bound's own constant would follow the constant wherever it was set.
-	// The lower bound stays fixed -- a slow machine only makes the stop take
-	// longer -- while the ceiling carries the caller's scale alone, because it
-	// tells a release bounded to a few seconds from one bounded far longer.
-	// The case's own wait is always wider than the ceiling, whatever factor
-	// the run carries.
+	// bound's own constant would follow the constant wherever it was set. The
+	// lower bound stays fixed -- a slow machine only makes the stop take
+	// longer -- while the ceiling carries the caller's scale alone. The wrong
+	// implementations this case rules out give the elapsed ceiling no finite
+	// time to meet: a release with no bound never returns and is caught by the
+	// wait below, and a release reusing the expired flush context returns
+	// before the lower bound. The wait is therefore the hang guard, and the
+	// ceiling keeps it finite across the scale a run declares.
 	ceiling := coretest.Declared(6 * time.Second)
 	select {
 	case got := <-done:

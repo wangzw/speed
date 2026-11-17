@@ -506,7 +506,9 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses
 	// busy timeout bounds the lock, so widening it makes that implementation
 	// need an hour while the right one still gives up after the delivered
 	// connection's 1.5 seconds. The bound in requireRefusedForTheLock is that
-	// timeout plus two seconds through GATE_TIME_SCALE alone.
+	// timeout plus two seconds through GATE_TIME_SCALE alone, and the hour
+	// meets it at a caller's scale of about eighteen hundred: at or past that
+	// scale the case stops telling the two apart.
 	j.connectWithin = time.Hour
 	holding, err := dbtest.SQLite(t, file, nil).DB().DB()
 	if err != nil {

@@ -15,8 +15,10 @@
 //     a case that tells a right implementation from a wrong one by how long it
 //     took: the race detector slows the program under test, but widening that
 //     bound by the same factor erases the difference the case exists to measure.
-//     A case using Declared widens the wrong implementation's own time far past
-//     the bound, so that the caller's scale can grow without the two meeting.
+//     A case using Declared widens the wrong implementation's own time far
+//     enough past the bound that the scale a run declares stays below the point
+//     where the two meet, and the case states that point: the room is finite,
+//     and a scale past it lets the wrong implementation pass.
 //
 // The race factor is 3 when the test binary is built with the race detector and
 // 1 otherwise: the program under test runs several times slower there.

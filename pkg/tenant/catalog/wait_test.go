@@ -300,7 +300,9 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 			// engine's busy timeout bounds the lock, so widening it makes that
 			// implementation need an hour while the right one still gives up
 			// after the locator's second. The bound below is the busy timeout
-			// plus two seconds through GATE_TIME_SCALE alone.
+			// plus two seconds through GATE_TIME_SCALE alone, and the hour meets
+			// it at a caller's scale of about eighteen hundred: at or past that
+			// scale the case stops telling the two apart.
 			r.connectWithin = time.Hour
 			most := time.Duration(c.waitsFor) * lockBusyTimeout
 			done := make(chan error, 1)
@@ -360,7 +362,9 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeo
 			// engine's busy timeout bounds the lock, so widening it makes that
 			// implementation need an hour while the right one still gives up
 			// after the locator's second. The bound below is the busy timeout
-			// plus two seconds through GATE_TIME_SCALE alone.
+			// plus two seconds through GATE_TIME_SCALE alone, and the hour meets
+			// it at a caller's scale of about eighteen hundred: at or past that
+			// scale the case stops telling the two apart.
 			r.connectWithin = time.Hour
 			if err := r.read(context.Background()); err != nil {
 				t.Fatalf("reading the roster: %v", err)

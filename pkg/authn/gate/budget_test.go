@@ -165,9 +165,11 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 	// The call budget is an hour, far past the bound this case allows: a gate
 	// that queued behind the backend and then gave up when the budget ran out
 	// would need up to that hour, while a gate that refuses at once needs none
-	// of it. The bound on the refusal below carries the caller's scale alone
-	// and not the race factor, so an implementation that pauses a fixed few
-	// seconds before refusing is seen here as well.
+	// of it. The hour meets the one-second bound below at a caller's scale of
+	// 3600: at or past that scale the case stops telling the two apart. The
+	// bound on the refusal carries the caller's scale alone and not the race
+	// factor, so an implementation that pauses a fixed few seconds before
+	// refusing is seen here as well.
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: time.Hour, inFlight: 1}, blocking)
 	sealed(t, g, routerWith("public"))
 

@@ -49,7 +49,8 @@ func newTable() *Table {
 // built, so that implementation's own time grows with nothing the bound
 // carries. The configured grace and the moment it gives a cancelled subscriber
 // need about 1.1 seconds, and the bound is 2.1 seconds through GATE_TIME_SCALE
-// alone, far below the hour at any scale a caller declares.
+// alone: the hour meets that bound at a caller's scale of about seventeen
+// hundred, and the case stops telling the two apart at or past it.
 func TestAStopWhoseGraceRunsOutCancelsTheSubscribers(t *testing.T) {
 	previousGrace := Grace
 	Grace = time.Hour
