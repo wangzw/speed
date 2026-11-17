@@ -142,14 +142,31 @@ function stripComments(source) {
  * closing partner on that line is not a string: it is emitted as ordinary
  * text and scanning continues after it, so a lone quote can hide at most the
  * rest of its own line. A template literal is the one string allowed to span
- * lines, and it is removed whole.
+ * lines, and it is removed whole; a backtick with no closing partner before
+ * the end of the source is emitted as ordinary text too, so a backtick read
+ * as one by mistake cannot swallow the lines below it.
  *
- * The approximations that remain all fail open -- they can hide a use, never
- * invent one: a regex whose opening `/` follows a token this rule does not
- * recognise is read as a division, and a quote inside it then starts a
- * string; and a quoted run at the start of JSX text (`<p>'quoted'</p>`) is
- * read as a string and collapses that line's text. Each affects at most its
- * own line, so neither can hide a wait below it.
+ * A `/` directly after a `<` in the source is a JSX closing tag, not a regex.
+ * Read as one, `</Link>` opens a regex at the slash, runs to a slash inside a
+ * template literal on the same line and takes that template's opening
+ * backtick with it; its closing backtick then opens a template that runs to
+ * the end of the file. The comparison operator is written with a space before
+ * its regex in practice (`x < /re/`), so that shape still opens one; the
+ * unspaced `x</re/` is read as a division, and the unterminated-template
+ * fallback above keeps that from swallowing more than the text it starts.
+ *
+ * The approximations that remain can hide a use or invent one: a regex whose
+ * opening `/` follows a token this rule does not recognise is read as a
+ * division, and a quote inside it then starts a string; and a quoted run at
+ * the start of JSX text (`<p>'quoted'</p>`) is read as a string and collapses
+ * that line's text. Each affects at most its own line, so neither can hide a
+ * wait below it. Two shapes report a use that is not there. An unterminated
+ * template literal is scanned as code, so a wait spelled inside it is
+ * counted; only malformed source reaches it, and a false positive is safer
+ * there than a blind spot. A regex written with no space after a `<`
+ * (`x</vi.waitFor/`) takes the JSX closing-tag branch above and is read as a
+ * division, so a name in its body is counted as a use; the current tree
+ * writes no such shape.
  */
 function stripCommentsAndStrings(source) {
   let out = ''
@@ -170,7 +187,10 @@ function stripCommentsAndStrings(source) {
       i += 1
       continue
     }
-    if (char === '/' && regexCanStart(out)) {
+    // A `/` directly after a `<` is a JSX closing tag, not a regex. The
+    // comparison operator writes a space before the slash, so `x < /re/`
+    // still opens one.
+    if (char === '/' && source[i - 1] !== '<' && regexCanStart(out)) {
       let end = i + 1
       let inClass = false
       while (end < source.length) {
@@ -225,12 +245,10 @@ function stripCommentsAndStrings(source) {
         end += 1
       }
       if (!closed) {
-        // An unterminated template literal runs to the end of the source.
-        if (char === '`') {
-          i = source.length
-          out += '0'
-          continue
-        }
+        // No string here reaches the end of the source: the quote is emitted
+        // as ordinary text and scanning continues after it. A template
+        // literal opened by mistake therefore hides at most the text up to
+        // the next construct it starts, not every line below it.
         out += char
         continue
       }
@@ -805,6 +823,43 @@ describe('workspace test configuration', () => {
     // A string is a value: the division after it is still a division.
     expect(
       bareWaitUses("const half = 'a'.length / 2\nawait vi.waitFor"),
+    ).toHaveLength(1)
+  })
+
+  it('scans a wait below a JSX closing tag that shares its line with a template', () => {
+    // `</Link>` is a closing tag, not a regex: read as one, the scan runs to
+    // the slash inside the template on the same line, swallows the opening
+    // backtick, and the closing one opens a template that runs to the end of
+    // the file, hiding every wait below it.
+    expect(
+      bareWaitUses(
+        'render(<Link>a</Link>); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
+      ),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses(
+        'render(<div>a</div>); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
+      ),
+    ).toHaveLength(1)
+    // A self-closing tag's slash follows the tag name, so it was never read as
+    // a regex; the pin keeps it that way.
+    expect(
+      bareWaitUses(
+        'render(<Br />); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
+      ),
+    ).toHaveLength(1)
+    // A `<` operator still opens a regex: the wait name inside the pattern is
+    // prose. Read as a division instead, it would be counted as a use.
+    expect(
+      bareWaitUses('const match = x < /vi.waitFor/\nawait vi.waitFor(() => {})'),
+    ).toHaveLength(1)
+  })
+
+  it('scans past a template literal that reaches the end of the file', () => {
+    // A template with no closing backtick must not swallow the rest of the
+    // file: the backtick is ordinary text and the lines below are scanned.
+    expect(
+      bareWaitUses('const text = `unclosed\nawait vi.waitFor(() => {})'),
     ).toHaveLength(1)
   })
 
