@@ -387,6 +387,37 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
             out,
         )
 
+    def test_a_step_that_starts_with_its_run_is_read_too(self) -> None:
+        # The step's first key is `run`, not `name`. A parser that reads only
+        # a name, an `if:` or a `continue-on-error:` from the dash line never
+        # finds the leg, so the `continue-on-error:` below it goes unjudged.
+        self.write(
+            os.path.join(".github", "workflows", "ci.yml"),
+            GATE_ENV
+            + "jobs:\n  all:\n    runs-on: ubuntu-26.04\n    steps:\n"
+            "      - run: make lint test\n        continue-on-error: true\n",
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(1, code, out + err)
+        self.assertIn(
+            "continue-on-error: true, so its failure would not fail", out
+        )
+
+    def test_a_step_that_starts_with_a_block_run_is_read_too(self) -> None:
+        # The same step with its script written as a block scalar: the dash
+        # line carries the `run: |` header, and the body is deeper than the
+        # step's keys.
+        self.write(
+            os.path.join(".github", "workflows", "ci.yml"),
+            GATE_ENV
+            + "jobs:\n  all:\n    runs-on: ubuntu-26.04\n    steps:\n"
+            "      - run: |\n          make lint test\n"
+            "        if: false\n",
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(1, code, out + err)
+        self.assertIn("runs only under if: false", out)
+
     def test_a_step_always_is_an_allowed_condition(self) -> None:
         code, out, err = self.write_step_attribute("if: always()")
         self.assertEqual(0, code, out + err)

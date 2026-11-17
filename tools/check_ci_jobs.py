@@ -235,15 +235,51 @@ def job_attributes(text: str) -> dict[str, dict[str, str]]:
     return attrs
 
 
+def step_key(
+    step: dict[str, object],
+    key: str,
+    value: str,
+    lines: list[str],
+    index: int,
+    attribute_indent: int,
+) -> int:
+    """Record one of a step's keys and return the index after it.
+
+    `run:` is the one key kept as a script: an inline command on the key's own
+    line, or a block scalar whose body is deeper than the step's keys. Every
+    other key is stored as it was written. Reading every key, rather than a
+    fixed set, is what finds a leg on the dash line itself: `- run: make lint`
+    carries its command there, not on a line below it.
+    """
+    if key == "run":
+        if re.fullmatch(r"[|>][+-]?\d*", value):
+            body: list[str] = []
+            following = index + 1
+            while following < len(lines):
+                entry = lines[following]
+                if entry.strip() and (len(entry) - len(entry.lstrip())) <= attribute_indent:
+                    break
+                body.append(entry.strip())
+                following += 1
+            step["scripts"].append((index + 2, "\n".join(body)))
+            return following
+        if value and not value.startswith("#"):
+            step["scripts"].append((index + 1, value.strip("\"'")))
+        return index + 1
+    step[key] = value.strip("\"'")
+    return index + 1
+
+
 def workflow_steps(text: str) -> dict[str, list[dict[str, object]]]:
-    """Return each job's steps with their own `if:`, `continue-on-error:` and runs.
+    """Return each job's steps with their own keys and runs.
 
     A step is an item of the job's `steps:` sequence; its keys sit one level
     deeper than the `- ` dash and its block-scalar `run:` body deeper still.
     A job's own `if:` and `continue-on-error:` sit above the sequence and are
-    not a step's, so the two levels cannot be confused. Each step is returned
-    as a mapping with the attributes it set (`name`, `if`,
-    `continue-on-error`) and a `scripts` list of (first line number, script).
+    not a step's, so the two levels cannot be confused. The dash line's first
+    key is read whatever it is, and every key at the step's own level is
+    recorded, with `run:` kept in a `scripts` list of (first line number,
+    script) entries.
     """
     lines = text.splitlines()
     start = next((i for i, line in enumerate(lines) if line.rstrip() == "jobs:"), None)
@@ -284,10 +320,18 @@ def workflow_steps(text: str) -> dict[str, list[dict[str, object]]]:
             step = {"scripts": []}
             jobs[current].append(step)
             attribute_indent = indent + 2
-            first_key = re.match(r"^(name|if|continue-on-error):\s*(.*)$", dash.group(2))
-            if first_key:
-                step[first_key.group(1)] = first_key.group(2).strip().strip("\"'")
-            index += 1
+            first_key = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", dash.group(2))
+            if first_key is None:
+                index += 1
+                continue
+            index = step_key(
+                step,
+                first_key.group(1),
+                first_key.group(2).strip(),
+                lines,
+                index,
+                attribute_indent,
+            )
             continue
         if step is None or attribute_indent is None:
             index += 1
@@ -299,42 +343,18 @@ def workflow_steps(text: str) -> dict[str, list[dict[str, object]]]:
         if indent > attribute_indent:
             index += 1
             continue
-        match = re.match(r"^\s*(if|continue-on-error|name|run):\s*(.*)$", line)
+        match = re.match(r"^\s*([A-Za-z0-9_-]+):\s*(.*)$", line)
         if match is None:
-            # A block scalar on another key (env:, with:) is not read, but its
-            # body is skipped so a `- ` inside it is not taken for a step.
-            block = re.match(r"^\s*[A-Za-z0-9_-]+:\s*[|>][+-]?\d*\s*$", line)
-            if block:
-                following = index + 1
-                while following < len(lines):
-                    entry = lines[following]
-                    if entry.strip() and (len(entry) - len(entry.lstrip())) <= attribute_indent:
-                        break
-                    following += 1
-                index = following
-                continue
             index += 1
             continue
-        key, value = match.group(1), match.group(2).strip()
-        if key == "run":
-            if re.fullmatch(r"[|>][+-]?\d*", value):
-                body: list[str] = []
-                following = index + 1
-                while following < len(lines):
-                    entry = lines[following]
-                    if entry.strip() and (len(entry) - len(entry.lstrip())) <= attribute_indent:
-                        break
-                    body.append(entry.strip())
-                    following += 1
-                step["scripts"].append((index + 2, "\n".join(body)))
-                index = following
-                continue
-            if value and not value.startswith("#"):
-                step["scripts"].append((index + 1, value.strip("\"'")))
-            index += 1
-            continue
-        step[key] = value.strip("\"'")
-        index += 1
+        index = step_key(
+            step,
+            match.group(1),
+            match.group(2).strip(),
+            lines,
+            index,
+            attribute_indent,
+        )
     return jobs
 
 
