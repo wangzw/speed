@@ -27,6 +27,7 @@ import {
   isAriaHiddenForbiddenTag,
   overlayKindFromClasses,
 } from './axe'
+import type { AxeAssertionOptions } from './axe'
 
 /** The workspace root (`web/`), the base every declared file is relative to. */
 const WEB_ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -448,6 +449,31 @@ describe('d', () => {
     expect(() => assertCaseRunsAxe(source, 'd > target')).toThrow(/is skipped/)
   })
 
+  it('rejects a case under a describe.todo', () => {
+    const source = `describe.todo('d', () => {
+  it('target', async () => {
+    await expectNoAxeViolations()
+  })
+})`
+    expect(() => assertCaseRunsAxe(source, 'd > target')).toThrow(/is skipped/)
+  })
+
+  it('rejects an it.todo case', () => {
+    const source = `describe('d', () => {
+  it.todo('target')
+})`
+    expect(() => assertCaseRunsAxe(source, 'd > target')).toThrow(/is skipped/)
+  })
+
+  it('rejects a case under a describe.skipIf', () => {
+    const source = `describe.skipIf(false)('d', () => {
+  it('target', async () => {
+    await expectNoAxeViolations()
+  })
+})`
+    expect(() => assertCaseRunsAxe(source, 'd > target')).toThrow(/is skipped/)
+  })
+
   it('requires the browser case to pass the determination it is registered under', () => {
     const source = `describe('d', () => {
   it('target', async () => {
@@ -457,5 +483,15 @@ describe('d', () => {
     expect(() =>
       assertCaseRunsAxe(source, 'd > target', 'accountsDetailPanel'),
     ).toThrow(/does not declare itself/)
+  })
+
+  it('accepts only a registered determination key', () => {
+    // A key is a member of BROWSER_DETERMINATIONS, not any string: if the
+    // option were typed as a plain string, a misspelt key would typecheck
+    // and the declaration would silently take no exemption. The directive
+    // below fails to compile as unused once the type is widened.
+    // @ts-expect-error -- 'notRegistered' is not a BROWSER_DETERMINATIONS key
+    const options: AxeAssertionOptions = { decidedInBrowser: 'notRegistered' }
+    expect(options.decidedInBrowser).toBe('notRegistered')
   })
 })
