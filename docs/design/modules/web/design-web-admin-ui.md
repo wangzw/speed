@@ -381,7 +381,7 @@ export function OrganizationProfilePage(): ReactElement
 | `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 要求加强认证时打开加强认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，管理后台显式传入 `session.isStepUpShortfall` 作为判别。`./otpauth` 子路径解析 `otpauth://` 登记 URI 并格式化 base32 密钥供手工输入，通行密钥仪式（[REF-webauthn](../../../references.md)）经子路径 `@speed/auth-core/webauthn`。平台管理面不读当前租户；组织管理面从宿主属性取当前租户，不调 auth-core 的当前租户钩子 |
 | `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）、认证器应用的登记面板 `TotpEnrollmentPanel`、取出显示时区的 `useResolvedTimeZone` 也由它提供 |
 | `@speed/layout-kit` | 外壳骨架：`AppShell` 的两种外壳形态（顶栏 / 侧栏）、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
-| `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染经 ui-kit 的 `useFormatInstant` 按显示时区，审计筛选的墙钟读数经 `wallClockToInstant` 换算成时刻，已应用的时刻经 `instantToWallClock` 换回墙钟。本包不直接调用 `formatInstant`，也不固定时区。宿主仍在读账户档案或档案读失败时，显示时区上下文没有值，时间按浏览器时区渲染；档案落定后若其存值与浏览器时区不同，首屏会跳一次，这是接受的代价 |
+| `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染经 ui-kit 的 `useFormatInstant` 按显示时区，审计筛选的[本地日期时间](../../../glossary.md)读数经 `wallClockToInstant` 换算成时刻，已应用的时刻经 `instantToWallClock` 换回本地日期时间。本包不直接调用 `formatInstant`，也不固定时区。宿主仍在读账户档案或档案读失败时，显示时区上下文没有值，时间按浏览器时区渲染；档案落定后若其存值与浏览器时区不同，首屏会跳一次，这是接受的代价 |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient |
 | `react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/*`（[REF-emotion](../../../references.md)） | peer（必需）：宿主拥有的 React／MUI 树 |
 
@@ -555,7 +555,7 @@ graph TD
 
 ### 审计查询的筛选与分页
 
-审计页把工具栏的 `since`、`until`、`action` 集合、`outcome` 集合与 `actor` 集合作为读的查询参数，在提交时应用（一次键入不触发请求）。`since` 与 `until` 是墙钟读数，按显示时区换算成时刻后送出；读数落在该时区的夏令时空档里时换算不出时刻，输入被拒绝并标为无效，提示该时间在当前时区不存在；日历或字段范围拒绝的读数同样被拒绝，但提示的是超出可接受范围，两类原因不共用文案。被拒时焦点移到第一个出错的字段，筛选保持上一次应用的值。回拨重叠的重复一小时里，`since` 取较早的瞬间，`until` 取较晚的瞬间，筛选区间因此覆盖重复的两个小时。显示时区变化时，已应用的时刻经 `instantToWallClock` 在新时区重新读成墙钟并回填到输入框，两个时间字段的无效标记同时按新时区重算；已应用的时刻本身不变。`action`、`outcome` 与 `actor` 各自按逗号或空白切成集合送出，每项与行上的同名列相等即命中。审计读按游标分页：应答带出下一页的游标，页脚据此前进与后退；游标式读不数总数，故页脚不显示总数。“重置”清空全部筛选并回到第一页。
+审计页把工具栏的 `since`、`until`、`action` 集合、`outcome` 集合与 `actor` 集合作为读的查询参数，在提交时应用（一次键入不触发请求）。`since` 与 `until` 是本地日期时间读数，按显示时区换算成时刻后送出；读数落在该时区的夏令时空档里时换算不出时刻，输入被拒绝并标为无效，提示该时间在当前时区不存在；日历或字段范围拒绝的读数同样被拒绝，但提示的是超出可接受范围，两类原因不共用文案。被拒时焦点移到第一个出错的字段，筛选保持上一次应用的值。回拨重叠的重复一小时里，`since` 取较早的瞬间，`until` 取较晚的瞬间，筛选区间因此覆盖重复的两个小时。显示时区变化时，已应用的时刻经 `instantToWallClock` 在新时区重新读成本地日期时间并回填到输入框，两个时间字段的无效标记同时按新时区重算；已应用的时刻本身不变。`action`、`outcome` 与 `actor` 各自按逗号或空白切成集合送出，每项与行上的同名列相等即命中。审计读按游标分页：应答带出下一页的游标，页脚据此前进与后退；游标式读不数总数，故页脚不显示总数。“重置”清空全部筛选并回到第一页。
 
 两张审计记录表（审计查询页与仪表盘的最近活动）共用同一套列与优先级。结果列必须在所有仍显示优先级列的宽度下保留：窄到 768px 的概览上，失败的记录与成功的记录仍要能分辨，而排查恰恰先看失败，故结果取最高优先级（容器 ≥600px 起显示，`sm` 档）；时间与动作不带优先级、永不隐藏。对象（记录所作用的路径）最先让位，容器低于 `lg`（1200px）即隐藏：动作已说明发生了什么，路径可由记录的详情页取得。操作者其次，`md`（≥900px）起显示。这一裁定对两张表同时生效：审计查询页在 13/14 寸笔记本上（容器宽 1184px，低于 `lg` 的 1200px）同样隐藏对象列，保留操作者与结果；这一结果出自两张表共用的列声明，不是审计查询页单独的选择。判定宽度取自表格自身的容器（`container-type: inline-size`），不取自视口。
 
