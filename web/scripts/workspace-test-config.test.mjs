@@ -256,14 +256,21 @@ function stripCommentsAndStrings(source) {
       // A string behind a member access is a property key, not prose:
       // `vi['waitFor']` names the wait the same way `vi.waitFor` does, so it
       // is kept. An array element is prose like any other string, so the
-      // bracket must follow the object it reads from.
+      // bracket must follow the object it reads from, and none of the
+      // keywords the regex rule knows is an object: `return ['vi.waitFor']`
+      // and `for (const n of ['vi.waitFor'])` are arrays of prose.
       const trimmed = out.trimEnd()
       let base = trimmed.length - 2
       while (base >= 0 && /\s/.test(trimmed[base])) base -= 1
+      let wordStart = base
+      while (wordStart >= 0 && /[A-Za-z0-9_$]/.test(trimmed[wordStart])) {
+        wordStart -= 1
+      }
       const memberAccess =
         trimmed.at(-1) === '['
         && base >= 0
         && /[A-Za-z0-9_$.]/.test(trimmed[base])
+        && !REGEX_PRECEDER_WORDS.has(trimmed.slice(wordStart + 1, base + 1))
       let after = i + 1
       while (after < source.length && /\s/.test(source[after])) after += 1
       if (memberAccess && source[after] === ']') {
@@ -280,6 +287,11 @@ function stripCommentsAndStrings(source) {
 
 /** The tokens after which a JavaScript `/` opens a regex literal. */
 const REGEX_PRECEDER_CHARS = new Set('(,=:[!&|?{};+-*%^~<>')
+/**
+ * The keywords after which a JavaScript `/` opens a regex literal. A bracket
+ * that directly follows one cannot be reading a member from it either: what
+ * sits in the bracket is an array element, not a property key.
+ */
 const REGEX_PRECEDER_WORDS = new Set([
   'return',
   'typeof',
@@ -767,6 +779,15 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses("const allowed = ['vi.waitFor']")).toHaveLength(0)
     expect(bareWaitUses("check(['vi.waitUntil'])")).toHaveLength(0)
     expect(bareWaitUses("const [first] = ['vi.waitFor']")).toHaveLength(0)
+    // A keyword before the bracket cannot be the object a string is read from,
+    // so the string after it is an array element like any other and prose.
+    expect(bareWaitUses("function f() { return ['vi.waitFor'] }")).toHaveLength(0)
+    expect(bareWaitUses("for (const n of ['vi.waitFor']) {}")).toHaveLength(0)
+    expect(bareWaitUses("function* g() { yield ['vi.waitUntil'] }")).toHaveLength(0)
+    expect(bareWaitUses("await ['vi.waitFor']")).toHaveLength(0)
+    expect(bareWaitUses("switch (x) { case ['vi.waitFor']: break }")).toHaveLength(0)
+    expect(bareWaitUses("x in ['vi.waitFor']")).toHaveLength(0)
+    expect(bareWaitUses("typeof ['vi.waitFor']")).toHaveLength(0)
   })
 
   it('scans a wait after a regex literal or JSX text that carries a quote', () => {
