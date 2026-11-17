@@ -80,12 +80,13 @@ if argv[0] in ("machine", "machines") and "list" in argv:
             print("error: the machines API did not answer", file=sys.stderr)
             log(argv, 1)
             sys.exit(1)
+        ids = config.get("machine_ids") or [config.get("machine_id", "m-1")]
         machines = [{
-            "id": config.get("machine_id", "m-1"),
+            "id": machine_id,
             "name": "demo",
             "state": config.get("machine_state", "started"),
             "checks": checks(config),
-        }]
+        } for machine_id in ids]
         print(json.dumps(machines))
         log(argv, 0)
         sys.exit(0)
@@ -111,12 +112,18 @@ if argv[0] == "volumes" and "list" in argv:
     sys.exit(0)
 
 if argv[0] == "volumes" and ("destroy" in argv or "create" in argv):
-    log(argv, 0)
-    sys.exit(0)
+    failed = "destroy" in argv and len(argv) > 2 and argv[2] in config.get("volume_destroy_fail_ids", [])
+    if failed:
+        print("error: the volume destroy failed", file=sys.stderr)
+    log(argv, 1 if failed else 0)
+    sys.exit(1 if failed else 0)
 
 if argv[0] in ("machine", "machines") and "destroy" in argv:
-    log(argv, 0)
-    sys.exit(0)
+    failed = len(argv) > 2 and argv[2] in config.get("machine_destroy_fail_ids", [])
+    if failed:
+        print("error: the machine destroy failed", file=sys.stderr)
+    log(argv, 1 if failed else 0)
+    sys.exit(1 if failed else 0)
 
 if argv[0] == "ssh":
     print("total 0")
@@ -234,7 +241,26 @@ class Harness:
         values.update(settings)
         self.config_path.write_text(json.dumps(values), encoding="utf-8")
 
-    def run(self, *args, stdin=""):
+    def script_with_fly_toml(self, text):
+        """A copy of the script in a scratch git checkout beside its own fly.toml.
+
+        The script reads fly.toml from the directory above it, so a case that
+        needs file values other than the repository's copies the script into a
+        throwaway checkout with that fly.toml next to it. The copy is a real
+        file, not a link, because the script resolves links back to the
+        repository before looking for fly.toml.
+        """
+        repo = self.root / "checkout"
+        deploy = repo / "starters" / "demo" / "deploy"
+        deploy.mkdir(parents=True)
+        script = deploy / SCRIPT.name
+        script.write_bytes(SCRIPT.read_bytes())
+        script.chmod(0o755)
+        (deploy.parent / "fly.toml").write_text(text, encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        return script
+
+    def run(self, *args, stdin="", script=None, extra_env=None):
         env = os.environ.copy()
         env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
         env["STUB_LOG"] = str(self.log_path)
@@ -244,8 +270,9 @@ class Harness:
         env["HEALTH_INTERVAL"] = "1"
         for name in ("APP", "REGION", "VOLUME", "BASE"):
             env.pop(name, None)
+        env.update(extra_env or {})
         return subprocess.run(
-            [str(SCRIPT), *args],
+            [str(script or SCRIPT), *args],
             input=stdin,
             capture_output=True,
             text=True,
@@ -281,6 +308,15 @@ class Harness:
 
 
 class RedeployScriptTest(unittest.TestCase):
+    """Cases for the decision logic, each asserting the exact calls it needs.
+
+    The stand-ins for flyctl, make, curl and python3 sit first on PATH, so a
+    command the script runs is a stub that logs it; nothing here reaches Fly or
+    a real deploy. A case therefore checks the specific call log it cares about
+    rather than a program-set assertion, which would hold for every case that
+    only ever logs its own stubs.
+    """
+
     def setUp(self):
         self.harness = Harness()
         self.addCleanup(self.harness.directory.cleanup)
@@ -290,16 +326,10 @@ class RedeployScriptTest(unittest.TestCase):
         self.harness.install("python3", PYTHON_STUB)
         self.harness.configure()
 
-    def assertOnlyStubsRan(self):
-        self.assertLessEqual(
-            self.harness.programs(), {"flyctl", "make", "curl", "python3"}
-        )
-
     def test_deploy_with_passing_checks_keeps_the_data(self):
         self.harness.configure(make_exit_codes=[0], machines="healthy")
         result = self.harness.run()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertOnlyStubsRan()
         self.assertEqual(len(self.harness.by_program("make")), 1)
         self.assertEqual(self.harness.rebuild_calls(), [])
         self.assertEqual(self.harness.by_program("curl"), [])
@@ -313,7 +343,6 @@ class RedeployScriptTest(unittest.TestCase):
         self.harness.configure(make_exit_codes=[1], machines="healthy")
         result = self.harness.run()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertOnlyStubsRan()
         self.assertEqual(len(self.harness.by_program("make")), 1)
         self.assertEqual(self.harness.rebuild_calls(), [])
         self.assertIn("probing health anyway", result.stdout)
@@ -323,7 +352,6 @@ class RedeployScriptTest(unittest.TestCase):
         self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
         result = self.harness.run(stdin="no\n")
         self.assertNotEqual(result.returncode, 0)
-        self.assertOnlyStubsRan()
         self.assertEqual(len(self.harness.by_program("make")), 1)
         self.assertEqual(self.harness.rebuild_calls(), [])
         self.assertIn('type "rebuild"', result.stdout)
@@ -333,7 +361,6 @@ class RedeployScriptTest(unittest.TestCase):
         self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
         result = self.harness.run("--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertOnlyStubsRan()
 
         calls = self.harness.calls()
 
@@ -428,7 +455,6 @@ class RedeployScriptTest(unittest.TestCase):
 
                 result = self.harness.run()
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertOnlyStubsRan()
                 self.assertEqual(self.harness.rebuild_calls(), [])
                 self.assertIn("falling back to the public probe", result.stdout)
                 self.assertIn("health via public probe", result.stdout)
@@ -440,7 +466,6 @@ class RedeployScriptTest(unittest.TestCase):
         self.harness.configure(machines="unreadable-nochecks", curl_codes=[503])
         result = self.harness.run(stdin="no\n")
         self.assertNotEqual(result.returncode, 0)
-        self.assertOnlyStubsRan()
         self.assertEqual(self.harness.rebuild_calls(), [])
         self.assertIn("falling back to the public probe", result.stdout)
         self.assertIn("answered 503", result.stdout)
@@ -457,7 +482,6 @@ class RedeployScriptTest(unittest.TestCase):
         self.harness.configure(machines="healthy", machine_state="starting")
         result = self.harness.run(stdin="no\n")
         self.assertNotEqual(result.returncode, 0)
-        self.assertOnlyStubsRan()
         self.assertEqual(self.harness.rebuild_calls(), [])
         self.assertIn("machine checks: m-1 is starting", result.stdout)
         self.assertNotIn("healthy via machine checks", result.stdout)
@@ -483,7 +507,6 @@ class RedeployScriptTest(unittest.TestCase):
 
                 result = self.harness.run(stdin="no\n")
                 self.assertNotEqual(result.returncode, 0)
-                self.assertOnlyStubsRan()
                 self.assertEqual(self.harness.rebuild_calls(), [])
                 self.assertIn(reason, result.stdout)
                 self.assertNotIn("healthy via machine checks", result.stdout)
@@ -491,6 +514,128 @@ class RedeployScriptTest(unittest.TestCase):
                 self.assertIn('type "rebuild"', result.stdout)
                 self.assertIn("stopped: nothing was destroyed", result.stdout)
                 self.assertEqual(len(self.harness.by_program("make")), 1)
+
+    def test_the_redeploy_waits_for_health_after_the_second_deploy(self):
+        self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
+        result = self.harness.run("--yes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        calls = self.harness.calls()
+        makes = [index for index, entry in enumerate(calls) if entry["program"] == "make"]
+        self.assertEqual(len(makes), 2)
+        second_make = makes[1]
+        machine_lists_after = [
+            index
+            for index in range(second_make + 1, len(calls))
+            if calls[index]["program"] == "flyctl"
+            and calls[index]["argv"][:2] in (["machine", "list"], ["machines", "list"])
+            and "--json" in calls[index]["argv"]
+        ]
+        self.assertTrue(machine_lists_after, calls[second_make:])
+        self.assertIn(
+            "volume rebuilt, new version healthy (health via machine checks)",
+            result.stdout,
+        )
+
+    def test_a_failed_second_deploy_stops_the_run(self):
+        self.harness.configure(make_exit_codes=[1], machines="by_make")
+        result = self.harness.run("--yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "the deploy command failed after the volume was recreated", result.stderr
+        )
+        self.assertIn(
+            "redeploy stopped at: 5/5 deploy again on the fresh volume", result.stderr
+        )
+        self.assertIn(
+            "redeploy had done: every machine destroyed and volume speed_demo_data recreated",
+            result.stderr,
+        )
+        self.assertEqual(len(self.harness.by_program("make")), 2)
+        evidence = [
+            argv for argv in self.harness.by_program("flyctl") if argv and argv[0] == "ssh"
+        ]
+        self.assertEqual(evidence, [])
+
+    def test_typing_rebuild_runs_the_destruction(self):
+        self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
+        result = self.harness.run(stdin="rebuild\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('type "rebuild"', result.stdout)
+        self.assertEqual(len(self.harness.by_program("make")), 2)
+
+        destroyed = [
+            argv
+            for argv in self.harness.by_program("flyctl")
+            if argv[:2] in (["machine", "destroy"], ["machines", "destroy"])
+        ]
+        self.assertEqual(destroyed, [["machine", "destroy", "m-1", "--force"]])
+        volumes_destroyed = [
+            argv
+            for argv in self.harness.by_program("flyctl")
+            if argv[:2] == ["volumes", "destroy"]
+        ]
+        self.assertEqual(volumes_destroyed, [["volumes", "destroy", "vol-1", "--yes"]])
+        self.assertIn("volume rebuilt", result.stdout)
+
+    def test_a_failed_destroy_midway_reports_what_was_done(self):
+        self.harness.configure(
+            make_exit_codes=[1, 0],
+            machines="by_make",
+            machine_ids=["m-1", "m-2"],
+            machine_destroy_fail_ids=["m-2"],
+        )
+        result = self.harness.run("--yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("redeploy stopped at: 3/5 destroy every machine", result.stderr)
+        self.assertIn("redeploy had done: destroyed machines: m-1", result.stderr)
+
+        outcomes = {
+            (entry["argv"][2], entry["exit"])
+            for entry in self.harness.calls()
+            if entry["program"] == "flyctl"
+            and entry["argv"][:2] == ["machine", "destroy"]
+        }
+        self.assertEqual(outcomes, {("m-1", 0), ("m-2", 1)})
+        volumes_destroyed = [
+            argv
+            for argv in self.harness.by_program("flyctl")
+            if argv[:2] == ["volumes", "destroy"]
+        ]
+        self.assertEqual(volumes_destroyed, [])
+
+    def test_fly_toml_values_win_over_the_built_in_defaults(self):
+        script = self.harness.script_with_fly_toml(
+            'app = "from-toml-app"\n'
+            'primary_region = "ams"\n'
+            "[[mounts]]\n"
+            '  source = "from_toml_volume"\n'
+        )
+        result = self.harness.run("--dry-run", script=script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("app:    from-toml-app", result.stdout)
+        self.assertIn("region: ams", result.stdout)
+        self.assertIn("volume: from_toml_volume", result.stdout)
+        self.assertNotIn("vislake-speed-demo", result.stdout)
+        self.assertIn("volumes create from_toml_volume --region ams", result.stdout)
+
+    def test_environment_overrides_the_fly_toml_and_the_defaults(self):
+        result = self.harness.run(
+            "--dry-run",
+            extra_env={
+                "APP": "env-app",
+                "REGION": "env-region",
+                "VOLUME": "env_vol",
+                "BASE": "https://env.example",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("app:    env-app (environment)", result.stdout)
+        self.assertIn("region: env-region (environment)", result.stdout)
+        self.assertIn("volume: env_vol (environment)", result.stdout)
+        self.assertIn("base:   https://env.example (environment)", result.stdout)
+        self.assertIn("-a env-app", result.stdout)
+        self.assertIn("volumes create env_vol --region env-region", result.stdout)
 
 
 if __name__ == "__main__":
