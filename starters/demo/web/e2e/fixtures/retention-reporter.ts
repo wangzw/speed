@@ -16,8 +16,23 @@ import type { FullResult, Reporter } from '@playwright/test/reporter'
 import { ARTIFACT_ROOT } from './paths'
 import { RETENTION_ROOT, removeRunDirectory } from './retention'
 
+/** Where the reporter deletes from, overridable by the tests. */
+export interface RunRetentionReporterOptions {
+  /** This run's own directory, the one a passed run removes. */
+  readonly artifactRoot?: string
+  /** The root a run directory must be a direct child of. */
+  readonly retentionRoot?: string
+}
+
 class RunRetentionReporter implements Reporter {
+  private readonly artifactRoot: string
+  private readonly retentionRoot: string
   private status: FullResult['status'] | undefined
+
+  constructor(options: RunRetentionReporterOptions = {}) {
+    this.artifactRoot = options.artifactRoot ?? ARTIFACT_ROOT
+    this.retentionRoot = options.retentionRoot ?? RETENTION_ROOT
+  }
 
   onEnd(result: FullResult): void {
     this.status = result.status
@@ -27,18 +42,19 @@ class RunRetentionReporter implements Reporter {
     if (this.status !== 'passed') {
       process.stdout.write(
         `[e2e] run directory kept for diagnosis ` +
-          `(run status: ${this.status ?? 'unknown'}): ${ARTIFACT_ROOT}\n` +
-          `[e2e] HTML report: ${ARTIFACT_ROOT}/report/index.html\n`,
+          `(run status: ${this.status ?? 'unknown'}): ${this.artifactRoot}\n` +
+          `[e2e] HTML report: ${this.artifactRoot}/report/index.html\n`,
       )
       return
     }
-    const removed = await removeRunDirectory(ARTIFACT_ROOT, {
-      prefixRoot: RETENTION_ROOT,
+    const removed = await removeRunDirectory(this.artifactRoot, {
+      prefixRoot: this.retentionRoot,
     })
     if (removed) {
-      process.stdout.write(`[e2e] run directory removed: ${ARTIFACT_ROOT}\n`)
+      process.stdout.write(`[e2e] run directory removed: ${this.artifactRoot}\n`)
     }
   }
 }
 
+export { RunRetentionReporter }
 export default RunRetentionReporter

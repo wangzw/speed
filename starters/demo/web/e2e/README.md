@@ -395,14 +395,16 @@ inspected; the path is attached to the failure.
 The run directory is bounded. At the start of every run, global setup removes
 earlier run directories under `/tmp` whose whole name matches
 `speed-e2e-<pid>-<clock>-<nonce>` and whose modification time is older than
-seven days (`RETENTION_WINDOW_MS` in `fixtures/retention.ts`). The same sweep
+one day (`RETENTION_WINDOW_MS` in `fixtures/retention.ts`). The same sweep
 removes the per-spec directories a failed test keeps -- the review server's
 `speed-e2e-server-<six>` and the deploy fixture's `speed-e2e-deploy-<six>` --
 once they age past the window, under the system temp directory the fixtures
 create them in. A name that does not match one of those shapes exactly is never
-a candidate, and a symbolic link is never followed. When the whole run passes,
-`fixtures/retention-reporter.ts` removes this run's directory from Playwright's
-`onExit`, after the HTML report has been written. A failed, timed-out or
-interrupted run keeps the directory and the reporter prints its path (and the
-report's) at the end of the run; the failure-kept per-spec directories are
-cleaned by the next run only after the same window.
+a candidate, and a symbolic link is never followed. A directory that holds
+read-only files has its owner write permission restored before it is deleted,
+so a test that locked its own fixture cannot leave the directory behind. When
+the whole run passes, `fixtures/retention-reporter.ts` removes this run's
+directory from Playwright's `onExit`, after the HTML report has been written. A
+failed, timed-out or interrupted run keeps the directory and the reporter
+prints its path (and the report's) at the end of the run; the failure-kept
+per-spec directories are cleaned by the next run only after the same window.

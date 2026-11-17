@@ -110,7 +110,7 @@ function build(
 export default async function globalSetup(): Promise<void> {
   // Sweep before the harness directory is created: the directory about to be
   // made is fresh and therefore outside the window, so the only candidates are
-  // runs that have already finished (or died) more than a week ago.
+  // runs that have already finished (or died) more than a day ago.
   const expired = await removeExpiredRunDirectories()
   for (const path of expired) {
     process.stderr.write(`[e2e] removed expired run directory: ${path}\n`)

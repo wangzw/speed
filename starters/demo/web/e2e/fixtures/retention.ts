@@ -25,12 +25,17 @@
  * removal of a symlink is refused, so a link planted under work the harness's
  * own name cannot redirect a deletion outside the root.
  *
+ * A directory being deleted may hold files whose permissions deny writing.
+ * `rm` cannot unlink a child of a read-only directory, so the deletion
+ * restores the owner's write and search bits first, walking the tree without
+ * following a symbolic link.
+ *
  * The roots are parameters so the rules can be exercised against a temporary
  * directory; the harness leaves the run root at `/tmp`, the root
  * `ARTIFACT_ROOT` is composed under, and the per-spec root at the system temp
  * directory the fixtures create in.
  */
-import { lstat, readdir, rm } from 'node:fs/promises'
+import { chmod, lstat, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
@@ -55,7 +60,7 @@ const SERVER_DIRECTORY_NAME = /^speed-e2e-server-[A-Za-z0-9]{6}$/
 const DEPLOY_DIRECTORY_NAME = /^speed-e2e-deploy-[A-Za-z0-9]{6}$/
 
 /** How long a kept run or per-spec directory is retained before a sweep. */
-export const RETENTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+export const RETENTION_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /** Where the rule looks and what "now" is, for the tests' temporary root. */
 export interface RetentionOptions {
@@ -90,6 +95,46 @@ function isNotFound(error: unknown): boolean {
     error !== null &&
     (error as { code?: unknown }).code === 'ENOENT'
   )
+}
+
+/**
+ * Delete `path` and everything under it, restoring the owner's write
+ * permission first. Unlinking a child needs write permission on its directory,
+ * so a directory whose owner bits deny writing gets them back before the walk
+ * lists it; a file gets its owner's write bit back as well. A symbolic link is
+ * unlinked, never followed: its target's permissions are left alone.
+ */
+async function removeTree(path: string): Promise<void> {
+  let info
+  try {
+    info = await lstat(path)
+  } catch (error) {
+    if (isNotFound(error)) return
+    throw error
+  }
+  if (info.isSymbolicLink()) {
+    await rm(path, { force: true })
+    return
+  }
+
+  const permissions = info.mode & 0o7777
+  if (info.isDirectory()) {
+    // Search (x) lets the walk list the directory; write (w) lets the final
+    // unlink of each child succeed.
+    if ((permissions & 0o700) !== 0o700) await chmod(path, permissions | 0o700)
+    let entries
+    try {
+      entries = await readdir(path)
+    } catch (error) {
+      if (isNotFound(error)) return
+      throw error
+    }
+    for (const entry of entries) await removeTree(join(path, entry))
+  } else if ((permissions & 0o600) !== 0o600) {
+    await chmod(path, permissions | 0o600)
+  }
+
+  await rm(path, { recursive: true, force: true })
 }
 
 /**
@@ -135,7 +180,7 @@ async function removeExpiredMatching(
     if (!info.isDirectory()) continue
     if (now - info.mtimeMs <= RETENTION_WINDOW_MS) continue
 
-    await rm(path, { recursive: true, force: true })
+    await removeTree(path)
     removed.push(path)
   }
   return removed
@@ -214,6 +259,6 @@ export async function removeRunDirectory(
     )
   }
 
-  await rm(candidate, { recursive: true, force: true })
+  await removeTree(candidate)
   return true
 }

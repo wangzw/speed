@@ -7,7 +7,18 @@
  * children of the root they are given, which is what keeps a scan from leaving
  * the harness's own namespace.
  */
-import { lstat, lutimes, mkdir, mkdtemp, rm, stat, symlink, utimes } from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  lutimes,
+  mkdir,
+  mkdtemp,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -80,6 +91,19 @@ describe('removeExpiredRunDirectories', () => {
     await expect(exists(run)).resolves.toBe(false)
   })
 
+  it('removes a run directory more than a day old', async () => {
+    const now = Date.now()
+    const run = await makeDirectory(RUN_DIRECTORY)
+    // The window is one day, so an age just past it is enough. A seven-day
+    // window would leave this directory in place.
+    await backdate(run, now, DAY_MS + 1_000)
+
+    const removed = await removeExpiredRunDirectories({ prefixRoot, now })
+
+    expect(removed).toEqual([run])
+    await expect(exists(run)).resolves.toBe(false)
+  })
+
   it('keeps a fresh run directory', async () => {
     const now = Date.now()
     const run = await makeDirectory(RUN_DIRECTORY)
@@ -90,7 +114,7 @@ describe('removeExpiredRunDirectories', () => {
     await expect(lstat(run)).resolves.toBeTruthy()
   })
 
-  it('keeps a run directory just inside the seven-day window and removes one just outside', async () => {
+  it('keeps a run directory just inside the one-day window and removes one just outside', async () => {
     const now = Date.now()
     const justInside = await makeDirectory('speed-e2e-4242-m1abc2de-00000001')
     const justOutside = await makeDirectory('speed-e2e-4242-m1abc2de-00000002')
@@ -221,6 +245,23 @@ describe('removeExpiredPerSpecDirectories', () => {
 describe('removeRunDirectory', () => {
   it("removes this run's own directory after a successful run", async () => {
     const run = await makeDirectory(RUN_DIRECTORY)
+
+    await expect(removeRunDirectory(run, { prefixRoot })).resolves.toBe(true)
+
+    await expect(exists(run)).resolves.toBe(false)
+  })
+
+  it('restores write permission before removing a read-only tree', async () => {
+    const run = await makeDirectory(RUN_DIRECTORY)
+    const nested = join(run, 'nested')
+    await mkdir(nested)
+    const file = join(nested, 'kept.txt')
+    await writeFile(file, 'evidence\n')
+    // A read-only directory cannot have its children unlinked, and a
+    // read-only file cannot be rewritten; the removal has to restore both
+    // before the recursive delete.
+    await chmod(nested, 0o500)
+    await chmod(file, 0o400)
 
     await expect(removeRunDirectory(run, { prefixRoot })).resolves.toBe(true)
 
